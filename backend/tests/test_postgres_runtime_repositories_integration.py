@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -17,6 +18,7 @@ try:
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
     from psycopg_pool import ConnectionPool
 
+    from backend.app.core.config import settings
     from backend.app.core.postgres_database import PostgresDatabaseLifecycle
     from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_document_repository import (
@@ -454,3 +456,55 @@ def test_real_postgres_today_count_github_uses_enriched_library_entries(
     # 只 +1（当日富化成功的入库项目）；github documents 行、纯候选、
     # 历史锚点与失败行均不计入。
     assert documents.get_today_document_count() == baseline + 1
+
+
+def test_real_postgres_today_count_uses_scheduler_timezone_day(
+    repositories, database,
+) -> None:
+    documents, _, _, project_ingestion = repositories
+    enrichments = PostgresGitHubProjectEnrichmentRepository(database)
+    # 「今日」= scheduler_timezone 自然日：今日凌晨（UTC 仍昨日）入库即计入；
+    # 昨日深夜与明日凌晨的边界行均不计。
+    zone = ZoneInfo(getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai")
+    today = datetime.now(zone).date()
+
+    def _at(day: Any, hour: int, minute: int) -> str:
+        return datetime.combine(day, time(hour, minute)).replace(tzinfo=zone).isoformat()
+
+    baseline = documents.get_today_document_count()
+    documents.upsert_document(_document("doc-day-early", created_at=_at(today, 0, 30)))
+    documents.upsert_document(
+        _document(
+            "doc-day-yesterday",
+            created_at=_at(today - timedelta(days=1), 23, 30),
+        )
+    )
+    documents.upsert_document(
+        _document(
+            "doc-day-tomorrow",
+            created_at=_at(today + timedelta(days=1), 0, 30),
+        )
+    )
+    project_ingestion.upsert_github_repo_candidate(
+        {
+            "repo_id": "it-day-early-repo",
+            "full_name": "it/day-early-repo",
+            "url": "https://github.com/it/day-early-repo",
+            "first_seen_at": _at(today, 0, 30),
+        }
+    )
+    enrichments.upsert_github_repo_enrichment(
+        {
+            "repo_id": "it-day-early-repo",
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "测试项目",
+            "source_fingerprint": "e" * 64,
+            "prompt_version": "it-v1",
+            "status": "succeeded",
+            "enriched_at": _at(today, 0, 30),
+        }
+    )
+
+    # +2：今日凌晨的文档与富化入库各一；昨日/明日边界行不计。
+    assert documents.get_today_document_count() == baseline + 2

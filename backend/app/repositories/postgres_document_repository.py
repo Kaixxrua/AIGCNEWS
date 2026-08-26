@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -34,6 +34,23 @@ def _utcnow() -> str:
 def _local_today() -> str:
     zone = getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
     return datetime.now(ZoneInfo(zone)).date().isoformat()
+
+
+def _local_today_utc_bounds() -> tuple[str, str]:
+    """调度时区自然日对应的 UTC 闭开区间（ISO 串）。
+
+    「今日」以 scheduler_timezone 的日历日为准，换算成 UTC 上下界供
+    timestamptz 范围比较；替代 LEFT(ts,10) 词法前缀（该写法把窗口整体
+    偏移了时区差，凌晨入库的行永远落不进「今天」）。
+    """
+    zone = ZoneInfo(getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai")
+    today = datetime.now(zone).date()
+    start = datetime.combine(today, time.min).replace(tzinfo=zone)
+    end = start + timedelta(days=1)
+    return (
+        start.astimezone(timezone.utc).isoformat(),
+        end.astimezone(timezone.utc).isoformat(),
+    )
 
 
 def _normalize_doc_lookup_key(value: str | None) -> str:
@@ -814,26 +831,29 @@ class PostgresDocumentRepository:
         return {row["source"]: int(row["cnt"]) for row in rows}
 
     def get_today_document_count(self) -> int:
-        today = _local_today()
-        # github 源不计 documents 行，改计 github_repo_enrichments 当日
-        # enriched_at 锚点且 status='succeeded' 的入库项目（即
-        # github_library_total 的当日增量；候选池 first_seen 不计）。
-        # 其余来源仍按 documents.created_at 当日入库计数。
-        # 两侧同为 LEFT(...,10) 词法日期前缀，口径一致。
+        start_utc, end_utc = _local_today_utc_bounds()
+        # 「今日」= scheduler_timezone（默认 Asia/Shanghai）的自然日：
+        # 时间戳经 ::timestamptz 归一后与当日 UTC 闭开区间比较，凌晨入库
+        # 当日即计入、零点翻篇即清零。github 源不计 documents 行，改计
+        # github_repo_enrichments 同窗口 status='succeeded' 的入库项目
+        # （github_library_total 的当日增量；候选池 first_seen 不计）。
         # 注意：upsert 重富化会覆写 enriched_at，prompt 版本升级等批量重跑
         # 当日会把旧项目计入本计数。
         return self._fetch_count(
             """
             SELECT (
                 SELECT COUNT(*) FROM documents
-                WHERE LEFT(created_at, 10) = %s AND source <> 'github'
+                WHERE source <> 'github'
+                  AND NULLIF(created_at, '')::timestamptz >= %s::timestamptz
+                  AND NULLIF(created_at, '')::timestamptz < %s::timestamptz
             ) + (
                 SELECT COUNT(*) FROM github_repo_enrichments
                 WHERE status = 'succeeded'
-                  AND LEFT(COALESCE(enriched_at, ''), 10) = %s
+                  AND NULLIF(enriched_at, '')::timestamptz >= %s::timestamptz
+                  AND NULLIF(enriched_at, '')::timestamptz < %s::timestamptz
             ) AS cnt
             """,
-            (today, today),
+            (start_utc, end_utc, start_utc, end_utc),
         )
 
     def clear_all_documents(self) -> int:

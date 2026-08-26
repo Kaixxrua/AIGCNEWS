@@ -175,9 +175,10 @@ class DocumentStatisticsReader(Protocol):
 
     def get_source_counts(self) -> dict[str, int]: ...
 
-    # 「今日更新」计数：非 github 来源按 documents.created_at 当日入库计数；
-    # github 部分按 github_repo_enrichments 当日 enriched_at 且 status='succeeded'
-    # 的入库项目计数（github_library_total 的当日增量）。
+    # 「今日更新」计数：「今日」为 scheduler_timezone（默认 Asia/Shanghai）
+    # 自然日；非 github 来源按 documents.created_at 落入当日窗口计数，
+    # github 部分按 github_repo_enrichments 当日 enriched_at 且
+    # status='succeeded' 的入库项目计数（github_library_total 的当日增量）。
     def get_today_document_count(self) -> int: ...
 
 
