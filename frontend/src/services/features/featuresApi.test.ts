@@ -14,8 +14,14 @@ describe('Features API contract', () => {
     const signal = new AbortController().signal
     transport.get.mockResolvedValueOnce({ data: { x_source: false, wechat_source: true } })
 
-    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, wechatSource: true, oauthProviders: [] })
+    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, wechatSource: true, oauthProviders: [], telegramPushEnabled: true })
     expect(transport.get).toHaveBeenLastCalledWith('/features', { signal })
+  })
+
+  it('maps an explicit telegram_push_enabled=false to the camelCase flag', async () => {
+    transport.get.mockResolvedValueOnce({ data: { telegram_push_enabled: false } })
+
+    await expect(fetchFeatures()).resolves.toEqual({ ...DEFAULT_FEATURE_FLAGS, telegramPushEnabled: false })
   })
 
   it('fails open when fields are missing', async () => {

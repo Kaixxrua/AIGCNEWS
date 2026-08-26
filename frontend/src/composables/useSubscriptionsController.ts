@@ -17,6 +17,9 @@ import { subscriptionsApi } from '@/services/subscriptions/subscriptionsApi'
 import type { SubscriptionsApi } from '@/services/subscriptions/subscriptionsApi'
 
 interface ApiErrorLike {
+  config?: {
+    url?: string
+  }
   response?: {
     status?: number
     data?: {
@@ -36,6 +39,12 @@ export function getErrorMessage(err: unknown, fallback: string): string {
   if (e.response?.status === 403) {
     const code = typeof detail === 'object' ? detail?.code : undefined
     return code === 'vip-required' ? 'vip-required' : 'quota-exceeded'
+  }
+  // Telegram 未配置/不可达时后端以 503 拒绝绑定：映射为稳定 key 走 i18n，
+  // detail 是运营口径中文，不做多语言透传。仅限 telegram 端点——其他 503
+  // （如 RSS token 未配置）保持 detail 透传。
+  if (e.response?.status === 503 && e.config?.url?.includes('/telegram/')) {
+    return 'telegram-unavailable'
   }
   const detailMessage = typeof detail === 'string' ? detail : detail?.message
   return data?.message ?? detailMessage ?? e.message ?? fallback

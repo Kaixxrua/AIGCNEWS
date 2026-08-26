@@ -10,6 +10,7 @@ from fastapi import APIRouter, Request
 from backend.app.core.config import settings
 from backend.app.services.auth.oauth.registry import configured_oauth_providers
 from backend.app.services.auth.oauth.runtime_config import resolve_oauth_config
+from backend.app.services.push.telegram_config_provider import resolve_telegram_config
 
 router = APIRouter()
 
@@ -25,4 +26,6 @@ async def get_features(request: Request) -> dict[str, object]:
             redis_available=getattr(request.app.state, "redis", None) is not None,
             config=config,
         ),
+        # Telegram 推送开关：DB 行覆盖 env（60s TTL），前端据此显隐订阅页卡片。
+        "telegram_push_enabled": bool(resolve_telegram_config().enabled),
     }

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { MailPlus, MessageCircle, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
+import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useAuthStore } from '@/stores/authStore'
 import {
   SUBSCRIPTION_SOURCES,
@@ -16,6 +17,8 @@ defineOptions({ name: 'SubscriptionsView' })
 const { t, te } = useI18n()
 const ctl = useSubscriptionsController()
 const authStore = useAuthStore()
+// Telegram 渠道卡片随 /api/features 的 telegram_push_enabled 显隐（默认 fail-open 显示）
+const { featureFlags, ensureFeatureFlags } = useFeatureFlags()
 
 const errorText = computed(() => {
   const key = `subscriptions.errors.${ctl.error.value}`
@@ -68,6 +71,7 @@ const confirmRemoveSubscription = (subscription: UserSubscription): void => {
 
 onMounted(() => {
   void ctl.loadAll()
+  void ensureFeatureFlags()
 })
 </script>
 
@@ -205,7 +209,7 @@ onMounted(() => {
           </form>
 
           <!-- Telegram deep-link -->
-          <div class="flex flex-col gap-2 rounded-[4px] border border-stone-200 p-2.5">
+          <div v-if="featureFlags.telegramPushEnabled" class="flex flex-col gap-2 rounded-[4px] border border-stone-200 p-2.5">
             <label class="flex items-center gap-1.5 text-xs font-bold text-stone-500">
               <MessageCircle class="h-3.5 w-3.5" />
               {{ t('subscriptions.channels.telegramTitle') }}

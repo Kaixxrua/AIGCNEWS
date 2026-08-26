@@ -306,8 +306,11 @@ class SubscriptionDispatchService:
 
     def _resolve_telegram_sender(self) -> Any:
         if self._telegram_sender is None:
-            # bot token 为静态部署配置，构建一次后缓存；
-            # 未启用/未配置 token 时按领域错误计入失败（文案静态，不含凭据）。
+            # build_telegram_bot_client 内部走 resolve_telegram_config：DB 行
+            # 覆盖 env、60s TTL 热生效（口径同 _resolve_email_service 的 SMTP）。
+            # 实例级缓存无需打破——本 service 活不过一轮派发，热生效上界即
+            # 一轮调度周期。未启用/未配置 token 时按领域错误计入失败（文案
+            # 静态，不含凭据）。
             from backend.app.services.push.telegram_service import (
                 build_telegram_bot_client,
             )

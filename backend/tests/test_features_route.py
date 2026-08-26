@@ -8,10 +8,15 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.routes_features import router
 from backend.app.core.config import settings
+from backend.app.services.push.telegram_config_provider import (
+    reset_telegram_config_provider,
+)
 
 
 @pytest.fixture()
 def client() -> TestClient:
+    # 防并行测试污染：telegram 配置 reader 若被其他用例绑定会走 DB 路径。
+    reset_telegram_config_provider()
     app = FastAPI()
     app.state.redis = None
     app.include_router(router, prefix="/api")
@@ -22,6 +27,7 @@ class TestFeaturesRoute:
     def test_flags_off(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "x_source_enabled", False)
         monkeypatch.setattr(settings, "wechat_source_enabled", False)
+        monkeypatch.setattr(settings, "telegram_push_enabled", False)
 
         response = client.get("/api/features")
 
@@ -30,11 +36,13 @@ class TestFeaturesRoute:
             "x_source": False,
             "wechat_source": False,
             "oauth_providers": [],
+            "telegram_push_enabled": False,
         }
 
     def test_flags_on(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "x_source_enabled", True)
         monkeypatch.setattr(settings, "wechat_source_enabled", True)
+        monkeypatch.setattr(settings, "telegram_push_enabled", True)
 
         response = client.get("/api/features")
 
@@ -43,6 +51,7 @@ class TestFeaturesRoute:
             "x_source": True,
             "wechat_source": True,
             "oauth_providers": [],
+            "telegram_push_enabled": True,
         }
 
     def test_configured_provider_requires_redis(

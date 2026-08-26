@@ -29,6 +29,7 @@ from backend.app.api.dependencies import (
     get_telegram_link_service,
 )
 from backend.app.core.auth import RequireUser
+from backend.app.core.config import settings as core_settings
 from backend.app.domain.wechat_secret_box import WeChatSecretBox
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.errors import (
@@ -39,6 +40,9 @@ from backend.app.services.push.errors import (
     VipRequiredError,
 )
 from backend.app.services.push.secrets import seal_channel_config, unseal_channel_config
+from backend.app.services.push.telegram_config_provider import (
+    reset_telegram_config_provider,
+)
 from backend.app.services.push.telegram_service import (
     TelegramBotClient,
     TelegramLinkService,
@@ -447,10 +451,12 @@ class TelegramRouteTests(unittest.TestCase):
             PushChannelService(self.channels)
         )
         self.confirmation_sender = FakeTelegramSender()
+        reset_telegram_config_provider()
+        self.addCleanup(reset_telegram_config_provider)
         self._patchers = [
-            patch.object(routes_push.settings, "telegram_push_enabled", True),
+            patch.object(core_settings, "telegram_push_enabled", True),
             patch.object(
-                routes_push.settings, "telegram_webhook_secret", "test-secret"
+                core_settings, "telegram_webhook_secret", "test-secret"
             ),
             patch.object(
                 routes_push,
@@ -535,7 +541,7 @@ class TelegramRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404, response.text)
 
     def test_webhook_hidden_without_secret_configuration(self) -> None:
-        with patch.object(routes_push.settings, "telegram_webhook_secret", ""):
+        with patch.object(core_settings, "telegram_webhook_secret", ""):
             response = self.client.post(
                 "/api/push/providers/telegram/webhook",
                 json=self._webhook_payload(nonce="x", chat_id=1, chat_type="private"),

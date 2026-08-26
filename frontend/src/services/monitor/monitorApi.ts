@@ -5,9 +5,9 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, OAuthConfig, OAuthConfigForm, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, TelegramConfig, TelegramConfigForm, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
-import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildOAuthConfigPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
+import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildOAuthConfigPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildTelegramConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
 export interface MonitorApi {
   fetchTasks(page: number, pageSize: number): Promise<PagedResult>
@@ -24,6 +24,10 @@ export interface MonitorApi {
   resetOAuthConfig(): Promise<OAuthConfig>
   fetchPaymentPlanPricing(): Promise<{ plans: PaymentPlanPricing[] }>
   savePaymentPlanPricing(form: PaymentPlanPricingForm): Promise<{ plans: PaymentPlanPricing[] }>
+  fetchTelegramConfig(): Promise<TelegramConfig>
+  saveTelegramConfig(form: TelegramConfigForm): Promise<TelegramConfig>
+  resetTelegramConfig(): Promise<TelegramConfig>
+  registerTelegramWebhook(): Promise<TelegramConfig>
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
   saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
@@ -98,6 +102,12 @@ export const monitorApi: MonitorApi = {
   async fetchOAuthConfig() { return (await api.get('/ops/oauth/config')).data },
   async saveOAuthConfig(form) { return (await api.put('/ops/oauth/config', buildOAuthConfigPayload(form))).data },
   async resetOAuthConfig() { return (await api.delete('/ops/oauth/config')).data },
+  // Telegram 推送配置：与 OAuth 同语义——脱敏投影、密文留空保留、clear_* 擦除、DELETE 回落 env；
+  // webhook 注册由后端代调 setWebhook（公网基址取服务端 public_base_url，不从请求 Host 派生）
+  async fetchTelegramConfig() { return (await api.get('/ops/telegram/config')).data },
+  async saveTelegramConfig(form) { return (await api.put('/ops/telegram/config', buildTelegramConfigPayload(form))).data },
+  async resetTelegramConfig() { return (await api.delete('/ops/telegram/config')).data },
+  async registerTelegramWebhook() { return (await api.post('/ops/telegram/config/webhook')).data },
   // 套餐定价：非密钥商业配置，整聚合 GET/PUT；表单元 → payload 整数分（null=恢复默认）
   async fetchPaymentPlanPricing() { return (await api.get('/ops/payments/plans')).data },
   async savePaymentPlanPricing(form) { return (await api.put('/ops/payments/plans', buildPaymentPlanPricingPayload(form))).data },

@@ -17,7 +17,6 @@ from backend.app.api.dependencies import (
 )
 from backend.app.core.auth import RequireUser
 from backend.app.core.client_ip import client_ip_from_request
-from backend.app.core.config import settings
 from backend.app.models.schema_push import (
     CreatePushChannelRequest,
     CreateSubscriptionRequest,
@@ -71,6 +70,7 @@ from backend.app.services.push.secrets import (
     build_push_channel_secret_box,
 )
 from backend.app.services.push.subscription_service import UserSubscriptionService
+from backend.app.services.push.telegram_config_provider import resolve_telegram_config
 from backend.app.services.push.telegram_service import (
     TelegramLinkService,
     build_telegram_bot_client,
@@ -461,8 +461,10 @@ async def telegram_webhook(
     service: TelegramLinkService = Depends(get_telegram_link_service),
 ) -> dict[str, Any]:
     # 未启用或未配置校验 secret 时隐藏端点存在性；secret 不匹配同样 404。
-    configured_secret = str(settings.telegram_webhook_secret or "")
-    if not settings.telegram_push_enabled or not configured_secret:
+    # 生效配置逐请求解析：Monitor 面板保存后最迟 60s 内全实例沿用。
+    telegram_config = resolve_telegram_config()
+    configured_secret = telegram_config.webhook_secret
+    if not telegram_config.enabled or not configured_secret:
         raise HTTPException(status_code=404, detail="Not Found")
     presented = request.headers.get(_TELEGRAM_WEBHOOK_SECRET_HEADER, "")
     if not hmac.compare_digest(presented, configured_secret):

@@ -43,6 +43,11 @@ from backend.app.services.push.secrets import (
     build_push_channel_secret_box,
     seal_channel_config,
 )
+from backend.app.services.push.telegram_config_provider import (
+    EffectiveTelegramConfig,
+    effective_telegram_config_from_env,
+    resolve_telegram_config,
+)
 from backend.app.services.push.webhook_service import (
     PROVIDER_TELEGRAM,
     chunk_markdown_for_provider,
@@ -163,18 +168,25 @@ class TelegramBotClient:
 
 def build_telegram_bot_client(
     *,
-    config: Any = settings,
+    config: Any = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> TelegramBotClient | None:
-    """按部署配置构建投递器；未启用或未配置 token 时返回 None。"""
-    if not getattr(config, "telegram_push_enabled", False):
+    """按生效配置构建投递器；未启用或未配置 token 时返回 None。
+
+    默认经 resolve_telegram_config 读取（DB 行覆盖 env，60s TTL 热生效）；
+    显式 config 参数保留为测试缝，按 settings 风格对象逐字段读取。
+    """
+    if config is None:
+        effective = resolve_telegram_config()
+    else:
+        effective = effective_telegram_config_from_env(config)
+    if not effective.enabled:
         return None
-    token = str(getattr(config, "telegram_bot_token", "") or "")
-    if not token:
+    if not effective.bot_token:
         return None
     return TelegramBotClient(
-        token=token,
-        timeout_seconds=float(getattr(config, "telegram_request_timeout_seconds", 5.0)),
+        token=effective.bot_token,
+        timeout_seconds=effective.request_timeout_seconds,
         transport=transport,
     )
 
@@ -187,29 +199,35 @@ class TelegramLinkService:
         *,
         attempts: TelegramLinkAttemptRepository,
         channels: PushChannelRepository,
-        config: Any = settings,
+        config: Any = None,
         secret_box: Any = _SECRET_BOX_UNSET,
     ) -> None:
         self._attempts = attempts
         self._channels = channels
-        self._enabled = bool(getattr(config, "telegram_push_enabled", False))
-        self._bot_username = str(
-            getattr(config, "telegram_bot_username", "") or ""
-        ).strip().lstrip("@")
-        self._ttl_seconds = max(30, int(getattr(config, "telegram_link_ttl_seconds", 300)))
-        # provider_key 的 HMAC pepper 复用渠道加密密钥材料（部署机密）
-        self._pepper = str(getattr(config, "push_channel_encryption_key", "") or "")
+        # 生效配置逐次解析（DB 行覆盖 env，60s TTL 热生效）；显式 config
+        # 保留为测试缝，按 settings 风格对象读取。
+        self._config_override = config
+        # provider_key 的 HMAC pepper 复用渠道加密密钥材料（部署机密，
+        # 保持 env-only，不进 Monitor 动态配置）
+        pepper_source = config if config is not None else settings
+        self._pepper = str(getattr(pepper_source, "push_channel_encryption_key", "") or "")
         self._secret_box = secret_box
+
+    def _resolve_config(self) -> EffectiveTelegramConfig:
+        if self._config_override is not None:
+            return effective_telegram_config_from_env(self._config_override)
+        return resolve_telegram_config()
 
     async def create_link(self, *, user: dict[str, Any]) -> dict[str, Any]:
         """为当前用户签发一次性 deep-link；nonce 仅入哈希，原文只随响应返回。"""
-        if not self._enabled or not self._bot_username:
+        config = self._resolve_config()
+        if not config.enabled or not config.bot_username:
             raise TelegramNotConfiguredError("Telegram 推送未启用")
         PushChannelService.require_direct_channel_entitlement(user)
         user_id = int(user.get("user_id") or 0)
         nonce = secrets.token_urlsafe(32)
         attempt_id = uuid4()
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=self._ttl_seconds)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=config.link_ttl_seconds)
         await asyncio.to_thread(
             self._attempts.create_attempt,
             attempt_id=attempt_id,
@@ -219,7 +237,7 @@ class TelegramLinkService:
         )
         return {
             "attempt_id": str(attempt_id),
-            "deep_link": f"https://t.me/{self._bot_username}?start={nonce}",
+            "deep_link": f"https://t.me/{config.bot_username}?start={nonce}",
             "expires_at": expires_at,
             "status": "pending",
         }

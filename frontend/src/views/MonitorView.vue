@@ -15,6 +15,7 @@ import MembershipUserListPanel from '@/components/monitor/MembershipUserListPane
 import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
 import PaymentConfigPanel from '@/components/monitor/PaymentConfigPanel.vue'
 import OAuthConfigPanel from '@/components/monitor/OAuthConfigPanel.vue'
+import TelegramPushConfigPanel from '@/components/monitor/TelegramPushConfigPanel.vue'
 import PaymentPricingPanel from '@/components/monitor/PaymentPricingPanel.vue'
 import MonitorAdminActionControls from '@/components/monitor/MonitorAdminActionControls.vue'
 import MonitorIngestionControls from '@/components/monitor/MonitorIngestionControls.vue'
@@ -53,6 +54,7 @@ const {
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, savePaymentConfig, resetPaymentConfig,
   oauthConfig, oauthForm, loadingOAuthConfig, savingOAuthConfig, resettingOAuthConfig, saveOAuthConfig, resetOAuthConfig,
+  telegramConfig, telegramForm, loadingTelegramConfig, savingTelegramConfig, resettingTelegramConfig, registeringTelegramWebhook, saveTelegramConfig, resetTelegramConfig, registerTelegramWebhook,
   paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, savePaymentPlanPricing,
   testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing,
   clearingCache, targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm,
@@ -403,6 +405,20 @@ onUnmounted(dispose)
             :resetting="resettingOAuthConfig"
             @save="saveOAuthConfig"
             @reset="resetOAuthConfig"
+          />
+        </template>
+        <template v-else-if="currentSection === 'telegram-push'">
+          <TelegramPushConfigPanel
+            v-if="authStore.isAdmin"
+            :config="telegramConfig"
+            :form="telegramForm"
+            :loading="loadingTelegramConfig"
+            :saving="savingTelegramConfig"
+            :resetting="resettingTelegramConfig"
+            :registering-webhook="registeringTelegramWebhook"
+            @save="saveTelegramConfig"
+            @reset="resetTelegramConfig"
+            @register-webhook="registerTelegramWebhook"
           />
         </template>
         <template v-else-if="currentSection === 'payment-orders'">

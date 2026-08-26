@@ -2,7 +2,7 @@ import { computed, ref, watch, type ComputedRef } from 'vue'
 import { monitorApi, type MonitorApi } from '@/services/monitor/monitorApi'
 import { i18n } from '@/i18n'
 import {
-  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createOAuthConfigForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, membershipExpiryToFormDate, removeMcpServer, replaceMcpServer, upsertMcpServer,
+  createEmailPoolForm, createEmptyMcpForm, createGithubCrawlForm, createMcpForm, createMembershipGrantForm, createOAuthConfigForm, createPaymentConfigForm, createPaymentPlanPricingForm, createProviderForm, createSiteContactPageForm, createSmtpForm, createTelegramConfigForm, membershipExpiryToFormDate, removeMcpServer, replaceMcpServer, upsertMcpServer,
   buildPaymentPlanPricingPayload,
   createEmptySchedulerJobConfigForm, normalizeEnrichmentConcurrency, normalizeReasoningEffort,
   type McpServerConfig, type McpToolCallMetricsSnapshot, type MembershipGrantResult, type MembershipUserItem, type PaymentPlanPricing, type SchedulerJobConfig, type SchedulerJobConfigForm, type SourceKey, type EmailDeliveryDayStat,
@@ -109,6 +109,13 @@ export const useMonitorPageController = ({
   const loadingOAuthConfig = ref(false)
   const savingOAuthConfig = ref(false)
   const resettingOAuthConfig = ref(false)
+  // Telegram 推送配置：与 OAuth 同语义；保存/重置后刷新 feature flags 让订阅页卡片即时显隐
+  const telegramConfig = ref<Awaited<ReturnType<MonitorApi['fetchTelegramConfig']>> | null>(null)
+  const telegramForm = ref(createTelegramConfigForm())
+  const loadingTelegramConfig = ref(false)
+  const savingTelegramConfig = ref(false)
+  const resettingTelegramConfig = ref(false)
+  const registeringTelegramWebhook = ref(false)
   // 套餐定价（运行时调价）：plans.py 默认价 + payment_plan_overrides 覆盖行
   const paymentPricing = ref<PaymentPlanPricing[]>([])
   const paymentPricingForm = ref(createPaymentPlanPricingForm())
@@ -334,6 +341,70 @@ export const useMonitorPageController = ({
     } catch (error) { errorMsg.value = detail(error) }
     finally { resettingOAuthConfig.value = false }
   }
+  const fetchTelegramConfig = async () => {
+    if (!isAdmin.value) return
+    loadingTelegramConfig.value = true
+    try {
+      telegramConfig.value = await api.fetchTelegramConfig()
+      telegramForm.value = createTelegramConfigForm(telegramConfig.value)
+    } catch (error) { console.error('Failed to fetch Telegram config', error) }
+    finally { loadingTelegramConfig.value = false }
+  }
+  const TELEGRAM_LINK_TTL_MIN = 60
+  const TELEGRAM_LINK_TTL_MAX = 3600
+  const TELEGRAM_TIMEOUT_MIN = 1
+  const TELEGRAM_TIMEOUT_MAX = 30
+  // 保存成功后归零密文输入态：密文永不回填，下一次保存按留空=保留语义
+  const resetTelegramSecretInputs = () => {
+    const form = telegramForm.value
+    form.bot_token = ''; form.webhook_secret = ''
+    form.clear_bot_token = false; form.clear_webhook_secret = false
+  }
+  const saveTelegramConfig = async () => {
+    if (savingTelegramConfig.value) return
+    clearMessages()
+    const form = telegramForm.value
+    // 与后端同口径的无害前端校验，提前拦截 400/422 往返
+    if (!Number.isInteger(form.link_ttl_seconds) || form.link_ttl_seconds < TELEGRAM_LINK_TTL_MIN || form.link_ttl_seconds > TELEGRAM_LINK_TTL_MAX) {
+      errorMsg.value = i18n.global.t('monitor.telegramPush.invalidLinkTtl')
+      return
+    }
+    if (typeof form.request_timeout_seconds !== 'number' || Number.isNaN(form.request_timeout_seconds) || form.request_timeout_seconds < TELEGRAM_TIMEOUT_MIN || form.request_timeout_seconds > TELEGRAM_TIMEOUT_MAX) {
+      errorMsg.value = i18n.global.t('monitor.telegramPush.invalidTimeout')
+      return
+    }
+    savingTelegramConfig.value = true
+    try {
+      // 传快照而非响应式引用：保存成功后归零密文草稿，不得回写到在途请求体
+      telegramConfig.value = await api.saveTelegramConfig({ ...form })
+      resetTelegramSecretInputs()
+      successMsg.value = i18n.global.t('monitor.telegramPush.saved')
+      await refreshFeatureFlags()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { savingTelegramConfig.value = false }
+  }
+  const resetTelegramConfig = async () => {
+    if (resettingTelegramConfig.value || !confirm(i18n.global.t('monitor.telegramPush.resetConfirm'))) return
+    clearMessages(); resettingTelegramConfig.value = true
+    try {
+      telegramConfig.value = await api.resetTelegramConfig()
+      telegramForm.value = createTelegramConfigForm(telegramConfig.value)
+      successMsg.value = i18n.global.t('monitor.telegramPush.resetDone')
+      await refreshFeatureFlags()
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { resettingTelegramConfig.value = false }
+  }
+  // 一键注册/刷新 webhook：后端代调 setWebhook；响应即最新投影（含 webhook 状态块）
+  const registerTelegramWebhook = async () => {
+    if (registeringTelegramWebhook.value) return
+    clearMessages(); registeringTelegramWebhook.value = true
+    try {
+      telegramConfig.value = await api.registerTelegramWebhook()
+      telegramForm.value = createTelegramConfigForm(telegramConfig.value)
+      successMsg.value = i18n.global.t('monitor.telegramPush.webhookRegistered')
+    } catch (error) { errorMsg.value = detail(error) }
+    finally { registeringTelegramWebhook.value = false }
+  }
   const setSuccessMessage = (message: string) => { successMsg.value = message }
   const setErrorMessage = (message: string) => { errorMsg.value = message }
   const { crawlPolling, crawlStatus, beginCrawlPolling, resumeGithubCrawlPolling, disposeCrawlPolling } = useGithubCrawlPolling({
@@ -502,7 +573,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchOAuthConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -949,7 +1020,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchOAuthConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -960,6 +1031,7 @@ export const useMonitorPageController = ({
     paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersPageSize, paymentOrdersFilter, loadingPaymentOrders, paymentOrdersTotalPages, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
     paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, fetchPaymentConfig, savePaymentConfig, resetPaymentConfig,
     oauthConfig, oauthForm, loadingOAuthConfig, savingOAuthConfig, resettingOAuthConfig, fetchOAuthConfig, saveOAuthConfig, resetOAuthConfig,
+    telegramConfig, telegramForm, loadingTelegramConfig, savingTelegramConfig, resettingTelegramConfig, registeringTelegramWebhook, fetchTelegramConfig, saveTelegramConfig, resetTelegramConfig, registerTelegramWebhook,
     paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, fetchPaymentPlanPricing, savePaymentPlanPricing,
     membershipForm, grantingMembership, membershipLastResult,
     membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,

@@ -1114,6 +1114,66 @@ export const buildOAuthConfigPayload = (form: OAuthConfigForm) => ({
   clear_wechat_app_secret: form.clear_wechat_app_secret,
 })
 
+// ── Telegram 推送配置（Monitor 面板）─────────────────────────────────────────
+// 与 OAuth 同语义：database=DB 覆盖行；environment=env；unconfigured=两者皆无。
+// bot_token / webhook_secret 只写入不回填；留空=保留，勾选 clear_*=擦除。
+// 保存新 token 时后端先调 getMe 校验并以返回值回填 bot username；
+// 保存/重置后由控制器调用 refreshFeatureFlags() 让订阅页 Telegram 卡片即时显隐。
+
+export interface TelegramWebhookStatus {
+  url: string
+  pending_update_count: number | null
+  last_error_message: string | null
+}
+
+export interface TelegramConfig {
+  enabled: boolean
+  bot_username: string
+  link_ttl_seconds: number
+  request_timeout_seconds: number
+  source: SmtpConfigSource
+  updated_at: string | null
+  bot_token_configured: boolean
+  bot_token_masked: string | null
+  webhook_secret_configured: boolean
+  webhook_secret_masked: string | null
+  webhook: TelegramWebhookStatus | null
+}
+
+export interface TelegramConfigForm {
+  enabled: boolean
+  bot_token: string
+  bot_username: string
+  webhook_secret: string
+  link_ttl_seconds: number
+  request_timeout_seconds: number
+  clear_bot_token: boolean
+  clear_webhook_secret: boolean
+}
+
+export const createTelegramConfigForm = (config?: TelegramConfig | null): TelegramConfigForm => ({
+  enabled: config?.enabled ?? false,
+  bot_token: '',
+  bot_username: config?.bot_username || '',
+  webhook_secret: '',
+  link_ttl_seconds: config?.link_ttl_seconds || 300,
+  request_timeout_seconds: config?.request_timeout_seconds || 5,
+  clear_bot_token: false,
+  clear_webhook_secret: false,
+})
+
+// null 密文 = 后端保留语义；绝不回传 masked 响应值
+export const buildTelegramConfigPayload = (form: TelegramConfigForm) => ({
+  enabled: form.enabled,
+  bot_token: form.bot_token || null,
+  bot_username: form.bot_username.trim().replace(/^@/, ''),
+  webhook_secret: form.webhook_secret || null,
+  link_ttl_seconds: form.link_ttl_seconds,
+  request_timeout_seconds: form.request_timeout_seconds,
+  clear_bot_token: form.clear_bot_token,
+  clear_webhook_secret: form.clear_webhook_secret,
+})
+
 export const createMembershipGrantForm = (): MembershipGrantForm => ({
   email: '',
   tier: 'member',

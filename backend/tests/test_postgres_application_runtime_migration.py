@@ -29,8 +29,22 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 60
-    assert migrations[-1].filename == "0060_telegram_discord_push_channels.sql"
+    assert migrations[-1].version == 62
+    assert migrations[-1].filename == "0062_telegram_settings.sql"
+
+
+def test_telegram_settings_migration_is_singleton_and_idempotent() -> None:
+    sql = (MIGRATIONS_DIR / "0062_telegram_settings.sql").read_text(encoding="utf-8")
+
+    # Monitor 管理的 Telegram 推送配置：singleton 行（id=1 CHECK），secret 只存
+    # AES-GCM envelope 列，TTL/超时区间 CHECK 与服务层校验同口径，全量幂等。
+    assert "CREATE TABLE IF NOT EXISTS telegram_settings" in sql
+    assert "id INTEGER PRIMARY KEY CHECK (id = 1)" in sql
+    assert "bot_token_envelope TEXT NOT NULL DEFAULT ''" in sql
+    assert "webhook_secret_envelope TEXT NOT NULL DEFAULT ''" in sql
+    assert "CHECK (link_ttl_seconds BETWEEN 60 AND 3600)" in sql
+    assert "CHECK (request_timeout_seconds BETWEEN 1 AND 30)" in sql
+    assert "bot_token TEXT" not in sql.replace("bot_token_envelope", "")
 
 
 def test_telegram_discord_push_channels_migration_is_additive_and_idempotent() -> None:

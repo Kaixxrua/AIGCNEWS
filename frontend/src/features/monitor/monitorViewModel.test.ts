@@ -77,6 +77,7 @@ describe('monitor presentation localization boundary', () => {
       ['smtp', 'monitor.nav.smtp', true],
       ['mcp-server', 'monitor.nav.mcpServer', true],
       ['oauth-config', 'monitor.nav.oauthConfig', true],
+      ['telegram-push', 'monitor.nav.telegramPush', true],
       ['contact-page', 'monitor.nav.contactPage', true],
       ['membership', 'monitor.nav.membership', true],
       ['user-stats', 'monitor.nav.userStats', true],
@@ -91,6 +92,7 @@ describe('monitor presentation localization boundary', () => {
     expect(normalizeMonitorSection('enrichment')).toBe('enrichment')
     expect(normalizeMonitorSection('mcp-server')).toBe('mcp-server')
     expect(normalizeMonitorSection('oauth-config')).toBe('oauth-config')
+    expect(normalizeMonitorSection('telegram-push')).toBe('telegram-push')
     expect(normalizeMonitorSection('')).toBe('tasks')
     expect(normalizeMonitorSection(undefined)).toBe('tasks')
     expect(normalizeMonitorSection(null)).toBe('tasks')

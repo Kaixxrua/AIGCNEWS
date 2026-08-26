@@ -3,4 +3,5 @@ export interface FeaturesWireResponse {
   x_source?: boolean | null
   wechat_source?: boolean | null
   oauth_providers?: string[] | null
+  telegram_push_enabled?: boolean | null
 }

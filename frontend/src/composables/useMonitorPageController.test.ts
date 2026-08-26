@@ -54,6 +54,7 @@ const createApi = (): MonitorApi => ({
   fetchProviderConfig: vi.fn(), saveProviderConfig: vi.fn(), testProviderConnection: vi.fn(async () => ({ status: 'success', message: '' })), fetchMcpServers: vi.fn(async () => []),
   fetchSmtpConfig: vi.fn(), saveSmtpConfig: vi.fn(), testSmtpConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchOAuthConfig: vi.fn(), saveOAuthConfig: vi.fn(), resetOAuthConfig: vi.fn(),
+  fetchTelegramConfig: vi.fn(), saveTelegramConfig: vi.fn(), resetTelegramConfig: vi.fn(), registerTelegramWebhook: vi.fn(),
   fetchEmailPoolConfig: vi.fn(), saveEmailPoolConfig: vi.fn(), testEmailPoolConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
@@ -732,6 +733,151 @@ describe('Monitor OAuth config controls', () => {
   })
 })
 
+
+describe('Monitor Telegram push config controls', () => {
+  beforeEach(() => vi.useFakeTimers())
+
+  const telegramConfig = {
+    enabled: true,
+    bot_username: 'aigc_news_bot',
+    link_ttl_seconds: 300,
+    request_timeout_seconds: 5,
+    source: 'database' as const,
+    updated_at: '2026-08-25T10:00:00+00:00',
+    bot_token_configured: true,
+    bot_token_masked: '1100****abcd',
+    webhook_secret_configured: true,
+    webhook_secret_masked: 'wh-s****1234',
+    webhook: {
+      url: 'https://aigcnews.cn/api/push/providers/telegram/webhook',
+      pending_update_count: 0,
+      last_error_message: null,
+    },
+  }
+
+  it('populates the Telegram form from the fetched config with blank secret drafts', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchTelegramConfig).mockResolvedValue(telegramConfig)
+
+    await controller.fetchTelegramConfig()
+
+    expect(controller.telegramConfig.value).toEqual(telegramConfig)
+    expect(controller.telegramForm.value).toMatchObject({
+      enabled: true,
+      bot_username: 'aigc_news_bot',
+      link_ttl_seconds: 300,
+      request_timeout_seconds: 5,
+      clear_bot_token: false,
+      clear_webhook_secret: false,
+    })
+    // 脱敏值绝不回填进密文草稿
+    expect(controller.telegramForm.value.bot_token).toBe('')
+    expect(controller.telegramForm.value.webhook_secret).toBe('')
+    expect(controller.loadingTelegramConfig.value).toBe(false)
+  })
+
+  it('saves, clears secret drafts and clear flags, then surfaces the saved message', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchTelegramConfig).mockResolvedValue(telegramConfig)
+    await controller.fetchTelegramConfig()
+    controller.telegramForm.value = {
+      ...controller.telegramForm.value,
+      bot_token: 'new-token',
+      clear_webhook_secret: true,
+    }
+
+    vi.mocked(api.saveTelegramConfig).mockResolvedValue(telegramConfig)
+    await controller.saveTelegramConfig()
+
+    expect(api.saveTelegramConfig).toHaveBeenCalledWith(expect.objectContaining({
+      bot_token: 'new-token',
+      clear_webhook_secret: true,
+    }))
+    expect(controller.telegramConfig.value).toEqual(telegramConfig)
+    // 保存成功后清掉敏感草稿与清空标志，防止下一次保存误擦 secret
+    expect(controller.telegramForm.value.bot_token).toBe('')
+    expect(controller.telegramForm.value.clear_bot_token).toBe(false)
+    expect(controller.telegramForm.value.clear_webhook_secret).toBe(false)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.telegramPush.saved'))
+    expect(controller.savingTelegramConfig.value).toBe(false)
+  })
+
+  it('surfaces save failure details and keeps the secret draft for retry', async () => {
+    const { api, controller } = createController()
+    controller.telegramForm.value = {
+      ...controller.telegramForm.value,
+      bot_token: 'bad-token',
+    }
+
+    vi.mocked(api.saveTelegramConfig).mockRejectedValue({ response: { data: { detail: 'token 无效' } } })
+    await controller.saveTelegramConfig()
+
+    expect(controller.errorMsg.value).toBe('token 无效')
+    expect(controller.successMsg.value).toBe('')
+    expect(controller.telegramForm.value.bot_token).toBe('bad-token')
+    expect(controller.savingTelegramConfig.value).toBe(false)
+  })
+
+  it('blocks out-of-range TTL and timeout without calling the API', async () => {
+    const { api, controller } = createController()
+    controller.telegramForm.value = { ...controller.telegramForm.value, link_ttl_seconds: 59 }
+    await controller.saveTelegramConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.telegramPush.invalidLinkTtl'))
+    expect(api.saveTelegramConfig).not.toHaveBeenCalled()
+
+    controller.clearMessages()
+    controller.telegramForm.value = { ...controller.telegramForm.value, link_ttl_seconds: 300, request_timeout_seconds: 31 }
+    await controller.saveTelegramConfig()
+    expect(controller.errorMsg.value).toBe(i18n.global.t('monitor.telegramPush.invalidTimeout'))
+    expect(api.saveTelegramConfig).not.toHaveBeenCalled()
+  })
+
+  it('resets to env fallback after confirmation and refills the form from the projection', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchTelegramConfig).mockResolvedValue(telegramConfig)
+    await controller.fetchTelegramConfig()
+    const envConfig = {
+      ...telegramConfig,
+      source: 'environment' as const,
+      bot_token_configured: false,
+      bot_token_masked: null,
+      webhook_secret_configured: false,
+      webhook_secret_masked: null,
+      webhook: null,
+      updated_at: null,
+    }
+    vi.mocked(api.resetTelegramConfig).mockResolvedValue(envConfig)
+
+    await controller.resetTelegramConfig()
+
+    expect(api.resetTelegramConfig).toHaveBeenCalledOnce()
+    expect(controller.telegramConfig.value).toEqual(envConfig)
+    expect(controller.telegramForm.value.bot_token).toBe('')
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.telegramPush.resetDone'))
+    expect(controller.resettingTelegramConfig.value).toBe(false)
+  })
+
+  it('registers the webhook and adopts the returned projection', async () => {
+    const { api, controller } = createController()
+    vi.mocked(api.fetchTelegramConfig).mockResolvedValue({ ...telegramConfig, webhook: null })
+    await controller.fetchTelegramConfig()
+    vi.mocked(api.registerTelegramWebhook).mockResolvedValue(telegramConfig)
+
+    await controller.registerTelegramWebhook()
+
+    expect(api.registerTelegramWebhook).toHaveBeenCalledOnce()
+    expect(controller.telegramConfig.value).toEqual(telegramConfig)
+    expect(controller.successMsg.value).toBe(i18n.global.t('monitor.telegramPush.webhookRegistered'))
+    expect(controller.registeringTelegramWebhook.value).toBe(false)
+  })
+
+  it('does not fetch Telegram config for non-admin users', async () => {
+    const { api, controller } = createController(createApi(), false)
+    await controller.refreshData()
+    expect(api.fetchTelegramConfig).not.toHaveBeenCalled()
+    expect(controller.telegramConfig.value).toBeNull()
+  })
+})
 
 describe('Monitor site contact page controls', () => {
   beforeEach(() => {

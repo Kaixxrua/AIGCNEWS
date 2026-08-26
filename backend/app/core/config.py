@@ -134,6 +134,30 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""
     telegram_link_ttl_seconds: int = 300
     telegram_request_timeout_seconds: float = 5.0
+    # Monitor 管理的 Telegram 配置（bot token/webhook secret）落库加密密钥；
+    # 未配置时回落复用 push_channel_encryption_key（同一 WeChatSecretBox 机制）。
+    telegram_config_encryption_key: str = ""
+    telegram_config_encryption_key_version: str = "v1"
+
+    @field_validator("telegram_config_encryption_key_version")
+    @classmethod
+    def _validate_telegram_config_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "telegram_config_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("telegram_config_encryption_key")
+    @classmethod
+    def _validate_telegram_config_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "telegram_config_encryption_key must not use the example placeholder"
+            )
+        return value
 
     @field_validator("push_channel_encryption_key_version")
     @classmethod

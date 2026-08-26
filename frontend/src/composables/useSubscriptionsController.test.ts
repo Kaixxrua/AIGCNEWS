@@ -25,6 +25,29 @@ describe('getErrorMessage quota mapping', () => {
     expect(getErrorMessage(new Error('boom'), 'request-failed')).toBe('boom')
     expect(getErrorMessage({}, 'request-failed')).toBe('request-failed')
   })
+  it('maps telegram-endpoint 503 to the stable telegram-unavailable token', () => {
+    expect(
+      getErrorMessage(
+        {
+          config: { url: '/push/me/channels/telegram/link' },
+          response: { status: 503, data: { detail: 'Telegram 推送未配置' } },
+        },
+        'request-failed',
+      ),
+    ).toBe('telegram-unavailable')
+  })
+
+  it('keeps detail passthrough for non-telegram 503 failures', () => {
+    expect(
+      getErrorMessage(
+        {
+          config: { url: '/push/me/feed-token' },
+          response: { status: 503, data: { detail: 'RSS token 服务未配置加密密钥' } },
+        },
+        'request-failed',
+      ),
+    ).toBe('RSS token 服务未配置加密密钥')
+  })
 })
 
 describe('useSubscriptionsController quota errors', () => {
