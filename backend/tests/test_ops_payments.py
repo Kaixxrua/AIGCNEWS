@@ -248,8 +248,13 @@ def test_get_plan_pricing_default_projection(harness: Any) -> None:
     response = harness.client.get("/api/ops/payments/plans")
     assert response.status_code == 200
     plans = response.json()["plans"]
-    assert [plan["code"] for plan in plans] == ["member_monthly", "member_yearly"]
-    monthly, yearly = plans
+    assert [plan["code"] for plan in plans] == [
+        "member_monthly",
+        "member_yearly",
+        "member_monthly_usd",
+        "member_yearly_usd",
+    ]
+    monthly, yearly, monthly_usd, yearly_usd = plans
     assert monthly["default_amount_cents"] == 1900
     assert monthly["override_amount_cents"] is None
     assert monthly["amount_cents"] == 1900
@@ -260,6 +265,16 @@ def test_get_plan_pricing_default_projection(harness: Any) -> None:
     assert yearly["months"] == 12
     assert yearly["currency"] == "CNY"
     assert monthly["updated_at"] is None
+    # 美元套餐同投影：默认价钉 $4.9/$39，币种 USD，时长语义与 CNY 对齐
+    assert monthly_usd["default_amount_cents"] == 490
+    assert monthly_usd["override_amount_cents"] is None
+    assert monthly_usd["amount_cents"] == 490
+    assert monthly_usd["currency"] == "USD"
+    assert monthly_usd["months"] == 1
+    assert yearly_usd["default_amount_cents"] == 3900
+    assert yearly_usd["amount_cents"] == 3900
+    assert yearly_usd["currency"] == "USD"
+    assert yearly_usd["months"] == 12
 
 
 def test_put_plan_pricing_upsert_overrides(harness: Any) -> None:
@@ -279,6 +294,32 @@ def test_put_plan_pricing_upsert_overrides(harness: Any) -> None:
     assert harness.plan_overrides.rows == {
         "member_monthly": 2500,
         "member_yearly": 20000,
+    }
+
+
+def test_put_plan_pricing_upsert_usd_overrides(harness: Any) -> None:
+    """美元套餐同链路调价：独立字段 upsert，缺省字段不触碰既有覆盖。"""
+    harness.plan_overrides.rows["member_monthly"] = 2500
+    response = harness.client.put(
+        "/api/ops/payments/plans",
+        json={
+            "monthly_amount_cents": 2500,
+            "monthly_usd_amount_cents": 550,
+            "yearly_usd_amount_cents": 4200,
+        },
+    )
+    assert response.status_code == 200
+    plans = {plan["code"]: plan for plan in response.json()["plans"]}
+    assert plans["member_monthly_usd"]["override_amount_cents"] == 550
+    assert plans["member_monthly_usd"]["amount_cents"] == 550
+    assert plans["member_yearly_usd"]["override_amount_cents"] == 4200
+    # 缺省字段 = 删除覆盖恢复默认（整体聚合语义对 USD 同样成立）
+    assert plans["member_yearly"]["override_amount_cents"] is None
+    assert plans["member_yearly"]["amount_cents"] == 15900
+    assert harness.plan_overrides.rows == {
+        "member_monthly": 2500,
+        "member_monthly_usd": 550,
+        "member_yearly_usd": 4200,
     }
 
 

@@ -10,18 +10,22 @@
 |---|---|---:|---:|
 | `member_monthly` | member | ¥19（1900 cents） | 1 个日历月 |
 | `member_yearly` | member | ¥159（15900 cents） | 12 个月 |
+| `member_monthly_usd` | member | $4.9（490 cents） | 1 个日历月 |
+| `member_yearly_usd` | member | $39（3900 cents） | 12 个月 |
 
 金额始终以整数分存储。月末续费按日历月扩展并钳制到目标月份最后一天；有效期内的 member 从现有到期时间顺延，free 或已过期用户从当前时间起算。
 
+**币种 × 渠道兼容矩阵**（`plans.py` 的 `CHANNEL_CURRENCIES`，服务端收口）：CNY 套餐只走微信/支付宝，USD 套餐只走海外跳转槽（PayPal 不收 CNY，PingPong 跨境以 USD 计价）；错配直接 400 `plan_channel_currency_mismatch`，不落单。前端按界面语言拣选套餐币种（`paymentModel.ts` 的 `planCurrencyForLocale`）：中文界面买 CNY 目录，其他语言买 USD 目录——纯展示层，权威判定在服务端矩阵。
+
 ### 运行时调价（监控页入口）
 
-管理员可在监控页「支付配置」分组的**会员套餐定价**面板（`PaymentPricingPanel.vue`）调整月付/年付价格，无需改代码发布：
+管理员可在监控页「支付配置」分组的**会员套餐定价**面板（`PaymentPricingPanel.vue`）调整四个套餐（人民币月付/年付 + 美元月付/年付）的价格，无需改代码发布：
 
 - 覆盖行存于 `payment_plan_overrides`（迁移 0056，`plan_code` 主键 + `amount_cents` 整数分，CHECK 约束 100–1,000,000 分拦截「把分当元」录错）；**缺行即按 plans.py 默认价生效**。
-- Ops API：`GET/PUT /api/ops/payments/plans`（`RequireAdmin`，刻意不挂 `payments_enabled` 门——可先调价再开支付）。PUT 为整体聚合语义：`{monthly_amount_cents, yearly_amount_cents}` 整数 = upsert 覆盖，`null`/缺省 = 删除覆盖恢复默认价；越界返回 400 中文 detail。
+- Ops API：`GET/PUT /api/ops/payments/plans`（`RequireAdmin`，刻意不挂 `payments_enabled` 门——可先调价再开支付）。PUT 为整体聚合语义：`{monthly_amount_cents, yearly_amount_cents, monthly_usd_amount_cents, yearly_usd_amount_cents}` 整数 = upsert 覆盖，`null`/缺省 = 删除覆盖恢复默认价；越界返回 400 中文 detail。
 - 读路径：`plan_overrides.py` 以 60 秒 TTL 缓存合并默认目录与覆盖行；面板保存即失效缓存（本实例即时生效），其余实例最迟 60 秒内跟随；读库异常按默认价降级，绝不影响下单。
 - **在途订单快照语义**：调价只影响新订单。`GET /api/payments/plans` 与创建订单走生效价；在途 pending 订单仍以 `payment_orders` 行内金额快照收款，回调验款也对快照校验，天然免疫运行时调价。回调发放只取静态 `get_plan` 的 months/tier。
-- 前端会员卡（`MembershipView.vue`）的金额、年付锚定、「年付省 ¥N」与「-N%」折扣标全部由 plans 接口数据自算（`paymentModel.ts` 纯函数，向下取整、非正隐藏）；plans 探测失败按兜底常量渲染，兜底常量与 plans.py 默认价跨侧钉死。
+- 前端会员卡（`MembershipView.vue`）的金额、年付锚定、「年付省 ¥N」与「-N%」折扣标全部由 plans 接口数据自算（`paymentModel.ts` 纯函数，向下取整、非正隐藏）；plans 探测失败按兜底常量渲染（按界面语言分 CNY/USD 两组），兜底常量与 plans.py 默认价跨侧钉死。
 
 ## 支付渠道
 
@@ -88,7 +92,7 @@ provider 位于 `backend/app/services/payments/providers/`。三渠道均已接�
 https://<public-base-url>/api/payments/callback/overseas_redirect
 ```
 
-**PayPal**：纯跳转链路（无 JS SDK）。下单走 `POST /v2/checkout/orders`（intent=CAPTURE，`reference_id`/`custom_id`/`PayPal-Request-Id` 均为本站订单号保证幂等），取 `rel=approve` 链接跳转；在 Developer Console 为该应用创建 webhook，订阅 `CHECKOUT.ORDER.APPROVED` 与 `PAYMENT.CAPTURE.COMPLETED`，把 Webhook ID 填入 `overseas_webhook_secret`。回调先经 `/v1/notifications/verify-webhook-signature` 在线验签；收到 `CHECKOUT.ORDER.APPROVED` 时服务端自动调用 capture API 并直接 ACK（零状态变更），`PAYMENT.CAPTURE.COMPLETED` 才发权益（金额从 `custom_id` 找回订单并归一到分校验）。**注意**：当前套餐为 CNY 定价，PayPal 跨境账户能否收 CNY 取决于商户协议——正式上线前需要美元套餐 PR（下一工作单元）并实测一笔沙箱单。
+**PayPal**：纯跳转链路（无 JS SDK）。下单走 `POST /v2/checkout/orders`（intent=CAPTURE，`reference_id`/`custom_id`/`PayPal-Request-Id` 均为本站订单号保证幂等），取 `rel=approve` 链接跳转；在 Developer Console 为该应用创建 webhook，订阅 `CHECKOUT.ORDER.APPROVED` 与 `PAYMENT.CAPTURE.COMPLETED`，把 Webhook ID 填入 `overseas_webhook_secret`。回调先经 `/v1/notifications/verify-webhook-signature` 在线验签；收到 `CHECKOUT.ORDER.APPROVED` 时服务端自动调用 capture API 并直接 ACK（零状态变更），`PAYMENT.CAPTURE.COMPLETED` 才发权益（金额从 `custom_id` 找回订单并归一到分校验）。**注意**：PayPal 不支持以 CNY 收款（下单 CNY 会 422 `CURRENCY_NOT_SUPPORTED`）——海外渠道只接 USD 套餐（`member_monthly_usd`/`member_yearly_usd`），由 `CHANNEL_CURRENCIES` 矩阵在下单前拦截错配。
 
 **PingPong**：信封式签名（顶层 `{accId, clientId, signType, version, bizContent, sign}`，`sign = SHA256(salt + 全部非 sign 字段键升序 key=value&…)` 大写 hex）。下单走 `POST /v4/payment/prePay`（`merchantTransactionId`=本站订单号天然幂等），应答 `code=="000000"` 且含 `paymentUrl` 时跳转。回调按官方 PHP 参考实现验签（原始文本转义归一后解析），钉死 `clientId`/`accId` 归属；仅 `code=="000000"` + `notifyType=="RECHARGE"` + `status=="SUCCESS"` 发权益，其余状态与非 RECHARGE 通知一律 ACK 200 零状态变更（关单交给既有到期关单任务）。ACK 为纯文本 `OK` / `FAIL`。
 

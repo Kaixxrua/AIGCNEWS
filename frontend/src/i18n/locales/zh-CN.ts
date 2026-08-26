@@ -600,6 +600,8 @@ const explicitBusinessTranslations: Record<string, string> = {
   'monitor.paymentPricing.hint': '运行时调整 VIP 月付/年付价格，只影响新订单；在途待支付订单仍按下单时金额收款。留空即恢复默认价；本实例即时生效，其余实例最迟 60 秒内跟随。',
   'monitor.paymentPricing.monthly': '月付（¥/月）',
   'monitor.paymentPricing.yearly': '年付（¥/年）',
+  'monitor.paymentPricing.monthlyUsd': '月付（$/月）',
+  'monitor.paymentPricing.yearlyUsd': '年付（$/年）',
   'monitor.paymentPricing.defaultPrice': '默认 {amount}',
   'monitor.paymentPricing.effectivePrice': '生效 {amount}',
   'monitor.paymentPricing.overridden': '已覆盖',

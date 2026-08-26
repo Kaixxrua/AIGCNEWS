@@ -26,6 +26,8 @@ const plansResponse = (overrides: Partial<PaymentPlansResponse> = {}): PaymentPl
   plans: [
     { code: 'member_monthly', tier: 'member', amount_cents: 1900, currency: 'CNY', months: 1 },
     { code: 'member_yearly', tier: 'member', amount_cents: 15900, currency: 'CNY', months: 12 },
+    { code: 'member_monthly_usd', tier: 'member', amount_cents: 490, currency: 'USD', months: 1 },
+    { code: 'member_yearly_usd', tier: 'member', amount_cents: 3900, currency: 'USD', months: 12 },
   ],
   channels: [
     { channel: 'wechat_native', available: true },
@@ -180,6 +182,15 @@ describe('MembershipCheckoutView', () => {
     expect(apiBox.listPlans).toHaveBeenCalledTimes(1)
   })
 
+  it('renders the USD yearly plan in English', async () => {
+    i18n.global.locale.value = 'en-US'
+    const { wrapper } = await mountView({ plan: 'yearly' })
+
+    expect(wrapper.find('.checkout-amount').text()).toContain('$39')
+    expect(wrapper.find('.checkout-amount').text()).toContain('/ year')
+    expect(wrapper.find('.checkout-plan-name').text()).toBe('vip · Annual')
+  })
+
   it('greys out unavailable channels and selects the first available one', async () => {
     const { wrapper } = await mountView()
     const channels = wrapper.findAll('.checkout-channel')
@@ -203,6 +214,9 @@ describe('MembershipCheckoutView', () => {
     expect(channels[0].attributes('disabled')).toBeDefined()
     expect(channels[0].text()).toContain('Coming soon')
     expect(wrapper.text()).not.toContain('WeChat Pay')
+    // 英文界面按 USD 套餐目录渲染金额
+    expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')
+    expect(wrapper.find('.checkout-amount').text()).toContain('/ month')
     // 无可选渠道 → 提交按钮禁用
     expect(wrapper.find('.checkout-submit').attributes('disabled')).toBeDefined()
   })
@@ -225,6 +239,9 @@ describe('MembershipCheckoutView', () => {
         paid_at: null,
         channel_order_no: '',
         channel: 'overseas_redirect',
+        plan_code: 'member_monthly_usd',
+        amount_cents: 490,
+        currency: 'USD',
       },
       instruction: { kind: 'redirect_url', content: 'https://www.sandbox.paypal.com/checkoutnow?token=x' },
     })
@@ -237,7 +254,7 @@ describe('MembershipCheckoutView', () => {
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     expect(apiBox.createOrder).toHaveBeenCalledWith(
-      'member_monthly',
+      'member_monthly_usd',
       'overseas_redirect',
       expect.any(String),
     )
@@ -255,22 +272,24 @@ describe('MembershipCheckoutView', () => {
     )
     const { wrapper } = await mountView()
 
-    // zh-CN：默认选中微信支付
+    // zh-CN：默认选中微信支付，金额为 CNY 目录
     expect(wrapper.find('.checkout-channel').text()).toContain('微信支付')
     expect(wrapper.find('.checkout-channel').classes()).toContain('checkout-channel--selected')
+    expect(wrapper.find('.checkout-amount').text()).toContain('¥19')
 
-    // 切英文：可见集变为海外槽，选中态随之迁移
+    // 切英文：可见集变为海外槽，选中态与金额（USD 目录）随之迁移
     i18n.global.locale.value = 'en-US'
     await flushPromises()
     const channels = wrapper.findAll('.checkout-channel')
     expect(channels).toHaveLength(1)
     expect(channels[0].text()).toContain('Card / PayPal')
     expect(channels[0].classes()).toContain('checkout-channel--selected')
+    expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')
 
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     expect(apiBox.createOrder).toHaveBeenCalledWith(
-      'member_monthly',
+      'member_monthly_usd',
       'overseas_redirect',
       expect.any(String),
     )

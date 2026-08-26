@@ -1620,7 +1620,7 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(api.fetchPaymentPlanPricing).toHaveBeenCalled()
     expect(controller.paymentPricing.value.map((plan) => plan.code)).toEqual(['member_monthly', 'member_yearly'])
     // 表单只回填覆盖价：默认价行留空（空串 = 恢复默认语义）
-    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '' })
+    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })
   })
 
   it('does not fetch plan pricing for non-admin users', async () => {
@@ -1634,7 +1634,7 @@ describe('Monitor GitHub enrichment controls', () => {
 
   it('blocks invalid pricing input without calling the API', async () => {
     const { api, controller } = createController()
-    controller.paymentPricingForm.value = { monthly_yuan: '19.999', yearly_yuan: '' }
+    controller.paymentPricingForm.value = { monthly_yuan: '19.999', yearly_yuan: '', monthly_usd: '', yearly_usd: '' }
 
     await controller.savePaymentPlanPricing()
 
@@ -1645,21 +1645,21 @@ describe('Monitor GitHub enrichment controls', () => {
   it('saves plan pricing and refills the form from the response', async () => {
     const api = createApi()
     const { controller } = createController(api)
-    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '200' }
+    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '200', monthly_usd: '', yearly_usd: '' }
     vi.mocked(api.savePaymentPlanPricing).mockResolvedValueOnce({ plans: pricingPlans(2500, 20000) })
 
     await controller.savePaymentPlanPricing()
 
-    expect(api.savePaymentPlanPricing).toHaveBeenCalledWith({ monthly_yuan: '25', yearly_yuan: '200' })
+    expect(api.savePaymentPlanPricing).toHaveBeenCalledWith({ monthly_yuan: '25', yearly_yuan: '200', monthly_usd: '', yearly_usd: '' })
     expect(controller.paymentPricing.value[0]?.amount_cents).toBe(2500)
-    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '200' })
+    expect(controller.paymentPricingForm.value).toEqual({ monthly_yuan: '25', yearly_yuan: '200', monthly_usd: '', yearly_usd: '' })
     expect(controller.successMsg.value).toBe(i18n.global.t('monitor.paymentPricing.saved'))
     expect(controller.errorMsg.value).toBe('')
   })
 
   it('surfaces the backend 400 detail on pricing save failure', async () => {
     const { api, controller } = createController()
-    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '' }
+    controller.paymentPricingForm.value = { monthly_yuan: '25', yearly_yuan: '', monthly_usd: '', yearly_usd: '' }
     vi.mocked(api.savePaymentPlanPricing).mockRejectedValueOnce({
       response: { status: 400, data: { detail: '套餐价格必须是 100-1000000 之间的整数分' } },
     })

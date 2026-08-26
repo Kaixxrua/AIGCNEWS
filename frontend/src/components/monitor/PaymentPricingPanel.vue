@@ -25,10 +25,13 @@ const updateForm = <K extends keyof PaymentPlanPricingForm>(field: K, value: Pay
   props.form[field] = value
 }
 
-// 套餐目录被后端钉为两个（test_payment_plans.py），按码定点渲染两行
+// 套餐目录被后端钉为四个（test_payment_plans.py），按码定点渲染四行；
+// 美元行同样按「元」（美元单位、最多两位小数）录入，复用同一 yuanToCents 校验
 const PLAN_ROWS = [
   { code: 'member_monthly', field: 'monthly_yuan', labelKey: 'monitor.paymentPricing.monthly' },
   { code: 'member_yearly', field: 'yearly_yuan', labelKey: 'monitor.paymentPricing.yearly' },
+  { code: 'member_monthly_usd', field: 'monthly_usd', labelKey: 'monitor.paymentPricing.monthlyUsd' },
+  { code: 'member_yearly_usd', field: 'yearly_usd', labelKey: 'monitor.paymentPricing.yearlyUsd' },
 ] as const
 
 const planFor = (code: string) => props.plans.find((plan) => plan.code === code) ?? null

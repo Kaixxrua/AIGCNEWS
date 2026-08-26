@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   DOMESTIC_CHANNELS,
   FALLBACK_MEMBER_MONTHLY_CENTS,
+  FALLBACK_MEMBER_MONTHLY_USD_CENTS,
   FALLBACK_MEMBER_YEARLY_CENTS,
+  FALLBACK_MEMBER_YEARLY_USD_CENTS,
   OVERSEAS_CHANNELS,
   PAYMENT_CHANNELS,
   computeYearlyDiscountPercent,
@@ -12,6 +14,7 @@ import {
   isTerminalOrderStatus,
   periodForPlanCode,
   planCodeForPeriod,
+  planCurrencyForLocale,
   resolvePlan,
   visibleChannelsForLocale,
 } from './paymentModel'
@@ -34,9 +37,26 @@ describe('planCodeForPeriod / periodForPlanCode', () => {
     expect(periodForPlanCode('member_yearly')).toBe('yearly')
   })
 
+  it('maps USD variants for the overseas catalog', () => {
+    expect(planCodeForPeriod('monthly', 'USD')).toBe('member_monthly_usd')
+    expect(planCodeForPeriod('yearly', 'USD')).toBe('member_yearly_usd')
+    expect(periodForPlanCode('member_monthly_usd')).toBe('monthly')
+    expect(periodForPlanCode('member_yearly_usd')).toBe('yearly')
+  })
+
   it('is fail-closed for unknown plan codes', () => {
     expect(periodForPlanCode('member_lifetime')).toBeNull()
     expect(periodForPlanCode('')).toBeNull()
+  })
+})
+
+describe('planCurrencyForLocale', () => {
+  it('gates the plan currency by locale: zh buys CNY, other locales buy USD', () => {
+    expect(planCurrencyForLocale('zh-CN')).toBe('CNY')
+    expect(planCurrencyForLocale('zh-TW')).toBe('CNY')
+    expect(planCurrencyForLocale('en-US')).toBe('USD')
+    expect(planCurrencyForLocale('')).toBe('USD')
+    expect(planCurrencyForLocale('fr-FR')).toBe('USD')
   })
 })
 
@@ -50,9 +70,20 @@ describe('resolvePlan', () => {
     expect(resolvePlan(plans, 'yearly')?.amount_cents).toBe(15900)
   })
 
+  it('picks the USD variant when the locale currency is USD', () => {
+    const plans = [
+      plan({ code: 'member_monthly', amount_cents: 1900, currency: 'CNY', months: 1 }),
+      plan({ code: 'member_monthly_usd', amount_cents: 490, currency: 'USD', months: 1 }),
+    ]
+    expect(resolvePlan(plans, 'monthly', 'USD')?.code).toBe('member_monthly_usd')
+    expect(resolvePlan(plans, 'monthly', 'USD')?.amount_cents).toBe(490)
+    expect(resolvePlan(plans, 'monthly', 'CNY')?.code).toBe('member_monthly')
+  })
+
   it('returns null when the plan is missing from the API response', () => {
     expect(resolvePlan([plan({ code: 'member_monthly' })], 'yearly')).toBeNull()
     expect(resolvePlan([], 'monthly')).toBeNull()
+    expect(resolvePlan([plan({ code: 'member_monthly' })], 'monthly', 'USD')).toBeNull()
   })
 })
 
@@ -68,9 +99,15 @@ describe('formatAmountCents', () => {
     expect(formatAmountCents(1000000, 'CNY')).toBe('¥10000')
   })
 
-  it('prefixes the currency code for non-CNY amounts', () => {
-    expect(formatAmountCents(500, 'USD')).toBe('USD 5')
-    expect(formatAmountCents(550, 'USD')).toBe('USD 5.5')
+  it('formats USD amounts with the dollar sign', () => {
+    expect(formatAmountCents(490, 'USD')).toBe('$4.9')
+    expect(formatAmountCents(3900, 'USD')).toBe('$39')
+    expect(formatAmountCents(499, 'USD')).toBe('$4.99')
+  })
+
+  it('prefixes the currency code for other non-CNY amounts', () => {
+    expect(formatAmountCents(500, 'EUR')).toBe('EUR 5')
+    expect(formatAmountCents(550, 'EUR')).toBe('EUR 5.5')
   })
 })
 
@@ -128,6 +165,8 @@ describe('fallback plan price constants', () => {
   it('pins the fallback prices to the backend default catalog', () => {
     expect(FALLBACK_MEMBER_MONTHLY_CENTS).toBe(1900)
     expect(FALLBACK_MEMBER_YEARLY_CENTS).toBe(15900)
+    expect(FALLBACK_MEMBER_MONTHLY_USD_CENTS).toBe(490)
+    expect(FALLBACK_MEMBER_YEARLY_USD_CENTS).toBe(3900)
   })
 })
 

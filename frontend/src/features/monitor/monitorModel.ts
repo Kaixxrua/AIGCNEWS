@@ -995,11 +995,15 @@ export interface PaymentPlanPricing {
 export interface PaymentPlanPricingForm {
   monthly_yuan: string
   yearly_yuan: string
+  monthly_usd: string
+  yearly_usd: string
 }
 
 export interface PaymentPlanPricingPayload {
   monthly_amount_cents: number | null
   yearly_amount_cents: number | null
+  monthly_usd_amount_cents: number | null
+  yearly_usd_amount_cents: number | null
 }
 
 const centsToYuanInput = (cents: number | null): string =>
@@ -1013,6 +1017,12 @@ export const createPaymentPlanPricingForm = (
   ),
   yearly_yuan: centsToYuanInput(
     plans?.find((plan) => plan.code === 'member_yearly')?.override_amount_cents ?? null,
+  ),
+  monthly_usd: centsToYuanInput(
+    plans?.find((plan) => plan.code === 'member_monthly_usd')?.override_amount_cents ?? null,
+  ),
+  yearly_usd: centsToYuanInput(
+    plans?.find((plan) => plan.code === 'member_yearly_usd')?.override_amount_cents ?? null,
   ),
 })
 
@@ -1036,8 +1046,21 @@ export const buildPaymentPlanPricingPayload = (
 ): PaymentPlanPricingPayload | null => {
   const monthly = yuanToCents(form.monthly_yuan)
   const yearly = yuanToCents(form.yearly_yuan)
-  if (monthly === undefined || yearly === undefined) return null
-  return { monthly_amount_cents: monthly, yearly_amount_cents: yearly }
+  const monthlyUsd = yuanToCents(form.monthly_usd)
+  const yearlyUsd = yuanToCents(form.yearly_usd)
+  if (
+    monthly === undefined ||
+    yearly === undefined ||
+    monthlyUsd === undefined ||
+    yearlyUsd === undefined
+  )
+    return null
+  return {
+    monthly_amount_cents: monthly,
+    yearly_amount_cents: yearly,
+    monthly_usd_amount_cents: monthlyUsd,
+    yearly_usd_amount_cents: yearlyUsd,
+  }
 }
 
 // ── OAuth 快捷登录配置（Monitor 面板）────────────────────────────────────────

@@ -52,7 +52,7 @@ from backend.app.services.payments.orders import (
     normalize_order_status,
 )
 from backend.app.services.payments.plan_overrides import get_effective_plan, resolve_effective_plans
-from backend.app.services.payments.plans import UnknownPlanError, get_plan
+from backend.app.services.payments.plans import CHANNEL_CURRENCIES, UnknownPlanError, get_plan
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
     ChannelUpstreamError,
@@ -195,6 +195,13 @@ async def create_payment_order(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="unknown_channel",
+        )
+    # 套餐币种 × 渠道兼容矩阵（服务端收口）：CNY 单只走微信/支付宝，
+    # USD 单只走海外跳转槽；错配 400 不落单（渠道侧必然 422/拒收）。
+    if plan.currency != CHANNEL_CURRENCIES[payload.channel]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="plan_channel_currency_mismatch",
         )
     provider = providers[payload.channel]
     if not provider.is_configured():

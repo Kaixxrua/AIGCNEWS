@@ -2,7 +2,6 @@ import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipView from './MembershipView.vue'
-import { paymentApi } from '@/services/payments/paymentApi'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
 
 const authBox = vi.hoisted(() => ({ isMember: false }))
@@ -89,6 +88,19 @@ const i18n = createI18n({
         memberNote: '感谢支持！vip 权益已生效。',
       },
     },
+    // 英文只钉定价区所需键（其余键缺失时按 key 渲染，不影响金额断言）
+    'en-US': {
+      membership: {
+        member: {
+          priceMonthlyPeriod: '/ month',
+          priceYearlyPeriod: '/ year',
+          yearlySavings: 'Save {amount} yearly',
+          yearlyDiscount: '-{percent}%',
+          billMonthly: 'Bill monthly',
+          billYearly: 'Bill yearly',
+        },
+      },
+    },
   },
   missingWarn: false,
   fallbackWarn: false,
@@ -105,6 +117,7 @@ beforeEach(() => {
   authBox.isMember = false
   configBox.current!.value = { ...configBox.current!.value, enabled: false }
   paymentBox.listPlans.mockReset().mockRejectedValue(new Error('payments disabled'))
+  i18n.global.locale.value = 'zh-CN'
 })
 
 describe('MembershipView', () => {
@@ -302,5 +315,40 @@ describe('MembershipView', () => {
     expect(memberCard.find('.tier-savings').exists()).toBe(false)
     expect(memberCard.find('.tier-billing-tag').exists()).toBe(false)
     expect(memberCard.find('.tier-price-yearly').text()).toContain('¥228 / 年')
+  })
+
+  it('renders USD fallback prices in English when the plans probe fails', async () => {
+    // plans 探测失败 + 英文界面 → 按 USD 兜底常量渲染（$4.9/月、$39/年）
+    i18n.global.locale.value = 'en-US'
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-price-amount').text()).toBe('$4.9')
+    expect(memberCard.find('.tier-price-period').text()).toBe('/ month')
+    const yearlyLine = memberCard.find('.tier-price-yearly').text()
+    expect(yearlyLine).toContain('$39 / year')
+    expect(yearlyLine).toContain('Save $19.8 yearly')
+    expect(memberCard.find('.tier-billing-tag').text()).toBe('-33%')
+  })
+
+  it('renders the live USD catalog in English', async () => {
+    // 管理员调整美元价后，英文界面按 USD 套餐码拣价（CNY 行不影响）
+    i18n.global.locale.value = 'en-US'
+    paymentBox.listPlans.mockResolvedValue({
+      plans: [
+        { code: 'member_monthly', tier: 'member', amount_cents: 1900, currency: 'CNY', months: 1 },
+        { code: 'member_yearly', tier: 'member', amount_cents: 15900, currency: 'CNY', months: 12 },
+        { code: 'member_monthly_usd', tier: 'member', amount_cents: 550, currency: 'USD', months: 1 },
+        { code: 'member_yearly_usd', tier: 'member', amount_cents: 4200, currency: 'USD', months: 12 },
+      ],
+      channels: [],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-price-amount').text()).toBe('$5.5')
+    expect(memberCard.find('.tier-price-yearly').text()).toContain('$42 / year')
   })
 })

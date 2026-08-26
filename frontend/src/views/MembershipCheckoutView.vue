@@ -10,6 +10,7 @@ import { useAuthStore } from '@/stores/authStore'
 import {
   formatAmountCents,
   formatCountdownMs,
+  planCurrencyForLocale,
   resolvePlan,
   visibleChannelsForLocale,
   type BillingPeriod,
@@ -35,7 +36,7 @@ const authStore = useAuthStore()
 
 const plansLoading = ref(true)
 const plansFailed = ref(false)
-const plan = ref<PaymentPlan | null>(null)
+const planList = ref<PaymentPlan[]>([])
 const channels = ref<PaymentChannelAvailability[]>([])
 const selectedChannel = ref<PaymentChannel | null>(null)
 
@@ -63,6 +64,12 @@ const CHANNEL_LABEL_KEYS: Record<PaymentChannel, string> = {
 
 // 语言门控：只渲染/只默认选中当前语言可见的渠道集
 const visibleChannels = computed(() => visibleChannelsForLocale(locale.value))
+
+// 套餐按（周期 × 界面语言币种）即时拣选：中文买 CNY 目录，其他语言买 USD
+// 目录；会话中切语言时展示金额与下单 plan_code 同步切换（服务端兼容矩阵收口）
+const plan = computed(() =>
+  resolvePlan(planList.value, period.value, planCurrencyForLocale(locale.value)),
+)
 
 const channelAvailable = (channel: PaymentChannel) =>
   channels.value.find((item) => item.channel === channel)?.available ?? false
@@ -125,7 +132,7 @@ const countdownLabel = computed(() => {
 onMounted(async () => {
   try {
     const response = await paymentApi.listPlans()
-    plan.value = resolvePlan(response.plans, period.value)
+    planList.value = response.plans
     channels.value = response.channels
     if (!plan.value) {
       // 套餐缺失 = 收银台不可用，回会员页（联系兜底在那边）

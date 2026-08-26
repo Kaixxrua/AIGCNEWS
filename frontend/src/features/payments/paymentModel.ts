@@ -4,7 +4,11 @@
 // 营销卡金额/折扣由前端用 plans 数据自算；plans 探测失败时用下方
 // 兜底常量渲染（与后端 plans.py 默认价由两侧测试钉住防漂移）。
 
-export type PaymentPlanCode = 'member_monthly' | 'member_yearly'
+export type PaymentPlanCode =
+  | 'member_monthly'
+  | 'member_yearly'
+  | 'member_monthly_usd'
+  | 'member_yearly_usd'
 export type BillingPeriod = 'monthly' | 'yearly'
 // 海外渠道是单槽多商（PayPal/PingPong 由 Monitor 选配），前端只见统一槽 id
 export type PaymentChannel = 'wechat_native' | 'alipay_page' | 'overseas_redirect'
@@ -67,34 +71,54 @@ export const OVERSEAS_CHANNELS: readonly PaymentChannel[] = ['overseas_redirect'
 export const visibleChannelsForLocale = (locale: string): readonly PaymentChannel[] =>
   locale.toLowerCase().startsWith('zh') ? DOMESTIC_CHANNELS : OVERSEAS_CHANNELS
 
-// 套餐码 ↔ 计费周期：收银台 query 参数（?plan=monthly|yearly）与后端
+// 套餐币种按界面语言门控（与渠道门控同一判定）：中文界面买 CNY 套餐，
+// 其他语言买 USD 套餐（PayPal 不收 CNY；PingPong 跨境以 USD 计价）。
+// 服务端另以 plans.py 的 CHANNEL_CURRENCIES 矩阵收口，前端只做展示层拣选。
+export const planCurrencyForLocale = (locale: string): 'CNY' | 'USD' =>
+  locale.toLowerCase().startsWith('zh') ? 'CNY' : 'USD'
+
+// 套餐码 ↔ 计费周期 + 币种：收银台 query 参数（?plan=monthly|yearly）与后端
 // plan_code 的唯一换算口；未知值一律 null（fail-closed，不落单）。
-export const planCodeForPeriod = (period: BillingPeriod): PaymentPlanCode =>
-  period === 'yearly' ? 'member_yearly' : 'member_monthly'
+export const planCodeForPeriod = (
+  period: BillingPeriod,
+  currency: 'CNY' | 'USD' = 'CNY',
+): PaymentPlanCode =>
+  period === 'yearly'
+    ? currency === 'USD'
+      ? 'member_yearly_usd'
+      : 'member_yearly'
+    : currency === 'USD'
+      ? 'member_monthly_usd'
+      : 'member_monthly'
 
 export const periodForPlanCode = (code: string): BillingPeriod | null => {
-  if (code === 'member_monthly') return 'monthly'
-  if (code === 'member_yearly') return 'yearly'
+  if (code === 'member_monthly' || code === 'member_monthly_usd') return 'monthly'
+  if (code === 'member_yearly' || code === 'member_yearly_usd') return 'yearly'
   return null
 }
 
-/** 从 plans 响应解析当前计费周期的套餐；缺套餐即收银台不可用（null）。 */
+/** 从 plans 响应解析当前计费周期 + 币种的套餐；缺套餐即收银台不可用（null）。 */
 export const resolvePlan = (
   plans: PaymentPlan[],
   period: BillingPeriod,
+  currency: 'CNY' | 'USD' = 'CNY',
 ): PaymentPlan | null =>
-  plans.find((plan) => plan.code === planCodeForPeriod(period)) ?? null
+  plans.find((plan) => plan.code === planCodeForPeriod(period, currency)) ?? null
 
-/** 分 → 展示金额：CNY 用 ¥，其余原样带币种码；整元不补小数，角去尾零（19.90 → 19.9，19.99 保留）。 */
+/** 分 → 展示金额：CNY 用 ¥、USD 用 $，其余原样带币种码；整元不补小数，角去尾零（19.90 → 19.9，19.99 保留）。 */
 export const formatAmountCents = (amountCents: number, currency: string): string => {
   const digits = (amountCents / 100).toFixed(2).replace(/\.?0+$/, '')
-  return currency === 'CNY' ? `¥${digits}` : `${currency} ${digits}`
+  if (currency === 'CNY') return `¥${digits}`
+  if (currency === 'USD') return `$${digits}`
+  return `${currency} ${digits}`
 }
 
 // 营销卡兜底价：plans 探测失败时按默认商业承诺渲染，与后端 plans.py
 // 常量钉住（backend/tests/test_payment_plans.py ↔ paymentModel.test.ts）。
 export const FALLBACK_MEMBER_MONTHLY_CENTS = 1900
 export const FALLBACK_MEMBER_YEARLY_CENTS = 15900
+export const FALLBACK_MEMBER_MONTHLY_USD_CENTS = 490
+export const FALLBACK_MEMBER_YEARLY_USD_CENTS = 3900
 
 /** 年付相对月付 ×12 的省钱额（分）；非正即无优惠（调用方据此隐藏 pill）。 */
 export const computeYearlySavingsCents = (

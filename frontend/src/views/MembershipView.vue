@@ -7,10 +7,13 @@ import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { paymentApi } from '@/services/payments/paymentApi'
 import {
   FALLBACK_MEMBER_MONTHLY_CENTS,
+  FALLBACK_MEMBER_MONTHLY_USD_CENTS,
   FALLBACK_MEMBER_YEARLY_CENTS,
+  FALLBACK_MEMBER_YEARLY_USD_CENTS,
   computeYearlyDiscountPercent,
   computeYearlySavingsCents,
   formatAmountCents,
+  planCurrencyForLocale,
   resolvePlan,
 } from '@/features/payments/paymentModel'
 import type { PaymentPlan } from '@/features/payments/paymentModel'
@@ -27,7 +30,7 @@ defineOptions({ name: 'MembershipView' })
  * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因），
  * RSS 一行三档区分——游客不可订阅、免费档公开摘要、vip 全文+归档。
  */
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const { contactPageConfig } = useContactPageConfig()
 
@@ -61,18 +64,21 @@ onMounted(async () => {
 })
 
 // 金额一律整数分；缺 plans 数据（探测失败/套餐缺席）一律回落兜底常量——
-// 单一代码路径，兜底渲染与调价前逐字节一致。
+// 单一代码路径，兜底渲染与调价前逐字节一致。币种随界面语言：中文 CNY、
+// 其他语言 USD（与收银台渠道门控同一判定，英文界面只卖美元套餐）。
+const plansCurrency = computed(() => planCurrencyForLocale(locale.value))
 const monthlyCents = computed(
   () =>
-    (memberPlans.value ? resolvePlan(memberPlans.value, 'monthly') : null)?.amount_cents ??
-    FALLBACK_MEMBER_MONTHLY_CENTS,
+    (memberPlans.value ? resolvePlan(memberPlans.value, 'monthly', plansCurrency.value) : null)
+      ?.amount_cents ??
+    (plansCurrency.value === 'USD' ? FALLBACK_MEMBER_MONTHLY_USD_CENTS : FALLBACK_MEMBER_MONTHLY_CENTS),
 )
 const yearlyCents = computed(
   () =>
-    (memberPlans.value ? resolvePlan(memberPlans.value, 'yearly') : null)?.amount_cents ??
-    FALLBACK_MEMBER_YEARLY_CENTS,
+    (memberPlans.value ? resolvePlan(memberPlans.value, 'yearly', plansCurrency.value) : null)
+      ?.amount_cents ??
+    (plansCurrency.value === 'USD' ? FALLBACK_MEMBER_YEARLY_USD_CENTS : FALLBACK_MEMBER_YEARLY_CENTS),
 )
-const plansCurrency = computed(() => memberPlans.value?.[0]?.currency ?? 'CNY')
 
 const memberAmountText = computed(() =>
   formatAmountCents(isYearly.value ? yearlyCents.value : monthlyCents.value, plansCurrency.value),

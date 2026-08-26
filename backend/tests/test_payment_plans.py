@@ -11,8 +11,11 @@ from datetime import datetime, timezone
 import pytest
 
 from backend.app.services.payments.plans import (
+    CHANNEL_CURRENCIES,
     MEMBER_MONTHLY,
+    MEMBER_MONTHLY_USD,
     MEMBER_YEARLY,
+    MEMBER_YEARLY_USD,
     MEMBERSHIP_PLANS,
     UnknownPlanError,
     effective_plans,
@@ -33,7 +36,30 @@ def test_plan_amounts_are_pinned_in_cents() -> None:
     assert MEMBER_YEARLY.amount_cents == 15900
     assert MEMBER_YEARLY.currency == "CNY"
     assert MEMBER_YEARLY.months == 12
-    assert set(MEMBERSHIP_PLANS) == {"member_monthly", "member_yearly"}
+    # 美元套餐：海外界面唯一可购目录（PayPal 不收 CNY），$4.9/$39 钉死
+    assert MEMBER_MONTHLY_USD.code == "member_monthly_usd"
+    assert MEMBER_MONTHLY_USD.amount_cents == 490
+    assert MEMBER_MONTHLY_USD.currency == "USD"
+    assert MEMBER_MONTHLY_USD.months == 1
+    assert MEMBER_YEARLY_USD.code == "member_yearly_usd"
+    assert MEMBER_YEARLY_USD.amount_cents == 3900
+    assert MEMBER_YEARLY_USD.currency == "USD"
+    assert MEMBER_YEARLY_USD.months == 12
+    assert set(MEMBERSHIP_PLANS) == {
+        "member_monthly",
+        "member_yearly",
+        "member_monthly_usd",
+        "member_yearly_usd",
+    }
+
+
+def test_channel_currencies_are_pinned() -> None:
+    # 渠道 × 币种兼容矩阵：CNY 只走国内渠道，USD 只走海外跳转槽
+    assert CHANNEL_CURRENCIES == {
+        "wechat_native": "CNY",
+        "alipay_page": "CNY",
+        "overseas_redirect": "USD",
+    }
 
 
 def test_extend_from_uses_calendar_months_not_fixed_days() -> None:

@@ -19,6 +19,18 @@ from backend.app.services.membership.tiers import MEMBERSHIP_TIER_MEMBER
 
 PLAN_CODE_MEMBER_MONTHLY = "member_monthly"
 PLAN_CODE_MEMBER_YEARLY = "member_yearly"
+PLAN_CODE_MEMBER_MONTHLY_USD = "member_monthly_usd"
+PLAN_CODE_MEMBER_YEARLY_USD = "member_yearly_usd"
+
+# 渠道 × 币种兼容矩阵（服务端收口，前端语言门控只是展示层）：
+# 国内渠道只收 CNY（微信/支付宝境内收单），海外跳转槽只收 USD
+# （PayPal 不支持 CNY 交易币种；PingPong 跨境以 USD 计价）。
+# 错配在下单时 400 fail-closed，绝不落单后再被渠道 422。
+CHANNEL_CURRENCIES: Mapping[str, str] = {
+    "wechat_native": "CNY",
+    "alipay_page": "CNY",
+    "overseas_redirect": "USD",
+}
 
 
 class UnknownPlanError(RuntimeError):
@@ -67,9 +79,26 @@ MEMBER_YEARLY = MembershipPlan(
     currency="CNY",
     months=12,
 )
+# 美元套餐：海外界面（非 zh 前缀）的唯一可购目录，走 overseas_redirect 槽。
+# 价位锚定跨境手续费后的国际档（$4.9/$39 ≈ ¥35/¥279，高于国内 ¥19/¥159）。
+MEMBER_MONTHLY_USD = MembershipPlan(
+    code=PLAN_CODE_MEMBER_MONTHLY_USD,
+    tier=MEMBERSHIP_TIER_MEMBER,
+    amount_cents=490,
+    currency="USD",
+    months=1,
+)
+MEMBER_YEARLY_USD = MembershipPlan(
+    code=PLAN_CODE_MEMBER_YEARLY_USD,
+    tier=MEMBERSHIP_TIER_MEMBER,
+    amount_cents=3900,
+    currency="USD",
+    months=12,
+)
 
 MEMBERSHIP_PLANS: Mapping[str, MembershipPlan] = {
-    plan.code: plan for plan in (MEMBER_MONTHLY, MEMBER_YEARLY)
+    plan.code: plan
+    for plan in (MEMBER_MONTHLY, MEMBER_YEARLY, MEMBER_MONTHLY_USD, MEMBER_YEARLY_USD)
 }
 
 

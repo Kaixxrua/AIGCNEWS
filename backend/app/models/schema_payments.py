@@ -146,3 +146,5 @@ class OpsPaymentPlanOverridesRequest(BaseModel):
 
     monthly_amount_cents: int | None = None
     yearly_amount_cents: int | None = None
+    monthly_usd_amount_cents: int | None = None
+    yearly_usd_amount_cents: int | None = None

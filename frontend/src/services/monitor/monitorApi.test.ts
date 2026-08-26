@@ -472,6 +472,16 @@ describe('Monitor API contract', () => {
         default_amount_cents: 15900, override_amount_cents: null, amount_cents: 15900,
         updated_at: null,
       },
+      {
+        code: 'member_monthly_usd', tier: 'member', currency: 'USD', months: 1,
+        default_amount_cents: 490, override_amount_cents: 550, amount_cents: 550,
+        updated_at: '2026-08-24T10:00:00+00:00',
+      },
+      {
+        code: 'member_yearly_usd', tier: 'member', currency: 'USD', months: 12,
+        default_amount_cents: 3900, override_amount_cents: null, amount_cents: 3900,
+        updated_at: null,
+      },
     ]
     transport.get.mockResolvedValueOnce({ data: { plans } })
     await expect(monitorApi.fetchPaymentPlanPricing()).resolves.toEqual({ plans })
@@ -479,30 +489,44 @@ describe('Monitor API contract', () => {
 
     // 表单只回填覆盖价（默认价行留空）；保存时元转分、空串发 null 恢复默认
     const form = createPaymentPlanPricingForm(plans)
-    expect(form).toEqual({ monthly_yuan: '25', yearly_yuan: '' })
+    expect(form).toEqual({ monthly_yuan: '25', yearly_yuan: '', monthly_usd: '5.5', yearly_usd: '' })
     transport.put.mockResolvedValueOnce({ data: { plans } })
     await monitorApi.savePaymentPlanPricing(form)
     expect(transport.put).toHaveBeenLastCalledWith('/ops/payments/plans', {
       monthly_amount_cents: 2500,
       yearly_amount_cents: null,
+      monthly_usd_amount_cents: 550,
+      yearly_usd_amount_cents: null,
     })
   })
 
   it('builds pricing payloads with yuan-to-cents conversion and bounds', () => {
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.9', yearly_yuan: '' })).toEqual({
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.9', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })).toEqual({
       monthly_amount_cents: 1990,
       yearly_amount_cents: null,
+      monthly_usd_amount_cents: null,
+      yearly_usd_amount_cents: null,
     })
-    // 双空 = 双恢复默认（整体聚合语义）
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: '' })).toEqual({
+    // 全空 = 全恢复默认（整体聚合语义）
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })).toEqual({
       monthly_amount_cents: null,
       yearly_amount_cents: null,
+      monthly_usd_amount_cents: null,
+      yearly_usd_amount_cents: null,
+    })
+    // 美元行同样按「元」（美元单位）转分
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: '', monthly_usd: '4.9', yearly_usd: '39' })).toEqual({
+      monthly_amount_cents: null,
+      yearly_amount_cents: null,
+      monthly_usd_amount_cents: 490,
+      yearly_usd_amount_cents: 3900,
     })
     // 非法/越界任一字段 → null：面板层拦截，绝不出请求
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.999', yearly_yuan: '' })).toBeNull()
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '0.5', yearly_yuan: '' })).toBeNull()
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '10001', yearly_yuan: '' })).toBeNull()
-    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: 'abc' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '19.999', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '0.5', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '10001', yearly_yuan: '', monthly_usd: '', yearly_usd: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: 'abc', monthly_usd: '', yearly_usd: '' })).toBeNull()
+    expect(buildPaymentPlanPricingPayload({ monthly_yuan: '', yearly_yuan: '', monthly_usd: '0.99', yearly_usd: '' })).toBeNull()
   })
 
   it('grants membership with normalized email and Beijing end-of-day expiry', async () => {

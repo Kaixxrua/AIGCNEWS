@@ -15,17 +15,21 @@ from backend.app.services.payments.plan_overrides import invalidate_plan_overrid
 from backend.app.services.payments.plans import (
     MEMBERSHIP_PLANS,
     PLAN_CODE_MEMBER_MONTHLY,
+    PLAN_CODE_MEMBER_MONTHLY_USD,
     PLAN_CODE_MEMBER_YEARLY,
+    PLAN_CODE_MEMBER_YEARLY_USD,
     effective_plans,
 )
 
 _MIN_AMOUNT_CENTS = 100
 _MAX_AMOUNT_CENTS = 1000000
-# PUT 整体聚合语义：显式两字段（套餐目录被 test_payment_plans.py 钉为两个），
+# PUT 整体聚合语义：显式四字段（套餐目录被 test_payment_plans.py 钉为四个），
 # null/缺省 = 删除覆盖恢复默认价，整数 = upsert 覆盖。
 _REQUEST_FIELDS: Mapping[str, str] = {
     "monthly_amount_cents": PLAN_CODE_MEMBER_MONTHLY,
     "yearly_amount_cents": PLAN_CODE_MEMBER_YEARLY,
+    "monthly_usd_amount_cents": PLAN_CODE_MEMBER_MONTHLY_USD,
+    "yearly_usd_amount_cents": PLAN_CODE_MEMBER_YEARLY_USD,
 }
 
 

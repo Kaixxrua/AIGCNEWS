@@ -299,7 +299,15 @@ def test_plans_are_public_and_pin_amounts(harness: Any) -> None:
     assert plans["member_monthly"]["months"] == 1
     assert plans["member_yearly"]["amount_cents"] == 15900
     assert plans["member_yearly"]["months"] == 12
-    assert all(plan["currency"] == "CNY" for plan in body["plans"])
+    # 美元套餐与 CNY 目录并列返回；前端按界面语言拣选币种
+    assert plans["member_monthly_usd"]["amount_cents"] == 490
+    assert plans["member_monthly_usd"]["months"] == 1
+    assert plans["member_yearly_usd"]["amount_cents"] == 3900
+    assert plans["member_yearly_usd"]["months"] == 12
+    for code in ("member_monthly", "member_yearly"):
+        assert plans[code]["currency"] == "CNY"
+    for code in ("member_monthly_usd", "member_yearly_usd"):
+        assert plans[code]["currency"] == "USD"
     channels = {channel["channel"]: channel["available"] for channel in body["channels"]}
     assert set(channels) == {"wechat_native", "alipay_page", "overseas_redirect"}
 
@@ -337,7 +345,9 @@ def test_plans_endpoint_uses_runtime_overrides(harness: Any, plan_override_reade
     # 覆盖只换金额：时长/币种保持默认目录语义
     assert plans["member_monthly"]["months"] == 1
     assert plans["member_yearly"]["months"] == 12
-    assert all(plan["currency"] == "CNY" for plan in body["plans"])
+    assert plans["member_monthly"]["currency"] == "CNY"
+    assert plans["member_monthly_usd"]["amount_cents"] == 490
+    assert plans["member_monthly_usd"]["currency"] == "USD"
 
 
 def test_plans_endpoint_degrades_to_defaults_on_reader_failure(
@@ -379,14 +389,51 @@ def test_create_order_rejects_unknown_plan_and_channel(harness: Any) -> None:
     assert response.json()["detail"] == "unknown_channel"
 
 
-def test_create_order_503_when_channel_not_configured(harness: Any) -> None:
-    harness.providers["overseas_redirect"]._configured = False
+def test_create_order_rejects_plan_channel_currency_mismatch(harness: Any) -> None:
+    """币种 × 渠道兼容矩阵服务端收口：CNY 单禁走海外槽，USD 单禁走国内渠道。"""
     response = harness.client.post(
         "/api/payments/orders",
         json={"plan_code": "member_monthly", "channel": "overseas_redirect"},
     )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "plan_channel_currency_mismatch"
+
+    for channel in ("wechat_native", "alipay_page"):
+        response = harness.client.post(
+            "/api/payments/orders",
+            json={"plan_code": "member_monthly_usd", "channel": channel},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "plan_channel_currency_mismatch"
+    # 错配零落单：仓储一行未写
+    assert harness.orders.rows == {}
+
+
+def test_create_order_503_when_channel_not_configured(harness: Any) -> None:
+    harness.providers["overseas_redirect"]._configured = False
+    response = harness.client.post(
+        "/api/payments/orders",
+        json={"plan_code": "member_monthly_usd", "channel": "overseas_redirect"},
+    )
     assert response.status_code == 503
     assert response.json()["detail"] == "payment_channel_not_configured"
+
+
+def test_create_order_usd_overseas_happy_path(harness: Any) -> None:
+    """USD 套餐 × 海外槽：订单按 USD 金额快照，notify_url 指海外回调端点。"""
+    response = harness.client.post(
+        "/api/payments/orders",
+        json={"plan_code": "member_yearly_usd", "channel": "overseas_redirect"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    order = body["order"]
+    assert order["plan_code"] == "member_yearly_usd"
+    assert order["amount_cents"] == 3900
+    assert order["currency"] == "USD"
+    assert order["status"] == "pending"
+    call = harness.providers["overseas_redirect"].create_calls[0]
+    assert call["notify_url"].endswith("/api/payments/callback/overseas_redirect")
 
 
 def test_create_order_happy_path_returns_instruction(harness: Any) -> None:
