@@ -77,18 +77,21 @@ class TestEnrichmentInputSqlShape:
 class TestUnprocessableCteFilters:
     def _status_sql(self) -> str:
         cursor = MagicMock()
-        cursor.fetchone.side_effect = [
-            {
-                "eligible": 0,
-                "succeeded": 0,
-                "failed": 0,
-                "catalog_total": 0,
-                "catalog_succeeded": 0,
-                "catalog_failed": 0,
-            },
-            {"count": 0},
-        ]
-        cursor.fetchall.return_value = []
+        cursor.fetchone.return_value = {
+            "eligible": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "catalog_total": 0,
+            "catalog_succeeded": 0,
+            "catalog_failed": 0,
+            "catalog_unprocessable": 0,
+            "catalog_pending": 0,
+            "unprocessable": 0,
+            "categories": [],
+            "unprocessable_projects": [],
+            "retained_buckets": [],
+            "retained_projects": [],
+        }
         repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
         repository.get_github_project_enrichment_status(min_stars=500)
         return "\n".join(str(call.args[0]) for call in cursor.execute.call_args_list)
@@ -119,28 +122,27 @@ class TestRetainedBreakdown:
 
     def _run_status(self) -> tuple[str, dict, MagicMock]:
         cursor = MagicMock()
-        cursor.fetchone.side_effect = [
-            {
-                "eligible": 0,
-                "succeeded": 0,
-                "failed": 0,
-                "catalog_total": 0,
-                "catalog_succeeded": 0,
-                "catalog_failed": 0,
-            },
-            {"count": 0},
-        ]
-        cursor.fetchall.side_effect = [
-            [],  # by_category
-            [],  # unprocessable_projects
-            [
+        # 单语句聚合：一次 fetchone 返回全部计数与 JSON 列表列
+        cursor.fetchone.return_value = {
+            "eligible": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "catalog_total": 0,
+            "catalog_succeeded": 0,
+            "catalog_failed": 0,
+            "catalog_unprocessable": 0,
+            "catalog_pending": 0,
+            "unprocessable": 0,
+            "categories": [],
+            "unprocessable_projects": [],
+            "retained_buckets": [
                 {"reason": "not_found", "count": 13},
                 {"reason": "snapshot_below_threshold", "count": 51},
                 {"reason": "lost_input", "count": 11},
                 {"reason": "tombstone", "count": 1},
                 {"reason": "unexpected_future_reason", "count": 9},
-            ],  # retained buckets
-            [
+            ],
+            "retained_projects": [
                 {
                     "repo_id": "acme/gone",
                     "full_name": "acme/gone",
@@ -148,8 +150,8 @@ class TestRetainedBreakdown:
                     "stars": 900,
                     "reason": "not_found",
                 }
-            ],  # retained projects
-        ]
+            ],
+        }
         repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
         status = repository.get_github_project_enrichment_status(min_stars=500)
         sql = "\n".join(str(call.args[0]) for call in cursor.execute.call_args_list)
@@ -164,10 +166,11 @@ class TestRetainedBreakdown:
         assert "snapshot_below_threshold" in sql
         assert "lost_input" in sql
         assert "tombstone" in sql
-        # 与 eligible 同构的否定谓词（快照星数 + 输入 + 非墓碑）
-        assert sql.count(_GITHUB_ENRICHMENT_INPUT_SQL.strip()) >= 4
+        # 与 eligible 同构的否定谓词（快照星数 + 输入 + 非墓碑）；
+        # 单语句聚合后该谓词只在 eligible（正向）与 retained（否定）各出现一次
+        assert sql.count(_GITHUB_ENRICHMENT_INPUT_SQL.strip()) >= 2
 
-    def test_all_base_queries_pass_five_min_stars_params(self) -> None:
+    def test_status_query_passes_five_min_stars_params(self) -> None:
         _, _, cursor = self._run_status()
         for call in cursor.execute.call_args_list:
             assert call.args[1] == (500,) * 5

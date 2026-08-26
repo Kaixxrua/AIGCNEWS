@@ -1043,8 +1043,10 @@ def test_live_stats_returns_flat_counters(monkeypatch) -> None:
         FastAPICache.reset()
 
     assert response.status_code == 200
-    assert response.headers["cache-control"] == "no-store, max-age=0, must-revalidate"
-    assert response.headers["pragma"] == "no-cache"
+    # 10s 短缓存已恢复（8e3c277 原设计；ac401ca 拆分期曾改 no-store 直查，
+    # 富化状态大查询进入热路径后必须把并发轮询重新聚合）。响应头由 @cache
+    # 装饰器统一输出 max-age=10，端点内不再写 no-store。
+    assert response.headers["cache-control"] == "max-age=10"
     body = response.json()
     assert body["source_counts"] == {"arxiv": 5, "github": 6983, "news": 7}
     assert body["total_documents"] == 5 + 6983 + 7

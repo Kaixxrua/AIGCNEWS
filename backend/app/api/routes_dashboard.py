@@ -136,7 +136,8 @@ async def _get_site_visit_stats(visits: SiteVisitStatsReader) -> SiteVisitStats:
 
 # 使用该 builder 的静态端点实际消费的 query 参数并集（见各路由 Query 声明）：
 #   top/radar/summary-static/snapshot-dates: limit/source/date（看板已仅日榜，无 period）
-#   x/recent: hours/limit/days_back/cursor；summary/live-stats/visitor-count 均不使用 FastAPI response cache。
+#   x/recent: hours/limit/days_back/cursor；summary/visitor-count 不使用 FastAPI response cache，
+#   live-stats 用 10s 短缓存聚合并发轮询（8e3c277 原设计，ac401ca 拆分后拆除，现恢复）。
 # 白名单外的参数一律不进 key——前端 _t 破缓存参数如此，匿名用户构造的
 # 随机参数更是如此：否则每个新参数值都生成新 key，可写爆 Redis 缓存。
 _DASHBOARD_CACHE_KEY_QUERY_PARAMS = frozenset(
@@ -622,6 +623,7 @@ async def get_dashboard_summary(
 
 
 @router.get("/dashboard/live-stats")
+@cache(expire=10, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_live_stats(
     request: Request,
     response: Response,
@@ -631,13 +633,13 @@ async def get_dashboard_live_stats(
     visits: SiteVisitStatsReader = Depends(get_site_visit_repository),
     enrichment: Any = Depends(_get_optional_github_enrichment_repository),
 ):
-    """首页统计带实时计数（不缓存响应）。
+    """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
 
     与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
     仅数字变化时滚筒动画滚动差位，无变化则静止。
+    响应 Cache-Control 由 @cache 装饰器输出 max-age=10（8e3c277 原设计）：
+    服务端缓存与前端轮询同频，浏览器侧短缓存同样 10s 到期，访客最多少见一拍。
     """
-    response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
     if enrichment is not None:
         source_counts, github_progress = await asyncio.gather(
             asyncio.to_thread(document_statistics.get_source_counts),

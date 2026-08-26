@@ -501,10 +501,23 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
     def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
         # Keep queue progress separate from historical generated content. The latter
         # intentionally has no current-star or source-input gate.
+        # latest_snap 只取候选仓的最新快照：LATERAL 让每仓走 (repo_id, snapshot_date)
+        # 唯一索引的一次组内反向扫描 + 单次回表（25k 探针），取代对 64 万行快照表
+        # 全量回表读出再排序去重。MATERIALIZED 保持单次物化、代价有界（理由见
+        # get_github_projects_needing_enrichment 的事故注释）；下游一律
+        # LEFT JOIN latest_snap ON ls.repo_id = c.repo_id，语义与旧写法的
+        # 连接结果完全一致（快照表有 (repo_id, snapshot_date) 唯一约束，无并列）。
         base = f"""
             WITH latest_snap AS MATERIALIZED (
-                SELECT DISTINCT ON (repo_id) * FROM github_repo_snapshots
-                ORDER BY repo_id, snapshot_date DESC
+                SELECT s.*
+                FROM github_repo_candidates c
+                CROSS JOIN LATERAL (
+                    SELECT *
+                    FROM github_repo_snapshots s
+                    WHERE s.repo_id = c.repo_id
+                    ORDER BY s.snapshot_date DESC
+                    LIMIT 1
+                ) s
             ), eligible AS (
                 SELECT c.repo_id, c.full_name, c.url, c.description,
                        COALESCE(ls.stars,c.stars,0) AS stars,
@@ -574,36 +587,56 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         # eligible, catalog scope, retained snapshot classification, and the
         # retained current-star/input queue gate (three retained placeholders).
         status_params = (min_stars,) * 5
+        # 单语句聚合：base 的五个 CTE 只物化一次。旧版对 base 顺序执行 6 条语句
+        # （总计数/分类聚合/不可处理明细/不可处理计数/保留桶/保留明细），每条都
+        # 重算 latest_snap 与下游 CTE，是首页 live-stats 6.9s 的直接原因（生产
+        # 实测单语句 ~0.4s）。列表结果用 json_agg 内嵌并保持原有排序与键名，
+        # psycopg 解码为 list[dict]；空集由 COALESCE 兜底为 []。
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(base + """SELECT COUNT(*) AS eligible,
-                    COUNT(*) FILTER (WHERE status='succeeded') AS succeeded,
-                    COUNT(*) FILTER (WHERE status='failed') AS failed,
-                    (SELECT COUNT(*) FROM content) AS catalog_total,
-                    (SELECT COUNT(*) FROM content WHERE state='succeeded') AS catalog_succeeded,
-                    (SELECT COUNT(*) FROM content WHERE state='failed') AS catalog_failed,
-                    (SELECT COUNT(*) FROM content WHERE state='unprocessable') AS catalog_unprocessable,
-                    (SELECT COUNT(*) FROM content WHERE state='pending') AS catalog_pending
-                    FROM eligible""", status_params)
+                cursor.execute(base + """SELECT agg.eligible, agg.succeeded, agg.failed,
+                    agg.catalog_total, agg.catalog_succeeded, agg.catalog_failed,
+                    agg.catalog_unprocessable, agg.catalog_pending,
+                    (SELECT COUNT(*) FROM unprocessable) AS unprocessable,
+                    (SELECT COALESCE(json_agg(row_to_json(cat) ORDER BY cat.count DESC,
+                                          cat.name COLLATE "C" ASC), '[]'::json)
+                     FROM (SELECT category_slug AS slug, category_name AS name,
+                                  COUNT(*) AS count
+                           FROM content WHERE state='succeeded'
+                           GROUP BY category_slug, category_name) cat) AS categories,
+                    (SELECT COALESCE(json_agg(row_to_json(u) ORDER BY u.stars DESC,
+                                          u.full_name COLLATE "C" ASC,
+                                          u.repo_id COLLATE "C" ASC), '[]'::json)
+                     FROM (SELECT repo_id, full_name, url, stars, reason
+                           FROM unprocessable
+                           ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                                    repo_id COLLATE "C" ASC
+                           LIMIT 100) u) AS unprocessable_projects,
+                    (SELECT COALESCE(json_agg(row_to_json(b)), '[]'::json)
+                     FROM (SELECT reason, COUNT(*) AS count
+                           FROM retained GROUP BY reason) b) AS retained_buckets,
+                    (SELECT COALESCE(json_agg(row_to_json(r) ORDER BY r.stars DESC,
+                                          r.full_name COLLATE "C" ASC,
+                                          r.repo_id COLLATE "C" ASC), '[]'::json)
+                     FROM (SELECT repo_id, full_name, url, stars, reason
+                           FROM retained
+                           ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                                    repo_id COLLATE "C" ASC
+                           LIMIT 100) r) AS retained_projects
+                    FROM (SELECT COUNT(*) AS eligible,
+                                 COUNT(*) FILTER (WHERE status='succeeded') AS succeeded,
+                                 COUNT(*) FILTER (WHERE status='failed') AS failed,
+                                 (SELECT COUNT(*) FROM content) AS catalog_total,
+                                 (SELECT COUNT(*) FROM content WHERE state='succeeded') AS catalog_succeeded,
+                                 (SELECT COUNT(*) FROM content WHERE state='failed') AS catalog_failed,
+                                 (SELECT COUNT(*) FROM content WHERE state='unprocessable') AS catalog_unprocessable,
+                                 (SELECT COUNT(*) FROM content WHERE state='pending') AS catalog_pending
+                          FROM eligible) agg""", status_params)
                 row = cursor.fetchone() or {}
-                cursor.execute(base + """SELECT category_slug AS slug, category_name AS name,
-                    COUNT(*) AS count FROM content WHERE state='succeeded'
-                    GROUP BY category_slug, category_name
-                    ORDER BY count DESC, category_name COLLATE "C" ASC""", status_params)
-                categories = cursor.fetchall()
-                cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
-                    FROM unprocessable ORDER BY stars DESC, full_name COLLATE "C" ASC,
-                    repo_id COLLATE "C" ASC LIMIT 100""", status_params)
-                unprocessable_projects = cursor.fetchall()
-                cursor.execute(base + """SELECT COUNT(*) AS count FROM unprocessable""", status_params)
-                unprocessable_row = cursor.fetchone() or {}
-                cursor.execute(base + """SELECT reason, COUNT(*) AS count
-                    FROM retained GROUP BY reason""", status_params)
-                retained_bucket_rows = cursor.fetchall()
-                cursor.execute(base + """SELECT repo_id, full_name, url, stars, reason
-                    FROM retained ORDER BY stars DESC, full_name COLLATE "C" ASC,
-                    repo_id COLLATE "C" ASC LIMIT 100""", status_params)
-                retained_projects = cursor.fetchall()
+        categories = row.get("categories") or []
+        unprocessable_projects = row.get("unprocessable_projects") or []
+        retained_bucket_rows = row.get("retained_buckets") or []
+        retained_projects = row.get("retained_projects") or []
         eligible = int(row.get("eligible") or 0)
         succeeded = int(row.get("succeeded") or 0)
         failed = int(row.get("failed") or 0)
@@ -642,7 +675,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                 "by_category": [{"slug": item.get("slug") or "other",
                     "name": item.get("name") or "其他", "count": int(item.get("count") or 0)}
                     for item in categories],
-                "unprocessable": int(unprocessable_row.get("count") or 0),
+                "unprocessable": int(row.get("unprocessable") or 0),
                 "unprocessable_projects": [{"repo_id": str(item.get("repo_id") or ""),
                     "full_name": str(item.get("full_name") or ""), "url": str(item.get("url") or ""),
                     "stars": int(item.get("stars") or 0),
