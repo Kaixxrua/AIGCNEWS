@@ -505,6 +505,11 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
     def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
         # Keep queue progress separate from historical generated content. The latter
         # intentionally has no current-star or source-input gate.
+        # catalog 分类契约：succeeded 恒优先；此外凡当前无富化输入（简介为空且无
+        # 有效 README 快照）一律归 unprocessable——不论仓库是否已 404 下架、是否
+        # 留有 failed 行。failed/pending 只统计有输入、真正可再跑的项目。该口径
+        # 纯派生、可自愈：活仓补齐简介或 README bootstrap 成功即回到 pending，
+        # 被下一轮流水线自动拉起。
         # latest_snap 只取候选仓的最新快照：LATERAL 让每仓走 (repo_id, snapshot_date)
         # 唯一索引的一次组内反向扫描 + 单次回表（25k 探针），取代对 64 万行快照表
         # 全量回表读出再排序去重。MATERIALIZED 保持单次物化、代价有界（理由见
@@ -539,14 +544,11 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                        e.status, e.category_slug, e.category_name,
                        CASE
                          WHEN e.status = 'succeeded' THEN 'succeeded'
-                         WHEN e.status = 'failed' THEN 'failed'
-                         WHEN c.availability_status = 'active'
-                              AND COALESCE(ls.stars,c.stars,0) >= scope._intake_threshold
-                              AND e.repo_id IS NULL
-                              AND BTRIM(COALESCE(c.description, '')) = ''
+                         WHEN BTRIM(COALESCE(c.description, '')) = ''
                               AND NOT (ss.readme_status = 'succeeded'
                                        AND BTRIM(COALESCE(ss.readme_text, '')) <> '')
                            THEN 'unprocessable'
+                         WHEN e.status = 'failed' THEN 'failed'
                          ELSE 'pending'
                        END AS state
                 FROM github_repo_candidates c

@@ -118,10 +118,11 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment(retry_failed=True)] == ["new"]
 
 
-def test_pg16_readme_only_repos_enter_enrichment_and_not_found_stay_out_of_unprocessable(
+def test_pg16_readme_only_repos_enter_enrichment_and_no_input_unifies_unprocessable(
     repositories,
 ) -> None:
-    """description 空 + 成功 README 的仓库进入标准队列；404 下架仓库不进无法富化名单。"""
+    """description 空 + 成功 README 的仓库进入标准队列；无富化输入的项目
+    （含 404 下架形态）统一计入无法富化名单。"""
     database, github, _ = repositories
     with database.transaction() as connection:
         with connection.cursor() as cursor:
@@ -148,13 +149,79 @@ def test_pg16_readme_only_repos_enter_enrichment_and_not_found_stay_out_of_unpro
 
     status = github.get_github_project_enrichment_status(min_stars=500)
     unprocessable_ids = {row["repo_id"] for row in status["unprocessable_projects"]}
-    # 404（QDiffusion 形态）与有有效 README 的都不进名单；仅真正双空的计入，
-    # 且计数与详情列表一致
-    assert "gone" not in unprocessable_ids
+    # 无输入即无法富化：404 下架（QDiffusion 形态）、README 抓取失败与双空
+    # 统一计入；仅有有效 README 输入的不进名单，且计数与详情列表一致
+    assert "gone" in unprocessable_ids
     assert "readme_only" not in unprocessable_ids
     assert "readme_failed" in unprocessable_ids
     assert "both_empty" in unprocessable_ids
     assert status["unprocessable"] == len(unprocessable_ids)
+
+
+def test_pg16_no_input_failed_and_pending_rows_unify_into_unprocessable(repositories) -> None:
+    """无富化输入的 failed/pending 残渣统一归 unprocessable（生产 QAI-brain 形态）：
+    404 下架不再豁免、留有 failed 行也不再挂失败数；有输入 failed 仍可重试；
+    succeeded 丢输入仍计成功并退到 retained lost_input 桶。模块共享 schema，
+    断言一律用 before/after 差值，不锁全局绝对数。"""
+    database, github, _ = repositories
+    before = github.get_github_project_enrichment_status(min_stars=500)
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("""INSERT INTO github_repo_candidates
+                (repo_id,full_name,description,language,topics_json,stars,forks,watchers,availability_status)
+                VALUES
+                ('uc_failed_gone','QAI-brain/uc-failed-gone','','','[]',800,1,1,'not_found'),
+                ('uc_pending_gone','QAI-brain/uc-pending-gone','','','[]',700,1,1,'not_found'),
+                ('uc_pending_active','acme/uc-pending-active',NULL,'','[]',650,1,1,'active'),
+                ('uc_failed_input','acme/uc-failed-input','Has desc','','[]',900,1,1,'active'),
+                ('uc_ok_pending','acme/uc-ok-pending','Ok desc','','[]',600,1,1,'active'),
+                ('uc_succeeded_lost','acme/uc-succeeded-lost','','','[]',550,1,1,'active')""")
+    github.mark_github_repo_enrichment_failed(
+        "uc_failed_gone", source_fingerprint="f" * 64,
+        prompt_version="v1", error_msg="boom",
+    )
+    github.mark_github_repo_enrichment_failed(
+        "uc_failed_input", source_fingerprint="f" * 64,
+        prompt_version="v1", error_msg="boom",
+    )
+    github.upsert_github_repo_enrichment({
+        "repo_id": "uc_succeeded_lost", "category_slug": "agent",
+        "category_name": "Agent", "description_zh": "智能体",
+        "description_en": "Agent", "tags": [], "source_fingerprint": "s" * 64,
+        "prompt_version": "v1",
+    })
+    after = github.get_github_project_enrichment_status(min_stars=500)
+
+    def delta(key: str) -> int:
+        return int(after[key]) - int(before[key])
+
+    # 三个无输入项目统一计入无法富化（不论 404 下架还是留有 failed 行）
+    assert delta("catalog_unprocessable") == 3
+    assert delta("unprocessable") == 3
+    listed = {row["repo_id"] for row in after["unprocessable_projects"]}
+    assert {"uc_failed_gone", "uc_pending_gone", "uc_pending_active"} <= listed
+    # 有输入 failed 留在可重试桶；有输入无行仍待处理；队列口径只数有输入项目
+    assert delta("catalog_failed") == 1
+    assert delta("catalog_pending") == 1
+    assert delta("queue_failed") == 1
+    assert delta("queue_pending") == 1
+    assert delta("eligible") == 2
+    # succeeded 丢输入仍计成功，退到 retained lost_input 桶而非 unprocessable
+    assert delta("catalog_succeeded") == 1
+    assert delta("retained_total") == 1
+    assert (
+        int(after["retained_buckets"]["lost_input"])
+        - int(before["retained_buckets"]["lost_input"])
+    ) == 1
+    # catalog 投影四状态互斥守恒
+    progress = after["catalog_progress"]
+    assert progress["total"] == (
+        progress["succeeded"] + progress["failed"]
+        + progress["unprocessable"] + progress["pending"]
+    )
+    assert (
+        progress["unprocessable"] - before["catalog_progress"]["unprocessable"]
+    ) == 3
 
 
 def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
@@ -279,9 +346,10 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
     queue = {row["repo_id"] for row in github.get_github_projects_needing_enrichment(limit=500)}
     assert not {"ret_tomb", "ret_gone404", "ret_dropped", "ret_lost"} & queue
 
-    # 反向 sanity：前序用例的 404 仓库（无富化记录）两边都不出现
+    # 反向 sanity：前序用例的 404 仓库（无富化记录）不进 retained（无成功成果），
+    # 但因无富化输入统一计入无法富化名单
     assert "gone" not in retained
-    assert "gone" not in unprocessable_ids
+    assert "gone" in unprocessable_ids
 
 
 def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -> None:

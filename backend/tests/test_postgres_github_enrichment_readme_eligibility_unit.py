@@ -98,19 +98,25 @@ class TestUnprocessableCteFilters:
 
     def test_unprocessable_excludes_repos_with_usable_readme(self) -> None:
         sql = self._status_sql()
-        # unprocessable 仅保留：description 空 + 无有效 README + 未成功富化
+        # unprocessable 判定 = description 空 + 无有效 README 快照
         assert "BTRIM(COALESCE(c.description, '')) = ''" in sql
         assert "ss.readme_status = 'succeeded'" in sql
         assert "BTRIM(COALESCE(ss.readme_text, '')) <> ''" in sql
-        # Failed rows are classified as failed by the canonical catalog CTE;
-        # they must not be reclassified as unprocessable.
+        # 无输入分支排在 failed 分支之前：有输入的失败留在可重试 failed 桶，
+        # 无输入的失败统一归并 unprocessable
         assert "WHEN e.status = 'failed' THEN 'failed'" in sql
+        assert sql.index("THEN 'unprocessable'") < sql.index(
+            "WHEN e.status = 'failed' THEN 'failed'"
+        )
 
-    def test_unprocessable_excludes_not_found_repos(self) -> None:
+    def test_unprocessable_includes_not_found_repos_without_input(self) -> None:
         # 已 2 次 404 确认的仓库（如 QAI-brain/awesome-QAI-Papers-QDiffusion）
-        # 不得进入无法富化计数/列表；公共 catalog 保留它们不受影响
+        # 既然无富化输入，与其他无输入项目统一计入无法富化（取代 20cddfc 的
+        # 豁免决策）；catalog CASE 不再携带 availability/active 门槛，
+        # succeeded 的 404 仓库仍经 retained 桶保留在库
         sql = self._status_sql()
-        assert "c.availability_status = 'active'" in sql
+        catalog_case = sql[sql.index("CASE") : sql.index("END AS state")]
+        assert "availability_status" not in catalog_case
 
     def test_reason_label_kept_for_frontend_contract(self) -> None:
         sql = self._status_sql()
