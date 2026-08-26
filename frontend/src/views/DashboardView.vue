@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
 import { useAuthStore } from '@/stores/authStore'
+import { subscribeLiveStats } from '@/composables/useLiveStatsStream'
 import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
@@ -44,20 +43,17 @@ const {
   selectSourceTab,
   onDateChange,
   hasData,
-  refreshLiveStats,
+  applyLiveStats,
 } = useDashboardData({
   updateStatSources,
   updateVisitorSources,
 })
 currentStats = () => stats.value
 
-/* 每 10s 轮询实时计数：仅变化的数字滚筒滚动差位（如 1306→2309 只滚千位与个位），
-   无变化则完全静止。KeepAlive 停用或卸载时暂停定时器。 */
-const { pause: pauseLivePoll, resume: resumeLivePoll } = useIntervalFn(() => { void refreshLiveStats() }, 10_000, { immediate: false })
-onMounted(resumeLivePoll)
-onActivated(resumeLivePoll)
-onDeactivated(pauseLivePoll)
-onBeforeUnmount(pauseLivePoll)
+/* 实时计数改事件驱动：SSE 推送（后端写路径触发重算后主动广播），变化的数字
+   即时滚筒滚动差位，无变化完全静止；断流时 composable 内部自动降级 30s 轮询。
+   连接为模块级单例（与顶栏「今日更新」共享），卸载自动退订释放。 */
+subscribeLiveStats(applyLiveStats)
 
 </script>
 

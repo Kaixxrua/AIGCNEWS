@@ -6,7 +6,7 @@ import { useTodayNewCount } from '@/composables/useTodayNewCount'
 
 /* 顶栏报头信息：日期 + 今日更新计数，报纸刊头式两行小字。
    定位在顶栏左区（绝对定位，不参与居中 flex 排布），窄屏隐藏避免挤压字标。
-   计数的数据源、轮询节奏与滚筒动画均与首页仪表盘一致（见 useTodayNewCount）。 */
+   计数的数据源、实时推送（SSE 事件流）与滚筒动画均与首页仪表盘一致（见 useTodayNewCount）。 */
 const { t, locale } = useI18n()
 const { todayNewCount } = useTodayNewCount()
 

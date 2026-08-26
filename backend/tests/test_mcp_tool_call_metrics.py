@@ -827,11 +827,9 @@ class McpToolCallModuleDefaultFallbackTests(unittest.TestCase):
 
 
 class DashboardMcpCallCountsTests(unittest.IsolatedAsyncioTestCase):
-    def _request(self, service: object) -> object:
+    def _app(self, service: object) -> object:
         return types.SimpleNamespace(
-            app=types.SimpleNamespace(
-                state=types.SimpleNamespace(mcp_tool_call_metrics=service)
-            )
+            state=types.SimpleNamespace(mcp_tool_call_metrics=service)
         )
 
     async def test_counts_come_from_bound_service_snapshot(self) -> None:
@@ -842,7 +840,7 @@ class DashboardMcpCallCountsTests(unittest.IsolatedAsyncioTestCase):
         await service.record("search_papers")
 
         total, dsh = await routes_dashboard._get_mcp_call_counts(
-            self._request(service)
+            self._app(service)
         )
 
         self.assertEqual(total, 2)
@@ -854,7 +852,7 @@ class DashboardMcpCallCountsTests(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("boom")
 
         total, dsh = await routes_dashboard._get_mcp_call_counts(
-            self._request(BoomService())
+            self._app(BoomService())
         )
 
         self.assertEqual((total, dsh), (0, 0))

@@ -18,6 +18,7 @@ from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
+from backend.app.services.dashboard import live_stats_broadcaster
 
 
 def _utcnow() -> str:
@@ -363,6 +364,9 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     """,
                     data,
                 )
+        # 富化状态落库（succeeded/failed 均走本方法）→ 首页 GitHub 计数投影
+        # 变更；notify 线程安全（富化批处理在 worker 线程池执行），未装配 no-op。
+        live_stats_broadcaster.notify_live_stats_changed("github-enrichment-upsert")
 
     def list_github_projects_needing_bilingual_tags(
         self, *, after_repo_id: str = "", limit: int = 50, min_stars: int = 500,

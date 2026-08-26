@@ -18,6 +18,11 @@ vi.mock('@/services/dashboard/dashboardLiveApi', () => ({
   fetchLiveStats: vi.fn(),
 }))
 
+/* SSE 单例在 jsdom 下无 EventSource；桩化订阅入口避免真实连接。 */
+vi.mock('@/composables/useLiveStatsStream', () => ({
+  subscribeLiveStats: vi.fn(() => () => {}),
+}))
+
 const fetchLiveStatsMock = vi.mocked(fetchLiveStats)
 
 let unmount: (() => void) | undefined

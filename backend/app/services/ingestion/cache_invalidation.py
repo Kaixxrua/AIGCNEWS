@@ -6,6 +6,7 @@ from fastapi_cache import FastAPICache
 from redis.asyncio import Redis
 
 from backend.app.core.config import settings
+from backend.app.services.dashboard import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +58,6 @@ async def clear_dashboard_cache_safely() -> None:
             await close_method()
         else:
             await redis_client.close()
+    # 动态计数常驻值随静态缓存一并换新：采集/ops 删除/X 运维共用本函数，
+    # 在此统一通知 live-stats 广播器重算（未装配时 no-op，绝不抛出）。
+    live_stats_broadcaster.notify_live_stats_changed("dashboard-cache-cleared")

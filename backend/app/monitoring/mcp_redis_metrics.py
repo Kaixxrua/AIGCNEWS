@@ -351,10 +351,17 @@ MCP_TOOL_CALL_METRICS_SERVICE: McpToolCallMetricsRecorder = LocalMcpToolCallMetr
 )
 
 
-def resolve_tool_call_metrics(request: Any) -> McpToolCallMetricsRecorder:
-    """按请求解析计数服务：优先 app.state（lifespan 绑定的 Redis 聚合），
-    缺省回退模块级 JSON 门面。TestClient 不跑 lifespan 的契约测试走后者。"""
-    service = getattr(request.app.state, "mcp_tool_call_metrics", None)
+def resolve_tool_call_metrics_for_app(app: Any) -> McpToolCallMetricsRecorder:
+    """按 app 解析计数服务：优先 app.state（lifespan 绑定的 Redis 聚合），
+    缺省回退模块级 JSON 门面。无请求上下文的常驻任务（live-stats 广播
+    的 MCP diff tick）与请求路径共用同一解析口径。"""
+    service = getattr(app.state, "mcp_tool_call_metrics", None)
     if service is None:
         return MCP_TOOL_CALL_METRICS_SERVICE
     return service
+
+
+def resolve_tool_call_metrics(request: Any) -> McpToolCallMetricsRecorder:
+    """按请求解析计数服务：优先 app.state（lifespan 绑定的 Redis 聚合），
+    缺省回退模块级 JSON 门面。TestClient 不跑 lifespan 的契约测试走后者。"""
+    return resolve_tool_call_metrics_for_app(request.app)

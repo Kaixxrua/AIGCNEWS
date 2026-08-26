@@ -22,10 +22,15 @@ vi.mock('@/composables/useDashboardData', async () => {
       selectSourceTab: vi.fn(),
       onDateChange: vi.fn(),
       hasData: ref(true),
-      refreshLiveStats: vi.fn(),
+      applyLiveStats: vi.fn(),
     }),
   }
 })
+
+/* SSE 单例在 jsdom 下无 EventSource；桩化订阅入口，仅校验视图已接线。 */
+vi.mock('@/composables/useLiveStatsStream', () => ({
+  subscribeLiveStats: vi.fn(() => () => {}),
+}))
 
 vi.mock('@/composables/useDashboardStats', async () => {
   const { ref } = await import('vue')

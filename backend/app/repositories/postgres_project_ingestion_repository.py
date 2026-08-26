@@ -9,6 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.services.dashboard import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -804,7 +805,10 @@ class PostgresGitHubProjectIngestionRepository:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(_MARK_AVAILABLE_SQL, (checked_at, full_name))
-                return cursor.rowcount > 0
+                changed = cursor.rowcount > 0
+        if changed:
+            live_stats_broadcaster.notify_live_stats_changed("github-repo-available")
+        return changed
 
     def record_github_repo_not_found(self, full_name: str, *, checked_at: str) -> bool:
         with self._database.transaction() as connection:
@@ -812,7 +816,9 @@ class PostgresGitHubProjectIngestionRepository:
                 _, newly = self._apply_not_found_observation(
                     cursor, full_name, checked_at
                 )
-                return newly
+        if newly:
+            live_stats_broadcaster.notify_live_stats_changed("github-repo-not-found")
+        return newly
 
     def insert_github_repo_snapshot(self, snapshot: dict[str, Any]) -> None:
         payload = self._normalize_snapshot_payload(snapshot)

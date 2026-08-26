@@ -5,6 +5,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from backend.app.services.dashboard import live_stats_broadcaster
+
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
 PASSWORD_CHANGE_PURPOSE = "password_change"
@@ -179,6 +181,8 @@ class AccountLifecycle:
         await self._otp.consume_otp(
             normalized_email, purpose=REGISTRATION_PURPOSE
         )
+        # 注册成功 → 首页实时计数（registered_users）变更，推送 SSE 订阅者。
+        live_stats_broadcaster.notify_live_stats_changed("user-registered")
         return RegistrationResult(user_id=user_id)
 
     async def login(

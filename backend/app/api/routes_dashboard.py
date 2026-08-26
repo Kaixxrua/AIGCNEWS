@@ -5,12 +5,14 @@ import base64
 import hashlib
 import json
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import psycopg
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi_cache.decorator import cache
+from starlette.responses import StreamingResponse
 
 from backend.app.api.dependencies import (
     get_document_repository,
@@ -34,7 +36,7 @@ from backend.app.repositories.site_visit_repository import (
     SiteVisitStatsReader,
 )
 from backend.app.repositories.user_account_repository import UserStatisticsReader
-from backend.app.services.dashboard import policy
+from backend.app.services.dashboard import live_stats_broadcaster, policy
 from backend.app.services.dashboard.query_service import (
     DashboardQueryService,
     GitHubHotBoardReader,
@@ -82,25 +84,34 @@ async def _get_source_counts(
     return source_counts
 
 
-async def _get_mcp_call_counts(request: Request) -> tuple[int, int]:
+async def read_mcp_call_counts(app: Any) -> tuple[int, int]:
+    """严格版：MCP 工具调用累计次数与其中 dsh 插件来源次数，故障向外抛。
+
+    供 live-stats 广播器的 diff tick 使用——故障必须可区分（返回 None 语义
+    由调用方 catch 实现），否则计数器故障会把 0 广播成真实值。
+    """
+    from backend.app.monitoring.mcp_redis_metrics import resolve_tool_call_metrics_for_app
+    from backend.app.monitoring.mcp_tools import DSH_PLUGIN_CLIENT
+
+    snapshot = await resolve_tool_call_metrics_for_app(app).snapshot()
+    clients = snapshot.get("clients")
+    dsh_entry = (
+        clients.get(DSH_PLUGIN_CLIENT) if isinstance(clients, dict) else None
+    )
+    dsh_calls = (
+        int(dsh_entry.get("calls", 0)) if isinstance(dsh_entry, dict) else 0
+    )
+    return int(snapshot.get("total_calls", 0)), dsh_calls
+
+
+async def _get_mcp_call_counts(app: Any) -> tuple[int, int]:
     """MCP 工具调用累计次数与其中 dsh 插件来源次数。
 
     公开营销位口径；计数器不可用时两者静默为 0。优先读 Redis 聚合
     （主/独立 MCP 双进程共享），未绑定或故障时由服务层回退本地 JSON。
     """
-    from backend.app.monitoring.mcp_redis_metrics import resolve_tool_call_metrics
-    from backend.app.monitoring.mcp_tools import DSH_PLUGIN_CLIENT
-
     try:
-        snapshot = await resolve_tool_call_metrics(request).snapshot()
-        clients = snapshot.get("clients")
-        dsh_entry = (
-            clients.get(DSH_PLUGIN_CLIENT) if isinstance(clients, dict) else None
-        )
-        dsh_calls = (
-            int(dsh_entry.get("calls", 0)) if isinstance(dsh_entry, dict) else 0
-        )
-        return int(snapshot.get("total_calls", 0)), dsh_calls
+        return await read_mcp_call_counts(app)
     except Exception:
         return 0, 0
 
@@ -538,7 +549,7 @@ async def _get_github_enrichment_progress(
 
 
 async def _get_dashboard_stats(
-    request: Request,
+    app: Any,
     *,
     user_statistics: UserStatisticsReader,
     document_statistics: DocumentStatisticsReader,
@@ -567,7 +578,7 @@ async def _get_dashboard_stats(
         user_statistics.get_today_registered_user_count
     )
     visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
+    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(app)
     return {
         "total_documents": sum(source_counts.values()),
         "source_counts": source_counts,
@@ -612,7 +623,7 @@ async def get_dashboard_summary(
         date=date, rank_snapshots=rank_snapshots, github_hot=github_hot
     )
     stats = await _get_dashboard_stats(
-        request,
+        request.app,
         user_statistics=user_statistics,
         document_statistics=document_statistics,
         catalog=catalog,
@@ -635,50 +646,74 @@ async def get_dashboard_live_stats(
 ):
     """首页统计带实时计数（10s 短缓存聚合并发访客的轮询）。
 
-    与 summary 统计卡片同一口径但不含排行数据；前端每 10s 轮询一次，
-    仅数字变化时滚筒动画滚动差位，无变化则静止。
-    响应 Cache-Control 由 @cache 装饰器输出 max-age=10（8e3c277 原设计）：
-    服务端缓存与前端轮询同频，浏览器侧短缓存同样 10s 到期，访客最多少见一拍。
+    与 summary 统计卡片同一口径但不含排行数据；实时主路径是
+    /dashboard/live-events SSE 推送，本接口保留为断流降级与外部兼容路径，
+    仅数字变化时前端滚筒动画滚动差位，无变化则静止。
+    响应 Cache-Control 由 @cache 装饰器输出 max-age=10（23c7ff6 事故修复：
+    短缓存聚合并发访客的兜底轮询，SSE 路径不经过该缓存）。
     """
-    if enrichment is not None:
-        source_counts, github_progress = await asyncio.gather(
-            asyncio.to_thread(document_statistics.get_source_counts),
-            _get_github_enrichment_progress(catalog, enrichment),
-        )
-        source_counts = {**source_counts, "github": github_progress["succeeded"]}
-    else:
-        source_counts = await _get_source_counts(document_statistics, catalog)
-        github_progress = {
-            "total": int(source_counts.get("github") or 0),
-            "succeeded": int(source_counts.get("github") or 0),
-            "failed": 0,
-            "unprocessable": 0,
-            "pending": 0,
-        }
-    total_documents = sum(source_counts.values())
-    registered_users = await asyncio.to_thread(user_statistics.get_user_count)
-    today_registered_users = await asyncio.to_thread(
-        user_statistics.get_today_registered_user_count
+    return await _get_dashboard_stats(
+        request.app,
+        user_statistics=user_statistics,
+        document_statistics=document_statistics,
+        catalog=catalog,
+        enrichment=enrichment,
+        visits=visits,
     )
-    user_count = registered_users + today_registered_users
-    today_new_documents = await asyncio.to_thread(document_statistics.get_today_document_count)
-    visit_stats = await _get_site_visit_stats(visits)
-    mcp_total_calls, mcp_dsh_calls = await _get_mcp_call_counts(request)
-    return {
-        "total_documents": total_documents,
-        "source_counts": source_counts,
-        "github_library_total": github_progress["succeeded"],
-        "github_enrichment": github_progress,
-        "registered_users": registered_users,
-        "today_registered_users": today_registered_users,
-        "user_count": user_count,
-        "today_new_documents": today_new_documents,
-        "today_unique_visitors": visit_stats.today_visits,
-        "today_visits": visit_stats.today_visits,
-        "total_visits": visit_stats.total_visits,
-        "mcp_total_calls": mcp_total_calls,
-        "mcp_dsh_calls": mcp_dsh_calls,
-    }
+
+
+def build_dashboard_live_stats_compute(app: Any) -> Callable[[], Awaitable[dict[str, Any]]]:
+    """装配 live-stats 广播器的重算闭包：与 REST 处理器同一口径、同一函数。
+
+    仓储/查询服务均为包裹全局连接池的无状态按次构造对象（与各 Depends 提供
+    函数同语义），在 lifespan 捕获一次即可；口径漂移风险由共享
+    _get_dashboard_stats 根除。
+    """
+    repositories = app.state.application_repositories
+
+    async def compute() -> dict[str, Any]:
+        return await _get_dashboard_stats(
+            app,
+            user_statistics=repositories.users,
+            document_statistics=repositories.documents,
+            catalog=get_project_catalog_query_service(),
+            enrichment=getattr(repositories, "github_enrichment", None),
+            visits=PostgresSiteVisitRepository(postgres_database),
+        )
+
+    return compute
+
+
+@router.get("/dashboard/live-events")
+async def get_dashboard_live_events(request: Request) -> StreamingResponse:
+    """首页实时计数 SSE 推送：首帧当前常驻值，数据变更时推送全量新值。
+
+    前端 EventSource 订阅，断线由浏览器按 retry 字段（3s）自动重连；无事件
+    时每 25s 发注释心跳，撑住回源链（本机 nginx/SSH 反隧）空闲超时并让断连
+    尽快在写入侧暴露。X-Accel-Buffering: no 防止 nginx 代理缓冲截断流。
+    """
+    broadcaster = getattr(request.app.state, "live_stats_broadcaster", None)
+    if broadcaster is None:
+        raise HTTPException(status_code=503, detail="live events unavailable")
+
+    async def event_stream() -> AsyncIterator[str]:
+        yield "retry: 3000\n\n"
+        async for payload in broadcaster.subscribe():
+            if await request.is_disconnected():
+                break
+            if payload is None:
+                yield ": hb\n\n"
+            else:
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/dashboard/snapshot-dates")
@@ -757,4 +792,5 @@ async def record_site_visit(
     """
     platform = classify_platform(request.headers.get("user-agent"))
     stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
+    live_stats_broadcaster.notify_live_stats_changed("site-visit")
     return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}

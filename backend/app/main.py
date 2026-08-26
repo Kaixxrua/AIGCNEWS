@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -37,6 +38,10 @@ from backend.app.api import (
     routes_x_media,
 )
 from backend.app.api.exception_handlers import register_exception_handlers
+from backend.app.api.routes_dashboard import (
+    build_dashboard_live_stats_compute,
+    read_mcp_call_counts,
+)
 from backend.app.core.app_version import resolve_app_version
 from backend.app.core.auth import hash_password, validate_jwt_secret
 from backend.app.core.config import settings
@@ -67,6 +72,10 @@ from backend.app.repositories.postgres_error_event_repository import (
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.auth.oauth.runtime_config import configure_oauth_settings_reader
 from backend.app.services.chat import attachment_service
+from backend.app.services.dashboard.live_stats_broadcaster import (
+    LiveStatsBroadcaster,
+    set_live_stats_broadcaster,
+)
 from backend.app.services.email.pool_config_provider import (
     configure_email_pool_settings_reader,
 )
@@ -136,6 +145,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     project_search_runtime: ApplicationProjectSearchRuntime | None = None
     rag_provider: RagChatServiceProvider | None = None
     semantic_warmup_task: asyncio.Task[object] | None = None
+    live_stats_task: asyncio.Task[None] | None = None
+    live_stats_broadcaster: LiveStatsBroadcaster | None = None
     redis_client: Redis | None = None
     operations_runtime: ApplicationOperationsRuntime | None = None
     model_provider_runtime: ApplicationModelProviderRuntime | None = None
@@ -150,6 +161,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.monitoring_runtime = None
     app.state.operations_runtime = None
     app.state.model_provider_runtime = None
+    app.state.live_stats_broadcaster = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
@@ -330,6 +342,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     redis_client = None
             logger.warning("[Startup] Redis cache init failed (non-fatal): %s", exc)
 
+        # 首页实时计数事件驱动分发：写路径 notify → 防抖重算 → Redis 常驻值
+        # swap + SSE 广播；Redis 未就绪时以纯内存态运行（重启后首请求重算）。
+        # compute 与 /dashboard/live-stats REST 同函数同口径，杜绝投影漂移。
+        live_stats_broadcaster = LiveStatsBroadcaster(
+            getattr(app.state, "redis", None),
+            build_dashboard_live_stats_compute(app),
+            mcp_probe=partial(read_mcp_call_counts, app),
+        )
+        app.state.live_stats_broadcaster = live_stats_broadcaster
+        set_live_stats_broadcaster(live_stats_broadcaster)
+        live_stats_task = asyncio.create_task(live_stats_broadcaster.run())
+
         scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
         job_configs = {}
         if scheduler_enabled:
@@ -374,6 +398,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             semantic_warmup_task,
             name="Project semantic search warmup",
         )
+        await _cancel_background_task(
+            live_stats_task,
+            name="Live stats broadcaster",
+        )
+        if live_stats_broadcaster is not None:
+            try:
+                await live_stats_broadcaster.aclose()
+            except Exception as exc:
+                logger.warning(
+                    "[Shutdown] Live stats broadcaster close failed (non-fatal): %s", exc
+                )
+            finally:
+                set_live_stats_broadcaster(None)
+                app.state.live_stats_broadcaster = None
         if project_search_runtime is not None:
             try:
                 await project_search_runtime.close()

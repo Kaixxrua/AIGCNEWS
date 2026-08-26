@@ -195,6 +195,14 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     }
   }
 
+  /* SSE 推送/降级轮询的全量计数入口：与 refreshLiveStats 同守卫、同合并语义；
+     数字变化由 RollingNumber 差位滚动承接。 */
+  const applyLiveStats = (incoming: Stats) => {
+    if (loading.value || tabLoading.value || isViewingHistory.value) return
+    stats.value = mergeLiveStats(stats.value, incoming)
+    options.updateStatSources(stats.value)
+  }
+
   onMounted(async () => {
     const { controller, generation } = beginDashboardRequest()
     try {
@@ -281,5 +289,6 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     onDateChange,
     hasData,
     refreshLiveStats,
+    applyLiveStats,
   }
 }
