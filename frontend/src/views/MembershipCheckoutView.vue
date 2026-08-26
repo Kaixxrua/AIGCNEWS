@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type FunctionalComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Check, LoaderCircle, QrCode } from 'lucide-vue-next'
+import { WeChatIcon } from '@/components/icons/WeChatIcon'
+import { AlipayIcon } from '@/components/icons/AlipayIcon'
+import { PayPalIcon } from '@/components/icons/PayPalIcon'
 import { paymentApi } from '@/services/payments/paymentApi'
 import { openPaymentPageInNewTab } from '@/services/payments/redirect'
 import { usePaymentCheckout } from '@/composables/usePaymentCheckout'
@@ -60,6 +63,13 @@ const CHANNEL_LABEL_KEYS: Record<PaymentChannel, string> = {
   wechat_native: 'membership.checkout.channelWechat',
   alipay_page: 'membership.checkout.channelAlipay',
   overseas_redirect: 'membership.checkout.channelOverseas',
+}
+
+// 渠道品牌图标（品牌色锁定在图标组件内）：微信绿 / 支付宝蓝 / PayPal 蓝
+const CHANNEL_ICONS: Record<PaymentChannel, FunctionalComponent> = {
+  wechat_native: WeChatIcon,
+  alipay_page: AlipayIcon,
+  overseas_redirect: PayPalIcon,
 }
 
 // 语言门控：只渲染/只默认选中当前语言可见的渠道集
@@ -214,7 +224,10 @@ const submit = () => {
             :disabled="!channelAvailable(channel)"
             @click="selectChannel(channel)"
           >
-            <span>{{ t(CHANNEL_LABEL_KEYS[channel]) }}</span>
+            <span class="checkout-channel-main">
+              <component :is="CHANNEL_ICONS[channel]" class="checkout-channel-icon" />
+              <span>{{ t(CHANNEL_LABEL_KEYS[channel]) }}</span>
+            </span>
             <span v-if="!channelAvailable(channel)" class="checkout-channel-soon">
               {{ t('membership.checkout.channelSoon') }}
             </span>
@@ -393,6 +406,19 @@ const submit = () => {
 
 .checkout-channel + .checkout-channel {
   margin-top: 8px;
+}
+
+.checkout-channel-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.checkout-channel-icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
 }
 
 .checkout-channel:hover:not(:disabled) {

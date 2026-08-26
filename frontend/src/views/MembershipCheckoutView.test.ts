@@ -204,6 +204,23 @@ describe('MembershipCheckoutView', () => {
     expect(channels[1].text()).toContain('即将开放')
   })
 
+  it('renders each channel brand icon with its locked brand color', async () => {
+    const { wrapper } = await mountView()
+    const channels = wrapper.findAll('.checkout-channel')
+
+    // 微信绿 / 支付宝蓝：品牌图标随渠道渲染，颜色由图标组件锁官方品牌色
+    expect(channels[0].find('svg.checkout-channel-icon').exists()).toBe(true)
+    expect(channels[0].find('svg.checkout-channel-icon').attributes('fill')).toBe('#07C160')
+    expect(channels[1].find('svg.checkout-channel-icon').attributes('fill')).toBe('#1677FF')
+
+    // 英文界面海外槽 → PayPal 蓝
+    i18n.global.locale.value = 'en-US'
+    await flushPromises()
+    const overseas = wrapper.find('.checkout-channel svg.checkout-channel-icon')
+    expect(overseas.exists()).toBe(true)
+    expect(overseas.attributes('fill')).toBe('#003087')
+  })
+
   it('shows only the overseas channel in English, greyed out when unconfigured', async () => {
     i18n.global.locale.value = 'en-US'
     const { wrapper } = await mountView()
