@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { MailPlus, MessageCircle, RefreshCw, Send, Trash2, Webhook } from 'lucide-vue-next'
+import { MailPlus, MessageCircle, RefreshCw, Rss, Send, Trash2, Webhook } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
@@ -66,6 +66,17 @@ const confirmRemoveChannel = (channel: PushChannel): void => {
 const confirmRemoveSubscription = (subscription: UserSubscription): void => {
   if (window.confirm(t('subscriptions.subs.deleteConfirm'))) {
     void ctl.removeSubscription(subscription)
+  }
+}
+
+// RSS：会员复制带 token 的全文链接，免费用户复制公开摘要链接（后端按档位分流，
+// 免费档拿不到全文——member.xml 对非会员 fail-closed 403）。
+const copyRss = (source: UserSubscription['source']): void => {
+  void ctl.copyRssLink(source, authStore.isMember)
+}
+const confirmRotateFeedToken = (): void => {
+  if (window.confirm(t('subscriptions.subs.rssResetConfirm'))) {
+    void ctl.rotateFeedToken()
   }
 }
 
@@ -303,7 +314,16 @@ onMounted(() => {
         <section class="stagger-enter glass-card flex flex-col gap-4 p-4" style="animation-delay: 0.1s">
           <div class="flex items-center justify-between">
             <h2 class="text-base font-bold text-stone-800">{{ t('subscriptions.subs.title') }}</h2>
-            <span class="text-2xs text-stone-400">
+            <span class="flex items-center gap-2 text-2xs text-stone-400">
+              <button
+                v-if="authStore.isMember"
+                type="button"
+                class="rounded-[4px] border border-stone-200 px-2 py-1 font-bold text-stone-500 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
+                :disabled="ctl.rssBusy.value"
+                @click="confirmRotateFeedToken"
+              >
+                {{ t('subscriptions.subs.rssReset') }}
+              </button>
               {{ t('subscriptions.subs.count', { count: ctl.subscriptions.value.length }) }}
             </span>
           </div>
@@ -372,6 +392,15 @@ onMounted(() => {
                 </div>
               </div>
               <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  class="rounded-[4px] border border-stone-200 p-1.5 text-stone-500 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
+                  :title="t('subscriptions.subs.rssCopy')"
+                  :disabled="ctl.rssBusy.value"
+                  @click="copyRss(subscription.source)"
+                >
+                  <Rss class="h-3.5 w-3.5" />
+                </button>
                 <button
                   type="button"
                   class="rounded-[4px] border border-stone-200 px-2 py-1 text-2xs font-bold text-stone-600 transition-colors hover:border-ink disabled:opacity-40"

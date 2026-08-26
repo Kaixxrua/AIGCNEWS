@@ -27,6 +27,7 @@ from backend.app.repositories.email_pool_settings_repository import (
 )
 from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
+from backend.app.repositories.feed_token_repository import FeedTokenRepository
 from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
@@ -302,6 +303,12 @@ def get_mcp_access_token_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> McpAccessTokenRepository:
     return repositories.mcp_access_tokens
+
+
+def get_feed_token_repository(
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> FeedTokenRepository:
+    return repositories.feed_tokens
 
 
 def get_user_account_repository(

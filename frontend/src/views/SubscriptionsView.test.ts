@@ -32,6 +32,8 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     subscriptionFormBusy: ref(false),
     busyChannelIds: ref(new Set()),
     busySubscriptionIds: ref(new Set()),
+    feedToken: ref(''),
+    rssBusy: ref(false),
     bindableChannels: computed(() =>
       (ctlBox.current?.channels.value ?? []).filter((c: any) => c.verified && c.status === 'active'),
     ),
@@ -53,6 +55,9 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     submitSubscription: vi.fn(),
     toggleSubscription: vi.fn(),
     removeSubscription: vi.fn(),
+    rssLinkFor: vi.fn(),
+    copyRssLink: vi.fn(),
+    rotateFeedToken: vi.fn(),
   }
   return { useSubscriptionsController: controllerSpy.mockReturnValue(ctlBox.current) }
 })
@@ -114,6 +119,9 @@ const i18n = createI18n({
           resume: '恢复',
           delete: '删除',
           deleteConfirm: '确定删除该订阅？',
+          rssCopy: '复制 RSS 订阅链接',
+          rssReset: '重置 RSS 链接',
+          rssResetConfirm: '重置后旧 RSS 链接立即失效，需要到阅读器里换成新链接。确定重置？',
           empty: '还没有订阅',
         },
         sources: { all: '全部', arxiv: 'arXiv 论文', dailyhot: '全网热榜' },
@@ -128,6 +136,8 @@ const i18n = createI18n({
           'discord-created': 'Discord Webhook 已验证并添加',
           'telegram-link-created': 'Telegram 链接已打开，请在 Telegram 中完成连接',
           'telegram-connected': 'Telegram 已连接',
+          'rss-copied': 'RSS 链接已复制，粘贴到阅读器即可订阅',
+          'rss-rotated': 'RSS 链接已重置，旧链接已失效',
         },
         errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。', 'vip-required': 'Telegram 和 Discord 渠道仅对有效会员开放。' },
       },
@@ -201,6 +211,8 @@ beforeEach(() => {
     ctl().submitSubscription,
     ctl().toggleSubscription,
     ctl().removeSubscription,
+    ctl().copyRssLink,
+    ctl().rotateFeedToken,
   ]) {
     fn.mockClear()
   }
@@ -337,6 +349,50 @@ describe('SubscriptionsView interactions', () => {
 
     expect(wrapper.findAll('button').some((button) => button.attributes('title') === '发送测试')).toBe(false)
     expect(wrapper.text()).toContain('已停用')
+  })
+
+  it('copies the RSS link for a subscription row with the caller membership flag', async () => {
+    ctl().subscriptions.value = [subscription]
+    authBox.isMember = true
+    const wrapper = await mountView()
+
+    const rssButton = wrapper.findAll('button').find((button) => button.attributes('title') === '复制 RSS 订阅链接')
+    expect(rssButton).toBeDefined()
+    await rssButton!.trigger('click')
+    // 视图只透传 source 与会员标记；URL 形态由 controller 决定
+    expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', true)
+  })
+
+  it('passes isMember=false when a free user copies the RSS link', async () => {
+    ctl().subscriptions.value = [subscription]
+    authBox.isMember = false
+    const wrapper = await mountView()
+
+    const rssButton = wrapper.findAll('button').find((button) => button.attributes('title') === '复制 RSS 订阅链接')
+    await rssButton!.trigger('click')
+    expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', false)
+  })
+
+  it('shows the RSS reset entry only to members and requires confirmation', async () => {
+    ctl().subscriptions.value = [subscription]
+    authBox.isMember = false
+    const freeWrapper = await mountView()
+    expect(freeWrapper.text()).not.toContain('重置 RSS 链接')
+    freeWrapper.unmount()
+
+    // authStore mock 非响应式：会员形态须在挂载前就位（与 quota 测试同法）
+    authBox.isMember = true
+    const wrapper = await mountView()
+    const resetButton = wrapper.findAll('button').find((button) => button.text() === '重置 RSS 链接')
+    expect(resetButton).toBeDefined()
+
+    confirmSpy.mockReturnValue(false)
+    await resetButton!.trigger('click')
+    expect(ctl().rotateFeedToken).not.toHaveBeenCalled()
+
+    confirmSpy.mockReturnValue(true)
+    await resetButton!.trigger('click')
+    expect(ctl().rotateFeedToken).toHaveBeenCalledTimes(1)
   })
 })
 

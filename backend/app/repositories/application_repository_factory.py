@@ -21,6 +21,7 @@ from backend.app.repositories.email_pool_settings_repository import (
 )
 from backend.app.repositories.error_event_repository import ErrorEventRepository
 from backend.app.repositories.evaluation_repository import EvaluationRepository
+from backend.app.repositories.feed_token_repository import FeedTokenRepository
 from backend.app.repositories.mcp_access_token_repository import (
     McpAccessTokenRepository,
 )
@@ -55,6 +56,9 @@ from backend.app.repositories.postgres_error_event_repository import (
 )
 from backend.app.repositories.postgres_evaluation_repository import (
     PostgresEvaluationRepository,
+)
+from backend.app.repositories.postgres_feed_token_repository import (
+    PostgresFeedTokenRepository,
 )
 from backend.app.repositories.postgres_github_project_semantic_repository import (
     PostgresGitHubProjectSemanticSourceRepository,
@@ -229,6 +233,7 @@ class ApplicationRepositories:
     error_events: ErrorEventRepository
     mcp_server_configs: McpServerConfigRepository
     mcp_access_tokens: McpAccessTokenRepository
+    feed_tokens: FeedTokenRepository
     github_ingestion: GitHubProjectIngestionRepository
     github_enrichment: GitHubProjectEnrichmentRepository
     tool_website_enrichment: ToolWebsiteEnrichmentRepository
@@ -314,6 +319,7 @@ def create_application_repositories(
         error_events=PostgresErrorEventRepository(postgres),
         mcp_server_configs=PostgresMcpServerConfigRepository(postgres),
         mcp_access_tokens=PostgresMcpAccessTokenRepository(postgres),
+        feed_tokens=PostgresFeedTokenRepository(postgres),
         github_ingestion=PostgresGitHubProjectIngestionRepository(postgres),
         github_enrichment=PostgresGitHubProjectEnrichmentRepository(postgres),
         tool_website_enrichment=PostgresToolWebsiteEnrichmentRepository(postgres),

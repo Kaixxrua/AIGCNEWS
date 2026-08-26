@@ -86,6 +86,25 @@
 `PUSH_CHANNEL_ENCRYPTION_KEY_VERSION`。密钥缺失或非法时含凭据的渠道类型拒绝处理
 secret，绝不降级为明文；email 渠道无凭据不受影响。生成方式见 `.env.example`。
 
+## RSS feed token（迁移 0063）
+
+会员全文 RSS（`GET /api/feeds/member.xml?token=…`）使用独立于 MCP token 的凭证域
+`user_feed_tokens`：每用户至多一个活跃 token（partial unique index 强制），永不过期、
+无 scopes；访问控制完全在请求时判定（token 未吊销 + 用户未禁用 + 生效会员档位），
+免费用户可先持证、升级后同一链接即刻生效。明文以 AES-256-GCM 密封落库供随时回显
+（库里永不出现明文），密钥来自独立密钥域 `FEED_TOKEN_ENCRYPTION_KEY` /
+`FEED_TOKEN_ENCRYPTION_KEY_VERSION`（不复用推送渠道密钥）。
+
+| 端点 | 语义 |
+| --- | --- |
+| `GET /api/auth/me/feed-token` | 获取（或首次签发）当前用户的 feed token，幂等返回同一枚 |
+| `POST /api/auth/me/feed-token/rotate` | 重新生成：单事务吊销旧 token 并签发新 token，旧 RSS 链接即刻失效；IP 限速 5 次/600 秒 |
+
+前端「我的订阅」页每个订阅行提供「复制 RSS 链接」：会员得到带 token 的
+`member.xml?token=…[&source=…]` 链接，免费用户得到公开单源链接；卡片级另有
+「重置 RSS 链接」入口（confirm 后调用 rotate）。公开 feed 面向中文读者：有中文译文的
+条目 description 用译文截断（X 源标题亦用译文截断），全文为会员权益。
+
 ## 代码位置
 
 - 服务层：`backend/app/services/push/`（`channel_service.py`、`subscription_service.py`、`dispatch_service.py`、`webhook_service.py`、`secrets.py`、`errors.py`）

@@ -29,8 +29,25 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 62
-    assert migrations[-1].filename == "0062_telegram_settings.sql"
+    assert migrations[-1].version == 63
+    assert migrations[-1].filename == "0063_user_feed_tokens.sql"
+
+
+def test_user_feed_tokens_migration_is_idempotent_and_hash_only() -> None:
+    sql = (MIGRATIONS_DIR / "0063_user_feed_tokens.sql").read_text(encoding="utf-8")
+
+    # 会员 RSS feed token：独立于 user_mcp_tokens 的凭证域；SHA-256 hash 唯一 +
+    # 每用户至多一个活跃 token 的 partial unique index；明文只以 AES-GCM 密封
+    # 形态落库（token_encrypted），永不明文列；无 expires_at（永不过期，访问
+    # 控制靠 revoked_at/disabled/档位请求时判定）。全量幂等。
+    assert "CREATE TABLE IF NOT EXISTS user_feed_tokens" in sql
+    assert "REFERENCES users(id) ON DELETE CASCADE" in sql
+    assert "token_hash CHAR(64) NOT NULL" in sql
+    assert "token_encrypted TEXT NOT NULL" in sql
+    assert "uq_user_feed_tokens_active_user" in sql
+    assert "WHERE revoked_at IS NULL" in sql
+    # 列定义无 expires_at（注释中的设计说明除外）
+    assert "\n    expires_at" not in sql
 
 
 def test_telegram_settings_migration_is_singleton_and_idempotent() -> None:

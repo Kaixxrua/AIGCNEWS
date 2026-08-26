@@ -15,6 +15,7 @@ import {
 } from '@/features/subscriptions/subscriptionsModel'
 import { subscriptionsApi } from '@/services/subscriptions/subscriptionsApi'
 import type { SubscriptionsApi } from '@/services/subscriptions/subscriptionsApi'
+import { copyToClipboard } from '@/composables/useClipboard'
 
 interface ApiErrorLike {
   config?: {
@@ -75,6 +76,10 @@ export function useSubscriptionsController(
 
   const busyChannelIds = ref<Set<number>>(new Set())
   const busySubscriptionIds = ref<Set<number>>(new Set())
+
+  // RSS feed token：完整 token 只活在内存（不落 DOM/存储），供拼装会员 RSS 链接
+  const feedToken = ref('')
+  const rssBusy = ref(false)
 
   const bindableChannels = computed(() => channels.value.filter(isChannelBindable))
   const canSubmitEmail = computed(
@@ -322,6 +327,54 @@ export function useSubscriptionsController(
     }
   }
 
+  const ensureFeedToken = async (): Promise<string> => {
+    if (feedToken.value) return feedToken.value
+    const info = await api.getFeedToken()
+    feedToken.value = info.token
+    return info.token
+  }
+
+  // 会员：带 token 的全文 member.xml（source=all 时省略参数取全量）；
+  // 免费用户：公开摘要 feed（无 token，可直接进阅读器/边缘缓存）。
+  const rssLinkFor = async (source: SubscriptionSource, isMember: boolean): Promise<string> => {
+    const origin = window.location.origin
+    if (isMember) {
+      const token = encodeURIComponent(await ensureFeedToken())
+      if (source === 'all') return `${origin}/api/feeds/member.xml?token=${token}`
+      return `${origin}/api/feeds/member.xml?token=${token}&source=${encodeURIComponent(source)}`
+    }
+    if (source === 'all') return `${origin}/api/feed.xml`
+    return `${origin}/api/feeds/${encodeURIComponent(source)}.xml`
+  }
+
+  const copyRssLink = async (source: SubscriptionSource, isMember: boolean): Promise<boolean> => {
+    if (rssBusy.value) return false
+    rssBusy.value = true
+    try {
+      return await _run(async () => {
+        await copyToClipboard(await rssLinkFor(source, isMember))
+        notice.value = 'rss-copied'
+      })
+    } finally {
+      rssBusy.value = false
+    }
+  }
+
+  // 重新生成即吊销旧 token：旧 RSS 链接即刻 401，内存中的 token 同步换新
+  const rotateFeedToken = async (): Promise<boolean> => {
+    if (rssBusy.value) return false
+    rssBusy.value = true
+    try {
+      return await _run(async () => {
+        const info = await api.rotateFeedToken()
+        feedToken.value = info.token
+        notice.value = 'rss-rotated'
+      })
+    } finally {
+      rssBusy.value = false
+    }
+  }
+
   return {
     channels,
     subscriptions,
@@ -342,6 +395,8 @@ export function useSubscriptionsController(
     subscriptionFormBusy,
     busyChannelIds,
     busySubscriptionIds,
+    feedToken,
+    rssBusy,
     bindableChannels,
     canSubmitEmail,
     canSubmitOtp,
@@ -361,6 +416,9 @@ export function useSubscriptionsController(
     submitSubscription,
     toggleSubscription,
     removeSubscription,
+    rssLinkFor,
+    copyRssLink,
+    rotateFeedToken,
   }
 }
 

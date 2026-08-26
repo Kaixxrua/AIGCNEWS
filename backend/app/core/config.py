@@ -256,6 +256,33 @@ class Settings(BaseSettings):
             )
         return value
 
+    # 会员 RSS feed token 静态加密（token 明文密封落库供回显，永不存明文）。
+    # 独立密钥域：不复用 push_channel/x_credential 等密钥，避免任一域轮换时
+    # 跨域连锁失效（现有 secret box 无多版本解密环）。缺失或非法时 feed token
+    # 端点拒绝签发/回显（503），不降级为明文。
+    feed_token_encryption_key: str = ""
+    feed_token_encryption_key_version: str = "v1"
+
+    @field_validator("feed_token_encryption_key_version")
+    @classmethod
+    def _validate_feed_token_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "feed_token_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("feed_token_encryption_key")
+    @classmethod
+    def _validate_feed_token_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "feed_token_encryption_key must not use the example placeholder"
+            )
+        return value
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_user: str = ""

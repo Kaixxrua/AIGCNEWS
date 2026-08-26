@@ -2,11 +2,13 @@
 
 覆盖：
   - 纯函数：item 渲染/跳过规则、回链策略（arxiv 站内、其余原文）、
-    全文模式追加译文、脏时间串容错、member source 参数解析、
+    全文模式追加译文、公开条目优先中文译文截断（X 源标题亦用译文）、
+    脏时间串容错、member source 参数解析、
     项目库热榜条目 → feed 行的字段映射；
   - 路由：公开综合/单源 feed 的缓存头与归并排序、非法源 404、
     github 源由站内今日热榜供稿（热榜不可用/为空时回退 documents 池）、
-    会员 feed 的 401/403/200 档位门禁、noindex/no-store 响应头、
+    会员 feed 的 401/403/200 档位门禁（独立 RSS feed token，非 MCP token）、
+    noindex/no-store 响应头、
     /feeds/member.xml 不被 {source} 路径参数捕获（路由顺序锁定）。
 """
 
@@ -23,12 +25,14 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.dependencies import (
     get_document_repository,
-    get_mcp_access_token_repository,
+    get_feed_token_repository,
     get_project_catalog_query_service,
 )
 from backend.app.api.routes_feed import (
     _INVALID_TOKEN_DETAIL,
     _MEMBER_ONLY_DETAIL,
+    _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT,
+    _PUBLIC_TITLE_TRANSLATION_LIMIT,
     _parse_member_sources,
     _parse_published_at,
     _project_to_feed_row,
@@ -163,6 +167,72 @@ def test_build_feed_item_full_mode_appends_translation_once() -> None:
     assert same is not None and same.count("摘要") == 1
 
 
+def _item_section(item: str, tag: str) -> str:
+    return item.split(f"<{tag}>", 1)[1].split(f"</{tag}>", 1)[0]
+
+
+def test_public_feed_item_description_prefers_truncated_translation() -> None:
+    # 公开条目面向中文读者：有译文时 description 为译文截断（200 上限），
+    # 原英文摘要不进公开 description；无译文回退原摘要
+    row = _doc("a1", summary="English summary", translation_zh="模型" * 150)
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    body = _item_section(item, "description").split("\n\n📮", 1)[0]
+    assert body.endswith("…")
+    assert len(body) <= _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT + 1
+    assert "English summary" not in body
+
+    no_translation = build_feed_item(_doc("a2", summary="English summary"), "https://aigcnews.cn")
+    assert no_translation is not None
+    assert _item_section(no_translation, "description").startswith("English summary\n\n📮")
+
+
+def test_public_feed_item_title_uses_translation_only_for_x_source() -> None:
+    # X 源「标题」即推文原文（英文为主）：有译文时标题换成译文截断；
+    # 其余源保持原 title（榜单/媒体源标题本身面向中文读者或为仓库名）
+    x_item = build_feed_item(
+        _doc("x1", source="x", title="Original English tweet", translation_zh="推文的中文译文"),
+        "https://aigcnews.cn",
+    )
+    assert x_item is not None
+    assert _item_section(x_item, "title") == "推文的中文译文"
+
+    arxiv_item = build_feed_item(
+        _doc("a1", title="English paper title", translation_zh="论文中文译文"),
+        "https://aigcnews.cn",
+    )
+    assert arxiv_item is not None
+    assert _item_section(arxiv_item, "title") == "English paper title"
+
+    # X 源无译文：回退原标题
+    bare_x = build_feed_item(_doc("x2", source="x", title="Untranslated tweet"), "https://aigcnews.cn")
+    assert bare_x is not None
+    assert _item_section(bare_x, "title") == "Untranslated tweet"
+
+
+def test_public_feed_item_x_title_truncates_long_translation() -> None:
+    row = _doc("x1", source="x", title="tweet", translation_zh="推" * 120)
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    title = _item_section(item, "title")
+    assert title.endswith("…")
+    assert len(title) <= _PUBLIC_TITLE_TRANSLATION_LIMIT + 1
+
+
+def test_member_feed_item_keeps_original_title_and_full_translation() -> None:
+    # 会员条目不截断、不换标题：原标题 + 完整译文全文
+    long_translation = "译" * 300
+    row = _doc(
+        "x1", source="x", title="Original tweet",
+        summary="English summary", translation_zh=long_translation,
+    )
+    item = build_feed_item(row, "https://aigcnews.cn", full=True)
+    assert item is not None
+    assert _item_section(item, "title") == "Original tweet"
+    assert long_translation in item
+    assert "…" not in item
+
+
 def test_parse_published_at_tolerates_dirty_and_naive_values() -> None:
     assert _parse_published_at("2026-08-18T08:00:00+00:00") is not None
     assert _parse_published_at("2026-08-18 08:00:00") is not None  # naive 按 UTC
@@ -263,7 +333,7 @@ def _client(
         get_project_catalog_query_service: lambda: catalog if catalog is not None else _catalog(),
     }
     if tokens is not None:
-        overrides[get_mcp_access_token_repository] = lambda: tokens
+        overrides[get_feed_token_repository] = lambda: tokens
     app.dependency_overrides.update(overrides)
     return TestClient(app)
 
@@ -430,7 +500,7 @@ def test_member_feed_uses_hot_board_for_github_source() -> None:
     documents = MagicMock()
     documents.list_recent_by_source.return_value = []
     tokens = MagicMock()
-    tokens.get_user_by_mcp_token_hash.return_value = {
+    tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "member",
     }
@@ -458,11 +528,11 @@ def test_member_feed_requires_token_and_is_not_captured_by_source_route() -> Non
 def test_member_feed_rejects_invalid_token_and_free_tier() -> None:
     documents = MagicMock()
     tokens = MagicMock()
-    tokens.get_user_by_mcp_token_hash.return_value = None
+    tokens.get_user_by_feed_token_hash.return_value = None
     client = _client(documents=documents, tokens=tokens)
     assert client.get("/api/feeds/member.xml?token=bad").status_code == 401
 
-    tokens.get_user_by_mcp_token_hash.return_value = {
+    tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "free",
     }
@@ -477,7 +547,7 @@ def test_member_feed_returns_full_content_for_member() -> None:
         _doc("a1", translation_zh="中文译文", published_at=_iso_hours_ago(3))
     ]
     tokens = MagicMock()
-    tokens.get_user_by_mcp_token_hash.return_value = {
+    tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "member",
     }
@@ -497,7 +567,7 @@ def test_member_feed_source_combination_limits_queried_sources() -> None:
     documents = MagicMock()
     documents.list_recent_by_source.return_value = []
     tokens = MagicMock()
-    tokens.get_user_by_mcp_token_hash.return_value = {
+    tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "member",
     }

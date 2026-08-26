@@ -212,6 +212,11 @@ def hash_mcp_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def hash_feed_token(token: str) -> str:
+    """Return the stable SHA-256 digest stored for a member RSS feed token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def get_mcp_access_token_authenticator(request: Request):
     """Return the token repository only when Bearer authentication is attempted."""
     authorization = request.headers.get("authorization", "")

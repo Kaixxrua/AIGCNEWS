@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import secrets
@@ -8,22 +9,30 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from psycopg import errors as pg_errors
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from backend.app.api.dependencies import (
+    get_feed_token_repository,
     get_mcp_access_token_repository,
     get_user_account_repository,
 )
 from backend.app.core.auth import (
     RequireUser,
     create_access_token,
+    hash_feed_token,
     hash_mcp_token,
     hash_password,
     verify_password,
 )
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
+from backend.app.repositories.feed_token_repository import FeedTokenRepository
 from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
+from backend.app.repositories.postgres_feed_token_repository import (
+    FeedTokenSecretError,
+    build_feed_token_secret_box,
+)
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
@@ -627,6 +636,104 @@ async def delete_mcp_token(
     if not deleted:
         raise HTTPException(status_code=404, detail="MCP Token 不存在")
     return {"deleted": True, "id": token_id}
+
+
+# ---------------------------------------------------------------- RSS feed token
+
+# 重新生成是吊销旧凭证的敏感操作，限速防脚本化刷量（窗口与上面认证端点同）
+_FEED_TOKEN_ROTATE_RATE_LIMIT = 5
+
+
+def _new_feed_token_material() -> dict[str, str]:
+    """生成新 feed token 并密封明文；密钥未配置/非法时抛 FeedTokenSecretError。
+
+    绝不把明文落库：库里只有 SHA-256 hash 与 AES-256-GCM 密封信封。
+    """
+    token = "aigc_feed_" + secrets.token_urlsafe(32)
+    secret_box = build_feed_token_secret_box()
+    if secret_box is None:
+        raise FeedTokenSecretError("feed token 加密密钥未配置")
+    return {
+        "token": token,
+        "token_hash": hash_feed_token(token),
+        "token_hint": f"{token[:14]}...{token[-4:]}",
+        "token_encrypted": json.dumps(secret_box.seal(token), ensure_ascii=False),
+    }
+
+
+def _feed_token_payload(item: dict[str, Any]) -> dict[str, Any]:
+    """对外载荷：完整 token（供拼 RSS 链接）+ hint + 是否本次新建。不含 URL，
+    前端用 window.location.origin 自行拼装（避免部署基址漂移写进库侧契约）。"""
+    return {
+        "token": item["token"],
+        "token_hint": item["token_hint"],
+        "created": bool(item.get("created")),
+        "created_at": item.get("created_at"),
+    }
+
+
+@router.get("/auth/me/feed-token", summary="获取（或首次签发）当前用户的 RSS feed token")
+async def get_feed_token(
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: FeedTokenRepository = Depends(get_feed_token_repository),
+) -> dict[str, Any]:
+    """每用户一个永不过期的 feed token，所有 RSS 渠道共用；重复调用返回同一枚。"""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        material = _new_feed_token_material()
+        item = await asyncio.to_thread(
+            repository.get_or_create_feed_token,
+            user_id=_user_id(current_user),
+            token_hash=material["token_hash"],
+            token_hint=material["token_hint"],
+            token_encrypted=material["token_encrypted"],
+        )
+    except FeedTokenSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RSS token 服务未配置加密密钥",
+        ) from exc
+    return _feed_token_payload(item)
+
+
+@router.post(
+    "/auth/me/feed-token/rotate",
+    summary="重新生成 RSS feed token（旧 token 立即吊销）",
+)
+async def rotate_feed_token(
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: FeedTokenRepository = Depends(get_feed_token_repository),
+) -> dict[str, Any]:
+    """泄漏自愈入口：单事务吊销旧 token 并签发新 token，旧 RSS 链接即刻失效。"""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.feed_token_rotate", limit=_FEED_TOKEN_ROTATE_RATE_LIMIT
+    )
+    try:
+        material = _new_feed_token_material()
+        item = await asyncio.to_thread(
+            repository.rotate_feed_token,
+            user_id=_user_id(current_user),
+            token_hash=material["token_hash"],
+            token_hint=material["token_hint"],
+            token_encrypted=material["token_encrypted"],
+        )
+    except FeedTokenSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RSS token 服务未配置加密密钥",
+        ) from exc
+    except pg_errors.UniqueViolation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="RSS token 生成冲突，请重试",
+        ) from exc
+    return _feed_token_payload(item)
 
 
 @router.get("/auth/me", summary="获取当前登录用户信息")

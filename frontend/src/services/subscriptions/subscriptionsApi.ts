@@ -9,6 +9,14 @@ import type {
   TelegramLinkAttempt,
 } from '@/features/subscriptions/subscriptionsModel'
 
+// 与后端 /auth/me/feed-token 载荷同形：完整 token 供拼 RSS 链接，hint 供展示
+export interface FeedTokenInfo {
+  token: string
+  token_hint: string
+  created: boolean
+  created_at: string | null
+}
+
 export interface SubscriptionsApi {
   listChannels(): Promise<PushChannel[]>
   createEmailChannel(email: string): Promise<PushChannel>
@@ -31,6 +39,8 @@ export interface SubscriptionsApi {
     status: SubscriptionStatus,
   ): Promise<UserSubscription>
   deleteSubscription(subscriptionId: number): Promise<void>
+  getFeedToken(): Promise<FeedTokenInfo>
+  rotateFeedToken(): Promise<FeedTokenInfo>
 }
 
 export const subscriptionsApi: SubscriptionsApi = {
@@ -109,5 +119,13 @@ export const subscriptionsApi: SubscriptionsApi = {
 
   async deleteSubscription(subscriptionId: number): Promise<void> {
     await api.delete(`/push/me/subscriptions/${encodeURIComponent(subscriptionId)}`)
+  },
+
+  async getFeedToken(): Promise<FeedTokenInfo> {
+    return (await api.get('/auth/me/feed-token')).data
+  },
+
+  async rotateFeedToken(): Promise<FeedTokenInfo> {
+    return (await api.post('/auth/me/feed-token/rotate')).data
   },
 }

@@ -3,15 +3,18 @@
 端点列表：
   GET  /api/feed.xml                → 综合 feed（全部源按发布时间归并）
   GET  /api/feeds/{source}.xml      → 单源 feed（arxiv/github/news/…）
-  GET  /api/feeds/member.xml        → 会员全文 feed（?token= 复用 MCP access token，
+  GET  /api/feeds/member.xml        → 会员全文 feed（?token= 用独立 RSS feed token，
                                       ?source=a,b 自由组合；非会员 fail-closed 403）
 
 设计要点：
-  - 公开 feed 只出摘要 + 回链（arxiv 指站内阅读页，其余源指原文链接），
-    全文是会员权益；每条摘要尾部带一行会员订阅钩子（指向 /membership），
-    会员 feed 不带。Cache-Control 交双边缘缓存，回源压力近零。
-  - 会员 feed 复用 user_mcp_tokens 鉴权（hash_mcp_token → token→user→tier），
-    响应 noindex + private/no-store——带 token 的 URL 绝不进边缘缓存。
+  - 公开 feed 面向中文读者：有中文译文的条目，description 用译文截断（X 源
+    标题也用译文截断），无译文回退原摘要；只出摘要 + 回链（arxiv 指站内
+    阅读页，其余源指原文链接），全文是会员权益；每条摘要尾部带一行会员
+    订阅钩子（指向 /membership），会员 feed 不带。Cache-Control 交双边缘缓存。
+  - 会员 feed 用独立的 user_feed_tokens 鉴权（hash_feed_token → token→user
+    →请求时 tier 判定），与 MCP token 完全分离；token 永不过期、重新生成
+    即吊销旧 token。响应 noindex + private/no-store——带 token 的 URL 绝不
+    进边缘缓存。
   - github 源由站内项目库「今日暴涨 top50」热榜供稿（scope=today + hot 排序，
     与 /projects 页同口径），不镜像 trending 抓取的 documents 池；
     热榜查询失败或为空时回退 documents 池兜底，保证 feed 不断更。
@@ -33,11 +36,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 
 from backend.app.api.dependencies import (
     get_document_repository,
-    get_mcp_access_token_repository,
+    get_feed_token_repository,
     get_project_catalog_query_service,
 )
-from backend.app.core.auth import hash_mcp_token
+from backend.app.core.auth import hash_feed_token
 from backend.app.repositories.document_repository import DocumentRecentReader
+from backend.app.repositories.feed_token_repository import FeedTokenRepository
+from backend.app.services.briefing.daily_briefing import _truncate_summary
 from backend.app.services.membership.tiers import (
     MEMBERSHIP_TIER_MEMBER,
     resolve_effective_tier,
@@ -189,17 +194,38 @@ def _item_link(row: dict[str, Any], base_url: str) -> str | None:
     return url or None
 
 
+_PUBLIC_TITLE_TRANSLATION_LIMIT = 80
+_PUBLIC_DESCRIPTION_TRANSLATION_LIMIT = 200
+
+
+def _public_item_title(row: dict[str, Any]) -> str:
+    """公开条目展示标题：X 源有中文译文时用译文截断，其余源保持原 title。
+
+    库中无 title_zh 字段，X 的「标题」即推文原文（英文为主）；译文截断到
+    80 字符当标题。榜单/媒体源本身已有面向中文读者的标题或仓库名，不动。
+    """
+    title = str(row.get("title") or "").strip()
+    if str(row.get("source") or "").strip() != "x":
+        return title
+    translation = str(row.get("translation_zh") or "").strip()
+    if not translation:
+        return title
+    return _truncate_summary(translation, _PUBLIC_TITLE_TRANSLATION_LIMIT)
+
+
 def _item_description(row: dict[str, Any], *, full: bool) -> str:
-    """摘要文本：公开 feed 仅 summary；会员 feed 追加中文译文（若有）。"""
-    parts: list[str] = []
+    """摘要文本：公开 feed 优先中文译文截断（无译文回退原摘要）；会员 feed
+    为原摘要 + 完整中文译文（不截断）。"""
     summary = str(row.get("summary") or "").strip()
-    if summary:
-        parts.append(summary)
+    translation = str(row.get("translation_zh") or "").strip()
     if full:
-        translation = str(row.get("translation_zh") or "").strip()
+        parts = [summary] if summary else []
         if translation and translation != summary:
             parts.append(translation)
-    return "\n\n".join(parts)
+        return "\n\n".join(parts)
+    if translation:
+        return _truncate_summary(translation, _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT)
+    return summary
 
 
 def _parse_tags(value: Any) -> list[str]:
@@ -226,6 +252,8 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
     link = _item_link(row, base_url)
     if not doc_id or not title or not link:
         return None
+    # 公开条目面向中文读者：X 源有译文时标题换成译文截断；会员条目保留原标题
+    display_title = title if full else _public_item_title(row)
 
     description = _item_description(row, full=full)
     if not full:
@@ -237,7 +265,7 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
     pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""
     return (
         "<item>"
-        f"<title>{escape(title)}</title>"
+        f"<title>{escape(display_title)}</title>"
         f"<link>{escape(link)}</link>"
         f'<guid isPermaLink="false">{escape(str(row.get("source") or ""))}:{escape(doc_id)}</guid>'
         f"{pub_date}"
@@ -400,16 +428,18 @@ async def feed_member(
     token: str = Query(default=""),
     source: str | None = Query(default=None),
     documents: DocumentRecentReader = Depends(get_document_repository),
-    tokens=Depends(get_mcp_access_token_repository),
+    tokens: FeedTokenRepository = Depends(get_feed_token_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
-    """会员全文 feed：token 鉴权（复用 MCP access token），非会员 fail-closed 403。"""
+    """会员全文 feed：独立 RSS feed token 鉴权，非会员 fail-closed 403。"""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_TOKEN_DETAIL,
         )
-    identity = await asyncio.to_thread(tokens.get_user_by_mcp_token_hash, hash_mcp_token(token))
+    identity = await asyncio.to_thread(
+        tokens.get_user_by_feed_token_hash, hash_feed_token(token)
+    )
     if identity is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
