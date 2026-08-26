@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -19,6 +20,8 @@ EXPECTED_ISSUER = "https://accounts.google.com"
 # 两者皆收），只认 discovery 的严格单值会把一批合法登录挡在回调里。
 ACCEPTED_TOKEN_ISSUERS = (EXPECTED_ISSUER, "accounts.google.com")
 _MAX_RESPONSE_BYTES = 1_048_576
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleOAuthError(RuntimeError):
@@ -130,6 +133,13 @@ class GoogleOIDCProvider:
             access_token = payload.get("access_token")
             if access_token is not None and not isinstance(access_token, str):
                 raise GoogleOAuthError("Google token exchange failed")
+            if access_token is None:
+                # 只记录字段名不记录值；Google code flow 正常必带 access_token，
+                # 缺失说明响应形态异常，需要知道实际字段集合才能继续定位。
+                logger.warning(
+                    "Google token response lacked access_token; keys=%s",
+                    sorted(payload.keys()),
+                )
             jwks = await _get_json(client, jwks_uri)
             # discovery 的 issuer 已在上方严格校验；id_token 的 iss 按 Google
             # 官方双形态白名单校验，不再依赖 discovery 单值透传。
