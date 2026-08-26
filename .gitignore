@@ -68,3 +68,19 @@ htmlcov/
 
 # uv 本地解析产物（仓库以 backend/requirements.lock 为权威锁文件）
 uv.lock
+
+# 本地浏览器验证与界面截图产物（Playwright MCP 快照、根目录临时截图）
+.playwright-mcp/
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+
+# 根目录误触 npm init 的产物（前端工程在 frontend/，根目录不需要 npm 清单）
+/package.json
+/package-lock.json
+
+# 运行态站点资源与 MCP 工具指标（本地/线上生成数据，不入 git）
+storage/site/
+storage/metrics_mcp/
