@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import time
 from urllib.parse import parse_qs, urlparse
 
@@ -99,17 +100,54 @@ async def test_exchange_rejects_non_https_metadata_endpoint() -> None:
             await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
 
 
-def _exchange_handler(key, token: str):
+def _exchange_handler(key, token: str, access_token: str | None = None):
     public = key.public_key().public_numbers()
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url == httpx.URL(DISCOVERY_URL):
             return httpx.Response(200, json={"issuer": EXPECTED_ISSUER, "token_endpoint": "https://oauth.example/token", "jwks_uri": "https://oauth.example/keys"})
         if str(request.url).endswith("/token"):
-            return httpx.Response(200, json={"id_token": token})
+            body = {"id_token": token}
+            if access_token is not None:
+                body["access_token"] = access_token
+            return httpx.Response(200, json=body)
         return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "k", "n": _b64(public.n), "e": _b64(public.e)}]})
 
     return handler
+
+
+def _at_hash(access_token: str) -> str:
+    digest = hashlib.sha256(access_token.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest[:16]).rstrip(b"=").decode("ascii")
+
+
+def _google_claims(**overrides):
+    claims = {"iss": EXPECTED_ISSUER, "aud": "client-id", "sub": "s", "email": "e@example.com", "email_verified": True, "nonce": "n", "iat": int(time.time()), "exp": int(time.time()) + 300}
+    claims.update(overrides)
+    return claims
+
+
+@pytest.mark.anyio
+async def test_exchange_validates_at_hash_against_access_token() -> None:
+    # 真实 Google code flow 的 id_token 带 at_hash，必须与响应里的 access_token 匹配
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    claims = _google_claims(at_hash=_at_hash("mock-access-token"))
+    token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token, access_token="mock-access-token"))) as client:
+        identity = await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+    assert identity.subject == "s"
+
+
+@pytest.mark.anyio
+async def test_exchange_rejects_at_hash_mismatch() -> None:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    claims = _google_claims(at_hash=_at_hash("attacker-access-token"))
+    token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token, access_token="mock-access-token"))) as client:
+        with pytest.raises(GoogleTokenValidationError, match="at_hash"):
+            await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
 
 
 @pytest.mark.anyio

@@ -125,12 +125,18 @@ class GoogleOIDCProvider:
             id_token = payload.get("id_token")
             if not isinstance(id_token, str) or not id_token:
                 raise GoogleOAuthError("Google response did not contain an identity token")
+            # code flow 的响应必带 access_token；id_token 里的 at_hash 需要用
+            # 它比对（OIDC 绑定校验），缺了 python-jose 会直接拒绝。
+            access_token = payload.get("access_token")
+            if access_token is not None and not isinstance(access_token, str):
+                raise GoogleOAuthError("Google token exchange failed")
             jwks = await _get_json(client, jwks_uri)
             # discovery 的 issuer 已在上方严格校验；id_token 的 iss 按 Google
             # 官方双形态白名单校验，不再依赖 discovery 单值透传。
             return _validate_id_token(
                 id_token, jwks,
                 audience=self.config.client_id, nonce=nonce,
+                access_token=access_token,
             )
 
     def _client_context(self):
@@ -186,7 +192,7 @@ def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _validate_id_token(token: str, jwks: dict[str, Any], *, audience: str, nonce: str | None) -> GoogleIdentity:
+def _validate_id_token(token: str, jwks: dict[str, Any], *, audience: str, nonce: str | None, access_token: str | None = None) -> GoogleIdentity:
     try:
         header = jwt.get_unverified_header(token)
         kid = header.get("kid")
@@ -194,7 +200,7 @@ def _validate_id_token(token: str, jwks: dict[str, Any], *, audience: str, nonce
         key = next((item for item in keys or [] if isinstance(item, dict) and item.get("kid") == kid), None)
         if key is None:
             raise GoogleTokenValidationError("Google signing key not found")
-        claims = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=ACCEPTED_TOKEN_ISSUERS, options={"require_exp": True, "require_iat": True, "require_sub": True})
+        claims = jwt.decode(token, key, algorithms=["RS256"], audience=audience, issuer=ACCEPTED_TOKEN_ISSUERS, access_token=access_token, options={"require_exp": True, "require_iat": True, "require_sub": True})
     except (JWTError, GoogleTokenValidationError, TypeError, ValueError) as exc:
         if isinstance(exc, GoogleTokenValidationError):
             raise
