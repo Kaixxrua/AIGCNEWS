@@ -310,6 +310,29 @@ onMounted(() => {
           </p>
         </section>
 
+        <!-- RSS 直订：与推送渠道完全解耦，不建渠道也能直接复制阅读器链接。
+             会员链接带专属 token（全文+7 天归档），免费用户为公开摘要源 -->
+        <section class="stagger-enter glass-card flex flex-col gap-3 p-4" style="animation-delay: 0.075s">
+          <h2 class="text-base font-bold text-stone-800">{{ t('subscriptions.subs.rssTitle') }}</h2>
+          <p class="text-2xs leading-relaxed text-stone-400">
+            {{ authStore.isMember ? t('subscriptions.subs.rssHintMember') : t('subscriptions.subs.rssHintFree') }}
+          </p>
+          <ul class="flex flex-wrap gap-1.5">
+            <li v-for="source in SUBSCRIPTION_SOURCES" :key="source">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-[4px] border border-stone-200 px-2 py-1 text-2xs font-bold text-stone-600 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
+                :title="t('subscriptions.subs.rssCopy')"
+                :disabled="ctl.rssBusy.value"
+                @click="copyRss(source)"
+              >
+                <Rss class="h-3 w-3" />
+                {{ t(`subscriptions.sources.${source}`) }}
+              </button>
+            </li>
+          </ul>
+        </section>
+
         <!-- 订阅管理 -->
         <section class="stagger-enter glass-card flex flex-col gap-4 p-4" style="animation-delay: 0.1s">
           <div class="flex items-center justify-between">

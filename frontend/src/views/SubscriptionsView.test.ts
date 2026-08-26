@@ -1,6 +1,7 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SUBSCRIPTION_SOURCES } from '@/features/subscriptions/subscriptionsModel'
 import SubscriptionsView from './SubscriptionsView.vue'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
@@ -122,6 +123,9 @@ const i18n = createI18n({
           rssCopy: '复制 RSS 订阅链接',
           rssReset: '重置 RSS 链接',
           rssResetConfirm: '重置后旧 RSS 链接立即失效，需要到阅读器里换成新链接。确定重置？',
+          rssTitle: 'RSS 直接订阅',
+          rssHintMember: '链接内含你的专属 token，请勿公开分享。',
+          rssHintFree: '公开源为摘要；开通会员解锁中文译文全文。',
           empty: '还没有订阅',
         },
         sources: { all: '全部', arxiv: 'arXiv 论文', dailyhot: '全网热榜' },
@@ -356,7 +360,10 @@ describe('SubscriptionsView interactions', () => {
     authBox.isMember = true
     const wrapper = await mountView()
 
-    const rssButton = wrapper.findAll('button').find((button) => button.attributes('title') === '复制 RSS 订阅链接')
+    // 订阅行内的 RSS 按钮只有图标没有文字，与直订卡片里的文字 pill 区分
+    const rssButton = wrapper
+      .findAll('button')
+      .find((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() === '')
     expect(rssButton).toBeDefined()
     await rssButton!.trigger('click')
     // 视图只透传 source 与会员标记；URL 形态由 controller 决定
@@ -368,9 +375,35 @@ describe('SubscriptionsView interactions', () => {
     authBox.isMember = false
     const wrapper = await mountView()
 
-    const rssButton = wrapper.findAll('button').find((button) => button.attributes('title') === '复制 RSS 订阅链接')
+    const rssButton = wrapper
+      .findAll('button')
+      .find((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() === '')
     await rssButton!.trigger('click')
     expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', false)
+  })
+
+  it('offers standalone RSS pills for every source without any channel or subscription', async () => {
+    // 零渠道零订阅也能直接拿 RSS 链接——直订与推送渠道完全解耦
+    authBox.isMember = false
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('RSS 直接订阅')
+    expect(wrapper.text()).toContain('公开源为摘要')
+    const pills = wrapper
+      .findAll('button')
+      .filter((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() !== '')
+    expect(pills.length).toBe(SUBSCRIPTION_SOURCES.length)
+  })
+
+  it('copies the all-sources member RSS link from the standalone card', async () => {
+    authBox.isMember = true
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('链接内含你的专属 token')
+    const allPill = wrapper.findAll('button').find((button) => button.text() === '全部')
+    expect(allPill).toBeDefined()
+    await allPill!.trigger('click')
+    expect(ctl().copyRssLink).toHaveBeenCalledWith('all', true)
   })
 
   it('shows the RSS reset entry only to members and requires confirmation', async () => {
