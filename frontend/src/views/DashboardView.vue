@@ -4,6 +4,7 @@ import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
+import { useAuthStore } from '@/stores/authStore'
 import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
@@ -15,6 +16,7 @@ import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
 const { t } = useI18n()
+const authStore = useAuthStore()
 
 let currentStats: () => Stats = () => ({})
 const {
@@ -145,7 +147,8 @@ onBeforeUnmount(pauseLivePoll)
             </span>
           </RouterLink>
 
-          <!-- RSS 订阅入口：公开摘要可直接订阅，会员全文只引导到权益页；不在 DOM 暴露 token -->
+          <!-- RSS 订阅入口：公开摘要可直接订阅；会员全文按身份分流——会员去订阅页
+               复制带 token 链接，免费用户去权益页转化；不在 DOM 暴露 token -->
           <div
             class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
             style="animation-delay: 0.4s"
@@ -167,7 +170,7 @@ onBeforeUnmount(pauseLivePoll)
                 <ArrowRight class="h-3.5 w-3.5" />
               </a>
               <RouterLink
-                to="/membership"
+                :to="authStore.isMember ? '/subscriptions' : '/membership'"
                 class="inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink px-2 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent-soft"
               >
                 {{ t('dashboard.rss.memberCta') }}

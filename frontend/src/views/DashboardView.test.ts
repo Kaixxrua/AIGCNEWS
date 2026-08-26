@@ -40,6 +40,11 @@ vi.mock('@/composables/useDashboardStats', async () => {
     }),
   }
 })
+
+/* authStore 用普通对象桩：挂载前置好 isMember，组件据此分流会员 RSS 入口 */
+const authBox = { isMember: false }
+vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+
 const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
@@ -71,6 +76,7 @@ const mountView = async () => {
 
 describe('DashboardView', () => {
   it('offers a public RSS feed without exposing a member token', async () => {
+    authBox.isMember = false
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('RSS 订阅')
@@ -88,8 +94,28 @@ describe('DashboardView', () => {
     expect(publicFeed.attributes('target')).toBe('_blank')
     expect(publicFeed.attributes('rel')).toBe('noopener noreferrer')
 
+    expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
+  })
+
+  it('routes the member RSS entry to the membership page for free users', async () => {
+    authBox.isMember = false
+    const wrapper = await mountView()
+
+    // 免费/未登录：入口仍是转化链路，导去权益页
     const memberCta = wrapper.get('a[href="/membership"]')
     expect(memberCta.text()).toContain('查看 vip 全文 RSS')
+    expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
+  })
+
+  it('routes the member RSS entry to the subscriptions page for members', async () => {
+    authBox.isMember = true
+    const wrapper = await mountView()
+
+    // 会员：入口直达订阅页复制带 token 链接，不再落到购买页死胡同
+    const memberCta = wrapper.get('a[href="/subscriptions"]')
+    expect(memberCta.text()).toContain('查看 vip 全文 RSS')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })
 })
