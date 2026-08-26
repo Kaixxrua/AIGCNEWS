@@ -132,5 +132,5 @@ async def test_exchange_rejects_unknown_token_issuer() -> None:
     token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token))) as client:
-        with pytest.raises(GoogleTokenValidationError):
+        with pytest.raises(GoogleTokenValidationError, match="Invalid issuer"):
             await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")

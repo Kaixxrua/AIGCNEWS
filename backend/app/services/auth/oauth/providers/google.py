@@ -198,7 +198,11 @@ def _validate_id_token(token: str, jwks: dict[str, Any], *, audience: str, nonce
     except (JWTError, GoogleTokenValidationError, TypeError, ValueError) as exc:
         if isinstance(exc, GoogleTokenValidationError):
             raise
-        raise GoogleTokenValidationError("Google identity token validation failed") from exc
+        # python-jose 的底层消息是固定短语（Invalid audience/issuer、Signature
+        # verification failed 等，已核查不含 token 内容），带进 reason 便于线上定位。
+        raise GoogleTokenValidationError(
+            f"Google identity token validation failed: {type(exc).__name__}: {exc}"
+        ) from exc
     if nonce is not None and not hmac.compare_digest(str(claims.get("nonce", "")), nonce):
         raise GoogleTokenValidationError("Google identity token nonce mismatch")
     if claims.get("email_verified") is not True:
