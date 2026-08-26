@@ -558,7 +558,7 @@ def test_payment_overseas_provider_schema_is_additive() -> None:
     migration = next(
         item
         for item in discover_migrations()
-        if item.filename == "0058_payment_overseas_provider.sql"
+        if item.filename == "0061_payment_overseas_provider.sql"
     )
     normalized = " ".join(migration.sql.split()).upper()
 
