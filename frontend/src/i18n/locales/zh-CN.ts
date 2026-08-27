@@ -26,7 +26,7 @@ const overrides = {
     },
   },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '商务合作：', infringement: '侵权投诉' },
-  masthead: { todayNew: '今日更新', userGroup: '用户组：{tier}', memberUntil: '{date}到期', memberLifetime: '长期有效' },
+  masthead: { todayNew: '今日更新', userGroup: '用户组：{tier}', memberUntil: '{date}到期', memberLifetime: '长期有效', favoriteSite: '收藏本站', unfavoriteSite: '取消收藏本站', favoriteSiteAdded: '已收藏本站，可到项目库「我的网页」查看', favoriteSiteDuplicate: '本站已在你的收藏中', favoriteSiteRemoved: '已取消收藏本站', favoriteSiteFailed: '操作失败，请稍后重试' },
   auth: {
     login: '登录', logout: '退出登录', username: '用户名', password: '密码', email: '邮箱', otp: '验证码', newPassword: '新密码', confirmPassword: '确认密码',
     loginTitle: 'AIGC 资讯 · 登录', loginDescription: '欢迎回来，请登录您的账号', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',

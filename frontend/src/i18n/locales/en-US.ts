@@ -24,7 +24,7 @@ const enUS = {
     },
   },
   footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Business & Partnerships: ', infringement: 'Report Infringement' },
-  masthead: { todayNew: 'New today', userGroup: 'Group: {tier}', memberUntil: 'until {date}', memberLifetime: 'lifetime' },
+  masthead: { todayNew: 'New today', userGroup: 'Group: {tier}', memberUntil: 'until {date}', memberLifetime: 'lifetime', favoriteSite: 'Favorite this site', unfavoriteSite: 'Unfavorite this site', favoriteSiteAdded: 'Site favorited — find it under "My Websites" in the project library.', favoriteSiteDuplicate: 'This site is already in your favorites.', favoriteSiteRemoved: 'Site unfavorited.', favoriteSiteFailed: 'Action failed, please try again.' },
   auth: {
     login: 'Log in', logout: 'Log out', username: 'Username', password: 'Password', email: 'Email', otp: 'Verification code', newPassword: 'New password', confirmPassword: 'Confirm password',
     loginTitle: 'AIGC News · Log in', loginDescription: 'Welcome back. Log in to your account.', registerTitle: 'AIGC News · Register', registerDescription: 'Create your account and start exploring AI news.', forgotTitle: 'AIGC News · Reset password', forgotDescription: 'Set a new password using an email verification code.',
