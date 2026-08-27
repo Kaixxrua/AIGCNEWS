@@ -117,6 +117,11 @@ const semanticCategories = computed(() => categories.value.filter((item) => (ite
 const activeCategory = computed(() => semanticCategories.value.find((item) => item.slug === selectedCategory.value))
 const visibleSubcategories = computed(() => activeCategory.value?.children ?? [])
 const isWebsiteOnlyView = computed(() => source.value === 'website')
+const projectsHeroKicker = computed(() => {
+  if (source.value === 'website') return t('projects.heroWebsiteKicker')
+  if (source.value === 'favorites') return t('projects.heroFavoritesKicker')
+  return t('projects.heroLibraryKicker')
+})
 // 瀑布流：估高贪心分列（与 X 页同一套 distributeColumns）。列数由容器
 // 内容宽驱动，镜像旧 auto-fill minmax(260px,1fr) 的断档；列内保持服务端
 // 排序（stars/hot 等），左上角仍是当前页第一项。
@@ -149,11 +154,18 @@ const masonryColumnCount = computed(() => {
   if (width <= 0) return 1
   return Math.max(1, Math.floor((width + MASONRY_GAP_PX) / (MASONRY_MIN_CARD_PX + MASONRY_GAP_PX)))
 })
+// 结果不足以填满容器容量时不渲染空轨道，避免个人收藏少量卡片时右侧
+// 出现大片无意义留白；空结果仍保留单列作为首帧与空状态的稳定回退。
+const effectiveMasonryColumnCount = computed(() => (
+  projects.value.length > 0
+    ? Math.min(masonryColumnCount.value, projects.value.length)
+    : 1
+))
 // 列宽取整并按列分配余数：1fr 均分在 DPR=1 屏幕上会让第 2/4 列落在
 // 半像素上，1px 边框被抗锯齿成虚边（用户反馈"二四列边框绘制异常"）。
 // 显式整数轨道 + 整数 gap ⇒ 每列左右边缘都落在物理像素上。
 const masonryColumnWidths = computed(() => {
-  const count = masonryColumnCount.value
+  const count = effectiveMasonryColumnCount.value
   const total = Math.floor(gridContentWidth.value) - MASONRY_GAP_PX * (count - 1)
   const base = Math.floor(total / count)
   let remainder = total - base * count
@@ -169,7 +181,7 @@ const masonryColumnWidth = computed(() => {
 })
 const masonryColumns = computed(() => distributeColumns(
   projects.value,
-  masonryColumnCount.value,
+  effectiveMasonryColumnCount.value,
   (repo) => estimateProjectCardHeight(repo, masonryColumnWidth.value, locale.value as AppLocale, {
     isPersonalView: isPersonalView.value,
     descriptionFallback: t(isWebsite(repo) ? 'projects.fallbackWebsite' : 'projects.fallbackProject'),
@@ -420,7 +432,7 @@ onBeforeUnmount(stopViewReads)
   <div ref="pageEl" class="projects-page">
     <section class="projects-hero glass-card">
       <div class="projects-hero__text">
-        <p class="projects-kicker">GITHUB PROJECTS</p>
+        <p class="projects-kicker">{{ projectsHeroKicker }}</p>
         <h1>{{ t('projects.pageTitle') }}</h1>
       </div>
 
@@ -481,7 +493,7 @@ onBeforeUnmount(stopViewReads)
       @clear-personal-tag="clearPersonalTag"
     />
 
-    <section v-if="!mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card" aria-labelledby="mcp-promo-title">
+    <section v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card" aria-labelledby="mcp-promo-title">
       <div class="projects-mcp-promo__controls">
         <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
           {{ t('projects.mcpPromo.dismissWeek') }}

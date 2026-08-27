@@ -275,6 +275,35 @@ describe('GitHubProjectsView controller wiring', () => {
     expect(columns[0]!.findAllComponents({ name: 'ProjectResultCard' })).toHaveLength(3)
   })
 
+  it('does not render empty masonry columns when the desktop capacity exceeds results', async () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1400 })
+    class DesktopResizeObserver {
+      private readonly callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) { this.callback = callback }
+      observe() { this.callback([], this as unknown as ResizeObserver) }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', DesktopResizeObserver)
+    controller().projects.value = [
+      { full_name: 'owner/one', description_zh: '一' },
+      { full_name: 'owner/two', description_zh: '二' },
+      { full_name: 'owner/three', description_zh: '三' },
+    ]
+
+    try {
+      const wrapper = await mountView()
+      const columns = wrapper.findAll('.projects-col')
+      expect(columns).toHaveLength(3)
+      expect(columns.flatMap((column) => column.findAllComponents({ name: 'ProjectResultCard' }))).toHaveLength(3)
+      wrapper.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+      else delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },
@@ -439,6 +468,22 @@ describe('GitHubProjectsView MCP guidance', () => {
     controller().requiresPersonalLogin.value = true
     const wrapper = await mountView()
 
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+  })
+
+  it('uses source-aware hero labels and keeps the MCP promo public-only', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroLibraryKicker')
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(true)
+
+    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
+    await nextTick()
+    expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroWebsiteKicker')
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+
+    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'favorites')
+    await nextTick()
+    expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroFavoritesKicker')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
   })
 

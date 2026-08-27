@@ -79,7 +79,7 @@ const emit = defineEmits<{
       <button v-if="selectedLanguage" type="button" class="projects-search__filter" @click="emit('clearLanguage')">{{ selectedLanguage }} ×</button>
     </div>
 
-    <label v-if="!requiresPersonalLogin" class="projects-sort">
+    <label v-if="!requiresPersonalLogin && !isPersonalView" class="projects-sort">
       <span>{{ t('projects.sort') }}</span>
       <select :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
         <option v-if="!isWebsiteOnlyView && !isPersonalView" value="relevance">{{ t('projects.sortRelevance') }}</option>
@@ -106,7 +106,7 @@ const emit = defineEmits<{
     </div>
   </section>
 
-  <section v-else-if="!requiresPersonalLogin && (personalTags.length || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
+  <section v-else-if="!requiresPersonalLogin && (personalTags.length > 1 || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
     <div class="projects-categories" :aria-label="t('projects.personalTagFilter')">
       <button v-for="tag in personalTags" :key="tag.value" type="button" class="projects-category projects-category--tag" :class="selectedTag === tag.value ? 'tab-active' : 'tab-inactive'" :disabled="tagsLoading" @click="emit('selectPersonalTag', tag.value)"><span>{{ localizedPersonalTagLabel(tag, locale as AppLocale) }}</span><small>{{ tag.count }}</small></button>
       <button v-if="selectedTag" type="button" class="projects-category projects-category--sub" :disabled="tagsLoading" @click="emit('clearPersonalTag')">{{ t('projects.clearTag') }}</button>

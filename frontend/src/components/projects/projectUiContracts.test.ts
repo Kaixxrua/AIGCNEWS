@@ -233,6 +233,61 @@ describe('filters panel behavior', () => {
     expect(today.find('.projects-sort select').attributes('disabled')).toBeDefined()
   })
 
+  it('hides public sorting controls in personal views without emitting changes', async () => {
+    for (const source of ['website', 'favorites'] as const) {
+      const wrapper = mount(ProjectFiltersPanel, {
+        ...mountOptions,
+        props: filtersProps({ source, isPersonalView: true, sort: 'updated' }),
+      })
+
+      expect(wrapper.find('.projects-sort').exists()).toBe(false)
+      expect(wrapper.emitted('update:sort')).toBeUndefined()
+      await wrapper.setProps({ sort: 'stars' })
+      expect(wrapper.emitted('update:sort')).toBeUndefined()
+    }
+  })
+
+  it('keeps the personal tag panel compact until it has useful choices', async () => {
+    const empty = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({ source: 'website', isPersonalView: true }),
+    })
+    expect(empty.find('.projects-tag-panel').exists()).toBe(false)
+
+    const one = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({
+        source: 'website',
+        isPersonalView: true,
+        personalTags: [{ value: 'agent', label: 'Agent', count: 1 }],
+      }),
+    })
+    expect(one.find('.projects-tag-panel').exists()).toBe(false)
+
+    const many = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({
+        source: 'website',
+        isPersonalView: true,
+        personalTags: [{ value: 'agent', label: 'Agent', count: 1 }, { value: 'rag', label: 'RAG', count: 2 }],
+      }),
+    })
+    expect(many.find('.projects-tag-panel').exists()).toBe(true)
+
+    const selected = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({
+        source: 'website',
+        isPersonalView: true,
+        personalTags: [{ value: 'agent', label: 'Agent', count: 1 }],
+        selectedTag: 'agent',
+      }),
+    })
+    expect(selected.find('.projects-tag-panel').exists()).toBe(true)
+    await selected.find('button.projects-category--sub').trigger('click')
+    expect(selected.emitted('clearPersonalTag')).toHaveLength(1)
+  })
+
   it('emits scope and category selections from the category rows', async () => {
     const wrapper = mount(ProjectFiltersPanel, {
       ...mountOptions,
