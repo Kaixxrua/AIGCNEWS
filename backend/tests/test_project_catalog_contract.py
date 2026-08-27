@@ -132,6 +132,9 @@ class ScriptedCatalogRepository:
             "page_size": page_size,
         }
 
+    def count_github_catalog_candidates(self, *, min_stars: int = 500) -> int:
+        return 0
+
     def get_project_categories(
         self,
         *,
@@ -153,7 +156,9 @@ def _without_annotations(function: Any) -> inspect.Signature:
 def test_catalog_read_signatures_are_frozen() -> None:
     list_signature = _without_annotations(ScriptedCatalogRepository.list_projects)
     categories_signature = _without_annotations(ScriptedCatalogRepository.get_project_categories)
+    count_signature = _without_annotations(ScriptedCatalogRepository.count_github_catalog_candidates)
 
+    assert _without_annotations(ProjectCatalogRepository.count_github_catalog_candidates) == count_signature
     assert _without_annotations(ProjectCatalogRepository.list_projects) == list_signature
     assert _without_annotations(ProjectCatalogRepository.get_project_categories) == categories_signature
 
@@ -355,4 +360,3 @@ def test_rest_project_and_category_serialization_is_frozen() -> None:
     assert categories["total"] == 2
     assert categories["today_count"] == 1
     assert categories["recommended_count"] == 1
-
