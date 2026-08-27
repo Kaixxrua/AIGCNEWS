@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { BellOff, BellRing, Mail, Send } from 'lucide-vue-next'
+import { BellRing, Mail, Send } from 'lucide-vue-next'
 import {
   REPORT_TYPES,
   type ReportKey,
@@ -17,7 +17,6 @@ defineProps<{
   isGenerating: boolean
   isLoggedIn: boolean
   isAdmin: boolean
-  isCurrentSubscribed: boolean
   isSubscribing: boolean
   isSendingEmail: boolean
   emailSentMsg: string
@@ -31,7 +30,6 @@ const emit = defineEmits<{
   toggleSubscribe: []
   promptLoginForSubscribe: []
   sendToEmail: []
-  manageSubscriptions: []
   generate: []
 }>()
 </script>
@@ -54,19 +52,15 @@ const emit = defineEmits<{
         <span>{{ t('report.generating') }}</span>
       </div>
 
-      <!-- 订阅/取消订阅按钮 -->
+      <!-- 订阅按钮 -->
       <button
-        class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium transition-all duration-200"
-        :class="isCurrentSubscribed
-          ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-          : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'"
+        class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium transition-all duration-200 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
         :disabled="isSubscribing"
         @click="isLoggedIn ? emit('toggleSubscribe') : emit('promptLoginForSubscribe')"
       >
         <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
-        <BellOff v-else-if="isCurrentSubscribed" class="h-3 w-3" />
         <BellRing v-else class="h-3 w-3" />
-        {{ t(isCurrentSubscribed ? 'report.unsubscribe' : 'report.subscribe') }}
+        {{ t('report.subscribe') }}
       </button>
 
       <!-- 发送到邮箱 -->
@@ -86,16 +80,6 @@ const emit = defineEmits<{
         <Mail class="h-3 w-3" />
         {{ emailSentMsg }}
       </span>
-
-      <button
-        v-if="isLoggedIn"
-        class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 transition-all duration-200"
-        :disabled="isSubscribing"
-        @click="emit('manageSubscriptions')"
-      >
-        <BellRing class="h-3 w-3" />
-        {{ t('report.manageSubscriptions') }}
-      </button>
 
       <!-- Admin: 生成相关控件 -->
       <template v-if="isAdmin">

@@ -5,6 +5,7 @@ from typing import Any, Mapping
 from fastapi import Depends, HTTPException, Request, status
 
 from backend.app.core.operations import ApplicationOperationsRuntime
+from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
 from backend.app.repositories.application_repository_factory import (
@@ -116,6 +117,9 @@ from backend.app.services.push.telegram_config_admin import TelegramConfigAdminS
 from backend.app.services.push.telegram_service import TelegramLinkService
 from backend.app.services.rag.chat_service import ChatService
 from backend.app.services.rag.composition import RagChatServiceProvider
+from backend.app.services.report.subscription_plan_service import (
+    ReportSubscriptionPlanService,
+)
 from backend.app.services.runtime_provider.admin_service import (
     RuntimeProviderAdminService,
 )
@@ -761,6 +765,25 @@ def get_wechat_follow_service(
     articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
 ) -> WeChatFollowServiceProtocol:
     return _require_wechat_bundle().follow_service(follows, articles)
+
+
+def get_postgres_database(request: Request) -> PostgresDatabaseLifecycle:
+    database = getattr(request.app.state, "postgres_database", None)
+    if database is None:
+        raise RuntimeError("PostgreSQL database lifecycle is not configured")
+    return database
+
+
+def get_report_subscription_plan_service(
+    request: Request,
+    repositories: ApplicationRepositories = Depends(get_application_repositories),
+) -> ReportSubscriptionPlanService:
+    return ReportSubscriptionPlanService(
+        database=get_postgres_database(request),
+        briefing_subscriptions=repositories.briefing_subscriptions,
+        user_subscriptions=repositories.user_subscriptions,
+        push_channels=repositories.push_channels,
+    )
 
 
 def get_push_channel_repository(

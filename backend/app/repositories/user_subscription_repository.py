@@ -13,6 +13,7 @@ class UserSubscriptionRepository(Protocol):
         channel_id: int,
         source: str,
         frequency: str,
+        connection: Any | None = None,
     ) -> dict[str, Any] | None:
         """插入订阅并返回该行；唯一约束冲突时返回 None。
 
@@ -20,7 +21,12 @@ class UserSubscriptionRepository(Protocol):
         """
         ...
 
-    def list_subscriptions(self, user_id: int) -> list[dict[str, Any]]:
+    def list_subscriptions(
+        self,
+        user_id: int,
+        *,
+        connection: Any | None = None,
+    ) -> list[dict[str, Any]]:
         """返回该用户的订阅，联表携带渠道类型与目标。"""
         ...
 

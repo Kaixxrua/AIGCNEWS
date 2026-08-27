@@ -51,6 +51,12 @@ describe('dsh navigation item', () => {
   })
 })
 
+describe('subscriptions navigation item', () => {
+  it('keeps subscriptions routable without exposing it in the navigation model', () => {
+    expect(NAV_ITEMS.some((item) => item.to === '/subscriptions')).toBe(false)
+  })
+})
+
 describe('membership navigation item', () => {
   it('exposes an ungated membership entry right before the contact item', () => {
     const index = NAV_ITEMS.findIndex((item) => item.to === '/membership')

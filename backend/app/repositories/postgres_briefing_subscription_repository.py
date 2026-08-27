@@ -19,9 +19,11 @@ class PostgresBriefingSubscriptionRepository:
         user_id: int,
         email: str,
         source: str = "all",
+        *,
+        connection: Any | None = None,
     ) -> dict[str, Any]:
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
+        def _execute(conn: Any) -> dict[str, Any]:
+            with conn.cursor() as cursor:
                 cursor.execute(
                     """
                     INSERT INTO briefing_subscriptions
@@ -37,6 +39,11 @@ class PostgresBriefingSubscriptionRepository:
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else {}
+
+        if connection is not None:
+            return _execute(connection)
+        with self._database.transaction() as connection:
+            return _execute(connection)
 
     def cancel_briefing_subscription(
         self,
@@ -58,16 +65,21 @@ class PostgresBriefingSubscriptionRepository:
     def get_user_briefing_subscriptions(
         self,
         user_id: int,
+        *,
+        connection: Any | None = None,
     ) -> list[dict[str, Any]]:
-        return self._fetchall(
-            """
+        sql = """
             SELECT id, source, period, is_active, created_at, updated_at
             FROM briefing_subscriptions
             WHERE user_id = %s AND is_active = TRUE AND period = %s
             ORDER BY created_at ASC
-            """,
-            (user_id, _DAILY_PERIOD),
-        )
+            """
+        params = (user_id, _DAILY_PERIOD)
+        if connection is not None:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                return [dict(row) for row in cursor.fetchall()]
+        return self._fetchall(sql, params)
 
     def get_active_subscribers(
         self,

@@ -42,6 +42,8 @@ class BriefingSubscriptionWriter(Protocol):
         user_id: int,
         email: str,
         source: str = "all",
+        *,
+        connection: Any | None = None,
     ) -> dict[str, Any]: ...
 
     def cancel_briefing_subscription(
@@ -57,6 +59,8 @@ class UserBriefingSubscriptionReader(Protocol):
     def get_user_briefing_subscriptions(
         self,
         user_id: int,
+        *,
+        connection: Any | None = None,
     ) -> list[dict[str, Any]]: ...
 
 

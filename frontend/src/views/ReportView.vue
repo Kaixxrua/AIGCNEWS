@@ -15,10 +15,10 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   getReportTypeInfo,
-  type BatchSubscriptionResponse,
-  type ReportMessageResponse,
   type ReportResponse,
   type SubscriptionListResponse,
+  type SubscriptionPlan,
+  type SubscriptionPlanApplyResponse,
 } from '@/features/report/reportViewModel'
 
 const { locale, t } = useI18n()
@@ -71,16 +71,21 @@ const {
   emailSentMsg,
   showSubscribePanel,
   showLoginPrompt,
-  selectedSubscribeSources,
-  isSourceSubscribed,
-  isCurrentSubscribed,
+  step,
+  selectedSources,
+  selectedDeliveryKeys,
+  isLoadingPlan,
+  canSelectMultipleSources,
+  deliveryCapabilities,
   promptLoginForSubscribe,
   closeLoginPrompt,
   handleLoginAndRedirect,
-  handleManageSubscriptions,
   closeSubscribePanel,
   toggleSubscribeSource,
-  confirmSubscribeSources,
+  goToDeliveryStep,
+  goBackToSourceStep,
+  toggleDelivery,
+  confirmSubscriptionPlan,
   toggleSubscribe,
   sendToEmail,
 } = useReportSubscriptions({
@@ -90,19 +95,20 @@ const {
   selectedDate,
   locale,
   operations: {
+    loadPlan: async () => {
+      const res = await api.get<SubscriptionPlan>('/report/subscription-plan')
+      return res.data
+    },
     loadSubscriptions: async () => {
       const res = await api.get<SubscriptionListResponse>('/report/subscriptions')
       return res.data
     },
-    subscribeSources: async payload => {
-      const res = await api.post<BatchSubscriptionResponse>('/report/subscriptions/batch', payload)
+    applyPlan: async payload => {
+      const res = await api.post<SubscriptionPlanApplyResponse>('/report/subscription-plan', payload)
       return res.data
     },
-    unsubscribe: async payload => {
-      await api.post('/report/unsubscribe', payload)
-    },
     sendToEmail: async payload => {
-      const res = await api.post<ReportMessageResponse>('/report/send-to-email', payload)
+      const res = await api.post<{ message: string }>('/report/send-to-email', payload)
       return res.data
     },
   },
@@ -111,6 +117,8 @@ const {
   },
   setError: message => { errorMsg.value = message },
 })
+
+const userEmail = computed(() => authStore.user?.email ?? '')
 </script>
 
 <template>
@@ -126,7 +134,6 @@ const {
         :is-generating="isGenerating"
         :is-logged-in="authStore.isLoggedIn"
         :is-admin="authStore.isAdmin"
-        :is-current-subscribed="isCurrentSubscribed"
         :is-subscribing="isSubscribing"
         :is-sending-email="isSendingEmail"
         :email-sent-msg="emailSentMsg"
@@ -135,7 +142,6 @@ const {
         @toggle-subscribe="toggleSubscribe"
         @prompt-login-for-subscribe="promptLoginForSubscribe"
         @send-to-email="sendToEmail"
-        @manage-subscriptions="handleManageSubscriptions"
         @generate="generate"
       />
 
@@ -143,14 +149,22 @@ const {
         :show-login-prompt="showLoginPrompt"
         :show-subscribe-panel="showSubscribePanel"
         :is-subscribing="isSubscribing"
+        :is-loading-plan="isLoadingPlan"
         :is-member="authStore.isMember"
-        :selected-subscribe-sources="selectedSubscribeSources"
-        :is-source-subscribed="isSourceSubscribed"
+        :user-email="userEmail"
+        :step="step"
+        :selected-sources="selectedSources"
+        :selected-delivery-keys="selectedDeliveryKeys"
+        :delivery-capabilities="deliveryCapabilities"
+        :can-select-multiple-sources="canSelectMultipleSources"
         @close-login-prompt="closeLoginPrompt"
         @login-and-redirect="handleLoginAndRedirect"
         @close-subscribe-panel="closeSubscribePanel"
         @toggle-subscribe-source="toggleSubscribeSource"
-        @confirm-subscribe-sources="confirmSubscribeSources"
+        @go-next="goToDeliveryStep"
+        @go-back="goBackToSourceStep"
+        @toggle-delivery="toggleDelivery"
+        @confirm-plan="confirmSubscriptionPlan"
       />
     </div>
 

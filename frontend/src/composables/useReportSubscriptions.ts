@@ -1,25 +1,31 @@
 import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
 import {
+  isReportKey,
   isSourceSubscribed as hasSourceSubscription,
-  selectActiveDailySources,
-  type BatchSubscriptionResponse,
+  type PlanDeliveryRequest,
   type ReportKey,
   type ReportMessageResponse,
   type Subscription,
   type SubscriptionListResponse,
+  type SubscriptionPlan,
+  type SubscriptionPlanApplyResponse,
 } from '@/features/report/reportViewModel'
 import { i18n } from '@/i18n'
 
 interface ReportSubscriptionOperations {
+  loadPlan: () => Promise<SubscriptionPlan | undefined>
   loadSubscriptions: () => Promise<SubscriptionListResponse | undefined>
-  subscribeSources: (payload: { sources: ReportKey[] }) => Promise<BatchSubscriptionResponse | undefined>
-  unsubscribe: (payload: { source: ReportKey }) => Promise<void>
+  applyPlan: (payload: {
+    sources: ReportKey[]
+    deliveries: PlanDeliveryRequest[]
+    idempotency_key: string
+  }) => Promise<SubscriptionPlanApplyResponse | undefined>
   sendToEmail: (payload: { source: ReportKey; date: string; locale: string }) => Promise<ReportMessageResponse | undefined>
 }
 
 interface UseReportSubscriptionsOptions {
   isLoggedIn: Readonly<Ref<boolean>>
-  /** 会员档位：免费档订阅面板退化为单选（后端按 1 模块上限强校验） */
+  /** 会员档位：订阅面板按后端 plan.can_select_multiple_sources 决定单/多选 */
   isMember: Readonly<Ref<boolean>>
   selectedSource: Ref<ReportKey>
   selectedDate: Ref<string>
@@ -30,18 +36,43 @@ interface UseReportSubscriptionsOptions {
 }
 
 const getApiErrorMessage = (error: unknown): string | undefined =>
-  (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+  (error as { response?: { data?: { detail?: string | { message?: string } } } })?.response?.data?.detail as string | undefined
 
-/** 订阅档位超限（后端 403）统一映射 i18n 升级文案；detail 是运营口径中文，不做多语言透传。 */
+const getApiErrorDetail = (error: unknown): string => {
+  const detail = (error as { response?: { data?: { detail?: string | { message?: string; code?: string } } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object') return detail.message ?? ''
+  return ''
+}
+
+const getErrorCode = (error: unknown): string | undefined => {
+  const detail = (error as { response?: { data?: { detail?: string | { code?: string } } } })?.response?.data?.detail
+  if (detail && typeof detail === 'object') return detail.code
+  return undefined
+}
+
+/** 订阅相关错误统一映射为 i18n 文案；detail 是运营口径中文，不做多语言透传。 */
 const getSubscriptionErrorMessage = (error: unknown, fallback: string): string => {
   const status = (error as { response?: { status?: number } })?.response?.status
-  if (status === 403) return i18n.global.t('report.subscribeQuotaExceeded')
-  return getApiErrorMessage(error) || fallback
+  const code = getErrorCode(error)
+  if (status === 403) {
+    if (code === 'vip-required') return i18n.global.t('report.wizard.errorVipRequired')
+    return i18n.global.t('report.wizard.errorQuotaExceeded')
+  }
+  return getApiErrorDetail(error) || getApiErrorMessage(error) || fallback
+}
+
+const generateIdempotencyKey = (): string => {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  }
 }
 
 export const useReportSubscriptions = ({
   isLoggedIn,
-  isMember,
+  isMember: _isMember,
   selectedSource,
   selectedDate,
   locale,
@@ -55,7 +86,13 @@ export const useReportSubscriptions = ({
   const emailSentMsg = ref('')
   const showSubscribePanel = ref(false)
   const showLoginPrompt = ref(false)
-  const selectedSubscribeSources = ref<ReportKey[]>([])
+
+  // ── 两步向导状态 ──────────────────────────────────────────────────────
+  const step = ref<1 | 2>(1)
+  const plan = ref<SubscriptionPlan | null>(null)
+  const selectedSources = ref<ReportKey[]>([])
+  const selectedDeliveryKeys = ref<string[]>([])
+  const isLoadingPlan = ref(false)
 
   // 延时回调统一登记，卸载时集中清理（对齐 useWechatController dispose 范式）
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -72,21 +109,39 @@ export const useReportSubscriptions = ({
     pendingTimers.clear()
   }
 
+  const canSelectMultipleSources = computed(() => plan.value?.can_select_multiple_sources ?? false)
+
   const isSourceSubscribed = (source: ReportKey): boolean =>
     hasSourceSubscription(subscriptions.value, source)
 
-  const isCurrentSubscribed = computed(() => isSourceSubscribed(selectedSource.value))
+  const deliveryCapabilities = computed(() => plan.value?.capabilities ?? [])
+
+  const selectedDeliveryCapabilities = computed(() =>
+    deliveryCapabilities.value.filter(cap => selectedDeliveryKeys.value.includes(cap.key))
+  )
+
+  const resetWizard = () => {
+    step.value = 1
+    plan.value = null
+    selectedSources.value = []
+    selectedDeliveryKeys.value = []
+    isLoadingPlan.value = false
+  }
 
   const openSubscribePanel = () => {
-    const currentDaily = selectActiveDailySources(subscriptions.value)
-    selectedSubscribeSources.value = currentDaily.length ? [...currentDaily] : [selectedSource.value]
-    showSubscribePanel.value = true
+    if (!isLoggedIn.value) {
+      promptLoginForSubscribe()
+      return
+    }
     setError('')
+    showSubscribePanel.value = true
+    resetWizard()
+    void loadPlan()
   }
 
   const promptLoginForSubscribe = () => {
     showLoginPrompt.value = true
-    setError('请先登录后再订阅简报')
+    setError(i18n.global.t('report.loginError'))
     scheduleTracked(() => {
       if (showLoginPrompt.value && !isLoggedIn.value) redirectToLogin()
     }, 900)
@@ -101,27 +156,9 @@ export const useReportSubscriptions = ({
     redirectToLogin()
   }
 
-  const handleManageSubscriptions = () => {
-    if (!isLoggedIn.value) {
-      promptLoginForSubscribe()
-      return
-    }
-    openSubscribePanel()
-  }
-
   const closeSubscribePanel = () => {
     showSubscribePanel.value = false
-  }
-
-  const toggleSubscribeSource = (source: ReportKey) => {
-    if (selectedSubscribeSources.value.includes(source)) {
-      selectedSubscribeSources.value = selectedSubscribeSources.value.filter(item => item !== source)
-    } else if (isMember.value) {
-      selectedSubscribeSources.value = [...selectedSubscribeSources.value, source]
-    } else {
-      // 免费档单选：新选择直接替换，避免「超上限 403」的可预见失败
-      selectedSubscribeSources.value = [source]
-    }
+    resetWizard()
   }
 
   const loadSubscriptions = async () => {
@@ -134,58 +171,104 @@ export const useReportSubscriptions = ({
     }
   }
 
-  const confirmSubscribeSources = async () => {
-    if (isSubscribing.value || !isLoggedIn.value || !selectedSubscribeSources.value.length) return
+  const loadPlan = async () => {
+    isLoadingPlan.value = true
+    try {
+      const data = await operations.loadPlan()
+      if (data) {
+        plan.value = data
+        const active = data.active_sources.filter(isReportKey)
+        selectedSources.value = active.length ? active : [selectedSource.value]
+        // 若已有活跃 source，默认帮用户勾选注册邮箱（兼容旧 briefing_subscriptions 习惯）
+        if (active.length) {
+          const emailCap = data.capabilities.find(cap => cap.kind === 'account_email')
+          if (emailCap) selectedDeliveryKeys.value = [emailCap.key]
+        }
+      }
+    } catch (error: unknown) {
+      setError(getApiErrorDetail(error) || i18n.global.t('report.wizard.errorLoadPlan'))
+    } finally {
+      isLoadingPlan.value = false
+    }
+  }
+
+  const toggleSubscribeSource = (source: ReportKey) => {
+    const current = selectedSources.value
+    if (current.includes(source)) {
+      selectedSources.value = current.filter(item => item !== source)
+    } else if (canSelectMultipleSources.value) {
+      selectedSources.value = [...current, source]
+    } else {
+      // 免费档单选：新选择直接替换，避免「超上限 403」的可预见失败
+      selectedSources.value = [source]
+    }
+  }
+
+  const goToDeliveryStep = () => {
+    if (!selectedSources.value.length) {
+      setError(i18n.global.t('report.wizard.errorNoSource'))
+      return
+    }
+    setError('')
+    step.value = 2
+  }
+
+  const goBackToSourceStep = () => {
+    step.value = 1
+  }
+
+  const toggleDelivery = (key: string) => {
+    const capability = deliveryCapabilities.value.find(cap => cap.key === key)
+    if (!capability || !capability.selectable) return
+    if (selectedDeliveryKeys.value.includes(key)) {
+      selectedDeliveryKeys.value = selectedDeliveryKeys.value.filter(k => k !== key)
+    } else {
+      selectedDeliveryKeys.value = [...selectedDeliveryKeys.value, key]
+    }
+  }
+
+  const buildDeliveryRequests = (): PlanDeliveryRequest[] =>
+    selectedDeliveryCapabilities.value.map(cap => {
+      if (cap.kind === 'rss') return { kind: 'rss', feed: cap.feed ?? 'briefing' }
+      if (cap.kind === 'account_email') return { kind: 'account_email' }
+      return { kind: 'push_channel', channel_id: cap.channel_id }
+    })
+
+  const getSuccessMessage = (result: SubscriptionPlanApplyResponse): string => {
+    const hasApplied = result.deliveries.some(d => d.status === 'applied')
+    return hasApplied
+      ? i18n.global.t('report.wizard.resultSuccess')
+      : i18n.global.t('report.wizard.resultAlreadyActive')
+  }
+
+  const confirmSubscriptionPlan = async () => {
+    if (isSubscribing.value || !isLoggedIn.value || !selectedSources.value.length) return
+    if (!selectedDeliveryKeys.value.length) {
+      setError(i18n.global.t('report.wizard.errorNoDelivery'))
+      return
+    }
     isSubscribing.value = true
     setError('')
     try {
-      const data = await operations.subscribeSources({
-        sources: selectedSubscribeSources.value,
+      const data = await operations.applyPlan({
+        sources: selectedSources.value,
+        deliveries: buildDeliveryRequests(),
+        idempotency_key: generateIdempotencyKey(),
       })
-      const subscribedSources = new Set(data?.sources ?? selectedSubscribeSources.value)
       await loadSubscriptions()
-      subscriptions.value = [
-        ...subscriptions.value.filter(s => !subscribedSources.has(s.source)),
-        ...Array.from(subscribedSources).map(source => ({
-          source,
-          is_active: true,
-        })),
-      ]
-      emailSentMsg.value = data?.message || '订阅成功，日报生成后会自动推送到邮箱'
+      emailSentMsg.value = getSuccessMessage(data ?? { sources: selectedSources.value, deliveries: [] })
       scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
-      showSubscribePanel.value = false
+      closeSubscribePanel()
     } catch (error: unknown) {
-      setError(getSubscriptionErrorMessage(error, '订阅操作失败'))
+      setError(getSubscriptionErrorMessage(error, i18n.global.t('report.wizard.errorSubmit')))
     } finally {
       isSubscribing.value = false
     }
   }
 
-  const toggleSubscribe = async () => {
-    if (isSubscribing.value) return
-    if (!isLoggedIn.value) {
-      promptLoginForSubscribe()
-      return
-    }
-    if (!isCurrentSubscribed.value) {
-      openSubscribePanel()
-      return
-    }
-    isSubscribing.value = true
-    setError('')
-    try {
-      await operations.unsubscribe({ source: selectedSource.value })
-      await loadSubscriptions()
-      subscriptions.value = subscriptions.value.filter(
-        s => s.source !== selectedSource.value,
-      )
-      emailSentMsg.value = i18n.global.t('report.unsubscribeSuccess')
-      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
-    } catch (error: unknown) {
-      setError(getApiErrorMessage(error) || '订阅操作失败')
-    } finally {
-      isSubscribing.value = false
-    }
+  // 旧单条订阅入口保留为打开向导，不再通过此处取消
+  const toggleSubscribe = () => {
+    openSubscribePanel()
   }
 
   const sendToEmail = async () => {
@@ -198,10 +281,10 @@ export const useReportSubscriptions = ({
         date: selectedDate.value,
         locale: locale.value,
       })
-      emailSentMsg.value = data?.message || '已发送'
+      emailSentMsg.value = data?.message || i18n.global.t('report.wizard.sent')
       scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error) || '发送失败')
+      setError(getApiErrorMessage(error) || i18n.global.t('report.wizard.sendFailed'))
     } finally {
       isSendingEmail.value = false
     }
@@ -220,16 +303,25 @@ export const useReportSubscriptions = ({
     emailSentMsg,
     showSubscribePanel,
     showLoginPrompt,
-    selectedSubscribeSources,
+    step,
+    plan,
+    selectedSources,
+    selectedDeliveryKeys,
+    isLoadingPlan,
+    canSelectMultipleSources,
+    deliveryCapabilities,
+    selectedDeliveryCapabilities,
     isSourceSubscribed,
-    isCurrentSubscribed,
     promptLoginForSubscribe,
     closeLoginPrompt,
     handleLoginAndRedirect,
-    handleManageSubscriptions,
+    openSubscribePanel,
     closeSubscribePanel,
     toggleSubscribeSource,
-    confirmSubscribeSources,
+    goToDeliveryStep,
+    goBackToSourceStep,
+    toggleDelivery,
+    confirmSubscriptionPlan,
     toggleSubscribe,
     sendToEmail,
   }

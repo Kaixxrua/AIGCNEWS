@@ -31,9 +31,10 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
         channel_id: int,
         source: str,
         frequency: str,
+        connection: Any | None = None,
     ) -> dict[str, Any] | None:
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
+        def _execute(conn: Any) -> dict[str, Any] | None:
+            with conn.cursor() as cursor:
                 try:
                     cursor.execute(
                         f"""
@@ -53,22 +54,35 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
                 row = cursor.fetchone()
                 return dict(row) if row else None
 
-    def list_subscriptions(self, user_id: int) -> list[dict[str, Any]]:
+        if connection is not None:
+            return _execute(connection)
+        with self._database.transaction() as connection:
+            return _execute(connection)
+
+    def list_subscriptions(
+        self,
+        user_id: int,
+        *,
+        connection: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT
+                s.id, s.user_id, s.channel_id, s.source, s.frequency,
+                s.status, s.created_at, s.updated_at,
+                c.channel_type, c.target
+            FROM user_subscriptions s
+            JOIN push_channels c ON c.id = s.channel_id
+            WHERE s.user_id = %s
+            ORDER BY s.id ASC
+            """
+        params = (user_id,)
+        if connection is not None:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                return [dict(row) for row in cursor.fetchall()]
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                        s.id, s.user_id, s.channel_id, s.source, s.frequency,
-                        s.status, s.created_at, s.updated_at,
-                        c.channel_type, c.target
-                    FROM user_subscriptions s
-                    JOIN push_channels c ON c.id = s.channel_id
-                    WHERE s.user_id = %s
-                    ORDER BY s.id ASC
-                    """,
-                    (user_id,),
-                )
+                cursor.execute(sql, params)
                 return [dict(row) for row in cursor.fetchall()]
 
     def set_subscription_status(

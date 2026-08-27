@@ -128,10 +128,10 @@ onBeforeUnmount(pauseLivePoll)
             :available-dates="availableDates"
             @update:model-value="onDateChange"
           />
-          <!-- 每日简报订阅入口 -->
-          <RouterLink
-            to="/report"
-            class="stagger-enter glass-card card-hover group flex flex-col gap-2 px-3 py-2.5 transition-colors"
+          <!-- 每日简报与 RSS 统一入口：公开 feed 直订；会员速览按身份分流。
+               会员入口只跳转订阅页，由订阅页复制带 token 链接；不在 DOM 暴露 token。 -->
+          <div
+            class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
             style="animation-delay: 0.35s"
           >
             <span class="flex items-center gap-2">
@@ -141,31 +141,21 @@ onBeforeUnmount(pauseLivePoll)
               <span class="text-sm font-bold text-stone-800">{{ t('dashboard.digest.title') }}</span>
             </span>
             <span class="text-2xs leading-relaxed text-stone-400">{{ t('dashboard.digest.description') }}</span>
-            <span class="digest-cta mt-auto inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors group-hover:bg-accent group-hover:text-accent-ink">
-              {{ t('dashboard.digest.cta') }}
-              <ArrowRight class="h-3.5 w-3.5" />
-            </span>
-          </RouterLink>
-
-          <!-- RSS 订阅入口：每日简报全文公开直订；会员速览按身份分流——会员去
-               订阅页复制带 token 链接，免费用户去权益页转化；不在 DOM 暴露 token -->
-          <div
-            class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
-            style="animation-delay: 0.4s"
-          >
-            <span class="flex items-center gap-2">
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] border border-ink bg-accent text-accent-ink">
-                <Rss class="h-4 w-4" />
-              </span>
-              <span class="text-sm font-bold text-stone-800">{{ t('dashboard.rss.title') }}</span>
-            </span>
             <div class="mt-auto flex flex-col gap-1.5">
+              <RouterLink
+                to="/report"
+                class="digest-cta inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
+              >
+                {{ t('dashboard.digest.cta') }}
+                <ArrowRight class="h-3.5 w-3.5" />
+              </RouterLink>
               <a
                 href="/api/feeds/briefing.xml"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="digest-cta inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
+                class="inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink px-2 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent-soft"
               >
+                <Rss class="h-3.5 w-3.5" />
                 {{ t('dashboard.rss.publicCta') }}
                 <ArrowRight class="h-3.5 w-3.5" />
               </a>

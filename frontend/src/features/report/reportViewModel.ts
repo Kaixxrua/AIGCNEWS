@@ -23,13 +23,61 @@ export interface SubscriptionListResponse {
   items: Subscription[]
 }
 
+export type ReportDelivery = 'rss' | 'email' | 'push'
+
+export interface BatchSubscriptionPayload {
+  sources: ReportKey[]
+  deliveries?: ReportDelivery[]
+}
+
 export interface BatchSubscriptionResponse {
   message?: string
   sources?: string[]
+  deliveries?: ReportDelivery[]
 }
 
 export interface ReportMessageResponse {
   message: string
+}
+
+export type DeliveryKind = 'account_email' | 'push_channel' | 'rss'
+
+export interface PlanDeliveryCapability {
+  kind: DeliveryKind
+  key: string
+  channel_id?: number
+  channel_type?: string
+  target?: string
+  verified?: boolean
+  status?: string
+  selectable: boolean
+  disabled_reason?: string | null
+}
+
+export interface SubscriptionPlan {
+  can_select_multiple_sources: boolean
+  max_sources: number
+  active_sources: ReportKey[]
+  capabilities: PlanDeliveryCapability[]
+}
+
+export interface PlanDeliveryRequest {
+  kind: DeliveryKind
+  channel_id?: number
+  feed?: string
+}
+
+export interface PlanAppliedDelivery {
+  kind: DeliveryKind
+  channel_id?: number
+  feed?: string
+  status: string
+}
+
+export interface SubscriptionPlanApplyResponse {
+  sources: ReportKey[]
+  deliveries: PlanAppliedDelivery[]
+  idempotency_key?: string
 }
 
 export interface ReportResponse {

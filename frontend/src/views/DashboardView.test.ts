@@ -79,7 +79,7 @@ describe('DashboardView', () => {
     authBox.isMember = false
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('RSS 订阅')
+    expect(wrapper.text()).toContain(messages.dashboard.digest.title)
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
     expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)
     expect(wrapper.get('aside').classes()).toContain('min-h-0')
@@ -89,8 +89,11 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
+    const digestCta = wrapper.get('a[href="/report"]')
+    expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
+
     const publicFeed = wrapper.get('a[href="/api/feeds/briefing.xml"]')
-    expect(publicFeed.text()).toContain('订阅每日简报')
+    expect(publicFeed.text()).toContain(messages.dashboard.rss.publicCta)
     expect(publicFeed.attributes('target')).toBe('_blank')
     expect(publicFeed.attributes('rel')).toBe('noopener noreferrer')
 
