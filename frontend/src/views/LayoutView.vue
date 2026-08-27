@@ -6,6 +6,7 @@ import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
 import BrandWordmark from '@/components/layout/BrandWordmark.vue'
 import MastheadMeta from '@/components/layout/MastheadMeta.vue'
 import MastheadUser from '@/components/layout/MastheadUser.vue'
+import FavoritesLink from '@/components/FavoritesLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -90,6 +91,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <MastheadMeta />
         <MastheadUser />
         <div class="flex items-center gap-3">
+          <FavoritesLink />
           <BrandWordmark :text="brandName" />
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="flex items-center gap-2">
