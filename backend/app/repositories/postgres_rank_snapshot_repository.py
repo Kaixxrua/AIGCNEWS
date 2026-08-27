@@ -111,26 +111,45 @@ class PostgresRankSnapshotRepository:
             conditions.append("d.source = %s")
             params.append(source_type)
         params.append(limit)
+        # github 星数/语言补全只在结果集可能含 github 行时才有意义：
+        # 具体非 github source_type 已把 d.source 钉死，join 永不命中，
+        # COALESCE 回退链等价于直接读 d 自身列——省掉对
+        # github_repo_candidates(2.5 万行) 与 github_repo_snapshots(65 万行)
+        # 的全量扫描（历史快照每次按 channel 调用，单查询曾 1.2s+）。
+        github_visible = source_type in (None, "", "all", "github")
+        if github_visible:
+            metric_columns = """COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+                   COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+                   COALESCE(NULLIF(d.language, ''), c.language, '') AS language,"""
+            # gs 取每仓库最新快照：LATERAL + (repo_id, snapshot_date) 索引倒序
+            # LIMIT 1 逐行探测；勿改回 DISTINCT ON 全表物化——那会对
+            # github_repo_snapshots 整表排序落盘，与结果集大小无关。
+            github_joins = """LEFT JOIN github_repo_candidates c
+              ON d.source = 'github' AND (c.full_name = d.title
+                  OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
+            LEFT JOIN LATERAL (
+                SELECT g.stars, g.forks
+                FROM github_repo_snapshots g
+                WHERE g.repo_id = c.repo_id
+                ORDER BY g.snapshot_date DESC
+                LIMIT 1
+            ) gs ON TRUE"""
+        else:
+            metric_columns = """COALESCE(NULLIF(d.stars, 0), 0) AS stars,
+                   COALESCE(NULLIF(d.forks, 0), 0) AS forks,
+                   COALESCE(NULLIF(d.language, ''), '') AS language,"""
+            github_joins = ""
         sql = f"""
             SELECT d.id, d.source, d.title, d.url, d.summary, d.published_date,
                    d.published_at, d.tags, d.indexed, d.created_at,
                    d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.retweeted_by, d.translation_zh,
                    d.authors, d.arxiv_id,
-                   COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
-                   COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
-                   COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
+                   {metric_columns}
                    d.in_daily, d.in_weekly, d.in_monthly, s.source_channel,
                    s.rank_in_period, s.raw_score, s.score, s.snapshot_date
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
-            LEFT JOIN github_repo_candidates c
-              ON d.source = 'github' AND (c.full_name = d.title
-                  OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
-            LEFT JOIN (
-                SELECT DISTINCT ON (repo_id) repo_id, stars, forks
-                FROM github_repo_snapshots
-                ORDER BY repo_id, snapshot_date DESC
-            ) gs ON gs.repo_id = c.repo_id
+            {github_joins}
             WHERE {' AND '.join(conditions)}
             ORDER BY
                 CASE WHEN d.source = 'github' THEN s.rank_in_period ELSE 9999 END ASC,
