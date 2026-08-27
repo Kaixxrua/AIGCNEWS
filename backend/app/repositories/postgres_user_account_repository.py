@@ -116,7 +116,7 @@ class PostgresUserAccountRepository:
         return self._fetchone(
             """
             SELECT id, phone, email, username, hashed_password, role, disabled,
-                   pwd_ver, membership_tier, created_at
+                   pwd_ver, password_login_enabled, membership_tier, created_at
             FROM users
             WHERE email = %s
             """,

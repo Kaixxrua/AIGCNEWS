@@ -56,6 +56,7 @@ def test_account_reads_normalize_email_and_copy_rows() -> None:
     # pwd_ver 供登录签发时写入 JWT 声明（改密即失效旧令牌）
     assert "disabled" in cursor.execute.call_args.args[0]
     assert "pwd_ver" in cursor.execute.call_args.args[0]
+    assert "password_login_enabled" in cursor.execute.call_args.args[0]
     assert database.transaction_count == 1
 
 
