@@ -124,23 +124,44 @@ def _document_search_candidates(query: str, *, max_terms: int = 5) -> list[str]:
     return candidates
 
 
-def _document_projection() -> str:
-    return """
+def _document_projection(*, github_visible: bool = True) -> str:
+    """文档读路径共享投影；github_visible=False 时裁剪 github 补全连接。
+
+    github 星数/语言补全只对可能含 github 行的结果集有意义：调用方已按
+    具体非 github source 过滤时，c/gs 连接永不命中，COALESCE 回退链
+    等价于直接读 d 自身列——省掉 github_repo_candidates(2.5 万行) 与
+    github_repo_snapshots(65 万行) 的全量扫描（X 看板每页曾 1.4s+）。
+    github_visible=True 时 gs 用 LATERAL + (repo_id, snapshot_date) 索引
+    倒序 LIMIT 1 逐行探测；勿改回 DISTINCT ON 全表物化（整表排序落盘，
+    与结果集大小无关）。
+    """
+    if github_visible:
+        metric_columns = """COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+               COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+               COALESCE(NULLIF(d.language, ''), c.language, '') AS language,"""
+        github_joins = """LEFT JOIN github_repo_candidates c
+          ON d.source = 'github' AND (c.full_name = d.title
+              OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
+        LEFT JOIN LATERAL (
+            SELECT g.stars, g.forks
+            FROM github_repo_snapshots g
+            WHERE g.repo_id = c.repo_id
+            ORDER BY g.snapshot_date DESC
+            LIMIT 1
+        ) gs ON TRUE"""
+    else:
+        metric_columns = """COALESCE(NULLIF(d.stars, 0), 0) AS stars,
+               COALESCE(NULLIF(d.forks, 0), 0) AS forks,
+               COALESCE(NULLIF(d.language, ''), '') AS language,"""
+        github_joins = ""
+    return f"""
         SELECT d.id, d.source, d.source_channel, d.title, d.url, d.summary,
                d.published_date, d.published_at, d.tags, d.score, d.raw_score,
-               COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
-               COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
-               COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
+               {metric_columns}
                d.rank_in_period, d.indexed, d.in_daily, d.in_weekly,
                d.in_monthly, d.local_pdf_path, d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.retweeted_by, d.translation_zh, d.authors, d.arxiv_id, d.created_at
         FROM documents d
-        LEFT JOIN github_repo_candidates c
-          ON d.source = 'github' AND (c.full_name = d.title
-              OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
-        LEFT JOIN (
-            SELECT DISTINCT ON (repo_id) repo_id, stars, forks
-            FROM github_repo_snapshots ORDER BY repo_id, snapshot_date DESC
-        ) gs ON gs.repo_id = c.repo_id
+        {github_joins}
     """
 
 
@@ -632,7 +653,9 @@ class PostgresDocumentRepository:
         return self._fetch_one("SELECT local_pdf_path, url, source FROM documents WHERE id = %s LIMIT 1", (paper_id,))
 
     def get_top_documents(self, limit: int = 10, source_type: str | None = None) -> list[dict[str, Any]]:
-        projection = _document_projection()
+        projection = _document_projection(
+            github_visible=source_type in (None, "", "all", "github")
+        )
         order = "ORDER BY COALESCE(d.raw_score, d.score, 0) DESC, d.published_date DESC"
         if source_type and source_type != "all":
             return self._fetch_rows(f"{projection} WHERE d.source = %s {order} LIMIT %s", (source_type, limit))
@@ -652,7 +675,8 @@ class PostgresDocumentRepository:
         采集入库时间，所有源都有值，语义等价于"近期进入文档池的条目"。
         """
         return self._fetch_rows(
-            f"{_document_projection()} WHERE d.source = %s AND LEFT(d.created_at, 10) >= %s "
+            f"{_document_projection(github_visible=source_type in ('', 'all', 'github'))}"
+            " WHERE d.source = %s AND LEFT(d.created_at, 10) >= %s "
             "ORDER BY COALESCE(d.raw_score, d.score, 0) DESC, d.created_at DESC LIMIT %s",
             (source_type, since_date, limit),
         )
@@ -723,7 +747,7 @@ class PostgresDocumentRepository:
             # 与下方 ORDER BY 完全同序；严格不等式续查天然跳过同值并列。
             score_expr = "COALESCE(d.raw_score, d.score, 0)"
             clause = (
-                f"{_document_projection()} WHERE d.source = %s"
+                f"{_document_projection(github_visible=(source == 'github'))} WHERE d.source = %s"
                 " AND NULLIF(d.published_at, '') IS NOT NULL"
                 " AND d.published_at >= %s"
             )
@@ -758,7 +782,7 @@ class PostgresDocumentRepository:
 
         recent_at = "COALESCE(NULLIF(d.published_at, ''), NULLIF(d.published_date, ''), d.created_at)"
         clause = (
-            f"{_document_projection()} WHERE d.source = %s"
+            f"{_document_projection(github_visible=(source == 'github'))} WHERE d.source = %s"
             f" AND ({recent_at} >= %s OR d.created_at >= %s)"
         )
         params = [source, since_iso, since_iso]
