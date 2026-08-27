@@ -1,9 +1,8 @@
 import { createApp } from 'vue'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import AppDock from '@/components/layout/AppDock.vue'
+import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import i18n, { setAppLocale } from '@/i18n'
-import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 import {
   __resetInstallPromptForTests,
   initializeInstallPrompt,
@@ -181,7 +180,7 @@ describe('installPrompt 状态机', () => {
   })
 })
 
-describe('AppDock 安装入口', () => {
+describe('顶栏安装入口（PwaInstallLink）', () => {
   let unmount: (() => void) | undefined
 
   beforeEach(() => {
@@ -197,21 +196,11 @@ describe('AppDock 安装入口', () => {
     setAppLocale('zh-CN')
   })
 
-  const mountDock = () => {
+  const mountLink = () => {
     const host = document.createElement('div')
     document.body.appendChild(host)
-    const app = createApp(AppDock, {
-      items: NAV_ITEMS,
-      currentPath: '/',
-      isAdmin: false,
-      isLoggedIn: false,
-    })
+    const app = createApp(PwaInstallLink)
     app.use(i18n)
-    app.component('RouterLink', {
-      inheritAttrs: true,
-      props: ['to'],
-      template: '<a :href="to"><slot /></a>',
-    })
     app.mount(host)
     unmount = () => { app.unmount(); host.remove() }
     return host
@@ -222,16 +211,16 @@ describe('AppDock 安装入口', () => {
     initializeInstallPrompt()
     dispatchBeforeInstallPrompt()
 
-    const host = mountDock()
-    const button = host.querySelector('.dock-item--install')
+    const host = mountLink()
+    const button = host.querySelector('.pwa-install-link')
     expect(button).not.toBeNull()
     expect(button?.getAttribute('aria-label')).toBe('安装应用')
   })
 
   it('未初始化时不渲染安装按钮', () => {
     expect(showInstallEntry.value).toBe(false)
-    const host = mountDock()
-    expect(host.querySelector('.dock-item--install')).toBeNull()
+    const host = mountLink()
+    expect(host.querySelector('.pwa-install-link')).toBeNull()
   })
 
   it('英文界面使用英文 aria-label', () => {
@@ -239,7 +228,18 @@ describe('AppDock 安装入口', () => {
     initializeInstallPrompt()
     dispatchBeforeInstallPrompt()
 
-    const host = mountDock()
-    expect(host.querySelector('.dock-item--install')?.getAttribute('aria-label')).toBe('Install app')
+    const host = mountLink()
+    expect(host.querySelector('.pwa-install-link')?.getAttribute('aria-label')).toBe('Install app')
+  })
+
+  it('点击安装按钮调用 promptInstall（消费系统弹窗事件）', async () => {
+    setAppLocale('zh-CN')
+    initializeInstallPrompt()
+    const { wasPrompted } = dispatchBeforeInstallPrompt()
+
+    const host = mountLink()
+    ;(host.querySelector('.pwa-install-link') as HTMLButtonElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(wasPrompted()).toBe(true)
   })
 })

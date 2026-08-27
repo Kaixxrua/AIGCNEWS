@@ -1,130 +1,146 @@
-import { createApp } from 'vue'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import FavoritesLink from './FavoritesLink.vue'
+import { createApp, nextTick } from 'vue'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import FavoritesLink from '@/components/FavoritesLink.vue'
 import i18n, { setAppLocale } from '@/i18n'
-import {
-  addMyToolWebsite,
-  fetchMyProjectCollection,
-  removeMyToolWebsite,
-} from '@/services/projects/projectApi'
-import { showToast } from '@/composables/useToast'
 
-const { requestLoginSpy, authBox } = vi.hoisted(() => ({
-  requestLoginSpy: vi.fn(),
-  authBox: { current: null as null | { isLoggedIn: boolean } },
-}))
+/** 收藏本站引导气泡契约：
+ * - 点击星星切换气泡显隐；Escape / 点击外部关闭；
+ * - 桌面非 Mac 提示 Ctrl + D，Mac 桌面提示 ⌘ + D；
+ * - 触屏设备没有快捷键语义，改为浏览器菜单指引；
+ * - 纯引导交互，不触达任何收藏 API。 */
 
-vi.mock('@/stores/authStore', async () => {
-  const { reactive } = await import('vue')
-  if (!authBox.current) authBox.current = reactive({ isLoggedIn: false })
-  return { useAuthStore: () => authBox.current }
-})
-vi.mock('@/composables/useLoginPrompt', () => ({
-  useLoginPrompt: () => ({ requestLogin: requestLoginSpy }),
-}))
-vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ fullPath: '/dashboard' }) }))
-vi.mock('@/services/projects/projectApi', () => ({
-  addMyToolWebsite: vi.fn(),
-  fetchMyProjectCollection: vi.fn(),
-  removeMyToolWebsite: vi.fn(),
-}))
+const ORIGINAL_UA = window.navigator.userAgent
+const ORIGINAL_PLATFORM = window.navigator.platform
+const ORIGINAL_MAX_TOUCH = window.navigator.maxTouchPoints
 
-const addMock = vi.mocked(addMyToolWebsite)
-const collectionMock = vi.mocked(fetchMyProjectCollection)
-const removeMock = vi.mocked(removeMyToolWebsite)
-const toastMock = vi.mocked(showToast)
+const setDevice = (ua: string, platform: string, maxTouchPoints: number) => {
+  Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+  Object.defineProperty(window.navigator, 'platform', { value: platform, configurable: true })
+  Object.defineProperty(window.navigator, 'maxTouchPoints', { value: maxTouchPoints, configurable: true })
+}
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+const restoreDevice = () => setDevice(ORIGINAL_UA, ORIGINAL_PLATFORM, ORIGINAL_MAX_TOUCH)
 
 let unmount: (() => void) | undefined
 
-const mountButton = () => {
+const mountLink = () => {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const app = createApp(FavoritesLink)
   app.use(i18n)
   app.mount(host)
   unmount = () => { app.unmount(); host.remove() }
-  return host.querySelector('button') as HTMLButtonElement
+  return host
 }
 
-describe('FavoritesLink（收藏本站开关）', () => {
-  beforeEach(() => {
+const starButton = (host: HTMLElement) =>
+  host.querySelector('button.favorites-link') as HTMLButtonElement
+
+// Transition 离场在 jsdom 里走 Vue 的 setTimeout 兜底（时长 +1ms），
+// 等 260ms 让离场完成后元素才真正从 DOM 移除。
+const flushLeave = () => new Promise((resolve) => setTimeout(resolve, 260))
+
+afterEach(() => {
+  unmount?.()
+  unmount = undefined
+  restoreDevice()
+  setAppLocale('zh-CN')
+})
+
+describe('FavoritesLink 收藏引导气泡', () => {
+  it('初始仅渲染星星按钮，气泡隐藏，aria-label 为「收藏本站」', () => {
     setAppLocale('zh-CN')
-    authBox.current!.isLoggedIn = false
-    collectionMock.mockResolvedValue({ items: [] } as never)
-    addMock.mockResolvedValue({ status: 'succeeded', message: '', duplicate: false, item: { website_id: 7 } } as never)
-    removeMock.mockResolvedValue({ status: 'succeeded', message: '', deleted: true, website_id: 7 } as never)
+    const host = mountLink()
+    expect(starButton(host).getAttribute('aria-label')).toBe('收藏本站')
+    expect(host.querySelector('.favorite-guide')).toBeNull()
   })
 
-  afterEach(() => {
-    unmount?.()
-    unmount = undefined
-    vi.clearAllMocks()
+  it('点击展开气泡显示 Ctrl + D（桌面非 Mac），再次点击关闭', async () => {
+    setAppLocale('zh-CN')
+    const host = mountLink()
+
+    starButton(host).click()
+    await nextTick()
+    const guide = host.querySelector('.favorite-guide')
+    expect(guide).not.toBeNull()
+    expect(guide?.querySelector('kbd')?.textContent).toBe('Ctrl + D')
+    expect(guide?.textContent).toContain('收藏本站到浏览器书签')
+    expect(starButton(host).getAttribute('aria-expanded')).toBe('true')
+
+    starButton(host).click()
+    await nextTick()
+    await flushLeave()
+    expect(host.querySelector('.favorite-guide')).toBeNull()
   })
 
-  it('未登录点击只弹登录，不调用任何收藏 API', async () => {
-    const button = mountButton()
-    await flush()
-    button.click()
-    await flush()
-    expect(requestLoginSpy).toHaveBeenCalledWith('/dashboard')
-    expect(addMock).not.toHaveBeenCalled()
-    expect(removeMock).not.toHaveBeenCalled()
+  it('Escape 关闭气泡', async () => {
+    setAppLocale('zh-CN')
+    const host = mountLink()
+
+    starButton(host).click()
+    await nextTick()
+    expect(host.querySelector('.favorite-guide')).not.toBeNull()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    await flushLeave()
+    expect(host.querySelector('.favorite-guide')).toBeNull()
   })
 
-  it('未登录点击后完成登录，自动执行收藏', async () => {
-    const button = mountButton()
-    await flush()
-    button.click()
-    await flush()
-    authBox.current!.isLoggedIn = true
-    await flush()
-    await flush()
-    expect(addMock).toHaveBeenCalledWith(window.location.origin)
-    expect(toastMock).toHaveBeenCalledWith('已收藏本站，可到项目库「我的网页」查看')
-    expect(button.getAttribute('aria-pressed')).toBe('true')
+  it('点击组件外部关闭气泡', async () => {
+    setAppLocale('zh-CN')
+    const host = mountLink()
+
+    starButton(host).click()
+    await nextTick()
+    expect(host.querySelector('.favorite-guide')).not.toBeNull()
+
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    await flushLeave()
+    expect(host.querySelector('.favorite-guide')).toBeNull()
   })
 
-  it('登录且本站未收藏：点击加入收藏并反馈位置', async () => {
-    authBox.current!.isLoggedIn = true
-    const button = mountButton()
-    await flush()
-    expect(button.getAttribute('aria-pressed')).toBe('false')
-    button.click()
-    await flush()
-    await flush()
-    expect(addMock).toHaveBeenCalledWith(window.location.origin)
-    expect(button.getAttribute('aria-pressed')).toBe('true')
+  it('Mac 桌面提示 ⌘ + D', async () => {
+    setDevice(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
+      'MacIntel',
+      0,
+    )
+    setAppLocale('zh-CN')
+    const host = mountLink()
+
+    starButton(host).click()
+    await nextTick()
+    expect(host.querySelector('.favorite-guide kbd')?.textContent).toBe('⌘ + D')
   })
 
-  it('登录且本站已收藏（含 www 前缀归一）：点击移出收藏', async () => {
-    authBox.current!.isLoggedIn = true
-    collectionMock.mockResolvedValue({
-      items: [{ website_id: 42, url: `http://www.${window.location.hostname}/` }],
-    } as never)
-    const button = mountButton()
-    await flush()
-    await flush()
-    expect(button.getAttribute('aria-pressed')).toBe('true')
-    button.click()
-    await flush()
-    await flush()
-    expect(removeMock).toHaveBeenCalledWith(42)
-    expect(toastMock).toHaveBeenCalledWith('已取消收藏本站')
-    expect(button.getAttribute('aria-pressed')).toBe('false')
+  it('触屏设备改为浏览器菜单指引且不显示 kbd', async () => {
+    setDevice(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+      'iPhone',
+      5,
+    )
+    setAppLocale('zh-CN')
+    const host = mountLink()
+
+    starButton(host).click()
+    await nextTick()
+    const guide = host.querySelector('.favorite-guide')
+    expect(guide?.querySelector('kbd')).toBeNull()
+    expect(guide?.textContent).toContain('打开浏览器菜单，选择「书签」或「收藏」即可收藏本站')
   })
 
-  it('收藏接口返回 duplicate 时提示已在收藏中', async () => {
-    authBox.current!.isLoggedIn = true
-    addMock.mockResolvedValue({ status: 'succeeded', message: '', duplicate: true, item: { website_id: 9 } } as never)
-    const button = mountButton()
-    await flush()
-    button.click()
-    await flush()
-    await flush()
-    expect(toastMock).toHaveBeenCalledWith('本站已在你的收藏中')
-    expect(button.getAttribute('aria-pressed')).toBe('true')
+  it('英文界面使用英文文案', async () => {
+    setAppLocale('en-US')
+    const host = mountLink()
+    expect(starButton(host).getAttribute('aria-label')).toBe('Bookmark this site')
+
+    starButton(host).click()
+    await nextTick()
+    expect(host.querySelector('.favorite-guide')?.textContent).toContain(
+      'to bookmark this site in your browser',
+    )
   })
 })
