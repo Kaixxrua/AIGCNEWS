@@ -33,7 +33,6 @@ import {
   canRecommendProject,
   estimateProjectCardHeight,
   isWebsite,
-  localizedCategoryName,
   projectKey,
   projectLogoKey,
   type ProjectChip,
@@ -42,7 +41,6 @@ import { distributeColumns } from '@/utils/masonry'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
-const categoryLabel = (item: Parameters<typeof localizedCategoryName>[0]) => localizedCategoryName(item, locale.value as AppLocale)
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const route = useRoute()
@@ -118,7 +116,6 @@ const todayScope = computed(() => scopeCategories.value.find((item) => item.scop
 const semanticCategories = computed(() => categories.value.filter((item) => (item.kind ?? 'category') === 'category'))
 const activeCategory = computed(() => semanticCategories.value.find((item) => item.slug === selectedCategory.value))
 const visibleSubcategories = computed(() => activeCategory.value?.children ?? [])
-const activeSubcategory = computed(() => visibleSubcategories.value.find((item) => item.slug === selectedSubcategory.value))
 const isWebsiteOnlyView = computed(() => source.value === 'website')
 // 瀑布流：估高贪心分列（与 X 页同一套 distributeColumns）。列数由容器
 // 内容宽驱动，镜像旧 auto-fill minmax(260px,1fr) 的断档；列内保持服务端
@@ -152,9 +149,22 @@ const masonryColumnCount = computed(() => {
   if (width <= 0) return 1
   return Math.max(1, Math.floor((width + MASONRY_GAP_PX) / (MASONRY_MIN_CARD_PX + MASONRY_GAP_PX)))
 })
-const masonryColumnWidth = computed(() => {
+// 列宽取整并按列分配余数：1fr 均分在 DPR=1 屏幕上会让第 2/4 列落在
+// 半像素上，1px 边框被抗锯齿成虚边（用户反馈"二四列边框绘制异常"）。
+// 显式整数轨道 + 整数 gap ⇒ 每列左右边缘都落在物理像素上。
+const masonryColumnWidths = computed(() => {
   const count = masonryColumnCount.value
-  const width = (gridContentWidth.value - MASONRY_GAP_PX * (count - 1)) / count
+  const total = Math.floor(gridContentWidth.value) - MASONRY_GAP_PX * (count - 1)
+  const base = Math.floor(total / count)
+  let remainder = total - base * count
+  return Array.from({ length: count }, () => base + (remainder-- > 0 ? 1 : 0))
+})
+const masonryGridTemplate = computed(() => {
+  const widths = masonryColumnWidths.value
+  return widths.every((w) => w > 0) ? widths.map((w) => `${w}px`).join(' ') : 'minmax(0, 1fr)'
+})
+const masonryColumnWidth = computed(() => {
+  const width = Math.min(...masonryColumnWidths.value)
   return width > 0 ? width : MASONRY_MIN_CARD_PX // 首帧未测量时的回退列宽
 })
 const masonryColumns = computed(() => distributeColumns(
@@ -172,11 +182,9 @@ const masonryColumns = computed(() => distributeColumns(
 // 同时 index<6 的 logo 走 eager 加载，语义保持全局名次而非列内名次。
 const projectOrdinal = computed(() => new Map(projects.value.map((repo, index) => [projectKey(repo), index])))
 const ordinalOf = (repo: GitHubProjectItem) => projectOrdinal.value.get(projectKey(repo)) ?? 0
-const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? t('projects.all'))
 const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
-const starsBadgeLabel = computed(() => source.value === 'all' ? t('projects.starsThresholdBadge') : '')
 const websiteQuotaExhausted = computed(() => websiteQuota.value?.unlimited === false && websiteQuota.value.remaining === 0)
 const websiteQuotaHint = computed(() => {
   if (websiteQuotaLoading.value && !websiteQuota.value) return t('projects.websiteQuotaLoading')
@@ -189,16 +197,6 @@ const websiteQuotaHint = computed(() => {
     return t('projects.websiteQuotaExhausted', { time: resetAt })
   }
   return t('projects.websiteQuotaRemaining', { count: websiteQuota.value.remaining })
-})
-const activeFilterLabel = computed(() => {
-  if (selectedTag.value) return t('projects.filterTag', { tag: selectedTag.value })
-  if (selectedLanguage.value) return t('projects.filterLanguage', { language: selectedLanguage.value })
-  if (isPersonalView.value) return t('projects.noTagFilter')
-  if (selectedScope.value === 'recommended') return categoryLabel(recommendedScope.value) || t('projects.recommended')
-  if (selectedScope.value === 'today') return categoryLabel(todayScope.value) || t('projects.today')
-  if (activeCategory.value && activeSubcategory.value) return `${categoryLabel(activeCategory.value)} / ${categoryLabel(activeSubcategory.value)}`
-  if (activeCategory.value) return categoryLabel(activeCategory.value)
-  return t('projects.allCategories')
 })
 const hasActiveFilter = computed(() => selectedScope.value !== 'all' || selectedCategory.value !== 'all' || selectedSubcategory.value !== 'all' || !!selectedLanguage.value || !!selectedTag.value)
 
@@ -422,18 +420,11 @@ onBeforeUnmount(stopViewReads)
   <div ref="pageEl" class="projects-page">
     <section class="projects-hero glass-card">
       <div class="projects-hero__text">
-        <p class="projects-kicker">AI TOOL ATLAS</p>
-        <h1>{{ t('navigation.projects') }}</h1>
-        <p>{{ t('projects.publicLibrary') }}</p>
+        <p class="projects-kicker">GITHUB PROJECTS</p>
+        <h1>{{ t('projects.pageTitle') }}</h1>
       </div>
 
       <div class="projects-hero__side">
-        <div class="projects-hero__stats" :aria-label="t('projects.results', { count: total })">
-          <span>{{ t('projects.results', { count: total }) }}</span>
-          <span>{{ sourceLabel }}</span>
-          <span v-if="starsBadgeLabel">{{ starsBadgeLabel }}</span>
-          <span>{{ activeFilterLabel }}</span>
-        </div>
         <button
           v-if="isWebsiteOnlyView"
           type="button"
@@ -732,18 +723,11 @@ onBeforeUnmount(stopViewReads)
   line-height: 1;
 }
 
-.projects-hero p:not(.projects-kicker),
 .empty-state p:not(.projects-kicker) {
   margin-top: 12px;
   color: rgb(var(--stone-500-rgb));
   font-size: 14px;
   line-height: 1.8;
-}
-
-.projects-hero p:not(.projects-kicker) {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .projects-hero__side {
@@ -753,25 +737,6 @@ onBeforeUnmount(stopViewReads)
   align-items: flex-end;
   flex-direction: column;
   gap: 8px;
-}
-
-.projects-hero__stats {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 300px;
-}
-
-.projects-hero__stats span {
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  padding: 4px 8px;
-  color: rgb(var(--stone-600-rgb));
-  background: var(--projects-paper-light);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .projects-home-btn {
@@ -1131,12 +1096,13 @@ onBeforeUnmount(stopViewReads)
 }
 
 /* 估高贪心瀑布流（与 X 页同一套 distributeColumns）：JS 按卡片估高把
-   每项放进当前最矮列，列高各自独立、卡片按内容高度堆叠；v-bind 列数
-   跟随容器宽（镜像旧 auto-fill minmax(260px,1fr) 的断档）。 */
+   每项放进当前最矮列，列高各自独立、卡片按内容高度堆叠；列数跟随容器
+   宽（镜像旧 auto-fill minmax(260px,1fr) 的断档）。轨道为 JS 分配的整数
+   像素（余数从左起每列 +1），避免 1fr 半像素轨道让 1px 边框发虚。 */
 .projects-grid {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(v-bind(masonryColumnCount), minmax(0, 1fr));
+  grid-template-columns: v-bind(masonryGridTemplate);
   gap: 12px;
   align-items: start;
 }
@@ -1220,11 +1186,6 @@ onBeforeUnmount(stopViewReads)
 
   .projects-login-prompt__action {
     width: 100%;
-  }
-
-  .projects-hero__stats {
-    justify-content: flex-start;
-    max-width: none;
   }
 
   .projects-hero__side {
