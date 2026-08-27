@@ -174,9 +174,19 @@ class ProjectVectorRepository:
         return len(rows)
 
     def delete_project(self, repo_id: str) -> None:
+        self.delete_projects([repo_id])
+
+    def delete_projects(self, repo_ids: Iterable[str], *, flush: bool = True) -> int:
+        """Delete all chunks for repository identities; missing identities are idempotent."""
+        ids = [str(repo_id or "").strip() for repo_id in repo_ids if str(repo_id or "").strip()]
+        if not ids:
+            return 0
         collection = self.ensure_collection()
-        collection.delete(f'repo_id == "{self._quoted(repo_id)}"')
-        collection.flush()
+        expr = " or ".join(f'repo_id == "{self._quoted(repo_id)}"' for repo_id in ids)
+        collection.delete(expr)
+        if flush:
+            collection.flush()
+        return len(ids)
 
     def search_repo_ids(
         self,
