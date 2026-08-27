@@ -261,6 +261,20 @@ describe('GitHubProjectsView controller wiring', () => {
     expect(cards[1]!.text()).not.toMatch(lastPushPattern)
   })
 
+  it('lays cards out inside masonry columns', async () => {
+    controller().projects.value = [
+      { full_name: 'owner/one', description_zh: '一' },
+      { full_name: 'owner/two', description_zh: '二' },
+      { full_name: 'owner/three', description_zh: '三' },
+    ]
+    const wrapper = await mountView()
+
+    // jsdom 无 ResizeObserver：回退单列，全部卡片包进同一个 .projects-col
+    const columns = wrapper.findAll('.projects-col')
+    expect(columns).toHaveLength(1)
+    expect(columns[0]!.findAllComponents({ name: 'ProjectResultCard' })).toHaveLength(3)
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },

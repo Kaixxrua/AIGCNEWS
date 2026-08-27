@@ -1,4 +1,5 @@
 import { formatLocaleCompactNumber, formatLocaleDate, formatLocaleRelativeDay } from '@/i18n/formatters'
+import { estimateTextLines, textAdvancePx } from '@/utils/masonry'
 import type { AppLocale } from '@/i18n'
 import type {
   GitHubProjectItem,
@@ -253,3 +254,113 @@ export const shouldShowProjectHotScore = (
 export const formattedProjectHotScore = (project: GitHubProjectItem) => (
   projectHotScore(project).toFixed(1).replace(/\.0$/, '')
 )
+
+/* ─── 瀑布流估高（GitHubProjectsView 分列用） ─────────────────────────
+ * 按 ProjectResultCard 模板结构逐项累加：来源徽标行、标题折行（按字宽）、
+ * 域名行、描述折行、标签芯片贪心装行、统计行贪心装行。只需列间相对比较
+ * 准确：描述与标题折行是估高主项，芯片/统计行的装行误差在列间相互抵消。
+ * 返回值已把列间距（12px）折进每卡，可直接累加比较。 */
+
+export interface ProjectCardHeightEstimateOptions {
+  /** 个人视图会过滤兜底标签，影响芯片行数 */
+  isPersonalView?: boolean
+  /** 描述缺失时的本地化兜底文案（视图层 t() 解析后传入） */
+  descriptionFallback?: string
+  /** 无标签时的兜底芯片文案（视图层 t() 解析后传入） */
+  genericTagLabels?: { project: string; website: string }
+  /** 排序/范围：决定统计行是否多一项热度分 */
+  sort?: GitHubProjectSort
+  scope?: ProjectScope
+}
+
+const CARD_BORDER_PX = 2
+const CARD_PADDING_PX = 44 // 上下 22×2
+const CARD_SECTION_GAPS_PX = 18 * 3 // body flex gap 18px ×（徽标/描述/标签/统计 4 段 − 1）
+const CARD_MIN_HEIGHT_PX = 248 // .project-card__body min-height
+const CARD_RAIL_MARGIN_PX = 34 // --projects-card-action-size：桌面右侧动作轨外探，挤压卡体宽
+const BADGE_ROW_PX = 27 // 徽标 ~20 + margin-bottom 7
+const TITLE_LINE_PX = 22.5 // 18px × 1.25
+const DOMAIN_ROW_PX = 18 // 12px 行 + margin-top 4
+const DESC_LINE_PX = 19.5 // 13px × 1.5
+const CHIP_GAP_PX = 6
+const CHIP_TEXT_PADDING_PX = 18 // 左右 padding 16 + 边框 2
+const CHIP_LINE_PX = 16 // 11px×1.45 行高：芯片 white-space:normal，长标签会在芯片内部折行
+const CHIP_VERTICAL_PADDING_PX = 4
+const STATS_HEAD_PX = 15 // padding-top 14 + 上边框 1
+const STATS_LINE_PX = 18 // 12px 字 / 14px 图标取整
+const STATS_GAP_PX = 10
+
+/** 芯片几何：标签文本在芯片内折行（窄列常见 2 行芯片）；装行宽度封顶容器宽 */
+const chipGeometry = (label: string, contentWidth: number): { width: number; height: number } => {
+  const textWidth = textAdvancePx(label, 11)
+  const innerWidth = Math.max(40, contentWidth - CHIP_TEXT_PADDING_PX)
+  const lines = Math.max(1, Math.ceil(textWidth / innerWidth))
+  return {
+    width: Math.min(textWidth + CHIP_TEXT_PADDING_PX, contentWidth),
+    height: lines * CHIP_LINE_PX + CHIP_VERTICAL_PADDING_PX,
+  }
+}
+
+/** flex-wrap 近似装行：按容器宽贪心换行，行高取行内最高件 */
+const packRowHeights = (items: { width: number; height: number }[], containerWidth: number, gapPx: number): number => {
+  if (!items.length) return 0
+  let total = 0
+  let rowWidth = 0
+  let rowHeight = 0
+  for (const item of items) {
+    if (rowWidth > 0 && rowWidth + gapPx + item.width > containerWidth) {
+      total += rowHeight + gapPx
+      rowWidth = item.width
+      rowHeight = item.height
+    } else {
+      rowWidth = rowWidth > 0 ? rowWidth + gapPx + item.width : item.width
+      rowHeight = Math.max(rowHeight, item.height)
+    }
+  }
+  return total + rowHeight
+}
+
+/** 统计行单项宽度近似：图标 14 + 间距 5 + 文本按 12px 字宽 */
+const statsItemWidthPx = (text: string): number => 19 + textAdvancePx(text, 12)
+
+export const estimateProjectCardHeight = (
+  project: GitHubProjectItem,
+  columnWidth: number,
+  locale: AppLocale = 'zh-CN',
+  options: ProjectCardHeightEstimateOptions = {},
+): number => {
+  const cardWidth = Math.max(200, columnWidth)
+  const contentWidth = Math.max(80, cardWidth - CARD_RAIL_MARGIN_PX - CARD_BORDER_PX - CARD_PADDING_PX)
+  let height = CARD_BORDER_PX + CARD_PADDING_PX + CARD_SECTION_GAPS_PX
+  // 头部：徽标 + 标题折行（徽标+标题恒高于 42px logo，logo 不主导行高）
+  height += BADGE_ROW_PX + estimateTextLines(projectName(project), contentWidth, 18) * TITLE_LINE_PX
+  if (isWebsite(project) && project.domain) height += DOMAIN_ROW_PX
+  const description = projectDescription(project, locale, options.descriptionFallback ?? '')
+  height += estimateTextLines(description, contentWidth, 13) * DESC_LINE_PX
+  const chips = projectDisplayTags(
+    project,
+    options.isPersonalView ?? false,
+    locale,
+    options.genericTagLabels ?? { project: 'AI 项目', website: '网页收藏' },
+  )
+  height += packRowHeights(chips.map((chip) => chipGeometry(chip.label, contentWidth)), contentWidth, CHIP_GAP_PX)
+  const stats: number[] = []
+  if (isWebsite(project)) {
+    stats.push(statsItemWidthPx(project.domain || 'website'))
+    stats.push(statsItemWidthPx('收录 00/00'))
+  } else {
+    // 实测 zh 统计行宽度标定（'45.6k stars'/'今日 +123'/'热度 42'/'1.2k forks'/'3 天前'），
+    // 窄列通常 3 行；en 文案量级相当，列间误差相互抵消
+    stats.push(statsItemWidthPx('00.0k stars'))
+    stats.push(statsItemWidthPx('今日 +000'))
+    if (options.sort && options.scope && shouldShowProjectHotScore(project, options.sort, options.scope)) stats.push(statsItemWidthPx('热度 00'))
+    stats.push(statsItemWidthPx('0.0k forks'))
+    if (project.pushed_at) stats.push(statsItemWidthPx('0 天前'))
+  }
+  height += STATS_HEAD_PX + packRowHeights(
+    stats.map((width) => ({ width, height: STATS_LINE_PX })),
+    contentWidth,
+    STATS_GAP_PX,
+  )
+  return Math.max(height, CARD_MIN_HEIGHT_PX) + 12 // 列间距 gap 折进每卡
+}

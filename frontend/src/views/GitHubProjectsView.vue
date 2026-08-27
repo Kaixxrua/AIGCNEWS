@@ -31,12 +31,14 @@ import {
   canEditWebsiteProject,
   canFavoriteProject,
   canRecommendProject,
+  estimateProjectCardHeight,
   isWebsite,
   localizedCategoryName,
   projectKey,
   projectLogoKey,
   type ProjectChip,
 } from '@/features/projects/projectPresentation'
+import { distributeColumns } from '@/utils/masonry'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
@@ -118,6 +120,58 @@ const activeCategory = computed(() => semanticCategories.value.find((item) => it
 const visibleSubcategories = computed(() => activeCategory.value?.children ?? [])
 const activeSubcategory = computed(() => visibleSubcategories.value.find((item) => item.slug === selectedSubcategory.value))
 const isWebsiteOnlyView = computed(() => source.value === 'website')
+// 瀑布流：估高贪心分列（与 X 页同一套 distributeColumns）。列数由容器
+// 内容宽驱动，镜像旧 auto-fill minmax(260px,1fr) 的断档；列内保持服务端
+// 排序（stars/hot 等），左上角仍是当前页第一项。
+const MASONRY_MIN_CARD_PX = 260
+const MASONRY_GAP_PX = 12
+const pageEl = ref<HTMLElement | null>(null)
+const gridContentWidth = ref(0)
+let pageResizeObserver: ResizeObserver | null = null
+// 实测页面滚动容器的水平 padding 得出内容宽：720/639px 断点会收窄
+// padding，写死常量会让瀑布流分列在窄屏失真。
+const measureGridContentWidth = () => {
+  const el = pageEl.value
+  if (!el) return
+  const style = window.getComputedStyle(el)
+  gridContentWidth.value = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+}
+const startGridMeasure = () => {
+  measureGridContentWidth()
+  if (pageResizeObserver || !pageEl.value || typeof ResizeObserver === 'undefined') return
+  // jsdom 等无 ResizeObserver 环境跳过观测，回退单列渲染
+  pageResizeObserver = new ResizeObserver(measureGridContentWidth)
+  pageResizeObserver.observe(pageEl.value)
+}
+const stopGridMeasure = () => {
+  pageResizeObserver?.disconnect()
+  pageResizeObserver = null
+}
+const masonryColumnCount = computed(() => {
+  const width = gridContentWidth.value
+  if (width <= 0) return 1
+  return Math.max(1, Math.floor((width + MASONRY_GAP_PX) / (MASONRY_MIN_CARD_PX + MASONRY_GAP_PX)))
+})
+const masonryColumnWidth = computed(() => {
+  const count = masonryColumnCount.value
+  const width = (gridContentWidth.value - MASONRY_GAP_PX * (count - 1)) / count
+  return width > 0 ? width : MASONRY_MIN_CARD_PX // 首帧未测量时的回退列宽
+})
+const masonryColumns = computed(() => distributeColumns(
+  projects.value,
+  masonryColumnCount.value,
+  (repo) => estimateProjectCardHeight(repo, masonryColumnWidth.value, locale.value as AppLocale, {
+    isPersonalView: isPersonalView.value,
+    descriptionFallback: t(isWebsite(repo) ? 'projects.fallbackWebsite' : 'projects.fallbackProject'),
+    genericTagLabels: { project: t('projects.genericProjectTag'), website: t('projects.genericWebsiteTag') },
+    sort: sort.value,
+    scope: selectedScope.value,
+  }),
+))
+// 卡片 aria-describedby 以 index 拼 tooltip id，分列后仍须全局唯一；
+// 同时 index<6 的 logo 走 eager 加载，语义保持全局名次而非列内名次。
+const projectOrdinal = computed(() => new Map(projects.value.map((repo, index) => [projectKey(repo), index])))
+const ordinalOf = (repo: GitHubProjectItem) => projectOrdinal.value.get(projectKey(repo)) ?? 0
 const sourceLabel = computed(() => sourceOptions.value.find((item) => item.value === source.value)?.label ?? t('projects.all'))
 const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
@@ -337,11 +391,13 @@ watch(() => authStore.isLoggedIn, (loggedIn) => {
 })
 const stopViewReads = () => {
   pauseSyncPoll()
+  stopGridMeasure()
   if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
   controller.deactivate()
 }
 onMounted(() => {
   resumeSyncPoll()
+  startGridMeasure()
   const hadSort = Boolean(String(route.query.sort ?? '').trim())
   if (applyRouteState()) {
     sortIsExplicit.value = hadSort
@@ -350,6 +406,7 @@ onMounted(() => {
 })
 onActivated(() => {
   resumeSyncPoll()
+  startGridMeasure()
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
   if (searchQuery.value !== debouncedQuery.value) searchTimer = window.setTimeout(() => { debouncedQuery.value = searchQuery.value }, 280)
@@ -362,7 +419,7 @@ onBeforeUnmount(stopViewReads)
 </script>
 
 <template>
-  <div class="projects-page">
+  <div ref="pageEl" class="projects-page">
     <section class="projects-hero glass-card">
       <div class="projects-hero__text">
         <p class="projects-kicker">AI TOOL ATLAS</p>
@@ -515,35 +572,41 @@ onBeforeUnmount(stopViewReads)
     </section>
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">
-      <ProjectResultCard
-        v-for="(repo, index) in projects"
-        :key="projectKey(repo)"
-        :repo="repo"
-        :index="index"
-        :is-personal-view="isPersonalView"
-        :can-favorite="canFavorite(repo)"
-        :can-recommend="canRecommendCard(repo)"
-        :can-edit="canEditCard(repo)"
-        :show-delete="isPersonalView && isWebsite(repo)"
-        :is-logged-in="authStore.isLoggedIn"
-        :favorite-busy="favoriteBusyKey === projectKey(repo)"
-        :favorite-actions-busy="Boolean(favoriteBusyKey)"
-        :recommend-busy="recommendBusyKey === projectKey(repo)"
-        :recommend-actions-busy="Boolean(recommendBusyKey)"
-        :saving-edit="savingEdit && editTarget?.website_id === repo.website_id"
-        :deleting="deletingWebsiteId === repo.website_id"
-        :logo-loaded="isWebsiteLogoLoaded(repo)"
-        :logo-broken="brokenLogoKeys.has(projectLogoKey(repo))"
-        :sort="sort"
-        :scope="selectedScope"
-        @chip-click="handleChipClick"
-        @favorite="toggleFavorite"
-        @recommend="recommendProject"
-        @edit="openEditDialog"
-        @delete="removeToolWebsite"
-        @logo-loaded="markWebsiteLogoLoaded"
-        @logo-broken="hideBrokenLogo"
-      />
+      <div
+        v-for="(column, columnIndex) in masonryColumns"
+        :key="columnIndex"
+        class="projects-col"
+      >
+        <ProjectResultCard
+          v-for="repo in column"
+          :key="projectKey(repo)"
+          :repo="repo"
+          :index="ordinalOf(repo)"
+          :is-personal-view="isPersonalView"
+          :can-favorite="canFavorite(repo)"
+          :can-recommend="canRecommendCard(repo)"
+          :can-edit="canEditCard(repo)"
+          :show-delete="isPersonalView && isWebsite(repo)"
+          :is-logged-in="authStore.isLoggedIn"
+          :favorite-busy="favoriteBusyKey === projectKey(repo)"
+          :favorite-actions-busy="Boolean(favoriteBusyKey)"
+          :recommend-busy="recommendBusyKey === projectKey(repo)"
+          :recommend-actions-busy="Boolean(recommendBusyKey)"
+          :saving-edit="savingEdit && editTarget?.website_id === repo.website_id"
+          :deleting="deletingWebsiteId === repo.website_id"
+          :logo-loaded="isWebsiteLogoLoaded(repo)"
+          :logo-broken="brokenLogoKeys.has(projectLogoKey(repo))"
+          :sort="sort"
+          :scope="selectedScope"
+          @chip-click="handleChipClick"
+          @favorite="toggleFavorite"
+          @recommend="recommendProject"
+          @edit="openEditDialog"
+          @delete="removeToolWebsite"
+          @logo-loaded="markWebsiteLogoLoaded"
+          @logo-broken="hideBrokenLogo"
+        />
+      </div>
     </section>
 
     <ProjectPagination
@@ -1067,12 +1130,22 @@ onBeforeUnmount(stopViewReads)
   justify-content: center;
 }
 
+/* 估高贪心瀑布流（与 X 页同一套 distributeColumns）：JS 按卡片估高把
+   每项放进当前最矮列，列高各自独立、卡片按内容高度堆叠；v-bind 列数
+   跟随容器宽（镜像旧 auto-fill minmax(260px,1fr) 的断档）。 */
 .projects-grid {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(v-bind(masonryColumnCount), minmax(0, 1fr));
   gap: 12px;
   align-items: start;
+}
+
+.projects-col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
 }
 
 
@@ -1112,10 +1185,6 @@ onBeforeUnmount(stopViewReads)
 @media (max-width: 720px) {
   .projects-page {
     padding: 16px 16px 96px;
-  }
-
-  .projects-grid {
-    grid-template-columns: 1fr;
   }
 
   .projects-hero,
@@ -1174,7 +1243,8 @@ onBeforeUnmount(stopViewReads)
     padding: 10px 12px;
   }
 
-  .projects-grid {
+  .projects-grid,
+  .projects-col {
     gap: 10px;
   }
 

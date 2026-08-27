@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  estimateProjectCardHeight,
   favoriteButtonLabelKey,
   formatProjectLastPush,
   localizedCategoryName,
@@ -139,5 +140,48 @@ describe('projectPresentation last push label', () => {
     expect(projectLastPushTitle({ full_name: 'o/p', pushed_at: '2026-08-08' }, t, 'zh-CN'))
       .toBe('projects.lastPushTitle|2026/08/08')
     expect(projectLastPushTitle({ full_name: 'o/p', pushed_at: '' }, t, 'zh-CN')).toBe('')
+  })
+})
+
+describe('estimateProjectCardHeight', () => {
+  const bareRepo = { repo_id: 7, full_name: 'owner/project' }
+  const longZh = '这是一段用来撑高卡片的中文描述，反复铺陈项目用途与亮点细节，足足数行'
+
+  it('floors at the card min-height even for an empty project', () => {
+    expect(estimateProjectCardHeight(bareRepo, 280)).toBe(260) // 248 min + 12 gap
+  })
+
+  it('grows with longer descriptions', () => {
+    const short = estimateProjectCardHeight({ ...bareRepo, description_zh: '短描述' }, 280, 'zh-CN')
+    const long = estimateProjectCardHeight({ ...bareRepo, description_zh: longZh }, 280, 'zh-CN')
+    expect(long).toBeGreaterThan(short)
+  })
+
+  it('grows in narrower columns because text wraps more', () => {
+    const repo = { ...bareRepo, description_zh: longZh }
+    expect(estimateProjectCardHeight(repo, 260, 'zh-CN')).toBeGreaterThan(estimateProjectCardHeight(repo, 460, 'zh-CN'))
+  })
+
+  it('grows when tags wrap onto more rows', () => {
+    const tagged = { ...bareRepo, tags: ['代码助手', 'IDE 插件', '模型上下文协议', '自动化工作流', '向量数据库'] }
+    expect(estimateProjectCardHeight(tagged, 280, 'zh-CN')).toBeGreaterThan(estimateProjectCardHeight(bareRepo, 280, 'zh-CN'))
+  })
+
+  it('adds a domain row for website projects', () => {
+    const site = { source: 'website' as const, website_id: 3, full_name: 'Example Website', title: 'Example', description_zh: longZh } // 长描述先顶过 248 min-height，域名行才显形
+    expect(estimateProjectCardHeight({ ...site, domain: 'example.com' }, 280, 'zh-CN'))
+      .toBeGreaterThan(estimateProjectCardHeight(site, 280, 'zh-CN'))
+  })
+
+  it('follows the locale-preferred description', () => {
+    const repo = { ...bareRepo, description_zh: longZh, description_en: 'short' }
+    expect(estimateProjectCardHeight(repo, 280, 'zh-CN')).toBeGreaterThan(estimateProjectCardHeight(repo, 280, 'en-US'))
+  })
+
+  it('does not shrink when the hot-score stat joins the footer', () => {
+    const repo = { ...bareRepo, pushed_at: '2026-08-20', hot_score: 42 }
+    const plain = estimateProjectCardHeight(repo, 300, 'zh-CN', { sort: 'stars', scope: 'all' })
+    const hot = estimateProjectCardHeight(repo, 300, 'zh-CN', { sort: 'hot', scope: 'all' })
+    expect(hot).toBeGreaterThanOrEqual(plain)
   })
 })
