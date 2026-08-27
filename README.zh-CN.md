@@ -240,8 +240,8 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 ## 数据归属与合规
 
 - **聚合内容不归本项目所有。** 管线呈现的论文、仓库元数据、新闻、Product Hunt / Hacker News 条目、X 推文与微信公众号文章，其权利归原作者与平台所有。AIGCNEWS 仅为运行阅读界面存储元数据、摘要与缩略图，不主张任何所有权。参考部署的数据库转储、采集快照与媒体缓存不属于本仓库，亦不许可再分发。
-- **抓取链路只发布接口。** X（Twitter）与微信采集实现**不包含在本仓库内**——它们经 `x_source_enabled` / `wechat_source_enabled` 特性开关从私有插件包可选加载（见 `backend/app/services/source_plugins/`）。插件缺席时对应路由返回 404、采集轮自动跳过，其余功能不受影响。
-- **自建实例的运营者责任**：启用此类插件须自行遵守源平台服务条款、robots 协议与适用法律，并妥善保管配置的凭据（cookie/token）。
+- **X 实现公开，微信仍为私有插件。** X（Twitter）的读取、解析与分页 transport 已随本仓库发布，并由默认关闭的 `x_source_enabled` 特性开关门控（见 `backend/app/services/ingestion/sources/x_transport.py`）。微信公众号采集实现仍经 `wechat_source_enabled` 从私有插件可选加载。真实 X cookie/token、加密凭据行、私有 overlay、代理拓扑、部署运营配置、数据库转储、采集快照与媒体缓存均不包含在仓库中。X 关闭或未配置时采集会安全跳过，其余功能不受影响。
+- **自建实例的运营者责任**：启用这些信息源须自行遵守源平台服务条款、robots 协议与适用法律，并妥善保管配置的凭据（cookie/token）。
 - **商标。** X、Twitter、WeChat、Product Hunt、Hacker News、arXiv、GitHub、Hugging Face 等名称与标志归各自所有者；本项目仅为指称性使用，不存在隶属或背书关系。
 - **内容移除请求**：请提 issue 或联系维护者。完整归属声明见 [NOTICE](NOTICE)。
 

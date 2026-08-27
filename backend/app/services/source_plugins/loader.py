@@ -1,9 +1,9 @@
-"""源插件加载器：特性开关门控 + 私有包候选解析。
+"""源装配加载器：特性开关门控 + 可选模块解析。
 
-每个可插拔源的实现只存在于仓库外私有包 ``aigcnews_private``（经部署
-overlay 注入 PYTHONPATH，开源检出中不可得）。开关关闭返回 None；开关
-打开但候选不可导入（或门面属性不全）时记 warning 并返回 None——
-fail closed，公共代码据此优雅降级。导入结果进程内缓存，测试经
+X transport 随公共仓发布；微信公众号实现仍由仓库外私有包
+``aigcnews_private`` 经部署 overlay 注入。开关关闭返回 None；开关打开但
+候选不可导入（或门面属性不全）时记 warning 并返回 None——fail closed，
+公共代码据此优雅降级。导入结果进程内缓存，测试经
 ``_reset_plugin_cache`` 重置。
 """
 
@@ -18,8 +18,10 @@ from backend.app.services.source_plugins.wechat_source import WeChatServiceBundl
 
 logger = logging.getLogger(__name__)
 
-# 候选模块：实现仅存于私有包，单一候选；保留元组形状以便将来扩展。
-_X_TRANSPORT_MODULES = ("aigcnews_private.sources.x_transport",)
+# X 使用仓库内唯一 canonical transport；微信仍为私有插件。
+_X_TRANSPORT_MODULES = (
+    "backend.app.services.ingestion.sources.x_transport",
+)
 
 _WECHAT_FACADE_MODULES = ("aigcnews_private.sources.wechat_facade",)
 
@@ -62,7 +64,7 @@ def _import_first(candidates: tuple[str, ...]) -> ModuleType | None:
 
 
 def load_x_transport_class() -> type[Any] | None:
-    """返回 XTransport 实现类；开关关闭或插件缺失/形状不符时返回 None。"""
+    """返回公共 XTransport 类；开关关闭或实现缺失/形状不符时返回 None。"""
     from backend.app.core.config import settings
 
     if not settings.x_source_enabled:

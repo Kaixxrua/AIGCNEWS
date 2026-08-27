@@ -22,7 +22,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 | Product Hunt | 日 | 每小时 :04 | 新产品发布（Apollo SSR 解析） |
 | Hacker News | 日 | 每小时 :05 + 00:35 关榜补采 | Firebase API Top-30 |
 | DailyHot 聚合热榜 | 日 | 每小时 :07 | 自托管 DailyHotApi（profile-gated 容器），见 [dailyhot-source.md](dailyhot-source.md) |
-| X / Twitter Watchlist | 日 | 每 2 小时 :06 + 00:31 关榜补采 | **可插拔源**：实现位于私有插件包，开关 `x_source_enabled` |
+| X / Twitter Watchlist | 日 | 每 2 小时 :06 + 00:31 关榜补采 | **公共 transport**：实现随仓库发布，默认关闭 `x_source_enabled`；凭据由实例提供 |
 | 微信公众号 | 关注制 | 按账号同步 | **可插拔源**：开关 `wechat_source_enabled`，自有路由不经采集注册表 |
 
 关键机制：
@@ -153,6 +153,6 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 |---|---|
 | Dashboard 榜单 / 项目库 / 论文阅读 / 简报 / 订阅推送 | 稳定开放 |
 | AIGC Radar MCP | 稳定开放（旗舰，公开只读） |
-| X 动态板 | 私有部署开启（依赖插件与凭据） |
+| X 动态板 | 实例自行开启（默认关闭，需合法凭据） |
 | 微信公众号 | 管理员可见（插件门控） |
 | RAG 对话 / 论文 AI 对话 | 实现完整，Web 入口维护中（requiresAdmin + 总开关） |

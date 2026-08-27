@@ -1,9 +1,8 @@
-"""源插件契约测试：开关门控、候选解析、缓存与异常路径。
+"""源装配契约测试：开关门控、候选解析、缓存与异常路径。
 
-实现仅存于私有包 ``aigcnews_private``（开源检出不可得），本文件只依赖
-伪造模块与公共契约，保证 OSS-only 环境全绿；实现与契约的身份同一性、
-Protocol 满足与默认候选加载由私有仓 tests/test_source_plugin_identity.py
-覆盖。
+X transport 随公共仓发布；微信公众号实现仍由私有包
+``aigcnews_private`` 提供。本文件验证两种装配路径都保持 fail-closed、
+可缓存且只暴露公共契约。
 """
 
 from __future__ import annotations
@@ -51,8 +50,8 @@ class XSourceSwitchTests(_SourcePluginTestCase):
         with mock.patch.object(settings, "x_source_enabled", False):
             self.assertIsNone(loader.load_x_transport_class())
 
-    def test_flag_on_loads_private_candidate(self) -> None:
-        fake = types.ModuleType("aigcnews_private.sources.x_transport")
+    def test_flag_on_loads_public_candidate(self) -> None:
+        fake = types.ModuleType("backend.app.services.ingestion.sources.x_transport")
         sentinel = type("XTransport", (), {})
         fake.XTransport = sentinel  # type: ignore[attr-defined]
         _install_fake_module(self, fake)
@@ -69,7 +68,7 @@ class XSourceSwitchTests(_SourcePluginTestCase):
         self.assertTrue(any("均不可导入" in message for message in captured.output))
 
     def test_module_without_xtransport_returns_none_with_warning(self) -> None:
-        fake = types.ModuleType("aigcnews_private.sources.x_transport")
+        fake = types.ModuleType("backend.app.services.ingestion.sources.x_transport")
         _install_fake_module(self, fake)
         with (
             mock.patch.object(settings, "x_source_enabled", True),
@@ -79,7 +78,7 @@ class XSourceSwitchTests(_SourcePluginTestCase):
         self.assertTrue(any("缺少 XTransport" in message for message in captured.output))
 
     def test_load_result_cached(self) -> None:
-        fake = types.ModuleType("aigcnews_private.sources.x_transport")
+        fake = types.ModuleType("backend.app.services.ingestion.sources.x_transport")
         fake.XTransport = type("XTransport", (), {})  # type: ignore[attr-defined]
         _install_fake_module(self, fake)
         with (

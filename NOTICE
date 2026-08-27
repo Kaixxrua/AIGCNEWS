@@ -19,12 +19,14 @@ database dump, collected snapshot, or cached media from any deployment
 of this project is licensed for redistribution or included in this
 repository.
 
-X (Twitter) and WeChat scraping implementations are not part of this
-repository; they are loaded optionally from a private plugin package
-behind feature flags, and the repository ships interfaces only. Operators
-who enable such plugins are responsible for complying with the source
+The X (Twitter) read/parse/pagination implementation is part of this
+repository and is disabled by default behind a feature flag. The WeChat
+scraping implementation remains an optional private plugin. Operators
+who enable either source are responsible for complying with the source
 platforms' Terms of Service, robots policies, and applicable law, and for
-safeguarding the credentials they configure.
+safeguarding the credentials they configure. Real cookies/tokens,
+credential database rows, private deployment overlays, proxy topology,
+collected snapshots, and media caches are not distributed here.
 
 Product names and marks referenced by this project — including X,
 Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging
@@ -47,6 +49,8 @@ The complete dependency lists with exact versions are maintained in
 backend/requirements.txt, backend/requirements.lock, and
 frontend/package.json.
 
-The optional, privately distributed X-ingestion plugin (not included in
-this repository) builds upon twitter-cli, licensed under the Apache
-License, Version 2.0 (https://github.com/jackwener/twitter-cli).
+The public X-ingestion transport builds upon twitter-cli, licensed under
+the Apache License, Version 2.0
+(https://github.com/jackwener/twitter-cli). Project-authored integration
+and compatibility code remains licensed under this repository's
+AGPL-3.0 license; twitter-cli retains its own upstream license.

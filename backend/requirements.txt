@@ -23,6 +23,8 @@ arxiv
 feedparser
 huggingface_hub
 beautifulsoup4
+# X transport 上游客户端；内部 API 由 compat 层钉住，必须精确版本。
+twitter-cli==0.8.5
 # ProductHunt 抓取主传输（浏览器指纹 TLS；失败回退 httpx）
 curl-cffi>=0.16
 pypdf
