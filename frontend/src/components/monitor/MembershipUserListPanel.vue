@@ -12,6 +12,7 @@ const props = defineProps<{
   totalPages: number
   loading: boolean
   query: string
+  error: string
 }>()
 const emit = defineEmits<{
   'update:query': [value: string]
@@ -45,6 +46,9 @@ const pageTargets = computed(() => {
       >
       <button v-if="query" type="button" class="monitor-btn-secondary" @click="emit('update:query', '')">{{ t('common.clear') }}</button>
     </div>
+    <p v-if="error" class="monitor-status-error mx-5 mb-3 rounded border px-3 py-2" role="alert">
+      {{ error }}
+    </p>
     <div class="overflow-x-auto">
       <table class="monitor-table">
         <thead><tr>
