@@ -56,12 +56,12 @@ describe('MastheadUser', () => {
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
   })
 
-  it('labels member-tier accounts as vip', () => {
+  it('labels member-tier accounts as vip with the lifetime suffix on the same line', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip')
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip  长期有效')
   })
 
   it('falls back to free when the tier field is missing', () => {
@@ -78,56 +78,56 @@ describe('MastheadUser', () => {
     authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip')
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip  lifetime')
   })
 
-  /* 到期行期望值用 Intl 现算，与组件同一格式化器口径，免受宿主 ICU 差异影响 */
+  /* 到期后缀期望值用 Intl 现算，与组件同一格式化器口径，免受宿主 ICU 差异影响 */
   const formatExpiry = (raw: string, locale: string) =>
     new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.parse(raw))
 
-  it('shows the expiry date line for member accounts with an expiry', () => {
+  it('appends the expiry date after the vip tier on the same line', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe(`至 ${formatExpiry('2027-01-01T15:59:59+00:00', 'zh-CN')}`)
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe(`用户组：vip  ${formatExpiry('2027-01-01T15:59:59+00:00', 'zh-CN')}到期`)
   })
 
-  it('shows the lifetime line for member accounts without an expiry', () => {
+  it('shows the lifetime suffix for member accounts without an expiry', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe('长期有效')
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip  长期有效')
   })
 
-  it('omits the expiry line for free-tier accounts even if an expiry leaks through', () => {
+  it('omits the expiry suffix for free-tier accounts even if an expiry leaks through', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'reader@example.com', membership_tier: 'free', membership_expires_at: '2027-01-01T15:59:59+00:00' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__expiry')).toBeNull()
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
   })
 
-  it('hides the expiry line when the timestamp cannot be parsed', () => {
+  it('hides the expiry suffix when the timestamp cannot be parsed', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: 'not-a-date' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__expiry')).toBeNull()
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip')
   })
 
-  it('renders the expiry lines in English under the en-US locale', () => {
+  it('renders the inline expiry in English under the en-US locale', () => {
     setAppLocale('en-US')
     authBox.isLoggedIn = true
     authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
     const host = mountMastheadUser()
 
-    expect(host.querySelector('.masthead-user__expiry')?.textContent).toBe(`until ${formatExpiry('2027-01-01T15:59:59+00:00', 'en-US')}`)
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe(`Group: vip  until ${formatExpiry('2027-01-01T15:59:59+00:00', 'en-US')}`)
 
     unmount?.()
     authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
     const lifetimeHost = mountMastheadUser()
-    expect(lifetimeHost.querySelector('.masthead-user__expiry')?.textContent).toBe('lifetime')
+    expect(lifetimeHost.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip  lifetime')
   })
 })

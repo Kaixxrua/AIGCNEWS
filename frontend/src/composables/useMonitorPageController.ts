@@ -18,6 +18,8 @@ interface MonitorPageControllerOptions {
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   confirm?: (message: string) => boolean
   now?: () => Date
+  /** 授予/吊销成功后回调（参数为生效邮箱）：视图层据此刷新本人会话身份，顶栏免手动刷新 */
+  refreshSessionIdentity?: (email: string) => void
 }
 
 interface AxiosLikeError {
@@ -36,6 +38,7 @@ export const useMonitorPageController = ({
   schedule = (callback, delay) => setTimeout(callback, delay),
   confirm = (message) => window.confirm(message),
   now = () => new Date(),
+  refreshSessionIdentity = () => {},
 }: MonitorPageControllerOptions) => {
   const tasks = ref<Awaited<ReturnType<MonitorApi['fetchTasks']>>['items']>([])
   const total = ref(0)
@@ -786,6 +789,8 @@ export const useMonitorPageController = ({
         : i18n.global.t('monitor.membership.granted', { email: result.email || email })
       // 授予/吊销下一请求即生效：列表同步刷新，避免管理员看到陈旧档位
       void fetchMembershipUsers()
+      // 通知视图层刷新会话身份：管理员给自己调档/吊销时，顶栏（MastheadUser）免手动刷新即更新
+      refreshSessionIdentity(result.email || email)
     } catch (error) {
       // 后端 404 detail 为「用户不存在」；统一走本地化文案保持口径一致
       errorMsg.value = statusOf(error) === 404 ? i18n.global.t('monitor.membership.userNotFound') : detail(error)

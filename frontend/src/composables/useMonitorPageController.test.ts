@@ -1520,6 +1520,49 @@ describe('Monitor GitHub enrichment controls', () => {
     expect(api.listMembershipUsers).toHaveBeenCalledOnce()
   })
 
+  it('notifies refreshSessionIdentity with the granted email so the view can refresh a self-grant', async () => {
+    const api = createApi()
+    const refreshSessionIdentity = vi.fn()
+    const controller = useMonitorPageController({
+      isAdmin: computed(() => true),
+      api,
+      schedule: vi.fn((callback: () => void, delay: number) => setTimeout(callback, delay)),
+      confirm: () => true,
+      refreshSessionIdentity,
+    })
+    controller.membershipForm.value = { email: 'member@example.com', tier: 'member', expires_on: '2027-01-01' }
+
+    await controller.grantMembership()
+
+    expect(refreshSessionIdentity).toHaveBeenCalledWith('member@example.com')
+  })
+
+  it('notifies refreshSessionIdentity on revoke too, but not on a failed grant', async () => {
+    const api = createApi()
+    const refreshSessionIdentity = vi.fn()
+    const controller = useMonitorPageController({
+      isAdmin: computed(() => true),
+      api,
+      schedule: vi.fn((callback: () => void, delay: number) => setTimeout(callback, delay)),
+      confirm: () => true,
+      refreshSessionIdentity,
+    })
+    vi.mocked(api.grantMembership).mockResolvedValueOnce({ user_id: 8, email: 'member@example.com', membership_tier: 'free', membership_expires_at: null, revoked: true })
+    controller.membershipForm.value = { email: 'member@example.com', tier: 'free', expires_on: '' }
+
+    await controller.grantMembership()
+
+    expect(refreshSessionIdentity).toHaveBeenCalledWith('member@example.com')
+
+    refreshSessionIdentity.mockClear()
+    vi.mocked(api.grantMembership).mockRejectedValueOnce({ response: { status: 404, data: { detail: '用户不存在' } } })
+    controller.membershipForm.value = { email: 'ghost@example.com', tier: 'free', expires_on: '' }
+
+    await controller.grantMembership()
+
+    expect(refreshSessionIdentity).not.toHaveBeenCalled()
+  })
+
   it('clamps membership user paging to the known page range', async () => {
     const api = createApi()
     vi.mocked(api.listMembershipUsers).mockResolvedValue({ items: [], total: 41, page: 1, page_size: 20 })

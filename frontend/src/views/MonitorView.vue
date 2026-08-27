@@ -69,7 +69,17 @@ const {
   xTranslationStatus, loadingXTranslation, retryingXTranslation, xTranslationPolling, fetchXTranslationStatus, retryXTranslations,
   enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
   fetchGithubEnrichmentStatus, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
-} = useMonitorPageController({ isAdmin: computed(() => authStore.isAdmin) })
+} = useMonitorPageController({
+  isAdmin: computed(() => authStore.isAdmin),
+  // 管理员给自己调档/吊销后同步刷新会话身份，顶栏 MastheadUser 免手动刷新即更新
+  refreshSessionIdentity: (email: string) => {
+    const sessionEmail = authStore.user?.email?.trim().toLowerCase()
+    if (sessionEmail && email.trim().toLowerCase() === sessionEmail) {
+      // 刷新失败不影响授予结果，下次进入页面时自愈
+      void authStore.fetchMe().catch(() => {})
+    }
+  },
+})
 
 const route = useRoute()
 const router = useRouter()
