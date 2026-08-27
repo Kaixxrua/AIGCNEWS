@@ -37,26 +37,41 @@ func (r RankSnapshotRepository) GetSnapshotDocuments(snapshotDate, sourceChannel
 		conditions = append(conditions, "d.source = $"+strconv.Itoa(len(params)))
 	}
 	params = append(params, limit)
+	// 与 Python get_snapshot_documents 同一规则：具体非 github sourceType
+	// 已把 d.source 钉死，github 补全连接永不命中，直接读 d 自身列——
+	// 避免 github_repo_snapshots(65 万行) 全表 DISTINCT ON 排序落盘；
+	// 需要补全时用 LATERAL + (repo_id, snapshot_date) 索引倒序 LIMIT 1。
+	githubVisible := sourceType == "" || sourceType == "all" || sourceType == "github"
+	metricColumns := `COALESCE(NULLIF(d.stars, 0), 0) AS stars,
+                   COALESCE(NULLIF(d.forks, 0), 0) AS forks,
+                   COALESCE(NULLIF(d.language, ''), '') AS language,`
+	githubJoins := ""
+	if githubVisible {
+		metricColumns = `COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
+                   COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
+                   COALESCE(NULLIF(d.language, ''), c.language, '') AS language,`
+		githubJoins = `LEFT JOIN github_repo_candidates c
+              ON d.source = 'github' AND (c.full_name = d.title
+                  OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
+            LEFT JOIN LATERAL (
+                SELECT g.stars, g.forks
+                FROM github_repo_snapshots g
+                WHERE g.repo_id = c.repo_id
+                ORDER BY g.snapshot_date DESC
+                LIMIT 1
+            ) gs ON TRUE`
+	}
 	query := `
             SELECT d.id, d.source, d.title, d.url, d.summary, d.published_date,
                    d.published_at, d.tags, d.indexed, d.created_at,
                    d.media, d.quote, d.link_card, d.author_avatar_url, d.author_name, d.retweeted_by, d.translation_zh,
                    d.authors, d.arxiv_id,
-                   COALESCE(NULLIF(d.stars, 0), NULLIF(gs.stars, 0), c.stars, 0) AS stars,
-                   COALESCE(NULLIF(d.forks, 0), NULLIF(gs.forks, 0), c.forks, 0) AS forks,
-                   COALESCE(NULLIF(d.language, ''), c.language, '') AS language,
+                   ` + metricColumns + `
                    d.in_daily, d.in_weekly, d.in_monthly, s.source_channel,
                    s.rank_in_period, s.raw_score, s.score, s.snapshot_date
             FROM document_rank_snapshots s
             JOIN documents d ON s.doc_id = d.id
-            LEFT JOIN github_repo_candidates c
-              ON d.source = 'github' AND (c.full_name = d.title
-                  OR (NULLIF(c.url, '') IS NOT NULL AND c.url = d.url))
-            LEFT JOIN (
-                SELECT DISTINCT ON (repo_id) repo_id, stars, forks
-                FROM github_repo_snapshots
-                ORDER BY repo_id, snapshot_date DESC
-            ) gs ON gs.repo_id = c.repo_id
+            ` + githubJoins + `
             WHERE ` + strings.Join(conditions, " AND ") + `
             ORDER BY
                 CASE WHEN d.source = 'github' THEN s.rank_in_period ELSE 9999 END ASC,
