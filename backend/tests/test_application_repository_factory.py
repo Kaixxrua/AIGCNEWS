@@ -36,6 +36,9 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
 )
+from backend.app.repositories.postgres_oauth_identity_repository import (
+    PostgresOAuthIdentityRepository,
+)
 from backend.app.repositories.postgres_project_enrichment_repository import (
     PostgresGitHubProjectEnrichmentRepository,
     PostgresToolWebsiteEnrichmentRepository,
@@ -76,6 +79,7 @@ def test_factory_builds_postgres_protocol_adapters() -> None:
 
     expected = {
         "users": PostgresUserAccountRepository,
+        "oauth_identities": PostgresOAuthIdentityRepository,
         "conversations": PostgresConversationRepository,
         "attachments": PostgresAttachmentRepository,
         "documents": PostgresDocumentRepository,
