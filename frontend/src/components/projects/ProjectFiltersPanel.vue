@@ -117,9 +117,9 @@ const emit = defineEmits<{
 <style scoped>
 .projects-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; padding: 14px; }
 .projects-source-tabs { display: flex; gap: 8px; flex: 0 1 auto; min-width: 0; }
-.projects-source-tab { display: flex; width: 112px; min-height: var(--projects-control-height, 44px); box-sizing: border-box; flex: 0 0 112px; flex-direction: column; justify-content: center; gap: 2px; border: 1px solid var(--projects-accent); border-radius: 4px; padding: 5px 12px; color: rgb(var(--stone-500-rgb)); background: var(--projects-paper-light); box-shadow: none; text-align: left; transition: all 160ms ease; }
-.projects-source-tab strong { color: rgb(var(--stone-700-rgb)); font-size: 13px; }
-.projects-source-tab small { font-size: 10px; opacity: .72; }
+.projects-source-tab { display: inline-flex; width: auto; min-width: 0; min-height: var(--projects-control-height, 44px); box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 6px; border: 1px solid var(--projects-accent); border-radius: 4px; padding: 5px 12px; color: rgb(var(--stone-500-rgb)); background: var(--projects-paper-light); box-shadow: none; text-align: left; white-space: nowrap; transition: all 160ms ease; }
+.projects-source-tab strong { color: rgb(var(--stone-700-rgb)); font-size: 13px; white-space: nowrap; }
+.projects-source-tab small { font-size: 10px; opacity: .72; white-space: nowrap; }
 .projects-source-tab:hover { border-color: var(--projects-accent); color: var(--projects-accent); background: var(--projects-acid-soft); transform: none; }
 .projects-source-tab--active { border-color: var(--projects-accent); color: var(--projects-on-acid); background: var(--projects-acid); box-shadow: inset 0 0 0 1px var(--projects-accent); transform: none; }
 .projects-source-tab--active strong { color: var(--projects-on-acid); }

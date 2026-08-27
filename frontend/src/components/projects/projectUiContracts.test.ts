@@ -192,12 +192,15 @@ describe('project card rail behavior', () => {
 })
 
 describe('filters panel behavior', () => {
-  it('renders source tabs with the active state and emits changeSource', async () => {
+  it('renders source tabs on one line with the active state and emits changeSource', async () => {
     const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps() })
     const tabs = wrapper.findAll('button.projects-source-tab')
     expect(tabs).toHaveLength(2)
     expect(tabs[0]!.classes()).toContain('projects-source-tab--active')
     expect(tabs[1]!.classes()).not.toContain('projects-source-tab--active')
+    expect(tabs[0]!.element.querySelector('strong')?.textContent).toBe('GitHub')
+    expect(tabs[0]!.element.querySelector('small')?.textContent).toBe('repos')
+    expect(getComputedStyle(tabs[0]!.element).flexDirection).toBe('row')
 
     await tabs[1]!.trigger('click')
 
