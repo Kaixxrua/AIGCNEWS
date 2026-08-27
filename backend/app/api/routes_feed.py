@@ -1,10 +1,12 @@
 """RSS 2.0 feed API：公开摘要 feed（获客）+ 会员全文 feed（增值）。
 
 端点列表：
-  GET  /api/feed.xml                → 综合 feed（全部源按发布时间归并）
-  GET  /api/feeds/{source}.xml      → 单源 feed（arxiv/github/news/…）
-  GET  /api/feeds/member.xml        → 会员全文 feed（?token= 用独立 RSS feed token，
-                                      ?source=a,b 自由组合；非会员 fail-closed 403）
+  GET  /api/feed.xml                     → 综合 feed（全部源按发布时间归并）
+  GET  /api/feeds/{source}.xml           → 单源 feed（arxiv/github/news/…）
+  GET  /api/feeds/member.xml             → 会员全文 feed（?token= 用独立 RSS feed token，
+                                           ?source=a,b 自由组合；非会员 fail-closed 403）
+  GET  /api/feeds/briefing.xml           → 每日综合简报全文 feed（公开，近 7 期）
+  GET  /api/feeds/briefing-digest.xml    → 会员简报速览 feed（?token=，规则压缩版）
 
 设计要点：
   - 公开 feed 面向中文读者：有中文译文的条目，description 用译文截断（X 源
@@ -18,6 +20,11 @@
   - github 源由站内项目库「今日暴涨 top50」热榜供稿（scope=today + hot 排序，
     与 /projects 页同口径），不镜像 trending 抓取的 documents 池；
     热榜查询失败或为空时回退 documents 池兜底，保证 feed 不断更。
+  - 简报 feed 只出综合报（briefings.date 裸日期键；'{date}_{module}' 模块报是
+    综合报原料，不单列）。全文公开与 /report 口径一致（简报全文本就无鉴权），
+    会员增量是速览版：M0 规则压缩（摘要节 + 条目标题一览），LLM 精简管线
+    后续替换 condense_briefing_markdown 输出即可。渲染走规则 Markdown→HTML
+    片段（rss_render 纯函数），description 按 RSS 惯例整体 XML 转义。
   - XML 渲染为纯函数，路由层只做读库与鉴权，便于契约测试。
 """
 
@@ -35,14 +42,20 @@ from xml.sax.saxutils import escape
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from backend.app.api.dependencies import (
+    get_briefing_repository,
     get_document_repository,
     get_feed_token_repository,
     get_project_catalog_query_service,
 )
 from backend.app.core.auth import hash_feed_token
+from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.document_repository import DocumentRecentReader
 from backend.app.repositories.feed_token_repository import FeedTokenRepository
 from backend.app.services.briefing.daily_briefing import _truncate_summary
+from backend.app.services.briefing.rss_render import (
+    condense_briefing_markdown,
+    render_briefing_markdown_html,
+)
 from backend.app.services.membership.tiers import (
     MEMBERSHIP_TIER_MEMBER,
     resolve_effective_tier,
@@ -86,6 +99,11 @@ _PUBLIC_HOOK_PREFIX = "📮 订阅会员全文 RSS（中文译文 · 完整归�
 
 # github 源供稿口径：站内项目库「今日暴涨」热榜（scope=today 强制 hot 排序）top50。
 _GITHUB_HOT_FEED_LIMIT = 50
+
+# 简报 feed：近 7 期综合报（一日一期，约一周归档）。
+_BRIEFING_FEED_LIMIT = 7
+_BRIEFING_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报全文：跨源技术亮点、工程动态与行业资讯"
+_BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（会员专属）"
 
 
 def _project_to_feed_row(item: dict[str, Any]) -> dict[str, Any]:
@@ -406,32 +424,13 @@ async def feed_all(
     return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)
 
 
-def _parse_member_sources(raw: str | None) -> set[str]:
-    """解析 ?source=a,b 组合；空 = 全部源，含非法源名抛 400。"""
-    if raw is None or not raw.strip() or raw.strip().lower() == "all":
-        return set(FEED_SOURCES)
-    sources = {part.strip().lower() for part in raw.split(",") if part.strip()}
-    unknown = sources - FEED_SOURCES
-    if unknown:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"未知 feed 源：{', '.join(sorted(unknown))}",
-        )
-    return sources or set(FEED_SOURCES)
+async def _require_member_identity(
+    token: str,
+    tokens: FeedTokenRepository,
+) -> dict[str, Any]:
+    """feed token → 会员身份：缺失/无效 401、非会员 403（fail-closed）。
 
-
-# 路由顺序锁定：/feeds/member.xml 必须先于 /feeds/{source}.xml 注册，
-# 否则 "member" 会被路径参数捕获、落到单源 feed 的 404 分支。
-@router.get("/feeds/member.xml", include_in_schema=False)
-async def feed_member(
-    request: Request,
-    token: str = Query(default=""),
-    source: str | None = Query(default=None),
-    documents: DocumentRecentReader = Depends(get_document_repository),
-    tokens: FeedTokenRepository = Depends(get_feed_token_repository),
-    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
-):
-    """会员全文 feed：独立 RSS feed token 鉴权，非会员 fail-closed 403。"""
+    供所有会员 feed 端点复用（member.xml、briefing-digest.xml）。"""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -453,6 +452,114 @@ async def feed_member(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=_MEMBER_ONLY_DETAIL,
         )
+    return identity
+
+
+def build_briefing_feed_item(row: dict[str, Any], base_url: str, *, digest: bool = False) -> str | None:
+    """把综合简报行渲染为 <item> XML；缺日期/正文的行返回 None。
+
+    digest=False 全文（公开，与 /report 同内容）；digest=True 规则压缩速览
+    （会员）。description 承载渲染后的 HTML 片段，按 RSS 惯例整体 XML 转义。
+    guid 以期号（date）为身份：同一期重生成原地更新内容，阅读器不重复推送。
+    """
+    date_str = str(row.get("date") or "").strip()
+    content = str(row.get("content_zh") or row.get("content") or "").strip()
+    if not date_str or not content:
+        return None
+    markdown = condense_briefing_markdown(content) if digest else content
+    description = render_briefing_markdown_html(markdown)
+    title = f"{date_str} 每日 AIGC 简报{'（速览）' if digest else ''}"
+    guid = f"briefing-digest:{date_str}" if digest else f"briefing:{date_str}"
+    published = _parse_published_at(str(row.get("created_at") or ""))
+    pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""
+    return (
+        "<item>"
+        f"<title>{escape(title)}</title>"
+        f"<link>{escape(f'{base_url}/report')}</link>"
+        f'<guid isPermaLink="false">{escape(guid)}</guid>'
+        f"{pub_date}"
+        f"<description>{escape(description)}</description>"
+        "</item>"
+    )
+
+
+def _parse_member_sources(raw: str | None) -> set[str]:
+    """解析 ?source=a,b 组合；空 = 全部源，含非法源名抛 400。"""
+    if raw is None or not raw.strip() or raw.strip().lower() == "all":
+        return set(FEED_SOURCES)
+    sources = {part.strip().lower() for part in raw.split(",") if part.strip()}
+    unknown = sources - FEED_SOURCES
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"未知 feed 源：{', '.join(sorted(unknown))}",
+        )
+    return sources or set(FEED_SOURCES)
+
+
+# 路由顺序锁定：/feeds/member.xml、/feeds/briefing.xml、/feeds/briefing-digest.xml
+# 必须先于 /feeds/{source}.xml 注册，否则字面量会被路径参数捕获、
+# 落到单源 feed 的 404 分支。
+@router.get("/feeds/briefing.xml", include_in_schema=False)
+async def feed_briefing(
+    request: Request,
+    briefings: BriefingContentRepository = Depends(get_briefing_repository),
+):
+    """每日综合简报全文公开 feed：免鉴权（与 /report 同口径），近 7 期，边缘可缓存。"""
+    rows = await asyncio.to_thread(briefings.list_recent_daily_briefings, _BRIEFING_FEED_LIMIT)
+    base_url = _resolve_base_url(request)
+    items = [item for row in rows if (item := build_briefing_feed_item(row, base_url)) is not None]
+    xml = build_rss_xml(
+        channel_title=f"{_CHANNEL_TITLE} · 每日简报",
+        channel_link=f"{base_url}/api/feeds/briefing.xml",
+        channel_description=_BRIEFING_CHANNEL_DESCRIPTION,
+        items=items,
+    )
+    return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)
+
+
+@router.get("/feeds/briefing-digest.xml", include_in_schema=False)
+async def feed_briefing_digest(
+    request: Request,
+    token: str = Query(default=""),
+    briefings: BriefingContentRepository = Depends(get_briefing_repository),
+    tokens: FeedTokenRepository = Depends(get_feed_token_repository),
+):
+    """会员简报速览 feed：规则压缩版（内容摘要 + 条目标题一览），feed token 鉴权。"""
+    await _require_member_identity(token, tokens)
+
+    rows = await asyncio.to_thread(briefings.list_recent_daily_briefings, _BRIEFING_FEED_LIMIT)
+    base_url = _resolve_base_url(request)
+    items = [
+        item for row in rows if (item := build_briefing_feed_item(row, base_url, digest=True)) is not None
+    ]
+    xml = build_rss_xml(
+        channel_title=f"{_CHANNEL_TITLE} · 每日简报速览",
+        channel_link=f"{base_url}/api/feeds/briefing-digest.xml",
+        channel_description=_BRIEFING_DIGEST_CHANNEL_DESCRIPTION,
+        items=items,
+    )
+    return Response(
+        content=xml,
+        media_type=_FEED_MEDIA_TYPE,
+        headers={
+            "Cache-Control": _MEMBER_CACHE_CONTROL,
+            "X-Robots-Tag": "noindex",
+        },
+    )
+
+
+@router.get("/feeds/member.xml", include_in_schema=False)
+async def feed_member(
+    request: Request,
+    token: str = Query(default=""),
+    source: str | None = Query(default=None),
+    documents: DocumentRecentReader = Depends(get_document_repository),
+    tokens: FeedTokenRepository = Depends(get_feed_token_repository),
+    catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
+):
+    """会员全文 feed：独立 RSS feed token 鉴权，非会员 fail-closed 403。"""
+    await _require_member_identity(token, tokens)
 
     sources = _parse_member_sources(source)
     rows = await _collect_rows(

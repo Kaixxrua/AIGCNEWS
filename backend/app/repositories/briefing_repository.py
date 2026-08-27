@@ -27,6 +27,8 @@ class BriefingReader(Protocol):
 
     def list_briefings(self, limit: int = 30) -> list[dict[str, Any]]: ...
 
+    def list_recent_daily_briefings(self, limit: int = 7) -> list[dict[str, Any]]: ...
+
 
 class BriefingContentRepository(BriefingWriter, BriefingReader, Protocol):
     """Combined content boundary used by briefing generation services."""

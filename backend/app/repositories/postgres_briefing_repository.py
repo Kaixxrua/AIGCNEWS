@@ -84,6 +84,27 @@ class PostgresBriefingRepository:
                 )
                 return [dict(row) for row in cursor.fetchall()]
 
+    def list_recent_daily_briefings(self, limit: int = 7) -> list[dict[str, Any]]:
+        """近 N 期综合日报（含全文 content_zh），按日期新到旧。
+
+        date 列混合两种键：裸日期（'2026-08-27'，综合报）与 '{date}_{module}'
+        （模块报）。简报 RSS 只出综合报——模块报是综合报的原料，且部分模块
+        当日可能缺席；以下划线出现与否区分两种键，比 LIKE 转义更直白。
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, date, created_at, content_zh, content_en
+                    FROM briefings
+                    WHERE position('_' in date) = 0
+                    ORDER BY date DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def _fetchone(
         self,
         sql: str,

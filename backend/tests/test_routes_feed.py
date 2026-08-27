@@ -9,7 +9,11 @@
     github 源由站内今日热榜供稿（热榜不可用/为空时回退 documents 池）、
     会员 feed 的 401/403/200 档位门禁（独立 RSS feed token，非 MCP token）、
     noindex/no-store 响应头、
-    /feeds/member.xml 不被 {source} 路径参数捕获（路由顺序锁定）。
+    /feeds/member.xml 不被 {source} 路径参数捕获（路由顺序锁定）；
+  - 简报 feed：规则 Markdown→HTML 片段渲染（转义/行内规则/标题 code 去 #）、
+    规则压缩速览（摘要节保留、条目正文丢弃、空章节回扫、标题剥 tag）、
+    /feeds/briefing.xml 公开全文（边缘缓存）、/feeds/briefing-digest.xml
+    会员门禁与 noindex/no-store、字面量路由均不被 {source} 捕获。
 """
 
 from __future__ import annotations
@@ -24,23 +28,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api.dependencies import (
+    get_briefing_repository,
     get_document_repository,
     get_feed_token_repository,
     get_project_catalog_query_service,
 )
 from backend.app.api.routes_feed import (
+    _BRIEFING_FEED_LIMIT,
     _INVALID_TOKEN_DETAIL,
     _MEMBER_ONLY_DETAIL,
     _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT,
     _PUBLIC_TITLE_TRANSLATION_LIMIT,
+    _filter_rows_to_window,
     _parse_member_sources,
     _parse_published_at,
     _project_to_feed_row,
-    _filter_rows_to_window,
+    build_briefing_feed_item,
     build_feed_item,
     build_rss_xml,
 )
 from backend.app.main import app
+from backend.app.services.briefing.rss_render import (
+    condense_briefing_markdown,
+    render_briefing_markdown_html,
+)
 
 
 def _doc(
@@ -326,6 +337,7 @@ def _client(
     documents: MagicMock,
     tokens: MagicMock | None = None,
     catalog: MagicMock | None = None,
+    briefings: MagicMock | None = None,
 ) -> TestClient:
     overrides = {
         get_document_repository: lambda: documents,
@@ -334,6 +346,8 @@ def _client(
     }
     if tokens is not None:
         overrides[get_feed_token_repository] = lambda: tokens
+    if briefings is not None:
+        overrides[get_briefing_repository] = lambda: briefings
     app.dependency_overrides.update(overrides)
     return TestClient(app)
 
@@ -579,3 +593,215 @@ def test_member_feed_source_combination_limits_queried_sources() -> None:
     assert queried == {"arxiv", "github"}
 
     assert client.get("/api/feeds/member.xml?token=ok&source=arxiv,bogus").status_code == 400
+
+
+# ---------------------------------------------------------------- 简报 feed
+
+_BRIEFING_MD = """# 今日 AIGC 技术资讯综合报｜2026年8月27日 `#news` `#LLM`
+
+## 今日内容摘要 `#news`
+
+本报梳理今日两条信息。
+
+产业端继续升温。
+
+## 技术亮点 `#arxiv`
+
+**趋势总结与洞察：** 章节导言不应进入速览。
+
+### 1. `ModelX`：新架构 `#arxiv`
+
+**话题概述：** 条目正文不应进入速览。
+
+**核心观点：** 同上。
+
+## 工程动态 `#github`
+
+### 1. `a/b`：工具更新 `#github`
+
+**话题概述：** 条目正文。
+
+## 日期与数据来源 `#news`
+
+- 来源一：[https://example.com/a](https://example.com/a)
+"""
+
+_CONDENSED_BRIEFING_MD = """# 今日 AIGC 技术资讯综合报｜2026年8月27日
+## 今日内容摘要
+本报梳理今日两条信息。
+产业端继续升温。
+## 技术亮点
+### 1. `ModelX`：新架构
+## 工程动态
+### 1. `a/b`：工具更新"""
+
+
+def _briefing_row(
+    date: str = "2026-08-27",
+    content: str = _BRIEFING_MD,
+    created_at: str = "2026-08-27T00:05:00+00:00",
+) -> dict:
+    return {
+        "id": 1,
+        "date": date,
+        "created_at": created_at,
+        "content_zh": content,
+        "content_en": "",
+    }
+
+
+def test_render_briefing_markdown_html_covers_headings_paragraphs_and_lists() -> None:
+    html = render_briefing_markdown_html(_BRIEFING_MD)
+    assert "<h1>今日 AIGC 技术资讯综合报｜2026年8月27日" in html
+    assert "<h2>今日内容摘要" in html
+    assert "<h3>1. <code>ModelX</code>：新架构" in html
+    assert "<p>本报梳理今日两条信息。</p>" in html
+    assert "<strong>话题概述：</strong>" in html
+    assert '<li>来源一：<a href="https://example.com/a">https://example.com/a</a></li>' in html
+
+
+def test_render_briefing_markdown_html_escapes_raw_html_and_link_quotes() -> None:
+    html = render_briefing_markdown_html("正文 <script>alert(1)</script> 与 [a](https://x.com?a=1&b=2)")
+    assert "&lt;script&gt;" in html
+    assert "<script>" not in html
+    # 链接 URL 里的 & 以 HTML 实体进入 href，阅读器解码后仍是合法 URL
+    assert '<a href="https://x.com?a=1&amp;b=2">a</a>' in html
+
+
+def test_render_briefing_markdown_html_strips_tag_hash_only_in_headings() -> None:
+    html = render_briefing_markdown_html("## 标题 `#news`\n正文代码 `#define` 保留井号")
+    h2_line = next(line for line in html.split("\n") if line.startswith("<h2"))
+    p_line = next(line for line in html.split("\n") if line.startswith("<p"))
+    # 标题标签不显示前导 #（与前端/邮件渲染约定一致）；正文代码不受影响
+    assert "<code>news</code>" in h2_line
+    assert "<code>#define</code>" in p_line
+
+
+def test_condense_briefing_markdown_keeps_abstract_and_item_titles_only() -> None:
+    digest = condense_briefing_markdown(_BRIEFING_MD)
+    assert digest == _CONDENSED_BRIEFING_MD
+
+
+def test_condense_briefing_markdown_drops_section_intros_and_metadata_section() -> None:
+    digest = condense_briefing_markdown(_BRIEFING_MD)
+    assert "趋势总结与洞察" not in digest
+    assert "话题概述" not in digest
+    # 尾部「日期与数据来源」正文被丢后成为空章节，回扫时整节移除
+    assert "日期与数据来源" not in digest
+    assert "https://example.com/a" not in digest
+    # 标题里的 `#tag` 行内代码全部剥掉
+    assert "`#" not in digest
+
+
+def test_condense_briefing_markdown_single_section_passthrough() -> None:
+    # 只有一个章节的纯散文简报退化为原文——速览不删信息
+    content = "# 标题 `#news`\n## 唯一章节\n正文一\n正文二"
+    assert condense_briefing_markdown(content) == "# 标题\n## 唯一章节\n正文一\n正文二"
+
+
+def test_build_briefing_feed_item_full_mode() -> None:
+    item = build_briefing_feed_item(_briefing_row(), "https://aigcnews.cn")
+    assert item is not None
+    assert "<title>2026-08-27 每日 AIGC 简报</title>" in item
+    assert "<link>https://aigcnews.cn/report</link>" in item
+    assert '<guid isPermaLink="false">briefing:2026-08-27</guid>' in item
+    assert "<pubDate>Thu, 27 Aug 2026 00:05:00 +0000</pubDate>" in item
+    # 全文模式：条目正文保留；description 为整体 XML 转义的 HTML 片段
+    assert "话题概述" in item
+    assert "&lt;h2&gt;" in item
+    assert "📮" not in item
+
+
+def test_build_briefing_feed_item_digest_mode_condenses() -> None:
+    item = build_briefing_feed_item(_briefing_row(), "https://aigcnews.cn", digest=True)
+    assert item is not None
+    assert "<title>2026-08-27 每日 AIGC 简报（速览）</title>" in item
+    assert '<guid isPermaLink="false">briefing-digest:2026-08-27</guid>' in item
+    assert "本报梳理" in item
+    assert "话题概述" not in item
+    assert "日期与数据来源" not in item
+
+
+def test_build_briefing_feed_item_skips_rows_without_date_or_content() -> None:
+    assert build_briefing_feed_item(_briefing_row(date=""), "https://aigcnews.cn") is None
+    assert build_briefing_feed_item(_briefing_row(content=""), "https://aigcnews.cn") is None
+
+
+def test_build_briefing_feed_item_falls_back_to_content_column() -> None:
+    row = _briefing_row()
+    row["content_zh"] = ""
+    row["content"] = _BRIEFING_MD
+    item = build_briefing_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "本报梳理" in item
+
+
+def test_briefing_feed_is_public_full_text_with_edge_cache_headers() -> None:
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [_briefing_row()]
+    client = _client(documents=MagicMock(), briefings=briefings)
+
+    response = client.get("/api/feeds/briefing.xml")
+    assert response.status_code == 200
+    # 命中简报路由而非 {source} 捕获（捕获会以 404 拒绝 "briefing"）
+    assert response.headers["cache-control"] == "public, max-age=900"
+    assert "charset=utf-8" in response.headers["content-type"]
+    assert "x-robots-tag" not in response.headers
+    briefings.list_recent_daily_briefings.assert_called_once_with(_BRIEFING_FEED_LIMIT)
+    assert "<title>AIGC NEWS · 每日简报</title>" in response.text
+    assert "<title>2026-08-27 每日 AIGC 简报</title>" in response.text
+    assert "话题概述" in response.text
+
+
+def test_briefing_feed_skips_contentless_rows() -> None:
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [
+        _briefing_row(date="2026-08-27"),
+        _briefing_row(date="2026-08-26", content=""),
+    ]
+    client = _client(documents=MagicMock(), briefings=briefings)
+
+    response = client.get("/api/feeds/briefing.xml")
+    assert response.status_code == 200
+    assert "2026-08-27 每日 AIGC 简报" in response.text
+    assert "2026-08-26" not in response.text
+
+
+def test_briefing_digest_requires_token_and_is_not_captured_by_source_route() -> None:
+    client = _client(documents=MagicMock(), briefings=MagicMock(), tokens=MagicMock())
+    response = client.get("/api/feeds/briefing-digest.xml")
+    # 路由顺序锁定：命中速览路由的 401，而非 {source} 捕获后的 404
+    assert response.status_code == 401
+    assert response.json()["detail"] == _INVALID_TOKEN_DETAIL
+
+
+def test_briefing_digest_rejects_free_tier() -> None:
+    tokens = MagicMock()
+    tokens.get_user_by_feed_token_hash.return_value = {
+        "user_id": 7,
+        "membership_tier": "free",
+    }
+    client = _client(documents=MagicMock(), briefings=MagicMock(), tokens=tokens)
+    response = client.get("/api/feeds/briefing-digest.xml?token=ok")
+    assert response.status_code == 403
+    assert response.json()["detail"] == _MEMBER_ONLY_DETAIL
+
+
+def test_briefing_digest_returns_condensed_content_for_member() -> None:
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [_briefing_row()]
+    tokens = MagicMock()
+    tokens.get_user_by_feed_token_hash.return_value = {
+        "user_id": 7,
+        "membership_tier": "member",
+    }
+    client = _client(documents=MagicMock(), briefings=briefings, tokens=tokens)
+
+    response = client.get("/api/feeds/briefing-digest.xml?token=ok")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-robots-tag"] == "noindex"
+    assert "<title>AIGC NEWS · 每日简报速览</title>" in response.text
+    assert "<title>2026-08-27 每日 AIGC 简报（速览）</title>" in response.text
+    assert "本报梳理" in response.text
+    assert "话题概述" not in response.text
