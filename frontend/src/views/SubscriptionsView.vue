@@ -74,6 +74,10 @@ const confirmRemoveSubscription = (subscription: UserSubscription): void => {
 const copyRss = (source: UserSubscription['source']): void => {
   void ctl.copyRssLink(source, authStore.isMember)
 }
+// 简报 RSS：全文公开直订（会员同一链接）；速览为会员专属（带 token）。
+const copyBriefing = (digest: boolean): void => {
+  void ctl.copyBriefingRssLink(digest)
+}
 const confirmRotateFeedToken = (): void => {
   if (window.confirm(t('subscriptions.subs.rssResetConfirm'))) {
     void ctl.rotateFeedToken()
@@ -114,27 +118,66 @@ onMounted(() => {
       </p>
 
       <div class="grid min-h-0 flex-1 items-start gap-5 lg:grid-cols-2">
-        <!-- RSS 直订：与推送渠道完全解耦，不建渠道也能直接复制阅读器链接。
-             会员链接带专属 token（全文+7 天归档），免费用户为公开摘要源 -->
+        <!-- RSS 简报直订：与推送渠道完全解耦，不建渠道也能直接复制阅读器链接。
+             主推每日综合简报：全文公开直订（会员同一链接）；速览为会员专属
+             （带 token）。8 个原始条目源收进默认折叠的高级区，保持可发现但不抢主线 -->
         <section class="stagger-enter glass-card flex flex-col gap-3 p-4" style="animation-delay: 0.05s">
           <h2 class="text-base font-bold text-stone-800">{{ t('subscriptions.subs.rssTitle') }}</h2>
           <p class="text-2xs leading-relaxed text-stone-400">
             {{ authStore.isMember ? t('subscriptions.subs.rssHintMember') : t('subscriptions.subs.rssHintFree') }}
           </p>
-          <ul class="flex flex-wrap gap-1.5">
-            <li v-for="source in SUBSCRIPTION_SOURCES" :key="source">
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-[4px] border border-stone-200 px-2 py-1 text-2xs font-bold text-stone-600 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
-                :title="t('subscriptions.subs.rssCopy')"
-                :disabled="ctl.rssBusy.value"
-                @click="copyRss(source)"
-              >
-                <Rss class="h-3 w-3" />
-                {{ t(`subscriptions.sources.${source}`) }}
-              </button>
-            </li>
-          </ul>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-[4px] border border-ink px-2.5 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent disabled:opacity-40"
+              :title="t('subscriptions.subs.rssCopy')"
+              :disabled="ctl.rssBusy.value"
+              @click="copyBriefing(false)"
+            >
+              <Rss class="h-3.5 w-3.5" />
+              {{ t('subscriptions.subs.rssBriefingFull') }}
+            </button>
+            <button
+              v-if="authStore.isMember"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-[4px] border border-ink px-2.5 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent disabled:opacity-40"
+              :title="t('subscriptions.subs.rssCopy')"
+              :disabled="ctl.rssBusy.value"
+              @click="copyBriefing(true)"
+            >
+              <Rss class="h-3.5 w-3.5" />
+              {{ t('subscriptions.subs.rssBriefingDigest') }}
+            </button>
+            <RouterLink
+              v-else
+              to="/membership"
+              class="inline-flex items-center gap-1 rounded-[4px] px-2 py-1.5 text-2xs font-bold text-stone-400 transition-colors hover:text-ink"
+            >
+              {{ t('subscriptions.subs.rssDigestUpsell') }}
+            </RouterLink>
+          </div>
+          <details class="rounded-[4px] border border-stone-200 px-2.5 py-2">
+            <summary class="cursor-pointer text-2xs font-bold text-stone-500 transition-colors hover:text-ink">
+              {{ t('subscriptions.subs.rssAdvancedTitle') }}
+            </summary>
+            <p class="mt-1.5 text-2xs leading-relaxed text-stone-400">
+              {{ t('subscriptions.subs.rssAdvancedHint') }}
+            </p>
+            <ul class="mt-2 flex flex-wrap gap-1.5">
+              <li v-for="source in SUBSCRIPTION_SOURCES" :key="source">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded-[4px] border border-stone-200 px-2 py-1 text-2xs font-bold text-stone-600 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
+                  :title="t('subscriptions.subs.rssCopy')"
+                  :disabled="ctl.rssBusy.value"
+                  @click="copyRss(source)"
+                >
+                  <Rss class="h-3 w-3" />
+                  {{ t(`subscriptions.sources.${source}`) }}
+                </button>
+              </li>
+            </ul>
+          </details>
         </section>
 
         <!-- 渠道管理 -->

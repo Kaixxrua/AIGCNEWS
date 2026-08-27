@@ -360,6 +360,29 @@ export function useSubscriptionsController(
     }
   }
 
+  // 简报 RSS（推送渠道之外的第二条直订链）：全文源公开、会员同一链接
+  // （内容与 /report 一致，免 token 进阅读器且可边缘缓存）；
+  // 速览为会员专属——带 token 的 briefing-digest.xml，调用方按档位显隐入口。
+  const rssBriefingLinkFor = async (digest: boolean): Promise<string> => {
+    const origin = window.location.origin
+    if (!digest) return `${origin}/api/feeds/briefing.xml`
+    const token = encodeURIComponent(await ensureFeedToken())
+    return `${origin}/api/feeds/briefing-digest.xml?token=${token}`
+  }
+
+  const copyBriefingRssLink = async (digest: boolean): Promise<boolean> => {
+    if (rssBusy.value) return false
+    rssBusy.value = true
+    try {
+      return await _run(async () => {
+        await copyToClipboard(await rssBriefingLinkFor(digest))
+        notice.value = 'rss-copied'
+      })
+    } finally {
+      rssBusy.value = false
+    }
+  }
+
   // 重新生成即吊销旧 token：旧 RSS 链接即刻 401，内存中的 token 同步换新
   const rotateFeedToken = async (): Promise<boolean> => {
     if (rssBusy.value) return false
@@ -418,6 +441,8 @@ export function useSubscriptionsController(
     removeSubscription,
     rssLinkFor,
     copyRssLink,
+    rssBriefingLinkFor,
+    copyBriefingRssLink,
     rotateFeedToken,
   }
 }

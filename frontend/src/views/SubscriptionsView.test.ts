@@ -58,6 +58,8 @@ vi.mock('@/composables/useSubscriptionsController', async () => {
     removeSubscription: vi.fn(),
     rssLinkFor: vi.fn(),
     copyRssLink: vi.fn(),
+    rssBriefingLinkFor: vi.fn(),
+    copyBriefingRssLink: vi.fn(),
     rotateFeedToken: vi.fn(),
   }
   return { useSubscriptionsController: controllerSpy.mockReturnValue(ctlBox.current) }
@@ -123,9 +125,14 @@ const i18n = createI18n({
           rssCopy: '复制 RSS 订阅链接',
           rssReset: '重置 RSS 链接',
           rssResetConfirm: '重置后旧 RSS 链接立即失效，需要到阅读器里换成新链接。确定重置？',
-          rssTitle: 'RSS 直接订阅',
-          rssHintMember: '链接内含你的专属 token，请勿公开分享。',
-          rssHintFree: '公开源为摘要；开通会员解锁中文译文全文。',
+          rssTitle: 'RSS 简报订阅',
+          rssHintMember: '速览链接内含你的专属 token，请勿公开分享。',
+          rssHintFree: '每日综合简报全文公开可订；开通会员独享速览版。',
+          rssBriefingFull: '每日简报 · 全文',
+          rssBriefingDigest: '每日简报 · 速览',
+          rssDigestUpsell: '速览版为会员权益 →',
+          rssAdvancedTitle: '按来源订阅原始条目（高级）',
+          rssAdvancedHint: '公开源为近 48 小时摘要；会员链接带 token。',
           empty: '还没有订阅',
         },
         sources: { all: '全部', arxiv: 'arXiv 论文', dailyhot: '全网热榜' },
@@ -216,6 +223,7 @@ beforeEach(() => {
     ctl().toggleSubscription,
     ctl().removeSubscription,
     ctl().copyRssLink,
+    ctl().copyBriefingRssLink,
     ctl().rotateFeedToken,
   ]) {
     fn.mockClear()
@@ -382,25 +390,63 @@ describe('SubscriptionsView interactions', () => {
     expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', false)
   })
 
-  it('offers standalone RSS pills for every source without any channel or subscription', async () => {
-    // 零渠道零订阅也能直接拿 RSS 链接——直订与推送渠道完全解耦
+  it('offers briefing RSS buttons plus collapsed source pills without any channel or subscription', async () => {
+    // 零渠道零订阅也能直接拿 RSS 链接——直订与推送渠道完全解耦；
+    // 简报为主推，8 个原始条目源收在默认折叠的高级区
     authBox.isMember = false
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('RSS 直接订阅')
-    expect(wrapper.text()).toContain('公开源为摘要')
-    const pills = wrapper
+    expect(wrapper.text()).toContain('RSS 简报订阅')
+    expect(wrapper.text()).toContain('每日综合简报全文公开可订')
+    const fullButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 全文')
+    expect(fullButton).toBeDefined()
+    await fullButton!.trigger('click')
+    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(false)
+
+    // 免费用户不显示速览按钮，改显示会员转化入口（RouterLinkStub 无 href，按 to 断言）
+    expect(wrapper.findAll('button').some((button) => button.text() === '每日简报 · 速览')).toBe(false)
+    const upsell = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((link) => link.props('to') === '/membership')
+    expect(upsell).toBeDefined()
+    expect(upsell!.text()).toContain('速览版为会员权益')
+
+    const advanced = wrapper.find('details')
+    expect(advanced.text()).toContain('按来源订阅原始条目（高级）')
+    const pills = advanced
       .findAll('button')
-      .filter((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() !== '')
+      .filter((button) => button.attributes('title') === '复制 RSS 订阅链接')
     expect(pills.length).toBe(SUBSCRIPTION_SOURCES.length)
   })
 
-  it('copies the all-sources member RSS link from the standalone card', async () => {
+  it('offers members the digest button and copies full or digest briefing links', async () => {
     authBox.isMember = true
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('链接内含你的专属 token')
-    const allPill = wrapper.findAll('button').find((button) => button.text() === '全部')
+    expect(wrapper.text()).toContain('速览链接内含你的专属 token')
+    // 会员无 upsell 链接（quota 转化入口对会员同样隐藏）
+    expect(
+      wrapper.findAllComponents(RouterLinkStub).some((link) => link.props('to') === '/membership'),
+    ).toBe(false)
+
+    const fullButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 全文')
+    await fullButton!.trigger('click')
+    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(false)
+
+    const digestButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 速览')
+    expect(digestButton).toBeDefined()
+    await digestButton!.trigger('click')
+    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(true)
+  })
+
+  it('copies per-source member RSS links from the collapsed advanced section', async () => {
+    authBox.isMember = true
+    const wrapper = await mountView()
+
+    const allPill = wrapper
+      .find('details')
+      .findAll('button')
+      .find((button) => button.text() === '全部')
     expect(allPill).toBeDefined()
     await allPill!.trigger('click')
     expect(ctl().copyRssLink).toHaveBeenCalledWith('all', true)

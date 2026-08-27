@@ -22,15 +22,10 @@ vi.mock('@/composables/useDashboardData', async () => {
       selectSourceTab: vi.fn(),
       onDateChange: vi.fn(),
       hasData: ref(true),
-      applyLiveStats: vi.fn(),
+      refreshLiveStats: vi.fn(),
     }),
   }
 })
-
-/* SSE 单例在 jsdom 下无 EventSource；桩化订阅入口，仅校验视图已接线。 */
-vi.mock('@/composables/useLiveStatsStream', () => ({
-  subscribeLiveStats: vi.fn(() => () => {}),
-}))
 
 vi.mock('@/composables/useDashboardStats', async () => {
   const { ref } = await import('vue')
@@ -54,7 +49,7 @@ const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
     digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报' },
-    rss: { title: 'RSS 订阅', publicCta: '订阅公开摘要', memberCta: '查看 vip 全文 RSS' },
+    rss: { title: 'RSS 订阅', publicCta: '订阅每日简报', memberCta: '查看 vip 速览 RSS' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
   },
 }
@@ -94,8 +89,8 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
-    const publicFeed = wrapper.get('a[href="/api/feed.xml"]')
-    expect(publicFeed.text()).toContain('订阅公开摘要')
+    const publicFeed = wrapper.get('a[href="/api/feeds/briefing.xml"]')
+    expect(publicFeed.text()).toContain('订阅每日简报')
     expect(publicFeed.attributes('target')).toBe('_blank')
     expect(publicFeed.attributes('rel')).toBe('noopener noreferrer')
 
@@ -108,7 +103,7 @@ describe('DashboardView', () => {
 
     // 免费/未登录：入口仍是转化链路，导去权益页
     const memberCta = wrapper.get('a[href="/membership"]')
-    expect(memberCta.text()).toContain('查看 vip 全文 RSS')
+    expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })
@@ -119,7 +114,7 @@ describe('DashboardView', () => {
 
     // 会员：入口直达订阅页复制带 token 链接，不再落到购买页死胡同
     const memberCta = wrapper.get('a[href="/subscriptions"]')
-    expect(memberCta.text()).toContain('查看 vip 全文 RSS')
+    expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })

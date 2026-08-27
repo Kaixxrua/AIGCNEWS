@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted } from 'vue'
+import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
 import { useAuthStore } from '@/stores/authStore'
-import { subscribeLiveStats } from '@/composables/useLiveStatsStream'
 import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
@@ -43,17 +44,20 @@ const {
   selectSourceTab,
   onDateChange,
   hasData,
-  applyLiveStats,
+  refreshLiveStats,
 } = useDashboardData({
   updateStatSources,
   updateVisitorSources,
 })
 currentStats = () => stats.value
 
-/* 实时计数改事件驱动：SSE 推送（后端写路径触发重算后主动广播），变化的数字
-   即时滚筒滚动差位，无变化完全静止；断流时 composable 内部自动降级 30s 轮询。
-   连接为模块级单例（与顶栏「今日更新」共享），卸载自动退订释放。 */
-subscribeLiveStats(applyLiveStats)
+/* 每 10s 轮询实时计数：仅变化的数字滚筒滚动差位（如 1306→2309 只滚千位与个位），
+   无变化则完全静止。KeepAlive 停用或卸载时暂停定时器。 */
+const { pause: pauseLivePoll, resume: resumeLivePoll } = useIntervalFn(() => { void refreshLiveStats() }, 10_000, { immediate: false })
+onMounted(resumeLivePoll)
+onActivated(resumeLivePoll)
+onDeactivated(pauseLivePoll)
+onBeforeUnmount(pauseLivePoll)
 
 </script>
 
@@ -143,8 +147,8 @@ subscribeLiveStats(applyLiveStats)
             </span>
           </RouterLink>
 
-          <!-- RSS 订阅入口：公开摘要可直接订阅；会员全文按身份分流——会员去订阅页
-               复制带 token 链接，免费用户去权益页转化；不在 DOM 暴露 token -->
+          <!-- RSS 订阅入口：每日简报全文公开直订；会员速览按身份分流——会员去
+               订阅页复制带 token 链接，免费用户去权益页转化；不在 DOM 暴露 token -->
           <div
             class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
             style="animation-delay: 0.4s"
@@ -157,7 +161,7 @@ subscribeLiveStats(applyLiveStats)
             </span>
             <div class="mt-auto flex flex-col gap-1.5">
               <a
-                href="/api/feed.xml"
+                href="/api/feeds/briefing.xml"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="digest-cta inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
