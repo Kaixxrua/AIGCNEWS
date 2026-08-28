@@ -109,6 +109,8 @@ const router = createRouter({
           path: 'dsh',
           name: 'dsh',
           component: DshView,
+          // DSH 向导自动签发账号绑定的 MCP Token：游客必须登录
+          meta: { requiresAuth: true },
         },
         {
           path: 'monitor',

@@ -1,9 +1,28 @@
 import { computed, ref } from 'vue'
+import axios from 'axios'
 import { DSH_PLUGIN_INSTALL_METHODS, type DshPluginInstallMethodId } from '@/features/mcp/dshPlugin'
-import { createMcpToken as defaultCreateMcpToken } from '@/services/mcp/mcpTokenApi'
+import {
+  ensureDshMcpToken as defaultEnsureDshMcpToken,
+  isDshTokenRecoveryRequired,
+  rotateDshMcpToken as defaultRotateDshMcpToken,
+  type DshMcpTokenResponse,
+} from '@/services/mcp/mcpTokenApi'
 
-export type DshIdentity = 'guest' | 'user' | 'vip'
-export interface DshSetupOptions { createMcpToken?: typeof defaultCreateMcpToken }
+/**
+ * DSH 接入向导控制器（登录后流程）。
+ *
+ * 不再有 guest/Free/VIP 身份选择：页面要求登录（路由 meta.requiresAuth），
+ * 挂载后自动调用服务端 ensure 接口拿到该用户唯一的 DSH 专用 MCP Token
+ * （跨刷新复用同一枚，服务端密封持久化）。Token 只保存在本控制器的内存
+ * ref 中——不写入 localStorage/sessionStorage/URL/日志；认证丢失或组件
+ * 卸载立即清空，且迟到响应（generation/disposed 守卫）不得回填凭证。
+ */
+export type DshTokenPhase = 'idle' | 'loading' | 'ready' | 'error' | 'recovery'
+
+export interface DshSetupOptions {
+  ensureDshMcpToken?: typeof defaultEnsureDshMcpToken
+  rotateDshMcpToken?: typeof defaultRotateDshMcpToken
+}
 
 const DSH_PATCH_PATH = '~/.dsh/profiles/web/cordis.patch.yml'
 
@@ -22,62 +41,129 @@ const patchLines = (token: string) => [
   `        mcpToken: ${yamlQuote(token)}`,
 ]
 
+const toErrorKey = (cause: unknown) =>
+  axios.isAxiosError(cause) && cause.response?.status === 503
+    ? 'dsh.wizard.tokenUnavailable'
+    : 'mcp.tokenCreateFailed'
+
 export const useDshSetupController = (options: DshSetupOptions = {}) => {
-  const createMcpToken = options.createMcpToken ?? defaultCreateMcpToken
-  const identity = ref<DshIdentity>('guest')
+  const ensureTokenApi = options.ensureDshMcpToken ?? defaultEnsureDshMcpToken
+  const rotateTokenApi = options.rotateDshMcpToken ?? defaultRotateDshMcpToken
   const selectedMethod = ref<DshPluginInstallMethodId>('npm')
+  // 两步：0 = 安装方式，1 = 接入命令
   const step = ref(0)
-  const creating = ref(false)
+  const phase = ref<DshTokenPhase>('idle')
   const token = ref('')
+  const tokenReused = ref(false)
   const error = ref('')
+  let generation = 0
+  let inflight: Promise<boolean> | null = null
+  let disposed = false
+
   const command = computed(() => DSH_PLUGIN_INSTALL_METHODS.find((m) => m.id === selectedMethod.value)?.command ?? DSH_PLUGIN_INSTALL_METHODS[0]!.command)
   // 一条命令完成安装与 Token 落盘：安装插件后把 mcpToken 补丁写进 profile 补丁层。
   // cordis.patch.yml 默认只有注释与空数组，追加会破坏 YAML 结构，因此整文件覆盖。
+  // 没有 ready token 时绝不渲染命令（凭证不得出现在半成品 UI/复制板里）。
   const installLine = computed(() => {
-    if (!token.value) return command.value
+    if (!token.value) return ''
     const args = patchLines(token.value).map(shellDoubleQuote).join(' ')
     return `${command.value} && printf '%s\\n' ${args} > ${DSH_PATCH_PATH}`
   })
 
-  const generate = async () => {
-    if (identity.value === 'guest' || token.value || creating.value) return true
-    creating.value = true
+  const applyToken = (result: DshMcpTokenResponse) => {
+    token.value = result.token
+    tokenReused.value = result.reused
+    phase.value = 'ready'
     error.value = ''
+  }
+
+  const ensure = async (): Promise<boolean> => {
+    if (disposed) return false
+    // 同一控制器实例只并发一次 ensure；已有 ready token 时直接命中
+    if (phase.value === 'ready' && token.value) return true
+    if (inflight) return inflight
+    const current = ++generation
+    phase.value = 'loading'
+    error.value = ''
+    let task: Promise<boolean> | null = null
+    task = (async () => {
+      try {
+        const result = await ensureTokenApi()
+        if (disposed || current !== generation) return false
+        applyToken(result)
+        return true
+      } catch (cause) {
+        if (disposed || current !== generation) return false
+        token.value = ''
+        if (isDshTokenRecoveryRequired(cause)) {
+          // 旧版 hash-only token 无法回显明文：引导用户显式重新生成
+          phase.value = 'recovery'
+          return false
+        }
+        phase.value = 'error'
+        error.value = toErrorKey(cause)
+        return false
+      } finally {
+        if (inflight === task) inflight = null
+      }
+    })()
+    inflight = task
+    return task
+  }
+
+  const rotate = async (): Promise<boolean> => {
+    if (disposed) return false
+    const current = ++generation
+    phase.value = 'loading'
+    error.value = ''
+    token.value = ''
     try {
-      const result = await createMcpToken({ client_type: 'other', client_label: 'dsh-aigc-radar' })
-      token.value = result.token
+      const result = await rotateTokenApi()
+      if (disposed || current !== generation) return false
+      applyToken(result)
       return true
-    } catch {
-      error.value = 'mcp.tokenCreateFailed'
+    } catch (cause) {
+      if (disposed || current !== generation) return false
+      phase.value = 'error'
+      error.value = toErrorKey(cause)
       return false
-    } finally { creating.value = false }
-  }
-  const next = async (isLoggedIn: boolean, isMember: boolean) => {
-    if (step.value === 0) {
-      if (identity.value !== 'guest' && !isLoggedIn) return 'login'
-      if (identity.value === 'vip' && !isMember) return 'vip'
     }
-    step.value = Math.min(2, step.value + 1)
-    if (step.value === 2) await generate()
-    return 'ok'
   }
+
+  // 认证丢失/登出：立即丢弃内存 token 并使在途请求失效（generation 守卫
+  // 让迟到响应无法回填；在途 promise 自行结束并释放 inflight 槽位）
+  const clearToken = () => {
+    generation += 1
+    token.value = ''
+    tokenReused.value = false
+    error.value = ''
+    phase.value = 'idle'
+  }
+
+  const dispose = () => {
+    disposed = true
+    generation += 1
+    token.value = ''
+    tokenReused.value = false
+  }
+
+  const next = () => { step.value = Math.min(1, step.value + 1) }
   const previous = () => { step.value = Math.max(0, step.value - 1) }
-  // VIP 会员免选身份，直接进入安装方式步骤；每次向导会话只自动跳一次，
-  // 用户手动返回身份步骤后不再强行前推。
-  // 普通登录用户仍停留在身份步骤，但默认身份从 guest 归一化为 user（Free），
-  // 避免以隐藏的游客身份误入免 token 路径。
-  let vipFastPathUsed = false
-  const syncAuth = (isLoggedIn: boolean, isMember: boolean) => {
-    if (!isLoggedIn) return
-    if (!isMember) {
-      if (step.value === 0 && identity.value === 'guest') identity.value = 'user'
-      return
-    }
-    if (vipFastPathUsed || step.value !== 0) return
-    vipFastPathUsed = true
-    identity.value = 'vip'
-    step.value = 1
+
+  return {
+    selectedMethod,
+    step,
+    phase,
+    token,
+    tokenReused,
+    error,
+    command,
+    installLine,
+    ensure,
+    rotate,
+    clearToken,
+    dispose,
+    next,
+    previous,
   }
-  const reset = () => { step.value = 0; token.value = ''; error.value = '' }
-  return { identity, selectedMethod, step, creating, token, error, command, installLine, next, previous, generate, syncAuth, reset }
 }

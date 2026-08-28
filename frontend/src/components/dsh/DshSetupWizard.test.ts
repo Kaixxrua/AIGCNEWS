@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -11,27 +11,30 @@ import type { AuthUser } from '@/stores/authStore'
 const freeUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', membership_tier: 'free' }
 const memberUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', membership_tier: 'member' }
 
-const createMcpToken = vi.hoisted(() => vi.fn())
+const ensureDshMcpToken = vi.hoisted(() => vi.fn())
+const rotateDshMcpToken = vi.hoisted(() => vi.fn())
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-vi.mock('@/services/mcp/mcpTokenApi', () => ({ createMcpToken }))
+vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
+  // 保留 isDshTokenRecoveryRequired 等真实辅助，只替换触网的 ensure/rotate
+  const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
+  return { ...actual, ensureDshMcpToken, rotateDshMcpToken }
+})
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
 
-const promptState = vi.hoisted(() => {
-  // 模块级共享弹框状态的测试替身：用普通可变对象避免 hoisted 阶段引用 vue。
-  return { open: { value: false }, redirect: { value: '/' } }
+const readyResult = (token: string, reused = false) => ({
+  token,
+  reused,
+  token_metadata: {
+    id: 21,
+    token_hint: 'aigc_mcp_abc...wxyz',
+    scopes: ['projects:favorites:read'],
+    client_type: 'other',
+    client_label: 'dsh-aigc-radar',
+    expires_at: null,
+    revoked_at: null,
+  },
 })
-vi.mock('@/composables/useLoginPrompt', () => ({
-  useLoginPrompt: () => ({
-    isOpen: promptState.open,
-    redirectTarget: promptState.redirect,
-    requestLogin: (target?: unknown) => {
-      promptState.redirect.value = typeof target === 'string' ? target : '/'
-      promptState.open.value = true
-    },
-    closeLoginPrompt: () => { promptState.open.value = false },
-  }),
-}))
 
 const messages = {
   mcp: {
@@ -45,16 +48,16 @@ const messages = {
   dsh: {
     recommended: '推荐', copy: '复制安装命令',
     wizard: {
-      ariaLabel: 'dsh 安装向导',
-      stepIdentity: '选择身份', stepIdentityDescription: '选择身份。',
-      stepInstall: '安装方式', stepInstallDescription: '选择安装方式。',
-      stepCommand: '生成命令', stepCommandDescription: '生成命令。',
-      identityGuest: 'guest', identityUser: 'Free', identityVip: 'VIP',
-      identityGuestDescription: 'guest 试用。', identityUserDescription: 'Free 配额说明。', identityVipDescription: 'VIP 配额。',
-      vipRequired: '该档位需要有效会员。', vipCta: '开通 VIP', continueAsFree: '按 Free 继续',
-      tokenCreating: '正在生成令牌', tokenRetry: '重试',
+      ariaLabel: 'dsh 接入向导',
+      stepInstall: '选择安装方式', stepInstallDescription: '选择安装方式。',
+      stepCommand: '获取接入命令', stepCommandDescription: '获取命令。',
+      tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试',
+      tokenUnavailable: 'DSH Token 服务暂不可用。',
+      tokenRecovery: '旧版 Token 无法自动恢复，请重新生成。', tokenRotate: '重新生成 Token',
       commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。',
-      oneTimeTokenWarning: '令牌仅显示一次。', anonymousHint: 'guest 受 IP 限额。',
+      tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变。',
+      vipHint: 'VIP 会员享更高调用次数。', vipCta: '升级 VIP',
+      memberStatus: '当前账号为 VIP 会员。',
     },
   },
 }
@@ -64,177 +67,146 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/membership', component: { template: '<div />' } },
 ] })
 
-const mountWizard = async () => {
+const mountWizard = async (user: AuthUser = freeUser) => {
+  const auth = useAuthStore()
+  auth.status = 'authenticated'
+  auth.user = user
   await router.push('/dsh'); await router.isReady()
   const wrapper = mount(DshSetupWizard, { global: { plugins: [router, i18n] } })
-  await nextTick()
+  await flushPromises()
   return wrapper
 }
 
 const nextButton = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('button').find((button) => button.text().includes('下一步'))!
 
-beforeEach(async () => {
-  createMcpToken.mockReset()
+beforeEach(() => {
+  ensureDshMcpToken.mockReset()
+  rotateDshMcpToken.mockReset()
   copy.mockClear()
-  promptState.open.value = false
-  promptState.redirect.value = '/'
   setActivePinia(createPinia())
 })
 
-describe('DshSetupWizard identity gate', () => {
-  it('opens the global login prompt when a logged-out user picks the account tier', async () => {
+describe('DshSetupWizard', () => {
+  it('auto-ensures the account-bound token on mount without any identity step', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_auto'))
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('Free'))!.trigger('click')
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
 
-    expect(promptState.open.value).toBe(true)
-    expect(promptState.redirect.value).toBe('/dsh')
-    expect(wrapper.text()).toContain('选择身份。')
-  })
-
-  it('stays on the identity step after login completes until the user advances', async () => {
-    const auth = useAuthStore()
-    auth.status = 'anonymous'
-    const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('Free'))!.trigger('click')
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
-    expect(promptState.open.value).toBe(true)
-
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    await nextTick()
-    await nextTick()
-
-    // 登录完成后不再自动跳步：停留在身份步骤，由用户明确点下一步
-    expect(wrapper.text()).toContain('选择身份。')
-    expect(wrapper.text()).not.toContain('npm 最新版')
-
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
+    // 没有身份选择步骤：直接落在安装方式步骤
     expect(wrapper.text()).toContain('npm 最新版')
+    expect(wrapper.text()).not.toContain('选择身份')
+    expect(wrapper.text()).not.toContain('guest')
+    expect(ensureDshMcpToken).toHaveBeenCalledOnce()
   })
 
-  it('shows Free and VIP cards but not the guest card once the user is logged in', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    const wrapper = await mountWizard()
+  it('shows free users a VIP upgrade hint linking to /membership', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_free'))
+    const wrapper = await mountWizard(freeUser)
 
-    // 普通登录用户停留在身份步骤，在 Free 与 VIP 之间明确选择
-    expect(wrapper.text()).toContain('选择身份。')
-    expect(wrapper.text()).toContain('Free 配额说明。')
-    expect(wrapper.text()).toContain('VIP 配额。')
-    expect(wrapper.text()).not.toContain('guest 试用。')
+    expect(wrapper.text()).toContain('VIP 会员享更高调用次数。')
+    expect(wrapper.get('a[href="/membership"]').text()).toContain('升级 VIP')
+    expect(wrapper.text()).not.toContain('当前账号为 VIP 会员。')
   })
 
-  it('sends VIP members straight to the install-method step', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = memberUser
-    const wrapper = await mountWizard()
-    await nextTick()
+  it('shows members their status instead of the upgrade hint', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_vip'))
+    const wrapper = await mountWizard(memberUser)
 
-    expect(wrapper.text()).toContain('npm 最新版')
-    expect(wrapper.text()).not.toContain('guest 试用。')
+    expect(wrapper.text()).toContain('当前账号为 VIP 会员。')
+    expect(wrapper.text()).not.toContain('VIP 会员享更高调用次数。')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
   })
 
-  it('blocks VIP for non-members with an upgrade hint and free-tier escape', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
+  it('walks install method → command with the ensured token folded into one line', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult("aigc_mcp_x'y"))
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('VIP'))!.trigger('click')
-    await nextTick()
-
-    expect(wrapper.text()).toContain('该档位需要有效会员。')
-    expect(wrapper.get('a[href="/membership"]').text()).toContain('开通 VIP')
-    await wrapper.findAll('button').find((b) => b.text().includes('按 Free 继续'))!.trigger('click')
-    expect(wrapper.text()).not.toContain('该档位需要有效会员。')
-
-    // 免费用户从 VIP 门禁逃逸后仍可前进到安装步骤并签发 token
-    createMcpToken.mockResolvedValue({ token: 'aigc_mcp_free' })
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
-    expect(wrapper.text()).toContain('npm 最新版')
-  })
-})
-
-describe('DshSetupWizard one-line command generation', () => {
-  it('guest path shows the plain install command without issuing a token', async () => {
-    const wrapper = await mountWizard()
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
+    await wrapper.findAll('button').find((b) => b.text().includes('GitHub 源码'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
 
-    expect(wrapper.text()).toContain('dsh plugin --profile web add dsh-aigc-radar')
-    expect(wrapper.text()).not.toContain('printf')
-    expect(wrapper.text()).toContain('guest 受 IP 限额。')
-    expect(createMcpToken).not.toHaveBeenCalled()
-  })
-
-  it('user path auto-issues one token and renders a single composite command', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    createMcpToken.mockResolvedValue({ token: "aigc_mcp_x'y" })
-    const wrapper = await mountWizard()
-    // 已登录普通用户直接选 Free 卡进入账号路径
-    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
-    await nextButton(wrapper).trigger('click')
-    await nextTick()
-    await nextButton(wrapper).trigger('click')
-    await nextTick(); await nextTick()
-
-    expect(createMcpToken).toHaveBeenCalledOnce()
-    expect(createMcpToken).toHaveBeenCalledWith({ client_type: 'other', client_label: 'dsh-aigc-radar' })
     const text = wrapper.text()
+    expect(text).toContain('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar && printf')
     expect(text).toContain("mcpToken: 'aigc_mcp_x''y'")
     expect(text).toContain('~/.dsh/profiles/web/cordis.patch.yml')
     expect(text).toContain('命令会写入 dsh 补丁配置。')
-    expect(text).toContain('令牌仅显示一次。')
+    expect(text).toContain('Token 与账号绑定、跨刷新保持不变。')
   })
 
-  it('shows retry state when token creation fails', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    createMcpToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({ token: 'aigc_mcp_ok' })
+  it('keeps the command hidden while the token is loading', async () => {
+    let resolveEnsure!: (value: ReturnType<typeof readyResult>) => void
+    ensureDshMcpToken.mockReturnValue(new Promise((res) => { resolveEnsure = res }))
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
-    await nextButton(wrapper).trigger('click')
-    await nextTick(); await nextTick()
 
-    expect(wrapper.text()).toContain('重试')
+    expect(wrapper.text()).toContain('正在获取你的专属 MCP Token…')
+    expect(wrapper.text()).not.toContain('printf')
+    expect(wrapper.find('code').exists()).toBe(false)
+
+    resolveEnsure(readyResult('aigc_mcp_late'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('aigc_mcp_late')
+  })
+
+  it('shows retry state when ensure fails', async () => {
+    ensureDshMcpToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(readyResult('aigc_mcp_ok'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Token 创建失败。')
     await wrapper.findAll('button').find((b) => b.text().includes('重试'))!.trigger('click')
-    await nextTick(); await nextTick()
+    await flushPromises()
     expect(wrapper.text()).toContain("mcpToken: 'aigc_mcp_ok'")
-    expect(createMcpToken).toHaveBeenCalledTimes(2)
+    expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
+  })
+
+  it('guides legacy-token users through explicit regeneration', async () => {
+    ensureDshMcpToken.mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 409, data: { detail: { code: 'dsh_token_recovery_required', message: 'legacy' } } },
+    })
+    rotateDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_new'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('旧版 Token 无法自动恢复，请重新生成。')
+    expect(wrapper.text()).not.toContain('printf')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('重新生成 Token'))!.trigger('click')
+    await flushPromises()
+    expect(rotateDshMcpToken).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain("mcpToken: 'aigc_mcp_new'")
   })
 
   it('copies the single install line with one button', async () => {
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    createMcpToken.mockResolvedValue({ token: 'aigc_mcp_demo' })
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_demo'))
     const wrapper = await mountWizard()
-    await wrapper.findAll('button').find((b) => b.text().includes('Free 配额说明。'))!.trigger('click')
     await nextButton(wrapper).trigger('click')
     await nextTick()
-    await nextButton(wrapper).trigger('click')
-    await nextTick(); await nextTick()
 
     await wrapper.findAll('button').find((b) => b.text().includes('复制安装命令'))!.trigger('click')
-    await nextTick()
+    await flushPromises()
     expect(copy).toHaveBeenCalledTimes(1)
     const copied = String(copy.mock.calls[0]![0])
     expect(copied.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
     expect(copied).toContain("mcpToken: 'aigc_mcp_demo'")
     expect(copied).toContain('> ~/.dsh/profiles/web/cordis.patch.yml')
+  })
+
+  it('regenerates the token in place from the ready state', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_old'))
+    rotateDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_regen'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('aigc_mcp_old')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('重新生成 Token'))!.trigger('click')
+    await flushPromises()
+    expect(rotateDshMcpToken).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('aigc_mcp_regen')
+    expect(wrapper.text()).not.toContain('aigc_mcp_old')
   })
 })

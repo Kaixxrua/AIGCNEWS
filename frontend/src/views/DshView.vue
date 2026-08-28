@@ -1,10 +1,27 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
 import { DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
+import { useAuthStore } from '@/stores/authStore'
 
 const { t } = useI18n()
+const auth = useAuthStore()
+const router = useRouter()
+
+// /dsh 要求登录（路由 meta.requiresAuth）。路由守卫只在导航时生效，而 auth
+// 是挂载后异步恢复的：解析为 anonymous 时在这里补上强制跳转；
+// initializing 展示恢复中、degraded 提供重试，均不误判为游客。
+watch(
+  () => auth.status,
+  (status) => {
+    if (status === 'anonymous') {
+      void router.replace({ path: '/login', query: { redirect: '/dsh' } })
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -24,7 +41,13 @@ const { t } = useI18n()
           </div>
         </section>
 
-        <DshSetupWizard />
+        <section v-if="auth.status === 'initializing' || auth.status === 'anonymous'" class="glass-card p-5 md:p-6">
+          <p class="text-xs text-stone-500">{{ t('dsh.authRestoring') }}</p>
+        </section>
+        <section v-else-if="auth.status === 'degraded'" class="glass-card p-5 md:p-6">
+          <p class="rounded bg-rose-50 p-3 text-xs text-rose-700">{{ t('dsh.authDegraded') }} <button type="button" class="underline" @click="auth.initFromStorage()">{{ t('dsh.authRetry') }}</button></p>
+        </section>
+        <DshSetupWizard v-else />
 
         <section class="glass-card grid gap-3 p-5 md:grid-cols-[auto_minmax(0,1fr)] md:items-start md:p-6">
           <div class="flex h-10 w-10 items-center justify-center border border-ink bg-[var(--acid)] text-lg font-black">✦</div>

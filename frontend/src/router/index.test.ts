@@ -85,3 +85,31 @@ describe('subscriptions auth contract', () => {
       .toEqual({ path: '/login', query: { redirect: '/subscriptions' } })
   })
 })
+
+// 契约：/dsh 要求登录（Red 权限变更锚点）—— 向导自动签发账号绑定的 DSH 专用
+// MCP Token，不再有游客路径；匿名深链重定向 /login?redirect=/dsh，
+// initializing/degraded 不误判为游客（由 getRoutePolicyRedirect 既有语义保证）。
+describe('dsh auth contract', () => {
+  it('dsh route requires auth', () => {
+    const record = router.getRoutes().find((r) => r.path === '/dsh')
+    expect(record, 'missing route /dsh').toBeDefined()
+    expect(record?.name).toBe('dsh')
+    expect(record?.meta.requiresAuth).toBe(true)
+  })
+
+  it('anonymous deep link to dsh redirects to /login with redirect', () => {
+    const resolved = router.resolve('/dsh')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ path: '/login', query: { redirect: '/dsh' } })
+  })
+
+  it('authenticated visitor is permitted to open dsh', () => {
+    const resolved = router.resolve('/dsh')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+  })
+
+  it.each(['initializing', 'degraded'] as const)('%s visitor is not redirected away from dsh', (status) => {
+    const resolved = router.resolve('/dsh')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
+  })
+})

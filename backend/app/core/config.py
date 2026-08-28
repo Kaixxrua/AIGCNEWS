@@ -283,6 +283,33 @@ class Settings(BaseSettings):
             )
         return value
 
+    # DSH 专用 MCP token 静态加密（跨刷新复用：token 明文密封落库供 ensure
+    # 回显，永不存明文）。独立密钥域：不复用 feed_token/push_channel 等密钥，
+    # 避免任一域轮换时跨域连锁失效（现有 secret box 无多版本解密环）。
+    # 缺失或非法时 DSH token 端点拒绝签发/回显（503），不降级为明文。
+    dsh_mcp_token_encryption_key: str = ""
+    dsh_mcp_token_encryption_key_version: str = "v1"
+
+    @field_validator("dsh_mcp_token_encryption_key_version")
+    @classmethod
+    def _validate_dsh_mcp_token_key_version(cls, value: str) -> str:
+        if not value or len(value) > 64:
+            raise ValueError(
+                "dsh_mcp_token_encryption_key_version must be 1..64 characters"
+            )
+        return value
+
+    @field_validator("dsh_mcp_token_encryption_key")
+    @classmethod
+    def _validate_dsh_mcp_token_key(cls, value: str) -> str:
+        if not value:
+            return value
+        if value.startswith("CHANGEME"):
+            raise ValueError(
+                "dsh_mcp_token_encryption_key must not use the example placeholder"
+            )
+        return value
+
     milvus_host: str = "localhost"
     milvus_port: int = 19530
     milvus_user: str = ""

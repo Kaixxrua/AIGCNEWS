@@ -28,10 +28,17 @@ from backend.app.core.auth import (
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.config import settings
 from backend.app.repositories.feed_token_repository import FeedTokenRepository
-from backend.app.repositories.mcp_access_token_repository import McpAccessTokenManager
+from backend.app.repositories.mcp_access_token_repository import (
+    DshMcpTokenManager,
+    McpAccessTokenManager,
+)
 from backend.app.repositories.postgres_feed_token_repository import (
     FeedTokenSecretError,
     build_feed_token_secret_box,
+)
+from backend.app.repositories.postgres_mcp_access_token_repository import (
+    DshMcpTokenSecretError,
+    build_dsh_mcp_token_secret_box,
 )
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
@@ -653,6 +660,138 @@ async def delete_mcp_token(
     if not deleted:
         raise HTTPException(status_code=404, detail="MCP Token 不存在")
     return {"deleted": True, "id": token_id}
+
+
+# ---------------------------------------------------------------- DSH MCP token
+
+# DSH 向导签发参数全部由服务端固定：purpose/scope/客户端标识不接受请求体
+# 覆盖，客户端更不能声明 membership_tier/group——MCP 调用按 token 属主
+# 在 users 表中的实时生效档位计费（Python 与 mcp-go 同口径）。
+_DSH_MCP_TOKEN_SCOPES = ["projects:favorites:read"]
+_DSH_MCP_TOKEN_CLIENT_TYPE = "other"
+_DSH_MCP_TOKEN_CLIENT_LABEL = "dsh-aigc-radar"
+# rotate 吊销旧凭证，限速防脚本化刷量（窗口与认证端点同）
+_DSH_TOKEN_ROTATE_RATE_LIMIT = 5
+
+DSH_TOKEN_RECOVERY_REQUIRED_CODE = "dsh_token_recovery_required"
+
+
+def _new_dsh_mcp_token_material() -> dict[str, str]:
+    """生成新 DSH MCP token 并密封明文；密钥未配置/非法时抛
+    DshMcpTokenSecretError。绝不把明文落库：库里只有 SHA-256 hash
+    与 AES-256-GCM 密封信封。"""
+    token = "aigc_mcp_" + secrets.token_urlsafe(32)
+    secret_box = build_dsh_mcp_token_secret_box()
+    if secret_box is None:
+        raise DshMcpTokenSecretError("dsh mcp token 加密密钥未配置")
+    return {
+        "token": token,
+        "token_hash": hash_mcp_token(token),
+        "token_hint": f"{token[:12]}...{token[-4:]}",
+        "token_encrypted": json.dumps(secret_box.seal(token), ensure_ascii=False),
+    }
+
+
+def _dsh_mcp_token_payload(item: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "token": item["token"],
+        "token_metadata": item["token_metadata"],
+        "reused": item.get("status") == "reused",
+    }
+    if "revoked_count" in item:
+        payload["revoked_count"] = item["revoked_count"]
+    return payload
+
+
+def _dsh_repository_kwargs(user_id: int, material: dict[str, str]) -> dict[str, Any]:
+    return {
+        "user_id": user_id,
+        "token_hash": material["token_hash"],
+        "token_hint": material["token_hint"],
+        "token_encrypted": material["token_encrypted"],
+        "scopes": _DSH_MCP_TOKEN_SCOPES,
+        "client_type": _DSH_MCP_TOKEN_CLIENT_TYPE,
+        "client_label": _DSH_MCP_TOKEN_CLIENT_LABEL,
+    }
+
+
+@router.post(
+    "/auth/me/mcp-tokens/dsh/ensure",
+    summary="确保当前用户的 DSH MCP Token（跨刷新复用同一枚）",
+)
+async def ensure_dsh_mcp_token(
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: DshMcpTokenManager = Depends(get_mcp_access_token_repository),
+) -> dict[str, Any]:
+    """每用户一个活跃 DSH token：首次签发，之后解密回显同一枚。
+
+    历史 hash-only DSH token 无法回显明文：返回 409 +
+    detail.code=dsh_token_recovery_required，由用户显式调用 rotate
+    轮换，绝不静默吊销仍在使用的旧 token。
+    """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    try:
+        material = _new_dsh_mcp_token_material()
+        item = await asyncio.to_thread(
+            repository.ensure_user_dsh_mcp_token,
+            **_dsh_repository_kwargs(_user_id(current_user), material),
+        )
+    except DshMcpTokenSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DSH token 服务未配置加密密钥",
+        ) from exc
+    except pg_errors.UniqueViolation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="DSH token 生成冲突，请重试",
+        ) from exc
+    if item.get("status") == "recovery_required":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": DSH_TOKEN_RECOVERY_REQUIRED_CODE,
+                "message": "旧版 DSH token 无法自动恢复，请重新生成",
+            },
+        )
+    return _dsh_mcp_token_payload(item)
+
+
+@router.post(
+    "/auth/me/mcp-tokens/dsh/rotate",
+    summary="重新生成 DSH MCP Token（旧 DSH token 立即吊销）",
+)
+async def rotate_dsh_mcp_token(
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: DshMcpTokenManager = Depends(get_mcp_access_token_repository),
+) -> dict[str, Any]:
+    """legacy 恢复与泄漏自愈入口：单事务吊销旧 DSH token 并签发新 token。"""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.dsh_mcp_token_rotate", limit=_DSH_TOKEN_ROTATE_RATE_LIMIT
+    )
+    try:
+        material = _new_dsh_mcp_token_material()
+        item = await asyncio.to_thread(
+            repository.rotate_user_dsh_mcp_token,
+            **_dsh_repository_kwargs(_user_id(current_user), material),
+        )
+    except DshMcpTokenSecretError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DSH token 服务未配置加密密钥",
+        ) from exc
+    except pg_errors.UniqueViolation as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="DSH token 生成冲突，请重试",
+        ) from exc
+    return _dsh_mcp_token_payload(item)
 
 
 # ---------------------------------------------------------------- RSS feed token
