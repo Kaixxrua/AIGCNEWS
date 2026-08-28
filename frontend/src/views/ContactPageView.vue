@@ -39,46 +39,62 @@ const primaryEntryIndex = computed(() => {
   return hrefIndex >= 0 ? hrefIndex : config.value.contactEntries.findIndex((entry) => entry.qrImageUrl)
 })
 const isPrimaryEntry = (index: number): boolean => index === primaryEntryIndex.value
+
+/** 区块按实际可见顺序编号（有空区块时自动重排），树形前缀只认真实末行。 */
+type SectionKey = 'services' | 'entries' | 'notes'
+const visibleSections = computed<SectionKey[]>(() => {
+  const sections: SectionKey[] = []
+  if (config.value.serviceCards.length) sections.push('services')
+  if (config.value.contactEntries.length) sections.push('entries')
+  if (config.value.bodyMarkdown.trim()) sections.push('notes')
+  return sections
+})
+const sectionNumber = (key: SectionKey): string =>
+  String(visibleSections.value.indexOf(key) + 1).padStart(2, '0')
+const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├──')
 </script>
 
 <template>
   <div v-if="config.enabled" class="contact-page">
-    <div class="contact-card">
+    <div class="contact-shell">
       <header class="contact-hero">
-        <div class="contact-hero-copy">
-          <p class="contact-kicker">{{ t('contact.kicker') }}</p>
-          <h1 class="contact-title">{{ config.title }}</h1>
-          <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
-        </div>
-        <div v-if="config.contactEntries.length" class="contact-hero-note">
-          <span class="contact-hero-note__line" aria-hidden="true" />
-          <span>{{ t('contact.heroNote') }}</span>
-        </div>
+        <p class="term-line contact-command" aria-hidden="true">
+          <span class="term-prompt">$</span> aigcnews contact --list<span class="term-caret" />
+        </p>
+        <p class="contact-kicker">{{ t('contact.kicker') }}</p>
+        <h1 class="contact-title">{{ config.title }}</h1>
+        <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
+        <p v-if="config.contactEntries.length" class="contact-hero-note">{{ t('contact.heroNote') }}</p>
       </header>
 
-      <div class="contact-main-grid">
-        <section v-if="config.serviceCards.length" class="contact-section service-section" aria-labelledby="contact-services-title">
-          <div class="section-heading">
-            <p class="section-kicker">{{ t('contact.servicesKicker') }}</p>
-            <h2 id="contact-services-title">{{ t('contact.servicesTitle') }}</h2>
-          </div>
-          <div class="service-grid">
-            <article v-for="(card, index) in config.serviceCards" :key="`${index}-${card.title}`" class="service-card glass-card">
-              <span class="service-index">0{{ index + 1 }}</span>
-              <span class="service-icon" v-html="cardIcon(card.icon)" aria-hidden="true" />
+      <section v-if="config.serviceCards.length" class="contact-section service-section" aria-labelledby="contact-services-title">
+        <div class="section-heading">
+          <p class="term-line" aria-hidden="true"><span class="term-prompt">$</span> ls ./services</p>
+          <p class="section-kicker">[{{ sectionNumber('services') }}] {{ t('contact.servicesKicker') }}</p>
+          <h2 id="contact-services-title">{{ t('contact.servicesTitle') }}</h2>
+        </div>
+        <ul class="service-grid">
+          <li v-for="(card, index) in config.serviceCards" :key="`${index}-${card.title}`" class="service-card">
+            <span class="tree-branch" aria-hidden="true">{{ treeBranch(index === config.serviceCards.length - 1) }}</span>
+            <span class="service-icon" v-html="cardIcon(card.icon)" aria-hidden="true" />
+            <div class="service-body">
               <h3 class="service-title">{{ card.title }}</h3>
               <p v-if="card.description" class="service-desc">{{ card.description }}</p>
-            </article>
-          </div>
-        </section>
+            </div>
+          </li>
+        </ul>
+      </section>
 
-        <section v-if="config.contactEntries.length" class="contact-section entry-section" aria-labelledby="contact-entry-title">
-          <div class="section-heading">
-            <p class="section-kicker">{{ t('contact.entryKicker') }}</p>
-            <h2 id="contact-entry-title">{{ t('contact.entryTitle') }}</h2>
-          </div>
-          <div class="entry-list">
-            <article v-for="(entry, index) in config.contactEntries" :key="`${index}-${entry.label}`" class="entry-item glass-card" :class="{ 'entry-item--primary': isPrimaryEntry(index) }">
+      <section v-if="config.contactEntries.length" class="contact-section entry-section" aria-labelledby="contact-entry-title">
+        <div class="section-heading">
+          <p class="term-line" aria-hidden="true"><span class="term-prompt">$</span> ls ./contact.routes</p>
+          <p class="section-kicker">[{{ sectionNumber('entries') }}] {{ t('contact.entryKicker') }}</p>
+          <h2 id="contact-entry-title">{{ t('contact.entryTitle') }}</h2>
+        </div>
+        <ul class="entry-list">
+          <li v-for="(entry, index) in config.contactEntries" :key="`${index}-${entry.label}`" class="entry-item" :class="{ 'entry-item--primary': isPrimaryEntry(index) }">
+            <span class="tree-branch" aria-hidden="true">{{ treeBranch(index === config.contactEntries.length - 1) }}</span>
+            <div class="entry-body">
               <div class="entry-meta">
                 <span class="entry-label">{{ entry.label }}</span>
                 <span v-if="isPrimaryEntry(index)" class="entry-badge">{{ t('contact.primaryBadge') }}</span>
@@ -92,14 +108,15 @@ const isPrimaryEntry = (index: number): boolean => index === primaryEntryIndex.v
               </a>
               <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
               <span v-if="entry.qrImageUrl && !failedQrEntries[index]" class="entry-qr-hint">{{ t('contact.qrHint') }}</span>
-            </article>
-          </div>
-        </section>
-      </div>
+            </div>
+          </li>
+        </ul>
+      </section>
 
       <section v-if="config.bodyMarkdown.trim()" class="contact-section contact-markdown-section" aria-labelledby="contact-notes-title">
-        <div class="section-heading section-heading--notes">
-          <p class="section-kicker">{{ t('contact.notesKicker') }}</p>
+        <div class="section-heading">
+          <p class="term-line" aria-hidden="true"><span class="term-prompt">$</span> cat ./NOTES.md</p>
+          <p class="section-kicker">[{{ sectionNumber('notes') }}] {{ t('contact.notesKicker') }}</p>
           <h2 id="contact-notes-title">{{ t('contact.notesTitle') }}</h2>
         </div>
         <!-- 经 renderPlainMarkdown（markdown-it + DOMPurify）消毒，禁止改绑原始渲染结果 -->
@@ -110,56 +127,315 @@ const isPrimaryEntry = (index: number): boolean => index === primaryEntryIndex.v
 </template>
 
 <style scoped>
-.contact-page { width: 100%; height: 100%; overflow-y: auto; box-sizing: border-box; padding: 32px 28px 112px; }
-.contact-card { width: 100%; max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 38px; min-width: 0; }
-.contact-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding: 12px 2px 26px; border-bottom: 1px solid var(--rule-strong); }
-.contact-hero-copy { min-width: 0; }
-.contact-kicker, .section-kicker { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: .12em; line-height: 1.4; text-transform: uppercase; }
-.contact-title { margin: 0; color: var(--ink); font-size: clamp(30px, 4vw, 52px); font-weight: 750; letter-spacing: -.045em; line-height: 1.05; max-width: 760px; }
-.contact-subtitle { margin: 16px 0 0; max-width: 660px; color: var(--ink-secondary); font-size: 15px; line-height: 1.8; white-space: pre-line; }
-.contact-hero-note { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; max-width: 190px; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
-.contact-hero-note__line { width: 28px; height: 1px; flex: 0 0 auto; background: var(--acid-strong); }
-.contact-main-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 52px; align-items: start; }
+/* Hallmark · macrostructure: Index-First · theme: project-managed (style.css tokens) · voice: terminal transcript · motion: caret-blink only
+ * Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4
+ * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49) · mobile: pass (34, 49, 50–57) · icons: pass (30) · nav/footer: app-shell（不在本次范围） */
+.contact-page {
+  --contact-mono: ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, 'Liberation Mono', monospace;
+  --cs-3xs: 0.125rem;
+  --cs-1: 0.25rem;
+  --cs-2: 0.5rem;
+  --cs-3: 0.75rem;
+  --cs-4: 1rem;
+  --cs-5: 1.5rem;
+  --cs-6: 2rem;
+  --cs-7: 2.5rem;
+  --cs-dock-clear: 112px; /* 与 LayoutView/AppDock 的底部安全区契约，勿随排版节奏改动 */
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: clip;
+  box-sizing: border-box;
+  padding: var(--cs-5) var(--cs-4) var(--cs-dock-clear);
+}
+.contact-shell {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cs-7);
+  min-width: 0;
+}
+
+/* ── 终端会话语法：提示符行 / 方块光标 / 树形前缀 ── */
+.term-line {
+  margin: 0;
+  font-family: var(--contact-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.term-prompt { color: var(--ink); font-weight: 700; }
+.term-caret {
+  display: inline-block;
+  width: 0.58ch;
+  height: 1.05em;
+  margin-left: 0.4ch;
+  vertical-align: text-bottom;
+  background: var(--acid);
+  outline: 1px solid var(--rule-strong);
+  animation: contact-caret-blink 1.06s step-end infinite;
+}
+@keyframes contact-caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.tree-branch {
+  font-family: var(--contact-mono);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+/* ── Hero：一条已执行的命令及其输出 ── */
+.contact-hero { padding: var(--cs-2) 0 var(--cs-6); border-bottom: 1px solid var(--rule-strong); }
+.contact-command { font-size: 0.8125rem; }
+.contact-kicker {
+  display: block;
+  width: fit-content;
+  margin: var(--cs-4) 0 0;
+  padding: var(--cs-3xs) var(--cs-2);
+  font-family: var(--contact-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--acid-ink);
+  background: var(--acid);
+  outline: 1px solid var(--rule-strong);
+}
+.contact-title {
+  margin: var(--cs-3) 0 0;
+  max-width: 22ch;
+  color: var(--ink);
+  font-size: clamp(1.875rem, 1.2rem + 2.6vw, 2.75rem);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.contact-subtitle {
+  margin: var(--cs-4) 0 0;
+  max-width: 62ch;
+  color: var(--ink-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.contact-hero-note {
+  margin: var(--cs-5) 0 0;
+  font-family: var(--contact-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--ink-muted);
+}
+.contact-hero-note::before { content: '# '; color: var(--ink-muted); }
+
+/* ── 区块头：子命令 + [NN] 编号 + 标题 + 发丝线 ── */
 .contact-section { min-width: 0; }
-.section-heading { margin-bottom: 18px; }
-.section-heading h2 { margin: 0; color: var(--ink); font-size: 19px; font-weight: 750; letter-spacing: -.02em; line-height: 1.25; }
-.section-heading--notes { margin-bottom: 14px; }
-.service-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.service-card { position: relative; min-width: 0; min-height: 166px; padding: 20px 18px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; overflow: hidden; transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
-.service-card:hover { transform: translate(-2px, -2px); border-color: var(--rule-strong); box-shadow: 5px 5px 0 var(--acid); }
-.service-index { position: absolute; top: 16px; right: 17px; color: var(--ink-faint); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
-.service-icon { width: 28px; height: 28px; margin-bottom: 10px; display: inline-flex; color: var(--acid-ink); }
-.service-icon :deep(svg) { width: 28px; height: 28px; }
-.service-title { margin: 0; color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
-.service-desc { margin: 0; color: var(--ink-secondary); font-size: 13px; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
-.entry-list { display: flex; flex-direction: column; gap: 12px; }
-.entry-item { min-width: 0; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; transition: border-color 150ms ease, box-shadow 150ms ease; }
-.entry-item--primary { border-color: var(--rule-strong); box-shadow: 5px 5px 0 var(--acid); }
-.entry-meta { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.entry-label { color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; overflow-wrap: anywhere; }
-.entry-badge { padding: 3px 7px; color: var(--acid-ink); background: var(--acid); border: 1px solid var(--acid-strong); font-size: 10px; font-weight: 800; white-space: nowrap; }
-.entry-value { max-width: 100%; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; }
-.entry-value--link { display: inline-flex; align-items: center; gap: 9px; padding: 9px 13px; color: var(--ink); border: 1px solid var(--rule-strong); background: var(--paper-raised); text-decoration: none; transition: background-color 150ms ease, color 150ms ease, transform 150ms ease; }
-.entry-value--link:hover { color: var(--acid-ink); background: var(--acid); transform: translateY(-1px); }
-.entry-action--primary { color: var(--acid-ink); background: var(--acid); border-color: var(--acid-strong); font-weight: 800; }
-.entry-action--primary:hover { color: var(--btn-primary-label); background: var(--ink); border-color: var(--ink); }
-.entry-arrow { font-size: 16px; line-height: 1; }
-.entry-qr-frame { width: min(100%, 220px); aspect-ratio: 1; display: grid; place-items: center; align-self: center; background: var(--paper-raised); border: 1px solid var(--rule); }
-.entry-qr { display: block; width: 100%; height: 100%; object-fit: contain; }
-.entry-qr-fallback { padding: 20px; color: var(--ink-muted); font-size: 12px; line-height: 1.6; text-align: center; }
-.entry-qr-hint { align-self: center; color: var(--ink-muted); font-size: 11px; line-height: 1.4; }
-.contact-markdown-section { padding-top: 4px; border-top: 1px solid var(--rule); }
-.contact-markdown { max-width: 760px; color: var(--ink-secondary); font-size: 14px; line-height: 1.8; }
-.contact-markdown :deep(h1), .contact-markdown :deep(h2), .contact-markdown :deep(h3) { margin: 20px 0 10px; padding-bottom: 6px; color: var(--ink); border-bottom: 1px solid var(--rule); font-weight: 650; }
-.contact-markdown :deep(h1) { font-size: 20px; } .contact-markdown :deep(h2) { font-size: 17px; } .contact-markdown :deep(h3) { font-size: 15px; }
-.contact-markdown :deep(p) { margin: 0 0 12px; } .contact-markdown :deep(a) { color: var(--acid-ink); text-decoration: none; border-bottom: 1px solid var(--acid-strong); }
-.contact-markdown :deep(ul), .contact-markdown :deep(ol) { margin: 8px 0 12px; padding-left: 22px; }
-.contact-markdown :deep(li) { margin: 5px 0; } .contact-markdown :deep(img) { max-width: 100%; border: 1px solid var(--rule); }
-.contact-markdown :deep(blockquote) { margin: 12px 0; padding: 8px 14px; color: var(--ink-muted); background: var(--paper-muted); border-left: 3px solid var(--acid); }
-.contact-markdown :deep(code) { padding: 1px 5px; color: var(--ink); background: var(--paper-muted); border: 1px solid var(--rule); border-radius: 4px; }
-.contact-markdown :deep(pre) { padding: 12px 14px; overflow-x: auto; background: var(--paper-muted); border: 1px solid var(--rule); }
-.contact-markdown :deep(pre code) { padding: 0; background: none; border: none; }
-@media (max-width: 767px) { .contact-main-grid { grid-template-columns: 1fr; gap: 34px; } }
-@media (max-width: 639px) { .contact-page { padding: 20px 14px 112px; } .contact-card { gap: 30px; } .contact-hero { align-items: flex-start; flex-direction: column; gap: 18px; padding-top: 4px; } .contact-hero-note { max-width: none; } .contact-title { font-size: clamp(29px, 9vw, 40px); } .contact-subtitle { font-size: 14px; } .service-grid { grid-template-columns: 1fr; } .entry-qr-frame { width: min(100%, 200px); } }
-@media (prefers-reduced-motion: reduce) { .service-card, .entry-value--link { transition: none; } .service-card:hover, .entry-value--link:hover { transform: none; } }
+.section-heading { margin-bottom: var(--cs-4); padding-bottom: var(--cs-3); border-bottom: 1px solid var(--rule); }
+.section-heading .term-line { margin-bottom: var(--cs-3); }
+.section-kicker {
+  margin: 0 0 var(--cs-2);
+  font-family: var(--contact-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.section-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* ── services 索引：树形行，无卡片 ── */
+.service-grid { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.service-card {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: var(--cs-3);
+  align-items: start;
+  padding: var(--cs-4) 0;
+  border-top: 1px solid var(--rule);
+}
+.service-card:first-child { border-top: 0; padding-top: var(--cs-2); }
+.service-icon { width: 1.75rem; height: 1.75rem; display: inline-flex; color: var(--ink); }
+.service-icon :deep(svg) { width: 100%; height: 100%; }
+.service-body { min-width: 0; display: flex; flex-direction: column; gap: var(--cs-1); }
+.service-title { margin: 0; color: var(--ink); font-size: 0.9375rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.service-desc { margin: 0; color: var(--ink-secondary); font-size: 0.8125rem; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+
+/* ── contact.routes 索引：链接本身就是按钮 ── */
+.entry-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.entry-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--cs-3);
+  padding: var(--cs-4) 0 var(--cs-4) var(--cs-3);
+  border-top: 1px solid var(--rule);
+}
+.entry-item:first-child { border-top: 0; padding-top: var(--cs-2); }
+.entry-item--primary {
+  background: var(--paper-raised);
+  box-shadow: inset 3px 0 0 var(--acid-strong);
+  padding-right: var(--cs-3);
+  margin-right: calc(-1 * var(--cs-3));
+}
+.entry-body { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--cs-3); }
+.entry-meta { display: flex; align-items: center; gap: var(--cs-3); flex-wrap: wrap; }
+.entry-label {
+  font-family: var(--contact-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.entry-badge {
+  padding: var(--cs-3xs) var(--cs-2);
+  font-family: var(--contact-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--acid-ink);
+  background: var(--acid);
+  outline: 1px solid var(--rule-strong);
+  white-space: nowrap;
+}
+.entry-value {
+  max-width: 100%;
+  font-family: var(--contact-mono);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.entry-value--link {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-faint);
+  text-underline-offset: 2px;
+}
+.entry-value--link:hover {
+  color: var(--acid-ink);
+  background: var(--acid);
+  outline: 1px solid var(--rule-strong);
+  text-decoration-color: transparent;
+}
+.entry-value--link:active { color: var(--paper); background: var(--ink); outline-color: var(--ink); }
+.entry-action--primary {
+  padding: 0 4px;
+  color: var(--acid-ink);
+  background: var(--acid);
+  outline: 1px solid var(--rule-strong);
+  text-decoration: none;
+  font-weight: 700;
+}
+.entry-action--primary:hover { color: var(--paper); background: var(--ink); outline-color: var(--ink); }
+.entry-action--primary:active { color: var(--ink); background: var(--paper-muted); }
+.entry-arrow { margin-left: 0.25em; }
+.entry-qr-frame {
+  width: 9.5rem;
+  max-width: 100%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  padding: var(--cs-2);
+  display: grid;
+  place-items: center;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+}
+.entry-qr { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+.entry-qr-fallback {
+  padding: var(--cs-2);
+  font-family: var(--contact-mono);
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--ink-secondary);
+  text-align: center;
+}
+.entry-qr-fallback::before { content: '[!] '; color: var(--ink-muted); }
+.entry-qr-hint { font-family: var(--contact-mono); font-size: 0.6875rem; line-height: 1.5; color: var(--ink-muted); }
+.entry-qr-hint::before { content: '› '; color: var(--ink-muted); }
+
+/* ── NOTES.md：正文按 readme/man page 渲染 ── */
+.contact-markdown { max-width: 72ch; color: var(--ink-secondary); font-size: 0.875rem; line-height: 1.8; }
+.contact-markdown :deep(h1), .contact-markdown :deep(h2), .contact-markdown :deep(h3) {
+  margin: var(--cs-5) 0 var(--cs-3);
+  padding-bottom: var(--cs-2);
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.contact-markdown :deep(h1) { font-size: 1.25rem; }
+.contact-markdown :deep(h2) { font-size: 1.0625rem; }
+.contact-markdown :deep(h3) { font-size: 0.9375rem; }
+.contact-markdown :deep(h1)::before, .contact-markdown :deep(h2)::before, .contact-markdown :deep(h3)::before {
+  font-family: var(--contact-mono);
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+.contact-markdown :deep(h1)::before { content: '# '; }
+.contact-markdown :deep(h2)::before { content: '## '; }
+.contact-markdown :deep(h3)::before { content: '### '; }
+.contact-markdown :deep(p) { margin: 0 0 var(--cs-3); }
+.contact-markdown :deep(a) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--acid-strong);
+  text-underline-offset: 2px;
+}
+.contact-markdown :deep(a:hover) { color: var(--acid-ink); background: var(--acid); text-decoration-color: transparent; }
+.contact-markdown :deep(ul), .contact-markdown :deep(ol) { margin: var(--cs-2) 0 var(--cs-3); padding-left: var(--cs-5); }
+.contact-markdown :deep(li) { margin: var(--cs-1) 0; }
+.contact-markdown :deep(img) { max-width: 100%; border: 1px solid var(--rule); }
+.contact-markdown :deep(blockquote) {
+  margin: var(--cs-3) 0;
+  padding: var(--cs-2) var(--cs-4);
+  color: var(--ink-muted);
+  background: var(--paper-muted);
+  border-left: 2px solid var(--acid-strong);
+}
+.contact-markdown :deep(code) {
+  font-family: var(--contact-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  color: var(--ink);
+  background: var(--paper-muted);
+  border: 1px solid var(--rule);
+}
+.contact-markdown :deep(pre) {
+  padding: var(--cs-3) var(--cs-4);
+  overflow-x: auto;
+  font-family: var(--contact-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  background: var(--paper-muted);
+  border: 1px solid var(--rule);
+}
+.contact-markdown :deep(pre code) { padding: 0; background: none; border: none; font-size: inherit; }
+
+@media (min-width: 48rem) {
+  .contact-page { padding: var(--cs-7) clamp(1.5rem, 4vw, 2.5rem) var(--cs-dock-clear); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .term-caret { animation: none; }
+}
 </style>

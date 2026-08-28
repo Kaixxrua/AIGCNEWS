@@ -189,4 +189,37 @@ describe('ContactPageView', () => {
     expect(wrapper.find('.contact-page').exists()).toBe(false)
     expect(wrapper.text()).toBe('')
   })
+
+  it('shows the typed command line with the caret hidden from assistive tech', () => {
+    const wrapper = mountView()
+
+    const command = wrapper.find('.contact-command')
+    expect(command.exists()).toBe(true)
+    expect(command.attributes('aria-hidden')).toBe('true')
+    expect(command.text()).toContain('aigcnews contact --list')
+    // 唯一的动效元素必须位于命令行内部（hallmark 终端纪律）
+    expect(command.find('.term-caret').exists()).toBe(true)
+    expect(wrapper.findAll('.term-line').every((line) => line.attributes('aria-hidden') === 'true')).toBe(true)
+  })
+
+  it('numbers visible sections in order and renumbers when a section is hidden', () => {
+    const wrapper = mountView()
+    const kickers = wrapper.findAll('.section-kicker')
+    expect(kickers.map((k) => k.text())).toEqual(['[01] 合作方向', '[02] 从这里开始', '[03] 补充说明'])
+
+    setConfig({ serviceCards: [] })
+    const shrunk = mountView()
+    const shrunkKickers = shrunk.findAll('.section-kicker')
+    expect(shrunkKickers.map((k) => k.text())).toEqual(['[01] 从这里开始', '[02] 补充说明'])
+  })
+
+  it('marks tree branches with ├── for rows and └── for the last row', () => {
+    const wrapper = mountView()
+
+    const serviceBranches = wrapper.findAll('.service-card .tree-branch').map((b) => b.text())
+    expect(serviceBranches).toEqual(['├──', '└──'])
+
+    const entryBranches = wrapper.findAll('.entry-item .tree-branch').map((b) => b.text())
+    expect(entryBranches).toEqual(['├──', '├──', '└──'])
+  })
 })

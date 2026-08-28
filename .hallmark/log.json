@@ -1,0 +1,15 @@
+{
+  "runs": [
+    {
+      "date": "2026-08-28",
+      "target": "frontend/src/views/ContactPageView.vue",
+      "verb": "redesign",
+      "macrostructure": "13-index-first",
+      "theme": "project-managed (style.css tokens)",
+      "voice": "terminal-transcript",
+      "motion": "caret-blink-only",
+      "scores": { "P": 4, "H": 4, "E": 4, "S": 5, "R": 5, "V": 4 },
+      "notes": "Gate-49 exception recorded: entry links render admin-authored values; bare long URLs may wrap (nowrap would trip gate-34). Section numbers renumber when config hides a section."
+    }
+  ]
+}
