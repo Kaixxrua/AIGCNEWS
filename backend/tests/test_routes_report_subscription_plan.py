@@ -4,9 +4,12 @@ import asyncio
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from backend.app.api import routes_report
+from backend.app.api.dependencies import get_report_subscription_plan_service
+from backend.app.core.auth import RequireUser
 from backend.app.services.membership.subscription_quota import (
     SubscriptionQuotaExceededError,
 )
@@ -186,3 +189,47 @@ class TestSubscriptionPlanRoute:
 
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail == "bad request"
+
+
+class TestSubscriptionPlanRouteOrder:
+    """字面量路由 subscription-plan 必须优先于 /report/{briefing_id}（int 路径参数）。
+
+    历史事故：subscription-plan 注册在 {briefing_id} 之后，ASGI 层被 int 解析
+    拦截返回 422，直调 handler 的单测无法发现，仅生产探测可见。
+    """
+
+    def _build_client(self, service) -> TestClient:
+        app = FastAPI()
+        app.include_router(routes_report.router, prefix="/api")
+        app.dependency_overrides[get_report_subscription_plan_service] = (
+            lambda: service
+        )
+        return TestClient(app)
+
+    def test_get_subscription_plan_not_shadowed_by_briefing_id(self) -> None:
+        service = MagicMock(spec=ReportSubscriptionPlanService)
+        service.get_plan.return_value = {
+            "can_select_multiple_sources": False,
+            "max_sources": 1,
+            "active_sources": [],
+            "capabilities": [],
+        }
+        client = self._build_client(service)
+        client.app.dependency_overrides[RequireUser] = lambda: {
+            "user_id": 7,
+            "email": "reader@example.com",
+        }
+
+        response = client.get("/api/report/subscription-plan")
+
+        assert response.status_code == 200
+        service.get_plan.assert_called_once()
+
+    def test_get_subscription_plan_anonymous_rejected(self) -> None:
+        service = MagicMock(spec=ReportSubscriptionPlanService)
+        client = self._build_client(service)
+
+        response = client.get("/api/report/subscription-plan")
+
+        assert response.status_code in (401, 403)
+        service.get_plan.assert_not_called()

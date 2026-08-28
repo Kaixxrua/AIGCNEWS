@@ -255,6 +255,147 @@ async def list_briefings(
     return {"items": items, "total": len(items)}
 
 
+# -----------------------------------------------------------------------
+# Report subscription plan facade (source × delivery wizard)
+# -----------------------------------------------------------------------
+
+
+class PlanDeliveryRequest(BaseModel):
+    kind: str  # account_email | push_channel | rss
+    channel_id: int | None = None
+    feed: str | None = None
+
+
+class PlanDeliveryCapability(BaseModel):
+    kind: str
+    key: str
+    channel_id: int | None = None
+    channel_type: str | None = None
+    target: str | None = None
+    verified: bool | None = None
+    status: str | None = None
+    selectable: bool
+    disabled_reason: str | None = None
+
+
+class SubscriptionPlanResponse(BaseModel):
+    can_select_multiple_sources: bool
+    max_sources: int
+    active_sources: list[str]
+    capabilities: list[PlanDeliveryCapability]
+
+
+class SubscriptionPlanRequest(BaseModel):
+    sources: list[str]
+    deliveries: list[PlanDeliveryRequest]
+    frequency: str = "daily"
+    idempotency_key: str | None = None
+
+
+class PlanAppliedDelivery(BaseModel):
+    kind: str
+    channel_id: int | None = None
+    feed: str | None = None
+    status: str
+
+
+class SubscriptionPlanApplyResponse(BaseModel):
+    sources: list[str]
+    deliveries: list[PlanAppliedDelivery]
+    idempotency_key: str | None = None
+
+
+def _user_id_or_raise(user: dict) -> int:
+    try:
+        user_id = int(user.get("user_id") or 0)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="用户身份无效") from exc
+    if user_id <= 0:
+        raise HTTPException(status_code=401, detail="用户身份无效")
+    return user_id
+
+
+def _map_subscription_plan_error(
+    exc: Exception,
+) -> HTTPException:
+    if isinstance(exc, SubscriptionQuotaExceededError):
+        return HTTPException(
+            status_code=403,
+            detail={"code": "quota-exceeded", "message": exc.detail},
+        )
+    if isinstance(exc, VipRequiredError):
+        return HTTPException(
+            status_code=403,
+            detail={"code": exc.code, "message": exc.detail},
+        )
+    if isinstance(exc, (PushChannelNotFoundError,)):
+        return HTTPException(status_code=404, detail=exc.detail)
+    if isinstance(exc, (PushChannelNotVerifiedError, PushChannelDisabledError)):
+        return HTTPException(status_code=400, detail=exc.detail)
+    if isinstance(exc, InvalidSubscriptionPlanError):
+        return HTTPException(status_code=422, detail=exc.detail)
+    if isinstance(exc, HTTPException):
+        return exc
+    logger.warning("[ReportSubscriptionPlan] apply failed: %s", exc, exc_info=True)
+    return HTTPException(status_code=500, detail="订阅计划保存失败，请稍后重试")
+
+
+@router.get("/report/subscription-plan", response_model=SubscriptionPlanResponse)
+async def get_subscription_plan(
+    user: dict = Depends(RequireUser),
+    service: ReportSubscriptionPlanService = Depends(
+        get_report_subscription_plan_service
+    ),
+):
+    """返回当前用户的日报订阅计划能力与活跃状态（不含 RSS token）。"""
+    user_id = _user_id_or_raise(user)
+    return service.get_plan(user=user, user_id=user_id)
+
+
+@router.post(
+    "/report/subscription-plan",
+    response_model=SubscriptionPlanApplyResponse,
+)
+async def apply_subscription_plan(
+    body: SubscriptionPlanRequest,
+    user: dict = Depends(RequireUser),
+    service: ReportSubscriptionPlanService = Depends(
+        get_report_subscription_plan_service
+    ),
+):
+    """一次性提交 source 集合与 delivery 集合，事务内写入 briefing_subscriptions /
+    user_subscriptions；RSS 为 virtual delivery，不创建 Push 记录。
+    """
+    user_id = _user_id_or_raise(user)
+    email = user.get("email", "")
+    if not email:
+        raise HTTPException(status_code=400, detail="用户邮箱为空，无法订阅")
+
+    if body.frequency != "daily":
+        raise HTTPException(status_code=422, detail="当前仅支持 daily 频率")
+
+    try:
+        result = service.apply_plan(
+            user=user,
+            user_id=user_id,
+            email=email,
+            sources=body.sources,
+            deliveries=[
+                DeliveryTarget(
+                    kind=d.kind,
+                    channel_id=d.channel_id,
+                    feed=d.feed,
+                )
+                for d in body.deliveries
+            ],
+            idempotency_key=body.idempotency_key,
+        )
+    except Exception as exc:
+        mapped = _map_subscription_plan_error(exc)
+        raise mapped from exc
+    return result
+
+
 @router.get("/report/{briefing_id}")
 async def get_briefing(
     briefing_id: int,
@@ -509,142 +650,3 @@ async def send_briefing_to_email(
     return {"message": f"简报已发送至 {email}", "sent_date": sent_date}
 
 
-# -----------------------------------------------------------------------
-# Report subscription plan facade (source × delivery wizard)
-# -----------------------------------------------------------------------
-
-
-class PlanDeliveryRequest(BaseModel):
-    kind: str  # account_email | push_channel | rss
-    channel_id: int | None = None
-    feed: str | None = None
-
-
-class PlanDeliveryCapability(BaseModel):
-    kind: str
-    key: str
-    channel_id: int | None = None
-    channel_type: str | None = None
-    target: str | None = None
-    verified: bool | None = None
-    status: str | None = None
-    selectable: bool
-    disabled_reason: str | None = None
-
-
-class SubscriptionPlanResponse(BaseModel):
-    can_select_multiple_sources: bool
-    max_sources: int
-    active_sources: list[str]
-    capabilities: list[PlanDeliveryCapability]
-
-
-class SubscriptionPlanRequest(BaseModel):
-    sources: list[str]
-    deliveries: list[PlanDeliveryRequest]
-    frequency: str = "daily"
-    idempotency_key: str | None = None
-
-
-class PlanAppliedDelivery(BaseModel):
-    kind: str
-    channel_id: int | None = None
-    feed: str | None = None
-    status: str
-
-
-class SubscriptionPlanApplyResponse(BaseModel):
-    sources: list[str]
-    deliveries: list[PlanAppliedDelivery]
-    idempotency_key: str | None = None
-
-
-def _user_id_or_raise(user: dict) -> int:
-    try:
-        user_id = int(user.get("user_id") or 0)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=401, detail="用户身份无效") from exc
-    if user_id <= 0:
-        raise HTTPException(status_code=401, detail="用户身份无效")
-    return user_id
-
-
-def _map_subscription_plan_error(
-    exc: Exception,
-) -> HTTPException:
-    if isinstance(exc, SubscriptionQuotaExceededError):
-        return HTTPException(
-            status_code=403,
-            detail={"code": "quota-exceeded", "message": exc.detail},
-        )
-    if isinstance(exc, VipRequiredError):
-        return HTTPException(
-            status_code=403,
-            detail={"code": exc.code, "message": exc.detail},
-        )
-    if isinstance(exc, (PushChannelNotFoundError,)):
-        return HTTPException(status_code=404, detail=exc.detail)
-    if isinstance(exc, (PushChannelNotVerifiedError, PushChannelDisabledError)):
-        return HTTPException(status_code=400, detail=exc.detail)
-    if isinstance(exc, InvalidSubscriptionPlanError):
-        return HTTPException(status_code=422, detail=exc.detail)
-    if isinstance(exc, HTTPException):
-        return exc
-    logger.warning("[ReportSubscriptionPlan] apply failed: %s", exc, exc_info=True)
-    return HTTPException(status_code=500, detail="订阅计划保存失败，请稍后重试")
-
-
-@router.get("/report/subscription-plan", response_model=SubscriptionPlanResponse)
-async def get_subscription_plan(
-    user: dict = Depends(RequireUser),
-    service: ReportSubscriptionPlanService = Depends(
-        get_report_subscription_plan_service
-    ),
-):
-    """返回当前用户的日报订阅计划能力与活跃状态（不含 RSS token）。"""
-    user_id = _user_id_or_raise(user)
-    return service.get_plan(user=user, user_id=user_id)
-
-
-@router.post(
-    "/report/subscription-plan",
-    response_model=SubscriptionPlanApplyResponse,
-)
-async def apply_subscription_plan(
-    body: SubscriptionPlanRequest,
-    user: dict = Depends(RequireUser),
-    service: ReportSubscriptionPlanService = Depends(
-        get_report_subscription_plan_service
-    ),
-):
-    """一次性提交 source 集合与 delivery 集合，事务内写入 briefing_subscriptions /
-    user_subscriptions；RSS 为 virtual delivery，不创建 Push 记录。
-    """
-    user_id = _user_id_or_raise(user)
-    email = user.get("email", "")
-    if not email:
-        raise HTTPException(status_code=400, detail="用户邮箱为空，无法订阅")
-
-    if body.frequency != "daily":
-        raise HTTPException(status_code=422, detail="当前仅支持 daily 频率")
-
-    try:
-        result = service.apply_plan(
-            user=user,
-            user_id=user_id,
-            email=email,
-            sources=body.sources,
-            deliveries=[
-                DeliveryTarget(
-                    kind=d.kind,
-                    channel_id=d.channel_id,
-                    feed=d.feed,
-                )
-                for d in body.deliveries
-            ],
-            idempotency_key=body.idempotency_key,
-        )
-    except Exception as exc:
-        mapped = _map_subscription_plan_error(exc)
-        raise mapped from exc
-    return result
