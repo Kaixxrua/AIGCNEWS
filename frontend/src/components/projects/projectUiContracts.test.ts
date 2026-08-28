@@ -94,10 +94,10 @@ interface FiltersProps {
 
 const filtersProps = (patch: Partial<FiltersProps> = {}): FiltersProps => ({
   sourceOptions: [
-    { value: 'github', label: 'GitHub', hint: 'repos' },
-    { value: 'website', label: 'Websites', hint: 'tools' },
+    { value: 'all', label: 'GitHub', hint: 'repos' },
+    { value: 'favorites', label: 'Favorites', hint: 'saved repos' },
   ],
-  source: 'github',
+  source: 'all',
   requiresPersonalLogin: false,
   searchQuery: '',
   selectedLanguage: '',
@@ -204,7 +204,7 @@ describe('filters panel behavior', () => {
 
     await tabs[1]!.trigger('click')
 
-    expect(wrapper.emitted('changeSource')).toEqual([['website']])
+    expect(wrapper.emitted('changeSource')).toEqual([['favorites']])
   })
 
   it('emits update:searchQuery on typing and clears via the clear button', async () => {

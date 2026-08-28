@@ -13,6 +13,8 @@ export interface NavigationItem {
   featureKey?: NavigationFeatureKey
   /** 站点自定义页面导航项：对应页面未启用时从导航隐藏 */
   sitePageKey?: NavigationSitePageKey
+  /** 当前 URL 命中这些查询参数时，不将该项标记为 active */
+  excludeActiveQuery?: Readonly<Record<string, string>>
   icon: string
 }
 
@@ -42,7 +44,14 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     to: '/projects',
     labelKey: 'navigation.projects',
     exact: false,
+    excludeActiveQuery: { source: 'website' },
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M8 7h8"/><path d="M8 11h6"/></svg>`,
+  },
+  {
+    to: '/projects?source=website',
+    labelKey: 'navigation.websiteCollection',
+    exact: true,
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h17v13h-17z"/><path d="M3.5 8.5h17"/><path d="M7 6.5h.01"/><path d="M9.5 6.5h.01"/><path d="M12 6.5h.01"/><path d="M7 12h4"/><path d="M7 15h7"/></svg>`,
   },
   {
     to: '/chat',
@@ -110,9 +119,22 @@ export const KEEP_ALIVE_VIEW_NAMES: string[] = ['DashboardView', 'GitHubProjects
 export const KEEP_ALIVE_MAX = 2
 
 export const isNavigationItemActive = (
-  item: Pick<NavigationItem, 'to' | 'exact'>,
+  item: Pick<NavigationItem, 'to' | 'exact' | 'excludeActiveQuery'>,
   currentPath: string,
+  currentQuery: Readonly<Record<string, unknown>> = {},
 ): boolean => {
-  if (item.exact) return currentPath === item.to
-  return currentPath.startsWith(item.to)
+  const [itemPath = '', itemQuery = ''] = item.to.split('?', 2)
+  const query = new URLSearchParams(itemQuery)
+  if (item.exact && !item.to.includes('?')) return currentPath === itemPath
+  const matchesItemQuery = [...query.entries()].every(([key, value]) => {
+    const currentValue = currentQuery[key]
+    return (Array.isArray(currentValue) ? currentValue[0] : currentValue) === value
+  })
+  const matchesExcludedQuery = item.excludeActiveQuery && Object.entries(item.excludeActiveQuery).every(([key, value]) => {
+    const currentValue = currentQuery[key]
+    return (Array.isArray(currentValue) ? currentValue[0] : currentValue) === value
+  })
+  if (matchesExcludedQuery) return false
+  if (item.exact) return currentPath === itemPath && matchesItemQuery
+  return currentPath.startsWith(itemPath) && matchesItemQuery
 }

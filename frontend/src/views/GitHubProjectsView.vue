@@ -103,7 +103,6 @@ const { pause: pauseSyncPoll, resume: resumeSyncPoll } = useIntervalFn(() => {
 }, SYNC_POLL_INTERVAL, { immediate: false })
 const sourceOptions = computed<SourceOption[]>(() => [
   { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
-  { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
   { value: 'favorites', label: t('projects.source.favoritesLabel'), hint: t('projects.source.favoritesHint'), authOnly: true },
 ])
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))

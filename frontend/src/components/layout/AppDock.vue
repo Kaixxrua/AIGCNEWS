@@ -6,6 +6,7 @@ import { isNavigationItemActive, type NavigationItem } from '@/features/navigati
 const props = defineProps<{
   items: readonly NavigationItem[]
   currentPath: string
+  currentQuery?: Readonly<Record<string, unknown>>
   isAdmin: boolean
   isLoggedIn: boolean
   /** 需要在图标右上角显示告警红点的导航路径（如 ['/monitor']） */
@@ -33,9 +34,9 @@ const hoveredChangePwd = ref(false)
       :to="item.to"
       v-show="(!item.requiresAdmin || props.isAdmin) && (!item.requiresAuth || props.isLoggedIn)"
       :aria-label="item.labelText || t(item.labelKey)"
-      :aria-current="isNavigationItemActive(item, props.currentPath) ? 'page' : undefined"
+      :aria-current="isNavigationItemActive(item, props.currentPath, props.currentQuery) ? 'page' : undefined"
       class="dock-item"
-      :class="{ 'dock-item--active': isNavigationItemActive(item, props.currentPath) }"
+      :class="{ 'dock-item--active': isNavigationItemActive(item, props.currentPath, props.currentQuery) }"
       @mouseenter="hoveredNav = item.to"
       @mouseleave="hoveredNav = null"
     >

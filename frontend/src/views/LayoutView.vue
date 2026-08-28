@@ -120,6 +120,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       v-show="!dockSuppressed"
       :items="visibleNavItems"
       :current-path="route.path"
+      :current-query="route.query"
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"
       :alert-items="dockAlertItems"

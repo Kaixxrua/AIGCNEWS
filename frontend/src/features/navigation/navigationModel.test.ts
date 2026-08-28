@@ -48,6 +48,28 @@ describe('dsh navigation item', () => {
     expect(item.sitePageKey).toBeUndefined()
     expect(isNavigationItemActive(item, '/dsh')).toBe(true)
     expect(isNavigationItemActive(item, '/mcp')).toBe(false)
+    expect(isNavigationItemActive({ to: '/example', exact: true }, '/example')).toBe(true)
+    expect(isNavigationItemActive({ to: '/example', exact: true }, '/example', { source: 'website' })).toBe(true)
+  })
+})
+
+describe('website collection navigation item', () => {
+  it('moves the personal website collection into the shared dock', () => {
+    const item = NAV_ITEMS.find((entry) => entry.to === '/projects?source=website')
+    expect(item).toBeDefined()
+    expect(item?.labelKey).toBe('navigation.websiteCollection')
+    expect(item?.exact).toBe(true)
+    expect(item?.requiresAuth).toBeUndefined()
+    expect(isNavigationItemActive(item!, '/projects', { source: 'website' })).toBe(true)
+    expect(isNavigationItemActive(item!, '/projects', { source: 'favorites' })).toBe(false)
+    expect(isNavigationItemActive(item!, '/projects', {})).toBe(false)
+  })
+
+  it('keeps the general projects item inactive for the website collection', () => {
+    const item = NAV_ITEMS.find((entry) => entry.to === '/projects')!
+    expect(isNavigationItemActive(item, '/projects', { source: 'website' })).toBe(false)
+    expect(isNavigationItemActive(item, '/projects', { source: 'favorites' })).toBe(true)
+    expect(isNavigationItemActive(item, '/projects', {})).toBe(true)
   })
 })
 

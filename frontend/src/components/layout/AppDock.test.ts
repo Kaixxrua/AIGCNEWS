@@ -6,12 +6,13 @@ import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
 let unmount: (() => void) | undefined
 
-const mountDock = (alertItems: string[] = []) => {
+const mountDock = (alertItems: string[] = [], currentPath = '/', currentQuery: Record<string, unknown> = {}) => {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const app = createApp(AppDock, {
     items: NAV_ITEMS,
-    currentPath: '/',
+    currentPath,
+    currentQuery,
     isAdmin: true,
     isLoggedIn: true,
     alertItems,
@@ -50,5 +51,16 @@ describe('AppDock enrichment alert dot', () => {
     setAppLocale('zh-CN')
     const host = mountDock([])
     expect(host.querySelector('.dock-alert-dot')).toBeNull()
+  })
+
+  it('exposes the website collection link and keeps its active state query-aware', () => {
+    setAppLocale('zh-CN')
+    const host = mountDock([], '/projects', { source: 'website' })
+
+    const websiteLink = host.querySelector('a[href="/projects?source=website"]')
+    expect(websiteLink).not.toBeNull()
+    expect(websiteLink?.getAttribute('aria-label')).toBe('我的网页')
+    expect(websiteLink?.getAttribute('aria-current')).toBe('page')
+    expect(host.querySelector('a[href="/projects"]')?.getAttribute('aria-current')).toBeNull()
   })
 })

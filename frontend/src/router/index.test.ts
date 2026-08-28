@@ -35,7 +35,16 @@ describe('paper read guest access contract', () => {
   })
 })
 
-// 契约：联系合作页是公开免鉴权页面，但挂 sitePage 门控 —— 管理员未启用时守卫重定向首页。
+describe('projects website collection deep link contract', () => {
+  it('keeps the website collection on the shared projects route', () => {
+    const resolved = router.resolve('/projects?source=website')
+    expect(resolved.name).toBe('github-projects')
+    expect(resolved.path).toBe('/projects')
+    expect(resolved.query).toEqual({ source: 'website' })
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
+  })
+})
+
 describe('contact site page contract', () => {
   it('contact route is public and carries the sitePage gate meta', () => {
     const record = router.getRoutes().find((r) => r.path === '/contact')
