@@ -527,6 +527,26 @@ class BriefingModel(Protocol):
     def astream(self, prompt: str) -> AsyncIterator[Any]: ...
 
 
+class BriefingSavedNotifier(Protocol):
+    """简报真实保存成功后的投递通知边界。
+
+    仅 save_briefing() 成功返回有效 id 后触发；缓存命中、无文档、空正文、
+    双语失败或任何 error 路径均不触发。默认不挂载（None），由组合层负责
+    把订阅补发编排接入；实现必须快速返回（如同步提交后台任务），通知异常
+    由服务方隔离，不影响已保存简报与 SSE 事件流。
+    """
+
+    def __call__(
+        self,
+        *,
+        report_date: str,
+        source: str,
+        cache_key: str,
+        briefing_id: int,
+        content_zh: str,
+    ) -> None: ...
+
+
 class DailyBriefingService:
     """Generate and persist daily briefing reports with SSE streaming."""
 
@@ -538,12 +558,42 @@ class DailyBriefingService:
         rank_snapshot_reader: RankSnapshotReader,
         model: BriefingModel,
         top_k: int = 10,
+        briefing_saved: BriefingSavedNotifier | None = None,
     ) -> None:
         self._briefings = briefing_repository
         self._document_feed = document_feed
         self._rank_snapshots = rank_snapshot_reader
         self._top_k = top_k
         self._llm = model
+        self._briefing_saved = briefing_saved
+
+    def _notify_briefing_saved(
+        self,
+        *,
+        report_date: str,
+        source: str,
+        cache_key: str,
+        briefing_id: int,
+        content_zh: str,
+    ) -> None:
+        """触发保存后通知；通知失败仅记录，绝不影响生成结果。"""
+        if self._briefing_saved is None:
+            return
+        try:
+            self._briefing_saved(
+                report_date=report_date,
+                source=source,
+                cache_key=cache_key,
+                briefing_id=briefing_id,
+                content_zh=content_zh,
+            )
+        except Exception:
+            logger.error(
+                "[Briefing] 简报保存后的订阅通知失败: source=%s briefing_id=%s",
+                source,
+                briefing_id,
+                exc_info=True,
+            )
 
     def _prepare_briefing(
         self,
@@ -704,8 +754,22 @@ class DailyBriefingService:
                         content_en=contents["en"],
                     )
                     logger.info("双语简报已持久化，id=%d, source=%s", briefing_id, source)
+                    self._notify_briefing_saved(
+                        report_date=today,
+                        source=source,
+                        cache_key=cache_date,
+                        briefing_id=briefing_id,
+                        content_zh=contents["zh-CN"],
+                    )
                 else:
                     briefing_id = self._briefings.save_briefing(cache_date, complete_text)
+                    self._notify_briefing_saved(
+                        report_date=today,
+                        source=source,
+                        cache_key=cache_date,
+                        briefing_id=briefing_id,
+                        content_zh=complete_text,
+                    )
             else:
                 briefing_id = -1
                 logger.warning("LLM 未输出任何内容，跳过持久化")

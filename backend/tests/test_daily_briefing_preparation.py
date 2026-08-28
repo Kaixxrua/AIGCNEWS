@@ -1069,6 +1069,183 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         self.assertEqual(asyncio.run(collect()), ["visible-1visible-2"])
 
 
+class DailyBriefingSavedNotifierTests(unittest.TestCase):
+    """保存后通知契约：只有真实 save_briefing() 成功才触发，且先于 done。"""
+
+    @staticmethod
+    def _service_with_notifier(notifier) -> DailyBriefingService:
+        service = _service()
+        service._briefing_saved = notifier
+        return service
+
+    def test_successful_generation_notifies_once_before_done(self) -> None:
+        calls: list[dict] = []
+        order: list[str] = []
+        service = self._service_with_notifier(
+            lambda **kwargs: (calls.append(kwargs), order.append("notify"))
+        )
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        report = "x" * 201 + "。"
+        service._llm.astream.side_effect = _astream_side_effect([report])
+
+        async def collect():
+            events = []
+            async for event in service.stream_generate("2026-07-22", source="github"):
+                order.append(event["type"])
+                events.append(event)
+            return events
+
+        events = asyncio.run(collect())
+
+        self.assertEqual(order, ["start", "content", "notify", "done"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            calls[0],
+            {
+                "report_date": "2026-07-22",
+                "source": "github",
+                "cache_key": "2026-07-22_github",
+                "briefing_id": 73,
+                "content_zh": report,
+            },
+        )
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+
+    def test_bilingual_notifies_with_canonical_chinese_content(self) -> None:
+        calls: list[dict] = []
+        service = self._service_with_notifier(lambda **kwargs: calls.append(kwargs))
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        chinese = "中" * 201 + "。"
+        english = "English briefing " * 20 + "."
+        service._llm.astream.side_effect = _astream_side_effect([english, chinese])
+
+        events = _collect(
+            service.stream_generate(
+                "2026-07-22",
+                source="github",
+                locale="en-US",
+                generate_bilingual=True,
+            )
+        )
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["content_zh"], chinese)
+        self.assertEqual(calls[0]["briefing_id"], 73)
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+
+    def test_x_source_notifies_with_anchored_cache_key_and_bare_date(self) -> None:
+        calls: list[dict] = []
+        service = self._service_with_notifier(lambda **kwargs: calls.append(kwargs))
+        service._document_feed.list_recent_by_source.return_value = [
+            _x_doc("t1", handle="OpenAI", author="OpenAI")
+        ]
+        service._llm.astream.side_effect = _astream_side_effect(["完整简报。"])
+
+        _collect(service.stream_generate("2026-07-22", source="x"))
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["report_date"], "2026-07-22")
+        self.assertEqual(calls[0]["source"], "x")
+        self.assertEqual(calls[0]["cache_key"], "2026-07-22_0800_x")
+
+    def test_cache_hit_does_not_notify(self) -> None:
+        notifier = MagicMock()
+        service = self._service_with_notifier(notifier)
+        service._briefings.get_briefing_by_date.return_value = {
+            "id": 42,
+            "content": "cached",
+        }
+
+        events = _collect(
+            service.stream_generate("2026-07-22", source="github", force_regenerate=False)
+        )
+
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 42}})
+        notifier.assert_not_called()
+
+    def test_no_documents_does_not_notify(self) -> None:
+        notifier = MagicMock()
+        service = self._service_with_notifier(notifier)
+        service._rank_snapshots.get_snapshot_documents.return_value = []
+        service._document_feed.get_recent_top_documents.return_value = []
+        service._document_feed.get_latest_documents.return_value = []
+
+        events = _collect(service.stream_generate("2026-07-22", source="news"))
+
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": -1}})
+        notifier.assert_not_called()
+
+    def test_empty_llm_output_does_not_notify(self) -> None:
+        notifier = MagicMock()
+        service = self._service_with_notifier(notifier)
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        service._llm.astream.side_effect = _astream_side_effect(["  "])
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": -1}})
+        service._briefings.save_briefing.assert_not_called()
+        notifier.assert_not_called()
+
+    def test_blocked_response_does_not_notify(self) -> None:
+        notifier = MagicMock()
+        service = self._service_with_notifier(notifier)
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        service._llm.astream.side_effect = _astream_side_effect(
+            ["Access Denied: Cloudflare Ray ID"]
+        )
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertEqual(events[-1]["type"], "error")
+        service._briefings.save_briefing.assert_not_called()
+        notifier.assert_not_called()
+
+    def test_bilingual_alternate_failure_does_not_notify(self) -> None:
+        notifier = MagicMock()
+        service = self._service_with_notifier(notifier)
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        chinese = "中" * 201 + "。"
+        service._llm.astream.side_effect = _astream_side_effect([chinese, "  "])
+
+        events = _collect(
+            service.stream_generate(
+                "2026-07-22", source="github", generate_bilingual=True
+            )
+        )
+
+        self.assertEqual(events[-1]["type"], "error")
+        service._briefings.save_briefing.assert_not_called()
+        notifier.assert_not_called()
+
+    def test_notifier_exception_is_isolated_from_generation(self) -> None:
+        def broken_notifier(**_kwargs) -> None:
+            raise RuntimeError("dispatcher exploded")
+
+        service = self._service_with_notifier(broken_notifier)
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        service._llm.astream.side_effect = _astream_side_effect(["x" * 201 + "。"])
+
+        with self.assertLogs("backend.app.services.briefing.daily_briefing", "ERROR"):
+            events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        # 通知失败不得把成功生成变成 error：简报已保存、事件流照常收尾。
+        service._briefings.save_briefing.assert_called_once()
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+
+
 class BriefingBacktickSanitizeTests(unittest.TestCase):
     """2026-08-14_news/_producthunt/_x 事故回归：提示词示例中的 \\` 转义写法
     被模型照搬进正文，Markdown 将其渲染为字面反引号，标签失去行内代码样式。

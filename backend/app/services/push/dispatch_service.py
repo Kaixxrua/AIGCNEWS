@@ -17,7 +17,10 @@ from backend.app.repositories.push_delivery_repository import PushDeliveryReposi
 from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
 )
-from backend.app.services.briefing.daily_briefing import select_briefing_content
+from backend.app.services.briefing.daily_briefing import (
+    get_briefing_cache_key,
+    select_briefing_content,
+)
 from backend.app.services.email.message_renderer import SOURCE_LABELS
 from backend.app.services.ingestion.base_crawler import today_cst
 from backend.app.services.membership.tiers import (
@@ -134,8 +137,9 @@ class SubscriptionDispatchService:
 
         issue_date = today.isoformat()
         for source, source_subscriptions in by_source.items():
-            suffix = "" if source == "all" else f"_{source}"
-            cache_key = f"{issue_date}{suffix}"
+            # 缓存键统一走 get_briefing_cache_key：X 的实际键是
+            # YYYY-MM-DD_0800_x（固定 08:00 锚点），手工拼接 _x 后缀会读不到。
+            cache_key = get_briefing_cache_key(issue_date, source)
             briefing = await asyncio.to_thread(
                 self._briefings.get_briefing_by_date, cache_key
             )
@@ -154,6 +158,47 @@ class SubscriptionDispatchService:
                     issue_date=issue_date,
                 )
                 summary[outcome] += 1
+        return summary
+
+    async def dispatch_issue(
+        self,
+        *,
+        source: str,
+        report_date: str,
+        content: str,
+    ) -> dict[str, int]:
+        """对已保存的指定一期执行 email-only 定向补发。
+
+        用于简报手动生成（报告页 SSE / 运维 generate-all）成功后的自动补发：
+        正文由调用方直接携带，不读缓存、不触发生成、不扫描其他来源。
+        webhook/Discord/Telegram 不纳入本入口，仍由调度轮询 dispatch_all 负责；
+        幂等与重试沿用 (subscription_id, item_key) delivery 台账，
+        item_key 即完整简报缓存键（X 为 {report_date}_0800_x）。
+        """
+        summary = {"sent": 0, "skipped": 0, "failed": 0}
+        if not content.strip() or not report_date:
+            return summary
+        subscriptions = await asyncio.to_thread(
+            self._subscriptions.list_active_dispatchable, frequency="daily"
+        )
+        if not subscriptions:
+            return summary
+        item_key = get_briefing_cache_key(report_date, source)
+        for subscription in subscriptions:
+            if subscription["source"] != source:
+                continue
+            if subscription["channel_type"] != CHANNEL_TYPE_EMAIL:
+                # 自动补发只面向邮箱；其他渠道留给调度轮询，这里连台账都不建。
+                continue
+            outcome = await self._deliver_one(
+                subscription=subscription,
+                item_key=item_key,
+                content=content,
+                source=source,
+                frequency="daily",
+                issue_date=report_date,
+            )
+            summary[outcome] += 1
         return summary
 
     async def _deliver_one(

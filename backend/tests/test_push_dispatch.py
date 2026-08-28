@@ -414,6 +414,156 @@ class SubscriptionDispatchServiceTests(unittest.TestCase):
         self.assertEqual(summary["sent"], 0)
         self.assertEqual(email.calls, [])
 
+    def test_dispatch_all_uses_x_anchor_cache_key(self) -> None:
+        # X 简报缓存键带固定 08:00 锚点：dispatch_all 必须读 2026-08-05_0800_x，
+        # 手工拼接 _x 后缀时该期会被静默跳过（本用例即该缺陷回归）。
+        service, _, briefing_repo, email = self._make_service(
+            subscriptions=[_subscription(1, source="x", target="watcher@example.com")],
+            briefings={"2026-08-05_0800_x": {"content_zh": "X 日报"}},
+        )
+
+        summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
+
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(email.calls[0]["source"], "x")
+        self.assertEqual(briefing_repo.requested_keys, ["2026-08-05_0800_x"])
+
+
+class SavedIssueDispatchTests(unittest.TestCase):
+    """dispatch_issue：已保存期次的 email-only 定向补发（手动生成自动补发）。"""
+
+    def _make_service(
+        self,
+        *,
+        subscriptions: list[dict[str, Any]],
+        email_service: FakeEmailService | None = None,
+    ) -> tuple[
+        SubscriptionDispatchService,
+        FakeDeliveryRepository,
+        FakeEmailService,
+    ]:
+        deliveries = FakeDeliveryRepository()
+        email = email_service or FakeEmailService()
+        service = SubscriptionDispatchService(
+            subscriptions=FakeSubscriptionRepository(subscriptions),
+            deliveries=deliveries,
+            briefings=FakeBriefingRepository({}),
+            email_service=email,
+        )
+        return service, deliveries, email
+
+    def test_sends_only_matching_source_email_subscriptions(self) -> None:
+        service, deliveries, email = self._make_service(
+            subscriptions=[
+                _subscription(1, source="github", target="dev@example.com"),
+                _subscription(2, source="news", target="news@example.com"),
+                _subscription(3, source="github", channel_type="webhook"),
+                _subscription(4, source="github", channel_type="telegram"),
+                _subscription(5, source="github", target="dev2@example.com"),
+            ]
+        )
+
+        summary = asyncio.run(
+            service.dispatch_issue(
+                source="github", report_date="2026-08-05", content="GitHub 热榜"
+            )
+        )
+
+        self.assertEqual(summary, {"sent": 2, "skipped": 0, "failed": 0})
+        self.assertEqual(
+            [call["to_email"] for call in email.calls],
+            ["dev@example.com", "dev2@example.com"],
+        )
+        # 正文由调用方携带、原样投递；date_str 为裸报告日期而非完整缓存键。
+        self.assertEqual(email.calls[0]["briefing_content"], "GitHub 热榜")
+        self.assertEqual(email.calls[0]["date_str"], "2026-08-05")
+        # webhook/telegram 不纳入自动补发：连 delivery 台账都不建，
+        # 仍留给调度轮询 dispatch_all 负责。
+        self.assertEqual(
+            sorted(deliveries._rows),
+            [(1, "2026-08-05_github"), (5, "2026-08-05_github")],
+        )
+
+    def test_x_source_uses_anchored_item_key_and_bare_date(self) -> None:
+        service, deliveries, email = self._make_service(
+            subscriptions=[_subscription(1, source="x", target="watcher@example.com")]
+        )
+
+        summary = asyncio.run(
+            service.dispatch_issue(
+                source="x", report_date="2026-08-05", content="X 日报"
+            )
+        )
+
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(email.calls[0]["date_str"], "2026-08-05")
+        self.assertIn((1, "2026-08-05_0800_x"), deliveries._rows)
+
+    def test_second_run_is_idempotent_via_ledger(self) -> None:
+        service, deliveries, email = self._make_service(
+            subscriptions=[_subscription(1, source="github")]
+        )
+
+        first = asyncio.run(
+            service.dispatch_issue(
+                source="github", report_date="2026-08-05", content="GitHub 热榜"
+            )
+        )
+        second = asyncio.run(
+            service.dispatch_issue(
+                source="github", report_date="2026-08-05", content="GitHub 热榜"
+            )
+        )
+
+        self.assertEqual(first, {"sent": 1, "skipped": 0, "failed": 0})
+        self.assertEqual(second, {"sent": 0, "skipped": 1, "failed": 0})
+        self.assertEqual(len(email.calls), 1)
+
+    def test_failed_attempt_is_retried_on_next_run(self) -> None:
+        email = FakeEmailService(failures_before_success=1)
+        service, deliveries, _ = self._make_service(
+            subscriptions=[_subscription(1, source="github")],
+            email_service=email,
+        )
+
+        first = asyncio.run(
+            service.dispatch_issue(
+                source="github", report_date="2026-08-05", content="GitHub 热榜"
+            )
+        )
+        second = asyncio.run(
+            service.dispatch_issue(
+                source="github", report_date="2026-08-05", content="GitHub 热榜"
+            )
+        )
+
+        self.assertEqual(first, {"sent": 0, "skipped": 0, "failed": 1})
+        self.assertEqual(second, {"sent": 1, "skipped": 0, "failed": 0})
+        delivery = deliveries.get_delivery(
+            subscription_id=1, item_key="2026-08-05_github"
+        )
+        self.assertEqual(delivery["status"], "sent")
+        self.assertEqual(delivery["attempts"], 2)
+
+    def test_empty_content_or_date_is_noop(self) -> None:
+        service, deliveries, email = self._make_service(
+            subscriptions=[_subscription(1, source="github")]
+        )
+
+        empty = asyncio.run(
+            service.dispatch_issue(source="github", report_date="2026-08-05", content="  ")
+        )
+        no_date = asyncio.run(
+            service.dispatch_issue(source="github", report_date="", content="正文")
+        )
+
+        self.assertEqual(empty, {"sent": 0, "skipped": 0, "failed": 0})
+        self.assertEqual(no_date, {"sent": 0, "skipped": 0, "failed": 0})
+        # 空内容连订阅清单都不查（FakeSubscriptionRepository.calls 记录频率入参）。
+        self.assertEqual(service._subscriptions.calls, [])
+        self.assertEqual(email.calls, [])
+        self.assertEqual(deliveries._rows, {})
+
 
 class FakeTelegramSender:
     def __init__(self, *, fail: bool = False) -> None:

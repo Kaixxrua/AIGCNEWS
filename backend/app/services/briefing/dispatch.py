@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
 )
@@ -17,6 +18,8 @@ from backend.app.repositories.briefing_repository import (
 )
 from backend.app.services import email_service
 from backend.app.services.briefing.composition import provide_daily_briefing_service
+from backend.app.services.briefing.daily_briefing import BriefingSavedNotifier
+from backend.app.services.push.dispatch_service import SubscriptionDispatchService
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,117 @@ async def send_briefing_to_subscribers(
                 exc_info=True,
             )
     return sent
+
+
+async def dispatch_saved_briefing_issue(
+    repositories: ApplicationRepositories,
+    *,
+    source: str,
+    report_date: str,
+    briefing_id: int,
+    content_zh: str,
+    redis_client: Any | None = None,
+) -> None:
+    """已保存期次的订阅邮件补发：旧 briefing_subscriptions + 新 user_subscriptions(email)。
+
+    供简报手动生成（报告页 SSE / 运维 generate-all）保存成功后自动补发。
+    两体系各自走既有幂等账本（A 用 watermark，B 用 delivery ledger），互不
+    迁移也不跨表去重；任一体系异常仅记录日志，不阻断另一体系，更不影响
+    已保存的简报内容。
+    """
+    content = content_zh if content_zh.strip() else ""
+    if not content or briefing_id <= 0 or not report_date:
+        return
+
+    try:
+        sent = await send_briefing_to_subscribers(
+            source=source,
+            date_str=report_date,
+            content=content,
+            briefing_id=briefing_id,
+            subscriptions=repositories.briefing_subscriptions,
+            redis_client=redis_client,
+        )
+        logger.info(
+            "[Briefing] 手动生成后旧订阅补发完成: source=%s date=%s sent=%d",
+            source,
+            report_date,
+            sent,
+        )
+    except Exception as exc:
+        logger.error(
+            "[Briefing] 手动生成后旧订阅补发失败: source=%s date=%s error=%s",
+            source,
+            report_date,
+            exc,
+            exc_info=True,
+        )
+
+    try:
+        service = SubscriptionDispatchService(
+            subscriptions=repositories.user_subscriptions,
+            deliveries=repositories.push_deliveries,
+            briefings=repositories.briefings,
+            redis_client=redis_client,
+        )
+        summary = await service.dispatch_issue(
+            source=source,
+            report_date=report_date,
+            content=content,
+        )
+        logger.info(
+            "[Briefing] 手动生成后订阅补发完成: source=%s date=%s summary=%s",
+            source,
+            report_date,
+            summary,
+        )
+    except Exception as exc:
+        logger.error(
+            "[Briefing] 手动生成后订阅补发失败: source=%s date=%s error=%s",
+            source,
+            report_date,
+            exc,
+            exc_info=True,
+        )
+
+
+def build_briefing_saved_notifier(
+    repositories: ApplicationRepositories,
+    *,
+    operations: ApplicationOperationsRuntime,
+    redis_client: Any | None = None,
+) -> BriefingSavedNotifier:
+    """构造保存后通知：把已保存期次的订阅补发提交到应用后台运行时。
+
+    由 ApplicationOperationsRuntime 托管任务，SSE 客户端断连不会取消 SMTP
+    补发；运行时已停止（submit 返回 False）时只记录日志，不抛异常。
+    """
+
+    def _notify(
+        *,
+        report_date: str,
+        source: str,
+        cache_key: str,
+        briefing_id: int,
+        content_zh: str,
+    ) -> None:
+        submitted = operations.submit(
+            dispatch_saved_briefing_issue,
+            repositories,
+            source=source,
+            report_date=report_date,
+            briefing_id=briefing_id,
+            content_zh=content_zh,
+            redis_client=redis_client,
+        )
+        if not submitted:
+            logger.warning(
+                "[Briefing] 后台运行时已停止，订阅补发未入队: source=%s briefing_id=%s",
+                source,
+                briefing_id,
+            )
+
+    return _notify
 
 
 async def run_daily_briefing_dispatch(

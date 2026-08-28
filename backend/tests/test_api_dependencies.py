@@ -234,6 +234,57 @@ class DatabaseDependencyTests(unittest.TestCase):
         ):
             dependencies.get_operations_runtime(request)
 
+    def test_daily_briefing_service_binds_saved_notifier_with_runtime(self) -> None:
+        runtime = dependencies.ApplicationOperationsRuntime()
+        redis_sentinel = object()
+        notifier_sentinel = object()
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        app.state.operations_runtime = runtime
+        app.state.redis = redis_sentinel
+        request.app = app
+        repositories = MagicMock()
+
+        with (
+            patch.object(
+                dependencies,
+                "build_briefing_saved_notifier",
+                return_value=notifier_sentinel,
+            ) as build,
+            patch.object(
+                dependencies, "provide_daily_briefing_service"
+            ) as provide,
+        ):
+            service = dependencies.get_daily_briefing_service(
+                request, repositories=repositories
+            )
+
+        build.assert_called_once_with(
+            repositories, operations=runtime, redis_client=redis_sentinel
+        )
+        provide.assert_called_once_with(
+            repositories=repositories, briefing_saved=notifier_sentinel
+        )
+        self.assertIs(service, provide.return_value)
+
+    def test_daily_briefing_service_degrades_without_operations_runtime(self) -> None:
+        # 补发是次功能：运行时缺失时降级为不挂通知，简报生成主链路不受影响。
+        request = MagicMock(spec=Request)
+        app = FastAPI()
+        request.app = app
+        repositories = MagicMock()
+
+        with (
+            patch.object(dependencies, "build_briefing_saved_notifier") as build,
+            patch.object(
+                dependencies, "provide_daily_briefing_service"
+            ) as provide,
+        ):
+            dependencies.get_daily_briefing_service(request, repositories=repositories)
+
+        build.assert_not_called()
+        provide.assert_called_once_with(repositories=repositories, briefing_saved=None)
+
     def test_scheduler_admin_service_uses_application_owned_runtime(self) -> None:
         scheduler_control = MagicMock()
         request = MagicMock(spec=Request)

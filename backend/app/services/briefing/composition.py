@@ -8,6 +8,7 @@ from backend.app.repositories.application_repository_factory import (
 )
 from backend.app.services.briefing.daily_briefing import (
     BriefingModel,
+    BriefingSavedNotifier,
     DailyBriefingService,
 )
 
@@ -17,6 +18,7 @@ def provide_daily_briefing_service(
     repositories: ApplicationRepositories,
     model: BriefingModel | None = None,
     top_k: int = 10,
+    briefing_saved: BriefingSavedNotifier | None = None,
 ) -> DailyBriefingService:
     """Build a briefing service from borrowed application dependencies."""
     return DailyBriefingService(
@@ -25,4 +27,5 @@ def provide_daily_briefing_service(
         document_feed=repositories.documents,
         rank_snapshot_reader=repositories.rank_snapshots,
         model=model or get_chat_model(),
+        briefing_saved=briefing_saved,
     )

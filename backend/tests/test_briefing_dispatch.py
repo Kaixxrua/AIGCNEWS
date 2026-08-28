@@ -453,5 +453,191 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         factory.assert_called_once_with(sentinel)
 
 
+class _FakeOperationsRuntime:
+    """submit 语义替身：记录入队参数并按预设返回值应答。"""
+
+    def __init__(self, *, submitted: bool = True) -> None:
+        self.calls: list[tuple[Any, tuple, dict]] = []
+        self._submitted = submitted
+
+    def submit(self, operation: Any, *args: Any, **kwargs: Any) -> bool:
+        self.calls.append((operation, args, kwargs))
+        return self._submitted
+
+
+class DispatchSavedBriefingIssueTests(unittest.IsolatedAsyncioTestCase):
+    """手动生成保存成功后的 A/B 双体系订阅邮件补发 worker。"""
+
+    def _repositories(self) -> MagicMock:
+        return _repositories_with_subscribers([])
+
+    async def test_dispatches_both_legacy_and_new_systems(self) -> None:
+        repositories = self._repositories()
+        sentinel = object()
+        dispatch_service = MagicMock()
+        dispatch_service.dispatch_issue = AsyncMock(
+            return_value={"sent": 1, "skipped": 0, "failed": 0}
+        )
+
+        with (
+            patch.object(
+                dispatch, "send_briefing_to_subscribers", new=AsyncMock(return_value=2)
+            ) as legacy,
+            patch.object(
+                dispatch, "SubscriptionDispatchService", return_value=dispatch_service
+            ) as factory,
+        ):
+            await dispatch.dispatch_saved_briefing_issue(
+                repositories,
+                source="x",
+                report_date="2026-08-27",
+                briefing_id=42,
+                content_zh="正文",
+                redis_client=sentinel,
+            )
+
+        legacy.assert_awaited_once_with(
+            source="x",
+            date_str="2026-08-27",
+            content="正文",
+            briefing_id=42,
+            subscriptions=repositories.briefing_subscriptions,
+            redis_client=sentinel,
+        )
+        factory.assert_called_once_with(
+            subscriptions=repositories.user_subscriptions,
+            deliveries=repositories.push_deliveries,
+            briefings=repositories.briefings,
+            redis_client=sentinel,
+        )
+        dispatch_service.dispatch_issue.assert_awaited_once_with(
+            source="x",
+            report_date="2026-08-27",
+            content="正文",
+        )
+
+    async def test_legacy_failure_does_not_block_new_system(self) -> None:
+        repositories = self._repositories()
+        dispatch_service = MagicMock()
+        dispatch_service.dispatch_issue = AsyncMock(
+            return_value={"sent": 1, "skipped": 0, "failed": 0}
+        )
+
+        with (
+            patch.object(
+                dispatch,
+                "send_briefing_to_subscribers",
+                new=AsyncMock(side_effect=RuntimeError("smtp pool down")),
+            ),
+            patch.object(
+                dispatch, "SubscriptionDispatchService", return_value=dispatch_service
+            ),
+        ):
+            # 不抛异常：单体系失败只落日志。
+            await dispatch.dispatch_saved_briefing_issue(
+                repositories,
+                source="github",
+                report_date="2026-08-27",
+                briefing_id=42,
+                content_zh="正文",
+            )
+
+        dispatch_service.dispatch_issue.assert_awaited_once()
+
+    async def test_new_system_failure_does_not_raise(self) -> None:
+        repositories = self._repositories()
+        dispatch_service = MagicMock()
+        dispatch_service.dispatch_issue = AsyncMock(
+            side_effect=RuntimeError("db down")
+        )
+
+        with (
+            patch.object(
+                dispatch, "send_briefing_to_subscribers", new=AsyncMock(return_value=0)
+            ) as legacy,
+            patch.object(
+                dispatch, "SubscriptionDispatchService", return_value=dispatch_service
+            ),
+        ):
+            await dispatch.dispatch_saved_briefing_issue(
+                repositories,
+                source="github",
+                report_date="2026-08-27",
+                briefing_id=42,
+                content_zh="正文",
+            )
+
+        legacy.assert_awaited_once()
+
+    async def test_invalid_issue_is_noop(self) -> None:
+        repositories = self._repositories()
+
+        with (
+            patch.object(
+                dispatch, "send_briefing_to_subscribers", new=AsyncMock()
+            ) as legacy,
+            patch.object(dispatch, "SubscriptionDispatchService") as factory,
+        ):
+            for kwargs in (
+                # 空正文、无效 briefing_id、空日期都不应触发任何派发。
+                {"content_zh": "  ", "briefing_id": 42, "report_date": "2026-08-27"},
+                {"content_zh": "正文", "briefing_id": -1, "report_date": "2026-08-27"},
+                {"content_zh": "正文", "briefing_id": 42, "report_date": ""},
+            ):
+                await dispatch.dispatch_saved_briefing_issue(
+                    repositories, source="github", **kwargs
+                )
+
+        legacy.assert_not_awaited()
+        factory.assert_not_called()
+
+
+class BuildBriefingSavedNotifierTests(unittest.TestCase):
+    def test_notify_submits_saved_issue_worker_to_operations_runtime(self) -> None:
+        repositories = MagicMock()
+        operations = _FakeOperationsRuntime()
+        sentinel = object()
+        notifier = dispatch.build_briefing_saved_notifier(
+            repositories, operations=operations, redis_client=sentinel
+        )
+
+        notifier(
+            report_date="2026-08-27",
+            source="x",
+            cache_key="2026-08-27_0800_x",
+            briefing_id=42,
+            content_zh="正文",
+        )
+
+        self.assertEqual(len(operations.calls), 1)
+        operation, args, kwargs = operations.calls[0]
+        self.assertIs(operation, dispatch.dispatch_saved_briefing_issue)
+        self.assertEqual(args, (repositories,))
+        self.assertEqual(
+            kwargs,
+            {
+                "source": "x",
+                "report_date": "2026-08-27",
+                "briefing_id": 42,
+                "content_zh": "正文",
+                "redis_client": sentinel,
+            },
+        )
+
+    def test_rejected_submit_only_logs(self) -> None:
+        notifier = dispatch.build_briefing_saved_notifier(
+            MagicMock(), operations=_FakeOperationsRuntime(submitted=False)
+        )
+
+        with self.assertLogs(dispatch.logger, "WARNING"):
+            notifier(
+                report_date="2026-08-27",
+                source="github",
+                cache_key="2026-08-27_github",
+                briefing_id=42,
+                content_zh="正文",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

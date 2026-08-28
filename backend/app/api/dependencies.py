@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 from fastapi import Depends, HTTPException, Request, status
@@ -86,6 +87,7 @@ from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.auth.oauth.config_admin import OAuthConfigAdminService
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import DailyBriefingService
+from backend.app.services.briefing.dispatch import build_briefing_saved_notifier
 from backend.app.services.briefing_admin import BriefingAdminService
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.dashboard.query_service import GitHubHotBoardReader
@@ -140,6 +142,8 @@ from backend.app.services.source_plugins.wechat_source import (
 from backend.app.services.x_credentials.admin_service import XCredentialAdminService
 from backend.app.services.x_snapshot_admin import XSnapshotAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
+
+logger = logging.getLogger(__name__)
 
 
 def get_monitoring_runtime(request: Request) -> Any:
@@ -207,9 +211,26 @@ def get_briefing_subscription_repository(
 
 
 def get_daily_briefing_service(
+    request: Request,
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> DailyBriefingService:
-    return provide_daily_briefing_service(repositories=repositories)
+    # 生成是主功能、补发是次功能：operations runtime 缺失时降级为不挂通知，
+    # 绝不让补发接线问题阻断简报生成（运维台运行时始终存在，仅测试桩缺失）。
+    runtime = getattr(request.app.state, "operations_runtime", None)
+    notifier = None
+    if isinstance(runtime, ApplicationOperationsRuntime):
+        notifier = build_briefing_saved_notifier(
+            repositories,
+            operations=runtime,
+            redis_client=getattr(request.app.state, "redis", None),
+        )
+    else:
+        logger.warning(
+            "[Briefing] operations runtime 未配置，简报保存后将跳过订阅补发通知"
+        )
+    return provide_daily_briefing_service(
+        repositories=repositories, briefing_saved=notifier
+    )
 
 
 def get_briefing_admin_service(
