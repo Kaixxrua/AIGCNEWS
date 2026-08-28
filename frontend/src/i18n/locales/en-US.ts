@@ -19,7 +19,7 @@ const enUS = {
       qrPlaceholder: 'Payment QR code', scanHint: 'Scan with the corresponding app to pay', redirectHint: 'Opening the payment page in a new tab… If nothing happens, use the button below', redirectAction: 'Continue to payment',
       expireCountdown: 'Time left to pay: {time}', awaiting: 'Waiting for payment…', orderNo: 'Order no.',
       resumeHint: 'Pending order restored. If you have not paid yet, finish it on the payment page; you can start a new payment after it expires.',
-      paid: 'Payment received — vip is active!', paidHint: 'Your membership is live. Thank you for the support!',
+      paid: 'Payment received — vip is active!', paidHint: 'Your membership is live. Thank you for the support!', paidUntil: 'Membership valid until {date}', paidLifetime: 'Lifetime membership — no expiry',
       expired: 'This order has expired. Please start a new payment.', pollTimeout: 'Payment confirmation timed out — if you already paid, your plan will activate shortly.', retry: 'Start a new payment',
       loadFailed: 'Checkout is unavailable right now. Try again later or contact us to subscribe.', backToMembership: 'Back to membership',
     },
