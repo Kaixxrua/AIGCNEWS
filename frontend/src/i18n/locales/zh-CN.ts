@@ -5,6 +5,7 @@ const overrides = {
   common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', clear: '清除', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', myFavorites: '我的收藏', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   navigation: { home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', websiteCollection: '我的网页', chat: '对话', report: '报告', xboard: 'X 动态', wechat: '微信公众号', subscriptions: '我的订阅', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: 'vip', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', changePassword: '修改密码', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
+  contact: { kicker: '联系合作', heroNote: '按你的需求，选择合适的联系入口。', servicesKicker: '合作方向', servicesTitle: '我们可以一起做什么', entryKicker: '从这里开始', entryTitle: '选择联系入口', primaryBadge: '优先入口', qrHint: '扫码继续', qrUnavailable: '二维码暂时无法显示', notesKicker: '补充说明', notesTitle: '更多信息' },
   membership: {
     title: 'vip', subtitle: '解锁更高的 MCP 调用额度、个人网页不限量收藏与全部简报模块，也支持本站持续运营。',
     guest: { name: 'guest', price: '¥0', note: '无需注册，打开即用', features: { browse: '浏览榜单、论文与项目库', mcpAnonymous: 'MCP 匿名调用 30 次/天', rss: 'RSS 订阅', briefing: '简报邮件订阅', website: '个人网页收藏' } },

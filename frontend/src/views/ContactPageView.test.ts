@@ -1,7 +1,9 @@
 import { mount } from '@vue/test-utils'
+import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ContactPageView from './ContactPageView.vue'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
+import { messages, DEFAULT_LOCALE } from '@/i18n'
 
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
 
@@ -20,6 +22,13 @@ vi.mock('@/composables/useContactPageConfig', async () => {
     })
   }
   return { useContactPageConfig: () => ({ contactPageConfig: configBox.current }) }
+})
+
+const i18n = createI18n({
+  legacy: false,
+  locale: DEFAULT_LOCALE,
+  fallbackLocale: DEFAULT_LOCALE,
+  messages,
 })
 
 const setConfig = (overrides: Partial<SiteContactPage> = {}) => {
@@ -43,7 +52,10 @@ const setConfig = (overrides: Partial<SiteContactPage> = {}) => {
   }
 }
 
-const mountView = () => mount(ContactPageView)
+const mountView = () =>
+  mount(ContactPageView, {
+    global: { plugins: [i18n] },
+  })
 
 describe('ContactPageView', () => {
   beforeEach(() => {
@@ -55,6 +67,7 @@ describe('ContactPageView', () => {
 
     expect(wrapper.find('.contact-title').text()).toBe('联系合作')
     expect(wrapper.find('.contact-subtitle').text()).toBe('外包 · 商务合作')
+    expect(wrapper.find('.contact-kicker').text()).toBe('联系合作')
 
     const cards = wrapper.findAll('.service-card')
     expect(cards).toHaveLength(2)
@@ -71,6 +84,14 @@ describe('ContactPageView', () => {
     const markdown = wrapper.find('.contact-markdown')
     expect(markdown.html()).toContain('<h1>欢迎</h1>')
     expect(markdown.html()).toContain('<strong>加粗</strong>')
+  })
+
+  it('renders section headings from i18n', () => {
+    const wrapper = mountView()
+
+    expect(wrapper.find('#contact-services-title').text()).toBe('我们可以一起做什么')
+    expect(wrapper.find('#contact-entry-title').text()).toBe('选择联系入口')
+    expect(wrapper.find('#contact-notes-title').text()).toBe('更多信息')
   })
 
   it('renders QR image only for entries with qrImageUrl', () => {
@@ -97,11 +118,47 @@ describe('ContactPageView', () => {
     expect(webLink.attributes('target')).toBe('_blank')
     expect(webLink.attributes('rel')).toBe('noopener noreferrer')
     // value 为空时以 href 作为链接文案
-    expect(webLink.text()).toBe('https://example.com')
+    expect(webLink.find('.entry-link-text').text()).toBe('https://example.com')
 
     // 无 href 的条目渲染纯文本值
     expect(entries[0]!.find('a').exists()).toBe(false)
     expect(entries[0]!.find('.entry-value').text()).toBe('123456')
+  })
+
+  it('highlights the first actionable entry as primary', () => {
+    const wrapper = mountView()
+    const entries = wrapper.findAll('.entry-item')
+
+    // 第一个带 href 的联系方式是邮箱（索引 1），优先作为主动作
+    expect(entries[1]!.classes()).toContain('entry-item--primary')
+    expect(entries[1]!.find('.entry-badge').text()).toBe('优先入口')
+    expect(entries[0]!.classes()).not.toContain('entry-item--primary')
+    expect(entries[2]!.classes()).not.toContain('entry-item--primary')
+  })
+
+  it('falls back to the first QR-only entry when no href is available', () => {
+    setConfig({
+      contactEntries: [
+        { label: 'QQ 群', value: '123456', href: '', qrImageUrl: '/qr.png' },
+        { label: '微信群', value: '', href: '', qrImageUrl: '/wechat.png' },
+      ],
+    })
+    const wrapper = mountView()
+    const entries = wrapper.findAll('.entry-item')
+
+    expect(entries[0]!.classes()).toContain('entry-item--primary')
+    expect(entries[0]!.find('.entry-badge').text()).toBe('优先入口')
+    expect(entries[1]!.classes()).not.toContain('entry-item--primary')
+  })
+
+  it('renders QR fallback when the image fails to load', async () => {
+    const wrapper = mountView()
+    const qr = wrapper.find('img.entry-qr')
+
+    await qr.trigger('error')
+
+    expect(wrapper.find('img.entry-qr').exists()).toBe(false)
+    expect(wrapper.find('.entry-qr-fallback').text()).toBe('二维码暂时无法显示')
   })
 
   it('sanitizes the admin-authored markdown body', () => {
@@ -122,6 +179,7 @@ describe('ContactPageView', () => {
     expect(wrapper.find('.entry-list').exists()).toBe(false)
     expect(wrapper.find('.contact-markdown').exists()).toBe(false)
     expect(wrapper.find('.contact-subtitle').exists()).toBe(false)
+    expect(wrapper.find('.contact-hero-note').exists()).toBe(false)
   })
 
   it('renders nothing when the page is disabled (defensive root guard)', () => {

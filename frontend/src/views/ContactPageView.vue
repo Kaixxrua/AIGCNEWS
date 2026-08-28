@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { renderPlainMarkdown } from '@/composables/useLatexRenderer'
 import type { SiteContactEntry } from '@/services/site/contactPageApi'
@@ -10,6 +11,7 @@ import type { SiteContactEntry } from '@/services/site/contactPageApi'
  */
 const { contactPageConfig } = useContactPageConfig()
 const config = contactPageConfig
+const { t } = useI18n()
 
 /** 服务卡片图标 key → 内联 SVG（与导航图标同风格）；未知/空 key 回退 default */
 const SERVICE_CARD_ICONS: Record<string, string> = {
@@ -21,56 +23,85 @@ const SERVICE_CARD_ICONS: Record<string, string> = {
 }
 
 const cardIcon = (icon: string): string => SERVICE_CARD_ICONS[icon] ?? SERVICE_CARD_ICONS.default!
-
 const isExternalLink = (href: string): boolean => /^https?:\/\//i.test(href)
-
 const linkAttrs = (entry: SiteContactEntry) =>
   isExternalLink(entry.href) ? { target: '_blank', rel: 'noopener noreferrer' } : {}
 
 const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdown))
+const failedQrEntries = ref<Record<number, boolean>>({})
+const markQrFailed = (index: number) => {
+  failedQrEntries.value = { ...failedQrEntries.value, [index]: true }
+}
+
+/** 只从管理员已配置的联系方式中选出一个主动作，不硬编码地址或文案。 */
+const primaryEntryIndex = computed(() => {
+  const hrefIndex = config.value.contactEntries.findIndex((entry) => entry.href)
+  return hrefIndex >= 0 ? hrefIndex : config.value.contactEntries.findIndex((entry) => entry.qrImageUrl)
+})
+const isPrimaryEntry = (index: number): boolean => index === primaryEntryIndex.value
 </script>
 
 <template>
   <div v-if="config.enabled" class="contact-page">
     <div class="contact-card">
       <header class="contact-hero">
-        <h1 class="contact-title">{{ config.title }}</h1>
-        <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
+        <div class="contact-hero-copy">
+          <p class="contact-kicker">{{ t('contact.kicker') }}</p>
+          <h1 class="contact-title">{{ config.title }}</h1>
+          <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
+        </div>
+        <div v-if="config.contactEntries.length" class="contact-hero-note">
+          <span class="contact-hero-note__line" aria-hidden="true" />
+          <span>{{ t('contact.heroNote') }}</span>
+        </div>
       </header>
 
-      <section v-if="config.serviceCards.length" class="contact-section">
-        <div class="service-grid">
-          <article v-for="card in config.serviceCards" :key="card.title" class="service-card glass-card">
-            <span class="service-icon" v-html="cardIcon(card.icon)" />
-            <h2 class="service-title">{{ card.title }}</h2>
-            <p v-if="card.description" class="service-desc">{{ card.description }}</p>
-          </article>
-        </div>
-      </section>
-
-      <section v-if="config.contactEntries.length" class="contact-section">
-        <div class="entry-list">
-          <div v-for="entry in config.contactEntries" :key="entry.label" class="entry-item glass-card">
-            <span class="entry-label">{{ entry.label }}</span>
-            <img
-              v-if="entry.qrImageUrl"
-              class="entry-qr"
-              :src="entry.qrImageUrl"
-              :alt="entry.label"
-              loading="lazy"
-            />
-            <a
-              v-if="entry.href"
-              class="entry-value entry-value--link"
-              :href="entry.href"
-              v-bind="linkAttrs(entry)"
-            >{{ entry.value || entry.href }}</a>
-            <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
+      <div class="contact-main-grid">
+        <section v-if="config.serviceCards.length" class="contact-section service-section" aria-labelledby="contact-services-title">
+          <div class="section-heading">
+            <p class="section-kicker">{{ t('contact.servicesKicker') }}</p>
+            <h2 id="contact-services-title">{{ t('contact.servicesTitle') }}</h2>
           </div>
-        </div>
-      </section>
+          <div class="service-grid">
+            <article v-for="(card, index) in config.serviceCards" :key="`${index}-${card.title}`" class="service-card glass-card">
+              <span class="service-index">0{{ index + 1 }}</span>
+              <span class="service-icon" v-html="cardIcon(card.icon)" aria-hidden="true" />
+              <h3 class="service-title">{{ card.title }}</h3>
+              <p v-if="card.description" class="service-desc">{{ card.description }}</p>
+            </article>
+          </div>
+        </section>
 
-      <section v-if="config.bodyMarkdown.trim()" class="contact-section contact-markdown-section">
+        <section v-if="config.contactEntries.length" class="contact-section entry-section" aria-labelledby="contact-entry-title">
+          <div class="section-heading">
+            <p class="section-kicker">{{ t('contact.entryKicker') }}</p>
+            <h2 id="contact-entry-title">{{ t('contact.entryTitle') }}</h2>
+          </div>
+          <div class="entry-list">
+            <article v-for="(entry, index) in config.contactEntries" :key="`${index}-${entry.label}`" class="entry-item glass-card" :class="{ 'entry-item--primary': isPrimaryEntry(index) }">
+              <div class="entry-meta">
+                <span class="entry-label">{{ entry.label }}</span>
+                <span v-if="isPrimaryEntry(index)" class="entry-badge">{{ t('contact.primaryBadge') }}</span>
+              </div>
+              <div v-if="entry.qrImageUrl" class="entry-qr-frame">
+                <img v-if="!failedQrEntries[index]" class="entry-qr" :src="entry.qrImageUrl" :alt="entry.label" loading="lazy" @error="markQrFailed(index)" />
+                <div v-else class="entry-qr-fallback" role="img" :aria-label="t('contact.qrUnavailable')">{{ t('contact.qrUnavailable') }}</div>
+              </div>
+              <a v-if="entry.href" class="entry-value entry-value--link" :class="{ 'entry-action--primary': isPrimaryEntry(index) }" :href="entry.href" v-bind="linkAttrs(entry)">
+                <span class="entry-link-text">{{ entry.value || entry.href }}</span><span class="entry-arrow" aria-hidden="true">↗</span>
+              </a>
+              <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
+              <span v-if="entry.qrImageUrl && !failedQrEntries[index]" class="entry-qr-hint">{{ t('contact.qrHint') }}</span>
+            </article>
+          </div>
+        </section>
+      </div>
+
+      <section v-if="config.bodyMarkdown.trim()" class="contact-section contact-markdown-section" aria-labelledby="contact-notes-title">
+        <div class="section-heading section-heading--notes">
+          <p class="section-kicker">{{ t('contact.notesKicker') }}</p>
+          <h2 id="contact-notes-title">{{ t('contact.notesTitle') }}</h2>
+        </div>
         <!-- 经 renderPlainMarkdown（markdown-it + DOMPurify）消毒，禁止改绑原始渲染结果 -->
         <div class="contact-markdown" v-html="renderedBody" />
       </section>
@@ -79,244 +110,56 @@ const renderedBody = computed(() => renderPlainMarkdown(config.value.bodyMarkdow
 </template>
 
 <style scoped>
-.contact-page {
-  width: 100%;
-  height: 100%;
-  overflow-y: auto;
-  display: flex;
-  justify-content: center;
-  padding: 32px 24px 48px;
-  box-sizing: border-box;
-}
-
-.contact-card {
-  width: 100%;
-  max-width: 860px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.contact-hero {
-  text-align: center;
-}
-
-.contact-title {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--ink);
-  margin: 0 0 10px;
-  font-family: 'Playfair Display', serif;
-}
-
-.contact-subtitle {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--ink-muted);
-  margin: 0 auto;
-  max-width: 560px;
-  white-space: pre-line;
-}
-
-.service-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
-}
-
-.service-card {
-  padding: 18px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.service-icon {
-  width: 26px;
-  height: 26px;
-  color: var(--acid-ink);
-  display: inline-flex;
-}
-
-.service-icon :deep(svg) {
-  width: 26px;
-  height: 26px;
-}
-
-.service-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0;
-}
-
-.service-desc {
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--ink-secondary);
-  margin: 0;
-  white-space: pre-line;
-}
-
-.entry-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 340px));
-  justify-content: center;
-  gap: 14px;
-}
-
-/* 联系卡片以二维码为视觉主体：标签在上、QR 大图居中、CTA 按钮收尾 */
-.entry-item {
-  padding: 20px 18px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 12px;
-}
-
-.entry-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-muted);
-  letter-spacing: 0.02em;
-}
-
-.entry-value {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink);
-  word-break: break-all;
-}
-
-/* 外链联系方式渲染为 CTA 胶囊按钮（拉起 QQ/打开合作链接的动作入口），
-   配色对齐 Dock 激活态：acid 实色底 + acid-ink 文字 */
-.entry-value--link {
-  display: inline-flex;
-  align-items: center;
-  padding: 9px 22px;
-  border-radius: 999px;
-  background: var(--acid);
-  color: var(--acid-ink);
-  border: 1px solid var(--acid-strong);
-  text-decoration: none;
-  transition: background-color 150ms ease;
-}
-
-.entry-value--link:hover {
-  background: var(--acid-bright);
-  color: var(--acid-ink);
-}
-
-/* 二维码是加群动作的另一入口，必须大到随手可扫 */
-.entry-qr {
-  width: 220px;
-  height: 220px;
-  object-fit: contain;
-  border-radius: 10px;
-  border: 1px solid var(--rule);
-  background: var(--paper-raised);
-}
-
-.contact-markdown {
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--ink-secondary);
-}
-
-.contact-markdown :deep(h1),
-.contact-markdown :deep(h2),
-.contact-markdown :deep(h3) {
-  color: var(--ink);
-  font-weight: 600;
-  margin: 20px 0 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.contact-markdown :deep(h1) { font-size: 20px; }
-.contact-markdown :deep(h2) { font-size: 17px; }
-.contact-markdown :deep(h3) { font-size: 15px; }
-
-.contact-markdown :deep(p) {
-  margin: 0 0 12px;
-}
-
-.contact-markdown :deep(a) {
-  color: var(--acid-ink);
-  text-decoration: none;
-  border-bottom: 1px solid var(--acid-strong);
-}
-
-.contact-markdown :deep(a:hover) {
-  color: var(--ink);
-}
-
-.contact-markdown :deep(ul),
-.contact-markdown :deep(ol) {
-  margin: 8px 0 12px;
-  padding-left: 22px;
-}
-
-.contact-markdown :deep(li) {
-  margin: 5px 0;
-}
-
-.contact-markdown :deep(img) {
-  max-width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--rule);
-}
-
-.contact-markdown :deep(blockquote) {
-  margin: 12px 0;
-  padding: 8px 14px;
-  border-left: 3px solid var(--acid);
-  background: var(--paper-muted);
-  color: var(--ink-muted);
-}
-
-.contact-markdown :deep(code) {
-  font-size: 13px;
-  background: var(--paper-muted);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 1px 5px;
-}
-
-.contact-markdown :deep(pre) {
-  background: var(--paper-muted);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 12px 14px;
-  overflow-x: auto;
-}
-
-.contact-markdown :deep(pre code) {
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-@media (max-width: 639px) {
-  .contact-page {
-    padding: 20px 14px 32px;
-  }
-
-  .contact-title {
-    font-size: 23px;
-  }
-
-  /* 服务卡与联系方式卡强制单列：auto-fill/auto-fit 的 minmax 下限
-     在 375px 减去页边距后只剩一列，但显式单列能避免临界宽度抖动 */
-  .service-grid,
-  .entry-list {
-    grid-template-columns: 1fr;
-  }
-
-  .entry-qr {
-    width: 200px;
-    height: 200px;
-  }
-}
+.contact-page { width: 100%; height: 100%; overflow-y: auto; box-sizing: border-box; padding: 32px 28px 112px; }
+.contact-card { width: 100%; max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 38px; min-width: 0; }
+.contact-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; padding: 12px 2px 26px; border-bottom: 1px solid var(--rule-strong); }
+.contact-hero-copy { min-width: 0; }
+.contact-kicker, .section-kicker { margin: 0 0 10px; color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: .12em; line-height: 1.4; text-transform: uppercase; }
+.contact-title { margin: 0; color: var(--ink); font-size: clamp(30px, 4vw, 52px); font-weight: 750; letter-spacing: -.045em; line-height: 1.05; max-width: 760px; }
+.contact-subtitle { margin: 16px 0 0; max-width: 660px; color: var(--ink-secondary); font-size: 15px; line-height: 1.8; white-space: pre-line; }
+.contact-hero-note { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; max-width: 190px; color: var(--ink-muted); font-size: 12px; line-height: 1.5; }
+.contact-hero-note__line { width: 28px; height: 1px; flex: 0 0 auto; background: var(--acid-strong); }
+.contact-main-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); gap: 52px; align-items: start; }
+.contact-section { min-width: 0; }
+.section-heading { margin-bottom: 18px; }
+.section-heading h2 { margin: 0; color: var(--ink); font-size: 19px; font-weight: 750; letter-spacing: -.02em; line-height: 1.25; }
+.section-heading--notes { margin-bottom: 14px; }
+.service-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.service-card { position: relative; min-width: 0; min-height: 166px; padding: 20px 18px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; overflow: hidden; transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
+.service-card:hover { transform: translate(-2px, -2px); border-color: var(--rule-strong); box-shadow: 5px 5px 0 var(--acid); }
+.service-index { position: absolute; top: 16px; right: 17px; color: var(--ink-faint); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.service-icon { width: 28px; height: 28px; margin-bottom: 10px; display: inline-flex; color: var(--acid-ink); }
+.service-icon :deep(svg) { width: 28px; height: 28px; }
+.service-title { margin: 0; color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.service-desc { margin: 0; color: var(--ink-secondary); font-size: 13px; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
+.entry-list { display: flex; flex-direction: column; gap: 12px; }
+.entry-item { min-width: 0; padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.entry-item--primary { border-color: var(--rule-strong); box-shadow: 5px 5px 0 var(--acid); }
+.entry-meta { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.entry-label { color: var(--ink-muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; overflow-wrap: anywhere; }
+.entry-badge { padding: 3px 7px; color: var(--acid-ink); background: var(--acid); border: 1px solid var(--acid-strong); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.entry-value { max-width: 100%; color: var(--ink); font-size: 15px; font-weight: 650; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word; }
+.entry-value--link { display: inline-flex; align-items: center; gap: 9px; padding: 9px 13px; color: var(--ink); border: 1px solid var(--rule-strong); background: var(--paper-raised); text-decoration: none; transition: background-color 150ms ease, color 150ms ease, transform 150ms ease; }
+.entry-value--link:hover { color: var(--acid-ink); background: var(--acid); transform: translateY(-1px); }
+.entry-action--primary { color: var(--acid-ink); background: var(--acid); border-color: var(--acid-strong); font-weight: 800; }
+.entry-action--primary:hover { color: var(--btn-primary-label); background: var(--ink); border-color: var(--ink); }
+.entry-arrow { font-size: 16px; line-height: 1; }
+.entry-qr-frame { width: min(100%, 220px); aspect-ratio: 1; display: grid; place-items: center; align-self: center; background: var(--paper-raised); border: 1px solid var(--rule); }
+.entry-qr { display: block; width: 100%; height: 100%; object-fit: contain; }
+.entry-qr-fallback { padding: 20px; color: var(--ink-muted); font-size: 12px; line-height: 1.6; text-align: center; }
+.entry-qr-hint { align-self: center; color: var(--ink-muted); font-size: 11px; line-height: 1.4; }
+.contact-markdown-section { padding-top: 4px; border-top: 1px solid var(--rule); }
+.contact-markdown { max-width: 760px; color: var(--ink-secondary); font-size: 14px; line-height: 1.8; }
+.contact-markdown :deep(h1), .contact-markdown :deep(h2), .contact-markdown :deep(h3) { margin: 20px 0 10px; padding-bottom: 6px; color: var(--ink); border-bottom: 1px solid var(--rule); font-weight: 650; }
+.contact-markdown :deep(h1) { font-size: 20px; } .contact-markdown :deep(h2) { font-size: 17px; } .contact-markdown :deep(h3) { font-size: 15px; }
+.contact-markdown :deep(p) { margin: 0 0 12px; } .contact-markdown :deep(a) { color: var(--acid-ink); text-decoration: none; border-bottom: 1px solid var(--acid-strong); }
+.contact-markdown :deep(ul), .contact-markdown :deep(ol) { margin: 8px 0 12px; padding-left: 22px; }
+.contact-markdown :deep(li) { margin: 5px 0; } .contact-markdown :deep(img) { max-width: 100%; border: 1px solid var(--rule); }
+.contact-markdown :deep(blockquote) { margin: 12px 0; padding: 8px 14px; color: var(--ink-muted); background: var(--paper-muted); border-left: 3px solid var(--acid); }
+.contact-markdown :deep(code) { padding: 1px 5px; color: var(--ink); background: var(--paper-muted); border: 1px solid var(--rule); border-radius: 4px; }
+.contact-markdown :deep(pre) { padding: 12px 14px; overflow-x: auto; background: var(--paper-muted); border: 1px solid var(--rule); }
+.contact-markdown :deep(pre code) { padding: 0; background: none; border: none; }
+@media (max-width: 767px) { .contact-main-grid { grid-template-columns: 1fr; gap: 34px; } }
+@media (max-width: 639px) { .contact-page { padding: 20px 14px 112px; } .contact-card { gap: 30px; } .contact-hero { align-items: flex-start; flex-direction: column; gap: 18px; padding-top: 4px; } .contact-hero-note { max-width: none; } .contact-title { font-size: clamp(29px, 9vw, 40px); } .contact-subtitle { font-size: 14px; } .service-grid { grid-template-columns: 1fr; } .entry-qr-frame { width: min(100%, 200px); } }
+@media (prefers-reduced-motion: reduce) { .service-card, .entry-value--link { transition: none; } .service-card:hover, .entry-value--link:hover { transform: none; } }
 </style>
