@@ -44,42 +44,16 @@ const channels = ref<PaymentChannelAvailability[]>([])
 const selectedChannel = ref<PaymentChannel | null>(null)
 
 // 支付到账（轮询/幂等命中/回跳续单任一路径）立刻刷新用户信息：
-// 顶栏用户组与会员到期时间随之更新，无需手动刷新页面。
-// paidProfileReady 落地前成功页不渲染到期行，避免拿旧的 free 快照误导；
-// 刷新失败降级为不显示到期时间，成功页主文案不受影响。
-const paidProfileReady = ref(false)
+// 顶栏用户组与会员到期时间随之更新，无需手动刷新页面
 const { phase, order, instruction, beginCheckout, restartCheckout, resumeCheckout, disposeCheckout } =
   usePaymentCheckout({
     api: paymentApi,
     onOrderPaid: () => {
-      void authStore.fetchMe()
-        .catch((error) => {
-          console.warn('支付成功后刷新用户信息失败', error)
-        })
-        .finally(() => {
-          paidProfileReady.value = true
-        })
+      void authStore.fetchMe().catch((error) => {
+        console.warn('支付成功后刷新用户信息失败', error)
+      })
     },
   })
-
-const isPaid = computed(() => phase.value === 'paid')
-
-// 成功页到期行：与顶栏 MastheadUser 同一快照同一格式（Intl 本地化日期）；
-// NULL 到期时间 = 长期有效
-const paidExpiryText = computed(() => {
-  if (!paidProfileReady.value) return ''
-  if (authStore.user?.membership_tier !== 'member') return ''
-  const raw = authStore.user.membership_expires_at
-  if (!raw) return t('membership.checkout.paidLifetime')
-  const timestamp = Date.parse(raw)
-  if (Number.isNaN(timestamp)) return ''
-  const date = new Intl.DateTimeFormat(locale.value, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(timestamp)
-  return t('membership.checkout.paidUntil', { date })
-})
 
 const period = computed<BillingPeriod>(() =>
   route.query.plan === 'yearly' ? 'yearly' : 'monthly',
@@ -223,8 +197,8 @@ const submit = () => {
       </template>
 
       <template v-else-if="plan">
-        <!-- 订单摘要：金额只来自 plans API；支付成功后整卡切换为成功页，摘要收起 -->
-        <section v-if="!isPaid" class="checkout-summary">
+        <!-- 订单摘要：金额只来自 plans API -->
+        <section class="checkout-summary">
           <span class="checkout-plan-name">
             {{ period === 'yearly' ? t('membership.checkout.planYearly') : t('membership.checkout.planMonthly') }}
           </span>
@@ -233,8 +207,8 @@ const submit = () => {
           </span>
         </section>
 
-        <!-- 渠道选择：available=false 置灰「即将开放」；支付成功后收起 -->
-        <section v-if="!isPaid" class="checkout-channels" role="radiogroup" :aria-label="t('membership.checkout.channelTitle')">
+        <!-- 渠道选择：available=false 置灰「即将开放」 -->
+        <section class="checkout-channels" role="radiogroup" :aria-label="t('membership.checkout.channelTitle')">
           <p class="checkout-section-label">{{ t('membership.checkout.channelTitle') }}</p>
           <button
             v-for="channel in visibleChannels"
@@ -286,17 +260,12 @@ const submit = () => {
           <p v-if="order" class="checkout-order-no">{{ t('membership.checkout.orderNo') }}：{{ order.order_no }}</p>
         </section>
 
-        <!-- 终态：paid 整卡切换为支付成功页——徽标 + 到期日期（取刷新后的
-             authStore 快照，与顶栏同源）+ 订单号 + 返回会员页主行动 -->
-        <section v-else-if="isPaid" class="checkout-result checkout-result--paid">
-          <span class="checkout-success-badge" aria-hidden="true">
-            <Check :size="30" :stroke-width="2.5" />
-          </span>
+        <!-- 终态 -->
+        <section v-else-if="phase === 'paid'" class="checkout-result checkout-result--paid">
+          <Check :size="28" :stroke-width="2.5" aria-hidden="true" />
           <p class="checkout-result-title">{{ t('membership.checkout.paid') }}</p>
-          <p v-if="paidExpiryText" class="checkout-success-expiry">{{ paidExpiryText }}</p>
           <p class="checkout-note">{{ t('membership.checkout.paidHint') }}</p>
-          <p v-if="order" class="checkout-order-no">{{ t('membership.checkout.orderNo') }}：{{ order.order_no }}</p>
-          <RouterLink to="/membership" class="checkout-success-cta">{{ t('membership.checkout.backToMembership') }}</RouterLink>
+          <RouterLink to="/membership" class="checkout-back">{{ t('membership.checkout.backToMembership') }}</RouterLink>
         </section>
         <section v-else-if="phase === 'expired' || phase === 'closed' || phase === 'poll_timeout'" class="checkout-result">
           <p class="checkout-result-title">
@@ -581,46 +550,6 @@ const submit = () => {
   font-size: 15px;
   font-weight: 800;
   color: var(--ink);
-}
-
-/* 支付成功页：圆形徽标 + 到期行 + 主行动按钮（复用 submit 配方，零新增色值） */
-.checkout-success-badge {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 2px solid var(--projects-success);
-  background: var(--paper-raised);
-}
-
-.checkout-success-expiry {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-
-.checkout-success-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 11px 20px;
-  border-radius: var(--control-radius);
-  background: var(--ink);
-  color: var(--btn-primary-label);
-  border: 2px solid var(--ink);
-  font-size: 14px;
-  font-weight: 800;
-  text-decoration: none;
-  transition: background-color 150ms ease, color 150ms ease;
-}
-
-.checkout-success-cta:hover {
-  background: var(--acid);
-  color: var(--acid-ink);
 }
 
 .checkout-submit {

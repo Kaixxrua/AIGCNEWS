@@ -21,7 +21,7 @@ const overrides = {
       qrPlaceholder: '支付二维码', scanHint: '请使用对应 App「扫一扫」完成支付', redirectHint: '正在新标签页打开支付页，若未自动打开请点击下方按钮', redirectAction: '前往支付',
       expireCountdown: '订单支付有效期剩余 {time}', awaiting: '等待支付结果…', orderNo: '订单号',
       resumeHint: '已恢复待支付订单：如未完成支付，请在支付页继续；订单过期后可重新发起。',
-      paid: '支付成功，vip 已开通！', paidHint: '会员权益已生效，感谢支持。', paidUntil: '会员有效期至 {date}', paidLifetime: '会员长期有效',
+      paid: '支付成功，vip 已开通！', paidHint: '会员权益已生效，感谢支持。',
       expired: '订单已过期，请重新发起支付。', pollTimeout: '支付结果确认超时：如已完成支付，权益会稍后自动到账。', retry: '重新发起支付',
       loadFailed: '收银台暂不可用，请稍后再试或联系我们开通。', backToMembership: '返回会员页',
     },

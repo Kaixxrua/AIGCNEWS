@@ -34,18 +34,17 @@ const expiryText = computed(() => {
   return t('masthead.memberUntil', { date })
 })
 
-/* 到期时间与档位同行展示，两个空格分隔（版式要求：vip 后直接跟随，不另起一行） */
-const identityLine = computed(() => {
-  const group = t('masthead.userGroup', { tier: tierLabel.value })
-  return expiryText.value ? `${group}  ${expiryText.value}` : group
-})
+const groupLabel = computed(() => t('masthead.userGroup', { tier: tierLabel.value }))
 </script>
 
 <template>
   <div class="masthead-user">
     <template v-if="authStore.isLoggedIn">
       <span class="masthead-user__status">{{ userName }}</span>
-      <span class="masthead-user__identity">{{ identityLine }}</span>
+      <span class="masthead-user__identity">
+        <span>{{ groupLabel }}</span>
+        <span v-if="expiryText" class="masthead-user__expiry">{{ `  ${expiryText}` }}</span>
+      </span>
     </template>
     <template v-else>
       <span class="masthead-user__status">未登录</span>
@@ -79,8 +78,14 @@ const identityLine = computed(() => {
   color: var(--ink);
 }
 
-/* 到期日期内嵌于身份行，等宽数字避免逐年跳动 */
+/* 到期日期与档位保持同行，并用明确间距拉开；等宽数字避免逐年跳动 */
 .masthead-user__identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.masthead-user__expiry {
   font-variant-numeric: tabular-nums;
 }
 

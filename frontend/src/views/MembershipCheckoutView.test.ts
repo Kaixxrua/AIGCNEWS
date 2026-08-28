@@ -87,8 +87,6 @@ const i18n = createI18n({
           orderNo: '订单号',
           paid: '支付成功，vip 已开通！',
           paidHint: '会员权益已生效，感谢支持。',
-          paidUntil: '会员有效期至 {date}',
-          paidLifetime: '会员长期有效',
           expired: '订单已过期，请重新发起支付。',
           pollTimeout: '支付结果确认超时。',
           retry: '重新发起支付',
@@ -125,8 +123,6 @@ const i18n = createI18n({
           orderNo: 'Order no.',
           paid: 'Payment received — vip is active!',
           paidHint: 'Your membership is live.',
-          paidUntil: 'Membership valid until {date}',
-          paidLifetime: 'Lifetime membership — no expiry',
           expired: 'This order has expired. Please start a new payment.',
           pollTimeout: 'Payment confirmation timed out.',
           retry: 'Start a new payment',
@@ -488,65 +484,6 @@ describe('MembershipCheckoutView', () => {
     // 到账后自动拉一次 /auth/me：顶栏用户组与到期时间无需手动刷新页面即更新
     expect(wrapper.text()).toContain('支付成功，vip 已开通！')
     expect(authStore.fetchMe).toHaveBeenCalledTimes(1)
-  })
-
-  it('shows a success page with the membership expiry once the refreshed profile lands', async () => {
-    const { wrapper, authStore } = await mountView()
-    // fetchMe 桩顺带落库 member 快照：成功页到期行与顶栏同源
-    authStore.fetchMe = vi.fn().mockImplementation(async () => {
-      authStore.user = {
-        user_id: 3,
-        email: 'vip@example.com',
-        role: 'user',
-        membership_tier: 'member',
-        membership_expires_at: '2027-08-28T06:27:08+00:00',
-      }
-    })
-    await wrapper.find('.checkout-submit').trigger('click')
-    await flushPromises()
-    await vi.advanceTimersByTimeAsync(3000)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('支付成功，vip 已开通！')
-    expect(wrapper.text()).toContain('会员有效期至 2027/08/28')
-    expect(wrapper.text()).toContain(paidOrder.order_no)
-    // 成功页整卡替换：订单摘要与渠道选择收起，主行动是返回会员页
-    expect(wrapper.find('.checkout-summary').exists()).toBe(false)
-    expect(wrapper.find('.checkout-channels').exists()).toBe(false)
-    expect(wrapper.find('.checkout-success-cta').exists()).toBe(true)
-  })
-
-  it('shows lifetime validity on the success page for lifetime members', async () => {
-    const { wrapper, authStore } = await mountView()
-    authStore.fetchMe = vi.fn().mockImplementation(async () => {
-      authStore.user = {
-        user_id: 3,
-        email: 'vip@example.com',
-        role: 'user',
-        membership_tier: 'member',
-        membership_expires_at: null,
-      }
-    })
-    await wrapper.find('.checkout-submit').trigger('click')
-    await flushPromises()
-    await vi.advanceTimersByTimeAsync(3000)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('会员长期有效')
-    expect(wrapper.text()).not.toContain('会员有效期至')
-  })
-
-  it('still renders the success page without the expiry line when the profile refresh fails', async () => {
-    const { wrapper, authStore } = await mountView()
-    authStore.fetchMe = vi.fn().mockRejectedValue(new Error('network down'))
-    await wrapper.find('.checkout-submit').trigger('click')
-    await flushPromises()
-    await vi.advanceTimersByTimeAsync(3000)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('支付成功，vip 已开通！')
-    expect(wrapper.text()).toContain('会员权益已生效，感谢支持。')
-    expect(wrapper.text()).not.toContain('会员有效期至')
   })
 
   it('shows the expired state with a restart action when the order expires', async () => {
