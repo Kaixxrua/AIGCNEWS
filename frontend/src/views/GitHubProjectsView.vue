@@ -195,6 +195,9 @@ const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
 const websiteQuotaExhausted = computed(() => websiteQuota.value?.unlimited === false && websiteQuota.value.remaining === 0)
+// 普通用户的常态提示为带 VIP 跳转的引导文案；其余状态（加载中/会员不限量/
+// 额度耗尽）仍是纯文本，websiteQuotaHint 同时供按钮 title 使用。
+const websiteQuotaUpsellActive = computed(() => websiteQuota.value?.unlimited === false && (websiteQuota.value.remaining ?? 0) > 0)
 const websiteQuotaHint = computed(() => {
   if (websiteQuotaLoading.value && !websiteQuota.value) return t('projects.websiteQuotaLoading')
   if (!websiteQuota.value) return ''
@@ -205,7 +208,7 @@ const websiteQuotaHint = computed(() => {
       : ''
     return t('projects.websiteQuotaExhausted', { time: resetAt })
   }
-  return t('projects.websiteQuotaRemaining', { count: websiteQuota.value.remaining })
+  return `${t('projects.websiteQuotaFreeUpsell')}VIP`
 })
 const hasActiveFilter = computed(() => selectedScope.value !== 'all' || selectedCategory.value !== 'all' || selectedSubcategory.value !== 'all' || !!selectedLanguage.value || !!selectedTag.value)
 
@@ -435,7 +438,13 @@ onBeforeUnmount(stopViewReads)
 
       <div v-if="isWebsiteOnlyView && !requiresPersonalLogin" class="projects-hero__side">
         <div class="projects-website-add">
-          <span v-if="websiteQuotaHint" class="projects-website-add__quota">{{ websiteQuotaHint }}</span>
+          <span v-if="websiteQuotaHint" class="projects-website-add__quota">
+            <template v-if="websiteQuotaUpsellActive">
+              {{ t('projects.websiteQuotaFreeUpsell') }}
+              <RouterLink to="/membership" class="projects-website-add__vip">VIP</RouterLink>
+            </template>
+            <template v-else>{{ websiteQuotaHint }}</template>
+          </span>
           <button
             type="button"
             class="projects-add-btn"
@@ -751,6 +760,17 @@ onBeforeUnmount(stopViewReads)
   font-size: 11px;
   line-height: 1.35;
   text-align: right;
+}
+
+.projects-website-add__vip {
+  color: var(--projects-accent);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.projects-website-add__vip:hover {
+  background: var(--projects-acid-soft);
 }
 
 .projects-add-btn {

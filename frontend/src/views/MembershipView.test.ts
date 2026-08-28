@@ -54,7 +54,7 @@ const i18n = createI18n({
           currentPlan: '当前默认方案',
           features: {
             mcpFree: 'MCP/API 共用 1,200 次/30 天滚动窗口 + 60 次/天',
-            websiteFree: '滚动 24 小时最多添加 5 个个人网页收藏',
+            websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏',
             briefingFree: '简报订阅 1 个日报模块',
             rssFree: 'RSS 公开摘要订阅（近 48 小时）',
             rssFull: 'RSS 中文译文、全文与 7 天完整归档',
@@ -140,7 +140,7 @@ describe('MembershipView', () => {
     expect(text).toContain('MCP 匿名调用 30 次/天')
     expect(text).toContain('MCP/API 共用 1,200 次/30 天滚动窗口 + 60 次/天')
     expect(text).toContain('MCP/API 共用 8,000 次/30 天滚动窗口 + 400 次/天')
-    expect(text).toContain('滚动 24 小时最多添加 5 个个人网页收藏')
+    expect(text).toContain('滚动 24 小时最多添加 3 个个人网页收藏')
     expect(text).toContain('个人网页收藏添加不限量')
     expect(text).toContain('简报订阅 1 个日报模块')
     expect(text).toContain('简报订阅全部 8 个模块')

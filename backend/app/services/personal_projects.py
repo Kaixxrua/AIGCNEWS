@@ -47,13 +47,13 @@ class WebsiteContentBlockedError(PersonalProjectsError):
     """The website was rejected by adult-content moderation."""
 
 
-PERSONAL_WEBSITE_FREE_LIMIT = 5
+PERSONAL_WEBSITE_FREE_LIMIT = 3
 PERSONAL_WEBSITE_QUOTA_WINDOW_SECONDS = 86400
 
 
 class PersonalWebsiteQuotaExceeded(PersonalProjectsError):
     def __init__(self, quota: dict[str, Any]) -> None:
-        super().__init__("免费用户滚动 24 小时内最多添加 5 个网页收藏，开通会员后不限量。")
+        super().__init__(f"免费用户滚动 24 小时内最多添加 {PERSONAL_WEBSITE_FREE_LIMIT} 个网页收藏，开通会员后不限量。")
         self.quota = quota
 
 

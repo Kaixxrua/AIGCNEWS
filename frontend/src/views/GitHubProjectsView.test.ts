@@ -74,6 +74,8 @@ vi.mock('@/composables/useProjectCatalogController', async () => {
     taxonomy: ref([]),
     taxonomyLoading: ref(false),
     total: ref(0),
+    websiteQuota: ref(null),
+    websiteQuotaLoading: ref(false),
     loadCategories: vi.fn(),
     loadProjects: vi.fn(),
     loadTaxonomy: vi.fn(),
@@ -145,6 +147,8 @@ const refDefaults: Record<string, unknown> = {
   taxonomy: [],
   taxonomyLoading: false,
   total: 0,
+  websiteQuota: null,
+  websiteQuotaLoading: false,
 }
 
 const websiteRepo = (patch: Partial<GitHubProjectItem> = {}): GitHubProjectItem => ({
@@ -358,6 +362,29 @@ describe('GitHubProjectsView dialog orchestration', () => {
     await switchToWebsiteSource(wrapper)
 
     expect(wrapper.find('.projects-home-btn').exists()).toBe(false)
+  })
+
+  it('shows free users the upsell copy with a VIP link to the membership page', async () => {
+    controller().websiteQuota.value = { unlimited: false, limit: 3, used: 1, remaining: 2, window_seconds: 86400, reset_at: null }
+    const wrapper = await mountView()
+    await switchToWebsiteSource(wrapper)
+
+    const quota = wrapper.find('.projects-website-add__quota')
+    expect(quota.text()).toContain('projects.websiteQuotaFreeUpsell')
+    const vipLink = quota.find('a.projects-website-add__vip')
+    expect(vipLink.exists()).toBe(true)
+    expect(vipLink.text()).toBe('VIP')
+    expect(vipLink.attributes('href')).toBe('/membership')
+  })
+
+  it('shows members the unlimited copy without the VIP upsell link', async () => {
+    controller().websiteQuota.value = { unlimited: true, limit: null, used: 0, remaining: null, window_seconds: 86400, reset_at: null }
+    const wrapper = await mountView()
+    await switchToWebsiteSource(wrapper)
+
+    const quota = wrapper.find('.projects-website-add__quota')
+    expect(quota.text()).toContain('projects.websiteQuotaUnlimited')
+    expect(quota.find('a.projects-website-add__vip').exists()).toBe(false)
   })
 
   it('opens the login prompt for anonymous add attempts instead of leaving the page', async () => {

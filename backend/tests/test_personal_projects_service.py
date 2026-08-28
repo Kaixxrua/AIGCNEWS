@@ -96,7 +96,7 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
             website_id=42,
             added_via="existing",
             quota_enabled=True,
-            quota_limit=5,
+            quota_limit=3,
             quota_window_seconds=86400,
         )
 
@@ -121,7 +121,7 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_website_quota_projection_reports_remaining(self) -> None:
         self.collection.get_personal_website_quota_usage.return_value = {
-            "used": 3,
+            "used": 1,
             "reset_at": "2026-08-19T00:00:00+00:00",
         }
 
@@ -163,7 +163,7 @@ class PersonalProjectsServiceTests(unittest.IsolatedAsyncioTestCase):
             website_id=42,
             added_via="existing",
             quota_enabled=True,
-            quota_limit=5,
+            quota_limit=3,
             quota_window_seconds=86400,
         )
         collection.get_tool_website_item_for_user.assert_called_once_with(
