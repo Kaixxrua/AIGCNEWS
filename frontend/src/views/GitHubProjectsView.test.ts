@@ -8,7 +8,6 @@ import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
-import BrowserHomeGuideDialog from '@/components/projects/BrowserHomeGuideDialog.vue'
 import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
@@ -354,21 +353,11 @@ describe('GitHubProjectsView dialog orchestration', () => {
     expect(wrapper.findComponent(ToolWebsiteAddDialog).props('open')).toBe(false)
   })
 
-  it('opens the browser-home guide from the website view and closes it via the close event', async () => {
+  it('the website view has no browser-home guide entry', async () => {
     const wrapper = await mountView()
     await switchToWebsiteSource(wrapper)
 
-    const guideButton = wrapper.find('.projects-home-btn')
-    expect(guideButton.exists()).toBe(true)
-    await guideButton.trigger('click')
-    await nextTick()
-
-    const dialog = wrapper.findComponent(BrowserHomeGuideDialog)
-    expect(dialog.props('open')).toBe(true)
-
-    dialog.vm.$emit('close')
-    await nextTick()
-    expect(wrapper.findComponent(BrowserHomeGuideDialog).props('open')).toBe(false)
+    expect(wrapper.find('.projects-home-btn').exists()).toBe(false)
   })
 
   it('opens the login prompt for anonymous add attempts instead of leaving the page', async () => {
@@ -474,16 +463,19 @@ describe('GitHubProjectsView MCP guidance', () => {
   it('uses source-aware hero labels and keeps the MCP promo public-only', async () => {
     const wrapper = await mountView()
     expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroLibraryKicker')
+    expect(wrapper.find('.projects-hero h1').text()).toBe('projects.pageTitle')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(true)
 
     wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
     await nextTick()
     expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroWebsiteKicker')
+    expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
 
     wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'favorites')
     await nextTick()
     expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroFavoritesKicker')
+    expect(wrapper.find('.projects-hero h1').text()).toBe('projects.pageTitle')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
   })
 
