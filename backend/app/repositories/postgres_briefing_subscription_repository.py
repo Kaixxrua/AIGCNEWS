@@ -49,9 +49,11 @@ class PostgresBriefingSubscriptionRepository:
         self,
         user_id: int,
         source: str = "all",
+        *,
+        connection: Any | None = None,
     ) -> bool:
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
+        def _execute(conn: Any) -> bool:
+            with conn.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE briefing_subscriptions
@@ -61,6 +63,11 @@ class PostgresBriefingSubscriptionRepository:
                     (user_id, source, _DAILY_PERIOD),
                 )
                 return cursor.rowcount > 0
+
+        if connection is not None:
+            return _execute(connection)
+        with self._database.transaction() as connection:
+            return _execute(connection)
 
     def get_user_briefing_subscriptions(
         self,

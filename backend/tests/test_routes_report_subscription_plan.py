@@ -190,6 +190,54 @@ class TestSubscriptionPlanRoute:
         assert exc_info.value.status_code == 422
         assert exc_info.value.detail == "bad request"
 
+    def test_apply_plan_endpoint_passes_sync_flag(self) -> None:
+        service = MagicMock(spec=ReportSubscriptionPlanService)
+        service.apply_plan.return_value = {
+            "sources": [],
+            "deliveries": [],
+            "removed_sources": ["github"],
+            "idempotency_key": None,
+        }
+        body = routes_report.SubscriptionPlanRequest(
+            sources=[],
+            deliveries=[],
+            sync=True,
+        )
+
+        result = _run(
+            routes_report.apply_subscription_plan(
+                body=body,
+                user={"user_id": 7, "email": "reader@example.com"},
+                service=service,
+            )
+        )
+
+        assert result["removed_sources"] == ["github"]
+        assert service.apply_plan.call_args.kwargs["sync"] is True
+
+    def test_apply_plan_endpoint_sync_defaults_to_false(self) -> None:
+        service = MagicMock(spec=ReportSubscriptionPlanService)
+        service.apply_plan.return_value = {
+            "sources": ["github"],
+            "deliveries": [],
+            "removed_sources": [],
+            "idempotency_key": None,
+        }
+        body = routes_report.SubscriptionPlanRequest(
+            sources=["github"],
+            deliveries=[routes_report.PlanDeliveryRequest(kind="account_email")],
+        )
+
+        _run(
+            routes_report.apply_subscription_plan(
+                body=body,
+                user={"user_id": 7, "email": "reader@example.com"},
+                service=service,
+            )
+        )
+
+        assert service.apply_plan.call_args.kwargs["sync"] is False
+
 
 class TestSubscriptionPlanRouteOrder:
     """字面量路由 subscription-plan 必须优先于 /report/{briefing_id}（int 路径参数）。

@@ -91,9 +91,10 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
         user_id: int,
         subscription_id: int,
         status: str,
+        connection: Any | None = None,
     ) -> bool:
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
+        def _execute(conn: Any) -> bool:
+            with conn.cursor() as cursor:
                 cursor.execute(
                     """
                     UPDATE user_subscriptions
@@ -104,9 +105,20 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
                 )
                 return cursor.rowcount > 0
 
-    def delete_subscription(self, *, user_id: int, subscription_id: int) -> bool:
+        if connection is not None:
+            return _execute(connection)
         with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
+            return _execute(connection)
+
+    def delete_subscription(
+        self,
+        *,
+        user_id: int,
+        subscription_id: int,
+        connection: Any | None = None,
+    ) -> bool:
+        def _execute(conn: Any) -> bool:
+            with conn.cursor() as cursor:
                 cursor.execute(
                     """
                     DELETE FROM user_subscriptions
@@ -115,6 +127,11 @@ class PostgresUserSubscriptionRepository(UserSubscriptionRepository):
                     (user_id, subscription_id),
                 )
                 return cursor.rowcount > 0
+
+        if connection is not None:
+            return _execute(connection)
+        with self._database.transaction() as connection:
+            return _execute(connection)
 
     def list_active_dispatchable(self, *, frequency: str) -> list[dict[str, Any]]:
         with self._database.transaction() as connection:

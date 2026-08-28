@@ -36,10 +36,17 @@ class UserSubscriptionRepository(Protocol):
         user_id: int,
         subscription_id: int,
         status: str,
+        connection: Any | None = None,
     ) -> bool:
         ...
 
-    def delete_subscription(self, *, user_id: int, subscription_id: int) -> bool:
+    def delete_subscription(
+        self,
+        *,
+        user_id: int,
+        subscription_id: int,
+        connection: Any | None = None,
+    ) -> bool:
         ...
 
     def list_active_dispatchable(self, *, frequency: str) -> list[dict[str, Any]]:

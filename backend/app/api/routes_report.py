@@ -290,6 +290,9 @@ class SubscriptionPlanRequest(BaseModel):
     deliveries: list[PlanDeliveryRequest]
     frequency: str = "daily"
     idempotency_key: str | None = None
+    # sync=True：把订阅同步为 sources × deliveries 的笛卡尔积，未选中的活跃
+    # 订阅在同事务移除；双空表示全部退订。默认 False 保持旧增量契约。
+    sync: bool = False
 
 
 class PlanAppliedDelivery(BaseModel):
@@ -302,6 +305,7 @@ class PlanAppliedDelivery(BaseModel):
 class SubscriptionPlanApplyResponse(BaseModel):
     sources: list[str]
     deliveries: list[PlanAppliedDelivery]
+    removed_sources: list[str] = []
     idempotency_key: str | None = None
 
 
@@ -389,6 +393,7 @@ async def apply_subscription_plan(
                 for d in body.deliveries
             ],
             idempotency_key=body.idempotency_key,
+            sync=body.sync,
         )
     except Exception as exc:
         mapped = _map_subscription_plan_error(exc)

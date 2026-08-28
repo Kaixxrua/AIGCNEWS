@@ -50,6 +50,8 @@ class BriefingSubscriptionWriter(Protocol):
         self,
         user_id: int,
         source: str = "all",
+        *,
+        connection: Any | None = None,
     ) -> bool: ...
 
 

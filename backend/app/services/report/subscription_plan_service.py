@@ -15,7 +15,6 @@ from backend.app.repositories.push_channel_repository import PushChannelReposito
 from backend.app.repositories.user_subscription_repository import UserSubscriptionRepository
 from backend.app.services.membership.subscription_quota import (
     SubscriptionQuotaExceededError,
-    collect_active_daily_sources,
     ensure_subscription_quota,
 )
 from backend.app.services.membership.tiers import (
@@ -89,10 +88,29 @@ class ReportSubscriptionPlanService:
         self._push_channels = push_channels
 
     def get_plan(self, *, user: dict[str, Any], user_id: int) -> dict[str, Any]:
-        """返回当前用户可选的 source/delivery 能力与活跃状态（不含 RSS token）。"""
+        """返回当前用户可选的 source/delivery 能力与活跃状态（不含 RSS token）。
+
+        capability.active 供前端向导预选：account_email 有活跃简报订阅、
+        push_channel 有活跃订阅时为 True；RSS 无服务端记录，恒为 False。
+        """
         can_select_multiple = self._can_select_multiple_sources(user)
-        active_sources = self._collect_active_sources(user_id)
-        capabilities = self._build_delivery_capabilities(user_id)
+        briefing_rows = self._briefing_subscriptions.get_user_briefing_subscriptions(
+            user_id
+        )
+        push_rows = self._user_subscriptions.list_subscriptions(user_id)
+        active_sources = self._collect_active_sources_from_rows(
+            briefing_rows, push_rows
+        )
+        active_push_channel_ids = {
+            int(row["channel_id"])
+            for row in push_rows
+            if row.get("status") == "active"
+        }
+        capabilities = self._build_delivery_capabilities(
+            user_id,
+            account_email_active=bool(briefing_rows),
+            active_push_channel_ids=active_push_channel_ids,
+        )
         return {
             "can_select_multiple_sources": can_select_multiple,
             "max_sources": 8 if can_select_multiple else 1,
@@ -109,28 +127,58 @@ class ReportSubscriptionPlanService:
         sources: list[str],
         deliveries: list[DeliveryTarget],
         idempotency_key: str | None = None,
+        sync: bool = False,
     ) -> dict[str, Any]:
-        """一次性应用 source 集合与 delivery 集合；失败时事务回滚、零写入。"""
-        normalized_sources = self._normalize_sources(sources)
-        if not normalized_sources:
-            raise InvalidSubscriptionPlanError("请选择至少一个有效订阅领域")
+        """一次性应用 source 集合与 delivery 集合；失败时事务回滚、零写入。
 
+        sync=False（默认，旧契约）：纯增量，只新增/幂等跳过，不做任何移除。
+        sync=True：把用户日报订阅同步为「sources × deliveries」的笛卡尔积——
+        未选中的活跃 source/渠道订阅在同一事务内移除（briefing 软取消、
+        user_subscriptions 硬删，与既有 unsubscribe/delete 路由语义一致），
+        期望对中的 paused 行恢复为 active。sources 与 deliveries 同时为空表示
+        全部退订；仅一边为空语义含混，拒绝。quota 按移除后的最终集合校验，
+        免费档换模块（A→B）不被存量误伤。
+        """
+        normalized_sources = self._normalize_sources(sources)
         normalized_deliveries = self._normalize_deliveries(deliveries)
-        if not normalized_deliveries:
-            raise InvalidSubscriptionPlanError("请选择至少一种投递方式")
+
+        if sync:
+            if bool(normalized_sources) != bool(normalized_deliveries):
+                raise InvalidSubscriptionPlanError(
+                    "同步模式下订阅领域与投递方式需同时为空（全部退订）或同时非空"
+                )
+        else:
+            if not normalized_sources:
+                raise InvalidSubscriptionPlanError("请选择至少一个有效订阅领域")
+            if not normalized_deliveries:
+                raise InvalidSubscriptionPlanError("请选择至少一种投递方式")
 
         if not self._can_select_multiple_sources(user) and len(normalized_sources) > 1:
             raise SubscriptionQuotaExceededError(
                 "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块"
             )
 
-        # 预加载渠道与现有订阅，用于校验与幂等去重
+        # 预加载渠道与现有订阅，用于校验、幂等去重与 sync 移除
         channels_by_id = self._load_channels(user_id)
-        active_push_subscriptions = self._load_active_push_subscriptions(user_id)
-        active_sources = self._collect_active_sources(user_id)
+        briefing_rows = self._briefing_subscriptions.get_user_briefing_subscriptions(
+            user_id
+        )
+        push_rows = self._user_subscriptions.list_subscriptions(user_id)
+        active_sources = self._collect_active_sources_from_rows(
+            briefing_rows, push_rows
+        )
+        active_push_subscriptions = {
+            (str(row["source"]), int(row["channel_id"]))
+            for row in push_rows
+            if row.get("status") == "active"
+        }
+        existing_push_pairs = {
+            (str(row["source"]), int(row["channel_id"])) for row in push_rows
+        }
 
         has_account_email = False
         rss_feed: str | None = None
+        selected_push_channel_ids: list[int] = []
         push_targets: list[tuple[str, int]] = []
 
         for delivery in normalized_deliveries:
@@ -149,19 +197,38 @@ class ReportSubscriptionPlanService:
                     )
                 channel = channels_by_id.get(channel_id)
                 self._validate_channel_for_subscription(channel, user)
+                selected_push_channel_ids.append(channel_id)
                 for source in normalized_sources:
-                    if (source, channel_id) not in active_push_subscriptions:
+                    # sync 模式按「无任何存量行」判定新增（paused 行稍后恢复），
+                    # 增量模式维持旧语义：仅跳过已活跃对。
+                    known_pairs = (
+                        existing_push_pairs if sync else active_push_subscriptions
+                    )
+                    if (source, channel_id) not in known_pairs:
                         push_targets.append((source, channel_id))
             else:
                 raise InvalidSubscriptionPlanError(
                     f"不支持的投递方式: {delivery.kind}"
                 )
 
-        # 跨体系 quota 校验（admin 在 ensure_subscription_quota 内豁免）
+        # 跨体系 quota 校验（admin 在 ensure_subscription_quota 内豁免）；
+        # sync 模式先扣除将被移除的存量，按最终集合校验，免费档换模块不被误伤。
+        desired_source_set = set(normalized_sources)
         ensure_subscription_quota(
             tier=str(user.get("membership_tier") or "free"),
-            active_sources=active_sources,
-            adding_sources=set(normalized_sources),
+            active_sources=(
+                active_sources & desired_source_set if sync else active_sources
+            ),
+            adding_sources=desired_source_set,
+        )
+
+        desired_push_pairs = {
+            (source, channel_id)
+            for source in normalized_sources
+            for channel_id in selected_push_channel_ids
+        }
+        removed_sources = (
+            active_sources - desired_source_set if sync else set()
         )
 
         applied: list[AppliedDelivery] = []
@@ -180,6 +247,17 @@ class ReportSubscriptionPlanService:
                     else "applied"
                 )
                 applied.append(AppliedDelivery(kind="account_email", status=status))
+
+            if sync:
+                self._apply_sync_removals(
+                    user_id=user_id,
+                    briefing_rows=briefing_rows,
+                    push_rows=push_rows,
+                    keep_briefing=has_account_email,
+                    desired_source_set=desired_source_set,
+                    desired_push_pairs=desired_push_pairs,
+                    connection=connection,
+                )
 
             if rss_feed:
                 applied.append(
@@ -218,8 +296,52 @@ class ReportSubscriptionPlanService:
                 }
                 for d in applied
             ],
+            "removed_sources": sorted(removed_sources),
             "idempotency_key": idempotency_key,
         }
+
+    def _apply_sync_removals(
+        self,
+        *,
+        user_id: int,
+        briefing_rows: list[dict[str, Any]],
+        push_rows: list[dict[str, Any]],
+        keep_briefing: bool,
+        desired_source_set: set[str],
+        desired_push_pairs: set[tuple[str, int]],
+        connection: Any,
+    ) -> None:
+        """sync 模式的移除与恢复：在调用方事务内执行。
+
+        briefing：未选中 source 的活跃行软取消；未选 account_email 时全部取消。
+        push：不在期望对中的行（含 paused）硬删，与既有 delete 路由语义一致；
+        期望对中的 paused 行恢复为 active——向导勾选即「我要它生效」。
+        """
+        for row in briefing_rows:
+            source = str(row.get("source") or "")
+            if not source:
+                continue
+            if not keep_briefing or source not in desired_source_set:
+                self._briefing_subscriptions.cancel_briefing_subscription(
+                    user_id=user_id,
+                    source=source,
+                    connection=connection,
+                )
+        for row in push_rows:
+            pair = (str(row.get("source") or ""), int(row["channel_id"]))
+            if pair not in desired_push_pairs:
+                self._user_subscriptions.delete_subscription(
+                    user_id=user_id,
+                    subscription_id=int(row["id"]),
+                    connection=connection,
+                )
+            elif row.get("status") != "active":
+                self._user_subscriptions.set_subscription_status(
+                    user_id=user_id,
+                    subscription_id=int(row["id"]),
+                    status="active",
+                    connection=connection,
+                )
 
     @staticmethod
     def _can_select_multiple_sources(user: dict[str, Any]) -> bool:
@@ -233,12 +355,23 @@ class ReportSubscriptionPlanService:
             == MEMBERSHIP_TIER_MEMBER
         )
 
-    def _collect_active_sources(self, user_id: int) -> set[str]:
-        return collect_active_daily_sources(
-            briefing_subscriptions=self._briefing_subscriptions,
-            user_subscriptions=self._user_subscriptions,
-            user_id=user_id,
+    @staticmethod
+    def _collect_active_sources_from_rows(
+        briefing_rows: list[dict[str, Any]],
+        push_rows: list[dict[str, Any]],
+    ) -> set[str]:
+        """跨体系合计活跃日报模块；口径与 subscription_quota.collect_active_daily_sources 一致。"""
+        sources = {
+            str(row["source"]) for row in briefing_rows if row.get("source")
+        }
+        sources.update(
+            str(row["source"])
+            for row in push_rows
+            if row.get("source")
+            and row.get("status") == "active"
+            and row.get("frequency", "daily") == "daily"
         )
+        return sources
 
     def _normalize_sources(self, sources: list[str]) -> list[str]:
         seen: set[str] = set()
@@ -264,13 +397,6 @@ class ReportSubscriptionPlanService:
     def _load_channels(self, user_id: int) -> dict[int, dict[str, Any]]:
         return {channel["id"]: channel for channel in self._push_channels.list_channels(user_id)}
 
-    def _load_active_push_subscriptions(self, user_id: int) -> set[tuple[str, int]]:
-        return {
-            (str(row["source"]), int(row["channel_id"]))
-            for row in self._user_subscriptions.list_subscriptions(user_id)
-            if row.get("status") == "active"
-        }
-
     def _validate_channel_for_subscription(
         self, channel: dict[str, Any] | None, user: dict[str, Any]
     ) -> None:
@@ -291,12 +417,20 @@ class ReportSubscriptionPlanService:
         if channel.get("status") != CHANNEL_STATUS_ACTIVE:
             raise PushChannelDisabledError("推送渠道已停用")
 
-    def _build_delivery_capabilities(self, user_id: int) -> list[dict[str, Any]]:
+    def _build_delivery_capabilities(
+        self,
+        user_id: int,
+        *,
+        account_email_active: bool = False,
+        active_push_channel_ids: set[int] | None = None,
+    ) -> list[dict[str, Any]]:
         """构造前端可用的 delivery 能力列表；RSS/注册邮箱始终可见，机器人仅来自已验证渠道。
 
         微信、飞书作为明确不可用项返回，让 UI 以灰色展示并附带原因；
-        服务端同样 fail-closed，不依赖前端灰度。
+        服务端同样 fail-closed，不依赖前端灰度。active 标记供向导预选
+        当前已生效的投递方式（RSS 无服务端记录，恒为 False）。
         """
+        active_push_channel_ids = active_push_channel_ids or set()
         capabilities: list[dict[str, Any]] = [
             {
                 "kind": "rss",
@@ -304,12 +438,14 @@ class ReportSubscriptionPlanService:
                 "feed": "briefing",
                 "selectable": True,
                 "disabled_reason": None,
+                "active": False,
             },
             {
                 "kind": "account_email",
                 "key": "account-email",
                 "selectable": True,
                 "disabled_reason": None,
+                "active": account_email_active,
             },
         ]
 
@@ -334,6 +470,7 @@ class ReportSubscriptionPlanService:
                     "status": channel.get("status"),
                     "selectable": selectable,
                     "disabled_reason": disabled_reason,
+                    "active": channel["id"] in active_push_channel_ids,
                 }
             )
 
@@ -348,6 +485,7 @@ class ReportSubscriptionPlanService:
                     "status": "coming_soon",
                     "selectable": False,
                     "disabled_reason": "暂未开放",
+                    "active": False,
                 }
             )
 
