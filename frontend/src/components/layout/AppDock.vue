@@ -16,13 +16,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   login: []
   logout: []
-  changePassword: []
+  accountSettings: []
 }>()
 
 const { t } = useI18n()
 const hoveredNav = ref<string | null>(null)
 const hoveredAuth = ref(false)
-const hoveredChangePwd = ref(false)
+const hoveredAccountSettings = ref(false)
 </script>
 
 <template>
@@ -75,25 +75,23 @@ const hoveredChangePwd = ref(false)
         <span v-if="hoveredAuth" class="dock-label">{{ t('navigation.loginAccount') }}</span>
       </Transition>
     </button>
-    <!-- 已登录：改密（钥匙）+ 登出（红色）按钮 -->
+    <!-- 已登录：账户设置（齿轮）+ 登出（红色）按钮 -->
     <template v-else>
       <button
-        class="dock-item dock-item--change-pwd"
-        :aria-label="t('navigation.changePassword')"
-        @click="emit('changePassword')"
-        @mouseenter="hoveredChangePwd = true"
-        @mouseleave="hoveredChangePwd = false"
+        class="dock-item dock-item--account-settings"
+        :aria-label="t('navigation.accountSettings')"
+        @click="emit('accountSettings')"
+        @mouseenter="hoveredAccountSettings = true"
+        @mouseleave="hoveredAccountSettings = false"
       >
         <span class="dock-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="8" cy="15" r="4"/>
-            <path d="M10.85 12.15 21 2"/>
-            <path d="m15 8 3 3"/>
-            <path d="m18 5 3 3"/>
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21v-1a6 6 0 016-6h4a6 6 0 016 6v1"/>
           </svg>
         </span>
         <Transition name="dock-label">
-          <span v-if="hoveredChangePwd" class="dock-label">{{ t('navigation.changePassword') }}</span>
+          <span v-if="hoveredAccountSettings" class="dock-label">{{ t('navigation.accountSettings') }}</span>
         </Transition>
       </button>
       <button
@@ -254,8 +252,8 @@ const hoveredChangePwd = ref(false)
   transform: translateY(-2px);
 }
 
-.dock-item--change-pwd { color: var(--ink-muted); }
-.dock-item--change-pwd:hover {
+.dock-item--account-settings { color: var(--ink-muted); }
+.dock-item--account-settings:hover {
   color: var(--ink);
   background: var(--acid-soft);
   transform: translateY(-2px);

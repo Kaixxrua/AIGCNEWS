@@ -7,6 +7,19 @@ from backend.app.core.auth import hash_password
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.oauth_identity_repository import OAuthLoginResolution
 
+# users.username 字段上限（VARCHAR(64)）
+_USERNAME_MAX_LENGTH = 64
+
+
+def _resolve_oauth_username(username: str, display_email: str | None) -> str:
+    """OAuth 首次建号的初始 username：provider 用户名 → provider 邮箱 → 空串。
+
+    仅用于新用户 INSERT；已有用户的 username 永不被本路径覆盖。
+    超长输入按字段上限截断（provider 数据不可信，避免 INSERT 报错回滚）。
+    """
+    resolved = (username or "").strip() or (display_email or "").strip()
+    return resolved[:_USERNAME_MAX_LENGTH]
+
 
 class PostgresOAuthIdentityRepository:
     """Transactional PostgreSQL persistence for OAuth identities and users."""
@@ -106,7 +119,7 @@ class PostgresOAuthIdentityRepository:
                         """,
                         (
                             account_email,
-                            username,
+                            _resolve_oauth_username(username, display_email),
                             unusable_hash,
                             account_verified,
                         ),
@@ -219,7 +232,12 @@ class PostgresOAuthIdentityRepository:
                     RETURNING id, email, role, disabled, pwd_ver,
                               membership_tier, membership_expires_at
                     """,
-                    (account_email, username, unusable_hash, account_verified),
+                    (
+                        account_email,
+                        _resolve_oauth_username(username, display_email),
+                        unusable_hash,
+                        account_verified,
+                    ),
                 )
                 user = cursor.fetchone()
                 if user is None:

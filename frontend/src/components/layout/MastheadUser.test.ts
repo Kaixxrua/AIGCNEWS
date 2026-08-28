@@ -6,7 +6,7 @@ import i18n, { setAppLocale } from '@/i18n'
 /* authStore 以 hoisted 盒子桩化：直控登录态与档位，绕过 pinia/token 存储。 */
 const authBox = vi.hoisted(() => ({
   isLoggedIn: false,
-  user: null as null | { email: string; membership_tier?: 'free' | 'member'; membership_expires_at?: string | null },
+  user: null as null | { email: string; username?: string | null; membership_tier?: 'free' | 'member'; membership_expires_at?: string | null },
 }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
@@ -54,6 +54,26 @@ describe('MastheadUser', () => {
 
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader@example.com')
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
+  })
+
+  it('prefers a non-empty username over the account email', () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'reader@example.com', username: '读者甲', membership_tier: 'free' }
+    const host = mountMastheadUser()
+
+    expect(host.querySelector('.masthead-user__status')?.textContent).toBe('读者甲')
+  })
+
+  it('falls back to the email when the username is null, empty, or blank', () => {
+    for (const username of [null, '', '   ']) {
+      authBox.isLoggedIn = true
+      authBox.user = { email: 'reader@example.com', username, membership_tier: 'free' }
+      const host = mountMastheadUser()
+
+      expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader@example.com')
+      unmount?.()
+      unmount = undefined
+    }
   })
 
   it('labels member-tier accounts as vip with the lifetime suffix on the same line', () => {

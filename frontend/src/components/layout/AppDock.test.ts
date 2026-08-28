@@ -64,3 +64,47 @@ describe('AppDock enrichment alert dot', () => {
     expect(host.querySelector('a[href="/projects"]')?.getAttribute('aria-current')).toBeNull()
   })
 })
+
+describe('AppDock account settings entry', () => {
+  afterEach(() => {
+    unmount?.()
+    unmount = undefined
+  })
+
+  it('renders the account-settings button for logged-in users and emits accountSettings on click', () => {
+    setAppLocale('zh-CN')
+    const events: string[] = []
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    // createApp 场景下 emit 侦听器以 on<Emit> prop 传入
+    const app = createApp(AppDock, {
+      items: NAV_ITEMS,
+      currentPath: '/',
+      currentQuery: {},
+      isAdmin: true,
+      isLoggedIn: true,
+      alertItems: [],
+      onAccountSettings: () => events.push('accountSettings'),
+    })
+    app.use(i18n)
+    app.component('RouterLink', {
+      inheritAttrs: true,
+      props: ['to'],
+      template: '<a :href="to"><slot /></a>',
+    })
+    app.mount(host)
+    unmount = () => { app.unmount(); host.remove() }
+
+    const button = host.querySelector('button[aria-label="账户设置"]') as HTMLButtonElement | null
+    expect(button).not.toBeNull()
+    button!.click()
+    expect(events).toEqual(['accountSettings'])
+  })
+
+  it('labels the entry in English under the en-US locale', () => {
+    setAppLocale('en-US')
+    const host = mountDock()
+
+    expect(host.querySelector('button[aria-label="Account settings"]')).not.toBeNull()
+  })
+})

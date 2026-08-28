@@ -14,10 +14,11 @@ const messages = {
   common: { close: '关闭' },
   auth: {
     registerTitle: '注册', registerDescription: '创建账号', otp: '验证码', otpPlaceholder: '6 位验证码',
+    username: '用户名', usernamePlaceholder: '设置一个用户名',
     password: '密码', confirmPassword: '确认密码', confirmPasswordPlaceholder: '再输一次',
     agreeAria: '同意协议', agreeTerms: '我已阅读', terms: '条款', and: '和', termsSuffix: '。',
     registering: '注册中', register: '注册', hasAccount: '已有账号', goLogin: '去登录',
-    invalidEmailGeneric: '邮箱无效', invalidOtp: '验证码无效', passwordMin: '密码太短', passwordMismatch: '两次密码不一致', mustAgree: '请同意协议',
+    invalidEmailGeneric: '邮箱无效', invalidOtp: '验证码无效', invalidUsername: '用户名无效', passwordMin: '密码太短', passwordMismatch: '两次密码不一致', mustAgree: '请同意协议',
     registerSuccess: '注册成功', registerFailed: '注册失败', otpSent: '验证码已发送', sendOtpFailed: '发送失败', rateLimited: '太频繁',
     email: '邮箱', emailPlaceholder: '邮箱地址', sendOtp: '发送验证码', resendOtp: '重发',
   },
@@ -49,9 +50,9 @@ describe('RegisterDialog', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true')
     const card = dialog.querySelector('.glass-card') as HTMLElement
     expect(card).toBeTruthy()
-    // 整卡兜住：标题、邮箱/验证码/密码输入、协议勾选、注册按钮、去登录入口都在卡内
+    // 整卡兜住：标题、邮箱/验证码/用户名/密码输入、协议勾选、注册按钮、去登录入口都在卡内
     expect(card.querySelector('h1')?.textContent).toBe('注册')
-    expect(card.querySelectorAll('input').length).toBeGreaterThanOrEqual(3)
+    expect(card.querySelectorAll('input').length).toBeGreaterThanOrEqual(5)
     expect(card.textContent).toContain('去登录')
     ;(card.querySelector('button[aria-label="关闭"]') as HTMLButtonElement).click()
     await nextTick()
@@ -73,15 +74,16 @@ describe('RegisterDialog', () => {
     const wrapper = mountDialog()
     const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement
     const inputs = [...dialog.querySelectorAll('input')] as HTMLInputElement[]
-    // OtpEmailField 的邮箱框 + 验证码框 + 两个密码框；原生赋值 + input 事件触发 v-model
+    // OtpEmailField 的邮箱框 + 验证码框 + 用户名框 + 两个密码框；原生赋值 + input 事件触发 v-model
     const setNative = (el: HTMLInputElement, value: string) => {
       el.value = value
       el.dispatchEvent(new Event('input', { bubbles: true }))
     }
-    setNative(inputs[0], 'new@example.com')
-    setNative(inputs[1], '123456')
-    setNative(inputs[2], 'secret1234')
-    setNative(inputs[3], 'secret1234')
+    setNative(inputs[0]!, 'new@example.com')
+    setNative(inputs[1]!, '123456')
+    setNative(inputs[2]!, '读者甲')
+    setNative(inputs[3]!, 'secret1234')
+    setNative(inputs[4]!, 'secret1234')
     await nextTick()
     // 勾选协议
     ;([...dialog.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === '同意协议') as HTMLButtonElement).click()
@@ -92,7 +94,7 @@ describe('RegisterDialog', () => {
     await new Promise(r => setTimeout(r, 900))
     await nextTick()
 
-    expect(apiPost).toHaveBeenCalledWith('/auth/register', { email: 'new@example.com', email_code: '123456', password: 'secret1234' })
+    expect(apiPost).toHaveBeenCalledWith('/auth/register', { email: 'new@example.com', email_code: '123456', password: 'secret1234', username: '读者甲' })
     expect(login).toHaveBeenCalledWith('new@example.com', 'secret1234')
     expect(wrapper.emitted('success')).toHaveLength(1)
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])

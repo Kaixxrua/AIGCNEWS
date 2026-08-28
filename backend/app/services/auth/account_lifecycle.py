@@ -153,8 +153,11 @@ class AccountLifecycle:
         email: str,
         email_code: str,
         password: str,
+        username: str,
     ) -> RegistrationResult:
         normalized_email = _normalize_email_domain(email)
+        # 防御性裁剪：路由层已 422 拦截空值/超长，这里统一 trim 保持仓储入参干净
+        normalized_username = username.strip()
         verified = await self._otp.verify_otp(
             normalized_email,
             email_code,
@@ -176,7 +179,7 @@ class AccountLifecycle:
             normalized_email,
             hashed_password,
             "user",
-            "",
+            normalized_username,
         )
         await self._otp.consume_otp(
             normalized_email, purpose=REGISTRATION_PURPOSE

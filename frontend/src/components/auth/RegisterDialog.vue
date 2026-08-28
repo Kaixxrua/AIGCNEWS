@@ -31,6 +31,7 @@ const {
   otp,
   password,
   confirmPwd,
+  username,
   loading,
   otpLoading,
   errorMsg,
@@ -77,6 +78,10 @@ const {
               <div class="space-y-1.5">
                 <label class="text-xs font-medium text-stone-500">{{ t('auth.otp') }}</label>
                 <input v-model="otp" type="text" inputmode="numeric" maxlength="6" class="input tracking-widest" :placeholder="t('auth.otpPlaceholder')" autocomplete="one-time-code" :disabled="loading" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium text-stone-500">{{ t('auth.username') }}</label>
+                <input v-model="username" type="text" maxlength="64" class="input" :placeholder="t('auth.usernamePlaceholder')" autocomplete="username" :disabled="loading" />
               </div>
               <PasswordConfirmationFields
                 v-model:password="password"

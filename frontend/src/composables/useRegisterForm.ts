@@ -26,6 +26,7 @@ export const useRegisterForm = ({ post, login, onSuccess }: RegisterFormDependen
   const otp = ref('')
   const password = ref('')
   const confirmPwd = ref('')
+  const username = ref('')
   const loading = ref(false)
   const otpLoading = ref(false)
   const errorMsg = ref('')
@@ -73,6 +74,7 @@ export const useRegisterForm = ({ post, login, onSuccess }: RegisterFormDependen
     errorMsg.value = ''
     if (!emailValid.value) { errorMsg.value = t('auth.invalidEmailGeneric'); return }
     if (!hasTrimmedValue(otp.value) || !isValidOtp(otp.value)) { errorMsg.value = t('auth.invalidOtp'); return }
+    if (!hasTrimmedValue(username.value) || username.value.trim().length > 64) { errorMsg.value = t('auth.invalidUsername'); return }
     if (!isValidPassword(password.value)) { errorMsg.value = t('auth.passwordMin'); return }
     if (!passwordsMatch(password.value, confirmPwd.value)) { errorMsg.value = t('auth.passwordMismatch'); return }
     if (!agreedToTerms.value) { errorMsg.value = t('auth.mustAgree'); return }
@@ -84,6 +86,7 @@ export const useRegisterForm = ({ post, login, onSuccess }: RegisterFormDependen
         email: normalizedEmail,
         email_code: otp.value.trim(),
         password: password.value,
+        username: username.value.trim(),
       })
       await login(normalizedEmail, password.value)
       successMsg.value = t('auth.registerSuccess')
@@ -107,6 +110,7 @@ export const useRegisterForm = ({ post, login, onSuccess }: RegisterFormDependen
     otp,
     password,
     confirmPwd,
+    username,
     loading,
     otpLoading,
     errorMsg,

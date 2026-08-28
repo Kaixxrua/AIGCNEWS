@@ -172,7 +172,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         )
         self.assertEqual(
             schemas["RegisterRequest"]["required"],
-            ["email", "email_code", "password"],
+            ["email", "email_code", "password", "username"],
         )
         self.assertEqual(
             schemas["ResetPasswordRequest"]["required"],
@@ -201,6 +201,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
             "email": "Reader@EXAMPLE.COM",
             "email_code": "123456",
             "password": "plain-secret",
+            "username": "  读者甲  ",
         }
         with patch.object(
             routes_auth, "hash_password", return_value="stored-password-hash"
@@ -221,7 +222,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "Reader@example.com",
                     "stored-password-hash",
                     "user",
-                    "",
+                    "读者甲",
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],
@@ -229,6 +230,25 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         self.assert_no_secret_leakage(
             response, "123456", "plain-secret", "stored-password-hash"
         )
+
+    def test_registration_rejects_blank_or_overlong_username_before_dispatch(self) -> None:
+        service = FakeEmailService(self.events)
+        for username in ("", "   ", "甲" * 65):
+            with self.subTest(username=username):
+                response = self._post(
+                    "/api/auth/register",
+                    {
+                        "email": "reader@example.com",
+                        "email_code": "123456",
+                        "password": "plain-secret",
+                        "username": username,
+                    },
+                    service,
+                )
+                # Pydantic 422 预拒绝：不触达 OTP 校验与仓储
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(self.events, [])
+                self.events.clear()
 
     def test_duplicate_registration_returns_exact_conflict_without_consuming_otp(self) -> None:
         self.repository.users["Reader@example.com"] = {"id": 7}
@@ -239,6 +259,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                 "email": "Reader@EXAMPLE.COM",
                 "email_code": "123456",
                 "password": "plain-secret",
+                "username": "读者甲",
             },
             service,
         )
@@ -263,6 +284,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                 "email": "reader@example.com",
                 "email_code": "123456",
                 "password": "plain-secret",
+                "username": "读者甲",
             },
             service,
         )

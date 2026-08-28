@@ -9,6 +9,7 @@ from backend.app.api.routes_auth import (
     RegisterRequest,
     ResetPasswordRequest,
     _validate_new_password,
+    _validate_username,
 )
 
 
@@ -41,7 +42,10 @@ class PasswordPolicyTests(unittest.TestCase):
     def test_request_schemas_enforce_policy(self) -> None:
         with self.assertRaises(ValidationError):
             RegisterRequest(
-                email="reader@example.com", email_code="123456", password="short"
+                email="reader@example.com",
+                email_code="123456",
+                password="short",
+                username="reader",
             )
         with self.assertRaises(ValidationError):
             ResetPasswordRequest(
@@ -57,7 +61,10 @@ class PasswordPolicyTests(unittest.TestCase):
         strong = "Str0ng!Passphrase"
         self.assertEqual(
             RegisterRequest(
-                email="reader@example.com", email_code="123456", password=strong
+                email="reader@example.com",
+                email_code="123456",
+                password=strong,
+                username="reader",
             ).password,
             strong,
         )
@@ -72,6 +79,39 @@ class PasswordPolicyTests(unittest.TestCase):
             .new_password,
             strong,
         )
+
+
+class UsernamePolicyTests(unittest.TestCase):
+    """注册用户名策略：去空白、非空、不超过 users.username 的 VARCHAR(64) 上限。"""
+
+    def test_trims_surrounding_whitespace(self) -> None:
+        self.assertEqual(_validate_username("  读者甲  "), "读者甲")
+
+    def test_rejects_empty_and_blank(self) -> None:
+        for value in ("", "   ", "\t\n"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                _validate_username(value)
+
+    def test_rejects_over_64_characters(self) -> None:
+        with self.assertRaises(ValueError):
+            _validate_username("甲" * 65)
+        # 恰好 64 字符放行（字段上限边界）
+        self.assertEqual(_validate_username("甲" * 64), "甲" * 64)
+
+    def test_register_request_requires_username(self) -> None:
+        with self.assertRaises(ValidationError):
+            RegisterRequest(
+                email="reader@example.com",
+                email_code="123456",
+                password="Str0ng!Passphrase",
+            )  # type: ignore[call-arg]
+        with self.assertRaises(ValidationError):
+            RegisterRequest(
+                email="reader@example.com",
+                email_code="123456",
+                password="Str0ng!Passphrase",
+                username="   ",
+            )
 
 
 if __name__ == "__main__":

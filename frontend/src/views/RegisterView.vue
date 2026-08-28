@@ -24,6 +24,7 @@ const {
   otp,
   password,
   confirmPwd,
+  username,
   loading,
   otpLoading,
   errorMsg,
@@ -78,6 +79,20 @@ const {
             class="input tracking-widest"
             :placeholder="t('auth.otpPlaceholder')"
             autocomplete="one-time-code"
+            :disabled="loading"
+          />
+        </div>
+
+        <!-- 用户名 -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-stone-500">{{ t('auth.username') }}</label>
+          <input
+            v-model="username"
+            type="text"
+            maxlength="64"
+            class="input"
+            :placeholder="t('auth.usernamePlaceholder')"
+            autocomplete="username"
             :disabled="loading"
           />
         </div>

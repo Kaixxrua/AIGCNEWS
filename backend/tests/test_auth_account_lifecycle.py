@@ -129,6 +129,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             email="Reader@EXAMPLE.COM",
             email_code="123456",
             password="plain-secret",
+            username="  读者甲  ",
         )
 
         self.assertEqual(result, RegistrationResult(user_id=42))
@@ -143,7 +144,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "Reader@example.com",
                     "stored-password-hash",
                     "user",
-                    "",
+                    "读者甲",
                 ),
                 ("consume_otp", "Reader@example.com", "registration"),
             ],
@@ -157,6 +158,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 email="reader@example.com",
                 email_code="123456",
                 password="plain-secret",
+                username="读者甲",
             )
         self.assertEqual(
             self.events,
@@ -171,6 +173,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 email="reader@example.com",
                 email_code="123456",
                 password="plain-secret",
+                username="读者甲",
             )
         self.assertEqual(
             self.events,

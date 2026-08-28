@@ -208,10 +208,21 @@ def _validate_new_password(value: str) -> str:
     return value
 
 
+def _validate_username(value: str) -> str:
+    # users.username 是 VARCHAR(64)：先裁剪再限长，超限直接拒绝而非静默截断
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("username must not be empty")
+    if len(normalized) > 64:
+        raise ValueError("username must not exceed 64 characters")
+    return normalized
+
+
 class RegisterRequest(BaseModel):
     email: EmailStr
     email_code: str
     password: str
+    username: str
 
     @field_validator("email_code")
     @classmethod
@@ -222,6 +233,11 @@ class RegisterRequest(BaseModel):
     @classmethod
     def validate_password(cls, value: str) -> str:
         return _validate_new_password(value)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        return _validate_username(value)
 
 
 class LoginRequest(BaseModel):
@@ -486,6 +502,7 @@ async def register(
             email=str(body.email),
             email_code=body.email_code,
             password=body.password,
+            username=body.username,
         )
     except account_lifecycle.InvalidOtp as exc:
         raise HTTPException(
@@ -742,10 +759,17 @@ async def me(
     repository: UserAccountRepository = Depends(get_user_account_repository),
 ) -> dict[str, Any]:
     """
-    返回当前登录用户信息（从 JWT payload 提取）。
+    返回当前登录用户信息（JWT payload 为准，username 以库内记录为准）。
     需要携带有效 Bearer Token。
     password_change_required 以库内哈希为准（仅种子默认邮箱账号触发查询）。
     """
+    record = await asyncio.to_thread(
+        repository.get_user_by_id, _user_id(current_user)
+    )
+    if record is None:
+        # 账号已删除但 JWT 仍在有效期：视为身份无效（RequireUser 后续版本
+        # 会收紧为统一 401，此处先行防护）
+        raise HTTPException(status_code=401, detail="用户身份无效")
     change_required = await asyncio.to_thread(
         password_change_required_for_email,
         repository=repository,
@@ -757,6 +781,7 @@ async def me(
     return {
         "user_id": current_user.get("user_id"),
         "email": current_user.get("email"),
+        "username": record.get("username"),
         "role": current_user.get("role"),
         "membership_tier": current_user.get("membership_tier"),
         "membership_expires_at": current_user.get("membership_expires_at"),

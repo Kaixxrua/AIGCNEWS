@@ -47,7 +47,8 @@ const afterLoginSuccess = () => {
 const enrichmentAlert = useEnrichmentAlertStore()
 const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
 
-// 改密对话框：dock 钥匙按钮或默认密码警示条打开
+// 账户设置入口：dock 账户按钮打开；当前承载改密对话框（用户名/邮箱/快捷登录
+// 绑定为后续工作单元，账户设置容器就位后迁移）
 const changePasswordOpen = ref(false)
 // 种子默认管理员仍用公开默认密码时全站常驻提醒，改密后随 /auth/me 刷新消失
 const showDefaultPasswordBanner = computed(
@@ -126,7 +127,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       :alert-items="dockAlertItems"
       @login="requestLogin()"
       @logout="authStore.logout()"
-      @change-password="changePasswordOpen = true"
+      @account-settings="changePasswordOpen = true"
     />
 
     <!-- 默认密码常驻警示：点击打开改密对话框，改密成功后自动消失；

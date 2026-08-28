@@ -3,6 +3,8 @@ import { api } from '@/services/http/apiClient'
 export interface AuthUserDTO {
   user_id: number
   email: string | null
+  /** 用户名（注册必填 / OAuth 首次登录自动回填）；旧数据可能为 null 或空串 */
+  username?: string | null
   role: 'user' | 'admin'
   email_verified?: boolean
   /** 会员档位（0045）：free / member；缺省按 free 处理 */

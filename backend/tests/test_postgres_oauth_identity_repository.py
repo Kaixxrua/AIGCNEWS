@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from backend.app.repositories.postgres_oauth_identity_repository import (
     PostgresOAuthIdentityRepository,
+    _resolve_oauth_username,
 )
 
 
@@ -75,3 +76,97 @@ def test_oauth_only_creation_never_marks_null_email_verified() -> None:
     assert insert_params[-1] is False
     identity_params = cursor.execute.call_args_list[1].args[1]
     assert identity_params[-1] is False
+
+
+def test_resolve_oauth_username_fallback_chain() -> None:
+    # provider 用户名优先（裁剪空白）
+    assert _resolve_oauth_username("  octocat  ", "a@example.com") == "octocat"
+    # 无用户名回退 provider 邮箱
+    assert _resolve_oauth_username("", "a@example.com") == "a@example.com"
+    assert _resolve_oauth_username("   ", "a@example.com") == "a@example.com"
+    # 两者皆空（微信无邮箱场景）写空串
+    assert _resolve_oauth_username("", None) == ""
+    assert _resolve_oauth_username("  ", "  ") == ""
+    # provider 数据不可信：超长按 VARCHAR(64) 截断而非报错回滚
+    assert _resolve_oauth_username("x" * 80, None) == "x" * 64
+
+
+def _user_insert_params(cursor: MagicMock) -> tuple:
+    for call in cursor.execute.call_args_list:
+        if "INSERT INTO users" in call.args[0]:
+            return call.args[1]
+    raise AssertionError("no INSERT INTO users call recorded")
+
+
+def test_resolve_first_login_insert_carries_resolved_username() -> None:
+    cursor = MagicMock()
+    # 身份未命中 → 有 canonical email 时查 owner 未命中 → INSERT users → INSERT identity
+    cursor.fetchone.side_effect = [None, None, {"id": 7, "email": "a@example.com"}, {"id": 12}]
+    database = FakeDatabase(cursor)
+    repository = PostgresOAuthIdentityRepository(database)
+
+    with patch(
+        "backend.app.repositories.postgres_oauth_identity_repository.hash_password",
+        return_value="random-unusable-hash",
+    ):
+        result = repository.resolve_first_login(
+            provider="github",
+            provider_subject="subject-1",
+            display_email="A@EXAMPLE.COM",
+            email_verified=True,
+            username="octocat",
+        )
+
+    assert result.status == "authenticated"
+    params = _user_insert_params(cursor)
+    # 参数位 1 是 username 列：provider 用户名优先于邮箱
+    assert params[1] == "octocat"
+
+
+def test_resolve_first_login_insert_falls_back_to_email_then_empty() -> None:
+    for username, display_email, expected in (
+        ("", "a@example.com", "a@example.com"),
+        ("", None, ""),
+    ):
+        cursor = MagicMock()
+        # 无 canonical email（email_verified=False）时不查 owner：身份未命中 → INSERT → identity
+        cursor.fetchone.side_effect = [None, {"id": 7, "email": None}, {"id": 12}]
+        database = FakeDatabase(cursor)
+        repository = PostgresOAuthIdentityRepository(database)
+
+        with patch(
+            "backend.app.repositories.postgres_oauth_identity_repository.hash_password",
+            return_value="random-unusable-hash",
+        ):
+            repository.resolve_first_login(
+                provider="wechat",
+                provider_subject="openid-1",
+                display_email=display_email,
+                email_verified=False,
+                username=username,
+            )
+
+        params = _user_insert_params(cursor)
+        assert params[1] == expected
+
+
+def test_create_oauth_only_user_insert_carries_resolved_username() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [{"id": 9, "email": None, "role": "user"}, {"id": 12}]
+    database = FakeDatabase(cursor)
+    repository = PostgresOAuthIdentityRepository(database)
+
+    with patch(
+        "backend.app.repositories.postgres_oauth_identity_repository.hash_password",
+        return_value="random-unusable-hash",
+    ):
+        repository.create_oauth_only_user(
+            provider="wechat",
+            provider_subject="openid-1",
+            display_email=None,
+            email_verified=False,
+            username="  微信用户  ",
+        )
+
+    params = _user_insert_params(cursor)
+    assert params[1] == "微信用户"
