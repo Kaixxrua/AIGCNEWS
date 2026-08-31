@@ -23,6 +23,9 @@ services:
       # 避免走公网回环（gptsakura.com）三穿隧道；NO_PROXY 已同步放行该主机名
       - sub2api
     volumes:
+      # 生产后端固定从干净发布检出读取，避免主工作树并行 WIP 经核心 bind mount
+      # 被热重启带入运行时。发布检出当前钉在已验证的 revenue release commit。
+      - /home/kaixxrua/aigcnews-revenue-deploy/backend:/src/backend:ro
       # 私有源插件包（X 传输层 / 微信链路实现）+ pylibs 依赖供给
       # （twitter-cli 及其独占依赖，供给方式见本仓 README.md）；
       # 只读挂载，容器内路径 /opt/aigcnews_private
