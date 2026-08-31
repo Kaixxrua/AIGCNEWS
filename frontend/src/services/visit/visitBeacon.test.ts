@@ -7,13 +7,14 @@ import { sendVisitBeacon } from './visitBeacon'
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
-describe('visit beacon (pure visit-count semantics)', () => {
+describe('visit beacon (daily anonymous visitor semantics)', () => {
   beforeEach(() => {
     transport.post.mockReset()
     sessionStorage.clear()
+    localStorage.clear()
   })
 
-  it('posts once per tab session and guards subsequent sends', async () => {
+  it('creates and persists one anonymous ID while guarding repeated sends', async () => {
     transport.post.mockResolvedValue({ data: { today_visits: 1, total_visits: 1 } })
 
     sendVisitBeacon()
@@ -22,7 +23,13 @@ describe('visit beacon (pure visit-count semantics)', () => {
     await flush()
 
     expect(transport.post).toHaveBeenCalledTimes(1)
-    expect(transport.post).toHaveBeenCalledWith('/dashboard/visit')
+    const call = transport.post.mock.calls[0]
+    expect(call).toBeDefined()
+    const path = call?.[0]
+    const body = call?.[1] as { visitor_id?: string } | undefined
+    expect(path).toBe('/dashboard/visit')
+    expect(body?.visitor_id).toMatch(/^[A-Za-z0-9_-]{16,128}$/)
+    expect(localStorage.getItem('aigc:anonymous-visitor-id')).toBe(body?.visitor_id)
   })
 
   it('does not set the guard when the post fails, so a later entry retries', async () => {
@@ -37,7 +44,21 @@ describe('visit beacon (pure visit-count semantics)', () => {
     expect(transport.post).toHaveBeenCalledTimes(2)
   })
 
-  it('stays silent when sessionStorage is unavailable', async () => {
+  it('reuses the same anonymous ID after the daily guard expires', async () => {
+    transport.post.mockResolvedValue({ data: { today_visits: 1, total_visits: 1 } })
+    sendVisitBeacon()
+    await flush()
+    const visitorId = localStorage.getItem('aigc:anonymous-visitor-id')
+    sessionStorage.clear()
+
+    sendVisitBeacon()
+    await flush()
+
+    expect(transport.post).toHaveBeenCalledTimes(2)
+    expect(transport.post.mock.calls[1]?.[1]).toEqual({ visitor_id: visitorId })
+  })
+
+  it('stays silent when storage is unavailable', async () => {
     const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('denied')
     })

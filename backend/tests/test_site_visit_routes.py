@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import psycopg
 from fastapi import FastAPI
@@ -32,8 +32,14 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         visits = MagicMock()
         visits.record_visit.return_value = SiteVisitStats(today_visits=8, total_visits=701)
         app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=1)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
 
-        response = TestClient(app).post("/api/dashboard/visit")
+        response = TestClient(app).post(
+            "/api/dashboard/visit", json={"visitor_id": "visitor-1234567890"}
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
@@ -41,6 +47,26 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         self.assertIsInstance(day_arg, date)
         # TestClient 默认不带浏览器 UA 特征，落入 other 桶
         self.assertEqual(platform_arg, "other")
+        redis.sadd.assert_awaited_once()
+
+    def test_duplicate_visitor_does_not_record_again(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        visits.get_visit_stats.return_value = SiteVisitStats(today_visits=8, total_visits=701)
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=0)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
+
+        response = TestClient(app).post(
+            "/api/dashboard/visit", json={"visitor_id": "visitor-1234567890"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
+        visits.record_visit.assert_not_called()
 
     def test_record_visit_classifies_user_agent_into_platform_bucket(self) -> None:
         app = FastAPI()
@@ -48,13 +74,19 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         visits = MagicMock()
         visits.record_visit.return_value = SiteVisitStats(today_visits=1, total_visits=1)
         app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=1)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
 
         iphone_ua = (
             "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) "
             "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         )
         response = TestClient(app).post(
-            "/api/dashboard/visit", headers={"User-Agent": iphone_ua}
+            "/api/dashboard/visit",
+            headers={"User-Agent": iphone_ua},
+            json={"visitor_id": "visitor-1234567890"},
         )
 
         self.assertEqual(response.status_code, 200)

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi_cache.decorator import cache
+from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
 from backend.app.api.dependencies import (
@@ -42,11 +43,19 @@ from backend.app.services.dashboard.query_service import (
     GitHubHotBoardReader,
 )
 from backend.app.services.dashboard.visit_platforms import classify_platform
+from backend.app.services.dashboard.visitor_deduplication import (
+    InvalidVisitorId,
+    mark_new_daily_visitor,
+)
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
+
+class SiteVisitBeacon(BaseModel):
+    visitor_id: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 def _get_optional_github_enrichment_repository(request: Request) -> Any:
@@ -781,16 +790,32 @@ async def get_visitor_count(
 
 @router.post("/dashboard/visit")
 async def record_site_visit(
+    payload: SiteVisitBeacon,
     request: Request,
     visits: SiteVisitRecorder = Depends(get_site_visit_repository),
 ):
-    """站点访问 beacon：前端每 tab 会话首次进入发一次（sessionStorage 守卫）。
+    """站点访问 beacon：同一匿名访客每天（CST）只计一次。
 
-    纯次数口径——每次调用当天（CST）计数 +1，不按访客去重；返回计数后的
-    最新值，前端统计卡片可即时刷新，无需等待 live-stats 轮询。
-    同时按 User-Agent 归类平台桶写入平台维度表（不落 UA 原文，仅聚合计数）。
+    Redis set 负责原子日内去重；只有首次出现的 ID 才会写入 PostgreSQL，
+    并按 User-Agent 归类平台桶。Redis 不可用时 fail closed，避免故障期间
+    把重复请求膨胀成访客数。
     """
-    platform = classify_platform(request.headers.get("user-agent"))
-    stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
-    live_stats_broadcaster.notify_live_stats_changed("site-visit")
+    try:
+        is_new = await mark_new_daily_visitor(
+            getattr(request.app.state, "redis", None),
+            day=cst_today(),
+            visitor_id=payload.visitor_id,
+        )
+    except InvalidVisitorId:
+        raise HTTPException(status_code=422, detail="invalid visitor_id") from None
+    except Exception:
+        logger.warning("[Dashboard] visitor deduplication unavailable", exc_info=True)
+        raise HTTPException(status_code=503, detail="visitor counting unavailable") from None
+
+    if is_new:
+        platform = classify_platform(request.headers.get("user-agent"))
+        stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
+        live_stats_broadcaster.notify_live_stats_changed("site-visit")
+    else:
+        stats = await _get_site_visit_stats(visits)
     return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}

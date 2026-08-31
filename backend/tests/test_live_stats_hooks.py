@@ -109,7 +109,12 @@ class LiveStatsHookTests(unittest.IsolatedAsyncioTestCase):
             lambda: visits
         )
 
-        response = TestClient(app).post("/api/dashboard/visit")
+        app.state.redis = MagicMock()
+        app.state.redis.sadd = AsyncMock(return_value=1)
+        app.state.redis.ttl = AsyncMock(return_value=60)
+        response = TestClient(app).post(
+            "/api/dashboard/visit", json={"visitor_id": "visitor-1234567890"}
+        )
         self.assertEqual(response.status_code, 200)
         self.notify.assert_called_once_with("site-visit")
 
