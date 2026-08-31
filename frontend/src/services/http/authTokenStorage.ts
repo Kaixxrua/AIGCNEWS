@@ -4,7 +4,9 @@
  */
 export const AUTH_TOKEN_KEY = 'auth_token'
 
-export function readAuthToken(): string | null {
+let runtimeAuthToken: string | null | undefined
+
+function readStoredAuthToken(): string | null {
   try {
     return localStorage.getItem(AUTH_TOKEN_KEY)
   } catch {
@@ -12,7 +14,20 @@ export function readAuthToken(): string | null {
   }
 }
 
+/**
+ * 当前页面的认证令牌以内存状态为准；首次初始化前才回退到 localStorage。
+ * 这样即使浏览器禁止持久化，登录后的 API 请求仍能携带令牌。
+ */
+export function readAuthToken(): string | null {
+  return runtimeAuthToken === undefined ? readStoredAuthToken() : runtimeAuthToken
+}
+
+export function setRuntimeAuthToken(token: string | null): void {
+  runtimeAuthToken = token
+}
+
 export function removeAuthToken(): void {
+  runtimeAuthToken = null
   try {
     localStorage.removeItem(AUTH_TOKEN_KEY)
   } catch {

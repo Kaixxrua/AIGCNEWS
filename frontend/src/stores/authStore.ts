@@ -6,7 +6,10 @@ import {
   loginWithPassword,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
-import { AUTH_TOKEN_KEY } from '@/services/http/authTokenStorage'
+import {
+  AUTH_TOKEN_KEY,
+  setRuntimeAuthToken,
+} from '@/services/http/authTokenStorage'
 
 export type AuthUser = AuthUserDTO
 export type AuthStatus = 'initializing' | 'authenticated' | 'anonymous' | 'degraded'
@@ -48,6 +51,7 @@ function isUnauthorized(error: unknown): boolean {
 export const useAuthStore = defineStore('auth', () => {
   // ── State ──────────────────────────────────────────────────────────────────
   const token = ref<string | null>(readStorage(TOKEN_KEY))
+  setRuntimeAuthToken(token.value)
   const user = ref<AuthUser | null>(null)
   const status = ref<AuthStatus>('initializing')
   /** 未登录用户在 Chat 页输入后点发送，临时缓存消息，登录后回填 */
@@ -107,6 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
     const data = await loginWithPassword(email, password)
     if (!isCurrent(revision, previousToken)) throw staleAuthOperation()
     token.value = data.access_token
+    setRuntimeAuthToken(data.access_token)
     writeStorage(TOKEN_KEY, data.access_token)
     // 登录后立即拉取完整用户信息；整个过程绑定本次登录 revision。
     const currentUser = await fetchMeForContext(revision, data.access_token)
@@ -121,6 +126,7 @@ export const useAuthStore = defineStore('auth', () => {
     const data = await consumeOAuthHandoff()
     if (!isCurrent(revision, previousToken)) throw staleAuthOperation()
     token.value = data.access_token
+    setRuntimeAuthToken(data.access_token)
     writeStorage(TOKEN_KEY, data.access_token)
     await fetchMeForContext(revision, data.access_token)
     if (!isCurrent(revision, data.access_token)) throw staleAuthOperation()
@@ -134,6 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!nextToken) throw new Error('Replacement token is empty')
     nextRevision()
     token.value = nextToken
+    setRuntimeAuthToken(nextToken)
     writeStorage(TOKEN_KEY, nextToken)
   }
 
@@ -141,6 +148,7 @@ export const useAuthStore = defineStore('auth', () => {
   function invalidateSession(): void {
     nextRevision()
     token.value = null
+    setRuntimeAuthToken(null)
     user.value = null
     status.value = 'anonymous'
     removeStorage(TOKEN_KEY)
@@ -170,12 +178,14 @@ export const useAuthStore = defineStore('auth', () => {
     if (!storedToken) {
       if (!isCurrent(revision, token.value)) return
       token.value = null
+      setRuntimeAuthToken(null)
       user.value = null
       status.value = 'anonymous'
       return
     }
 
     token.value = storedToken
+    setRuntimeAuthToken(storedToken)
     try {
       await fetchMeForContext(revision, storedToken)
       if (isCurrent(revision, storedToken)) status.value = 'authenticated'

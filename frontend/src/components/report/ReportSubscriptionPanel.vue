@@ -149,17 +149,17 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
         <div
           v-for="cap in deliveryCapabilities"
           :key="cap.key"
-          class="flex items-start gap-2 rounded-xl border px-3 py-2 text-left transition-all duration-200"
+          class="delivery-option flex items-stretch gap-2 rounded-xl border text-left transition-all duration-200"
           :class="[
             cap.selectable && selectedDeliveryKeys.includes(cap.key)
-              ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
-              : 'border-stone-100 bg-card/70 text-stone-600',
+              ? 'delivery-option--selected border-indigo-200 bg-indigo-50 text-indigo-800'
+              : 'border-stone-200 bg-card/70 text-stone-600',
             !cap.selectable && 'cursor-not-allowed opacity-60',
           ]"
         >
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-start gap-2 text-left"
+            class="delivery-option__toggle flex min-w-0 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left hover:bg-accent-soft disabled:cursor-not-allowed"
             :disabled="isSubscribing || !cap.selectable"
             :aria-pressed="selectedDeliveryKeys.includes(cap.key)"
             @click="emit('toggleDelivery', cap.key)"
@@ -184,24 +184,24 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
               </span>
             </span>
           </button>
-          <div v-if="cap.kind === 'rss'" class="flex shrink-0 items-center gap-1">
+          <div v-if="cap.kind === 'rss'" class="flex shrink-0 flex-col items-stretch justify-center gap-1 border-l border-stone-200 p-2">
             <button
               type="button"
-              class="rounded px-1.5 py-1 text-2xs underline underline-offset-2 hover:bg-white/70 disabled:cursor-wait disabled:opacity-50"
+              class="btn-secondary justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
               @click="emit('copyRss', false)"
             >{{ t('report.wizard.delivery.copyPublic') }}</button>
             <button
               v-if="isMember"
               type="button"
-              class="rounded px-1.5 py-1 text-2xs underline underline-offset-2 hover:bg-white/70 disabled:cursor-wait disabled:opacity-50"
+              class="btn-secondary justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
               @click="emit('copyRss', true)"
             >{{ t('report.wizard.delivery.copyMember') }}</button>
             <button
               v-if="isMember"
               type="button"
-              class="rounded px-1.5 py-1 text-2xs text-stone-400 underline underline-offset-2 hover:bg-white/70 disabled:cursor-wait disabled:opacity-50"
+              class="btn-ghost justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
               @click="emit('rotateRss')"
             >{{ t('report.wizard.delivery.resetToken') }}</button>
@@ -217,7 +217,7 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
       <div class="mt-3 flex items-center justify-end gap-2">
         <div class="flex items-center gap-2">
           <button
-            class="rounded-full px-3 py-1.5 text-xs font-medium text-stone-500 hover:bg-accent-soft"
+            class="btn-secondary px-3 py-1.5 text-xs"
             :disabled="isSubscribing"
             @click="emit('goBack')"
           >{{ t('report.wizard.back') }}</button>
@@ -234,3 +234,22 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
     </template>
   </div>
 </template>
+
+<style scoped>
+.delivery-option {
+  border-color: var(--rule-strong);
+  background: var(--paper-raised);
+  color: var(--ink-secondary);
+}
+
+.delivery-option--selected {
+  border-color: var(--ink);
+  background: var(--acid-bright);
+  color: var(--chat-on-acid);
+}
+
+.delivery-option__toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+</style>
