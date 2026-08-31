@@ -8,9 +8,9 @@ const overrides = {
   contact: { kicker: '联系合作', heroNote: '按你的需求，选择合适的联系入口。', servicesKicker: '合作方向', servicesTitle: '我们可以一起做什么', entryKicker: '从这里开始', entryTitle: '选择联系入口', primaryBadge: '优先入口', qrHint: '扫码继续', qrUnavailable: '二维码暂时无法显示', notesKicker: '补充说明', notesTitle: '更多信息' },
   membership: {
     title: 'vip', subtitle: '解锁更高的 MCP 调用额度、个人网页不限量收藏与全部简报模块，也支持本站持续运营。',
-    guest: { name: 'guest', price: '¥0', note: '无需注册，打开即用', features: { browse: '浏览榜单、论文与项目库', mcpAnonymous: 'MCP 匿名调用 30 次/天', rss: '简报 RSS 订阅', briefing: '简报邮件订阅', website: '个人网页收藏' } },
-    free: { name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { mcpFree: 'MCP/API 共用 1,200 次/30 天滚动窗口 + 60 次/天', websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏', briefingFree: '简报订阅 1 个日报模块', rssFree: 'RSS 每日综合简报订阅', rssFull: 'RSS 会员简报速览（近 7 期）', briefingAll: '简报订阅全部 8 个模块' } },
-    member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', features: { mcpMember: 'MCP/API 共用 8,000 次/30 天滚动窗口 + 400 次/天', websiteMember: '个人网页收藏添加不限量', briefingMember: '简报订阅全部 8 个模块', rssFree: 'RSS 公开完整每日综合简报', rssMember: 'RSS 私有简报速览（近 7 期归档）', support: '优先支持与后续 vip 权益' } },
+    guest: { name: 'guest', price: '¥0', note: '无需注册，打开即用', features: { browse: '浏览榜单、论文与项目库', mcpAnonymous: 'MCP 匿名额度：每 24 小时 30 次', rss: '简报 RSS 订阅', briefing: '简报邮件订阅', website: '个人网页收藏' } },
+    free: { name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { mcpFree: 'MCP/API 共用：每 24 小时 60 次 + 滚动 30 天 1,200 次', websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏', briefingFree: '简报订阅 1 个日报模块', rssFree: 'RSS 每日综合简报订阅', rssFull: 'RSS 会员简报速览（近 7 期）', briefingAll: '简报订阅全部 8 个模块' } },
+    member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', features: { mcpMember: 'MCP/API 共用：每 24 小时 400 次 + 滚动 30 天 8,000 次', websiteMember: '个人网页收藏添加不限量', briefingMember: '简报订阅全部 8 个模块', rssFree: 'RSS 公开完整每日综合简报', rssMember: 'RSS 私有简报速览（近 7 期归档）', support: '优先支持与后续 vip 权益' } },
     currentMember: '当前已是 vip', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News vip 开通咨询', memberNote: '感谢支持！vip 权益已生效。',
     ctaOnline: '立即开通', ctaOnlineHint: '在线支付：支付成功后权益立即生效。',
     checkout: {
@@ -169,7 +169,7 @@ const overrides = {
     },
     errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。', 'vip-required': 'Telegram 和 Discord 渠道仅对有效会员开放。', 'telegram-unavailable': 'Telegram 推送暂未配置或暂不可用，请稍后再试。' },
   },
-  dsh: { eyebrow: 'AIGC 雷达 · DSH', title: '在 dsh 终端里搜索 AI 项目', description: '安装原生 dsh-aigc-radar 插件，即可在 dsh 终端使用 AIGC Radar 项目库卡片与检索路由。登录后自动分配账号绑定的专属 MCP Token，无需手动选择身份。', mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令', capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件把 AIGC Radar 项目搜索卡片、Code Mode、路由提示和 pre-step 主动触发直接带进 dsh web profile。', authRestoring: '正在恢复登录状态…', authDegraded: '登录状态校验失败，无法安全获取你的专属 Token。', authRetry: '重试', wizard: { ariaLabel: 'dsh 接入向导', stepInstall: '选择安装方式', stepInstallDescription: '第 1 步：选择 dsh 安装插件的方式。', stepCommand: '获取接入命令', stepCommandDescription: '第 2 步：复制一行命令，完成安装并写入你的专属 Token。', tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试', tokenUnavailable: 'DSH Token 服务暂不可用，请稍后重试。', tokenRecovery: '检测到你仍在使用旧版 DSH Token，无法自动恢复明文。请重新生成一枚新 Token，旧 Token 会立即失效。', tokenRotate: '重新生成 Token', commandLabel: '安装命令', tokenCommandNote: '命令已内置你的专属 Token，执行后会自动写入 dsh 补丁配置（覆盖该 profile 默认的空补丁文件）。', tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变，调用配额按账号实时会员档位计算。请按密码妥善保管，不要分享给他人。', vipHint: 'VIP 会员享更高调用次数：每日 400 次、30 天 8,000 次（Free 为每日 60 次、30 天 1,200 次）。', vipCta: '升级 VIP', memberStatus: '当前账号为 VIP 会员，已享最高调用配额。' } },
+  dsh: { eyebrow: 'AIGC 雷达 · DSH', title: '在 dsh 终端里搜索 AI 项目', description: '安装原生 dsh-aigc-radar 插件，即可在 dsh 终端使用 AIGC Radar 项目库卡片与检索路由。登录后自动分配账号绑定的专属 MCP Token，无需手动选择身份。', mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令', capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件把 AIGC Radar 项目搜索卡片、Code Mode、路由提示和 pre-step 主动触发直接带进 dsh web profile。', authRestoring: '正在恢复登录状态…', authDegraded: '登录状态校验失败，无法安全获取你的专属 Token。', authRetry: '重试', wizard: { ariaLabel: 'dsh 接入向导', stepInstall: '选择安装方式', stepInstallDescription: '第 1 步：选择 dsh 安装插件的方式。', stepCommand: '获取接入命令', stepCommandDescription: '第 2 步：复制一行命令，完成安装并写入你的专属 Token。', tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试', tokenUnavailable: 'DSH Token 服务暂不可用，请稍后重试。', tokenRecovery: '检测到你仍在使用旧版 DSH Token，无法自动恢复明文。请重新生成一枚新 Token，旧 Token 会立即失效。', tokenRotate: '重新生成 Token', commandLabel: '安装命令', tokenCommandNote: '命令已内置你的专属 Token，执行后会自动写入 dsh 补丁配置（覆盖该 profile 默认的空补丁文件）。', tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变，调用配额按账号实时会员档位计算。请按密码妥善保管，不要分享给他人。', vipHint: 'VIP 的 MCP/API 共用额度：每 24 小时 400 次、滚动 30 天 8,000 次（Free 为 60 次、1,200 次）。', vipCta: '升级 VIP', memberStatus: '当前账号为 VIP 会员，已享最高调用配额。' } },
   mcpExamples: { sectionKicker: '这样提问', sectionTitle: '连接后，用自然语言提问', sectionDescription: '以下示例对应上方公开工具，复制到已连接的客户端即可。', copy: '复制', copyAria: '复制该提示词', demoAria: '在站内搜索 {query}', toolTagLabel: '调用 {tool}', ragFrameworks: { prompt: '在 AI 项目库中找 RAG 框架，按 Star 数排序。' }, agentFrameworks: { prompt: '对比最近更新的 Agent 框架项目，推荐值得复用的。' }, weeklyRanking: { prompt: '看看本周 AI 项目和论文榜单前十。' }, papersRagSurvey: { prompt: '搜索关于检索增强生成评估的 arXiv 论文。' }, categories: { prompt: 'AI 项目库有哪些分类，各有多少项目？' }, nonAiScreenshot: { prompt: '找一个 Windows 上的开源截图工具。' } },
 } as const
 
@@ -282,8 +282,8 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.authRestoring': '正在恢复登录状态…',
   'mcp.authDegraded': '登录状态校验失败。为安全起见，登录状态确认前不会签发 MCP Token。',
   'mcp.authRetry': '重试',
-  'mcp.quota.anonymous': '匿名调用限额 30 次/天；登录后升至每日 60 次 + 1,200 次/30 天，开通 vip 可达每日 400 次 + 8,000 次/30 天。',
-  'mcp.quota.free': '当前免费档额度 1,200 次/30 天滚动窗口（每日 60 次）；开通 vip 升至 8,000 次/30 天 + 每日 400 次。',
+  'mcp.quota.anonymous': 'MCP 匿名额度按 IP 计：每 24 小时 30 次；登录后 MCP/API 共用每 24 小时 60 次 + 滚动 30 天 1,200 次，开通 vip 可达 400 次 + 8,000 次。',
+  'mcp.quota.free': '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
   'mcp.quota.loginCta': '登录提升额度',
   'mcp.quota.vipCta': '开通 vip',
   'mcp.endpointAria': 'MCP 端点',

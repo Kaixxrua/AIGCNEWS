@@ -1,7 +1,7 @@
 # AIGC Radar MCP Server 协议与策略
 
 AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.name` 为 `aigc-radar`，版本见
-[`backend/app/services/mcp/inbound/catalog.py`](../backend/app/services/mcp/inbound/catalog.py)）。
+[`mcp-go/internal/version/version.go`](../mcp-go/internal/version/version.go)）。
 本文是协议参数、内置策略与鉴权语义的权威文档；README 仅保留接入概览。
 
 > 命名说明：`serverInfo.name` 与 session id 前缀已随品牌更名迁移至 `aigc-radar`；
@@ -71,8 +71,8 @@ MCP 服务端控制，因此 host 必须核验其候选的当前 GitHub Stars，
 会改变架构、部署、数据归属、许可证或长期维护，host 应列出直接复用、借鉴设计后自研和完全自研选项并
 等待用户确认。
 
-该策略以英文原文通过 `initialize` instructions、工具描述和 Prompt 发布（见 catalog.py 的
-`MCP_HOST_INSTRUCTIONS`），但服务端无法覆盖客户端自己的 system prompt 或原生工具优先级。策略依据的
+该策略以英文原文通过 `initialize` instructions、工具描述和 Prompt 发布（见
+[`mcp-go/internal/mcpapp/catalog.go`](../mcp-go/internal/mcpapp/catalog.go) 的 `hostInstructions`），但服务端无法覆盖客户端自己的 system prompt 或原生工具优先级。策略依据的
 实测对比见 [mcp-vs-websearch-agent-project-discovery.md](mcp-vs-websearch-agent-project-discovery.md)。
 
 ## 本地优先与 GitHub fallback
@@ -128,16 +128,27 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` 时完全省略 `Authorization` header，因此可直接使用公开 runtime；只有明确配置 Token 时才进入账号渠道，个人收藏等私有能力需要有效 Token。
 
-## 限流
+## 限流与调用额度
 
-端点按 Redis 固定窗口限流（窗口 60 秒，实现见 `backend/app/services/mcp/inbound/rate_limit.py`）：
+实现见 [`mcp-go/internal/ratelimit/ratelimit.go`](../mcp-go/internal/ratelimit/ratelimit.go)。协议请求先经过 Redis 60 秒固定窗口的突发限流：
 
 | 调用方 | 协议方法（initialize / tools/list / resources / prompts） | tools/call |
 | --- | --- | --- |
-| 匿名（按客户端 IP，取 X-Forwarded-For 首跳） | 60 次/分 | 30 次/分 |
+| 匿名（按客户端 IP，取可信代理 X-Forwarded-For 首跳） | 60 次/分 | 30 次/分 |
 | 认证（按用户 id） | 240 次/分 | 120 次/分 |
 
-- 超限返回 HTTP 429，响应体为 JSON-RPC error（code `-32000`），并带 `Retry-After: 60` 头。
+只有 `tools/call` 继续进入商业调用额度。额度窗口从该身份首次调用起计时，不按自然日或自然月重置：
+
+| 档位 | 身份分桶 | 固定 24 小时窗口 | 滚动 30 天窗口 |
+| --- | --- | ---: | ---: |
+| 匿名 | 客户端 IP | 30 次 | — |
+| Free | 用户 id | 60 次 | 1,200 次 |
+| VIP | 用户 id | 400 次 | 8,000 次 |
+| 管理员 | 用户 id | 豁免 | 豁免 |
+
+- MCP 与程序化 REST `/api/v1/projects/search`、`/api/v1/projects/categories` 使用相同 Redis key，调用会消耗同一个共享池；网站浏览端点 `/api/projects` 不参与该额度。
+- 登录档先检查 24 小时 pacing 桶，通过后才消耗滚动 30 天桶；被短窗口拒绝的请求不会消耗长窗口额度。
+- 超限返回 HTTP 429，响应体为 JSON-RPC error（code `-32000`），并带与实际剩余窗口相符的 `Retry-After` 头；`error.data.quota_scope` 为兼容保留 `daily` / `monthly` 字面量，但用户文案使用“每 24 小时”与“滚动 30 天”。
 - 解析失败的畸形请求直接返回 JSON-RPC 错误，不计入配额。
 - Redis 不可用时放行（可用性优先于限流严格性），与认证端点限流策略一致。
 

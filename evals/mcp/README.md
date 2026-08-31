@@ -1,7 +1,7 @@
 # AIGC Radar MCP 测评套件
 
 用 [mcp-eval](https://github.com/lastmile-ai/mcp-eval)（PyPI 发行名 `mcpevals`）
-对本仓库自研的 AIGC Radar MCP server（`backend/app/services/mcp/`）做两层测评：
+对本仓库自研的 AIGC Radar MCP server（生产入站实现位于 `mcp-go/`）做两层测评：
 
 | 层 | 文件 | 内容 | LLM 消耗 |
 |---|---|---|---|

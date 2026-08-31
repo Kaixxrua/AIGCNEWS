@@ -1,5 +1,4 @@
-// 限流 429 的 HTTP 投影，逐字节对齐 Python 的 mcp_rate_limited_projection
-// 与 mcp_quota_exceeded_projection（inbound/rate_limit.py）。
+// 限流 429 的 HTTP 投影，逐字节对齐 Python /api/v1 的限流与配额投影。
 package ratelimit
 
 import (
@@ -47,27 +46,27 @@ func (e *Exceeded) Projection(requestID any) wire.Response {
 	switch {
 	case e.QuotaScope == "daily" && e.IdentityKind == "ip":
 		message = fmt.Sprintf(
-			"已达今日匿名调用上限（%d 次/天，按 IP 计）。请前往 https://aigcnews.cn/mcp 登录并创建 MCP token 获得月度配额，或前往 https://aigcnews.cn/membership 开通 VIP 享更高额度。Anonymous daily quota exhausted (%d calls/day per IP): sign in at https://aigcnews.cn/mcp to create an MCP token for a monthly quota, or upgrade to VIP at https://aigcnews.cn/membership.",
+			"已达匿名调用上限（每 24 小时 %d 次，按 IP 计）。请前往 https://aigcnews.cn/mcp 登录并创建 MCP token，获得每 24 小时与滚动 30 天配额；或前往 https://aigcnews.cn/membership 开通 VIP 享更高额度。Anonymous quota exhausted (%d calls per 24 hours per IP): sign in at https://aigcnews.cn/mcp to create an MCP token for per-24-hour and rolling-30-day quotas, or upgrade to VIP at https://aigcnews.cn/membership.",
 			e.Limit, e.Limit,
 		)
 	case e.QuotaScope == "daily" && e.Tier == authn.TierMember:
 		message = fmt.Sprintf(
-			"今日 VIP 额度已用完（%d 次/天），配额窗口将于约 %d 秒后重置。VIP daily quota exhausted (%d calls/day); the window resets in about %d seconds.",
+			"VIP 每 24 小时额度已用完（%d 次），配额窗口将于约 %d 秒后重置。VIP per-24-hour quota exhausted (%d calls); the window resets in about %d seconds.",
 			e.Limit, e.RetryAfter, e.Limit, e.RetryAfter,
 		)
 	case e.QuotaScope == "daily":
 		message = fmt.Sprintf(
-			"已达今日免费调用上限（%d 次/天）。请前往 https://aigcnews.cn/membership 开通 VIP 享更高日度与月度额度，或等待配额窗口重置（约 %d 秒后）。Free daily quota exhausted (%d calls/day): upgrade to VIP at https://aigcnews.cn/membership for higher daily and monthly quotas, or wait for the window to reset.",
+			"免费档每 24 小时额度已用完（%d 次）。请前往 https://aigcnews.cn/membership 开通 VIP，享更高的每 24 小时与滚动 30 天额度；或等待配额窗口重置（约 %d 秒后）。Free per-24-hour quota exhausted (%d calls): upgrade to VIP at https://aigcnews.cn/membership for higher per-24-hour and rolling-30-day quotas, or wait for the window to reset.",
 			e.Limit, e.RetryAfter, e.Limit,
 		)
 	case e.Tier == authn.TierMember:
 		message = fmt.Sprintf(
-			"本月 VIP 额度已用完（%d 次/月），配额窗口将于约 %d 秒后重置。VIP monthly quota exhausted (%d calls/month); the window resets in about %d seconds.",
+			"VIP 滚动 30 天额度已用完（%d 次），配额窗口将于约 %d 秒后重置。VIP rolling-30-day quota exhausted (%d calls); the window resets in about %d seconds.",
 			e.Limit, e.RetryAfter, e.Limit, e.RetryAfter,
 		)
 	default:
 		message = fmt.Sprintf(
-			"本月免费额度已用完（%d 次/月）。请前往 https://aigcnews.cn/membership 开通 VIP 享更高额度，或等待配额窗口重置（约 %d 秒后）。Free monthly quota exhausted (%d calls/month): upgrade to VIP at https://aigcnews.cn/membership for a higher quota, or wait for the window to reset.",
+			"免费档滚动 30 天额度已用完（%d 次）。请前往 https://aigcnews.cn/membership 开通 VIP 享更高额度，或等待配额窗口重置（约 %d 秒后）。Free rolling-30-day quota exhausted (%d calls): upgrade to VIP at https://aigcnews.cn/membership for a higher quota, or wait for the window to reset.",
 			e.Limit, e.RetryAfter, e.Limit,
 		)
 	}

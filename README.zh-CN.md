@@ -133,7 +133,7 @@ dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar
 
 GitHub 安装会现场构建源码；pnpm 构建放行与固定 commit 的细节见[插件 README](https://github.com/Kaixxrua/dsh-aigc-radar#安装)。
 
-MCP 与 `/api/v1` 共用同一配额池：匿名按 IP 每日 30 次；免费账号每日 60 次、滚动 30 天 1,200 次；VIP 每日 400 次、滚动 30 天 8,000 次。登录档先检查日 pacing 桶，日限额触发时不会消耗月度配额。
+MCP 与 `/api/v1` 共用同一配额池：匿名按 IP 每个固定 24 小时窗口 30 次；Free 每个固定 24 小时窗口 60 次、滚动 30 天窗口 1,200 次；VIP 分别为 400 次与 8,000 次。登录档先检查 24 小时 pacing 桶，触发时不会消耗滚动 30 天额度。
 
 公开工具（无需鉴权；除仅追加的采纳回执外全部只读）：
 

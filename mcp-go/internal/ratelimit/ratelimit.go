@@ -1,11 +1,11 @@
-// Package ratelimit 实现 /api/mcp 入站端点的 Redis 固定窗口限流，
-// 逐项镜像 backend/app/services/mcp/inbound/rate_limit.py 的编排与
-// backend/app/services/auth/rate_limit.py 的 hit_rate_limit 原语：
+// Package ratelimit 实现 /api/mcp 入站端点的 Redis 固定窗口限流；
+// 配额常量与 backend/app/services/api_access/quota.py 保持一致，命中原语
+// 与 backend/app/services/auth/rate_limit.py 的 hit_rate_limit 等价：
 //
 //   - 两层正交限速：分钟级突发桶防爬（所有方法），tools/call 再叠加
-//     分层配额桶（匿名按日 30 以 IP 为键 / 免费 60/天 + 月 1200、
-//     会员 400/天 + 月 8000 以用户为键，月窗为 30 天滚动固定窗口而非
-//     自然月；登录档日桶是 pacing 层，防脉冲烧穿月度商业额度）；
+//     分层配额桶（匿名按 IP 每 24 小时 30 次；Free 按用户每 24 小时
+//     60 次 + 滚动 30 天 1200 次；VIP 按用户每 24 小时 400 次 + 滚动
+//     30 天 8000 次；24 小时桶是 pacing 层，防脉冲烧穿长窗口额度）；
 //   - 先分钟桶后配额桶，被分钟桶 429 的请求不消耗配额；
 //   - admin 豁免配额（运营排查不受商业约束），但不豁免分钟桶；
 //   - 除超限外任何 Redis 错误 fail-open（可用性优先于严格性）。
@@ -24,7 +24,7 @@ import (
 	"aigcnews/mcp-go/internal/authn"
 )
 
-// 与 Python 侧常量逐字一致（inbound/rate_limit.py + auth/rate_limit.py）。
+// 与 REST 配额及认证限流常量逐字一致（api_access/quota.py + auth/rate_limit.py）。
 const (
 	// WindowSeconds 是分钟级突发桶窗口（MCP_RATE_LIMIT_WINDOW_SECONDS）。
 	WindowSeconds = 60
@@ -39,8 +39,8 @@ const (
 	// QuotaDailyBucket / QuotaMonthlyBucket 是 tools/call 分层配额桶名。
 	QuotaDailyBucket   = "mcp.quota.daily"
 	QuotaMonthlyBucket = "mcp.quota.monthly"
-	// QuotaDailyWindowSeconds / QuotaMonthlyWindowSeconds 是配额窗口
-	// （日 86400 / 30 天 2592000）。
+	// QuotaDailyWindowSeconds / QuotaMonthlyWindowSeconds 是兼容命名：
+	// 分别表示固定 86400 秒与 2592000 秒窗口，不是自然日或自然月。
 	QuotaDailyWindowSeconds   = 86400
 	QuotaMonthlyWindowSeconds = 2592000
 
@@ -168,15 +168,16 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		return nil
 	}
 
-	// 3. tools/call 分层配额桶：认证按用户先日 pacing 桶后月商业额度桶
-	// （档位取生效档，未知档 fail-closed 按 free；被日桶拒绝的请求不再
-	// 消耗月配额），匿名按 IP 走日配额（按免费档口径报告）。配额是商业
+	// 3. tools/call 分层配额桶：认证按用户先检查固定 24 小时 pacing 桶，
+	// 再检查滚动 30 天商业额度桶（档位取生效档，未知档 fail-closed 按
+	// free；被短窗口拒绝的请求不再消耗长窗口额度）；匿名按 IP 仅使用
+	// 固定 24 小时配额（按免费档口径报告）。配额是商业
 	// 软约束而非安全边界：固定窗口 + INCR 在并发下可能瞬时超 1，与
 	// Python 同口径，可接受。
 	if id.UserID > 0 {
 		tier := id.EffectiveTier(time.Now())
 		quotaIdentity := "user:" + strconv.Itoa(id.UserID)
-		// 3.1 日 pacing 桶（与匿名同桶不同键：mcp.quota.daily:user:<id>）
+		// 3.1 固定 24 小时 pacing 桶（与匿名同桶不同键）
 		dailyLimit := l.limits.FreeDailyToolCallQuota
 		if tier == authn.TierMember {
 			dailyLimit = l.limits.MemberDailyToolCallQuota
@@ -187,7 +188,7 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		); exceeded != nil {
 			return exceeded
 		}
-		// 3.2 月度商业额度桶
+		// 3.2 滚动 30 天商业额度桶
 		monthlyLimit := l.limits.FreeMonthlyToolCallQuota
 		if tier == authn.TierMember {
 			monthlyLimit = l.limits.MemberMonthlyToolCallQuota
@@ -197,7 +198,7 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 			"monthly", tier, monthlyLimit, "user",
 		)
 	}
-	// 匿名没有账号档位，按免费档口径返回（日配额本身更紧）
+	// 匿名没有账号档位，按免费档口径返回（24 小时配额本身更紧）
 	return l.enforceQuotaBucket(
 		ctx, QuotaDailyBucket, "ip:"+ClientIP(r, l.trusted), QuotaDailyWindowSeconds,
 		"daily", authn.TierFree, l.limits.AnonymousDailyToolCallQuota, "ip",

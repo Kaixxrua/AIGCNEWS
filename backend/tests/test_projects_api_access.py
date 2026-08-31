@@ -142,7 +142,7 @@ class EnforceRateLimitTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """分层配额：匿名日 30 / 免费 60/天+1200/月 / 会员 400/天+8000/月（与 MCP 同池）。"""
+    """分层配额：匿名每 24 小时 30；Free 60/1,200、VIP 400/8,000（与 MCP 同池）。"""
 
     async def test_anonymous_call_consumes_daily_ip_quota_in_shared_bucket(self) -> None:
         redis = FakeRedis()
@@ -480,7 +480,7 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["tier"], "free")
         self.assertEqual(payload["identity_kind"], "user")
         self.assertIn("aigcnews.cn/membership", payload["detail"])
-        self.assertIn("Free daily quota exhausted", payload["detail"])
+        self.assertIn("Free per-24-hour quota exhausted", payload["detail"])
         # 被日桶拒绝的请求不消耗月配额：月度键只有第 1 发
         self.assertEqual(
             self.redis.values["ratelimit:mcp.quota.monthly:user:42"], 1
@@ -502,7 +502,7 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["quota_scope"], "daily")
         self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["identity_kind"], "user")
-        self.assertIn("VIP daily quota", payload["detail"])
+        self.assertIn("VIP per-24-hour quota", payload["detail"])
         self.assertIn("window resets", payload["detail"])
 
     def test_free_user_monthly_quota_exceeded_guides_to_membership(self) -> None:
@@ -540,7 +540,7 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["limit"], 3)
-        self.assertIn("VIP monthly quota", payload["detail"])
+        self.assertIn("VIP rolling-30-day quota", payload["detail"])
         self.assertIn("window resets", payload["detail"])
 
     def test_admin_user_skips_quota_entirely(self) -> None:

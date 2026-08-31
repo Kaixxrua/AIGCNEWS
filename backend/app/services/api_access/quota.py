@@ -1,16 +1,15 @@
 """程序化 REST API（``/api/v1/*``）的双层限速与分层配额。
 
-与 MCP inbound 同一套商业口径：分钟级突发桶防爬，检索调用再叠加分层
-配额桶管商业权益（0045 会员体系）——匿名按 IP 走日配额、登录用户按
-档位走日+月双层配额（日 pacing 防脉冲式爬取，30 天滚动窗管商业权益），
-admin 豁免配额。Redis 故障 fail-open（可用性优先，
-与 auth/MCP 限速同策略）。
+与 Go MCP 入站实现使用同一套商业口径：分钟级突发桶防爬，检索调用再
+叠加分层配额桶（0045 会员体系）——匿名按 IP 使用固定 24 小时窗口，
+登录用户按档位使用固定 24 小时 pacing 窗口与滚动 30 天窗口；admin
+豁免配额。Redis 故障 fail-open（可用性优先，与 auth/MCP 限速同策略）。
 
-配额桶字符串与 ``services/mcp/inbound/rate_limit`` 完全一致：MCP 与
-REST 共享同一个配额池——用户 MCP 通道用了 1000 次，REST 通道就只剩
-1000 次，杜绝双通道套利。突发桶独立（``api.search``，流量形状与
-JSON-RPC 协议方法不同）。改任一侧的配额桶名/窗口/额度时必须同步
-另一侧，契约测试（test_projects_api_access.SharedPoolContract）守护同值。
+配额桶字符串与 ``mcp-go/internal/ratelimit/ratelimit.go`` 完全一致：
+MCP 与 REST 共享同一个配额池，杜绝双通道套利。突发桶独立
+（``api.search``，流量形状与 JSON-RPC 协议方法不同）。改任一侧的
+配额桶名、窗口或额度时必须同步另一侧；契约测试
+（test_projects_api_access.SharedPoolContract）守护同值。
 """
 
 from __future__ import annotations
@@ -40,11 +39,11 @@ API_SEARCH_BUCKET = "api.search"
 API_ANONYMOUS_SEARCH_LIMIT = 30
 API_AUTHENTICATED_SEARCH_LIMIT = 120
 
-# 配额桶与 MCP inbound 共享（同值即同池，勿漂移）：匿名日 30（IP 键）/
-# 免费 60/天 + 1200/月 / 会员 400/天 + 8000/月（用户键）。月窗为 30 天
-# 滚动固定窗口而非自然月——INCR+EXPIRE 原语无日历语义，滚动窗对脉冲式
-# 用量更友好。登录档日配额是 pacing 层：杜绝单月额度被一次突发打光，
-# 同时保证匿名持续用量（30×30=900/月）低于免费档月度总量，梯子不倒挂。
+# 配额桶与 Go MCP 入站实现共享（同值即同池，勿漂移）：匿名按 IP 每个
+# 固定 24 小时窗口 30 次；Free 按用户每 24 小时 60 次 + 滚动 30 天
+# 1200 次；VIP 按用户每 24 小时 400 次 + 滚动 30 天 8000 次。
+# INCR+EXPIRE 原语无日历语义；登录档 24 小时配额是 pacing 层，防止一次
+# 突发打光长窗口额度，并保持匿名持续用量低于 Free 长窗口总量。
 API_QUOTA_DAILY_BUCKET = "mcp.quota.daily"
 API_QUOTA_MONTHLY_BUCKET = "mcp.quota.monthly"
 API_QUOTA_DAILY_WINDOW_SECONDS = 86400
@@ -59,8 +58,9 @@ API_MEMBER_MONTHLY_SEARCH_QUOTA = 8000
 class ApiQuotaExceededError(RuntimeError):
     """检索分层配额超限（区别于分钟级突发限速 RateLimitExceededError）。
 
-    携带配额域信息供路由层投影：quota_scope（daily/monthly）、tier、
-    limit、retry_after（超限键剩余 TTL 秒数，供 Retry-After 与客户端提示）、
+    携带配额域信息供路由层投影：quota_scope（兼容值 daily 表示固定
+    86400 秒窗口，monthly 表示固定 2592000 秒窗口）、tier、limit、
+    retry_after（超限键剩余 TTL 秒数，供 Retry-After 与客户端提示）、
     identity_kind（ip/user——匿名日配额与登录日配额同 scope 不同投影文案，
     按 IP 计的提示不能落在登录用户头上）。
     """
@@ -144,17 +144,18 @@ async def _enforce_search_quota(
 ) -> None:
     """Consume one search quota hit; raise ApiQuotaExceededError when over.
 
-    匿名调用者按 IP 走日配额；登录用户按 user id 走日+月双层配额，档位以
-    membership_tier 为准（未知档 fail-closed 按 free）。登录档先日桶后
-    月桶：日桶是 pacing 层，被日桶拒绝的请求不再消耗月配额（防脉冲烧穿
-    月度商业额度）。配额是商业软约束而非安全边界：固定窗口 + INCR 在
+    匿名调用者按 IP 使用固定 24 小时配额；登录用户按 user id 使用固定
+    24 小时 + 滚动 30 天双层配额，档位以 membership_tier 为准（未知档
+    fail-closed 按 free）。登录档先检查 24 小时 pacing 桶，再检查 30 天
+    桶；被短窗口拒绝的请求不再消耗长窗口额度。配额是商业软约束而非
+    安全边界：固定窗口 + INCR 在
     并发下可能瞬时超 1，可接受。Redis 故障 fail-open（与分钟桶同口径）。
     """
 
     if user_id > 0:
         tier = normalize_membership_tier(membership_tier)
         identity = f"user:{user_id}"
-        # 1. 日 pacing 桶（与匿名同桶不同键：mcp.quota.daily:user:<id>）
+        # 1. 固定 24 小时 pacing 桶（与匿名同桶不同键）
         daily_limit = (
             API_MEMBER_DAILY_SEARCH_QUOTA
             if tier == MEMBERSHIP_TIER_MEMBER
@@ -170,7 +171,7 @@ async def _enforce_search_quota(
             limit=daily_limit,
             identity_kind="user",
         )
-        # 2. 月度商业额度桶
+        # 2. 滚动 30 天商业额度桶
         monthly_limit = (
             API_MEMBER_MONTHLY_SEARCH_QUOTA
             if tier == MEMBERSHIP_TIER_MEMBER
@@ -187,7 +188,7 @@ async def _enforce_search_quota(
             identity_kind="user",
         )
         return
-    # 匿名没有账号档位，按免费档口径返回（日配额本身更紧）
+    # 匿名没有账号档位，按免费档口径返回（24 小时配额本身更紧）
     await _hit_quota_bucket(
         redis_client,
         bucket=API_QUOTA_DAILY_BUCKET,

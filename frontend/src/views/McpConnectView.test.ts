@@ -105,8 +105,8 @@ const i18n = createI18n({
         },
         copyQuick: '复制配置命令',
         quota: {
-          anonymous: '匿名调用限额 30 次/天；登录后升至每日 60 次 + 1,200 次/30 天，开通 vip 可达每日 400 次 + 8,000 次/30 天。',
-          free: '当前免费档额度 1,200 次/30 天滚动窗口（每日 60 次）；开通 vip 升至 8,000 次/30 天 + 每日 400 次。',
+          anonymous: 'MCP 匿名额度按 IP 计：每 24 小时 30 次；登录后 MCP/API 共用每 24 小时 60 次 + 滚动 30 天 1,200 次，开通 vip 可达 400 次 + 8,000 次。',
+          free: '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
           loginCta: '登录提升额度',
           vipCta: '开通 vip',
         },
@@ -417,14 +417,14 @@ describe('McpConnectView quota upsell notice', () => {
 
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/mcp"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('匿名调用限额 30 次/天')
+    expect(wrapper.text()).not.toContain('MCP 匿名额度按 IP 计：每 24 小时 30 次')
     expect(controller().loadTokens).not.toHaveBeenCalled()
   })
 
   it('prompts free-tier users to open VIP for a higher quota', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('当前免费档额度 1,200 次/30 天滚动窗口')
+    expect(wrapper.text()).toContain('当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次')
     const cta = wrapper.get('a[href="/membership"]')
     expect(cta.text()).toContain('开通 vip')
   })
