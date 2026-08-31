@@ -81,6 +81,7 @@ describe('monitor presentation localization boundary', () => {
       ['contact-page', 'monitor.nav.contactPage', true],
       ['membership', 'monitor.nav.membership', true],
       ['user-stats', 'monitor.nav.userStats', true],
+      ['revenue', 'monitor.nav.revenue', true],
       ['payment-config', 'monitor.nav.paymentConfig', true],
       ['payment-orders', 'monitor.nav.paymentOrders', true],
     ])
@@ -93,6 +94,7 @@ describe('monitor presentation localization boundary', () => {
     expect(normalizeMonitorSection('mcp-server')).toBe('mcp-server')
     expect(normalizeMonitorSection('oauth-config')).toBe('oauth-config')
     expect(normalizeMonitorSection('telegram-push')).toBe('telegram-push')
+    expect(normalizeMonitorSection('revenue')).toBe('revenue')
     expect(normalizeMonitorSection('')).toBe('tasks')
     expect(normalizeMonitorSection(undefined)).toBe('tasks')
     expect(normalizeMonitorSection(null)).toBe('tasks')

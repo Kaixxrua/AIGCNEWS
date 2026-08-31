@@ -25,6 +25,7 @@ export type {
   SourceKey,
   Task,
   UserStatsResponse,
+  RevenueStatsResponse,
   VisitPlatformKey,
   VisitPlatformShare,
   VisitPlatformStatsResponse,
@@ -61,7 +62,7 @@ export type MonitorSectionKey =
   | 'collect' | 'crawl' | 'enrichment'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server' | 'oauth-config' | 'telegram-push'
-  | 'contact-page' | 'membership' | 'user-stats' | 'payment-config' | 'payment-orders'
+  | 'contact-page' | 'membership' | 'user-stats' | 'revenue' | 'payment-config' | 'payment-orders'
 
 export interface MonitorNavLeaf {
   key: MonitorSectionKey
@@ -106,6 +107,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'contact-page', labelKey: 'monitor.nav.contactPage', adminOnly: true },
     { key: 'membership', labelKey: 'monitor.nav.membership', adminOnly: true },
     { key: 'user-stats', labelKey: 'monitor.nav.userStats', adminOnly: true },
+    { key: 'revenue', labelKey: 'monitor.nav.revenue', adminOnly: true },
     { key: 'payment-config', labelKey: 'monitor.nav.paymentConfig', adminOnly: true },
     { key: 'payment-orders', labelKey: 'monitor.nav.paymentOrders', adminOnly: true },
   ] },

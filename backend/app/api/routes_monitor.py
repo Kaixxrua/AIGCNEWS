@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -12,6 +13,7 @@ from backend.app.api.dependencies import (
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
+    get_payment_order_repository,
     get_readiness_check,
     get_user_account_repository,
 )
@@ -22,6 +24,7 @@ from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
+from backend.app.repositories.payment_order_repository import PaymentRevenueReader
 from backend.app.repositories.site_visit_repository import SiteVisitPlatformReader
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
@@ -165,3 +168,26 @@ async def user_stats(
     total_users = await asyncio.to_thread(users.get_user_count)
     member_users = await asyncio.to_thread(users.get_effective_member_count)
     return {"total_users": total_users, "member_users": member_users}
+
+
+@router.get("/monitor/revenue-stats")
+async def revenue_stats(
+    _: dict = Depends(RequireAdmin),
+    revenue: PaymentRevenueReader = Depends(get_payment_order_repository),
+):
+    """Return CNY/USD paid revenue for CST day, week, month, and year."""
+    tz_cst = timezone(timedelta(hours=8))
+    now = datetime.now(tz_cst)
+    today = now.date()
+    day_start = datetime.combine(today, datetime.min.time(), tzinfo=tz_cst)
+    week_start = day_start - timedelta(days=day_start.weekday())
+    month_start = day_start.replace(day=1)
+    year_start = day_start.replace(month=1, day=1)
+    tomorrow = day_start + timedelta(days=1)
+    windows = {
+        "today": (day_start, tomorrow),
+        "week": (week_start, tomorrow),
+        "month": (month_start, tomorrow),
+        "year": (year_start, tomorrow),
+    }
+    return await asyncio.to_thread(revenue.get_revenue_stats, windows=windows)

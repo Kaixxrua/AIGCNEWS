@@ -15,7 +15,7 @@ describe('MonitorSectionNav', () => {
     setAppLocale('zh-CN')
   })
 
-  it('renders 5 categories and 20 leaves in MONITOR_NAV order with localized labels', () => {
+  it('renders 5 categories and 21 leaves in MONITOR_NAV order with localized labels', () => {
     const wrapper = mountNav()
     expect(wrapper.find('nav.monitor-nav').attributes('aria-label')).toBe('监控分区')
     const headers = wrapper.findAll('.monitor-nav-group-header')
@@ -29,7 +29,7 @@ describe('MonitorSectionNav', () => {
       '采集控制', 'GitHub 爬取', 'GitHub 富化',
       'X 关注账号', 'X 凭证', '微信公众号',
       '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务', 'OAuth 登录', 'Telegram 推送',
-      '联系合作页', '用户组', '用户统计', '支付配置', '支付订单',
+      '联系合作页', '用户组', '用户统计', '收入统计', '支付配置', '支付订单',
     ])
   })
 

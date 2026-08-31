@@ -59,6 +59,16 @@ describe('Monitor API contract', () => {
     transport.get.mockResolvedValueOnce({ data: { total_users: 120, member_users: 7 } })
     await expect(monitorApi.fetchUserStats()).resolves.toEqual({ total_users: 120, member_users: 7 })
     expect(transport.get).toHaveBeenLastCalledWith('/monitor/user-stats')
+
+    const revenue = {
+      today: { cny_amount_cents: 1900, usd_amount_cents: 490 },
+      week: { cny_amount_cents: 3800, usd_amount_cents: 980 },
+      month: { cny_amount_cents: 5700, usd_amount_cents: 1470 },
+      year: { cny_amount_cents: 7600, usd_amount_cents: 1960 },
+    }
+    transport.get.mockResolvedValueOnce({ data: revenue })
+    await expect(monitorApi.fetchRevenueStats()).resolves.toEqual(revenue)
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/revenue-stats')
   })
 
   it('uses the X translation status and retry endpoints', async () => {

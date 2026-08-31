@@ -15,6 +15,7 @@ from backend.app.api.dependencies import (
     get_evaluation_repository,
     get_health_check_service,
     get_ingestion_task_repository,
+    get_payment_order_repository,
     get_readiness_check,
     get_user_account_repository,
 )
@@ -418,6 +419,39 @@ class VisitPlatformBreakdownRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["window"], "7d")
+
+
+class RevenueStatsRouteTests(unittest.TestCase):
+    @staticmethod
+    def _build_app(revenue) -> FastAPI:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        app.dependency_overrides[get_payment_order_repository] = lambda: revenue
+        return app
+
+    def test_requires_admin_before_repository_calls(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_monitor.router, prefix="/api")
+        revenue = MagicMock()
+        app.dependency_overrides[get_payment_order_repository] = lambda: revenue
+        response = TestClient(app).get("/api/monitor/revenue-stats")
+        self.assertIn(response.status_code, (401, 403))
+        revenue.get_revenue_stats.assert_not_called()
+
+    def test_returns_four_windows(self) -> None:
+        revenue = MagicMock()
+        revenue.get_revenue_stats.return_value = {
+            name: {"cny_amount_cents": 100, "usd_amount_cents": 200}
+            for name in ("today", "week", "month", "year")
+        }
+        response = TestClient(self._build_app(revenue)).get("/api/monitor/revenue-stats")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()), {"today", "week", "month", "year"})
+        revenue.get_revenue_stats.assert_called_once()
+        windows = revenue.get_revenue_stats.call_args.kwargs["windows"]
+        self.assertEqual(windows["today"][0].hour, 0)
+        self.assertEqual(windows["week"][0].weekday(), 0)
 
 
 class UserStatsRouteTests(unittest.TestCase):

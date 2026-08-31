@@ -119,6 +119,44 @@ class PostgresPaymentOrderRepository:
                 items = [dict(row) for row in cursor.fetchall()]
         return items, total
 
+    def get_revenue_stats(
+        self,
+        *,
+        windows: dict[str, tuple[datetime, datetime]],
+    ) -> dict[str, dict[str, int]]:
+        """Aggregate paid order amounts in cents, preserving currency separation."""
+        if not windows:
+            return {}
+        earliest_start = min(start for start, _ in windows.values())
+        latest_end = max(end for _, end in windows.values())
+        result = {
+            name: {"cny_amount_cents": 0, "usd_amount_cents": 0}
+            for name in windows
+        }
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT paid_at, currency, amount_cents
+                    FROM payment_orders
+                    WHERE status = 'paid'
+                      AND paid_at IS NOT NULL
+                      AND paid_at >= %s
+                      AND paid_at < %s
+                      AND currency IN ('CNY', 'USD')
+                    """,
+                    (earliest_start, latest_end),
+                )
+                rows = cursor.fetchall()
+        for row in rows:
+            paid_at = row["paid_at"]
+            currency = str(row["currency"]).upper()
+            amount = int(row["amount_cents"])
+            for name, (start, end) in windows.items():
+                if start <= paid_at < end:
+                    result[name][f"{currency.lower()}_amount_cents"] += amount
+        return result
+
     def list_orders_admin(
         self,
         *,

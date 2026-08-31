@@ -13,6 +13,7 @@ import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
 import MembershipUserListPanel from '@/components/monitor/MembershipUserListPanel.vue'
 import PaymentOrdersPanel from '@/components/monitor/PaymentOrdersPanel.vue'
+import RevenueStatsPanel from '@/components/monitor/RevenueStatsPanel.vue'
 import PaymentConfigPanel from '@/components/monitor/PaymentConfigPanel.vue'
 import OAuthConfigPanel from '@/components/monitor/OAuthConfigPanel.vue'
 import TelegramPushConfigPanel from '@/components/monitor/TelegramPushConfigPanel.vue'
@@ -385,6 +386,10 @@ onUnmounted(dispose)
             @save="saveSiteContactPageConfig"
           />
         </template>
+        <template v-else-if="currentSection === 'revenue'">
+          <RevenueStatsPanel v-if="authStore.isAdmin" />
+        </template>
+
         <template v-else-if="currentSection === 'payment-config'">
           <PaymentPricingPanel
             v-if="authStore.isAdmin"

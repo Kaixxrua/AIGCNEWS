@@ -81,6 +81,18 @@ class PaymentOrderReader(Protocol):
         ...
 
 
+class PaymentRevenueReader(Protocol):
+    """Read paid revenue totals for administrator dashboards."""
+
+    def get_revenue_stats(
+        self,
+        *,
+        windows: dict[str, tuple[datetime, datetime]],
+    ) -> dict[str, dict[str, int]]:
+        """Sum paid order amounts in cents for each half-open time window."""
+        ...
+
+
 class PaymentOrderAdminReader(Protocol):
     """Read projections consumed by ops payment routes (may join users)."""
 
@@ -104,6 +116,7 @@ class PaymentOrderRepository(
     PaymentOrderReader,
     PaymentOrderWriter,
     PaymentOrderAdminReader,
+    PaymentRevenueReader,
     Protocol,
 ):
     """Combined payment-order persistence boundary."""

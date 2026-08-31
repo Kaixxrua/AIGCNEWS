@@ -256,3 +256,91 @@ def test_payment_order_admin_list_filters_and_joins_email(database, user_id) -> 
         created_from=None, created_to=None, page=1, page_size=10,
     )
     assert total == 1 and items[0]["plan_code"] == "member_yearly"
+
+
+def test_payment_order_revenue_stats_filters_and_aggregates_paid_orders(
+    database, user_id
+) -> None:
+    repository = PostgresPaymentOrderRepository(database)
+    day_start = datetime(2026, 8, 18, 16, 0, tzinfo=timezone.utc)
+    tomorrow = datetime(2026, 8, 19, 16, 0, tzinfo=timezone.utc)
+    windows = {
+        "today": (day_start, tomorrow),
+        "week": (datetime(2026, 8, 16, 16, tzinfo=timezone.utc), tomorrow),
+        "month": (datetime(2026, 7, 31, 16, tzinfo=timezone.utc), tomorrow),
+        "year": (datetime(2025, 12, 31, 16, tzinfo=timezone.utc), tomorrow),
+    }
+
+    paid_cny = _create(
+        repository, user_id, order_no="M20260819121000000001aa01", amount_cents=1900
+    )
+    paid_usd = _create(
+        repository,
+        user_id,
+        order_no="M20260819121000000001aa02",
+        amount_cents=490,
+        currency="USD",
+    )
+    at_start = _create(
+        repository, user_id, order_no="M20260819121000000001aa03", amount_cents=300
+    )
+    at_end = _create(
+        repository, user_id, order_no="M20260819121000000001aa04", amount_cents=700
+    )
+    _create(
+        repository, user_id, order_no="M20260819121000000001aa05", amount_cents=1100
+    )
+    expired = _create(
+        repository, user_id, order_no="M20260819121000000001aa06", amount_cents=1200
+    )
+    closed = _create(
+        repository, user_id, order_no="M20260819121000000001aa07", amount_cents=1300
+    )
+    null_paid_at = _create(
+        repository, user_id, order_no="M20260819121000000001aa08", amount_cents=1400
+    )
+    unknown_currency = _create(
+        repository,
+        user_id,
+        order_no="M20260819121000000001aa09",
+        amount_cents=1500,
+        currency="JPY",
+    )
+
+    paid_at = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "UPDATE payment_orders SET status = 'paid', paid_at = %s WHERE id = %s",
+                [
+                    (paid_at, paid_cny["id"]),
+                    (paid_at, paid_usd["id"]),
+                    (day_start, at_start["id"]),
+                    (tomorrow, at_end["id"]),
+                    (paid_at, expired["id"]),
+                    (paid_at, closed["id"]),
+                    (paid_at, unknown_currency["id"]),
+                ],
+            )
+            cursor.execute(
+                "UPDATE payment_orders SET status = 'expired', paid_at = %s WHERE id = %s",
+                (paid_at, expired["id"]),
+            )
+            cursor.execute(
+                "UPDATE payment_orders SET status = 'closed', paid_at = %s WHERE id = %s",
+                (paid_at, closed["id"]),
+            )
+            cursor.execute(
+                "UPDATE payment_orders SET status = 'paid', paid_at = NULL WHERE id = %s",
+                (null_paid_at["id"],),
+            )
+
+    result = repository.get_revenue_stats(windows=windows)
+
+    assert result == {
+        "today": {"cny_amount_cents": 2200, "usd_amount_cents": 490},
+        "week": {"cny_amount_cents": 2200, "usd_amount_cents": 490},
+        "month": {"cny_amount_cents": 2200, "usd_amount_cents": 490},
+        "year": {"cny_amount_cents": 2200, "usd_amount_cents": 490},
+    }
+    assert repository.get_revenue_stats(windows={}) == {}

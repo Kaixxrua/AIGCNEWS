@@ -68,6 +68,18 @@ export interface SchedulerStatus {
   jobs: Array<{ id: string; name: string; next_run_time: string | null }>
 }
 
+export interface RevenueWindowStats {
+  cny_amount_cents: number
+  usd_amount_cents: number
+}
+
+export interface RevenueStatsResponse {
+  today: RevenueWindowStats
+  week: RevenueWindowStats
+  month: RevenueWindowStats
+  year: RevenueWindowStats
+}
+
 export interface PagedResult {
   items: Task[]
   total: number
