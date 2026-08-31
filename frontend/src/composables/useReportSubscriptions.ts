@@ -1,5 +1,6 @@
-import { computed, onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import {
+  isActiveSubscription,
   isReportKey,
   isSourceSubscribed as hasSourceSubscription,
   type PlanDeliveryRequest,
@@ -10,6 +11,8 @@ import {
   type SubscriptionPlan,
   type SubscriptionPlanApplyResponse,
 } from '@/features/report/reportViewModel'
+import { copySensitiveToClipboard, copyToClipboard } from '@/composables/useClipboard'
+import type { FeedTokenInfo } from '@/services/auth/feedTokenApi'
 import { i18n } from '@/i18n'
 
 interface ReportSubscriptionOperations {
@@ -19,14 +22,19 @@ interface ReportSubscriptionOperations {
     sources: ReportKey[]
     deliveries: PlanDeliveryRequest[]
     idempotency_key: string
+    sync: boolean
   }) => Promise<SubscriptionPlanApplyResponse | undefined>
+  getFeedToken: () => Promise<FeedTokenInfo>
+  rotateFeedToken: () => Promise<FeedTokenInfo>
   sendToEmail: (payload: { source: ReportKey; date: string; locale: string }) => Promise<ReportMessageResponse | undefined>
 }
 
 interface UseReportSubscriptionsOptions {
   isLoggedIn: Readonly<Ref<boolean>>
-  /** 会员档位：订阅面板按后端 plan.can_select_multiple_sources 决定单/多选 */
-  isMember: Readonly<Ref<boolean>>
+  /** 当前账号是否为有效会员；仅用于选择私有 RSS digest。 */
+  isMember?: Readonly<Ref<boolean>>
+  /** 当前认证用户 ID；用于隔离账号级异步结果和 RSS token 缓存。 */
+  userId: Readonly<Ref<number | null>>
   selectedSource: Ref<ReportKey>
   selectedDate: Ref<string>
   locale: Ref<string>
@@ -72,7 +80,8 @@ const generateIdempotencyKey = (): string => {
 
 export const useReportSubscriptions = ({
   isLoggedIn,
-  isMember: _isMember,
+  isMember,
+  userId,
   selectedSource,
   selectedDate,
   locale,
@@ -93,6 +102,16 @@ export const useReportSubscriptions = ({
   const selectedSources = ref<ReportKey[]>([])
   const selectedDeliveryKeys = ref<string[]>([])
   const isLoadingPlan = ref(false)
+
+  // 完整 RSS token 仅保存在 composable 闭包内存，绝不进入模板、持久化存储或日志。
+  // 绑定当前认证主体；登出或切换账号时必须清空，避免跨账号复用 bearer token。
+  let feedToken = ''
+  let feedTokenOwner: number | string | null = null
+  const isRssBusy = ref(false)
+  const rssNotice = ref('')
+  // RSS 是 virtual delivery，后端不会返回 active；此状态仅代表本次账号会话最近应用的计划。
+  const rssSubscribed = ref(false)
+  const emailSubscribed = ref(false)
 
   // 延时回调统一登记，卸载时集中清理（对齐 useWechatController dispose 范式）
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -120,12 +139,46 @@ export const useReportSubscriptions = ({
     deliveryCapabilities.value.filter(cap => selectedDeliveryKeys.value.includes(cap.key))
   )
 
+  let disposed = false
+  let accountGeneration = 0
+  let requestGeneration = 0
+  const isCurrent = (generation: number, request?: number): boolean =>
+    !disposed
+    && generation === accountGeneration
+    && (request === undefined || request === requestGeneration)
+    && isLoggedIn.value
+    && Number.isInteger(userId.value)
+    && (userId.value ?? 0) > 0
+
+  const clearAccountState = () => {
+    subscriptions.value = []
+    plan.value = null
+    selectedSources.value = []
+    selectedDeliveryKeys.value = []
+    feedToken = ''
+    feedTokenOwner = null
+    rssNotice.value = ''
+    rssSubscribed.value = false
+    emailSubscribed.value = false
+  }
+
+  const invalidateAccount = () => {
+    accountGeneration += 1
+    requestGeneration += 1
+    clearAccountState()
+    isLoadingPlan.value = false
+    isSubscribing.value = false
+    isSendingEmail.value = false
+    isRssBusy.value = false
+  }
+
   const resetWizard = () => {
     step.value = 1
     plan.value = null
     selectedSources.value = []
     selectedDeliveryKeys.value = []
     isLoadingPlan.value = false
+    rssNotice.value = ''
   }
 
   const openSubscribePanel = () => {
@@ -162,33 +215,43 @@ export const useReportSubscriptions = ({
   }
 
   const loadSubscriptions = async () => {
-    if (!isLoggedIn.value) return
+    if (!isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return
+    const generation = accountGeneration
+    const request = ++requestGeneration
     try {
       const data = await operations.loadSubscriptions()
-      subscriptions.value = data?.items ?? []
+      if (isCurrent(generation, request)) subscriptions.value = data?.items ?? []
     } catch {
-      subscriptions.value = []
+      if (isCurrent(generation, request)) subscriptions.value = []
     }
   }
 
   const loadPlan = async () => {
+    if (!isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return
+    const generation = accountGeneration
+    const request = ++requestGeneration
     isLoadingPlan.value = true
     try {
       const data = await operations.loadPlan()
-      if (data) {
+      if (data && isCurrent(generation, request)) {
         plan.value = data
         const active = data.active_sources.filter(isReportKey)
         selectedSources.value = active.length ? active : [selectedSource.value]
-        // 若已有活跃 source，默认帮用户勾选注册邮箱（兼容旧 briefing_subscriptions 习惯）
-        if (active.length) {
-          const emailCap = data.capabilities.find(cap => cap.kind === 'account_email')
-          if (emailCap) selectedDeliveryKeys.value = [emailCap.key]
-        }
+        // 后端为无状态 RSS 固定 active=false；这里只预选真实仍在生效的投递方式。
+        selectedDeliveryKeys.value = data.capabilities
+          .filter(cap => cap.selectable && cap.active === true)
+          .map(cap => cap.key)
+        // account_email 是服务端持久化的真实 delivery；RSS 则是无状态 virtual delivery。
+        emailSubscribed.value = data.capabilities.some(
+          cap => cap.kind === 'account_email' && cap.active === true,
+        )
       }
     } catch (error: unknown) {
-      setError(getApiErrorDetail(error) || i18n.global.t('report.wizard.errorLoadPlan'))
+      if (isCurrent(generation, request)) {
+        setError(getApiErrorDetail(error) || i18n.global.t('report.wizard.errorLoadPlan'))
+      }
     } finally {
-      isLoadingPlan.value = false
+      if (isCurrent(generation, request)) isLoadingPlan.value = false
     }
   }
 
@@ -205,7 +268,8 @@ export const useReportSubscriptions = ({
   }
 
   const goToDeliveryStep = () => {
-    if (!selectedSources.value.length) {
+    // 已有计划的用户需要能清空模块并进入第二步完成全量退订；新用户仍需至少选一个模块。
+    if (!selectedSources.value.length && !hasExistingPlan.value) {
       setError(i18n.global.t('report.wizard.errorNoSource'))
       return
     }
@@ -235,34 +299,160 @@ export const useReportSubscriptions = ({
     })
 
   const getSuccessMessage = (result: SubscriptionPlanApplyResponse): string => {
+    if (result.removed_sources?.length && !result.deliveries.length) {
+      return i18n.global.t('report.wizard.resultUnsubscribed')
+    }
     const hasApplied = result.deliveries.some(d => d.status === 'applied')
     return hasApplied
       ? i18n.global.t('report.wizard.resultSuccess')
       : i18n.global.t('report.wizard.resultAlreadyActive')
   }
 
+  const hasExistingPlan = computed(() => Boolean(
+    subscriptions.value.some(isActiveSubscription)
+      || plan.value?.active_sources.length
+      || deliveryCapabilities.value.some(cap => cap.active === true),
+  ))
+
+  const confirm = (message: string): boolean =>
+    typeof window === 'undefined' ? false : window.confirm(message)
+
   const confirmSubscriptionPlan = async () => {
-    if (isSubscribing.value || !isLoggedIn.value || !selectedSources.value.length) return
-    if (!selectedDeliveryKeys.value.length) {
-      setError(i18n.global.t('report.wizard.errorNoDelivery'))
+    if (isSubscribing.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return
+    const generation = accountGeneration
+
+    const nextSources = [...selectedSources.value]
+    const nextDeliveries = [...selectedDeliveryKeys.value]
+    const selectedCapabilities = selectedDeliveryCapabilities.value
+    const rssSelected = selectedCapabilities.some(cap => cap.kind === 'rss')
+    const emailSelected = selectedCapabilities.some(cap => cap.kind === 'account_email')
+    const memberFeedSelected = Boolean(isMember?.value)
+    const isEmptyPlan = !nextSources.length && !nextDeliveries.length
+    const removesAny = <T>(before: readonly T[], after: readonly T[]): boolean => {
+      const afterSet = new Set(after)
+      return before.some(item => !afterSet.has(item))
+    }
+    const activeDeliveryKeys = deliveryCapabilities.value
+      .filter(cap => cap.active === true)
+      .map(cap => cap.key)
+    const hasReduction = hasExistingPlan.value && (
+      removesAny(plan.value?.active_sources ?? [], nextSources)
+      || removesAny(activeDeliveryKeys, nextDeliveries)
+    )
+
+    if ((!nextSources.length || !nextDeliveries.length) && !isEmptyPlan) {
+      setError(i18n.global.t('report.wizard.errorPlanMustBeTogether'))
       return
     }
+    if (!hasExistingPlan.value && isEmptyPlan) {
+      setError(i18n.global.t('report.wizard.errorNoSource'))
+      return
+    }
+    if (isEmptyPlan && !confirm(i18n.global.t('report.wizard.unsubscribeConfirm'))) return
+    if (hasReduction && !isEmptyPlan && !confirm(i18n.global.t('report.wizard.reductionConfirm'))) return
+
     isSubscribing.value = true
     setError('')
     try {
       const data = await operations.applyPlan({
-        sources: selectedSources.value,
+        sources: nextSources,
         deliveries: buildDeliveryRequests(),
         idempotency_key: generateIdempotencyKey(),
+        sync: true,
       })
+      if (!isCurrent(generation)) return
       await loadSubscriptions()
-      emailSentMsg.value = getSuccessMessage(data ?? { sources: selectedSources.value, deliveries: [] })
-      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
+      if (!isCurrent(generation)) return
+      rssSubscribed.value = rssSelected
+      emailSubscribed.value = emailSelected
+      let successMessage = getSuccessMessage(data ?? { sources: nextSources, deliveries: [] })
+      if (rssSelected) {
+        const copied = await copyRssLink(memberFeedSelected)
+        if (!isCurrent(generation)) return
+        if (copied) {
+          successMessage = i18n.global.t('report.wizard.subscriptionAndRssCopied')
+        } else {
+          // 订阅已保存，但复制失败时不显示“已复制”的成功反馈。
+          successMessage = ''
+        }
+      }
+      emailSentMsg.value = successMessage
+      if (successMessage) scheduleTracked(() => {
+        if (generation === accountGeneration && !disposed) emailSentMsg.value = ''
+      }, 4000)
       closeSubscribePanel()
     } catch (error: unknown) {
-      setError(getSubscriptionErrorMessage(error, i18n.global.t('report.wizard.errorSubmit')))
+      if (isCurrent(generation)) setError(getSubscriptionErrorMessage(error, i18n.global.t('report.wizard.errorSubmit')))
     } finally {
-      isSubscribing.value = false
+      if (generation === accountGeneration && !disposed) isSubscribing.value = false
+    }
+  }
+
+  const ensureFeedToken = async (generation: number): Promise<string> => {
+    const owner = userId.value
+    if (!isCurrent(generation) || owner === null) throw new Error('Authentication changed')
+    if (feedToken && feedTokenOwner === owner) return feedToken
+    const info = await operations.getFeedToken()
+    if (!isCurrent(generation) || userId.value !== owner) throw new Error('Authentication changed')
+    feedToken = info.token
+    feedTokenOwner = owner
+    return feedToken
+  }
+
+  const copyRssLink = async (member: boolean): Promise<boolean> => {
+    if (isRssBusy.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return false
+    const generation = accountGeneration
+    isRssBusy.value = true
+    rssNotice.value = ''
+    try {
+      const token = member ? encodeURIComponent(await ensureFeedToken(generation)) : ''
+      if (!isCurrent(generation)) return false
+      const origin = typeof window === 'undefined' ? '' : window.location.origin
+      const url = member
+        ? `${origin}/api/feeds/briefing-digest.xml?token=${token}`
+        : `${origin}/api/feeds/briefing.xml`
+      await (member ? copySensitiveToClipboard(url) : copyToClipboard(url))
+      if (!isCurrent(generation)) return false
+      rssNotice.value = 'rss-copied'
+      return true
+    } catch (error: unknown) {
+      if (isCurrent(generation)) {
+        rssNotice.value = ''
+        setError(getSubscriptionErrorMessage(error, i18n.global.t('report.wizard.errorRss')))
+      }
+      return false
+    } finally {
+      if (generation === accountGeneration && !disposed) isRssBusy.value = false
+    }
+  }
+
+  const copySubscribedRss = async (): Promise<boolean> => {
+    if (!rssSubscribed.value) return false
+    return copyRssLink(Boolean(isMember?.value))
+  }
+
+  const rotateRssToken = async (): Promise<boolean> => {
+    if (isRssBusy.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return false
+    if (!confirm(i18n.global.t('report.wizard.rssResetConfirm'))) return false
+    const generation = accountGeneration
+    const owner = userId.value
+    isRssBusy.value = true
+    rssNotice.value = ''
+    try {
+      const info = await operations.rotateFeedToken()
+      if (!isCurrent(generation) || userId.value !== owner) return false
+      feedToken = info.token
+      feedTokenOwner = owner
+      rssNotice.value = 'rss-rotated'
+      return true
+    } catch (error: unknown) {
+      if (isCurrent(generation)) {
+        rssNotice.value = ''
+        setError(getSubscriptionErrorMessage(error, i18n.global.t('report.wizard.errorRss')))
+      }
+      return false
+    } finally {
+      if (generation === accountGeneration && !disposed) isRssBusy.value = false
     }
   }
 
@@ -272,7 +462,8 @@ export const useReportSubscriptions = ({
   }
 
   const sendToEmail = async () => {
-    if (isSendingEmail.value || !isLoggedIn.value) return
+    if (isSendingEmail.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return
+    const generation = accountGeneration
     isSendingEmail.value = true
     emailSentMsg.value = ''
     try {
@@ -281,20 +472,39 @@ export const useReportSubscriptions = ({
         date: selectedDate.value,
         locale: locale.value,
       })
+      if (!isCurrent(generation)) return
       emailSentMsg.value = data?.message || i18n.global.t('report.wizard.sent')
-      scheduleTracked(() => { emailSentMsg.value = '' }, 4000)
+      scheduleTracked(() => {
+        if (generation === accountGeneration && !disposed) emailSentMsg.value = ''
+      }, 4000)
     } catch (error: unknown) {
-      setError(getApiErrorMessage(error) || i18n.global.t('report.wizard.sendFailed'))
+      if (isCurrent(generation)) setError(getApiErrorMessage(error) || i18n.global.t('report.wizard.sendFailed'))
     } finally {
-      isSendingEmail.value = false
+      if (generation === accountGeneration && !disposed) isSendingEmail.value = false
     }
   }
+
+  watch(
+    [isLoggedIn, userId],
+    ([loggedIn, currentUserId], [previousLoggedIn, previousUserId]) => {
+      if (loggedIn === previousLoggedIn && currentUserId === previousUserId) return
+      invalidateAccount()
+      if (loggedIn && Number.isInteger(currentUserId) && (currentUserId ?? 0) > 0) void loadSubscriptions()
+    },
+    { flush: 'sync' },
+  )
 
   onMounted(() => {
     void loadSubscriptions()
   })
 
-  onUnmounted(clearPendingTimers)
+  onUnmounted(() => {
+    disposed = true
+    accountGeneration += 1
+    requestGeneration += 1
+    clearAccountState()
+    clearPendingTimers()
+  })
 
   return {
     subscriptions,
@@ -308,6 +518,12 @@ export const useReportSubscriptions = ({
     selectedSources,
     selectedDeliveryKeys,
     isLoadingPlan,
+    hasExistingPlan,
+    isRssBusy,
+    rssNotice,
+    rssSubscribed,
+    emailSubscribed,
+    copySubscribedRss,
     canSelectMultipleSources,
     deliveryCapabilities,
     selectedDeliveryCapabilities,
@@ -322,6 +538,8 @@ export const useReportSubscriptions = ({
     goBackToSourceStep,
     toggleDelivery,
     confirmSubscriptionPlan,
+    copyRssLink,
+    rotateRssToken,
     toggleSubscribe,
     sendToEmail,
   }

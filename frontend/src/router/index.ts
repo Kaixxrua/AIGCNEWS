@@ -13,7 +13,6 @@ const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
 const WechatView = () => import('@/views/WechatView.vue')
-const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
@@ -27,6 +26,7 @@ const DshView = () => import('@/views/DshView.vue')
 const ContactPageView = () => import('@/views/ContactPageView.vue')
 const MembershipView = () => import('@/views/MembershipView.vue')
 const MembershipCheckoutView = () => import('@/views/MembershipCheckoutView.vue')
+const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -83,6 +83,13 @@ const router = createRouter({
           component: ReportView,
         },
         {
+          path: 'subscriptions',
+          name: 'subscriptions',
+          component: SubscriptionsView,
+          // 复杂渠道与单条 Push 订阅管理兼容深链；主 Dock 不展示该入口。
+          meta: { requiresAuth: true },
+        },
+        {
           path: 'x',
           name: 'x-board',
           component: XBoardView,
@@ -95,15 +102,10 @@ const router = createRouter({
           meta: { requiresAdmin: true, feature: 'wechatSource' },
         },
         {
-          path: 'subscriptions',
-          name: 'subscriptions',
-          component: SubscriptionsView,
-          meta: { requiresAuth: true },
-        },
-        {
           path: 'mcp',
           name: 'mcp-connect',
           component: McpConnectView,
+          // MCP 配置页只负责登录后的客户端与 Token 管理；运行时仍允许站外匿名调用
           meta: { requiresAuth: true },
         },
         {

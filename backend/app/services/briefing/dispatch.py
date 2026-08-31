@@ -6,7 +6,9 @@ from __future__ import annotations
 （start/content/done/error）、正文拼接与逐订阅者邮件派发均归属 services 层。
 """
 
+import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from backend.app.core.operations import ApplicationOperationsRuntime
@@ -19,9 +21,13 @@ from backend.app.repositories.briefing_repository import (
 from backend.app.services import email_service
 from backend.app.services.briefing.composition import provide_daily_briefing_service
 from backend.app.services.briefing.daily_briefing import BriefingSavedNotifier
+from backend.app.services.ingestion.base_crawler import today_cst
 from backend.app.services.push.dispatch_service import SubscriptionDispatchService
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SOURCE_CONCURRENCY = 3
+DEFAULT_LLM_CONCURRENCY = 1
 
 BRIEFING_SOURCES: List[str] = [
     "all",
@@ -33,6 +39,24 @@ BRIEFING_SOURCES: List[str] = [
     "x",
     "dailyhot",
 ]
+
+
+@dataclass(frozen=True)
+class _DailyBriefingSourceResult:
+    source: str
+    report_date: str = ""
+    content: str = ""
+    briefing_id: int = -1
+    error: str = ""
+
+    @property
+    def successful(self) -> bool:
+        return (
+            not self.error
+            and self.briefing_id > 0
+            and bool(self.report_date)
+            and bool(self.content.strip())
+        )
 
 
 def _already_delivered(subscriber: Dict[str, Any], briefing_id: int) -> bool:
@@ -213,24 +237,21 @@ def build_briefing_saved_notifier(
     return _notify
 
 
-async def run_daily_briefing_dispatch(
-    repositories: ApplicationRepositories,
+async def _run_daily_briefing_source(
+    service: Any,
+    source: str,
     *,
-    redis_client: Any | None = None,
-) -> None:
-    logger.info(
-        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_SOURCES)
-    )
-    service = provide_daily_briefing_service(repositories=repositories)
-    success = 0
-    for source in BRIEFING_SOURCES:
+    target_date: str,
+    limiter: asyncio.Semaphore,
+) -> _DailyBriefingSourceResult:
+    async with limiter:
+        content_parts: list[str] = []
+        report_date = ""
+        briefing_id = -1
+        stream_error = ""
         try:
-            content_parts: list[str] = []
-            report_date = ""
-            briefing_id = -1
-            stream_error = ""
             async for payload in service.stream_generate(
-                target_date=None,
+                target_date=target_date,
                 source=source,
                 force_regenerate=False,
                 generate_bilingual=True,
@@ -247,36 +268,98 @@ async def run_daily_briefing_dispatch(
                 elif payload_type == "error":
                     stream_error = str(payload.get("data") or "unknown error")
             if stream_error:
-                # 流内 error 载荷同样代表本维度失败，不计入成功数也不派发。
                 logger.error(
                     "[Briefing] 简报生成失败: source=%s error=%s",
                     source,
                     stream_error,
                 )
-                continue
-            success += 1
-            logger.info(
-                "[Briefing] 日报生成完成，准备推送订阅用户: source=%s",
-                source,
+                return _DailyBriefingSourceResult(source=source, error=stream_error)
+            result = _DailyBriefingSourceResult(
+                source=source,
+                report_date=report_date,
+                content="".join(content_parts),
+                briefing_id=briefing_id,
             )
-            content = "".join(content_parts)
-            if briefing_id > 0 and content.strip() and report_date:
-                sent = await send_briefing_to_subscribers(
-                    source=source,
-                    date_str=report_date,
-                    content=content,
-                    briefing_id=briefing_id,
-                    subscriptions=repositories.briefing_subscriptions,
-                    redis_client=redis_client,
-                )
+            if result.successful:
                 logger.info(
-                    "[Briefing] 订阅简报发送完成: source=%s sent=%d",
-                    source,
-                    sent,
+                    "[Briefing] 日报生成完成，准备推送订阅用户: source=%s", source
                 )
+            return result
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             logger.error(
                 "[Briefing] 简报生成失败: source=%s error=%s",
+                source,
+                exc,
+                exc_info=True,
+            )
+            return _DailyBriefingSourceResult(source=source, error=str(exc))
+
+
+async def run_daily_briefing_dispatch(
+    repositories: ApplicationRepositories,
+    *,
+    redis_client: Any | None = None,
+    source_concurrency: int = DEFAULT_SOURCE_CONCURRENCY,
+    llm_concurrency: int = DEFAULT_LLM_CONCURRENCY,
+) -> None:
+    if source_concurrency < 1 or llm_concurrency < 1:
+        raise ValueError("briefing concurrency must be at least 1")
+    logger.info(
+        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_SOURCES)
+    )
+    target_date = today_cst()
+    llm_limiter = asyncio.Semaphore(llm_concurrency)
+    service = provide_daily_briefing_service(
+        repositories=repositories,
+        llm_limiter=llm_limiter,
+    )
+    source_limiter = asyncio.Semaphore(source_concurrency)
+    tasks = [
+        asyncio.create_task(
+            _run_daily_briefing_source(
+                service,
+                source,
+                target_date=target_date,
+                limiter=source_limiter,
+            ),
+            name=f"briefing-source-{source}",
+        )
+        for source in BRIEFING_SOURCES
+    ]
+    try:
+        results = await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+    by_source = {result.source: result for result in results}
+    success = sum(1 for source in BRIEFING_SOURCES if by_source[source].successful)
+    for source in BRIEFING_SOURCES:
+        result = by_source[source]
+        if not result.successful:
+            continue
+        try:
+            sent = await send_briefing_to_subscribers(
+                source=source,
+                date_str=result.report_date,
+                content=result.content,
+                briefing_id=result.briefing_id,
+                subscriptions=repositories.briefing_subscriptions,
+                redis_client=redis_client,
+            )
+            logger.info(
+                "[Briefing] 订阅简报发送完成: source=%s sent=%d", source, sent
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error(
+                "[Briefing] 订阅简报发送失败: source=%s error=%s",
                 source,
                 exc,
                 exc_info=True,

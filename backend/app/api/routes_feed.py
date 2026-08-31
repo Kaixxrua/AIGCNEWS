@@ -1,4 +1,4 @@
-"""RSS 2.0 feed API：公开摘要 feed（获客）+ 会员全文 feed（增值）。
+"""RSS 2.0 feed API：canonical 简报 feed + legacy compatibility routes。
 
 端点列表：
   GET  /api/feed.xml                     → 综合 feed（全部源按发布时间归并）
@@ -55,6 +55,8 @@ from backend.app.services.briefing.daily_briefing import _truncate_summary
 from backend.app.services.briefing.rss_render import (
     condense_briefing_markdown,
     render_briefing_markdown_html,
+    sanitize_public_resource_url,
+    sanitize_public_text,
 )
 from backend.app.services.membership.tiers import (
     MEMBERSHIP_TIER_MEMBER,
@@ -208,8 +210,8 @@ def _item_link(row: dict[str, Any], base_url: str) -> str | None:
     source = str(row.get("source") or "").strip()
     if source == "arxiv" and doc_id:
         return f"{base_url}/papers/{quote(doc_id, safe='')}/read"
-    url = str(row.get("url") or "").strip()
-    return url or None
+    url = sanitize_public_resource_url(str(row.get("url") or ""))
+    return url
 
 
 _PUBLIC_TITLE_TRANSLATION_LIMIT = 80
@@ -240,10 +242,12 @@ def _item_description(row: dict[str, Any], *, full: bool) -> str:
         parts = [summary] if summary else []
         if translation and translation != summary:
             parts.append(translation)
-        return "\n\n".join(parts)
+        return sanitize_public_text("\n\n".join(parts))
     if translation:
-        return _truncate_summary(translation, _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT)
-    return summary
+        return sanitize_public_text(
+            _truncate_summary(translation, _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT)
+        )
+    return sanitize_public_text(summary)
 
 
 def _parse_tags(value: Any) -> list[str]:

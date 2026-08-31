@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -13,6 +14,7 @@ from backend.app.services.briefing.preparation import (
     normalize_briefing_context,
     prepare_briefing,
 )
+from backend.app.services.briefing.rss_render import sanitize_public_text
 from backend.app.services.ingestion.base_crawler import today_cst
 
 logger = logging.getLogger(__name__)
@@ -139,6 +141,7 @@ _WRITING_DISCIPLINE = r"""
 **写作纪律（所有章节必须遵守）：**
 - 以编辑部第一人称口吻直接撰写（如"本报梳理""本报判断"）；全文禁止出现"题目""提供的材料""输入材料""给定资料""supplied""provided materials"等元叙述措辞
 - 每个条目结尾必须用 Markdown 链接附上来源（使用输入中给出的 URL）
+- 来源链接只能使用输入中提供的公开 HTTPS URL；禁止输出 `/home/`、`/tmp/`、`/var/`、`storage/` 等服务器路径、Windows/UNC 路径、`file://`、`javascript:`、`data:`、`ftp:`、协议相对 URL 或其他本地资源引用
 - 每个章节内的条目编号从 1 开始连续编号，不得沿用输入列表的全局编号
 """
 
@@ -559,6 +562,7 @@ class DailyBriefingService:
         model: BriefingModel,
         top_k: int = 10,
         briefing_saved: BriefingSavedNotifier | None = None,
+        llm_limiter: asyncio.Semaphore | None = None,
     ) -> None:
         self._briefings = briefing_repository
         self._document_feed = document_feed
@@ -566,6 +570,7 @@ class DailyBriefingService:
         self._top_k = top_k
         self._llm = model
         self._briefing_saved = briefing_saved
+        self._llm_limiter = llm_limiter
 
     def _notify_briefing_saved(
         self,
@@ -859,28 +864,40 @@ class DailyBriefingService:
             logger.warning("检测到转义反引号，已还原为行内代码形式")
             parts[:] = [unescaped]
             accumulated = unescaped
+        sanitized = sanitize_public_text(accumulated)
+        if sanitized != accumulated:
+            logger.warning("检测到非公开资源引用，已在简报持久化前移除")
+            parts[:] = [sanitized]
+            accumulated = sanitized
         return accumulated
 
     async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
         """执行一轮 LLM 流式生成，逐 token 返回。"""
-        async for chunk in self._llm.astream(prompt):
-            raw_content = getattr(chunk, "content", None)
-            # Anthropic Extended Thinking 返回的 content 可能是
-            # list[dict]（含 thinking_block / text_block），需要提取纯文本
-            if isinstance(raw_content, list):
-                text_parts = []
-                for block in raw_content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            text_parts.append(block.get("text", ""))
-                        # 跳过 thinking_block 等非文本块
-                    elif isinstance(block, str):
-                        text_parts.append(block)
-                content = "".join(text_parts)
-            else:
-                content = raw_content or ""
-            if content:
-                yield str(content)
+        limiter = self._llm_limiter
+        if limiter is not None:
+            await limiter.acquire()
+        try:
+            async for chunk in self._llm.astream(prompt):
+                raw_content = getattr(chunk, "content", None)
+                # Anthropic Extended Thinking 返回的 content 可能是
+                # list[dict]（含 thinking_block / text_block），需要提取纯文本
+                if isinstance(raw_content, list):
+                    text_parts = []
+                    for block in raw_content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                text_parts.append(block.get("text", ""))
+                            # 跳过 thinking_block 等非文本块
+                        elif isinstance(block, str):
+                            text_parts.append(block)
+                    content = "".join(text_parts)
+                else:
+                    content = raw_content or ""
+                if content:
+                    yield str(content)
+        finally:
+            if limiter is not None:
+                limiter.release()
 
     @staticmethod
     def _is_truncated(text: str) -> bool:

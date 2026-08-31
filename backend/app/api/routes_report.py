@@ -276,6 +276,8 @@ class PlanDeliveryCapability(BaseModel):
     status: str | None = None
     selectable: bool
     disabled_reason: str | None = None
+    feed: str | None = None
+    active: bool | None = None
 
 
 class SubscriptionPlanResponse(BaseModel):

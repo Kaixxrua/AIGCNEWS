@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from typing import Any, AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -241,6 +242,7 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-08-08"),
             patch.object(
                 dispatch, "provide_daily_briefing_service", return_value=service
             ) as provide,
@@ -251,12 +253,15 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         ):
             await dispatch.run_daily_briefing_dispatch(repositories)
 
-        provide.assert_called_once_with(repositories=repositories)
+        provide.assert_called_once_with(
+            repositories=repositories,
+            llm_limiter=unittest.mock.ANY,
+        )
         self.assertEqual(
             service.calls,
             [
                 {
-                    "target_date": None,
+                    "target_date": "2026-08-08",
                     "source": "github",
                     "force_regenerate": False,
                     "generate_bilingual": True,
@@ -451,6 +456,101 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
             )
 
         factory.assert_called_once_with(sentinel)
+
+
+    async def test_sources_overlap_and_email_delivery_keeps_canonical_order(self) -> None:
+        sources = ["all", "arxiv", "github", "news"]
+        active = 0
+        max_active = 0
+        started: list[str] = []
+        finished: list[str] = []
+
+        class _OverlappingService:
+            calls: list[dict[str, Any]] = []
+
+            async def stream_generate(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+                nonlocal active, max_active
+                source = kwargs["source"]
+                self.calls.append(kwargs)
+                started.append(source)
+                active += 1
+                max_active = max(max_active, active)
+                try:
+                    yield {"type": "start", "data": {"date": "2026-08-31"}}
+                    await asyncio.sleep(0.01)
+                    yield {"type": "content", "data": source}
+                    yield {"type": "done", "data": {"briefing_id": sources.index(source) + 1}}
+                finally:
+                    active -= 1
+                    finished.append(source)
+
+        service = _OverlappingService()
+        repositories = _repositories_with_subscribers(
+            [{"id": 5, "email": "subscriber@example.com"}]
+        )
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+        delivered_sources: list[str] = []
+
+        async def record_email(**kwargs: Any) -> None:
+            delivered_sources.append(kwargs["source"])
+
+        email_service.send_briefing.side_effect = record_email
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", sources),
+            patch.object(dispatch, "today_cst", return_value="2026-08-31"),
+            patch.object(dispatch, "provide_daily_briefing_service", return_value=service),
+            patch(
+                "backend.app.services.email_service.build_email_service",
+                return_value=email_service,
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, source_concurrency=2, llm_concurrency=1
+            )
+
+        self.assertEqual(max_active, 2)
+        self.assertEqual(set(started), set(sources))
+        self.assertEqual(set(finished), set(sources))
+        self.assertEqual(
+            [call["target_date"] for call in service.calls], ["2026-08-31"] * 4
+        )
+        self.assertEqual(delivered_sources, sources)
+
+    async def test_cancellation_joins_all_source_tasks(self) -> None:
+        sources = ["arxiv", "github", "x"]
+        started: set[str] = set()
+        finished: set[str] = set()
+        release = asyncio.Event()
+
+        class _BlockingService:
+            async def stream_generate(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+                source = kwargs["source"]
+                started.add(source)
+                try:
+                    yield {"type": "start", "data": {"date": "2026-08-31"}}
+                    await release.wait()
+                finally:
+                    finished.add(source)
+
+        repositories = _repositories_with_subscribers([])
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", sources),
+            patch.object(dispatch, "today_cst", return_value="2026-08-31"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=_BlockingService()
+            ),
+        ):
+            task = asyncio.create_task(dispatch.run_daily_briefing_dispatch(repositories))
+            for _ in range(20):
+                if len(started) == 2:
+                    break
+                await asyncio.sleep(0)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+
+        self.assertEqual(finished, started)
 
 
 class _FakeOperationsRuntime:

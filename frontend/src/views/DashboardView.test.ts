@@ -105,20 +105,21 @@ describe('DashboardView', () => {
     const wrapper = await mountView()
 
     // 免费/未登录：入口仍是转化链路，导去权益页
-    const memberCta = wrapper.get('a[href="/membership"]')
+    const memberCta = wrapper.findAll('a[href="/report"]')[1]!
     expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })
 
-  it('routes the member RSS entry to the subscriptions page for members', async () => {
+  it('routes the member RSS entry to the report wizard for members', async () => {
     authBox.isMember = true
     const wrapper = await mountView()
 
-    // 会员：入口直达订阅页复制带 token 链接，不再落到购买页死胡同
-    const memberCta = wrapper.get('a[href="/subscriptions"]')
+    // 会员：统一进入简报向导，在第二步复制会员 RSS 链接
+    const memberCta = wrapper.findAll('a[href="/report"]')[1]!
     expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })
 })

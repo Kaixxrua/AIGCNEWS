@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from xml.etree import ElementTree
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,6 +52,8 @@ from backend.app.main import app
 from backend.app.services.briefing.rss_render import (
     condense_briefing_markdown,
     render_briefing_markdown_html,
+    sanitize_public_resource_url,
+    sanitize_public_text,
 )
 
 
@@ -648,6 +651,109 @@ def _briefing_row(
         "content_zh": content,
         "content_en": "",
     }
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://example.com/a?x=1#part", "https://example.com/a?x=1#part"),
+        ("/api/media/briefing.png?x=1#hero", "/api/media/briefing.png?x=1#hero"),
+        ("file:///home/kaixxrua/secret.png", None),
+        ("javascript:alert(1)", None),
+        ("data:text/plain,secret", None),
+        ("ftp://example.com/a", None),
+        ("//example.com/a", None),
+        ("/home/kaixxrua/secret.png", None),
+        ("storage/secret.png", None),
+        ("C:\\\\Users\\\\secret.png", None),
+        ("\\\\server\\share\\secret.png", None),
+        ("/api/media/../secret.png", None),
+        ("https://user:pass@example.com/a", None),
+    ],
+)
+def test_sanitize_public_resource_url_allowlists_public_resources(
+    value: str, expected: str | None
+) -> None:
+    assert sanitize_public_resource_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("图片 ![x](/home/kaixxrua/secret.png) 链接 [secret](file:///tmp/a)", "图片  链接 secret"),
+        ("安全 ![x](https://example.com/a.png) [a](/api/media/a.png)", "安全 ![x](https://example.com/a.png) [a](/api/media/a.png)"),
+        ("裸路径 /home/kaixxrua/a.png storage/b.png file://tmp/a javascript:alert(1)", "裸路径    "),
+    ],
+)
+def test_sanitize_public_text_removes_unsafe_markdown_resources(
+    source: str, expected: str
+) -> None:
+    assert sanitize_public_text(source) == expected
+
+
+def test_build_feed_item_skips_unsafe_required_external_link() -> None:
+    row = _doc("unsafe", source="news", url="file:///home/kaixxrua/private.png")
+    assert build_feed_item(row, "https://aigcnews.cn") is None
+
+
+def test_build_feed_item_sanitizes_unsafe_description_content() -> None:
+    row = _doc(
+        "unsafe-summary",
+        source="news",
+        summary="摘要 /home/kaixxrua/private.png [私密](file:///tmp/private.png)",
+    )
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "/home/" not in item
+    assert "file://" not in item
+    assert "私密" in item
+
+
+def test_render_briefing_markdown_html_drops_unsafe_images_and_links() -> None:
+    html = render_briefing_markdown_html(
+        "![泄漏](/home/kaixxrua/secret.png) [私密](javascript:alert(1)) "
+        "![安全](https://example.com/a.png) [媒体](/api/media/a.png)"
+    )
+    assert "secret.png" not in html
+    assert "javascript:" not in html
+    assert "泄漏" not in html
+    assert "私密" in html
+    assert '<img src="https://example.com/a.png" alt="安全" />' in html
+    assert '<a href="/api/media/a.png">媒体</a>' in html
+
+
+def test_build_briefing_feed_item_sanitizes_historical_dirty_content() -> None:
+    row = _briefing_row(
+        content=(
+            "# 简报\\n"
+            "泄漏 /home/kaixxrua/16e94576-3c54-4a46-8f1c-cdf75f3a419d.png\\n"
+            "[私密](file:///tmp/private.png)"
+        )
+    )
+    item = build_briefing_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "/home/" not in item
+    assert "file://" not in item
+    assert "16e94576" not in item
+
+
+def test_briefing_xml_is_well_formed_and_contains_no_unsafe_resource_tokens() -> None:
+    rows = [
+        _briefing_row(
+            content="# 简报\\n![泄漏](/home/kaixxrua/secret.png)\\n安全 [媒体](https://example.com/a)"
+        )
+    ]
+    item = build_briefing_feed_item(rows[0], "https://aigcnews.cn")
+    assert item is not None
+    xml = build_rss_xml(
+        channel_title="AIGC NEWS · 每日简报",
+        channel_link="https://aigcnews.cn/report",
+        channel_description="每日简报",
+        items=[item],
+    )
+    ElementTree.fromstring(xml)
+    for token in ("/home/", "file://", "javascript:", "data:", "ftp://", "storage/"):
+        assert token not in xml
 
 
 def test_render_briefing_markdown_html_covers_headings_paragraphs_and_lists() -> None:

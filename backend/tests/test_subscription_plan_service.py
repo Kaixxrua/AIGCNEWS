@@ -996,3 +996,108 @@ class TestReportSubscriptionPlanServiceApplyPlanSync:
 
         assert result["removed_sources"] == []
         briefing_subscriptions.cancel_briefing_subscription.assert_not_called()
+
+
+class TestReportSubscriptionPlanServiceDailyFrequency:
+    """日报计划只读取和同步 daily push subscriptions。"""
+
+    def test_get_plan_ignores_non_daily_push_rows(self) -> None:
+        briefing_subscriptions = MagicMock()
+        briefing_subscriptions.get_user_briefing_subscriptions.return_value = []
+        user_subscriptions = MagicMock()
+        user_subscriptions.list_subscriptions.return_value = [
+            {
+                "source": "weekly-only",
+                "channel_id": 10,
+                "status": "active",
+                "frequency": "weekly",
+            },
+            {
+                "source": "github",
+                "channel_id": 11,
+                "status": "active",
+                "frequency": "daily",
+            },
+        ]
+        push_channels = MagicMock()
+        push_channels.list_channels.return_value = []
+        service = _service(
+            briefing_subscriptions=briefing_subscriptions,
+            user_subscriptions=user_subscriptions,
+            push_channels=push_channels,
+        )
+
+        plan = service.get_plan(user={"user_id": 1}, user_id=1)
+
+        assert plan["active_sources"] == ["github"]
+
+    def test_apply_plan_does_not_delete_non_daily_rows_in_sync(self) -> None:
+        briefing_subscriptions = MagicMock()
+        briefing_subscriptions.get_user_briefing_subscriptions.return_value = []
+        user_subscriptions = MagicMock()
+        user_subscriptions.list_subscriptions.return_value = [
+            {
+                "id": 7,
+                "source": "weekly-only",
+                "channel_id": 10,
+                "status": "active",
+                "frequency": "weekly",
+            }
+        ]
+        push_channels = MagicMock()
+        push_channels.list_channels.return_value = []
+        service = _service(
+            briefing_subscriptions=briefing_subscriptions,
+            user_subscriptions=user_subscriptions,
+            push_channels=push_channels,
+        )
+
+        service.apply_plan(
+            user={"user_id": 1},
+            user_id=1,
+            email="a@b.com",
+            sources=["github"],
+            deliveries=[DeliveryTarget(kind="rss")],
+            sync=True,
+        )
+
+        user_subscriptions.delete_subscription.assert_not_called()
+
+    def test_existing_non_daily_pair_does_not_block_daily_subscription(self) -> None:
+        briefing_subscriptions = MagicMock()
+        briefing_subscriptions.get_user_briefing_subscriptions.return_value = []
+        user_subscriptions = MagicMock()
+        user_subscriptions.list_subscriptions.return_value = [
+            {
+                "id": 7,
+                "source": "github",
+                "channel_id": 10,
+                "status": "active",
+                "frequency": "weekly",
+            }
+        ]
+        push_channels = MagicMock()
+        push_channels.list_channels.return_value = [
+            {
+                "id": 10,
+                "channel_type": "webhook",
+                "target": "https://example.com/hook",
+                "verified": True,
+                "status": CHANNEL_STATUS_ACTIVE,
+            }
+        ]
+        service = _service(
+            briefing_subscriptions=briefing_subscriptions,
+            user_subscriptions=user_subscriptions,
+            push_channels=push_channels,
+        )
+
+        service.apply_plan(
+            user={"user_id": 1},
+            user_id=1,
+            email="a@b.com",
+            sources=["github"],
+            deliveries=[DeliveryTarget(kind="push_channel", channel_id=10)],
+        )
+
+        user_subscriptions.create_subscription.assert_called_once()

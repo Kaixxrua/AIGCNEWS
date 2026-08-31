@@ -54,9 +54,28 @@ export const useAuthStore = defineStore('auth', () => {
   const pendingChatMessage = ref<string>(readStorage(PENDING_CHAT_KEY) ?? '')
 
   // ── Getters ────────────────────────────────────────────────────────────────
+  const authRevision = ref(0)
   const isLoggedIn = computed(() => status.value === 'authenticated')
   const isAdmin = computed(() => status.value === 'authenticated' && user.value?.role === 'admin')
-  const isMember = computed(() => status.value === 'authenticated' && user.value?.membership_tier === 'member')
+  const isMember = computed(() => {
+    if (status.value !== 'authenticated' || user.value?.membership_tier !== 'member') return false
+    const expiry = user.value.membership_expires_at
+    if (expiry == null || expiry.trim() === '') return true
+    const timestamp = Date.parse(expiry)
+    // 与后端 resolve_effective_tier 保持 fail-open：无法解析的历史值不误伤会员。
+    return Number.isNaN(timestamp) || timestamp > Date.now()
+  })
+  const userId = computed(() => user.value?.user_id ?? null)
+
+  const nextRevision = (): number => {
+    authRevision.value += 1
+    return authRevision.value
+  }
+
+  const isCurrent = (revision: number, expectedToken: string | null): boolean =>
+    authRevision.value === revision && token.value === expectedToken
+
+  const staleAuthOperation = () => new Error('Authentication context changed')
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -74,47 +93,82 @@ export const useAuthStore = defineStore('auth', () => {
     return msg
   }
 
+  const fetchMeForContext = async (revision: number, expectedToken: string): Promise<AuthUser> => {
+    const currentUser = await fetchCurrentUser()
+    if (!isCurrent(revision, expectedToken)) throw staleAuthOperation()
+    user.value = currentUser
+    return currentUser
+  }
+
   /** 登录：调用 POST /api/auth/login，保存 token/user，返回 user */
   async function login(email: string, password: string): Promise<AuthUser> {
+    const revision = nextRevision()
+    const previousToken = token.value
     const data = await loginWithPassword(email, password)
+    if (!isCurrent(revision, previousToken)) throw staleAuthOperation()
     token.value = data.access_token
     writeStorage(TOKEN_KEY, data.access_token)
-    // 登录后立即拉取完整用户信息
-    await fetchMe()
+    // 登录后立即拉取完整用户信息；整个过程绑定本次登录 revision。
+    const currentUser = await fetchMeForContext(revision, data.access_token)
+    if (!isCurrent(revision, data.access_token)) throw staleAuthOperation()
     status.value = 'authenticated'
-    return user.value!
+    return currentUser
   }
 
   async function loginWithOAuthHandoff(): Promise<string> {
+    const revision = nextRevision()
+    const previousToken = token.value
     const data = await consumeOAuthHandoff()
+    if (!isCurrent(revision, previousToken)) throw staleAuthOperation()
     token.value = data.access_token
     writeStorage(TOKEN_KEY, data.access_token)
-    await fetchMe()
+    await fetchMeForContext(revision, data.access_token)
+    if (!isCurrent(revision, data.access_token)) throw staleAuthOperation()
     status.value = 'authenticated'
     return data.redirect_to
   }
 
-  /** 退出：清除 token/user，回到首页 */
-  function logout(): void {
+  /** 安装服务端签发的新令牌，并使使用旧令牌的异步操作失效。 */
+  function replaceToken(accessToken: string): void {
+    const nextToken = accessToken.trim()
+    if (!nextToken) throw new Error('Replacement token is empty')
+    nextRevision()
+    token.value = nextToken
+    writeStorage(TOKEN_KEY, nextToken)
+  }
+
+  /** 统一清除当前会话，并使所有旧的异步认证请求失效。 */
+  function invalidateSession(): void {
+    nextRevision()
     token.value = null
     user.value = null
     status.value = 'anonymous'
     removeStorage(TOKEN_KEY)
+  }
+
+  /** 退出：清除 token/user，回到首页 */
+  function logout(): void {
+    invalidateSession()
     import('@/router/index').then(({ default: router }) => {
       router.push('/')
     })
   }
 
-  /** 刷新当前用户信息 */
+  /** 刷新当前用户信息；结果只写入发起时仍然有效的会话。 */
   async function fetchMe(): Promise<void> {
-    user.value = await fetchCurrentUser()
+    const revision = authRevision.value
+    const expectedToken = token.value
+    if (!expectedToken) return
+    await fetchMeForContext(revision, expectedToken)
   }
 
   /** 从 localStorage 恢复 token；仅服务端确认 401 时清除凭据。 */
   async function initFromStorage(): Promise<void> {
-    status.value = 'initializing'
+    const revision = nextRevision()
     const storedToken = readStorage(TOKEN_KEY)
+    status.value = 'initializing'
     if (!storedToken) {
+      if (!isCurrent(revision, token.value)) return
       token.value = null
       user.value = null
       status.value = 'anonymous'
@@ -123,14 +177,12 @@ export const useAuthStore = defineStore('auth', () => {
 
     token.value = storedToken
     try {
-      await fetchMe()
-      status.value = 'authenticated'
+      await fetchMeForContext(revision, storedToken)
+      if (isCurrent(revision, storedToken)) status.value = 'authenticated'
     } catch (error: unknown) {
+      if (!isCurrent(revision, storedToken)) return
       if (isUnauthorized(error)) {
-        token.value = null
-        user.value = null
-        status.value = 'anonymous'
-        removeStorage(TOKEN_KEY)
+        invalidateSession()
         return
       }
       status.value = 'degraded'
@@ -144,6 +196,9 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     isAdmin,
     isMember,
+    userId,
+    replaceToken,
+    invalidateSession,
     pendingChatMessage,
     savePendingMessage,
     consumePendingMessage,

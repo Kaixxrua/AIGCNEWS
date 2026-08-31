@@ -17,6 +17,8 @@ export type ReportKey = (typeof REPORT_TYPES)[number]['key']
 export interface Subscription {
   source: string
   is_active?: number | boolean | string
+  period?: string
+  frequency?: string
 }
 
 export interface SubscriptionListResponse {
@@ -45,12 +47,14 @@ export type DeliveryKind = 'account_email' | 'push_channel' | 'rss'
 export interface PlanDeliveryCapability {
   kind: DeliveryKind
   key: string
+  feed?: string
   channel_id?: number
   channel_type?: string
   target?: string
   verified?: boolean
   status?: string
   selectable: boolean
+  active?: boolean
   disabled_reason?: string | null
 }
 
@@ -77,6 +81,7 @@ export interface PlanAppliedDelivery {
 export interface SubscriptionPlanApplyResponse {
   sources: ReportKey[]
   deliveries: PlanAppliedDelivery[]
+  removed_sources?: string[]
   idempotency_key?: string
 }
 

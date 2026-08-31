@@ -98,12 +98,13 @@ class ReportSubscriptionPlanService:
             user_id
         )
         push_rows = self._user_subscriptions.list_subscriptions(user_id)
+        daily_push_rows = self._filter_daily_push_rows(push_rows)
         active_sources = self._collect_active_sources_from_rows(
-            briefing_rows, push_rows
+            briefing_rows, daily_push_rows
         )
         active_push_channel_ids = {
             int(row["channel_id"])
-            for row in push_rows
+            for row in daily_push_rows
             if row.get("status") == "active"
         }
         capabilities = self._build_delivery_capabilities(
@@ -164,16 +165,18 @@ class ReportSubscriptionPlanService:
             user_id
         )
         push_rows = self._user_subscriptions.list_subscriptions(user_id)
+        daily_push_rows = self._filter_daily_push_rows(push_rows)
         active_sources = self._collect_active_sources_from_rows(
-            briefing_rows, push_rows
+            briefing_rows, daily_push_rows
         )
         active_push_subscriptions = {
             (str(row["source"]), int(row["channel_id"]))
-            for row in push_rows
+            for row in daily_push_rows
             if row.get("status") == "active"
         }
         existing_push_pairs = {
-            (str(row["source"]), int(row["channel_id"])) for row in push_rows
+            (str(row["source"]), int(row["channel_id"]))
+            for row in daily_push_rows
         }
 
         has_account_email = False
@@ -252,7 +255,7 @@ class ReportSubscriptionPlanService:
                 self._apply_sync_removals(
                     user_id=user_id,
                     briefing_rows=briefing_rows,
-                    push_rows=push_rows,
+                    push_rows=daily_push_rows,
                     keep_briefing=has_account_email,
                     desired_source_set=desired_source_set,
                     desired_push_pairs=desired_push_pairs,
@@ -354,6 +357,15 @@ class ReportSubscriptionPlanService:
             )
             == MEMBERSHIP_TIER_MEMBER
         )
+
+    @staticmethod
+    def _filter_daily_push_rows(
+        push_rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Keep only rows owned by the daily plan; legacy rows default to daily."""
+        return [
+            row for row in push_rows if row.get("frequency", "daily") == "daily"
+        ]
 
     @staticmethod
     def _collect_active_sources_from_rows(

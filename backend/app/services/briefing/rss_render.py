@@ -17,10 +17,84 @@
 from __future__ import annotations
 
 import re
+from html import unescape
+from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
 # 标题里的标签行内代码：如 `# 标题 `#news` `#LLM`` 中的 `` `#news` ``。
 _TAG_CODE_SPAN = re.compile(r"\s*`#[^`]+`")
+_MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_UNSAFE_RESOURCE = re.compile(
+    r"(?<![\w])(?:"
+    r"file://[^\s<>]*|javascript:[^\s<>]*|data:[^\s<>]*|ftp://[^\s<>]*|"
+    r"(?<!:)//[^\s<>]*|/home/[^\s<>]*|/tmp/[^\s<>]*|/var/[^\s<>]*|"
+    r"/etc/[^\s<>]*|/root/[^\s<>]*|storage/[^\s<>]*|"
+    r"[A-Za-z]:[\\/][^\s<>]*|\\\\[^\s<>]*|"
+    r"/[^\s<>]*\.\.?/[^\s<>]*)",
+    re.IGNORECASE,
+)
+
+
+def sanitize_public_resource_url(value: str) -> str | None:
+    """Return a URL safe for public RSS resources, or ``None``.
+
+    RSS is a public serialization boundary, so this deliberately allows only
+    HTTPS and the application's public media path.  In particular, relative
+    filesystem paths and unknown schemes must not be guessed into URLs.
+    """
+    candidate = unescape(str(value or "")).strip()
+    if not candidate or any(ord(char) < 0x20 for char in candidate):
+        return None
+    if "\\" in candidate or candidate.startswith("//"):
+        return None
+    parts = urlsplit(candidate)
+    if parts.scheme.lower() == "https":
+        if not parts.netloc or parts.username or parts.password:
+            return None
+        path_parts = [part for part in parts.path.split("/") if part]
+        if ".." in path_parts:
+            return None
+        return candidate
+    if parts.scheme:
+        return None
+    if not candidate.startswith("/api/media/"):
+        return None
+    if ".." in [part for part in parts.path.split("/") if part]:
+        return None
+    return candidate
+
+
+def sanitize_public_text(value: str) -> str:
+    """Remove unsafe Markdown resources and leaked local resource strings."""
+    text = str(value or "")
+
+    def replace_image(match: re.Match[str]) -> str:
+        return match.group(0) if sanitize_public_resource_url(match.group(2)) else ""
+
+    def replace_link(match: re.Match[str]) -> str:
+        return match.group(0) if sanitize_public_resource_url(match.group(2)) else match.group(1)
+
+    text = _MARKDOWN_IMAGE.sub(replace_image, text)
+    text = _MARKDOWN_LINK.sub(replace_link, text)
+    return _UNSAFE_RESOURCE.sub("", text)
+
+
+def _render_safe_inline_resources(body: str) -> str:
+    """Render only allow-listed Markdown links/images after HTML escaping."""
+    def image(match: re.Match[str]) -> str:
+        url = sanitize_public_resource_url(match.group(2))
+        if not url:
+            return ""
+        alt = escape(unescape(match.group(1)), {'"': "&quot;"})
+        return f'<img src="{escape(url, {chr(34): "&quot;"})}" alt="{alt}" />'
+
+    def link(match: re.Match[str]) -> str:
+        url = sanitize_public_resource_url(match.group(2))
+        return f'<a href="{escape(url, {chr(34): "&quot;"})}">{match.group(1)}</a>' if url else match.group(1)
+
+    body = _MARKDOWN_IMAGE.sub(image, body)
+    return _MARKDOWN_LINK.sub(link, body)
 
 
 def _strip_heading_tags(line: str) -> str:
@@ -36,6 +110,7 @@ def render_briefing_markdown_html(content: str) -> str:
     与前端及邮件渲染约定一致。
     """
     html_lines: list[str] = []
+    content = sanitize_public_text(content)
     for line in content.split("\n"):
         stripped = line.strip()
         if not stripped:
@@ -60,7 +135,8 @@ def render_briefing_markdown_html(content: str) -> str:
     body = "\n".join(html_lines)
     body = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", body)
     body = re.sub(r"`([^`]+)`", r"<code>\1</code>", body)
-    body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', body)
+    # URL 语义校验必须在生成 href/src 前完成；XML/HTML escape 不是安全校验。
+    body = _render_safe_inline_resources(body)
     # 标题内的标签行内代码不显示前导 #（与前端/邮件渲染约定一致）：
     # <h2>标题 <code>news</code></h2>；正文代码如 `#define` 不受影响。
     return "\n".join(

@@ -6,6 +6,7 @@ import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
 import { api } from '@/services/http/apiClient'
+import { getFeedToken, rotateFeedToken } from '@/services/auth/feedTokenApi'
 import { useEventSource } from '@/composables/useEventSource'
 import { useFollowViewport } from '@/composables/useFollowViewport'
 import { useReportController } from '@/composables/useReportController'
@@ -75,7 +76,13 @@ const {
   selectedSources,
   selectedDeliveryKeys,
   isLoadingPlan,
+  isRssBusy,
+  rssNotice,
+  rssSubscribed,
+  emailSubscribed,
+  copySubscribedRss,
   canSelectMultipleSources,
+  hasExistingPlan,
   deliveryCapabilities,
   promptLoginForSubscribe,
   closeLoginPrompt,
@@ -86,11 +93,14 @@ const {
   goBackToSourceStep,
   toggleDelivery,
   confirmSubscriptionPlan,
+  copyRssLink,
+  rotateRssToken,
   toggleSubscribe,
   sendToEmail,
 } = useReportSubscriptions({
   isLoggedIn: computed(() => authStore.isLoggedIn),
   isMember: computed(() => authStore.isMember),
+  userId: computed(() => authStore.user?.user_id ?? null),
   selectedSource: selectedType,
   selectedDate,
   locale,
@@ -107,6 +117,8 @@ const {
       const res = await api.post<SubscriptionPlanApplyResponse>('/report/subscription-plan', payload)
       return res.data
     },
+    getFeedToken,
+    rotateFeedToken,
     sendToEmail: async payload => {
       const res = await api.post<{ message: string }>('/report/send-to-email', payload)
       return res.data
@@ -137,11 +149,16 @@ const userEmail = computed(() => authStore.user?.email ?? '')
         :is-subscribing="isSubscribing"
         :is-sending-email="isSendingEmail"
         :email-sent-msg="emailSentMsg"
+        :rss-subscribed="rssSubscribed"
+        :email-subscribed="emailSubscribed"
+        :user-email="userEmail"
+        :is-rss-busy="isRssBusy"
         :report-content="reportContent"
         :auto-scroll="autoScroll"
         @toggle-subscribe="toggleSubscribe"
         @prompt-login-for-subscribe="promptLoginForSubscribe"
         @send-to-email="sendToEmail"
+        @copy-subscribed-rss="copySubscribedRss"
         @generate="generate"
       />
 
@@ -150,6 +167,8 @@ const userEmail = computed(() => authStore.user?.email ?? '')
         :show-subscribe-panel="showSubscribePanel"
         :is-subscribing="isSubscribing"
         :is-loading-plan="isLoadingPlan"
+        :is-rss-busy="isRssBusy"
+        :rss-notice="rssNotice"
         :is-member="authStore.isMember"
         :user-email="userEmail"
         :step="step"
@@ -157,6 +176,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
         :selected-delivery-keys="selectedDeliveryKeys"
         :delivery-capabilities="deliveryCapabilities"
         :can-select-multiple-sources="canSelectMultipleSources"
+        :has-existing-plan="hasExistingPlan"
         @close-login-prompt="closeLoginPrompt"
         @login-and-redirect="handleLoginAndRedirect"
         @close-subscribe-panel="closeSubscribePanel"
@@ -164,6 +184,8 @@ const userEmail = computed(() => authStore.user?.email ?? '')
         @go-next="goToDeliveryStep"
         @go-back="goBackToSourceStep"
         @toggle-delivery="toggleDelivery"
+        @copy-rss="copyRssLink"
+        @rotate-rss="rotateRssToken"
         @confirm-plan="confirmSubscriptionPlan"
       />
     </div>

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """Framework-light dependency composition for briefing generation."""
 
+import asyncio
+
 from backend.app.core.model_factory import get_chat_model
 from backend.app.repositories.application_repository_factory import (
     ApplicationRepositories,
@@ -19,6 +21,7 @@ def provide_daily_briefing_service(
     model: BriefingModel | None = None,
     top_k: int = 10,
     briefing_saved: BriefingSavedNotifier | None = None,
+    llm_limiter: asyncio.Semaphore | None = None,
 ) -> DailyBriefingService:
     """Build a briefing service from borrowed application dependencies."""
     return DailyBriefingService(
@@ -28,4 +31,5 @@ def provide_daily_briefing_service(
         rank_snapshot_reader=repositories.rank_snapshots,
         model=model or get_chat_model(),
         briefing_saved=briefing_saved,
+        llm_limiter=llm_limiter,
     )

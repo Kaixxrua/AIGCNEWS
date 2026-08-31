@@ -20,6 +20,10 @@ defineProps<{
   isSubscribing: boolean
   isSendingEmail: boolean
   emailSentMsg: string
+  rssSubscribed: boolean
+  emailSubscribed: boolean
+  userEmail: string
+  isRssBusy: boolean
   reportContent: string
   autoScroll: boolean
 }>()
@@ -30,6 +34,7 @@ const emit = defineEmits<{
   toggleSubscribe: []
   promptLoginForSubscribe: []
   sendToEmail: []
+  copySubscribedRss: []
   generate: []
 }>()
 </script>
@@ -51,6 +56,23 @@ const emit = defineEmits<{
         <span class="stream-dot" />
         <span>{{ t('report.generating') }}</span>
       </div>
+
+      <button
+        v-if="rssSubscribed"
+        type="button"
+        class="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-2xs font-medium text-emerald-700 border border-emerald-200 hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
+        :disabled="isRssBusy"
+        :title="t('report.wizard.copySubscribedRss')"
+        @click="emit('copySubscribedRss')"
+      >
+        <span v-if="isRssBusy" class="h-3 w-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+        <span v-else class="status-dot bg-brand-green" />
+        {{ t('report.wizard.subscribedRss') }}
+      </button>
+      <span v-if="emailSubscribed" class="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-2xs font-medium text-emerald-700 border border-emerald-200" :title="t('report.wizard.subscribedEmail', { email: userEmail })">
+        <Mail class="h-3 w-3" />
+        {{ t('report.wizard.subscribedEmail', { email: userEmail }) }}
+      </span>
 
       <!-- 订阅按钮 -->
       <button

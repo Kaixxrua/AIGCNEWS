@@ -77,18 +77,51 @@ describe('membership checkout auth contract', () => {
   })
 })
 
-// 契约：订阅管理页要求登录；匿名深链走 /login 全屏回退，应用内交互走登录弹框。
-describe('subscriptions auth contract', () => {
-  it('anonymous deep link to subscriptions redirects to /login with redirect', () => {
-    const resolved = router.resolve('/subscriptions')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ path: '/login', query: { redirect: '/subscriptions' } })
-  })
-})
-
 // 契约：/dsh 要求登录（Red 权限变更锚点）—— 向导自动签发账号绑定的 DSH 专用
 // MCP Token，不再有游客路径；匿名深链重定向 /login?redirect=/dsh，
 // initializing/degraded 不误判为游客（由 getRoutePolicyRedirect 既有语义保证）。
+describe('mcp auth contract', () => {
+  it('mcp route requires auth', () => {
+    const record = router.getRoutes().find((r) => r.path === '/mcp')
+    expect(record, 'missing route /mcp').toBeDefined()
+    expect(record?.name).toBe('mcp-connect')
+    expect(record?.meta.requiresAuth).toBe(true)
+  })
+
+  it('anonymous deep link to mcp redirects to /login with redirect', () => {
+    const resolved = router.resolve('/mcp')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ path: '/login', query: { redirect: '/mcp' } })
+  })
+
+  it('authenticated visitor is permitted to open mcp', () => {
+    const resolved = router.resolve('/mcp')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+  })
+
+  it.each(['initializing', 'degraded'] as const)('%s visitor is not redirected away from mcp', (status) => {
+    const resolved = router.resolve('/mcp')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
+  })
+})
+
+describe('subscriptions management compatibility contract', () => {
+  it('keeps the authenticated deep-link route without a Dock entry', () => {
+    const record = router.getRoutes().find((r) => r.path === '/subscriptions')
+    expect(record, 'missing route /subscriptions').toBeDefined()
+    expect(record?.name).toBe('subscriptions')
+    expect(record?.meta.requiresAuth).toBe(true)
+    expect(NAV_ITEMS.some((item) => item.to === '/subscriptions')).toBe(false)
+  })
+
+  it('redirects anonymous visitors while allowing authenticated visitors', () => {
+    const resolved = router.resolve('/subscriptions')
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ path: '/login', query: { redirect: '/subscriptions' } })
+    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+  })
+})
+
 describe('dsh auth contract', () => {
   it('dsh route requires auth', () => {
     const record = router.getRoutes().find((r) => r.path === '/dsh')
