@@ -42,13 +42,14 @@ const progress = computed(() => {
   const succeeded = Math.max(Number(explicit?.succeeded ?? props.status?.catalog_succeeded ?? props.status?.succeeded ?? 0), 0)
   const failed = Math.max(Number(explicit?.failed ?? props.status?.catalog_failed ?? props.status?.failed ?? 0), 0)
   const unprocessable = Math.max(Number(explicit?.unprocessable ?? props.status?.catalog_unprocessable ?? props.status?.unprocessable ?? 0), 0)
-  const pending = Math.max(total - succeeded - failed - unprocessable, 0)
-  return { total, succeeded, failed, unprocessable, pending }
+  // 无法处理的项目由下方独立面板承载，不占可处理进度的分母。
+  const processableTotal = Math.max(total - unprocessable, 0)
+  const pending = Math.max(processableTotal - succeeded - failed, 0)
+  return { total, processableTotal, succeeded, failed, unprocessable, pending }
 })
-const succeededPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.succeeded / progress.value.total * 100, 100) : 0))
-const failedPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.failed / progress.value.total * 100, 100) : 0))
-const unprocessablePct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.unprocessable / progress.value.total * 100, 100) : 0))
-const pendingPct = computed(() => (progress.value.total > 0 ? Math.min(progress.value.pending / progress.value.total * 100, 100) : 0))
+const succeededPct = computed(() => (progress.value.processableTotal > 0 ? Math.min(progress.value.succeeded / progress.value.processableTotal * 100, 100) : 0))
+const failedPct = computed(() => (progress.value.processableTotal > 0 ? Math.min(progress.value.failed / progress.value.processableTotal * 100, 100) : 0))
+const pendingPct = computed(() => (progress.value.processableTotal > 0 ? Math.min(progress.value.pending / progress.value.processableTotal * 100, 100) : 0))
 const succeededPercent = computed(() => Math.round(succeededPct.value))
 
 const retainedBuckets = computed(() => {
@@ -84,11 +85,11 @@ const retainedTotal = computed(() => Math.max(
       </button>
     </div>
 
-    <div v-if="status && progress.total > 0" class="mb-3">
+    <div v-if="status && progress.processableTotal > 0" class="mb-3">
       <div class="flex items-center justify-between text-2xs monitor-caption mb-1">
         <span>{{ t('monitor.enrichment.progress') }}</span>
         <span class="tabular-nums font-bold">{{ succeededPercent }}%</span>
-        <span class="sr-only">{{ progress.succeeded }} succeeded, {{ progress.failed }} failed, {{ progress.unprocessable }} unprocessable, {{ progress.pending }} pending</span>
+        <span class="sr-only">{{ progress.succeeded }} succeeded, {{ progress.failed }} failed, {{ progress.pending }} pending, {{ progress.unprocessable }} unprocessable</span>
       </div>
       <div
         class="enrichment-progress"
@@ -100,7 +101,6 @@ const retainedTotal = computed(() => Math.max(
       >
         <div class="enrichment-progress-succeeded" :style="{ width: `${succeededPct}%` }" />
         <div class="enrichment-progress-failed" :style="{ width: `${failedPct}%` }" />
-        <div class="enrichment-progress-unprocessable" :style="{ width: `${unprocessablePct}%` }" />
         <div class="enrichment-progress-pending" :style="{ width: `${pendingPct}%` }" />
       </div>
       <p v-if="polling" class="mt-1.5 flex items-center gap-1.5 text-2xs monitor-caption">
@@ -111,8 +111,9 @@ const retainedTotal = computed(() => Math.max(
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
       <template v-if="status">
-        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.enriched', { done: progress.succeeded, total: progress.total }) }}</span>
-        <span class="text-xs monitor-caption tabular-nums">{{ progress.failed }} failed · {{ progress.unprocessable }} unprocessable · {{ progress.pending }} pending</span>
+        <span class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.enriched', { done: progress.succeeded, total: progress.processableTotal }) }}</span>
+        <span v-if="progress.unprocessable > 0" class="text-xs monitor-caption tabular-nums">{{ t('monitor.enrichment.unprocessableCount', { count: progress.unprocessable }) }}</span>
+        <span class="text-xs monitor-caption tabular-nums">{{ progress.failed }} failed · {{ progress.pending }} pending</span>
         <span v-if="retainedTotal > 0" class="text-xs monitor-caption tabular-nums">
           {{ t('monitor.enrichment.retainedSummary', { count: retainedTotal }) }}
           <span class="inline-flex flex-wrap gap-1.5 ml-1.5">
@@ -253,11 +254,6 @@ const retainedTotal = computed(() => Math.max(
   transition: width 0.4s ease;
 }
 
-.enrichment-progress-unprocessable {
-  background: #9ca3af;
-  transition: width 0.4s ease;
-}
-
 .enrichment-progress-pending {
   background: repeating-linear-gradient(135deg, #d6d3d1 0 4px, #e7e5e4 4px 8px);
   transition: width 0.4s ease;
@@ -284,7 +280,6 @@ const retainedTotal = computed(() => Math.max(
   }
   .enrichment-progress-succeeded,
   .enrichment-progress-failed,
-  .enrichment-progress-unprocessable,
   .enrichment-progress-pending {
     transition: none;
   }

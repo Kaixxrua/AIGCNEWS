@@ -75,6 +75,28 @@ describe('GithubEnrichmentPanel', () => {
     expect(backfill.attributes('disabled')).toBeDefined()
   })
 
+  it('excludes unprocessable projects from the active progress denominator', () => {
+    const wrapper = mountPanel({
+      eligible: 19_087,
+      succeeded: 19_087,
+      failed: 0,
+      pending: 0,
+      catalog_total: 19_099,
+      catalog_succeeded: 19_087,
+      catalog_failed: 0,
+      catalog_pending: 0,
+      catalog_unprocessable: 12,
+      unprocessable: 12,
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('已富化 19087/19087')
+    expect(text).toContain('无法处理 12 个')
+    expect(text).toContain('待处理 0')
+    expect(wrapper.find('.enrichment-progress-unprocessable').exists()).toBe(false)
+    expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('100')
+  })
+
   it('falls back to actionable fields for legacy responses without catalog counters', () => {
     // 滚动发布期间旧响应没有 catalog_*：展示回退到 eligible/succeeded/failed/pending
     const wrapper = mountPanel({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })
