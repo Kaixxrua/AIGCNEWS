@@ -1,18 +1,24 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import McpConnectView from './McpConnectView.vue'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
 const clipboardCopy = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
-const authBox = vi.hoisted(() => ({ current: null as null | { isLoggedIn: boolean; isAdmin: boolean; isMember: boolean } }))
+const authBox = vi.hoisted(() => ({ current: null as null | { status: 'initializing' | 'authenticated' | 'anonymous' | 'degraded'; isLoggedIn: boolean; isAdmin: boolean; isMember: boolean; initFromStorage: ReturnType<typeof vi.fn> } }))
 
 vi.mock('@/stores/authStore', async () => {
   const { reactive } = await import('vue')
-  if (!authBox.current) authBox.current = reactive({ isLoggedIn: true, isAdmin: false, isMember: false })
+  if (!authBox.current) authBox.current = reactive({
+    status: 'authenticated' as const,
+    isLoggedIn: true,
+    isAdmin: false,
+    isMember: false,
+    initFromStorage: vi.fn(),
+  })
   return { useAuthStore: () => authBox.current }
 })
 
@@ -34,6 +40,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
     copyQuickCommand: vi.fn(),
+    clearAuthenticatedState: vi.fn(),
     creating: ref(false),
     deletingId: ref(null),
     displayedPublicTools: ref([
@@ -74,6 +81,9 @@ const i18n = createI18n({
         serverEyebrow: 'AIGC RADAR MCP',
         publicEndpoint: '公开端点',
         authenticatedSetup: '鉴权配置',
+        authRestoring: '正在恢复登录状态…',
+        authDegraded: '登录状态校验失败。为安全起见，确认前不会签发 MCP Token。',
+        authRetry: '重试',
         tokenManagement: '令牌管理',
         routing: 'MCP 优先路由',
         aiArtifacts: 'AI 工程产物',
@@ -142,12 +152,19 @@ const mountView = async () => {
   await testRouter.push('/mcp')
   await testRouter.isReady()
   const wrapper = mount(McpConnectView, { global: { plugins: [testRouter, i18n] } })
+  mountedWrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
 
 const controller = () => ctlBox.current as Record<string, any>
-const auth = () => authBox.current as { isLoggedIn: boolean; isAdmin: boolean; isMember: boolean }
+const auth = () => authBox.current as { status: 'initializing' | 'authenticated' | 'anonymous' | 'degraded'; isLoggedIn: boolean; isAdmin: boolean; isMember: boolean; initFromStorage: ReturnType<typeof vi.fn> }
+
+let mountedWrappers: Array<{ unmount: () => void }> = []
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+})
 
 beforeEach(() => {
   controller().clientLabel.value = ''
@@ -168,6 +185,7 @@ beforeEach(() => {
   controller().selectedShell.value = 'bash'
   for (const fn of [
     controller().clientDisplayLabel,
+    controller().clearAuthenticatedState,
     controller().copyGeneratedCommand,
     controller().copyHostInstruction,
     controller().copyQuickCommand,
@@ -180,12 +198,15 @@ beforeEach(() => {
   ]) {
     fn.mockClear()
   }
+  auth().status = 'authenticated'
   auth().isLoggedIn = true
   auth().isMember = false
+  auth().initFromStorage.mockClear()
   controllerSpy.mockClear()
   clipboardCopy.mockClear()
   requestLogin.mockClear()
 })
+
 
 describe('McpConnectView controller boundary', () => {
   it('hands clipboard, auth, login prompt and translate seams to the controller', async () => {
@@ -295,16 +316,20 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(wrapper.text()).not.toContain('dsh-aigc-radar@0.2.0')
   })
 
-  it('offers the quick connect path without login', async () => {
+  it('redirects anonymous visitors to login without rendering configuration', async () => {
+    auth().status = 'anonymous'
     auth().isLoggedIn = false
-    controller().quickCommand.value = 'codex mcp add aigc-news --url https://aigcnews.cn/api/mcp'
     const wrapper = await mountView()
-    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
-    await flushPromises()
 
-    expect(wrapper.text()).toContain('codex mcp add aigc-news')
-    expect(wrapper.text()).toContain('mcp.loginRequiredTitle')
+    expect(testRouter.currentRoute.value).toMatchObject({
+      path: '/login',
+      query: { redirect: '/mcp' },
+    })
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('令牌管理')
+    expect(controller().loadTokens).not.toHaveBeenCalled()
+    expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
+    expect(requestLogin).not.toHaveBeenCalled()
   })
 
   it('never renders the transient command while offering one-time copy', async () => {
@@ -323,19 +348,42 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().copyGeneratedCommand).toHaveBeenCalledTimes(1)
   })
 
-  it('shows the login call-to-action when logged out and opens the login prompt in place', async () => {
+  it('keeps the page fail-closed while authentication is initializing', async () => {
+    auth().status = 'initializing'
     auth().isLoggedIn = false
     const wrapper = await mountView()
-    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
-    await flushPromises()
 
-    const loginButton = wrapper.findAll('button').find((button) => button.text() === '登录后配置')
-    expect(loginButton).toBeDefined()
+    expect(testRouter.currentRoute.value.path).toBe('/mcp')
+    expect(wrapper.text()).toContain('正在恢复登录状态…')
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('令牌管理')
+    expect(controller().loadTokens).not.toHaveBeenCalled()
+    expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
 
-    await loginButton!.trigger('click')
-    expect(requestLogin).toHaveBeenCalledWith('/mcp')
-    expect(testRouter.currentRoute.value.fullPath).toBe('/mcp')
+    auth().status = 'anonymous'
+    await flushPromises()
+    expect(testRouter.currentRoute.value).toMatchObject({
+      path: '/login',
+      query: { redirect: '/mcp' },
+    })
+  })
+
+  it('keeps degraded authentication on the page without exposing configuration', async () => {
+    auth().status = 'degraded'
+    auth().isLoggedIn = false
+    const wrapper = await mountView()
+
+    expect(testRouter.currentRoute.value.path).toBe('/mcp')
+    expect(wrapper.text()).toContain('登录状态校验失败。为安全起见，确认前不会签发 MCP Token。')
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('令牌管理')
+    expect(controller().loadTokens).not.toHaveBeenCalled()
+    expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
+
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    expect(auth().initFromStorage).toHaveBeenCalledOnce()
   })
 
   it('renders tokens from controller state and forwards removal', async () => {
@@ -362,17 +410,15 @@ describe('McpConnectView privacy and auth behavior', () => {
 })
 
 describe('McpConnectView quota upsell notice', () => {
-  it('prompts anonymous visitors to log in for a higher quota', async () => {
+  it('does not render account quota controls before authentication is confirmed', async () => {
+    auth().status = 'initializing'
     auth().isLoggedIn = false
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('匿名调用限额 30 次/天')
-    const cta = wrapper.get('a[href="/mcp"]')
-    expect(cta.text()).toContain('登录提升额度')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-
-    await cta.trigger('click')
-    expect(requestLogin).toHaveBeenCalledWith('/mcp')
+    expect(wrapper.find('a[href="/mcp"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('匿名调用限额 30 次/天')
+    expect(controller().loadTokens).not.toHaveBeenCalled()
   })
 
   it('prompts free-tier users to open VIP for a higher quota', async () => {

@@ -1,8 +1,9 @@
 /**
  * dsh 插件（dsh-aigc-radar）安装信息。
  *
- * dsh 终端用户的原生接入方式：插件内置项目库搜索卡片与检索路由提示，
- * 走 AIGC Radar 公共 MCP 端点且免 Token，一条命令装入 dsh web profile。
+ * 插件可直接从 npm 或 GitHub 安装，无需先登录网站；不配置 mcpToken 时，
+ * 仍可通过 AIGC Radar 公共 MCP runtime 使用公开工具。网站 `/dsh` 配置页必须登录，
+ * 登录后生成的命令会把账号绑定的 DSH 专用 Token 写入 dsh web profile。
  */
 export type DshPluginInstallMethodId = 'npm' | 'github'
 

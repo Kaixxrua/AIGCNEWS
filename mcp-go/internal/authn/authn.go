@@ -122,6 +122,9 @@ type PgxQuerier struct {
 }
 
 func (q PgxQuerier) Begin(ctx context.Context) (Tx, error) {
+	if q.Pool == nil {
+		return nil, errors.New("pgx pool is not configured")
+	}
 	return q.Pool.Begin(ctx)
 }
 
@@ -131,20 +134,30 @@ type Authenticator struct {
 }
 
 // Authenticate 认证一个 Authorization 头值。匿名返回零 Identity 与 nil
-// 失败响应；任何"提供了但无效"的头都是 401。
-func (a Authenticator) Authenticate(ctx context.Context, authorization string) (Identity, *Response) {
+// 失败响应；任何"提供了但无效"的头都是 401。authenticated 独立于
+// Identity.UserID，避免测试缝或未来账号 ID 语义变化造成权限降级。
+func (a Authenticator) Authenticate(ctx context.Context, authorization string) (Identity, bool, *Response) {
 	if authorization == "" {
-		return Identity{}, nil
+		return Identity{}, false, nil
 	}
 	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
-		return Identity{}, unauthorized(invalidSchemeDetail)
+		return Identity{}, false, unauthorized(invalidSchemeDetail)
 	}
 
 	token := authorization[len("Bearer "):]
+	// 空白 token（以及 scheme 后多余/尾随空白）不是可查找的凭证；
+	// 在开启事务前拒绝，保证 malformed credential 不触碰数据库。
+	if token == "" || token != strings.TrimSpace(token) ||
+		strings.IndexFunc(token, func(r rune) bool { return r == '\t' || r == '\n' || r == '\r' }) >= 0 {
+		return Identity{}, false, unauthorized(invalidTokenDetail)
+	}
 	digest := sha256.Sum256([]byte(token))
+	if a.DB == nil {
+		return Identity{}, false, internalError()
+	}
 	tx, err := a.DB.Begin(ctx)
 	if err != nil {
-		return Identity{}, internalError()
+		return Identity{}, false, internalError()
 	}
 	committed := false
 	defer func() {
@@ -160,23 +173,26 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 		&row.MembershipTier, &row.MembershipExpiresAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Identity{}, unauthorized(invalidTokenDetail)
+		return Identity{}, false, unauthorized(invalidTokenDetail)
 	}
 	if err != nil {
-		return Identity{}, internalError()
+		return Identity{}, false, internalError()
+	}
+
+	// scopes 属于凭证有效性的一部分，必须先于 usage 写入和提交校验。
+	// malformed scope 由 deferred rollback 收尾，不能留下 last_used_at 写入。
+	scopes, ok := decodeScopes(row.ScopesJSON)
+	if !ok {
+		return Identity{}, false, unauthorized(invalidScopesDetail)
 	}
 	if _, err = tx.Exec(ctx, lastUsedSQL, row.TokenID); err != nil {
-		return Identity{}, internalError()
+		return Identity{}, false, internalError()
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return Identity{}, internalError()
+		return Identity{}, false, internalError()
 	}
 	committed = true
 
-	scopes, ok := decodeScopes(row.ScopesJSON)
-	if !ok {
-		return Identity{}, unauthorized(invalidScopesDetail)
-	}
 	return Identity{
 		UserID:              row.UserID,
 		Email:               row.Email,
@@ -184,7 +200,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 		MembershipTier:      row.MembershipTier,
 		MembershipExpiresAt: row.MembershipExpiresAt,
 		Scopes:              scopes,
-	}, nil
+	}, true, nil
 }
 
 type tokenRow struct {

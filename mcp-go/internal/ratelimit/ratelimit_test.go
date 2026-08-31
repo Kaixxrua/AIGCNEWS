@@ -117,6 +117,38 @@ func TestEnforceToolCallBurstBucketLimits(t *testing.T) {
 	}
 }
 
+func TestAnonymousAndAuthenticatedBucketsAreIsolated(t *testing.T) {
+	mr, rdb := newRedisPair(t)
+	limiter := NewLimiter(rdb, "", func(l *Limits) {
+		l.AnonymousToolCallPerMinute = 1
+		l.AuthenticatedToolCallPerMinute = 1
+		l.AnonymousDailyToolCallQuota = 1
+		l.FreeDailyToolCallQuota = 1
+		l.FreeMonthlyToolCallQuota = 100
+	})
+	anonymous := authn.Identity{}
+	authenticated := authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}
+	ctx := context.Background()
+	if exceeded := limiter.Enforce(ctx, "tools/call", anonymous, anonymousRequest()); exceeded != nil {
+		t.Fatalf("anonymous first call should pass: %+v", exceeded)
+	}
+	if exceeded := limiter.Enforce(ctx, "tools/call", authenticated, anonymousRequest()); exceeded != nil {
+		t.Fatalf("authenticated first call should pass despite same IP: %+v", exceeded)
+	}
+	if value, err := mr.Get("ratelimit:mcp.tool_call:ip:192.0.2.1"); err != nil || value != "1" {
+		t.Fatalf("anonymous burst bucket = %q, %v", value, err)
+	}
+	if value, err := mr.Get("ratelimit:mcp.tool_call:user:7"); err != nil || value != "1" {
+		t.Fatalf("authenticated burst bucket = %q, %v", value, err)
+	}
+	if value, err := mr.Get("ratelimit:mcp.quota.daily:ip:192.0.2.1"); err != nil || value != "1" {
+		t.Fatalf("anonymous quota bucket = %q, %v", value, err)
+	}
+	if value, err := mr.Get("ratelimit:mcp.quota.daily:user:7"); err != nil || value != "1" {
+		t.Fatalf("authenticated quota bucket = %q, %v", value, err)
+	}
+}
+
 func TestEnforceAnonymousDailyQuota(t *testing.T) {
 	mr, rdb := newRedisPair(t)
 	// 拉高分钟桶，让日配额成为约束面。

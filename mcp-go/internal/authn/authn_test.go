@@ -13,11 +13,15 @@ import (
 )
 
 type fakeDB struct {
-	tx  *fakeTx
-	err error
+	tx     *fakeTx
+	err    error
+	begins *int
 }
 
 func (d fakeDB) Begin(context.Context) (Tx, error) {
+	if d.begins != nil {
+		*d.begins = *d.begins + 1
+	}
 	if d.err != nil {
 		return nil, d.err
 	}
@@ -93,22 +97,65 @@ func authenticator(tx *fakeTx) Authenticator {
 }
 
 func TestAuthenticateAnonymous(t *testing.T) {
-	identity, response := (Authenticator{}).Authenticate(context.Background(), "")
-	if response != nil || identity.UserID != 0 {
-		t.Fatalf("got identity=%+v response=%v", identity, response)
+	identity, authenticated, response := (Authenticator{}).Authenticate(context.Background(), "")
+	if response != nil || authenticated || identity.UserID != 0 {
+		t.Fatalf("got identity=%+v authenticated=%v response=%v", identity, authenticated, response)
 	}
 }
 
 func TestAuthenticateRejectsNonBearer(t *testing.T) {
-	_, response := (Authenticator{}).Authenticate(context.Background(), "Basic abc")
+	_, authenticated, response := (Authenticator{}).Authenticate(context.Background(), "Basic abc")
+	if authenticated {
+		t.Fatal("invalid scheme marked authenticated")
+	}
 	assertUnauthorized(t, response, invalidSchemeDetail)
+}
+
+func TestAuthenticateRejectsMalformedBearerBeforeDatabase(t *testing.T) {
+	cases := map[string]string{
+		"empty":           "Bearer ",
+		"whitespace-only": "Bearer \t",
+		"extra-space":     "Bearer  secret",
+		"trailing-space":  "Bearer secret ",
+		"tab":             "Bearer sec\tret",
+		"newline":         "Bearer sec\nret",
+		"carriage-return": "Bearer sec\rret",
+	}
+	for name, header := range cases {
+		t.Run(name, func(t *testing.T) {
+			begins := 0
+			identity, authenticated, response := (Authenticator{DB: fakeDB{begins: &begins}}).Authenticate(context.Background(), header)
+			if response == nil || response.Status != http.StatusUnauthorized {
+				t.Fatalf("header %q got response=%+v", header, response)
+			}
+			if authenticated || identity.UserID != 0 {
+				t.Fatalf("header %q got identity=%+v authenticated=%v", header, identity, authenticated)
+			}
+			if begins != 0 {
+				t.Fatalf("malformed header %q touched database %d times", header, begins)
+			}
+		})
+	}
+}
+
+func TestAuthenticateAcceptsOpaqueEmbeddedSpaceToken(t *testing.T) {
+	begins := 0
+	tx := &fakeTx{row: fakeRow{err: pgx.ErrNoRows}}
+	_, authenticated, response := (Authenticator{DB: fakeDB{tx: tx, begins: &begins}}).Authenticate(context.Background(), "Bearer opaque token")
+	if authenticated {
+		t.Fatal("unknown opaque token marked authenticated")
+	}
+	assertUnauthorized(t, response, invalidTokenDetail)
+	if begins != 1 {
+		t.Fatalf("embedded ordinary spaces should be treated as token data, begins=%d", begins)
+	}
 }
 
 func TestAuthenticateLookupAndConditionalTouch(t *testing.T) {
 	tx := &fakeTx{row: fakeRow{values: []any{7, 42, `["projects:favorites:read"]`, nil, nil, nil, "u@example.com", "user", "member", nil}}}
-	identity, response := authenticator(tx).Authenticate(context.Background(), "bEaReR secret")
-	if response != nil {
-		t.Fatalf("unexpected response: %+v", response)
+	identity, authenticated, response := authenticator(tx).Authenticate(context.Background(), "bEaReR secret")
+	if response != nil || !authenticated {
+		t.Fatalf("authenticated=%v response=%+v", authenticated, response)
 	}
 	if identity.UserID != 42 || identity.Email != "u@example.com" ||
 		identity.Role != "user" || identity.MembershipTier != "member" ||
@@ -132,7 +179,10 @@ func TestAuthenticateLookupAndConditionalTouch(t *testing.T) {
 
 func TestAuthenticateMissingToken(t *testing.T) {
 	tx := &fakeTx{row: fakeRow{err: pgx.ErrNoRows}}
-	_, response := authenticator(tx).Authenticate(context.Background(), "Bearer nope")
+	_, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer nope")
+	if authenticated {
+		t.Fatal("missing token marked authenticated")
+	}
 	assertUnauthorized(t, response, invalidTokenDetail)
 	if !tx.rolledBack || tx.committed {
 		t.Fatalf("missing token must rollback without commit: %+v", tx)
@@ -149,38 +199,79 @@ func TestAuthenticateMalformedScopes(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			tx := &fakeTx{row: fakeRow{values: []any{7, 42, raw, nil, nil, nil, "u@example.com", "user", "free", nil}}}
-			_, response := authenticator(tx).Authenticate(context.Background(), "Bearer secret")
+			_, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer secret")
+			if authenticated {
+				t.Fatal("malformed scopes marked authenticated")
+			}
 			assertUnauthorized(t, response, invalidScopesDetail)
+			if tx.updateSQL != "" || tx.committed || !tx.rolledBack {
+				t.Fatalf("malformed scopes must rollback without usage write or commit: %+v", tx)
+			}
 		})
 	}
 }
 
 func TestAuthenticateDatabaseFailures(t *testing.T) {
+	t.Run("nil-db", func(t *testing.T) {
+		_, authenticated, response := (Authenticator{}).Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("nil database marked authenticated")
+		}
+		assertInternalError(t, response)
+	})
+	t.Run("nil-pool", func(t *testing.T) {
+		_, authenticated, response := (Authenticator{DB: PgxQuerier{}}).Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("nil pool marked authenticated")
+		}
+		assertInternalError(t, response)
+	})
 	t.Run("begin", func(t *testing.T) {
 		auth := Authenticator{DB: fakeDB{err: errors.New("pool exhausted")}}
-		_, response := auth.Authenticate(context.Background(), "Bearer x")
+		_, authenticated, response := auth.Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("begin failure marked authenticated")
+		}
 		assertInternalError(t, response)
 	})
 	t.Run("query", func(t *testing.T) {
 		tx := &fakeTx{row: fakeRow{err: errors.New("database down")}}
-		_, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		_, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("query failure marked authenticated")
+		}
 		assertInternalError(t, response)
+		if !tx.rolledBack || tx.committed {
+			t.Fatalf("query failure must rollback: %+v", tx)
+		}
 	})
 	t.Run("update", func(t *testing.T) {
 		tx := &fakeTx{
 			row:     fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free", nil}},
 			execErr: errors.New("lock timeout"),
 		}
-		_, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		_, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("update failure marked authenticated")
+		}
 		assertInternalError(t, response)
+		if !tx.rolledBack || tx.committed {
+			t.Fatalf("update failure must rollback: %+v", tx)
+		}
 	})
 	t.Run("commit", func(t *testing.T) {
 		tx := &fakeTx{
 			row:         fakeRow{values: []any{7, 42, `[]`, nil, nil, nil, "u@example.com", "user", "free", nil}},
 			commitError: errors.New("commit failed"),
 		}
-		_, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		_, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer x")
+		if authenticated {
+			t.Fatal("commit failure marked authenticated")
+		}
 		assertInternalError(t, response)
+		if !tx.rolledBack || tx.committed {
+			t.Fatalf("commit failure must rollback: %+v", tx)
+		}
 	})
 }
 

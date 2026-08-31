@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
@@ -11,6 +12,7 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const router = useRouter()
 const { copy } = useClipboard()
 const { requestLogin } = useLoginPrompt()
 
@@ -22,6 +24,7 @@ const controller = useMcpConnectController({
 })
 
 const {
+  clearAuthenticatedState,
   copiedKey,
   copyHostInstruction,
   deletingId,
@@ -41,7 +44,23 @@ const formatDate = (value?: string | null) => value
   ? formatLocaleDate(value, { dateStyle: 'medium', timeStyle: 'short' })
   : t('common.never')
 
-onMounted(loadTokens)
+// /mcp 是网站配置页，路由守卫负责导航时门禁；auth 在挂载后异步恢复时，
+// 这里补上与 DSH 相同的 fail-closed 页面门禁，避免游客短暂看到配置或触发 Token API。
+watch(
+  () => authStore.status,
+  (status) => {
+    if (status === 'authenticated') {
+      void loadTokens()
+      return
+    }
+    clearAuthenticatedState()
+    if (status === 'anonymous') {
+      void router.replace({ path: '/login', query: { redirect: '/mcp' } })
+    }
+  },
+  { immediate: true },
+)
+
 onBeforeUnmount(dispose)
 </script>
 
@@ -49,45 +68,46 @@ onBeforeUnmount(dispose)
   <div class="mcp-connect-page flex h-full min-h-0 flex-col overflow-hidden">
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-8">
       <div class="mx-auto flex max-w-7xl flex-col gap-5 pb-24">
-      <section class="glass-card relative overflow-hidden p-4 md:p-5">
-        <div class="mcp-grid-overlay" />
-        <div class="relative z-10">
-          <div class="mb-3 flex flex-wrap gap-2">
-            <span v-for="pillKey in heroPillKeys" :key="pillKey" class="rounded-full border border-cyan-200/60 bg-cyan-50/75 px-2.5 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-cyan-700">{{ t(`mcp.${pillKey}`) }}</span>
-          </div>
-          <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('mcp.serverEyebrow') }}</p>
-          <h1 class="mt-2 max-w-3xl font-serif text-2xl font-semibold leading-tight text-stone-900 md:text-3xl">{{ t('mcp.title') }}</h1>
-          <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.description') }}</p>
-          <div class="mt-3 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-card/90 bg-card/75 px-3 py-2 shadow-sm">
-            <span class="text-2xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</span>
-            <span class="break-all font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</span>
-          </div>
-          <div v-if="!authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
-            <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t(authStore.isLoggedIn ? 'mcp.quota.free' : 'mcp.quota.anonymous') }}</p>
-            <RouterLink :to="authStore.isLoggedIn ? '/membership' : '/mcp'" @click="!authStore.isLoggedIn && requestLogin('/mcp')" class="btn-secondary shrink-0 text-xs">{{ t(authStore.isLoggedIn ? 'mcp.quota.vipCta' : 'mcp.quota.loginCta') }}</RouterLink>
-          </div>
-        </div>
-      </section>
+        <template v-if="authStore.status === 'authenticated'">
+          <section class="glass-card relative overflow-hidden p-4 md:p-5">
+            <div class="mcp-grid-overlay" />
+            <div class="relative z-10">
+              <div class="mb-3 flex flex-wrap gap-2">
+                <span v-for="pillKey in heroPillKeys" :key="pillKey" class="rounded-full border border-cyan-200/60 bg-cyan-50/75 px-2.5 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-cyan-700">{{ t(`mcp.${pillKey}`) }}</span>
+              </div>
+              <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('mcp.serverEyebrow') }}</p>
+              <h1 class="mt-2 max-w-3xl font-serif text-2xl font-semibold leading-tight text-stone-900 md:text-3xl">{{ t('mcp.title') }}</h1>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-stone-500">{{ t('mcp.description') }}</p>
+              <div class="mt-3 inline-flex max-w-full flex-wrap items-center gap-2 rounded-[20px] border border-card/90 bg-card/75 px-3 py-2 shadow-sm">
+                <span class="text-2xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</span>
+                <span class="break-all font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</span>
+              </div>
+              <div v-if="!authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
+                <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t('mcp.quota.free') }}</p>
+                <RouterLink to="/membership" class="btn-secondary shrink-0 text-xs">{{ t('mcp.quota.vipCta') }}</RouterLink>
+              </div>
+            </div>
+          </section>
 
-      <McpSetupWizard :controller="controller" :is-logged-in="authStore.isLoggedIn" @login="requestLogin('/mcp')" />
+          <McpSetupWizard :controller="controller" />
 
-      <section class="glass-card flex flex-wrap items-center justify-between gap-4 p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
-        <div class="min-w-0 flex-1 basis-72">
-          <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p>
-          <h2 class="mt-1 text-base font-semibold text-stone-800">{{ t('mcp.dshPlugin.crossLinkTitle') }}</h2>
-          <p class="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{{ t('mcp.dshPlugin.crossLinkDescription') }}</p>
-        </div>
-        <RouterLink to="/dsh" class="btn-primary justify-center text-xs">{{ t('mcp.dshPlugin.openPage') }} →</RouterLink>
-      </section>
+          <section class="glass-card flex flex-wrap items-center justify-between gap-4 p-4 md:p-5" :aria-label="t('mcp.dshPlugin.kicker')">
+            <div class="min-w-0 flex-1 basis-72">
+              <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('mcp.dshPlugin.kicker') }}</p>
+              <h2 class="mt-1 text-base font-semibold text-stone-800">{{ t('mcp.dshPlugin.crossLinkTitle') }}</h2>
+              <p class="mt-1 max-w-3xl text-xs leading-5 text-stone-500">{{ t('mcp.dshPlugin.crossLinkDescription') }}</p>
+            </div>
+            <RouterLink to="/dsh" class="btn-primary justify-center text-xs">{{ t('mcp.dshPlugin.openPage') }} →</RouterLink>
+          </section>
 
-      <section v-if="authStore.isLoggedIn" class="glass-card p-5 md:p-6">
-        <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
-        <SpinnerLoader v-if="loadingTokens && !tokens.length" class="mt-4 min-h-[180px]" />
-        <div v-else-if="tokens.length" class="mcp-token-list mt-4 grid content-start gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-card/70 p-4 md:h-24 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:overflow-hidden"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="min-w-0 max-w-full truncate font-semibold text-stone-800" :title="item.client_label || item.client_type">{{ item.client_label || item.client_type }}</span><span class="shrink-0 rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-[var(--token-valid-bg)] text-[var(--projects-success)]' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 truncate font-mono text-xs text-stone-500" :title="item.token_hint">{{ item.token_hint }}</p><p class="mt-1 truncate text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary shrink-0 text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
-        <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
-      </section>
+          <section class="glass-card p-5 md:p-6">
+            <div class="flex items-center justify-between gap-3"><div><p class="text-xs font-semibold uppercase tracking-[0.2em] text-stone-400">{{ t('mcp.tokenManagement') }}</p><h2 class="mt-1 text-lg font-semibold text-stone-800">{{ t('mcp.tokenTitle') }}</h2></div><button class="btn-secondary text-xs" :disabled="loadingTokens" @click="loadTokens">{{ t(loadingTokens ? 'common.refreshing' : 'common.refresh') }}</button></div>
+            <SpinnerLoader v-if="loadingTokens && !tokens.length" class="mt-4 min-h-[180px]" />
+            <div v-else-if="tokens.length" class="mcp-token-list mt-4 grid content-start gap-3 pr-1"><div v-for="item in tokens" :key="item.id" class="grid gap-3 rounded-[20px] border border-stone-200 bg-card/70 p-4 md:h-24 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:overflow-hidden"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><span class="min-w-0 max-w-full truncate font-semibold text-stone-800" :title="item.client_label || item.client_type">{{ item.client_label || item.client_type }}</span><span class="shrink-0 rounded-full px-2 py-0.5 text-2xs" :class="tokenStatus(item) === 'valid' ? 'bg-[var(--token-valid-bg)] text-[var(--projects-success)]' : 'bg-stone-100 text-stone-500'">{{ tokenStatusLabel(tokenStatus(item)) }}</span></div><p class="mt-2 truncate font-mono text-xs text-stone-500" :title="item.token_hint">{{ item.token_hint }}</p><p class="mt-1 truncate text-2xs text-stone-400">{{ t('mcp.tokenCreatedUsed', { created: formatDate(item.created_at), used: formatDate(item.last_used_at) }) }}</p></div><button class="btn-secondary shrink-0 text-xs text-rose-700" :disabled="deletingId === item.id" @click="removeToken(item)">{{ t(deletingId === item.id ? 'mcp.deleting' : 'common.delete') }}</button></div></div>
+            <p v-else-if="!loadingTokens" class="mt-4 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">{{ t('mcp.noTokens') }}</p>
+          </section>
 
-      <details class="mcp-resources glass-card p-5 md:p-6">
+          <details class="mcp-resources glass-card p-5 md:p-6">
         <summary class="mcp-resources-summary">
           <span class="text-sm font-semibold text-stone-700">{{ t('mcp.wizard.resourcesToggle') }}</span>
           <span class="mcp-resources-hint text-2xs font-semibold text-stone-400" aria-hidden="true"></span>
@@ -115,7 +135,15 @@ onBeforeUnmount(dispose)
             <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4"><p class="text-xs font-semibold text-amber-900">{{ t('mcp.hostPriorityTitle') }}</p><p class="mt-1 text-xs leading-5 text-amber-800">{{ t('mcp.hostPriorityDescription') }}</p></div>
           </section>
         </div>
-      </details>
+          </details>
+        </template>
+
+        <section v-if="authStore.status === 'initializing' || authStore.status === 'anonymous'" class="glass-card p-5 md:p-6">
+          <p class="text-xs text-stone-500">{{ t('mcp.authRestoring') }}</p>
+        </section>
+        <section v-else-if="authStore.status === 'degraded'" class="glass-card p-5 md:p-6">
+          <p class="rounded bg-rose-50 p-3 text-xs text-rose-700">{{ t('mcp.authDegraded') }} <button type="button" class="underline" @click="authStore.initFromStorage()">{{ t('mcp.authRetry') }}</button></p>
+        </section>
       </div>
     </div>
   </div>

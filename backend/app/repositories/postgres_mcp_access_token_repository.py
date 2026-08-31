@@ -238,16 +238,32 @@ class PostgresMcpAccessTokenRepository:
                     (token_hash,),
                 )
                 row = cursor.fetchone()
-                if row:
-                    cursor.execute(
-                        """
-                        UPDATE user_mcp_tokens SET last_used_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                          AND (last_used_at IS NULL OR last_used_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
-                        """,
-                        (row["token_id"],),
-                    )
-                return self._mcp_token_metadata(dict(row)) if row else None
+                if not row:
+                    return None
+
+                metadata = self._mcp_token_metadata(dict(row))
+                # 认证 lookup 不能沿用 metadata 展示层对坏 JSON 的容错：
+                # malformed scopes 必须在 OptionalMcpUser 边界变成 401，
+                # 且不能因为认证失败更新 last_used_at。
+                try:
+                    scopes = json.loads(row.get("scopes_json", ""))
+                except (TypeError, json.JSONDecodeError):
+                    scopes = None
+                if not isinstance(scopes, list) or not all(
+                    isinstance(scope, str) for scope in scopes
+                ):
+                    metadata["scopes"] = None
+                    return metadata
+
+                cursor.execute(
+                    """
+                    UPDATE user_mcp_tokens SET last_used_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                      AND (last_used_at IS NULL OR last_used_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+                    """,
+                    (row["token_id"],),
+                )
+                return metadata
 
     def delete_user_mcp_token(self, *, user_id: int, token_id: int) -> bool:
         with self._database.transaction() as connection:

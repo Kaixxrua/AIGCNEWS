@@ -9,9 +9,7 @@ const SCOPE = 'projects:favorites:read'
 
 const props = defineProps<{
   controller: McpConnectController
-  isLoggedIn: boolean
 }>()
-const emit = defineEmits<{ (event: 'login'): void }>()
 
 const { t } = useI18n()
 
@@ -150,22 +148,15 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           <button type="button" class="btn-primary mt-3 w-full justify-center" :disabled="!quickCommand" @click="copyQuickCommand">{{ t(copiedKey === 'quick-command' ? 'mcp.copied' : 'mcp.copyQuick') }}</button>
 
           <div class="mcp-wizard-auth mt-6 border-t border-stone-200 pt-5">
-            <template v-if="isLoggedIn">
-              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.favoritesAuth') }}</p>
-              <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
-              <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label>
-              <input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
-              <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
-              <button type="button" class="btn-primary mt-4 w-full justify-center" :disabled="creating" @click="startSetup">{{ t(creating ? 'mcp.creating' : clientOption.setupScope === 'import-file' ? 'mcp.generateImport' : 'mcp.generateCommand') }}</button>
-              <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button type="button" class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button></div>
-              <p v-if="setupNoticeDisplay" class="mt-3 rounded-2xl bg-[var(--token-valid-bg)] px-4 py-3 text-xs text-[var(--projects-success)]">{{ setupNoticeDisplay }}</p>
-              <p v-if="setupErrorDisplay" class="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ setupErrorDisplay }}</p>
-            </template>
-            <div v-else class="rounded-[24px] border border-dashed border-stone-300 bg-card/60 p-7 text-center">
-              <p class="text-base font-semibold text-stone-700">{{ t('mcp.loginRequiredTitle') }}</p>
-              <p class="mt-2 text-sm text-stone-500">{{ t('mcp.loginRequiredDescription') }}</p>
-              <button type="button" class="btn-primary mt-4" @click="emit('login')">{{ t('mcp.loginToConfigure') }}</button>
-            </div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.favoritesAuth') }}</p>
+            <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
+            <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label>
+            <input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
+            <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
+            <button type="button" class="btn-primary mt-4 w-full justify-center" :disabled="creating" @click="startSetup">{{ t(creating ? 'mcp.creating' : clientOption.setupScope === 'import-file' ? 'mcp.generateImport' : 'mcp.generateCommand') }}</button>
+            <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button type="button" class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button></div>
+            <p v-if="setupNoticeDisplay" class="mt-3 rounded-2xl bg-[var(--token-valid-bg)] px-4 py-3 text-xs text-[var(--projects-success)]">{{ setupNoticeDisplay }}</p>
+            <p v-if="setupErrorDisplay" class="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ setupErrorDisplay }}</p>
           </div>
         </div>
 
@@ -180,11 +171,11 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
       </div>
     </Transition>
 
-    <div class="mcp-wizard-nav mt-6 flex items-center justify-between gap-3 border-t border-stone-200 pt-4">
-      <button type="button" class="btn-secondary text-xs" :disabled="isFirst" @click="goPrev">← {{ t('mcp.wizard.prev') }}</button>
-      <span class="text-2xs font-semibold text-stone-400">{{ t('mcp.wizard.stepProgress', { current: currentStep + 1, total: stepTitleKeys.length }) }}</span>
-      <button type="button" class="btn-primary text-xs" :disabled="isLast" @click="goNext">{{ t('mcp.wizard.next') }} →</button>
-    </div>
+      <div class="mcp-wizard-nav mt-6 flex items-center justify-between gap-3 border-t border-stone-200 pt-4">
+        <button type="button" class="btn-secondary text-xs" :disabled="isFirst" @click="goPrev">← {{ t('mcp.wizard.prev') }}</button>
+        <span class="text-2xs font-semibold text-stone-400">{{ t('mcp.wizard.stepProgress', { current: currentStep + 1, total: stepTitleKeys.length }) }}</span>
+        <button type="button" class="btn-primary text-xs" :disabled="isLast" @click="goNext">{{ t('mcp.wizard.next') }} →</button>
+      </div>
   </section>
 </template>
 

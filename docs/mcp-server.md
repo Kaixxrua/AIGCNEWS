@@ -12,9 +12,13 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 - 生产 endpoint：`https://aigcnews.cn/api/mcp`（Streamable HTTP）；自托管本地开发为 `http://localhost:8000/api/mcp`
 - Claude Code：`claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp`
 - 站内 onboarding：Web 站点为 Claude Code、Cursor、Codex、OpenCode、Cline / Roo Code、Continue、
-  Windsurf、VS Code 与通用 JSON 共 9 类客户端生成导入配置与命令
+  Windsurf、VS Code 与通用 JSON 共 9 类客户端生成导入配置与命令；网站 `/mcp` 配置页必须先登录
+- DSH：网站 `/dsh` 配置页同样必须登录；但从 npm 或 GitHub 安装 `dsh-aigc-radar` 插件本身不要求登录，
+  省略 `mcpToken` 时仍可使用公开 runtime，登录后再按需把账号绑定的 DSH Token 写入本地 dsh profile
 - 仅支持 stdio 的客户端：经社区标准桥 `npx mcp-remote https://aigcnews.cn/api/mcp` 接入；
   需要私有工具时追加 `--header "Authorization: Bearer <MCP access token>"`
+
+网站登录只保护配置、Token 管理与账号级能力，不改变站外 `/api/mcp` runtime 的可选 Bearer 语义。
 
 ## 传输与协议
 
@@ -105,10 +109,24 @@ Prompts：
 
 ## 鉴权
 
-- 公开工具与公开 resources 无需鉴权。
-- 携带 `Authorization: Bearer <MCP access token>` 的请求按 token 对应的用户与 scope 鉴权，
-  解锁私有工具 `search_my_project_favorites`；token 无效返回 401。
-- MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
+MCP 有两个相互独立的平面：网站配置与站外运行时。
+
+### 网站配置平面
+
+- 网站 `/mcp` 配置页必须登录；匿名深链跳转到 `/login?redirect=/mcp`。
+- 网站 `/dsh` 配置页也必须登录；登录后才能取得或复用账号绑定的 DSH 专用 Token。
+- generic MCP Token 的创建、查看脱敏 metadata、删除与轮换，以及网站生成的客户端配置，均由登录账号执行；客户端不能提交 membership、group、quota 或 VIP 作为权限依据。
+- 登录 JWT 仅用于网站会话，不等于 MCP access token，也不会直接作为 `/api/mcp` runtime credential。
+- generic Token 只保存 SHA-256 lookup digest、hint、scopes、有效期与撤销状态；DSH Token 通过独立 `purpose` 隔离，并保存服务端加密材料以支持跨刷新复用。Token 明文不会进入网站的普通 storage、URL、页面日志或 analytics；目标客户端、终端、剪贴板或环境变量仍可能自行保存它。
+
+### MCP 运行平面
+
+- 没有 `Authorization` 头：请求按 anonymous/guest 处理，公开工具、resources 与 prompts 继续可用，使用游客/IP 配额；不会投影为某个 Free 账号。
+- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`。
+- 只要显式提供了凭证但凭证为非 Bearer、格式错误、未知、过期、已撤销、已删除、所属用户已禁用或 scopes JSON 无效，均在 JSON-RPC 解析前返回 HTTP 401，并带 `WWW-Authenticate: Bearer`；绝不降级为游客，也不消耗游客配额。
+- 认证顺序固定为：方法校验 → Bearer 认证 → JSON-RPC 解析 → 限流 → 分派。MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
+
+npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` 时完全省略 `Authorization` header，因此可直接使用公开 runtime；只有明确配置 Token 时才进入账号渠道，个人收藏等私有能力需要有效 Token。
 
 ## 限流
 

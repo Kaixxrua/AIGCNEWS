@@ -92,9 +92,9 @@ const i18n = createI18n({
   fallbackWarn: false,
 })
 
-const mountWizard = async (isLoggedIn = true) => {
+const mountWizard = async () => {
   const wrapper = mount(McpSetupWizard, {
-    props: { controller: ctl() as any, isLoggedIn },
+    props: { controller: ctl() as any },
     global: { plugins: [i18n] },
   })
   await flushPromises()
@@ -182,16 +182,6 @@ describe('McpSetupWizard step content', () => {
     expect(handshake).toBeDefined()
     await handshake!.trigger('click')
     expect(ctl().testPublicHandshake).toHaveBeenCalledTimes(1)
-  })
-
-  it('emits login from the command step CTA when logged out', async () => {
-    const wrapper = await mountWizard(false)
-    await nextButton(wrapper)!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('登录后授权个人收藏')
-    await buttonByText(wrapper, '登录后配置')!.trigger('click')
-    expect(wrapper.emitted('login')).toHaveLength(1)
   })
 
   it('never renders the transient command while offering one-time copy', async () => {

@@ -338,7 +338,7 @@ func newSessionID() string {
 // Authenticator 是 /api/mcp 的可选 Bearer 认证边界（authn.Authenticator
 // 即其实现；回放用 fixture 假实现）。
 type Authenticator interface {
-	Authenticate(ctx context.Context, authorization string) (authn.Identity, *authn.Response)
+	Authenticate(ctx context.Context, authorization string) (authn.Identity, bool, *authn.Response)
 }
 
 // Handler 把认证、解析、限流、分派接成 http.Handler。顺序对齐 FastAPI
@@ -367,14 +367,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, `{"detail":"Method Not Allowed"}`)
 		return
 	}
-	var identity authn.Identity
+	var (
+		identity      authn.Identity
+		authenticated bool
+	)
 	if h.auth != nil {
-		id, authFailure := h.auth.Authenticate(r.Context(), r.Header.Get("Authorization"))
+		authorizations := r.Header.Values("Authorization")
+		if len(authorizations) > 1 {
+			unauthorizedHeaderResponse().Write(w)
+			return
+		}
+		authorization := ""
+		if len(authorizations) == 1 {
+			authorization = authorizations[0]
+		}
+		id, ok, authFailure := h.auth.Authenticate(r.Context(), authorization)
 		if authFailure != nil {
 			authFailure.Write(w)
 			return
 		}
 		identity = id
+		authenticated = ok
 	}
 	req, parseErr := wire.ParseRequest(r)
 	if parseErr != nil {
@@ -390,10 +403,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// PR 1.4 起 tools/list 私有工具按 is_authenticated 分叉，身份经参数传入分派。
 	// User-Agent 在分派前读取（对齐 application.py），供 dashboard 计数
 	// 按 bench/客户端分桶；不参与协议行为。
-	h.app.DispatchWithIdentityUA(req, identity, h.auth != nil && r.Header.Get("Authorization") != "", r.Header.Get("User-Agent")).Write(w)
+	h.app.DispatchWithIdentityUA(req, identity, authenticated, r.Header.Get("User-Agent")).Write(w)
 }
 
 // writeInternalServerError 对齐 ServerErrorMiddleware：纯文本定长 500。
+func unauthorizedHeaderResponse() *authn.Response {
+	return &authn.Response{
+		Status:  http.StatusUnauthorized,
+		Body:    []byte(`{"detail":"Authorization must contain exactly one value"}`),
+		Headers: http.Header{"WWW-Authenticate": []string{"Bearer"}},
+	}
+}
+
 func writeInternalServerError(w http.ResponseWriter) {
 	body := "Internal Server Error"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

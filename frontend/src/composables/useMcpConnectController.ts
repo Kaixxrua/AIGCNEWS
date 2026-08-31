@@ -193,6 +193,22 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     }
   }
 
+  /**
+   * Drop account-scoped material when the website auth state is no longer verified.
+   * The view stays mounted during auth transitions, so hiding the template alone is
+   * not enough to prevent stale token metadata or one-time commands from lingering.
+   */
+  const clearAuthenticatedState = () => {
+    tokenLoadGeneration += 1
+    setupGeneration += 1
+    creating.value = false
+    loadingTokens.value = false
+    tokens.value = []
+    setupError.value = null
+    setupNotice.value = null
+    clearTransientCommand()
+  }
+
   const startSetup = async () => {
     setupError.value = null
     setupNotice.value = null
@@ -340,6 +356,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     clientDisplayLabel,
     clientLabel,
     clientOption,
+    clearAuthenticatedState,
     clearTransientCommand,
     copiedKey,
     copyGeneratedCommand,

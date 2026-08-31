@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -125,21 +126,22 @@ func TestSuccessfulToolCallHasStructuredContent(t *testing.T) {
 // ── HTTP 接线：方法闸 / 认证先于解析 / panic 兜底 500 ────────────────────
 
 type stubAuthenticator struct {
-	failDetail string
-	identity   authn.Identity
-	seen       bool
+	failDetail    string
+	identity      authn.Identity
+	authenticated bool
+	seen          bool
 }
 
-func (s *stubAuthenticator) Authenticate(_ context.Context, authorization string) (authn.Identity, *authn.Response) {
+func (s *stubAuthenticator) Authenticate(_ context.Context, authorization string) (authn.Identity, bool, *authn.Response) {
 	s.seen = true
 	if s.failDetail != "" && strings.HasPrefix(authorization, "Bearer") {
-		return authn.Identity{}, &authn.Response{
+		return authn.Identity{}, false, &authn.Response{
 			Status:  http.StatusUnauthorized,
 			Body:    []byte(`{"detail":"` + s.failDetail + `"}`),
 			Headers: http.Header{},
 		}
 	}
-	return s.identity, nil
+	return s.identity, s.authenticated, nil
 }
 
 func post(t *testing.T, handler http.Handler, body string) *httptest.ResponseRecorder {
@@ -184,6 +186,81 @@ func TestHandlerAuthPrecedesParsing(t *testing.T) {
 	}
 	if rec.Header().Get("MCP-Protocol-Version") != "" {
 		t.Fatal("401 泄漏了协议头")
+	}
+}
+
+func TestHandlerAuthFailureSkipsLimiterDispatchAndMetrics(t *testing.T) {
+	app, mr := newMetricsApp(t)
+	called := 0
+	app.tools = Handlers{
+		"search_papers": func(map[string]any) (any, error) {
+			called++
+			return nil, nil
+		},
+	}
+	store := &countingRedis{}
+	limiter := ratelimit.NewLimiter(store, "")
+	auth := &stubAuthenticator{failDetail: "MCP Token 无效、已过期或已撤销"}
+	handler := NewHandler(app, auth, limiter)
+	req := httptest.NewRequest(http.MethodPost, "http://example.test/api/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_papers","arguments":{}}}`,
+	))
+	req.Header.Set("Authorization", "Bearer invalid")
+	req.Header.Set("User-Agent", "dsh-aigc-radar/2.1")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+	}
+	if len(store.counts) != 0 {
+		t.Fatalf("auth failure consumed rate limit: %v", store.counts)
+	}
+	if called != 0 {
+		t.Fatalf("auth failure dispatched tool %d times", called)
+	}
+	for _, key := range mr.Keys() {
+		if strings.HasPrefix(key, "mcpmetrics:") {
+			t.Fatalf("auth failure created metrics key %q", key)
+		}
+	}
+}
+
+func TestHandlerRejectsDuplicateAuthorizationHeaders(t *testing.T) {
+	auth := &stubAuthenticator{}
+	handler := NewHandler(newApp(), auth, nil)
+	req := httptest.NewRequest(http.MethodPost, "http://example.test/api/mcp", strings.NewReader("{"))
+	req.Header.Add("Authorization", "Bearer first")
+	req.Header.Add("Authorization", "Bearer second")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+	}
+	if auth.seen {
+		t.Fatal("duplicate authorization must be rejected before authenticator selection")
+	}
+	if rec.Header().Get("WWW-Authenticate") != "Bearer" {
+		t.Fatal("missing bearer challenge")
+	}
+}
+
+func TestHandlerAuthenticatedCatalogUsesExplicitBoolean(t *testing.T) {
+	for _, authenticated := range []bool{false, true} {
+		t.Run(strconv.FormatBool(authenticated), func(t *testing.T) {
+			auth := &stubAuthenticator{
+				identity:      authn.Identity{},
+				authenticated: authenticated,
+			}
+			handler := NewHandler(newApp(), auth, nil)
+			rec := post(t, handler, `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body)
+			}
+			hasFavorites := strings.Contains(rec.Body.String(), "search_my_project_favorites")
+			if hasFavorites != authenticated {
+				t.Fatalf("favorites visibility=%v, authenticated=%v; body=%s", hasFavorites, authenticated, rec.Body)
+			}
+		})
 	}
 }
 
@@ -232,7 +309,10 @@ func TestHandlerRateLimitAfterParseUsesAuthenticatedIdentity(t *testing.T) {
 	limiter := ratelimit.NewLimiter(store, "", func(l *ratelimit.Limits) {
 		l.AuthenticatedProtocolPerMinute = 1
 	})
-	auth := &stubAuthenticator{identity: authn.Identity{UserID: 42, Role: "user"}}
+	auth := &stubAuthenticator{
+		identity:      authn.Identity{UserID: 42, Role: "user"},
+		authenticated: true,
+	}
 	handler := NewHandler(newApp(), auth, limiter)
 	body := `{"jsonrpc":"2.0","id":9,"method":"ping"}`
 	if rec := post(t, handler, body); rec.Code != http.StatusOK {

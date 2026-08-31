@@ -464,7 +464,7 @@ def test_token_lookup_filters_inactive_and_throttles_last_use() -> None:
 
     result = repository.get_user_by_mcp_token_hash("a" * 64)
 
-    lookup, update = cursor.execute.call_args_list
+    lookup = cursor.execute.call_args_list[0]
     assert "t.token_hash = %s" in lookup.args[0]
     assert "t.revoked_at IS NULL" in lookup.args[0]
     assert "t.deleted_at IS NULL" in lookup.args[0]
@@ -472,8 +472,9 @@ def test_token_lookup_filters_inactive_and_throttles_last_use() -> None:
     # 禁用账号的未吊销 token 必须一并失效（REST JWT 路径已有 per-request 拦截，
     # MCP token 路径曾缺失该校验，渗透实测禁用后 tools/list 仍 200）
     assert "u.disabled = FALSE" in lookup.args[0]
-    assert "INTERVAL '5 minutes'" in update.args[0]
-    assert result["scopes"] == []
+    # 坏 scope 不应更新 last_used_at；否则每次无效认证都会制造写放大。
+    assert len(cursor.execute.call_args_list) == 1
+    assert result["scopes"] is None
     assert "token_hash" not in result
 
 

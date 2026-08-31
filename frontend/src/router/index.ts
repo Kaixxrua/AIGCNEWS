@@ -104,6 +104,7 @@ const router = createRouter({
           path: 'mcp',
           name: 'mcp-connect',
           component: McpConnectView,
+          meta: { requiresAuth: true },
         },
         {
           path: 'dsh',

@@ -133,31 +133,31 @@ type fixtureAuthenticator struct {
 	tokens map[string]fixtureToken
 }
 
-func (f fixtureAuthenticator) Authenticate(_ context.Context, authorization string) (authn.Identity, *authn.Response) {
+func (f fixtureAuthenticator) Authenticate(_ context.Context, authorization string) (authn.Identity, bool, *authn.Response) {
 	if authorization == "" {
-		return authn.Identity{}, nil
+		return authn.Identity{}, false, nil
 	}
 	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
-		return authn.Identity{}, fixtureUnauthorized("Authorization 必须使用 Bearer Token")
+		return authn.Identity{}, false, fixtureUnauthorized("Authorization 必须使用 Bearer Token")
 	}
 	digest := sha256.Sum256([]byte(authorization[len("Bearer "):]))
 	entry, ok := f.tokens[hex.EncodeToString(digest[:])]
 	if !ok {
-		return authn.Identity{}, fixtureUnauthorized("MCP Token 无效、已过期或已撤销")
+		return authn.Identity{}, false, fixtureUnauthorized("MCP Token 无效、已过期或已撤销")
 	}
 	scopes, ok := entry.Scopes.([]any)
 	if !ok {
-		return authn.Identity{}, fixtureUnauthorized("MCP Token 权限无效")
+		return authn.Identity{}, false, fixtureUnauthorized("MCP Token 权限无效")
 	}
 	identity := authn.Identity{UserID: entry.UserID}
 	for _, scope := range scopes {
 		s, ok := scope.(string)
 		if !ok {
-			return authn.Identity{}, fixtureUnauthorized("MCP Token 权限无效")
+			return authn.Identity{}, false, fixtureUnauthorized("MCP Token 权限无效")
 		}
 		identity.Scopes = append(identity.Scopes, s)
 	}
-	return identity, nil
+	return identity, true, nil
 }
 
 func fixtureUnauthorized(detail string) *authn.Response {
