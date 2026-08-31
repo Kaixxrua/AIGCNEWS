@@ -189,15 +189,8 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
               type="button"
               class="btn-secondary justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
-              @click="emit('copyRss', false)"
-            >{{ t('report.wizard.delivery.copyPublic') }}</button>
-            <button
-              v-if="isMember"
-              type="button"
-              class="btn-secondary justify-center px-2 py-1 text-2xs"
-              :disabled="isRssBusy"
-              @click="emit('copyRss', true)"
-            >{{ t('report.wizard.delivery.copyMember') }}</button>
+              @click="emit('copyRss', isMember)"
+            >{{ t(isMember ? 'report.wizard.delivery.copyMember' : 'report.wizard.delivery.copyPublic') }}</button>
             <button
               v-if="isMember"
               type="button"

@@ -75,7 +75,7 @@ describe('ReportSubscriptionPanel delivery controls', () => {
     expect(cards[2]!.find('.delivery-option__toggle').attributes('disabled')).toBeDefined()
   })
 
-  it('uses visible secondary controls for RSS copying and going back', async () => {
+  it('uses visible secondary controls for public RSS copying and going back', async () => {
     const wrapper = mount(ReportSubscriptionPanel, {
       props: props(),
       global: {
@@ -91,5 +91,22 @@ describe('ReportSubscriptionPanel delivery controls', () => {
     await secondaryButtons[secondaryButtons.length - 1]!.trigger('click')
     expect(wrapper.emitted('copyRss')).toEqual([[false]])
     expect(wrapper.emitted('goBack')).toHaveLength(1)
+  })
+
+  it('uses the token-protected RSS copy action for members', async () => {
+    const wrapper = mount(ReportSubscriptionPanel, {
+      props: props({ isMember: true }),
+      global: {
+        plugins: [i18n],
+        stubs: { RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+
+    const copyButton = wrapper.findAll('button.btn-secondary')[0]!
+    expect(copyButton.text()).toBe(i18n.global.t('report.wizard.delivery.copyMember'))
+
+    await copyButton.trigger('click')
+
+    expect(wrapper.emitted('copyRss')).toEqual([[true]])
   })
 })
