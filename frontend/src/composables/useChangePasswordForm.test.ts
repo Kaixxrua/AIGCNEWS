@@ -69,7 +69,9 @@ describe('useChangePasswordForm', () => {
     expect(submit).not.toHaveBeenCalled()
   })
 
-  it('submits code and new password, marks done, and invokes onChanged on success', async () => {
+  it('submits code and new password, passes rotation result before marking done', async () => {
+    const rotation = { access_token: 'replacement-token', token_type: 'bearer', changed: true }
+    submit.mockResolvedValue(rotation)
     const onChanged = vi.fn()
     const form = makeForm(onChanged)
     form.otp.value = '123456'
@@ -84,6 +86,7 @@ describe('useChangePasswordForm', () => {
     expect(form.errorMsg.value).toBe('')
     expect(form.loading.value).toBe(false)
     expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(onChanged).toHaveBeenCalledWith(rotation)
   })
 
   it('maps a 429 failure to the rate-limited message', async () => {

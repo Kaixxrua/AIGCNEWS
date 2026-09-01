@@ -31,6 +31,19 @@ class EmailMessageRenderer:
     def password_change_otp(self, otp: str) -> tuple[str, str]:
         return "【AIGC_NEWS】修改密码验证码", self.password_change_otp_body(otp)
 
+    def email_change_otp(self, otp: str) -> tuple[str, str]:
+        return "【AIGC_NEWS】换绑邮箱验证码", self.email_change_otp_body(otp)
+
+    def email_change_otp_body(self, otp: str) -> str:
+        return (
+            f"您好，\n\n"
+            f"您正在换绑 AIGC_NEWS 账号的登录邮箱，验证码为：\n\n"
+            f"    {otp}\n\n"
+            f"验证码有效期为 5 分钟，请勿泄露给他人。\n\n"
+            f"如非本人操作，请忽略此邮件并尽快检查账号安全。\n\n"
+            f"— AIGC_NEWS"
+        )
+
     def password_change_otp_body(self, otp: str) -> str:
         return (
             f"您好，\n\n"

@@ -17,6 +17,7 @@ const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const ForgotPasswordView = () => import('@/views/ForgotPasswordView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
+const OAuthActionCallbackView = () => import('@/views/OAuthActionCallbackView.vue')
 const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
@@ -48,6 +49,13 @@ const router = createRouter({
       name: 'oauth-callback',
       component: OAuthCallbackView,
       meta: { guestOnly: true },
+    },
+    {
+      path: '/oauth/action-callback',
+      name: 'oauth-action-callback',
+      component: OAuthActionCallbackView,
+      // 渠道绑定回调须携带当前登录会话：绑定目标 = 当前账户
+      meta: { requiresAuth: true },
     },
 
     // ── 主 Layout（大白卡片 + Dock + Auth） ──

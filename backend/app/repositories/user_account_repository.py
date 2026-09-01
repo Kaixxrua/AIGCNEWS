@@ -33,6 +33,24 @@ class UserAccountWriter(Protocol):
         hashed_password: str,
     ) -> int: ...
 
+    def update_user_username(
+        self,
+        *,
+        user_id: int,
+        username: str,
+    ) -> int: ...
+
+    def update_user_email(
+        self,
+        *,
+        user_id: int,
+        current_email: str,
+        new_email: str,
+    ) -> int:
+        """Rebind the login email under a (user_id, current_email) snapshot;
+        returns affected row count (0 = snapshot mismatch or user missing)."""
+        ...
+
     def set_membership_tier(
         self,
         *,
