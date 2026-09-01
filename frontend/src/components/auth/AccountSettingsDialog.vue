@@ -115,22 +115,23 @@ watch(() => props.modelValue, async open => {
 
             <section class="space-y-3 border-t border-stone-200/70 pt-4">
               <div class="flex items-center justify-between"><h4 class="text-xs font-semibold text-stone-500">{{ t('auth.connectedLoginMethods') }}</h4><span class="text-xs monitor-caption">{{ (currentUser?.oauth_identities ?? []).length }}</span></div>
-              <div class="grid grid-cols-3 gap-2">
+              <div class="grid grid-cols-3 gap-3">
                 <button
                   v-for="provider in providers"
                   :key="provider"
                   type="button"
-                  class="flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-xs transition-colors"
-                  :class="connectedProviders.has(provider)
-                    ? 'cursor-default border-stone-200/70 bg-stone-50/60 text-stone-500'
-                    : 'border-stone-200/70 hover:border-stone-400 hover:bg-stone-50 text-stone-700'"
+                  class="oauth-provider-btn"
+                  :class="{ 'is-connected': connectedProviders.has(provider) }"
                   :disabled="connectedProviders.has(provider)"
                   :aria-label="connectedProviders.has(provider) ? `${providerLabel(provider)} ${t('auth.connected')}` : `${providerLabel(provider)} ${t('auth.notConnected')}`"
                   @click="bindProvider(provider)"
                 >
-                  <OAuthProviderIcon :provider="provider" />
-                  <span class="truncate font-medium">{{ providerLabel(provider) }}</span>
-                  <span class="text-[10px] leading-tight" :class="connectedProviders.has(provider) ? 'text-emerald-700' : 'text-stone-500'">{{ connectedProviders.has(provider) ? t('auth.connected') : t('auth.notConnected') }}</span>
+                  <OAuthProviderIcon :provider="provider" class="oauth-provider-icon" />
+                  <span class="oauth-provider-name">{{ providerLabel(provider) }}</span>
+                  <span
+                    class="oauth-provider-status"
+                    :class="connectedProviders.has(provider) ? 'status-connected' : 'status-disconnected'"
+                  >{{ connectedProviders.has(provider) ? t('auth.connected') : t('auth.notConnected') }}</span>
                 </button>
               </div>
             </section>
@@ -150,4 +151,58 @@ watch(() => props.modelValue, async open => {
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.oauth-provider-btn {
+  @apply flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-2 py-3 text-xs font-semibold transition-all duration-150;
+  min-height: 5.5rem;
+  background: var(--paper-raised);
+  border-color: var(--rule-strong);
+  color: var(--ink);
+  box-shadow: var(--shadow-low);
+}
+.oauth-provider-btn:hover:not(:disabled) {
+  background: var(--acid-soft);
+  transform: translate(-1.5px, -1.5px);
+  box-shadow: 3px 3px 0 var(--shadow-ink-soft);
+}
+.oauth-provider-btn:active:not(:disabled) {
+  transform: translate(0, 1px);
+  box-shadow: none;
+}
+.oauth-provider-btn.is-connected {
+  cursor: default;
+  background: transparent;
+  opacity: 0.55;
+  box-shadow: none;
+  transform: none !important;
+}
+.oauth-provider-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.oauth-provider-name {
+  @apply truncate leading-tight;
+  max-width: 100%;
+}
+.oauth-provider-status {
+  @apply rounded-full px-2 py-0.5 text-[10px] font-medium leading-none;
+}
+.oauth-provider-status.status-connected {
+  background: var(--success-surface, #dcfce7);
+  color: var(--success-ink, #166534);
+}
+.oauth-provider-status.status-disconnected {
+  background: var(--paper-muted, #f5f5f4);
+  color: var(--ink-muted);
+}
+@media (max-width: 639px) {
+  .oauth-provider-btn {
+    min-height: 4.75rem;
+    padding: 0.625rem 0.375rem;
+  }
+  .oauth-provider-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
 </style>
