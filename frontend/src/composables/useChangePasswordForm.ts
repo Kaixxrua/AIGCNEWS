@@ -13,8 +13,8 @@ interface ChangePasswordFormOptions {
   submit: (emailCode: string, newPassword: string) => Promise<unknown>
   /** 发送改密验证码到当前账号邮箱 */
   sendOtp: () => Promise<unknown>
-  /** 改密成功后回调（如刷新 /auth/me 以清除默认密码提醒） */
-  onChanged?: () => Promise<void> | void
+  /** 改密成功后回调；调用方可先安装服务端返回的新令牌，再刷新账户资料。 */
+  onChanged?: (result?: unknown) => Promise<void> | void
 }
 
 /** 已登录改密表单状态：邮箱验证码 + 新密码确认（验证码替代当前密码） */
@@ -89,11 +89,11 @@ export function useChangePasswordForm({ submit, sendOtp, onChanged }: ChangePass
 
     loading.value = true
     try {
-      await submit(otp.value.trim(), password.value)
+      const result = await submit(otp.value.trim(), password.value)
+      await onChanged?.(result)
       changeDone.value = true
       successMsg.value = t('auth.changeSuccess')
       resetCountdown()
-      await onChanged?.()
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)
         ? t('auth.rateLimited')

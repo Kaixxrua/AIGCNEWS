@@ -8,7 +8,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_auth
-from backend.app.api.dependencies import get_user_account_repository
+from backend.app.api.dependencies import (
+    get_oauth_identity_repository,
+    get_user_account_repository,
+)
 from backend.app.core.auth import (
     create_access_token,
     get_user_identity_repository,
@@ -34,6 +37,9 @@ class FakeUserAccountRepository:
                 return user
         return None
 
+    def list_identities_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        return []
+
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
         self.events.append(("get_user_by_email", email))
         return self.users_by_email.get(email)
@@ -46,6 +52,11 @@ class FakeUserAccountRepository:
         hashed_password: str,
     ) -> int:
         self.events.append(("update_user_password", user_id, email, hashed_password))
+        if self.affected_rows == 1:
+            for user in self.users_by_email.values():
+                if user["id"] == user_id:
+                    user["pwd_ver"] = int(user.get("pwd_ver") or 1) + 1
+                    break
         return self.affected_rows
 
 
@@ -67,6 +78,9 @@ class ChangePasswordRouteTests(unittest.TestCase):
         app.include_router(routes_auth.router, prefix="/api")
         self.repository = FakeUserAccountRepository()
         app.dependency_overrides[get_user_account_repository] = (
+            lambda: self.repository
+        )
+        app.dependency_overrides[get_oauth_identity_repository] = (
             lambda: self.repository
         )
         app.dependency_overrides[get_user_identity_repository] = (
@@ -99,11 +113,16 @@ class ChangePasswordRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"detail": "密码已修改"})
+        payload = response.json()
+        self.assertEqual(payload["token_type"], "bearer")
+        self.assertIs(payload["changed"], True)
+        self.assertTrue(payload["access_token"])
         self.assertEqual(response.headers["cache-control"], "no-store")
-        lookup, update = self.repository.events
-        self.assertEqual(lookup, ("get_user_by_email", "reader@example.com"))
-        self.assertEqual(update[:3], ("update_user_password", 7, "reader@example.com"))
+        self.assertEqual(
+            self.repository.events,
+            [("update_user_password", 7, "reader@example.com", unittest.mock.ANY)],
+        )
+        update = self.repository.events[0]
         updated_hash = update[3]
         self.assertNotIn("replacement-secret", updated_hash)
         email_service.verify_otp.assert_awaited_once_with(
@@ -192,18 +211,36 @@ class ChangePasswordRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(self.repository.events, [])
 
-    def test_change_password_rejects_token_without_email_claim(self) -> None:
-        response = self.client.post(
-            "/api/auth/me/password",
-            headers=_bearer({"user_id": 7, "role": "user"}),
-            json={
-                "email_code": "123456",
-                "new_password": "replacement-secret",
-            },
+    def test_change_password_uses_user_id_without_email_claim(self) -> None:
+        email_service = _fake_email_service(verified=True)
+        with patch.object(routes_auth, "_get_email_service", return_value=email_service):
+            response = self.client.post(
+                "/api/auth/me/password",
+                headers=_bearer({"user_id": 7, "role": "user"}),
+                json={
+                    "email_code": "123456",
+                    "new_password": "replacement-secret",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        email_service.verify_otp.assert_awaited_once_with(
+            "reader@example.com", "123456", consume=False, purpose="password_change"
         )
 
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json(), {"detail": "用户身份无效"})
+    def test_change_password_ignores_stale_email_claim(self) -> None:
+        email_service = _fake_email_service(verified=True)
+        with patch.object(routes_auth, "_get_email_service", return_value=email_service):
+            response = self.client.post(
+                "/api/auth/me/password",
+                headers=_bearer({"user_id": 7, "role": "user", "email": "old@example.com"}),
+                json={"email_code": "123456", "new_password": "replacement-secret"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        email_service.verify_otp.assert_awaited_once_with(
+            "reader@example.com", "123456", consume=False, purpose="password_change"
+        )
 
 
 class SendChangePasswordOtpRouteTests(unittest.TestCase):
@@ -212,6 +249,9 @@ class SendChangePasswordOtpRouteTests(unittest.TestCase):
         app.include_router(routes_auth.router, prefix="/api")
         self.repository = FakeUserAccountRepository()
         app.dependency_overrides[get_user_account_repository] = (
+            lambda: self.repository
+        )
+        app.dependency_overrides[get_oauth_identity_repository] = (
             lambda: self.repository
         )
         app.dependency_overrides[get_user_identity_repository] = (
@@ -252,14 +292,31 @@ class SendChangePasswordOtpRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(self.repository.events, [])
 
-    def test_send_otp_rejects_token_without_email_claim(self) -> None:
-        response = self.client.post(
-            "/api/auth/me/send-password-change-otp",
-            headers=_bearer({"user_id": 7, "role": "user"}),
+    def test_send_otp_uses_user_id_without_email_claim(self) -> None:
+        email_service = _fake_email_service()
+        with patch.object(routes_auth, "_get_email_service", return_value=email_service):
+            response = self.client.post(
+                "/api/auth/me/send-password-change-otp",
+                headers=_bearer({"user_id": 7, "role": "user"}),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        email_service.send_otp.assert_awaited_once_with(
+            "reader@example.com", purpose="password_change", deliver=True
         )
 
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json(), {"detail": "用户身份无效"})
+    def test_send_otp_ignores_stale_email_claim(self) -> None:
+        email_service = _fake_email_service()
+        with patch.object(routes_auth, "_get_email_service", return_value=email_service):
+            response = self.client.post(
+                "/api/auth/me/send-password-change-otp",
+                headers=_bearer({"user_id": 7, "role": "user", "email": "old@example.com"}),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        email_service.send_otp.assert_awaited_once_with(
+            "reader@example.com", purpose="password_change", deliver=True
+        )
 
     def test_send_otp_maps_cooldown_to_429(self) -> None:
         email_service = _fake_email_service()
@@ -302,6 +359,9 @@ class DefaultAdminCredentialFlagTests(unittest.TestCase):
         app.include_router(routes_auth.router, prefix="/api")
         self.repository = FakeUserAccountRepository()
         app.dependency_overrides[get_user_account_repository] = (
+            lambda: self.repository
+        )
+        app.dependency_overrides[get_oauth_identity_repository] = (
             lambda: self.repository
         )
         app.dependency_overrides[get_user_identity_repository] = (

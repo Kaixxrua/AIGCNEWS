@@ -5,7 +5,10 @@ from typing import Any
 
 from backend.app.core.auth import hash_password
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-from backend.app.repositories.oauth_identity_repository import OAuthLoginResolution
+from backend.app.repositories.oauth_identity_repository import (
+    OAuthBindResult,
+    OAuthLoginResolution,
+)
 
 # users.username 字段上限（VARCHAR(64)）
 _USERNAME_MAX_LENGTH = 64
@@ -264,6 +267,25 @@ class PostgresOAuthIdentityRepository:
                     raise RuntimeError("PostgreSQL OAuth identity insert did not return a row")
                 return user_row
 
+    def list_identities_for_user(
+        self,
+        user_id: int,
+    ) -> list[dict[str, Any]]:
+        """Return display-safe identities without stable provider subjects."""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT provider, display_email, email_verified,
+                           created_at AS linked_at
+                    FROM user_oauth_identities
+                    WHERE user_id = %s
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (int(user_id),),
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def bind_identity(
         self,
         *,
@@ -272,9 +294,40 @@ class PostgresOAuthIdentityRepository:
         provider_subject: str,
         display_email: str | None = None,
         email_verified: bool = False,
-    ) -> bool:
+    ) -> OAuthBindResult:
+        """Bind an external identity to an already-authenticated account.
+
+        与 resolve_first_login 共用同一 advisory lock 键，绑定与首次登录建号
+        在数据库层互斥；返回结构化结果以区分幂等成功与他人占用，绝不把
+        他人身份转移到本账户。
+        """
+        if provider not in {"github", "google", "wechat"}:
+            raise ValueError("unknown OAuth provider")
+        subject = str(provider_subject)
+        if not subject or not subject.strip():
+            raise ValueError("provider_subject must not be empty")
+        target_user_id = int(user_id)
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"oauth:subject:{provider}:{subject}",),
+                )
+                cursor.execute(
+                    """
+                    SELECT user_id
+                    FROM user_oauth_identities
+                    WHERE provider = %s AND provider_subject = %s
+                    FOR UPDATE
+                    """,
+                    (provider, subject),
+                )
+                existing = cursor.fetchone()
+                if existing is not None:
+                    owner_id = int(existing["user_id"])
+                    return OAuthBindResult(
+                        status="already_bound" if owner_id == target_user_id else "owned_by_other"
+                    )
                 cursor.execute(
                     """
                     INSERT INTO user_oauth_identities (
@@ -283,16 +336,36 @@ class PostgresOAuthIdentityRepository:
                     )
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (provider, provider_subject) DO NOTHING
+                    RETURNING id
                     """,
                     (
-                        int(user_id),
+                        target_user_id,
                         provider,
-                        provider_subject,
+                        subject,
                         display_email,
                         bool(email_verified),
                     ),
                 )
-                return bool(cursor.rowcount)
+                if cursor.fetchone() is not None:
+                    return OAuthBindResult(status="bound")
+                # 未走 advisory lock 的并发写入者抢占了该身份：重查属主并据实返回，
+                # 绝不返回 "bound" 造成绑定成功的假象。
+                cursor.execute(
+                    """
+                    SELECT user_id
+                    FROM user_oauth_identities
+                    WHERE provider = %s AND provider_subject = %s
+                    FOR UPDATE
+                    """,
+                    (provider, subject),
+                )
+                winner = cursor.fetchone()
+                if winner is None:
+                    raise RuntimeError("OAuth identity conflict winner disappeared")
+                winner_id = int(winner["user_id"])
+                return OAuthBindResult(
+                    status="already_bound" if winner_id == target_user_id else "owned_by_other"
+                )
 
     def _fetchone(
         self, sql: str, params: tuple[Any, ...]

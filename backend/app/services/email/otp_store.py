@@ -6,7 +6,7 @@ import hmac
 from collections.abc import Callable
 from typing import Literal
 
-OtpPurpose = Literal["registration", "password_reset", "push_channel_verify", "password_change"]
+OtpPurpose = Literal["registration", "password_reset", "push_channel_verify", "password_change", "email_change"]
 
 OTP_CODE_PREFIX = "email:code:"
 OTP_LOCK_PREFIX = "email:lock:"
@@ -20,6 +20,11 @@ PUSH_ATTEMPTS_PREFIX = "email:push:attempts:"
 CHANGE_CODE_PREFIX = "email:change:code:"
 CHANGE_LOCK_PREFIX = "email:change:lock:"
 CHANGE_ATTEMPTS_PREFIX = "email:change:attempts:"
+# 换绑邮箱专用命名空间：与改密（email:change:*）及其他用途完全隔离；
+# 同一 purpose 下按邮箱地址分键，当前邮箱与新邮箱的验证码天然互不覆盖。
+EMAIL_CHANGE_CODE_PREFIX = "email:emailchange:code:"
+EMAIL_CHANGE_LOCK_PREFIX = "email:emailchange:lock:"
+EMAIL_CHANGE_ATTEMPTS_PREFIX = "email:emailchange:attempts:"
 OTP_TTL = 300
 LOCK_TTL = 60
 MAX_ATTEMPTS = 5
@@ -57,6 +62,12 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
             f"{CHANGE_CODE_PREFIX}{email_lower}",
             f"{CHANGE_LOCK_PREFIX}{email_lower}",
             f"{CHANGE_ATTEMPTS_PREFIX}{email_lower}",
+        )
+    if purpose == "email_change":
+        return (
+            f"{EMAIL_CHANGE_CODE_PREFIX}{email_lower}",
+            f"{EMAIL_CHANGE_LOCK_PREFIX}{email_lower}",
+            f"{EMAIL_CHANGE_ATTEMPTS_PREFIX}{email_lower}",
         )
     return (
         f"{OTP_CODE_PREFIX}{email_lower}",

@@ -92,6 +92,7 @@ class PostgresUserAccountRepository:
         return self._fetchone(
             """
             SELECT id, phone, email, username, role, disabled, pwd_ver,
+                   email_verified, password_login_enabled,
                    membership_tier, membership_expires_at, created_at
             FROM users
             WHERE id = %s
@@ -175,6 +176,48 @@ class PostgresUserAccountRepository:
                     WHERE id = %s AND email = %s
                     """,
                     (hashed_password, int(user_id), email.lower()),
+                )
+                return int(cursor.rowcount)
+
+    def update_user_username(
+        self,
+        *,
+        user_id: int,
+        username: str,
+    ) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET username = %s
+                    WHERE id = %s
+                    """,
+                    (username, int(user_id)),
+                )
+                return int(cursor.rowcount)
+
+    def update_user_email(
+        self,
+        *,
+        user_id: int,
+        current_email: str,
+        new_email: str,
+    ) -> int:
+        # 快照条件更新：仅当库内邮箱仍等于本次换绑发起时读取的 current_email
+        # 才落写（并发换绑/改密之外的路径改了邮箱 → rowcount=0 → 领域层失败，
+        # 已发验证码不消耗，可安全重试）。新邮箱已验 OTP，email_verified 置真。
+        # 并发两账户换绑同一新邮箱由 users.email 唯一约束兜底（UniqueViolation
+        # 交由路由层映射中性 409，不泄露归属）。
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET email = %s, email_verified = TRUE
+                    WHERE id = %s AND email = %s
+                    """,
+                    (new_email.lower(), int(user_id), current_email.lower()),
                 )
                 return int(cursor.rowcount)
 

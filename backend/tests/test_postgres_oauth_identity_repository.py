@@ -170,3 +170,100 @@ def test_create_oauth_only_user_insert_carries_resolved_username() -> None:
 
     params = _user_insert_params(cursor)
     assert params[1] == "微信用户"
+
+
+def _lock_keys(cursor: MagicMock) -> list[str]:
+    return [
+        call.args[1][0]
+        for call in cursor.execute.call_args_list
+        if "pg_advisory_xact_lock" in call.args[0]
+    ]
+
+
+def test_bind_identity_inserts_under_subject_advisory_lock() -> None:
+    cursor = MagicMock()
+    # 身份未命中 → INSERT ... RETURNING id
+    cursor.fetchone.side_effect = [None, {"id": 12}]
+    database = FakeDatabase(cursor)
+    repository = PostgresOAuthIdentityRepository(database)
+
+    result = repository.bind_identity(
+        user_id=7,
+        provider="github",
+        provider_subject="subject-1",
+        display_email="a@example.com",
+        email_verified=True,
+    )
+
+    assert result.status == "bound"
+    assert database.transactions == 1
+    # 与 resolve_first_login 共用同一 lock 键：绑定与首次登录建号互斥
+    assert _lock_keys(cursor) == ["oauth:subject:github:subject-1"]
+    sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "FOR UPDATE" in sql
+    assert "ON CONFLICT (provider, provider_subject) DO NOTHING" in sql
+    insert_call = [
+        call for call in cursor.execute.call_args_list
+        if "INSERT INTO user_oauth_identities" in call.args[0]
+    ][0]
+    assert insert_call.args[1] == (7, "github", "subject-1", "a@example.com", True)
+
+
+def test_bind_identity_same_owner_is_idempotent() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [{"user_id": 7}]
+    database = FakeDatabase(cursor)
+    repository = PostgresOAuthIdentityRepository(database)
+
+    result = repository.bind_identity(
+        user_id=7, provider="github", provider_subject="subject-1"
+    )
+
+    assert result.status == "already_bound"
+    sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "INSERT INTO user_oauth_identities" not in sql
+
+
+def test_bind_identity_never_transfers_other_accounts_identity() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.side_effect = [{"user_id": 8}]
+    database = FakeDatabase(cursor)
+    repository = PostgresOAuthIdentityRepository(database)
+
+    result = repository.bind_identity(
+        user_id=7, provider="github", provider_subject="subject-1"
+    )
+
+    assert result.status == "owned_by_other"
+    sql = "\n".join(call.args[0] for call in cursor.execute.call_args_list)
+    assert "INSERT INTO user_oauth_identities" not in sql
+    assert "UPDATE user_oauth_identities" not in sql
+
+
+def test_bind_identity_conflict_race_reports_actual_winner() -> None:
+    # INSERT 被未走 advisory lock 的并发写入者抢占：重查属主并据实返回
+    for winner_id, expected in ((8, "owned_by_other"), (7, "already_bound")):
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [None, None, {"user_id": winner_id}]
+        database = FakeDatabase(cursor)
+        repository = PostgresOAuthIdentityRepository(database)
+
+        result = repository.bind_identity(
+            user_id=7, provider="github", provider_subject="subject-1"
+        )
+
+        assert result.status == expected
+
+
+def test_bind_identity_rejects_unknown_provider_and_empty_subject() -> None:
+    repository = PostgresOAuthIdentityRepository(FakeDatabase(MagicMock()))
+    import pytest
+
+    with pytest.raises(ValueError):
+        repository.bind_identity(
+            user_id=7, provider="gitlab", provider_subject="subject-1"
+        )
+    with pytest.raises(ValueError):
+        repository.bind_identity(
+            user_id=7, provider="github", provider_subject="   "
+        )

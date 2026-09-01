@@ -10,10 +10,13 @@ from backend.app.services.dashboard import live_stats_broadcaster
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
 PASSWORD_CHANGE_PURPOSE = "password_change"
+EMAIL_CHANGE_PURPOSE = "email_change"
 
 
 class AccountRepository(Protocol):
     """Persistence operations required by account lifecycle coordination."""
+
+    def get_user_by_id(self, user_id: int) -> Mapping[str, Any] | None: ...
 
     def get_user_by_email(self, email: str) -> Mapping[str, Any] | None: ...
 
@@ -32,6 +35,28 @@ class AccountRepository(Protocol):
         email: str,
         hashed_password: str,
     ) -> int: ...
+
+    def update_user_username(
+        self,
+        *,
+        user_id: int,
+        username: str,
+    ) -> int: ...
+
+    def update_user_email(
+        self,
+        *,
+        user_id: int,
+        current_email: str,
+        new_email: str,
+    ) -> int:
+        """Atomically rebind the login email; returns affected row count.
+
+        实现方必须以 (user_id, current_email) 快照为更新条件（current_email
+        不匹配时返回 0），并将 email_verified 置真——新邮箱已通过 OTP 证明
+        收件控制。邮箱唯一性冲突由 users.email 的唯一约束兜底抛给调用层。
+        """
+        ...
 
 
 class OtpService(Protocol):
@@ -95,6 +120,26 @@ class PasswordChangeFailed(AccountLifecycleError):
     """Authenticated password change did not update exactly one account."""
 
 
+class ProfileUpdateFailed(AccountLifecycleError):
+    """Profile persistence did not update exactly one account."""
+
+
+class EmailChangeUnavailable(AccountLifecycleError):
+    """The account has no current email to verify against."""
+
+
+class EmailChangeSameEmail(AccountLifecycleError):
+    """The new email is identical to the current email."""
+
+
+class EmailAlreadyInUse(AccountLifecycleError):
+    """The new email is owned by another account."""
+
+
+class EmailChangeFailed(AccountLifecycleError):
+    """Email rebind persistence did not update exactly one account."""
+
+
 @dataclass(frozen=True, slots=True)
 class RegistrationResult:
     user_id: int
@@ -112,6 +157,13 @@ class PasswordResetResult:
 
 @dataclass(frozen=True, slots=True)
 class PasswordChangeResult:
+    access_token: str
+    token_type: str = "bearer"
+    changed: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class EmailChangeResult:
     changed: bool = True
 
 
@@ -223,6 +275,20 @@ class AccountLifecycle:
             role=role,
         )
 
+    async def update_username(
+        self,
+        *,
+        user_id: int,
+        username: str,
+    ) -> None:
+        affected_rows = await asyncio.to_thread(
+            self._repository.update_user_username,
+            user_id=int(user_id),
+            username=username.strip(),
+        )
+        if affected_rows != 1:
+            raise ProfileUpdateFailed
+
     async def request_password_reset_otp(
         self,
         *,
@@ -242,17 +308,17 @@ class AccountLifecycle:
     async def request_change_password_otp(
         self,
         *,
-        email: str,
+        user_id: int,
     ) -> ResetOtpRequestResult:
-        """已登录改密的发码路径：账号已注销（JWT 滞留）时不真实投递。"""
-        normalized_email = _normalize_email_domain(email)
-        user = await asyncio.to_thread(
-            self._repository.get_user_by_email, normalized_email
-        )
+        """向已认证账号的数据库当前邮箱发码，不信任 JWT 中的 email。"""
+        user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
+        email = _normalize_email_domain(str(user.get("email") or "")) if user else ""
+        if not email:
+            raise InvalidCredentials
         await self._otp.send_otp(
-            normalized_email,
+            email,
             purpose=PASSWORD_CHANGE_PURPOSE,
-            deliver=user is not None,
+            deliver=True,
         )
         return ResetOtpRequestResult()
 
@@ -294,7 +360,7 @@ class AccountLifecycle:
     async def change_password(
         self,
         *,
-        email: str,
+        user_id: int,
         email_code: str,
         new_password: str,
     ) -> PasswordChangeResult:
@@ -303,30 +369,151 @@ class AccountLifecycle:
         已确认产品决策：强制邮箱验证码，不保留免 SMTP 的旧口令回退路径。
         与 reset_password 同构：先验码（consume=False）→ 更新 → 消耗。
         """
-        normalized_email = _normalize_email_domain(email)
+        user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
+        normalized_email = (
+            _normalize_email_domain(str(user.get("email") or "")) if user else ""
+        )
+        if not normalized_email:
+            raise InvalidCredentials
         verified = await self._otp.verify_otp(
             normalized_email,
             email_code,
             consume=False,
             purpose=PASSWORD_CHANGE_PURPOSE,
         )
-        user = await asyncio.to_thread(
-            self._repository.get_user_by_email, normalized_email
-        )
-        if not verified or user is None:
+        if not verified:
             raise InvalidOtp
 
         hashed_password = self._hash_password(new_password)
         affected_rows = await asyncio.to_thread(
             self._repository.update_user_password,
-            user_id=int(user["id"]),
+            user_id=int(user_id),
             email=normalized_email,
             hashed_password=hashed_password,
         )
         if affected_rows != 1:
             raise PasswordChangeFailed
 
+        latest_user = await asyncio.to_thread(
+            self._repository.get_user_by_id, int(user_id)
+        )
+        if latest_user is None:
+            raise PasswordChangeFailed
+        access_token = self._issue_token(
+            {
+                "user_id": latest_user["id"],
+                "role": latest_user["role"],
+                "email": latest_user.get("email"),
+                "pwd_ver": int(latest_user.get("pwd_ver") or 1),
+            }
+        )
         await self._otp.consume_otp(
             normalized_email, purpose=PASSWORD_CHANGE_PURPOSE
         )
-        return PasswordChangeResult()
+        return PasswordChangeResult(access_token=access_token)
+
+    async def _current_email_for_change(
+        self,
+        *,
+        user_id: int,
+    ) -> tuple[Mapping[str, Any], str]:
+        """读取数据库当前邮箱；无邮箱账号（如纯 OAuth）本单元不支持换绑。"""
+        user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
+        current_email = (
+            _normalize_email_domain(str(user.get("email") or "")) if user else ""
+        )
+        if user is None or not current_email:
+            raise EmailChangeUnavailable
+        return user, current_email
+
+    async def request_email_change_current_otp(
+        self,
+        *,
+        user_id: int,
+    ) -> ResetOtpRequestResult:
+        """向数据库当前邮箱发换绑验证码（不信任 JWT email 声明）。"""
+        _user, current_email = await self._current_email_for_change(user_id=user_id)
+        await self._otp.send_otp(
+            current_email,
+            purpose=EMAIL_CHANGE_PURPOSE,
+            deliver=True,
+        )
+        return ResetOtpRequestResult()
+
+    async def request_email_change_new_otp(
+        self,
+        *,
+        user_id: int,
+        new_email: str,
+    ) -> ResetOtpRequestResult:
+        """向新邮箱发换绑验证码。
+
+        与注册/重置一致地始终投递：不在发送阶段检查归属，避免把
+        “邮箱是否已注册”变成可探测的应答差分；归属冲突在 confirm 统一裁决。
+        """
+        _user, current_email = await self._current_email_for_change(user_id=user_id)
+        normalized_new = _normalize_email_domain(new_email.strip()).lower()
+        if normalized_new == current_email.lower():
+            raise EmailChangeSameEmail
+        await self._otp.send_otp(
+            normalized_new,
+            purpose=EMAIL_CHANGE_PURPOSE,
+            deliver=True,
+        )
+        return ResetOtpRequestResult()
+
+    async def change_email(
+        self,
+        *,
+        user_id: int,
+        new_email: str,
+        current_code: str,
+        new_code: str,
+    ) -> EmailChangeResult:
+        """双验证码换绑登录邮箱：当前邮箱 + 新邮箱均须各自验真。
+
+        顺序约束（与 change_password 同构）：先验双码（consume=False，避免
+        验码消耗后归属冲突导致用户卡死）→ 归属预检 → 快照条件原子更新 →
+        仅更新成功后消耗两枚验证码。不做 token 轮换：RequireUser 只校验
+        disabled/role/pwd_ver，JWT email 声明仅为展示信息，DB 投影权威。
+        """
+        _user, current_email = await self._current_email_for_change(user_id=user_id)
+        normalized_new = _normalize_email_domain(new_email.strip()).lower()
+        if normalized_new == current_email.lower():
+            raise EmailChangeSameEmail
+
+        current_verified = await self._otp.verify_otp(
+            current_email,
+            current_code,
+            consume=False,
+            purpose=EMAIL_CHANGE_PURPOSE,
+        )
+        if not current_verified:
+            raise InvalidOtp
+        new_verified = await self._otp.verify_otp(
+            normalized_new,
+            new_code,
+            consume=False,
+            purpose=EMAIL_CHANGE_PURPOSE,
+        )
+        if not new_verified:
+            raise InvalidOtp
+
+        owner = await asyncio.to_thread(
+            self._repository.get_user_by_email, normalized_new
+        )
+        if owner is not None and int(owner["id"]) != int(user_id):
+            raise EmailAlreadyInUse
+
+        affected_rows = await asyncio.to_thread(
+            self._repository.update_user_email,
+            user_id=int(user_id),
+            current_email=current_email,
+            new_email=normalized_new,
+        )
+        if affected_rows != 1:
+            raise EmailChangeFailed
+
+        await self._otp.consume_otp(current_email, purpose=EMAIL_CHANGE_PURPOSE)
+        await self._otp.consume_otp(normalized_new, purpose=EMAIL_CHANGE_PURPOSE)
+        return EmailChangeResult()

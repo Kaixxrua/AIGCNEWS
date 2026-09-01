@@ -25,6 +25,12 @@ export interface AuthUserDTO {
   password_change_required?: boolean
 }
 
+export interface TokenRotationDTO {
+  access_token: string
+  token_type: string
+  changed: boolean
+}
+
 export interface LoginResponse {
   access_token: string
   role: string
@@ -35,27 +41,12 @@ export async function startOAuth(provider: string, redirectTo: string): Promise<
   window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent(redirectTo)}`)
 }
 
-export async function startOAuthBinding(provider: string, redirectTo: string): Promise<void> {
-  window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/bind/start?redirect_to=${encodeURIComponent(redirectTo)}`)
-}
-
 export interface OAuthConsumeResponse extends LoginResponse {
   redirect_to: string
 }
 
 export async function consumeOAuthHandoff(): Promise<OAuthConsumeResponse> {
   const res = await api.post<OAuthConsumeResponse>('/auth/oauth/consume', undefined)
-  return res.data
-}
-
-export interface OAuthBindConsumeResponse {
-  provider: string
-  status: 'bound' | 'already_bound' | 'conflict'
-  redirect_to: string
-}
-
-export async function consumeOAuthBindingHandoff(): Promise<OAuthBindConsumeResponse> {
-  const res = await api.post<OAuthBindConsumeResponse>('/auth/oauth/bind/consume', undefined)
   return res.data
 }
 
@@ -75,9 +66,9 @@ export async function sendChangePasswordOtp(): Promise<{ detail: string }> {
   return res.data
 }
 
-/** 已登录改密：邮箱验证码校验（验证码替代当前密码；无 SMTP 的自托管环境无改密路径） */
-export async function changePassword(emailCode: string, newPassword: string): Promise<{ detail: string }> {
-  const res = await api.post<{ detail: string }>('/auth/me/password', {
+/** 已登录改密：邮箱验证码校验并返回已轮换的会话令牌。 */
+export async function changePassword(emailCode: string, newPassword: string): Promise<TokenRotationDTO> {
+  const res = await api.post<TokenRotationDTO>('/auth/me/password', {
     email_code: emailCode,
     new_password: newPassword,
   })
@@ -86,5 +77,45 @@ export async function changePassword(emailCode: string, newPassword: string): Pr
 
 export async function updateProfile(username: string): Promise<AuthUserDTO> {
   const res = await api.patch<AuthUserDTO>('/auth/me/profile', { username })
+  return res.data
+}
+
+/** 换绑邮箱：验证码发送到数据库当前邮箱（不携带任何请求体，目标账户由服务端会话裁决） */
+export async function sendEmailChangeCurrentOtp(): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/email-change/send-current')
+  return res.data
+}
+
+/** 换绑邮箱：验证码发送到新邮箱（应答口径恒定，不泄露邮箱占用状态） */
+export async function sendEmailChangeNewOtp(newEmail: string): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/email-change/send-new', { new_email: newEmail })
+  return res.data
+}
+
+/** 换绑邮箱确认：当前邮箱 + 新邮箱双验证码，返回换绑后的权威账户投影 */
+export async function confirmEmailChange(newEmail: string, currentCode: string, newCode: string): Promise<AuthUserDTO> {
+  const res = await api.post<AuthUserDTO>('/auth/me/email-change/confirm', {
+    new_email: newEmail,
+    current_code: currentCode,
+    new_code: newCode,
+  })
+  return res.data
+}
+
+/** 已登录发起渠道绑定：整页跳转后端 bind/start，目标账户只存服务端 state */
+export async function startOAuthBind(provider: string, redirectTo: string): Promise<void> {
+  window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/bind/start?redirect_to=${encodeURIComponent(redirectTo)}`)
+}
+
+export interface OAuthBindConsumeResponse {
+  provider: string
+  /** bound = 本次新绑定；already_bound = 该渠道此前已绑定本账户（幂等） */
+  status: 'bound' | 'already_bound'
+  redirect_to: string
+}
+
+/** 完成渠道绑定：消费一次性绑定 handoff（cookie 流），绝不签发/轮换会话令牌 */
+export async function consumeOAuthBindHandoff(): Promise<OAuthBindConsumeResponse> {
+  const res = await api.post<OAuthBindConsumeResponse>('/auth/oauth/bind/consume', undefined)
   return res.data
 }

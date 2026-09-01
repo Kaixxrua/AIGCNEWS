@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import {
   fetchCurrentUser,
   consumeOAuthHandoff,
-  consumeOAuthBindingHandoff,
+  consumeOAuthBindHandoff,
   loginWithPassword,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
@@ -139,7 +139,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /** 消费 OAuth 账户绑定 handoff；不签发/轮换令牌，只刷新当前用户信息。 */
   async function consumeOAuthBinding(): Promise<string> {
-    const data = await consumeOAuthBindingHandoff()
+    const data = await consumeOAuthBindHandoff()
     await fetchMe()
     return data.redirect_to
   }
