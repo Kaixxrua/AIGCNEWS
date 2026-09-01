@@ -27,9 +27,20 @@ class FakeRepository:
         self.users: dict[str, Mapping[str, Any]] = {}
         self.affected_rows = 1
 
+    def get_user_by_id(self, user_id: int) -> Mapping[str, Any] | None:
+        self.events.append(("get_user_by_id", user_id))
+        for user in self.users.values():
+            if int(user.get("id", 0)) == int(user_id):
+                return user
+        return None
+
     def get_user_by_email(self, email: str) -> Mapping[str, Any] | None:
         self.events.append(("get_user_by_email", email))
         return self.users.get(email)
+
+    def update_user_username(self, *, user_id: int, username: str) -> int:
+        self.events.append(("update_user_username", user_id, username))
+        return self.affected_rows
 
     def create_user_with_email(
         self,
@@ -59,6 +70,12 @@ class FakeRepository:
         self.events.append(
             ("update_user_password", user_id, email, hashed_password)
         )
+        if self.affected_rows == 1:
+            for user in self.users.values():
+                if int(user.get("id", 0)) == int(user_id):
+                    if isinstance(user, dict):
+                        user["pwd_ver"] = int(user.get("pwd_ver") or 1) + 1
+                    break
         return self.affected_rows
 
 
@@ -385,57 +402,59 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_request_change_password_otp_delivers_to_existing_account(self) -> None:
-        self.repository.users["Reader@example.com"] = {"id": 7}
+        self.repository.users["Reader@example.com"] = {
+            "id": 7,
+            "email": "Reader@example.com",
+        }
 
-        result = await self.lifecycle.request_change_password_otp(
-            email="Reader@EXAMPLE.COM",
-        )
+        result = await self.lifecycle.request_change_password_otp(user_id=7)
 
         self.assertEqual(result, ResetOtpRequestResult())
         self.assertEqual(
             self.events,
             [
-                ("get_user_by_email", "Reader@example.com"),
+                ("get_user_by_id", 7),
                 ("send_otp", "Reader@example.com", "password_change", True),
             ],
         )
 
-    async def test_request_change_password_otp_skips_delivery_for_missing_account(self) -> None:
-        result = await self.lifecycle.request_change_password_otp(
-            email="missing@example.com",
-        )
+    async def test_request_change_password_otp_rejects_missing_account(self) -> None:
+        with self.assertRaises(InvalidCredentials):
+            await self.lifecycle.request_change_password_otp(user_id=404)
 
-        self.assertEqual(result, ResetOtpRequestResult())
-        self.assertEqual(
-            self.events,
-            [
-                ("get_user_by_email", "missing@example.com"),
-                ("send_otp", "missing@example.com", "password_change", False),
-            ],
-        )
+        self.assertEqual(self.events, [("get_user_by_id", 404)])
 
-    async def test_change_password_verifies_otp_then_updates_one_row(self) -> None:
+    async def test_change_password_verifies_otp_then_rotates_token(self) -> None:
         self.repository.users["Reader@example.com"] = {
             "id": 7,
             "email": "reader@example.com",
+            "role": "user",
+            "pwd_ver": 3,
             "hashed_password": "old-password-hash",
         }
 
         result = await self.lifecycle.change_password(
-            email="Reader@EXAMPLE.COM",
+            user_id=7,
             email_code="654321",
             new_password="replacement-secret",
         )
 
-        self.assertEqual(result, PasswordChangeResult())
+        self.assertEqual(result, PasswordChangeResult(access_token="signed.jwt.token"))
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "Reader@example.com", "654321", False, "password_change"),
-                ("get_user_by_email", "Reader@example.com"),
+                ("get_user_by_id", 7),
+                ("verify_otp", "reader@example.com", "654321", False, "password_change"),
                 ("hash_password", "replacement-secret"),
-                ("update_user_password", 7, "Reader@example.com", "stored-password-hash"),
-                ("consume_otp", "Reader@example.com", "password_change"),
+                ("update_user_password", 7, "reader@example.com", "stored-password-hash"),
+                ("get_user_by_id", 7),
+                ("issue_token", {
+                    "user_id": 7,
+                    "role": "user",
+                    "email": "reader@example.com",
+                    "pwd_ver": 4,
+                }),
+                ("consume_otp", "reader@example.com", "password_change"),
             ],
         )
         self.assert_no_plaintext_secrets(
@@ -446,50 +465,46 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.repository.users["reader@example.com"] = {
             "id": 7,
             "email": "reader@example.com",
-            "hashed_password": "old-password-hash",
+            "role": "user",
+            "pwd_ver": 1,
         }
         self.otp.verified = False
 
         with self.assertRaises(InvalidOtp):
             await self.lifecycle.change_password(
-                email="reader@example.com",
+                user_id=7,
                 email_code="000000",
                 new_password="replacement-secret",
             )
         self.assertEqual(
             self.events,
             [
+                ("get_user_by_id", 7),
                 ("verify_otp", "reader@example.com", "000000", False, "password_change"),
-                ("get_user_by_email", "reader@example.com"),
             ],
         )
 
-    async def test_change_password_missing_account_shares_invalid_otp(self) -> None:
-        with self.assertRaises(InvalidOtp):
+    async def test_change_password_missing_account_rejects_before_otp(self) -> None:
+        with self.assertRaises(InvalidCredentials):
             await self.lifecycle.change_password(
-                email="missing@example.com",
+                user_id=404,
                 email_code="654321",
                 new_password="replacement-secret",
             )
-        self.assertEqual(
-            self.events,
-            [
-                ("verify_otp", "missing@example.com", "654321", False, "password_change"),
-                ("get_user_by_email", "missing@example.com"),
-            ],
-        )
+        self.assertEqual(self.events, [("get_user_by_id", 404)])
 
     async def test_change_password_requires_exactly_one_updated_row(self) -> None:
         self.repository.users["reader@example.com"] = {
             "id": 7,
             "email": "reader@example.com",
-            "hashed_password": "old-password-hash",
+            "role": "user",
+            "pwd_ver": 1,
         }
         self.repository.affected_rows = 0
 
         with self.assertRaises(PasswordChangeFailed):
             await self.lifecycle.change_password(
-                email="reader@example.com",
+                user_id=7,
                 email_code="654321",
                 new_password="replacement-secret",
             )

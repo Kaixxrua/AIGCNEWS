@@ -8,6 +8,9 @@ from backend.app.services.auth.oauth.runtime_config import EffectiveOAuthConfig,
 
 OAUTH_CALLBACK_PATH = "/api/auth/oauth/{provider}/callback"
 OAUTH_FRONTEND_CALLBACK_PATH = "/oauth/callback"
+# 绑定等账户操作的前端回跳路径：与游客登录回调分离，避免绑定产物
+# 误入登录 consume 流程
+OAUTH_FRONTEND_ACTION_CALLBACK_PATH = "/oauth/action-callback"
 
 
 class OAuthRedirectError(ValueError):
@@ -47,6 +50,10 @@ def canonical_base_url(config: EffectiveOAuthConfig | None = None) -> str:
 
 def canonical_frontend_callback_uri(config: EffectiveOAuthConfig | None = None) -> str:
     return f"{canonical_base_url(config)}{OAUTH_FRONTEND_CALLBACK_PATH}"
+
+
+def canonical_frontend_action_callback_uri(config: EffectiveOAuthConfig | None = None) -> str:
+    return f"{canonical_base_url(config)}{OAUTH_FRONTEND_ACTION_CALLBACK_PATH}"
 
 
 def canonical_callback_uri(

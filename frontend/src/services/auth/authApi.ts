@@ -88,3 +88,25 @@ export async function updateProfile(username: string): Promise<AuthUserDTO> {
   const res = await api.patch<AuthUserDTO>('/auth/me/profile', { username })
   return res.data
 }
+
+/** 向数据库当前邮箱发送换绑验证码（无请求体，目标账户取自服务端会话） */
+export async function sendEmailChangeCurrentOtp(): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/email-change/send-current')
+  return res.data
+}
+
+/** 向新邮箱发送换绑验证码 */
+export async function sendEmailChangeNewOtp(newEmail: string): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/email-change/send-new', { new_email: newEmail })
+  return res.data
+}
+
+/** 双验证码确认换绑；返回服务端权威账户投影 */
+export async function confirmEmailChange(newEmail: string, currentCode: string, newCode: string): Promise<AuthUserDTO> {
+  const res = await api.post<AuthUserDTO>('/auth/me/email-change/confirm', {
+    new_email: newEmail,
+    current_code: currentCode,
+    new_code: newCode,
+  })
+  return res.data
+}

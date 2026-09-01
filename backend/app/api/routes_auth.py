@@ -10,11 +10,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from psycopg import errors as pg_errors
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from backend.app.api.dependencies import (
     get_feed_token_repository,
     get_mcp_access_token_repository,
+    get_oauth_identity_repository,
     get_user_account_repository,
 )
 from backend.app.core.auth import (
@@ -283,6 +284,36 @@ class ChangePasswordRequest(BaseModel):
         return _validate_new_password(value)
 
 
+class UpdateProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, value: str) -> str:
+        return _validate_username(value)
+
+
+class SendEmailChangeNewOtpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: EmailStr
+
+
+class ConfirmEmailChangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: EmailStr
+    current_code: str
+    new_code: str
+
+    @field_validator("current_code", "new_code")
+    @classmethod
+    def validate_code(cls, value: str) -> str:
+        return _validate_email_code(value)
+
+
 MCP_TOKEN_SCOPES = frozenset({"projects:favorites:read"})
 MCP_CLIENT_TYPES = frozenset({"claude", "cursor", "vscode", "other"})
 
@@ -418,16 +449,18 @@ async def send_change_password_otp(
     await _enforce_rate_limit(
         request, action="auth.send_change_otp", limit=_OTP_SEND_RATE_LIMIT
     )
-    email = str(current_user.get("email") or "")
-    if not email:
-        raise HTTPException(status_code=401, detail="用户身份无效")
     lifecycle = build_account_lifecycle(
         repository=repository,
         otp=_get_email_service(request),
         password_hasher=hash_password,
     )
     try:
-        await lifecycle.request_change_password_otp(email=email)
+        await lifecycle.request_change_password_otp(user_id=_user_id(current_user))
+    except account_lifecycle.InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户身份无效",
+        ) from exc
     except OtpSendRateLimitedError as exc:
         raise HTTPException(status_code=429, detail=exc.detail) from exc
     except OtpDeliveryUnavailableError as exc:
@@ -445,29 +478,32 @@ async def change_password(
 ) -> dict[str, Any]:
     """凭邮箱验证码修改密码（验证码替代当前密码，产品决策：强制邮箱验证）。
 
-    JWT 无 email 声明视为身份无效（401）。注意：无 SMTP 的自托管环境
-    无可用改密路径（免验证码旧口令路径已按决策移除）。
+    账户归属只取自 RequireUser 提供的 user_id；当前邮箱由生命周期从数据库读取。
+    无 SMTP 的自托管环境无可用改密路径（免验证码旧口令路径已按决策移除）。
     """
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
     await _enforce_rate_limit(
         request, action="auth.change_password", limit=_AUTH_ATTEMPT_RATE_LIMIT
     )
-    email = str(current_user.get("email") or "")
-    if not email:
-        raise HTTPException(status_code=401, detail="用户身份无效")
     lifecycle = build_account_lifecycle(
         repository=repository,
         otp=_get_email_service(request),
         password_hasher=hash_password,
         password_verifier=verify_password,
+        token_issuer=create_access_token,
     )
     try:
-        await lifecycle.change_password(
-            email=email,
+        result = await lifecycle.change_password(
+            user_id=_user_id(current_user),
             email_code=body.email_code,
             new_password=body.new_password,
         )
+    except account_lifecycle.InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="用户身份无效",
+        ) from exc
     except account_lifecycle.InvalidOtp as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -478,7 +514,161 @@ async def change_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="密码修改失败，请稍后重试",
         ) from exc
-    return {"detail": "密码已修改"}
+    return {
+        "access_token": result.access_token,
+        "token_type": result.token_type,
+        "changed": result.changed,
+    }
+
+
+# ---------------------------------------------------------------- 邮箱换绑
+# 目标账户只取自 RequireUser 的 user_id；当前邮箱由生命周期从数据库读取，
+# 绝不信任 JWT email 声明或请求体。confirm 返回数据库权威账户投影，
+# 前端据此一次性刷新（无需再发一次 /auth/me）。
+
+
+@router.post(
+    "/auth/me/email-change/send-current",
+    summary="发送换绑验证码到当前邮箱（已登录）",
+)
+async def send_email_change_current_otp(
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.send_email_change_otp", limit=_OTP_SEND_RATE_LIMIT
+    )
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+    )
+    try:
+        await lifecycle.request_email_change_current_otp(user_id=_user_id(current_user))
+    except account_lifecycle.EmailChangeUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前账号未绑定邮箱，暂不支持在线换绑",
+        ) from exc
+    except OtpSendRateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
+    except OtpDeliveryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
+    return {"detail": "验证码已发送至当前账号邮箱"}
+
+
+@router.post(
+    "/auth/me/email-change/send-new",
+    summary="发送换绑验证码到新邮箱（已登录）",
+)
+async def send_email_change_new_otp(
+    body: SendEmailChangeNewOtpRequest,
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    """始终返回同一文案：不在发送阶段暴露新邮箱是否已被其他账号占用。"""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.send_email_change_otp", limit=_OTP_SEND_RATE_LIMIT
+    )
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+    )
+    try:
+        await lifecycle.request_email_change_new_otp(
+            user_id=_user_id(current_user),
+            new_email=str(body.new_email),
+        )
+    except account_lifecycle.EmailChangeUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前账号未绑定邮箱，暂不支持在线换绑",
+        ) from exc
+    except account_lifecycle.EmailChangeSameEmail as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新邮箱不能与当前邮箱相同",
+        ) from exc
+    except OtpSendRateLimitedError as exc:
+        raise HTTPException(status_code=429, detail=exc.detail) from exc
+    except OtpDeliveryUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
+    return {"detail": "验证码已发送至新邮箱"}
+
+
+@router.post("/auth/me/email-change/confirm", summary="确认换绑邮箱（双验证码）")
+async def confirm_email_change(
+    body: ConfirmEmailChangeRequest,
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+    oauth_repository: Any = Depends(get_oauth_identity_repository),
+) -> dict[str, Any]:
+    """凭当前邮箱与新邮箱两枚验证码原子换绑，返回换绑后的权威账户投影。
+
+    归属冲突（含并发下 users.email 唯一约束兜底）统一映射中性 409，
+    不区分“验证码错”之外的失败原因，避免泄露邮箱归属。
+    """
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(
+        request, action="auth.email_change", limit=_AUTH_ATTEMPT_RATE_LIMIT
+    )
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        otp=_get_email_service(request),
+    )
+    try:
+        await lifecycle.change_email(
+            user_id=_user_id(current_user),
+            new_email=str(body.new_email),
+            current_code=body.current_code,
+            new_code=body.new_code,
+        )
+    except account_lifecycle.EmailChangeUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前账号未绑定邮箱，暂不支持在线换绑",
+        ) from exc
+    except account_lifecycle.EmailChangeSameEmail as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="新邮箱不能与当前邮箱相同",
+        ) from exc
+    except account_lifecycle.InvalidOtp as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码错误或已过期",
+        ) from exc
+    except account_lifecycle.EmailAlreadyInUse as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="换绑失败，请更换邮箱后重试",
+        ) from exc
+    except pg_errors.UniqueViolation as exc:
+        # 并发换绑同一新邮箱：唯一约束兜底，口径与归属预检一致
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="换绑失败，请更换邮箱后重试",
+        ) from exc
+    except account_lifecycle.EmailChangeFailed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="邮箱换绑失败，请稍后重试",
+        ) from exc
+    return await _account_view(
+        current_user=current_user,
+        repository=repository,
+        oauth_repository=oauth_repository,
+    )
 
 
 @router.post("/auth/register", summary="用户注册（邮箱 + 验证码 + 密码）")
@@ -892,37 +1082,82 @@ async def rotate_feed_token(
     return _feed_token_payload(item)
 
 
-@router.get("/auth/me", summary="获取当前登录用户信息")
-async def me(
-    current_user: dict[str, Any] = Depends(RequireUser),
-    repository: UserAccountRepository = Depends(get_user_account_repository),
+async def _account_view(
+    *,
+    current_user: dict[str, Any],
+    repository: UserAccountRepository,
+    oauth_repository: Any,
 ) -> dict[str, Any]:
-    """
-    返回当前登录用户信息（JWT payload 为准，username 以库内记录为准）。
-    需要携带有效 Bearer Token。
-    password_change_required 以库内哈希为准（仅种子默认邮箱账号触发查询）。
-    """
-    record = await asyncio.to_thread(
-        repository.get_user_by_id, _user_id(current_user)
-    )
+    """Build the public account projection exclusively from current DB rows."""
+    user_id = _user_id(current_user)
+    record = await asyncio.to_thread(repository.get_user_by_id, user_id)
     if record is None:
-        # 账号已删除但 JWT 仍在有效期：视为身份无效（RequireUser 后续版本
-        # 会收紧为统一 401，此处先行防护）
         raise HTTPException(status_code=401, detail="用户身份无效")
+    identities = await asyncio.to_thread(
+        oauth_repository.list_identities_for_user, user_id
+    )
     change_required = await asyncio.to_thread(
         password_change_required_for_email,
         repository=repository,
-        email=str(current_user.get("email") or ""),
+        email=str(record.get("email") or ""),
         configured_email=settings.DEFAULT_ADMIN_EMAIL,
         configured_password=settings.DEFAULT_ADMIN_PASSWORD,
         verify_password=verify_password,
     )
     return {
-        "user_id": current_user.get("user_id"),
-        "email": current_user.get("email"),
+        "user_id": user_id,
+        "email": record.get("email"),
         "username": record.get("username"),
-        "role": current_user.get("role"),
-        "membership_tier": current_user.get("membership_tier"),
-        "membership_expires_at": current_user.get("membership_expires_at"),
+        "email_verified": bool(record.get("email_verified", False)),
+        "role": record.get("role"),
+        "membership_tier": record.get("membership_tier"),
+        "membership_expires_at": record.get("membership_expires_at"),
+        "created_at": record.get("created_at"),
+        "password_login_enabled": bool(record.get("password_login_enabled", False)),
         "password_change_required": change_required,
+        "oauth_identities": identities,
     }
+
+
+@router.patch("/auth/me/profile", summary="修改当前用户资料")
+async def update_profile(
+    body: UpdateProfileRequest,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+    oauth_repository: Any = Depends(get_oauth_identity_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    lifecycle = build_account_lifecycle(
+        repository=repository,
+        password_hasher=hash_password,
+        password_verifier=verify_password,
+    )
+    try:
+        await lifecycle.update_username(
+            user_id=_user_id(current_user), username=body.username
+        )
+    except account_lifecycle.ProfileUpdateFailed as exc:
+        raise HTTPException(status_code=500, detail="资料修改失败，请稍后重试") from exc
+    return await _account_view(
+        current_user=current_user,
+        repository=repository,
+        oauth_repository=oauth_repository,
+    )
+
+
+@router.get("/auth/me", summary="获取当前登录用户信息")
+async def me(
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+    oauth_repository: Any = Depends(get_oauth_identity_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return await _account_view(
+        current_user=current_user,
+        repository=repository,
+        oauth_repository=oauth_repository,
+    )

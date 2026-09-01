@@ -11,6 +11,9 @@ from typing import Any
 from backend.app.models.schema_oauth import OAuthStatePayload
 
 OAUTH_STATE_PREFIX = "auth:oauth:state:"
+# 绑定操作使用独立的 Redis 键空间：登录态 state 的 opaque 值在绑定命名空间
+# 中必然 MISS（键即不同），与载荷上的 operation 判别构成双重隔离。
+OAUTH_BIND_STATE_PREFIX = "auth:oauth:bind:state:"
 
 
 class OAuthStateUnavailableError(RuntimeError):
@@ -33,8 +36,8 @@ def digest_secret(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def state_key(state: str) -> str:
-    return f"{OAUTH_STATE_PREFIX}{digest_secret(state)}"
+def state_key(state: str, *, prefix: str = OAUTH_STATE_PREFIX) -> str:
+    return f"{prefix}{digest_secret(state)}"
 
 
 def create_state_material(*, use_pkce: bool, use_nonce: bool) -> OAuthStateMaterial:
@@ -47,9 +50,16 @@ def create_state_material(*, use_pkce: bool, use_nonce: bool) -> OAuthStateMater
 
 
 class OAuthStateStore:
-    def __init__(self, redis_client: Any, *, ttl_seconds: int = 300) -> None:
+    def __init__(
+        self,
+        redis_client: Any,
+        *,
+        ttl_seconds: int = 300,
+        prefix: str = OAUTH_STATE_PREFIX,
+    ) -> None:
         self._redis = redis_client
         self._ttl_seconds = ttl_seconds
+        self._prefix = prefix
 
     @property
     def available(self) -> bool:
@@ -59,14 +69,16 @@ class OAuthStateStore:
         if not self.available:
             raise OAuthStateUnavailableError
         value = payload.model_dump_json()
-        await self._redis.set(state_key(material.state), value, ex=self._ttl_seconds)
+        await self._redis.set(
+            state_key(material.state, prefix=self._prefix), value, ex=self._ttl_seconds
+        )
 
     async def consume(self, state: str) -> OAuthStatePayload:
         if not self.available:
             raise OAuthStateUnavailableError
         if not state or len(state) > 512:
             raise OAuthStateInvalidError
-        value = await self._getdel(state_key(state))
+        value = await self._getdel(state_key(state, prefix=self._prefix))
         if value is None:
             raise OAuthStateInvalidError
         try:
