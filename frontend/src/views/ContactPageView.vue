@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ContactHeroVisual from '@/components/contact/ContactHeroVisual.vue'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { renderPlainMarkdown } from '@/composables/useLatexRenderer'
 import type { SiteContactEntry } from '@/services/site/contactPageApi'
@@ -62,13 +63,16 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   <div v-if="config.enabled" class="contact-page">
     <div class="contact-shell">
       <header class="contact-hero">
-        <!-- 抽象信号场：只提供氛围，不模拟浏览器、终端或产品 chrome。 -->
+        <!-- 抽象信号场（WebGL2 shader 实时渲染 + 可读性遮罩）：只提供氛围，不模拟浏览器、终端或产品 chrome。 -->
         <div class="hero-field" aria-hidden="true">
-          <span class="hero-beam hero-beam--a" />
-          <span class="hero-beam hero-beam--b" />
-          <span class="hero-beam hero-beam--c" />
-          <span class="hero-beam hero-beam--d" />
-          <span class="hero-scanline" />
+          <ContactHeroVisual />
+          <div class="hero-overlay" />
+          <!-- 旧契约节点：仅为兼容既有选择器保留，不再渲染任何可见内容。 -->
+          <span class="hero-beam hero-beam--a" hidden aria-hidden="true" />
+          <span class="hero-beam hero-beam--b" hidden aria-hidden="true" />
+          <span class="hero-beam hero-beam--c" hidden aria-hidden="true" />
+          <span class="hero-beam hero-beam--d" hidden aria-hidden="true" />
+          <span class="hero-scanline" hidden aria-hidden="true" />
         </div>
         <!-- 保留旧契约节点；视觉呈现改由 signal-led eyebrow 承担。 -->
         <p class="term-line contact-command" aria-hidden="true">
@@ -164,9 +168,9 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 </template>
 
 <style scoped>
-/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: beam-drift + pulse only
+/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: three.js WebGL2 shader field (realtime, reduced-motion → static frame)
  * Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5
- * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · responsive: pass (49–57) · icons: pass (30) · nav/footer: app-shell（不在本次范围） */
+ * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48, shader 颜色经 getComputedStyle 取 token) · responsive: pass (49–57) · icons: pass (30) · nav/footer: app-shell（不在本次范围） */
 .contact-page {
   --contact-mono: ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, 'Liberation Mono', monospace;
   --contact-display: 'DM Sans', Inter, ui-sans-serif, system-ui, sans-serif;
@@ -183,12 +187,6 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   --contact-hero-ink: var(--paper-raised);
   --contact-hero-muted: color-mix(in srgb, var(--paper-raised) 68%, transparent);
   --contact-hero-rule: color-mix(in srgb, var(--paper-raised) 18%, transparent);
-  --contact-hero-surface: color-mix(in srgb, var(--ink) 88%, var(--acid) 12%);
-  --contact-hero-gradient: linear-gradient(180deg, var(--ink) 0%, var(--contact-hero-surface) 48%, var(--ink) 100%);
-  --contact-hero-grid: repeating-linear-gradient(90deg, transparent 0 0.7rem, color-mix(in srgb, var(--acid) 12%, transparent) 0.7rem 0.76rem, transparent 0.76rem 1.6rem);
-  --contact-hero-glow: radial-gradient(ellipse at 50% 4%, color-mix(in srgb, var(--acid) 34%, transparent), transparent 57%);
-  --contact-hero-beam: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--tech-primary) 32%, var(--acid) 28%) 34%, color-mix(in srgb, var(--acid) 56%, transparent) 56%, transparent 100%);
-  --contact-hero-scan: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acid) 58%, transparent), transparent);
   --contact-cta-bg: var(--paper-raised);
   --contact-cta-ink: var(--ink);
   --contact-primary-surface: color-mix(in srgb, var(--paper-raised) 92%, var(--acid) 8%);
@@ -205,12 +203,6 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   --contact-hero-ink: var(--ink);
   --contact-hero-muted: color-mix(in srgb, var(--ink) 66%, transparent);
   --contact-hero-rule: color-mix(in srgb, var(--ink) 18%, transparent);
-  --contact-hero-surface: color-mix(in srgb, var(--paper-muted) 84%, var(--acid) 16%);
-  --contact-hero-gradient: linear-gradient(180deg, var(--paper-muted) 0%, var(--contact-hero-surface) 48%, var(--paper-muted) 100%);
-  --contact-hero-grid: repeating-linear-gradient(90deg, transparent 0 0.7rem, color-mix(in srgb, var(--acid) 13%, transparent) 0.7rem 0.76rem, transparent 0.76rem 1.6rem);
-  --contact-hero-glow: radial-gradient(ellipse at 50% 4%, color-mix(in srgb, var(--acid) 26%, transparent), transparent 57%);
-  --contact-hero-beam: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--tech-primary) 34%, var(--acid) 18%) 34%, color-mix(in srgb, var(--acid) 48%, transparent) 56%, transparent 100%);
-  --contact-hero-scan: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acid) 50%, transparent), transparent);
   --contact-cta-bg: var(--ink);
   --contact-cta-ink: var(--paper-muted);
   --contact-primary-surface: color-mix(in srgb, var(--paper-raised) 90%, var(--acid) 10%);
@@ -256,54 +248,20 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   background: var(--contact-hero-bg);
   border: 1px solid var(--rule);
 }
-.hero-field,
-.hero-field::before,
-.hero-field::after {
+.hero-field {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-}
-.hero-field {
   z-index: -1;
   overflow: hidden;
-  background: var(--contact-hero-gradient);
+  pointer-events: none;
 }
-.hero-field::before {
-  content: '';
-  background-image: var(--contact-hero-grid);
-  opacity: 0.76;
-  mask-image: linear-gradient(180deg, var(--ink) 0%, transparent 84%);
-}
-.hero-field::after {
-  content: '';
-  background: var(--contact-hero-glow);
-  opacity: 0.9;
-}
-.hero-beam {
+/* 可读性遮罩：压住信号场中心与下缘，让标题/CTA 始终清晰 */
+.hero-overlay {
   position: absolute;
-  top: -20%;
-  width: clamp(3.5rem, 9vw, 10rem);
-  height: 150%;
-  background: var(--contact-hero-beam);
-  filter: blur(0.7rem);
-  opacity: 0.38;
-  transform: skewX(-12deg);
-  transform-origin: 50% 18%;
-  will-change: transform, opacity;
-}
-.hero-beam--a { left: 16%; animation: contact-beam-drift-a 8.5s ease-in-out infinite; }
-.hero-beam--b { left: 37%; width: clamp(2.5rem, 6vw, 7rem); opacity: 0.55; animation: contact-beam-drift-b 10s ease-in-out infinite; }
-.hero-beam--c { right: 28%; width: clamp(4rem, 8vw, 9rem); opacity: 0.32; animation: contact-beam-drift-c 9.2s ease-in-out infinite; }
-.hero-beam--d { right: 8%; width: clamp(2.5rem, 5vw, 6rem); opacity: 0.24; animation: contact-beam-drift-d 11s ease-in-out infinite; }
-.hero-scanline {
-  position: absolute;
-  top: 42%;
-  left: 8%;
-  right: 8%;
-  height: 1px;
-  background: var(--contact-hero-scan);
-  opacity: 0.7;
-  animation: contact-scanline 7s ease-in-out infinite;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 62% 58% at 50% 52%, color-mix(in srgb, var(--contact-hero-bg) 58%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--contact-hero-bg) 42%, transparent) 0%, transparent 24%, transparent 70%, var(--contact-hero-bg) 100%);
 }
 .hero-inner {
   position: relative;
@@ -418,27 +376,6 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   text-overflow: ellipsis;
 }
 .hero-cta-arrow { font-size: 1rem; line-height: 0.8; }
-
-@keyframes contact-beam-drift-a {
-  0%, 100% { opacity: 0.28; transform: translate3d(-1.2rem, -0.25rem, 0) skewX(-12deg); }
-  50% { opacity: 0.62; transform: translate3d(1.25rem, 0.75rem, 0) skewX(8deg); }
-}
-@keyframes contact-beam-drift-b {
-  0%, 100% { opacity: 0.38; transform: translate3d(1rem, 0, 0) skewX(11deg) scaleX(0.92); }
-  50% { opacity: 0.72; transform: translate3d(-1.5rem, 0.5rem, 0) skewX(-8deg) scaleX(1.08); }
-}
-@keyframes contact-beam-drift-c {
-  0%, 100% { opacity: 0.24; transform: translate3d(0, 0.75rem, 0) skewX(-10deg); }
-  50% { opacity: 0.54; transform: translate3d(-1.75rem, -0.4rem, 0) skewX(7deg); }
-}
-@keyframes contact-beam-drift-d {
-  0%, 100% { opacity: 0.18; transform: translate3d(-0.5rem, 0, 0) skewX(12deg); }
-  50% { opacity: 0.4; transform: translate3d(1rem, 0.35rem, 0) skewX(-7deg); }
-}
-@keyframes contact-scanline {
-  0%, 100% { opacity: 0.18; transform: scaleX(0.78); }
-  50% { opacity: 0.76; transform: scaleX(1); }
-}
 
 /* ── 内容区：发丝线分隔、模块化卡片和明确行动层级 ── */
 .contact-content {
@@ -785,9 +722,5 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   .entry-qr-frame { width: min(12rem, 100%); }
   .section-rule-mark { width: 3rem; }
   .contact-markdown { padding: var(--cs-4); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hero-beam,
-  .hero-scanline { animation: none; }
 }
 </style>

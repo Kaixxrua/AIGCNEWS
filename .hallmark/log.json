@@ -8,8 +8,33 @@
       "theme": "project-managed (style.css tokens)",
       "voice": "terminal-transcript",
       "motion": "caret-blink-only",
-      "scores": { "P": 4, "H": 4, "E": 4, "S": 5, "R": 5, "V": 4 },
+      "scores": {
+        "P": 4,
+        "H": 4,
+        "E": 4,
+        "S": 5,
+        "R": 5,
+        "V": 4
+      },
       "notes": "Gate-49 exception recorded: entry links render admin-authored values; bare long URLs may wrap (nowrap would trip gate-34). Section numbers renumber when config hides a section."
+    },
+    {
+      "date": "2026-09-01",
+      "target": "frontend/src/views/ContactPageView.vue + components/contact/ContactHeroVisual.vue",
+      "verb": "redesign",
+      "macrostructure": "layered hero (WebGL2 shader field / overlay / content)",
+      "theme": "project-managed (shader colors via getComputedStyle tokens, data-theme observer)",
+      "voice": "signal-led product editorial",
+      "motion": "three.js WebGL2 realtime shader field; prefers-reduced-motion -> static single frame",
+      "scores": {
+        "P": 5,
+        "H": 4,
+        "E": 5,
+        "S": 5,
+        "R": 5,
+        "V": 5
+      },
+      "notes": "three r180 lazy chunk (dynamic import, ContactPageView only); GLSL1 ShaderMaterial on WebGL2 context with colorspace_fragment only (pars chunk is auto-injected by WebGLProgram prefix). Verified: light/dark 1440, dark 320/375/414/768, no x-overflow, 62.6% px delta over 1.5s realtime, 0 px delta under reduced-motion, 0 shader errors, 112px dock clearance intact. Admin content/QR fallback/link safety unchanged; inert .hero-beam/.hero-scanline contract nodes preserved hidden."
     }
   ]
 }

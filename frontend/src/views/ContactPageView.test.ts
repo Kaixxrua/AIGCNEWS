@@ -222,4 +222,32 @@ describe('ContactPageView', () => {
     const entryBranches = wrapper.findAll('.entry-item .tree-branch').map((b) => b.text())
     expect(entryBranches).toEqual(['├──', '├──', '└──'])
   })
+
+  it('renders the WebGL hero layer with static fallback and inert legacy nodes', () => {
+    const wrapper = mountView()
+
+    const field = wrapper.find('.hero-field')
+    expect(field.exists()).toBe(true)
+    expect(field.attributes('aria-hidden')).toBe('true')
+    // 三层合成：shader 视觉层（无 WebGL2 的 jsdom 下停在静态兜底）→ 遮罩 → 内容
+    const visual = field.find('.hero-visual')
+    expect(visual.exists()).toBe(true)
+    expect(visual.attributes('aria-hidden')).toBe('true')
+    expect(visual.find('canvas.hero-canvas').exists()).toBe(true)
+    expect(visual.find('.hero-fallback').exists()).toBe(true)
+    expect(field.find('.hero-overlay').exists()).toBe(true)
+    // 旧 beam/scanline 契约节点保留但不可见、无动画职责
+    const beams = field.findAll('.hero-beam')
+    expect(beams).toHaveLength(4)
+    expect(beams.every((beam) => beam.attributes('hidden') !== undefined)).toBe(true)
+    expect(field.find('.hero-scanline').attributes('hidden')).toBeDefined()
+  })
+
+  it('does not render the hero visual when the page is disabled', () => {
+    setConfig({ enabled: false })
+    const wrapper = mountView()
+
+    expect(wrapper.find('.hero-visual').exists()).toBe(false)
+    expect(wrapper.find('.hero-field').exists()).toBe(false)
+  })
 })
