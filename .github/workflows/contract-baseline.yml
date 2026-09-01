@@ -82,16 +82,9 @@ jobs:
           --health-retries 20
     env:
       TEST_POSTGRES_DSN: postgresql://aigcnews_test:aigcnews_test@127.0.0.1:5432/aigcnews_test
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: aigcnews_test
-      POSTGRES_PASSWORD: aigcnews_test
-      POSTGRES_DATABASE: aigcnews_test
-      POSTGRES_DB: aigcnews_test
-      POSTGRES_SSLMODE: disable
-      POSTGRES_POOL_MIN_SIZE: "1"
-      POSTGRES_POOL_MAX_SIZE: "4"
-      POSTGRES_INTEGRATION: "1"
+      TEST_POSTGRES_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
+      # Test-only 32-byte key; production secrets never enter this job.
+      MCP_SERVER_ENCRYPTION_KEY: rRMcQkNlCLdB-aJue6WnZTeQ6n-HIhmbb2Qy04cW7KU=
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -109,8 +102,19 @@ jobs:
           python -m pip install -r backend/requirements.lock
           python -m pip install "pytest>=8.2,<9"
 
-      - name: Apply PostgreSQL migrations explicitly
-        run: python scripts/migrate_postgres.py apply
+      - name: Provision PostgreSQL test-run marker
+        env:
+          PGPASSWORD: aigcnews_test
+        run: |
+          psql "host=127.0.0.1 port=5432 user=aigcnews_test dbname=aigcnews_test sslmode=disable" \
+            -v ON_ERROR_STOP=1 -v run_id="$TEST_POSTGRES_RUN_ID" <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public;
+          CREATE TABLE IF NOT EXISTS public.aigcnews_test_run_guard (
+              run_id TEXT PRIMARY KEY,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT INTO public.aigcnews_test_run_guard (run_id) VALUES (:'run_id');
+          SQL
 
       # Integration suites share one PostgreSQL service container, so they run
       # file-isolated to avoid cross-suite database state leakage.
@@ -132,8 +136,10 @@ jobs:
             python -m pytest -q -p langchain_core.documents "$test_file" || exit 1
           done <<'EOF'
           backend/tests/test_postgres_user_account_repository_integration.py
+          backend/tests/test_postgres_payment_order_repository_integration.py
           backend/tests/test_postgres_conversation_repository_integration.py
           backend/tests/test_postgres_attachment_repository_integration.py
+          backend/tests/test_postgres_attachment_meta_repository_integration.py
           backend/tests/test_postgres_mcp_repositories_integration.py
           backend/tests/test_postgres_config_repositories_integration.py
           backend/tests/test_postgres_runtime_repositories_integration.py
@@ -142,6 +148,9 @@ jobs:
           backend/tests/test_postgres_project_enrichment_adapters_pg16_integration.py
           backend/tests/test_postgres16_github_project_semantic_source_integration.py
           backend/tests/test_postgres_push_repositories_integration.py
+          backend/tests/test_postgres_document_repository_integration.py
+          backend/tests/test_postgres_github_rename_reconcile_integration.py
+          backend/tests/test_postgres_x_translation_repository_integration.py
           EOF
 
   mcp-go:
@@ -285,6 +294,16 @@ jobs:
           AIGCNEWS_PROJECT_ROOT="$GITHUB_WORKSPACE" \
           AIGCNEWS_BACKUP_ARTIFACTS="$RUNNER_TEMP/backup-artifacts" \
             docker compose --file docker/docker-compose.postgres-backup-test.yml config --quiet
+
+      - name: Validate digest-only staging compose file
+        env:
+          AIGCNEWS_STAGING_BACKEND_IMAGE_DIGEST: example/backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          AIGCNEWS_STAGING_MCP_IMAGE_DIGEST: example/mcp@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          AIGCNEWS_STAGING_FRONTEND_IMAGE_DIGEST: example/frontend@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+          POSTGRES_USER: staging
+          POSTGRES_PASSWORD: staging
+          POSTGRES_DATABASE: staging
+        run: docker compose --file deploy/staging/docker-compose.yml config --quiet
 
       # The frontend image must build from a clean checkout: SSL material is
       # gitignored and mounted at runtime, never copied into the image.

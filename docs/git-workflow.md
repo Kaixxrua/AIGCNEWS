@@ -96,8 +96,9 @@ Reverts: <commit-sha>
 2. 提交前完成与影响面匹配的测试、类型检查或构建；失败时不得提交或推送。
 3. 不覆盖、暂存或提交其他开发者及用户已有的无关修改。
 4. 提交信息通过本规范校验。
-5. 当前项目采用主干开发，完成并验证后直接提交到 `main`，不创建长期任务分支。
-6. 推送前仍须按 Green/Yellow/Red 风险等级完成相应验证；自动推送不等于自动发布。
+5. 开发工作必须通过 `scripts/dev_session.py start <slug>` 创建 branch-backed worktree；会话分支命名为唯一的 `session/<slug>-<id>`，以最新 `origin/main` 为基线。不得在 `main`、detached HEAD 或未注册的 worktree 中开展会话工作。
+6. 在提交前运行 `scripts/dev_session.py check`；它会拒绝 detached/main、ghost parent、分支或 worktree 复用，以及 dirty/staged/untracked 状态。该工具 fail-closed，不执行 reset、stash、rebase 或清理。
+7. 推送前仍须按 Green/Yellow/Red 风险等级完成相应验证；自动推送不等于自动发布。
 
 ## 4. “PR 完成”的自动推送语义
 
@@ -107,31 +108,31 @@ Reverts: <commit-sha>
 2. 影响范围检查全部通过；
 3. 仅暂存该工作单元的文件；
 4. Conventional Commit 创建成功；
-5. 当前分支是 `main`，且本地 `main` 已基于最新 `origin/main`。
+5. 当前分支是唯一的 `session/<slug>-<id>` 任务分支，并已通过对应风险等级的验证。
 
-成功执行 `git commit` 后，项目的 Claude Code `PostToolUse` hook 自动推送当前 `HEAD`：
+成功执行 `git commit` 后，项目的 Claude Code `PostToolUse` hook 可自动推送当前任务分支：
 
-- `main` 已有 upstream：`git push`；
-- `main` 没有 upstream：`git push -u origin main`；
-- 禁止 force push；
-- 非 `main` 分支、detached HEAD、无 `origin` 时跳过并报告；
+- 仅允许推送 `session/*` 任务分支；
+- 禁止直接推送 `main`，也禁止 force push；
+- detached HEAD、无 `origin` 或非任务分支时跳过并报告；
 - push 失败必须如实报告，提交仍保留在本地；
-- 设置 `AIGCNEWS_SKIP_AUTO_PUSH=1` 可对单次紧急操作禁用自动推送。
+- 需要进入 `main` 时，必须使用经过验证的 serialized landing 命令，执行 non-force CAS，并由远端分支保护规则完成最终拒绝/接受。
 
 该 hook 只响应 Claude Code 成功完成的 Bash `git commit` 操作，不会自动创建或合并 GitHub PR，也不会自动发布。开发者在 Claude Code 外部创建的提交不受该 hook 影响。
 
 ## 5. 本地 Git hook
 
-仓库提供 `.githooks/commit-msg`，用于在提交创建前校验标题。首次克隆或 hooks 路径失效时执行：
+仓库提供 `.githooks/commit-msg`，用于在提交创建前校验标题。首次克隆或 hooks 路径失效时，在每个 linked worktree 中执行（避免把主 checkout 的绝对路径共享给其他 worktree）：
 
 ```bash
-git config core.hooksPath .githooks
+git config extensions.worktreeConfig true
+git config --worktree core.hooksPath .githooks
 ```
 
-检查当前配置：
+检查当前 worktree 配置：
 
 ```bash
-git config --get core.hooksPath
+git config --worktree --get core.hooksPath
 ```
 
 `.githooks/pre-commit` 按暂存文件的影响面执行三段门禁，任一失败即阻断提交：

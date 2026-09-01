@@ -5,8 +5,9 @@
 - 所有提交必须遵守 `docs/git-workflow.md`，标题格式为 `<type>(<scope>): <subject>`；`scope` 必填；`!` 仅用于不兼容变更，且必须配 `BREAKING CHANGE:` footer。
 - 一个提交对应一个 PR-sized 工作单元；仅暂存本次工作涉及的文件，不得夹带、覆盖或回滚用户已有修改。
 - 提交前必须运行与影响面匹配的测试、类型检查或构建。检查失败时不得提交或推送，并应如实报告。
-- 当前项目采用主干开发：完成并验证一个 PR-sized 工作单元后，直接提交并推送到 `main`。
-- 成功提交后，由项目 Claude Code hook 自动 push `main`。不得使用 `--force`、`--force-with-lease` 或任何等效强制推送。
+- 开发工作必须通过 `scripts/dev_session.py start <slug>` 创建 branch-backed worktree；会话分支命名为唯一的 `session/<slug>-<id>`，以最新 `origin/main` 为基线。
+- 提交前运行 `scripts/dev_session.py check`；工具拒绝 `main`、detached HEAD、ghost parent、复用的分支/worktree，以及 dirty/staged/untracked 状态；工具不会执行 reset、stash、rebase 或清理。
+- 成功提交后，由项目 Claude Code hook 自动 push 当前会话分支。不得使用 `--force`、`--force-with-lease` 或任何等效强制推送。
 - 自动 push 不代表自动发布；若需要创建或合并远程 PR，仍需独立授权或既定流程。
 - Git 提交必须保留 Claude Code 要求的 `Co-Authored-By: Claude <noreply@anthropic.com>` trailer。
 

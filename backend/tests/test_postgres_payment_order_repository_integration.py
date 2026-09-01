@@ -1,42 +1,24 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.repositories.postgres_payment_order_repository import (
     PostgresPaymentOrderRepository,
 )
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE users RESTART IDENTITY CASCADE")
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+    with postgres_test_sandbox() as sandbox:
+        yield sandbox.database
 
 
 @pytest.fixture
@@ -78,9 +60,7 @@ def test_payment_order_create_and_read_round_trip(database, user_id) -> None:
 
     items, total = repository.list_user_orders(user_id=user_id, page=1, page_size=10)
     assert total == 1 and [item["id"] for item in items] == [order["id"]]
-    other_items, other_total = repository.list_user_orders(
-        user_id=user_id + 999, page=1, page_size=10
-    )
+    other_items, other_total = repository.list_user_orders(user_id=user_id + 999, page=1, page_size=10)
     assert other_total == 0 and other_items == []
 
 
@@ -100,9 +80,7 @@ def test_payment_order_idempotency_key_conflict_returns_none(database, user_id) 
     )
     assert conflict is None
 
-    existing = repository.get_order_by_user_and_idempotency_key(
-        user_id=user_id, idempotency_key="checkout-attempt-1"
-    )
+    existing = repository.get_order_by_user_and_idempotency_key(user_id=user_id, idempotency_key="checkout-attempt-1")
     assert existing is not None and existing["id"] == first["id"]
     _, total = repository.list_user_orders(user_id=user_id, page=1, page_size=10)
     assert total == 1
@@ -180,9 +158,7 @@ def test_payment_order_close_only_from_pending(database, user_id) -> None:
     # 终态重复关单 → None（路由层映射 409）
     assert repository.close_order(order_id=order["id"]) is None
 
-    paid_order = _create(
-        repository, user_id, order_no="M20260819120200000001ef56"
-    )
+    paid_order = _create(repository, user_id, order_no="M20260819120200000001ef56")
     repository.mark_paid_and_grant(
         order_id=paid_order["id"],
         channel_order_no="txn",
@@ -221,9 +197,7 @@ def test_payment_order_mark_expired_overdue_respects_limit(database, user_id) ->
     assert total == 4
     statuses = {item["order_no"]: item["status"] for item in items}
     assert statuses["M20260819129900000001zz99"] == "pending"
-    assert (
-        sum(1 for status in statuses.values() if status == "expired") == 3
-    )
+    assert sum(1 for status in statuses.values() if status == "expired") == 3
 
 
 def test_payment_order_admin_list_filters_and_joins_email(database, user_id) -> None:
@@ -239,28 +213,44 @@ def test_payment_order_admin_list_filters_and_joins_email(database, user_id) -> 
     )
 
     items, total = repository.list_orders_admin(
-        status=None, channel=None, plan_code=None, email=None,
-        created_from=None, created_to=None, page=1, page_size=10,
+        status=None,
+        channel=None,
+        plan_code=None,
+        email=None,
+        created_from=None,
+        created_to=None,
+        page=1,
+        page_size=10,
     )
     assert total == 2
     assert all(item["user_email"] == "buyer@example.com" for item in items)
 
     items, total = repository.list_orders_admin(
-        status=None, channel="stripe", plan_code=None, email=None,
-        created_from=None, created_to=None, page=1, page_size=10,
+        status=None,
+        channel="stripe",
+        plan_code=None,
+        email=None,
+        created_from=None,
+        created_to=None,
+        page=1,
+        page_size=10,
     )
     assert total == 1 and items[0]["channel"] == "stripe"
 
     items, total = repository.list_orders_admin(
-        status=None, channel=None, plan_code="member_yearly", email="BUYER@example.com",
-        created_from=None, created_to=None, page=1, page_size=10,
+        status=None,
+        channel=None,
+        plan_code="member_yearly",
+        email="BUYER@example.com",
+        created_from=None,
+        created_to=None,
+        page=1,
+        page_size=10,
     )
     assert total == 1 and items[0]["plan_code"] == "member_yearly"
 
 
-def test_payment_order_revenue_stats_filters_and_aggregates_paid_orders(
-    database, user_id
-) -> None:
+def test_payment_order_revenue_stats_filters_and_aggregates_paid_orders(database, user_id) -> None:
     repository = PostgresPaymentOrderRepository(database)
     day_start = datetime(2026, 8, 18, 16, 0, tzinfo=timezone.utc)
     tomorrow = datetime(2026, 8, 19, 16, 0, tzinfo=timezone.utc)
@@ -271,9 +261,7 @@ def test_payment_order_revenue_stats_filters_and_aggregates_paid_orders(
         "year": (datetime(2025, 12, 31, 16, tzinfo=timezone.utc), tomorrow),
     }
 
-    paid_cny = _create(
-        repository, user_id, order_no="M20260819121000000001aa01", amount_cents=1900
-    )
+    paid_cny = _create(repository, user_id, order_no="M20260819121000000001aa01", amount_cents=1900)
     paid_usd = _create(
         repository,
         user_id,
@@ -281,24 +269,12 @@ def test_payment_order_revenue_stats_filters_and_aggregates_paid_orders(
         amount_cents=490,
         currency="USD",
     )
-    at_start = _create(
-        repository, user_id, order_no="M20260819121000000001aa03", amount_cents=300
-    )
-    at_end = _create(
-        repository, user_id, order_no="M20260819121000000001aa04", amount_cents=700
-    )
-    _create(
-        repository, user_id, order_no="M20260819121000000001aa05", amount_cents=1100
-    )
-    expired = _create(
-        repository, user_id, order_no="M20260819121000000001aa06", amount_cents=1200
-    )
-    closed = _create(
-        repository, user_id, order_no="M20260819121000000001aa07", amount_cents=1300
-    )
-    null_paid_at = _create(
-        repository, user_id, order_no="M20260819121000000001aa08", amount_cents=1400
-    )
+    at_start = _create(repository, user_id, order_no="M20260819121000000001aa03", amount_cents=300)
+    at_end = _create(repository, user_id, order_no="M20260819121000000001aa04", amount_cents=700)
+    _create(repository, user_id, order_no="M20260819121000000001aa05", amount_cents=1100)
+    expired = _create(repository, user_id, order_no="M20260819121000000001aa06", amount_cents=1200)
+    closed = _create(repository, user_id, order_no="M20260819121000000001aa07", amount_cents=1300)
+    null_paid_at = _create(repository, user_id, order_no="M20260819121000000001aa08", amount_cents=1400)
     unknown_currency = _create(
         repository,
         user_id,

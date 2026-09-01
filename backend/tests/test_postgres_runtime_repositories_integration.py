@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import uuid
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -9,18 +8,16 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from backend.tests.postgres_test_safety import postgres_test_sandbox
+
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
 os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
     from backend.app.core.config import settings
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_document_repository import (
         PostgresDocumentRepository,
     )
@@ -40,43 +37,11 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    try:
-        database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    except Exception as exc:
-        pytest.skip(f"TEST_POSTGRES_DSN is not a valid PostgreSQL DSN: {exc}")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def database() -> Iterator[Any]:
-    dsn = _test_dsn()
-    schema = f"runtime_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        PostgresMigrationRunner(database).apply()
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
         yield database
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 @pytest.fixture(scope="module")
@@ -92,9 +57,7 @@ def repositories(database: Any) -> Iterator[tuple[Any, Any, Any, Any]]:
 # get_today_document_count uses the UTC+8 calendar day of created_at; pin the
 # fixture to UTC+8 noon so the assertion stays true regardless of the run date.
 _CREATED_AT_TODAY = (
-    datetime.now(timezone(timedelta(hours=8)))
-    .replace(hour=12, minute=0, second=0, microsecond=0)
-    .isoformat()
+    datetime.now(timezone(timedelta(hours=8))).replace(hour=12, minute=0, second=0, microsecond=0).isoformat()
 )
 
 
@@ -218,9 +181,7 @@ def test_real_postgres_replace_channel_snapshots_is_atomic_and_syncs_scores(repo
     # （max(daily 7.0, weekly 6.0)，与逐行 upsert 的同步口径一致）
     assert {(row["raw_score"], row["score"]) for row in weekly} == {(7.0, 7.0)}
 
-    written_empty = snapshots.replace_channel_snapshots(
-        "2026-08-09", "huggingface_daily_html", []
-    )
+    written_empty = snapshots.replace_channel_snapshots("2026-08-09", "huggingface_daily_html", [])
     assert written_empty == 0
 
 
@@ -376,7 +337,8 @@ def test_real_postgres_list_recent_by_source_filters_window_and_orders(repositor
 
 
 def test_real_postgres_today_count_github_uses_enriched_library_entries(
-    repositories, database,
+    repositories,
+    database,
 ) -> None:
     documents, _, _, project_ingestion = repositories
     enrichments = PostgresGitHubProjectEnrichmentRepository(database)
@@ -449,9 +411,7 @@ def test_real_postgres_today_count_github_uses_enriched_library_entries(
         )
     )
     # 当日富化失败：不计
-    enrichments.upsert_github_repo_enrichment(
-        _enrichment("it-today-failed-repo", status="failed")
-    )
+    enrichments.upsert_github_repo_enrichment(_enrichment("it-today-failed-repo", status="failed"))
 
     # 只 +1（当日富化成功的入库项目）；github documents 行、纯候选、
     # 历史锚点与失败行均不计入。
@@ -459,7 +419,8 @@ def test_real_postgres_today_count_github_uses_enriched_library_entries(
 
 
 def test_real_postgres_today_count_uses_scheduler_timezone_day(
-    repositories, database,
+    repositories,
+    database,
 ) -> None:
     documents, _, _, project_ingestion = repositories
     enrichments = PostgresGitHubProjectEnrichmentRepository(database)

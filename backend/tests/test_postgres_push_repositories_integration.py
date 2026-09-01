@@ -23,17 +23,15 @@ from typing import Any, Iterator
 
 import pytest
 
+from backend.tests.postgres_test_safety import postgres_test_sandbox
+
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
 os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_push_channel_repository import (
         PostgresPushChannelRepository,
     )
@@ -50,44 +48,11 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    try:
-        database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    except Exception as exc:
-        pytest.skip(f"TEST_POSTGRES_DSN is not a valid PostgreSQL DSN: {exc}")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def database() -> Iterator[Any]:
-    dsn = _test_dsn()
-    schema = f"push_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    lifecycle = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        PostgresMigrationRunner(lifecycle).apply()
-        yield lifecycle
-    finally:
-        lifecycle.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
+        yield database
 
 
 def _create_user(database: Any) -> int:
@@ -102,8 +67,7 @@ def _create_user(database: Any) -> int:
 def _create_subscription(database: Any, *, user_id: int, channel_id: int) -> int:
     with database.transaction() as connection:
         row = connection.execute(
-            "INSERT INTO user_subscriptions (user_id, channel_id)"
-            " VALUES (%s, %s) RETURNING id",
+            "INSERT INTO user_subscriptions (user_id, channel_id) VALUES (%s, %s) RETURNING id",
             (user_id, channel_id),
         ).fetchone()
         return int(row["id"])
@@ -155,15 +119,11 @@ def test_push_channel_round_trip_update_and_owner_scoping(database) -> None:
     # 属主隔离：其他用户读不到、也改不动这条渠道
     assert repository.get_channel(user_id=other_id, channel_id=channel_id) is None
     assert not repository.mark_channel_verified(user_id=other_id, channel_id=channel_id)
-    assert not repository.set_channel_status(
-        user_id=other_id, channel_id=channel_id, status="disabled"
-    )
+    assert not repository.set_channel_status(user_id=other_id, channel_id=channel_id, status="disabled")
     assert not repository.delete_channel(user_id=other_id, channel_id=channel_id)
 
     assert repository.mark_channel_verified(user_id=owner_id, channel_id=channel_id)
-    assert repository.set_channel_status(
-        user_id=owner_id, channel_id=channel_id, status="disabled"
-    )
+    assert repository.set_channel_status(user_id=owner_id, channel_id=channel_id, status="disabled")
     updated = repository.get_channel(user_id=owner_id, channel_id=channel_id)
     assert updated is not None
     assert updated["verified"] is True
@@ -217,9 +177,7 @@ def test_push_channel_check_constraints_reject_unknown_enums(database) -> None:
     channel = _create_channel(database, user_id)
     # ck_push_channels_status 只允许 active / disabled
     with pytest.raises(psycopg.errors.CheckViolation):
-        repository.set_channel_status(
-            user_id=user_id, channel_id=int(channel["id"]), status="archived"
-        )
+        repository.set_channel_status(user_id=user_id, channel_id=int(channel["id"]), status="archived")
 
     # 约束失败后连接已被事务上下文安全弃用，后续操作不受影响
     assert repository.get_channel(user_id=user_id, channel_id=int(channel["id"])) is not None
@@ -229,13 +187,9 @@ def test_push_delivery_create_is_idempotent_and_defaults_pending(database) -> No
     repository = PostgresPushDeliveryRepository(database)
     user_id = _create_user(database)
     channel = _create_channel(database, user_id)
-    subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(channel["id"])
-    )
+    subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(channel["id"]))
 
-    delivery = repository.create_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    delivery = repository.create_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert delivery is not None
     assert delivery["status"] == "pending"
     assert delivery["attempts"] == 0
@@ -243,37 +197,23 @@ def test_push_delivery_create_is_idempotent_and_defaults_pending(database) -> No
     assert delivery["sent_at"] is None
 
     # uq_push_deliveries_subscription_item 冲突（并发重复派发）返回 None
-    assert (
-        repository.create_delivery(subscription_id=subscription_id, item_key="2026-08-08")
-        is None
-    )
-    fetched = repository.get_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    assert repository.create_delivery(subscription_id=subscription_id, item_key="2026-08-08") is None
+    fetched = repository.get_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert fetched is not None and int(fetched["id"]) == int(delivery["id"])
-    assert (
-        repository.get_delivery(subscription_id=subscription_id, item_key="missing")
-        is None
-    )
+    assert repository.get_delivery(subscription_id=subscription_id, item_key="missing") is None
 
 
 def test_push_delivery_sent_transition_only_from_pending(database) -> None:
     repository = PostgresPushDeliveryRepository(database)
     user_id = _create_user(database)
     channel = _create_channel(database, user_id)
-    subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(channel["id"])
-    )
-    delivery = repository.create_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(channel["id"]))
+    delivery = repository.create_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert delivery is not None
     delivery_id = int(delivery["id"])
 
     repository.mark_delivery_sent(delivery_id=delivery_id, attempts=2)
-    sent = repository.get_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    sent = repository.get_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert sent is not None
     assert sent["status"] == "sent"
     assert sent["attempts"] == 2
@@ -282,9 +222,7 @@ def test_push_delivery_sent_transition_only_from_pending(database) -> None:
 
     # 并发派发下第二个 worker 的 sent 迁移不再生效：attempts/sent_at 保持首次值
     repository.mark_delivery_sent(delivery_id=delivery_id, attempts=5)
-    still = repository.get_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    still = repository.get_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert still is not None
     assert still["attempts"] == 2
     assert still["sent_at"] == sent["sent_at"]
@@ -294,19 +232,13 @@ def test_push_delivery_failed_attempts_and_terminal_state(database) -> None:
     repository = PostgresPushDeliveryRepository(database)
     user_id = _create_user(database)
     channel = _create_channel(database, user_id)
-    subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(channel["id"])
-    )
-    delivery = repository.create_delivery(
-        subscription_id=subscription_id, item_key="2026-08-08"
-    )
+    subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(channel["id"]))
+    delivery = repository.create_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert delivery is not None
     delivery_id = int(delivery["id"])
 
     # 未用尽重试次数：保持 pending，记录错误供下一次派发读取
-    repository.record_attempt_failed(
-        delivery_id=delivery_id, attempts=1, last_error="smtp timeout", exhausted=False
-    )
+    repository.record_attempt_failed(delivery_id=delivery_id, attempts=1, last_error="smtp timeout", exhausted=False)
     row = repository.get_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert row is not None
     assert row["status"] == "pending"
@@ -328,9 +260,7 @@ def test_push_delivery_failed_attempts_and_terminal_state(database) -> None:
 
     # 终态不可逆：sent / 再次失败记录都不再生效
     repository.mark_delivery_sent(delivery_id=delivery_id, attempts=4)
-    repository.record_attempt_failed(
-        delivery_id=delivery_id, attempts=5, last_error="late", exhausted=False
-    )
+    repository.record_attempt_failed(delivery_id=delivery_id, attempts=5, last_error="late", exhausted=False)
     row = repository.get_delivery(subscription_id=subscription_id, item_key="2026-08-08")
     assert row is not None
     assert row["status"] == "failed"
@@ -357,29 +287,19 @@ def test_count_email_deliveries_by_day_scopes_channel_and_window(database) -> No
         target=f"https://example.com/hook-{uuid.uuid4().hex}",
         channel_type="webhook",
     )
-    email_subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(email_channel["id"])
-    )
-    webhook_subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(webhook_channel["id"])
-    )
+    email_subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(email_channel["id"]))
+    webhook_subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(webhook_channel["id"]))
 
     # 模块共享 schema：前面用例已留下 sent/failed 的 email 投递，
     # 先取基线，后面按增量断言
-    baseline_14d = {
-        row["date"]: row for row in repository.count_email_deliveries_by_day(days=14)
-    }
+    baseline_14d = {row["date"]: row for row in repository.count_email_deliveries_by_day(days=14)}
 
     # email 渠道：两条 sent + 一条 failed 终态，全部归今日（Asia/Shanghai）
     for item_key in ("item-a", "item-b"):
-        delivery = repository.create_delivery(
-            subscription_id=email_subscription_id, item_key=item_key
-        )
+        delivery = repository.create_delivery(subscription_id=email_subscription_id, item_key=item_key)
         assert delivery is not None
         repository.mark_delivery_sent(delivery_id=int(delivery["id"]), attempts=1)
-    failed = repository.create_delivery(
-        subscription_id=email_subscription_id, item_key="item-c"
-    )
+    failed = repository.create_delivery(subscription_id=email_subscription_id, item_key="item-c")
     assert failed is not None
     repository.record_attempt_failed(
         delivery_id=int(failed["id"]),
@@ -388,31 +308,20 @@ def test_count_email_deliveries_by_day_scopes_channel_and_window(database) -> No
         exhausted=True,
     )
     # pending 不计入统计
-    assert (
-        repository.create_delivery(
-            subscription_id=email_subscription_id, item_key="item-pending"
-        )
-        is not None
-    )
+    assert repository.create_delivery(subscription_id=email_subscription_id, item_key="item-pending") is not None
 
     # webhook 渠道的 sent 不计入 email 统计
-    webhook_delivery = repository.create_delivery(
-        subscription_id=webhook_subscription_id, item_key="item-hook"
-    )
+    webhook_delivery = repository.create_delivery(subscription_id=webhook_subscription_id, item_key="item-hook")
     assert webhook_delivery is not None
     repository.mark_delivery_sent(delivery_id=int(webhook_delivery["id"]), attempts=1)
 
     # 10 天前的 sent：days=7 窗口外、days=14 窗口内
-    old = repository.create_delivery(
-        subscription_id=email_subscription_id, item_key="item-old"
-    )
+    old = repository.create_delivery(subscription_id=email_subscription_id, item_key="item-old")
     assert old is not None
     repository.mark_delivery_sent(delivery_id=int(old["id"]), attempts=1)
     with database.transaction() as connection:
         connection.execute(
-            "UPDATE push_deliveries"
-            " SET sent_at = CURRENT_TIMESTAMP - INTERVAL '10 days'"
-            " WHERE id = %s",
+            "UPDATE push_deliveries SET sent_at = CURRENT_TIMESTAMP - INTERVAL '10 days' WHERE id = %s",
             (int(old["id"]),),
         )
 
@@ -434,16 +343,13 @@ def test_count_email_deliveries_by_day_scopes_channel_and_window(database) -> No
     base_old = baseline_14d.get(old_day, {"sent": 0, "failed": 0})
     assert by_day_14d[old_day]["sent"] == base_old["sent"] + 1
     # 结果按日期倒序
-    assert [row["date"] for row in stats_14d] == sorted(
-        (row["date"] for row in stats_14d), reverse=True
-    )
+    assert [row["date"] for row in stats_14d] == sorted((row["date"] for row in stats_14d), reverse=True)
 
 
 def _create_member_user(database: Any, *, tier: str = "member", role: str = "user") -> int:
     with database.transaction() as connection:
         row = connection.execute(
-            "INSERT INTO users (email, hashed_password, role, membership_tier)"
-            " VALUES (%s, %s, %s, %s) RETURNING id",
+            "INSERT INTO users (email, hashed_password, role, membership_tier) VALUES (%s, %s, %s, %s) RETURNING id",
             (f"push-it-{uuid.uuid4().hex}@example.com", "hash", role, tier),
         ).fetchone()
         return int(row["id"])
@@ -480,9 +386,7 @@ def test_push_channel_provider_key_cross_user_conflict_returns_none(database) ->
     )
     assert duplicate is None
 
-    found = channels.find_channel_by_provider_key(
-        channel_type="telegram", provider_key=key
-    )
+    found = channels.find_channel_by_provider_key(channel_type="telegram", provider_key=key)
     assert found is not None
     assert found["user_id"] == owner_id
 
@@ -497,17 +401,9 @@ def test_push_channel_provider_key_cross_user_conflict_returns_none(database) ->
         display_target="discord",
     )
     assert other_type is not None
-    assert (
-        channels.find_channel_by_provider_key(
-            channel_type="discord", provider_key=key
-        )["user_id"]
-        == other_id
-    )
+    assert channels.find_channel_by_provider_key(channel_type="discord", provider_key=key)["user_id"] == other_id
     # 未登记的类型查不到
-    assert (
-        channels.find_channel_by_provider_key(channel_type="webhook", provider_key=key)
-        is None
-    )
+    assert channels.find_channel_by_provider_key(channel_type="webhook", provider_key=key) is None
 
 
 def test_telegram_link_attempt_lifecycle(database) -> None:
@@ -533,12 +429,7 @@ def test_telegram_link_attempt_lifecycle(database) -> None:
     assert "nonce_hash" not in fetched
 
     # 错误哈希不命中；正确哈希原子消费并记录 chat_id
-    assert (
-        attempts.consume_attempt(
-            nonce_hash=hashlib.sha256(b"wrong").hexdigest(), chat_id="1"
-        )
-        is None
-    )
+    assert attempts.consume_attempt(nonce_hash=hashlib.sha256(b"wrong").hexdigest(), chat_id="1") is None
     consumed = attempts.consume_attempt(nonce_hash=nonce_hash, chat_id="424242001")
     assert consumed is not None
     assert consumed["status"] == "completed"
@@ -596,9 +487,7 @@ def test_telegram_link_attempt_consume_single_winner_under_concurrency(database)
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(
             pool.map(
-                lambda _: attempts.consume_attempt(
-                    nonce_hash=nonce_hash, chat_id="424242001"
-                ),
+                lambda _: attempts.consume_attempt(nonce_hash=nonce_hash, chat_id="424242001"),
                 range(8),
             )
         )
@@ -620,9 +509,7 @@ def test_list_active_dispatchable_carries_membership_fields(database) -> None:
         verified=True,
     )
     assert channel is not None
-    subscription_id = _create_subscription(
-        database, user_id=user_id, channel_id=int(channel["id"])
-    )
+    subscription_id = _create_subscription(database, user_id=user_id, channel_id=int(channel["id"]))
 
     rows = subscriptions.list_active_dispatchable(frequency="daily")
     mine = [row for row in rows if int(row["id"]) == subscription_id]

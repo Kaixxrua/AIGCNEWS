@@ -1,16 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.domain.wechat_secret_box import WeChatSecretBox
 from backend.app.repositories.mcp_server_repository import McpServerConfigConflictError
 from backend.app.repositories.postgres_mcp_access_token_repository import (
@@ -19,25 +13,13 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
 )
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE mcp_server_configs, users RESTART IDENTITY CASCADE")
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+    with postgres_test_sandbox() as sandbox:
+        yield sandbox.database
 
 
 def _create_user(database, email: str = "reader@example.com") -> int:
@@ -97,9 +79,7 @@ def test_postgres_mcp_server_repository_round_trip_and_unique_sqlstate(database)
     assert "搜索" in tested["last_tools_json"]
     assert tested["last_test_at"].tzinfo is not None
 
-    cleared = repository.update_mcp_server_config(
-        created["id"], {"clear_auth_token": True}
-    )
+    cleared = repository.update_mcp_server_config(created["id"], {"clear_auth_token": True})
     assert cleared["auth_token"] is None
 
     with pytest.raises(McpServerConfigConflictError):
@@ -176,7 +156,9 @@ def test_postgres_mcp_token_lifecycle_secrecy_expiry_and_unique_sqlstate(databas
         token_id=expired["token_metadata"]["id"],
     )
     assert repository.get_user_by_mcp_token_hash("b" * 64) is None
-    assert all(item["id"] != expired["token_metadata"]["id"] for item in repository.list_user_mcp_tokens(user_id=user_id))
+    assert all(
+        item["id"] != expired["token_metadata"]["id"] for item in repository.list_user_mcp_tokens(user_id=user_id)
+    )
 
 
 def test_postgres_mcp_token_rejects_missing_user(database) -> None:
@@ -215,9 +197,7 @@ def test_postgres_dsh_mcp_token_ensure_reuse_rotate_and_legacy_recovery(database
     repository = PostgresMcpAccessTokenRepository(database, secret_box=box)
     user_id = _create_user(database)
 
-    first = repository.ensure_user_dsh_mcp_token(
-        user_id=user_id, **_dsh_material(box, "aigc_mcp_first_token", "d")
-    )
+    first = repository.ensure_user_dsh_mcp_token(user_id=user_id, **_dsh_material(box, "aigc_mcp_first_token", "d"))
     assert first["status"] == "created"
     assert first["token"] == "aigc_mcp_first_token"
     assert first["token_metadata"]["purpose"] == "dsh"
@@ -225,9 +205,7 @@ def test_postgres_dsh_mcp_token_ensure_reuse_rotate_and_legacy_recovery(database
     assert "token_hash" not in first["token_metadata"]
 
     # 重复 ensure（模拟刷新/重开页面）：回显同一枚，不再 INSERT
-    again = repository.ensure_user_dsh_mcp_token(
-        user_id=user_id, **_dsh_material(box, "aigc_mcp_other_token", "e")
-    )
+    again = repository.ensure_user_dsh_mcp_token(user_id=user_id, **_dsh_material(box, "aigc_mcp_other_token", "e"))
     assert again["status"] == "reused"
     assert again["token"] == "aigc_mcp_first_token"
     assert again["token_metadata"]["id"] == first["token_metadata"]["id"]
@@ -267,9 +245,7 @@ def test_postgres_dsh_mcp_token_ensure_reuse_rotate_and_legacy_recovery(database
         scopes=["projects:favorites:read"],
         client_type="claude",
     )
-    rotated = repository.rotate_user_dsh_mcp_token(
-        user_id=user_id, **_dsh_material(box, "aigc_mcp_rotated_token", "2")
-    )
+    rotated = repository.rotate_user_dsh_mcp_token(user_id=user_id, **_dsh_material(box, "aigc_mcp_rotated_token", "2"))
     assert rotated["status"] == "rotated"
     assert rotated["revoked_count"] == 1
     assert rotated["token"] == "aigc_mcp_rotated_token"

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import os
-import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -12,6 +11,7 @@ from backend.app.repositories.project_catalog import (
     ProjectLexicalConcept,
     ProjectLexicalRetrievalPlan,
 )
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 # Import application settings away from the repository root so pydantic cannot
 # discover a developer or production-like .env file during this opt-in test.
@@ -21,11 +21,7 @@ os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.services.project_discovery import public_project_item
 finally:
     os.chdir(_IMPORT_CWD)
@@ -65,47 +61,15 @@ EXPECTED_PUBLIC_FIELDS = {
 }
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    try:
-        database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    except Exception as exc:
-        pytest.skip(f"TEST_POSTGRES_DSN is not a valid PostgreSQL DSN: {exc}")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def catalog() -> Iterator[Any]:
-    dsn = _test_dsn()
-    schema = f"catalog_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        applied = PostgresMigrationRunner(database).apply()
-        assert applied, "a unique schema must receive the committed migrations"
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
         with database.transaction() as connection:
             connection.execute(SEED_PATH.read_text(encoding="utf-8"))
 
         try:
-            adapter_module = importlib.import_module(
-                "backend.app.repositories.postgres_project_catalog"
-            )
+            adapter_module = importlib.import_module("backend.app.repositories.postgres_project_catalog")
         except ModuleNotFoundError as exc:
             if exc.name == "backend.app.repositories.postgres_project_catalog":
                 pytest.skip("PostgresProjectCatalogRepository is not available yet")
@@ -115,16 +79,10 @@ def catalog() -> Iterator[Any]:
             yield repository_type(database=database)
         except TypeError:
             yield repository_type(database)
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 def test_real_catalog_queries_match_committed_expected_results(catalog: Any) -> None:
-    result = catalog.list_projects(
-        source="github", min_stars=500, enriched_only=True, sort="stars"
-    )
+    result = catalog.list_projects(source="github", min_stars=500, enriched_only=True, sort="stars")
 
     assert result["total"] == 2
     assert result["page"] == 1
@@ -193,14 +151,10 @@ def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
     today = catalog.list_projects(source="github", scope="today", min_stars=500)
     assert [item["repo_id"] for item in today["items"]] == ["acme/alpha", "acme/beta"]
 
-    recommended = catalog.list_projects(
-        source="github", scope="recommended", min_stars=500
-    )
+    recommended = catalog.list_projects(source="github", scope="recommended", min_stars=500)
     assert [item["repo_id"] for item in recommended["items"]] == ["acme/alpha"]
 
-    favorites = catalog.list_projects(
-        source="github", min_stars=500, user_id=42, favorites_only=True
-    )
+    favorites = catalog.list_projects(source="github", min_stars=500, user_id=42, favorites_only=True)
     assert [item["repo_id"] for item in favorites["items"]] == ["acme/beta"]
     assert favorites["items"][0]["is_favorited"] is True
 
@@ -214,9 +168,7 @@ def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
 
 
 def test_real_rows_preserve_public_serialization(catalog: Any) -> None:
-    row = catalog.list_projects(
-        source="github", category="rag_knowledge", min_stars=500
-    )["items"][0]
+    row = catalog.list_projects(source="github", category="rag_knowledge", min_stars=500)["items"][0]
     public = public_project_item(row)
 
     assert set(public) == EXPECTED_PUBLIC_FIELDS
@@ -266,10 +218,21 @@ def test_real_repo_name_segment_outranks_owner_prefix(catalog: Any) -> None:
             connection.execute(
                 candidates_sql,
                 (
-                    repo_id, repo_id, title, f"https://github.com/{repo_id}",
-                    "name segment fixture", "Python", "[]",
-                    "2025-01-01T00:00:00Z", "2026-07-20T08:00:00Z", stars, 1, 1,
-                    "fixture", "2026-07-01T00:00:00Z", "2026-07-20T08:00:00Z",
+                    repo_id,
+                    repo_id,
+                    title,
+                    f"https://github.com/{repo_id}",
+                    "name segment fixture",
+                    "Python",
+                    "[]",
+                    "2025-01-01T00:00:00Z",
+                    "2026-07-20T08:00:00Z",
+                    stars,
+                    1,
+                    1,
+                    "fixture",
+                    "2026-07-01T00:00:00Z",
+                    "2026-07-20T08:00:00Z",
                     "2026-07-23T09:00:00Z",
                 ),
             )
@@ -321,27 +284,21 @@ def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None
         ).fetchone()
         website_id = int(row["id"])
         connection.execute(
-            "INSERT INTO user_tool_websites (user_id, website_id, added_via)"
-            " VALUES (42, %s, 'manual')",
+            "INSERT INTO user_tool_websites (user_id, website_id, added_via) VALUES (42, %s, 'manual')",
             (website_id,),
         )
         connection.execute(
-            "INSERT INTO project_favorites (user_id, project_source, project_id)"
-            " VALUES (42, 'website', %s)",
+            "INSERT INTO project_favorites (user_id, project_source, project_id) VALUES (42, 'website', %s)",
             (str(website_id),),
         )
 
-    listed = catalog.list_projects(
-        source="website", user_id=42, favorites_only=True, min_stars=0
-    )
+    listed = catalog.list_projects(source="website", user_id=42, favorites_only=True, min_stars=0)
     assert listed["total"] == 1
     assert [item["domain"] for item in listed["items"]] == ["selfhost.example"]
     assert listed["items"][0]["is_favorited"] is True
     assert listed["items"][0]["category_slug"] == "other"
 
-    categories = catalog.get_project_categories(
-        source="website", user_id=42, favorites_only=True
-    )
+    categories = catalog.get_project_categories(source="website", user_id=42, favorites_only=True)
     # 修复前此处为 0（INNER JOIN 富化表把未富化自建网站排除在计数外）
     assert categories["total"] == listed["total"]
     counts = {item["slug"]: item["count"] for item in categories["items"]}
@@ -376,18 +333,13 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
     # 公开榜无星数门槛：已成功富化的项目即使显式传 min_stars=1000 也保留
     # （跌破门槛的成功存量不从公开口径消失）
     assert [
-        row["repo_id"]
-        for row in catalog.list_github_hot_for_date(
-            metric_date=today, limit=10, min_stars=1000
-        )
+        row["repo_id"] for row in catalog.list_github_hot_for_date(metric_date=today, limit=10, min_stars=1000)
     ] == ["acme/alpha", "acme/beta"]
     # 星数门槛只保留给非公开（intake/未成功队列）口径：1000 以上只剩 alpha
     # （draft 无当日指标，永不出现）
     assert [
         row["repo_id"]
-        for row in catalog.list_github_hot_for_date(
-            metric_date=today, limit=10, min_stars=1000, enriched_only=False
-        )
+        for row in catalog.list_github_hot_for_date(metric_date=today, limit=10, min_stars=1000, enriched_only=False)
     ] == ["acme/alpha"]
     # 无指标日期返回空（诚实空榜，不回退）
     assert catalog.list_github_hot_for_date(metric_date="1999-01-01", limit=10) == []

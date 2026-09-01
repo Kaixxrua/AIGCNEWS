@@ -8,17 +8,15 @@ from typing import Any, Iterator
 
 import pytest
 
+from backend.tests.postgres_test_safety import postgres_test_sandbox
+
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
 os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_briefing_repository import (
         PostgresBriefingRepository,
     )
@@ -35,45 +33,11 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    try:
-        database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    except Exception as exc:
-        pytest.skip(f"TEST_POSTGRES_DSN is not a valid PostgreSQL DSN: {exc}")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def database() -> Iterator[Any]:
-    dsn = _test_dsn()
-    schema = f"runtime_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    lifecycle = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        applied = PostgresMigrationRunner(lifecycle).apply()
-        assert any(migration.version == 6 for migration in applied)
-        yield lifecycle
-    finally:
-        lifecycle.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
+        yield database
 
 
 def _create_user(database: Any) -> int:
@@ -91,9 +55,7 @@ def test_real_runtime_provider_round_trip_preserves_secret_and_singleton(databas
     first = repository.upsert_runtime_provider_setting(
         " OpenAI ", " https://one.test ", " secret ", model_name=" model-one "
     )
-    second = repository.upsert_runtime_provider_setting(
-        "Anthropic", "https://two.test", model_name="model-two"
-    )
+    second = repository.upsert_runtime_provider_setting("Anthropic", "https://two.test", model_name="model-two")
 
     assert first["provider"] == "openai"
     assert second["provider"] == "anthropic"

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
 import pytest
+
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
@@ -13,11 +14,7 @@ os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_project_write_repository import (
         PostgresProjectWriteRepository,
     )
@@ -25,36 +22,10 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def write_repository() -> Iterator[tuple[Any, PostgresProjectWriteRepository]]:
-    dsn = _test_dsn()
-    schema = f"project_write_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=2,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        PostgresMigrationRunner(database).apply()
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
         with database.transaction() as connection:
             connection.execute(
                 """INSERT INTO users (id, username, hashed_password) VALUES
@@ -85,10 +56,6 @@ def write_repository() -> Iterator[tuple[Any, PostgresProjectWriteRepository]]:
                            '工具', '[\"base\"]', '[\"基础\"]', '[\"Base\"]', repeat('d', 64), 'v1', 'succeeded')"""
             )
         yield database, PostgresProjectWriteRepository(database)
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 def test_real_postgres_canonical_favorite_and_recommendation(
@@ -96,29 +63,29 @@ def test_real_postgres_canonical_favorite_and_recommendation(
 ) -> None:
     _, repository = write_repository
 
-    favorite = repository.add_project_favorite(
-        user_id=7, source="github", repo_id="legacy-1"
-    )
-    recommendation = repository.recommend_github_project(
-        full_name="acme/project", recommended_by_user_id=7
-    )
+    favorite = repository.add_project_favorite(user_id=7, source="github", repo_id="legacy-1")
+    recommendation = repository.recommend_github_project(full_name="acme/project", recommended_by_user_id=7)
 
     assert favorite["repo_id"] == "canonical-1"
     assert favorite["favorited_at"]
     assert recommendation["repo_id"] == "canonical-1"
     assert recommendation["is_recommended"] is True
     assert repository.get_user_project_tags(user_id=7) == {
-        "items": [{
-            "label": "MCP", "value": "MCP", "label_zh": "MCP", "label_en": "MCP",
-            "count": 1, "tags_origin": "system",
-        }],
+        "items": [
+            {
+                "label": "MCP",
+                "value": "MCP",
+                "label_zh": "MCP",
+                "label_en": "MCP",
+                "count": 1,
+                "tags_origin": "system",
+            }
+        ],
         "total": 1,
         "source": "github",
     }
     assert repository.unrecommend_github_project(repo_id="legacy-1")["removed"] is True
-    assert repository.remove_project_favorite(
-        user_id=7, source="github", repo_id="legacy-1"
-    ) is True
+    assert repository.remove_project_favorite(user_id=7, source="github", repo_id="legacy-1") is True
 
 
 def test_real_postgres_tool_collection_override_and_atomic_unlink(
@@ -126,12 +93,8 @@ def test_real_postgres_tool_collection_override_and_atomic_unlink(
 ) -> None:
     database, repository = write_repository
 
-    linked = repository.link_user_tool_website(
-        user_id=7, website_id=11, added_via="manual"
-    )
-    favorite = repository.add_project_favorite(
-        user_id=7, source="website", website_id=11
-    )
+    linked = repository.link_user_tool_website(user_id=7, website_id=11, added_via="manual")
+    favorite = repository.add_project_favorite(user_id=7, source="website", website_id=11)
     item = repository.upsert_user_tool_website_override(
         {
             "user_id": 7,
@@ -147,16 +110,20 @@ def test_real_postgres_tool_collection_override_and_atomic_unlink(
     assert favorite["website_id"] == 11
     assert item["title"] == "My Tool"
     assert item["is_favorited"] is True
-    collection = repository.list_user_project_collection(
-        user_id=7, source="website", min_stars=0, enriched_only=True
-    )
+    collection = repository.list_user_project_collection(user_id=7, source="website", min_stars=0, enriched_only=True)
     assert collection["total"] == 1
     assert collection["items"][0]["category_slug"] == "custom"
     assert repository.get_user_project_tags(user_id=7, source="website") == {
-        "items": [{
-            "label": "mine", "value": "mine", "label_zh": "mine", "label_en": "mine",
-            "count": 1, "tags_origin": "user",
-        }],
+        "items": [
+            {
+                "label": "mine",
+                "value": "mine",
+                "label_zh": "mine",
+                "label_en": "mine",
+                "count": 1,
+                "tags_origin": "user",
+            }
+        ],
         "total": 1,
         "source": "website",
     }
