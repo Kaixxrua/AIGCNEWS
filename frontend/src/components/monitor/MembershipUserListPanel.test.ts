@@ -22,7 +22,7 @@ describe('MembershipUserListPanel', () => {
   it('renders users and emits search and edit actions', async () => {
     const wrapper = mount(MembershipUserListPanel, {
       global: { plugins: [i18n] },
-      props: { items: [user], total: 1, page: 1, totalPages: 1, loading: false, query: '' },
+      props: { items: [user], total: 1, page: 1, totalPages: 1, loading: false, query: '', error: '' },
     })
     expect(wrapper.text()).toContain('member@example.com')
     expect(wrapper.text()).toContain('13800000000')
@@ -36,7 +36,7 @@ describe('MembershipUserListPanel', () => {
   it('emits pagination changes', async () => {
     const wrapper = mount(MembershipUserListPanel, {
       global: { plugins: [i18n] },
-      props: { items: [user], total: 40, page: 1, totalPages: 2, loading: false, query: '' },
+      props: { items: [user], total: 40, page: 1, totalPages: 2, loading: false, query: '', error: '' },
     })
     const buttons = wrapper.findAll('button.monitor-pagination-btn')
     await buttons[buttons.length - 1]!.trigger('click')

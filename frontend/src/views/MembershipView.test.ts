@@ -156,6 +156,7 @@ describe('MembershipView', () => {
     expect(cards).toHaveLength(3)
 
     const [guestCard, freeCard, memberCard] = cards
+    if (!guestCard || !freeCard || !memberCard) throw new Error('tier cards missing')
     // guest：RSS / 简报 / 网页收藏三项排除；free：RSS 全文与全部简报两项排除
     expect(guestCard.findAll('.tier-feature--excluded')).toHaveLength(3)
     expect(freeCard.findAll('.tier-feature--excluded')).toHaveLength(2)

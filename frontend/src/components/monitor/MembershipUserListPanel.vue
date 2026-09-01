@@ -28,7 +28,7 @@ const pageTargets = computed(() => {
 </script>
 
 <template>
-  <section class="stagger-enter glass-card overflow-hidden flex flex-col">
+  <section class="stagger-enter glass-card shrink-0 overflow-hidden flex flex-col">
     <div class="monitor-divider flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
       <div>
         <h2 class="monitor-section-title">{{ t('monitor.membership.usersTitle') }}</h2>

@@ -10,7 +10,7 @@ const recentDocs = () => [
 ]
 
 const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
-  fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24 })),
+  fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: recentDocs(), total: 2, windowHours: 24, hasMore: false, nextCursor: null })),
   fetchSnapshotDates: vi.fn(async () => ['2026-08-04', '2026-08-03']),
   deleteDocument: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_id: 'x:1', deleted: true })),
   bulkDeleteDocuments: vi.fn(async () => ({ status: 'ok', message: 'deleted', doc_ids: ['x:1'], deleted_count: 1, not_found_count: 0 })),
@@ -41,6 +41,8 @@ describe('useXBoardController', () => {
         ],
         total: 2,
         windowHours: 24,
+        hasMore: false,
+        nextCursor: null,
       })),
     })
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
@@ -169,7 +171,7 @@ describe('useXBoardController', () => {
     // fetchRecentX 在快照日期 resolve 之后才会被调用；先等它真正发出再 dispose
     await vi.waitFor(() => expect(resolveRecent).toBeDefined())
     controller.dispose()
-    resolveRecent?.({ items: [doc('x:9', 'https://x.com/openai/status/9', 1)], total: 1, windowHours: 24 })
+    resolveRecent?.({ items: [doc('x:9', 'https://x.com/openai/status/9', 1)], total: 1, windowHours: 24, hasMore: false, nextCursor: null })
     await pending
     expect(controller.docs.value).toHaveLength(0)
     expect(controller.loading.value).toBe(false)
@@ -228,7 +230,7 @@ describe('useXBoardController', () => {
     ))
 
   const createPagedApi = (count: number, overrides: Partial<XBoardApi> = {}) => createApi({
-    fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: docPage(count), total: count, windowHours: 24 })),
+    fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items: docPage(count), total: count, windowHours: 24, hasMore: false, nextCursor: null })),
     ...overrides,
   })
 
@@ -280,7 +282,7 @@ describe('useXBoardController', () => {
     // 21 条 = 2 页，末页仅 1 条；删除末页唯一条目后应自动回夹到第 1 页
     let items = docPage(21)
     const api = createApi({
-      fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items, total: items.length, windowHours: 24 })),
+      fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({ items, total: items.length, windowHours: 24, hasMore: false, nextCursor: null })),
       bulkDeleteDocuments: vi.fn(async () => {
         items = items.slice(0, 20)
         return { status: 'ok', message: 'deleted', doc_ids: ['x:21'], deleted_count: 1, not_found_count: 0 }

@@ -570,7 +570,7 @@ describe('xBoardViewModel', () => {
     // 引用卡/链接卡/转贴行都增加估高
     const withQuote = tweet('openai', '5', {
       summary: 'short update',
-      quote: { url: 'https://x.com/a/status/9', text: 'quoted', author_name: 'A' },
+      quote: { url: 'https://x.com/a/status/9', text: 'quoted', author_name: 'A', author: 'A' },
     })
     expect(estimateTweetCardHeight(withQuote, column, 'en-US')).toBeGreaterThan(hPlain)
     const withLink = tweet('openai', '6', {

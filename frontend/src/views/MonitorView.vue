@@ -50,7 +50,7 @@ const {
   emailPoolConfig, emailPoolForm, loadingEmailPoolConfig, savingEmailPoolConfig, testingEmailPool, emailDeliveryStats, loadingEmailDeliveryStats, mcpServers, mcpForm, loadingMcpServers, savingMcpServer,
   siteContactPageConfig, siteContactPageForm, loadingSiteContactPage, savingSiteContactPage,
   membershipForm, grantingMembership, membershipLastResult, grantMembership,
-  membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,
+  membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers, membershipUsersError,
   goMembershipUsersPage, setMembershipUsersQuery, editMembershipUser,
   paymentOrders, paymentOrdersTotal, paymentOrdersPage, paymentOrdersTotalPages, paymentOrdersFilter, loadingPaymentOrders, paymentOrderDetail, loadingPaymentOrderDetail, fetchPaymentOrders, fetchPaymentOrderDetail, clearPaymentOrderDetail, goPaymentOrdersPage, markPaymentOrderPaid, closePaymentOrder,
   paymentConfig, paymentForm, loadingPaymentConfig, savingPaymentConfig, resettingPaymentConfig, savePaymentConfig, resetPaymentConfig,
@@ -455,6 +455,7 @@ onUnmounted(dispose)
             :total-pages="membershipUsersTotalPages"
             :loading="loadingMembershipUsers"
             :query="membershipUsersQuery"
+            :error="membershipUsersError"
             @update:query="setMembershipUsersQuery"
             @go-page="goMembershipUsersPage"
             @edit="editMembershipUser"

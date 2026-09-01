@@ -15,10 +15,10 @@ import { useDshInstallController } from '@/composables/useDshInstallController'
 const { t } = useI18n()
 const auth = useAuthStore()
 const { copy } = useClipboard()
-const installCopy = useDshInstallController({
+const installCopy = proxyRefs(useDshInstallController({
   copy,
   onCopyError: () => showToast(t('mcp.copyFailed')),
-})
+}))
 const controller = proxyRefs(useDshSetupController())
 const installMethods = DSH_PLUGIN_INSTALL_METHODS
 const stepKeys = ['dsh.wizard.stepInstall', 'dsh.wizard.stepCommand'] as const

@@ -74,7 +74,7 @@ describe('usePaymentCheckout', () => {
     expect(checkout.phase.value).toBe('awaiting_payment')
     expect(checkout.order.value?.order_no).toBe('P202608190001AB12CD')
     expect(checkout.instruction.value?.kind).toBe('qr_code')
-    const key = (api.createOrder as ReturnType<typeof vi.fn>).mock.calls[0][2]
+    const key = (api.createOrder as ReturnType<typeof vi.fn>).mock.calls[0]![2]
     expect(typeof key).toBe('string')
     expect(key.length).toBeGreaterThan(8)
 
@@ -95,9 +95,9 @@ describe('usePaymentCheckout', () => {
 
     checkout.restartCheckout()
     // restart 视为新的支付尝试：换新幂等键口径之前先确认旧键只用过一次
-    const firstKey = createOrder.mock.calls[0][2]
+    const firstKey = createOrder.mock.calls[0]![2]
     await checkout.beginCheckout('member_monthly', 'wechat_native')
-    expect(createOrder.mock.calls[1][2]).not.toBe(firstKey)
+    expect(createOrder.mock.calls[1]![2]).not.toBe(firstKey)
     expect(checkout.phase.value).toBe('awaiting_payment')
   })
 

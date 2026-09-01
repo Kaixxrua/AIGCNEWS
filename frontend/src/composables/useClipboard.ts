@@ -27,6 +27,7 @@ export function copyToClipboard(text: string): Promise<void> {
   } finally {
     ta.remove()
   }
+  return Promise.resolve()
 }
 
 /** 复制敏感文本（例如会员 RSS token），禁止退回会将文本写入 DOM 的 textarea。 */

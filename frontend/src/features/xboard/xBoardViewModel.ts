@@ -401,7 +401,7 @@ export const mergePagedTweets = (pages: TopDoc[][]): TopDoc[] => {
   const merged: TopDoc[] = []
   for (const page of pages) {
     for (const doc of page) {
-      const id = doc.id ?? doc.url ?? ''
+      const id = String(doc.id ?? doc.url ?? '')
       if (id && seen.has(id)) continue
       if (id) seen.add(id)
       merged.push(doc)

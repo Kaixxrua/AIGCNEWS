@@ -45,7 +45,8 @@ const createApi = (): MonitorApi => ({
   fetchTasks: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
   fetchErrorLogs: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 10 })),
   fetchPaymentOrders: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 20 })),
-  fetchPaymentOrderDetail: vi.fn(async () => ({ order_no: '', user_id: 0, email: null, plan_code: '', channel: '', amount_cents: 0, currency: 'CNY', status: 'pending', channel_order_no: '', idempotency_key: '', paid_at: null, grant_expires_at: null, expires_at: '', created_at: '', updated_at: '', callback_payload: '' })),
+  fetchPaymentConfig: vi.fn(), savePaymentConfig: vi.fn(), resetPaymentConfig: vi.fn(),
+  fetchPaymentOrderDetail: vi.fn(async () => ({ id: 0, order_no: '', user_id: 0, email: null, plan_code: '', channel: '', amount_cents: 0, currency: 'CNY', status: 'pending', channel_order_no: '', idempotency_key: '', paid_at: null, grant_expires_at: null, expires_at: '', created_at: '', updated_at: '', callback_payload: '' })),
   markPaymentOrderPaid: vi.fn(), closePaymentOrder: vi.fn(),
   fetchSchedulerStatus: vi.fn(async () => ({ running: false, job_count: 0, jobs: [] })),
   fetchSchedulerConfigs: vi.fn(async () => []),
@@ -78,6 +79,7 @@ const createApi = (): MonitorApi => ({
     latest_failure_error: null, latest_failure_model_provider: null, latest_failure_model_name: null,
   })),
   retryXTranslations: vi.fn(async () => ({ status: 'queued', message: '' })),
+  fetchVisitPlatformStats: vi.fn(), fetchUserStats: vi.fn(), fetchRevenueStats: vi.fn(),
 })
 
 const createController = (api = createApi(), isAdmin = true) => {

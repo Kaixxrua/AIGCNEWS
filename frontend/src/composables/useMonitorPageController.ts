@@ -90,6 +90,7 @@ export const useMonitorPageController = ({
   const membershipUsersPageSize = ref(20)
   const membershipUsersQuery = ref('')
   const loadingMembershipUsers = ref(false)
+  const membershipUsersError = ref('')
   const membershipUsersTotalPages = computed(() => Math.max(1, Math.ceil(membershipUsersTotal.value / membershipUsersPageSize.value)))
   const paymentOrders = ref<Awaited<ReturnType<MonitorApi['fetchPaymentOrders']>>['items']>([])
   const paymentOrdersTotal = ref(0)
@@ -739,11 +740,15 @@ export const useMonitorPageController = ({
   const fetchMembershipUsers = async () => {
     if (!isAdmin.value) return
     loadingMembershipUsers.value = true
+    membershipUsersError.value = ''
     try {
       const data = await api.listMembershipUsers({ query: membershipUsersQuery.value.trim(), page: membershipUsersPage.value, pageSize: membershipUsersPageSize.value })
       membershipUsers.value = data.items
       membershipUsersTotal.value = data.total
-    } catch (error) { console.error('Failed to fetch membership users', error) }
+    } catch (error) {
+      membershipUsersError.value = detail(error)
+      console.error('Failed to fetch membership users', error)
+    }
     finally { loadingMembershipUsers.value = false }
   }
   const goMembershipUsersPage = async (targetPage: number) => {
@@ -1039,7 +1044,7 @@ export const useMonitorPageController = ({
     telegramConfig, telegramForm, loadingTelegramConfig, savingTelegramConfig, resettingTelegramConfig, registeringTelegramWebhook, fetchTelegramConfig, saveTelegramConfig, resetTelegramConfig, registerTelegramWebhook,
     paymentPricing, paymentPricingForm, loadingPaymentPricing, savingPaymentPricing, fetchPaymentPlanPricing, savePaymentPlanPricing,
     membershipForm, grantingMembership, membershipLastResult,
-    membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers,
+    membershipUsers, membershipUsersTotal, membershipUsersPage, membershipUsersTotalPages, membershipUsersQuery, loadingMembershipUsers, membershipUsersError,
     fetchMembershipUsers, goMembershipUsersPage, setMembershipUsersQuery, editMembershipUser,
     testingMcpServerId, deletingMcpServerId, isTaskRunning, totalPages, syncing, generatingBriefing, clearingCache,
     targetDate, maxTargetDate, ingestingByDate, ingestingSource, clearing, showClearConfirm, clearMessages, fetchTasks,

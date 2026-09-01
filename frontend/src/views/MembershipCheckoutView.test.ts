@@ -197,11 +197,11 @@ describe('MembershipCheckoutView', () => {
 
     // 中文界面只出国内渠道集（微信/支付宝），海外槽不渲染
     expect(channels).toHaveLength(2)
-    expect(channels[0].text()).toContain('微信支付')
-    expect(channels[0].classes()).toContain('checkout-channel--selected')
-    expect(channels[1].text()).toContain('支付宝')
-    expect(channels[1].attributes('disabled')).toBeDefined()
-    expect(channels[1].text()).toContain('即将开放')
+    expect(channels[0]!.text()).toContain('微信支付')
+    expect(channels[0]!.classes()).toContain('checkout-channel--selected')
+    expect(channels[1]!.text()).toContain('支付宝')
+    expect(channels[1]!.attributes('disabled')).toBeDefined()
+    expect(channels[1]!.text()).toContain('即将开放')
   })
 
   it('renders each channel brand icon with its locked brand color', async () => {
@@ -209,9 +209,9 @@ describe('MembershipCheckoutView', () => {
     const channels = wrapper.findAll('.checkout-channel')
 
     // 微信绿 / 支付宝蓝：品牌图标随渠道渲染，颜色由图标组件锁官方品牌色
-    expect(channels[0].find('svg.checkout-channel-icon').exists()).toBe(true)
-    expect(channels[0].find('svg.checkout-channel-icon').attributes('fill')).toBe('#07C160')
-    expect(channels[1].find('svg.checkout-channel-icon').attributes('fill')).toBe('#1677FF')
+    expect(channels[0]!.find('svg.checkout-channel-icon').exists()).toBe(true)
+    expect(channels[0]!.find('svg.checkout-channel-icon').attributes('fill')).toBe('#07C160')
+    expect(channels[1]!.find('svg.checkout-channel-icon').attributes('fill')).toBe('#1677FF')
 
     // 英文界面海外槽 → PayPal 蓝
     i18n.global.locale.value = 'en-US'
@@ -227,9 +227,9 @@ describe('MembershipCheckoutView', () => {
     const channels = wrapper.findAll('.checkout-channel')
 
     expect(channels).toHaveLength(1)
-    expect(channels[0].text()).toContain('Card / PayPal')
-    expect(channels[0].attributes('disabled')).toBeDefined()
-    expect(channels[0].text()).toContain('Coming soon')
+    expect(channels[0]!.text()).toContain('Card / PayPal')
+    expect(channels[0]!.attributes('disabled')).toBeDefined()
+    expect(channels[0]!.text()).toContain('Coming soon')
     expect(wrapper.text()).not.toContain('WeChat Pay')
     // 英文界面按 USD 套餐目录渲染金额
     expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')
@@ -266,7 +266,7 @@ describe('MembershipCheckoutView', () => {
     const channels = wrapper.findAll('.checkout-channel')
 
     expect(channels).toHaveLength(1)
-    expect(channels[0].classes()).toContain('checkout-channel--selected')
+    expect(channels[0]!.classes()).toContain('checkout-channel--selected')
 
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
@@ -299,8 +299,8 @@ describe('MembershipCheckoutView', () => {
     await flushPromises()
     const channels = wrapper.findAll('.checkout-channel')
     expect(channels).toHaveLength(1)
-    expect(channels[0].text()).toContain('Card / PayPal')
-    expect(channels[0].classes()).toContain('checkout-channel--selected')
+    expect(channels[0]!.text()).toContain('Card / PayPal')
+    expect(channels[0]!.classes()).toContain('checkout-channel--selected')
     expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')
 
     await wrapper.find('.checkout-submit').trigger('click')

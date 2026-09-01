@@ -39,13 +39,13 @@ let burstFirstTimer: ReturnType<typeof setTimeout> | null = null
 let burstUntil = 0
 let reducedMotion = false
 
-const randomGlyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)]
+const randomGlyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)] ?? '░'
 
 const tick = () => {
   for (const [i, remaining] of active) {
     const next = remaining - 1
     if (next <= 0) {
-      displayChars.value[i] = chars.value[i]
+      displayChars.value[i] = chars.value[i] ?? ''
       active.delete(i)
     } else {
       displayChars.value[i] = randomGlyph()
@@ -122,7 +122,7 @@ onUnmounted(() => {
     @mouseleave="hovered = false"
   >
     <span ref="textEl" class="brand-wordmark__text" aria-hidden="true"><span class="bw-fringe bw-fringe--cyan">{{ text }}</span><span class="bw-fringe bw-fringe--magenta">{{ text }}</span><span class="bw-slice bw-slice--cyan">{{ text }}</span><span class="bw-slice bw-slice--magenta">{{ text }}</span><span
-      v-for="(ch, i) in chars"
+      v-for="(_, i) in chars"
       :key="i"
       class="brand-wordmark__char"
     >{{ displayChars[i] }}</span><span class="brand-wordmark__scan"></span></span>

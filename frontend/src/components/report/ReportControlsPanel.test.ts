@@ -2,11 +2,11 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ReportControlsPanel from './ReportControlsPanel.vue'
 import { i18n } from '@/i18n'
-import { REPORT_TYPES } from '@/features/report/reportViewModel'
+import { REPORT_TYPES, type ReportKey } from '@/features/report/reportViewModel'
 
-const props = (overrides: Record<string, unknown> = {}) => ({
+const props = (overrides: Partial<{ selectedType: ReportKey }> & Record<string, unknown> = {}) => ({
   currentTypeInfo: REPORT_TYPES[0],
-  selectedType: 'all',
+  selectedType: 'all' as ReportKey,
   selectedDate: '2026-08-31',
   isCached: true,
   isGenerating: false,
