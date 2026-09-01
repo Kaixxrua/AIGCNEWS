@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: aigcnews_test
       POSTGRES_PASSWORD: aigcnews_test
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${POSTGRES_TEST_PORT:-5433}:5432"
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:

@@ -277,12 +277,14 @@ watch(() => props.modelValue, async open => {
                   :aria-label="connectedProviders.has(provider) ? `${providerLabel(provider)} ${t('auth.connected')}` : `${providerLabel(provider)} ${t('auth.notConnected')}`"
                   @click="bindProvider(provider)"
                 >
-                  <OAuthProviderIcon :provider="provider" class="oauth-provider-icon" />
-                  <span class="oauth-provider-name">{{ providerLabel(provider) }}</span>
-                  <span
-                    class="oauth-provider-status"
-                    :class="connectedProviders.has(provider) ? 'status-connected' : 'status-disconnected'"
-                  >{{ connectedProviders.has(provider) ? t('auth.connected') : t('auth.notConnected') }}</span>
+                  <span class="oauth-provider-row flex">
+                    <OAuthProviderIcon :provider="provider" class="oauth-provider-icon" />
+                    <span class="oauth-provider-name">{{ providerLabel(provider) }}</span>
+                    <span
+                      class="oauth-provider-status"
+                      :class="connectedProviders.has(provider) ? 'status-connected' : 'status-disconnected'"
+                    >{{ connectedProviders.has(provider) ? t('auth.connected') : t('auth.notConnected') }}</span>
+                  </span>
                 </button>
               </div>
             </section>
@@ -306,8 +308,8 @@ watch(() => props.modelValue, async open => {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
 .oauth-provider-btn {
-  @apply flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-2 py-3 text-xs font-semibold transition-all duration-150;
-  min-height: 5.5rem;
+  @apply flex items-center justify-center rounded-lg border-2 px-2 py-2.5 text-xs font-semibold transition-all duration-150;
+  min-height: 3rem;
   background: transparent;
   border-color: var(--rule-strong);
   color: var(--ink);
@@ -331,16 +333,19 @@ watch(() => props.modelValue, async open => {
   box-shadow: var(--shadow-low);
   transform: none !important;
 }
+.oauth-provider-row {
+  @apply flex min-w-0 items-center gap-1.5;
+}
 .oauth-provider-icon {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
 }
 .oauth-provider-name {
   @apply truncate leading-tight;
-  max-width: 100%;
 }
 .oauth-provider-status {
-  @apply rounded-full px-2 py-0.5 text-[10px] font-medium leading-none;
+  @apply ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none;
 }
 .oauth-provider-status.status-connected {
   background: var(--success-surface, #dcfce7);
@@ -352,12 +357,15 @@ watch(() => props.modelValue, async open => {
 }
 @media (max-width: 639px) {
   .oauth-provider-btn {
-    min-height: 4.75rem;
-    padding: 0.625rem 0.375rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.375rem;
   }
   .oauth-provider-icon {
-    width: 1.25rem;
-    height: 1.25rem;
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .oauth-provider-status {
+    @apply px-1.5;
   }
 }
 </style>

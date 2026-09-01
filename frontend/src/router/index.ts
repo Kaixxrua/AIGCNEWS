@@ -47,6 +47,8 @@ const router = createRouter({
       path: '/oauth/action-callback',
       name: 'oauth-action-callback',
       component: OAuthActionCallbackView,
+      // 渠道绑定回调须携带当前登录会话：绑定目标 = 当前账户
+      meta: { requiresAuth: true },
     },
 
     // ── 主 Layout（大白卡片 + Dock + Auth） ──

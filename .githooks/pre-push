@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Reject direct main pushes; serialized landing is the only main entry point.
+set -euo pipefail
+
+remote=${1:-}
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "$local_ref" ]] && continue
+  case "$remote_ref" in
+    refs/heads/main)
+      nonce_file=$(git rev-parse --git-common-dir)/aigcnews-landing.nonce
+      expected_nonce=""
+      if [[ -f "$nonce_file" ]]; then
+        IFS= read -r expected_nonce < "$nonce_file" || true
+      fi
+      if [[ "${AIGCNEWS_LANDING_COMMAND:-}" != "1" || -z "$expected_nonce" || "${AIGCNEWS_LANDING_NONCE:-}" != "$expected_nonce" ]]; then
+        echo "[pre-push] 拒绝直接推送 main；请使用已验证的 serialized landing 命令" >&2
+        exit 1
+      fi
+      ;;
+    refs/heads/session/*)
+      ;;
+    *)
+      echo "[pre-push] 拒绝推送非受管分支：$remote_ref" >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0

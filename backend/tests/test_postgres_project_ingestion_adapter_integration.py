@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
@@ -14,11 +15,7 @@ os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_project_ingestion_repository import (
         PostgresGitHubProjectIngestionRepository,
     )
@@ -29,40 +26,11 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def postgres_ingestion() -> Iterator[tuple[Any, Any]]:
-    dsn = _test_dsn()
-    schema = f"project_ingestion_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        PostgresMigrationRunner(database).apply()
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
         yield PostgresGitHubProjectIngestionRepository(database), database
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 def test_candidate_alias_availability_and_snapshot_contract(
@@ -85,9 +53,7 @@ def test_candidate_alias_availability_and_snapshot_contract(
         }
     )
     assert (
-        repository.ensure_github_repo_candidate(
-            {"repo_id": "acme/alpha", "full_name": "ACME/ALPHA", "stars": 1}
-        )
+        repository.ensure_github_repo_candidate({"repo_id": "acme/alpha", "full_name": "ACME/ALPHA", "stars": 1})
         == "acme/alpha"
     )
     repository.upsert_github_repo_candidate(
@@ -99,22 +65,10 @@ def test_candidate_alias_availability_and_snapshot_contract(
         }
     )
 
-    assert (
-        repository.record_github_repo_not_found("ACME/ALPHA", checked_at="2026-07-02")
-        is False
-    )
-    assert (
-        repository.record_github_repo_not_found("acme/alpha", checked_at="2026-07-03")
-        is True
-    )
-    assert (
-        repository.record_github_repo_not_found("missing/repo", checked_at="2026-07-03")
-        is False
-    )
-    assert (
-        repository.mark_github_repo_available("Acme/Alpha", checked_at="2026-07-04")
-        is True
-    )
+    assert repository.record_github_repo_not_found("ACME/ALPHA", checked_at="2026-07-02") is False
+    assert repository.record_github_repo_not_found("acme/alpha", checked_at="2026-07-03") is True
+    assert repository.record_github_repo_not_found("missing/repo", checked_at="2026-07-03") is False
+    assert repository.mark_github_repo_available("Acme/Alpha", checked_at="2026-07-04") is True
 
     repository.insert_github_repo_snapshot(
         {
@@ -140,15 +94,9 @@ def test_candidate_alias_availability_and_snapshot_contract(
     )
 
     with database.transaction() as connection:
-        candidate = connection.execute(
-            "SELECT * FROM github_repo_candidates WHERE repo_id='acme/alpha'"
-        ).fetchone()
-        alias = connection.execute(
-            "SELECT * FROM github_repo_aliases WHERE alias_repo_id='101'"
-        ).fetchone()
-        snapshot = connection.execute(
-            "SELECT * FROM github_repo_snapshots WHERE repo_id='acme/alpha'"
-        ).fetchone()
+        candidate = connection.execute("SELECT * FROM github_repo_candidates WHERE repo_id='acme/alpha'").fetchone()
+        alias = connection.execute("SELECT * FROM github_repo_aliases WHERE alias_repo_id='101'").fetchone()
+        snapshot = connection.execute("SELECT * FROM github_repo_snapshots WHERE repo_id='acme/alpha'").fetchone()
     assert candidate["stars"] == 700
     assert candidate["description"] == "kept"
     assert candidate["availability_status"] == "active"
@@ -357,9 +305,7 @@ def test_watcher_corruption_repair_quarantines_history_and_is_idempotent(
         )
 
     with database.transaction() as connection:
-        identity = connection.execute(
-            "SELECT current_database() AS database, current_schema() AS schema"
-        ).fetchone()
+        identity = connection.execute("SELECT current_database() AS database, current_schema() AS schema").fetchone()
         target_database = identity["database"]
         target_schema = identity["schema"]
     service = GitHubWatcherCorruptionRepairService(
@@ -452,14 +398,8 @@ def test_metric_observations_batch_matches_single_row_write_semantics(
                 "last_snapshot_at": "2026-07-01T00:00:00+00:00",
             }
         )
-        assert (
-            repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29")
-            is False
-        )
-        assert (
-            repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29")
-            is True
-        )
+        assert repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29") is False
+        assert repository.record_github_repo_not_found("acme/batch-down", checked_at="2026-07-29") is True
         repository.insert_github_repo_snapshot(
             {
                 "repo_id": "acme/batch-down",
@@ -562,14 +502,8 @@ def test_metric_observations_batch_failure_leaves_no_partial_state(
         repository.upsert_github_repo_candidate(
             {"repo_id": "acme/batch-keep", "full_name": "acme/batch-keep", "stars": 900}
         )
-        assert (
-            repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29")
-            is False
-        )
-        assert (
-            repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29")
-            is True
-        )
+        assert repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29") is False
+        assert repository.record_github_repo_not_found("acme/batch-keep", checked_at="2026-07-29") is True
 
         with pytest.raises(Exception):
             repository.upsert_github_repo_metric_observations(
@@ -615,8 +549,7 @@ def test_metric_observations_batch_failure_leaves_no_partial_state(
                 "SELECT repo_id FROM github_repo_candidates WHERE repo_id='acme/batch-bad'"
             ).fetchone()
             keep = connection.execute(
-                "SELECT availability_status,stars FROM github_repo_candidates "
-                "WHERE repo_id='acme/batch-keep'"
+                "SELECT availability_status,stars FROM github_repo_candidates WHERE repo_id='acme/batch-keep'"
             ).fetchone()
             snapshots = connection.execute(
                 "SELECT COUNT(*) AS cnt FROM github_repo_snapshots "
@@ -757,12 +690,7 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     targets = repository.list_github_project_metric_targets(min_stars=500)
     assert [item["repo_id"] for item in targets] == ["acme/alpha"]
     status = repository.get_github_metric_refresh_status(metric_date="2026-07-28")
-    assert (
-        status["target_count"]
-        == status["snapshot_count"]
-        == status["metric_count"]
-        == 1
-    )
+    assert status["target_count"] == status["snapshot_count"] == status["metric_count"] == 1
     assert status["oldest_captured_at"] == "2026-07-28T12:00:00+00:00"
     hot = repository.get_github_hot_repos("daily", limit=10)
     assert [item["repo_id"] for item in hot] == ["acme/alpha"]

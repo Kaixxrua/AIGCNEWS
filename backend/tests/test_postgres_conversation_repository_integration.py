@@ -1,39 +1,20 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.repositories.postgres_conversation_repository import (
     PostgresConversationRepository,
 )
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE users RESTART IDENTITY CASCADE")
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+    with postgres_test_sandbox() as sandbox:
+        yield sandbox.database
 
 
 @pytest.fixture
@@ -72,9 +53,7 @@ def test_postgres_conversation_round_trip_owner_scope_order_and_json(database, o
         max_messages=10,
     )
 
-    context = repository.get_owned_conversation_context(
-        user_id=owner_id, conversation_id=conversation_id
-    )
+    context = repository.get_owned_conversation_context(user_id=owner_id, conversation_id=conversation_id)
     assert context is not None
     assert [item["content"] for item in context["messages"]] == [
         "First question",
@@ -86,12 +65,8 @@ def test_postgres_conversation_round_trip_owner_scope_order_and_json(database, o
     assert context["messages"][1]["thinking_preview"] == "private reasoning"
     assert context["conversation"]["message_count"] == 4
     assert context["conversation"]["last_message_preview"] == "Second answer"
-    assert repository.get_owned_conversation_context(
-        user_id=other_id, conversation_id=conversation_id
-    ) is None
-    assert not repository.delete_owned_conversation(
-        user_id=other_id, conversation_id=conversation_id
-    )
+    assert repository.get_owned_conversation_context(user_id=other_id, conversation_id=conversation_id) is None
+    assert not repository.delete_owned_conversation(user_id=other_id, conversation_id=conversation_id)
     assert repository.list_conversations(user_id=other_id)["total"] == 0
     assert second["assistant_message"]["parent_message_id"] == second["user_message"]["id"]
 
@@ -119,9 +94,7 @@ def test_postgres_branch_regeneration_and_retention_refresh_counts(database, own
         max_messages=10,
     )
 
-    regeneration = repository.prepare_owned_regeneration(
-        user_id=owner_id, message_id=int(second["user_message"]["id"])
-    )
+    regeneration = repository.prepare_owned_regeneration(user_id=owner_id, message_id=int(second["user_message"]["id"]))
     assert regeneration is not None
     assert regeneration["deleted_ids"] == [
         second["user_message"]["id"],
@@ -176,45 +149,28 @@ def test_postgres_append_rolls_back_pair_when_parent_is_foreign(database, owners
             parent_message_id=int(foreign["assistant_message"]["id"]),
         )
 
-    context = repository.get_owned_conversation_context(
-        user_id=owner_id, conversation_id=int(owner["id"])
-    )
+    context = repository.get_owned_conversation_context(user_id=owner_id, conversation_id=int(owner["id"]))
     assert context is not None
     assert context["messages"] == []
     assert context["conversation"]["message_count"] == 0
 
 
-def test_postgres_scope_conversation_is_singleton_across_ensure_and_create(
-    database, owners
-) -> None:
+def test_postgres_scope_conversation_is_singleton_across_ensure_and_create(database, owners) -> None:
     owner_id, _ = owners
     repository = PostgresConversationRepository(database)
 
-    first = repository.ensure_conversation(
-        user_id=owner_id, scope="global", scope_key=None
-    )
-    again = repository.ensure_conversation(
-        user_id=owner_id, scope="global", scope_key=None
-    )
+    first = repository.ensure_conversation(user_id=owner_id, scope="global", scope_key=None)
+    again = repository.ensure_conversation(user_id=owner_id, scope="global", scope_key=None)
     assert int(again["id"]) == int(first["id"])
 
     # 「强制新建」与既有 scope 冲突时返回既有会话：uq_conv_user_scope_key
     # 唯一索引下不再产生 (user_id, scope, scope_key) 重复行
-    created = repository.create_conversation(
-        user_id=owner_id, scope="global", scope_key=None
-    )
+    created = repository.create_conversation(user_id=owner_id, scope="global", scope_key=None)
     assert int(created["id"]) == int(first["id"])
 
-    paper = repository.ensure_conversation(
-        user_id=owner_id, scope="paper", scope_key="paper-1"
-    )
+    paper = repository.ensure_conversation(user_id=owner_id, scope="paper", scope_key="paper-1")
     assert int(paper["id"]) != int(first["id"])
-    assert (
-        int(
-            repository.ensure_conversation(
-                user_id=owner_id, scope="paper", scope_key="paper-1"
-            )["id"]
-        )
-        == int(paper["id"])
+    assert int(repository.ensure_conversation(user_id=owner_id, scope="paper", scope_key="paper-1")["id"]) == int(
+        paper["id"]
     )
     assert repository.list_conversations(user_id=owner_id)["total"] == 2

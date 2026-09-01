@@ -6,15 +6,17 @@
 - 名称重用防御（陌生 node id 观测被拒 + 累计不可用观测）
 - 热榜读取侧过滤（not_found / 别名隐藏行不再出现）
 """
+
 from __future__ import annotations
 
 import os
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
@@ -22,11 +24,7 @@ os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_project_ingestion_repository import (
         PostgresGitHubProjectIngestionRepository,
     )
@@ -37,40 +35,11 @@ _CHECKED_AT = "2026-08-14T01:00:00+00:00"
 _SNAPSHOT_DATE = "2026-08-14"
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def postgres_ingestion() -> Iterator[tuple[Any, Any]]:
-    dsn = _test_dsn()
-    schema = f"rename_reconcile_it_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(
-        lambda: ConnectionPool(
-            conninfo=scoped_dsn,
-            min_size=1,
-            max_size=4,
-            timeout=10,
-            kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row},
-            open=False,
-        )
-    )
-    try:
-        PostgresMigrationRunner(database).apply()
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
         yield PostgresGitHubProjectIngestionRepository(database), database
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
 def _seed_candidate(
@@ -220,8 +189,7 @@ def test_node_based_row_renamed_in_place(
     assert alias is not None and alias["canonical_repo_id"] == "R_node_a"
     snapshot = _fetchone(
         database,
-        "SELECT stars FROM github_repo_snapshots "
-        "WHERE repo_id='R_node_a' AND snapshot_date=%s",
+        "SELECT stars FROM github_repo_snapshots WHERE repo_id='R_node_a' AND snapshot_date=%s",
         (_SNAPSHOT_DATE,),
     )
     assert snapshot is not None and snapshot["stars"] == 800
@@ -263,24 +231,21 @@ def test_name_based_row_renamed_via_clone_and_merge(
     )
     row = _fetchone(
         database,
-        "SELECT repo_id, full_name, stars FROM github_repo_candidates "
-        "WHERE repo_id='acme/renamed'",
+        "SELECT repo_id, full_name, stars FROM github_repo_candidates WHERE repo_id='acme/renamed'",
     )
     assert row is not None
     assert row["full_name"] == "acme/renamed"
     assert row["stars"] == 650
     old_snapshot = _fetchone(
         database,
-        "SELECT stars FROM github_repo_snapshots "
-        "WHERE repo_id='acme/renamed' AND snapshot_date='2026-08-13'",
+        "SELECT stars FROM github_repo_snapshots WHERE repo_id='acme/renamed' AND snapshot_date='2026-08-13'",
     )
     assert old_snapshot is not None and old_snapshot["stars"] == 590
     aliases = {
         item["alias_repo_id"]: item["canonical_repo_id"]
         for item in _fetchall(
             database,
-            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases "
-            "WHERE canonical_repo_id='acme/renamed'",
+            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases WHERE canonical_repo_id='acme/renamed'",
         )
     }
     assert aliases.get("R_node_b") == "acme/renamed"
@@ -333,8 +298,7 @@ def test_duplicate_rows_merged_keeping_new_name(
     )
     _execute(
         database,
-        "INSERT INTO project_favorites (user_id, project_source, project_id) "
-        "VALUES (91, 'github', 'acme/dup-old')",
+        "INSERT INTO project_favorites (user_id, project_source, project_id) VALUES (91, 'github', 'acme/dup-old')",
     )
 
     written = repository.upsert_github_repo_metric_observations(
@@ -359,8 +323,7 @@ def test_duplicate_rows_merged_keeping_new_name(
     )
     row = _fetchone(
         database,
-        "SELECT stars, first_seen_at, source_channels FROM github_repo_candidates "
-        "WHERE repo_id='acme/dup-new'",
+        "SELECT stars, first_seen_at, source_channels FROM github_repo_candidates WHERE repo_id='acme/dup-new'",
     )
     assert row is not None
     assert row["stars"] == 950
@@ -372,8 +335,7 @@ def test_duplicate_rows_merged_keeping_new_name(
         item["snapshot_date"]: item["stars"]
         for item in _fetchall(
             database,
-            "SELECT snapshot_date, stars FROM github_repo_snapshots "
-            "WHERE repo_id='acme/dup-new'",
+            "SELECT snapshot_date, stars FROM github_repo_snapshots WHERE repo_id='acme/dup-new'",
         )
     }
     assert snapshots.get("2026-08-12") == 480
@@ -399,8 +361,7 @@ def test_duplicate_rows_merged_keeping_new_name(
         item["alias_repo_id"]: item["canonical_repo_id"]
         for item in _fetchall(
             database,
-            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases "
-            "WHERE canonical_repo_id='acme/dup-new'",
+            "SELECT alias_repo_id, canonical_repo_id FROM github_repo_aliases WHERE canonical_repo_id='acme/dup-new'",
         )
     }
     assert aliases.get("R_node_c") == "acme/dup-new"
@@ -456,8 +417,7 @@ def test_name_reuse_guard_rejects_foreign_node_observation(
     assert written == 0
     row = _fetchone(
         database,
-        "SELECT stars, not_found_count, availability_status "
-        "FROM github_repo_candidates WHERE repo_id='acme/stay'",
+        "SELECT stars, not_found_count, availability_status FROM github_repo_candidates WHERE repo_id='acme/stay'",
     )
     assert row is not None
     assert row["stars"] == 710  # 未被陌生 node 的数据覆盖
@@ -466,8 +426,7 @@ def test_name_reuse_guard_rejects_foreign_node_observation(
     assert (
         _fetchone(
             database,
-            "SELECT repo_id FROM github_repo_snapshots "
-            "WHERE repo_id='acme/stay' AND snapshot_date=%s",
+            "SELECT repo_id FROM github_repo_snapshots WHERE repo_id='acme/stay' AND snapshot_date=%s",
             (_SNAPSHOT_DATE,),
         )
         is None

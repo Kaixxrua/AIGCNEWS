@@ -18,6 +18,16 @@ import tempfile
 
 import pytest
 
+# PostgreSQL integration tests must never interpret the legacy opt-in as a
+# connection selector.  Fail during collection, before any application module
+# can import the deployment settings singleton.
+if os.environ.get("POSTGRES_INTEGRATION", "").strip() == "1":
+    pytest.exit(
+        "POSTGRES_INTEGRATION=1 is obsolete; use an explicitly provisioned "
+        "TEST_POSTGRES_DSN and TEST_POSTGRES_RUN_ID",
+        returncode=1,
+    )
+
 # 外部 shell 若已把 MCP_TOOL_CALL_METRICS_PATH 指到仓库 storage/ 生产路径，
 # setdefault 会尊重该外部值导致隔离失效，且下方断言同样读到该值而静默通过。
 # 因此先拦截：解析路径落在仓库 storage/ 内直接失败并提示取消导出；

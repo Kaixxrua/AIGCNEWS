@@ -1,47 +1,27 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.repositories.attachment_repository import AttachmentRepository
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE users RESTART IDENTITY CASCADE")
-            cursor.execute(
+    with postgres_test_sandbox() as sandbox:
+        with sandbox.database.transaction() as connection:
+            connection.execute(
                 """
                 INSERT INTO users (email, hashed_password) VALUES
                     ('owner@example.com', 'hash'),
                     ('other@example.com', 'hash')
                 """
             )
-            cursor.execute(
-                "INSERT INTO conversations (user_id, title) VALUES (1, 'test')"
-            )
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+            connection.execute("INSERT INTO conversations (user_id, title) VALUES (1, 'test')")
+        yield sandbox.database
 
 
 def test_attachment_repository_round_trip_and_owner_scope(database) -> None:
@@ -66,10 +46,7 @@ def test_attachment_repository_round_trip_and_owner_scope(database) -> None:
     assert repository.get_chat_attachment(1, user_id=1)["file_name"] == "paper.pdf"
     assert repository.get_chat_attachment(1, user_id=2) is None
     assert [item["id"] for item in repository.list_chat_attachments(user_id=1)] == [1]
-    assert [
-        item["id"]
-        for item in repository.list_chat_attachments(user_id=1, conversation_id=1)
-    ] == [1]
+    assert [item["id"] for item in repository.list_chat_attachments(user_id=1, conversation_id=1)] == [1]
 
 
 def test_attachment_repository_enforces_owner_and_conversation_foreign_keys(database) -> None:

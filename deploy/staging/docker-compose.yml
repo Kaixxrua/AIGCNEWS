@@ -1,0 +1,139 @@
+name: aigcnews-staging
+
+# Repository-only staging runtime.
+# Every application image must be supplied by the release manifest as a full
+# repository@sha256:<digest> reference. This file intentionally has no build
+# directives, source-code mounts, or production container names/ports.
+
+x-staging-logging: &staging-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  backend-api-staging:
+    image: ${AIGCNEWS_STAGING_BACKEND_IMAGE_DIGEST:?set AIGCNEWS_STAGING_BACKEND_IMAGE_DIGEST from the release manifest}
+    container_name: aigcnews-staging-backend
+    restart: "no"
+    logging: *staging-logging
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      redis-staging:
+        condition: service_healthy
+      postgres-staging:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres-staging
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:?set POSTGRES_DATABASE}
+      POSTGRES_SSLMODE: disable
+      REDIS_HOST: redis-staging
+      REDIS_PORT: "6379"
+      ENV: staging
+      SCHEDULER_ENABLED: "${STAGING_SCHEDULER_ENABLED:-false}"
+      PAYMENTS_ENABLED: "${STAGING_PAYMENTS_ENABLED:-false}"
+      TELEGRAM_PUSH_ENABLED: "${STAGING_TELEGRAM_PUSH_ENABLED:-false}"
+      X_SOURCE_ENABLED: "${STAGING_X_SOURCE_ENABLED:-false}"
+      WECHAT_SOURCE_ENABLED: "${STAGING_WECHAT_SOURCE_ENABLED:-false}"
+      PROJECT_SEMANTIC_SEARCH_ENABLED: "${STAGING_PROJECT_SEMANTIC_SEARCH_ENABLED:-false}"
+      PROJECT_SEMANTIC_INDEXING_ENABLED: "${STAGING_PROJECT_SEMANTIC_INDEXING_ENABLED:-false}"
+      X_MEDIA_WARMUP_ENABLED: "${STAGING_X_MEDIA_WARMUP_ENABLED:-false}"
+      AIGCNEWS_OPS_ALERT_DISABLED: "${AIGCNEWS_OPS_ALERT_DISABLED:-1}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=5)"]
+      interval: 10s
+      timeout: 7s
+      retries: 12
+      start_period: 20s
+
+  mcp-api-go-staging:
+    image: ${AIGCNEWS_STAGING_MCP_IMAGE_DIGEST:?set AIGCNEWS_STAGING_MCP_IMAGE_DIGEST from the release manifest}
+    container_name: aigcnews-staging-mcp
+    restart: "no"
+    logging: *staging-logging
+    ports:
+      - "127.0.0.1:18002:8000"
+    depends_on:
+      redis-staging:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: redis-staging
+      REDIS_PORT: "6379"
+      ENV: staging
+      AIGCNEWS_OPS_ALERT_DISABLED: "${AIGCNEWS_OPS_ALERT_DISABLED:-1}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  frontend-web-staging:
+    image: ${AIGCNEWS_STAGING_FRONTEND_IMAGE_DIGEST:?set AIGCNEWS_STAGING_FRONTEND_IMAGE_DIGEST from the release manifest}
+    container_name: aigcnews-staging-frontend
+    restart: "no"
+    logging: *staging-logging
+    ports:
+      - "127.0.0.1:18080:80"
+      - "127.0.0.1:18443:443"
+    depends_on:
+      backend-api-staging:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+      - CHOWN
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+
+  postgres-staging:
+    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    container_name: aigcnews-staging-postgres
+    restart: "no"
+    logging: *staging-logging
+    ports:
+      - "127.0.0.1:15432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:?set POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-staging:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    container_name: aigcnews-staging-redis
+    restart: "no"
+    logging: *staging-logging
+    expose:
+      - "6379"
+    volumes:
+      - staging_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  staging_postgres_data:
+  staging_redis_data:
