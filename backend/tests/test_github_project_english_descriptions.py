@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from backend.app.domain.project_taxonomy import (
-    PROMPT_VERSION,
     EnrichmentResult,
     normalize_enrichment,
     raw_description_needs_english,

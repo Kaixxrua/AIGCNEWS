@@ -19,7 +19,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const redirect = computed(() => getSafeInternalRedirect(props.redirect))
 useDockSuppression(() => props.modelValue)
-void redirect
 
 const {
   email, otp, password, confirmPwd, loading, otpLoading, errorMsg, successMsg,
