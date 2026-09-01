@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
@@ -10,7 +9,7 @@ import { startOAuth } from '@/services/auth/authApi'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
 const props = defineProps<{ redirect?: unknown }>()
-const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void; (event: 'switch-to-register'): void }>()
+const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void; (event: 'switch-to-register'): void; (event: 'switch-to-forgot-password'): void }>()
 const authStore = useAuthStore()
 const { t } = useI18n()
 const email = ref('')
@@ -20,7 +19,6 @@ const errorMsg = ref('')
 const oauthProviders = ref<string[]>([])
 const oauthLoading = ref(false)
 const redirectTarget = computed(() => getSafeInternalRedirect(props.redirect))
-const redirectQuery = computed(() => ({ redirect: redirectTarget.value }))
 
 onMounted(async () => {
   oauthProviders.value = (await ensureFeatureFlags()).oauthProviders
@@ -69,7 +67,7 @@ const handleLogin = async () => {
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.email') }}</label><input v-model="email" type="email" class="input" :placeholder="t('auth.emailPlaceholder')" autocomplete="email" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.password') }}</label><input v-model="password" type="password" class="input" :placeholder="t('auth.passwordPlaceholder')" autocomplete="current-password" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <AuthFeedback :message="errorMsg" type="error" />
-      <div class="text-right"><RouterLink :to="{ path: '/forgot-password', query: redirectQuery }" class="text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('close')">{{ t('auth.forgotPassword') }}</RouterLink></div>
+      <div class="text-right"><button type="button" class="text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-forgot-password')">{{ t('auth.forgotPassword') }}</button></div>
       <div v-if="oauthProviders.length" class="space-y-2 border-t border-stone-200 pt-4">
         <p class="text-center text-xs text-stone-400">{{ t('auth.oauthOr') }}</p>
         <button v-for="provider in oauthProviders" :key="provider" type="button" class="btn-secondary w-full justify-center gap-2 py-2.5" :disabled="loading || oauthLoading" @click="handleOAuth(provider)">

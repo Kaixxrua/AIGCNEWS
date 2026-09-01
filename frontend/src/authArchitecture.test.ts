@@ -53,13 +53,14 @@ describe('authentication architecture behavior', () => {
     expect(probe.order).toEqual(['app-mounted', 'auth-restored'])
   })
 
-  it('has no login page while register and forgot-password remain guest-only', () => {
+  it('has no login or password-reset page while register remains guest-only', () => {
     const metaOf = (path: string) => router.getRoutes().find((route) => route.path === path)?.meta ?? {}
 
     expect(router.getRoutes().some((route) => route.path === '/login')).toBe(false)
     expect(router.resolve('/login').matched).toHaveLength(0)
+    expect(router.getRoutes().some((route) => route.path === '/forgot-password')).toBe(false)
+    expect(router.resolve('/forgot-password?redirect=/').matched).toHaveLength(0)
     expect(metaOf('/register')).toMatchObject({ guestOnly: true })
-    expect(metaOf('/forgot-password')).toMatchObject({ guestOnly: true })
   })
 
   it('rejects external and protocol-relative redirect targets', () => {

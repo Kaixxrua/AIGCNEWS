@@ -23,6 +23,7 @@ describe('LoginDialog', () => {
     expect(form.props()).not.toHaveProperty('dialog')
     wrapper.unmount()
   })
+
   it('renders as a modal and closes when the form emits close', async () => {
     const wrapper = mountDialog()
     expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')

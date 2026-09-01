@@ -38,9 +38,13 @@ describe('LoginForm', () => {
     expect(router.currentRoute.value.fullPath).toBe('/')
   })
 
-  it('sanitizes the redirect used by the forgot-password link', () => {
+  it('emits a modal event without navigating for forgot password', async () => {
     const wrapper = mountForm({ redirect: '//evil.example' })
-    expect(wrapper.get('a[href="/forgot-password?redirect=/"]')).toBeDefined()
+    const forgotButton = wrapper.findAll('button').find(button => button.text() === '忘记密码')
+    expect(forgotButton).toBeDefined()
+    await forgotButton!.trigger('click')
+    expect(wrapper.emitted('switch-to-forgot-password')).toHaveLength(1)
+    expect(router.currentRoute.value.fullPath).toBe('/')
   })
 
   it('is modal-only and emits switch-to-register instead of linking to a page', async () => {

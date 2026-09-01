@@ -15,7 +15,6 @@ const XBoardView = () => import('@/views/XBoardView.vue')
 const WechatView = () => import('@/views/WechatView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
-const ForgotPasswordView = () => import('@/views/ForgotPasswordView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
 const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
@@ -30,17 +29,11 @@ const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // ── 注册 / 重置密码 / OAuth 回调（独立全屏，不继承 Layout） ──
+    // ── 注册 / OAuth 回调（独立全屏，不继承 Layout） ──
     {
       path: '/register',
       name: 'register',
       component: RegisterView,
-      meta: { guestOnly: true },
-    },
-    {
-      path: '/forgot-password',
-      name: 'forgot-password',
-      component: ForgotPasswordView,
       meta: { guestOnly: true },
     },
     {
@@ -160,6 +153,11 @@ const router = createRouter({
 // ── 全局路由守卫 ──────────────────────────────────────────────────────────────
 router.beforeEach(async (to, from) => {
   startRouteProgress()
+  if (to.path === '/forgot-password') {
+    const { useLoginPrompt } = await import('@/composables/useLoginPrompt')
+    useLoginPrompt().requestPasswordReset(to.query.redirect)
+    return { path: '/', replace: true }
+  }
   const { useAuthStore } = await import('@/stores/authStore')
   const { getActivePinia } = await import('pinia')
   const pinia = getActivePinia()
