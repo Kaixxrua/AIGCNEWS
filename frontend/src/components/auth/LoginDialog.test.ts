@@ -11,11 +11,18 @@ const mountDialog = () => mount(LoginDialog, {
   props: { modelValue: true, redirect: '/dsh' },
   global: {
     plugins: [i18n],
-    stubs: { LoginForm: { props: ['redirect', 'dialog'], emits: ['success', 'close', 'switch-to-register'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
+    stubs: { LoginForm: { props: ['redirect'], emits: ['success', 'close', 'switch-to-register'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
   },
 })
 
 describe('LoginDialog', () => {
+  it('passes redirect to the modal-only form without a dialog mode prop', () => {
+    const wrapper = mountDialog()
+    const form = wrapper.findComponent(LoginForm)
+    expect(form.props('redirect')).toBe('/dsh')
+    expect(form.props()).not.toHaveProperty('dialog')
+    wrapper.unmount()
+  })
   it('renders as a modal and closes when the form emits close', async () => {
     const wrapper = mountDialog()
     expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')

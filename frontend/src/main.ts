@@ -25,7 +25,7 @@ void import('./services/visit/visitBeacon').then(({ sendVisitBeacon }) => {
 
 // 页面先可用，再异步确认已保存的登录状态。
 void import('./stores/authStore').then(({ useAuthStore }) => {
-  return useAuthStore(pinia).initFromStorage()
+  return useAuthStore(pinia).ensureInitialized()
 })
 
 // PWA Service Worker：仅生产环境注册（开发态预缓存会污染 HMR 调试）。

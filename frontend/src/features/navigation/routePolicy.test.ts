@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RouteLocationNormalized } from 'vue-router'
 import {
   getFeatureGateRedirect,
-  getRoutePolicyRedirect,
+  getRoutePolicyDecision,
   getSitePageGateRedirect,
   type FeatureGateState,
   type RouteAuthState,
@@ -19,49 +19,51 @@ const auth = (
   isAdmin = false,
 ): RouteAuthState => ({ status, isAdmin })
 
-describe('getRoutePolicyRedirect', () => {
-  it('redirects confirmed anonymous users from auth and admin routes', () => {
-    expect(getRoutePolicyRedirect(route({ requiresAuth: true }, '/papers/1/read'), auth('anonymous')))
-      .toEqual({ path: '/login', query: { redirect: '/papers/1/read' } })
-    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }, '/monitor'), auth('anonymous')))
-      .toEqual({ path: '/login', query: { redirect: '/monitor' } })
+describe('getRoutePolicyDecision', () => {
+  it('requests the login modal for confirmed anonymous users on auth and admin routes', () => {
+    expect(getRoutePolicyDecision(route({ requiresAuth: true }, '/papers/1/read'), auth('anonymous')))
+      .toEqual({ kind: 'login', target: '/papers/1/read' })
+    expect(getRoutePolicyDecision(route({ requiresAdmin: true }, '/monitor'), auth('anonymous')))
+      .toEqual({ kind: 'login', target: '/monitor' })
   })
 
   it.each(['initializing', 'degraded'] as const)(
-    'does not prematurely redirect protected routes while %s',
+    'blocks protected routes while auth is %s',
     (status) => {
-      expect(getRoutePolicyRedirect(route({ requiresAuth: true }), auth(status))).toBeNull()
-      expect(getRoutePolicyRedirect(route({ requiresAdmin: true }), auth(status))).toBeNull()
+      expect(getRoutePolicyDecision(route({ requiresAuth: true }), auth(status)))
+        .toEqual({ kind: 'block' })
+      expect(getRoutePolicyDecision(route({ requiresAdmin: true }), auth(status)))
+        .toEqual({ kind: 'block' })
     },
   )
 
   it('redirects a confirmed non-admin but permits a confirmed admin', () => {
-    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }), auth('authenticated')))
-      .toEqual({ path: '/' })
-    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }), auth('authenticated', true)))
+    expect(getRoutePolicyDecision(route({ requiresAdmin: true }), auth('authenticated')))
+      .toEqual({ kind: 'redirect', to: { path: '/' } })
+    expect(getRoutePolicyDecision(route({ requiresAdmin: true }), auth('authenticated', true)))
       .toBeNull()
   })
 
   it('redirects guest-only routes only for confirmed authentication', () => {
-    expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('authenticated')))
-      .toEqual({ path: '/' })
-    expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('initializing'))).toBeNull()
-    expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('degraded'))).toBeNull()
-    expect(getRoutePolicyRedirect(route({ guestOnly: true }), auth('anonymous'))).toBeNull()
+    expect(getRoutePolicyDecision(route({ guestOnly: true }), auth('authenticated')))
+      .toEqual({ kind: 'redirect', to: { path: '/' } })
+    expect(getRoutePolicyDecision(route({ guestOnly: true }), auth('initializing'))).toBeNull()
+    expect(getRoutePolicyDecision(route({ guestOnly: true }), auth('degraded'))).toBeNull()
+    expect(getRoutePolicyDecision(route({ guestOnly: true }), auth('anonymous'))).toBeNull()
   })
 
-  it('preserves query and hash in the login redirect for protected deep links', () => {
-    expect(getRoutePolicyRedirect(
+  it('preserves query and hash as the modal return target for protected deep links', () => {
+    expect(getRoutePolicyDecision(
       route({ requiresAuth: true }, '/membership/checkout?plan=yearly#payment'),
       auth('anonymous'),
-    )).toEqual({ path: '/login', query: { redirect: '/membership/checkout?plan=yearly#payment' } })
+    )).toEqual({ kind: 'login', target: '/membership/checkout?plan=yearly#payment' })
   })
 
-  it('anonymous requiresAdmin hits login, not the non-admin home redirect', () => {
-    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }, '/monitor'), auth('anonymous')))
-      .toEqual({ path: '/login', query: { redirect: '/monitor' } })
-    expect(getRoutePolicyRedirect(route({ requiresAdmin: true }, '/monitor'), auth('authenticated')))
-      .toEqual({ path: '/' })
+  it('anonymous requiresAdmin requests login instead of the non-admin home redirect', () => {
+    expect(getRoutePolicyDecision(route({ requiresAdmin: true }, '/monitor'), auth('anonymous')))
+      .toEqual({ kind: 'login', target: '/monitor' })
+    expect(getRoutePolicyDecision(route({ requiresAdmin: true }, '/monitor'), auth('authenticated')))
+      .toEqual({ kind: 'redirect', to: { path: '/' } })
   })
 })
 

@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { RouteLocationNormalized } from 'vue-router'
 import router from './index'
-import { getRoutePolicyRedirect } from '@/features/navigation/routePolicy'
+import { getRoutePolicyDecision } from '@/features/navigation/routePolicy'
 import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
 // 契约：微信公众号页与对话聊天页仅对管理员开放 —— 导航入口隐藏 + 路由守卫拦截
+describe('modal-only login route contract', () => {
+  it('/login is unmatched because login is rendered as a modal', () => {
+    const resolved = router.resolve('/login')
+
+    expect(router.getRoutes().some((route) => route.path === '/login')).toBe(false)
+    expect(resolved.matched).toHaveLength(0)
+  })
+})
+
 describe('admin-only pages contract', () => {
   it.each(['/chat', '/wechat'])('route %s requires admin', (path) => {
     const record = router.getRoutes().find((r) => r.path === path)
@@ -31,7 +40,7 @@ describe('paper read guest access contract', () => {
 
   it('anonymous visitor is not redirected away from a paper read page', () => {
     const resolved = router.resolve('/papers/abc123/read')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
   })
 })
 
@@ -41,7 +50,7 @@ describe('projects website collection deep link contract', () => {
     expect(resolved.name).toBe('github-projects')
     expect(resolved.path).toBe('/projects')
     expect(resolved.query).toEqual({ source: 'website' })
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
   })
 })
 
@@ -55,8 +64,8 @@ describe('contact site page contract', () => {
   })
 })
 
-// 契约：会员结算页要求登录 —— 匿名深链守卫仍重定向 /login?redirect=，
-// 保留 query/hash 用于支付计划参数（会员页本身公开获客）。
+// 契约：会员结算页要求登录 —— 匿名深链触发登录弹窗，
+// 保留完整路径用于登录后返回（会员页本身公开获客）。
 describe('membership checkout auth contract', () => {
   it('checkout route requires auth', () => {
     const record = router.getRoutes().find((r) => r.path === '/membership/checkout')
@@ -67,19 +76,18 @@ describe('membership checkout auth contract', () => {
 
   it('anonymous deep link to checkout preserves the full redirect', () => {
     const resolved = router.resolve('/membership/checkout?plan=yearly')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ path: '/login', query: { redirect: '/membership/checkout?plan=yearly' } })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ kind: 'login', target: '/membership/checkout?plan=yearly' })
   })
 
   it('authenticated visitor is permitted to open checkout', () => {
     const resolved = router.resolve('/membership/checkout')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
   })
 })
 
-// 契约：/dsh 要求登录（Red 权限变更锚点）—— 向导自动签发账号绑定的 DSH 专用
-// MCP Token，不再有游客路径；匿名深链重定向 /login?redirect=/dsh，
-// initializing/degraded 不误判为游客（由 getRoutePolicyRedirect 既有语义保证）。
+// 契约：/mcp 要求登录（Red 权限变更锚点）—— 配置页不再有游客路径；
+// 匿名深链触发登录弹窗，initializing/degraded 阻止受保护导航。
 describe('mcp auth contract', () => {
   it('mcp route requires auth', () => {
     const record = router.getRoutes().find((r) => r.path === '/mcp')
@@ -88,20 +96,21 @@ describe('mcp auth contract', () => {
     expect(record?.meta.requiresAuth).toBe(true)
   })
 
-  it('anonymous deep link to mcp redirects to /login with redirect', () => {
+  it('anonymous deep link to mcp requests the login modal', () => {
     const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ path: '/login', query: { redirect: '/mcp' } })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ kind: 'login', target: '/mcp' })
   })
 
   it('authenticated visitor is permitted to open mcp', () => {
     const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
   })
 
-  it.each(['initializing', 'degraded'] as const)('%s visitor is not redirected away from mcp', (status) => {
+  it.each(['initializing', 'degraded'] as const)('%s visitor is blocked from mcp', (status) => {
     const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false }))
+      .toEqual({ kind: 'block' })
   })
 })
 
@@ -116,9 +125,9 @@ describe('subscriptions management compatibility contract', () => {
 
   it('redirects anonymous visitors while allowing authenticated visitors', () => {
     const resolved = router.resolve('/subscriptions')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ path: '/login', query: { redirect: '/subscriptions' } })
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ kind: 'login', target: '/subscriptions' })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
   })
 })
 
@@ -130,19 +139,20 @@ describe('dsh auth contract', () => {
     expect(record?.meta.requiresAuth).toBe(true)
   })
 
-  it('anonymous deep link to dsh redirects to /login with redirect', () => {
+  it('anonymous deep link to dsh requests the login modal', () => {
     const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ path: '/login', query: { redirect: '/dsh' } })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
+      .toEqual({ kind: 'login', target: '/dsh' })
   })
 
   it('authenticated visitor is permitted to open dsh', () => {
     const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
   })
 
-  it.each(['initializing', 'degraded'] as const)('%s visitor is not redirected away from dsh', (status) => {
+  it.each(['initializing', 'degraded'] as const)('%s visitor is blocked from dsh', (status) => {
     const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyRedirect(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false }))
+      .toEqual({ kind: 'block' })
   })
 })

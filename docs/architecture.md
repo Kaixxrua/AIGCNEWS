@@ -184,22 +184,24 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 |---|---|---|
 | `/` | DashboardView | 公开 |
 | `/projects` | GitHubProjectsView（826 行，逻辑委派 controller + presentation） | 公开 |
-| `/report` · `/papers/:id/read` · `/mcp` · `/disclaimer` · `/privacy` | 简报 · 论文阅读 · MCP 接入 · 法务 | 公开（论文对话游客降级为登录引导） |
+| `/report` · `/papers/:id/read` · `/disclaimer` · `/privacy` | 简报 · 论文阅读 · 法务 | 公开（论文对话游客降级为登录引导） |
+| `/mcp` | McpConnectView | `requiresAuth`（网站客户端配置与 Token 管理） |
+| `/dsh` | DshView | `requiresAuth`（网站 DSH 配置与账号 Token） |
 | `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
 | `/subscriptions` | SubscriptionsView | requiresAuth |
 | `/chat` | ChatView | requiresAdmin + `CHAT_SERVICE_ENABLED` |
 | `/wechat` | WechatView | requiresAdmin + `wechatSource` |
 | `/monitor` | MonitorView（12+ 面板编排，含支付订单详情与回调载荷管理员投影） | requiresAdmin |
 | `/membership/checkout?plan=monthly|yearly` | MembershipCheckoutView（套餐金额来自支付 API，二维码/跳转指令与支付轮询） | requiresAuth + payments_enabled |
-| `/login` · `/register` · `/forgot-password` | 认证三页 | guestOnly |
+| `/register` · `/forgot-password` | 注册与密码重置页（登录由全局弹窗承载，无独立 `/login`） | guestOnly |
 
-守卫为纯函数（`features/navigation/routePolicy.ts`）：匿名访问受保护页 → `/login?redirect=…`；非管理员 → `/`；特性关闭 → `/`。
+守卫为纯函数（`features/navigation/routePolicy.ts`）：匿名访问受保护页 → 拒绝本次导航（首次深链落到安全路由 `/`），记录完整目标并打开全局登录弹窗；登录成功后恢复目标。非管理员 → `/`；特性关闭 → `/`。
 
 ### 6.3 关键机制
 
 - **SSE**：`useEventSource` 基于 fetch ReadableStream（非原生 EventSource），自动带 Bearer，解析 `data:` 帧与 `[DONE]`，429 映射为配额提示。
 - **聊天**：`chatStore` + `ChatLifecycleCoordinator`（会话生命周期状态机）+ SSE 事件 reducer + 16ms 帧打字机引擎（与 Pinia 解耦）。
-- **HTTP**：axios 实例（baseURL `/api`，60s）；401 单 flight 处理 —— 清 token、强制 anonymous、toast、跳登录；MCP token 接口响应体脱敏。
+- **HTTP**：axios 实例（baseURL `/api`，60s）；401 单 flight 处理 —— 清 token、强制 anonymous、toast、打开全局登录弹窗；若会话在受保护页失效，先回安全路由并保留目标，登录成功后恢复。MCP token 接口响应体脱敏。
 - **i18n**：vue-i18n，`en-US.ts` 为完整基线树，`zh-CN.ts` 深合并补丁（每 key 必有英文）；默认中文，浏览器语言探测。
 - **设计系统**：编辑部纸张风 —— 暖白纸面 `#f7f5ee` / 近黑墨色 / 荧光黄绿 `#d8f14b` 强调 / 硬边框硬阴影 / Playfair Display + DM Sans + JetBrains Mono；明暗双主题 CSS 变量；旧 glassmorphism `tech-*` token 仅个别组件残留。
 - **构建/质量**：`dev / build / typecheck(vue-tsc) / lint(eslint) / test:unit(vitest, jsdom)`；契约测试含 CSP hash 与认证架构。

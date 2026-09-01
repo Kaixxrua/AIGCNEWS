@@ -143,7 +143,6 @@ const testRouter = createRouter({
   routes: [
     { path: '/mcp', name: 'mcp-connect', component: McpConnectView },
     { path: '/dsh', name: 'dsh', component: { template: '<div />' } },
-    { path: '/login', name: 'login', component: { template: '<div />' } },
     { path: '/membership', name: 'membership', component: { template: '<div />' } },
   ],
 })
@@ -160,7 +159,7 @@ const mountView = async () => {
 const controller = () => ctlBox.current as Record<string, any>
 const auth = () => authBox.current as { status: 'initializing' | 'authenticated' | 'anonymous' | 'degraded'; isLoggedIn: boolean; isAdmin: boolean; isMember: boolean; initFromStorage: ReturnType<typeof vi.fn> }
 
-let mountedWrappers: Array<{ unmount: () => void }> = []
+const mountedWrappers: Array<{ unmount: () => void }> = []
 
 afterEach(() => {
   for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
@@ -316,20 +315,17 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(wrapper.text()).not.toContain('dsh-aigc-radar@0.2.0')
   })
 
-  it('redirects anonymous visitors to login without rendering configuration', async () => {
+  it('requests the login modal for anonymous visitors without rendering configuration', async () => {
     auth().status = 'anonymous'
     auth().isLoggedIn = false
     const wrapper = await mountView()
 
-    expect(testRouter.currentRoute.value).toMatchObject({
-      path: '/login',
-      query: { redirect: '/mcp' },
-    })
+    expect(testRouter.currentRoute.value.path).toBe('/mcp')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
     expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('令牌管理')
     expect(controller().loadTokens).not.toHaveBeenCalled()
     expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
-    expect(requestLogin).not.toHaveBeenCalled()
   })
 
   it('never renders the transient command while offering one-time copy', async () => {
@@ -362,10 +358,8 @@ describe('McpConnectView privacy and auth behavior', () => {
 
     auth().status = 'anonymous'
     await flushPromises()
-    expect(testRouter.currentRoute.value).toMatchObject({
-      path: '/login',
-      query: { redirect: '/mcp' },
-    })
+    expect(testRouter.currentRoute.value.path).toBe('/mcp')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
   })
 
   it('keeps degraded authentication on the page without exposing configuration', async () => {

@@ -1,7 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { START_LOCATION, createRouter, createWebHistory } from 'vue-router'
 import {
   getFeatureGateRedirect,
-  getRoutePolicyRedirect,
+  getRoutePolicyDecision,
   getSitePageGateRedirect,
 } from '@/features/navigation/routePolicy'
 import LayoutView from '@/views/LayoutView.vue'
@@ -14,7 +14,6 @@ const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
 const WechatView = () => import('@/views/WechatView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
-const LoginView = () => import('@/views/LoginView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const ForgotPasswordView = () => import('@/views/ForgotPasswordView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
@@ -31,12 +30,7 @@ const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    // ── 登录 / 注册（独立全屏，不继承 Layout） ──
-    {
-      path: '/login',
-      name: 'login',
-      component: LoginView,
-    },
+    // ── 注册 / 重置密码 / OAuth 回调（独立全屏，不继承 Layout） ──
     {
       path: '/register',
       name: 'register',
@@ -164,30 +158,44 @@ const router = createRouter({
 })
 
 // ── 全局路由守卫 ──────────────────────────────────────────────────────────────
-router.beforeEach(async (to, _from, next) => {
+router.beforeEach(async (to, from) => {
   startRouteProgress()
   const { useAuthStore } = await import('@/stores/authStore')
   const { getActivePinia } = await import('pinia')
   const pinia = getActivePinia()
-  if (!pinia) { next(); return }
+  if (!pinia) return true
 
   const authStore = useAuthStore(pinia)
-  const redirect = getRoutePolicyRedirect(to, authStore)
+  if ((to.meta.requiresAuth || to.meta.requiresAdmin) && authStore.status === 'initializing') {
+    await authStore.ensureInitialized()
+  }
 
-  if (redirect) return next(redirect)
+  const decision = getRoutePolicyDecision(to, authStore)
+  if (decision?.kind === 'login') {
+    const { useLoginPrompt } = await import('@/composables/useLoginPrompt')
+    useLoginPrompt().requestLogin(decision.target)
+    return from === START_LOCATION ? { path: '/', replace: true } : false
+  }
+  if (decision?.kind === 'redirect') return decision.to
+  if (decision?.kind === 'block') {
+    if (authStore.status === 'degraded') {
+      const { useLoginPrompt } = await import('@/composables/useLoginPrompt')
+      useLoginPrompt().rememberLoginRedirect(to.fullPath)
+    }
+    return from === START_LOCATION ? { path: '/', replace: true } : false
+  }
 
   // 可插拔源特性门控：开关关闭时源路由回首页（开关进程内缓存，仅首次拉取）
   const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')
   const featureRedirect = getFeatureGateRedirect(to, await ensureFeatureFlags())
-  if (featureRedirect) return next(featureRedirect)
+  if (featureRedirect) return featureRedirect
 
   // 站点页面门控：联系合作页未启用时回首页（配置进程内缓存，仅首次拉取）
   const { ensureContactPageConfig } = await import('@/composables/useContactPageConfig')
   const sitePageRedirect = getSitePageGateRedirect(to, {
     contactPage: (await ensureContactPageConfig()).enabled,
   })
-  if (sitePageRedirect) return next(sitePageRedirect)
-  next()
+  return sitePageRedirect ?? true
 })
 
 // afterEach 对确认与取消（含重定向）的导航都会触发；onError 兜底 chunk 加载失败等异常。

@@ -26,20 +26,31 @@ declare module 'vue-router' {
   }
 }
 
-export const getRoutePolicyRedirect = (
+export type RoutePolicyDecision =
+  | { kind: 'login'; target: string }
+  | { kind: 'redirect'; to: RouteLocationRaw }
+  | { kind: 'block' }
+  | null
+
+export const getRoutePolicyDecision = (
   to: RouteLocationNormalized,
   auth: RouteAuthState,
-): RouteLocationRaw | null => {
-  if (auth.status === 'anonymous' && (to.meta.requiresAuth || to.meta.requiresAdmin)) {
-    return { path: '/login', query: { redirect: to.fullPath } }
+): RoutePolicyDecision => {
+  const protectedRoute = to.meta.requiresAuth || to.meta.requiresAdmin
+  if (protectedRoute && auth.status === 'anonymous') {
+    return { kind: 'login', target: to.fullPath }
+  }
+
+  if (protectedRoute && (auth.status === 'initializing' || auth.status === 'degraded')) {
+    return { kind: 'block' }
   }
 
   if (auth.status === 'authenticated' && to.meta.requiresAdmin && !auth.isAdmin) {
-    return { path: '/' }
+    return { kind: 'redirect', to: { path: '/' } }
   }
 
   if (to.meta.guestOnly && auth.status === 'authenticated') {
-    return { path: '/' }
+    return { kind: 'redirect', to: { path: '/' } }
   }
 
   return null

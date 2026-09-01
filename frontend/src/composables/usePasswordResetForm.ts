@@ -13,10 +13,10 @@ import { useOtpCountdown } from './useOtpCountdown'
 
 interface PasswordResetFormDependencies {
   post: (url: string, payload: Record<string, string>) => Promise<unknown>
-  replaceLogin: () => void | Promise<unknown>
+  openLogin: () => void | Promise<unknown>
 }
 
-export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDependencies) => {
+export const usePasswordResetForm = ({ post, openLogin }: PasswordResetFormDependencies) => {
   const { t } = useI18n()
   const email = ref('')
   const otp = ref('')
@@ -82,7 +82,7 @@ export const usePasswordResetForm = ({ post, replaceLogin }: PasswordResetFormDe
       successMsg.value = t('auth.resetSuccess')
       resetCountdown()
       redirectTimer = setTimeout(() => {
-        void replaceLogin()
+        void openLogin()
       }, PASSWORD_RESET_REDIRECT_DELAY_MS)
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)

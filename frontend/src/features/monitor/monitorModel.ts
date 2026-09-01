@@ -1078,7 +1078,7 @@ export const buildPaymentPlanPricingPayload = (
 // ── OAuth 快捷登录配置（Monitor 面板）────────────────────────────────────────
 // 与支付配置同语义：database=DB 覆盖行；environment=env；unconfigured=两者皆无。
 // 密文（client secret / app secret）只写入不回填；留空=保留，勾选 clear_*=擦除。
-// 保存/重置后由控制器调用 refreshFeatureFlags() 让登录页按钮即时显隐。
+// 保存/重置后由控制器调用 refreshFeatureFlags() 让全局登录窗口中的按钮即时显隐。
 
 export type OAuthProviderKey = 'github' | 'google' | 'wechat'
 

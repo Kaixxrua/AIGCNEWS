@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
@@ -12,7 +11,6 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
-const router = useRouter()
 const { copy } = useClipboard()
 const { requestLogin } = useLoginPrompt()
 
@@ -54,9 +52,7 @@ watch(
       return
     }
     clearAuthenticatedState()
-    if (status === 'anonymous') {
-      void router.replace({ path: '/login', query: { redirect: '/mcp' } })
-    }
+    if (status === 'anonymous') requestLogin('/mcp')
   },
   { immediate: true },
 )

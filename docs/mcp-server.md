@@ -113,7 +113,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 ### 网站配置平面
 
-- 网站 `/mcp` 配置页必须登录；匿名深链跳转到 `/login?redirect=/mcp`。
+- 网站 `/mcp` 配置页必须登录；匿名深链会被拒绝并落到安全路由 `/`，同时打开全局登录弹窗并保留 `/mcp` 目标，登录成功后继续进入 `/mcp`。站点没有独立 `/login` 页面。
 - 网站 `/dsh` 配置页也必须登录；登录后才能取得或复用账号绑定的 DSH 专用 Token。
 - generic MCP Token 的创建、查看脱敏 metadata、删除与轮换，以及网站生成的客户端配置，均由登录账号执行；客户端不能提交 membership、group、quota 或 VIP 作为权限依据。
 - 登录 JWT 仅用于网站会话，不等于 MCP access token，也不会直接作为 `/api/mcp` runtime credential。

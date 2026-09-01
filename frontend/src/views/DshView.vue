@@ -1,24 +1,21 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
 import { DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { useAuthStore } from '@/stores/authStore'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
 const { t } = useI18n()
 const auth = useAuthStore()
-const router = useRouter()
+const { requestLogin } = useLoginPrompt()
 
-// /dsh 要求登录（路由 meta.requiresAuth）。路由守卫只在导航时生效，而 auth
-// 是挂载后异步恢复的：解析为 anonymous 时在这里补上强制跳转；
-// initializing 展示恢复中、degraded 提供重试，均不误判为游客。
+// 路由守卫负责正常导航；该视图仍 fail-closed，并在测试或恢复竞态下补发同一登录请求。
 watch(
   () => auth.status,
   (status) => {
-    if (status === 'anonymous') {
-      void router.replace({ path: '/login', query: { redirect: '/dsh' } })
-    }
+    if (status === 'anonymous') requestLogin('/dsh')
   },
   { immediate: true },
 )

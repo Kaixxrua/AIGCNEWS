@@ -28,6 +28,14 @@ describe('useLoginPrompt', () => {
     expect(prompt.redirectTarget.value).toBe('/')
   })
 
+  it('remembers a protected target without opening login while verification is degraded', () => {
+    const prompt = useLoginPrompt()
+    prompt.rememberLoginRedirect('/mcp?source=retry#setup')
+
+    expect(prompt.isOpen.value).toBe(false)
+    expect(prompt.redirectTarget.value).toBe('/mcp?source=retry#setup')
+  })
+
   it('supports writable v-model state', () => {
     const prompt = useLoginPrompt()
     prompt.requestLogin('/chat')

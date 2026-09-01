@@ -12,12 +12,14 @@ const freeUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', membershi
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
   return { ...actual, ensureDshMcpToken, rotateDshMcpToken }
 })
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
+vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
 
 const messages = {
   mcp: { copied: '已复制', copyFailed: '复制失败', tokenCreateFailed: 'Token 创建失败。', wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' }, dshPlugin: { methods: {
@@ -45,7 +47,6 @@ const messages = {
 
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/dsh', component: DshView },
-  { path: '/login', component: { template: '<div />' } },
   { path: '/mcp', component: { template: '<div />' } },
   { path: '/membership', component: { template: '<div />' } },
 ] })
@@ -62,22 +63,23 @@ beforeEach(() => {
   ensureDshMcpToken.mockReset()
   rotateDshMcpToken.mockReset()
   copy.mockClear()
+  requestLogin.mockClear()
   setActivePinia(createPinia())
 })
 
 describe('DshView', () => {
-  it('forces anonymous visitors to the login page with a redirect back to /dsh', async () => {
+  it('requests the login modal for anonymous visitors without leaving /dsh', async () => {
     const auth = useAuthStore()
     auth.status = 'anonymous'
     const wrapper = await mountView()
 
-    expect(router.currentRoute.value.path).toBe('/login')
-    expect(router.currentRoute.value.query.redirect).toBe('/dsh')
+    expect(router.currentRoute.value.path).toBe('/dsh')
+    expect(requestLogin).toHaveBeenCalledWith('/dsh')
     expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
   })
 
-  it('redirects late-resolving anonymous sessions too (post-mount auth resolution)', async () => {
+  it('requests login for late-resolving anonymous sessions too', async () => {
     const auth = useAuthStore()
     auth.status = 'initializing'
     const wrapper = await mountView()
@@ -86,8 +88,8 @@ describe('DshView', () => {
 
     auth.status = 'anonymous'
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/login')
-    expect(router.currentRoute.value.query.redirect).toBe('/dsh')
+    expect(router.currentRoute.value.path).toBe('/dsh')
+    expect(requestLogin).toHaveBeenCalledWith('/dsh')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
   })
 

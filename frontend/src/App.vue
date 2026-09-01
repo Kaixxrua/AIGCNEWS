@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import AppToast from '@/components/AppToast.vue'
+import AuthPromptHost from '@/components/auth/AuthPromptHost.vue'
 import RouteProgress from '@/components/RouteProgress.vue'
 import { useLocaleTransition } from './composables/useLocaleTransition'
 
@@ -14,8 +15,9 @@ const { isLocaleTransitioning } = useLocaleTransition()
   <!-- ═══ Layer -8: 极弱纸张噪点 ═══ -->
   <div class="app-noise" aria-hidden="true"></div>
 
-  <!-- ═══ 顶层路由出口（Layout 或 Login/Register） ═══ -->
+  <!-- ═══ 顶层路由出口（Layout 或独立认证辅助页） ═══ -->
   <RouterView />
+  <AuthPromptHost />
   <RouteProgress />
   <AppToast />
 

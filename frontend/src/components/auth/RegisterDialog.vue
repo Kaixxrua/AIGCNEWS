@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
@@ -7,11 +6,10 @@ import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
 import OtpEmailField from '@/components/auth/OtpEmailField.vue'
 import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFields.vue'
 import { useRegisterForm } from '@/composables/useRegisterForm'
-import { getSafeInternalRedirect } from '@/features/auth/authViewModel'
 import { api } from '@/services/http/apiClient'
 import { useAuthStore } from '@/stores/authStore'
 
-const props = defineProps<{ modelValue: boolean; redirect?: unknown }>()
+const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{
   (event: 'update:modelValue', value: boolean): void
   (event: 'success'): void
@@ -22,10 +20,9 @@ useDockSuppression(() => props.modelValue)
 const authStore = useAuthStore()
 
 const close = () => emit('update:modelValue', false)
-// 注册成功即已登录：关弹窗并把 redirect 目标交给 LayoutView 处理，不在遮罩下二次跳页
+// 注册成功即已登录：关弹窗并把 redirect 目标交给根级 AuthPromptHost 处理。
 const success = () => { emit('success'); close() }
 
-const redirectTarget = computed(() => getSafeInternalRedirect(props.redirect))
 const {
   email,
   otp,

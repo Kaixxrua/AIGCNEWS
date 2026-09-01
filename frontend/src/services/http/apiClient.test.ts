@@ -120,12 +120,39 @@ describe('frontend API transport contract', () => {
 
     expect(mocks.showToast).toHaveBeenCalledOnce()
     expect(mocks.requestLogin).toHaveBeenCalledOnce()
-    expect(mocks.requestLogin).toHaveBeenCalledWith()
+    expect(mocks.requestLogin).toHaveBeenCalledWith('/')
     expect(localStorage.getItem('auth_token')).toBeNull()
     expect(authStore.invalidateSession).toHaveBeenCalledOnce()
     expect(authStore.token).toBe('old-token')
     expect(authStore.user).toEqual({ id: 1 })
     expect(authStore.status).toBe('authenticated')
+  })
+
+  it('does not invalidate or prompt for an anonymous 401 response', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const authStore = { token: null, user: null, status: 'anonymous', invalidateSession: vi.fn() }
+    mocks.getActivePinia.mockReturnValue({})
+    mocks.useAuthStore.mockReturnValue(authStore)
+    const error = { config: { url: '/auth/oauth/consume', __authToken: null }, response: { status: 401 } }
+
+    await expect(responseRejectedInterceptor(error)).rejects.toBe(error)
+
+    expect(authStore.invalidateSession).not.toHaveBeenCalled()
+    expect(mocks.showToast).not.toHaveBeenCalled()
+    expect(mocks.requestLogin).not.toHaveBeenCalled()
+  })
+
+  it('preserves the full browser target when an authenticated request expires', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const authStore = { token: 'old-token', user: null, status: 'authenticated', invalidateSession: vi.fn() }
+    mocks.getActivePinia.mockReturnValue({})
+    mocks.useAuthStore.mockReturnValue(authStore)
+    window.history.replaceState({}, '', '/projects?source=website#saved')
+    const error = { config: { url: '/projects', __authToken: 'old-token' }, response: { status: 401 } }
+
+    await expect(responseRejectedInterceptor(error)).rejects.toBe(error)
+
+    expect(mocks.requestLogin).toHaveBeenCalledWith('/projects?source=website#saved')
   })
 
   it('reasserts the login prompt for each subsequent 401 without navigating away', async () => {
@@ -142,7 +169,7 @@ describe('frontend API transport contract', () => {
     expect(mocks.requestLogin).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['/auth/login', '/auth/me', '/auth/me/mcp-tokens'])('cleans auth state but suppresses the login prompt for %s', async (url) => {
+  it.each(['/auth/login', '/auth/me', '/auth/me/mcp-tokens', '/auth/oauth/consume'])('cleans auth state but suppresses the login prompt for %s', async (url) => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const authStore = { token: 'old-token', user: { id: 1 } as unknown, status: 'authenticated', invalidateSession: vi.fn(() => localStorage.removeItem('auth_token')) }
     mocks.getActivePinia.mockReturnValue({})

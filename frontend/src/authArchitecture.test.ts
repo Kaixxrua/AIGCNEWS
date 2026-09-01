@@ -1,13 +1,9 @@
-import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createI18n } from 'vue-i18n'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import LoginView from '@/views/LoginView.vue'
 import router from '@/router'
 import { getSafeInternalRedirect } from '@/features/auth/authViewModel'
 
-const probe = vi.hoisted(() => ({ order: [] as string[], login: null as null | ReturnType<typeof vi.fn> }))
+const probe = vi.hoisted(() => ({ order: [] as string[] }))
 
 vi.mock('@/App.vue', async () => {
   const { h, onMounted } = await import('vue')
@@ -24,74 +20,44 @@ vi.mock('@/App.vue', async () => {
 
 vi.mock('@/stores/authStore', () => ({
   useAuthStore: () => ({
-    login: probe.login ?? vi.fn().mockResolvedValue(undefined),
-    initFromStorage: () => {
+    ensureInitialized: () => {
       probe.order.push('auth-restored')
       return Promise.resolve()
     },
   }),
 }))
 
+vi.mock('@/services/visit/visitBeacon', () => ({ sendVisitBeacon: vi.fn() }))
+vi.mock('@/pwa/registerPwa', () => ({ registerPwa: vi.fn() }))
+vi.mock('@/pwa/installPrompt', () => ({ initializeInstallPrompt: vi.fn() }))
+vi.mock('@/components/pwa/PwaInstallGuide.vue', () => ({ default: { template: '<div />' } }))
+
 vi.mock('@/views/LayoutView.vue', () => ({
   default: { name: 'LayoutView', template: '<div><router-view /></div>' },
 }))
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'zh-CN',
-  messages: {},
-  missingWarn: false,
-  fallbackWarn: false,
-})
-
-const mountLogin = async (initialPath: string) => {
-  const testRouter = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      { path: '/login', component: LoginView },
-      { path: '/', component: { template: '<div />' } },
-      { path: '/projects', component: { template: '<div />' } },
-    ],
-  })
-  await testRouter.push(initialPath)
-  await testRouter.isReady()
-  const wrapper = mount(LoginView, {
-    global: { plugins: [testRouter, i18n], stubs: { RouterLink: true } },
-  })
-  return { testRouter, wrapper }
-}
-
-const submitLogin = async (wrapper: Awaited<ReturnType<typeof mountLogin>>['wrapper']) => {
-  await wrapper.find('input[type="email"]').setValue('user@example.com')
-  await wrapper.find('input[type="password"]').setValue('secret-1')
-  await wrapper.find('button.btn-primary').trigger('click')
-  await flushPromises()
-}
 
 describe('authentication architecture behavior', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     probe.order.length = 0
-    probe.login = vi.fn().mockResolvedValue(undefined)
   })
 
-  it('mounts the application before starting asynchronous auth restore', async () => {
+  it('mounts the application before ensuring asynchronous auth initialization', async () => {
     vi.resetModules()
     document.body.innerHTML = '<div id="app"></div>'
 
     await import('./main')
-    // 挂载在导入时同步完成，auth-restore 异步触发；两个事件都等到再断言顺序：
-    // 先挂载可用，再异步恢复登录态。
     await vi.waitFor(() => expect(probe.order).toContain('app-mounted'))
     await vi.waitFor(() => expect(probe.order).toContain('auth-restored'))
 
     expect(probe.order).toEqual(['app-mounted', 'auth-restored'])
   })
 
-  it('keeps login always enterable while register and forgot-password remain guest-only', () => {
+  it('has no login page while register and forgot-password remain guest-only', () => {
     const metaOf = (path: string) => router.getRoutes().find((route) => route.path === path)?.meta ?? {}
 
-    expect(metaOf('/login')).not.toHaveProperty('guestOnly')
+    expect(router.getRoutes().some((route) => route.path === '/login')).toBe(false)
+    expect(router.resolve('/login').matched).toHaveLength(0)
     expect(metaOf('/register')).toMatchObject({ guestOnly: true })
     expect(metaOf('/forgot-password')).toMatchObject({ guestOnly: true })
   })
@@ -101,24 +67,5 @@ describe('authentication architecture behavior', () => {
     expect(getSafeInternalRedirect('//evil.example/phish')).toBe('/')
     expect(getSafeInternalRedirect(undefined)).toBe('/')
     expect(getSafeInternalRedirect('/projects')).toBe('/projects')
-  })
-
-  it('redirects to the safe internal target after successful login', async () => {
-    const { testRouter, wrapper } = await mountLogin('/login?redirect=/projects')
-    const pushSpy = vi.spyOn(testRouter, 'push')
-
-    await submitLogin(wrapper)
-
-    expect(probe.login).toHaveBeenCalledWith('user@example.com', 'secret-1')
-    expect(pushSpy).toHaveBeenCalledWith('/projects')
-  })
-
-  it('falls back to home when the login redirect points off-site', async () => {
-    const { testRouter, wrapper } = await mountLogin('/login?redirect=https://evil.example/phish')
-    const pushSpy = vi.spyOn(testRouter, 'push')
-
-    await submitLogin(wrapper)
-
-    expect(pushSpy).toHaveBeenCalledWith('/')
   })
 })

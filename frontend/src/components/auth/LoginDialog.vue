@@ -13,9 +13,9 @@ const success = () => { emit('success'); close() }
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
-        <!-- 卡片本体由 LoginForm 的 dialog 模式渲染（含右上角 ✕ 与文A切换），这里只管遮罩与滚动容器 -->
+        <!-- 卡片本体由 LoginForm 渲染（含右上角关闭与注册切换），这里只管遮罩与滚动容器。 -->
         <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
-          <LoginForm :redirect="redirect" dialog @success="success" @close="close" @switch-to-register="emit('switch-to-register')" />
+          <LoginForm :redirect="redirect" @success="success" @close="close" @switch-to-register="emit('switch-to-register')" />
         </div>
       </div>
     </Transition>

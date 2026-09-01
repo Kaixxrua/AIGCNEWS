@@ -33,7 +33,7 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
 
 const mountDialog = (modelValue = true) => mount(RegisterDialog, {
   attachTo: document.body,
-  props: { modelValue, redirect: '/dsh' },
+  props: { modelValue },
   global: { plugins: [i18n, router] },
 })
 

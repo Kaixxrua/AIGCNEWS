@@ -54,6 +54,8 @@ export const useAuthStore = defineStore('auth', () => {
   setRuntimeAuthToken(token.value)
   const user = ref<AuthUser | null>(null)
   const status = ref<AuthStatus>('initializing')
+  const logoutInProgress = ref(false)
+  let initializationPromise: Promise<void> | null = null
   /** 未登录用户在 Chat 页输入后点发送，临时缓存消息，登录后回填 */
   const pendingChatMessage = ref<string>(readStorage(PENDING_CHAT_KEY) ?? '')
 
@@ -154,12 +156,12 @@ export const useAuthStore = defineStore('auth', () => {
     removeStorage(TOKEN_KEY)
   }
 
-  /** 退出：清除 token/user，回到首页 */
+  /** 退出：标记为主动退出，避免受保护页面的失效监听误弹登录窗。 */
   function logout(): void {
+    logoutInProgress.value = true
     invalidateSession()
-    import('@/router/index').then(({ default: router }) => {
-      router.push('/')
-    })
+    import('@/router/index').then(({ default: router }) => router.push('/'))
+      .finally(() => { logoutInProgress.value = false })
   }
 
   /** 刷新当前用户信息；结果只写入发起时仍然有效的会话。 */
@@ -199,10 +201,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** 认证恢复与失败重试保持单飞；已确认的登录/匿名状态不重复请求。 */
+  function ensureInitialized(): Promise<void> {
+    if (status.value !== 'initializing' && status.value !== 'degraded') return Promise.resolve()
+    if (!initializationPromise) {
+      initializationPromise = initFromStorage().finally(() => {
+        initializationPromise = null
+      })
+    }
+    return initializationPromise
+  }
+
   return {
     token,
     user,
     status,
+    logoutInProgress,
     isLoggedIn,
     isAdmin,
     isMember,
@@ -217,5 +231,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     fetchMe,
     initFromStorage,
+    ensureInitialized,
   }
 })

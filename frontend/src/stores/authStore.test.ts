@@ -1,9 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchCurrentUser } from '@/services/auth/authApi'
+import { consumeOAuthHandoff, fetchCurrentUser } from '@/services/auth/authApi'
 import { useAuthStore } from './authStore'
 
 vi.mock('../services/auth/authApi', () => ({
+  consumeOAuthHandoff: vi.fn(),
   fetchCurrentUser: vi.fn(),
   loginWithPassword: vi.fn(),
 }))
@@ -11,12 +12,14 @@ vi.mock('../services/auth/authApi', () => ({
 const routerPush = vi.hoisted(() => vi.fn())
 vi.mock('@/router/index', () => ({ default: { push: routerPush } }))
 
+const mockedConsumeOAuthHandoff = vi.mocked(consumeOAuthHandoff)
 const mockedFetchCurrentUser = vi.mocked(fetchCurrentUser)
 const user = { user_id: 1, email: 'user@example.com', role: 'user' as const }
 
 describe('auth store bootstrap', () => {
   beforeEach(() => {
     localStorage.clear()
+    mockedConsumeOAuthHandoff.mockReset()
     mockedFetchCurrentUser.mockReset()
     setActivePinia(createPinia())
   })
@@ -30,6 +33,76 @@ describe('auth store bootstrap', () => {
     expect(store.status).toBe('anonymous')
     expect(store.isLoggedIn).toBe(false)
     expect(mockedFetchCurrentUser).not.toHaveBeenCalled()
+  })
+
+  it('single-flights concurrent initialization requests', async () => {
+    localStorage.setItem('auth_token', 'saved-token')
+    let resolveRequest: ((value: typeof user) => void) | undefined
+    mockedFetchCurrentUser.mockImplementation(() => new Promise(resolve => { resolveRequest = resolve }))
+    const store = useAuthStore()
+
+    const first = store.ensureInitialized()
+    const second = store.ensureInitialized()
+
+    // Pinia wraps action return values, so single-flight is observable by one underlying request.
+    expect(mockedFetchCurrentUser).toHaveBeenCalledTimes(1)
+
+    resolveRequest?.(user)
+    await Promise.all([first, second])
+
+    expect(store.status).toBe('authenticated')
+    await store.ensureInitialized()
+    expect(mockedFetchCurrentUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('serializes OAuth handoff behind an in-flight bootstrap', async () => {
+    localStorage.setItem('auth_token', 'saved-token')
+    let resolveBootstrap: ((value: typeof user) => void) | undefined
+    mockedFetchCurrentUser
+      .mockImplementationOnce(() => new Promise(resolve => { resolveBootstrap = resolve }))
+      .mockResolvedValueOnce(user)
+    mockedConsumeOAuthHandoff.mockResolvedValue({
+      access_token: 'oauth-token',
+      role: 'user',
+      redirect_to: '/mcp',
+    })
+    const store = useAuthStore()
+
+    const bootstrap = store.ensureInitialized()
+    const handoff = (async () => {
+      await store.ensureInitialized()
+      return store.loginWithOAuthHandoff()
+    })()
+    expect(mockedConsumeOAuthHandoff).not.toHaveBeenCalled()
+
+    resolveBootstrap?.(user)
+    await bootstrap
+    await expect(handoff).resolves.toBe('/mcp')
+
+    expect(mockedConsumeOAuthHandoff).toHaveBeenCalledOnce()
+    expect(store.token).toBe('oauth-token')
+    expect(store.status).toBe('authenticated')
+  })
+
+  it('single-flights recovery retries after an unconfirmed failure', async () => {
+    localStorage.setItem('auth_token', 'saved-token')
+    mockedFetchCurrentUser.mockRejectedValueOnce(new Error('offline'))
+    const store = useAuthStore()
+    await store.ensureInitialized()
+    expect(store.status).toBe('degraded')
+
+    let resolveRetry: ((value: typeof user) => void) | undefined
+    mockedFetchCurrentUser.mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve }))
+    const first = store.ensureInitialized()
+    const second = store.ensureInitialized()
+
+    expect(store.status).toBe('initializing')
+    expect(mockedFetchCurrentUser).toHaveBeenCalledTimes(2)
+    resolveRetry?.(user)
+    await Promise.all([first, second])
+
+    expect(store.status).toBe('authenticated')
+    expect(store.user).toEqual(user)
   })
 
   it('restores a confirmed authenticated user', async () => {
@@ -85,7 +158,9 @@ describe('auth store logout', () => {
     store.savePendingMessage('稍后发送')
 
     store.logout()
+    expect(store.logoutInProgress).toBe(true)
     await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith('/'))
+    await vi.waitFor(() => expect(store.logoutInProgress).toBe(false))
 
     expect(store.token).toBeNull()
     expect(store.user).toBeNull()

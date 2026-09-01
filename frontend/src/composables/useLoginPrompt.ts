@@ -11,8 +11,12 @@ export function useLoginPrompt() {
   })
   const redirectTarget = computed(() => redirect.value)
 
-  const requestLogin = (target?: unknown) => {
+  const rememberLoginRedirect = (target?: unknown) => {
     redirect.value = getSafeInternalRedirect(target)
+  }
+
+  const requestLogin = (target?: unknown) => {
+    rememberLoginRedirect(target)
     open.value = true
   }
 
@@ -29,6 +33,7 @@ export function useLoginPrompt() {
   return {
     isOpen,
     redirectTarget,
+    rememberLoginRedirect,
     requestLogin,
     closeLoginPrompt,
     consumeLoginRedirect,

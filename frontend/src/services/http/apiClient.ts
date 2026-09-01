@@ -51,7 +51,9 @@ api.interceptors.response.use(
     })
 
     if (status === 401 && !_is401Handling) {
-      const isAuthEndpoint = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/me')
+      const isAuthEndpoint = requestUrl.includes('/auth/login')
+        || requestUrl.includes('/auth/me')
+        || requestUrl.includes('/auth/oauth/consume')
       let invalidated = false
 
       try {
@@ -60,8 +62,9 @@ api.interceptors.response.use(
         const pinia = getActivePinia()
         if (pinia) {
           const authStore = useAuthStore(pinia)
+          // 只有实际携带当前会话令牌的请求才能使会话失效；匿名 401 不弹登录窗。
           // An old request must not invalidate a newer login session.
-          if (authStore.token === requestToken) {
+          if (requestToken && authStore.token === requestToken) {
             authStore.invalidateSession()
             invalidated = true
           }
@@ -77,7 +80,8 @@ api.interceptors.response.use(
         _is401Handling = true
         try {
           showToast(i18n.global.t('auth.sessionExpired'))
-          useLoginPrompt().requestLogin()
+          const currentTarget = `${window.location.pathname}${window.location.search}${window.location.hash}`
+          useLoginPrompt().requestLogin(currentTarget)
         } finally {
           _is401Handling = false
         }
