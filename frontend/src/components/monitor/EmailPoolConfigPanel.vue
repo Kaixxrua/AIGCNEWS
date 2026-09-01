@@ -33,7 +33,6 @@ const MAX_ENTRIES = 20
 const updateEntry = <K extends keyof EmailPoolEntryForm>(index: number, field: K, value: EmailPoolEntryForm[K]) => {
   const entry = props.form.entries[index]
   if (!entry) return
-  // eslint-disable-next-line vue/no-mutating-props -- form 为父组件传入的草稿对象，此处为受控表单的有意回写
   entry[field] = value
 }
 

@@ -21,12 +21,12 @@ from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.repositories.payment_settings_repository import PaymentSettings
 from backend.app.services.payments.config_admin import PaymentConfigAdminService
+from backend.app.services.payments.providers.registry import build_payment_providers
 from backend.app.services.payments.runtime_config import (
     EffectivePaymentConfig,
     configure_payment_settings_reader,
     reset_payment_config_provider,
 )
-from backend.app.services.payments.providers.registry import build_payment_providers
 
 
 def _row(**overrides) -> PaymentSettings:

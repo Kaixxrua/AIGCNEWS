@@ -49,13 +49,13 @@ from backend.app.repositories.application_repository_factory import (
 from backend.app.repositories.conversation_repository import ConversationCleanupWriter
 from backend.app.repositories.payment_order_repository import PaymentOrderWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
-from backend.app.services.payments.runtime_config import (
-    payment_settings_reader_bound,
-    resolve_payment_config,
-)
 from backend.app.services.briefing.dispatch import (
     BRIEFING_SOURCES,
     run_daily_briefing_dispatch,
+)
+from backend.app.services.payments.runtime_config import (
+    payment_settings_reader_bound,
+    resolve_payment_config,
 )
 from backend.app.services.x_credentials.probe import probe_all_x_credentials
 

@@ -13,14 +13,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from backend.app.services.payments.providers.alipay_page import (
-    _canonical_params,
     AlipayPagePaymentProvider,
+    _canonical_params,
 )
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
     ChannelUpstreamError,
 )
-
 
 APP_ID = "2021000000000000"
 ORDER = {
