@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
@@ -26,6 +26,17 @@ const { locale, t } = useI18n()
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const route = useRoute()
+const router = useRouter()
+
+// 从 Dashboard 一键订阅入口进入时，自动打开订阅向导；已登录则清理 query 避免重复触发。
+onMounted(() => {
+  if (route.query.subscribe === '1') {
+    toggleSubscribe()
+    if (authStore.isLoggedIn) {
+      void router.replace({ query: { ...route.query, subscribe: undefined } })
+    }
+  }
+})
 
 const { renderMarkdown } = useLatexRenderer()
 const reportRef = ref<HTMLElement | null>(null)

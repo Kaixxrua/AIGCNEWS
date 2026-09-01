@@ -10,7 +10,7 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { CalendarDays, ArrowRight, MailPlus, Plug, Rss, Terminal } from 'lucide-vue-next'
+import { CalendarDays, ArrowRight, MailPlus, Plug, Terminal } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 
 defineOptions({ name: 'DashboardView' })
@@ -125,7 +125,7 @@ onBeforeUnmount(pauseLivePoll)
             :available-dates="availableDates"
             @update:model-value="onDateChange"
           />
-          <!-- 每日简报与 RSS 统一入口：公开 feed 直订；会员速览在简报向导内复制。
+          <!-- 每日简报与 RSS 统一入口：点击后直接打开简报页订阅向导，RSS 在向导内按需复制。
                token 只在用户明确复制时进入内存与剪贴板，不在 Dashboard DOM 暴露。 -->
           <div
             class="stagger-enter glass-card flex flex-col gap-2 px-3 py-2.5"
@@ -138,29 +138,12 @@ onBeforeUnmount(pauseLivePoll)
               <span class="text-sm font-bold text-stone-800">{{ t('dashboard.digest.title') }}</span>
             </span>
             <span class="text-2xs leading-relaxed text-stone-400">{{ t('dashboard.digest.description') }}</span>
-            <div class="mt-auto flex flex-col gap-1.5">
+            <div class="mt-auto">
               <RouterLink
-                to="/report"
-                class="digest-cta inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
+                :to="{ path: '/report', query: { subscribe: '1' } }"
+                class="digest-cta inline-flex w-full items-center justify-center gap-1 rounded-[4px] border border-ink bg-ink px-2 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink"
               >
                 {{ t('dashboard.digest.cta') }}
-                <ArrowRight class="h-3.5 w-3.5" />
-              </RouterLink>
-              <a
-                href="/api/feeds/briefing.xml"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink px-2 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent-soft"
-              >
-                <Rss class="h-3.5 w-3.5" />
-                {{ t('dashboard.rss.publicCta') }}
-                <ArrowRight class="h-3.5 w-3.5" />
-              </a>
-              <RouterLink
-                to="/report"
-                class="inline-flex items-center justify-center gap-1 rounded-[4px] border border-ink px-2 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent-soft"
-              >
-                {{ t('dashboard.rss.memberCta') }}
                 <ArrowRight class="h-3.5 w-3.5" />
               </RouterLink>
             </div>

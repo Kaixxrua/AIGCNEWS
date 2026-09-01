@@ -49,18 +49,33 @@ const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
     digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报' },
-    rss: { title: 'RSS 订阅', publicCta: '订阅每日简报', memberCta: '查看 vip 速览 RSS' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
   },
 }
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
 
+const buildQuery = (query?: Record<string, string>): string => {
+  if (!query) return ''
+  const params = new URLSearchParams(query)
+  const qs = params.toString()
+  return qs ? `?${qs}` : ''
+}
+
 const mountView = async () => {
   const wrapper = mount(DashboardView, {
     global: {
       plugins: [i18n],
-      components: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } },
+      components: {
+        RouterLink: {
+          props: ['to'],
+          setup(props: { to: string | { path?: string; query?: Record<string, string> } }) {
+            const href = typeof props.to === 'string' ? props.to : `${props.to.path ?? '/'}${buildQuery(props.to.query)}`
+            return { href }
+          },
+          template: '<a :href="href"><slot /></a>',
+        },
+      },
       stubs: {
         GlassCalendar: { template: '<div />' },
         DashboardOverviewPanel: { template: '<div />' },
@@ -75,7 +90,7 @@ const mountView = async () => {
 }
 
 describe('DashboardView', () => {
-  it('offers a public RSS feed without exposing a member token', async () => {
+  it('renders a single digest CTA that opens the report subscription wizard', async () => {
     authBox.isMember = false
     const wrapper = await mountView()
 
@@ -89,37 +104,13 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
-    const digestCta = wrapper.get('a[href="/report"]')
+    const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
     expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
 
-    const publicFeed = wrapper.get('a[href="/api/feeds/briefing.xml"]')
-    expect(publicFeed.text()).toContain(messages.dashboard.rss.publicCta)
-    expect(publicFeed.attributes('target')).toBe('_blank')
-    expect(publicFeed.attributes('rel')).toBe('noopener noreferrer')
-
+    // 只保留一个订阅入口，RSS 在简报向导内复制；Dashboard 不暴露 member token
+    expect(wrapper.find('a[href="/api/feeds/briefing.xml"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
-  })
-
-  it('routes the member RSS entry to the membership page for free users', async () => {
-    authBox.isMember = false
-    const wrapper = await mountView()
-
-    // 免费/未登录：入口仍是转化链路，导去权益页
-    const memberCta = wrapper.findAll('a[href="/report"]')[1]!
-    expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
-    expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
-  })
-
-  it('routes the member RSS entry to the report wizard for members', async () => {
-    authBox.isMember = true
-    const wrapper = await mountView()
-
-    // 会员：统一进入简报向导，在第二步复制会员 RSS 链接
-    const memberCta = wrapper.findAll('a[href="/report"]')[1]!
-    expect(memberCta.text()).toContain('查看 vip 速览 RSS')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-    expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
-    expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
   })
 })
