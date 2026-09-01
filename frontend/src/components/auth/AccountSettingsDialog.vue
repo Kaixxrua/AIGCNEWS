@@ -155,15 +155,17 @@ watch(() => props.modelValue, async open => {
 .oauth-provider-btn {
   @apply flex flex-col items-center justify-center gap-2 rounded-lg border-2 px-2 py-3 text-xs font-semibold transition-all duration-150;
   min-height: 5.5rem;
-  background: var(--paper-raised);
+  background: transparent;
   border-color: var(--rule-strong);
   color: var(--ink);
-  box-shadow: var(--shadow-low);
+  opacity: 0.55;
+  box-shadow: none;
 }
 .oauth-provider-btn:hover:not(:disabled) {
-  background: var(--acid-soft);
+  opacity: 1;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-low);
   transform: translate(-1.5px, -1.5px);
-  box-shadow: 3px 3px 0 var(--shadow-ink-soft);
 }
 .oauth-provider-btn:active:not(:disabled) {
   transform: translate(0, 1px);
@@ -171,9 +173,9 @@ watch(() => props.modelValue, async open => {
 }
 .oauth-provider-btn.is-connected {
   cursor: default;
-  background: transparent;
-  opacity: 0.55;
-  box-shadow: none;
+  opacity: 1;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-low);
   transform: none !important;
 }
 .oauth-provider-icon {
