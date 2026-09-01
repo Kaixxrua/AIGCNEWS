@@ -92,6 +92,10 @@ const i18n = createI18n({
           retry: '重新发起支付',
           loadFailed: '收银台暂不可用。',
           backToMembership: '返回会员页',
+          agreeTerms: '我已阅读并同意',
+          termsLink: '《用户协议与免责声明》',
+          refundNotice: '，并知悉 vip 会员为在线交付的虚拟商品：支付成功开通后立即生效，不支持退款。',
+          agreeAria: '同意用户协议并知悉虚拟商品不支持退款',
         },
       },
     },
@@ -128,6 +132,10 @@ const i18n = createI18n({
           retry: 'Start a new payment',
           loadFailed: 'Checkout is unavailable right now.',
           backToMembership: 'Back to membership',
+          agreeTerms: 'I have read and agree to',
+          termsLink: 'the User Agreement and Disclaimer',
+          refundNotice: ', and I understand vip is a virtual good delivered online: it activates immediately after payment and is non-refundable.',
+          agreeAria: 'Agree to the User Agreement and acknowledge the no-refund virtual-goods policy',
         },
       },
     },
@@ -142,6 +150,7 @@ const mountView = async (query: Record<string, string> = { plan: 'monthly' }) =>
     routes: [
       { path: '/membership', name: 'membership', component: { template: '<div />' } },
       { path: '/membership/checkout', name: 'membership-checkout', component: MembershipCheckoutView },
+      { path: '/disclaimer', name: 'disclaimer', component: { template: '<div />' } },
     ],
   })
   await router.push({ path: '/membership/checkout', query })
@@ -172,6 +181,12 @@ afterEach(() => {
 
 import { afterEach } from 'vitest'
 
+// 消保勾选门禁：协议复选框是 submit 的前置条件，凡走 submit() 下单路径的
+// 用例都先勾选；expired 终态的「重新发起支付」走 restartCheckout，不经此门禁。
+const agreeToTerms = async (wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) => {
+  await wrapper.find('.checkout-agree-input').setValue(true)
+}
+
 describe('MembershipCheckoutView', () => {
   it('renders the plan amount from the plans API, not from i18n literals', async () => {
     const { wrapper } = await mountView({ plan: 'yearly' })
@@ -189,6 +204,44 @@ describe('MembershipCheckoutView', () => {
     expect(wrapper.find('.checkout-amount').text()).toContain('$39')
     expect(wrapper.find('.checkout-amount').text()).toContain('/ year')
     expect(wrapper.find('.checkout-plan-name').text()).toBe('vip · Annual')
+  })
+
+  it('gates order creation behind the agreement checkbox until explicitly checked', async () => {
+    const { wrapper } = await mountView()
+
+    // 默认未勾选：按钮禁用，点击也不下单（submit() 内部同样拒绝）
+    const submit = wrapper.find('.checkout-submit')
+    expect(submit.attributes('disabled')).toBeDefined()
+    await submit.trigger('click')
+    await flushPromises()
+    expect(apiBox.createOrder).not.toHaveBeenCalled()
+
+    // 勾选后解锁并正常下单
+    await agreeToTerms(wrapper)
+    expect(wrapper.find('.checkout-submit').attributes('disabled')).toBeUndefined()
+    await wrapper.find('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(apiBox.createOrder).toHaveBeenCalledWith(
+      'member_monthly',
+      'wechat_native',
+      expect.any(String),
+    )
+  })
+
+  it('renders the no-refund virtual-goods notice with a link to the user agreement', async () => {
+    const { wrapper } = await mountView()
+
+    const agree = wrapper.find('.checkout-agree')
+    expect(agree.exists()).toBe(true)
+    expect(agree.text()).toContain('不支持退款')
+    expect(agree.text()).toContain('虚拟商品')
+    const link = agree.find('a.checkout-agree-link')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('/disclaimer')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(wrapper.find('.checkout-agree-input').attributes('aria-label')).toBe(
+      '同意用户协议并知悉虚拟商品不支持退款',
+    )
   })
 
   it('greys out unavailable channels and selects the first available one', async () => {
@@ -268,6 +321,7 @@ describe('MembershipCheckoutView', () => {
     expect(channels).toHaveLength(1)
     expect(channels[0]!.classes()).toContain('checkout-channel--selected')
 
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     expect(apiBox.createOrder).toHaveBeenCalledWith(
@@ -303,6 +357,7 @@ describe('MembershipCheckoutView', () => {
     expect(channels[0]!.classes()).toContain('checkout-channel--selected')
     expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')
 
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     expect(apiBox.createOrder).toHaveBeenCalledWith(
@@ -315,6 +370,7 @@ describe('MembershipCheckoutView', () => {
   it('creates an order on submit and renders the qr placeholder with raw content', async () => {
     const { wrapper } = await mountView()
 
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
@@ -354,6 +410,7 @@ describe('MembershipCheckoutView', () => {
     })
     const { wrapper } = await mountView()
 
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
@@ -371,6 +428,7 @@ describe('MembershipCheckoutView', () => {
 
   it('never auto-opens qr_code instructions', async () => {
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     await vi.advanceTimersByTimeAsync(5000)
@@ -434,6 +492,7 @@ describe('MembershipCheckoutView', () => {
       expires_at: '2026-08-19T12:02:00Z',
     })
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
@@ -449,6 +508,7 @@ describe('MembershipCheckoutView', () => {
   it('stops showing the countdown once the order reaches a terminal state', async () => {
     vi.setSystemTime(new Date('2026-08-19T12:00:00Z'))
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('订单支付有效期剩余')
@@ -461,6 +521,7 @@ describe('MembershipCheckoutView', () => {
 
   it('lands on the paid state when polling observes the paid status', async () => {
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
@@ -473,6 +534,7 @@ describe('MembershipCheckoutView', () => {
 
   it('refreshes the user identity once polling observes the paid status', async () => {
     const { wrapper, authStore } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 
@@ -489,6 +551,7 @@ describe('MembershipCheckoutView', () => {
   it('shows the expired state with a restart action when the order expires', async () => {
     apiBox.getOrder.mockResolvedValue({ ...paidOrder, status: 'expired' })
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
     await vi.advanceTimersByTimeAsync(3000)
@@ -522,6 +585,7 @@ describe('MembershipCheckoutView', () => {
       response: { status: 503, data: { detail: 'payment_channel_not_configured' } },
     })
     const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
     await wrapper.find('.checkout-submit').trigger('click')
     await flushPromises()
 

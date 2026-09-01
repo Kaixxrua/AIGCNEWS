@@ -9,6 +9,7 @@ const sections = [
   { title: 'conductTitle', paragraphs: ['conductIntro'], items: ['conduct1', 'conduct2', 'conduct3', 'conduct4', 'conduct5'], footer: 'conductWarning' },
   { title: 'ipTitle', paragraphs: ['upstream', 'generated', 'removalHow', 'removalSla', 'removalScope', 'scraping'] },
   { title: 'serviceTitle', paragraphs: ['serviceIntro'], items: ['service1', 'service2', 'service3', 'service4'] },
+  { title: 'memberTitle', paragraphs: ['member1', 'member2', 'member3', 'member4'] },
   { title: 'accountTitle', paragraphs: ['account1', 'account2', 'account3'] },
 ] as const
 </script>

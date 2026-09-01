@@ -36,6 +36,7 @@ const emit = defineEmits<{
 
   <!-- 报告正文 -->
   <div v-if="reportContent" class="p-5">
+    <p class="mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
     <article class="prose-content prose-report max-w-none" v-html="renderMarkdown(reportContent)" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>

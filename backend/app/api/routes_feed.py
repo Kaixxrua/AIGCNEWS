@@ -89,7 +89,7 @@ _FEED_MEDIA_TYPE = "application/rss+xml; charset=utf-8"
 _BRAND_BASE_URL = "https://aigcnews.cn"
 
 _CHANNEL_TITLE = "AIGC NEWS"
-_CHANNEL_DESCRIPTION = "AI 资讯聚合：arXiv 论文、GitHub 项目、Product Hunt、Hacker News、X 与科技媒体日报"
+_CHANNEL_DESCRIPTION = "AI 资讯聚合：arXiv 论文、GitHub 项目、Product Hunt、Hacker News、X 与科技媒体日报（含 AI 生成摘要与译文，仅供参考）"
 
 _MEMBER_ONLY_DETAIL = "全文 RSS 是会员权益，开通会员后使用你的访问令牌订阅"
 _INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销"
@@ -104,8 +104,8 @@ _GITHUB_HOT_FEED_LIMIT = 50
 
 # 简报 feed：近 7 期综合报（一日一期，约一周归档）。
 _BRIEFING_FEED_LIMIT = 7
-_BRIEFING_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报全文：跨源技术亮点、工程动态与行业资讯"
-_BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（会员专属）"
+_BRIEFING_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报全文：跨源技术亮点、工程动态与行业资讯（内容由 AI 生成，仅供参考）"
+_BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（会员专属；内容由 AI 生成）"
 
 
 def _project_to_feed_row(item: dict[str, Any]) -> dict[str, Any]:

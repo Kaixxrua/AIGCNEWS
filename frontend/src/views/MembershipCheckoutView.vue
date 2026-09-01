@@ -102,6 +102,10 @@ const periodSuffix = computed(() =>
 const submitting = computed(() => phase.value === 'creating')
 const awaitingPayment = computed(() => phase.value === 'awaiting_payment')
 
+// 消保合规：虚拟商品付款前必须主动勾选确认协议与不退款条款（默认不勾选、
+// 不预填），未勾选时提交按钮置灰且 submit() 直接拒绝。
+const agreedToTerms = ref(false)
+
 // redirect_url 指令（支付宝/海外跳转）：短暂展示提示后在新标签页打开渠道收银台，
 // 本页轮询/倒计时不中断；手动链接保留为弹窗被拦截时的兜底。
 const REDIRECT_DELAY_MS = 600
@@ -174,7 +178,7 @@ const selectChannel = (channel: PaymentChannel) => {
 }
 
 const submit = () => {
-  if (!plan.value || !selectedChannel.value || submitting.value || awaitingPayment.value) return
+  if (!plan.value || !selectedChannel.value || !agreedToTerms.value || submitting.value || awaitingPayment.value) return
   void beginCheckout(plan.value.code, selectedChannel.value)
 }
 </script>
@@ -277,10 +281,18 @@ const submit = () => {
         </section>
 
         <template v-else>
+          <label class="checkout-agree">
+            <input v-model="agreedToTerms" type="checkbox" class="checkout-agree-input" :aria-label="t('membership.checkout.agreeAria')" />
+            <span class="checkout-agree-text">
+              {{ t('membership.checkout.agreeTerms') }}
+              <RouterLink to="/disclaimer" class="checkout-agree-link" target="_blank">{{ t('membership.checkout.termsLink') }}</RouterLink>
+              {{ t('membership.checkout.refundNotice') }}
+            </span>
+          </label>
           <button
             type="button"
             class="checkout-submit"
-            :disabled="!selectedChannel || submitting"
+            :disabled="!agreedToTerms || !selectedChannel || submitting"
             @click="submit"
           >
             {{ submitting ? t('membership.checkout.submitting') : t('membership.checkout.submit') }}
@@ -550,6 +562,35 @@ const submit = () => {
   font-size: 15px;
   font-weight: 800;
   color: var(--ink);
+}
+
+.checkout-agree {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkout-agree-input {
+  margin-top: 2px;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.checkout-agree-text {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-secondary);
+}
+
+.checkout-agree-link {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .checkout-submit {

@@ -5,11 +5,13 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const { t } = useI18n()
 const sections = [
+  { title: 'payTitle', paragraphs: ['payText'] },
   { title: 'collectTitle', paragraphs: ['collectIntro'], items: ['email', 'password', 'logs'] },
   { title: 'aiTitle', paragraphs: ['aiText'], warning: 'aiWarning' },
   { title: 'useTitle', items: ['use1', 'use2', 'use3', 'use4'] },
   { title: 'securityTitle', paragraphs: ['security1', 'security2'] },
   { title: 'cookieTitle', paragraphs: ['cookieText'] },
+  { title: 'minorTitle', paragraphs: ['minorText'] },
   { title: 'rightsTitle', paragraphs: ['rightsIntro'], items: ['right1', 'right2', 'right3'] },
 ] as const
 </script>
