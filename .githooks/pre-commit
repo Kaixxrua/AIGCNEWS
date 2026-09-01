@@ -1,8 +1,23 @@
 #!/usr/bin/env bash
 # AIGCNEWS pre-commit：ruff 快检 + 受影响后端测试快筛。
-# 启用方式（仓库已配置 core.hooksPath=.githooks 时无需操作）：
-#   git config core.hooksPath .githooks
+# 启用方式（每个 linked worktree 单独配置）：
+#   git config extensions.worktreeConfig true
+#   git config --worktree core.hooksPath .githooks
 set -euo pipefail
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [[ -z "$branch" ]]; then
+  echo "[pre-commit] 拒绝 detached HEAD；请在 session/<slug>-<id> worktree 中提交" >&2
+  exit 1
+fi
+if [[ "$branch" == "main" ]]; then
+  echo "[pre-commit] 拒绝直接在 main 提交；请使用 branch-backed session worktree" >&2
+  exit 1
+fi
+if [[ "$branch" != session/* ]]; then
+  echo "[pre-commit] 拒绝非 session 分支：$branch" >&2
+  exit 1
+fi
 
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"

@@ -7,43 +7,27 @@ from unittest.mock import patch
 
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.repositories.postgres_attachment_meta_repository import (
     PostgresAttachmentMetaRepository,
 )
 from backend.app.services.chat import attachment_service
 from backend.app.services.chat.attachment_policy import ValidatedPdf
 from backend.app.services.chat.attachment_service import _PostgresMetaStore
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE users RESTART IDENTITY CASCADE")
-            cursor.execute(
+    with postgres_test_sandbox() as sandbox:
+        with sandbox.database.transaction() as connection:
+            connection.execute(
                 """
                 INSERT INTO users (email, hashed_password) VALUES
                     ('owner@example.com', 'hash'),
                     ('other@example.com', 'hash')
                 """
             )
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+        yield sandbox.database
 
 
 def test_attachment_meta_round_trip_owner_scope_and_order(database) -> None:
@@ -87,9 +71,7 @@ def test_attachment_meta_round_trip_owner_scope_and_order(database) -> None:
     assert repository.get_attachment_meta("missing", user_id=1) is None
 
     # 请求顺序与重复项保持，owner 过滤生效。
-    rows = repository.list_attachment_meta(
-        ["second", "missing", "first", "second", "foreign"], user_id=1
-    )
+    rows = repository.list_attachment_meta(["second", "missing", "first", "second", "foreign"], user_id=1)
     assert [row["attachment_id"] for row in rows] == ["second", "first", "second"]
     assert repository.list_attachment_meta([], user_id=1) == []
 
@@ -189,6 +171,7 @@ def test_service_full_chain_survives_restart_and_reconciles_orphans(database) ->
                 patch.object(attachment_service, "_meta_repository", restarted_repository),
                 patch.object(attachment_service, "_meta_store", restarted_store),
             ):
+
                 async def exercise() -> None:
                     restored = await attachment_service.get_attachment(meta.id, 1)
                     assert restored is not None
@@ -196,10 +179,7 @@ def test_service_full_chain_survives_restart_and_reconciles_orphans(database) ->
                     assert restored.page_count == 2
                     assert restored.text_preview == "persisted text"
                     assert await attachment_service.get_attachment(meta.id, 2) is None
-                    assert (
-                        await attachment_service.get_pdf_text(meta.id, 1)
-                        == "persisted text"
-                    )
+                    assert await attachment_service.get_pdf_text(meta.id, 1) == "persisted text"
 
                 asyncio.run(exercise())
 
@@ -207,9 +187,7 @@ def test_service_full_chain_survives_restart_and_reconciles_orphans(database) ->
                 with open(orphan_path, "wb") as orphan_file:
                     orphan_file.write(b"%PDF-1.7\norphan")
 
-                result = attachment_service.reconcile_orphan_attachments(
-                    now=meta.created_at + 1, upload_dir=upload_dir
-                )
+                result = attachment_service.reconcile_orphan_attachments(now=meta.created_at + 1, upload_dir=upload_dir)
                 assert result["orphan_files_removed"] == 1
                 assert not os.path.exists(orphan_path)
                 assert os.path.exists(os.path.join(upload_dir, f"{meta.id}.pdf"))

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aigcnews.local/schemas/release-candidate-manifest.v1.json",
+  "title": "AIGCNEWS release candidate manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_sha", "candidate_id", "ci_run_id", "dependency_lock_hashes", "migration_set_digest", "migration_latest_version", "image_digests", "frontend_artifact_digest", "risk", "actor", "evidence_digests", "created_at", "schema_version"],
+  "properties": {
+    "source_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "candidate_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "ci_run_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "dependency_lock_hashes": {"type": "object", "propertyNames": {"pattern": "^.+$"}, "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "migration_set_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "migration_latest_version": {"type": "string", "minLength": 1},
+    "image_digests": {"type": "array", "items": {"type": "string", "pattern": "^[^@\\s]+@sha256:[0-9a-f]{64}$"}},
+    "frontend_artifact_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "risk": {"type": "string", "enum": ["green", "yellow", "red"]},
+    "actor": {"type": "string", "minLength": 1, "maxLength": 256},
+    "evidence_digests": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "created_at": {"type": "string", "format": "date-time"},
+    "schema_version": {"const": "aigcnews.release-candidate.v1"}
+  }
+}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-import uuid
 from pathlib import Path
 from typing import Any, Iterator
 
 import pytest
+
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _IMPORT_CWD = Path.cwd()
@@ -13,11 +14,7 @@ os.chdir(_TESTS_DIR)
 try:
     psycopg = pytest.importorskip("psycopg")
     pytest.importorskip("psycopg_pool")
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-    from psycopg_pool import ConnectionPool
 
-    from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-    from backend.app.core.postgres_migrations import PostgresMigrationRunner
     from backend.app.repositories.postgres_project_enrichment_repository import (
         PostgresGitHubProjectEnrichmentRepository,
         PostgresToolWebsiteEnrichmentRepository,
@@ -26,37 +23,15 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 
-def _test_dsn() -> str:
-    dsn = os.environ.get("TEST_POSTGRES_DSN", "").strip()
-    if not dsn:
-        pytest.skip("TEST_POSTGRES_DSN is required for PostgreSQL integration tests")
-    database = str(conninfo_to_dict(dsn).get("dbname") or "")
-    if "test" not in database.lower():
-        pytest.skip("TEST_POSTGRES_DSN dbname must contain 'test'")
-    return dsn
-
-
 @pytest.fixture(scope="module")
 def repositories() -> Iterator[tuple[Any, Any, Any]]:
-    dsn = _test_dsn()
-    schema = f"enrichment_pg16_{uuid.uuid4().hex}"
-    with psycopg.connect(dsn, autocommit=True) as admin:
-        version = int(admin.execute("SHOW server_version_num").fetchone()[0])
-        if version < 160000 or version >= 170000:
-            pytest.skip("this integration suite requires PostgreSQL 16")
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    scoped_dsn = make_conninfo(dsn, options=f"-c search_path={schema}")
-    database = PostgresDatabaseLifecycle(lambda: ConnectionPool(
-        conninfo=scoped_dsn, min_size=1, max_size=4, timeout=10,
-        kwargs={"autocommit": False, "row_factory": psycopg.rows.dict_row}, open=False,
-    ))
-    try:
-        PostgresMigrationRunner(database).apply()
-        yield database, PostgresGitHubProjectEnrichmentRepository(database), PostgresToolWebsiteEnrichmentRepository(database)
-    finally:
-        database.close()
-        with psycopg.connect(dsn, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+    with postgres_test_sandbox() as sandbox:
+        database = sandbox.database
+        yield (
+            database,
+            PostgresGitHubProjectEnrichmentRepository(database),
+            PostgresToolWebsiteEnrichmentRepository(database),
+        )
 
 
 def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories) -> None:
@@ -84,36 +59,55 @@ def test_pg16_github_candidates_fingerprint_status_and_alias_upsert(repositories
     assert candidates[0]["topics"] == ["rag"]
     fingerprint = candidates[0]["source_fingerprint"]
 
-    github.upsert_github_repo_enrichment({
-        "repo_id": "alias", "category_slug": "agent", "category_name": "Agent",
-        "description_zh": "智能体", "tags": ["RAG"], "source_fingerprint": fingerprint,
-        "prompt_version": "v1",
-    })
+    github.upsert_github_repo_enrichment(
+        {
+            "repo_id": "alias",
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "智能体",
+            "tags": ["RAG"],
+            "source_fingerprint": fingerprint,
+            "prompt_version": "v1",
+        }
+    )
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment()] == ["new"]
     github.mark_github_repo_enrichment_failed(
-        "new", source_fingerprint=candidates[1]["source_fingerprint"],
-        prompt_version="v1", error_msg="boom"
+        "new", source_fingerprint=candidates[1]["source_fingerprint"], prompt_version="v1", error_msg="boom"
     )
     # 完整状态投影（真实 PG）：活动统计 = canonical 有效项目（alias/墓碑排除，
     # 4 行候选只算 canonical+new），四状态守恒 total = s/f/u/p；队列计数与
     # catalog 展示口径分离；retained 桶全零但结构齐全。
     assert github.get_github_project_enrichment_status() == {
-        "eligible": 2, "succeeded": 1, "failed": 1, "pending": 0,
-        "queue_pending": 0, "queue_failed": 1, "content_total": 1,
-        "catalog_total": 2, "catalog_succeeded": 1, "catalog_failed": 1,
-        "catalog_pending": 0, "catalog_unprocessable": 0,
+        "eligible": 2,
+        "succeeded": 1,
+        "failed": 1,
+        "pending": 0,
+        "queue_pending": 0,
+        "queue_failed": 1,
+        "content_total": 1,
+        "catalog_total": 2,
+        "catalog_succeeded": 1,
+        "catalog_failed": 1,
+        "catalog_pending": 0,
+        "catalog_unprocessable": 0,
         "catalog_progress": {
-            "total": 2, "succeeded": 1, "failed": 1,
-            "unprocessable": 0, "pending": 0,
+            "total": 2,
+            "succeeded": 1,
+            "failed": 1,
+            "unprocessable": 0,
+            "pending": 0,
         },
         "retained_total": 0,
         "retained_buckets": {
-            "tombstone": 0, "not_found": 0,
-            "snapshot_below_threshold": 0, "lost_input": 0,
+            "tombstone": 0,
+            "not_found": 0,
+            "snapshot_below_threshold": 0,
+            "lost_input": 0,
         },
         "retained_projects": [],
         "by_category": [{"slug": "agent", "name": "Agent", "count": 1}],
-        "unprocessable": 0, "unprocessable_projects": [],
+        "unprocessable": 0,
+        "unprocessable_projects": [],
     }
     assert [row["repo_id"] for row in github.get_github_projects_needing_enrichment(retry_failed=True)] == ["new"]
 
@@ -177,19 +171,29 @@ def test_pg16_no_input_failed_and_pending_rows_unify_into_unprocessable(reposito
                 ('uc_ok_pending','acme/uc-ok-pending','Ok desc','','[]',600,1,1,'active'),
                 ('uc_succeeded_lost','acme/uc-succeeded-lost','','','[]',550,1,1,'active')""")
     github.mark_github_repo_enrichment_failed(
-        "uc_failed_gone", source_fingerprint="f" * 64,
-        prompt_version="v1", error_msg="boom",
+        "uc_failed_gone",
+        source_fingerprint="f" * 64,
+        prompt_version="v1",
+        error_msg="boom",
     )
     github.mark_github_repo_enrichment_failed(
-        "uc_failed_input", source_fingerprint="f" * 64,
-        prompt_version="v1", error_msg="boom",
+        "uc_failed_input",
+        source_fingerprint="f" * 64,
+        prompt_version="v1",
+        error_msg="boom",
     )
-    github.upsert_github_repo_enrichment({
-        "repo_id": "uc_succeeded_lost", "category_slug": "agent",
-        "category_name": "Agent", "description_zh": "智能体",
-        "description_en": "Agent", "tags": [], "source_fingerprint": "s" * 64,
-        "prompt_version": "v1",
-    })
+    github.upsert_github_repo_enrichment(
+        {
+            "repo_id": "uc_succeeded_lost",
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "智能体",
+            "description_en": "Agent",
+            "tags": [],
+            "source_fingerprint": "s" * 64,
+            "prompt_version": "v1",
+        }
+    )
     after = github.get_github_project_enrichment_status(min_stars=500)
 
     def delta(key: str) -> int:
@@ -209,19 +213,13 @@ def test_pg16_no_input_failed_and_pending_rows_unify_into_unprocessable(reposito
     # succeeded 丢输入仍计成功，退到 retained lost_input 桶而非 unprocessable
     assert delta("catalog_succeeded") == 1
     assert delta("retained_total") == 1
-    assert (
-        int(after["retained_buckets"]["lost_input"])
-        - int(before["retained_buckets"]["lost_input"])
-    ) == 1
+    assert (int(after["retained_buckets"]["lost_input"]) - int(before["retained_buckets"]["lost_input"])) == 1
     # catalog 投影四状态互斥守恒
     progress = after["catalog_progress"]
     assert progress["total"] == (
-        progress["succeeded"] + progress["failed"]
-        + progress["unprocessable"] + progress["pending"]
+        progress["succeeded"] + progress["failed"] + progress["unprocessable"] + progress["pending"]
     )
-    assert (
-        progress["unprocessable"] - before["catalog_progress"]["unprocessable"]
-    ) == 3
+    assert (progress["unprocessable"] - before["catalog_progress"]["unprocessable"]) == 3
 
 
 def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
@@ -237,20 +235,26 @@ def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
                 VALUES ('readme_fp','README v1 body','hash-v1','succeeded','now')""")
 
     row = next(
-        item
-        for item in github.get_github_projects_needing_enrichment(limit=100)
-        if item["repo_id"] == "readme_fp"
+        item for item in github.get_github_projects_needing_enrichment(limit=100) if item["repo_id"] == "readme_fp"
     )
-    github.upsert_github_repo_enrichment({
-        "repo_id": "readme_fp", "category_slug": "agent", "category_name": "Agent",
-        "description_zh": "智能体", "description_en": "Agent",
-        "tags": [], "source_fingerprint": row["source_fingerprint"],
-        "prompt_version": "v1",
-    })
+    github.upsert_github_repo_enrichment(
+        {
+            "repo_id": "readme_fp",
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "智能体",
+            "description_en": "Agent",
+            "tags": [],
+            "source_fingerprint": row["source_fingerprint"],
+            "prompt_version": "v1",
+        }
+    )
     assert "readme_fp" not in {
         item["repo_id"]
         for item in github.get_github_projects_needing_enrichment(
-            refresh_changed=True, prompt_version="v1", limit=100,
+            refresh_changed=True,
+            prompt_version="v1",
+            limit=100,
         )
     }
 
@@ -264,7 +268,9 @@ def test_pg16_readme_hash_change_triggers_refresh(repositories) -> None:
     assert "readme_fp" in {
         item["repo_id"]
         for item in github.get_github_projects_needing_enrichment(
-            refresh_changed=True, prompt_version="v1", limit=100,
+            refresh_changed=True,
+            prompt_version="v1",
+            limit=100,
         )
     }
 
@@ -288,11 +294,17 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
 
     # 1) 四个仓库都在“还符合口径”时完成富化
     for repo_id in ("ret_tomb", "ret_gone404", "ret_dropped", "ret_lost"):
-        github.upsert_github_repo_enrichment({
-            "repo_id": repo_id, "category_slug": "agent", "category_name": "Agent",
-            "description_zh": "智能体", "tags": [],
-            "source_fingerprint": f"fp-{repo_id}", "prompt_version": "v1",
-        })
+        github.upsert_github_repo_enrichment(
+            {
+                "repo_id": repo_id,
+                "category_slug": "agent",
+                "category_name": "Agent",
+                "description_zh": "智能体",
+                "tags": [],
+                "source_fingerprint": f"fp-{repo_id}",
+                "prompt_version": "v1",
+            }
+        )
 
     with database.transaction() as connection:
         with connection.cursor() as cursor:
@@ -302,15 +314,15 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
                 (alias_repo_id,canonical_repo_id,full_name)
                 VALUES ('ret_tomb','canonical','acme/before-rename')""")
             # ret_gone404：两次 404 观测后下架
-            cursor.execute("UPDATE github_repo_candidates SET availability_status='not_found' "
-                           "WHERE repo_id='ret_gone404'")
+            cursor.execute(
+                "UPDATE github_repo_candidates SET availability_status='not_found' WHERE repo_id='ret_gone404'"
+            )
             # ret_dropped：最新快照星数回落到门槛以下（candidates 仍 600）
             cursor.execute("""INSERT INTO github_repo_snapshots
                 (repo_id,snapshot_date,captured_at,stars,forks,watchers,open_issues)
                 VALUES ('ret_dropped','2026-08-20','now',450,1,1,1)""")
             # ret_lost：作者删掉简介，README 抓取也失败
-            cursor.execute("UPDATE github_repo_candidates SET description='' "
-                           "WHERE repo_id='ret_lost'")
+            cursor.execute("UPDATE github_repo_candidates SET description='' WHERE repo_id='ret_lost'")
             cursor.execute("""INSERT INTO github_project_semantic_sources
                 (repo_id,readme_text,readme_sha256,readme_status,updated_at)
                 VALUES ('ret_lost','','','failed','now')""")
@@ -335,8 +347,9 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
     assert buckets["snapshot_below_threshold"] >= 1
     assert buckets["lost_input"] >= 1
     assert status["retained_total"] == sum(buckets.values())
-    assert status["retained_total"] == len(status["retained_projects"]) or \
-        status["retained_total"] > len(status["retained_projects"])  # 列表有 100 条上限
+    assert status["retained_total"] == len(status["retained_projects"]) or status["retained_total"] > len(
+        status["retained_projects"]
+    )  # 列表有 100 条上限
 
     # 四行都富化成功过：绝不进入无法富化名单
     unprocessable_ids = {row["repo_id"] for row in status["unprocessable_projects"]}
@@ -354,27 +367,47 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
 
 def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -> None:
     _, _, websites = repositories
-    created = websites.upsert_tool_website({
-        "canonical_url": "https://tool.test/docs", "normalized_url_hash": "h" * 64,
-        "domain": "tool.test", "title": "Tool", "description": "Useful",
-        "image_url": "https://tool.test/logo.png", "raw_metadata_json": '{"a":1}',
-        "source_fingerprint": "a" * 64, "visibility": "private",
-    })
-    merged = websites.upsert_tool_website({
-        "canonical_url": "https://tool.test", "normalized_url_hash": "h" * 64,
-        "domain": "tool.test", "title": "", "description": "", "image_url": "",
-        "source_fingerprint": "b" * 64, "visibility": "public",
-    })
+    created = websites.upsert_tool_website(
+        {
+            "canonical_url": "https://tool.test/docs",
+            "normalized_url_hash": "h" * 64,
+            "domain": "tool.test",
+            "title": "Tool",
+            "description": "Useful",
+            "image_url": "https://tool.test/logo.png",
+            "raw_metadata_json": '{"a":1}',
+            "source_fingerprint": "a" * 64,
+            "visibility": "private",
+        }
+    )
+    merged = websites.upsert_tool_website(
+        {
+            "canonical_url": "https://tool.test",
+            "normalized_url_hash": "h" * 64,
+            "domain": "tool.test",
+            "title": "",
+            "description": "",
+            "image_url": "",
+            "source_fingerprint": "b" * 64,
+            "visibility": "public",
+        }
+    )
     assert merged["id"] == created["id"]
     assert merged["title"] == "Tool"
     assert merged["description"] == "Useful"
     assert merged["visibility"] == "public"
 
-    websites.upsert_tool_website_enrichment({
-        "website_id": created["id"], "category_slug": "ai_tools",
-        "category_name": "AI 工具", "description_zh": "工具", "tags": ["AI"],
-        "source_fingerprint": "b" * 64, "prompt_version": "v1",
-    })
+    websites.upsert_tool_website_enrichment(
+        {
+            "website_id": created["id"],
+            "category_slug": "ai_tools",
+            "category_name": "AI 工具",
+            "description_zh": "工具",
+            "tags": ["AI"],
+            "source_fingerprint": "b" * 64,
+            "prompt_version": "v1",
+        }
+    )
     item = websites.get_tool_website_item(created["id"])
     assert item is not None
     assert item["id"] == f"website:{created['id']}"
@@ -382,8 +415,10 @@ def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -
     assert item["image_url"] == "https://tool.test/logo.png"
 
     websites.mark_tool_website_enrichment_failed(
-        created["id"], source_fingerprint="c" * 64,
-        prompt_version="v2", error_msg="x" * 2100,
+        created["id"],
+        source_fingerprint="c" * 64,
+        prompt_version="v2",
+        error_msg="x" * 2100,
     )
     failed = websites.get_tool_website_enrichment(created["id"])
     assert failed is not None
@@ -408,9 +443,12 @@ def test_pg16_run_scope_excludes_alias_tombstones(repositories) -> None:
                 (alias_repo_id,canonical_repo_id,full_name)
                 VALUES ('run_old','run_canonical','acme/run-old')""")
 
-    assert github.count_github_run_enrichment_candidates(
-        channel="it-chan", first_seen_after="2026-08-01T00:00:00Z", min_stars=500
-    ) == 1
+    assert (
+        github.count_github_run_enrichment_candidates(
+            channel="it-chan", first_seen_after="2026-08-01T00:00:00Z", min_stars=500
+        )
+        == 1
+    )
     rows = github.list_github_run_enrichment_candidates(
         channel="it-chan", first_seen_after="2026-08-01T00:00:00Z", min_stars=500
     )
@@ -427,24 +465,28 @@ def test_pg16_refresh_changed_uses_sql_fingerprint_equivalent_to_python(reposito
                 VALUES ('stable','acme/稳定','Agent 描述','Python','[\"rag\"]',900,2,3)""")
 
     # 模块共享 schema 内可能有前序用例的其他 repo，断言只锁定 stable 一行
-    stable = next(
-        row
-        for row in github.get_github_projects_needing_enrichment(limit=50)
-        if row["repo_id"] == "stable"
-    )
+    stable = next(row for row in github.get_github_projects_needing_enrichment(limit=50) if row["repo_id"] == "stable")
     fingerprint = stable["source_fingerprint"]
-    github.upsert_github_repo_enrichment({
-        "repo_id": "stable", "category_slug": "agent", "category_name": "Agent",
-        "description_zh": "智能体", "description_en": "Agent",
-        "tags": ["RAG"], "source_fingerprint": fingerprint,
-        "prompt_version": "v1",
-    })
+    github.upsert_github_repo_enrichment(
+        {
+            "repo_id": "stable",
+            "category_slug": "agent",
+            "category_name": "Agent",
+            "description_zh": "智能体",
+            "description_en": "Agent",
+            "tags": ["RAG"],
+            "source_fingerprint": fingerprint,
+            "prompt_version": "v1",
+        }
+    )
 
     # 指纹、双语字段与版本一致：SQL 下推必须排除该项目
     assert "stable" not in {
         row["repo_id"]
         for row in github.get_github_projects_needing_enrichment(
-            refresh_changed=True, prompt_version="v1", limit=50,
+            refresh_changed=True,
+            prompt_version="v1",
+            limit=50,
         )
     }
 
@@ -452,20 +494,21 @@ def test_pg16_refresh_changed_uses_sql_fingerprint_equivalent_to_python(reposito
     assert "stable" in {
         row["repo_id"]
         for row in github.get_github_projects_needing_enrichment(
-            refresh_changed=True, prompt_version="v2", limit=50,
+            refresh_changed=True,
+            prompt_version="v2",
+            limit=50,
         )
     }
 
     # 内容变化（SQL 指纹随之变化）触发重富化
     with database.transaction() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE github_repo_candidates SET description='New 描述' "
-                "WHERE repo_id='stable'"
-            )
+            cursor.execute("UPDATE github_repo_candidates SET description='New 描述' WHERE repo_id='stable'")
     assert "stable" in {
         row["repo_id"]
         for row in github.get_github_projects_needing_enrichment(
-            refresh_changed=True, prompt_version="v1", limit=50,
+            refresh_changed=True,
+            prompt_version="v1",
+            limit=50,
         )
     }

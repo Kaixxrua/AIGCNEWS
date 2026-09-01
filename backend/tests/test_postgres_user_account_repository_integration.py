@@ -1,36 +1,17 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 
-from backend.app.core.postgres_database import (
-    PostgresDatabaseLifecycle,
-    create_postgres_pool,
-)
-from backend.app.core.postgres_migrations import PostgresMigrationRunner
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("POSTGRES_INTEGRATION") != "1",
-    reason="set POSTGRES_INTEGRATION=1 to run PostgreSQL integration tests",
-)
+from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
 @pytest.fixture
 def database():
-    lifecycle = PostgresDatabaseLifecycle(create_postgres_pool)
-    lifecycle.open()
-    PostgresMigrationRunner(lifecycle).apply()
-    with lifecycle.transaction() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("TRUNCATE users RESTART IDENTITY CASCADE")
-    try:
-        yield lifecycle
-    finally:
-        lifecycle.close()
+    with postgres_test_sandbox() as sandbox:
+        yield sandbox.database
 
 
 def test_postgres_user_repository_round_trip_and_statistics(database) -> None:
