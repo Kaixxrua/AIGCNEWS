@@ -1,0 +1,153 @@
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAuthStore } from '@/stores/authStore'
+import { startOAuthBinding, updateProfile } from '@/services/auth/authApi'
+import ChangePasswordDialog from '@/components/auth/ChangePasswordDialog.vue'
+import OAuthProviderIcon from '@/components/auth/OAuthProviderIcon.vue'
+import AuthFeedback from '@/components/auth/AuthFeedback.vue'
+import { getErrorDetail } from '@/features/auth/authViewModel'
+import { useDockSuppression } from '@/composables/useDockSuppression'
+
+const props = defineProps<{
+  modelValue: boolean
+}>()
+const emit = defineEmits<{ (event: 'update:modelValue', value: boolean): void }>()
+
+const { t, locale } = useI18n()
+const authStore = useAuthStore()
+const visible = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
+useDockSuppression(() => props.modelValue)
+
+const dialogRef = ref<HTMLElement | null>(null)
+const username = ref('')
+const saving = ref(false)
+const error = ref('')
+const success = ref('')
+const passwordOpen = ref(false)
+let previouslyFocused: HTMLElement | null = null
+
+const currentUser = computed(() => authStore.user)
+const usernameValue = computed(() => currentUser.value?.username ?? '')
+const registeredAt = computed(() => {
+  const value = currentUser.value?.created_at
+  if (!value) return t('auth.notAvailable')
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t('auth.notAvailable')
+  return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+})
+const providerLabel = (provider: string) => provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : provider === 'wechat' ? '微信' : provider
+const providers = ['github', 'google', 'wechat']
+const connectedProviders = computed(() => new Set((currentUser.value?.oauth_identities ?? []).map(identity => identity.provider)))
+
+const close = () => { passwordOpen.value = false; visible.value = false }
+const onKeydown = (event: KeyboardEvent) => { if (event.key === 'Escape' && visible.value && !passwordOpen.value) close() }
+const bindProvider = (provider: string) => {
+  if (connectedProviders.value.has(provider)) return
+  void startOAuthBinding(provider, '/')
+}
+const saveUsername = async () => {
+  const next = username.value.trim()
+  error.value = ''; success.value = ''
+  if (!next) { error.value = t('auth.usernameRequired'); return }
+  if (next.length > 64) { error.value = t('auth.usernameTooLong'); return }
+  saving.value = true
+  try {
+    const updated = await updateProfile(next)
+    authStore.user = updated
+    username.value = updated.username ?? next
+    success.value = t('auth.usernameSaved')
+  } catch (reason: unknown) {
+    error.value = getErrorDetail(reason, t('auth.usernameSaveFailed'))
+  } finally { saving.value = false }
+}
+
+watch(() => props.modelValue, async open => {
+  if (open) {
+    previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    username.value = usernameValue.value
+    error.value = ''; success.value = ''
+    passwordOpen.value = false
+    window.addEventListener('keydown', onKeydown)
+    await nextTick(); dialogRef.value?.focus()
+  } else {
+    window.removeEventListener('keydown', onKeydown)
+    passwordOpen.value = false
+    await nextTick(); previouslyFocused?.focus(); previouslyFocused = null
+  }
+}, { immediate: true })
+</script>
+
+<template>
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="visible" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="account-settings-dialog-title" @click.self="close">
+        <div ref="dialogRef" class="glass-card max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto" tabindex="-1">
+          <div class="monitor-divider flex items-center justify-between border-b p-4">
+            <div>
+              <h3 id="account-settings-dialog-title" class="text-sm font-semibold">{{ t('auth.accountSettings') }}</h3>
+              <p class="mt-1 text-xs monitor-caption">{{ t('auth.accountOverviewDescription') }}</p>
+            </div>
+            <button type="button" class="text-lg leading-none opacity-70 hover:opacity-100" :aria-label="t('auth.closeAccountSettings')" @click="close">✕</button>
+          </div>
+
+          <div class="space-y-5 p-5">
+            <section aria-labelledby="account-overview-title" class="space-y-3">
+              <h4 id="account-overview-title" class="text-xs font-semibold uppercase tracking-wider text-stone-500">{{ t('auth.accountOverview') }}</h4>
+              <dl class="grid gap-3 text-sm sm:grid-cols-2">
+                <div><dt class="text-xs text-stone-500">{{ t('auth.username') }}</dt><dd class="mt-1 font-medium">{{ usernameValue || t('auth.notSet') }}</dd></div>
+                <div><dt class="text-xs text-stone-500">{{ t('auth.email') }}</dt><dd class="mt-1 break-all font-medium">{{ currentUser?.email || t('auth.notSet') }}</dd></div>
+                <div><dt class="text-xs text-stone-500">{{ t('auth.email') }}</dt><dd class="mt-1">{{ currentUser?.email_verified === true ? t('auth.verified') : t('auth.unverified') }}</dd></div>
+                <div><dt class="text-xs text-stone-500">{{ t('auth.registeredAt') }}</dt><dd class="mt-1">{{ registeredAt }}</dd></div>
+                <div><dt class="text-xs text-stone-500">{{ t('auth.role') }}</dt><dd class="mt-1">{{ currentUser?.role || t('auth.notAvailable') }}</dd></div>
+                <div><dt class="text-xs text-stone-500">{{ t('auth.membership') }}</dt><dd class="mt-1">{{ currentUser?.membership_tier === 'member' ? t('auth.memberMembership') : t('auth.freeMembership') }}</dd></div>
+              </dl>
+            </section>
+
+            <section class="space-y-3 border-t border-stone-200/70 pt-4">
+              <label for="account-settings-username" class="text-xs font-semibold text-stone-500">{{ t('auth.editUsername') }}</label>
+              <div class="flex gap-2">
+                <input id="account-settings-username" v-model="username" class="input min-w-0 flex-1" maxlength="64" autocomplete="username" :disabled="saving" />
+                <button type="button" class="btn-primary shrink-0" :disabled="saving" @click="saveUsername">{{ saving ? t('auth.savingUsername') : t('auth.saveUsername') }}</button>
+              </div>
+              <AuthFeedback :message="error" type="error" /><AuthFeedback :message="success" type="success" />
+            </section>
+
+            <section class="space-y-3 border-t border-stone-200/70 pt-4">
+              <div class="flex items-center justify-between"><h4 class="text-xs font-semibold text-stone-500">{{ t('auth.connectedLoginMethods') }}</h4><span class="text-xs monitor-caption">{{ (currentUser?.oauth_identities ?? []).length }}</span></div>
+              <div class="grid grid-cols-3 gap-2">
+                <button
+                  v-for="provider in providers"
+                  :key="provider"
+                  type="button"
+                  class="flex flex-col items-center gap-1.5 rounded-lg border px-2 py-3 text-xs transition-colors"
+                  :class="connectedProviders.has(provider)
+                    ? 'cursor-default border-stone-200/70 bg-stone-50/60 text-stone-500'
+                    : 'border-stone-200/70 hover:border-stone-400 hover:bg-stone-50 text-stone-700'"
+                  :disabled="connectedProviders.has(provider)"
+                  :aria-label="connectedProviders.has(provider) ? `${providerLabel(provider)} ${t('auth.connected')}` : `${providerLabel(provider)} ${t('auth.notConnected')}`"
+                  @click="bindProvider(provider)"
+                >
+                  <OAuthProviderIcon :provider="provider" />
+                  <span class="truncate font-medium">{{ providerLabel(provider) }}</span>
+                  <span class="text-[10px] leading-tight" :class="connectedProviders.has(provider) ? 'text-emerald-700' : 'text-stone-500'">{{ connectedProviders.has(provider) ? t('auth.connected') : t('auth.notConnected') }}</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="space-y-3 border-t border-stone-200/70 pt-4">
+              <div class="flex items-center justify-between"><div><h4 class="text-xs font-semibold text-stone-500">{{ t('auth.passwordLogin') }}</h4><p class="mt-1 text-xs monitor-caption">{{ currentUser?.password_login_enabled === true ? t('auth.passwordEnabled') : t('auth.passwordDisabled') }}</p></div><button type="button" class="btn-primary" @click="passwordOpen = true">{{ t('auth.changePasswordAction') }}</button></div>
+              <p v-if="currentUser?.password_login_enabled !== true" class="text-xs monitor-caption">{{ t('auth.accountActionUnavailable') }}</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+  <ChangePasswordDialog v-model="passwordOpen" />
+</template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+</style>

@@ -16,6 +16,7 @@ const WechatView = () => import('@/views/WechatView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
+const OAuthActionCallbackView = () => import('@/views/OAuthActionCallbackView.vue')
 const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
@@ -41,6 +42,11 @@ const router = createRouter({
       name: 'oauth-callback',
       component: OAuthCallbackView,
       meta: { guestOnly: true },
+    },
+    {
+      path: '/oauth/action-callback',
+      name: 'oauth-action-callback',
+      component: OAuthActionCallbackView,
     },
 
     // ── 主 Layout（大白卡片 + Dock + Auth） ──

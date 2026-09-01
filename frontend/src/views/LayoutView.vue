@@ -13,7 +13,7 @@ import LocaleToggle from '@/components/LocaleToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
-import ChangePasswordDialog from '@/components/auth/ChangePasswordDialog.vue'
+import AccountSettingsDialog from '@/components/auth/AccountSettingsDialog.vue'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   KEEP_ALIVE_MAX,
@@ -33,9 +33,8 @@ const { requestLogin } = useLoginPrompt()
 const enrichmentAlert = useEnrichmentAlertStore()
 const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
 
-// 账户设置入口：dock 账户按钮打开；当前承载改密对话框（用户名/邮箱/快捷登录
-// 绑定为后续工作单元，账户设置容器就位后迁移）
-const changePasswordOpen = ref(false)
+// 账户设置入口：dock 账户按钮打开账户信息面板，面板内可进入改密子流程。
+const accountSettingsOpen = ref(false)
 // 种子默认管理员仍用公开默认密码时全站常驻提醒，改密后随 /auth/me 刷新消失
 const showDefaultPasswordBanner = computed(
   () => authStore.isLoggedIn && authStore.user?.password_change_required === true,
@@ -113,15 +112,15 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       :alert-items="dockAlertItems"
       @login="requestLogin(route.fullPath)"
       @logout="authStore.logout()"
-      @account-settings="changePasswordOpen = true"
+      @account-settings="accountSettingsOpen = true"
     />
 
     <!-- 默认密码常驻警示：点击打开改密对话框，改密成功后自动消失；
          弹窗打开期间隐藏（其 z-index 高于遮罩，否则会浮在弹窗上层） -->
     <button
-      v-if="showDefaultPasswordBanner && !changePasswordOpen"
+      v-if="showDefaultPasswordBanner && !accountSettingsOpen"
       class="default-pwd-banner"
-      @click="changePasswordOpen = true"
+      @click="accountSettingsOpen = true"
     >
       <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 9v4"/>
@@ -132,7 +131,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       <span class="default-pwd-banner__action">{{ $t('auth.defaultPasswordBannerAction') }}</span>
     </button>
 
-    <ChangePasswordDialog v-model="changePasswordOpen" />
+    <AccountSettingsDialog v-model="accountSettingsOpen" />
 
     <LayoutFooter :brand-name="brandName" />
 

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import {
   fetchCurrentUser,
   consumeOAuthHandoff,
+  consumeOAuthBindingHandoff,
   loginWithPassword,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
@@ -136,6 +137,13 @@ export const useAuthStore = defineStore('auth', () => {
     return data.redirect_to
   }
 
+  /** 消费 OAuth 账户绑定 handoff；不签发/轮换令牌，只刷新当前用户信息。 */
+  async function consumeOAuthBinding(): Promise<string> {
+    const data = await consumeOAuthBindingHandoff()
+    await fetchMe()
+    return data.redirect_to
+  }
+
   /** 安装服务端签发的新令牌，并使使用旧令牌的异步操作失效。 */
   function replaceToken(accessToken: string): void {
     const nextToken = accessToken.trim()
@@ -228,6 +236,7 @@ export const useAuthStore = defineStore('auth', () => {
     consumePendingMessage,
     login,
     loginWithOAuthHandoff,
+    consumeOAuthBinding,
     logout,
     fetchMe,
     initFromStorage,

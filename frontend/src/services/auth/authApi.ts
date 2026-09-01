@@ -1,5 +1,12 @@
 import { api } from '@/services/http/apiClient'
 
+export interface OAuthIdentityDTO {
+  provider: 'github' | 'google' | 'wechat' | string
+  display_email?: string | null
+  email_verified?: boolean
+  linked_at?: string | null
+}
+
 export interface AuthUserDTO {
   user_id: number
   email: string | null
@@ -11,6 +18,9 @@ export interface AuthUserDTO {
   membership_tier?: 'free' | 'member'
   /** 会员到期时间（0048，ISO 字符串）；null/缺省 = 长期有效 */
   membership_expires_at?: string | null
+  created_at?: string | null
+  password_login_enabled?: boolean
+  oauth_identities?: OAuthIdentityDTO[]
   /** 种子默认管理员仍使用公开默认密码时为真：前端常驻提醒改密 */
   password_change_required?: boolean
 }
@@ -25,12 +35,27 @@ export async function startOAuth(provider: string, redirectTo: string): Promise<
   window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent(redirectTo)}`)
 }
 
+export async function startOAuthBinding(provider: string, redirectTo: string): Promise<void> {
+  window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/bind/start?redirect_to=${encodeURIComponent(redirectTo)}`)
+}
+
 export interface OAuthConsumeResponse extends LoginResponse {
   redirect_to: string
 }
 
 export async function consumeOAuthHandoff(): Promise<OAuthConsumeResponse> {
   const res = await api.post<OAuthConsumeResponse>('/auth/oauth/consume', undefined)
+  return res.data
+}
+
+export interface OAuthBindConsumeResponse {
+  provider: string
+  status: 'bound' | 'already_bound' | 'conflict'
+  redirect_to: string
+}
+
+export async function consumeOAuthBindingHandoff(): Promise<OAuthBindConsumeResponse> {
+  const res = await api.post<OAuthBindConsumeResponse>('/auth/oauth/bind/consume', undefined)
   return res.data
 }
 
@@ -56,5 +81,10 @@ export async function changePassword(emailCode: string, newPassword: string): Pr
     email_code: emailCode,
     new_password: newPassword,
   })
+  return res.data
+}
+
+export async function updateProfile(username: string): Promise<AuthUserDTO> {
+  const res = await api.patch<AuthUserDTO>('/auth/me/profile', { username })
   return res.data
 }

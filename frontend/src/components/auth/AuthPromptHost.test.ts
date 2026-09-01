@@ -12,10 +12,13 @@ vi.mock('@/composables/useLoginPrompt', async () => {
   const { ref } = await import('vue')
   promptBox.current = {
     isOpen: ref(false),
+    isResetOpen: ref(false),
     redirectTarget: ref('/'),
     rememberLoginRedirect: vi.fn(),
     requestLogin: vi.fn(),
     closeLoginPrompt: vi.fn(),
+    closePasswordReset: vi.fn(),
+    requestPasswordReset: vi.fn(),
     consumeLoginRedirect: vi.fn(() => '/'),
   }
   return { useLoginPrompt: () => promptBox.current }
@@ -66,10 +69,13 @@ const auth = () => authBox.current as { status: 'initializing' | 'authenticated'
 
 beforeEach(async () => {
   prompt().isOpen.value = false
+  if (prompt().isResetOpen) prompt().isResetOpen.value = false
   prompt().redirectTarget.value = '/'
   prompt().rememberLoginRedirect.mockClear()
   prompt().requestLogin.mockClear()
   prompt().closeLoginPrompt.mockClear()
+  prompt().closePasswordReset?.mockClear()
+  prompt().requestPasswordReset?.mockClear()
   prompt().consumeLoginRedirect.mockReset()
   prompt().consumeLoginRedirect.mockReturnValue('/')
   auth().status = 'authenticated'
