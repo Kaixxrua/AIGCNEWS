@@ -93,10 +93,10 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
     expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)
     expect(wrapper.get('aside').classes()).toContain('min-h-0')
-    // MCP/dsh 两张计数卡 flex-1 平分侧栏剩余高度：既不留大片空白，又使 dsh 底线与排行榜下边缘对齐
-    expect(wrapper.get('a[href="/mcp"]').classes()).toContain('flex-1')
+    // MCP/dsh 两张计数卡为紧凑单行卡：自然高度，不再 flex-1 撑满侧栏
+    expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('mt-auto')
-    expect(wrapper.get('a[href="/dsh"]').classes()).toContain('flex-1')
+    expect(wrapper.get('a[href="/dsh"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
