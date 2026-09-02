@@ -80,7 +80,7 @@ describe('project route state contract', () => {
     })
     invalid.routeState.applyRouteState()
     expect(invalid.state.source.value).toBe('all')
-    expect(invalid.state.selectedScope.value).toBe('recommended')
+    expect(invalid.state.selectedScope.value).toBe('today')
     expect(invalid.state.sort.value).toBe('hot')
     expect(invalid.state.selectedTag.value).toBe('')
     expect(invalid.state.page.value).toBe(1)
@@ -95,11 +95,11 @@ describe('project route state contract', () => {
     expect(today.state.sort.value).toBe('hot')
   })
 
-  it('lands on the recommended scope with recent sort when no route state is present', async () => {
+  it('lands on the today scope with hot sort when no route state is present', async () => {
     const landing = createHarness()
     landing.routeState.applyRouteState()
-    expect(landing.state.selectedScope.value).toBe('recommended')
-    expect(landing.state.sort.value).toBe('recent')
+    expect(landing.state.selectedScope.value).toBe('today')
+    expect(landing.state.sort.value).toBe('hot')
     vi.runAllTimers()
 
     await landing.routeState.replaceRouteFromState()
@@ -198,8 +198,8 @@ describe('project route state contract', () => {
 
     const emptyPublic = createHarness({ sort: 'relevance' })
     emptyPublic.routeState.applyRouteState()
-    expect(emptyPublic.state.selectedScope.value).toBe('recommended')
-    expect(emptyPublic.state.sort.value).toBe('recent')
+    expect(emptyPublic.state.selectedScope.value).toBe('today')
+    expect(emptyPublic.state.sort.value).toBe('hot')
   })
 
   it('suppresses relevance sort from URL when it matches the query default', async () => {
@@ -222,8 +222,8 @@ describe('project route state contract', () => {
   })
 
   it('exposes the query-aware default scope helper', () => {
-    expect(defaultProjectScopeForQuery('all', '')).toBe('recommended')
-    expect(defaultProjectScopeForQuery('all', '  ')).toBe('recommended')
+    expect(defaultProjectScopeForQuery('all', '')).toBe('today')
+    expect(defaultProjectScopeForQuery('all', '  ')).toBe('today')
     expect(defaultProjectScopeForQuery('all', 'mcp')).toBe('all')
     expect(defaultProjectScopeForQuery('favorites', '')).toBe('all')
     expect(defaultProjectScopeForQuery('website', '')).toBe('all')
