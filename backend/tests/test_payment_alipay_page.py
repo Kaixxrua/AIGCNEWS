@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from backend.app.services.payments.providers.alipay_page import (
     AlipayPagePaymentProvider,
     _canonical_params,
+    _load_pem,
 )
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
@@ -289,6 +290,18 @@ def test_bare_base64_keys_sign_and_verify_round_trip(
     body, _ = _signed_callback(_callback_fields(), private)
     verified = provider.verify_and_parse_callback(raw_body=body, headers={})
     assert verified.order_no == ORDER["order_no"]
+
+
+def test_load_pem_overlong_path_like_input_falls_back_to_bare_base64() -> None:
+    """裸 Base64 前 255 字符无 '/' 时 Path.is_file 在 Python ≤3.12 抛
+    ENAMETOOLONG（超长路径名）；归一化必须收口并按裸 Base64 补 armor。"""
+    body = base64.b64encode(b"\x01" * 400).decode("ascii").replace("/", "a")
+
+    pems = _load_pem(body, ("PUBLIC KEY",))
+
+    assert len(pems) == 1
+    assert pems[0].startswith(b"-----BEGIN PUBLIC KEY-----\n")
+    assert body.encode("ascii") in pems[0]
 
 
 def test_bare_base64_tolerates_embedded_whitespace_and_pkcs1(

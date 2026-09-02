@@ -12,6 +12,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from backend.app.services import media_cache
 from backend.app.services.media_cache import (
@@ -104,6 +105,16 @@ class EnforceCacheBudgetTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(expired.exists())
         self.assertIn(str(self.dir), media_cache._last_eviction)
+
+    async def test_first_call_prunes_even_on_fresh_boot(self) -> None:
+        """monotonic < 节流间隔（新拉起进程/CI runner）首调也必须驱逐：
+        无记录 ≠ 0.0 时刻扫描过。"""
+        expired = _write_file(self.dir, "old.jpg", 10, age_seconds=30 * 86400)
+
+        with mock.patch.object(media_cache.time, "monotonic", return_value=120.0):
+            await enforce_cache_budget(self.dir, max_bytes=10**9, max_age_seconds=7 * 86400)
+
+        self.assertFalse(expired.exists())
 
     async def test_second_call_within_interval_is_throttled(self) -> None:
         await enforce_cache_budget(self.dir, max_bytes=10**9, max_age_seconds=7 * 86400)
