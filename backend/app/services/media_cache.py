@@ -82,13 +82,17 @@ async def enforce_cache_budget(
 ) -> None:
     """按节流间隔对目录执行 TTL + 容量驱逐；任何失败仅记录日志。"""
     key = str(cache_dir)
-    if time.monotonic() - _last_eviction.get(key, 0.0) < _EVICTION_INTERVAL_SECONDS:
+    # 「从未扫描」与「monotonic≈0 时扫描过」必须可区分：缺省 0.0 会让开机
+    # uptime < 600s 的进程（新拉起容器/CI runner）把首次驱逐误判成节流跳过。
+    last = _last_eviction.get(key)
+    if last is not None and time.monotonic() - last < _EVICTION_INTERVAL_SECONDS:
         return
     lock = _eviction_locks.setdefault(key, asyncio.Lock())
     if lock.locked():
         return  # 另一请求正在扫描，本次直接跳过
     async with lock:
-        if time.monotonic() - _last_eviction.get(key, 0.0) < _EVICTION_INTERVAL_SECONDS:
+        last = _last_eviction.get(key)
+        if last is not None and time.monotonic() - last < _EVICTION_INTERVAL_SECONDS:
             return
         _last_eviction[key] = time.monotonic()
         try:

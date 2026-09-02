@@ -60,8 +60,13 @@ def _load_pem(value: str, armors: tuple[str, ...]) -> list[bytes]:
     if "BEGIN" in value:
         return [value.encode("utf-8")]
     path = Path(value)
-    if path.is_file():
-        return [path.read_bytes()]
+    # is_file 在 Python ≤3.12 只对 ENOENT/ENOTDIR/EBADF/ELOOP 返回 False；
+    # 裸 Base64 被当成长路径探测时 ENAMETOOLONG 会原样抛出，必须在此收口。
+    try:
+        if path.is_file():
+            return [path.read_bytes()]
+    except OSError:
+        pass
     body = "".join(value.split())
     return [
         f"-----BEGIN {armor}-----\n{body}\n-----END {armor}-----\n".encode("utf-8")
