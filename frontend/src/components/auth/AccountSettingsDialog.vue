@@ -167,7 +167,10 @@ watch(() => props.modelValue, async open => {
               </dl>
             </section>
 
-            <section v-if="emailChangeOpen" aria-labelledby="email-change-title" class="space-y-3 border-t border-stone-200/70 pt-4">
+            <Transition name="email-expand">
+              <div v-if="emailChangeOpen" class="email-change-shell">
+                <div class="email-change-clip">
+                  <section aria-labelledby="email-change-title" class="mt-5 space-y-3 border-t border-stone-200/70 pt-4">
               <h4 id="email-change-title" class="text-xs font-semibold text-stone-500">{{ t('auth.emailChangeTitle') }}</h4>
               <p class="text-xs leading-5 monitor-caption">{{ t('auth.emailChangeHint') }}</p>
 
@@ -253,7 +256,10 @@ watch(() => props.modelValue, async open => {
                   {{ emailChanging ? t('auth.emailChanging') : t('auth.emailChangeSubmit') }}
                 </button>
               </div>
-            </section>
+                  </section>
+                </div>
+              </div>
+            </Transition>
 
             <section class="space-y-3 border-t border-stone-200/70 pt-4">
               <label for="account-settings-username" class="text-xs font-semibold text-stone-500">{{ t('auth.editUsername') }}</label>
@@ -307,6 +313,34 @@ watch(() => props.modelValue, async open => {
 .fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+/* 换绑邮箱展开/收起：grid 行轨 0fr↔1fr 平滑动画高度（同 WechatAccountCard
+   article-expand 方案，长内容无 max-height 封顶跳变）；父容器 space-y-5 的
+   上间距折进裁剪区内部随高度一起动画，shell 自身 margin 归零避免收尾瞬移 */
+.email-change-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-top: 0 !important;
+}
+.email-expand-enter-active,
+.email-expand-leave-active {
+  transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.22s ease;
+}
+.email-expand-enter-from,
+.email-expand-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+.email-change-clip {
+  min-height: 0;
+  overflow: clip;
+}
+@media (prefers-reduced-motion: reduce) {
+  .email-expand-enter-active,
+  .email-expand-leave-active {
+    transition: none;
+  }
+}
+
 .oauth-provider-btn {
   @apply flex items-center justify-center rounded-lg border-2 px-2 py-2.5 text-xs font-semibold transition-all duration-150;
   min-height: 3rem;
@@ -333,8 +367,10 @@ watch(() => props.modelValue, async open => {
   box-shadow: var(--shadow-low);
   transform: none !important;
 }
+/* 行内容不下时整颗状态胶囊折到下一行居中（英文 "Not connected" 在窄屏
+   三列格内超宽），胶囊自身 nowrap 保证不在词间断行；中文短文案仍单行 */
 .oauth-provider-row {
-  @apply flex min-w-0 items-center gap-1.5;
+  @apply flex min-w-0 flex-wrap items-center justify-center gap-x-1.5 gap-y-1;
 }
 .oauth-provider-icon {
   width: 1.25rem;
@@ -345,7 +381,7 @@ watch(() => props.modelValue, async open => {
   @apply truncate leading-tight;
 }
 .oauth-provider-status {
-  @apply ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-none;
+  @apply shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium leading-none;
 }
 .oauth-provider-status.status-connected {
   background: var(--success-surface, #dcfce7);
