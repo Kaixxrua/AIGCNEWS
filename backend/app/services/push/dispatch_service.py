@@ -23,10 +23,6 @@ from backend.app.services.briefing.daily_briefing import (
 )
 from backend.app.services.email.message_renderer import SOURCE_LABELS
 from backend.app.services.ingestion.base_crawler import today_cst
-from backend.app.services.membership.tiers import (
-    MEMBERSHIP_TIER_MEMBER,
-    resolve_effective_tier,
-)
 from backend.app.services.push.channel_service import (
     CHANNEL_TYPE_DISCORD,
     CHANNEL_TYPE_EMAIL,
@@ -51,11 +47,8 @@ _SUPPORTED_CHANNEL_TYPES = frozenset(
         CHANNEL_TYPE_TELEGRAM,
     }
 )
-# 直投渠道（bot/webhook 类）要求当前有效会员；到期只暂停派发，
-# 不删渠道/订阅，权益恢复后下一轮自然接续。
-_DIRECT_CHANNEL_TYPES = frozenset(
-    {CHANNEL_TYPE_WEBHOOK, CHANNEL_TYPE_DISCORD, CHANNEL_TYPE_TELEGRAM}
-)
+# 简报推送已降级为注册用户免费权益：直投渠道（bot/webhook 类）与邮件
+# 一样对所有订阅者派发，不再按会员 tier 抑制。
 _PERIOD_LABELS = {"daily": "日报"}
 _SECRET_BOX_UNSET = object()
 _EMAIL_SERVICE_UNSET = object()
@@ -65,21 +58,6 @@ def _webhook_title(source: str, frequency: str, issue_date: str) -> str:
     source_label = SOURCE_LABELS.get(source, source)
     period_label = _PERIOD_LABELS.get(frequency, frequency)
     return f"AIGC Radar · {source_label}{period_label} · {issue_date}"
-
-
-def _direct_dispatch_allowed(subscription: dict[str, Any]) -> bool:
-    """直投渠道派发门禁：admin 或当前有效 member；其余（含过期 member）暂停。
-
-    会员抑制不是 provider failure：不创建 delivery、不计 attempts。
-    派发查询（list_active_dispatchable）负责带出 role/membership 字段。
-    """
-    if subscription.get("role") == "admin":
-        return True
-    tier = resolve_effective_tier(
-        subscription.get("membership_tier"),
-        subscription.get("membership_expires_at"),
-    )
-    return tier == MEMBERSHIP_TIER_MEMBER
 
 
 class SubscriptionDispatchService:
@@ -219,15 +197,6 @@ class SubscriptionDispatchService:
                 "[Dispatch] 暂不支持的渠道类型: channel_type=%s subscription=%s",
                 channel_type,
                 subscription_id,
-            )
-            return "skipped"
-        if channel_type in _DIRECT_CHANNEL_TYPES and not _direct_dispatch_allowed(
-            subscription
-        ):
-            logger.info(
-                "[Dispatch] 会员权益失效，暂停直投渠道派发: subscription=%s channel_type=%s",
-                subscription_id,
-                channel_type,
             )
             return "skipped"
 

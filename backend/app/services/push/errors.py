@@ -15,10 +15,6 @@ class PushDomainError(Exception):
         self.detail = detail
 
 
-class VipRequiredError(PushDomainError):
-    code = "vip-required"
-
-
 class InvalidProviderTargetError(PushDomainError):
     code = "invalid-provider-target"
 

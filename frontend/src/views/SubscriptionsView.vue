@@ -5,7 +5,6 @@ import { MailPlus, MessageCircle, RefreshCw, Rss, Send, Trash2, Webhook } from '
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useSubscriptionsController } from '@/composables/useSubscriptionsController'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
-import { useAuthStore } from '@/stores/authStore'
 import {
   SUBSCRIPTION_SOURCES,
   detectWebhookPlatform,
@@ -16,7 +15,6 @@ defineOptions({ name: 'SubscriptionsView' })
 
 const { t, te } = useI18n()
 const ctl = useSubscriptionsController()
-const authStore = useAuthStore()
 // Telegram 渠道卡片随 /api/features 的 telegram_push_enabled 显隐（默认 fail-open 显示）
 const { featureFlags, ensureFeatureFlags } = useFeatureFlags()
 
@@ -31,22 +29,6 @@ const noticeText = computed(() => {
 
 const webhookPlatformLabel = computed(() =>
   t(`subscriptions.channels.platform.${detectWebhookPlatform(ctl.webhookInput.value)}`),
-)
-
-// 免费档 1 个日报模块上限（会员/admin 不限）：已达上限且当前选择的不是
-// 已活跃模块时置灰新增按钮；同模块换渠道属存量变更，后端放行，不置灰。
-// 跨体系（邮件简报）占用由后端 403 兜底 → subscriptions.errors.quota-exceeded。
-const activeDailySources = computed(() =>
-  ctl.subscriptions.value
-    .filter((subscription) => subscription.status === 'active')
-    .map((subscription) => subscription.source),
-)
-const subscriptionQuotaReached = computed(
-  () =>
-    !authStore.isMember &&
-    !authStore.isAdmin &&
-    activeDailySources.value.length >= 1 &&
-    !activeDailySources.value.includes(ctl.newSource.value),
 )
 
 const channelTypeLabel = (channel: PushChannel): string => {
@@ -69,12 +51,11 @@ const confirmRemoveSubscription = (subscription: UserSubscription): void => {
   }
 }
 
-// RSS：会员复制带 token 的全文链接，免费用户复制公开摘要链接（后端按档位分流，
-// 免费档拿不到全文——member.xml 对非会员 fail-closed 403）。
+// RSS：全文归档（member.xml 带 token）已对全部注册用户免费开放
 const copyRss = (source: UserSubscription['source']): void => {
-  void ctl.copyRssLink(source, authStore.isMember)
+  void ctl.copyRssLink(source)
 }
-// 简报 RSS：全文公开直订（会员同一链接）；速览为会员专属（带 token）。
+// 简报 RSS：全文公开直订（注册用户同一链接）；速览带 token，注册用户免费。
 const copyBriefing = (digest: boolean): void => {
   void ctl.copyBriefingRssLink(digest)
 }
@@ -119,12 +100,12 @@ onMounted(() => {
 
       <div class="grid min-h-0 flex-1 items-start gap-5 lg:grid-cols-2">
         <!-- RSS 简报直订：与推送渠道完全解耦，不建渠道也能直接复制阅读器链接。
-             主推每日综合简报：全文公开直订（会员同一链接）；速览为会员专属
-             （带 token）。8 个原始条目源收进默认折叠的高级区，保持可发现但不抢主线 -->
+             主推每日综合简报：全文公开直订（注册用户同一链接）；速览带 token，
+             注册用户免费。8 个原始条目源收进默认折叠的高级区，保持可发现但不抢主线 -->
         <section class="stagger-enter glass-card flex flex-col gap-3 p-4" style="animation-delay: 0.05s">
           <h2 class="text-base font-bold text-stone-800">{{ t('subscriptions.subs.rssTitle') }}</h2>
           <p class="text-2xs leading-relaxed text-stone-400">
-            {{ authStore.isMember ? t('subscriptions.subs.rssHintMember') : t('subscriptions.subs.rssHintFree') }}
+            {{ t('subscriptions.subs.rssHint') }}
           </p>
           <div class="flex flex-wrap items-center gap-1.5">
             <button
@@ -138,7 +119,6 @@ onMounted(() => {
               {{ t('subscriptions.subs.rssBriefingFull') }}
             </button>
             <button
-              v-if="authStore.isMember"
               type="button"
               class="inline-flex items-center gap-1.5 rounded-[4px] border border-ink px-2.5 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-accent disabled:opacity-40"
               :title="t('subscriptions.subs.rssCopy')"
@@ -148,13 +128,6 @@ onMounted(() => {
               <Rss class="h-3.5 w-3.5" />
               {{ t('subscriptions.subs.rssBriefingDigest') }}
             </button>
-            <RouterLink
-              v-else
-              to="/membership"
-              class="inline-flex items-center gap-1 rounded-[4px] px-2 py-1.5 text-2xs font-bold text-stone-400 transition-colors hover:text-ink"
-            >
-              {{ t('subscriptions.subs.rssDigestUpsell') }}
-            </RouterLink>
           </div>
           <details class="rounded-[4px] border border-stone-200 px-2.5 py-2">
             <summary class="cursor-pointer text-2xs font-bold text-stone-500 transition-colors hover:text-ink">
@@ -308,9 +281,6 @@ onMounted(() => {
             >
               {{ t('subscriptions.channels.telegramPending') }}
             </a>
-            <span class="text-2xs leading-relaxed text-stone-400">
-              {{ t('subscriptions.channels.vipOnly') }}
-            </span>
           </div>
 
           <!-- 渠道列表 -->
@@ -382,7 +352,6 @@ onMounted(() => {
             <h2 class="text-base font-bold text-stone-800">{{ t('subscriptions.subs.title') }}</h2>
             <span class="flex items-center gap-2 text-2xs text-stone-400">
               <button
-                v-if="authStore.isMember"
                 type="button"
                 class="rounded-[4px] border border-stone-200 px-2 py-1 font-bold text-stone-500 transition-colors hover:border-ink hover:text-ink disabled:opacity-40"
                 :disabled="ctl.rssBusy.value"
@@ -423,16 +392,10 @@ onMounted(() => {
             <p v-if="!ctl.bindableChannels.value.length" class="text-2xs text-amber-600">
               {{ t('subscriptions.subs.noBindableChannel') }}
             </p>
-            <p v-else-if="subscriptionQuotaReached" class="text-2xs" style="color: var(--notice-warn-ink)">
-              {{ t('subscriptions.subs.quotaHint') }}
-              <RouterLink to="/membership" class="font-semibold underline underline-offset-2">
-                {{ t('subscriptions.subs.quotaUpgrade') }}
-              </RouterLink>
-            </p>
             <button
               type="submit"
               class="self-start rounded-[4px] border border-ink bg-ink px-3 py-1.5 text-xs font-bold text-accent transition-colors hover:bg-accent hover:text-accent-ink disabled:opacity-40"
-              :disabled="!ctl.canSubmitSubscription.value || subscriptionQuotaReached"
+              :disabled="!ctl.canSubmitSubscription.value"
             >
               {{ t('subscriptions.subs.create') }}
             </button>

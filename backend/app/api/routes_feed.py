@@ -3,26 +3,26 @@
 端点列表：
   GET  /api/feed.xml                     → 综合 feed（全部源按发布时间归并）
   GET  /api/feeds/{source}.xml           → 单源 feed（arxiv/github/news/…）
-  GET  /api/feeds/member.xml             → 会员全文 feed（?token= 用独立 RSS feed token，
-                                           ?source=a,b 自由组合；非会员 fail-closed 403）
+  GET  /api/feeds/member.xml             → 注册用户全文 feed（?token= 用独立 RSS feed
+                                           token，?source=a,b 自由组合；任意注册用户
+                                           可用，未登录/无效 token 401）
   GET  /api/feeds/briefing.xml           → 每日综合简报全文 feed（公开，近 7 期）
-  GET  /api/feeds/briefing-digest.xml    → 会员简报速览 feed（?token=，规则压缩版）
+  GET  /api/feeds/briefing-digest.xml    → 注册用户简报速览 feed（?token=，规则压缩版）
 
 设计要点：
   - 公开 feed 面向中文读者：有中文译文的条目，description 用译文截断（X 源
     标题也用译文截断），无译文回退原摘要；只出摘要 + 回链（arxiv 指站内
-    阅读页，其余源指原文链接），全文是会员权益；每条摘要尾部带一行会员
-    订阅钩子（指向 /membership），会员 feed 不带。Cache-Control 交双边缘缓存。
-  - 会员 feed 用独立的 user_feed_tokens 鉴权（hash_feed_token → token→user
-    →请求时 tier 判定），与 MCP token 完全分离；token 永不过期、重新生成
-    即吊销旧 token。响应 noindex + private/no-store——带 token 的 URL 绝不
-    进边缘缓存。
+    阅读页，其余源指原文链接）；每条摘要尾部带一行全文 RSS 订阅钩子（指向
+    /subscriptions 引导注册登录），token feed 不带。Cache-Control 交双边缘缓存。
+  - 全文/速览 feed 用独立的 user_feed_tokens 鉴权（hash_feed_token → token→user），
+    与 MCP token 完全分离；token 永不过期、重新生成即吊销旧 token。响应
+    noindex + private/no-store——带 token 的 URL 绝不进边缘缓存。
   - github 源由站内项目库「今日暴涨 top50」热榜供稿（scope=today + hot 排序，
     与 /projects 页同口径），不镜像 trending 抓取的 documents 池；
     热榜查询失败或为空时回退 documents 池兜底，保证 feed 不断更。
   - 简报 feed 只出综合报（briefings.date 裸日期键；'{date}_{module}' 模块报是
     综合报原料，不单列）。全文公开与 /report 口径一致（简报全文本就无鉴权），
-    会员增量是速览版：M0 规则压缩（摘要节 + 条目标题一览），LLM 精简管线
+    注册用户增量是速览版：M0 规则压缩（摘要节 + 条目标题一览），LLM 精简管线
     后续替换 condense_briefing_markdown 输出即可。渲染走规则 Markdown→HTML
     片段（rss_render 纯函数），description 按 RSS 惯例整体 XML 转义。
   - XML 渲染为纯函数，路由层只做读库与鉴权，便于契约测试。
@@ -58,10 +58,6 @@ from backend.app.services.briefing.rss_render import (
     sanitize_public_resource_url,
     sanitize_public_text,
 )
-from backend.app.services.membership.tiers import (
-    MEMBERSHIP_TIER_MEMBER,
-    resolve_effective_tier,
-)
 from backend.app.services.papers.presentation import public_base_url
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 
@@ -75,7 +71,7 @@ FEED_SOURCES: frozenset[str] = frozenset({"arxiv", "github", "news", "producthun
 # 公开 feed 定位「最新」而非归档：近 48 小时、至多 100 条。
 _PUBLIC_FEED_WINDOW = timedelta(hours=48)
 _PUBLIC_FEED_LIMIT = 100
-# 会员 feed 给更长回溯窗口与更高条数上限。
+# token feed（注册用户）给更长回溯窗口与更高条数上限。
 _MEMBER_FEED_WINDOW = timedelta(days=7)
 _MEMBER_FEED_LIMIT = 500
 
@@ -91,13 +87,12 @@ _BRAND_BASE_URL = "https://aigcnews.cn"
 _CHANNEL_TITLE = "AIGC NEWS"
 _CHANNEL_DESCRIPTION = "AI 资讯聚合：arXiv 论文、GitHub 项目、Product Hunt、Hacker News、X 与科技媒体日报（含 AI 生成摘要与译文，仅供参考）"
 
-_MEMBER_ONLY_DETAIL = "全文 RSS 是会员权益，开通会员后使用你的访问令牌订阅"
-_INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销"
+_INVALID_TOKEN_DETAIL = "feed 令牌无效或已吊销，请登录后在订阅页复制你的 RSS 链接"
 
-# 公开 feed 转化钩子：每条摘要尾部一行，指向游客可见的会员页（获客漏斗末端）。
+# 公开 feed 转化钩子：每条摘要尾部一行，引导读者注册登录后免费订阅全文 RSS。
 # RSS 条目在阅读器里被逐条消费、脱离 channel 上下文，钩子须随条目走。
-# 会员 feed 不带钩子——付费内容里不插广告。
-_PUBLIC_HOOK_PREFIX = "📮 订阅会员全文 RSS（中文译文 · 完整归档）："
+# token feed 不带钩子——订阅用户已转化，不再插引导。
+_PUBLIC_HOOK_PREFIX = "📮 全文 RSS（中文译文 · 完整归档），注册登录即可免费订阅："
 
 # github 源供稿口径：站内项目库「今日暴涨」热榜（scope=today 强制 hot 排序）top50。
 _GITHUB_HOT_FEED_LIMIT = 50
@@ -105,7 +100,7 @@ _GITHUB_HOT_FEED_LIMIT = 50
 # 简报 feed：近 7 期综合报（一日一期，约一周归档）。
 _BRIEFING_FEED_LIMIT = 7
 _BRIEFING_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报全文：跨源技术亮点、工程动态与行业资讯（内容由 AI 生成，仅供参考）"
-_BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（会员专属；内容由 AI 生成）"
+_BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（注册用户免费订阅；内容由 AI 生成）"
 
 
 def _project_to_feed_row(item: dict[str, Any]) -> dict[str, Any]:
@@ -234,7 +229,7 @@ def _public_item_title(row: dict[str, Any]) -> str:
 
 
 def _item_description(row: dict[str, Any], *, full: bool) -> str:
-    """摘要文本：公开 feed 优先中文译文截断（无译文回退原摘要）；会员 feed
+    """摘要文本：公开 feed 优先中文译文截断（无译文回退原摘要）；token feed
     为原摘要 + 完整中文译文（不截断）。"""
     summary = str(row.get("summary") or "").strip()
     translation = str(row.get("translation_zh") or "").strip()
@@ -274,12 +269,12 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
     link = _item_link(row, base_url)
     if not doc_id or not title or not link:
         return None
-    # 公开条目面向中文读者：X 源有译文时标题换成译文截断；会员条目保留原标题
+    # 公开条目面向中文读者：X 源有译文时标题换成译文截断；token feed 条目保留原标题
     display_title = title if full else _public_item_title(row)
 
     description = _item_description(row, full=full)
     if not full:
-        hook = f"{_PUBLIC_HOOK_PREFIX}{base_url}/membership"
+        hook = f"{_PUBLIC_HOOK_PREFIX}{base_url}/subscriptions"
         description = f"{description}\n\n{hook}" if description else hook
     categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
@@ -428,13 +423,15 @@ async def feed_all(
     return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)
 
 
-async def _require_member_identity(
+async def _require_feed_identity(
     token: str,
     tokens: FeedTokenRepository,
 ) -> dict[str, Any]:
-    """feed token → 会员身份：缺失/无效 401、非会员 403（fail-closed）。
+    """feed token → 注册用户身份：缺失/无效 401（fail-closed）。
 
-    供所有会员 feed 端点复用（member.xml、briefing-digest.xml）。"""
+    简报与全文 RSS 已降级为注册用户免费权益，此处只校验 token 有效，
+    不再判定会员 tier。供所有 token feed 端点复用（member.xml、
+    briefing-digest.xml）。"""
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -448,14 +445,6 @@ async def _require_member_identity(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_TOKEN_DETAIL,
         )
-    if resolve_effective_tier(
-        identity.get("membership_tier"),
-        identity.get("membership_expires_at"),
-    ) != MEMBERSHIP_TIER_MEMBER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=_MEMBER_ONLY_DETAIL,
-        )
     return identity
 
 
@@ -463,7 +452,7 @@ def build_briefing_feed_item(row: dict[str, Any], base_url: str, *, digest: bool
     """把综合简报行渲染为 <item> XML；缺日期/正文的行返回 None。
 
     digest=False 全文（公开，与 /report 同内容）；digest=True 规则压缩速览
-    （会员）。description 承载渲染后的 HTML 片段，按 RSS 惯例整体 XML 转义。
+    （注册用户）。description 承载渲染后的 HTML 片段，按 RSS 惯例整体 XML 转义。
     guid 以期号（date）为身份：同一期重生成原地更新内容，阅读器不重复推送。
     """
     date_str = str(row.get("date") or "").strip()
@@ -529,8 +518,8 @@ async def feed_briefing_digest(
     briefings: BriefingContentRepository = Depends(get_briefing_repository),
     tokens: FeedTokenRepository = Depends(get_feed_token_repository),
 ):
-    """会员简报速览 feed：规则压缩版（内容摘要 + 条目标题一览），feed token 鉴权。"""
-    await _require_member_identity(token, tokens)
+    """注册用户简报速览 feed：规则压缩版（内容摘要 + 条目标题一览），feed token 鉴权。"""
+    await _require_feed_identity(token, tokens)
 
     rows = await asyncio.to_thread(briefings.list_recent_daily_briefings, _BRIEFING_FEED_LIMIT)
     base_url = _resolve_base_url(request)
@@ -562,8 +551,8 @@ async def feed_member(
     tokens: FeedTokenRepository = Depends(get_feed_token_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
-    """会员全文 feed：独立 RSS feed token 鉴权，非会员 fail-closed 403。"""
-    await _require_member_identity(token, tokens)
+    """注册用户全文 feed：独立 RSS feed token 鉴权，任意注册用户可用。"""
+    await _require_feed_identity(token, tokens)
 
     sources = _parse_member_sources(source)
     rows = await _collect_rows(
@@ -576,7 +565,7 @@ async def feed_member(
     base_url = _resolve_base_url(request)
     items = [item for row in rows if (item := build_feed_item(row, base_url, full=True)) is not None]
     xml = build_rss_xml(
-        channel_title=f"{_CHANNEL_TITLE} · 会员全文",
+        channel_title=f"{_CHANNEL_TITLE} · 全文归档",
         channel_link=f"{base_url}/api/feeds/member.xml",
         channel_description=_CHANNEL_DESCRIPTION,
         items=items,

@@ -37,7 +37,6 @@ from backend.app.services.push.errors import (
     ProviderRateLimitedError,
     TelegramDeliveryError,
     TelegramNotConfiguredError,
-    VipRequiredError,
 )
 from backend.app.services.push.secrets import seal_channel_config, unseal_channel_config
 from backend.app.services.push.telegram_config_provider import (
@@ -162,10 +161,11 @@ class TelegramLinkServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(TelegramNotConfiguredError):
             await service.create_link(user=_member_user())
 
-    async def test_create_link_requires_membership(self) -> None:
+    async def test_create_link_allows_free_user(self) -> None:
+        # 简报推送已降级为注册用户免费权益，免费档也可创建绑定链接
         free_user = {**_member_user(), "membership_tier": "free"}
-        with self.assertRaises(VipRequiredError):
-            await self.service.create_link(user=free_user)
+        link = await self.service.create_link(user=free_user)
+        self.assertEqual(link["status"], "pending")
         admin = {**_member_user(), "role": "admin", "membership_tier": "free"}
         link = await self.service.create_link(user=admin)
         self.assertEqual(link["status"], "pending")
@@ -426,7 +426,7 @@ class TelegramTestMessageTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TelegramRouteTests(unittest.TestCase):
-    """路由契约：限速、会员门禁、webhook secret 校验与响应脱敏。"""
+    """路由契约：限速、webhook secret 校验与响应脱敏。"""
 
     def setUp(self) -> None:
         self.redis = FakeRedis()
@@ -498,14 +498,14 @@ class TelegramRouteTests(unittest.TestCase):
         self.assertIn("https://t.me/aigc_news_bot?start=", link["deep_link"])
         self.assertTrue(nonce)
 
-    def test_create_link_free_user_gets_vip_required(self) -> None:
+    def test_create_link_free_user_gets_201(self) -> None:
         async def free_user() -> dict:
             return {**_member_user(), "membership_tier": "free"}
 
         self.app.dependency_overrides[RequireUser] = free_user
         response = self.client.post("/api/push/me/channels/telegram/link")
-        self.assertEqual(response.status_code, 403, response.text)
-        self.assertEqual(response.json()["detail"]["code"], "vip-required")
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["status"], "pending")
 
     def test_create_link_disabled_gets_503(self) -> None:
         disabled = TelegramLinkService(

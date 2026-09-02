@@ -110,7 +110,6 @@ const {
   sendToEmail,
 } = useReportSubscriptions({
   isLoggedIn: computed(() => authStore.isLoggedIn),
-  isMember: computed(() => authStore.isMember),
   userId: computed(() => authStore.user?.user_id ?? null),
   selectedSource: selectedType,
   selectedDate,
@@ -180,7 +179,6 @@ const userEmail = computed(() => authStore.user?.email ?? '')
         :is-loading-plan="isLoadingPlan"
         :is-rss-busy="isRssBusy"
         :rss-notice="rssNotice"
-        :is-member="authStore.isMember"
         :user-email="userEmail"
         :step="step"
         :selected-sources="selectedSources"

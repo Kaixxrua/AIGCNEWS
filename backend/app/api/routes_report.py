@@ -15,7 +15,6 @@ from backend.app.api.dependencies import (
     get_daily_briefing_service,
     get_evaluation_repository,
     get_report_subscription_plan_service,
-    get_user_subscription_repository,
 )
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.core.config import settings
@@ -24,9 +23,6 @@ from backend.app.repositories.briefing_repository import (
     BriefingSubscriptionRepository,
 )
 from backend.app.repositories.evaluation_repository import EvaluationRepository
-from backend.app.repositories.user_subscription_repository import (
-    UserSubscriptionRepository,
-)
 from backend.app.services.briefing.daily_briefing import (
     DailyBriefingService,
     get_briefing_cache_key,
@@ -39,16 +35,10 @@ from backend.app.services.email_service import (
     build_email_service,
 )
 from backend.app.services.ingestion.base_crawler import today_cst
-from backend.app.services.membership.subscription_quota import (
-    SubscriptionQuotaExceededError,
-    collect_active_daily_sources,
-    ensure_subscription_quota,
-)
 from backend.app.services.push.errors import (
     PushChannelDisabledError,
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
-    VipRequiredError,
 )
 from backend.app.services.report.subscription_plan_service import (
     DeliveryTarget,
@@ -68,35 +58,6 @@ _SSE_HEARTBEAT_INTERVAL_SECONDS = float(settings.sse_heartbeat_interval)
 
 
 _VALID_SOURCES = {"all", "arxiv", "github", "news", "producthunt", "hackernews", "x", "dailyhot"}
-
-
-def _enforce_subscription_quota(
-    user: dict,
-    adding_sources: set[str],
-    briefing_repository: BriefingSubscriptionRepository,
-    user_subscription_repository: UserSubscriptionRepository,
-) -> None:
-    """免费档订阅档位校验（admin 豁免，与 MCP 配额同一运营口径）。
-
-    跨体系 A（briefing_subscriptions）+ B（user_subscriptions）合计活跃
-    日报模块，防止「A 订 1 个 + B 订 8 个」绕过；存量豁免语义由
-    ensure_subscription_quota 承载（已活跃 source 重复 upsert 幂等放行）。
-    """
-    if user.get("role") == "admin":
-        return
-    active = collect_active_daily_sources(
-        briefing_subscriptions=briefing_repository,
-        user_subscriptions=user_subscription_repository,
-        user_id=user.get("user_id"),
-    )
-    try:
-        ensure_subscription_quota(
-            tier=str(user.get("membership_tier") or "free"),
-            active_sources=active,
-            adding_sources=adding_sources,
-        )
-    except SubscriptionQuotaExceededError as exc:
-        raise HTTPException(status_code=403, detail=exc.detail) from exc
 
 
 class GenerateReportRequest(BaseModel):
@@ -324,16 +285,6 @@ def _user_id_or_raise(user: dict) -> int:
 def _map_subscription_plan_error(
     exc: Exception,
 ) -> HTTPException:
-    if isinstance(exc, SubscriptionQuotaExceededError):
-        return HTTPException(
-            status_code=403,
-            detail={"code": "quota-exceeded", "message": exc.detail},
-        )
-    if isinstance(exc, VipRequiredError):
-        return HTTPException(
-            status_code=403,
-            detail={"code": exc.code, "message": exc.detail},
-        )
     if isinstance(exc, (PushChannelNotFoundError,)):
         return HTTPException(status_code=404, detail=exc.detail)
     if isinstance(exc, (PushChannelNotVerifiedError, PushChannelDisabledError)):
@@ -518,9 +469,6 @@ async def subscribe_briefing(
     repository: BriefingSubscriptionRepository = Depends(
         get_briefing_subscription_repository
     ),
-    user_subscription_repository: UserSubscriptionRepository = Depends(
-        get_user_subscription_repository
-    ),
 ):
     """订阅简报邮件推送；日报生成后会自动推送到注册邮箱。"""
     source = body.source if body.source in _VALID_SOURCES else "all"
@@ -532,9 +480,6 @@ async def subscribe_briefing(
             content={"detail": "用户邮箱为空，无法订阅"},
         )
 
-    _enforce_subscription_quota(
-        user, {source}, repository, user_subscription_repository
-    )
     sub = repository.upsert_briefing_subscription(
         user_id=user_id, email=email, source=source
     )
@@ -588,9 +533,6 @@ async def batch_subscribe_briefings(
     repository: BriefingSubscriptionRepository = Depends(
         get_briefing_subscription_repository
     ),
-    user_subscription_repository: UserSubscriptionRepository = Depends(
-        get_user_subscription_repository
-    ),
 ):
     """批量订阅日报领域；日报生成后会自动推送到注册邮箱。"""
     email = user.get("email", "")
@@ -611,9 +553,6 @@ async def batch_subscribe_briefings(
             content={"detail": "请选择至少一个有效订阅领域"},
         )
 
-    _enforce_subscription_quota(
-        user, set(sources), repository, user_subscription_repository
-    )
     subscriptions = [
         repository.upsert_briefing_subscription(
             user_id=user_id,

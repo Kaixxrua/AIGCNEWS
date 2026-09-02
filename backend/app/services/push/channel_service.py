@@ -7,10 +7,6 @@ from typing import Any
 
 from backend.app.repositories.push_channel_repository import PushChannelRepository
 from backend.app.services.email_service import EmailService
-from backend.app.services.membership.tiers import (
-    MEMBERSHIP_TIER_MEMBER,
-    resolve_effective_tier,
-)
 from backend.app.services.push.errors import (
     InvalidChannelOtpError,
     PushChannelDisabledError,
@@ -18,7 +14,6 @@ from backend.app.services.push.errors import (
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
     TelegramNotConfiguredError,
-    VipRequiredError,
     WebhookProbeFailedError,
 )
 from backend.app.services.push.secrets import seal_channel_config, unseal_channel_config
@@ -67,17 +62,6 @@ class PushChannelService:
 
     def __init__(self, channels: PushChannelRepository) -> None:
         self._channels = channels
-
-    @staticmethod
-    def require_direct_channel_entitlement(user: dict[str, Any]) -> None:
-        """Require an effective member tier for bot/webhook channels."""
-        if user.get("role") == "admin":
-            return
-        tier = resolve_effective_tier(
-            user.get("membership_tier"), user.get("membership_expires_at")
-        )
-        if tier != MEMBERSHIP_TIER_MEMBER:
-            raise VipRequiredError("当前功能仅对有效会员开放")
 
     async def create_email_channel(
         self,

@@ -615,7 +615,7 @@ def _direct_subscription(
 
 
 class DirectChannelDispatchTests(unittest.TestCase):
-    """telegram/discord 渠道派发与会员抑制语义。"""
+    """telegram/discord 渠道派发语义（简报已降级为注册用户免费，不再按会员抑制）。"""
 
     def _make_service(
         self,
@@ -683,7 +683,8 @@ class DirectChannelDispatchTests(unittest.TestCase):
         self.assertEqual(summary["sent"], 1)
         self.assertEqual(sender.calls[0]["url"], url)
 
-    def test_expired_member_direct_channel_is_suppressed(self) -> None:
+    def test_expired_member_direct_channel_still_dispatches(self) -> None:
+        """简报降级免费后：过期会员的直投渠道照常派发。"""
         sender = FakeTelegramSender()
         service, deliveries = self._make_service(
             subscriptions=[
@@ -700,14 +701,14 @@ class DirectChannelDispatchTests(unittest.TestCase):
 
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
 
-        # 会员抑制不是 provider failure：不创建 delivery、不计 attempts
-        self.assertEqual(summary, {"sent": 0, "skipped": 1, "failed": 0})
-        self.assertEqual(sender.calls, [])
-        self.assertIsNone(
-            deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
-        )
+        self.assertEqual(summary, {"sent": 1, "skipped": 0, "failed": 0})
+        self.assertEqual(len(sender.calls), 1)
+        row = deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        assert row is not None
+        self.assertEqual(row["status"], "sent")
 
-    def test_free_tier_discord_is_suppressed(self) -> None:
+    def test_free_tier_discord_dispatches(self) -> None:
+        """简报降级免费后：免费档 discord 渠道照常派发。"""
         sender = FakePlatformWebhookSender()
         service, deliveries = self._make_service(
             subscriptions=[
@@ -724,13 +725,13 @@ class DirectChannelDispatchTests(unittest.TestCase):
 
         summary = asyncio.run(service.dispatch_all(today=date(2026, 8, 5)))
 
-        self.assertEqual(summary["skipped"], 1)
-        self.assertEqual(sender.calls, [])
-        self.assertIsNone(
-            deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
-        )
+        self.assertEqual(summary["sent"], 1)
+        self.assertEqual(len(sender.calls), 1)
+        row = deliveries.get_delivery(subscription_id=1, item_key="2026-08-05")
+        assert row is not None
+        self.assertEqual(row["status"], "sent")
 
-    def test_admin_bypasses_membership_suppression(self) -> None:
+    def test_admin_direct_channel_dispatches(self) -> None:
         sender = FakeTelegramSender()
         service, _deliveries = self._make_service(
             subscriptions=[
@@ -751,8 +752,8 @@ class DirectChannelDispatchTests(unittest.TestCase):
         self.assertEqual(summary["sent"], 1)
         self.assertEqual(len(sender.calls), 1)
 
-    def test_email_channel_not_subject_to_membership_suppression(self) -> None:
-        # email 不是直投渠道：免费用户照常派发，且行无需携带权益字段
+    def test_email_channel_dispatches_regardless_of_tier(self) -> None:
+        # email 渠道照常派发，且行无需携带权益字段
         email = FakeEmailService()
         deliveries = FakeDeliveryRepository()
         service = SubscriptionDispatchService(

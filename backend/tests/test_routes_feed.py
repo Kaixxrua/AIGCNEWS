@@ -7,13 +7,13 @@
     项目库热榜条目 → feed 行的字段映射；
   - 路由：公开综合/单源 feed 的缓存头与归并排序、非法源 404、
     github 源由站内今日热榜供稿（热榜不可用/为空时回退 documents 池）、
-    会员 feed 的 401/403/200 档位门禁（独立 RSS feed token，非 MCP token）、
-    noindex/no-store 响应头、
+    token feed 的 401/200 门禁（独立 RSS feed token，非 MCP token；任意
+    注册用户可用，不再校验会员档位）、noindex/no-store 响应头、
     /feeds/member.xml 不被 {source} 路径参数捕获（路由顺序锁定）；
   - 简报 feed：规则 Markdown→HTML 片段渲染（转义/行内规则/标题 code 去 #）、
     规则压缩速览（摘要节保留、条目正文丢弃、空章节回扫、标题剥 tag）、
     /feeds/briefing.xml 公开全文（边缘缓存）、/feeds/briefing-digest.xml
-    会员门禁与 noindex/no-store、字面量路由均不被 {source} 捕获。
+    注册用户 token 门禁与 noindex/no-store、字面量路由均不被 {source} 捕获。
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from backend.app.api.dependencies import (
 from backend.app.api.routes_feed import (
     _BRIEFING_FEED_LIMIT,
     _INVALID_TOKEN_DETAIL,
-    _MEMBER_ONLY_DETAIL,
     _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT,
     _PUBLIC_TITLE_TRANSLATION_LIMIT,
     _filter_rows_to_window,
@@ -101,12 +100,12 @@ def test_build_feed_item_arxiv_links_to_internal_read_page() -> None:
     assert "<link>https://aigcnews.cn/papers/2508.12345/read</link>" in item
     assert '<guid isPermaLink="false">arxiv:2508.12345</guid>' in item
     assert "<pubDate>Tue, 18 Aug 2026 08:00:00 +0000</pubDate>" in item
-    # 公开条目：摘要 + 转化钩子（指向游客可见的会员页）
-    assert "<description>摘要\n\n📮 订阅会员全文 RSS（中文译文 · 完整归档）：https://aigcnews.cn/membership</description>" in item
+    # 公开条目：摘要 + 转化钩子（引导注册登录后免费订阅全文 RSS）
+    assert "<description>摘要\n\n📮 全文 RSS（中文译文 · 完整归档），注册登录即可免费订阅：https://aigcnews.cn/subscriptions</description>" in item
 
 
 def test_build_feed_item_full_mode_omits_conversion_hook() -> None:
-    # 会员条目不带钩子——付费内容里不插广告
+    # token feed 条目不带钩子——订阅用户已转化，不再插引导
     item = build_feed_item(_doc("2508.12345", translation_zh="中文译文"), "https://aigcnews.cn", full=True)
     assert item is not None
     assert "📮" not in item
@@ -234,7 +233,7 @@ def test_public_feed_item_x_title_truncates_long_translation() -> None:
 
 
 def test_member_feed_item_keeps_original_title_and_full_translation() -> None:
-    # 会员条目不截断、不换标题：原标题 + 完整译文全文
+    # token feed 条目不截断、不换标题：原标题 + 完整译文全文
     long_translation = "译" * 300
     row = _doc(
         "x1", source="x", title="Original tweet",
@@ -537,25 +536,26 @@ def test_member_feed_requires_token_and_is_not_captured_by_source_route() -> Non
     documents = MagicMock()
     client = _client(documents=documents, tokens=MagicMock())
     response = client.get("/api/feeds/member.xml")
-    # 路由顺序锁定：命中会员路由的 401，而非 {source} 捕获后的 404
+    # 路由顺序锁定：命中 token feed 路由的 401，而非 {source} 捕获后的 404
     assert response.status_code == 401
     assert response.json()["detail"] == _INVALID_TOKEN_DETAIL
 
 
-def test_member_feed_rejects_invalid_token_and_free_tier() -> None:
+def test_member_feed_rejects_invalid_token_but_allows_free_tier() -> None:
     documents = MagicMock()
+    documents.list_recent_by_source.return_value = []
     tokens = MagicMock()
     tokens.get_user_by_feed_token_hash.return_value = None
     client = _client(documents=documents, tokens=tokens)
     assert client.get("/api/feeds/member.xml?token=bad").status_code == 401
 
+    # 简报/全文 RSS 已降级为注册用户免费权益：免费档有效 token 直接放行
     tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "free",
     }
     response = client.get("/api/feeds/member.xml?token=ok")
-    assert response.status_code == 403
-    assert response.json()["detail"] == _MEMBER_ONLY_DETAIL
+    assert response.status_code == 200
 
 
 def test_member_feed_returns_full_content_for_member() -> None:
@@ -573,7 +573,7 @@ def test_member_feed_returns_full_content_for_member() -> None:
     response = client.get("/api/feeds/member.xml?token=ok")
     assert response.status_code == 200
     assert "中文译文" in response.text
-    # 会员 feed 不带获客钩子
+    # token feed 不带获客钩子
     assert "📮" not in response.text
     assert "charset=utf-8" in response.headers["content-type"]
     assert response.headers["x-robots-tag"] == "noindex"
@@ -881,16 +881,19 @@ def test_briefing_digest_requires_token_and_is_not_captured_by_source_route() ->
     assert response.json()["detail"] == _INVALID_TOKEN_DETAIL
 
 
-def test_briefing_digest_rejects_free_tier() -> None:
+def test_briefing_digest_allows_free_tier() -> None:
+    """简报速览已降级为注册用户免费权益：免费档有效 token 直接放行。"""
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [_briefing_row()]
     tokens = MagicMock()
     tokens.get_user_by_feed_token_hash.return_value = {
         "user_id": 7,
         "membership_tier": "free",
     }
-    client = _client(documents=MagicMock(), briefings=MagicMock(), tokens=tokens)
+    client = _client(documents=MagicMock(), briefings=briefings, tokens=tokens)
     response = client.get("/api/feeds/briefing-digest.xml?token=ok")
-    assert response.status_code == 403
-    assert response.json()["detail"] == _MEMBER_ONLY_DETAIL
+    assert response.status_code == 200
+    assert "<title>2026-08-27 每日 AIGC 简报（速览）</title>" in response.text
 
 
 def test_briefing_digest_returns_condensed_content_for_member() -> None:

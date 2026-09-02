@@ -9,10 +9,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from backend.app.api.dependencies import (
-    get_briefing_subscription_repository,
     get_push_channel_service,
     get_telegram_link_service,
-    get_user_subscription_repository,
     get_user_subscription_service,
 )
 from backend.app.core.auth import RequireUser
@@ -27,12 +25,6 @@ from backend.app.models.schema_push import (
     UpdateSubscriptionRequest,
     VerifyPushChannelRequest,
 )
-from backend.app.repositories.briefing_repository import (
-    UserBriefingSubscriptionReader,
-)
-from backend.app.repositories.user_subscription_repository import (
-    UserSubscriptionRepository,
-)
 from backend.app.services.auth.rate_limit import RateLimitExceededError, hit_rate_limit
 from backend.app.services.email_service import (
     BriefingDeliveryError,
@@ -40,11 +32,6 @@ from backend.app.services.email_service import (
     OtpDeliveryUnavailableError,
     OtpSendRateLimitedError,
     build_email_service,
-)
-from backend.app.services.membership.subscription_quota import (
-    SubscriptionQuotaExceededError,
-    collect_active_daily_sources,
-    ensure_subscription_quota,
 )
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.errors import (
@@ -60,7 +47,6 @@ from backend.app.services.push.errors import (
     SubscriptionNotFoundError,
     TelegramDeliveryError,
     TelegramNotConfiguredError,
-    VipRequiredError,
     WebhookDeliveryError,
     WebhookProbeFailedError,
     WebhookUrlError,
@@ -165,12 +151,8 @@ def _subscription_payload(subscription: dict[str, Any]) -> dict[str, Any]:
 
 
 def _map_domain_error(
-    exc: PushDomainError | SubscriptionQuotaExceededError,
+    exc: PushDomainError,
 ) -> HTTPException:
-    if isinstance(exc, SubscriptionQuotaExceededError):
-        return HTTPException(status_code=403, detail={"code": "quota-exceeded", "message": exc.detail})
-    if isinstance(exc, VipRequiredError):
-        return HTTPException(status_code=403, detail={"code": exc.code, "message": exc.detail})
     if isinstance(exc, (PushChannelNotFoundError, SubscriptionNotFoundError)):
         return HTTPException(status_code=404, detail=exc.detail)
     if isinstance(exc, (PushChannelDuplicateError, SubscriptionDuplicateError)):
@@ -182,32 +164,6 @@ def _map_domain_error(
     if isinstance(exc, (WebhookDeliveryError, TelegramDeliveryError, ProviderCredentialInvalidError)):
         return HTTPException(status_code=502, detail=exc.detail)
     return HTTPException(status_code=400, detail=exc.detail)
-
-
-def _enforce_subscription_quota(
-    current_user: dict[str, Any],
-    adding_sources: set[str],
-    briefing_subscriptions: UserBriefingSubscriptionReader,
-    user_subscriptions: UserSubscriptionRepository,
-) -> None:
-    """免费档订阅档位校验（admin 豁免，与 MCP 配额同一运营口径）。
-
-    跨体系 A（briefing_subscriptions）+ B（user_subscriptions）合计活跃
-    日报模块，防止「A 订 1 个 + B 订 8 个」绕过；存量豁免语义由
-    ensure_subscription_quota 承载（已活跃 source 的变更幂等放行）。
-    """
-    if current_user.get("role") == "admin":
-        return
-    active = collect_active_daily_sources(
-        briefing_subscriptions=briefing_subscriptions,
-        user_subscriptions=user_subscriptions,
-        user_id=_user_id(current_user),
-    )
-    ensure_subscription_quota(
-        tier=str(current_user.get("membership_tier") or "free"),
-        active_sources=active,
-        adding_sources=adding_sources,
-    )
 
 
 def _map_email_error(exc: Exception) -> HTTPException:
@@ -252,10 +208,8 @@ async def create_push_channel(
 ) -> dict[str, Any]:
     _set_no_store(response)
     if body.channel_type in {"webhook", "discord"}:
-        try:
-            PushChannelService.require_direct_channel_entitlement(current_user)
-        except VipRequiredError as exc:
-            raise _map_domain_error(exc) from exc
+        # 简报推送已降级为注册用户免费权益：bot/webhook 渠道不再要求会员，
+        # 仅保留创建频率限制。
         await _enforce_rate_limit(
             request,
             action="push.channel_webhook",
@@ -273,7 +227,6 @@ async def create_push_channel(
             PushChannelDuplicateError,
             WebhookUrlError,
             WebhookProbeFailedError,
-            VipRequiredError,
         ) as exc:
             raise _map_domain_error(exc) from exc
         except PushChannelSecretError as exc:
@@ -423,7 +376,7 @@ async def create_telegram_link(
     )
     try:
         return await service.create_link(user=current_user)
-    except (VipRequiredError, TelegramNotConfiguredError) as exc:
+    except TelegramNotConfiguredError as exc:
         raise _map_domain_error(exc) from exc
 
 
@@ -537,18 +490,9 @@ async def create_user_subscription(
     response: Response,
     current_user: dict[str, Any] = Depends(RequireUser),
     service: UserSubscriptionService = Depends(get_user_subscription_service),
-    briefing_subscriptions: UserBriefingSubscriptionReader = Depends(
-        get_briefing_subscription_repository
-    ),
-    user_subscriptions: UserSubscriptionRepository = Depends(
-        get_user_subscription_repository
-    ),
 ) -> dict[str, Any]:
     _set_no_store(response)
     try:
-        _enforce_subscription_quota(
-            current_user, {body.source}, briefing_subscriptions, user_subscriptions
-        )
         subscription = await asyncio.to_thread(
             service.create_subscription,
             user_id=_user_id(current_user),
@@ -562,8 +506,6 @@ async def create_user_subscription(
         PushChannelNotVerifiedError,
         PushChannelDisabledError,
         SubscriptionDuplicateError,
-        SubscriptionQuotaExceededError,
-        VipRequiredError,
     ) as exc:
         raise _map_domain_error(exc) from exc
     return _subscription_payload(subscription)
@@ -578,34 +520,9 @@ async def update_user_subscription(
     response: Response,
     current_user: dict[str, Any] = Depends(RequireUser),
     service: UserSubscriptionService = Depends(get_user_subscription_service),
-    briefing_subscriptions: UserBriefingSubscriptionReader = Depends(
-        get_briefing_subscription_repository
-    ),
-    user_subscriptions: UserSubscriptionRepository = Depends(
-        get_user_subscription_repository
-    ),
 ) -> dict[str, Any]:
     _set_no_store(response)
     user_id = _user_id(current_user)
-    if body.status == "active" and current_user.get("role") != "admin":
-        # 恢复（paused→active）属变更，纳入档位校验不豁免；对已活跃订阅的
-        # 幂等 PATCH 不视为新增模块。pause 方向永不校验。
-        existing = await asyncio.to_thread(service.list_subscriptions, user_id=user_id)
-        target = next(
-            (item for item in existing if item["id"] == subscription_id), None
-        )
-        if target is None:
-            raise HTTPException(status_code=404, detail="订阅不存在")
-        if target["status"] != "active":
-            try:
-                _enforce_subscription_quota(
-                    current_user,
-                    {str(target["source"])},
-                    briefing_subscriptions,
-                    user_subscriptions,
-                )
-            except SubscriptionQuotaExceededError as exc:
-                raise _map_domain_error(exc) from exc
     try:
         await asyncio.to_thread(
             service.set_subscription_status,
@@ -614,7 +531,7 @@ async def update_user_subscription(
             status=body.status,
             current_user=current_user,
         )
-    except (SubscriptionNotFoundError, VipRequiredError) as exc:
+    except SubscriptionNotFoundError as exc:
         raise _map_domain_error(exc) from exc
     subscriptions = await asyncio.to_thread(service.list_subscriptions, user_id=user_id)
     subscription = next(

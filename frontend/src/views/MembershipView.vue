@@ -27,8 +27,8 @@ defineOptions({ name: 'MembershipView' })
  * 定价卡为商业化布局：动作收进卡内、付费档抬升 + 推荐徽章、年付价格锚定。
  * 会员卡金额/折扣由 plans 接口价自算（管理员可在监控页运行时调价）；
  * 探测失败按 paymentModel 兜底常量渲染（与 plans.py 默认价钉住）。
- * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因），
- * RSS 一行三档区分——游客不可订阅、免费档公开摘要、vip 全文+归档。
+ * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因）；
+ * 简报与 RSS 已对登录用户全量免费，vip 差异集中在 MCP 额度与网页收藏。
  */
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -126,15 +126,10 @@ const FREE_FEATURES: readonly TierFeature[] = [
   { key: 'websiteFree', included: true },
   { key: 'briefingFree', included: true },
   { key: 'rssFree', included: true },
-  { key: 'rssFull', included: false },
-  { key: 'briefingAll', included: false },
 ]
 const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'mcpMember', included: true },
   { key: 'websiteMember', included: true },
-  { key: 'briefingMember', included: true },
-  { key: 'rssFree', included: true },
-  { key: 'rssMember', included: true },
   { key: 'support', included: true },
 ]
 </script>

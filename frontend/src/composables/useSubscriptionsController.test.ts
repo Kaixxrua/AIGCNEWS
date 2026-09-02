@@ -8,16 +8,7 @@ vi.mock('@/composables/useClipboard', () => ({
 
 import { copyToClipboard } from '@/composables/useClipboard'
 
-describe('getErrorMessage quota mapping', () => {
-  it('maps any 403 to the stable quota-exceeded token', () => {
-    expect(
-      getErrorMessage(
-        { response: { status: 403, data: { detail: '免费档最多订阅 1 个日报模块' } } },
-        'request-failed',
-      ),
-    ).toBe('quota-exceeded')
-  })
-
+describe('getErrorMessage mapping', () => {
   it('keeps detail passthrough for non-403 failures', () => {
     expect(
       getErrorMessage(
@@ -56,45 +47,6 @@ describe('getErrorMessage quota mapping', () => {
   })
 })
 
-describe('useSubscriptionsController quota errors', () => {
-  const makeApi = (reject: unknown): SubscriptionsApi =>
-    ({
-      createSubscription: vi.fn().mockRejectedValue(reject),
-      setSubscriptionStatus: vi.fn().mockRejectedValue(reject),
-    }) as unknown as SubscriptionsApi
-
-  it('surfaces quota-exceeded when createSubscription is rejected with 403', async () => {
-    const ctl = useSubscriptionsController(
-      makeApi({ response: { status: 403, data: { detail: '免费档最多订阅 1 个日报模块' } } }),
-    )
-    ctl.newChannelId.value = 1
-
-    const ok = await ctl.submitSubscription()
-
-    expect(ok).toBe(false)
-    expect(ctl.error.value).toBe('quota-exceeded')
-  })
-
-  it('surfaces quota-exceeded when resuming a paused subscription hits the limit', async () => {
-    const ctl = useSubscriptionsController(
-      makeApi({ response: { status: 403, data: { detail: '免费档最多订阅 1 个日报模块' } } }),
-    )
-
-    await ctl.toggleSubscription({
-      id: 9,
-      channel_id: 1,
-      channel_type: 'email',
-      target: 'me@example.com',
-      source: 'github',
-      frequency: 'daily',
-      status: 'paused',
-      created_at: '2026-08-01T00:00:00Z',
-    })
-
-    expect(ctl.error.value).toBe('quota-exceeded')
-  })
-})
-
 describe('useSubscriptionsController RSS links', () => {
   const makeFeedApi = (): SubscriptionsApi & { getFeedToken: ReturnType<typeof vi.fn> } =>
     ({
@@ -112,12 +64,13 @@ describe('useSubscriptionsController RSS links', () => {
       }),
     }) as unknown as SubscriptionsApi & { getFeedToken: ReturnType<typeof vi.fn> }
 
-  it('builds member URLs with a lazily fetched token, cached across calls', async () => {
+  // 全文 RSS 已对所有注册用户免费开放：统一拼装带 token 的 member.xml 链接
+  it('builds token URLs with a lazily fetched token, cached across calls', async () => {
     const api = makeFeedApi()
     const ctl = useSubscriptionsController(api)
 
-    const allUrl = await ctl.rssLinkFor('all', true)
-    const sourceUrl = await ctl.rssLinkFor('arxiv', true)
+    const allUrl = await ctl.rssLinkFor('all')
+    const sourceUrl = await ctl.rssLinkFor('arxiv')
 
     // token 只取一次（内存缓存）；特殊字符经 encodeURIComponent 编码
     expect(api.getFeedToken).toHaveBeenCalledTimes(1)
@@ -128,23 +81,28 @@ describe('useSubscriptionsController RSS links', () => {
     )
   })
 
-  it('builds public URLs for free users without touching the token endpoint', async () => {
+  it('builds per-source token URLs from the same member feed', async () => {
     const api = makeFeedApi()
     const ctl = useSubscriptionsController(api)
 
-    expect(await ctl.rssLinkFor('all', false)).toBe(`${window.location.origin}/api/feed.xml`)
-    expect(await ctl.rssLinkFor('x', false)).toBe(`${window.location.origin}/api/feeds/x.xml`)
-    expect(api.getFeedToken).not.toHaveBeenCalled()
+    const token = encodeURIComponent('aigc_feed_test token')
+    expect(await ctl.rssLinkFor('x')).toBe(
+      `${window.location.origin}/api/feeds/member.xml?token=${token}&source=x`,
+    )
+    expect(api.getFeedToken).toHaveBeenCalledTimes(1)
   })
 
   it('copies the resolved link and sets the rss-copied notice', async () => {
     const api = makeFeedApi()
     const ctl = useSubscriptionsController(api)
 
-    const ok = await ctl.copyRssLink('github', false)
+    const ok = await ctl.copyRssLink('github')
 
+    const token = encodeURIComponent('aigc_feed_test token')
     expect(ok).toBe(true)
-    expect(copyToClipboard).toHaveBeenCalledWith(`${window.location.origin}/api/feeds/github.xml`)
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      `${window.location.origin}/api/feeds/member.xml?token=${token}&source=github`,
+    )
     expect(ctl.notice.value).toBe('rss-copied')
     expect(ctl.error.value).toBe('')
   })
@@ -152,7 +110,7 @@ describe('useSubscriptionsController RSS links', () => {
   it('rotate swaps the in-memory token and invalidates the old link', async () => {
     const api = makeFeedApi()
     const ctl = useSubscriptionsController(api)
-    await ctl.rssLinkFor('all', true)
+    await ctl.rssLinkFor('all')
     expect(ctl.feedToken.value).toBe('aigc_feed_test token')
 
     const ok = await ctl.rotateFeedToken()
@@ -162,7 +120,7 @@ describe('useSubscriptionsController RSS links', () => {
     expect(ctl.feedToken.value).toBe('aigc_feed_rotated')
     expect(ctl.notice.value).toBe('rss-rotated')
     // 后续拼链接用新 token，不再调 getFeedToken
-    const url = await ctl.rssLinkFor('all', true)
+    const url = await ctl.rssLinkFor('all')
     expect(url).toContain(encodeURIComponent('aigc_feed_rotated'))
     expect(api.getFeedToken).toHaveBeenCalledTimes(1)
   })
@@ -173,7 +131,7 @@ describe('useSubscriptionsController RSS links', () => {
     api.getFeedToken.mockRejectedValue({ response: { status: 503, data: { detail: 'RSS token 服务未配置加密密钥' } } })
     const ctl = useSubscriptionsController(api)
 
-    const ok = await ctl.copyRssLink('all', true)
+    const ok = await ctl.copyRssLink('all')
 
     expect(ok).toBe(false)
     expect(ctl.error.value).toBe('RSS token 服务未配置加密密钥')

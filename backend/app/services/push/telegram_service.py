@@ -29,10 +29,7 @@ from backend.app.repositories.push_channel_repository import PushChannelReposito
 from backend.app.repositories.telegram_link_attempt_repository import (
     TelegramLinkAttemptRepository,
 )
-from backend.app.services.push.channel_service import (
-    CHANNEL_TYPE_TELEGRAM,
-    PushChannelService,
-)
+from backend.app.services.push.channel_service import CHANNEL_TYPE_TELEGRAM
 from backend.app.services.push.errors import (
     ProviderCredentialInvalidError,
     ProviderRateLimitedError,
@@ -223,7 +220,7 @@ class TelegramLinkService:
         config = self._resolve_config()
         if not config.enabled or not config.bot_username:
             raise TelegramNotConfiguredError("Telegram 推送未启用")
-        PushChannelService.require_direct_channel_entitlement(user)
+        # 简报推送已降级为注册用户免费权益：telegram 渠道不再要求会员。
         user_id = int(user.get("user_id") or 0)
         nonce = secrets.token_urlsafe(32)
         attempt_id = uuid4()

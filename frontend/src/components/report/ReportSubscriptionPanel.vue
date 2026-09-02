@@ -15,7 +15,6 @@ defineProps<{
   isLoadingPlan: boolean
   isRssBusy: boolean
   rssNotice: string
-  isMember: boolean
   userEmail: string
   step: 1 | 2
   selectedSources: ReportKey[]
@@ -33,7 +32,7 @@ const emit = defineEmits<{
   goNext: []
   goBack: []
   toggleDelivery: [key: string]
-  copyRss: [member: boolean]
+  copyRss: []
   rotateRss: []
   confirmPlan: []
 }>()
@@ -88,10 +87,6 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
         <div>
           <p class="text-sm font-semibold text-stone-700">{{ t('report.wizard.step1Title') }}</p>
           <p class="text-2xs text-stone-400 mt-0.5">{{ t('report.wizard.step1Description') }}</p>
-          <p v-if="!isMember && !canSelectMultipleSources" class="text-2xs mt-1" style="color: var(--notice-warn-ink)">
-            {{ t('report.freeTierHint') }}
-            <RouterLink to="/membership" class="font-semibold underline underline-offset-2">{{ t('report.upgradeCta') }}</RouterLink>
-          </p>
         </div>
         <button class="text-2xs text-stone-400 hover:text-stone-600" :disabled="isSubscribing" @click="emit('closeSubscribePanel')">{{ t('common.cancel') }}</button>
       </div>
@@ -189,10 +184,9 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
               type="button"
               class="btn-secondary justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
-              @click="emit('copyRss', isMember)"
-            >{{ t(isMember ? 'report.wizard.delivery.copyMember' : 'report.wizard.delivery.copyPublic') }}</button>
+              @click="emit('copyRss')"
+            >{{ t('report.wizard.delivery.copyDigest') }}</button>
             <button
-              v-if="isMember"
               type="button"
               class="btn-ghost justify-center px-2 py-1 text-2xs"
               :disabled="isRssBusy"
@@ -216,7 +210,7 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
           >{{ t('report.wizard.back') }}</button>
           <button
             class="btn-primary gap-1.5 text-xs py-1.5 px-3"
-            :disabled="isSubscribing || (!selectedDeliveryKeys.length && selectedSources.length > 0 && !isMember)"
+            :disabled="isSubscribing || (!selectedDeliveryKeys.length && selectedSources.length > 0)"
             @click="emit('confirmPlan')"
           >
             <span v-if="isSubscribing" class="h-3 w-3 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />

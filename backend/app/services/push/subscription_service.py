@@ -12,11 +12,8 @@ from backend.app.repositories.push_channel_repository import PushChannelReposito
 from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
 )
-from backend.app.services.membership.tiers import MEMBERSHIP_TIER_MEMBER, resolve_effective_tier
 from backend.app.services.push.channel_service import (
     CHANNEL_STATUS_ACTIVE,
-    CHANNEL_TYPE_DISCORD,
-    CHANNEL_TYPE_TELEGRAM,
 )
 from backend.app.services.push.errors import (
     PushChannelDisabledError,
@@ -24,7 +21,6 @@ from backend.app.services.push.errors import (
     PushChannelNotVerifiedError,
     SubscriptionDuplicateError,
     SubscriptionNotFoundError,
-    VipRequiredError,
 )
 
 SUBSCRIPTION_STATUS_ACTIVE = "active"
@@ -58,12 +54,7 @@ class UserSubscriptionService:
         channel = self._channels.get_channel(user_id=user_id, channel_id=channel_id)
         if channel is None:
             raise PushChannelNotFoundError("推送渠道不存在")
-        if channel["channel_type"] in {CHANNEL_TYPE_DISCORD, CHANNEL_TYPE_TELEGRAM}:
-            user = current_user or {}
-            if user.get("role") != "admin" and resolve_effective_tier(
-                user.get("membership_tier"), user.get("membership_expires_at")
-            ) != MEMBERSHIP_TIER_MEMBER:
-                raise VipRequiredError("当前功能仅对有效会员开放")
+        # 简报订阅已降级为注册用户免费权益：discord/telegram 渠道不再校验会员 tier。
         if not channel["verified"]:
             raise PushChannelNotVerifiedError("推送渠道尚未验证")
         if channel["status"] != CHANNEL_STATUS_ACTIVE:
@@ -95,17 +86,8 @@ class UserSubscriptionService:
         status: str,
         current_user: dict[str, Any] | None = None,
     ) -> None:
-        if status == "active" and current_user is not None:
-            existing = next(
-                (row for row in self._subscriptions.list_subscriptions(user_id)
-                 if row["id"] == subscription_id),
-                None,
-            )
-            if existing and existing["channel_type"] in {CHANNEL_TYPE_DISCORD, CHANNEL_TYPE_TELEGRAM}:
-                if current_user.get("role") != "admin" and resolve_effective_tier(
-                    current_user.get("membership_tier"), current_user.get("membership_expires_at")
-                ) != MEMBERSHIP_TIER_MEMBER:
-                    raise VipRequiredError("当前功能仅对有效会员开放")
+        # 简报订阅已降级为注册用户免费权益：恢复 discord/telegram 订阅
+        # 不再校验会员 tier（current_user 参数保留以兼容既有调用签名）。
         updated = self._subscriptions.set_subscription_status(
             user_id=user_id,
             subscription_id=subscription_id,

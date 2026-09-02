@@ -35,7 +35,7 @@ const i18n = createI18n({
     'zh-CN': {
       membership: {
         title: 'vip',
-        subtitle: '解锁更高的 MCP 调用额度与全部简报模块。',
+        subtitle: '解锁更高的 MCP 调用额度与个人网页不限量收藏。',
         guest: {
           name: 'guest',
           price: '¥0',
@@ -55,10 +55,8 @@ const i18n = createI18n({
           features: {
             mcpFree: 'MCP/API 共用：每 24 小时 60 次 + 滚动 30 天 1,200 次',
             websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏',
-            briefingFree: '简报订阅 1 个日报模块',
-            rssFree: 'RSS 公开摘要订阅（近 48 小时）',
-            rssFull: 'RSS 中文译文、全文与 7 天完整归档',
-            briefingAll: '简报订阅全部 8 个模块',
+            briefingFree: '简报订阅全部 8 个日报模块',
+            rssFree: 'RSS 每日综合简报与简报速览订阅',
           },
         },
         member: {
@@ -73,9 +71,6 @@ const i18n = createI18n({
           features: {
             mcpMember: 'MCP/API 共用：每 24 小时 400 次 + 滚动 30 天 8,000 次',
             websiteMember: '个人网页收藏添加不限量',
-            briefingMember: '简报订阅全部 8 个模块',
-            rssFree: 'RSS 公开摘要订阅（近 48 小时）',
-            rssMember: 'RSS 中文译文、全文与 7 天完整归档',
             support: '优先支持与后续 vip 权益',
           },
         },
@@ -142,12 +137,10 @@ describe('MembershipView', () => {
     expect(text).toContain('MCP/API 共用：每 24 小时 400 次 + 滚动 30 天 8,000 次')
     expect(text).toContain('滚动 24 小时最多添加 3 个个人网页收藏')
     expect(text).toContain('个人网页收藏添加不限量')
-    expect(text).toContain('简报订阅 1 个日报模块')
-    expect(text).toContain('简报订阅全部 8 个模块')
-    // RSS 三档区分：游客 ✗ / 免费公开摘要 / vip 全文归档
+    // 简报/RSS 已并入免费档：免费档含全部 8 模块与双 RSS，会员卡只保留工具权益
+    expect(text).toContain('简报订阅全部 8 个日报模块')
+    expect(text).toContain('RSS 每日综合简报与简报速览订阅')
     expect(text).toContain('RSS 订阅')
-    expect(text).toContain('RSS 公开摘要订阅（近 48 小时）')
-    expect(text).toContain('RSS 中文译文、全文与 7 天完整归档')
   })
 
   it('marks excluded features with ✗ so tiers do not read as all-checkmarks', () => {
@@ -157,9 +150,9 @@ describe('MembershipView', () => {
 
     const [guestCard, freeCard, memberCard] = cards
     if (!guestCard || !freeCard || !memberCard) throw new Error('tier cards missing')
-    // guest：RSS / 简报 / 网页收藏三项排除；free：RSS 全文与全部简报两项排除
+    // guest：RSS / 简报 / 网页收藏三项排除；free 与 vip 均无排除项
     expect(guestCard.findAll('.tier-feature--excluded')).toHaveLength(3)
-    expect(freeCard.findAll('.tier-feature--excluded')).toHaveLength(2)
+    expect(freeCard.findAll('.tier-feature--excluded')).toHaveLength(0)
     expect(memberCard.findAll('.tier-feature--excluded')).toHaveLength(0)
 
     // guest 的 RSS 行必须是 ✗（排除态），与免费/vip 的 ✓ 形成区分
@@ -170,19 +163,16 @@ describe('MembershipView', () => {
     expect(guestRssRow?.find('.tier-check').exists()).toBe(false)
 
     const freeRows = freeCard.findAll('.tier-features li')
-    const freeRssRow = freeRows.find((row) => row.text().includes('RSS 公开摘要订阅'))
+    const freeRssRow = freeRows.find((row) => row.text().includes('RSS 每日综合简报'))
     expect(freeRssRow?.classes()).not.toContain('tier-feature--excluded')
     expect(freeRssRow?.find('.tier-check').exists()).toBe(true)
 
-    // vip 继承免费的公开摘要 RSS（✓），再叠加全文归档
-    const memberRows = memberCard.findAll('.tier-features li')
-    const memberRssFreeRow = memberRows.find((row) => row.text().includes('RSS 公开摘要订阅'))
-    expect(memberRssFreeRow?.classes()).not.toContain('tier-feature--excluded')
-    expect(memberRssFreeRow?.find('.tier-check').exists()).toBe(true)
-    expect(memberCard.findAll('.tier-check')).toHaveLength(6)
+    // vip 卡只保留工具权益（MCP 额度 / 网页收藏 / 支持），简报 RSS 不再单列
+    expect(memberCard.findAll('.tier-check')).toHaveLength(3)
+    expect(memberCard.text()).not.toContain('RSS')
 
-    // 排除项图标总数 = 3 + 2
-    expect(wrapper.findAll('.tier-x')).toHaveLength(5)
+    // 排除项图标总数 = guest 的 3 项
+    expect(wrapper.findAll('.tier-x')).toHaveLength(3)
   })
 
   it('links the in-card CTA to the online checkout when plans are available', async () => {

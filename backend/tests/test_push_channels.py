@@ -12,9 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_push
 from backend.app.api.dependencies import (
-    get_briefing_subscription_repository,
     get_push_channel_service,
-    get_user_subscription_repository,
     get_user_subscription_service,
 )
 from backend.app.core.auth import RequireUser
@@ -203,23 +201,6 @@ class FakeUserSubscriptionRepository:
         return True
 
 
-class FakeBriefingSubscriptionRepository:
-    """体系 A（briefing_subscriptions）内存仓储：只建模活跃日报读接口。"""
-
-    def __init__(self) -> None:
-        self.rows: list[dict] = []
-
-    def add_active(self, *, user_id: int, source: str) -> None:
-        self.rows.append({"user_id": user_id, "source": source, "is_active": True})
-
-    def get_user_briefing_subscriptions(self, user_id: int) -> list[dict]:
-        return [
-            dict(row)
-            for row in self.rows
-            if row["user_id"] == user_id and row["is_active"]
-        ]
-
-
 class PushChannelSecretTests(unittest.TestCase):
     def test_seal_unseal_roundtrip(self) -> None:
         box = WeChatSecretBox.generate_for_test()
@@ -317,14 +298,11 @@ class _PushRouteTestBase(unittest.TestCase):
         self.redis = FakeRedis()
         self.channels = FakePushChannelRepository()
         self.subscriptions = FakeUserSubscriptionRepository(self.channels)
-        self.briefing_subscriptions = FakeBriefingSubscriptionRepository()
         app = FastAPI()
         app.state.redis = self.redis
         app.include_router(routes_push.router, prefix="/api")
 
         async def user() -> dict:
-            # 既有 CRUD 用例的语义不受档位配额干扰：fixture 默认会员档
-            # （档位校验的免费档行为由 PushSubscriptionQuotaTests 专项覆盖）
             return {
                 "user_id": 7,
                 "email": "owner@example.com",
@@ -338,13 +316,6 @@ class _PushRouteTestBase(unittest.TestCase):
         )
         app.dependency_overrides[get_user_subscription_service] = lambda: (
             UserSubscriptionService(self.subscriptions, self.channels)
-        )
-        # 档位校验跨体系合计所需的两个读仓储（PR3 新增依赖）
-        app.dependency_overrides[get_briefing_subscription_repository] = lambda: (
-            self.briefing_subscriptions
-        )
-        app.dependency_overrides[get_user_subscription_repository] = lambda: (
-            self.subscriptions
         )
         # 邮件服务固定走 dev 模式（开发环境 + SMTP 未配置），避免测试触网；
         # 非开发环境 SMTP 未配置会拒绝发码（OTP 明文日志限定 dev）
@@ -651,8 +622,8 @@ class UserSubscriptionRouteTests(_PushRouteTestBase):
         self.assertEqual(response.status_code, 404)
 
 
-class PushSubscriptionQuotaTests(_PushRouteTestBase):
-    """体系 B 路由级档位契约：免费 1 模块/会员全模块，跨体系合计 + 存量豁免。"""
+class PushSubscriptionTierTests(_PushRouteTestBase):
+    """简报推送已降级为注册用户免费权益：不再按档位限制模块数，免费档与会员同权。"""
 
     def _as_user(self, *, role: str = "user", tier: str = "free") -> None:
         async def user() -> dict:
@@ -665,29 +636,18 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
 
         self.app.dependency_overrides[RequireUser] = user
 
-    def test_free_tier_first_subscription_created_second_source_rejected(self) -> None:
+    def test_free_tier_subscribes_multiple_sources(self) -> None:
         self._as_user()
         channel = self._create_verified_channel()
-        first = self.client.post(
-            "/api/push/me/subscriptions",
-            json={"channel_id": channel["id"], "source": "github"},
-        )
-        self.assertEqual(first.status_code, 201, first.text)
-        second = self.client.post(
-            "/api/push/me/subscriptions",
-            json={"channel_id": channel["id"], "source": "news"},
-        )
-        self.assertEqual(second.status_code, 403, second.text)
-        self.assertEqual(
-            second.json()["detail"],
-            {
-                "code": "quota-exceeded",
-                "message": "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
-            },
-        )
+        for source in ("github", "news"):
+            response = self.client.post(
+                "/api/push/me/subscriptions",
+                json={"channel_id": channel["id"], "source": source},
+            )
+            self.assertEqual(response.status_code, 201, response.text)
 
-    def test_free_tier_same_source_on_new_channel_is_not_a_new_module(self) -> None:
-        # 存量豁免：已活跃 source 换渠道重复订阅不视为新增模块
+    def test_free_tier_same_source_on_new_channel_succeeds(self) -> None:
+        # 已活跃 source 换渠道重复订阅同样放行
         self._as_user()
         first_channel = self._create_verified_channel("a@example.com")
         second_channel = self._create_verified_channel("b@example.com")
@@ -712,7 +672,7 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
             )
             self.assertEqual(response.status_code, 201, response.text)
 
-    def test_admin_bypasses_quota(self) -> None:
+    def test_admin_subscribes_multiple_sources(self) -> None:
         self._as_user(role="admin")
         channel = self._create_verified_channel()
         for source in ("github", "news"):
@@ -722,8 +682,8 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
             )
             self.assertEqual(response.status_code, 201, response.text)
 
-    def test_resume_counts_toward_quota_after_downgrade(self) -> None:
-        # 会员期建 2 模块 → 全暂停 → 降级免费档 → 恢复第 1 个放行、第 2 个 403
+    def test_resume_after_downgrade_always_succeeds(self) -> None:
+        # 建 2 模块 → 全暂停 → 降级免费档 → 两个都可恢复（无档位配额）
         channel = self._create_verified_channel()
         created = [
             self.client.post(
@@ -739,23 +699,13 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
             self.assertEqual(paused.status_code, 200, paused.text)
 
         self._as_user()  # 降级免费档
-        resumed = self.client.patch(
-            f"/api/push/me/subscriptions/{created[0]['id']}", json={"status": "active"}
-        )
-        self.assertEqual(resumed.status_code, 200, resumed.text)
-        rejected = self.client.patch(
-            f"/api/push/me/subscriptions/{created[1]['id']}", json={"status": "active"}
-        )
-        self.assertEqual(rejected.status_code, 403, rejected.text)
-        self.assertEqual(
-            rejected.json()["detail"],
-            {
-                "code": "quota-exceeded",
-                "message": "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块",
-            },
-        )
+        for item in created:
+            resumed = self.client.patch(
+                f"/api/push/me/subscriptions/{item['id']}", json={"status": "active"}
+            )
+            self.assertEqual(resumed.status_code, 200, resumed.text)
 
-    def test_idempotent_patch_on_active_subscription_skips_quota(self) -> None:
+    def test_idempotent_patch_on_active_subscription_succeeds(self) -> None:
         self._as_user()
         channel = self._create_verified_channel()
         created = self.client.post(
@@ -766,22 +716,6 @@ class PushSubscriptionQuotaTests(_PushRouteTestBase):
             f"/api/push/me/subscriptions/{created['id']}", json={"status": "active"}
         )
         self.assertEqual(response.status_code, 200, response.text)
-
-    def test_cross_system_sources_are_counted_together(self) -> None:
-        # 体系 A 已活跃 github：免费档在体系 B 订 news 被拒，订 github 去重放行
-        self._as_user()
-        self.briefing_subscriptions.add_active(user_id=7, source="github")
-        channel = self._create_verified_channel()
-        rejected = self.client.post(
-            "/api/push/me/subscriptions",
-            json={"channel_id": channel["id"], "source": "news"},
-        )
-        self.assertEqual(rejected.status_code, 403, rejected.text)
-        deduped = self.client.post(
-            "/api/push/me/subscriptions",
-            json={"channel_id": channel["id"], "source": "github"},
-        )
-        self.assertEqual(deduped.status_code, 201, deduped.text)
 
 
 if __name__ == "__main__":

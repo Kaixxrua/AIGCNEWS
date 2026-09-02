@@ -7,9 +7,6 @@ import SubscriptionsView from './SubscriptionsView.vue'
 const controllerSpy = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const confirmSpy = vi.hoisted(() => vi.fn())
-const authBox = vi.hoisted(() => ({ isMember: false, isAdmin: false }))
-
-vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
 
 vi.mock('@/composables/useSubscriptionsController', async () => {
   const { computed, ref } = await import('vue')
@@ -95,7 +92,6 @@ const i18n = createI18n({
           telegramTitle: '连接 Telegram',
           telegramConnect: '打开 Telegram 连接',
           telegramPending: '等待你打开 Telegram 链接…',
-          vipOnly: '仅对有效会员和管理员开放',
           verified: '已验证',
           unverified: '未验证',
           disabled: '已停用',
@@ -115,8 +111,6 @@ const i18n = createI18n({
           selectChannel: '选择渠道',
           noBindableChannel: '暂无可用渠道',
           create: '创建订阅',
-          quotaHint: '免费档最多订阅 1 个日报模块；',
-          quotaUpgrade: '开通会员解锁全部模块 →',
           paused: '已暂停',
           pause: '暂停',
           resume: '恢复',
@@ -126,13 +120,11 @@ const i18n = createI18n({
           rssReset: '重置 RSS 链接',
           rssResetConfirm: '重置后旧 RSS 链接立即失效，需要到阅读器里换成新链接。确定重置？',
           rssTitle: 'RSS 简报订阅',
-          rssHintMember: '速览链接内含你的专属 token，请勿公开分享。',
-          rssHintFree: '每日综合简报全文公开可订；开通会员独享速览版。',
+          rssHint: '速览链接内含你的专属 token，请勿公开分享。',
           rssBriefingFull: '每日简报 · 全文',
           rssBriefingDigest: '每日简报 · 速览',
-          rssDigestUpsell: '速览版为会员权益 →',
           rssAdvancedTitle: '按来源订阅原始条目（高级）',
-          rssAdvancedHint: '公开源为近 48 小时摘要；会员链接带 token。',
+          rssAdvancedHint: '公开源为近 48 小时摘要；链接带 token。',
           empty: '还没有订阅',
         },
         sources: { all: '全部', arxiv: 'arXiv 论文', dailyhot: '全网热榜' },
@@ -150,7 +142,7 @@ const i18n = createI18n({
           'rss-copied': 'RSS 链接已复制，粘贴到阅读器即可订阅',
           'rss-rotated': 'RSS 链接已重置，旧链接已失效',
         },
-        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'quota-exceeded': '免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。', 'vip-required': 'Telegram 和 Discord 渠道仅对有效会员开放。' },
+        errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试' },
       },
     },
   },
@@ -231,8 +223,6 @@ beforeEach(() => {
   confirmSpy.mockReset()
   vi.stubGlobal('confirm', confirmSpy)
   controllerSpy.mockClear()
-  authBox.isMember = false
-  authBox.isAdmin = false
   ctl().newSource.value = 'all'
 })
 
@@ -363,9 +353,8 @@ describe('SubscriptionsView interactions', () => {
     expect(wrapper.text()).toContain('已停用')
   })
 
-  it('copies the RSS link for a subscription row with the caller membership flag', async () => {
+  it('copies the RSS link for a subscription row', async () => {
     ctl().subscriptions.value = [subscription]
-    authBox.isMember = true
     const wrapper = await mountView()
 
     // 订阅行内的 RSS 按钮只有图标没有文字，与直订卡片里的文字 pill 区分
@@ -374,42 +363,32 @@ describe('SubscriptionsView interactions', () => {
       .find((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() === '')
     expect(rssButton).toBeDefined()
     await rssButton!.trigger('click')
-    // 视图只透传 source 与会员标记；URL 形态由 controller 决定
-    expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', true)
-  })
-
-  it('passes isMember=false when a free user copies the RSS link', async () => {
-    ctl().subscriptions.value = [subscription]
-    authBox.isMember = false
-    const wrapper = await mountView()
-
-    const rssButton = wrapper
-      .findAll('button')
-      .find((button) => button.attributes('title') === '复制 RSS 订阅链接' && button.text() === '')
-    await rssButton!.trigger('click')
-    expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot', false)
+    // 视图只透传 source；URL 形态由 controller 决定
+    expect(ctl().copyRssLink).toHaveBeenCalledWith('dailyhot')
   })
 
   it('offers briefing RSS buttons plus collapsed source pills without any channel or subscription', async () => {
     // 零渠道零订阅也能直接拿 RSS 链接——直订与推送渠道完全解耦；
-    // 简报为主推，8 个原始条目源收在默认折叠的高级区
-    authBox.isMember = false
+    // 简报为主推，8 个原始条目源收在默认折叠的高级区；
+    // 完整版与速览版均已对所有注册用户开放，无会员转化入口。
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('RSS 简报订阅')
-    expect(wrapper.text()).toContain('每日综合简报全文公开可订')
+    expect(wrapper.text()).toContain('速览链接内含你的专属 token')
+
     const fullButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 全文')
     expect(fullButton).toBeDefined()
     await fullButton!.trigger('click')
     expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(false)
 
-    // 免费用户不显示速览按钮，改显示会员转化入口（RouterLinkStub 无 href，按 to 断言）
-    expect(wrapper.findAll('button').some((button) => button.text() === '每日简报 · 速览')).toBe(false)
-    const upsell = wrapper
-      .findAllComponents(RouterLinkStub)
-      .find((link) => link.props('to') === '/membership')
-    expect(upsell).toBeDefined()
-    expect(upsell!.text()).toContain('速览版为会员权益')
+    const digestButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 速览')
+    expect(digestButton).toBeDefined()
+    await digestButton!.trigger('click')
+    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(true)
+
+    expect(
+      wrapper.findAllComponents(RouterLinkStub).some((link) => link.props('to') === '/membership'),
+    ).toBe(false)
 
     const advanced = wrapper.find('details')
     expect(advanced.text()).toContain('按来源订阅原始条目（高级）')
@@ -419,28 +398,7 @@ describe('SubscriptionsView interactions', () => {
     expect(pills.length).toBe(SUBSCRIPTION_SOURCES.length)
   })
 
-  it('offers members the digest button and copies full or digest briefing links', async () => {
-    authBox.isMember = true
-    const wrapper = await mountView()
-
-    expect(wrapper.text()).toContain('速览链接内含你的专属 token')
-    // 会员无 upsell 链接（quota 转化入口对会员同样隐藏）
-    expect(
-      wrapper.findAllComponents(RouterLinkStub).some((link) => link.props('to') === '/membership'),
-    ).toBe(false)
-
-    const fullButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 全文')
-    await fullButton!.trigger('click')
-    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(false)
-
-    const digestButton = wrapper.findAll('button').find((button) => button.text() === '每日简报 · 速览')
-    expect(digestButton).toBeDefined()
-    await digestButton!.trigger('click')
-    expect(ctl().copyBriefingRssLink).toHaveBeenCalledWith(true)
-  })
-
-  it('copies per-source member RSS links from the collapsed advanced section', async () => {
-    authBox.isMember = true
+  it('copies per-source RSS links from the collapsed advanced section', async () => {
     const wrapper = await mountView()
 
     const allPill = wrapper
@@ -449,18 +407,11 @@ describe('SubscriptionsView interactions', () => {
       .find((button) => button.text() === '全部')
     expect(allPill).toBeDefined()
     await allPill!.trigger('click')
-    expect(ctl().copyRssLink).toHaveBeenCalledWith('all', true)
+    expect(ctl().copyRssLink).toHaveBeenCalledWith('all')
   })
 
-  it('shows the RSS reset entry only to members and requires confirmation', async () => {
+  it('requires confirmation before resetting the RSS link', async () => {
     ctl().subscriptions.value = [subscription]
-    authBox.isMember = false
-    const freeWrapper = await mountView()
-    expect(freeWrapper.text()).not.toContain('重置 RSS 链接')
-    freeWrapper.unmount()
-
-    // authStore mock 非响应式：会员形态须在挂载前就位（与 quota 测试同法）
-    authBox.isMember = true
     const wrapper = await mountView()
     const resetButton = wrapper.findAll('button').find((button) => button.text() === '重置 RSS 链接')
     expect(resetButton).toBeDefined()
@@ -472,48 +423,5 @@ describe('SubscriptionsView interactions', () => {
     confirmSpy.mockReturnValue(true)
     await resetButton!.trigger('click')
     expect(ctl().rotateFeedToken).toHaveBeenCalledTimes(1)
-  })
-})
-
-describe('SubscriptionsView membership quota gating', () => {
-  const createButton = (wrapper: any) =>
-    wrapper.findAll('button').find((button: any) => button.text() === '创建订阅')
-
-  it('disables create and shows the upgrade hint when a free user is at the limit', async () => {
-    ctl().channels.value = [emailChannel]
-    ctl().subscriptions.value = [subscription]
-    ctl().newSource.value = 'all'
-    const wrapper = await mountView()
-
-    expect(wrapper.text()).toContain('免费档最多订阅 1 个日报模块')
-    expect(createButton(wrapper)!.attributes('disabled')).toBeDefined()
-  })
-
-  it('keeps create enabled for an already-active source (same-module change)', async () => {
-    ctl().channels.value = [emailChannel]
-    ctl().subscriptions.value = [subscription]
-    ctl().newSource.value = 'dailyhot'
-    const wrapper = await mountView()
-
-    expect(wrapper.text()).not.toContain('免费档最多订阅 1 个日报模块')
-    expect(createButton(wrapper)!.attributes('disabled')).toBeUndefined()
-  })
-
-  it('never gates members', async () => {
-    authBox.isMember = true
-    ctl().channels.value = [emailChannel]
-    ctl().subscriptions.value = [subscription]
-    ctl().newSource.value = 'all'
-    const wrapper = await mountView()
-
-    expect(wrapper.text()).not.toContain('免费档最多订阅 1 个日报模块')
-    expect(createButton(wrapper)!.attributes('disabled')).toBeUndefined()
-  })
-
-  it('maps the quota-exceeded token to the localized upgrade message', async () => {
-    ctl().error.value = 'quota-exceeded'
-    const wrapper = await mountView()
-
-    expect(wrapper.text()).toContain('免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块。')
   })
 })

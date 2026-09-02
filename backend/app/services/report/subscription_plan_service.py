@@ -13,20 +13,11 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.briefing_repository import BriefingSubscriptionRepository
 from backend.app.repositories.push_channel_repository import PushChannelRepository
 from backend.app.repositories.user_subscription_repository import UserSubscriptionRepository
-from backend.app.services.membership.subscription_quota import (
-    SubscriptionQuotaExceededError,
-    ensure_subscription_quota,
-)
-from backend.app.services.membership.tiers import (
-    MEMBERSHIP_TIER_MEMBER,
-    resolve_effective_tier,
-)
 from backend.app.services.push.channel_service import CHANNEL_STATUS_ACTIVE
 from backend.app.services.push.errors import (
     PushChannelDisabledError,
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
-    VipRequiredError,
 )
 
 _VALID_SOURCES = {
@@ -93,7 +84,7 @@ class ReportSubscriptionPlanService:
         capability.active 供前端向导预选：account_email 有活跃简报订阅、
         push_channel 有活跃订阅时为 True；RSS 无服务端记录，恒为 False。
         """
-        can_select_multiple = self._can_select_multiple_sources(user)
+        can_select_multiple = True
         briefing_rows = self._briefing_subscriptions.get_user_briefing_subscriptions(
             user_id
         )
@@ -154,10 +145,7 @@ class ReportSubscriptionPlanService:
             if not normalized_deliveries:
                 raise InvalidSubscriptionPlanError("请选择至少一种投递方式")
 
-        if not self._can_select_multiple_sources(user) and len(normalized_sources) > 1:
-            raise SubscriptionQuotaExceededError(
-                "免费档最多订阅 1 个日报模块，开通会员解锁全部 8 个模块"
-            )
+        # 简报订阅已降级为注册用户免费权益：不再按档位限制模块数。
 
         # 预加载渠道与现有订阅，用于校验、幂等去重与 sync 移除
         channels_by_id = self._load_channels(user_id)
@@ -214,16 +202,8 @@ class ReportSubscriptionPlanService:
                     f"不支持的投递方式: {delivery.kind}"
                 )
 
-        # 跨体系 quota 校验（admin 在 ensure_subscription_quota 内豁免）；
-        # sync 模式先扣除将被移除的存量，按最终集合校验，免费档换模块不被误伤。
+        # 简报订阅已降级为注册用户免费权益：不再做跨体系档位 quota 校验。
         desired_source_set = set(normalized_sources)
-        ensure_subscription_quota(
-            tier=str(user.get("membership_tier") or "free"),
-            active_sources=(
-                active_sources & desired_source_set if sync else active_sources
-            ),
-            adding_sources=desired_source_set,
-        )
 
         desired_push_pairs = {
             (source, channel_id)
@@ -347,18 +327,6 @@ class ReportSubscriptionPlanService:
                 )
 
     @staticmethod
-    def _can_select_multiple_sources(user: dict[str, Any]) -> bool:
-        """admin 与当前有效会员可多选；过期会员按 free 处理。"""
-        if user.get("role") == "admin":
-            return True
-        return (
-            resolve_effective_tier(
-                user.get("membership_tier"), user.get("membership_expires_at")
-            )
-            == MEMBERSHIP_TIER_MEMBER
-        )
-
-    @staticmethod
     def _filter_daily_push_rows(
         push_rows: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
@@ -372,7 +340,7 @@ class ReportSubscriptionPlanService:
         briefing_rows: list[dict[str, Any]],
         push_rows: list[dict[str, Any]],
     ) -> set[str]:
-        """跨体系合计活跃日报模块；口径与 subscription_quota.collect_active_daily_sources 一致。"""
+        """跨体系合计活跃日报模块（briefing_subscriptions + active daily user_subscriptions）。"""
         sources = {
             str(row["source"]) for row in briefing_rows if row.get("source")
         }
@@ -419,11 +387,7 @@ class ReportSubscriptionPlanService:
             raise InvalidSubscriptionPlanError(
                 f"{channel_type} 渠道暂未开放"
             )
-        if channel_type in {"discord", "telegram"}:
-            if user.get("role") != "admin" and resolve_effective_tier(
-                user.get("membership_tier"), user.get("membership_expires_at")
-            ) != MEMBERSHIP_TIER_MEMBER:
-                raise VipRequiredError("当前功能仅对有效会员开放")
+        # 简报订阅已降级为注册用户免费权益：discord/telegram 渠道不再校验会员 tier。
         if not channel.get("verified"):
             raise PushChannelNotVerifiedError("推送渠道尚未验证")
         if channel.get("status") != CHANNEL_STATUS_ACTIVE:

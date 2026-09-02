@@ -7,15 +7,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from backend.app.services.membership.subscription_quota import (
-    SubscriptionQuotaExceededError,
-)
 from backend.app.services.push.channel_service import CHANNEL_STATUS_ACTIVE
 from backend.app.services.push.errors import (
     PushChannelDisabledError,
     PushChannelNotFoundError,
     PushChannelNotVerifiedError,
-    VipRequiredError,
 )
 from backend.app.services.report.subscription_plan_service import (
     DeliveryTarget,
@@ -55,12 +51,12 @@ def _service(
 
 
 class TestReportSubscriptionPlanServiceGetPlan:
-    def test_free_user_cannot_select_multiple_sources(self) -> None:
+    def test_free_user_can_select_multiple_sources(self) -> None:
         service = _service()
         plan = service.get_plan(user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"}, user_id=1)
 
-        assert plan["can_select_multiple_sources"] is False
-        assert plan["max_sources"] == 1
+        assert plan["can_select_multiple_sources"] is True
+        assert plan["max_sources"] == 8
 
     def test_member_can_select_multiple_sources(self) -> None:
         service = _service()
@@ -81,7 +77,7 @@ class TestReportSubscriptionPlanServiceGetPlan:
 
         assert plan["can_select_multiple_sources"] is True
 
-    def test_expired_member_treated_as_free(self) -> None:
+    def test_expired_member_can_select_multiple_sources(self) -> None:
         service = _service()
         plan = service.get_plan(
             user={
@@ -93,8 +89,8 @@ class TestReportSubscriptionPlanServiceGetPlan:
             user_id=1,
         )
 
-        assert plan["can_select_multiple_sources"] is False
-        assert plan["max_sources"] == 1
+        assert plan["can_select_multiple_sources"] is True
+        assert plan["max_sources"] == 8
 
     def test_capabilities_include_rss_and_account_email(self) -> None:
         push_channels = MagicMock()
@@ -232,17 +228,20 @@ class TestReportSubscriptionPlanServiceApplyPlan:
                 deliveries=[],
             )
 
-    def test_free_user_cannot_select_multiple_sources(self) -> None:
-        service = _service()
+    def test_free_user_can_apply_multiple_sources(self) -> None:
+        briefing_subscriptions = MagicMock()
+        briefing_subscriptions.upsert_briefing_subscription.return_value = {"id": 1}
+        service = _service(briefing_subscriptions=briefing_subscriptions)
 
-        with pytest.raises(SubscriptionQuotaExceededError):
-            service.apply_plan(
-                user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
-                user_id=1,
-                email="a@b.com",
-                sources=["github", "news"],
-                deliveries=[DeliveryTarget(kind="account_email")],
-            )
+        result = service.apply_plan(
+            user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
+            user_id=1,
+            email="a@b.com",
+            sources=["github", "news"],
+            deliveries=[DeliveryTarget(kind="account_email")],
+        )
+
+        assert set(result["sources"]) == {"github", "news"}
 
     def test_member_can_select_multiple_sources(self) -> None:
         briefing_subscriptions = MagicMock()
@@ -459,11 +458,12 @@ class TestReportSubscriptionPlanServiceApplyPlan:
                 deliveries=[DeliveryTarget(kind="push_channel", channel_id=10)],
             )
 
-    def test_discord_requires_member(self) -> None:
+    def test_free_user_can_select_discord_channel(self) -> None:
         briefing_subscriptions = MagicMock()
         briefing_subscriptions.get_user_briefing_subscriptions.return_value = []
         user_subscriptions = MagicMock()
         user_subscriptions.list_subscriptions.return_value = []
+        user_subscriptions.create_subscription.return_value = {"id": 2}
         push_channels = MagicMock()
         push_channels.list_channels.return_value = [
             {
@@ -480,16 +480,18 @@ class TestReportSubscriptionPlanServiceApplyPlan:
             push_channels=push_channels,
         )
 
-        with pytest.raises(VipRequiredError):
-            service.apply_plan(
-                user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
-                user_id=1,
-                email="a@b.com",
-                sources=["github"],
-                deliveries=[DeliveryTarget(kind="push_channel", channel_id=10)],
-            )
+        result = service.apply_plan(
+            user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
+            user_id=1,
+            email="a@b.com",
+            sources=["github"],
+            deliveries=[DeliveryTarget(kind="push_channel", channel_id=10)],
+        )
 
-    def test_free_user_same_source_across_channels_is_exempt(self) -> None:
+        assert result["deliveries"][0]["channel_id"] == 10
+        user_subscriptions.create_subscription.assert_called_once()
+
+    def test_free_user_same_source_across_channels_succeeds(self) -> None:
         briefing_subscriptions = MagicMock()
         briefing_subscriptions.get_user_briefing_subscriptions.return_value = [
             {"source": "github"}
@@ -522,11 +524,12 @@ class TestReportSubscriptionPlanServiceApplyPlan:
 
         assert result["sources"] == ["github"]
 
-    def test_free_user_adding_second_source_exceeds_quota(self) -> None:
+    def test_free_user_adding_second_source_succeeds(self) -> None:
         briefing_subscriptions = MagicMock()
         briefing_subscriptions.get_user_briefing_subscriptions.return_value = [
             {"source": "github"}
         ]
+        briefing_subscriptions.upsert_briefing_subscription.return_value = {"id": 2}
         user_subscriptions = MagicMock()
         user_subscriptions.list_subscriptions.return_value = []
         push_channels = MagicMock()
@@ -537,14 +540,15 @@ class TestReportSubscriptionPlanServiceApplyPlan:
             push_channels=push_channels,
         )
 
-        with pytest.raises(SubscriptionQuotaExceededError):
-            service.apply_plan(
-                user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
-                user_id=1,
-                email="a@b.com",
-                sources=["news"],
-                deliveries=[DeliveryTarget(kind="account_email")],
-            )
+        result = service.apply_plan(
+            user={"user_id": 1, "email": "a@b.com", "membership_tier": "free"},
+            user_id=1,
+            email="a@b.com",
+            sources=["news"],
+            deliveries=[DeliveryTarget(kind="account_email")],
+        )
+
+        assert "news" in result["sources"]
 
     def test_duplicate_deliveries_are_normalized(self) -> None:
         briefing_subscriptions = MagicMock()
@@ -901,8 +905,8 @@ class TestReportSubscriptionPlanServiceApplyPlanSync:
                 sync=True,
             )
 
-    def test_sync_free_user_switching_source_passes_quota(self) -> None:
-        """免费档 A→B 换模块：存量 A 将被移除，按最终集合 1 个校验，不误伤。"""
+    def test_sync_free_user_switching_source_succeeds(self) -> None:
+        """A→B 换模块：存量 A 被移除，按最终集合生效（简报已无按档位的模块数限制）。"""
         briefing_subscriptions = MagicMock()
         briefing_subscriptions.get_user_briefing_subscriptions.return_value = [
             {"source": "github"}

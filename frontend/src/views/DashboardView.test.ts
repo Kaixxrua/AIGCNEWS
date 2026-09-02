@@ -41,10 +41,6 @@ vi.mock('@/composables/useDashboardStats', async () => {
   }
 })
 
-/* authStore 用普通对象桩：挂载前置好 isMember，组件据此分流会员 RSS 入口 */
-const authBox = { isMember: false }
-vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
-
 const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
@@ -91,7 +87,6 @@ const mountView = async () => {
 
 describe('DashboardView', () => {
   it('renders a single digest CTA that opens the report subscription wizard', async () => {
-    authBox.isMember = false
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain(messages.dashboard.digest.title)
@@ -107,7 +102,7 @@ describe('DashboardView', () => {
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
     expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
 
-    // 只保留一个订阅入口，RSS 在简报向导内复制；Dashboard 不暴露 member token
+    // 只保留一个订阅入口，RSS 在简报向导内复制；Dashboard 不暴露 feed token
     expect(wrapper.find('a[href="/api/feeds/briefing.xml"]').exists()).toBe(false)
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
     expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)

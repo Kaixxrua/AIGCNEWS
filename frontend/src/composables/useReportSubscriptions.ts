@@ -11,7 +11,7 @@ import {
   type SubscriptionPlan,
   type SubscriptionPlanApplyResponse,
 } from '@/features/report/reportViewModel'
-import { copySensitiveToClipboard, copyToClipboard } from '@/composables/useClipboard'
+import { copySensitiveToClipboard } from '@/composables/useClipboard'
 import type { FeedTokenInfo } from '@/services/auth/feedTokenApi'
 import { i18n } from '@/i18n'
 
@@ -31,8 +31,6 @@ interface ReportSubscriptionOperations {
 
 interface UseReportSubscriptionsOptions {
   isLoggedIn: Readonly<Ref<boolean>>
-  /** 当前账号是否为有效会员；仅用于选择私有 RSS digest。 */
-  isMember?: Readonly<Ref<boolean>>
   /** 当前认证用户 ID；用于隔离账号级异步结果和 RSS token 缓存。 */
   userId: Readonly<Ref<number | null>>
   selectedSource: Ref<ReportKey>
@@ -53,22 +51,9 @@ const getApiErrorDetail = (error: unknown): string => {
   return ''
 }
 
-const getErrorCode = (error: unknown): string | undefined => {
-  const detail = (error as { response?: { data?: { detail?: string | { code?: string } } } })?.response?.data?.detail
-  if (detail && typeof detail === 'object') return detail.code
-  return undefined
-}
-
 /** 订阅相关错误统一映射为 i18n 文案；detail 是运营口径中文，不做多语言透传。 */
-const getSubscriptionErrorMessage = (error: unknown, fallback: string): string => {
-  const status = (error as { response?: { status?: number } })?.response?.status
-  const code = getErrorCode(error)
-  if (status === 403) {
-    if (code === 'vip-required') return i18n.global.t('report.wizard.errorVipRequired')
-    return i18n.global.t('report.wizard.errorQuotaExceeded')
-  }
-  return getApiErrorDetail(error) || getApiErrorMessage(error) || fallback
-}
+const getSubscriptionErrorMessage = (error: unknown, fallback: string): string =>
+  getApiErrorDetail(error) || getApiErrorMessage(error) || fallback
 
 const generateIdempotencyKey = (): string => {
   try {
@@ -80,7 +65,6 @@ const generateIdempotencyKey = (): string => {
 
 export const useReportSubscriptions = ({
   isLoggedIn,
-  isMember,
   userId,
   selectedSource,
   selectedDate,
@@ -262,7 +246,7 @@ export const useReportSubscriptions = ({
     } else if (canSelectMultipleSources.value) {
       selectedSources.value = [...current, source]
     } else {
-      // 免费档单选：新选择直接替换，避免「超上限 403」的可预见失败
+      // plan 未放开多选时单选：新选择直接替换，避免「超上限 403」的可预见失败
       selectedSources.value = [source]
     }
   }
@@ -326,7 +310,6 @@ export const useReportSubscriptions = ({
     const selectedCapabilities = selectedDeliveryCapabilities.value
     const rssSelected = selectedCapabilities.some(cap => cap.kind === 'rss')
     const emailSelected = selectedCapabilities.some(cap => cap.kind === 'account_email')
-    const memberFeedSelected = Boolean(isMember?.value)
     const isEmptyPlan = !nextSources.length && !nextDeliveries.length
     const removesAny = <T>(before: readonly T[], after: readonly T[]): boolean => {
       const afterSet = new Set(after)
@@ -367,7 +350,7 @@ export const useReportSubscriptions = ({
       emailSubscribed.value = emailSelected
       let successMessage = getSuccessMessage(data ?? { sources: nextSources, deliveries: [] })
       if (rssSelected) {
-        const copied = await copyRssLink(memberFeedSelected)
+        const copied = await copyRssLink()
         if (!isCurrent(generation)) return
         if (copied) {
           successMessage = i18n.global.t('report.wizard.subscriptionAndRssCopied')
@@ -399,19 +382,19 @@ export const useReportSubscriptions = ({
     return feedToken
   }
 
-  const copyRssLink = async (member: boolean): Promise<boolean> => {
+  // 速览 RSS 已对所有注册用户免费开放：统一复制带 token 的 briefing-digest.xml
+  // （token 属敏感凭证，走 sensitive 剪贴板路径）。
+  const copyRssLink = async (): Promise<boolean> => {
     if (isRssBusy.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return false
     const generation = accountGeneration
     isRssBusy.value = true
     rssNotice.value = ''
     try {
-      const token = member ? encodeURIComponent(await ensureFeedToken(generation)) : ''
+      const token = encodeURIComponent(await ensureFeedToken(generation))
       if (!isCurrent(generation)) return false
       const origin = typeof window === 'undefined' ? '' : window.location.origin
-      const url = member
-        ? `${origin}/api/feeds/briefing-digest.xml?token=${token}`
-        : `${origin}/api/feeds/briefing.xml`
-      await (member ? copySensitiveToClipboard(url) : copyToClipboard(url))
+      const url = `${origin}/api/feeds/briefing-digest.xml?token=${token}`
+      await copySensitiveToClipboard(url)
       if (!isCurrent(generation)) return false
       rssNotice.value = 'rss-copied'
       return true
@@ -428,7 +411,7 @@ export const useReportSubscriptions = ({
 
   const copySubscribedRss = async (): Promise<boolean> => {
     if (!rssSubscribed.value) return false
-    return copyRssLink(Boolean(isMember?.value))
+    return copyRssLink()
   }
 
   const rotateRssToken = async (): Promise<boolean> => {

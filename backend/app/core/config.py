@@ -256,7 +256,7 @@ class Settings(BaseSettings):
             )
         return value
 
-    # 会员 RSS feed token 静态加密（token 明文密封落库供回显，永不存明文）。
+    # RSS feed token 静态加密（token 明文密封落库供回显，永不存明文）。
     # 独立密钥域：不复用 push_channel/x_credential 等密钥，避免任一域轮换时
     # 跨域连锁失效（现有 secret box 无多版本解密环）。缺失或非法时 feed token
     # 端点拒绝签发/回显（503），不降级为明文。

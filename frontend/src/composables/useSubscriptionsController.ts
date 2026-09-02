@@ -33,20 +33,14 @@ interface ApiErrorLike {
 
 export function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as ApiErrorLike
-  // 订阅档位超限是唯一的 403 来源（push 路由）：映射为稳定 key 走 i18n，
-  // detail 是运营口径中文，不做多语言透传。
-  const data = e.response?.data
-  const detail = data?.detail
-  if (e.response?.status === 403) {
-    const code = typeof detail === 'object' ? detail?.code : undefined
-    return code === 'vip-required' ? 'vip-required' : 'quota-exceeded'
-  }
   // Telegram 未配置/不可达时后端以 503 拒绝绑定：映射为稳定 key 走 i18n，
   // detail 是运营口径中文，不做多语言透传。仅限 telegram 端点——其他 503
   // （如 RSS token 未配置）保持 detail 透传。
   if (e.response?.status === 503 && e.config?.url?.includes('/telegram/')) {
     return 'telegram-unavailable'
   }
+  const data = e.response?.data
+  const detail = data?.detail
   const detailMessage = typeof detail === 'string' ? detail : detail?.message
   return data?.message ?? detailMessage ?? e.message ?? fallback
 }
@@ -77,7 +71,7 @@ export function useSubscriptionsController(
   const busyChannelIds = ref<Set<number>>(new Set())
   const busySubscriptionIds = ref<Set<number>>(new Set())
 
-  // RSS feed token：完整 token 只活在内存（不落 DOM/存储），供拼装会员 RSS 链接
+  // RSS feed token：完整 token 只活在内存（不落 DOM/存储），供拼装带 token 的 RSS 链接
   const feedToken = ref('')
   const rssBusy = ref(false)
 
@@ -334,25 +328,21 @@ export function useSubscriptionsController(
     return info.token
   }
 
-  // 会员：带 token 的全文 member.xml（source=all 时省略参数取全量）；
-  // 免费用户：公开摘要 feed（无 token，可直接进阅读器/边缘缓存）。
-  const rssLinkFor = async (source: SubscriptionSource, isMember: boolean): Promise<string> => {
+  // 全文 RSS 已降级为注册用户免费权益：统一复制带 token 的 member.xml
+  // 全文归档链接（source=all 时省略参数取全量）。
+  const rssLinkFor = async (source: SubscriptionSource): Promise<string> => {
     const origin = window.location.origin
-    if (isMember) {
-      const token = encodeURIComponent(await ensureFeedToken())
-      if (source === 'all') return `${origin}/api/feeds/member.xml?token=${token}`
-      return `${origin}/api/feeds/member.xml?token=${token}&source=${encodeURIComponent(source)}`
-    }
-    if (source === 'all') return `${origin}/api/feed.xml`
-    return `${origin}/api/feeds/${encodeURIComponent(source)}.xml`
+    const token = encodeURIComponent(await ensureFeedToken())
+    if (source === 'all') return `${origin}/api/feeds/member.xml?token=${token}`
+    return `${origin}/api/feeds/member.xml?token=${token}&source=${encodeURIComponent(source)}`
   }
 
-  const copyRssLink = async (source: SubscriptionSource, isMember: boolean): Promise<boolean> => {
+  const copyRssLink = async (source: SubscriptionSource): Promise<boolean> => {
     if (rssBusy.value) return false
     rssBusy.value = true
     try {
       return await _run(async () => {
-        await copyToClipboard(await rssLinkFor(source, isMember))
+        await copyToClipboard(await rssLinkFor(source))
         notice.value = 'rss-copied'
       })
     } finally {
@@ -360,9 +350,9 @@ export function useSubscriptionsController(
     }
   }
 
-  // 简报 RSS（推送渠道之外的第二条直订链）：全文源公开、会员同一链接
+  // 简报 RSS（推送渠道之外的第二条直订链）：全文源公开、注册用户同一链接
   // （内容与 /report 一致，免 token 进阅读器且可边缘缓存）；
-  // 速览为会员专属——带 token 的 briefing-digest.xml，调用方按档位显隐入口。
+  // 速览同样对注册用户免费开放——带 token 的 briefing-digest.xml。
   const rssBriefingLinkFor = async (digest: boolean): Promise<string> => {
     const origin = window.location.origin
     if (!digest) return `${origin}/api/feeds/briefing.xml`

@@ -47,7 +47,6 @@ const props = (overrides: Record<string, unknown> = {}) => ({
   isLoadingPlan: false,
   isRssBusy: false,
   rssNotice: '',
-  isMember: false,
   userEmail: 'reader@example.com',
   step: 2 as const,
   selectedSources: ['github'] as ReportKey[],
@@ -75,7 +74,7 @@ describe('ReportSubscriptionPanel delivery controls', () => {
     expect(cards[2]!.find('.delivery-option__toggle').attributes('disabled')).toBeDefined()
   })
 
-  it('uses visible secondary controls for public RSS copying and going back', async () => {
+  it('uses visible secondary controls for digest RSS copying and going back', async () => {
     const wrapper = mount(ReportSubscriptionPanel, {
       props: props(),
       global: {
@@ -87,26 +86,35 @@ describe('ReportSubscriptionPanel delivery controls', () => {
     const secondaryButtons = wrapper.findAll('button.btn-secondary')
     expect(secondaryButtons.length).toBeGreaterThanOrEqual(2)
 
+    // 速览 RSS 已对所有注册用户免费开放：复制按钮统一为 copyDigest，emit 不带会员标记
+    expect(secondaryButtons[0]!.text()).toBe(i18n.global.t('report.wizard.delivery.copyDigest'))
+
     await secondaryButtons[0]!.trigger('click')
     await secondaryButtons[secondaryButtons.length - 1]!.trigger('click')
-    expect(wrapper.emitted('copyRss')).toEqual([[false]])
+    expect(wrapper.emitted('copyRss')).toEqual([[]])
     expect(wrapper.emitted('goBack')).toHaveLength(1)
   })
 
-  it('uses the token-protected RSS copy action for members', async () => {
+  it('disables confirm only when sources are picked without any delivery', () => {
     const wrapper = mount(ReportSubscriptionPanel, {
-      props: props({ isMember: true }),
+      props: props({ selectedDeliveryKeys: [] }),
       global: {
         plugins: [i18n],
         stubs: { RouterLink: { template: '<a><slot /></a>' } },
       },
     })
 
-    const copyButton = wrapper.findAll('button.btn-secondary')[0]!
-    expect(copyButton.text()).toBe(i18n.global.t('report.wizard.delivery.copyMember'))
+    const confirmButton = wrapper.findAll('button.btn-primary').pop()!
+    expect(confirmButton.attributes('disabled')).toBeDefined()
 
-    await copyButton.trigger('click')
-
-    expect(wrapper.emitted('copyRss')).toEqual([[true]])
+    // 全清（连来源也不选）= 退订路径，confirm 可用
+    const clearing = mount(ReportSubscriptionPanel, {
+      props: props({ selectedSources: [], selectedDeliveryKeys: [] }),
+      global: {
+        plugins: [i18n],
+        stubs: { RouterLink: { template: '<a><slot /></a>' } },
+      },
+    })
+    expect(clearing.findAll('button.btn-primary').pop()!.attributes('disabled')).toBeUndefined()
   })
 })

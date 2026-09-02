@@ -10,9 +10,6 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_report
 from backend.app.api.dependencies import get_report_subscription_plan_service
 from backend.app.core.auth import RequireUser
-from backend.app.services.membership.subscription_quota import (
-    SubscriptionQuotaExceededError,
-)
 from backend.app.services.report.subscription_plan_service import (
     ReportSubscriptionPlanService,
 )
@@ -26,8 +23,8 @@ class TestSubscriptionPlanRoute:
     def test_get_plan_endpoint_calls_service(self) -> None:
         service = MagicMock(spec=ReportSubscriptionPlanService)
         service.get_plan.return_value = {
-            "can_select_multiple_sources": False,
-            "max_sources": 1,
+            "can_select_multiple_sources": True,
+            "max_sources": 8,
             "active_sources": ["github"],
             "capabilities": [
                 {
@@ -52,8 +49,8 @@ class TestSubscriptionPlanRoute:
             )
         )
 
-        assert result["can_select_multiple_sources"] is False
-        assert result["max_sources"] == 1
+        assert result["can_select_multiple_sources"] is True
+        assert result["max_sources"] == 8
         assert result["active_sources"] == ["github"]
         assert len(result["capabilities"]) == 2
         service.get_plan.assert_called_once_with(
@@ -109,26 +106,6 @@ class TestSubscriptionPlanRoute:
             )
 
         assert exc_info.value.status_code == 422
-
-    def test_apply_plan_endpoint_maps_quota_exceeded(self) -> None:
-        service = MagicMock(spec=ReportSubscriptionPlanService)
-        service.apply_plan.side_effect = SubscriptionQuotaExceededError()
-        body = routes_report.SubscriptionPlanRequest(
-            sources=["github", "news"],
-            deliveries=[routes_report.PlanDeliveryRequest(kind="account_email")],
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            _run(
-                routes_report.apply_subscription_plan(
-                    body=body,
-                    user={"user_id": 7, "email": "reader@example.com"},
-                    service=service,
-                )
-            )
-
-        assert exc_info.value.status_code == 403
-        assert exc_info.value.detail["code"] == "quota-exceeded"
 
     def test_apply_plan_endpoint_success(self) -> None:
         service = MagicMock(spec=ReportSubscriptionPlanService)
@@ -257,8 +234,8 @@ class TestSubscriptionPlanRouteOrder:
     def test_get_subscription_plan_not_shadowed_by_briefing_id(self) -> None:
         service = MagicMock(spec=ReportSubscriptionPlanService)
         service.get_plan.return_value = {
-            "can_select_multiple_sources": False,
-            "max_sources": 1,
+            "can_select_multiple_sources": True,
+            "max_sources": 8,
             "active_sources": [],
             "capabilities": [],
         }

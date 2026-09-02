@@ -3,19 +3,16 @@ import { defineComponent, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/composables/useClipboard', () => ({
-  copyToClipboard: vi.fn().mockResolvedValue(undefined),
   copySensitiveToClipboard: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { useReportSubscriptions } from './useReportSubscriptions'
 import { i18n } from '@/i18n'
-import { copySensitiveToClipboard, copyToClipboard } from '@/composables/useClipboard'
+import { copySensitiveToClipboard } from '@/composables/useClipboard'
 import type { FeedTokenInfo } from '@/services/auth/feedTokenApi'
 import type { ReportKey, SubscriptionPlan } from '@/features/report/reportViewModel'
 
 beforeEach(() => {
-  vi.mocked(copyToClipboard).mockReset()
-  vi.mocked(copyToClipboard).mockResolvedValue(undefined)
   vi.mocked(copySensitiveToClipboard).mockReset()
   vi.mocked(copySensitiveToClipboard).mockResolvedValue(undefined)
   localStorage.clear()
@@ -55,12 +52,11 @@ const makeOperations = () => ({
   sendToEmail: vi.fn().mockResolvedValue(undefined),
 })
 
-const withSetup = ({ isLoggedIn = true, member = false }: { isLoggedIn?: boolean; member?: boolean } = {}) => {
+const withSetup = ({ isLoggedIn = true }: { isLoggedIn?: boolean } = {}) => {
   const operations = makeOperations()
   const setError = vi.fn()
   const redirectToLogin = vi.fn()
   const loggedIn = ref(isLoggedIn)
-  const membership = ref(member)
   const userId = ref<number | null>(isLoggedIn ? 42 : null)
   let controller!: ReturnType<typeof useReportSubscriptions>
   const wrapper = mount(
@@ -68,7 +64,6 @@ const withSetup = ({ isLoggedIn = true, member = false }: { isLoggedIn?: boolean
       setup() {
         controller = useReportSubscriptions({
           isLoggedIn: loggedIn,
-          isMember: membership,
           userId,
           selectedSource: ref<ReportKey>('all'),
           selectedDate: ref('2026-08-17'),
@@ -81,7 +76,7 @@ const withSetup = ({ isLoggedIn = true, member = false }: { isLoggedIn?: boolean
       },
     }),
   )
-  return { controller, operations, setError, redirectToLogin, loggedIn, membership, userId, wrapper }
+  return { controller, operations, setError, redirectToLogin, loggedIn, userId, wrapper }
 }
 
 describe('useReportSubscriptions wizard flow', () => {
@@ -115,7 +110,7 @@ describe('useReportSubscriptions wizard flow', () => {
     expect(controller.selectedSources.value).toEqual(['all'])
   })
 
-  it('lets members accumulate multiple daily modules', () => {
+  it('accumulates multiple daily modules when the plan allows multi-select', () => {
     const { controller } = withSetup()
     controller.plan.value = makePlan()
     controller.selectedSources.value = []
@@ -126,7 +121,7 @@ describe('useReportSubscriptions wizard flow', () => {
     expect(controller.selectedSources.value).toEqual(['github', 'news'])
   })
 
-  it('collapses the free tier to single-select so a second pick replaces the first', async () => {
+  it('collapses to single-select when the plan disallows multi-select', async () => {
     const { controller, operations } = withSetup()
     operations.loadPlan.mockResolvedValue(makePlan({ can_select_multiple_sources: false, max_sources: 1 }))
 
@@ -208,7 +203,9 @@ describe('useReportSubscriptions wizard flow', () => {
     expect(payload.sync).toBe(true)
     expect(controller.rssSubscribed.value).toBe(true)
     expect(controller.emailSubscribed.value).toBe(true)
-    expect(copyToClipboard).toHaveBeenCalledWith(`${window.location.origin}/api/feeds/briefing.xml`)
+    expect(copySensitiveToClipboard).toHaveBeenCalledWith(
+      `${window.location.origin}/api/feeds/briefing-digest.xml?token=${encodeURIComponent('aigc_feed_test token')}`,
+    )
     expect(controller.emailSentMsg.value).toBe(i18n.global.t('report.wizard.subscriptionAndRssCopied'))
   })
 
@@ -296,24 +293,21 @@ describe('useReportSubscriptions wizard flow', () => {
     expect(operations.applyPlan).toHaveBeenCalledOnce()
   })
 
-  it('does not fetch the member token for public RSS and caches it for member RSS', async () => {
+  it('fetches the feed token once and caches it across digest copies', async () => {
     const { controller, operations } = withSetup()
     controller.plan.value = makePlan()
 
-    await controller.copyRssLink(false)
-    expect(operations.getFeedToken).not.toHaveBeenCalled()
-    expect(copyToClipboard).toHaveBeenCalledWith(`${window.location.origin}/api/feeds/briefing.xml`)
+    await controller.copyRssLink()
+    await controller.copyRssLink()
 
-    await controller.copyRssLink(true)
-    await controller.copyRssLink(true)
     expect(operations.getFeedToken).toHaveBeenCalledOnce()
     expect(copySensitiveToClipboard).toHaveBeenLastCalledWith(
       `${window.location.origin}/api/feeds/briefing-digest.xml?token=${encodeURIComponent('aigc_feed_test token')}`,
     )
   })
 
-  it('automatically copies the private digest for members after RSS subscription', async () => {
-    const { controller, operations, membership } = withSetup({ member: true })
+  it('automatically copies the digest link after RSS subscription', async () => {
+    const { controller, operations } = withSetup()
     controller.plan.value = makePlan()
     controller.selectedSources.value = ['github']
     controller.selectedDeliveryKeys.value = ['rss-briefing']
@@ -321,7 +315,6 @@ describe('useReportSubscriptions wizard flow', () => {
 
     await controller.confirmSubscriptionPlan()
 
-    expect(membership.value).toBe(true)
     expect(operations.getFeedToken).toHaveBeenCalledOnce()
     expect(copySensitiveToClipboard).toHaveBeenCalledWith(
       `${window.location.origin}/api/feeds/briefing-digest.xml?token=${encodeURIComponent('aigc_feed_test token')}`,
@@ -335,7 +328,7 @@ describe('useReportSubscriptions wizard flow', () => {
     controller.selectedSources.value = ['github']
     controller.selectedDeliveryKeys.value = ['rss-briefing']
     controller.step.value = 2
-    vi.mocked(copyToClipboard).mockRejectedValueOnce(new Error('clipboard denied'))
+    vi.mocked(copySensitiveToClipboard).mockRejectedValueOnce(new Error('clipboard denied'))
 
     await controller.confirmSubscriptionPlan()
 
@@ -374,7 +367,7 @@ describe('useReportSubscriptions wizard flow', () => {
   })
 
   it('copies the active subscribed RSS link through the header action', async () => {
-    const { controller } = withSetup({ member: true })
+    const { controller } = withSetup()
     controller.rssSubscribed.value = true
 
     await controller.copySubscribedRss()
@@ -384,7 +377,7 @@ describe('useReportSubscriptions wizard flow', () => {
     )
   })
 
-  it('requires confirmation before rotating the member RSS token', async () => {
+  it('requires confirmation before rotating the RSS token', async () => {
     const { controller, operations } = withSetup()
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
@@ -403,7 +396,7 @@ describe('useReportSubscriptions wizard flow', () => {
     controller.plan.value = makePlan()
     vi.mocked(copySensitiveToClipboard).mockRejectedValueOnce(new Error('clipboard denied'))
 
-    expect(await controller.copyRssLink(true)).toBe(false)
+    expect(await controller.copyRssLink()).toBe(false)
     expect(document.body.textContent).not.toContain('aigc_feed_test token')
     expect(localStorage.getItem('aigc_feed_test token')).toBeNull()
     expect(operations.getFeedToken).toHaveBeenCalledOnce()
@@ -412,10 +405,10 @@ describe('useReportSubscriptions wizard flow', () => {
   it('invalidates the in-memory RSS token when the account changes', async () => {
     const { controller, operations, userId } = withSetup()
 
-    expect(await controller.copyRssLink(true)).toBe(true)
+    expect(await controller.copyRssLink()).toBe(true)
     userId.value = 43
     await flushPromises()
-    expect(await controller.copyRssLink(true)).toBe(true)
+    expect(await controller.copyRssLink()).toBe(true)
 
     expect(operations.getFeedToken).toHaveBeenCalledTimes(2)
   })
@@ -436,38 +429,8 @@ describe('useReportSubscriptions wizard flow', () => {
   })
 })
 
-describe('useReportSubscriptions quota error mapping', () => {
-  it('maps a 403 quota error to the localized upgrade message', async () => {
-    const { controller, operations, setError } = withSetup()
-    controller.selectedSources.value = ['github']
-    controller.selectedDeliveryKeys.value = ['account-email']
-    controller.plan.value = makePlan()
-    controller.step.value = 2
-    operations.applyPlan.mockRejectedValue({
-      response: { status: 403, data: { detail: { code: 'quota-exceeded', message: '免费档最多订阅 1 个日报模块' } } },
-    })
-
-    await controller.confirmSubscriptionPlan()
-
-    expect(setError).toHaveBeenCalledWith(i18n.global.t('report.wizard.errorQuotaExceeded'))
-  })
-
-  it('maps a 403 vip error to the localized vip message', async () => {
-    const { controller, operations, setError } = withSetup()
-    controller.selectedSources.value = ['github']
-    controller.selectedDeliveryKeys.value = ['account-email']
-    controller.plan.value = makePlan()
-    controller.step.value = 2
-    operations.applyPlan.mockRejectedValue({
-      response: { status: 403, data: { detail: { code: 'vip-required', message: '当前功能仅对有效会员开放' } } },
-    })
-
-    await controller.confirmSubscriptionPlan()
-
-    expect(setError).toHaveBeenCalledWith(i18n.global.t('report.wizard.errorVipRequired'))
-  })
-
-  it('passes through the server detail for non-quota failures', async () => {
+describe('useReportSubscriptions error mapping', () => {
+  it('passes through the server detail for failures', async () => {
     const { controller, operations, setError } = withSetup()
     controller.selectedSources.value = ['github']
     controller.selectedDeliveryKeys.value = ['account-email']
