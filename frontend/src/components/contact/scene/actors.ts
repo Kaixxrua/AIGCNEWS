@@ -62,12 +62,10 @@ export class ActorController {
   private bubbleKind: BubbleKind | null = null
   private bubbleUntil = -1
   private readonly rng: () => number
+  private readonly spec: ActorSpec
 
-  constructor(
-    startX: number,
-    private readonly spec: ActorSpec,
-    now = 0,
-  ) {
+  constructor(startX: number, spec: ActorSpec, now = 0) {
+    this.spec = spec
     this.xFloat = startX
     this.rng = spec.rng ?? (() => 0.5)
     this.idleUntil = now + this.nextIdleSpan()

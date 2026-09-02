@@ -31,7 +31,7 @@ const shiftUp = (rows: string[]): string[] => {
 }
 
 /** 眨眼帧：眼睛字母替换为肤色 */
-const withBlink = (rows: string[]): string[] => rows.map((row) => row.replaceAll('e', 's'))
+const withBlink = (rows: string[]): string[] => rows.map((row) => row.replace(/e/g, 's'))
 
 const compose = (body: string[], legs: string[]): string[] => [...body, ...legs]
 

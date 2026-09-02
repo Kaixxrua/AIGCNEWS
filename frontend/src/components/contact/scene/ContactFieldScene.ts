@@ -1088,7 +1088,7 @@ const boot = (
         clearTimeout(bandRegenTimer)
         bandRegenTimer = null
       }
-      cleanup()
+      for (const disposable of disposables.splice(0)) disposable.dispose()
       renderer.forceContextLoss()
       disposeUnitPlane()
     },
