@@ -24,8 +24,9 @@ services:
       - sub2api
     volumes:
       # 生产后端固定从干净发布检出读取，避免主工作树并行 WIP 经核心 bind mount
-      # 被热重启带入运行时。发布检出当前钉在已验证的 account-settings release commit。
-      - /home/kaixxrua/aigcnews-deploy/account-4eecda5/backend:/src/backend:ro
+      # 被热重启带入运行时。发布检出当前钉在已验证的 briefing-llm3 release commit
+      # （6772121，日报 LLM 流式并发 1→3，main #4）。
+      - /home/kaixxrua/aigcnews-deploy/briefing-llm3-6772121/backend:/src/backend:ro
       # 私有源插件包（X 传输层 / 微信链路实现）+ pylibs 依赖供给
       # （twitter-cli 及其独占依赖，供给方式见本仓 README.md）；
       # 只读挂载，容器内路径 /opt/aigcnews_private
