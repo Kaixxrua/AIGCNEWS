@@ -35,6 +35,24 @@
         "V": 5
       },
       "notes": "three r180 lazy chunk (dynamic import, ContactPageView only); GLSL1 ShaderMaterial on WebGL2 context with colorspace_fragment only (pars chunk is auto-injected by WebGLProgram prefix). Verified: light/dark 1440, dark 320/375/414/768, no x-overflow, 62.6% px delta over 1.5s realtime, 0 px delta under reduced-motion, 0 shader errors, 112px dock clearance intact. Admin content/QR fallback/link safety unchanged; inert .hero-beam/.hero-scanline contract nodes preserved hidden."
+    },
+    {
+      "date": "2026-09-02",
+      "target": "frontend/src/components/contact/ContactHeroVisual.vue + views/ContactPageView.vue",
+      "verb": "redesign",
+      "macrostructure": "layered hero (pixel HD-2D harbor scene / overlay / content)",
+      "theme": "project-managed (uDay uniform: light theme = day scene, dark = night; uLight/uDark assigned by JS luminance compare of --ink vs --paper-raised)",
+      "voice": "signal-led product editorial",
+      "motion": "three.js WebGL2 pixel harbor, Octopath-style time switch: 1.8s constant-rate celestial arc (sun/moon swap through zenith), dusk horizon band + half-lit windows at midpoint, stars/fireflies crossfade to dust; prefers-reduced-motion -> instant snap single frame",
+      "scores": {
+        "P": 5,
+        "H": 4,
+        "E": 5,
+        "S": 5,
+        "R": 5,
+        "V": 5
+      },
+      "notes": "Single geometry, two lightings: Bayer-dithered sky gradient, fbm clouds, ridge/hills/shoreline, 5-building village with per-cell lit windows, lantern + mirrored water (scene re-evaluation at 2*HOR-y); chunky geometry on 160px/unit grid, smooth unquantized lighting layer. New --contact-acid-ink token keeps acid kicker legible on bright day sky (dark override = var(--acid)). Verified via Playwright + stubbed contact-page config: realtime delta true, no x-overflow 1440/320/375/414/768, arc frames show sun/moon sweep + dusk band, reduced-motion snaps to full night in <120ms with zero RAF, 0 real console errors (EventSource MIME noise is environmental). Hero DOM/overlay/admin content/QR fallback/link safety/inert compatibility nodes unchanged."
     }
   ]
 }

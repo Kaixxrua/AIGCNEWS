@@ -168,7 +168,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 </template>
 
 <style scoped>
-/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: three.js WebGL2 shader field (realtime, reduced-motion → static frame)
+/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: three.js WebGL2 像素 HD-2D 港湾，昼夜随主题（亮=昼 暗=夜），切换播八方旅人式时间过渡；reduced-motion → 静态单帧
  * Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5
  * contrast: pass (40–41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48, shader 颜色经 getComputedStyle 取 token) · responsive: pass (49–57) · icons: pass (30) · nav/footer: app-shell（不在本次范围） */
 .contact-page {
@@ -183,13 +183,15 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   --cs-7: 2.5rem;
   --cs-8: 3.5rem;
   --cs-dock-clear: 112px; /* 与 LayoutView/AppDock 的底部安全区契约，勿随排版节奏改动 */
-  --contact-hero-bg: var(--ink);
-  --contact-hero-ink: var(--paper-raised);
-  --contact-hero-muted: color-mix(in srgb, var(--paper-raised) 68%, transparent);
-  --contact-hero-rule: color-mix(in srgb, var(--paper-raised) 18%, transparent);
-  --contact-cta-bg: var(--paper-raised);
-  --contact-cta-ink: var(--ink);
-  --contact-primary-surface: color-mix(in srgb, var(--paper-raised) 92%, var(--acid) 8%);
+  --contact-hero-bg: var(--paper-muted);
+  --contact-hero-ink: var(--ink);
+  --contact-hero-muted: color-mix(in srgb, var(--ink) 66%, transparent);
+  --contact-hero-rule: color-mix(in srgb, var(--ink) 18%, transparent);
+  --contact-cta-bg: var(--ink);
+  --contact-cta-ink: var(--paper-muted);
+  --contact-primary-surface: color-mix(in srgb, var(--paper-raised) 90%, var(--acid) 10%);
+  /* 酸绿文字在昼场亮天上需压暗保对比；暗主题用纯 acid */
+  --contact-acid-ink: color-mix(in srgb, var(--acid) 52%, var(--ink));
   width: 100%;
   height: 100%;
   overflow-y: auto;
@@ -198,14 +200,10 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   padding: var(--cs-4) var(--cs-4) var(--cs-dock-clear);
 }
 
+/* hero 与像素场景同节律：亮主题 = 白昼亮场深字，暗主题 = 夜晚暗场亮字，
+ * 靠 --ink/--paper-* 自身随主题反转实现，无需整套 dark 覆盖。 */
 :global(:root[data-theme='dark'] .contact-page) {
-  --contact-hero-bg: var(--paper-muted);
-  --contact-hero-ink: var(--ink);
-  --contact-hero-muted: color-mix(in srgb, var(--ink) 66%, transparent);
-  --contact-hero-rule: color-mix(in srgb, var(--ink) 18%, transparent);
-  --contact-cta-bg: var(--ink);
-  --contact-cta-ink: var(--paper-muted);
-  --contact-primary-surface: color-mix(in srgb, var(--paper-raised) 90%, var(--acid) 10%);
+  --contact-acid-ink: var(--acid);
 }
 
 .contact-shell {
@@ -239,7 +237,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   white-space: nowrap;
 }
 
-/* ── Hero：黑场、垂直信号束和居中主张 ── */
+/* ── Hero：像素 HD-2D 港湾场景（昼/夜随主题）、可读性遮罩和居中主张 ── */
 .contact-hero {
   position: relative;
   min-height: 27rem;
@@ -255,7 +253,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   overflow: hidden;
   pointer-events: none;
 }
-/* 可读性遮罩：压住信号场中心与下缘，让标题/CTA 始终清晰 */
+/* 可读性遮罩：压住场景中心与下缘，让标题/CTA 始终清晰（随 hero token 昼夜自动换向） */
 .hero-overlay {
   position: absolute;
   inset: 0;
@@ -279,7 +277,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   align-items: center;
   gap: var(--cs-4);
   margin: 0;
-  color: var(--acid);
+  color: var(--contact-acid-ink);
   font-family: var(--contact-mono);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -336,7 +334,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 .contact-hero-note::before {
   content: '＋';
   margin-right: var(--cs-2);
-  color: var(--acid);
+  color: var(--contact-acid-ink);
 }
 .hero-cta {
   display: inline-flex;
