@@ -86,31 +86,27 @@ describe('membership checkout auth contract', () => {
   })
 })
 
-// 契约：/mcp 要求登录（Red 权限变更锚点）—— 配置页不再有游客路径；
-// 匿名深链触发登录弹窗，initializing/degraded 阻止受保护导航。
-describe('mcp auth contract', () => {
-  it('mcp route requires auth', () => {
+// 契约：/mcp 对游客开放（Red 权限变更锚点）—— 页面是获客入口，路由不带
+// requiresAuth/requiresAdmin，匿名深链不再触发登录重定向；Token 签发与
+// 收藏授权改由页面内向导在「下一步」处门禁，后端 Token API 仍以 401 兜底。
+describe('mcp guest access contract', () => {
+  it('mcp route carries no auth requirement', () => {
     const record = router.getRoutes().find((r) => r.path === '/mcp')
     expect(record, 'missing route /mcp').toBeDefined()
     expect(record?.name).toBe('mcp-connect')
-    expect(record?.meta.requiresAuth).toBe(true)
+    expect(record?.meta.requiresAuth).toBeUndefined()
+    expect(record?.meta.requiresAdmin).toBeUndefined()
   })
 
-  it('anonymous deep link to mcp requests the login modal', () => {
-    const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ kind: 'login', target: '/mcp' })
+  it('mcp nav item is visible to guests', () => {
+    const item = NAV_ITEMS.find((n) => n.to === '/mcp')
+    expect(item, 'missing nav item /mcp').toBeDefined()
+    expect(item?.requiresAuth).toBeUndefined()
   })
 
-  it('authenticated visitor is permitted to open mcp', () => {
+  it.each(['anonymous', 'initializing', 'degraded'] as const)('%s visitor is not redirected away from mcp', (status) => {
     const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
-  })
-
-  it.each(['initializing', 'degraded'] as const)('%s visitor is blocked from mcp', (status) => {
-    const resolved = router.resolve('/mcp')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false }))
-      .toEqual({ kind: 'block' })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
   })
 })
 
@@ -131,28 +127,20 @@ describe('subscriptions management compatibility contract', () => {
   })
 })
 
-describe('dsh auth contract', () => {
-  it('dsh route requires auth', () => {
+// 契约：/dsh 对游客开放（Red 权限变更锚点）—— 路由不带 requiresAuth，
+// 匿名深链不再触发登录重定向；DSH 专用 Token 的签发改由向导在「下一步」
+// 处要求登录后进行，后端 ensure/rotate 接口仍以 401 兜底。
+describe('dsh guest access contract', () => {
+  it('dsh route carries no auth requirement', () => {
     const record = router.getRoutes().find((r) => r.path === '/dsh')
     expect(record, 'missing route /dsh').toBeDefined()
     expect(record?.name).toBe('dsh')
-    expect(record?.meta.requiresAuth).toBe(true)
+    expect(record?.meta.requiresAuth).toBeUndefined()
+    expect(record?.meta.requiresAdmin).toBeUndefined()
   })
 
-  it('anonymous deep link to dsh requests the login modal', () => {
+  it.each(['anonymous', 'initializing', 'degraded'] as const)('%s visitor is not redirected away from dsh', (status) => {
     const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ kind: 'login', target: '/dsh' })
-  })
-
-  it('authenticated visitor is permitted to open dsh', () => {
-    const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
-  })
-
-  it.each(['initializing', 'degraded'] as const)('%s visitor is blocked from dsh', (status) => {
-    const resolved = router.resolve('/dsh')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false }))
-      .toEqual({ kind: 'block' })
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status, isAdmin: false })).toBeNull()
   })
 })

@@ -14,8 +14,10 @@ const buildController = () => ({
   creating: ref(false),
   endpointUrl: ref('https://aigcnews.cn/api/mcp'),
   endpointWarningKey: ref(''),
+  isLoggedIn: ref(true),
   normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
   quickCommand: ref(''),
+  requestLogin: vi.fn(),
   selectedClient: ref('claude-code'),
   selectedShell: ref('bash'),
   setupError: ref(null),
@@ -153,6 +155,44 @@ describe('McpSetupWizard navigation', () => {
     expect(prevButton(wrapper)!.attributes('disabled')).toBeUndefined()
 
     await wrapper.findAll('.mcp-step-dot')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+  })
+})
+
+describe('McpSetupWizard guest gating', () => {
+  it('requests login instead of advancing for guests, then advances after sign-in', async () => {
+    ctl().isLoggedIn.value = false
+    const wrapper = await mountWizard()
+
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(ctl().requestLogin).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+
+    // 登录完成后「下一步」恢复正常
+    ctl().isLoggedIn.value = true
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
+  })
+
+  it('blocks forward step-dot jumps for guests but never blocks going back', async () => {
+    ctl().isLoggedIn.value = false
+    const wrapper = await mountWizard()
+
+    await wrapper.findAll('.mcp-step-dot')[2]!.trigger('click')
+    await flushPromises()
+    expect(ctl().requestLogin).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+
+    // 进入第 2 步后即使登录态丢失，也始终允许退回已看过的步骤
+    ctl().isLoggedIn.value = true
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
+    ctl().isLoggedIn.value = false
+    await prevButton(wrapper)!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
   })

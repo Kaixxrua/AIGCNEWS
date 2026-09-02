@@ -1,24 +1,14 @@
 <script setup lang="ts">
-import { watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
 import { DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
 import { useAuthStore } from '@/stores/authStore'
-import { useLoginPrompt } from '@/composables/useLoginPrompt'
 
+// /dsh 对游客开放为获客入口：插件介绍与安装方式选择免登录可见；
+// 登录在向导「下一步」处按需弹窗，Token 签发仍由登录后的服务端完成。
 const { t } = useI18n()
 const auth = useAuthStore()
-const { requestLogin } = useLoginPrompt()
-
-// 路由守卫负责正常导航；该视图仍 fail-closed，并在测试或恢复竞态下补发同一登录请求。
-watch(
-  () => auth.status,
-  (status) => {
-    if (status === 'anonymous') requestLogin('/dsh')
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
@@ -38,7 +28,7 @@ watch(
           </div>
         </section>
 
-        <section v-if="auth.status === 'initializing' || auth.status === 'anonymous'" class="glass-card p-5 md:p-6">
+        <section v-if="auth.status === 'initializing'" class="glass-card p-5 md:p-6">
           <p class="text-xs text-stone-500">{{ t('dsh.authRestoring') }}</p>
         </section>
         <section v-else-if="auth.status === 'degraded'" class="glass-card p-5 md:p-6">

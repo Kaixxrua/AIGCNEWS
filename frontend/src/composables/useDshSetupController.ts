@@ -9,13 +9,14 @@ import {
 } from '@/services/mcp/mcpTokenApi'
 
 /**
- * DSH 接入向导控制器（登录后流程）。
+ * DSH 接入向导控制器。
  *
- * 不再有 guest/Free/VIP 身份选择：页面要求登录（路由 meta.requiresAuth），
- * 挂载后自动调用服务端 ensure 接口拿到该用户唯一的 DSH 专用 MCP Token
- * （跨刷新复用同一枚，服务端密封持久化）。Token 只保存在本控制器的内存
- * ref 中——不写入 localStorage/sessionStorage/URL/日志；认证丢失或组件
- * 卸载立即清空，且迟到响应（generation/disposed 守卫）不得回填凭证。
+ * /dsh 已对游客开放为获客入口（路由无 requiresAuth），但 ensure 只会由
+ * 向导在已登录状态下触发：挂载时已是登录态、或页面停留期间完成登录。
+ * 没有 guest/Free/VIP 身份选择——配额由服务端按 token 属主实时会员档位
+ * 计算。Token 只保存在本控制器的内存 ref 中——不写入
+ * localStorage/sessionStorage/URL/日志；认证丢失或组件卸载立即清空，
+ * 且迟到响应（generation/disposed 守卫）不得回填凭证。
  */
 export type DshTokenPhase = 'idle' | 'loading' | 'ready' | 'error' | 'recovery'
 
