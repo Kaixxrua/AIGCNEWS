@@ -43,7 +43,7 @@ export const defaultProjectScopeForQuery = (
   source: ProjectViewSource,
   query: string,
 ): ProjectScope => (
-  source === 'all' && !query.trim() ? 'today' : 'all'
+  source === 'all' && !query.trim() ? 'recommended' : 'all'
 )
 
 export const defaultProjectSortForScope = (
