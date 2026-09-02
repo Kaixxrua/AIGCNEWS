@@ -14,11 +14,11 @@ from backend.app.domain.project_taxonomy import (
     RAW_DESCRIPTION_ENGLISH_MIN_CHARS,
     raw_description_needs_english,
 )
+from backend.app.monitoring import live_stats_broadcaster
 from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
-from backend.app.services.dashboard import live_stats_broadcaster
 
 
 def _utcnow() -> str:

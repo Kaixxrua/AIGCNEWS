@@ -29,8 +29,23 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 63
-    assert migrations[-1].filename == "0063_user_feed_tokens.sql"
+    assert migrations[-1].version == 64
+    assert migrations[-1].filename == "0064_user_mcp_token_dsh_purpose.sql"
+
+
+def test_user_mcp_token_dsh_purpose_migration_is_additive_and_idempotent() -> None:
+    sql = (MIGRATIONS_DIR / "0064_user_mcp_token_dsh_purpose.sql").read_text(
+        encoding="utf-8"
+    )
+
+    # DSH 专用 MCP token：仅 additive 补列 + legacy 行按 client_label 一次性
+    # 标记（不删除不轮换）；partial unique index 保证每用户至多一个新制活跃
+    # DSH token，legacy hash-only 行不纳入；鉴权 lookup 不感知 purpose。
+    assert "ADD COLUMN IF NOT EXISTS purpose VARCHAR(32) NOT NULL DEFAULT 'generic'" in sql
+    assert "ADD COLUMN IF NOT EXISTS token_encrypted TEXT" in sql
+    assert "WHERE purpose = 'generic' AND client_label = 'dsh-aigc-radar'" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_mcp_tokens_dsh_active" in sql
+    assert "WHERE purpose = 'dsh' AND token_encrypted IS NOT NULL" in sql
 
 
 def test_user_feed_tokens_migration_is_idempotent_and_hash_only() -> None:

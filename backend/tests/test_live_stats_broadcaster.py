@@ -6,7 +6,7 @@ import unittest
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.app.services.dashboard.live_stats_broadcaster import (
+from backend.app.monitoring.live_stats_broadcaster import (
     HEARTBEAT,
     LiveStatsBroadcaster,
     notify_live_stats_changed,

@@ -23,6 +23,7 @@ from backend.app.api.dependencies import (
     get_user_account_repository,
 )
 from backend.app.core.postgres_database import postgres_database
+from backend.app.monitoring import live_stats_broadcaster
 from backend.app.repositories.document_repository import (
     DocumentRecentReader,
     DocumentStatisticsReader,
@@ -37,7 +38,7 @@ from backend.app.repositories.site_visit_repository import (
     SiteVisitStatsReader,
 )
 from backend.app.repositories.user_account_repository import UserStatisticsReader
-from backend.app.services.dashboard import live_stats_broadcaster, policy
+from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import (
     DashboardQueryService,
     GitHubHotBoardReader,

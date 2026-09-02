@@ -61,6 +61,7 @@ from backend.app.services.email_service import (
     OtpSendRateLimitedError,
     build_email_service,
 )
+from backend.app.services.membership.tiers import resolve_effective_tier
 
 logger = logging.getLogger(__name__)
 
@@ -1104,14 +1105,22 @@ async def _account_view(
         configured_password=settings.DEFAULT_ADMIN_PASSWORD,
         verify_password=verify_password,
     )
+    # 会员展示口径与 RequireUser 身份同构（0048）：库内档位列不回写，
+    # 生效档位按 resolve_effective_tier 收口（member 过期按 free，未知值
+    # fail-closed 归 free）；expires_at 原样透传供读取侧展示与前端二次判定。
+    expires_at = record.get("membership_expires_at")
     return {
         "user_id": user_id,
         "email": record.get("email"),
         "username": record.get("username"),
         "email_verified": bool(record.get("email_verified", False)),
         "role": record.get("role"),
-        "membership_tier": record.get("membership_tier"),
-        "membership_expires_at": record.get("membership_expires_at"),
+        "membership_tier": resolve_effective_tier(
+            record.get("membership_tier"), expires_at
+        ),
+        "membership_expires_at": (
+            expires_at.isoformat() if hasattr(expires_at, "isoformat") else None
+        ),
         "created_at": record.get("created_at"),
         "password_login_enabled": bool(record.get("password_login_enabled", False)),
         "password_change_required": change_required,

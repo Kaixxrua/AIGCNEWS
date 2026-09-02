@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from backend.app.services.dashboard import live_stats_broadcaster
+from backend.app.monitoring import live_stats_broadcaster
 
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
