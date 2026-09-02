@@ -14,6 +14,7 @@ const memberUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', members
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
   // 保留 isDshTokenRecoveryRequired 等真实辅助，只替换触网的 ensure/rotate
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
@@ -21,6 +22,7 @@ vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
 })
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
+vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
 
 const readyResult = (token: string, reused = false) => ({
   token,
@@ -77,6 +79,16 @@ const mountWizard = async (user: AuthUser = freeUser) => {
   return wrapper
 }
 
+const mountGuestWizard = async () => {
+  const auth = useAuthStore()
+  auth.status = 'anonymous'
+  auth.user = null
+  await router.push('/dsh'); await router.isReady()
+  const wrapper = mount(DshSetupWizard, { global: { plugins: [router, i18n] } })
+  await flushPromises()
+  return wrapper
+}
+
 const nextButton = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('button').find((button) => button.text().includes('下一步'))!
 
@@ -84,6 +96,7 @@ beforeEach(() => {
   ensureDshMcpToken.mockReset()
   rotateDshMcpToken.mockReset()
   copy.mockClear()
+  requestLogin.mockClear()
   setActivePinia(createPinia())
 })
 
@@ -149,16 +162,20 @@ describe('DshSetupWizard', () => {
   })
 
   it('shows retry state when ensure fails', async () => {
-    ensureDshMcpToken.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(readyResult('aigc_mcp_ok'))
+    // 已登录挂载即触发首次 ensure；失败后在命令步再次 ensure，仍失败才露出重试态
+    ensureDshMcpToken.mockRejectedValue(new Error('boom'))
     const wrapper = await mountWizard()
     await nextButton(wrapper).trigger('click')
     await nextTick()
 
     expect(wrapper.text()).toContain('Token 创建失败。')
+    expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
+
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_ok'))
     await wrapper.findAll('button').find((b) => b.text().includes('重试'))!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain("mcpToken: 'aigc_mcp_ok'")
-    expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
+    expect(ensureDshMcpToken).toHaveBeenCalledTimes(3)
   })
 
   it('guides legacy-token users through explicit regeneration', async () => {
@@ -208,5 +225,57 @@ describe('DshSetupWizard', () => {
     expect(rotateDshMcpToken).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('aigc_mcp_regen')
     expect(wrapper.text()).not.toContain('aigc_mcp_old')
+  })
+})
+
+describe('DshSetupWizard guest gating', () => {
+  it('lets guests browse the install methods without touching the token API', async () => {
+    const wrapper = await mountGuestWizard()
+
+    expect(wrapper.text()).toContain('npm 最新版')
+    expect(wrapper.text()).toContain('1/2')
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+    expect(requestLogin).not.toHaveBeenCalled()
+  })
+
+  it('requests login on next and stays on the current step for guests', async () => {
+    const wrapper = await mountGuestWizard()
+
+    await nextButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(requestLogin).toHaveBeenCalledWith('/dsh')
+    expect(wrapper.text()).toContain('1/2')
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+  })
+
+  it('auto-ensures the token when the guest signs in while staying on the page', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_late'))
+    await mountGuestWizard()
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+
+    const auth = useAuthStore()
+    auth.status = 'authenticated'
+    auth.user = freeUser
+    await flushPromises()
+
+    expect(ensureDshMcpToken).toHaveBeenCalledOnce()
+  })
+
+  it('resets the wizard and clears the token when the session is lost mid-flow', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_temp'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('aigc_mcp_temp')
+
+    const auth = useAuthStore()
+    auth.status = 'anonymous'
+    auth.user = null
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('1/2')
+    expect(wrapper.text()).toContain('npm 最新版')
+    expect(wrapper.text()).not.toContain('aigc_mcp_temp')
   })
 })

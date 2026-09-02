@@ -85,7 +85,7 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     to: '/mcp',
     labelKey: 'navigation.mcp',
     exact: false,
-    requiresAuth: true,
+    // 获客入口：游客可见可进；登录在向导「下一步」处由页面内弹窗按需触发
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8a3 3 0 100 6h3"/><path d="M17 8a3 3 0 110 6h-3"/><path d="M8 12h8"/><path d="M12 4v3"/><path d="M12 17v3"/></svg>`,
   },
   {

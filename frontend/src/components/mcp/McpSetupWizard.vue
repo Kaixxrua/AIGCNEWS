@@ -23,8 +23,10 @@ const {
   creating,
   endpointUrl,
   endpointWarningKey,
+  isLoggedIn,
   normalizedEndpoint,
   quickCommand,
+  requestLogin,
   selectedClient,
   selectedShell,
   setupError,
@@ -103,6 +105,12 @@ const scrollToWizardTop = async () => {
 
 const goTo = async (index: number) => {
   if (index === currentStep.value) return
+  // 游客可自由浏览第 1 步并选择客户端/终端；前进到命令与验证步须先登录
+  // （收藏 Token 在登录后才可签发）。返回已看过的步骤不受限。
+  if (index > currentStep.value && !isLoggedIn.value) {
+    await requestLogin()
+    return
+  }
   currentStep.value = index
   await scrollToWizardTop()
 }

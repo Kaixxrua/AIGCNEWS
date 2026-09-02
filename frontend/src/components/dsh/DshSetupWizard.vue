@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, proxyRefs } from 'vue'
+import { computed, onBeforeUnmount, onMounted, proxyRefs, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
 import { useDshSetupController } from '@/composables/useDshSetupController'
 import { DSH_PLUGIN_INSTALL_METHODS } from '@/features/mcp/dshPlugin'
 import { useClipboard } from '@/composables/useClipboard'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { showToast } from '@/composables/useToast'
 import { useDshInstallController } from '@/composables/useDshInstallController'
 
-// 前置条件：本组件只在已认证状态下由 DshView 挂载（路由 meta.requiresAuth +
-// 视图层 watcher 兜底）。挂载即 ensure 当前用户的 DSH 专用 MCP Token；
-// 没有身份选择步骤——配额由服务端按 token 属主实时会员档位计算。
+// 获客入口：游客可浏览第 1 步并选择安装方式；前进到命令步时弹登录。
+// 登录后自动 ensure 当前用户的 DSH 专用 MCP Token（跨刷新复用同一枚，
+// 服务端密封持久化）；没有身份选择步骤——配额由服务端按 token 属主
+// 实时会员档位计算。登出/会话失效时立即丢弃内存 token 并退回第 1 步，
+// 命令步不得残留凭证。
 const { t } = useI18n()
 const auth = useAuthStore()
+const { requestLogin } = useLoginPrompt()
 const { copy } = useClipboard()
 const installCopy = proxyRefs(useDshInstallController({
   copy,
@@ -23,7 +27,40 @@ const controller = proxyRefs(useDshSetupController())
 const installMethods = DSH_PLUGIN_INSTALL_METHODS
 const stepKeys = ['dsh.wizard.stepInstall', 'dsh.wizard.stepCommand'] as const
 const currentTitle = computed(() => stepKeys[controller.step])
-onMounted(() => { void controller.ensure() })
+
+// 前进（「下一步」按钮或前方步骤点）：游客先弹登录并留在当前步
+const advance = () => {
+  if (!auth.isLoggedIn) {
+    requestLogin('/dsh')
+    return
+  }
+  controller.next()
+  void controller.ensure()
+}
+const goToStep = (index: number) => {
+  if (index === controller.step) return
+  if (index < controller.step) {
+    controller.step = index
+    return
+  }
+  advance()
+}
+
+onMounted(() => { if (auth.isLoggedIn) void controller.ensure() })
+watch(
+  () => auth.status,
+  (status) => {
+    if (status === 'authenticated') {
+      // 页面停留期间完成登录：立即补发 Token（ensure 幂等）
+      void controller.ensure()
+      return
+    }
+    if (status === 'anonymous') {
+      controller.clearToken()
+      controller.step = 0
+    }
+  },
+)
 onBeforeUnmount(() => {
   installCopy.dispose()
   controller.dispose()
@@ -32,7 +69,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="dsh-wizard glass-card p-5 md:p-6" :aria-label="t('dsh.wizard.ariaLabel')">
-    <ol class="flex flex-wrap items-center gap-2"><li v-for="(key, index) in stepKeys" :key="key"><button type="button" class="border px-3 py-2 text-xs font-bold" :class="controller.step === index ? 'bg-[var(--acid)]' : 'bg-card'" @click="index <= controller.step && (controller.step = index)">{{ index + 1 }}. {{ t(key) }}</button></li></ol>
+    <ol class="flex flex-wrap items-center gap-2"><li v-for="(key, index) in stepKeys" :key="key"><button type="button" class="border px-3 py-2 text-xs font-bold" :class="controller.step === index ? 'bg-[var(--acid)]' : 'bg-card'" @click="goToStep(index)">{{ index + 1 }}. {{ t(key) }}</button></li></ol>
     <p class="mt-3 text-xs text-stone-500">{{ t(currentTitle + 'Description') }}</p>
     <div v-if="auth.isMember" class="mt-4 rounded border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800">{{ t('dsh.wizard.memberStatus') }}</div>
     <div v-else class="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">{{ t('dsh.wizard.vipHint') }} <RouterLink to="/membership" class="font-bold underline">{{ t('dsh.wizard.vipCta') }}</RouterLink></div>
@@ -57,7 +94,7 @@ onBeforeUnmount(() => {
         <p class="text-xs text-amber-700">{{ t('dsh.wizard.tokenReuseNote') }}</p>
       </template>
     </div>
-    <div class="mt-6 flex items-center justify-between border-t border-stone-200 pt-4"><button type="button" class="btn-secondary text-xs" :disabled="controller.step === 0" @click="controller.previous">← {{ t('mcp.wizard.prev') }}</button><span class="text-2xs text-stone-400">{{ t('mcp.wizard.stepProgress', { current: controller.step + 1, total: 2 }) }}</span><button type="button" class="btn-primary text-xs" :disabled="controller.step === 1" @click="controller.next">{{ t('mcp.wizard.next') }} →</button></div>
+    <div class="mt-6 flex items-center justify-between border-t border-stone-200 pt-4"><button type="button" class="btn-secondary text-xs" :disabled="controller.step === 0" @click="controller.previous">← {{ t('mcp.wizard.prev') }}</button><span class="text-2xs text-stone-400">{{ t('mcp.wizard.stepProgress', { current: controller.step + 1, total: 2 }) }}</span><button type="button" class="btn-primary text-xs" :disabled="controller.step === 1" @click="advance">{{ t('mcp.wizard.next') }} →</button></div>
   </section>
 </template>
 

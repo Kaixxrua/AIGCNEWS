@@ -50,11 +50,13 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     dispose: vi.fn(),
     endpointUrl: ref('https://aigcnews.cn/api/mcp'),
     endpointWarningKey: ref(''),
+    isLoggedIn: ref(true),
     loadTokens: vi.fn(),
     loadingTokens: ref(false),
     normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
     quickCommand: ref(''),
     removeToken: vi.fn(),
+    requestLogin: vi.fn(),
     selectedClient: ref('claude-code'),
     selectedShell: ref('bash'),
     setupError: ref(null),
@@ -93,6 +95,8 @@ const i18n = createI18n({
         toolSearchAi: '搜索站内精选 AI 项目',
         toolSearchPapers: '检索 arXiv 论文',
         loginToConfigure: '登录后配置',
+        loginRequiredTitle: '登录后管理 Token 与收藏授权',
+        loginRequiredDescription: '游客可查看本页并选择客户端；创建或删除 Token、生成含账号凭证的命令与个人收藏授权需要登录。',
         quickConnect: '免登录接入',
         wizard: {
           stepClient: '选择客户端与终端',
@@ -171,6 +175,7 @@ beforeEach(() => {
   controller().creating.value = false
   controller().deletingId.value = null
   controller().endpointWarningKey.value = ''
+  controller().isLoggedIn.value = true
   controller().loadingTokens.value = false
   controller().quickCommand.value = ''
   controller().setupError.value = null
@@ -191,6 +196,7 @@ beforeEach(() => {
     controller().dispose,
     controller().loadTokens,
     controller().removeToken,
+    controller().requestLogin,
     controller().startSetup,
     controller().testPublicHandshake,
     controller().tokenStatus,
@@ -315,17 +321,48 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(wrapper.text()).not.toContain('dsh-aigc-radar@0.2.0')
   })
 
-  it('requests the login modal for anonymous visitors without rendering configuration', async () => {
+  it('renders the guest shell for anonymous visitors without requesting login on mount', async () => {
     auth().status = 'anonymous'
     auth().isLoggedIn = false
+    controller().isLoggedIn.value = false
     const wrapper = await mountView()
 
     expect(testRouter.currentRoute.value.path).toBe('/mcp')
-    expect(requestLogin).toHaveBeenCalledWith('/mcp')
-    expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('令牌管理')
+    expect(requestLogin).not.toHaveBeenCalled()
+    // 游客可查看向导并选择客户端；Token API 不被触发
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(true)
+    expect(wrapper.text()).toContain('选择客户端与终端')
     expect(controller().loadTokens).not.toHaveBeenCalled()
     expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
+
+    // Token 管理区降级为登录引导卡，不渲染令牌列表
+    expect(wrapper.text()).toContain('登录后管理 Token 与收藏授权')
+    expect(wrapper.text()).toContain('游客可查看本页并选择客户端')
+    expect(wrapper.find('.mcp-token-list').exists()).toBe(false)
+
+    const cta = wrapper.findAll('button').find((button) => button.text() === '登录提升额度')
+    expect(cta).toBeDefined()
+    await cta!.trigger('click')
+    expect(requestLogin).toHaveBeenCalledWith('/mcp')
+  })
+
+  it('gates wizard forward navigation behind the login prompt for guests', async () => {
+    auth().status = 'anonymous'
+    auth().isLoggedIn = false
+    controller().isLoggedIn.value = false
+    const wrapper = await mountView()
+
+    // 游客点「下一步」/前方步骤点：弹登录、停留在第 1 步
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
+    expect(controller().requestLogin).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+
+    // 登录完成后即可前进
+    controller().isLoggedIn.value = true
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
   })
 
   it('never renders the transient command while offering one-time copy', async () => {
@@ -357,9 +394,12 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
 
     auth().status = 'anonymous'
+    controller().isLoggedIn.value = false
     await flushPromises()
+    // 异步恢复为游客：页面留在 /mcp 并渲染游客壳，不再强制弹登录
     expect(testRouter.currentRoute.value.path).toBe('/mcp')
-    expect(requestLogin).toHaveBeenCalledWith('/mcp')
+    expect(requestLogin).not.toHaveBeenCalled()
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(true)
   })
 
   it('keeps degraded authentication on the page without exposing configuration', async () => {
@@ -421,6 +461,17 @@ describe('McpConnectView quota upsell notice', () => {
     expect(wrapper.text()).toContain('当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次')
     const cta = wrapper.get('a[href="/membership"]')
     expect(cta.text()).toContain('开通 vip')
+  })
+
+  it('shows guests the anonymous quota with a login CTA instead of the membership upsell', async () => {
+    auth().status = 'anonymous'
+    auth().isLoggedIn = false
+    controller().isLoggedIn.value = false
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('MCP 匿名额度按 IP 计：每 24 小时 30 次')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('登录提升额度')
   })
 
   it('hides the notice for active VIP members', async () => {
