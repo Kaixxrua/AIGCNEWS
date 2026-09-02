@@ -27,7 +27,10 @@ from backend.app.services.push.dispatch_service import SubscriptionDispatchServi
 logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE_CONCURRENCY = 3
-DEFAULT_LLM_CONCURRENCY = 1
+# LLM 流式生成并发上限：_stream_llm_round 在一轮流式期间全程占锁，
+# 钉 1 会把所有维度的生成串成一条线（source 并发只剩数据准备重叠）。
+# 与 source 并发对齐为 3；若 sub2api 中转站承压再下调。
+DEFAULT_LLM_CONCURRENCY = 3
 
 BRIEFING_SOURCES: List[str] = [
     "all",

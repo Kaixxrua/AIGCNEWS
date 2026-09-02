@@ -517,6 +517,14 @@ class RunDailyBriefingDispatchTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(delivered_sources, sources)
 
+    def test_default_llm_concurrency_does_not_serialize_sources(self) -> None:
+        # _stream_llm_round 在一轮流式期间全程占锁；默认 LLM 并发低于
+        # source 并发会让维度并发退化为串行（回归守护：默认值曾钉 1）。
+        self.assertGreaterEqual(
+            dispatch.DEFAULT_LLM_CONCURRENCY,
+            dispatch.DEFAULT_SOURCE_CONCURRENCY,
+        )
+
     async def test_cancellation_joins_all_source_tasks(self) -> None:
         sources = ["arxiv", "github", "x"]
         started: set[str] = set()
