@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 联系页 Hero 视觉层：Three.js 正交机位 2.5D 像素原野（ContactFieldScene），实时渲染。
+ * 联系页 Hero 视觉层：HD-2D 透视双层管线像素原野（ContactFieldScene），实时渲染。
  * 纯装饰（aria-hidden），本组件只做生命周期壳：
  * - 仅探测 webgl2 上下文；不可用 / 上下文丢失 / 场景模块加载失败 → 露出底层静态 CSS 渐变兜底
  * - 昼/夜绑定站点主题（亮=白昼，暗=夜晚），切换经场景内 1.8s 恒速扫掠播时间过渡；
@@ -169,31 +169,30 @@ onBeforeUnmount(() => {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  /* 画布整数倍放大后余量由纸色吸收；与场景边缘融合目标严格同色 */
+  /* 合成画布与容器同尺寸；与场景边缘融合目标严格同色 */
   --contact-scene-bg: var(--paper-raised);
   background: var(--contact-scene-bg);
 }
-/* 静态兜底与场景同语义：昼 = 亮天绿地原野渐变，夜 = 夜空与暗草地，各缀一丛暖灯光 */
+/* 静态兜底与场景同语义：3/4 浅俯角构图——地平线在屏顶下 ~22%，天空 → 远野 → 近草纵深渐变，各缀一丛暖灯光 */
 .hero-fallback {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(40% 26% at 31% 62%, rgb(255 202 122 / 0.22), transparent 70%),
-    linear-gradient(180deg, #7ec8e3 0%, #d9eec9 40%, #b8d498 44%, #98c078 62%, #5a9448 100%);
+    radial-gradient(40% 26% at 31% 58%, rgb(255 202 122 / 0.22), transparent 70%),
+    linear-gradient(180deg, #7ec8e3 0%, #d9eec9 22%, #b8d498 30%, #98c078 60%, #5a9448 100%);
 }
 :global(:root[data-theme='dark']) .hero-fallback {
   background:
-    radial-gradient(40% 26% at 31% 62%, rgb(255 202 122 / 0.16), transparent 70%),
-    radial-gradient(30% 22% at 68% 22%, rgb(184 200 232 / 0.14), transparent 70%),
-    linear-gradient(180deg, #101830 0%, #2b3a55 40%, #22304c 44%, #18243c 62%, #0f1830 100%);
+    radial-gradient(40% 26% at 31% 58%, rgb(255 202 122 / 0.16), transparent 70%),
+    radial-gradient(30% 22% at 68% 12%, rgb(184 200 232 / 0.14), transparent 70%),
+    linear-gradient(180deg, #101830 0%, #2b3a55 22%, #22304c 30%, #18243c 60%, #0f1830 100%);
 }
 .hero-canvas {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
-  image-rendering: pixelated;
   opacity: 0;
   transition: opacity 0.6s ease;
 }

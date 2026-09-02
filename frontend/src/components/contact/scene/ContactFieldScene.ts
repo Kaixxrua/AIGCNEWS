@@ -1,39 +1,45 @@
 /**
- * 像素原野编排器：正交机位 2.5D 侧视场景。
- * - 世界单位 = 低分缓冲美术像素（相机可视高 = lowH → 精灵 1:1 贴像素格）；
- * - 全材质 depthTest/Write:false，画家算法靠 renderOrder 分层：
- *   天空 shader → 远山 → 树线 → 远地面 → 小径 → 近地面 → 道具/角色 → 前景草；
- * - 昼夜：uDay 0..1 恒速 1.8s 扫掠，PaletteRegistry 仅在 uDay 变化时重写色；
- * - 事件：FieldEventScheduler 循环时间线 + 黄昏错峰点灯（下穿 0.5 恰一次）；
- * - 剪影层 = 白底 alpha 纹理 + material.color 逐帧改色（昼夜零纹理切换）。
+ * HD-2D 透视原野编排器（八方旅人技法复刻的组装层；仅复刻技法与氛围，
+ * 全部精灵/纹理/代码均为本项目原创，无任何原作资产）。
+ *
+ * 架构：环境层（透视相机真深度 + bokeh 景深 + bloom，见 env/envStage）
+ * 与精灵层（低分整数美术格，见 spriteStage）由 replicaPipeline 双通道合成；
+ * 本层只回答「谁在哪、何时演什么」：
+ * - 角色控制器域沿用旧正交版的虚拟像素语义（±(lowW/2−26)、26px/s、
+ *   startXRatio×lowW），经 k = 焦点深度可视半宽/(lowW/2) 映射成世界单位，
+ *   再投影回整数美术格摆放精灵——actors/events 两纯模块零改动；
+ * - 昼夜：uDay 恒速 1.8s 扫掠，env.setDay + 精灵 PaletteRegistry 双路应用；
+ * - 事件时间线/点灯闪烁/环境鸟蝶/hover·press 反应与旧版逐一对应（行为零回归）；
+ * - 指针视差 = 相机微移（±0.45u），投影在相机更新之后逐帧重算，
+ *   静态道具（灯/树）精灵因此每帧随相机重投影而不与环境层脱节。
  */
 import * as THREE from 'three'
 import { ActorController, type BubbleKind } from './actors'
 import { DAY_NIGHT_THRESHOLD, FieldEventScheduler, mulberry32 } from './events'
-import { FieldInteractions } from './interactions'
-import { duskAmount, FIELD_PALETTE, PaletteRegistry } from './palette'
-import { createPixelPipeline } from './pixelPipeline'
+import { FieldInteractions, type FieldInteractionTarget } from './interactions'
+import { PaletteRegistry } from './palette'
+import { computePixelScale } from './pixelPipeline'
+import { createReplicaPipeline, shouldDegrade, type ReplicaPipeline } from './replicaPipeline'
+import { disposeUnitPlane, FrameSet, frameToTexture, validateFrame, type PixelFrame } from './sprites'
+import { createSpriteStage, SPRITE_LAYER, type SpriteHandle } from './spriteStage'
 import {
-  disposeUnitPlane,
-  FrameSet,
-  frameToTexture,
-  unitPlaneGeometry,
-  type PixelFrame,
-} from './sprites'
+  createEnvStage,
+  ENV_CAMERA,
+  FOCUS_DISTANCE,
+  STAGE_Z,
+  type LampEnvHandle,
+} from './env/envStage'
+import { artRectToCss, visibleHalfWidthAt, worldToArt, type CssRect } from './project'
 import {
   BIRD,
-  BLOB_SHADOW,
   BUBBLES,
   BUTTERFLY,
   CAT,
   DOG,
   ELDER,
-  grassStrip,
-  groundStrip,
   KID,
   LAMP_POST,
   MERCHANT,
-  ridgeStrip,
   TRAVELER,
   TREE_LEAF_A,
   TREE_LEAF_B,
@@ -46,148 +52,8 @@ export const DAY_SWEEP_SECONDS = 1.8
 const BLOOM_DAY = 0.15
 const BLOOM_NIGHT = 0.55
 
-/** 竖向布局（占 lowH 比例，y 自底向上） */
-const LAYOUT = {
-  horizon: 0.4,
-  farHillsHeight: 0.17,
-  treeLineHeight: 0.12,
-  groundFarHeight: 0.12, // 0.30–0.42，盖住地平线接缝
-  pathHeight: 0.1, // 0.20–0.30
-  groundNearHeight: 0.22,
-  grassBackHeight: 0.055,
-  actorFeet: 0.24,
-  grassFrontHeight: 0.1,
-} as const
-
+/** 行走域边距（虚拟像素，沿用旧版数值） */
 const WALK_MARGIN = 26
-
-const RENDER_ORDER = {
-  sky: 0,
-  hills: 1,
-  treeLine: 2,
-  groundFar: 3,
-  path: 4,
-  groundNear: 5,
-  grassBack: 6,
-  shadow: 7,
-  props: 8,
-  actors: 9,
-  bubbles: 10,
-  foreground: 11,
-} as const
-
-/* ── 天空 ShaderMaterial（沿用港湾 shader 的 GLSL 习语：hash/vnoise/fbm/bayer） ── */
-
-const SKY_VERTEX = /* glsl */ `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`
-
-const SKY_FRAGMENT = /* glsl */ `
-  uniform float uDay;
-  uniform float uDusk;
-  uniform float uTime;
-  uniform vec2 uPointer;
-  uniform vec2 uResolution;
-  uniform vec3 uSkyTop;
-  uniform vec3 uSkyHorizon;
-  uniform vec3 uDuskBand;
-  uniform vec3 uSunCore;
-  uniform vec3 uSunGlow;
-  uniform vec3 uMoonCore;
-  uniform vec3 uMoonGlow;
-  uniform vec3 uStar;
-  uniform vec3 uCloud;
-  varying vec2 vUv;
-
-  float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
-  float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
-  float hash21(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-  float vnoise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
-      mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x),
-      u.y
-    );
-  }
-  float fbm(vec2 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 3; i++) {
-      v += a * vnoise(p);
-      p *= 2.03;
-      a *= 0.5;
-    }
-    return v;
-  }
-
-  void main() {
-    vec2 frag = vUv * uResolution;
-
-    // 天空渐变
-    vec3 col = mix(uSkyHorizon, uSkyTop, pow(vUv.y, 0.85));
-    // 黄昏暖带（贴地平线，昼夜中点最强）
-    float duskBand = exp(-pow((vUv.y - 0.42) * 4.2, 2.0));
-    col = mix(col, uDuskBand, duskBand * uDusk * 0.55);
-
-    // 太阳：昼半段沿小弧线升落，硬核边圆盘 + HDR 核（过 bloom 阈值）
-    float sunVis = smoothstep(0.52, 0.66, uDay);
-    if (sunVis > 0.001) {
-      float t = clamp((uDay - 0.52) / 0.48, 0.0, 1.0);
-      vec2 sunPos = vec2(mix(0.30, 0.66, t), mix(0.46, 0.74, t)) * uResolution;
-      float dist = length(frag - sunPos);
-      float disc = 1.0 - step(8.0, dist);
-      float glow = exp(-dist / 16.0);
-      col += uSunGlow * glow * 0.35 * sunVis;
-      col += uSunCore * disc * 1.10 * sunVis;
-    }
-
-    // 月亮：夜半段镜像弧线，新月 = 两圆盘相减
-    float moonVis = 1.0 - smoothstep(0.34, 0.48, uDay);
-    if (moonVis > 0.001) {
-      float t = clamp((0.48 - uDay) / 0.48, 0.0, 1.0);
-      vec2 moonPos = vec2(mix(0.34, 0.68, 1.0 - t), mix(0.46, 0.72, t)) * uResolution;
-      float dist = length(frag - moonPos);
-      float bite = length(frag - moonPos - vec2(3.0, 1.5));
-      float disc = (1.0 - step(7.0, dist)) * step(6.0, bite);
-      float glow = exp(-dist / 14.0);
-      col += uMoonGlow * glow * 0.30 * moonVis;
-      col += uMoonCore * disc * 1.15 * moonVis;
-    }
-
-    // 星星：3px 格点 hash，夜间淡入，闪烁
-    float starVis = 1.0 - smoothstep(0.18, 0.5, uDay);
-    if (starVis > 0.001 && vUv.y > 0.44) {
-      vec2 cell = floor(frag / 3.0);
-      float h = hash21(cell);
-      if (h > 0.962) {
-        float twinkle = 0.55 + 0.45 * sin(uTime * (1.2 + h * 3.0) + h * 40.0);
-        col += uStar * twinkle * starVis * smoothstep(0.44, 0.52, vUv.y) * 0.85;
-      }
-    }
-
-    // 云：fbm 低矮云带，昼亮夜暗，随指针轻移
-    vec2 q = frag / vec2(46.0, 26.0) + vec2(uTime * 0.010 + uPointer.x * 0.12, 0.0);
-    float n = fbm(q);
-    float band = smoothstep(0.50, 0.62, vUv.y) * (1.0 - smoothstep(0.86, 0.98, vUv.y));
-    float cloud = smoothstep(0.58, 0.74, n) * band;
-    col = mix(col, uCloud, cloud * mix(0.45, 0.85, uDay));
-
-    // 有序抖动防色带
-    col += (bayer4(gl_FragCoord.xy) - 0.5) * (2.0 / 255.0);
-    gl_FragColor = vec4(col, 1.0);
-  }
-`
 
 /* ── 类型 ── */
 
@@ -217,401 +83,128 @@ export interface FieldSceneHandle {
   readonly running: boolean
 }
 
+interface ActorFrames {
+  idle: PixelFrame[]
+  walk: PixelFrame[]
+  react: PixelFrame[]
+}
+
 interface ActorVisual {
   controller: ActorController
-  mesh: THREE.Mesh
-  material: THREE.MeshBasicMaterial
+  sprite: SpriteHandle
   frames: { idle: FrameSet; walk: FrameSet; react: FrameSet }
+  /** 行走带内的世界深度（决定投影缩放的唯一纵深量） */
+  z: number
+  shadowScale: number
   shadow: THREE.Mesh
-  hitArea: THREE.Mesh
-  bubble: THREE.Mesh
-  bubbleMaterial: THREE.MeshBasicMaterial
-  bubbleScale: number
+  bubble: SpriteHandle
   bubbleShownAt: number
   lastBubble: BubbleKind | null
+  /** 交互命中矩形（逐帧原地覆写，见 interactions） */
+  hitRect: CssRect
+  target: FieldInteractionTarget
 }
 
 interface LampVisual {
-  group: THREE.Group
-  coreMaterial: THREE.MeshBasicMaterial
-  poolMaterial: THREE.MeshBasicMaterial
+  env: LampEnvHandle
+  sprite: SpriteHandle
+  shadow: THREE.Mesh
+  ratio: number
+  /** 灯的世界 x（resize 重算） */
+  worldX: number
+  /** 事件域（虚拟像素）x = worldX / k */
+  virtualX: number
   lit: number
   flickerAt: number | null
   fadeOutAt: number | null
 }
 
-const SILHOUETTE_RENDER = {
-  depthTest: false,
-  depthWrite: false,
-} as const
-
-/** 白底 alpha 剪影帧 → 调色板色网格（material.color 由 PaletteRegistry 逐帧改色） */
-const makeSilhouetteMesh = (
-  frame: PixelFrame,
-): { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial } => {
-  const texture = frameToTexture(frame)
-  if (!texture) throw new Error('Canvas 2D 不可用')
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    ...SILHOUETTE_RENDER,
-  })
-  const mesh = new THREE.Mesh(unitPlaneGeometry(), material)
-  mesh.scale.set(frame.rows[0]!.length, frame.rows.length, 1)
-  return { mesh, material }
+interface TreeVisual {
+  ratio: number
+  z: number
+  trunk: SpriteHandle
+  canopy: SpriteHandle
+  shadow: THREE.Mesh
+  shadowScale: number
 }
 
 export const createFieldScene = (opts: FieldSceneOptions): FieldSceneHandle | null => {
-  let renderer: THREE.WebGLRenderer
+  const disposables: Array<{ dispose(): void }> = []
+  let pipeline: ReplicaPipeline | null = null
   try {
-    renderer = new THREE.WebGLRenderer({
-      canvas: opts.canvas,
-      antialias: false,
-      alpha: false,
-      powerPreference: 'low-power',
+    return boot(opts, disposables, (created) => {
+      pipeline = created
     })
   } catch {
-    return null
-  }
-
-  const disposables: Array<{ dispose(): void }> = [renderer]
-  const cleanup = (): void => {
+    // Canvas 2D / WebGL2 不可用、纹理创建失败等：清理后回退静态兜底
     for (const disposable of disposables.splice(0)) disposable.dispose()
-  }
-
-  try {
-    return boot(renderer, opts, disposables)
-  } catch {
-    // Canvas 2D 不可用 / 纹理创建失败等：清理后回退静态兜底
-    cleanup()
-    renderer.forceContextLoss()
+    if (pipeline) (pipeline as ReplicaPipeline).renderer.forceContextLoss()
     disposeUnitPlane()
     return null
   }
 }
 
 const boot = (
-  renderer: THREE.WebGLRenderer,
   opts: FieldSceneOptions,
   disposables: Array<{ dispose(): void }>,
+  onPipeline: (pipeline: ReplicaPipeline) => void,
 ): FieldSceneHandle => {
-  const scene = new THREE.Scene()
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, 0, -10, 10)
-  camera.position.z = 5
+  const env = createEnvStage()
+  disposables.push(env)
 
-  const pipeline = createPixelPipeline({
-    renderer,
-    scene,
-    camera,
+  const spritePalette = new PaletteRegistry()
+  disposables.push(spritePalette)
+  const sprites = createSpriteStage(spritePalette)
+  disposables.push(sprites)
+
+  /* 移动端/窄屏降质（弱散景、低环境分辨率） */
+  const initialWidth = opts.host.clientWidth || opts.canvas.clientWidth || 320
+  const initialHeight = opts.host.clientHeight || opts.canvas.clientHeight || 240
+  const coarsePointer =
+    typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+  const quality: 'high' | 'low' = coarsePointer || initialWidth < 640 ? 'low' : 'high'
+
+  const pipeline = createReplicaPipeline({
     canvas: opts.canvas,
+    envScene: env.scene,
+    envCamera: env.camera,
+    spriteScene: sprites.scene,
+    spriteCamera: sprites.camera,
     paper: opts.paper,
+    focus: FOCUS_DISTANCE,
+    quality,
   })
   disposables.push(pipeline)
+  onPipeline(pipeline)
 
-  const registry = new PaletteRegistry()
   const scheduler = new FieldEventScheduler()
   const rng = mulberry32(0xa16d)
 
   /* ── 状态 ── */
-  let lowW = 2
-  let lowH = 2
   let uDay = opts.theme === 'dark' ? 0 : 1
   let targetDay = uDay
-  let dusk = duskAmount(uDay)
+  /** 虚拟像素 → 世界单位（焦点深度可视半宽 / 虚拟半宽） */
+  let worldPerVirtual = 0.05
   const pointer = { x: 0, y: 0 }
   const pointerTarget = { x: 0, y: 0 }
   let elapsed = 0
   let lastFrameAt: number | null = null
   let rafId: number | null = null
   let running = false
-  let bandRegenTimer: ReturnType<typeof setTimeout> | null = null
+  // 自适应降级状态：EMA 帧耗（未钳制的真实 RAF 间隔）与已见帧数
+  let frameEmaMs = 0
+  let framesSeen = 0
   let nextAmbientBirdAt = 12
 
-  /* ── 天空 ── */
-  const skyUniforms = {
-    uDay: { value: uDay },
-    uDusk: { value: dusk },
-    uTime: { value: 0 },
-    uPointer: { value: new THREE.Vector2(0, 0) },
-    uResolution: { value: new THREE.Vector2(2, 2) },
-    uSkyTop: { value: new THREE.Color(FIELD_PALETTE.skyTop.day) },
-    uSkyHorizon: { value: new THREE.Color(FIELD_PALETTE.skyHorizon.day) },
-    uDuskBand: { value: new THREE.Color(FIELD_PALETTE.duskBand.day) },
-    uSunCore: { value: new THREE.Color(FIELD_PALETTE.sunCore.day) },
-    uSunGlow: { value: new THREE.Color(FIELD_PALETTE.sunGlow.day) },
-    uMoonCore: { value: new THREE.Color(FIELD_PALETTE.moonCore.day) },
-    uMoonGlow: { value: new THREE.Color(FIELD_PALETTE.moonGlow.day) },
-    uStar: { value: new THREE.Color(FIELD_PALETTE.star.day) },
-    uCloud: { value: new THREE.Color(FIELD_PALETTE.cloud.day) },
-  }
-  const skyMaterial = new THREE.ShaderMaterial({
-    uniforms: skyUniforms,
-    vertexShader: SKY_VERTEX,
-    fragmentShader: SKY_FRAGMENT,
-    ...SILHOUETTE_RENDER,
-  })
-  disposables.push(skyMaterial)
-  const skyMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), skyMaterial)
-  skyMesh.renderOrder = RENDER_ORDER.sky
-  disposables.push(skyMesh.geometry)
-  scene.add(skyMesh)
-  registry.registerKey(skyUniforms.uSkyTop.value, 'skyTop')
-  registry.registerKey(skyUniforms.uSkyHorizon.value, 'skyHorizon')
-  registry.registerKey(skyUniforms.uCloud.value, 'cloud')
-  registry.registerKey(skyUniforms.uStar.value, 'star')
+  const scratchWorld = new THREE.Vector3()
 
-  /* ── 视差层组 ── */
-  const parallaxLayers: Array<{ group: THREE.Group; factor: number }> = []
-  const makeLayer = (factor: number): THREE.Group => {
-    const group = new THREE.Group()
-    scene.add(group)
-    parallaxLayers.push({ group, factor })
-    return group
-  }
-  const hillsLayer = makeLayer(0.03)
-  const treeLineLayer = makeLayer(0.05)
-  const groundFarLayer = makeLayer(0.07)
-  const pathLayer = makeLayer(0.1)
-  const groundNearLayer = makeLayer(0.12)
-  const propsLayer = makeLayer(0.15)
-  const actorsLayer = makeLayer(0.15)
-  const skyExtrasLayer = makeLayer(0.04)
-  const foregroundLayer = makeLayer(0.22)
-
-  /* ── 剪影带（按 lowW 重生成，含视差余量） ── */
-  interface Band {
-    mesh: THREE.Mesh
-    material: THREE.MeshBasicMaterial
-    rebuild: (frame: PixelFrame) => void
-    kind: 'ridge' | 'ground' | 'grass'
-    seed: number
-    heightRatio: number
-    bottomRatio: number
-    ridgeArgs?: { base: number; amp: number; freq: number }
-    speckle?: number
+  /** 世界锚点 → 整数美术格（相机视差微移后调用） */
+  const projectFeet = (worldX: number, z: number): { x: number; y: number; inside: boolean } => {
+    scratchWorld.set(worldX, 0, z)
+    return worldToArt(env.camera, sprites.grid, scratchWorld)
   }
 
-  const bands: Band[] = []
-  const makeBand = (
-    layer: THREE.Group,
-    paletteKey: keyof typeof FIELD_PALETTE,
-    init: Omit<Band, 'mesh' | 'material' | 'rebuild'>,
-  ): Band => {
-    const placeholder: PixelFrame = { rows: ['x'], palette: { x: '#ffffff' } }
-    const { mesh, material } = makeSilhouetteMesh(placeholder)
-    mesh.renderOrder =
-      init.kind === 'grass'
-        ? RENDER_ORDER.grassBack
-        : init.kind === 'ridge'
-          ? RENDER_ORDER.hills
-          : RENDER_ORDER.groundFar
-    layer.add(mesh)
-    registry.registerKey(material.color, paletteKey)
-    disposables.push(material, { dispose: () => material.map?.dispose() })
-    const band: Band = {
-      mesh,
-      material,
-      rebuild(frame) {
-        const old = material.map
-        const texture = frameToTexture(frame)
-        if (!texture) return
-        material.map = texture
-        old?.dispose()
-        mesh.scale.set(frame.rows[0]!.length, frame.rows.length, 1)
-      },
-      ...init,
-    }
-    bands.push(band)
-    return band
-  }
-
-  makeBand(hillsLayer, 'farHill', {
-    kind: 'ridge',
-    seed: 101,
-    heightRatio: LAYOUT.farHillsHeight,
-    bottomRatio: LAYOUT.horizon,
-    ridgeArgs: { base: 0.35, amp: 0.45, freq: 3 },
-  })
-  const treeLineBand = makeBand(treeLineLayer, 'treeLine', {
-    kind: 'ridge',
-    seed: 202,
-    heightRatio: LAYOUT.treeLineHeight,
-    bottomRatio: LAYOUT.horizon,
-    ridgeArgs: { base: 0.5, amp: 0.3, freq: 7 },
-  })
-  treeLineBand.mesh.renderOrder = RENDER_ORDER.treeLine
-  const groundFarBand = makeBand(groundFarLayer, 'groundFar', {
-    kind: 'ground',
-    seed: 303,
-    heightRatio: LAYOUT.groundFarHeight,
-    bottomRatio: LAYOUT.horizon + 0.02 - LAYOUT.groundFarHeight,
-    speckle: 0.05,
-  })
-  groundFarBand.mesh.renderOrder = RENDER_ORDER.groundFar
-  const pathBand = makeBand(pathLayer, 'path', {
-    kind: 'ground',
-    seed: 404,
-    heightRatio: LAYOUT.pathHeight,
-    bottomRatio: 0.2,
-    speckle: 0.1,
-  })
-  pathBand.mesh.renderOrder = RENDER_ORDER.path
-  const groundNearBand = makeBand(groundNearLayer, 'groundNear', {
-    kind: 'ground',
-    seed: 505,
-    heightRatio: LAYOUT.groundNearHeight,
-    bottomRatio: 0,
-    speckle: 0.07,
-  })
-  groundNearBand.mesh.renderOrder = RENDER_ORDER.groundNear
-  const grassBackBand = makeBand(groundNearLayer, 'grass', {
-    kind: 'grass',
-    seed: 606,
-    heightRatio: LAYOUT.grassBackHeight,
-    bottomRatio: 0.19,
-  })
-  grassBackBand.mesh.renderOrder = RENDER_ORDER.grassBack
-  const grassFrontBand = makeBand(foregroundLayer, 'grassFg', {
-    kind: 'grass',
-    seed: 707,
-    heightRatio: LAYOUT.grassFrontHeight,
-    bottomRatio: 0,
-  })
-  grassFrontBand.mesh.renderOrder = RENDER_ORDER.foreground
-
-  const rebuildBands = (): void => {
-    const margin = Math.ceil(0.35 * lowH * 0.22) + 6
-    const width = lowW + margin * 2
-    for (const band of bands) {
-      const height = Math.max(2, Math.round(band.heightRatio * lowH))
-      let frame: PixelFrame
-      if (band.kind === 'ridge' && band.ridgeArgs) {
-        frame = ridgeStrip(width, height, band.seed, band.ridgeArgs.base, band.ridgeArgs.amp, band.ridgeArgs.freq)
-      } else if (band.kind === 'grass') {
-        frame = grassStrip(width, height, band.seed)
-      } else {
-        frame = groundStrip(width, height, band.seed, band.speckle ?? 0.05)
-      }
-      band.rebuild(frame)
-      band.mesh.position.set(0, band.bottomRatio * lowH, 0)
-    }
-  }
-
-  /* ── 道具：路灯 ×3（柱剪影 + HDR 灯芯 + 加法光池 + blob 影） ── */
-  const lamps: LampVisual[] = []
-  const lampCoreColor = new THREE.Color(FIELD_PALETTE.lampCore.day)
-  const poolTexture = (() => {
-    const frame: PixelFrame = {
-      rows: Array.from({ length: 6 }, (_, y) =>
-        Array.from({ length: 24 }, (__, x) => {
-          const dx = (x - 11.5) / 11.5
-          const dy = (y - 2.5) / 2.5
-          const d = Math.sqrt(dx * dx + dy * dy)
-          return d >= 1 ? '.' : d < 0.45 ? 'x' : 'd'
-        }).join(''),
-      ),
-      palette: { x: '#ffffff', d: '#ffffff66' },
-    }
-    const texture = frameToTexture(frame)
-    if (!texture) throw new Error('Canvas 2D 不可用')
-    return texture
-  })()
-  disposables.push(poolTexture)
-
-  const shadowTexture = frameToTexture(BLOB_SHADOW)
-  if (!shadowTexture) throw new Error('Canvas 2D 不可用')
-  disposables.push(shadowTexture)
-
-  const makeShadow = (width: number): THREE.Mesh => {
-    const material = new THREE.MeshBasicMaterial({
-      map: shadowTexture,
-      transparent: true,
-      opacity: 0.32,
-      ...SILHOUETTE_RENDER,
-    })
-    disposables.push(material)
-    registry.registerKey(material.color, 'shadowBlob')
-    const mesh = new THREE.Mesh(unitPlaneGeometry(), material)
-    mesh.scale.set(width, 3, 1)
-    mesh.renderOrder = RENDER_ORDER.shadow
-    return mesh
-  }
-
-  for (const xRatio of [-0.28, 0.03, 0.31]) {
-    const group = new THREE.Group()
-    const { mesh: post, material: postMaterial } = makeSilhouetteMesh(LAMP_POST)
-    post.renderOrder = RENDER_ORDER.props
-    registry.registerKey(postMaterial.color, 'lampPost')
-    disposables.push(postMaterial, postMaterial.map as THREE.Texture)
-    group.add(post)
-
-    // HDR 灯芯：叠加在玻璃窗口（柱高 30，窗口中心 ≈ 24）
-    const coreMaterial = new THREE.MeshBasicMaterial({
-      color: lampCoreColor.clone(),
-      transparent: true,
-      ...SILHOUETTE_RENDER,
-    })
-    disposables.push(coreMaterial)
-    const core = new THREE.Mesh(unitPlaneGeometry(), coreMaterial)
-    core.scale.set(3, 4, 1)
-    core.position.set(0, 22.5, 0)
-    core.renderOrder = RENDER_ORDER.props + 0.1
-    group.add(core)
-
-    // 地面加法光池
-    const poolMaterial = new THREE.MeshBasicMaterial({
-      map: poolTexture,
-      color: lampCoreColor.clone(),
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      ...SILHOUETTE_RENDER,
-    })
-    disposables.push(poolMaterial)
-    const pool = new THREE.Mesh(unitPlaneGeometry(), poolMaterial)
-    pool.scale.set(26, 7, 1)
-    pool.position.set(0, -1, 0)
-    pool.renderOrder = RENDER_ORDER.props + 0.2
-    group.add(pool)
-
-    group.add(makeShadow(14))
-    propsLayer.add(group)
-    lamps.push({
-      group,
-      coreMaterial,
-      poolMaterial,
-      lit: uDay >= 0.5 ? 0 : 1,
-      flickerAt: null,
-      fadeOutAt: null,
-    })
-    group.userData.xRatio = xRatio
-  }
-
-  /* ── 道具：树 ×2（干 + 叶两色剪影 + blob 影） ── */
-  const treeSpecs = [
-    { xRatio: -0.4, leaf: TREE_LEAF_A, feetRatio: 0.27 },
-    { xRatio: 0.44, leaf: TREE_LEAF_B, feetRatio: 0.22 },
-  ]
-  for (const spec of treeSpecs) {
-    const group = new THREE.Group()
-    const { mesh: trunk, material: trunkMaterial } = makeSilhouetteMesh(TREE_TRUNK)
-    trunk.renderOrder = RENDER_ORDER.props
-    registry.registerKey(trunkMaterial.color, 'treeTrunk')
-    disposables.push(trunkMaterial, trunkMaterial.map as THREE.Texture)
-    group.add(trunk)
-    const { mesh: leaf, material: leafMaterial } = makeSilhouetteMesh(spec.leaf)
-    leaf.renderOrder = RENDER_ORDER.props + 0.1
-    leaf.position.set(-10, 16, 0) // 叶冠 28 宽，相对干（8 宽）居中偏置
-    registry.registerKey(leafMaterial.color, 'treeLeaf')
-    disposables.push(leafMaterial, leafMaterial.map as THREE.Texture)
-    group.add(leaf)
-    group.add(makeShadow(18))
-    group.userData.xRatio = spec.xRatio
-    group.userData.feetRatio = spec.feetRatio
-    propsLayer.add(group)
-  }
-
-  /* ── 角色 ── */
+  /* ── 气泡纹理（三枚共用，逐 actor 一个精灵） ── */
   const bubbleTextures: Record<BubbleKind, THREE.Texture> = {
     exclaim: frameToTexture(BUBBLES.exclaim) as THREE.Texture,
     dots: frameToTexture(BUBBLES.dots) as THREE.Texture,
@@ -621,65 +214,82 @@ const boot = (
     if (!texture) throw new Error('Canvas 2D 不可用')
     disposables.push(texture)
   }
+  const bubbleSize = validateFrame(BUBBLES.dots)
 
+  /* ── 道具：路灯 ×3（环境层光晕/灯芯/光池 + 精灵层柱身 + 方向影） ── */
+  const lamps: LampVisual[] = []
+  const lampSize = validateFrame(LAMP_POST)
+  const lampTexture = frameToTexture(LAMP_POST)
+  if (!lampTexture) throw new Error('Canvas 2D 不可用')
+  disposables.push(lampTexture)
+
+  for (const ratio of [-0.28, 0.03, 0.31]) {
+    const envLamp = env.addLamp(ratio)
+    const sprite = sprites.addSprite(lampTexture, lampSize.width, lampSize.height, 'lampPost')
+    const shadow = env.acquireShadow()
+    lamps.push({
+      env: envLamp,
+      sprite,
+      shadow,
+      ratio,
+      worldX: 0,
+      virtualX: 0,
+      lit: uDay >= DAY_NIGHT_THRESHOLD ? 0 : 1,
+      flickerAt: null,
+      fadeOutAt: null,
+    })
+  }
+
+  /* ── 道具：近树 ×2（精灵层干+冠，环境层方向影；冠层可罩住角色） ── */
+  const trunkSize = validateFrame(TREE_TRUNK)
+  const trunkTexture = frameToTexture(TREE_TRUNK)
+  if (!trunkTexture) throw new Error('Canvas 2D 不可用')
+  disposables.push(trunkTexture)
+  const canopySize = validateFrame(TREE_LEAF_A)
+
+  const trees: TreeVisual[] = [
+    { ratio: -0.4, z: -4.5, leaf: TREE_LEAF_A, shadowScale: 1.5 },
+    { ratio: 0.44, z: -3.2, leaf: TREE_LEAF_B, shadowScale: 1.3 },
+  ].map((spec) => {
+    const trunk = sprites.addSprite(trunkTexture, trunkSize.width, trunkSize.height, 'treeTrunk')
+    const leafTexture = frameToTexture(spec.leaf)
+    if (!leafTexture) throw new Error('Canvas 2D 不可用')
+    disposables.push(leafTexture)
+    const canopy = sprites.addSprite(leafTexture, canopySize.width, canopySize.height, 'treeLeaf')
+    return {
+      ratio: spec.ratio,
+      z: spec.z,
+      trunk,
+      canopy,
+      shadow: env.acquireShadow(),
+      shadowScale: spec.shadowScale,
+    }
+  })
+
+  /* ── 角色 ── */
   const actors: ActorVisual[] = []
-  const feetY = (): number => LAYOUT.actorFeet * lowH
 
   const spawnActor = (
-    art: { idle: PixelFrame[]; walk: PixelFrame[]; react: PixelFrame[] },
+    art: ActorFrames,
     startXRatio: number,
+    z: number,
+    shadowScale: number,
     spec: {
       walkSpeed?: number
       fleeSpeed?: number
       idleFrameMs?: number
       walkFrameMs?: number
       reactFrameMs?: number
-      bubbleScale?: number
     } = {},
   ): ActorVisual => {
     const idle = new FrameSet(art.idle)
     const walk = new FrameSet(art.walk)
     const react = new FrameSet(art.react)
     disposables.push(idle, walk, react)
-    const material = new THREE.MeshBasicMaterial({
-      map: idle.textureAt(0),
-      transparent: true,
-      ...SILHOUETTE_RENDER,
-    })
-    disposables.push(material)
-    registry.registerKey(material.color, 'actorNightTint')
-    const mesh = new THREE.Mesh(unitPlaneGeometry(), material)
-    mesh.scale.set(idle.width, idle.height, 1)
-    mesh.renderOrder = RENDER_ORDER.actors
-
-    const shadow = makeShadow(Math.round(idle.width * 0.85))
-    shadow.renderOrder = RENDER_ORDER.shadow
-
-    const hitArea = new THREE.Mesh(
-      unitPlaneGeometry(),
-      new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        colorWrite: false,
-        ...SILHOUETTE_RENDER,
-      }),
-    )
-    disposables.push(hitArea.material as THREE.MeshBasicMaterial)
-    hitArea.scale.set(Math.max(idle.width, 18), Math.max(idle.height, 18), 1)
-
-    const bubbleMaterial = new THREE.MeshBasicMaterial({
-      map: bubbleTextures.dots,
-      transparent: true,
-      ...SILHOUETTE_RENDER,
-    })
-    disposables.push(bubbleMaterial)
-    const bubble = new THREE.Mesh(unitPlaneGeometry(), bubbleMaterial)
-    const bubbleScale = spec.bubbleScale ?? 1
-    bubble.scale.set(14 * bubbleScale, 12 * bubbleScale, 1)
-    bubble.renderOrder = RENDER_ORDER.bubbles
-    bubble.visible = false
-
-    actorsLayer.add(shadow, mesh, hitArea, bubble)
+    const sprite = sprites.addSprite(idle.textureAt(0), idle.width, idle.height, 'actorNightTint')
+    const bubble = sprites.addSprite(bubbleTextures.dots, bubbleSize.width, bubbleSize.height)
+    bubble.setVisible(false)
+    const shadow = env.acquireShadow()
 
     const controller = new ActorController(0, {
       idleFrameCount: idle.frameCount,
@@ -692,133 +302,211 @@ const boot = (
       reactFrameMs: spec.reactFrameMs,
       rng,
     })
+    controller.teleport(startXRatio * sprites.grid.lowW, 0)
 
     const visual: ActorVisual = {
       controller,
-      mesh,
-      material,
+      sprite,
       frames: { idle, walk, react },
+      z,
+      shadowScale,
       shadow,
-      hitArea,
       bubble,
-      bubbleMaterial,
-      bubbleScale,
       bubbleShownAt: -1,
       lastBubble: null,
+      hitRect: { left: 0, top: 0, width: 0, height: 0 },
+      target: { rect: null, onHover: null, onPress: null },
     }
-    visual.controller.teleport(startXRatio * lowW, 0)
+    visual.target.rect = visual.hitRect
     actors.push(visual)
     return visual
   }
 
-  const kid = spawnActor(KID, -0.18)
-  const elder = spawnActor(ELDER, 0.24, { walkSpeed: 16 })
-  const merchant = spawnActor(MERCHANT, 0.13, { walkSpeed: 18 })
-  const traveler = spawnActor(TRAVELER, -0.36)
-  const cat = spawnActor(
-    { idle: CAT.groom, walk: CAT.walk, react: CAT.scurry },
-    0.34,
-    { walkSpeed: 20, fleeSpeed: 70, idleFrameMs: 420, walkFrameMs: 160, reactFrameMs: 110 },
-  )
-  const dog = spawnActor({ idle: DOG.sit, walk: DOG.walk, react: DOG.sit }, -0.06, {
-    walkSpeed: 24,
-    idleFrameMs: 360,
-    reactFrameMs: 200,
-  })
-
-  /* 飞鸟（事件生成，平时隐藏） */
+  /* ── 飞鸟（事件生成，平时隐藏）与蝴蝶（常驻 8 字舞），纯美术格坐标 ── */
   const birdFrames = new FrameSet(BIRD.fly)
   disposables.push(birdFrames)
-  const birdMaterial = new THREE.MeshBasicMaterial({
-    map: birdFrames.textureAt(0),
-    transparent: true,
-    ...SILHOUETTE_RENDER,
-  })
-  disposables.push(birdMaterial)
-  registry.registerKey(birdMaterial.color, 'actorNightTint')
-  const bird = new THREE.Mesh(unitPlaneGeometry(), birdMaterial)
-  bird.scale.set(10, 6, 1)
-  bird.renderOrder = RENDER_ORDER.actors
-  bird.visible = false
-  skyExtrasLayer.add(bird)
+  const bird = sprites.addSprite(
+    birdFrames.textureAt(0),
+    birdFrames.width,
+    birdFrames.height,
+    'actorNightTint',
+  )
+  bird.setVisible(false)
   const birdState = { active: false, x: 0, y: 0, vx: 0 }
 
-  /* 蝴蝶（常驻，8 字舞） */
   const butterflyFrames = new FrameSet(BUTTERFLY.fly)
   disposables.push(butterflyFrames)
-  const butterflyMaterial = new THREE.MeshBasicMaterial({
-    map: butterflyFrames.textureAt(0),
-    transparent: true,
-    ...SILHOUETTE_RENDER,
-  })
-  disposables.push(butterflyMaterial)
-  registry.registerKey(butterflyMaterial.color, 'actorNightTint')
-  const butterfly = new THREE.Mesh(unitPlaneGeometry(), butterflyMaterial)
-  butterfly.scale.set(5, 4, 1)
-  butterfly.renderOrder = RENDER_ORDER.actors
-  actorsLayer.add(butterfly)
-  const butterflyState = { fleeUntil: -1, fleeDir: 1 as 1 | -1 }
+  const butterfly = sprites.addSprite(
+    butterflyFrames.textureAt(0),
+    butterflyFrames.width,
+    butterflyFrames.height,
+    'actorNightTint',
+  )
+  const butterflyState = { x: 0, fleeUntil: -1, fleeDir: 1 as 1 | -1 }
 
-  /* ── 交互 ── */
-  const interactions = new FieldInteractions({
-    camera,
-    dom: opts.host,
-    isUiEvent: (event) =>
-      event.target instanceof Element &&
-      Boolean(event.target.closest('.entry-item, a, button')),
-  })
-  disposables.push(interactions)
-
-  if (!opts.reducedMotion) {
-    for (const visual of [kid, elder, merchant, traveler]) {
-      interactions.register({
-        hitArea: visual.hitArea,
-        onHover: (point) => {
-          visual.controller.faceTowards(point.x)
-          visual.controller.react(elapsed, 600, rng() < 0.5 ? 'dots' : 'note')
-        },
-        onPress: (point) => {
-          visual.controller.faceTowards(point.x)
-          visual.controller.react(elapsed, 800, 'exclaim')
-        },
-      })
-    }
-    interactions.register({
-      hitArea: cat.hitArea,
-      onHover: () => cat.controller.react(elapsed, 500, 'dots'),
-      onPress: (point) => cat.controller.fleeFrom(point.x, elapsed),
-    })
-    interactions.register({
-      hitArea: dog.hitArea,
-      onHover: () => dog.controller.showBubble(elapsed, 'note', 900),
-      onPress: () => dog.controller.react(elapsed, 600, 'dots'),
-    })
+  /* ── 摆位：静态道具逐帧随相机视差重投影 ── */
+  const placeLamp = (lamp: LampVisual): void => {
+    const art = projectFeet(lamp.worldX, STAGE_Z.lamp)
+    lamp.sprite.setPosition(art.x, art.y)
+    lamp.sprite.setOrder(art.y, SPRITE_LAYER.props)
+    env.placeShadow(lamp.shadow, lamp.worldX, STAGE_Z.lamp, 0.7)
   }
 
-  /* ── 事件行为 ── */
+  const placeTree = (tree: TreeVisual): void => {
+    const worldX = env.worldXAt(tree.ratio, tree.z)
+    const art = projectFeet(worldX, tree.z)
+    tree.trunk.setPosition(art.x, art.y)
+    tree.trunk.setOrder(art.y, SPRITE_LAYER.props)
+    // 冠底边压在干顶下 8px：干从冠腹穿过，冠层可罩住路过角色
+    tree.canopy.setPosition(art.x, art.y + 8)
+    tree.canopy.setOrder(art.y, SPRITE_LAYER.canopies)
+    env.placeShadow(tree.shadow, worldX, tree.z, tree.shadowScale)
+  }
+
+  const placeStatics = (): void => {
+    for (const lamp of lamps) placeLamp(lamp)
+    for (const tree of trees) placeTree(tree)
+  }
+
+  /* ── 相机视差微移（投影之前调用；lookAt 随动保持俯角） ── */
+  const applyCameraNudge = (): void => {
+    env.camera.position.set(
+      ENV_CAMERA.position.x + pointer.x * 0.45,
+      ENV_CAMERA.position.y + pointer.y * 0.18,
+      ENV_CAMERA.position.z,
+    )
+    env.camera.lookAt(
+      ENV_CAMERA.lookAt.x + pointer.x * 0.9,
+      ENV_CAMERA.lookAt.y,
+      ENV_CAMERA.lookAt.z,
+    )
+    env.camera.updateMatrixWorld(true)
+  }
+
+  /* ── 帧同步 ── */
+  const walkBounds = (): { min: number; max: number } => ({
+    min: -(sprites.grid.lowW / 2 - WALK_MARGIN),
+    max: sprites.grid.lowW / 2 - WALK_MARGIN,
+  })
+
+  const syncActor = (visual: ActorVisual, now: number, dt: number): void => {
+    const snapshot = visual.controller.update(now, dt, walkBounds())
+    const frames =
+      snapshot.state === 'walk'
+        ? visual.frames.walk
+        : snapshot.state === 'react'
+          ? visual.frames.react
+          : visual.frames.idle
+    visual.sprite.setFrame(frames.textureAt(snapshot.frame))
+    visual.sprite.setFlip(snapshot.facing < 0)
+
+    const worldX = snapshot.x * worldPerVirtual
+    const art = projectFeet(worldX, visual.z)
+    visual.sprite.setPosition(art.x, art.y)
+    visual.sprite.setOrder(art.y, SPRITE_LAYER.actors)
+    env.placeShadow(visual.shadow, worldX, visual.z, visual.shadowScale)
+
+    // 命中矩形（≥18 美术像素，底部对齐脚部锚点）
+    const hitW = Math.max(visual.sprite.artW, 18)
+    const hitH = Math.max(visual.sprite.artH, 18)
+    const css = artRectToCss(sprites.grid, art.x - hitW / 2, art.y, hitW, hitH)
+    visual.hitRect.left = css.left
+    visual.hitRect.top = css.top
+    visual.hitRect.width = css.width
+    visual.hitRect.height = css.height
+
+    if (snapshot.bubble) {
+      if (snapshot.bubble !== visual.lastBubble) {
+        visual.lastBubble = snapshot.bubble
+        visual.bubble.setFrame(bubbleTextures[snapshot.bubble])
+        visual.bubbleShownAt = now
+      }
+      visual.bubble.setVisible(true)
+      // 弹出动画：120ms 内 0.75 → 1（气泡永不翻转，直接改 mesh.scale）
+      const pop = now - visual.bubbleShownAt < 0.12 ? 0.75 : 1
+      visual.bubble.mesh.scale.set(bubbleSize.width * pop, bubbleSize.height * pop, 1)
+      const bx = art.x + snapshot.facing * 4
+      const by = art.y + visual.sprite.artH + 2
+      visual.bubble.setPosition(bx, by)
+      visual.bubble.setOrder(by, SPRITE_LAYER.bubbles)
+    } else {
+      visual.bubble.setVisible(false)
+      visual.lastBubble = null
+    }
+  }
+
+  const placeButterfly = (now: number): void => {
+    const lowW = sprites.grid.lowW
+    const lowH = sprites.grid.lowH
+    const fleeActive = now < butterflyState.fleeUntil
+    const fleeOffset = fleeActive ? butterflyState.fleeDir * 10 : 0
+    // 域与旧版一致：中心坐标系（±lowW/2），与猫控制器同域；上屏时 +lowW/2 换到美术格
+    const prevX = butterflyState.x
+    const bx = 0.16 * lowW + Math.sin(now * 0.7) * 12 + fleeOffset
+    butterflyState.x = bx
+    const by = 0.3 * lowH + Math.sin(now * 1.4) * 5
+    butterfly.setPosition(bx + lowW / 2, by)
+    butterfly.setFlip(bx < prevX)
+    butterfly.setFrame(butterflyFrames.textureAt(Math.floor(now * 10) % 2))
+    butterfly.setOrder(by, SPRITE_LAYER.actors)
+  }
+
+  const spawnBird = (): void => {
+    const lowW = sprites.grid.lowW
+    const lowH = sprites.grid.lowH
+    birdState.active = true
+    birdState.x = -(lowW / 2) - 12
+    birdState.y = lowH * (0.6 + rng() * 0.15)
+    birdState.vx = 26 + rng() * 10
+    bird.setVisible(true)
+  }
+
+  const syncBird = (dt: number): void => {
+    if (!birdState.active) return
+    birdState.x += birdState.vx * dt
+    const lowW = sprites.grid.lowW
+    const y = birdState.y + Math.sin(elapsed * 3) * 2
+    bird.setPosition(birdState.x + lowW / 2, y)
+    bird.setFrame(birdFrames.textureAt(Math.floor(elapsed * 8) % 2))
+    bird.setOrder(y, SPRITE_LAYER.actors)
+    if (birdState.x > lowW / 2 + 12) {
+      birdState.active = false
+      bird.setVisible(false)
+    }
+  }
+
+  /* ── 点灯/熄灯 ── */
+  const tickLamps = (now: number, dt: number): void => {
+    for (const lamp of lamps) {
+      if (lamp.flickerAt !== null && now >= lamp.flickerAt) {
+        // 点火闪烁：0 → 0.7 → 0.25 → 0.85 → 1（240ms）
+        const t = (now - lamp.flickerAt) / 0.24
+        lamp.lit = t >= 1 ? 1 : t < 0.25 ? 0.7 : t < 0.5 ? 0.25 : t < 0.75 ? 0.85 : 1
+        if (t >= 1) lamp.flickerAt = null
+      } else if (lamp.fadeOutAt !== null) {
+        lamp.lit = Math.max(0, lamp.lit - dt / 0.2)
+        if (lamp.lit <= 0) lamp.fadeOutAt = null
+      }
+      lamp.env.setGlow(lamp.lit)
+    }
+  }
+
   const lampsOn = (now: number): void => {
     lamps.forEach((lamp, index) => {
       lamp.flickerAt = now + index * 0.3
       lamp.fadeOutAt = null
     })
     const mid = lamps[1]
-    if (mid) traveler.controller.walkTo(mid.group.position.x - 5)
+    if (mid) traveler.controller.walkTo(mid.virtualX - 5)
     traveler.controller.showBubble(now + 1.0, 'note', 1200)
   }
+
   const lampsOff = (): void => {
     for (const lamp of lamps) {
       lamp.fadeOutAt = elapsed
       lamp.flickerAt = null
     }
     spawnBird()
-  }
-
-  const spawnBird = (): void => {
-    birdState.active = true
-    birdState.x = -(lowW / 2) - 12
-    birdState.y = lowH * (0.6 + rng() * 0.15)
-    birdState.vx = 26 + rng() * 10
-    bird.visible = true
   }
 
   const handleEvent = (kind: string, now: number): void => {
@@ -833,14 +521,15 @@ const boot = (
       }
       case 'elder-lamp-visit': {
         const lamp = lamps[0]
-        if (lamp) elder.controller.walkTo(lamp.group.position.x - 6)
+        if (lamp) elder.controller.walkTo(lamp.virtualX - 6)
         elder.controller.showBubble(now + 2.2, 'dots', 1400)
         break
       }
       case 'cat-chase-butterfly': {
-        cat.controller.walkTo(butterfly.position.x)
+        // 蝴蝶域 = 中心坐标系（±lowW/2），与猫控制器同域
+        cat.controller.walkTo(butterflyState.x)
         butterflyState.fleeUntil = now + 1.6
-        butterflyState.fleeDir = butterfly.position.x > cat.controller.renderX ? 1 : -1
+        butterflyState.fleeDir = butterflyState.x > cat.controller.renderX ? 1 : -1
         break
       }
       case 'dog-follow-traveler': {
@@ -851,127 +540,67 @@ const boot = (
   }
 
   /* ── 尺寸/布局 ── */
-  const applyLayout = (): void => {
-    camera.left = -lowW / 2
-    camera.right = lowW / 2
-    camera.top = lowH
-    camera.bottom = 0
-    camera.updateProjectionMatrix()
-    skyMesh.scale.set(lowW, lowH, 1)
-    skyMesh.position.set(0, lowH / 2, 0)
-    skyUniforms.uResolution.value.set(lowW, lowH)
-
-    for (const lamp of lamps) {
-      lamp.group.position.set((lamp.group.userData.xRatio as number) * lowW, 0.25 * lowH, 0)
-    }
-    for (const group of propsLayer.children) {
-      if (group.userData.feetRatio !== undefined) {
-        group.position.set(
-          (group.userData.xRatio as number) * lowW,
-          (group.userData.feetRatio as number) * lowH,
-          0,
-        )
-      }
-    }
-  }
-
   const resize = (cssWidth: number, cssHeight: number): void => {
-    const size = pipeline.setSize(cssWidth, cssHeight)
-    lowW = size.lowW
-    lowH = size.lowH
-    applyLayout()
-    // 剪影带按新宽度重生成（去抖 150ms，避免拖拽期间反复画 canvas）
-    if (bandRegenTimer !== null) clearTimeout(bandRegenTimer)
-    bandRegenTimer = setTimeout(() => {
-      bandRegenTimer = null
-      rebuildBands()
-      if (!running) renderOnce()
-    }, 150)
+    const scale = computePixelScale(cssHeight)
+    env.resize(cssWidth, cssHeight)
+    sprites.resize(cssWidth, cssHeight, scale)
+    pipeline.setSize(cssWidth, cssHeight, sprites.grid)
+    // 虚拟像素 → 世界单位换算率（焦点深度 = 行走带中心）
+    worldPerVirtual = visibleHalfWidthAt(env.camera, FOCUS_DISTANCE) / (sprites.grid.lowW / 2)
+    // 灯的世界/事件域坐标（布局比例 × 该深度可视宽，与视口解耦）
+    for (const lamp of lamps) {
+      lamp.worldX = env.worldXAt(lamp.ratio, STAGE_Z.lamp)
+      lamp.virtualX = lamp.worldX / worldPerVirtual
+      // 环境层 halo/灯芯对齐精灵灯笼中心（脚部锚点上 33 美术像素）：美术像素/世界单位随视口而变
+      const ground = worldToArt(env.camera, sprites.grid, scratchWorld.set(lamp.worldX, 0, STAGE_Z.lamp))
+      const oneUp = worldToArt(env.camera, sprites.grid, scratchWorld.set(lamp.worldX, 1, STAGE_Z.lamp))
+      const artPerWorld = oneUp.y - ground.y
+      if (artPerWorld > 0) lamp.env.setHeadWorldY(33 / artPerWorld)
+    }
     // 循环停止时（reduced-motion / 离屏 / 首帧前）重绘静帧，resize 不留旧画面
     if (!running) renderOnce()
   }
 
-  /* ── 帧循环 ── */
-  const walkBounds = (): { min: number; max: number } => ({
-    min: -(lowW / 2 - WALK_MARGIN),
-    max: lowW / 2 - WALK_MARGIN,
+  /* ── 交互 ── */
+  const interactions = new FieldInteractions({
+    camera: env.camera,
+    dom: opts.host,
+    isUiEvent: (event) =>
+      event.target instanceof Element &&
+      Boolean(event.target.closest('.entry-item, a, button')),
   })
+  disposables.push(interactions)
 
-  const syncActor = (visual: ActorVisual, now: number, dt: number): void => {
-    const snapshot = visual.controller.update(now, dt, walkBounds())
-    const frames =
-      snapshot.state === 'walk'
-        ? visual.frames.walk
-        : snapshot.state === 'react'
-          ? visual.frames.react
-          : visual.frames.idle
-    visual.material.map = frames.textureAt(snapshot.frame)
-    const width = frames.width
-    visual.mesh.scale.set(width * snapshot.facing, frames.height, 1)
-    visual.mesh.position.set(snapshot.x, feetY(), 0)
-    visual.shadow.position.set(snapshot.x, feetY() - 1.5, 0)
-    visual.hitArea.position.set(snapshot.x, feetY(), 0)
-
-    if (snapshot.bubble) {
-      if (snapshot.bubble !== visual.lastBubble) {
-        visual.lastBubble = snapshot.bubble
-        visual.bubbleMaterial.map = bubbleTextures[snapshot.bubble]
-        visual.bubbleShownAt = now
-      }
-      visual.bubble.visible = true
-      const pop = (now - visual.bubbleShownAt < 0.12 ? 0.75 : 1) * visual.bubbleScale
-      visual.bubble.scale.set(14 * pop, 12 * pop, 1)
-      visual.bubble.position.set(
-        snapshot.x + snapshot.facing * 4,
-        feetY() + frames.height + 2,
-        0,
-      )
-    } else {
-      visual.bubble.visible = false
-      visual.lastBubble = null
-    }
-  }
-
-  const tickLamps = (now: number, dt: number): void => {
-    for (const lamp of lamps) {
-      if (lamp.flickerAt !== null && now >= lamp.flickerAt) {
-        // 点火闪烁：0 → 0.7 → 0.3 → 1（240ms）
-        const t = (now - lamp.flickerAt) / 0.24
-        lamp.lit = t >= 1 ? 1 : t < 0.25 ? 0.7 : t < 0.5 ? 0.25 : t < 0.75 ? 0.85 : 1
-        if (t >= 1) lamp.flickerAt = null
-      } else if (lamp.fadeOutAt !== null) {
-        lamp.lit = Math.max(0, lamp.lit - dt / 0.2)
-        if (lamp.lit <= 0) lamp.fadeOutAt = null
-      }
-      const lit = lamp.lit
-      lamp.coreMaterial.color.copy(lampCoreColor).multiplyScalar(0.45 + lit * 1.9)
-      lamp.poolMaterial.opacity = lit * 0.55
-    }
-  }
-
+  /* ── 帧循环 ── */
   const frame = (nowMs: number): void => {
     if (!running) return
     rafId = null
     const now = nowMs / 1000
+    const rawDtMs = lastFrameAt === null ? 0 : (now - lastFrameAt) * 1000
     const dt = lastFrameAt === null ? 1 / 60 : Math.min(now - lastFrameAt, 0.1)
     lastFrameAt = now
     elapsed += dt
+    if (rawDtMs > 0) {
+      frameEmaMs = framesSeen === 0 ? rawDtMs : frameEmaMs * 0.92 + rawDtMs * 0.08
+      framesSeen++
+      // 软渲染/弱 GPU 兜底：持续超帧耗预算 → 管线一次性降档
+      if (shouldDegrade(frameEmaMs, framesSeen)) pipeline.degrade()
+    }
 
     // 昼夜扫掠（恒速）
     if (uDay !== targetDay) {
       const step = dt / DAY_SWEEP_SECONDS
       const diff = targetDay - uDay
       uDay = Math.abs(diff) <= step ? targetDay : uDay + Math.sign(diff) * step
-      dusk = duskAmount(uDay)
     }
     const toggle = scheduler.checkDayCrossing(uDay)
     if (toggle === 'lamps-on') lampsOn(elapsed)
     else if (toggle === 'lamps-off') lampsOff()
 
-    skyUniforms.uDay.value = uDay
-    skyUniforms.uDusk.value = dusk
-    skyUniforms.uTime.value = elapsed
-    registry.apply(uDay)
+    env.setDay(uDay)
+    spritePalette.apply(uDay)
+    env.setPointer(pointer.x, pointer.y)
+    env.tick(elapsed)
     pipeline.setBloom(BLOOM_DAY + (BLOOM_NIGHT - BLOOM_DAY) * (1 - uDay))
 
     for (const kind of scheduler.tick(elapsed)) handleEvent(kind, elapsed)
@@ -981,40 +610,18 @@ const boot = (
       nextAmbientBirdAt = elapsed + 47 + rng() * 8
     }
 
-    for (const visual of actors) syncActor(visual, elapsed, dt)
-
-    // 飞鸟横穿
-    if (birdState.active) {
-      birdState.x += birdState.vx * dt
-      bird.position.set(birdState.x, birdState.y + Math.sin(elapsed * 3) * 2, 0)
-      birdMaterial.map = birdFrames.textureAt(Math.floor(elapsed * 8) % 2)
-      if (birdState.x > lowW / 2 + 12) {
-        birdState.active = false
-        bird.visible = false
-      }
-    }
-
-    // 蝴蝶 8 字舞 + 逃窜偏置
-    const fleeActive = elapsed < butterflyState.fleeUntil
-    const fleeOffset = fleeActive ? butterflyState.fleeDir * 10 : 0
-    const bx = 0.16 * lowW + Math.sin(elapsed * 0.7) * 12 + fleeOffset
-    const by = 0.3 * lowH + Math.sin(elapsed * 1.4) * 5
-    const prevX = butterfly.position.x
-    butterfly.position.set(bx, by, 0)
-    butterfly.scale.x = (bx >= prevX ? 1 : -1) * 5
-    butterflyMaterial.map = butterflyFrames.textureAt(Math.floor(elapsed * 10) % 2)
-
-    tickLamps(elapsed, dt)
-
-    // 指针平滑（沿用港湾壳的 0.06 趋近），视差越近越大；相机固定
+    // 指针平滑（沿用旧版 0.06 趋近）→ 相机微移 → 全部投影
     pointer.x += (pointerTarget.x - pointer.x) * 0.06
     pointer.y += (pointerTarget.y - pointer.y) * 0.06
-    for (const { group, factor } of parallaxLayers) {
-      group.position.x = -pointer.x * factor * 0.35 * lowH
-    }
-    skyUniforms.uPointer.value.set(pointer.x, pointer.y)
+    applyCameraNudge()
 
-    pipeline.composer.render()
+    placeStatics()
+    for (const visual of actors) syncActor(visual, elapsed, dt)
+    syncBird(dt)
+    placeButterfly(elapsed)
+    tickLamps(elapsed, dt)
+
+    pipeline.render()
 
     if (running) rafId = requestAnimationFrame(frame)
   }
@@ -1035,9 +642,8 @@ const boot = (
   }
 
   const renderOnce = (): void => {
-    skyUniforms.uDay.value = uDay
-    skyUniforms.uDusk.value = duskAmount(uDay)
-    registry.apply(uDay)
+    env.setDay(uDay)
+    spritePalette.apply(uDay)
     pipeline.setBloom(BLOOM_DAY + (BLOOM_NIGHT - BLOOM_DAY) * (1 - uDay))
     // 静帧跳变：灯火与昼夜侧直接对齐，不播点灯动画
     for (const lamp of lamps) {
@@ -1046,18 +652,57 @@ const boot = (
       lamp.lit = uDay >= DAY_NIGHT_THRESHOLD ? 0 : 1
     }
     tickLamps(elapsed, 0)
+    applyCameraNudge()
+    placeStatics()
     for (const visual of actors) syncActor(visual, elapsed, 0)
-    pipeline.composer.render()
+    placeButterfly(elapsed)
+    env.tick(elapsed)
+    pipeline.render()
   }
 
-  /* ── 初始化 ── */
-  resize(opts.host.clientWidth || opts.canvas.clientWidth || 320, opts.host.clientHeight || opts.canvas.clientHeight || 240)
-  if (bandRegenTimer !== null) {
-    clearTimeout(bandRegenTimer)
-    bandRegenTimer = null
+  /* ── 初始化（先 resize 定美术格与换算率，再 spawn 让起始 x 落在真实域内） ── */
+  resize(initialWidth, initialHeight)
+
+  const kid = spawnActor(KID, -0.18, -0.35, 0.75)
+  const elder = spawnActor(ELDER, 0.24, -0.62, 0.85, { walkSpeed: 16 })
+  const merchant = spawnActor(MERCHANT, 0.13, -0.48, 1.0, { walkSpeed: 18 })
+  const traveler = spawnActor(TRAVELER, -0.36, -0.28, 0.85)
+  const cat = spawnActor(
+    { idle: CAT.groom, walk: CAT.walk, react: CAT.scurry },
+    0.34,
+    -0.15,
+    0.5,
+    { walkSpeed: 20, fleeSpeed: 70, idleFrameMs: 420, walkFrameMs: 160, reactFrameMs: 110 },
+  )
+  const dog = spawnActor({ idle: DOG.sit, walk: DOG.walk, react: DOG.sit }, -0.06, -0.4, 0.6, {
+    walkSpeed: 24,
+    idleFrameMs: 360,
+    reactFrameMs: 200,
+  })
+
+  if (!opts.reducedMotion) {
+    for (const visual of [kid, elder, merchant, traveler]) {
+      visual.target.onHover = (point) => {
+        visual.controller.faceTowards(point.x / worldPerVirtual)
+        visual.controller.react(elapsed, 600, rng() < 0.5 ? 'dots' : 'note')
+      }
+      visual.target.onPress = (point) => {
+        visual.controller.faceTowards(point.x / worldPerVirtual)
+        visual.controller.react(elapsed, 800, 'exclaim')
+      }
+      interactions.register(visual.target)
+    }
+    cat.target.onHover = () => cat.controller.react(elapsed, 500, 'dots')
+    cat.target.onPress = (point) => cat.controller.fleeFrom(point.x / worldPerVirtual, elapsed)
+    interactions.register(cat.target)
+    dog.target.onHover = () => dog.controller.showBubble(elapsed, 'note', 900)
+    dog.target.onPress = () => dog.controller.react(elapsed, 600, 'dots')
+    interactions.register(dog.target)
   }
-  rebuildBands()
-  registry.apply(uDay)
+
+  placeButterfly(0)
+  env.setDay(uDay)
+  spritePalette.apply(uDay)
   renderOnce()
 
   return {
@@ -1067,7 +712,6 @@ const boot = (
       // 循环停止时（reduced-motion / 离屏 / 首帧前）直接跳变，保证静帧也是正确场景
       if (opts.reducedMotion || !running) {
         uDay = targetDay
-        dusk = duskAmount(uDay)
         renderOnce()
       }
     },
@@ -1084,12 +728,8 @@ const boot = (
     },
     dispose() {
       stop()
-      if (bandRegenTimer !== null) {
-        clearTimeout(bandRegenTimer)
-        bandRegenTimer = null
-      }
       for (const disposable of disposables.splice(0)) disposable.dispose()
-      renderer.forceContextLoss()
+      pipeline.renderer.forceContextLoss()
       disposeUnitPlane()
     },
   }
