@@ -9,7 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
-from backend.app.services.dashboard import live_stats_broadcaster
+from backend.app.monitoring import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
 

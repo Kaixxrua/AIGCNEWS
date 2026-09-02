@@ -6,7 +6,7 @@ from fastapi_cache import FastAPICache
 from redis.asyncio import Redis
 
 from backend.app.core.config import settings
-from backend.app.services.dashboard import live_stats_broadcaster
+from backend.app.monitoring import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
 

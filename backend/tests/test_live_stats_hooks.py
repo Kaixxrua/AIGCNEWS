@@ -10,6 +10,7 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
 from backend.app.api import routes_dashboard
+from backend.app.monitoring import live_stats_broadcaster
 from backend.app.repositories.postgres_project_enrichment_repository import (
     PostgresGitHubProjectEnrichmentRepository,
 )
@@ -18,7 +19,6 @@ from backend.app.repositories.postgres_project_ingestion_repository import (
 )
 from backend.app.repositories.site_visit_repository import SiteVisitStats
 from backend.app.services.auth.account_lifecycle import AccountLifecycle
-from backend.app.services.dashboard import live_stats_broadcaster
 from backend.app.services.ingestion import cache_invalidation
 from backend.tests.test_auth_account_lifecycle import FakeOtpService, FakeRepository
 
@@ -95,7 +95,10 @@ class LiveStatsHookTests(unittest.IsolatedAsyncioTestCase):
             issue_token=lambda user: "token",
         )
         result = await service.register(
-            email="hook@example.com", email_code="123456", password="secret-1"
+            email="hook@example.com",
+            email_code="123456",
+            password="secret-1",
+            username="hook-user",
         )
         self.assertEqual(result.user_id, 42)
         self.notify.assert_called_once_with("user-registered")

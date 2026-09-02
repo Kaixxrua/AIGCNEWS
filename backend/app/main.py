@@ -58,6 +58,10 @@ from backend.app.core.redis_client import close_redis_client, create_redis_clien
 from backend.app.core.scheduler import create_scheduler_runtime
 from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
+from backend.app.monitoring.live_stats_broadcaster import (
+    LiveStatsBroadcaster,
+    set_live_stats_broadcaster,
+)
 from backend.app.monitoring.mcp_redis_metrics import create_redis_mcp_tool_call_metrics
 from backend.app.monitoring.mcp_tools import MCP_TOOL_NAMES, JsonMcpToolCallStore
 from backend.app.repositories.application_repository_context import (
@@ -72,10 +76,6 @@ from backend.app.repositories.postgres_error_event_repository import (
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.auth.oauth.runtime_config import configure_oauth_settings_reader
 from backend.app.services.chat import attachment_service
-from backend.app.services.dashboard.live_stats_broadcaster import (
-    LiveStatsBroadcaster,
-    set_live_stats_broadcaster,
-)
 from backend.app.services.email.pool_config_provider import (
     configure_email_pool_settings_reader,
 )

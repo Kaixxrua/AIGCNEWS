@@ -14,12 +14,12 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from backend.app.services.payments.plans import MEMBER_MONTHLY
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
     VerifiedCallback,
 )
 from backend.tests.test_payments_api import (
-    NOW,
     _create,
     harness,  # noqa: F401  (fixture re-export)
 )
@@ -171,13 +171,12 @@ def test_closed_order_is_absorbing_422(harness) -> None:  # noqa: F811
 
 
 def test_active_member_renews_from_existing_expiry(harness) -> None:  # noqa: F811
-    existing_expiry = NOW + timedelta(days=10)
+    existing_expiry = datetime.now(timezone.utc) + timedelta(days=10)
     harness.users.add(7, tier="member", expires_at=existing_expiry)
     order = _create(harness)  # member_monthly
     harness.provider._verified = _verified(order)
     assert _callback(harness.client).status_code == 200
     user = harness.users.get_user_by_id(7)
-    # 在现有到期日上顺延一个月（9/29），非从回调时刻起算
-    assert user["membership_expires_at"] == datetime(
-        2026, 9, 29, 12, 0, tzinfo=timezone.utc
-    )
+    # 在现有到期日上顺延一个月，非从回调时刻起算；fixture 须锚定真实时钟，
+    # 否则时间走过 fixture 到期日后该会员实际已过期，用例退化为过期续费语义
+    assert user["membership_expires_at"] == MEMBER_MONTHLY.extend_from(existing_expiry)

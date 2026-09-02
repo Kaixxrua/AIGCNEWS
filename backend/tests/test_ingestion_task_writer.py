@@ -98,7 +98,7 @@ class IngestionTaskWriterTests(unittest.TestCase):
         ):
             result = self._run(orchestrator.run_single_source("news", ["daily"]))
 
-        self.assertEqual(result, {"news": 3, "ingested_total": 3})
+        self.assertEqual(result, {"news": 3, "ingested_total": 3, "new_x_rows": 0})
         writer.create_task.assert_called_once_with("single:news")
         writer.finish_task.assert_called_once_with(
             42,

@@ -49,6 +49,9 @@ class FakeUserAccountRepository:
                 return record
         return None
 
+    def list_identities_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        return []
+
     def list_users(
         self,
         *,
@@ -499,7 +502,9 @@ class AuthMeMembershipTierTests(unittest.TestCase):
         self.repository = FakeUserAccountRepository()
         app = FastAPI()
         app.include_router(routes_auth.router, prefix="/api")
-        app.state.application_repositories = SimpleNamespace(users=self.repository)
+        app.state.application_repositories = SimpleNamespace(
+            users=self.repository, oauth_identities=self.repository
+        )
         self.client = TestClient(app)
 
     def test_auth_me_includes_membership_tier(self) -> None:
