@@ -53,6 +53,24 @@
         "V": 5
       },
       "notes": "Single geometry, two lightings: Bayer-dithered sky gradient, fbm clouds, ridge/hills/shoreline, 5-building village with per-cell lit windows, lantern + mirrored water (scene re-evaluation at 2*HOR-y); chunky geometry on 160px/unit grid, smooth unquantized lighting layer. New --contact-acid-ink token keeps acid kicker legible on bright day sky (dark override = var(--acid)). Verified via Playwright + stubbed contact-page config: realtime delta true, no x-overflow 1440/320/375/414/768, arc frames show sun/moon sweep + dusk band, reduced-motion snaps to full night in <120ms with zero RAF, 0 real console errors (EventSource MIME noise is environmental). Hero DOM/overlay/admin content/QR fallback/link safety/inert compatibility nodes unchanged."
+    },
+    {
+      "date": "2026-09-02",
+      "target": "frontend/src/components/contact/ContactHeroVisual.vue + scene/* + views/ContactPageView.vue",
+      "verb": "redesign",
+      "macrostructure": "Atmosphere-First contact landing: pixel HD-2D field fills the whole card; heading top-left, contact entries docked bottom-right as pixel dialog panels",
+      "theme": "project-managed (style.css tokens; --contact-scene-bg = var(--paper-raised) read via getComputedStyle -> canvas clear color + edge-blend uniform + page background, exact same color in every theme)",
+      "voice": "signal-led editorial",
+      "motion": "three.js orthographic 2.5D pixel field, realtime: painter-ordered layers (sky shader/far hills/tree-line/path/props/actors/foreground grass), pointer parallax, 3 lamp posts with HDR cores + additive ground pools + low-res bloom, 4 NPCs + dog + cat + bird + butterfly on a deterministic mulberry32 event timeline, day/night bound to site theme with 1.8s constant-rate sweep and dusk midpoint; prefers-reduced-motion -> static single frame, zero RAF",
+      "scores": {
+        "P": 5,
+        "H": 5,
+        "E": 4,
+        "S": 5,
+        "R": 5,
+        "V": 5
+      },
+      "notes": "Pixel-lock: whole EffectComposer at low res (target 230px height, integer scale clamped 2..6; r180 EffectComposer.setSize does NOT resize the renderer buffer, pipeline pins renderer.setSize(lowW,lowH,false) itself) + NearestFilter RTs + CSS image-rendering:pixelated; verified exact 3x integer scale (buffer 466x245 -> CSS 1398x735). NoToneMapping + hand-authored sRGB palette round-trips exactly; card inner corners measured #fffefa. Originality: all sprite pixel data hand-authored in spriteArt.ts (original work, zero external/AI/Octopath assets; technique/atmosphere only). Display layer reduced to heading + admin-configured contact entries (service cards / markdown body no longer rendered; admin fields + API contract untouched). Verified: 63/63 focused + 1203/1203 full vitest, vue-tsc 0, eslint clean, build OK (141 precache entries, scene lazy chunk in sw.js); Playwright mocked-API matrix: no x-overflow/no document scroll at 320/375/414/768/1440 x light/dark, 112px dock clearance exact, FPS 59, hover shows speech bubble + pointer cursor over actor hit areas, click triggers face-camera react + '!' bubble, touch pointerdown accepted at 375, reduced-motion byte-identical static frame with zero page RAF, WebGL2-blocked -> graceful CSS fallback with 0 console errors, QR 404 -> '[!] QR image unavailable' fallback, mailto without target/rel, https gets noopener; hidden compatibility nodes (.contact-command/.term-caret/.tree-branch/hero-beam/hero-scanline) preserved."
     }
   ]
 }

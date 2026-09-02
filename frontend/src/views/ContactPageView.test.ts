@@ -31,6 +31,7 @@ const i18n = createI18n({
   messages,
 })
 
+/** 默认夹具对齐生产形态：交流群（QR）+ 邮箱（mailto）两条联系方式 */
 const setConfig = (overrides: Partial<SiteContactPage> = {}) => {
   configBox.current!.value = {
     enabled: true,
@@ -44,7 +45,6 @@ const setConfig = (overrides: Partial<SiteContactPage> = {}) => {
     contactEntries: [
       { label: 'QQ 群', value: '123456', href: '', qrImageUrl: '/qr.png' },
       { label: '邮箱', value: 'hi@example.com', href: 'mailto:hi@example.com', qrImageUrl: '' },
-      { label: '官网', value: '', href: 'https://example.com', qrImageUrl: '' },
     ],
     bodyMarkdown: '# 欢迎\n\n**加粗**段落',
     updatedAt: null,
@@ -62,36 +62,32 @@ describe('ContactPageView', () => {
     setConfig()
   })
 
-  it('renders hero, service cards, contact entries and markdown body when enabled', () => {
+  it('renders the heading and contact entries, but never service cards or the markdown body', () => {
     const wrapper = mountView()
 
     expect(wrapper.find('.contact-title').text()).toBe('联系合作')
     expect(wrapper.find('.contact-subtitle').text()).toBe('外包 · 商务合作')
     expect(wrapper.find('.contact-kicker').text()).toBe('联系合作')
 
-    const cards = wrapper.findAll('.service-card')
-    expect(cards).toHaveLength(2)
-    expect(cards[0]!.find('.service-title').text()).toBe('外包开发')
-    expect(cards[0]!.find('.service-desc').text()).toBe('AI 应用定制')
-    // 每张卡都渲染图标（未知 key 回退 default SVG）
-    expect(cards[1]!.find('.service-icon svg').exists()).toBe(true)
-    // 空描述不渲染占位元素
-    expect(cards[1]!.find('.service-desc').exists()).toBe(false)
-
     const entries = wrapper.findAll('.entry-item')
-    expect(entries).toHaveLength(3)
+    expect(entries).toHaveLength(2)
 
-    const markdown = wrapper.find('.contact-markdown')
-    expect(markdown.html()).toContain('<h1>欢迎</h1>')
-    expect(markdown.html()).toContain('<strong>加粗</strong>')
+    // 展示层取舍：后台仍配置了服务卡/Markdown，但页面不渲染这些区块
+    expect(wrapper.find('.service-card').exists()).toBe(false)
+    expect(wrapper.find('.service-grid').exists()).toBe(false)
+    expect(wrapper.find('.contact-markdown').exists()).toBe(false)
+    expect(wrapper.find('.section-heading').exists()).toBe(false)
   })
 
-  it('renders section headings from i18n', () => {
+  it('docks the entry list inside the full-bleed hero', () => {
     const wrapper = mountView()
 
-    expect(wrapper.find('#contact-services-title').text()).toBe('我们可以一起做什么')
-    expect(wrapper.find('#contact-entry-title').text()).toBe('选择联系入口')
-    expect(wrapper.find('#contact-notes-title').text()).toBe('更多信息')
+    const hero = wrapper.find('.contact-hero')
+    expect(hero.exists()).toBe(true)
+    const dock = hero.find('.hero-dock')
+    expect(dock.exists()).toBe(true)
+    expect(dock.find('.entry-list').exists()).toBe(true)
+    expect(dock.find('.contact-hero-note').text()).toBe('按你的需求，选择合适的联系入口。')
   })
 
   it('renders QR image only for entries with qrImageUrl', () => {
@@ -105,7 +101,31 @@ describe('ContactPageView', () => {
     expect(entries[1]!.find('img.entry-qr').exists()).toBe(false)
   })
 
+  it('shows QR only on the primary entry when more than two entries are configured', () => {
+    setConfig({
+      contactEntries: [
+        { label: 'QQ 群', value: '123456', href: '', qrImageUrl: '/qr.png' },
+        { label: '邮箱', value: 'hi@example.com', href: 'mailto:hi@example.com', qrImageUrl: '/mail-qr.png' },
+        { label: '官网', value: '', href: 'https://example.com', qrImageUrl: '/web-qr.png' },
+      ],
+    })
+    const wrapper = mountView()
+    const entries = wrapper.findAll('.entry-item')
+
+    // 邮箱是第一个带 href 的条目（primary），仅它显示 QR
+    expect(entries[0]!.find('.entry-qr-frame').exists()).toBe(false)
+    expect(entries[1]!.find('img.entry-qr').attributes('src')).toBe('/mail-qr.png')
+    expect(entries[2]!.find('.entry-qr-frame').exists()).toBe(false)
+  })
+
   it('links http(s) hrefs externally and other schemes in-place', () => {
+    setConfig({
+      contactEntries: [
+        { label: 'QQ 群', value: '123456', href: '', qrImageUrl: '/qr.png' },
+        { label: '邮箱', value: 'hi@example.com', href: 'mailto:hi@example.com', qrImageUrl: '' },
+        { label: '官网', value: '', href: 'https://example.com', qrImageUrl: '' },
+      ],
+    })
     const wrapper = mountView()
     const entries = wrapper.findAll('.entry-item')
 
@@ -133,7 +153,6 @@ describe('ContactPageView', () => {
     expect(entries[1]!.classes()).toContain('entry-item--primary')
     expect(entries[1]!.find('.entry-badge').text()).toBe('优先入口')
     expect(entries[0]!.classes()).not.toContain('entry-item--primary')
-    expect(entries[2]!.classes()).not.toContain('entry-item--primary')
   })
 
   it('falls back to the first QR-only entry when no href is available', () => {
@@ -161,25 +180,15 @@ describe('ContactPageView', () => {
     expect(wrapper.find('.entry-qr-fallback').text()).toBe('二维码暂时无法显示')
   })
 
-  it('sanitizes the admin-authored markdown body', () => {
-    setConfig({ bodyMarkdown: '正常段落 <script>alert(1)</script>' })
-    const wrapper = mountView()
-    const markdown = wrapper.find('.contact-markdown')
-
-    expect(markdown.html()).toContain('正常段落')
-    expect(markdown.html()).not.toMatch(/<script\b/i)
-  })
-
-  it('hides empty sections', () => {
-    setConfig({ serviceCards: [], contactEntries: [], bodyMarkdown: '', subtitle: '' })
+  it('hides the dock and hero note when no contact entries are configured', () => {
+    setConfig({ contactEntries: [], subtitle: '' })
     const wrapper = mountView()
 
     expect(wrapper.find('.contact-title').exists()).toBe(true)
-    expect(wrapper.find('.service-grid').exists()).toBe(false)
+    expect(wrapper.find('.hero-dock').exists()).toBe(false)
     expect(wrapper.find('.entry-list').exists()).toBe(false)
-    expect(wrapper.find('.contact-markdown').exists()).toBe(false)
-    expect(wrapper.find('.contact-subtitle').exists()).toBe(false)
     expect(wrapper.find('.contact-hero-note').exists()).toBe(false)
+    expect(wrapper.find('.contact-subtitle').exists()).toBe(false)
   })
 
   it('renders nothing when the page is disabled (defensive root guard)', () => {
@@ -202,25 +211,11 @@ describe('ContactPageView', () => {
     expect(wrapper.findAll('.term-line').every((line) => line.attributes('aria-hidden') === 'true')).toBe(true)
   })
 
-  it('numbers visible sections in order and renumbers when a section is hidden', () => {
-    const wrapper = mountView()
-    const kickers = wrapper.findAll('.section-kicker')
-    expect(kickers.map((k) => k.text())).toEqual(['[01] 合作方向', '[02] 从这里开始', '[03] 补充说明'])
-
-    setConfig({ serviceCards: [] })
-    const shrunk = mountView()
-    const shrunkKickers = shrunk.findAll('.section-kicker')
-    expect(shrunkKickers.map((k) => k.text())).toEqual(['[01] 从这里开始', '[02] 补充说明'])
-  })
-
   it('marks tree branches with ├── for rows and └── for the last row', () => {
     const wrapper = mountView()
 
-    const serviceBranches = wrapper.findAll('.service-card .tree-branch').map((b) => b.text())
-    expect(serviceBranches).toEqual(['├──', '└──'])
-
     const entryBranches = wrapper.findAll('.entry-item .tree-branch').map((b) => b.text())
-    expect(entryBranches).toEqual(['├──', '├──', '└──'])
+    expect(entryBranches).toEqual(['├──', '└──'])
   })
 
   it('renders the WebGL hero layer with static fallback and inert legacy nodes', () => {
@@ -229,7 +224,7 @@ describe('ContactPageView', () => {
     const field = wrapper.find('.hero-field')
     expect(field.exists()).toBe(true)
     expect(field.attributes('aria-hidden')).toBe('true')
-    // 三层合成：shader 视觉层（无 WebGL2 的 jsdom 下停在静态兜底）→ 遮罩 → 内容
+    // 三层合成：场景视觉层（无 WebGL2 的 jsdom 下停在静态兜底）→ 遮罩 → 内容
     const visual = field.find('.hero-visual')
     expect(visual.exists()).toBe(true)
     expect(visual.attributes('aria-hidden')).toBe('true')
