@@ -184,11 +184,12 @@ onBeforeUnmount(pauseLivePoll)
 
           <!-- 侧栏末端纯装饰：AIGC Radar 雷达扫掠（three.js WebGL2 实时渲染，光点按查看日期播种，
                翻日历换一幅；悬停倾斜跟随、点击 ping 涟漪；WebGL2 不可用 / reduced-motion 退化为静态兜底）。
-               flex-1 吸满侧栏剩余高度，侧栏底线始终与排行榜下边缘对齐，不再留空 -->
+               flex-1 min-h-0 精确吸满侧栏剩余高度：卡片高度随行高伸缩，底部始终与排行榜下边缘对齐；
+               极小视口下随 min-h-0 收缩而非撑出侧栏内部滚动 -->
           <DashboardRadarCard
             :seed-date="currentDate"
             :live="!isViewingHistory"
-            class="stagger-enter flex-1 min-h-[190px]"
+            class="stagger-enter flex-1 min-h-0"
             style="animation-delay: 0.5s"
           />
       </aside>
