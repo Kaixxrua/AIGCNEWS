@@ -109,7 +109,6 @@ const i18n = createI18n({
         },
         copyQuick: '复制配置命令',
         quota: {
-          anonymous: 'MCP 匿名额度按 IP 计：每 24 小时 30 次；登录后 MCP/API 共用每 24 小时 60 次 + 滚动 30 天 1,200 次，开通 vip 可达 400 次 + 8,000 次。',
           free: '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
           loginCta: '登录提升额度',
           vipCta: '开通 vip',
@@ -451,7 +450,8 @@ describe('McpConnectView quota upsell notice', () => {
 
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/mcp"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('MCP 匿名额度按 IP 计：每 24 小时 30 次')
+    expect(wrapper.text()).not.toContain('开通 vip')
+    expect(wrapper.text()).not.toContain('当前 Free 的')
     expect(controller().loadTokens).not.toHaveBeenCalled()
   })
 
@@ -463,15 +463,21 @@ describe('McpConnectView quota upsell notice', () => {
     expect(cta.text()).toContain('开通 vip')
   })
 
-  it('shows guests the anonymous quota with a login CTA instead of the membership upsell', async () => {
+  it('hides the quota notice for guests; the login CTA lives in the token section', async () => {
     auth().status = 'anonymous'
     auth().isLoggedIn = false
     controller().isLoggedIn.value = false
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('MCP 匿名额度按 IP 计：每 24 小时 30 次')
+    // 网站不向游客推介匿名额度：按 IP 匿名桶只是 GitHub/NPM 发布渠道
+    // （插件开箱即用）的默认体验，不在站内展示
+    expect(wrapper.text()).not.toContain('开通 vip')
+    expect(wrapper.text()).not.toContain('当前 Free 的')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('登录提升额度')
+    // 游客的登录引导由 Token 管理区的引导卡承担
+    expect(wrapper.text()).toContain('登录后管理 Token 与收藏授权')
+    const cta = wrapper.findAll('button').find((button) => button.text() === '登录提升额度')
+    expect(cta).toBeDefined()
   })
 
   it('hides the notice for active VIP members', async () => {
