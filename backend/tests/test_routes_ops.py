@@ -742,6 +742,47 @@ class OperationsRouteTests(unittest.TestCase):
         self.assertEqual(response.json(), {"total": 12, "enriched": 7, "running": False})
         repository.get_github_project_enrichment_status.assert_called_once_with()
 
+    def test_project_enrichment_pages_forward_independent_queries(self) -> None:
+        repository = MagicMock(spec=GitHubProjectEnrichmentRepository)
+        repository.list_github_project_enrichment_pages.return_value = {
+            "unprocessable": {"items": [], "total": 121, "page": 2, "page_size": 15},
+            "retained": {"items": [], "total": 44, "page": 3, "page_size": 15},
+        }
+        client = self._project_ops_client(enrichment=repository)
+
+        response = client.get(
+            "/api/ops/github-projects/enrichment-project-pages",
+            params={"unprocessable_page": 2, "retained_page": 3, "page_size": 15},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["unprocessable"]["page"], 2)
+        self.assertEqual(response.json()["retained"]["page"], 3)
+        repository.list_github_project_enrichment_pages.assert_called_once_with(
+            unprocessable_page=2,
+            retained_page=3,
+            page_size=15,
+        )
+
+    def test_project_enrichment_pages_validate_query_bounds(self) -> None:
+        for params in (
+            {"unprocessable_page": 0},
+            {"retained_page": 0},
+            {"page_size": 0},
+            {"page_size": 101},
+        ):
+            with self.subTest(params=params):
+                repository = MagicMock(spec=GitHubProjectEnrichmentRepository)
+                client = self._project_ops_client(enrichment=repository)
+
+                response = client.get(
+                    "/api/ops/github-projects/enrichment-project-pages",
+                    params=params,
+                )
+
+                self.assertEqual(response.status_code, 422)
+                repository.list_github_project_enrichment_pages.assert_not_called()
+
     def test_github_enrich_queues_with_limit_cap_and_concurrency(self) -> None:
         service = MagicMock()
         operations = MagicMock()

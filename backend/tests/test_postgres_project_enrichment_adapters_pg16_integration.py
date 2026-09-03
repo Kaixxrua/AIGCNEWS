@@ -365,6 +365,91 @@ def test_pg16_retained_breakdown_buckets_and_projects(repositories) -> None:
     assert "gone" in unprocessable_ids
 
 
+def test_pg16_enrichment_pages_are_stable_independent_and_reach_past_100(
+    repositories,
+) -> None:
+    database, github, _ = repositories
+    row_count = 121
+    page_size = 15
+    stars = 9_999_999
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO github_repo_candidates
+                    (repo_id, full_name, description, language, topics_json,
+                     stars, forks, watchers)
+                   SELECT
+                     'page-u-' || to_char(series, 'FM000'),
+                     'paging-u/repo-' || to_char(series, 'FM000'),
+                     '', 'Python', '[]', %s, 0, 0
+                   FROM generate_series(%s, 1, -1) AS series""",
+                (stars, row_count),
+            )
+            cursor.execute(
+                """INSERT INTO github_repo_candidates
+                    (repo_id, full_name, description, language, topics_json,
+                     stars, forks, watchers)
+                   SELECT
+                     'page-r-' || to_char(series, 'FM000'),
+                     'paging-r/repo-' || to_char(series, 'FM000'),
+                     '', 'Python', '[]', %s, 0, 0
+                   FROM generate_series(%s, 1, -1) AS series""",
+                (stars, row_count),
+            )
+            cursor.execute(
+                """INSERT INTO github_repo_enrichments
+                    (repo_id, category_slug, category_name, description_zh,
+                     tags_json, source_fingerprint, prompt_version, status)
+                   SELECT
+                     'page-r-' || to_char(series, 'FM000'),
+                     'agent', 'Agent', '智能体', '[]',
+                     repeat('f', 64), 'v1', 'succeeded'
+                   FROM generate_series(%s, 1, -1) AS series""",
+                (row_count,),
+            )
+
+    first = github.list_github_project_enrichment_pages(
+        unprocessable_page=1,
+        retained_page=1,
+        page_size=page_size,
+    )
+    second = github.list_github_project_enrichment_pages(
+        unprocessable_page=2,
+        retained_page=1,
+        page_size=page_size,
+    )
+    beyond_100 = github.list_github_project_enrichment_pages(
+        unprocessable_page=8,
+        retained_page=9,
+        page_size=page_size,
+    )
+    repeated = github.list_github_project_enrichment_pages(
+        unprocessable_page=8,
+        retained_page=9,
+        page_size=page_size,
+    )
+
+    def ids(result: dict[str, Any], kind: str) -> list[str]:
+        return [row["repo_id"] for row in result[kind]["items"]]
+
+    expected_unprocessable_first = [f"page-u-{index:03d}" for index in range(1, 16)]
+    expected_unprocessable_second = [f"page-u-{index:03d}" for index in range(16, 31)]
+    expected_unprocessable_eighth = [f"page-u-{index:03d}" for index in range(106, 121)]
+    assert ids(first, "unprocessable") == expected_unprocessable_first
+    assert ids(second, "unprocessable") == expected_unprocessable_second
+    assert set(ids(first, "unprocessable")).isdisjoint(ids(second, "unprocessable"))
+    assert ids(beyond_100, "unprocessable") == expected_unprocessable_eighth
+    assert [
+        repo_id for repo_id in ids(beyond_100, "retained")
+        if repo_id.startswith("page-r-")
+    ] == ["page-r-121"]
+    assert first["unprocessable"]["total"] >= row_count
+    assert first["retained"]["total"] >= row_count
+    assert ids(first, "retained") == ids(second, "retained")
+    assert ids(beyond_100, "unprocessable") == ids(repeated, "unprocessable")
+    assert ids(beyond_100, "retained") == ids(repeated, "retained")
+
+
 def test_pg16_website_metadata_merge_item_and_enrichment_failure(repositories) -> None:
     _, _, websites = repositories
     created = websites.upsert_tool_website(

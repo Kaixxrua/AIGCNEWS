@@ -67,6 +67,10 @@ const createApi = (): MonitorApi => ({
   generateAllBriefings: vi.fn(), clearDashboardCache: vi.fn(), syncData: vi.fn(), ingestByDate: vi.fn(), clearAllData: vi.fn(),
   crawlGithubProjects: vi.fn(), fetchGithubCrawlStatus: vi.fn(async () => idleCrawlStatus()),
   fetchGithubEnrichmentStatus: vi.fn(async () => ({ eligible: 10, succeeded: 9, failed: 1, pending: 0 })),
+  fetchGithubEnrichmentProjectPages: vi.fn(async ({ unprocessablePage, retainedPage, pageSize }) => ({
+    unprocessable: { items: [], total: 0, page: unprocessablePage, page_size: pageSize },
+    retained: { items: [], total: 0, page: retainedPage, page_size: pageSize },
+  })),
   fetchGithubEnrichmentConfig: vi.fn(async () => ({ reasoning_effort: '', effective_reasoning_effort: 'medium' })),
   saveGithubEnrichmentConfig: vi.fn(async (value: string) => ({ reasoning_effort: value, effective_reasoning_effort: value || 'medium' })),
   triggerGithubEnrichment: vi.fn(async () => ({ status: 'queued', message: '' })),
@@ -274,6 +278,104 @@ describe('Monitor page controller contract', () => {
     await controller.saveProviderConfig()
     expect(api.saveProviderConfig).toHaveBeenCalledWith(expect.objectContaining({ reasoning_effort: 'high' }))
     expect(controller.providerForm.value.reasoning_effort).toBe('high')
+  })
+
+  it('keeps enrichment detail pages independent and status refresh does not reset them', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchGithubEnrichmentProjectPages).mockImplementation(async ({ unprocessablePage, retainedPage, pageSize }) => ({
+      unprocessable: {
+        items: [{
+          repo_id: `u-${unprocessablePage}`, full_name: `acme/u-${unprocessablePage}`,
+          url: `https://github.com/acme/u-${unprocessablePage}`, stars: 700,
+          reason: 'missing_description' as const,
+        }],
+        total: 46,
+        page: unprocessablePage,
+        page_size: pageSize,
+      },
+      retained: {
+        items: [{
+          repo_id: `r-${retainedPage}`, full_name: `acme/r-${retainedPage}`,
+          url: `https://github.com/acme/r-${retainedPage}`, stars: 650,
+          reason: 'not_found' as const,
+        }],
+        total: 61,
+        page: retainedPage,
+        page_size: pageSize,
+      },
+    }))
+    const { controller } = createController(api)
+
+    await controller.fetchGithubEnrichmentProjectPages()
+    await controller.goUnprocessableProjectsPage(2)
+    expect(api.fetchGithubEnrichmentProjectPages).toHaveBeenLastCalledWith({
+      unprocessablePage: 2, retainedPage: 1, pageSize: 15,
+    })
+    expect(controller.unprocessableProjectsPage.value).toBe(2)
+    expect(controller.retainedProjectsPage.value).toBe(1)
+
+    await controller.goRetainedProjectsPage(3)
+    expect(api.fetchGithubEnrichmentProjectPages).toHaveBeenLastCalledWith({
+      unprocessablePage: 2, retainedPage: 3, pageSize: 15,
+    })
+    expect(controller.unprocessableProjectsPage.value).toBe(2)
+    expect(controller.retainedProjectsPage.value).toBe(3)
+
+    await controller.fetchGithubEnrichmentStatus()
+    expect(controller.unprocessableProjectsPage.value).toBe(2)
+    expect(controller.retainedProjectsPage.value).toBe(3)
+  })
+
+  it('clamps enrichment detail pages after totals shrink', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchGithubEnrichmentProjectPages)
+      .mockResolvedValueOnce({
+        unprocessable: { items: [], total: 3, page: 4, page_size: 15 },
+        retained: { items: [], total: 31, page: 3, page_size: 15 },
+      })
+      .mockResolvedValueOnce({
+        unprocessable: { items: [{
+          repo_id: 'u-1', full_name: 'acme/u-1', url: 'https://github.com/acme/u-1',
+          stars: 600, reason: 'missing_description',
+        }], total: 3, page: 1, page_size: 15 },
+        retained: { items: [{
+          repo_id: 'r-3', full_name: 'acme/r-3', url: 'https://github.com/acme/r-3',
+          stars: 500, reason: 'lost_input',
+        }], total: 31, page: 3, page_size: 15 },
+      })
+    const { controller } = createController(api)
+
+    await controller.fetchGithubEnrichmentProjectPages(4, 3)
+
+    expect(api.fetchGithubEnrichmentProjectPages).toHaveBeenCalledTimes(2)
+    expect(api.fetchGithubEnrichmentProjectPages).toHaveBeenLastCalledWith({
+      unprocessablePage: 1, retainedPage: 3, pageSize: 15,
+    })
+    expect(controller.unprocessableProjectsPage.value).toBe(1)
+    expect(controller.retainedProjectsPage.value).toBe(3)
+  })
+
+  it('ignores stale enrichment detail page responses', async () => {
+    const api = createApi()
+    let resolveFirst!: (value: Awaited<ReturnType<MonitorApi['fetchGithubEnrichmentProjectPages']>>) => void
+    vi.mocked(api.fetchGithubEnrichmentProjectPages)
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({
+        unprocessable: { items: [], total: 30, page: 2, page_size: 15 },
+        retained: { items: [], total: 30, page: 1, page_size: 15 },
+      })
+    const { controller } = createController(api)
+
+    const first = controller.fetchGithubEnrichmentProjectPages(1, 1)
+    await controller.fetchGithubEnrichmentProjectPages(2, 1)
+    resolveFirst({
+      unprocessable: { items: [], total: 30, page: 1, page_size: 15 },
+      retained: { items: [], total: 30, page: 1, page_size: 15 },
+    })
+    await first
+
+    expect(controller.unprocessableProjectsPage.value).toBe(2)
+    expect(controller.loadingEnrichmentProjectPages.value).toBe(false)
   })
 
   it('fetches enrichment reasoning effort config and saves normalized edits once', async () => {

@@ -118,6 +118,15 @@ class GitHubProjectEnrichmentRepository(Protocol):
         self, *, min_stars: int = 500
     ) -> dict[str, Any]: ...
 
+    def list_github_project_enrichment_pages(
+        self,
+        *,
+        unprocessable_page: int = 1,
+        retained_page: int = 1,
+        page_size: int = 15,
+        min_stars: int = 500,
+    ) -> dict[str, Any]: ...
+
     def count_github_run_enrichment_candidates(
         self, *, channel: str, first_seen_after: str, min_stars: int = 500
     ) -> int: ...

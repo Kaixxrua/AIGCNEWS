@@ -33,6 +33,15 @@ class EnrichmentStatusReader(Protocol):
         min_stars: int = 500,
     ) -> dict[str, Any]: ...
 
+    def list_github_project_enrichment_pages(
+        self,
+        *,
+        unprocessable_page: int = 1,
+        retained_page: int = 1,
+        page_size: int = 15,
+        min_stars: int = 500,
+    ) -> dict[str, Any]: ...
+
 
 class GitHubCatalogTotalReader(Protocol):
     async def github_library_total(self) -> int: ...
@@ -106,6 +115,20 @@ class GitHubProjectRecommendationAdminService:
             else "该项目当前不是站长推荐。"
         )
         return RecommendationOutcome(message=message, result=result)
+
+    async def get_enrichment_pages(
+        self,
+        *,
+        unprocessable_page: int = 1,
+        retained_page: int = 1,
+        page_size: int = 15,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            self._enrichment_status.list_github_project_enrichment_pages,
+            unprocessable_page=unprocessable_page,
+            retained_page=retained_page,
+            page_size=page_size,
+        )
 
     async def get_enrichment_status(self) -> dict[str, Any]:
         status = await asyncio.to_thread(

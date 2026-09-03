@@ -99,14 +99,48 @@ describe('GithubUnprocessableProjectsPanel', () => {
     expect(wrapper.text()).toContain('保留 1 个')
   })
 
-  it('renders both sections when both kinds exist', () => {
+  it('renders both kinds as separate fixed-height scroll cards', () => {
     const wrapper = mountPanel({
       items: projects, total: 1,
       retainedItems: [retainedProjects[0]], retainedTotal: 1,
     })
 
+    const cards = wrapper.findAll('.enrichment-project-card')
+    expect(cards).toHaveLength(2)
+    expect(cards[0]!.attributes('data-testid')).toBe('unprocessable-project-card')
+    expect(cards[1]!.attributes('data-testid')).toBe('retained-project-card')
+    expect(cards.every(card => card.classes().includes('overflow-hidden'))).toBe(true)
+    expect(wrapper.findAll('.enrichment-project-table')).toHaveLength(2)
     expect(wrapper.text()).toContain('无法处理 1 个')
     expect(wrapper.text()).toContain('保留 1 个')
+  })
+
+  it('emits independent compact pagination targets', async () => {
+    const wrapper = mountPanel({
+      items: projects, total: 150, page: 5, totalPages: 10,
+      retainedItems: [retainedProjects[0]], retainedTotal: 120, retainedPage: 3, retainedTotalPages: 8,
+    })
+    const cards = wrapper.findAll('.enrichment-project-card')
+    const unprocessableButtons = cards[0]!.findAll('.monitor-pagination-btn')
+    const retainedButtons = cards[1]!.findAll('.monitor-pagination-btn')
+
+    expect(unprocessableButtons.map(button => button.text())).toEqual(['上一页', '3', '4', '5', '6', '7', '下一页'])
+    expect(retainedButtons.map(button => button.text())).toEqual(['上一页', '1', '2', '3', '4', '5', '下一页'])
+    await unprocessableButtons[unprocessableButtons.length - 1]!.trigger('click')
+    await retainedButtons[0]!.trigger('click')
+    expect(wrapper.emitted('go-page')).toEqual([[6]])
+    expect(wrapper.emitted('go-retained-page')).toEqual([[2]])
+  })
+
+  it('keeps pagination footer visible during loading and reports errors', () => {
+    const wrapper = mountPanel({
+      items: projects, total: 30, page: 2, totalPages: 2,
+      loading: true, error: 'detail page failed',
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('detail page failed')
+    expect(wrapper.text()).toContain('第 2 / 2 页 · 共 30 条')
+    expect(wrapper.findAll('.monitor-pagination-btn').every(button => button.attributes('disabled') !== undefined)).toBe(true)
   })
 
   it('does not render when both unprocessable and retained are empty', () => {
