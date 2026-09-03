@@ -77,6 +77,10 @@ const mountView = async () => {
         DashboardOverviewPanel: { template: '<div />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { template: '<div />' },
+        DashboardRadarCard: {
+          props: ['seedDate', 'live'],
+          template: '<div class="radar-card-stub" :data-seed="seedDate" :data-live="live" />',
+        },
         RollingNumber: { template: '<span />' },
       },
     },
@@ -98,6 +102,14 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('mt-auto')
     expect(wrapper.get('a[href="/dsh"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
+
+    // 侧栏末端雷达装饰卡：flex-1 吸满剩余高度使底线对齐榜单；接收当前查看日期作光点种子
+    const radar = wrapper.get('.radar-card-stub')
+    expect(radar.classes()).toContain('flex-1')
+    expect(radar.attributes('data-seed')).toBe('2026-08-19')
+    expect(radar.attributes('data-live')).toBe('true')
+    const aside = wrapper.get('aside')
+    expect(aside.element.lastElementChild).toBe(radar.element)
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
     expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
