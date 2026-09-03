@@ -29,21 +29,21 @@ import {
   villageSkyline,
 } from './textures'
 
-/** 相机与舞台几何（世界单位，全程一致）。浅俯角长焦：地平线落在屏顶下 ~20%，天空/远山可见 */
+/** 相机与舞台几何（世界单位，全程一致）。俯角 11.3° 长焦：地平线约在屏顶下 16%，地面纵深铺开 */
 export const ENV_CAMERA = {
   fov: 30,
   near: 0.5,
   far: 80,
-  position: new THREE.Vector3(0, 3.4, 15),
-  lookAt: new THREE.Vector3(0, 1.0, 0),
+  position: new THREE.Vector3(0, 3.8, 15),
+  lookAt: new THREE.Vector3(0, 0.8, 0),
 } as const
 
-/** 纵深五带的 z 坐标（近大远小）。grassFg 贴近相机底缘（底缘视线落地 z≈7.4） */
+/** 纵深五带的 z 坐标（近大远小）。grassFg 贴近相机底缘（底缘视线落地 z≈7.3） */
 export const STAGE_Z = {
   grassFg: 6.5,
-  walkNear: 0.2,
-  path: -0.5,
-  walkFar: -1.2,
+  walkNear: 1.8,
+  path: -0.6,
+  walkFar: -2.6,
   lamp: -2.4,
   bush: -6.5,
   treeLine: -14,
@@ -366,20 +366,26 @@ export const createEnvStage = (): EnvStage => {
   const bushTextureB = rgbaToTexture(bushBlob(0xd45, 24, 16))
   const rockTexture = rgbaToTexture(rockChunk(0xe55, 20, 14))
   // AI 素材为近方团块（灌木圆冠/岩石），尺寸收敛到贴地灌木量级；
-  // 底部埋入地面 16%（圆底不悬空）。两棵中景树（橡树/白杨，替换精灵层
-  // DSL 棒棒糖树）以树干贴地为准只浅埋 3%；启动占位沿用灌木团块，
-  // AI 素材解码后换装并重算纵横比
-  const midProps: Array<{ texture: THREE.CanvasTexture | null; ratio: number; z: number; h: number; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; bury?: number }> = [
+  // 底部埋入地面 16%（圆底不悬空）。中景树（橡树/白杨）以树干贴地为准只浅埋 3%；
+  // 树高 3.3–4.2 世界单位 ≈ 角色的 2.5–3 倍（八方式近景锚点），第三棵镜像复用
+  // 橡树素材（scale.x 取负镜像防重复感）。启动占位沿用灌木团块，AI 素材解码后
+  // 换装并重算纵横比（镜像在换装时保留）
+  const midProps: Array<{ texture: THREE.CanvasTexture | null; ratio: number; z: number; h: number; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; bury?: number; mirror?: boolean }> = [
     { texture: bushTextureA, ratio: -0.46, z: -7.5, h: 0.78, slot: 'bush' },
     { texture: bushTextureB, ratio: -0.2, z: -6.2, h: 0.6, slot: 'bush' },
     { texture: rockTexture, ratio: 0.28, z: -5.6, h: 0.5, slot: 'rock' },
     { texture: bushTextureA, ratio: 0.48, z: -8.2, h: 0.92, slot: 'bush' },
     { texture: bushTextureB, ratio: 0.08, z: -9.0, h: 0.68, slot: 'bush' },
     { texture: rockTexture, ratio: -0.34, z: -4.6, h: 0.42, slot: 'rock' },
-    { texture: bushTextureA, ratio: -0.4, z: -4.5, h: 2.8, slot: 'treeA', bury: 0.03 },
-    { texture: bushTextureB, ratio: 0.44, z: -3.2, h: 2.4, slot: 'treeB', bury: 0.03 },
+    // 行走带近缘的灌木/岩石（z -2.2..-3.0，角色近景参照物）
+    { texture: bushTextureB, ratio: -0.62, z: -2.8, h: 0.55, slot: 'bush' },
+    { texture: rockTexture, ratio: 0.58, z: -2.2, h: 0.45, slot: 'rock' },
+    { texture: bushTextureA, ratio: 0.72, z: -3.0, h: 0.62, slot: 'bush' },
+    { texture: bushTextureA, ratio: -0.4, z: -4.5, h: 4.2, slot: 'treeA', bury: 0.03 },
+    { texture: bushTextureB, ratio: 0.44, z: -3.2, h: 3.3, slot: 'treeB', bury: 0.03 },
+    { texture: bushTextureA, ratio: 0.8, z: -6.5, h: 3.0, slot: 'treeA', bury: 0.03, mirror: true },
   ]
-  const midPropMeshes: Array<{ mesh: THREE.Mesh; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; h: number }> = []
+  const midPropMeshes: Array<{ mesh: THREE.Mesh; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; h: number; mirror: boolean }> = []
   for (const prop of midProps) {
     if (!prop.texture) continue
     track(prop.texture)
@@ -389,10 +395,10 @@ export const createEnvStage = (): EnvStage => {
     palette.register(material.color, tintFromKey('treeLeaf'))
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     const width = (prop.texture.image.width / prop.texture.image.height) * prop.h
-    mesh.scale.set(width, prop.h, 1)
+    mesh.scale.set(prop.mirror ? -width : width, prop.h, 1)
     mesh.position.set(0, prop.h / 2 - prop.h * (prop.bury ?? 0.16), prop.z)
     billboards.push({ mesh, ratio: prop.ratio, z: prop.z, widthFactor: 0 })
-    midPropMeshes.push({ mesh, slot: prop.slot, h: prop.h })
+    midPropMeshes.push({ mesh, slot: prop.slot, h: prop.h, mirror: prop.mirror ?? false })
     scene.add(mesh)
   }
 
@@ -426,7 +432,7 @@ export const createEnvStage = (): EnvStage => {
     pathMesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     pathMesh.rotation.x = -Math.PI / 2
     pathMesh.position.set(0, 0.02, STAGE_Z.path)
-    pathMesh.scale.set(1, 2.8, 1)
+    pathMesh.scale.set(1, 3.8, 1)
     pathMesh.renderOrder = 1
     scene.add(pathMesh)
   }
@@ -658,7 +664,8 @@ export const createEnvStage = (): EnvStage => {
                 ? art.treeA
                 : art.treeB
         swap(prop.mesh.material as THREE.MeshBasicMaterial, tex)
-        prop.mesh.scale.x = texAspect(tex) * prop.h
+        const w = texAspect(tex) * prop.h
+        prop.mesh.scale.x = prop.mirror ? -w : w
       }
       // 换装后按当前视口重算平铺（resize 可能已在解码前跑过）
       if (lastCss.w > 0) resize(lastCss.w, lastCss.h)

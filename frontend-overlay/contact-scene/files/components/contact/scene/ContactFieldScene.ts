@@ -183,6 +183,8 @@ const boot = (
   let targetDay = uDay
   /** 虚拟像素 → 世界单位（焦点深度可视半宽 / 虚拟半宽） */
   let worldPerVirtual = 0.05
+  /** 焦点深度的 美术像素/世界单位（resize 重算；精灵随纵深透视缩放的基准） */
+  let artPerWorldFocus = 1
   const pointer = { x: 0, y: 0 }
   const pointerTarget = { x: 0, y: 0 }
   let elapsed = 0
@@ -242,8 +244,9 @@ const boot = (
 
   /* ── 中景树地面影（树本体 = 环境层 AI billboard，位置镜像 envStage 槽位） ── */
   const treeShadows: TreeShadowVisual[] = [
-    { ratio: -0.4, z: -4.5, shadowScale: 1.5 },
-    { ratio: 0.44, z: -3.2, shadowScale: 1.3 },
+    { ratio: -0.4, z: -4.5, shadowScale: 1.9 },
+    { ratio: 0.44, z: -3.2, shadowScale: 1.5 },
+    { ratio: 0.8, z: -6.5, shadowScale: 1.3 },
   ].map((spec) => ({ ...spec, shadow: env.acquireShadow() }))
 
   /* ── 角色 ── */
@@ -336,11 +339,21 @@ const boot = (
   )
   const butterflyState = { x: 0, fleeUntil: -1, fleeDir: 1 as 1 | -1 }
 
+  /** 精灵在当前深度的透视缩放：该深度 美术像素/世界单位 ÷ 焦点深度基准（钳制防极端视口失真） */
+  const depthScale = (worldX: number, z: number, artYGround: number): number => {
+    const oneUp = worldToArt(env.camera, sprites.grid, scratchWorld.set(worldX, 1, z))
+    const k = (oneUp.y - artYGround) / artPerWorldFocus
+    return Math.min(1.35, Math.max(0.7, k))
+  }
+
   /* ── 摆位：静态道具逐帧随相机视差重投影 ── */
   const placeLamp = (lamp: LampVisual): void => {
     const art = projectFeet(lamp.worldX, STAGE_Z.lamp)
+    const k = depthScale(lamp.worldX, STAGE_Z.lamp, art.y)
     lamp.sprite.setPosition(art.x, art.y)
     lamp.sprite.setOrder(art.y, SPRITE_LAYER.props)
+    // 灯柱精灵随所在深度缩放（与角色同一透视规律）；无翻转，直写 scale
+    lamp.sprite.mesh.scale.set(lampSize.width * k, lampSize.height * k, 1)
     env.placeShadow(lamp.shadow, lamp.worldX, STAGE_Z.lamp, 0.7)
   }
 
@@ -391,9 +404,17 @@ const boot = (
     visual.sprite.setOrder(art.y, SPRITE_LAYER.actors)
     env.placeShadow(visual.shadow, worldX, visual.z, visual.shadowScale)
 
-    // 命中矩形（≥18 美术像素，底部对齐脚部锚点；跟随当前帧 cell 尺寸）
-    const hitW = Math.max(visual.binding.frameW, 18)
-    const hitH = Math.max(visual.binding.frameH, 18)
+    // 透视缩放：同一行走带上近大远小（八方式地面纵深的关键信号）。
+    // binding 的 applyScale 只写未缩放 cell 尺寸，这里在其后覆写为 cell×zScale
+    // （含朝向镜像的负 x），脚底锚点由几何 translate 保证不动
+    const zScale = depthScale(worldX, visual.z, art.y)
+    const scaledW = visual.binding.frameW * zScale
+    const scaledH = visual.binding.frameH * zScale
+    visual.sprite.mesh.scale.set(snapshot.facing > 0 ? -scaledW : scaledW, scaledH, 1)
+
+    // 命中矩形（≥18 美术像素，底部对齐脚部锚点；跟随当前帧 cell 尺寸与透视缩放）
+    const hitW = Math.max(scaledW, 18)
+    const hitH = Math.max(scaledH, 18)
     const css = artRectToCss(sprites.grid, art.x - hitW / 2, art.y, hitW, hitH)
     visual.hitRect.left = css.left
     visual.hitRect.top = css.top
@@ -410,8 +431,8 @@ const boot = (
       // 弹出动画：120ms 内 0.75 → 1（气泡永不翻转，直接改 mesh.scale）
       const pop = now - visual.bubbleShownAt < 0.12 ? 0.75 : 1
       visual.bubble.mesh.scale.set(bubbleSize.width * pop, bubbleSize.height * pop, 1)
-      const bx = art.x + snapshot.facing * 4
-      const by = art.y + visual.binding.frameH + 2
+      const bx = art.x + snapshot.facing * 4 * zScale
+      const by = art.y + scaledH + 2
       visual.bubble.setPosition(bx, by)
       visual.bubble.setOrder(by, SPRITE_LAYER.bubbles)
     } else {
@@ -543,15 +564,17 @@ const boot = (
     pipeline.setSize(cssWidth, cssHeight, sprites.grid)
     // 虚拟像素 → 世界单位换算率（焦点深度 = 行走带中心）
     worldPerVirtual = visibleHalfWidthAt(env.camera, FOCUS_DISTANCE) / (sprites.grid.lowW / 2)
+    // 焦点深度换算基准（精灵透视缩放的 1.0 点）
+    const focusGround = worldToArt(env.camera, sprites.grid, scratchWorld.set(0, 0, STAGE_Z.path))
+    const focusUp = worldToArt(env.camera, sprites.grid, scratchWorld.set(0, 1, STAGE_Z.path))
+    artPerWorldFocus = Math.max(1, focusUp.y - focusGround.y)
     // 灯的世界/事件域坐标（布局比例 × 该深度可视宽，与视口解耦）
     for (const lamp of lamps) {
       lamp.worldX = env.worldXAt(lamp.ratio, STAGE_Z.lamp)
       lamp.virtualX = lamp.worldX / worldPerVirtual
-      // 环境层 halo/灯芯对齐精灵灯笼中心（脚部锚点上 33 美术像素）：美术像素/世界单位随视口而变
-      const ground = worldToArt(env.camera, sprites.grid, scratchWorld.set(lamp.worldX, 0, STAGE_Z.lamp))
-      const oneUp = worldToArt(env.camera, sprites.grid, scratchWorld.set(lamp.worldX, 1, STAGE_Z.lamp))
-      const artPerWorld = oneUp.y - ground.y
-      if (artPerWorld > 0) lamp.env.setHeadWorldY(33 / artPerWorld)
+      // 环境层 halo/灯芯对齐精灵灯笼中心：灯笼在脚部锚点上 33 美术像素（灯柱精灵
+      // 已按所在深度缩放，世界高 = 33×k/artPerWorld(lampZ) = 33/焦点基准）
+      lamp.env.setHeadWorldY(33 / artPerWorldFocus)
     }
     // 循环停止时（reduced-motion / 离屏 / 首帧前）重绘静帧，resize 不留旧画面
     if (!running) renderOnce()
@@ -663,25 +686,27 @@ const boot = (
     .then((castArt) => {
       if (disposed) return
       const texture = castArt.texture
-      const knight = spawnActor(castArt.knight, texture, -0.18, -0.35, 0.75)
-      const scholarM = spawnActor(castArt.scholarM, texture, 0.24, -0.62, 0.85, {
+      // 纵深摆位（八方地面读法）：旅人+狗在近景、猫前景游走、骑士/剑士
+      // 居中带、双学者远带贴近灯列；透视缩放由 syncActor 按 z 逐帧施加
+      const knight = spawnActor(castArt.knight, texture, -0.18, -1.0, 0.75)
+      const scholarM = spawnActor(castArt.scholarM, texture, 0.24, -2.1, 0.85, {
         walkSpeed: 16,
       })
-      const swordsman = spawnActor(castArt.swordsman, texture, 0.13, -0.48, 1.0, {
+      const swordsman = spawnActor(castArt.swordsman, texture, 0.13, -0.6, 1.0, {
         walkSpeed: 18,
       })
-      const cloak = spawnActor(castArt.cloak, texture, -0.36, -0.28, 0.85)
-      const scholarF = spawnActor(castArt.scholarF, texture, -0.02, -0.55, 0.8, {
+      const cloak = spawnActor(castArt.cloak, texture, -0.36, 1.4, 0.85)
+      const scholarF = spawnActor(castArt.scholarF, texture, -0.02, -1.6, 0.8, {
         walkSpeed: 17,
       })
-      const cat = spawnActor(castArt.cat, texture, 0.34, -0.15, 0.5, {
+      const cat = spawnActor(castArt.cat, texture, 0.34, 0.3, 0.5, {
         walkSpeed: 20,
         fleeSpeed: 70,
         idleFrameMs: 420,
         walkFrameMs: 160,
         reactFrameMs: 110,
       })
-      const dog = spawnActor(castArt.dog, texture, -0.06, -0.4, 0.6, {
+      const dog = spawnActor(castArt.dog, texture, -0.06, 1.9, 0.6, {
         walkSpeed: 24,
         idleFrameMs: 360,
         reactFrameMs: 200,
