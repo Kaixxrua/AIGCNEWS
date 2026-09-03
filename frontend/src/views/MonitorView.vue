@@ -147,7 +147,7 @@ onUnmounted(dispose)
 
 <template>
   <div class="monitor-page monitor-view flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex flex-col gap-5">
+    <div class="monitor-content flex min-h-0 flex-1 flex-col gap-5 overflow-hidden">
 
     <!-- 页头 -->
     <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -475,7 +475,7 @@ onUnmounted(dispose)
 .monitor-page {
   position: relative;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px 24px 64px;
   color: var(--projects-accent);
   background: var(--projects-paper);

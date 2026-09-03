@@ -1188,16 +1188,25 @@
 /* ═══ 二级导航（桌面：大类可折叠两级树 / 移动端：叶子摊平横向 chips） ═══ */
 .monitor-page .monitor-body {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 24px;
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .monitor-page .monitor-section-panels {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .monitor-page .monitor-nav {
@@ -1206,8 +1215,11 @@
   gap: 10px;
   width: 184px;
   flex-shrink: 0;
-  position: sticky;
-  top: 24px;
+  align-self: stretch;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  position: static;
 }
 
 .monitor-page .monitor-nav-group {
@@ -1334,13 +1346,20 @@
 
   .monitor-page .monitor-section-panels {
     width: 100%;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .monitor-page .monitor-nav {
     flex-direction: row;
     flex-wrap: nowrap;
     width: 100%;
+    align-self: auto;
+    height: auto;
+    max-height: none;
     overflow-x: auto;
+    overflow-y: hidden;
     padding-bottom: 4px;
     position: static;
     scrollbar-width: none;
