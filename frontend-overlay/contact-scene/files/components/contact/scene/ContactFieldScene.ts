@@ -5,6 +5,9 @@
  * 架构：环境层（透视相机真深度 + bokeh 景深 + bloom，见 env/envStage）
  * 与精灵层（低分整数美术格，见 spriteStage）由 replicaPipeline 双通道合成；
  * 本层只回答「谁在哪、何时演什么」：
+ * - 卡司为 AI 抽卡原图经离线管线打包的图集（cast.png + castManifest.ts，见 spriteArt），
+ *   异步解码完成后登场（环境层/道具/鸟蝶先行上屏；加载失败静默降级为无卡司场景），
+ *   播帧 = 重写精灵 quad 克隆几何的 UV，全场共享一次图集纹理上传；
  * - 角色控制器域沿用旧正交版的虚拟像素语义（±(lowW/2−26)、26px/s、
  *   startXRatio×lowW），经 k = 焦点深度可视半宽/(lowW/2) 映射成世界单位，
  *   再投影回整数美术格摆放精灵——actors/events 两纯模块零改动；
@@ -20,7 +23,7 @@ import { FieldInteractions, type FieldInteractionTarget } from './interactions'
 import { PaletteRegistry } from './palette'
 import { computePixelScale } from './pixelPipeline'
 import { createReplicaPipeline, shouldDegrade, type ReplicaPipeline } from './replicaPipeline'
-import { disposeUnitPlane, FrameSet, frameToTexture, validateFrame, type PixelFrame } from './sprites'
+import { disposeUnitPlane, FrameSet, frameToTexture, validateFrame } from './sprites'
 import { createSpriteStage, SPRITE_LAYER, type SpriteHandle } from './spriteStage'
 import {
   createEnvStage,
@@ -34,17 +37,14 @@ import {
   BIRD,
   BUBBLES,
   BUTTERFLY,
-  CAT,
-  CLOAK,
-  DOG,
-  KNIGHT,
   LAMP_POST,
-  SCHOLAR_F,
-  SCHOLAR_M,
-  SWORDSMAN,
   TREE_LEAF_A,
   TREE_LEAF_B,
   TREE_TRUNK,
+  bindCastSprite,
+  loadCastArt,
+  type CastActorArt,
+  type CastSpriteBinding,
 } from './spriteArt'
 
 /** 主题切换扫掠时长（秒），恒定速率 */
@@ -84,16 +84,12 @@ export interface FieldSceneHandle {
   readonly running: boolean
 }
 
-interface ActorFrames {
-  idle: PixelFrame[]
-  walk: PixelFrame[]
-  react: PixelFrame[]
-}
-
 interface ActorVisual {
   controller: ActorController
   sprite: SpriteHandle
-  frames: { idle: FrameSet; walk: FrameSet; react: FrameSet }
+  /** 图集帧绑定（UV 播帧 + 朝向镜像 + 跨动作 cell 尺寸同步） */
+  binding: CastSpriteBinding
+  frames: CastActorArt
   /** 行走带内的世界深度（决定投影缩放的唯一纵深量） */
   z: number
   shadowScale: number
@@ -192,6 +188,8 @@ const boot = (
   let lastFrameAt: number | null = null
   let rafId: number | null = null
   let running = false
+  /** dispose 后图集才解码完成时禁止再生成卡司（材质/几何会漏进已销毁的舞台） */
+  let disposed = false
   // 自适应降级状态：EMA 帧耗（未钳制的真实 RAF 间隔）与已见帧数
   let frameEmaMs = 0
   let framesSeen = 0
@@ -269,9 +267,17 @@ const boot = (
 
   /* ── 角色 ── */
   const actors: ActorVisual[] = []
+  /** 卡司名册：图集解码完成后填充；事件/点灯回调须防御卡司未登场（或加载失败） */
+  const cast: Partial<
+    Record<
+      'knight' | 'scholarM' | 'swordsman' | 'cloak' | 'scholarF' | 'cat' | 'dog',
+      ActorVisual
+    >
+  > = {}
 
   const spawnActor = (
-    art: ActorFrames,
+    art: CastActorArt,
+    castTexture: THREE.Texture,
     startXRatio: number,
     z: number,
     shadowScale: number,
@@ -283,19 +289,22 @@ const boot = (
       reactFrameMs?: number
     } = {},
   ): ActorVisual => {
-    const idle = new FrameSet(art.idle)
-    const walk = new FrameSet(art.walk)
-    const react = new FrameSet(art.react)
-    disposables.push(idle, walk, react)
-    const sprite = sprites.addSprite(idle.textureAt(0), idle.width, idle.height, 'actorNightTint')
+    const sprite = sprites.addSprite(
+      castTexture,
+      art.idle.width,
+      art.idle.height,
+      'actorNightTint',
+    )
+    const binding = bindCastSprite(sprite, art.idle.frameAt(0))
+    disposables.push(binding)
     const bubble = sprites.addSprite(bubbleTextures.dots, bubbleSize.width, bubbleSize.height)
     bubble.setVisible(false)
     const shadow = env.acquireShadow()
 
     const controller = new ActorController(0, {
-      idleFrameCount: idle.frameCount,
-      walkFrameCount: walk.frameCount,
-      reactFrameCount: react.frameCount,
+      idleFrameCount: art.idle.frameCount,
+      walkFrameCount: art.walk.frameCount,
+      reactFrameCount: art.react.frameCount,
       walkSpeed: spec.walkSpeed,
       fleeSpeed: spec.fleeSpeed,
       idleFrameMs: spec.idleFrameMs,
@@ -308,7 +317,8 @@ const boot = (
     const visual: ActorVisual = {
       controller,
       sprite,
-      frames: { idle, walk, react },
+      binding,
+      frames: art,
       z,
       shadowScale,
       shadow,
@@ -398,8 +408,8 @@ const boot = (
         : snapshot.state === 'react'
           ? visual.frames.react
           : visual.frames.idle
-    visual.sprite.setFrame(frames.textureAt(snapshot.frame))
-    visual.sprite.setFlip(snapshot.facing < 0)
+    visual.binding.setFrame(frames.frameAt(snapshot.frame))
+    visual.binding.setFlip(snapshot.facing < 0)
 
     const worldX = snapshot.x * worldPerVirtual
     const art = projectFeet(worldX, visual.z)
@@ -407,9 +417,9 @@ const boot = (
     visual.sprite.setOrder(art.y, SPRITE_LAYER.actors)
     env.placeShadow(visual.shadow, worldX, visual.z, visual.shadowScale)
 
-    // 命中矩形（≥18 美术像素，底部对齐脚部锚点）
-    const hitW = Math.max(visual.sprite.artW, 18)
-    const hitH = Math.max(visual.sprite.artH, 18)
+    // 命中矩形（≥18 美术像素，底部对齐脚部锚点；跟随当前帧 cell 尺寸）
+    const hitW = Math.max(visual.binding.frameW, 18)
+    const hitH = Math.max(visual.binding.frameH, 18)
     const css = artRectToCss(sprites.grid, art.x - hitW / 2, art.y, hitW, hitH)
     visual.hitRect.left = css.left
     visual.hitRect.top = css.top
@@ -427,7 +437,7 @@ const boot = (
       const pop = now - visual.bubbleShownAt < 0.12 ? 0.75 : 1
       visual.bubble.mesh.scale.set(bubbleSize.width * pop, bubbleSize.height * pop, 1)
       const bx = art.x + snapshot.facing * 4
-      const by = art.y + visual.sprite.artH + 2
+      const by = art.y + visual.binding.frameH + 2
       visual.bubble.setPosition(bx, by)
       visual.bubble.setOrder(by, SPRITE_LAYER.bubbles)
     } else {
@@ -498,6 +508,8 @@ const boot = (
       lamp.fadeOutAt = null
     })
     const mid = lamps[1]
+    const cloak = cast.cloak
+    if (!cloak) return
     if (mid) cloak.controller.walkTo(mid.virtualX - 5)
     cloak.controller.showBubble(now + 1.0, 'note', 1200)
   }
@@ -513,6 +525,8 @@ const boot = (
   const handleEvent = (kind: string, now: number): void => {
     switch (kind) {
       case 'kid-merchant-meet': {
+        const { knight, swordsman } = cast
+        if (!knight || !swordsman) break
         knight.controller.walkTo(swordsman.controller.renderX - 12)
         swordsman.controller.faceTowards(knight.controller.renderX)
         swordsman.controller.showBubble(now + 1.4, 'dots', 1300)
@@ -522,18 +536,25 @@ const boot = (
       }
       case 'elder-lamp-visit': {
         const lamp = lamps[0]
+        const scholarM = cast.scholarM
+        if (!scholarM) break
         if (lamp) scholarM.controller.walkTo(lamp.virtualX - 6)
         scholarM.controller.showBubble(now + 2.2, 'dots', 1400)
         break
       }
       case 'cat-chase-butterfly': {
         // 蝴蝶域 = 中心坐标系（±lowW/2），与猫控制器同域
+        const cat = cast.cat
+        if (!cat) break
         cat.controller.walkTo(butterflyState.x)
         butterflyState.fleeUntil = now + 1.6
         butterflyState.fleeDir = butterflyState.x > cat.controller.renderX ? 1 : -1
         break
       }
       case 'dog-follow-traveler': {
+        const dog = cast.dog
+        const cloak = cast.cloak
+        if (!dog || !cloak) break
         dog.controller.walkTo(cloak.controller.renderX + 8 * cloak.controller.facingSign)
         break
       }
@@ -661,46 +682,70 @@ const boot = (
     pipeline.render()
   }
 
-  /* ── 初始化（先 resize 定美术格与换算率，再 spawn 让起始 x 落在真实域内） ── */
+  /* ── 初始化（先 resize 定美术格与换算率；卡司待图集解码完成再登场） ── */
   resize(initialWidth, initialHeight)
 
-  const knight = spawnActor(KNIGHT, -0.18, -0.35, 0.75)
-  const scholarM = spawnActor(SCHOLAR_M, 0.24, -0.62, 0.85, { walkSpeed: 16 })
-  const swordsman = spawnActor(SWORDSMAN, 0.13, -0.48, 1.0, { walkSpeed: 18 })
-  const cloak = spawnActor(CLOAK, -0.36, -0.28, 0.85)
-  const scholarF = spawnActor(SCHOLAR_F, -0.02, -0.55, 0.8, { walkSpeed: 17 })
-  const cat = spawnActor(CAT, 0.34, -0.15, 0.5, {
-    walkSpeed: 20,
-    fleeSpeed: 70,
-    idleFrameMs: 420,
-    walkFrameMs: 160,
-    reactFrameMs: 110,
-  })
-  const dog = spawnActor(DOG, -0.06, -0.4, 0.6, {
-    walkSpeed: 24,
-    idleFrameMs: 360,
-    reactFrameMs: 200,
-  })
+  void loadCastArt()
+    .then((castArt) => {
+      if (disposed) return
+      const texture = castArt.texture
+      const knight = spawnActor(castArt.knight, texture, -0.18, -0.35, 0.75)
+      const scholarM = spawnActor(castArt.scholarM, texture, 0.24, -0.62, 0.85, {
+        walkSpeed: 16,
+      })
+      const swordsman = spawnActor(castArt.swordsman, texture, 0.13, -0.48, 1.0, {
+        walkSpeed: 18,
+      })
+      const cloak = spawnActor(castArt.cloak, texture, -0.36, -0.28, 0.85)
+      const scholarF = spawnActor(castArt.scholarF, texture, -0.02, -0.55, 0.8, {
+        walkSpeed: 17,
+      })
+      const cat = spawnActor(castArt.cat, texture, 0.34, -0.15, 0.5, {
+        walkSpeed: 20,
+        fleeSpeed: 70,
+        idleFrameMs: 420,
+        walkFrameMs: 160,
+        reactFrameMs: 110,
+      })
+      const dog = spawnActor(castArt.dog, texture, -0.06, -0.4, 0.6, {
+        walkSpeed: 24,
+        idleFrameMs: 360,
+        reactFrameMs: 200,
+      })
+      cast.knight = knight
+      cast.scholarM = scholarM
+      cast.swordsman = swordsman
+      cast.cloak = cloak
+      cast.scholarF = scholarF
+      cast.cat = cat
+      cast.dog = dog
 
-  if (!opts.reducedMotion) {
-    for (const visual of [knight, scholarM, swordsman, cloak, scholarF]) {
-      visual.target.onHover = (point) => {
-        visual.controller.faceTowards(point.x / worldPerVirtual)
-        visual.controller.react(elapsed, 600, rng() < 0.5 ? 'dots' : 'note')
+      if (!opts.reducedMotion) {
+        for (const visual of [knight, scholarM, swordsman, cloak, scholarF]) {
+          visual.target.onHover = (point) => {
+            visual.controller.faceTowards(point.x / worldPerVirtual)
+            visual.controller.react(elapsed, 600, rng() < 0.5 ? 'dots' : 'note')
+          }
+          visual.target.onPress = (point) => {
+            visual.controller.faceTowards(point.x / worldPerVirtual)
+            visual.controller.react(elapsed, 800, 'exclaim')
+          }
+          interactions.register(visual.target)
+        }
+        cat.target.onHover = () => cat.controller.react(elapsed, 500, 'dots')
+        cat.target.onPress = (point) => cat.controller.fleeFrom(point.x / worldPerVirtual, elapsed)
+        interactions.register(cat.target)
+        dog.target.onHover = () => dog.controller.showBubble(elapsed, 'note', 900)
+        dog.target.onPress = () => dog.controller.react(elapsed, 600, 'dots')
+        interactions.register(dog.target)
       }
-      visual.target.onPress = (point) => {
-        visual.controller.faceTowards(point.x / worldPerVirtual)
-        visual.controller.react(elapsed, 800, 'exclaim')
-      }
-      interactions.register(visual.target)
-    }
-    cat.target.onHover = () => cat.controller.react(elapsed, 500, 'dots')
-    cat.target.onPress = (point) => cat.controller.fleeFrom(point.x / worldPerVirtual, elapsed)
-    interactions.register(cat.target)
-    dog.target.onHover = () => dog.controller.showBubble(elapsed, 'note', 900)
-    dog.target.onPress = () => dog.controller.react(elapsed, 600, 'dots')
-    interactions.register(dog.target)
-  }
+
+      // 静帧模式（reduced-motion/离屏首帧）补绘一帧让卡司立刻可见
+      if (!running) renderOnce()
+    })
+    .catch(() => {
+      // 图集加载失败：环境层/道具/鸟蝶仍在运行，静默降级为无卡司场景
+    })
 
   placeButterfly(0)
   env.setDay(uDay)
@@ -730,6 +775,7 @@ const boot = (
     },
     dispose() {
       stop()
+      disposed = true
       for (const disposable of disposables.splice(0)) disposable.dispose()
       pipeline.renderer.forceContextLoss()
       disposeUnitPlane()

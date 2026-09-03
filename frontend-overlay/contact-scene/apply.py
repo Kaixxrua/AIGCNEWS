@@ -15,7 +15,9 @@ OVERLAY_ROOT = Path(__file__).parent / 'files'
 FILES = [
     'components/contact/scene/spriteArt.ts',
     'components/contact/scene/spriteArt.test.ts',
+    'components/contact/scene/castManifest.ts',
     'components/contact/scene/ContactFieldScene.ts',
+    'components/contact/scene/assets/cast.png',
 ]
 
 
