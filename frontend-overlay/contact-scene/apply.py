@@ -18,6 +18,19 @@ FILES = [
     'components/contact/scene/castManifest.ts',
     'components/contact/scene/ContactFieldScene.ts',
     'components/contact/scene/assets/cast.png',
+    'components/contact/scene/env/envStage.ts',
+    'components/contact/scene/env/envArt.ts',
+    'components/contact/scene/assets/env/grass.webp',
+    'components/contact/scene/assets/env/path.webp',
+    'components/contact/scene/assets/env/hills.webp',
+    'components/contact/scene/assets/env/treeline.webp',
+    'components/contact/scene/assets/env/village.webp',
+    'components/contact/scene/assets/env/village-windows.webp',
+    'components/contact/scene/assets/env/bush.webp',
+    'components/contact/scene/assets/env/rock.webp',
+    'components/contact/scene/assets/env/treeA.webp',
+    'components/contact/scene/assets/env/treeB.webp',
+    'components/contact/scene/assets/env/fggrass.webp',
 ]
 
 

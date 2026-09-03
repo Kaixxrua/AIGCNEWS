@@ -38,14 +38,12 @@ import {
   BUBBLES,
   BUTTERFLY,
   LAMP_POST,
-  TREE_LEAF_A,
-  TREE_LEAF_B,
-  TREE_TRUNK,
   bindCastSprite,
   loadCastArt,
   type CastActorArt,
   type CastSpriteBinding,
 } from './spriteArt'
+import { loadEnvArt } from './env/envArt'
 
 /** 主题切换扫掠时长（秒），恒定速率 */
 export const DAY_SWEEP_SECONDS = 1.8
@@ -116,11 +114,14 @@ interface LampVisual {
   fadeOutAt: number | null
 }
 
-interface TreeVisual {
+/**
+ * 中景树（私有 overlay）：本体是环境层 AI 纹理 billboard（见 envStage），
+ * 精灵层 DSL 干/冠已退役；这里只保留地面方向影，位置须与 envStage 的
+ * 树槽位 ratio/z 一致
+ */
+interface TreeShadowVisual {
   ratio: number
   z: number
-  trunk: SpriteHandle
-  canopy: SpriteHandle
   shadow: THREE.Mesh
   shadowScale: number
 }
@@ -239,31 +240,11 @@ const boot = (
     })
   }
 
-  /* ── 道具：近树 ×2（精灵层干+冠，环境层方向影；冠层可罩住角色） ── */
-  const trunkSize = validateFrame(TREE_TRUNK)
-  const trunkTexture = frameToTexture(TREE_TRUNK)
-  if (!trunkTexture) throw new Error('Canvas 2D 不可用')
-  disposables.push(trunkTexture)
-  const canopySize = validateFrame(TREE_LEAF_A)
-
-  const trees: TreeVisual[] = [
-    { ratio: -0.4, z: -4.5, leaf: TREE_LEAF_A, shadowScale: 1.5 },
-    { ratio: 0.44, z: -3.2, leaf: TREE_LEAF_B, shadowScale: 1.3 },
-  ].map((spec) => {
-    const trunk = sprites.addSprite(trunkTexture, trunkSize.width, trunkSize.height, 'treeTrunk')
-    const leafTexture = frameToTexture(spec.leaf)
-    if (!leafTexture) throw new Error('Canvas 2D 不可用')
-    disposables.push(leafTexture)
-    const canopy = sprites.addSprite(leafTexture, canopySize.width, canopySize.height, 'treeLeaf')
-    return {
-      ratio: spec.ratio,
-      z: spec.z,
-      trunk,
-      canopy,
-      shadow: env.acquireShadow(),
-      shadowScale: spec.shadowScale,
-    }
-  })
+  /* ── 中景树地面影（树本体 = 环境层 AI billboard，位置镜像 envStage 槽位） ── */
+  const treeShadows: TreeShadowVisual[] = [
+    { ratio: -0.4, z: -4.5, shadowScale: 1.5 },
+    { ratio: 0.44, z: -3.2, shadowScale: 1.3 },
+  ].map((spec) => ({ ...spec, shadow: env.acquireShadow() }))
 
   /* ── 角色 ── */
   const actors: ActorVisual[] = []
@@ -363,20 +344,11 @@ const boot = (
     env.placeShadow(lamp.shadow, lamp.worldX, STAGE_Z.lamp, 0.7)
   }
 
-  const placeTree = (tree: TreeVisual): void => {
-    const worldX = env.worldXAt(tree.ratio, tree.z)
-    const art = projectFeet(worldX, tree.z)
-    tree.trunk.setPosition(art.x, art.y)
-    tree.trunk.setOrder(art.y, SPRITE_LAYER.props)
-    // 冠底边压在干顶下 8px：干从冠腹穿过，冠层可罩住路过角色
-    tree.canopy.setPosition(art.x, art.y + 8)
-    tree.canopy.setOrder(art.y, SPRITE_LAYER.canopies)
-    env.placeShadow(tree.shadow, worldX, tree.z, tree.shadowScale)
-  }
-
   const placeStatics = (): void => {
     for (const lamp of lamps) placeLamp(lamp)
-    for (const tree of trees) placeTree(tree)
+    for (const tree of treeShadows) {
+      env.placeShadow(tree.shadow, env.worldXAt(tree.ratio, tree.z), tree.z, tree.shadowScale)
+    }
   }
 
   /* ── 相机视差微移（投影之前调用；lookAt 随动保持俯角） ── */
@@ -745,6 +717,17 @@ const boot = (
     })
     .catch(() => {
       // 图集加载失败：环境层/道具/鸟蝶仍在运行，静默降级为无卡司场景
+    })
+
+  // AI 环境纹理在 envStage 内完成换装（注册更早，同一 Promise 回调序保证换装先行）；
+  // 这里只在静帧模式（reduced-motion/未启动）补绘一帧让换装立刻可见
+  void loadEnvArt()
+    .then(() => {
+      if (disposed) return
+      if (!running) renderOnce()
+    })
+    .catch(() => {
+      // 环境素材加载失败：程序化稿兜底，无需打扰
     })
 
   placeButterfly(0)
