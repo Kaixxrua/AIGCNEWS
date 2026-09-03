@@ -747,5 +747,245 @@ class BuildBriefingSavedNotifierTests(unittest.TestCase):
             )
 
 
+class BriefingFailureHookTests(unittest.IsolatedAsyncioTestCase):
+    """on_source_failed 钩子：失败确认当刻触发，供调度层排程自动补跑。"""
+
+    async def test_error_payload_invokes_hook_with_date_source_error(self) -> None:
+        streams = {
+            "arxiv": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "error", "data": "llm exploded"},
+            ],
+            "github": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers([])
+        hook = AsyncMock()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["arxiv", "github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, on_source_failed=hook
+            )
+
+        hook.assert_awaited_once_with(
+            target_date="2026-09-03", source="arxiv", error="llm exploded"
+        )
+
+    async def test_hook_fires_immediately_without_waiting_for_slow_sources(
+        self,
+    ) -> None:
+        """github 仍阻塞时 arxiv 的失败钩子已触发（不等 gather 屏障）。"""
+        release = asyncio.Event()
+        github_finished = False
+
+        class _MixedService:
+            async def stream_generate(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+                nonlocal github_finished
+                if kwargs.get("source") == "arxiv":
+                    yield {"type": "start", "data": {"date": "2026-09-03"}}
+                    yield {"type": "error", "data": "stream broke"}
+                    return
+                try:
+                    yield {"type": "start", "data": {"date": "2026-09-03"}}
+                    await release.wait()
+                    yield {"type": "content", "data": "正文"}
+                    yield {"type": "done", "data": {"briefing_id": 1}}
+                finally:
+                    github_finished = True
+
+        repositories = _repositories_with_subscribers([])
+        hook = AsyncMock()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["arxiv", "github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=_MixedService()
+            ),
+        ):
+            task = asyncio.create_task(
+                dispatch.run_daily_briefing_dispatch(
+                    repositories, on_source_failed=hook
+                )
+            )
+            for _ in range(50):
+                if hook.await_count:
+                    break
+                await asyncio.sleep(0)
+            self.assertEqual(hook.await_count, 1)
+            self.assertFalse(github_finished)
+            release.set()
+            await task
+
+    async def test_exception_path_invokes_hook(self) -> None:
+        class _ExplodingService:
+            async def stream_generate(self, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+                raise RuntimeError("api blew up")
+                yield  # pragma: no cover - 保持异步生成器形态
+
+        repositories = _repositories_with_subscribers([])
+        hook = AsyncMock()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=_ExplodingService()
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, on_source_failed=hook
+            )
+
+        hook.assert_awaited_once_with(
+            target_date="2026-09-03", source="github", error="api blew up"
+        )
+
+    async def test_hook_not_called_when_all_sources_succeed(self) -> None:
+        streams = {
+            "github": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers([])
+        hook = AsyncMock()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, on_source_failed=hook
+            )
+
+        hook.assert_not_awaited()
+
+    async def test_hook_exception_does_not_break_dispatch(self) -> None:
+        streams = {
+            "arxiv": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "error", "data": "llm exploded"},
+            ],
+            "github": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers([])
+        hook = AsyncMock(side_effect=RuntimeError("scheduler blew up"))
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["arxiv", "github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+        ):
+            with self.assertLogs(dispatch.logger, "ERROR"):
+                await dispatch.run_daily_briefing_dispatch(
+                    repositories, on_source_failed=hook
+                )
+
+        hook.assert_awaited_once()
+
+
+class BriefingDispatchSubsetTests(unittest.IsolatedAsyncioTestCase):
+    """sources 子集 + target_date 固定：补跑链收窄到失败维度的入口。"""
+
+    async def test_sources_subset_runs_only_listed_and_dispatches(self) -> None:
+        streams = {
+            "github": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers(
+            [{"id": 5, "email": "subscriber@example.com"}]
+        )
+        email_service = MagicMock()
+        email_service.send_briefing = AsyncMock()
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["arxiv", "github"]),
+            patch.object(dispatch, "today_cst", return_value="2026-09-03"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+            patch(
+                "backend.app.services.email_service.build_email_service",
+                return_value=email_service,
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, sources=["github"]
+            )
+
+        self.assertEqual(
+            [call["source"] for call in service.calls], ["github"]
+        )
+        email_service.send_briefing.assert_awaited_once_with(
+            to_email="subscriber@example.com",
+            briefing_content="正文",
+            source="github",
+            period="daily",
+            date_str="2026-09-03",
+        )
+
+    async def test_target_date_override_is_used(self) -> None:
+        streams = {
+            "github": [
+                {"type": "start", "data": {"date": "2026-09-03"}},
+                {"type": "content", "data": "正文"},
+                {"type": "done", "data": {"briefing_id": 42}},
+            ],
+        }
+        service = _FakeBriefingService(streams)
+        repositories = _repositories_with_subscribers([])
+
+        with (
+            patch.object(dispatch, "BRIEFING_SOURCES", ["github"]),
+            # today_cst 故意给出另一天：覆盖参数必须赢。
+            patch.object(dispatch, "today_cst", return_value="2026-09-04"),
+            patch.object(
+                dispatch, "provide_daily_briefing_service", return_value=service
+            ),
+        ):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, sources=["github"], target_date="2026-09-03"
+            )
+
+        self.assertEqual(
+            [call["target_date"] for call in service.calls], ["2026-09-03"]
+        )
+
+    async def test_unknown_source_rejected(self) -> None:
+        repositories = _repositories_with_subscribers([])
+
+        with self.assertRaises(ValueError):
+            await dispatch.run_daily_briefing_dispatch(
+                repositories, sources=["github", "weibo"]
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

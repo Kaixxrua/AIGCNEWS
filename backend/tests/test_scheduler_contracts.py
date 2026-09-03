@@ -407,7 +407,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             repositories=repositories,
             x_lock=runtime._x_operation_lock,
         )
-        daily_briefing.assert_awaited_once_with(repositories, redis_client=None)
+        daily_briefing.assert_awaited_once_with(
+            repositories,
+            redis_client=None,
+            on_source_failed=runtime._handle_briefing_source_failed,
+        )
         subscription_dispatch.assert_awaited_once_with(repositories, redis_client=None)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)
         semantic_warmup.assert_awaited_once_with(semantic_warmup_callback)
@@ -438,7 +442,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(runtime._run_daily_briefing_job())
             asyncio.run(runtime._run_subscription_dispatch_job())
 
-        daily_briefing.assert_awaited_once_with(repositories, redis_client=sentinel)
+        daily_briefing.assert_awaited_once_with(
+            repositories,
+            redis_client=sentinel,
+            on_source_failed=runtime._handle_briefing_source_failed,
+        )
         subscription_dispatch.assert_awaited_once_with(
             repositories, redis_client=sentinel
         )
@@ -456,7 +464,9 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                     repositories, redis_client=sentinel
                 )
             )
-        dispatch_mock.assert_awaited_once_with(repositories, redis_client=sentinel)
+        dispatch_mock.assert_awaited_once_with(
+            repositories, redis_client=sentinel, on_source_failed=None
+        )
 
         with patch(
             "backend.app.services.push.dispatch_service.SubscriptionDispatchService"
