@@ -78,11 +78,10 @@ onBeforeUnmount(dispose)
                 <span class="text-2xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</span>
                 <span class="break-all font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</span>
               </div>
-              <div v-if="authStore.status === 'anonymous'" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
-                <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t('mcp.quota.anonymous') }}</p>
-                <button type="button" class="btn-secondary shrink-0 text-xs" @click="requestLogin('/mcp')">{{ t('mcp.quota.loginCta') }}</button>
-              </div>
-              <div v-else-if="!authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
+              <!-- 额度卡仅对已登录非会员展示。网站不向游客推介匿名额度：
+                   按 IP 匿名桶只作为 GitHub/NPM 发布渠道（插件开箱即用）的默认体验，
+                   游客的登录引导由 Token 管理区的引导卡承担。 -->
+              <div v-if="authStore.status === 'authenticated' && !authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
                 <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t('mcp.quota.free') }}</p>
                 <RouterLink to="/membership" class="btn-secondary shrink-0 text-xs">{{ t('mcp.quota.vipCta') }}</RouterLink>
               </div>

@@ -279,7 +279,6 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.authRestoring': '正在恢复登录状态…',
   'mcp.authDegraded': '登录状态校验失败。为安全起见，登录状态确认前不会签发 MCP Token。',
   'mcp.authRetry': '重试',
-  'mcp.quota.anonymous': 'MCP 匿名额度按 IP 计：每 24 小时 30 次；登录后 MCP/API 共用每 24 小时 60 次 + 滚动 30 天 1,200 次，开通 vip 可达 400 次 + 8,000 次。',
   'mcp.quota.free': '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
   'mcp.quota.loginCta': '登录提升额度',
   'mcp.quota.vipCta': '开通 vip',
