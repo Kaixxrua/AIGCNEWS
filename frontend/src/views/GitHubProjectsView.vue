@@ -69,7 +69,7 @@ let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
 
-const { applyRouteState, currentProjectsRedirect, endStateBatch, isApplyingRouteState, isReplacingRoute, replaceRouteFromState } = useProjectRouteState(route, router, {
+const { applyRouteState, currentProjectsRedirect, endStateBatch, isApplyingRouteState, isReplacingRoute, replaceRouteFromState, routeStateMatchesRoute } = useProjectRouteState(route, router, {
   source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page,
 })
 
@@ -419,6 +419,18 @@ onActivated(() => {
   startGridMeasure()
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
+  // KeepAlive 以 route.path 为 key 复用本实例：挂起期间路由被切走
+  // （如 报告页 → 我的网页 /projects?source=website），route.query
+  // watcher 在激活前触发被 isViewActive 拦截，须在这里补应用路由状态，
+  // 否则 URL 已是新查询而列表仍停留在旧 source 的内容。
+  if (route.name === 'github-projects' && !isReplacingRoute.value && !routeStateMatchesRoute()) {
+    const hadSort = Boolean(String(route.query.sort ?? '').trim())
+    if (applyRouteState()) {
+      sortIsExplicit.value = hadSort
+      void refreshReads()
+      return
+    }
+  }
   if (searchQuery.value !== debouncedQuery.value) searchTimer = window.setTimeout(() => { debouncedQuery.value = searchQuery.value }, 280)
   if (Date.now() - lastSuccessfulFetchAt.value >= VIEW_REFRESH_INTERVAL) {
     void refreshReads({ clearSuccess: false, preserveContent: true })

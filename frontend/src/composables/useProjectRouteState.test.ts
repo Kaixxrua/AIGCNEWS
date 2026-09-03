@@ -214,6 +214,35 @@ describe('project route state contract', () => {
     })
   })
 
+  it('reports whether the live route query still matches the in-memory state', () => {
+    // KeepAlive 复用同 path 实例：挂起期间路由被切走（报告页 → 我的网页），
+    // 状态仍停在上一份查询，须能检出失配以补应用。
+    const harness = createHarness({ source: 'website' })
+    harness.routeState.applyRouteState()
+    expect(harness.routeState.routeStateMatchesRoute()).toBe(true)
+
+    // 挂起期间用户点了「项目」（无查询参数），状态仍是 website → 失配
+    harness.route.query = {}
+    expect(harness.routeState.routeStateMatchesRoute()).toBe(false)
+
+    harness.routeState.applyRouteState()
+    expect(harness.routeState.routeStateMatchesRoute()).toBe(true)
+
+    // 反向：状态停在 all，路由已是 /projects?source=website → 失配
+    harness.route.query = { source: 'website' }
+    expect(harness.routeState.routeStateMatchesRoute()).toBe(false)
+  })
+
+  it('treats canonical default-only URLs as matching after route application', () => {
+    const landing = createHarness()
+    landing.routeState.applyRouteState()
+    expect(landing.routeState.routeStateMatchesRoute()).toBe(true)
+
+    const paged = createHarness({ source: 'website', page: '3' })
+    paged.routeState.applyRouteState()
+    expect(paged.routeState.routeStateMatchesRoute()).toBe(true)
+  })
+
   it('exposes the query-aware default helper', () => {
     expect(defaultProjectSortForQuery('all', 'all', 'langchain')).toBe('relevance')
     expect(defaultProjectSortForQuery('all', 'all', '')).toBe('stars')
