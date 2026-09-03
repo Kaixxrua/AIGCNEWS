@@ -8,6 +8,7 @@ import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
+import DashboardRadarCard from '@/components/dashboard/DashboardRadarCard.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import { CalendarDays, ArrowRight, MailPlus, Plug, Terminal } from 'lucide-vue-next'
@@ -180,6 +181,16 @@ onBeforeUnmount(pauseLivePoll)
             </span>
             <RollingNumber :value="mcpDshCalls" grouping class="ml-auto text-lg font-extrabold tabular-nums" />
           </RouterLink>
+
+          <!-- 侧栏末端纯装饰：AIGC Radar 雷达扫掠（three.js WebGL2 实时渲染，光点按查看日期播种，
+               翻日历换一幅；悬停倾斜跟随、点击 ping 涟漪；WebGL2 不可用 / reduced-motion 退化为静态兜底）。
+               flex-1 吸满侧栏剩余高度，侧栏底线始终与排行榜下边缘对齐，不再留空 -->
+          <DashboardRadarCard
+            :seed-date="currentDate"
+            :live="!isViewingHistory"
+            class="stagger-enter flex-1 min-h-[190px]"
+            style="animation-delay: 0.5s"
+          />
       </aside>
     </div>
   </div>
