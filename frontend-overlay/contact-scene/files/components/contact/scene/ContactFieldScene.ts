@@ -381,7 +381,9 @@ const boot = (
           ? visual.frames.react
           : visual.frames.idle
     visual.binding.setFrame(frames.frameAt(snapshot.frame))
-    visual.binding.setFlip(snapshot.facing < 0)
+    // 图集帧全部面朝左（抽卡素材原生朝向），向右走须水平镜像——
+    // 与 DSL 道具（蝴蝶等面朝右）的翻转极性相反，勿对齐
+    visual.binding.setFlip(snapshot.facing > 0)
 
     const worldX = snapshot.x * worldPerVirtual
     const art = projectFeet(worldX, visual.z)

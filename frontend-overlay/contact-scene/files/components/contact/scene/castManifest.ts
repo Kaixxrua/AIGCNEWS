@@ -194,7 +194,12 @@ export const CAST_FRAMES: Record<string, CastFrameRect> = {
   'swordK/walk-f7': { x: 691, y: 196, w: 29, h: 40 },
 }
 
-/** 场景编排实际使用的动作帧序列（idle/walk/react，顺序即播放顺序） */
+/**
+ * 场景编排实际使用的动作帧序列（idle/walk/react，顺序即播放顺序）。
+ * react = 悬停致意：swordK/knightR 原 react-* 是攻击帧（悬空播放像摔倒），
+ * 改用 victory-* 举剑致意；scholarM/scholarF 去掉收尾的蹲伏/弓步杂帧；
+ * 图集帧统一面朝左，朝向镜像由 ContactFieldScene 的 setFlip 负责
+ */
 export const CAST_ART = {
   cloakP: {
     idle: [
@@ -244,9 +249,9 @@ export const CAST_ART = {
       'knightR/walk-f7',
     ],
     react: [
-      'knightR/react-f0',
-      'knightR/react-f1',
-      'knightR/react-f2',
+      'knightR/victory-f0',
+      'knightR/victory-f1',
+      'knightR/victory-f2',
     ],
   },
   petcat: {
@@ -304,7 +309,6 @@ export const CAST_ART = {
       'scholarF/react-f0',
       'scholarF/react-f1',
       'scholarF/react-f2',
-      'scholarF/react-f3',
     ],
   },
   scholarM: {
@@ -330,7 +334,6 @@ export const CAST_ART = {
       'scholarM/react-f0',
       'scholarM/react-f1',
       'scholarM/react-f2',
-      'scholarM/react-f3',
     ],
   },
   swordK: {
@@ -351,9 +354,9 @@ export const CAST_ART = {
       'swordK/walk-f7',
     ],
     react: [
-      'swordK/react-f0',
-      'swordK/react-f1',
-      'swordK/react-f2',
+      'swordK/victory-f0',
+      'swordK/victory-f1',
+      'swordK/victory-f2',
     ],
   },
 } as const
