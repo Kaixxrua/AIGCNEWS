@@ -20,6 +20,9 @@ const rootRef = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 /** 首帧已上屏后才淡入 canvas，盖住静态兜底 */
 const renderLive = ref(false)
+/** 紧凑模式：卡片高度低于阈值时隐藏 caption，避免文字压住迷你雷达（对齐排名榜底边后卡片可能很矮） */
+const isShort = ref(false)
+const SHORT_HEIGHT_THRESHOLD = 150
 
 /** 当日查看 → LIVE；历史日期 → MM/DD */
 const caption = computed(() => (props.live ? 'LIVE' : props.seedDate.slice(5).replace('-', '/')))
@@ -397,11 +400,23 @@ let alive = true
 let deactivated = false
 let pauseFn: (() => void) | null = null
 let resumeFn: (() => void) | null = null
+/** 紧凑模式尺寸观察器（组件级，与 WebGL 生命周期无关） */
+let sizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
   alive = true
   deactivated = false
   void boot()
+  /* 紧凑模式观察：独立于 WebGL boot，静态兜底路径同样生效；
+     jsdom 等无 ResizeObserver 环境静默跳过 */
+  const root = rootRef.value
+  if (root && typeof ResizeObserver === 'function') {
+    sizeObserver = new ResizeObserver(() => {
+      const h = root.clientHeight
+      isShort.value = h > 0 && h < SHORT_HEIGHT_THRESHOLD
+    })
+    sizeObserver.observe(root)
+  }
 })
 onActivated(() => {
   deactivated = false
@@ -417,11 +432,13 @@ onBeforeUnmount(() => {
   cleanup = null
   pauseFn = null
   resumeFn = null
+  sizeObserver?.disconnect()
+  sizeObserver = null
 })
 </script>
 
 <template>
-  <div ref="rootRef" class="radar-card" :class="{ 'radar-card--live': renderLive }" aria-hidden="true">
+  <div ref="rootRef" class="radar-card" :class="{ 'radar-card--live': renderLive, 'radar-card--short': isShort }" aria-hidden="true">
     <div class="radar-fallback" />
     <canvas ref="canvasRef" class="radar-canvas" />
     <span class="radar-caption">AIGC RADAR · {{ caption }}</span>
@@ -506,6 +523,10 @@ onBeforeUnmount(() => {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--dash-muted, var(--muted));
+}
+/* 紧凑模式：卡片过矮（对齐榜单底边后剩余高度不足）时隐藏 caption，避免压住迷你雷达 */
+.radar-card--short .radar-caption {
+  display: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .radar-canvas {
