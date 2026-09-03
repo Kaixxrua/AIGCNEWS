@@ -91,6 +91,91 @@ def test_github_enrichment_status_query_excludes_alias_tombstones() -> None:
     assert cursor.execute.call_args_list[0].args[1] == (600,) * 5
 
 
+def test_github_enrichment_pages_use_independent_stable_offsets() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "unprocessable_total": 121,
+        "unprocessable_items": [{
+            "repo_id": 7,
+            "full_name": "acme/missing",
+            "url": "https://github.com/acme/missing",
+            "stars": "700",
+            "reason": "",
+        }],
+        "retained_total": 44,
+        "retained_items": [{
+            "repo_id": "retained-1",
+            "full_name": "acme/retained",
+            "url": "https://github.com/acme/retained",
+            "stars": 650,
+            "reason": "not_found",
+        }],
+    }
+    database = FakeDatabase(cursor)
+    repository = PostgresGitHubProjectEnrichmentRepository(database)  # type: ignore[arg-type]
+
+    result = repository.list_github_project_enrichment_pages(
+        unprocessable_page=2,
+        retained_page=3,
+        page_size=15,
+        min_stars=600,
+    )
+
+    sql, params = cursor.execute.call_args.args
+    assert database.transaction_count == 1
+    assert cursor.execute.call_count == 1
+    assert sql.count("LIMIT %s OFFSET %s") == 2
+    assert "FROM unprocessable" in sql
+    assert "FROM retained" in sql
+    assert sql.count('ORDER BY stars DESC, full_name COLLATE "C" ASC') == 2
+    assert params == (600, 600, 600, 600, 600, 15, 15, 15, 30)
+    assert result == {
+        "unprocessable": {
+            "items": [{
+                "repo_id": "7",
+                "full_name": "acme/missing",
+                "url": "https://github.com/acme/missing",
+                "stars": 700,
+                "reason": "missing_description",
+            }],
+            "total": 121,
+            "page": 2,
+            "page_size": 15,
+        },
+        "retained": {
+            "items": [{
+                "repo_id": "retained-1",
+                "full_name": "acme/retained",
+                "url": "https://github.com/acme/retained",
+                "stars": 650,
+                "reason": "not_found",
+            }],
+            "total": 44,
+            "page": 3,
+            "page_size": 15,
+        },
+    }
+
+
+def test_github_enrichment_pages_normalize_empty_out_of_range_input() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    repository = PostgresGitHubProjectEnrichmentRepository(FakeDatabase(cursor))  # type: ignore[arg-type]
+
+    result = repository.list_github_project_enrichment_pages(
+        unprocessable_page=0,
+        retained_page=-2,
+        page_size=0,
+    )
+
+    _, params = cursor.execute.call_args.args
+    assert params[-4:] == (1, 0, 1, 0)
+    assert result == {
+        "unprocessable": {"items": [], "total": 0, "page": 1, "page_size": 1},
+        "retained": {"items": [], "total": 0, "page": 1, "page_size": 1},
+    }
+
+
 def test_github_fingerprint_sql_matches_python_fingerprint() -> None:
     # _FINGERPRINT_SQL 与 _github_fingerprint 必须同构：拼接顺序、分隔符、编码一致
     import hashlib

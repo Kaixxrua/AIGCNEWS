@@ -402,6 +402,32 @@ describe('Monitor API contract', () => {
     await monitorApi.deleteXCredential(7)
     expect(transport.delete).toHaveBeenLastCalledWith('/ops/x-credentials/7')
   })
+  it('fetches independent GitHub enrichment detail pages with safe defaults', async () => {
+    const unprocessable = [{
+      repo_id: 'u-1', full_name: 'acme/missing', url: 'https://github.com/acme/missing',
+      stars: 700, reason: 'missing_description',
+    }]
+    transport.get.mockResolvedValueOnce({
+      data: {
+        unprocessable: { items: unprocessable, total: 121, page: 2, page_size: 15 },
+        retained: { items: null, total: null, page: null, page_size: null },
+      },
+    })
+
+    await expect(monitorApi.fetchGithubEnrichmentProjectPages({
+      unprocessablePage: 2,
+      retainedPage: 3,
+      pageSize: 15,
+    })).resolves.toEqual({
+      unprocessable: { items: unprocessable, total: 121, page: 2, page_size: 15 },
+      retained: { items: [], total: 0, page: 3, page_size: 15 },
+    })
+    expect(transport.get).toHaveBeenLastCalledWith(
+      '/ops/github-projects/enrichment-project-pages',
+      { params: { unprocessable_page: 2, retained_page: 3, page_size: 15 } },
+    )
+  })
+
   it('preserves GitHub crawl payloads and long request timeout', async () => {
     transport.post.mockResolvedValue({ data: { status: 'queued' } })
     const form = { ...createGithubCrawlForm('2026-08-04'), pushedAfter: '2025-07-09' }

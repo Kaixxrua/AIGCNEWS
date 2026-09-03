@@ -374,6 +374,18 @@ export interface GithubRetainedProject {
   reason: GithubRetainedReason
 }
 
+export interface GithubEnrichmentProjectPage<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface GithubEnrichmentProjectPages {
+  unprocessable: GithubEnrichmentProjectPage<GithubUnprocessableProject>
+  retained: GithubEnrichmentProjectPage<GithubRetainedProject>
+}
+
 export interface GithubEnrichmentStatus {
   eligible: number
   succeeded: number

@@ -502,21 +502,9 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
             "status": "failed", "error_msg": error_msg[:2000],
         })
 
-    def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
-        # Keep queue progress separate from historical generated content. The latter
-        # intentionally has no current-star or source-input gate.
-        # catalog 分类契约：succeeded 恒优先；此外凡当前无富化输入（简介为空且无
-        # 有效 README 快照）一律归 unprocessable——不论仓库是否已 404 下架、是否
-        # 留有 failed 行。failed/pending 只统计有输入、真正可再跑的项目。该口径
-        # 纯派生、可自愈：活仓补齐简介或 README bootstrap 成功即回到 pending，
-        # 被下一轮流水线自动拉起。
-        # latest_snap 只取候选仓的最新快照：LATERAL 让每仓走 (repo_id, snapshot_date)
-        # 唯一索引的一次组内反向扫描 + 单次回表（25k 探针），取代对 64 万行快照表
-        # 全量回表读出再排序去重。MATERIALIZED 保持单次物化、代价有界（理由见
-        # get_github_projects_needing_enrichment 的事故注释）；下游一律
-        # LEFT JOIN latest_snap ON ls.repo_id = c.repo_id，语义与旧写法的
-        # 连接结果完全一致（快照表有 (repo_id, snapshot_date) 唯一约束，无并列）。
-        base = f"""
+    @staticmethod
+    def _github_project_enrichment_base_sql() -> str:
+        return f"""
             WITH latest_snap AS MATERIALIZED (
                 SELECT s.*
                 FROM github_repo_candidates c
@@ -588,7 +576,23 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                            AND {_GITHUB_ENRICHMENT_INPUT_SQL}
                            AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL})
             )
-        """
+            """
+
+    def get_github_project_enrichment_status(self, *, min_stars: int = 500) -> dict[str, Any]:
+        # Keep queue progress separate from historical generated content. The latter
+        # intentionally has no current-star or source-input gate.
+        # catalog 分类契约：succeeded 恒优先；此外凡当前无富化输入（简介为空且无
+        # 有效 README 快照）一律归 unprocessable——不论仓库是否已 404 下架、是否
+        # 留有 failed 行。failed/pending 只统计有输入、真正可再跑的项目。该口径
+        # 纯派生、可自愈：活仓补齐简介或 README bootstrap 成功即回到 pending，
+        # 被下一轮流水线自动拉起。
+        # latest_snap 只取候选仓的最新快照：LATERAL 让每仓走 (repo_id, snapshot_date)
+        # 唯一索引的一次组内反向扫描 + 单次回表（25k 探针），取代对 64 万行快照表
+        # 全量回表读出再排序去重。MATERIALIZED 保持单次物化、代价有界（理由见
+        # get_github_projects_needing_enrichment 的事故注释）；下游一律
+        # LEFT JOIN latest_snap ON ls.repo_id = c.repo_id，语义与旧写法的
+        # 连接结果完全一致（快照表有 (repo_id, snapshot_date) 唯一约束，无并列）。
+        base = self._github_project_enrichment_base_sql()
         # base contains five independent intake-threshold placeholders:
         # eligible, catalog scope, retained snapshot classification, and the
         # retained current-star/input queue gate (three retained placeholders).
@@ -687,6 +691,75 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                     "stars": int(item.get("stars") or 0),
                     "reason": str(item.get("reason") or "missing_description")}
                     for item in unprocessable_projects]}
+
+    def list_github_project_enrichment_pages(
+        self,
+        *,
+        unprocessable_page: int = 1,
+        retained_page: int = 1,
+        page_size: int = 15,
+        min_stars: int = 500,
+    ) -> dict[str, Any]:
+        unprocessable_page = max(int(unprocessable_page), 1)
+        retained_page = max(int(retained_page), 1)
+        page_size = max(int(page_size), 1)
+        base = self._github_project_enrichment_base_sql()
+        params = (
+            *((min_stars,) * 5),
+            page_size,
+            (unprocessable_page - 1) * page_size,
+            page_size,
+            (retained_page - 1) * page_size,
+        )
+        query = base + """
+            SELECT
+                (SELECT COUNT(*) FROM unprocessable) AS unprocessable_total,
+                (SELECT COALESCE(json_agg(row_to_json(u) ORDER BY u.stars DESC,
+                                      u.full_name COLLATE "C" ASC,
+                                      u.repo_id COLLATE "C" ASC), '[]'::json)
+                 FROM (SELECT repo_id, full_name, url, stars, reason
+                       FROM unprocessable
+                       ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                                repo_id COLLATE "C" ASC
+                       LIMIT %s OFFSET %s) u) AS unprocessable_items,
+                (SELECT COUNT(*) FROM retained) AS retained_total,
+                (SELECT COALESCE(json_agg(row_to_json(r) ORDER BY r.stars DESC,
+                                      r.full_name COLLATE "C" ASC,
+                                      r.repo_id COLLATE "C" ASC), '[]'::json)
+                 FROM (SELECT repo_id, full_name, url, stars, reason
+                       FROM retained
+                       ORDER BY stars DESC, full_name COLLATE "C" ASC,
+                                repo_id COLLATE "C" ASC
+                       LIMIT %s OFFSET %s) r) AS retained_items
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, params)
+                row = cursor.fetchone() or {}
+
+        def serialize(items: list[dict[str, Any]], *, default_reason: str) -> list[dict[str, Any]]:
+            return [{
+                "repo_id": str(item.get("repo_id") or ""),
+                "full_name": str(item.get("full_name") or ""),
+                "url": str(item.get("url") or ""),
+                "stars": int(item.get("stars") or 0),
+                "reason": str(item.get("reason") or default_reason),
+            } for item in items]
+
+        return {
+            "unprocessable": {
+                "items": serialize(row.get("unprocessable_items") or [], default_reason="missing_description"),
+                "total": int(row.get("unprocessable_total") or 0),
+                "page": unprocessable_page,
+                "page_size": page_size,
+            },
+            "retained": {
+                "items": serialize(row.get("retained_items") or [], default_reason="lost_input"),
+                "total": int(row.get("retained_total") or 0),
+                "page": retained_page,
+                "page_size": page_size,
+            },
+        }
 
     def count_github_run_enrichment_candidates(
         self, *, channel: str, first_seen_after: str, min_stars: int = 500
