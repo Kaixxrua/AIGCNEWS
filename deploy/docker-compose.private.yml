@@ -24,9 +24,9 @@ services:
       - sub2api
     volumes:
       # 生产后端固定从干净发布检出读取，避免主工作树并行 WIP 经核心 bind mount
-      # 被热重启带入运行时。发布检出当前钉在已验证的 briefing-free release commit
-      # （1f355eb，简报订阅与 RSS 降级为登录免费，main 直落）。
-      - /home/kaixxrua/aigcnews-deploy/briefing-free-1f355eb/backend:/src/backend:ro
+      # 被热重启带入运行时。发布检出当前钉在已验证的 dashboard-radar release commit
+      # （dfe7ce5，含 monitor 富化分页链路 3d83f78 与 briefing 失败补跑 517acf5）。
+      - /home/kaixxrua/aigcnews-deploy/dashboard-radar-dfe7ce5/backend:/src/backend:ro
       # 私有源插件包（X 传输层 / 微信链路实现）+ pylibs 依赖供给
       # （twitter-cli 及其独占依赖，供给方式见本仓 README.md）；
       # 只读挂载，容器内路径 /opt/aigcnews_private
