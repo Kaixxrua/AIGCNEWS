@@ -4,12 +4,16 @@ from __future__ import annotations
 
 调度器（core.scheduler）仅注册本模块的回调句柄；简报流协议解析
 （start/content/done/error）、正文拼接与逐订阅者邮件派发均归属 services 层。
+
+失败补跑：本模块不感知 APScheduler；单维度失败时经 on_source_failed 钩子
+即时上报（不等 gather 屏障），由调度层决定何时/是否补跑，补跑复用本模块
+的 sources 子集入口收窄到失败维度。
 """
 
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Sequence
 
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.repositories.application_repository_factory import (
@@ -42,6 +46,31 @@ BRIEFING_SOURCES: List[str] = [
     "x",
     "dailyhot",
 ]
+
+# 单维度生成失败钩子：参数 (target_date=, source=, error=)；在失败确认当刻
+# 触发（不等全部维度收尾），供调度层排程自动补跑。钩子异常只记日志，
+# 不回灌进派发链。
+BriefingSourceFailureHook = Callable[..., Awaitable[None]]
+
+
+async def _notify_source_failed(
+    hook: BriefingSourceFailureHook | None,
+    *,
+    target_date: str,
+    source: str,
+    error: str,
+) -> None:
+    if hook is None:
+        return
+    try:
+        await hook(target_date=target_date, source=source, error=error)
+    except Exception:
+        logger.error(
+            "[Briefing] 失败补跑钩子执行异常: source=%s date=%s",
+            source,
+            target_date,
+            exc_info=True,
+        )
 
 
 @dataclass(frozen=True)
@@ -246,6 +275,7 @@ async def _run_daily_briefing_source(
     *,
     target_date: str,
     limiter: asyncio.Semaphore,
+    on_source_failed: BriefingSourceFailureHook | None = None,
 ) -> _DailyBriefingSourceResult:
     async with limiter:
         content_parts: list[str] = []
@@ -276,6 +306,12 @@ async def _run_daily_briefing_source(
                     source,
                     stream_error,
                 )
+                await _notify_source_failed(
+                    on_source_failed,
+                    target_date=target_date,
+                    source=source,
+                    error=stream_error,
+                )
                 return _DailyBriefingSourceResult(source=source, error=stream_error)
             result = _DailyBriefingSourceResult(
                 source=source,
@@ -297,6 +333,12 @@ async def _run_daily_briefing_source(
                 exc,
                 exc_info=True,
             )
+            await _notify_source_failed(
+                on_source_failed,
+                target_date=target_date,
+                source=source,
+                error=str(exc),
+            )
             return _DailyBriefingSourceResult(source=source, error=str(exc))
 
 
@@ -306,13 +348,20 @@ async def run_daily_briefing_dispatch(
     redis_client: Any | None = None,
     source_concurrency: int = DEFAULT_SOURCE_CONCURRENCY,
     llm_concurrency: int = DEFAULT_LLM_CONCURRENCY,
+    sources: Sequence[str] | None = None,
+    target_date: str | None = None,
+    on_source_failed: BriefingSourceFailureHook | None = None,
 ) -> None:
     if source_concurrency < 1 or llm_concurrency < 1:
         raise ValueError("briefing concurrency must be at least 1")
+    selected = list(sources) if sources is not None else list(BRIEFING_SOURCES)
+    unknown = [source for source in selected if source not in BRIEFING_SOURCES]
+    if unknown:
+        raise ValueError(f"unknown briefing sources: {unknown}")
+    target_date = target_date or today_cst()
     logger.info(
-        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(BRIEFING_SOURCES)
+        "[Briefing] 触发每日自动简报生成（%d 个维度）...", len(selected)
     )
-    target_date = today_cst()
     llm_limiter = asyncio.Semaphore(llm_concurrency)
     service = provide_daily_briefing_service(
         repositories=repositories,
@@ -326,10 +375,11 @@ async def run_daily_briefing_dispatch(
                 source,
                 target_date=target_date,
                 limiter=source_limiter,
+                on_source_failed=on_source_failed,
             ),
             name=f"briefing-source-{source}",
         )
-        for source in BRIEFING_SOURCES
+        for source in selected
     ]
     try:
         results = await asyncio.gather(*tasks)
@@ -341,8 +391,8 @@ async def run_daily_briefing_dispatch(
         raise
 
     by_source = {result.source: result for result in results}
-    success = sum(1 for source in BRIEFING_SOURCES if by_source[source].successful)
-    for source in BRIEFING_SOURCES:
+    success = sum(1 for source in selected if by_source[source].successful)
+    for source in selected:
         result = by_source[source]
         if not result.successful:
             continue
@@ -369,5 +419,5 @@ async def run_daily_briefing_dispatch(
             )
 
     logger.info(
-        "[Briefing] 每日简报生成完毕，%d/%d 成功。", success, len(BRIEFING_SOURCES)
+        "[Briefing] 每日简报生成完毕，%d/%d 成功。", success, len(selected)
     )
