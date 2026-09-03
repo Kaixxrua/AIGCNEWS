@@ -37,6 +37,7 @@ vi.mock('@/composables/useProjectRouteState', async () => {
     isApplyingRouteState: ref(false),
     isReplacingRoute: ref(false),
     replaceRouteFromState: vi.fn(),
+    routeStateMatchesRoute: vi.fn(() => true),
   }
   return {
     useProjectRouteState: () => routeStateBox.current,
@@ -174,6 +175,7 @@ beforeEach(() => {
   routeState().applyRouteState.mockClear().mockReturnValue(true)
   routeState().endStateBatch.mockClear()
   routeState().replaceRouteFromState.mockClear()
+  routeState().routeStateMatchesRoute.mockClear().mockReturnValue(true)
   routeState().isApplyingRouteState.value = false
   routeState().isReplacingRoute.value = false
   auth().isLoggedIn = true
@@ -331,6 +333,35 @@ describe('GitHubProjectsView controller wiring', () => {
     await nextTick()
     expect(controller().activate).toHaveBeenCalledTimes(2)
     expect(controller().refreshReads).toHaveBeenCalledWith({ clearSuccess: false, preserveContent: true })
+  })
+
+  it('re-applies route state on reactivation when the query changed while deactivated', async () => {
+    // 回归：dock 点「报告」再点「我的网页」(/projects?source=website)，
+    // KeepAlive 按 route.path 复用实例，route.query watcher 在激活前被
+    // isViewActive 拦截；onActivated 须检出失配并补应用，否则停在旧内容。
+    const Harness = defineComponent({
+      components: { GitHubProjectsView },
+      setup: () => ({ show: ref(true) }),
+      template: '<KeepAlive><GitHubProjectsView v-if="show" /></KeepAlive>',
+    })
+    await testRouter.push('/projects')
+    await testRouter.isReady()
+    const wrapper = mount(Harness, {
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
+    })
+    await flushPromises()
+
+    ;(wrapper.vm as unknown as { show: boolean }).show = false
+    await nextTick()
+    routeState().applyRouteState.mockClear()
+    controller().refreshReads.mockClear()
+    routeState().routeStateMatchesRoute.mockReturnValue(false)
+
+    ;(wrapper.vm as unknown as { show: boolean }).show = true
+    await nextTick()
+
+    expect(routeState().applyRouteState).toHaveBeenCalledTimes(1)
+    expect(controller().refreshReads).toHaveBeenCalledWith()
   })
 })
 

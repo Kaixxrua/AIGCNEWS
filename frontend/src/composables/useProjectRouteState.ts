@@ -129,6 +129,16 @@ export const useProjectRouteState = (
     }
   }
 
+  /**
+   * 当前路由查询是否与内存状态互为规范序列化。KeepAlive 以 route.path 为 key
+   * 复用实例：视图挂起期间路由被切走（如 报告页 → /projects?source=website），
+   * route.query watcher 在激活前触发会被 isViewActive 拦截，onActivated 须靠
+   * 此检测补做 applyRouteState；查询未变时返回 true，走原有的过期刷新路径。
+   */
+  const routeStateMatchesRoute = () => (
+    route.path === '/projects' && sameRouteQuery(route.query, buildRouteQuery())
+  )
+
   const applyRouteState = () => {
     const routeSource = queryValue(route.query.source)
     const nextSource = validSources.includes(routeSource as ProjectViewSource)
@@ -175,5 +185,6 @@ export const useProjectRouteState = (
     isApplyingRouteState,
     isReplacingRoute,
     replaceRouteFromState,
+    routeStateMatchesRoute,
   }
 }
