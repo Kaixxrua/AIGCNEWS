@@ -31,6 +31,9 @@ FILES = [
     'components/contact/scene/assets/env/treeA.webp',
     'components/contact/scene/assets/env/treeB.webp',
     'components/contact/scene/assets/env/fggrass.webp',
+    'components/contact/scene/assets/env/well.webp',
+    'components/contact/scene/assets/env/pond.webp',
+    'components/contact/scene/assets/env/fence.webp',
 ]
 
 

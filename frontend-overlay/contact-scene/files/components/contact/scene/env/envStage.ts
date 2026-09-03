@@ -1,19 +1,19 @@
 /**
- * 环境层场景图（HD-2D 复刻的 3/4 透视纵深载体）：
- * 透视相机 + 真深度 + 线性雾（大气透视），五带纵深——前景草（近镜散景）→
- * 草地/土径行走带 → 灌木岩石中景 → 树线/村庄剪影 → 远山/天空。
+ * 环境层场景图（HD-2D 复刻的 3/4 透视纵深载体）——雪境版：
+ * 透视相机 + 真深度 + 线性雾（大气透视），五带纵深——前景雪丛（近镜散景）→
+ * 雪地/雪径行走带 → 雪盖灌木/岩石/冰井/栅栏中景 → 雪松林线/雪村剪影 → 雪山/天空。
  * 光照全部手绘：纹理烘焙方向明暗，昼夜经 PaletteRegistry 乘法罩色
- * （罩色 = 色板夜/昼分量比，昼=white 不动烘焙稿，夜按比例压向色板夜色），
- * 方向影为地面倾斜暗斑（方位/长度随 uDay），灯光晕/光池/暖窗为加法 HDR（喂 bloom）。
+ * （罩色 = 夜乘子，昼=white 不动烘焙稿，雪夜 =  luminous 蓝——雪地反照月光）；
+ * 方向影为地面倾斜暗斑（雪上影为蓝调），灯光晕/光池/暖窗为加法 HDR（喂 bloom）。
+ * 落雪 = env 层 THREE.Points（GPU 时间驱动，真深度没入树后，reduced-motion 静帧自然成立）。
  *
  * 【私有 overlay】大纹理不再用程序化 canvas 稿：启动先以程序化稿即时上屏
  * （jsdom/弱网兜底），loadEnvArt() 解码完成后把各槽位 material.map 直接换成
- * AI 抽卡素材（离线 prep_env.py 只键控 alpha，RGB 逐像素保留）；
+ * AI 抽卡素材（离线 prep_snow.py 只键控/羽化 alpha，RGB 逐像素保留）；
  * 平铺参数按素材纵横比在 resize 重算，防拉伸。
  */
 import * as THREE from 'three'
-import { duskAmount, paletteColor, PaletteRegistry } from '../palette'
-import type { PaletteKey } from '../palette'
+import { duskAmount, PaletteRegistry } from '../palette'
 import { visibleHalfWidthAt } from '../project'
 import { loadEnvArt } from './envArt'
 import {
@@ -62,18 +62,28 @@ const smoothstep = (a: number, b: number, x: number): number => {
   return t * t * (3 - 2 * t)
 }
 
-/** 罩色：昼 white（不动烘焙稿），夜 = 色板夜/昼分量比（终点恰为色板夜色的相对压暗） */
-const tintFromKey = (key: PaletteKey): { day: string; night: string } => {
-  const day = parseInt(paletteColor(key, 1).slice(1), 16)
-  const night = parseInt(paletteColor(key, 0).slice(1), 16)
-  const ratio = (shift: number): number => {
-    const d = (day >> shift) & 0xff
-    const n = (night >> shift) & 0xff
-    return d === 0 ? 0 : Math.round(Math.min(1, n / d) * 255)
-  }
-  const nightHex = `#${((ratio(16) << 16) | (ratio(8) << 8) | ratio(0)).toString(16).padStart(6, '0')}`
-  return { day: '#ffffff', night: nightHex }
-}
+/**
+ * 雪境槽位罩色（overlay 本地常量，不碰公开色板 palette.ts）：
+ * day 一律 white（纹理原色上屏），night 为雪地夜乘子——
+ * 雪反照月光，夜雪是「发光的蓝」而非荒原夜的死黑；越近/越暗的带乘子越暗。
+ */
+const tint = (night: string): { day: string; night: string } => ({ day: '#ffffff', night })
+const SNOW_TINT = {
+  ground: tint('#46609c'), // 月夜雪面：亮蓝
+  path: tint('#3c4e78'), // 踩实雪径：稍暗
+  fg: tint('#26355c'), // 前景暗枝：近景压深
+  hills: tint('#35466e'), // 雪山脊
+  treeline: tint('#2b3a58'), // 远林剪影
+  // 村庄远带：纹理本体已是板岩蓝剪影（离线压平，暮色盘细节乘色救不回），
+  // day 不动；暖窗层独立加色
+  village: tint('#212d49'),
+  props: tint('#3a4c7a'), // 中景道具/树
+  pond: tint('#42568c'), // 冰湖：反光更亮
+} as const
+/** 雪上方向影：昼 = 天光蓝影（非荒原的绿影），夜 = 深青 */
+const SNOW_SHADOW = { day: '#5f7d9e', night: '#0a1224' } as const
+/** 雪境雾/地平线：昼 = 冷白蓝（荒原的奶油绿在雪地里发脏），夜沿用公开色板 */
+const SNOW_HORIZON = { day: '#dfe9f4', night: '#2b3a55' } as const
 
 /* ── 天空 shader（沿用港湾 GLSL 习语 bayer/hash/vnoise/fbm；太阳/月亮/星星/云在 shader 内） ── */
 
@@ -258,10 +268,10 @@ export const createEnvStage = (): EnvStage => {
   }> = []
   const lastCss = { w: 0, h: 0 }
 
-  /** 雾 = 大气透视：地面/远山向地平线色融合（颜色注册进色板） */
-  const fog = new THREE.Fog('#d9eec9', 20, 58)
+  /** 雾 = 大气透视：地面/远山向地平线色融合（雪境冷白蓝 ↔ 夜青） */
+  const fog = new THREE.Fog(SNOW_HORIZON.day, 20, 58)
   scene.fog = fog
-  palette.registerKey(fog.color, 'skyHorizon')
+  palette.register(fog.color, SNOW_HORIZON)
   /**
    * 背景 = 同一地平线色（palette 就地 lerp 的同一 Color 实例）：
    * 地平线以下、地面远缘之外的视线落空域不再是清屏色，
@@ -294,7 +304,8 @@ export const createEnvStage = (): EnvStage => {
     uCloud: { value: new THREE.Color('#ffffff') },
   }
   palette.registerKey(skyUniforms.uSkyTop.value, 'skyTop')
-  palette.registerKey(skyUniforms.uSkyHorizon.value, 'skyHorizon')
+  // 地平线色与雾同源（雪境冷白蓝），天空/雾在地平线无缝相接
+  palette.register(skyUniforms.uSkyHorizon.value, SNOW_HORIZON)
   palette.registerKey(skyUniforms.uDuskBand.value, 'duskBand')
   palette.registerKey(skyUniforms.uSunCore.value, 'sunCore')
   palette.registerKey(skyUniforms.uSunGlow.value, 'sunGlow')
@@ -315,6 +326,89 @@ export const createEnvStage = (): EnvStage => {
   skyMesh.position.set(0, 6.25, STAGE_Z.sky)
   skyMesh.renderOrder = -10
   scene.add(skyMesh)
+
+  /* ── 落雪（GPU 时间驱动 Points：真深度没入树后，前景草带挡住最近雪片；
+   * z 上限 6.0 < grassFg 6.5，reduced-motion 下 uTime 冻结即为静帧雪） ── */
+  const SNOW_VERTEX_SHADER = /* glsl */ `
+    uniform float uTime;
+    uniform vec4 uBounds; // x=覆盖半宽 y=落区高 z=落区中 z w=落区 z 半宽
+    uniform float uPointScale;
+    attribute float aSpeed;
+    attribute float aPhase;
+    attribute float aSize;
+    varying float vFade;
+    void main() {
+      vec3 p = vec3(
+        position.x * uBounds.x + sin(uTime * 0.7 + aPhase) * 0.3,
+        mod(position.y * uBounds.y - uTime * aSpeed, uBounds.y),
+        uBounds.z + position.z * uBounds.w
+      );
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = aSize * uPointScale / max(1.0, -mv.z);
+      vFade = smoothstep(0.0, 0.6, p.y);
+      gl_Position = projectionMatrix * mv;
+    }
+  `
+  const SNOW_FRAGMENT_SHADER = /* glsl */ `
+    uniform sampler2D uMap;
+    uniform vec3 uColor;
+    varying float vFade;
+    void main() {
+      vec4 tex = texture2D(uMap, gl_PointCoord);
+      gl_FragColor = vec4(uColor, tex.a * 0.85 * vFade);
+    }
+  `
+  const coarseSnow =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches
+  const flakeCount = coarseSnow ? 150 : 400
+  // 确定性 LCG：雪野分布在 jsdom/快照间稳定
+  let lcgState = 0x5f0a
+  const lcg = (): number => {
+    lcgState = (lcgState * 1664525 + 1013904223) >>> 0
+    return lcgState / 0x100000000
+  }
+  const snowGeo = track(new THREE.BufferGeometry())
+  {
+    const pos = new Float32Array(flakeCount * 3)
+    const speed = new Float32Array(flakeCount)
+    const phase = new Float32Array(flakeCount)
+    const size = new Float32Array(flakeCount)
+    for (let i = 0; i < flakeCount; i++) {
+      pos[i * 3] = lcg() * 2 - 1
+      pos[i * 3 + 1] = lcg()
+      pos[i * 3 + 2] = lcg() * 2 - 1
+      speed[i] = 0.45 + lcg() * 0.6
+      phase[i] = lcg() * Math.PI * 2
+      size[i] = 0.02 + lcg() * 0.035
+    }
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    snowGeo.setAttribute('aSpeed', new THREE.BufferAttribute(speed, 1))
+    snowGeo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1))
+    snowGeo.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
+  }
+  const snowUniforms = {
+    uTime: { value: 0 },
+    uMap: { value: rgbaToTexture(radialGlow(32, 1.8)) },
+    uColor: { value: new THREE.Color('#ffffff') },
+    uBounds: { value: new THREE.Vector4(14, 7, -4, 10) },
+    uPointScale: { value: 600 },
+  }
+  if (snowUniforms.uMap.value) track(snowUniforms.uMap.value)
+  palette.register(snowUniforms.uColor.value, { day: '#ffffff', night: '#c4d2ec' })
+  const snowMaterial = track(
+    new THREE.ShaderMaterial({
+      vertexShader: SNOW_VERTEX_SHADER,
+      fragmentShader: SNOW_FRAGMENT_SHADER,
+      uniforms: snowUniforms,
+      transparent: true,
+      depthWrite: false,
+    }),
+  )
+  const snowPoints = new THREE.Points(snowGeo, snowMaterial)
+  snowPoints.frustumCulled = false // 粒子在顶点着色器内游走，包围球失真
+  scene.add(snowPoints)
 
   /* ── 纹理 billboard 工厂 ── */
   const billboards: TexturedBillboard[] = []
@@ -348,29 +442,31 @@ export const createEnvStage = (): EnvStage => {
     return mesh
   }
 
-  // 远山（双层山脊，最远实体；高度沿地平线收敛——浅俯角下远物顶边贴近 0° 视线）
-  const hillsMesh = addTextured(rgbaToTexture(farHills(0xa11, 192, 48)), STAGE_Z.hills, -0.35, 3.3, 1.35, tintFromKey('farHill'))
-  // 村庄剪影 + 独立暖窗层（夜里亮起，HDR 喂 bloom）
+  // 远山（雪山脊；高度沿地平线收敛——浅俯角下远物顶边贴近 0° 视线）
+  const hillsMesh = addTextured(rgbaToTexture(farHills(0xa11, 192, 48)), STAGE_Z.hills, -0.35, 3.3, 1.35, SNOW_TINT.hills)
+  // 雪村剪影 + 独立暖窗层（夜里亮起，HDR 喂 bloom）
+  // yBottom 抬到 0.5：带底藏在树线密枝后，屋身/暖窗恰好从林隙与树线顶部
+  // 渐隐区透出（-0.2 时整带被树线挡死，夜里暖窗完全不可见）
   const village = villageSkyline(0xb22, 320, 64)
-  const villageMesh = addTextured(rgbaToTexture(village.silhouette), STAGE_Z.village, -0.2, 2.3, 1.1, tintFromKey('treeLine'))
-  const windowsMesh = addTextured(rgbaToTexture(village.windows), STAGE_Z.village + 0.1, -0.2, 2.3, 1.1, { day: '#ffca7a', night: '#ffca7a' }, { additive: true })
+  const villageMesh = addTextured(rgbaToTexture(village.silhouette), STAGE_Z.village, 0.5, 2.3, 1.1, SNOW_TINT.village)
+  const windowsMesh = addTextured(rgbaToTexture(village.windows), STAGE_Z.village + 0.1, 0.5, 2.3, 1.1, { day: '#ffca7a', night: '#ffca7a' }, { additive: true })
   if (windowsMesh) {
     const windowsMaterial = windowsMesh.material as THREE.MeshBasicMaterial
     windowsMaterial.color.multiplyScalar(1.8) // HDR：夜里暖窗过 bloom 阈值
     windowsMaterial.opacity = 0
   }
-  // 树线
-  const treeLineMesh = addTextured(rgbaToTexture(treeLineStrip(0xc33, 256, 64)), STAGE_Z.treeLine, -0.2, 2.1, 1.2, tintFromKey('treeLine'))
+  // 雪松林线
+  const treeLineMesh = addTextured(rgbaToTexture(treeLineStrip(0xc33, 256, 64)), STAGE_Z.treeLine, -0.2, 2.1, 1.2, SNOW_TINT.treeline)
   // 中景灌木与岩石
   const bushTextureA = rgbaToTexture(bushBlob(0xd44, 28, 18))
   const bushTextureB = rgbaToTexture(bushBlob(0xd45, 24, 16))
   const rockTexture = rgbaToTexture(rockChunk(0xe55, 20, 14))
-  // AI 素材为近方团块（灌木圆冠/岩石），尺寸收敛到贴地灌木量级；
-  // 底部埋入地面 16%（圆底不悬空）。中景树（橡树/白杨）以树干贴地为准只浅埋 3%；
+  // AI 素材为近方团块（雪盖灌木/岩石），尺寸收敛到贴地灌木量级；
+  // 底部埋入地面 16%（圆底不悬空）。中景树（昼绿雪松/黄昏蓝松）以树干贴地为准只浅埋 3%；
   // 树高 3.3–4.2 世界单位 ≈ 角色的 2.5–3 倍（八方式近景锚点），第三棵镜像复用
-  // 橡树素材（scale.x 取负镜像防重复感）。启动占位沿用灌木团块，AI 素材解码后
-  // 换装并重算纵横比（镜像在换装时保留）
-  const midProps: Array<{ texture: THREE.CanvasTexture | null; ratio: number; z: number; h: number; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; bury?: number; mirror?: boolean }> = [
+  // 雪松素材（scale.x 取负镜像防重复感）。启动占位沿用灌木团块，AI 素材解码后
+  // 换装并重算纵横比（镜像在换装时保留）。冰井/栅栏同槽换装，冰湖是地面贴片（见换装回调）
+  const midProps: Array<{ texture: THREE.CanvasTexture | null; ratio: number; z: number; h: number; slot: 'bush' | 'rock' | 'treeA' | 'treeB' | 'well' | 'fence'; bury?: number; mirror?: boolean }> = [
     { texture: bushTextureA, ratio: -0.46, z: -7.5, h: 0.78, slot: 'bush' },
     { texture: bushTextureB, ratio: -0.2, z: -6.2, h: 0.6, slot: 'bush' },
     { texture: rockTexture, ratio: 0.28, z: -5.6, h: 0.5, slot: 'rock' },
@@ -378,21 +474,25 @@ export const createEnvStage = (): EnvStage => {
     { texture: bushTextureB, ratio: 0.08, z: -9.0, h: 0.68, slot: 'bush' },
     { texture: rockTexture, ratio: -0.34, z: -4.6, h: 0.42, slot: 'rock' },
     // 行走带近缘的灌木/岩石（z -2.2..-3.0，角色近景参照物）
-    { texture: bushTextureB, ratio: -0.62, z: -2.8, h: 0.55, slot: 'bush' },
+    // 注：-0.62 是冰湖贴片位（z -4.0），灌木别压上去
+    { texture: bushTextureB, ratio: -0.18, z: -2.8, h: 0.55, slot: 'bush' },
     { texture: rockTexture, ratio: 0.58, z: -2.2, h: 0.45, slot: 'rock' },
     { texture: bushTextureA, ratio: 0.72, z: -3.0, h: 0.62, slot: 'bush' },
     { texture: bushTextureA, ratio: -0.4, z: -4.5, h: 4.2, slot: 'treeA', bury: 0.03 },
     { texture: bushTextureB, ratio: 0.44, z: -3.2, h: 3.3, slot: 'treeB', bury: 0.03 },
     { texture: bushTextureA, ratio: 0.8, z: -6.5, h: 3.0, slot: 'treeA', bury: 0.03, mirror: true },
+    // 雪境新道具：冰井（行走带旁）与木栅栏（中景左缘横栏）
+    { texture: rockTexture, ratio: 0.68, z: -3.8, h: 1.15, slot: 'well', bury: 0.04 },
+    { texture: bushTextureA, ratio: -0.75, z: -6.4, h: 0.62, slot: 'fence', bury: 0.1 },
   ]
-  const midPropMeshes: Array<{ mesh: THREE.Mesh; slot: 'bush' | 'rock' | 'treeA' | 'treeB'; h: number; mirror: boolean }> = []
+  const midPropMeshes: Array<{ mesh: THREE.Mesh; slot: 'bush' | 'rock' | 'treeA' | 'treeB' | 'well' | 'fence'; h: number; mirror: boolean }> = []
   for (const prop of midProps) {
     if (!prop.texture) continue
     track(prop.texture)
     const material = track(
       new THREE.MeshBasicMaterial({ map: prop.texture, transparent: true }),
     )
-    palette.register(material.color, tintFromKey('treeLeaf'))
+    palette.register(material.color, SNOW_TINT.props)
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     const width = (prop.texture.image.width / prop.texture.image.height) * prop.h
     mesh.scale.set(prop.mirror ? -width : width, prop.h, 1)
@@ -410,7 +510,7 @@ export const createEnvStage = (): EnvStage => {
     track(groundTexture)
     const material = track(new THREE.MeshBasicMaterial({ map: groundTexture }))
     groundMaterial = material
-    palette.register(material.color, tintFromKey('grass'))
+    palette.register(material.color, SNOW_TINT.ground)
     groundMesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     groundMesh.rotation.x = -Math.PI / 2
     // 覆盖到相机底缘视线落点（z≈7.4）之外：z ∈ [-30, 10]
@@ -428,7 +528,7 @@ export const createEnvStage = (): EnvStage => {
       new THREE.MeshBasicMaterial({ map: pathTexture, transparent: true, depthWrite: false }),
     )
     pathMaterial = material
-    palette.register(material.color, tintFromKey('path'))
+    palette.register(material.color, SNOW_TINT.path)
     pathMesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     pathMesh.rotation.x = -Math.PI / 2
     pathMesh.position.set(0, 0.02, STAGE_Z.path)
@@ -447,7 +547,7 @@ export const createEnvStage = (): EnvStage => {
       new THREE.MeshBasicMaterial({ map: fgTexture, transparent: true, depthWrite: false }),
     )
     fgMaterial = material
-    palette.register(material.color, tintFromKey('grassFg'))
+    palette.register(material.color, SNOW_TINT.fg)
     fgMesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     fgMesh.position.set(0, 0.35, STAGE_Z.grassFg)
     fgMesh.scale.set(1, 1.4, 1)
@@ -546,7 +646,7 @@ export const createEnvStage = (): EnvStage => {
         depthWrite: false,
       }),
     )
-    palette.registerKey(material.color, 'shadowBlob')
+    palette.register(material.color, SNOW_SHADOW)
     const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
     mesh.rotation.x = -Math.PI / 2
     mesh.renderOrder = 1
@@ -616,6 +716,9 @@ export const createEnvStage = (): EnvStage => {
       entry.meshes[1]!.position.x = x
       entry.meshes[2]!.position.x = x
     }
+    // 落雪覆盖域：横宽取树线处可视半宽（远端屏宽最大），点大小随视口高度换算
+    snowUniforms.uBounds.value.x = visibleHalfWidthAt(camera, viewDistanceAt(STAGE_Z.treeLine)) * 1.05
+    snowUniforms.uPointScale.value = (safeH * 1.0) / (2 * Math.tan((ENV_CAMERA.fov * Math.PI) / 360))
   }
 
   /* ── AI 环境美术换装：map 直换（MeshBasicMaterial 已有 map，着色器定义不变） ── */
@@ -662,10 +765,28 @@ export const createEnvStage = (): EnvStage => {
               ? art.rock
               : prop.slot === 'treeA'
                 ? art.treeA
-                : art.treeB
+                : prop.slot === 'treeB'
+                  ? art.treeB
+                  : prop.slot === 'well'
+                    ? art.well
+                    : art.fence
         swap(prop.mesh.material as THREE.MeshBasicMaterial, tex)
         const w = texAspect(tex) * prop.h
         prop.mesh.scale.x = prop.mirror ? -w : w
+      }
+      // 冰湖：地面贴片（XZ 平躺， Clamp 单幅，不重复；霜花纹理不烤进地面层以保冰面完整）
+      {
+        const material = track(
+          new THREE.MeshBasicMaterial({ map: art.pond, transparent: true, depthWrite: false }),
+        )
+        palette.register(material.color, SNOW_TINT.pond)
+        const mesh = new THREE.Mesh(track(new THREE.PlaneGeometry(1, 1)), material)
+        mesh.rotation.x = -Math.PI / 2
+        mesh.position.set(worldXAt(-0.62, -4.0), 0.015, -4.0)
+        mesh.scale.set(2.6, 2.0, 1)
+        mesh.renderOrder = 1
+        billboards.push({ mesh, ratio: -0.62, z: -4.0, widthFactor: 0 })
+        scene.add(mesh)
       }
       // 换装后按当前视口重算平铺（resize 可能已在解码前跑过）
       if (lastCss.w > 0) resize(lastCss.w, lastCss.h)
@@ -706,6 +827,7 @@ export const createEnvStage = (): EnvStage => {
 
   const tick = (time: number): void => {
     skyUniforms.uTime.value = time
+    snowUniforms.uTime.value = time
   }
 
   const dispose = (): void => {
