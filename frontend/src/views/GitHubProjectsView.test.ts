@@ -309,6 +309,47 @@ describe('GitHubProjectsView controller wiring', () => {
     }
   })
 
+  it('keeps sparse masonry cards at the dense-row column width instead of stretching', async () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1400 })
+    class DesktopResizeObserver {
+      private readonly callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) { this.callback = callback }
+      observe() { this.callback([], this as unknown as ResizeObserver) }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', DesktopResizeObserver)
+    controller().projects.value = [
+      { full_name: 'owner/one', description_zh: '一' },
+      { full_name: 'owner/two', description_zh: '二' },
+    ]
+
+    try {
+      const wrapper = await mountView()
+      const vm = wrapper.vm as unknown as {
+        masonryGridTemplate: string
+        masonryColumnWidths: number[]
+        masonryColumnCount: number
+        effectiveMasonryColumnCount: number
+      }
+      const widths = [...String(vm.masonryGridTemplate).matchAll(/(\d+)px/g)].map((match) => Number(match[1]))
+      expect(wrapper.findAll('.projects-col')).toHaveLength(2)
+      expect(vm.masonryColumnCount).toBe(5)
+      expect(vm.effectiveMasonryColumnCount).toBe(2)
+      expect(vm.masonryColumnWidths).toHaveLength(5)
+      expect(widths).toHaveLength(2)
+      // 1400px 容量约 5 列；稀疏行必须沿用满列轨道宽（~270px），而不是
+      // 把两张卡均分整行（~688px）。jsdom 不解析 v-bind CSS，因此断言计算值。
+      expect(widths.every((width) => width >= 260 && width <= 280)).toBe(true)
+      expect(vm.masonryColumnWidths.every((width) => width >= 260 && width <= 280)).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+      else delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },
