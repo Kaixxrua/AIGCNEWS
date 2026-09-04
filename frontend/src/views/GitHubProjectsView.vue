@@ -151,8 +151,9 @@ const masonryColumnCount = computed(() => {
   if (width <= 0) return 1
   return Math.max(1, Math.floor((width + MASONRY_GAP_PX) / (MASONRY_MIN_CARD_PX + MASONRY_GAP_PX)))
 })
-// 结果不足以填满容器容量时不渲染空轨道，避免个人收藏少量卡片时右侧
-// 出现大片无意义留白；空结果仍保留单列作为首帧与空状态的稳定回退。
+// 结果不足以填满容器容量时不渲染空轨道；空结果仍保留单列作为首帧
+// 与空状态的稳定回退。列宽始终按容器满列容量计算，稀疏行左侧对齐、
+// 右侧留白，避免把一两张卡拉伸到整行宽度。
 const effectiveMasonryColumnCount = computed(() => (
   projects.value.length > 0
     ? Math.min(masonryColumnCount.value, projects.value.length)
@@ -162,14 +163,14 @@ const effectiveMasonryColumnCount = computed(() => (
 // 半像素上，1px 边框被抗锯齿成虚边（用户反馈"二四列边框绘制异常"）。
 // 显式整数轨道 + 整数 gap ⇒ 每列左右边缘都落在物理像素上。
 const masonryColumnWidths = computed(() => {
-  const count = effectiveMasonryColumnCount.value
+  const count = masonryColumnCount.value
   const total = Math.floor(gridContentWidth.value) - MASONRY_GAP_PX * (count - 1)
   const base = Math.floor(total / count)
   let remainder = total - base * count
   return Array.from({ length: count }, () => base + (remainder-- > 0 ? 1 : 0))
 })
 const masonryGridTemplate = computed(() => {
-  const widths = masonryColumnWidths.value
+  const widths = masonryColumnWidths.value.slice(0, effectiveMasonryColumnCount.value)
   return widths.every((w) => w > 0) ? widths.map((w) => `${w}px`).join(' ') : 'minmax(0, 1fr)'
 })
 const masonryColumnWidth = computed(() => {
