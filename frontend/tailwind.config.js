@@ -113,7 +113,7 @@ export default {
         mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'],
       },
       fontSize: {
-        '2xs': ['0.65rem', { lineHeight: '1rem' }],
+        '2xs': ['0.75rem', { lineHeight: '1.125rem' }],
       },
       backdropBlur: {
         xs: '2px',

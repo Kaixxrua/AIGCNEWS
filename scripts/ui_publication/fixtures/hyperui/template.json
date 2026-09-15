@@ -1,0 +1,81 @@
+{
+  "id": "hyperui-marketing-buttons-1",
+  "name": {
+    "zh": "圆角行动按钮",
+    "en": "Rounded action buttons"
+  },
+  "description": {
+    "zh": "HyperUI 原版圆角行动按钮，含可运行预览、源码及许可。",
+    "en": "Original Rounded action buttons from HyperUI, with runnable preview, source and license."
+  },
+  "provider": "HyperUI",
+  "provider_id": "hyperui",
+  "author": "Mark Mead",
+  "license": "MIT",
+  "license_url": "/ui-library/licenses/hyperui/LICENSE",
+  "source_url": "https://github.com/markmead/hyperui/blob/ae5038979b77320793360a46b85e7c71a73beda6/public/examples/marketing/buttons/1.html",
+  "revision": "ae5038979b77320793360a46b85e7c71a73beda6",
+  "demo_url": "https://www.hyperui.dev/components/marketing/buttons",
+  "category": "component",
+  "frameworks": [
+    "html"
+  ],
+  "aliases": [
+    "button",
+    "按钮",
+    "圆角",
+    "ui",
+    "component",
+    "template",
+    "组件",
+    "素材",
+    "模板",
+    "html",
+    "tailwind",
+    "界面"
+  ],
+  "files": [
+    {
+      "name": "public/examples/marketing/buttons/1.html",
+      "path": "sources/hyperui/public/examples/marketing/buttons/1.html",
+      "sha256": "2dd992aa4fe2069a76c9aa7a4a8d4476b16475094ed70a825a16ee90e073ebf3"
+    },
+    {
+      "name": "public/component.js",
+      "path": "sources/hyperui/public/component.js",
+      "sha256": "3cb42e2b9cba44f749ddaf7e1a2323480c4bf6f8a7f77e893a5bfd3b971fb4a3"
+    }
+  ],
+  "notices": [
+    {
+      "name": "LICENSE",
+      "path": "licenses/hyperui/LICENSE",
+      "sha256": "60e0bb845a95da072acc1ada114cf8ce325347ed9d5f802d8d7fd9b511248f98"
+    }
+  ],
+  "assets": [
+    {
+      "name": "public/component.css",
+      "path": "assets/hyperui/public/component.css",
+      "sha256": "2303f257fd0170214a78227738445ee9f0f252ba8962f22d24f5c1dffe56ec43",
+      "license": "MIT",
+      "license_url": "/ui-library/licenses/hyperui/LICENSE"
+    }
+  ],
+  "dependencies": {
+    "tailwindcss": "4.3.3"
+  },
+  "export_name": "",
+  "props": {},
+  "notes": {
+    "zh": "保留原版代码与 MIT 许可。将附带的 component.css 和 component.js 放到网站根路径；打包样式仅移除了远程字体导入，预览使用系统字体。HTML 可嵌入任意框架，链接和提交仅用于演示。",
+    "en": "Preserve the original source and MIT notice.Serve the supplied component.css and component.js at the site root. Bundled CSS only removes the remote font import; previews use system fonts. HTML works with any framework; links and submissions are demo-only."
+  },
+  "preview_url": "/ui-library/previews/hyperui-marketing-buttons-1.html",
+  "poster_url": "/ui-library/posters/hyperui-marketing-buttons-1.png",
+  "clip_url": "/ui-library/clips/hyperui-marketing-buttons-1.webm",
+  "added_at": "2026-09-10T15:56:21.380169+00:00",
+  "rights_evidence_url": "/ui-library/assets/hyperui/evidence/ae5038979b77320793360a46b85e7c71a73beda6/manifest.json",
+  "subcategory": "buttons",
+  "kind": "component"
+}

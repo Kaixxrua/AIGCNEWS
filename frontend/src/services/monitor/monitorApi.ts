@@ -3,7 +3,7 @@ import type {
   ErrorLogPage,
   EmailPoolConfig, EmailPoolForm, EmailPoolTestResult, EmailDeliveryDayStat,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
-  GithubEnrichmentConfig, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult,
+  GithubEnrichmentConfig, GithubEnrichmentProjectPages, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult, GithubRetainedProject, GithubUnprocessableProject,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, OAuthConfig, OAuthConfigForm, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, TelegramConfig, TelegramConfigForm, RevenueStatsResponse, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
 } from '@/features/monitor/monitorModel'
@@ -68,6 +68,7 @@ export interface MonitorApi {
   crawlGithubProjects(form: GithubCrawlForm): Promise<GithubCrawlTriggerResult>
   fetchGithubCrawlStatus(query?: GithubCrawlStatusQuery): Promise<GithubCrawlStatus>
   fetchGithubEnrichmentStatus(): Promise<GithubEnrichmentStatus>
+  fetchGithubEnrichmentProjectPages(params: { unprocessablePage: number; retainedPage: number; pageSize: number }): Promise<GithubEnrichmentProjectPages>
   fetchGithubEnrichmentConfig(): Promise<GithubEnrichmentConfig>
   saveGithubEnrichmentConfig(reasoningEffort: string): Promise<GithubEnrichmentConfig>
   triggerGithubEnrichment(limit: number, concurrency: number): Promise<GithubEnrichmentTriggerResult>
@@ -152,7 +153,7 @@ export const monitorApi: MonitorApi = {
   async saveSiteContactPageConfig(form) { return (await api.put('/ops/site/contact-page', buildSiteContactPagePayload(form))).data },
   // 站点公开素材上传（二维码/正文插图）：multipart 直传，返回站内 /api/media/site/... URL
   // 注意：api 实例默认 Content-Type=application/json，axios 1.x 遇 JSON 头会把 FormData
-  // 序列化成 JSON（File 变 {}）导致 422——必须显式声明 multipart（uploadPdfAttachment 同款）。
+  // 序列化成 JSON（File 变 {}）导致 422——必须显式声明 multipart。
   async uploadSiteImage(file) {
     const formData = new FormData()
     formData.append('file', file)
@@ -224,6 +225,28 @@ export const monitorApi: MonitorApi = {
     )).data
   },
   async fetchGithubEnrichmentStatus() { return (await api.get('/ops/github-projects/enrichment-status')).data },
+  async fetchGithubEnrichmentProjectPages({ unprocessablePage, retainedPage, pageSize }) {
+    const { data } = await api.get('/ops/github-projects/enrichment-project-pages', {
+      params: {
+        unprocessable_page: unprocessablePage,
+        retained_page: retainedPage,
+        page_size: pageSize,
+      },
+    })
+    const normalizePage = <T>(page: unknown, fallbackPage: number) => {
+      const source = page && typeof page === 'object' ? page as Record<string, unknown> : {}
+      return {
+        items: Array.isArray(source.items) ? source.items as T[] : [],
+        total: Number(source.total) || 0,
+        page: Number(source.page) || fallbackPage,
+        page_size: Number(source.page_size) || pageSize,
+      }
+    }
+    return {
+      unprocessable: normalizePage<GithubUnprocessableProject>(data?.unprocessable, unprocessablePage),
+      retained: normalizePage<GithubRetainedProject>(data?.retained, retainedPage),
+    }
+  },
   async fetchGithubEnrichmentConfig() {
     const data = (await api.get('/ops/github-projects/enrichment-config')).data
     return {

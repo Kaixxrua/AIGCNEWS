@@ -94,7 +94,7 @@ python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 
 - **多源榜单 Dashboard** —— 论文 / GitHub / 新闻 / Product Hunt / Hacker News / X 六源同板（日 / 周 / 月），快照可按日期回看，GitHub 热度分不只看总 Stars
 - **GitHub AI 项目库** —— 18,000+ 精选项目与工具站，≥500 Stars 准入门槛，中英双语分类与标签，PostgreSQL 关键词 × Milvus 语义混合检索，卡片展示今日 +N Stars，筛选状态同步 URL 可分享
-- **论文发现与阅读** —— arXiv / HuggingFace 每日热门论文，站内分页 PDF 阅读器支持区域框选，后台全文切片与向量索引
+- **论文发现与阅读** —— arXiv / HuggingFace 每日热门论文，站内摘要与原文链接，后台 PDF 图文提取、全文索引和日报总结
 - **X 动态与微信公众号** —— 精选时间线 + 按日期快照与静默期，推文中文翻译完整补回 @ 提及，统一站内阅读 Feed
 - **智能简报与订阅** —— 各方向日 / 周 / 月报（中英双语）SSE 流式生成，按来源与频率邮件订阅、支持立即送达
 - **收藏与私人书架** —— 乐观更新收藏 + 个人标签 + 跨设备同步，提交 URL 自动富化的私人工具书架，公共与私人数据严格隔离

@@ -115,7 +115,7 @@ def verify_live_test_target(connection: Any, params: Mapping[str, str], run_id: 
         row = connection.execute(
             """
             SELECT current_database() AS database, current_user AS username,
-                   inet_server_addr()::text AS server_addr, inet_server_port() AS server_port,
+                   host(inet_server_addr()) AS server_addr, inet_server_port() AS server_port,
                    (SELECT run_id FROM public.aigcnews_test_run_guard
                     WHERE run_id = %s) AS marker_run_id
             """,

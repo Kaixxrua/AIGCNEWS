@@ -130,7 +130,7 @@ describe('Dashboard request lifecycle contract', () => {
     await pending
 
     expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
-    expect(mounted.updateStatSources).toHaveBeenCalledOnce()
+    expect(mounted.updateStatSources).toHaveBeenCalled()
     expect(mounted.dashboard.isViewingHistory.value).toBe(true)
     mounted.app.unmount()
   })
@@ -167,7 +167,7 @@ describe('Dashboard request lifecycle contract', () => {
     })
     const mounted = mountDashboard()
     await flush()
-    expect(mounted.dashboard.stats.value).toEqual({})
+    expect(mounted.dashboard.stats.value.today_visits).toBe(9)
 
     resolveSummary({
       stats: { total_documents: 3, today_visits: 6, total_visits: 97, mcp_total_calls: 1232 },
@@ -274,6 +274,7 @@ describe('Dashboard request lifecycle contract', () => {
     await flush()
     expect(mounted.dashboard.stats.value.total_documents).toBe(2)
     expect(mounted.dashboard.isFinalized.value).toBe(false)
+    expect(mounted.dashboard.loading.value).toBe(false)
     mounted.app.unmount()
   })
 
@@ -294,6 +295,84 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.visible.value = true
     await flush()
     expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(2)
+    mounted.app.unmount()
+  })
+
+  it('shows rankings while statistics and available dates are still pending', async () => {
+    let finishStats!: (stats: { total_documents: number }) => void
+    let finishDates!: (dates: string[]) => void
+    liveStatsApi.fetchLiveStats.mockImplementation(() => new Promise(resolve => { finishStats = resolve }))
+    defaultDashboardApi.fetchSnapshotDates.mockImplementation(() => new Promise(resolve => { finishDates = resolve }))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.loading.value).toBe(false)
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: 1, title: 'Top' }])
+    expect(mounted.dashboard.stats.value).toEqual({})
+    finishStats({ total_documents: 25 })
+    finishDates(['2026-07-27'])
+    await flush()
+    expect(mounted.dashboard.stats.value.total_documents).toBe(25)
+    expect(mounted.dashboard.availableDates.value).toEqual(['2026-07-27'])
+    mounted.app.unmount()
+  })
+
+  it('keeps rankings usable when the statistics request fails', async () => {
+    liveStatsApi.fetchLiveStats.mockRejectedValue(new Error('statistics unavailable'))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.loading.value).toBe(false)
+    expect(mounted.dashboard.errorMsg.value).toBe('')
+    expect(mounted.dashboard.tabList.value).toHaveLength(1)
+    mounted.app.unmount()
+  })
+
+  it('accepts SSE during loading and ignores an older REST response arriving later', async () => {
+    let finishSummary!: (value: { isFinalized: boolean; isEmbargoed: boolean }) => void
+    let finishStats!: (value: { today_visits: number; source_counts: { github: number } }) => void
+    defaultDashboardApi.fetchSummaryStatic.mockImplementation(() => new Promise(resolve => { finishSummary = resolve }))
+    liveStatsApi.fetchLiveStats.mockImplementation(() => new Promise(resolve => { finishStats = resolve }))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.loading.value).toBe(true)
+    mounted.dashboard.applyLiveStats({ today_visits: 20, source_counts: { github: 10 } })
+    expect(mounted.dashboard.stats.value.today_visits).toBe(20)
+    finishStats({ today_visits: 18, source_counts: { github: 8 } })
+    finishSummary({ isFinalized: true, isEmbargoed: false })
+    await flush()
+    expect(mounted.dashboard.stats.value).toMatchObject({ today_visits: 20, source_counts: { github: 10 } })
+    expect(mounted.dashboard.loading.value).toBe(false)
+    mounted.visible.value = false
+    await nextTick()
+    mounted.dashboard.applyLiveStats({ today_visits: 99 })
+    expect(mounted.dashboard.stats.value.today_visits).toBe(20)
+    mounted.app.unmount()
+  })
+
+  it('resumes statistics after a short kept-alive navigation', async () => {
+    const mounted = mountDashboard()
+    await flush()
+    mounted.visible.value = false
+    await nextTick()
+    liveStatsApi.fetchLiveStats.mockResolvedValue({ total_documents: 12 })
+    mounted.visible.value = true
+    await flush()
+    expect(mounted.dashboard.stats.value.total_documents).toBe(12)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(1)
+    mounted.app.unmount()
+  })
+
+  it('restarts an interrupted first load when returning to the kept-alive view', async () => {
+    defaultDashboardApi.fetchSummaryStatic.mockImplementationOnce(() => new Promise(() => {}))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.loading.value).toBe(true)
+    mounted.visible.value = false
+    await nextTick()
+    mounted.visible.value = true
+    await flush()
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(2)
+    expect(mounted.dashboard.loading.value).toBe(false)
+    expect(mounted.dashboard.tabList.value).toHaveLength(1)
     mounted.app.unmount()
   })
 })

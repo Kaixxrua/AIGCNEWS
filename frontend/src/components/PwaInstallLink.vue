@@ -2,9 +2,8 @@
 import { useI18n } from 'vue-i18n'
 import { showInstallEntry, usePwaInstall } from '@/pwa/installPrompt'
 
-/** 顶栏 PWA 安装入口（原底部 dock 下载按钮迁移而来）：
-    仅浏览器判定可安装（或 iOS 待手动安装且未装）时出现；
-    Android/桌面 Chrome 直调系统弹窗，iOS 经 PwaInstallGuide 卡片指引。 */
+/** 顶栏下载入口：普通网页中常驻，浏览器支持时调用系统安装弹窗，
+    其余情况展示安装指引；已安装的独立应用中隐藏。 */
 const { t } = useI18n()
 const { promptInstall } = usePwaInstall()
 </script>
@@ -44,13 +43,14 @@ const { promptInstall } = usePwaInstall()
   padding: 0;
   border: 0;
   border-radius: 50%;
-  color: var(--acid-ink);
+  color: var(--ink);
   background: var(--acid-soft);
   cursor: pointer;
   transition: color 150ms ease, background-color 150ms ease, transform 150ms ease;
 }
 
 .pwa-install-link:hover {
+  color: var(--acid-ink);
   background: var(--acid);
   transform: translateY(-1px);
 }
@@ -61,6 +61,26 @@ const { promptInstall } = usePwaInstall()
 .pwa-install-link svg {
   width: 18px;
   height: 18px;
+}
+
+@media (max-width: 767px) {
+  .pwa-install-link {
+    position: relative;
+    isolation: isolate;
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+    background: transparent;
+  }
+  .pwa-install-link::before {
+    content: '';
+    position: absolute;
+    inset: 8px;
+    z-index: -1;
+    border-radius: 6px;
+    background: var(--acid-soft);
+  }
+  .pwa-install-link:hover::before { background: var(--acid); }
 }
 
 @media (prefers-reduced-motion: reduce) {

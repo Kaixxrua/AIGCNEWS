@@ -351,7 +351,7 @@ class IngestionOrchestrator:
         return result
 
     def _start_arxiv_pdf_background(self, papers: List[dict]) -> None:
-        """启动后台线程：下载 Arxiv PDF 落盘 → PyMuPDF 解析 → 切片写入 Milvus（非阻塞）。
+        """启动后台线程：下载 Arxiv PDF 落盘 → pdfplumber / pypdf 解析 → 切片写入 Milvus（非阻塞）。
 
         经组合的 pdf_indexer（ArxivPdfDownloader）执行：
           - 每篇 PDF 下载间隔 3s（防封杀）

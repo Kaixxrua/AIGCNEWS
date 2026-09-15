@@ -6,9 +6,12 @@ import logging
 import re
 from typing import Any, AsyncGenerator, AsyncIterator, Dict, List, Protocol
 
+from langchain_core.messages import HumanMessage
+
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.document_repository import DocumentFeedReader
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
+from backend.app.services.briefing.paper_evidence import paper_pdf_evidence
 from backend.app.services.briefing.preparation import (
     PreparedBriefing,
     normalize_briefing_context,
@@ -16,6 +19,11 @@ from backend.app.services.briefing.preparation import (
 )
 from backend.app.services.briefing.rss_render import sanitize_public_text
 from backend.app.services.ingestion.base_crawler import today_cst
+from backend.app.services.x_model_inputs import (
+    briefing_photo_blocks,
+    with_x_photos,
+    x_tweet_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -445,11 +453,11 @@ def _format_x_articles_by_account(docs: List[Dict[str, Any]]) -> str:
         lines.append(f"{i}. {_x_account_label(group)}（{len(tweets)} 条推文）")
         for j, doc in enumerate(tweets, start=1):
             title = doc.get("title") or "无标题"
-            summary = doc.get("summary") or ""
+            summary = x_tweet_text(doc)
             url = doc.get("url") or ""
             lines.append(f"   {j}) **{title}**")
             if summary:
-                lines.append(f"      {_truncate_summary(summary)}")
+                lines.append(f"      {summary}")
             if url:
                 lines.append(f"      🔗 {url}")
         lines.append("")
@@ -489,8 +497,9 @@ def _format_articles(docs: List[Dict[str, Any]], source: str = "all") -> str:
         if attribution:
             heading += f"（{attribution}）"
         lines.append(heading)
-        if summary:
-            lines.append(f"   {_truncate_summary(summary)}")
+        body = x_tweet_text(doc) if src == "x" else _truncate_summary(summary)
+        if body:
+            lines.append(f"   {body}")
         if url:
             lines.append(f"   🔗 {url}")
         lines.append("")
@@ -527,7 +536,7 @@ def _filter_blocked_docs(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 class BriefingModel(Protocol):
     """Streaming model boundary used by briefing generation."""
 
-    def astream(self, prompt: str) -> AsyncIterator[Any]: ...
+    def astream(self, prompt: str | list[HumanMessage]) -> AsyncIterator[Any]: ...
 
 
 class BriefingSavedNotifier(Protocol):
@@ -709,7 +718,13 @@ class DailyBriefingService:
             logger.info(
                 "找到 %d 条文档，source=%s，开始构建 Prompt...", len(docs), source
             )
-            prompt = prepared.prompt or ""
+            pdf_context, pdf_images = await asyncio.to_thread(
+                paper_pdf_evidence, docs, source=source
+            )
+            base_prompt = (prepared.prompt or "") + pdf_context
+            prompt = base_prompt
+            attachments = briefing_photo_blocks(docs, source=source)
+            attachments.extend(pdf_images)
             if generate_bilingual:
                 prompt += _LANGUAGE_INSTRUCTIONS[requested_locale]
 
@@ -717,7 +732,7 @@ class DailyBriefingService:
             primary_parts: List[str] = []
             try:
                 async for token in self._stream_with_continuation(
-                    prompt, source=source, parts=primary_parts
+                    prompt, source=source, parts=primary_parts, attachments=attachments
                 ):
                     yield {"type": "content", "data": token}
             except _BlockResponseError:
@@ -732,13 +747,14 @@ class DailyBriefingService:
             if complete_text.strip():
                 if generate_bilingual:
                     alternate_locale = next(item for item in _BRIEFING_LANGUAGES if item != requested_locale)
-                    alternate_prompt = (prepared.prompt or "") + _LANGUAGE_INSTRUCTIONS[alternate_locale]
+                    alternate_prompt = base_prompt + _LANGUAGE_INSTRUCTIONS[alternate_locale]
                     # 另一语言与主语言走同一条含续写的生成路径（续写对等），
                     # 仅不向客户端推流。
                     alternate_parts: List[str] = []
                     try:
                         async for _token in self._stream_with_continuation(
-                            alternate_prompt, source=source, parts=alternate_parts
+                            alternate_prompt, source=source, parts=alternate_parts,
+                            attachments=attachments,
                         ):
                             pass
                     except _BlockResponseError:
@@ -803,6 +819,7 @@ class DailyBriefingService:
         *,
         source: str,
         parts: List[str],
+        attachments: list[dict[str, Any]] | None = None,
     ) -> AsyncGenerator[str, None]:
         """流式生成简报正文，截断时自动多轮续写。
 
@@ -810,7 +827,8 @@ class DailyBriefingService:
         调用方用 "".join(parts) 取得完整文本。主语言与双语场景的另一语言
         共用本路径，保证续写行为对等。疑似拦截页时抛 _BlockResponseError。
         """
-        async for token in self._stream_llm_round(prompt):
+        images = attachments or []
+        async for token in self._stream_llm_round(with_x_photos(prompt, images)):
             parts.append(token)
             yield token
 
@@ -834,7 +852,11 @@ class DailyBriefingService:
                 previous_content=accumulated[-4000:]  # 只传最后 4000 字符避免超长
             )
 
-            async for token in self._stream_llm_round(cont_prompt):
+            # A new model call needs both the original evidence and the photos;
+            # the previous 4000 characters alone cannot preserve visual context.
+            if images:
+                cont_prompt = prompt + "\n\n" + cont_prompt
+            async for token in self._stream_llm_round(with_x_photos(cont_prompt, images)):
                 parts.append(token)
                 yield token
 
@@ -871,7 +893,7 @@ class DailyBriefingService:
             accumulated = sanitized
         return accumulated
 
-    async def _stream_llm_round(self, prompt: str) -> AsyncGenerator[str, None]:
+    async def _stream_llm_round(self, prompt: str | list[HumanMessage]) -> AsyncGenerator[str, None]:
         """执行一轮 LLM 流式生成，逐 token 返回。"""
         limiter = self._llm_limiter
         if limiter is not None:

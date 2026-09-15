@@ -15,7 +15,8 @@ const initialized = ref(false)
 const canInstall = ref(false)
 const isInstalled = ref(false)
 const isIOS = ref(false)
-const showIOSGuide = ref(false)
+const showInstallGuide = ref(false)
+let prompting = false
 
 let deferredPrompt: BeforeInstallPromptEventLike | null = null
 
@@ -37,11 +38,11 @@ const isIOSDevice = (): boolean => {
 }
 
 /**
- * 可观察的入口状态。入口只有在生产初始化完成后才会出现，避免开发环境
- * 的 AppDock 因浏览器能力检测而显示不可用的安装按钮。
+ * 普通网页中的下载入口保持可见；没有原生安装事件时提供手动指引。
+ * 尚未初始化、或已经作为独立应用运行时不显示。
  */
 export const showInstallEntry = computed(
-  () => initialized.value && !isInstalled.value && (canInstall.value || isIOS.value),
+  () => initialized.value && !isInstalled.value,
 )
 
 export function usePwaInstall() {
@@ -49,15 +50,15 @@ export function usePwaInstall() {
     canInstall,
     isInstalled,
     isIOS,
-    showIOSGuide,
+    showInstallGuide,
     showInstallEntry,
     promptInstall,
-    closeIOSGuide,
+    closeInstallGuide,
   }
 }
 
 /**
- * 注册浏览器安装事件。调用幂等，main.ts 仅在生产环境触发；独立导出也
+ * 注册浏览器安装事件。调用幂等，main.ts 在页面挂载后触发；独立导出也
  * 方便契约测试在 jsdom 中验证 Android/桌面与 iOS 两条分支。
  */
 export function initializeInstallPrompt(): void {
@@ -85,34 +86,37 @@ function handleAppInstalled(): void {
   deferredPrompt = null
   canInstall.value = false
   isInstalled.value = true
-  showIOSGuide.value = false
+  showInstallGuide.value = false
 }
 
 export async function promptInstall(): Promise<void> {
-  if (isInstalled.value) return
+  if (!initialized.value || isInstalled.value || prompting) return
 
-  if (isIOS.value) {
-    showIOSGuide.value = true
+  if (isIOS.value || !deferredPrompt) {
+    showInstallGuide.value = true
     return
   }
 
   const installEvent = deferredPrompt
-  if (!installEvent) return
 
-  // The browser permits prompt() only once per event. Hide the entry before
-  // opening the native dialog so a second click cannot race the same event.
+  // 原生事件只能消费一次；保留入口，同时防止重复点击同一安装弹窗。
+  prompting = true
   deferredPrompt = null
   canInstall.value = false
-  await installEvent.prompt()
-
-  const choice = await installEvent.userChoice
-  if (choice.outcome === 'accepted') {
-    isInstalled.value = true
+  showInstallGuide.value = false
+  try {
+    await installEvent.prompt()
+    const choice = await installEvent.userChoice
+    if (choice.outcome === 'accepted') isInstalled.value = true
+  } catch {
+    showInstallGuide.value = !isInstalled.value
+  } finally {
+    prompting = false
   }
 }
 
-export function closeIOSGuide(): void {
-  showIOSGuide.value = false
+export function closeInstallGuide(): void {
+  showInstallGuide.value = false
 }
 
 /**
@@ -129,5 +133,6 @@ export function __resetInstallPromptForTests(): void {
   canInstall.value = false
   isInstalled.value = false
   isIOS.value = false
-  showIOSGuide.value = false
+  showInstallGuide.value = false
+  prompting = false
 }

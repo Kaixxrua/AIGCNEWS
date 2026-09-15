@@ -33,6 +33,7 @@ from backend.app.core.scheduler_registry import (
     DAILY_BRIEFING_JOB,
     PAYMENT_ORDER_CLOSING_JOB,
     SOURCE_JOB_DESCRIPTORS,
+    UI_LIBRARY_JOBS,
     SUBSCRIPTION_DISPATCH_JOB,
     JobDescriptor,
     SchedulerCallback,
@@ -51,6 +52,7 @@ from backend.app.repositories.payment_order_repository import PaymentOrderWriter
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotRepository
 from backend.app.services.briefing.dispatch import (
     BRIEFING_SOURCES,
+    BriefingSourceFailureHook,
     run_daily_briefing_dispatch,
 )
 from backend.app.services.payments.runtime_config import (
@@ -107,8 +109,21 @@ _DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
 
 # X 链路源任务集合：x_source_enabled=False 时不注册、也不允许经在线配置启用
 _X_SOURCE_JOB_SOURCES = frozenset(
-    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor", "x_media_warmup"}
+    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor", "x_media_warmup", "ui_library_x_discovery"}
 )
+
+# 简报维度失败自动补跑：单维度每日最多补跑 3 次，距上次失败确认 5 分钟后
+# 触发（按源失败时刻即时排程，不等全维度 gather 屏障）。计数按
+# (目标日期, 维度) 存 Redis（进程重启不丢额度、天然按日重置），Redis
+# 缺席/故障退化进程内字典。补跑仍失败且额度耗尽时以 ERROR 落 error_events
+# （后台监测页 /monitor/errors），当日不再自动补跑。
+_BRIEFING_RETRY_MAX_ATTEMPTS = 3
+_BRIEFING_RETRY_DELAY = timedelta(minutes=5)
+_BRIEFING_RETRY_KEY_PREFIX = "aigc:briefing:retry"
+_BRIEFING_RETRY_KEY_TTL_SECONDS = 2 * 86400
+# 一次性补跑 job 的哑火宽限：事件循环繁忙时允许迟到一个小时内补上；
+# 进程重启丢 MemoryJobStore 里未触发的补跑，额度已消耗是刻意的保守取向。
+_BRIEFING_RETRY_MISFIRE_GRACE_SECONDS = 3600
 
 
 def _notify_ops_alert(job_id: str, failures: int, detail: str) -> None:
@@ -810,9 +825,33 @@ async def _run_daily_briefing_job(
     repositories: ApplicationRepositories,
     *,
     redis_client: Any | None = None,
+    on_source_failed: BriefingSourceFailureHook | None = None,
 ) -> None:
     """一行委托：每日简报生成与订阅派发编排归属于 services/briefing。"""
-    await run_daily_briefing_dispatch(repositories, redis_client=redis_client)
+    await run_daily_briefing_dispatch(
+        repositories,
+        redis_client=redis_client,
+        on_source_failed=on_source_failed,
+    )
+
+
+async def _run_daily_briefing_retry_job(
+    repositories: ApplicationRepositories,
+    *,
+    target_date: str,
+    source: str,
+    redis_client: Any | None = None,
+    on_source_failed: BriefingSourceFailureHook | None = None,
+) -> None:
+    """单维度简报补跑：复用日常派发链（取数/生成/落库/订阅派发），收窄到一个
+    维度并沿用原目标日期；再失败仍经同一钩子回报，构成补跑链。"""
+    await run_daily_briefing_dispatch(
+        repositories,
+        redis_client=redis_client,
+        sources=[source],
+        target_date=target_date,
+        on_source_failed=on_source_failed,
+    )
 
 
 async def _run_subscription_dispatch_job(
@@ -837,10 +876,22 @@ async def _run_subscription_dispatch_job(
     try:
         summary = await service.dispatch_all()
         logger.info("[Scheduler] 订阅简报派发完成：%s", summary)
-        return True
+        succeeded = True
     except Exception as exc:
         logger.error("[Scheduler] 订阅简报派发失败: %s", exc, exc_info=True)
-        return False
+        succeeded = False
+    tracking = getattr(repositories, "tracking", None)
+    if tracking is not None:
+        from backend.app.services.tracking.dispatch import dispatch_tracking
+
+        try:
+            result = await dispatch_tracking(tracking, service)
+            logger.info("[Scheduler] 个人情报派发完成：%s", result)
+            succeeded = succeeded and result["failed"] == 0
+        except Exception:
+            logger.exception("[Scheduler] 个人情报派发失败")
+            succeeded = False
+    return succeeded
 
 
 async def _run_project_semantic_warmup_job(
@@ -1079,6 +1130,8 @@ class ApplicationSchedulerRuntime:
         )
         self._active_tasks: set[asyncio.Task[Any]] = set()
         self._redis_client = redis_client
+        # Redis 缺席时的进程内补跑计数兜底：(目标日期, 维度) -> 已排程补跑次数。
+        self._briefing_retry_counters: Dict[tuple[str, str], int] = {}
         self._stopping = False
         self._stop_lock = asyncio.Lock()
 
@@ -1250,9 +1303,116 @@ class ApplicationSchedulerRuntime:
             lambda: self._guarded(
                 "daily_briefing",
                 lambda: _run_daily_briefing_job(
-                    self.repositories, redis_client=self._redis_client
+                    self.repositories,
+                    redis_client=self._redis_client,
+                    on_source_failed=self._handle_briefing_source_failed,
                 ),
             )
+        )
+
+    async def _run_daily_briefing_retry_job(
+        self, target_date: str, source: str
+    ) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                f"daily_briefing_retry:{source}",
+                lambda: _run_daily_briefing_retry_job(
+                    self.repositories,
+                    target_date=target_date,
+                    source=source,
+                    redis_client=self._redis_client,
+                    on_source_failed=self._handle_briefing_source_failed,
+                ),
+            )
+        )
+
+    async def _next_briefing_retry_attempt(
+        self, target_date: str, source: str
+    ) -> int:
+        """(目标日期, 维度) 补跑额度计数 +1 并返回新值。
+
+        Redis 计数保证进程重启不丢额度；Redis 缺席/故障时退化进程内字典
+        （fail-open：补跑是增益能力，不能因计数面故障反过来压制补跑）。
+        """
+        if self._redis_client is not None:
+            try:
+                key = f"{_BRIEFING_RETRY_KEY_PREFIX}:{target_date}:{source}"
+                used = int(await self._redis_client.incr(key))
+                if used == 1:
+                    await self._redis_client.expire(
+                        key, _BRIEFING_RETRY_KEY_TTL_SECONDS
+                    )
+                return used
+            except Exception:
+                logger.warning(
+                    "[Briefing] 补跑计数 Redis 读写失败，退化进程内计数: "
+                    "date=%s source=%s",
+                    target_date,
+                    source,
+                    exc_info=True,
+                )
+        stale = [
+            key for key in self._briefing_retry_counters if key[0] != target_date
+        ]
+        for key in stale:
+            del self._briefing_retry_counters[key]
+        key = (target_date, source)
+        used = self._briefing_retry_counters.get(key, 0) + 1
+        self._briefing_retry_counters[key] = used
+        return used
+
+    async def _handle_briefing_source_failed(
+        self, *, target_date: str, source: str, error: str
+    ) -> None:
+        """单维度简报失败钩子：额度内排程 5 分钟后的一次性补跑 job。
+
+        在维度失败确认当刻触发（而非全维度收尾后），因此间隔语义严格是
+        「上次失败 5 分钟后」。额度耗尽落 ERROR（经 error_events 上监测页），
+        当日不再自动补跑。补跑 job 为一次性 date 触发器，按维度独立 id，
+        出现在调度面板的 job 列表里可直接观察。
+        """
+        if self._stopping:
+            logger.info(
+                "[Briefing] 调度器停止中，跳过补跑排程: date=%s source=%s",
+                target_date,
+                source,
+            )
+            return
+        attempt = await self._next_briefing_retry_attempt(target_date, source)
+        if attempt > _BRIEFING_RETRY_MAX_ATTEMPTS:
+            logger.error(
+                "[Briefing] 简报自动补跑已达每日上限: date=%s source=%s "
+                "retries=%d last_error=%s；今日不再自动补跑，待人工介入。",
+                target_date,
+                source,
+                _BRIEFING_RETRY_MAX_ATTEMPTS,
+                error,
+            )
+            return
+        run_date = datetime.now(self.scheduler.timezone) + _BRIEFING_RETRY_DELAY
+
+        async def _retry() -> None:
+            await self._run_daily_briefing_retry_job(target_date, source)
+
+        self.scheduler.add_job(
+            _retry,
+            trigger="date",
+            run_date=run_date,
+            id=f"daily_briefing_retry_{source}",
+            name=f"简报自动补跑（第 {attempt}/{_BRIEFING_RETRY_MAX_ATTEMPTS} 次）: {source}",
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=_BRIEFING_RETRY_MISFIRE_GRACE_SECONDS,
+        )
+        logger.warning(
+            "[Briefing] 简报维度失败，已排程 %s 自动补跑（第 %d/%d 次）: "
+            "date=%s source=%s error=%s",
+            run_date.isoformat(),
+            attempt,
+            _BRIEFING_RETRY_MAX_ATTEMPTS,
+            target_date,
+            source,
+            error,
         )
 
     async def _run_subscription_dispatch_job(self) -> None:
@@ -1299,6 +1459,28 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_ui_library_discovery_job(self) -> None:
+        from backend.app.core.config import settings
+        from backend.app.services.ui_discovery import discover_web
+        async def run() -> bool:
+            async with asyncio.timeout(900):
+                async with self._github_job_lock:
+                    return await discover_web(self.repositories.ui_library, token=settings.github_token, proxy=settings.outbound_proxy)
+        await self._run_tracked(lambda: self._guarded("ui_library_discovery", run))
+
+    async def _run_ui_library_x_discovery_job(self) -> None:
+        from backend.app.services.source_plugins import load_x_transport_class
+        from backend.app.services.ui_discovery import discover_x
+        async def run() -> bool:
+            async with asyncio.timeout(900):
+                async with self._x_operation_lock:
+                    transport_class = load_x_transport_class()
+                    if transport_class is None:
+                        raise RuntimeError("X transport unavailable")
+                    transport = transport_class(credential_provider=self.repositories.x_credentials.list_enabled_x_credentials)
+                    return await discover_x(self.repositories.ui_library, transport)
+        await self._run_tracked(lambda: self._guarded("ui_library_x_discovery", run))
+
     def _is_source_job_suppressed(self, descriptor: JobDescriptor) -> bool:
         """特性开关关闭的源任务不注册、不允许在线启用（X 链路透出前不占调度面）。"""
         return (
@@ -1318,6 +1500,8 @@ class ApplicationSchedulerRuntime:
     def _job_callbacks(self) -> Dict[str, Any]:
         return {
             "_run_single_source_job": self._run_single_source_job,
+            "_run_ui_library_discovery_job": self._run_ui_library_discovery_job,
+            "_run_ui_library_x_discovery_job": self._run_ui_library_x_discovery_job,
             "_run_github_project_daily_pipeline_job": (
                 self._run_github_project_daily_pipeline_job
             ),
@@ -1349,7 +1533,7 @@ class ApplicationSchedulerRuntime:
             return self._payments_enabled
 
     def _base_descriptor(self, job_id: str) -> JobDescriptor | None:
-        for descriptor in SOURCE_JOB_DESCRIPTORS:
+        for descriptor in (*SOURCE_JOB_DESCRIPTORS, *UI_LIBRARY_JOBS):
             if descriptor.id == job_id:
                 return descriptor
         if job_id == DAILY_BRIEFING_JOB.id:
@@ -1540,6 +1724,11 @@ class ApplicationSchedulerRuntime:
                 logger.info("[Scheduler] 跳过已停用的支付关单任务: payment_order_closing")
         else:
             logger.info("[Scheduler] 支付开关关闭，跳过支付订单超时关单任务。")
+
+        for base in UI_LIBRARY_JOBS:
+            descriptor = self._effective_descriptor(base)
+            if descriptor is not None and not self._is_source_job_suppressed(descriptor):
+                _register_job(self.scheduler, descriptor, self._resolve_callback(descriptor))
 
         self.scheduler.start()
         # 登记为活动运行时：手动运维入口（IngestionAdminService）借此复用

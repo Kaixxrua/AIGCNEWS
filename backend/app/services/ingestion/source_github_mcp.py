@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Literal
 import httpx
 
 from backend.app.core.config import settings
+from backend.app.domain.project_visibility import PUBLIC_PROJECT_MIN_STARS
 from backend.app.domain.search_semantics import (
     normalize_search_query,
     project_search_terms,
@@ -36,7 +37,6 @@ _SORT_MAP = {
     "name": "stars",
 }
 _SEARCH_MODES = {"generic", "ai"}
-PUBLIC_PROJECT_MIN_STARS = 500
 _CACHE_MAX_ENTRIES = 128
 _CACHE_SUCCESS_TTL_SECONDS = 300.0
 _CACHE_EMPTY_TTL_SECONDS = 45.0

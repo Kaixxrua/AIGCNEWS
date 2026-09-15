@@ -53,6 +53,15 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         )
         database.close.side_effect = lambda: shutdown_events.append("postgres")
         monitoring_runtime = MagicMock()
+        metrics = MagicMock()
+        metrics.seed_from_json = AsyncMock()
+        warmup_started = asyncio.Event()
+
+        async def warm_dashboard(repositories_arg):
+            self.assertIs(repositories_arg, repositories)
+            warmup_started.set()
+            await asyncio.Future()
+
         with (
             patch.object(main, "settings", _settings()),
             patch.object(main, "postgres_database", database),
@@ -88,6 +97,8 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 return_value=rag_provider,
             ) as rag_provider_type,
             patch.object(main, "create_redis_client", return_value=redis_client),
+            patch.object(main, "create_redis_mcp_tool_call_metrics", return_value=metrics),
+            patch.object(main, "maintain_dashboard_cache", side_effect=warm_dashboard),
             patch.object(main.FastAPICache, "init"),
         ):
             async with main.lifespan(app):
@@ -99,6 +110,9 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIs(app.state.model_provider_runtime, model_provider_runtime)
                 self.assertIs(app.state.project_search_runtime, project_search_runtime)
                 self.assertIs(app.state.monitoring_runtime, monitoring_runtime)
+                await asyncio.wait_for(warmup_started.wait(), timeout=1)
+                dashboard_warmup_task = app.state.dashboard_warmup_task
+                self.assertFalse(dashboard_warmup_task.done())
                 scheduler_runtime.start.assert_not_called()
                 scheduler_runtime.stop.assert_not_called()
                 database.close.assert_not_called()
@@ -124,6 +138,8 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             rag_provider.close.assert_called_once_with()
             redis_client.aclose.assert_awaited_once_with()
             database.close.assert_called_once_with()
+            self.assertTrue(dashboard_warmup_task.cancelled())
+            self.assertIsNone(app.state.dashboard_warmup_task)
             self.assertEqual(
                 shutdown_events,
                 ["scheduler", "operations", "models", "postgres"],

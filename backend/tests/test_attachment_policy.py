@@ -5,13 +5,11 @@ import unittest
 
 from backend.app.services.chat.attachment_policy import (
     MAX_IMAGE_BYTES,
-    MAX_PDF_BYTES,
     AttachmentValidationError,
     image_extension,
     safe_display_filename,
     validate_image_attachment,
     validate_image_bytes,
-    validate_pdf_attachment,
 )
 
 
@@ -62,14 +60,6 @@ class AttachmentPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(AttachmentValidationError, "10 MiB"):
             validate_image_attachment(oversized, "image/jpeg")
 
-    def test_pdf_magic_size_and_filename(self) -> None:
-        result = validate_pdf_attachment(b"%PDF-1.7\n", "../../report.pdf")
-        self.assertEqual(result.filename, "report.pdf")
-
-        with self.assertRaisesRegex(AttachmentValidationError, "内容无效"):
-            validate_pdf_attachment(b"not a pdf", "report.pdf")
-        with self.assertRaisesRegex(AttachmentValidationError, "50 MiB"):
-            validate_pdf_attachment(b"%PDF-" + b"x" * MAX_PDF_BYTES)
 
     def test_display_filename_removes_paths_and_controls(self) -> None:
         self.assertEqual(safe_display_filename("..\\dir/evil\x00.pdf", "x.pdf"), "evil.pdf")

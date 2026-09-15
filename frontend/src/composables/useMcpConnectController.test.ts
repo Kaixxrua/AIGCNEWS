@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpHandshakeOptions } from '@/features/mcp/mcpHandshake'
 import type { McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
@@ -237,5 +237,22 @@ describe('MCP connect controller', () => {
     await controller.copyQuickCommand()
     expect(controller.setupError.value).toEqual({ kind: 'key', key: 'mcp.copyFailed', params: undefined })
     expect(JSON.stringify(controller.setupError.value)).not.toContain('aigc-news')
+  })
+
+  it('exposes a reactive isLoggedIn state derived from the injected getter', async () => {
+    const loggedIn = ref(false)
+    const { controller } = createController({ isLoggedIn: () => loggedIn.value })
+    expect(controller.isLoggedIn.value).toBe(false)
+
+    loggedIn.value = true
+    await nextTick()
+    expect(controller.isLoggedIn.value).toBe(true)
+  })
+
+  it('forwards requestLogin to the injected navigateToLogin seam', async () => {
+    const navigateToLogin = vi.fn(async () => undefined)
+    const { controller } = createController({ navigateToLogin })
+    await controller.requestLogin()
+    expect(navigateToLogin).toHaveBeenCalledOnce()
   })
 })

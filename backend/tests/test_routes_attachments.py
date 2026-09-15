@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
 from backend.app.api import routes_attachments
-from backend.app.services.chat.attachment_policy import MAX_PDF_BYTES
 from backend.app.services.chat.attachment_service import (
     AttachmentMeta,
     AttachmentStatus,
@@ -57,17 +56,6 @@ class AttachmentRouteTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 400)
         self.assertEqual(raised.exception.detail, "图片数据格式无效")
 
-    def test_pdf_route_reads_only_max_plus_one_and_rejects_invalid_magic(self) -> None:
-        file = MagicMock()
-        file.filename = "fake.pdf"
-        file.read = AsyncMock(return_value=b"not-pdf")
-
-        with self.assertRaises(HTTPException) as raised:
-            asyncio.run(routes_attachments.upload_pdf_attachment(file, {"user_id": 1}))
-
-        file.read.assert_awaited_once_with(MAX_PDF_BYTES + 1)
-        self.assertEqual(raised.exception.status_code, 400)
-        self.assertEqual(raised.exception.detail, "PDF 文件内容无效")
 
     def test_cross_owner_status_behaves_absent(self) -> None:
         with patch.object(
@@ -85,3 +73,14 @@ class AttachmentRouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_pdf_upload_route_is_retired():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(routes_attachments.router, prefix="/api")
+    response = TestClient(app).post("/api/chat/attachments/pdf", content=b"%PDF-1.7")
+    assert response.status_code == 405
+    assert "/api/chat/attachments/pdf" not in app.openapi()["paths"]

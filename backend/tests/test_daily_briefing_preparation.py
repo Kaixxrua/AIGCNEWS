@@ -1399,5 +1399,30 @@ def _collect(generator):
 DailyBriefingPreparationContractTests._collect = staticmethod(_collect)
 
 
+def test_paper_pdf_text_and_figures_are_used_in_both_briefing_languages(monkeypatch):
+    from backend.app.services.briefing import daily_briefing
+
+    service = _service()
+    service._briefings.get_briefing_by_date.return_value = None
+    service._rank_snapshots.get_snapshot_documents.return_value = [{
+        "id": "paper", "source": "arxiv", "source_channel": "huggingface_daily_html",
+        "title": "Paper", "summary": "Abstract", "url": "https://arxiv.org/abs/2403.12345",
+        "raw_score": 1,
+    }]
+    images = [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,figure"}}]
+    monkeypatch.setattr(daily_briefing, "paper_pdf_evidence", lambda docs, source: ("PDF method evidence", images))
+    service._llm.astream.side_effect = _astream_side_effect(["完整中文报告。", "Complete English report."])
+
+    events = _collect(service.stream_generate("2026-07-22", source="arxiv", generate_bilingual=True))
+
+    assert events[-1]["type"] == "done"
+    assert service._llm.astream.call_count == 2
+    for call in service._llm.astream.call_args_list:
+        content = call.args[0][0].content
+        assert "PDF method evidence" in content[0]["text"]
+        assert content[-1] == images[0]
+    service._briefings.save_briefing.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

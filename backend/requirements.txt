@@ -28,8 +28,8 @@ twitter-cli==0.8.5
 # ProductHunt 抓取主传输（浏览器指纹 TLS；失败回退 httpx）
 curl-cffi>=0.16
 pypdf
-pymupdf
 pdfplumber
+pypdfium2
 
 psycopg[binary]>=3.2,<4
 psycopg_pool>=3.2,<4

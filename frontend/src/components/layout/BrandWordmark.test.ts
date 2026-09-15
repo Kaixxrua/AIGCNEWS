@@ -19,14 +19,14 @@ const stubMatchMedia = (reduced: boolean) => {
   })) as typeof window.matchMedia
 }
 
-const mountWordmark = (text = 'AIGC NEWS') => {
+const mountWordmark = (text = 'AIGC NEWS', compact = false) => {
   const host = document.createElement('div')
   document.body.appendChild(host)
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/', component: { template: '<div />' } }],
   })
-  const app = createApp(BrandWordmark, { text })
+  const app = createApp(BrandWordmark, { text, compact })
   app.use(router)
   app.mount(host)
   unmount = () => {
@@ -57,6 +57,7 @@ describe('BrandWordmark', () => {
     const link = host.querySelector('a.brand-wordmark') as HTMLAnchorElement
     expect(link.getAttribute('href')).toBe('/')
     expect(link.getAttribute('aria-label')).toBe('AIGC NEWS')
+    expect(link.querySelector('.brand-wordmark__logo')).toBeNull()
 
     const chars = host.querySelectorAll('.brand-wordmark__char')
     expect(chars).toHaveLength('AIGC NEWS'.length)
@@ -104,5 +105,19 @@ describe('BrandWordmark', () => {
     vi.advanceTimersByTime(2000)
     await nextTick()
     expect(charText()).toBe('AIGC NEWS')
+  })
+
+  it('keeps the compact wordmark readable by scrambling only one character at a time', async () => {
+    vi.useFakeTimers()
+    const host = mountWordmark('AIGC NEWS', true)
+    expect(host.querySelector('.brand-wordmark__logo')).not.toBeNull()
+    await nextTick()
+    await nextTick()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.advanceTimersByTime(250)
+    await nextTick()
+    const chars = [...host.querySelectorAll('.brand-wordmark__char')].map(el => el.textContent)
+    expect(chars.filter(char => char === '▓')).toHaveLength(1)
+    expect(chars.join('')).toContain('IGC NEWS')
   })
 })

@@ -5,9 +5,7 @@ import { useChatStore } from '@/stores/chatStore'
 import { showToast } from '@/composables/useToast'
 import { i18n } from '@/i18n'
 import {
-  getAttachmentStatus,
   uploadImageAttachment,
-  uploadPdfAttachment,
   type AttachmentMeta,
 } from '@/services/attachments/attachmentApi'
 
@@ -21,15 +19,6 @@ export const useChatAttachments = (inputText: Ref<string>) => {
   const removeAttachment = (attachmentId: string) => {
     store.removePendingAttachment(attachmentId)
     attachmentMetas.value = attachmentMetas.value.filter((item) => item.id !== attachmentId)
-  }
-
-  const refreshAttachmentStatus = async (attachmentId: string) => {
-    try {
-      const latest = await getAttachmentStatus(attachmentId)
-      attachmentMetas.value = attachmentMetas.value.map((item) => item.id === attachmentId ? latest : item)
-    } catch (error) {
-      console.error('[Attachment status error]', error)
-    }
   }
 
   const handleFileChange = async (event: Event) => {
@@ -55,8 +44,6 @@ export const useChatAttachments = (inputText: Ref<string>) => {
           fileReader.readAsDataURL(file)
         })
         meta = await uploadImageAttachment(dataUrl, file.type, file.name)
-      } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        meta = await uploadPdfAttachment(file)
       } else {
         showToast(i18n.global.t('chat.attachmentsUnsupported'))
         input.value = ''
@@ -66,11 +53,6 @@ export const useChatAttachments = (inputText: Ref<string>) => {
       store.addPendingAttachment(meta.id)
       attachmentMetas.value = [...attachmentMetas.value, meta]
 
-      if (meta.status === 'processing') {
-        window.setTimeout(() => {
-          void refreshAttachmentStatus(meta.id)
-        }, 1500)
-      }
     } catch (error) {
       console.error('[Attachment upload error]', error)
       showToast(i18n.global.t('chat.attachmentUploadFailed'))

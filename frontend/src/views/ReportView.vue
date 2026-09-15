@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
@@ -40,7 +41,10 @@ onMounted(() => {
 
 const { renderMarkdown } = useLatexRenderer()
 const reportRef = ref<HTMLElement | null>(null)
-const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(reportRef)
+const reportPageRef = ref<HTMLElement | null>(null)
+const isMobile = useMediaQuery('(max-width: 767px)')
+const readingViewport = computed(() => isMobile.value ? reportPageRef.value : reportRef.value)
+const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(readingViewport)
 
 const { connect } = useEventSource()
 const {
@@ -144,7 +148,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
 </script>
 
 <template>
-  <div class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5">
+  <div ref="reportPageRef" class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5">
 
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
     <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
@@ -206,7 +210,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
     </div>
 
     <!-- ═══ 内容阅读区（最大化空间） ═══ -->
-    <div ref="reportRef" class="stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
+    <div ref="reportRef" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
       <ReportContentPanel
         :report-content="reportContent"
         :is-generating="isGenerating"
@@ -224,32 +228,38 @@ const userEmail = computed(() => authStore.user?.email ?? '')
   --paper: var(--chat-paper);
   --paper-raised: var(--paper-warm);
   --ink: var(--chat-ink);
-  --rule: rgb(var(--chat-ink-rgb) / 0.76);
   background: var(--paper);
   color: var(--ink);
 }
 
+@media (max-width: 767px) {
+  .report-shell { display: block; overflow-y: auto; padding: 16px; }
+  .report-reading { min-height: 320px; margin-top: 16px; overflow: visible; }
+  .report-shell :deep(button), .report-shell :deep(input) { min-height: 44px; }
+  .report-shell :deep(.report-content) { padding: 16px; }
+}
+
 .report-shell :deep(.glass-card) {
   border: 1px solid var(--rule);
-  border-radius: 6px;
+  border-radius: var(--module-radius);
   background: var(--paper-raised);
-  box-shadow: 3px 3px 0 rgb(var(--chat-shadow-rgb) / 0.1);
+  box-shadow: none;
   backdrop-filter: none;
 }
 
 .report-shell :deep(button),
-.report-shell :deep(input) { border-radius: 4px; }
+.report-shell :deep(input) { border-radius: var(--control-radius); }
 
 .report-shell :deep(button:focus-visible),
 .report-shell :deep(input:focus-visible) {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
-  box-shadow: 0 0 0 4px var(--acid-bright);
+  box-shadow: 0 0 0 3px var(--acid-soft);
 }
 
 .report-shell :deep(.btn-primary) {
   border: 1px solid var(--ink);
-  border-radius: 4px;
+  border-radius: var(--control-radius);
   background: var(--ink);
   color: var(--paper-raised);
   box-shadow: none;
@@ -264,7 +274,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
   border-color: var(--ink);
   background: var(--acid-bright);
   color: var(--chat-on-acid);
-  box-shadow: inset 0 -3px 0 var(--ink);
+  box-shadow: none;
 }
 
 .report-shell :deep(.tab-inactive:hover) {
@@ -296,7 +306,6 @@ const userEmail = computed(() => authStore.user?.email ?? '')
 
 /* 移动端：外壳与操作卡收窄边距，把宽度让给内容阅读区 */
 @media (max-width: 639px) {
-  .report-shell { padding: 10px; gap: 8px; }
-  .report-shell > .glass-card:first-child { padding: 10px 12px; }
+  .report-shell > .glass-card:first-child { padding: 12px; }
 }
 </style>

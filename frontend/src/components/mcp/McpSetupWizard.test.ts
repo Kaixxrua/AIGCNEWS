@@ -7,15 +7,18 @@ import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 const buildController = () => ({
   clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
   clientLabel: ref(''),
-  clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
+  clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
+  clearTransientCommand: vi.fn(() => { controllerBox.transientCommand.value = '' }),
   copiedKey: ref(''),
   copyGeneratedCommand: vi.fn(),
   copyQuickCommand: vi.fn(),
   creating: ref(false),
   endpointUrl: ref('https://aigcnews.cn/api/mcp'),
   endpointWarningKey: ref(''),
+  isLoggedIn: ref(true),
   normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
   quickCommand: ref(''),
+  requestLogin: vi.fn(),
   selectedClient: ref('claude-code'),
   selectedShell: ref('bash'),
   setupError: ref(null),
@@ -58,6 +61,7 @@ const i18n = createI18n({
         hiddenConfig: '配置内容不渲染到页面。{result}',
         copyOneTime: '复制一次性命令',
         copiedClipboard: '已复制到剪贴板',
+        configureAgain: '重新配置',
         resultClaudeCode: '写入 Claude Code 用户级 MCP 配置。',
         hintClaudeCode: '随后可运行 claude mcp list 验证。',
         loginRequiredTitle: '登录后授权个人收藏',
@@ -158,6 +162,44 @@ describe('McpSetupWizard navigation', () => {
   })
 })
 
+describe('McpSetupWizard guest gating', () => {
+  it('requests login instead of advancing for guests, then advances after sign-in', async () => {
+    ctl().isLoggedIn.value = false
+    const wrapper = await mountWizard()
+
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(ctl().requestLogin).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+
+    // 登录完成后「下一步」恢复正常
+    ctl().isLoggedIn.value = true
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
+  })
+
+  it('blocks forward step-dot jumps for guests but never blocks going back', async () => {
+    ctl().isLoggedIn.value = false
+    const wrapper = await mountWizard()
+
+    await wrapper.findAll('.mcp-step-dot')[2]!.trigger('click')
+    await flushPromises()
+    expect(ctl().requestLogin).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+
+    // 进入第 2 步后即使登录态丢失，也始终允许退回已看过的步骤
+    ctl().isLoggedIn.value = true
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
+    ctl().isLoggedIn.value = false
+    await prevButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 1 步 · 共 3 步')
+  })
+})
+
 describe('McpSetupWizard step content', () => {
   it('renders the quick command and forwards quick copy on the command step', async () => {
     ctl().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
@@ -194,5 +236,10 @@ describe('McpSetupWizard step content', () => {
     expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
     await buttonByText(wrapper, '复制一次性命令')!.trigger('click')
     expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#mcp-device-label').exists()).toBe(false)
+    await buttonByText(wrapper, '重新配置')!.trigger('click')
+    expect(ctl().clearTransientCommand).toHaveBeenCalledOnce()
+    expect(wrapper.find('#mcp-device-label').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
   })
 })

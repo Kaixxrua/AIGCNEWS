@@ -72,6 +72,19 @@ def test_redaction_never_leaks_password():
     assert "***" in message
 
 
+def test_routable_test_server_requires_exact_host_address(monkeypatch):
+    monkeypatch.setattr(safety, "_expected_addresses", lambda host, port: {"172.21.0.3"})
+    params = {"host": "test-postgres", "port": "5432", "dbname": "aigcnews_test", "user": "test_user"}
+    row = {"database": "aigcnews_test", "username": "test_user", "server_addr": "172.21.0.3",
+           "server_port": 5432, "marker_run_id": "test-run"}
+    connection = FakeConnection(row)
+    safety.verify_live_test_target(connection, params, "test-run")
+    # inet::text includes a /32 or /128 mask; DNS resolution returns bare addresses.
+    assert "host(inet_server_addr())" in connection.statements[0]
+    with pytest.raises(safety.PostgresTestSafetyError, match="server address"):
+        safety.verify_live_test_target(FakeConnection({**row, "server_addr": "172.21.0.4"}), params, "test-run")
+
+
 def test_legacy_opt_in_is_not_a_connection_authority(valid_env):
     assert safety.legacy_bootstrap_error({"POSTGRES_INTEGRATION": "1"}) is not None
     assert safety.legacy_bootstrap_error({**valid_env, "POSTGRES_INTEGRATION": "1"}) is None

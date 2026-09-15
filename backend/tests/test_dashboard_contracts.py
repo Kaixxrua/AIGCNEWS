@@ -4,7 +4,9 @@ import asyncio
 import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -404,9 +406,7 @@ def test_top_route_preserves_dedupe_limit_and_relative_pdf_url() -> None:
     payload = response.json()
     assert [item["id"] for item in payload["items"]] == ["first", "second"]
     # pdf_media_url 不采信可伪造的 Host/X-Forwarded-Proto：默认相对路径
-    assert payload["items"][0]["pdf_media_url"] == (
-        "/api/media/papers/report.pdf"
-    )
+    assert payload["items"][0]["pdf_media_url"] is None
     assert payload["items"][1]["pdf_media_url"] is None
     assert payload == {
         "items": payload["items"],
@@ -1028,6 +1028,43 @@ def test_summary_github_stat_falls_back_to_documents_when_catalog_unavailable(mo
     assert stats["total_documents"] == 5 + 461 + 7
     assert isinstance(stats["mcp_total_calls"], int)
     assert isinstance(stats["mcp_dsh_calls"], int)
+
+
+def test_live_stats_reads_resident_projection_even_when_response_cache_is_bypassed(monkeypatch) -> None:
+    client = _summary_client(monkeypatch, lambda: object())
+    payload = {"total_documents": 19, "today_visits": 4, "source_counts": {"github": 19}}
+    current = AsyncMock(return_value=payload)
+    client.app.state.live_stats_broadcaster = SimpleNamespace(get_current=current)
+    compute = AsyncMock(side_effect=AssertionError("resident statistics must not query SQL"))
+    monkeypatch.setattr(routes_dashboard, "_get_dashboard_stats", compute)
+    FastAPICache.reset()
+    FastAPICache.init(InMemoryBackend(), prefix="resident-stats-contract")
+    try:
+        for _ in range(2):
+            response = client.get("/api/dashboard/live-stats", headers={"Cache-Control": "no-cache"})
+            assert response.status_code == 200
+            assert response.json() == payload
+            assert response.headers["cache-control"] == "max-age=10"
+    finally:
+        FastAPICache.reset()
+    assert current.await_count == 2
+    compute.assert_not_awaited()
+
+
+def test_live_stats_falls_back_when_the_resident_projection_is_unavailable(monkeypatch) -> None:
+    client = _summary_client(monkeypatch, lambda: object())
+    client.app.state.live_stats_broadcaster = SimpleNamespace(get_current=AsyncMock(return_value={}))
+    compute = AsyncMock(return_value={"total_documents": 12})
+    monkeypatch.setattr(routes_dashboard, "_get_dashboard_stats", compute)
+    FastAPICache.reset()
+    FastAPICache.init(InMemoryBackend(), prefix="resident-stats-fallback")
+    try:
+        response = client.get("/api/dashboard/live-stats")
+        assert response.status_code == 200
+        assert response.json() == {"total_documents": 12}
+    finally:
+        FastAPICache.reset()
+    compute.assert_awaited_once()
 
 
 def test_live_stats_returns_flat_counters(monkeypatch) -> None:

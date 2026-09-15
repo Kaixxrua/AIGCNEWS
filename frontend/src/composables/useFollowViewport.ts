@@ -1,4 +1,4 @@
-import { nextTick, onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { nextTick, ref, watch, type Ref } from 'vue'
 
 export const useFollowViewport = (viewportRef: Ref<HTMLElement | null>) => {
   const autoScroll = ref(true)
@@ -35,23 +35,17 @@ export const useFollowViewport = (viewportRef: Ref<HTMLElement | null>) => {
     void scrollToBottom()
   }
 
-  onMounted(() => {
-    const element = viewportRef.value
-    if (element) {
-      element.addEventListener('wheel', onWheelHandler, { passive: true })
-      element.addEventListener('touchstart', onTouchStart, { passive: true })
-      element.addEventListener('touchmove', onTouchMoveHandler, { passive: true })
-    }
-  })
-
-  onUnmounted(() => {
-    const element = viewportRef.value
-    if (element) {
+  watch(viewportRef, (element, _previous, onCleanup) => {
+    if (!element) return
+    element.addEventListener('wheel', onWheelHandler, { passive: true })
+    element.addEventListener('touchstart', onTouchStart, { passive: true })
+    element.addEventListener('touchmove', onTouchMoveHandler, { passive: true })
+    onCleanup(() => {
       element.removeEventListener('wheel', onWheelHandler)
       element.removeEventListener('touchstart', onTouchStart)
       element.removeEventListener('touchmove', onTouchMoveHandler)
-    }
-  })
+    })
+  }, { immediate: true, flush: 'post' })
 
   return {
     autoScroll,

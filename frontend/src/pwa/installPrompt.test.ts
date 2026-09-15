@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import i18n, { setAppLocale } from '@/i18n'
@@ -12,9 +12,9 @@ import {
 
 /**
  * 安装提示状态机契约：
- * - 未初始化（开发态）时 Dock 永远不出安装入口；
- * - beforeinstallprompt 捕获后入口出现，prompt() 消费后入口隐藏；
- * - accepted → 已安装态永久隐藏；dismissed → 入口保持隐藏（尊重用户拒绝）；
+ * - 未初始化（开发态）时不出安装入口；普通网页初始化后入口常驻；
+ * - beforeinstallprompt 只消费一次，没有原生事件时展示手动指引；
+ * - accepted → 已安装态隐藏；dismissed → 保留入口，不自动弹指引；
  * - appinstalled → 已安装态；
  * - iOS 无系统弹窗：入口点击改为展示指引卡片；
  * - standalone（已装）与 iPadOS MacIntel+touch 判定。
@@ -60,9 +60,9 @@ describe('installPrompt 状态机', () => {
     expect(showInstallEntry.value).toBe(false)
   })
 
-  it('捕获 beforeinstallprompt 后显示入口，prompt 消费后隐藏', async () => {
+  it('普通网页入口常驻，原生安装成功后隐藏', async () => {
     initializeInstallPrompt()
-    expect(showInstallEntry.value).toBe(false)
+    expect(showInstallEntry.value).toBe(true)
 
     const { wasPrompted } = dispatchBeforeInstallPrompt()
     expect(showInstallEntry.value).toBe(true)
@@ -90,14 +90,17 @@ describe('installPrompt 状态机', () => {
     expect(showInstallEntry.value).toBe(false)
   })
 
-  it('prompt 被拒绝后入口保持隐藏', async () => {
+  it('拒绝原生安装后保留入口，再次点击提供指引', async () => {
     initializeInstallPrompt()
     dispatchBeforeInstallPrompt('dismissed')
     expect(showInstallEntry.value).toBe(true)
 
     await usePwaInstall().promptInstall()
     expect(usePwaInstall().isInstalled.value).toBe(false)
-    expect(showInstallEntry.value).toBe(false)
+    expect(showInstallEntry.value).toBe(true)
+    expect(usePwaInstall().showInstallGuide.value).toBe(false)
+    await usePwaInstall().promptInstall()
+    expect(usePwaInstall().showInstallGuide.value).toBe(true)
   })
 
   it('appinstalled 事件进入已安装态并隐藏入口', () => {
@@ -146,10 +149,10 @@ describe('installPrompt 状态机', () => {
     expect(showInstallEntry.value).toBe(true)
 
     await state.promptInstall()
-    expect(state.showIOSGuide.value).toBe(true)
+    expect(state.showInstallGuide.value).toBe(true)
 
-    state.closeIOSGuide()
-    expect(state.showIOSGuide.value).toBe(false)
+    state.closeInstallGuide()
+    expect(state.showInstallGuide.value).toBe(false)
     // iOS 指引关闭后入口仍可再次打开（用户可能没装完就关了）。
     expect(showInstallEntry.value).toBe(true)
   })
@@ -165,10 +168,44 @@ describe('installPrompt 状态机', () => {
     expect(showInstallEntry.value).toBe(true)
   })
 
-  it('桌面非 iOS 且无 beforeinstallprompt 时入口不出现', () => {
+  it('桌面无原生事件时保留入口，点击展示可关闭的安装指引', async () => {
     initializeInstallPrompt()
-    expect(usePwaInstall().isIOS.value).toBe(false)
-    expect(showInstallEntry.value).toBe(false)
+    const state = usePwaInstall()
+    expect(state.isIOS.value).toBe(false)
+    expect(showInstallEntry.value).toBe(true)
+    await state.promptInstall()
+    expect(state.showInstallGuide.value).toBe(true)
+    state.closeInstallGuide()
+    expect(state.showInstallGuide.value).toBe(false)
+    expect(showInstallEntry.value).toBe(true)
+  })
+
+  it('原生弹窗进行中重复点击不会重复调用或打开指引', async () => {
+    initializeInstallPrompt()
+    let resolveChoice!: (choice: { outcome: 'dismissed'; platform: string }) => void
+    const prompt = vi.fn(() => Promise.resolve())
+    window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt,
+      userChoice: new Promise((resolve) => { resolveChoice = resolve }),
+    }))
+    const first = usePwaInstall().promptInstall()
+    await usePwaInstall().promptInstall()
+    expect(prompt).toHaveBeenCalledTimes(1)
+    expect(usePwaInstall().showInstallGuide.value).toBe(false)
+    resolveChoice({ outcome: 'dismissed', platform: 'web' })
+    await first
+    expect(showInstallEntry.value).toBe(true)
+  })
+
+  it('原生安装弹窗失败时回退到手动指引', async () => {
+    initializeInstallPrompt()
+    window.dispatchEvent(Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+      prompt: () => Promise.reject(new Error('Installation unavailable')),
+      userChoice: Promise.resolve({ outcome: 'dismissed', platform: 'web' }),
+    }))
+    await usePwaInstall().promptInstall()
+    expect(usePwaInstall().showInstallGuide.value).toBe(true)
+    expect(showInstallEntry.value).toBe(true)
   })
 
   it('重复初始化幂等，事件监听不叠加', () => {
@@ -221,6 +258,16 @@ describe('顶栏安装入口（PwaInstallLink）', () => {
     expect(showInstallEntry.value).toBe(false)
     const host = mountLink()
     expect(host.querySelector('.pwa-install-link')).toBeNull()
+  })
+
+  it('没有原生安装事件时也显示下载按钮，点击打开指引', async () => {
+    initializeInstallPrompt()
+    const host = mountLink()
+    const button = host.querySelector('.pwa-install-link') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    button.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(usePwaInstall().showInstallGuide.value).toBe(true)
   })
 
   it('英文界面使用英文 aria-label', () => {

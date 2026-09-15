@@ -144,6 +144,18 @@ export const useMonitorPageController = ({
   const crawlForm = ref(createGithubCrawlForm(today))
   const crawling = ref(false)
   const loadingEnrichmentStatus = ref(false)
+  const enrichmentProjectPageSize = 15
+  const unprocessableProjects = ref<Awaited<ReturnType<MonitorApi['fetchGithubEnrichmentProjectPages']>>['unprocessable']['items']>([])
+  const unprocessableProjectsTotal = ref(0)
+  const unprocessableProjectsPage = ref(1)
+  const retainedProjects = ref<Awaited<ReturnType<MonitorApi['fetchGithubEnrichmentProjectPages']>>['retained']['items']>([])
+  const retainedProjectsTotal = ref(0)
+  const retainedProjectsPage = ref(1)
+  const loadingEnrichmentProjectPages = ref(false)
+  const enrichmentProjectPagesError = ref('')
+  const unprocessableProjectsTotalPages = computed(() => Math.max(1, Math.ceil(unprocessableProjectsTotal.value / enrichmentProjectPageSize)))
+  const retainedProjectsTotalPages = computed(() => Math.max(1, Math.ceil(retainedProjectsTotal.value / enrichmentProjectPageSize)))
+  let enrichmentProjectPagesRequestId = 0
   const retryingEnrichment = ref(false)
   const backfillingEnrichment = ref(false)
   const cancellingEnrichment = ref(false)
@@ -431,6 +443,7 @@ export const useMonitorPageController = ({
     return timer
   }
   const dispose = () => {
+    enrichmentProjectPagesRequestId += 1
     for (const timer of pendingTimers) clearTimeout(timer)
     pendingTimers.clear()
     // 终止观望标志复位：watch 链被清定时器截断后，组件重挂不应残留锁定态
@@ -513,6 +526,59 @@ export const useMonitorPageController = ({
     catch (error) { console.error('Failed to fetch GitHub enrichment status', error) }
     finally { loadingEnrichmentStatus.value = false }
   }
+  const fetchGithubEnrichmentProjectPages = async (
+    nextUnprocessablePage = unprocessableProjectsPage.value,
+    nextRetainedPage = retainedProjectsPage.value,
+  ) => {
+    if (!isAdmin.value) return
+    const requestId = ++enrichmentProjectPagesRequestId
+    loadingEnrichmentProjectPages.value = true
+    enrichmentProjectPagesError.value = ''
+    try {
+      const data = await api.fetchGithubEnrichmentProjectPages({
+        unprocessablePage: nextUnprocessablePage,
+        retainedPage: nextRetainedPage,
+        pageSize: enrichmentProjectPageSize,
+      })
+      if (requestId !== enrichmentProjectPagesRequestId) return
+      const unprocessableLastPage = Math.max(1, Math.ceil(data.unprocessable.total / enrichmentProjectPageSize))
+      const retainedLastPage = Math.max(1, Math.ceil(data.retained.total / enrichmentProjectPageSize))
+      const safeUnprocessablePage = Math.min(nextUnprocessablePage, unprocessableLastPage)
+      const safeRetainedPage = Math.min(nextRetainedPage, retainedLastPage)
+      if (safeUnprocessablePage !== nextUnprocessablePage || safeRetainedPage !== nextRetainedPage) {
+        unprocessableProjectsPage.value = safeUnprocessablePage
+        retainedProjectsPage.value = safeRetainedPage
+        await fetchGithubEnrichmentProjectPages(safeUnprocessablePage, safeRetainedPage)
+        return
+      }
+      unprocessableProjects.value = data.unprocessable.items
+      unprocessableProjectsTotal.value = data.unprocessable.total
+      unprocessableProjectsPage.value = data.unprocessable.page
+      retainedProjects.value = data.retained.items
+      retainedProjectsTotal.value = data.retained.total
+      retainedProjectsPage.value = data.retained.page
+    } catch (error) {
+      if (requestId !== enrichmentProjectPagesRequestId) return
+      enrichmentProjectPagesError.value = detail(error)
+      console.error('Failed to fetch GitHub enrichment project pages', error)
+    } finally {
+      if (requestId === enrichmentProjectPagesRequestId) loadingEnrichmentProjectPages.value = false
+    }
+  }
+  const refreshGithubEnrichmentData = async () => {
+    await Promise.all([
+      fetchGithubEnrichmentStatus(),
+      fetchGithubEnrichmentProjectPages(),
+    ])
+  }
+  const goUnprocessableProjectsPage = async (nextPage: number) => {
+    if (nextPage < 1 || nextPage > unprocessableProjectsTotalPages.value) return
+    await fetchGithubEnrichmentProjectPages(nextPage, retainedProjectsPage.value)
+  }
+  const goRetainedProjectsPage = async (nextPage: number) => {
+    if (nextPage < 1 || nextPage > retainedProjectsTotalPages.value) return
+    await fetchGithubEnrichmentProjectPages(unprocessableProjectsPage.value, nextPage)
+  }
   const fetchGithubEnrichmentConfig = async () => {
     if (!isAdmin.value) return
     try {
@@ -577,7 +643,7 @@ export const useMonitorPageController = ({
   }
   const refreshData = async () => {
     loading.value = true
-    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
+    await Promise.all([fetchTasks(), fetchErrorLogs(), fetchPaymentOrders(), fetchMembershipUsers(), fetchSchedulerStatus(), fetchSchedulerConfigs(), fetchMcpToolCalls(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), refreshGithubEnrichmentData(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), resumeGithubCrawlPolling()])
     loading.value = false
   }
   const goPage = async (nextPage: number) => {
@@ -1030,7 +1096,7 @@ export const useMonitorPageController = ({
   // admin 接口会被静默跳过；待恢复出管理员身份后补拉一次，避免配置面板空数据。
   watch(isAdmin, (admin, wasAdmin) => {
     if (!admin || wasAdmin) return
-    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), fetchGithubEnrichmentStatus(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
+    void Promise.all([fetchSchedulerConfigs(), fetchProviderConfig(), fetchSmtpConfig(), fetchEmailPoolConfig(), fetchEmailDeliveryStats(), fetchSiteContactPageConfig(), fetchMcpServers(), refreshGithubEnrichmentData(), fetchGithubEnrichmentConfig(), fetchXTranslationStatus(), fetchErrorLogs(), fetchPaymentConfig(), fetchOAuthConfig(), fetchTelegramConfig(), fetchPaymentPlanPricing(), fetchMembershipUsers(), resumeGithubCrawlPolling()])
   })
 
   return {
@@ -1058,10 +1124,15 @@ export const useMonitorPageController = ({
     clearDashboardCache, syncDataNow, ingestByDate, clearAllData,
     crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
     enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+    unprocessableProjects, unprocessableProjectsTotal, unprocessableProjectsPage, unprocessableProjectsTotalPages,
+    retainedProjects, retainedProjectsTotal, retainedProjectsPage, retainedProjectsTotalPages,
+    loadingEnrichmentProjectPages, enrichmentProjectPagesError,
     enrichmentCancelWatching,
     xTranslationStatus, loadingXTranslation, retryingXTranslation, xTranslationPolling, fetchXTranslationStatus, retryXTranslations,
     enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
-    fetchGithubEnrichmentStatus, fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
+    fetchGithubEnrichmentStatus, fetchGithubEnrichmentProjectPages, refreshGithubEnrichmentData,
+    goUnprocessableProjectsPage, goRetainedProjectsPage,
+    fetchGithubEnrichmentConfig, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
     dispose,
   }
 }

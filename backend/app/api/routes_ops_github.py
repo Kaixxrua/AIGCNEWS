@@ -309,6 +309,24 @@ async def github_project_enrichment_status(
     return await service.get_enrichment_status()
 
 
+@router.get("/ops/github-projects/enrichment-project-pages", tags=["Ops"])
+async def github_project_enrichment_project_pages(
+    unprocessable_page: int = Query(default=1, ge=1),
+    retained_page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=15, ge=1, le=100),
+    _: dict = Depends(RequireAdmin),
+    service: GitHubProjectRecommendationAdminService = Depends(
+        get_github_project_recommendation_admin_service
+    ),
+):
+    """分页查看无法处理及已退出执行队列的 GitHub 项目。"""
+    return await service.get_enrichment_pages(
+        unprocessable_page=unprocessable_page,
+        retained_page=retained_page,
+        page_size=page_size,
+    )
+
+
 @router.get(
     "/ops/github-projects/enrichment-config",
     response_model=EnrichmentConfigResponse,

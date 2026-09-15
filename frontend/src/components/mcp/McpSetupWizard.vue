@@ -17,18 +17,20 @@ const {
   clientDisplayLabel,
   clientLabel,
   clientOption,
+  clearTransientCommand,
   copiedKey,
   copyGeneratedCommand,
   copyQuickCommand,
   creating,
   endpointUrl,
   endpointWarningKey,
+  isLoggedIn,
   normalizedEndpoint,
   quickCommand,
+  requestLogin,
   selectedClient,
   selectedShell,
   setupError,
-  setupNotice,
   startSetup,
   testing,
   testMessage,
@@ -84,7 +86,6 @@ const setupResultDescription = computed(() => {
   return t('mcp.hintImport', { path: clientConfigTarget(clientOption.value) })
 })
 const setupErrorDisplay = computed(() => resolveMcpFeedback(setupError.value, t))
-const setupNoticeDisplay = computed(() => resolveMcpFeedback(setupNotice.value, t))
 const testMessageDisplay = computed(() => resolveMcpFeedback(testMessage.value, t))
 const endpointWarning = computed(() => endpointWarningKey.value ? t(endpointWarningKey.value) : '')
 
@@ -103,6 +104,12 @@ const scrollToWizardTop = async () => {
 
 const goTo = async (index: number) => {
   if (index === currentStep.value) return
+  // 游客可自由浏览第 1 步并选择客户端/终端；前进到命令与验证步须先登录
+  // （收藏 Token 在登录后才可签发）。返回已看过的步骤不受限。
+  if (index > currentStep.value && !isLoggedIn.value) {
+    await requestLogin()
+    return
+  }
   currentStep.value = index
   await scrollToWizardTop()
 }
@@ -133,40 +140,60 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
 
     <Transition name="mcp-step" mode="out-in">
       <div :key="currentStep" class="mcp-step-panel mt-5">
-        <div v-if="currentStep === 0">
+        <div v-if="currentStep === 0" class="mcp-client-layout">
+          <div class="mcp-client-list">
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.chooseClient') }}</p>
-          <div class="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3"><button v-for="client in clientOptions" :key="client.id" type="button" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" @click="selectedClient = client.id"><span class="flex flex-wrap items-center gap-2"><span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span><span class="rounded-full bg-stone-100 px-2 py-0.5 text-2xs font-semibold text-stone-500">{{ t(`mcp.scope.${setupScopeKeys[client.setupScope]}`) }}</span></span><span class="mt-1 block text-2xs leading-4 text-stone-400">{{ t(client.descriptionKey) }}</span></button></div>
+          <div class="mcp-client-grid mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <button v-for="client in clientOptions" :key="client.id" type="button" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" :aria-pressed="selectedClient === client.id" :title="t(client.descriptionKey)" @click="selectedClient = client.id">
+              <span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span>
+              <span class="mcp-client-caption text-stone-500">{{ t(client.descriptionKey) }}</span>
+            </button>
+          </div>
+          </div>
+          <div class="mcp-client-settings">
+          <div class="mcp-client-detail mt-3 rounded-xl border border-stone-200 p-3" aria-live="polite">
+            <span class="text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span>
+            <p class="mt-1 text-xs leading-5 text-stone-500">{{ t(clientOption.descriptionKey) }}</p>
+          </div>
+          <div class="mcp-terminal">
           <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
-          <div class="mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" type="button" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
+          <div class="mcp-shell-options mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" type="button" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" :aria-pressed="selectedShell === shell.id" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
+          </div>
+          </div>
         </div>
 
-        <div v-else-if="currentStep === 1">
+        <div v-else-if="currentStep === 1" class="mcp-command-layout">
+          <div class="mcp-command-public">
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.quickCommandLabel') }}</p>
           <pre v-if="quickCommand" class="mcp-quick-command mt-4 overflow-auto rounded-2xl border border-stone-700 bg-stone-900 p-4 font-mono text-2xs leading-5 text-stone-100">{{ quickCommand }}</pre>
           <p v-else class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ endpointWarning }}</p>
           <div class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
           <button type="button" class="btn-primary mt-3 w-full justify-center" :disabled="!quickCommand" @click="copyQuickCommand">{{ t(copiedKey === 'quick-command' ? 'mcp.copied' : 'mcp.copyQuick') }}</button>
 
+          </div>
           <div class="mcp-wizard-auth mt-6 border-t border-stone-200 pt-5">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.favoritesAuth') }}</p>
-            <div class="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
-            <label class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label>
-            <input v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
+            <div v-if="!transientCommand" class="mcp-auth-form">
+            <div class="mcp-permission mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4"><p class="text-sm font-semibold text-cyan-900">{{ t('mcp.permission') }}</p><p class="mt-1 font-mono text-2xs text-cyan-700">{{ SCOPE }}</p><p class="mt-2 text-xs leading-5 text-cyan-800/80">{{ t('mcp.bearerMemory') }}</p></div>
+            <div class="mcp-auth-fields">
+            <label for="mcp-device-label" class="mt-5 block text-xs font-semibold text-stone-600">{{ t('mcp.deviceLabel') }}</label>
+            <input id="mcp-device-label" v-model="clientLabel" maxlength="128" class="input mt-2" :placeholder="t('mcp.devicePlaceholder')" />
             <p class="mt-3 text-xs leading-5 text-stone-500">{{ t('mcp.multipleTokens') }}</p>
             <button type="button" class="btn-primary mt-4 w-full justify-center" :disabled="creating" @click="startSetup">{{ t(creating ? 'mcp.creating' : clientOption.setupScope === 'import-file' ? 'mcp.generateImport' : 'mcp.generateCommand') }}</button>
-            <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button type="button" class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button></div>
-            <p v-if="setupNoticeDisplay" class="mt-3 rounded-2xl bg-[var(--token-valid-bg)] px-4 py-3 text-xs text-[var(--projects-success)]">{{ setupNoticeDisplay }}</p>
+            </div>
+            </div>
+            <div v-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcp.bearerWarning') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button type="button" class="btn-primary mt-3 text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcp.copyOneTime') }}</button><button type="button" class="ml-3 text-xs underline" @click="clearTransientCommand">{{ t('mcp.configureAgain') }}</button></div>
             <p v-if="setupErrorDisplay" class="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{{ setupErrorDisplay }}</p>
           </div>
         </div>
 
-        <div v-else-if="currentStep === 2">
+        <div v-else-if="currentStep === 2" class="mcp-verify-panel">
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</p>
           <div class="mt-3 rounded-2xl border border-stone-200 bg-stone-50/80 px-3 py-2 font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row"><input v-model.trim="endpointUrl" class="input min-w-0 flex-1 font-mono text-xs" :aria-label="t('mcp.endpointAria')" /><button type="button" class="btn-secondary justify-center text-xs" :disabled="testing || Boolean(endpointWarning)" @click="testPublicHandshake">{{ t(testing ? 'mcp.testing' : 'mcp.publicHandshake') }}</button></div>
           <p v-if="endpointWarning" class="mt-2 text-xs text-rose-700">{{ endpointWarning }}</p>
           <p v-if="testMessageDisplay" class="mt-3 text-xs text-stone-500">{{ testMessageDisplay }}</p>
-          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3"><div v-for="phase in testPhases" :key="phase.label" class="rounded-xl border border-stone-200 bg-card p-2"><p class="text-2xs text-stone-700">{{ t(`mcp.phase.${phase.descriptionKey}`) }}</p><p class="mt-1 text-2xs" :class="phase.status === 'success' ? 'text-emerald-600' : phase.status === 'error' ? 'text-rose-600' : 'text-stone-400'">{{ phase.detail ? resolveMcpFeedback(phase.detail, t) : t(`mcp.phaseStatus.${phase.status}`) }}</p></div></div>
+          <div class="mcp-handshake-phases mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3"><div v-for="phase in testPhases" :key="phase.label" class="mcp-handshake-phase rounded-xl border border-stone-200 bg-card p-2"><p class="text-2xs text-stone-700">{{ t(`mcp.phase.${phase.descriptionKey}`) }}</p><p class="mt-1 text-2xs" :class="phase.status === 'success' ? 'text-emerald-600' : phase.status === 'error' ? 'text-rose-600' : 'text-stone-400'">{{ phase.detail ? resolveMcpFeedback(phase.detail, t) : t(`mcp.phaseStatus.${phase.status}`) }}</p></div></div>
         </div>
       </div>
     </Transition>
@@ -180,6 +207,34 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
 </template>
 
 <style scoped>
+.mcp-wizard { display: flex; flex-direction: column; }
+.mcp-client-grid .mcp-choice { min-height: 44px; }
+.mcp-client-caption { display: none; }
+.mcp-client-detail { min-height: 72px; }
+.mcp-command-layout > div { min-width: 0; }
+.mcp-quick-command { max-height: 12rem; }
+
+@media (min-width: 960px) {
+  .mcp-wizard { padding: 16px; }
+  .mcp-client-grid .mcp-choice { padding: 8px 12px; }
+  .mcp-client-detail { min-height: 0; padding: 8px 12px; }
+  .mcp-client-detail + p { margin-top: 12px; }
+  .mcp-step-panel { margin-top: 12px; }
+  .mcp-wizard-nav { margin-top: 12px; padding-top: 8px; }
+  .mcp-command-public > * + * { margin-top: 12px; }
+  .mcp-command-public > div { padding: 12px; }
+  .mcp-command-public .mcp-quick-command { padding: 12px; line-height: 16px; max-height: 160px; }
+  .mcp-command-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .mcp-wizard-auth { margin-top: 0; padding-top: 0; padding-left: 16px; border-top: 0; border-left: 1px solid var(--rule); }
+  .mcp-wizard-auth > * + * { margin-top: 8px; }
+  .mcp-wizard-auth > div { padding: 12px; }
+  .mcp-wizard-auth .input { padding-top: 8px; padding-bottom: 8px; }
+}
+
+@media (min-width: 960px) and (max-height: 760px) {
+  .mcp-command-public .mcp-quick-command { max-height: 8rem; }
+}
+
 .mcp-wizard-steps {
   margin: 0;
 }
@@ -234,7 +289,72 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
 }
 
 .mcp-step-panel {
-  min-height: 12rem;
+  min-height: 0;
+}
+
+@media (min-width: 960px) and (min-height: 640px) {
+  .mcp-wizard-step { flex: 1; }
+  .mcp-step-dot { width: 100%; justify-content: center; }
+  .mcp-step-panel { flex: 1; }
+  .mcp-client-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(200px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+    height: 100%;
+  }
+  .mcp-client-list { display: flex; flex-direction: column; min-height: 0; }
+  .mcp-client-grid { flex: 1; min-height: 0; grid-template-rows: repeat(3, minmax(0, 1fr)); }
+  .mcp-client-grid .mcp-choice { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 12px 16px; min-height: 0; }
+  .mcp-client-settings { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; min-width: 0; min-height: 0; }
+  .mcp-client-detail { margin-top: 0; display: flex; flex-direction: column; justify-content: center; padding: 16px; }
+  .mcp-terminal > p { margin-top: 0; font-size: 12px; }
+  .mcp-shell-options { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .mcp-command-layout { height: 100%; }
+  .mcp-command-public { display: flex; flex-direction: column; min-height: 0; }
+  .mcp-command-public .mcp-quick-command { flex: 1; min-height: 64px; max-height: none; }
+  .mcp-wizard-auth { display: flex; flex-direction: column; min-height: 0; }
+  .mcp-wizard-auth > .mcp-auth-form { padding: 0; }
+  .mcp-auth-form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .mcp-auth-form .mcp-permission { margin-top: 0; padding: 12px; }
+  .mcp-auth-fields { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .mcp-auth-fields > * + * { margin-top: 8px; }
+  .mcp-auth-fields > .btn-primary { margin-top: auto; }
+  .mcp-verify-panel { display: flex; flex-direction: column; height: 100%; }
+  .mcp-handshake-phases { flex: 1; min-height: 0; }
+  .mcp-handshake-phase { display: flex; flex-direction: column; justify-content: center; padding: 24px; }
+  .mcp-handshake-phase > p { font-size: 14px; }
+  .mcp-wizard-nav { flex-shrink: 0; }
+}
+
+@media (min-width: 960px) and (max-height: 799px) {
+  .mcp-wizard { padding: 12px 16px; }
+  .mcp-wizard > p { margin-top: 8px; }
+  .mcp-step-panel { margin-top: 8px; }
+  .mcp-client-grid { margin-top: 8px; }
+  .mcp-client-grid .mcp-choice { padding: 8px 12px; }
+  .mcp-client-detail { padding: 8px 12px; }
+  .mcp-shell-options { display: flex; gap: 6px; }
+  .mcp-shell-options .mcp-choice { flex: 1 1 70px; padding: 6px 8px; font-size: 11px; }
+  .mcp-wizard-nav { margin-top: 8px; padding-top: 8px; }
+  .mcp-command-public > * + * { margin-top: 8px; }
+  .mcp-command-public > div { padding: 8px; }
+  .mcp-command-public > div > p { margin-top: 4px; font-size: 11px; line-height: 16px; }
+  .mcp-command-public .mcp-quick-command { padding: 8px; font-size: 10px; line-height: 14px; }
+  .mcp-command-public > .btn-primary { padding-block: 6px; font-size: 12px; }
+  .mcp-auth-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: start; }
+  .mcp-auth-form .mcp-permission { padding: 8px; }
+  .mcp-permission > p { font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
+  .mcp-permission > p + p { margin-top: 6px; }
+  .mcp-auth-fields { height: 100%; }
+  .mcp-auth-fields > label { margin-top: 0; }
+  .mcp-auth-fields > p { font-size: 11px; line-height: 16px; }
+  .mcp-auth-fields .input { padding-block: 6px; }
+  .mcp-auth-fields > .btn-primary { padding-block: 6px; font-size: 11px; }
+}
+
+@media (min-width: 960px) and (min-height: 800px) {
+  .mcp-client-caption { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; line-height: 1.5; }
 }
 
 .mcp-step-enter-active,

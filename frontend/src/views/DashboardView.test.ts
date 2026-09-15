@@ -3,6 +3,8 @@ import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 
+vi.mock('@/composables/useLiveStatsStream', () => ({ subscribeLiveStats: vi.fn() }))
+
 vi.mock('@/composables/useDashboardData', async () => {
   const { ref } = await import('vue')
   return {
@@ -23,6 +25,7 @@ vi.mock('@/composables/useDashboardData', async () => {
       onDateChange: vi.fn(),
       hasData: ref(true),
       refreshLiveStats: vi.fn(),
+      applyLiveStats: vi.fn(),
     }),
   }
 })
@@ -77,6 +80,10 @@ const mountView = async () => {
         DashboardOverviewPanel: { template: '<div />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { template: '<div />' },
+        DashboardRadarCard: {
+          props: ['seedDate', 'live'],
+          template: '<div class="radar-card-stub" :data-seed="seedDate" :data-live="live" />',
+        },
         RollingNumber: { template: '<span />' },
       },
     },
@@ -93,11 +100,21 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
     expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)
     expect(wrapper.get('aside').classes()).toContain('min-h-0')
-    // MCP/dsh 两张计数卡 flex-1 平分侧栏剩余高度：既不留大片空白，又使 dsh 底线与排行榜下边缘对齐
-    expect(wrapper.get('a[href="/mcp"]').classes()).toContain('flex-1')
+    // MCP/dsh 两张计数卡为紧凑单行卡：自然高度，不再 flex-1 撑满侧栏
+    expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('mt-auto')
-    expect(wrapper.get('a[href="/dsh"]').classes()).toContain('flex-1')
+    expect(wrapper.get('a[href="/dsh"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
+
+    // 侧栏末端雷达装饰卡：flex-1 min-h-0 精确吸满剩余高度——卡片随行高伸缩，
+    // 底部始终与排行榜下边缘对齐（不设最小高度，避免撑出侧栏内部滚动导致底边错位）
+    const radar = wrapper.get('.radar-card-stub')
+    expect(radar.classes()).toContain('flex-1')
+    expect(radar.classes()).toContain('min-h-0')
+    expect(radar.attributes('data-seed')).toBe('2026-08-19')
+    expect(radar.attributes('data-live')).toBe('true')
+    const aside = wrapper.get('aside')
+    expect(aside.element.lastElementChild).toBe(radar.element)
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
     expect(digestCta.text()).toContain(messages.dashboard.digest.cta)

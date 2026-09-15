@@ -11,10 +11,12 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from backend.app.api.dependencies import get_site_contact_page_repository
+from backend.app.api.routes_recommended_websites import router as recommended_websites_router
 from backend.app.models.schema_site import SiteContactPageResponse
 from backend.app.repositories.site_contact_page_repository import SiteContactPageRepository
 
 router = APIRouter()
+router.include_router(recommended_websites_router)
 
 _DISABLED_PROJECTION = SiteContactPageResponse(enabled=False)
 

@@ -35,7 +35,7 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
-/* 动态计数由 live-stats 直接读取 Redis/数据库，静态 summary 只负责快照元数据。
+/* 动态计数由实时推送和 live-stats 常驻值提供，静态 summary 只负责快照元数据。
    保留已知的较新计数，避免旧客户端或兼容接口响应把数字从 4001 回退到 3993。 */
 const MONOTONIC_COUNTER_FIELDS = [
   'total_documents', 'registered_users', 'user_count', 'total_visits',
@@ -74,6 +74,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   let hasActivatedOnce = false
   let dashboardController: AbortController | null = null
   let dashboardGeneration = 0
+  let liveStatsRevision = 0
 
   const beginDashboardRequest = () => {
     dashboardController?.abort()
@@ -111,20 +112,20 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   ) => {
     // 今天不显式传 date，让后端回溯到最近一个可展示快照；历史日期仍精确查询。
     const requestDate = selectedDate === todayStr ? undefined : selectedDate
+    void loadLiveStats(controller, generation)
     const staticSummaryRequest = dashboardApi.fetchSummaryStatic
       ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: requestDate, signal: controller.signal })
       : dashboardApi.fetchSummary({ period: PERIOD, date: requestDate, signal: controller.signal })
-    const [summary, top, live] = await Promise.all([
+    const [summary, top] = await Promise.all([
       staticSummaryRequest,
       dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal }),
-      fetchLiveStats(controller.signal),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
     const legacySummary = summary as { stats?: Stats }
     if (legacySummary.stats) {
-      stats.value = mergeLiveStats(stats.value, legacySummary.stats)
+      // 实时计数可能先到；旧版 summary 只补齐尚未取得的字段。
+      stats.value = mergeLiveStats(legacySummary.stats, stats.value)
     }
-    stats.value = mergeLiveStats(stats.value, live)
     tabList.value = top.items
     isFinalized.value = summary.isFinalized
     isEmbargoed.value = summary.isEmbargoed
@@ -160,22 +161,35 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   }
 
   const refreshDashboardInBackground = async () => {
-    if (loading.value || tabLoading.value) return
     const { controller, generation } = beginDashboardRequest()
     try {
-      await Promise.all([
-        fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
-        fetchAvailableDates(),
-      ])
+      void fetchAvailableDates()
+      await fetchDashboardData(activeTab.value, currentDate.value, controller, generation)
       if (isCurrentDashboardRequest(controller, generation)) options.updateStatSources(stats.value)
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.warn('[Dashboard] 后台刷新失败', error)
+    } finally {
+      if (isCurrentDashboardRequest(controller, generation)) {
+        loading.value = false
+        tabLoading.value = false
+      }
     }
   }
 
-  /* 10s 实时计数轮询：合并最新计数，变化的数字走滚筒差位滚动，无变化静止。
-     历史日期/静默期/加载中跳过；停用、切页后的延迟响应不得回写。 */
+  const loadLiveStats = async (controller: AbortController, generation: number) => {
+    const revision = liveStatsRevision
+    try {
+      const live = await fetchLiveStats(controller.signal)
+      if (!isCurrentDashboardRequest(controller, generation) || revision !== liveStatsRevision) return
+      stats.value = mergeLiveStats(stats.value, live)
+      options.updateStatSources(stats.value)
+    } catch {
+      // 统计失败不阻塞榜单；SSE 或下次激活继续补齐。
+    }
+  }
+
+  /* 重新激活时补齐实时计数；停用、切页后的延迟响应不得回写。 */
   const refreshLiveStats = async () => {
     // Global counters remain live even while the selected board is in its
     // embargo window; only historical dates must stop the live poll.
@@ -183,22 +197,14 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     const controller = dashboardController
     const generation = dashboardGeneration
     if (!controller) return
-    try {
-      const live = await fetchLiveStats(controller.signal)
-      if (!isCurrentDashboardRequest(controller, generation) || isViewingHistory.value) return
-      stats.value = mergeLiveStats(stats.value, live)
-      options.updateStatSources(stats.value)
-    } catch (error: unknown) {
-      if (!isCanceledError(error)) {
-        /* 实时计数失败静默，保留当前展示值 */
-      }
-    }
+    await loadLiveStats(controller, generation)
   }
 
-  /* SSE 推送/降级轮询的全量计数入口：与 refreshLiveStats 同守卫、同合并语义；
+  /* SSE 推送/降级轮询可在榜单加载期间独立更新计数。
      数字变化由 RollingNumber 差位滚动承接。 */
   const applyLiveStats = (incoming: Stats) => {
-    if (loading.value || tabLoading.value || isViewingHistory.value) return
+    if (!dashboardController || dashboardController.signal.aborted || isViewingHistory.value) return
+    liveStatsRevision += 1
     stats.value = mergeLiveStats(stats.value, incoming)
     options.updateStatSources(stats.value)
   }
@@ -206,10 +212,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   onMounted(async () => {
     const { controller, generation } = beginDashboardRequest()
     try {
-      await Promise.all([
-        fetchDashboardData(activeTab.value, currentDate.value, controller, generation),
-        fetchAvailableDates(),
-      ])
+      void fetchAvailableDates()
+      await fetchDashboardData(activeTab.value, currentDate.value, controller, generation)
     } catch (error: unknown) {
       if (!isCanceledError(error) && isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
     } finally {
@@ -225,7 +229,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       hasActivatedOnce = true
       return
     }
-    if (now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
+    if (!dashboardController) beginDashboardRequest()
+    if (loading.value || tabLoading.value || now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
+    else void refreshLiveStats()
   })
 
   onDeactivated(stopDashboardRequests)
@@ -236,14 +242,17 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     tabList.value = []
     const { controller, generation } = beginDashboardRequest()
     try {
-      await fetchAvailableDates(tab)
+      void fetchAvailableDates(tab)
       const applied = await fetchDashboardData(tab, currentDate.value, controller, generation)
       if (applied) options.updateStatSources(stats.value)
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data', error)
     } finally {
-      if (isCurrentDashboardRequest(controller, generation)) tabLoading.value = false
+      if (isCurrentDashboardRequest(controller, generation)) {
+        loading.value = false
+        tabLoading.value = false
+      }
     }
   })
 
@@ -259,7 +268,10 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data by date', error)
     } finally {
-      if (isCurrentDashboardRequest(controller, generation)) tabLoading.value = false
+      if (isCurrentDashboardRequest(controller, generation)) {
+        loading.value = false
+        tabLoading.value = false
+      }
     }
   }
 

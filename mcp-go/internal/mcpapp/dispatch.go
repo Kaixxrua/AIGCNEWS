@@ -134,7 +134,7 @@ func (a *App) dispatch(req wire.ValidatedRequest, identity authn.Identity, authe
 	case "initialize":
 		return a.initialize(req)
 	case "tools/list":
-		return wire.Result(req.RequestID, ToolsList(authenticated))
+		return wire.Result(req.RequestID, a.toolsList(authenticated))
 	case "resources/list":
 		return wire.Result(req.RequestID, ResourcesList())
 	case "resources/templates/list":
@@ -190,7 +190,7 @@ func (a *App) initialize(req wire.ValidatedRequest) wire.Response {
 			{Key: "name", Value: a.serverName},
 			{Key: "version", Value: a.serverVersion},
 		}},
-		{Key: "instructions", Value: hostInstructions},
+		{Key: "instructions", Value: a.instructions()},
 	}
 	return wire.WithSession(wire.Result(req.RequestID, result), a.sessionID())
 }

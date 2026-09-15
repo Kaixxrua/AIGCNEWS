@@ -12,8 +12,6 @@ export interface PaperItem {
   score?: number
   raw_score?: number
   rank_in_period?: number
-  local_pdf_path?: string | null
-  pdf_media_url?: string | null
   created_at?: string
 }
 

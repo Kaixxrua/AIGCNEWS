@@ -108,6 +108,8 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "daily_briefing",
                 "subscription_dispatch",
                 "conversation_cleanup",
+                "ui_library_discovery",
+                "ui_library_x_discovery",
             ],
         )
 
@@ -407,7 +409,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             repositories=repositories,
             x_lock=runtime._x_operation_lock,
         )
-        daily_briefing.assert_awaited_once_with(repositories, redis_client=None)
+        daily_briefing.assert_awaited_once_with(
+            repositories,
+            redis_client=None,
+            on_source_failed=runtime._handle_briefing_source_failed,
+        )
         subscription_dispatch.assert_awaited_once_with(repositories, redis_client=None)
         conversation_cleanup.assert_awaited_once_with(repositories.conversations)
         semantic_warmup.assert_awaited_once_with(semantic_warmup_callback)
@@ -438,7 +444,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(runtime._run_daily_briefing_job())
             asyncio.run(runtime._run_subscription_dispatch_job())
 
-        daily_briefing.assert_awaited_once_with(repositories, redis_client=sentinel)
+        daily_briefing.assert_awaited_once_with(
+            repositories,
+            redis_client=sentinel,
+            on_source_failed=runtime._handle_briefing_source_failed,
+        )
         subscription_dispatch.assert_awaited_once_with(
             repositories, redis_client=sentinel
         )
@@ -446,6 +456,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
     def test_module_jobs_forward_redis_client_to_dispatch_layer(self) -> None:
         """模块级 job 函数把 redis_client 继续透传到 services 派发层。"""
         repositories = MagicMock()
+        repositories.tracking = None
         sentinel = object()
 
         with patch.object(
@@ -456,7 +467,9 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                     repositories, redis_client=sentinel
                 )
             )
-        dispatch_mock.assert_awaited_once_with(repositories, redis_client=sentinel)
+        dispatch_mock.assert_awaited_once_with(
+            repositories, redis_client=sentinel, on_source_failed=None
+        )
 
         with patch(
             "backend.app.services.push.dispatch_service.SubscriptionDispatchService"

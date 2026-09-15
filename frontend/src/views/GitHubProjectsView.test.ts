@@ -37,6 +37,7 @@ vi.mock('@/composables/useProjectRouteState', async () => {
     isApplyingRouteState: ref(false),
     isReplacingRoute: ref(false),
     replaceRouteFromState: vi.fn(),
+    routeStateMatchesRoute: vi.fn(() => true),
   }
   return {
     useProjectRouteState: () => routeStateBox.current,
@@ -174,6 +175,7 @@ beforeEach(() => {
   routeState().applyRouteState.mockClear().mockReturnValue(true)
   routeState().endStateBatch.mockClear()
   routeState().replaceRouteFromState.mockClear()
+  routeState().routeStateMatchesRoute.mockClear().mockReturnValue(true)
   routeState().isApplyingRouteState.value = false
   routeState().isReplacingRoute.value = false
   auth().isLoggedIn = true
@@ -307,6 +309,47 @@ describe('GitHubProjectsView controller wiring', () => {
     }
   })
 
+  it('keeps sparse masonry cards at the dense-row column width instead of stretching', async () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1400 })
+    class DesktopResizeObserver {
+      private readonly callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) { this.callback = callback }
+      observe() { this.callback([], this as unknown as ResizeObserver) }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', DesktopResizeObserver)
+    controller().projects.value = [
+      { full_name: 'owner/one', description_zh: '一' },
+      { full_name: 'owner/two', description_zh: '二' },
+    ]
+
+    try {
+      const wrapper = await mountView()
+      const vm = wrapper.vm as unknown as {
+        masonryGridTemplate: string
+        masonryColumnWidths: number[]
+        masonryColumnCount: number
+        effectiveMasonryColumnCount: number
+      }
+      const widths = [...String(vm.masonryGridTemplate).matchAll(/(\d+)px/g)].map((match) => Number(match[1]))
+      expect(wrapper.findAll('.projects-col')).toHaveLength(2)
+      expect(vm.masonryColumnCount).toBe(5)
+      expect(vm.effectiveMasonryColumnCount).toBe(2)
+      expect(vm.masonryColumnWidths).toHaveLength(5)
+      expect(widths).toHaveLength(2)
+      // 1400px 容量约 5 列；稀疏行必须沿用满列轨道宽（~270px），而不是
+      // 把两张卡均分整行（~688px）。jsdom 不解析 v-bind CSS，因此断言计算值。
+      expect(widths.every((width) => width >= 260 && width <= 280)).toBe(true)
+      expect(vm.masonryColumnWidths.every((width) => width >= 260 && width <= 280)).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+      else delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },
@@ -331,6 +374,35 @@ describe('GitHubProjectsView controller wiring', () => {
     await nextTick()
     expect(controller().activate).toHaveBeenCalledTimes(2)
     expect(controller().refreshReads).toHaveBeenCalledWith({ clearSuccess: false, preserveContent: true })
+  })
+
+  it('re-applies route state on reactivation when the query changed while deactivated', async () => {
+    // 回归：dock 点「报告」再点「我的网页」(/projects?source=website)，
+    // KeepAlive 按 route.path 复用实例，route.query watcher 在激活前被
+    // isViewActive 拦截；onActivated 须检出失配并补应用，否则停在旧内容。
+    const Harness = defineComponent({
+      components: { GitHubProjectsView },
+      setup: () => ({ show: ref(true) }),
+      template: '<KeepAlive><GitHubProjectsView v-if="show" /></KeepAlive>',
+    })
+    await testRouter.push('/projects')
+    await testRouter.isReady()
+    const wrapper = mount(Harness, {
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
+    })
+    await flushPromises()
+
+    ;(wrapper.vm as unknown as { show: boolean }).show = false
+    await nextTick()
+    routeState().applyRouteState.mockClear()
+    controller().refreshReads.mockClear()
+    routeState().routeStateMatchesRoute.mockReturnValue(false)
+
+    ;(wrapper.vm as unknown as { show: boolean }).show = true
+    await nextTick()
+
+    expect(routeState().applyRouteState).toHaveBeenCalledTimes(1)
+    expect(controller().refreshReads).toHaveBeenCalledWith()
   })
 })
 
@@ -539,5 +611,32 @@ describe('GitHubProjectsView MCP guidance', () => {
     expect(init.routeState.searchQuery.value).toBe('RAG 框架')
     expect(init.routeState.debouncedQuery.value).toBe('RAG 框架')
     expect(controller().loadProjects).toHaveBeenCalled()
+  })
+})
+
+
+describe('GitHubProjectsView collection navigation', () => {
+  it('links personal websites to the standalone website recommendations', async () => {
+    const wrapper = await mountView()
+    const filters = wrapper.findComponent(ProjectFiltersPanel)
+    expect(filters.props('sourceOptions').map((option) => option.value)).toEqual(['all', 'website'])
+    await wrapper.findAll('.projects-source-tab')[1]!.trigger('click')
+    expect(filters.props('source')).toBe('website')
+    expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
+    expect(wrapper.find('.website-tabs a[href="/websites"]').exists()).toBe(true)
+    expect(wrapper.find('.website-tabs a[aria-current="page"]').attributes('href')).toBe('/projects?source=website')
+    expect(wrapper.find('.website-tabs a[href="/projects?scope=recommended"]').exists()).toBe(false)
+    filters.vm.$emit('changeSource', 'all')
+    await nextTick()
+    expect(routerPush).toHaveBeenCalledWith('/websites')
+    expect(filters.props('source')).toBe('website')
+  })
+
+  it('keeps the GitHub source active without changing its current project scope', async () => {
+    const wrapper = await mountView()
+    const beforeScope = wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')
+    expect(wrapper.findAll('.projects-source-tab')[0]!.attributes('aria-pressed')).toBe('true')
+    await wrapper.findAll('.projects-source-tab')[0]!.trigger('click')
+    expect(wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')).toBe(beforeScope)
   })
 })

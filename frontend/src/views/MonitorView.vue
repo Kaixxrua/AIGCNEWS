@@ -66,10 +66,14 @@ const {
   editSchedulerConfig, cancelSchedulerConfigEdit, saveSchedulerConfig,
   crawlForm, crawling, crawlPolling, crawlStatus, startGithubCrawl,
   enrichmentStatus, loadingEnrichmentStatus, retryingEnrichment, backfillingEnrichment, cancellingEnrichment, enrichmentConcurrency, enrichmentPolling,
+  unprocessableProjects, unprocessableProjectsTotal, unprocessableProjectsPage, unprocessableProjectsTotalPages,
+  retainedProjects, retainedProjectsTotal, retainedProjectsPage, retainedProjectsTotalPages,
+  loadingEnrichmentProjectPages, enrichmentProjectPagesError,
   enrichmentCancelWatching,
   xTranslationStatus, loadingXTranslation, retryingXTranslation, xTranslationPolling, fetchXTranslationStatus, retryXTranslations,
   enrichmentReasoningEffort, enrichmentEffectiveReasoningEffort, savingEnrichmentReasoningEffort,
-  fetchGithubEnrichmentStatus, saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
+  refreshGithubEnrichmentData, goUnprocessableProjectsPage, goRetainedProjectsPage,
+  saveEnrichmentReasoningEffort, retryFailedEnrichments, backfillPendingEnrichments, cancelEnrichment,
 } = useMonitorPageController({
   isAdmin: computed(() => authStore.isAdmin),
   // 管理员给自己调档/吊销后同步刷新会话身份，顶栏 MastheadUser 免手动刷新即更新
@@ -147,7 +151,7 @@ onUnmounted(dispose)
 
 <template>
   <div class="monitor-page monitor-view flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex flex-col gap-5">
+    <div class="monitor-content flex min-h-0 flex-1 flex-col gap-5 overflow-hidden">
 
     <!-- 页头 -->
     <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
@@ -272,7 +276,7 @@ onUnmounted(dispose)
             :reasoning-effort="enrichmentReasoningEffort"
             :effective-reasoning-effort="enrichmentEffectiveReasoningEffort"
             :saving-reasoning-effort="savingEnrichmentReasoningEffort"
-            @refresh="fetchGithubEnrichmentStatus"
+            @refresh="refreshGithubEnrichmentData"
             @retry="retryFailedEnrichments"
             @backfill="backfillPendingEnrichments"
             @cancel="cancelEnrichment"
@@ -280,10 +284,18 @@ onUnmounted(dispose)
             @update-reasoning-effort="saveEnrichmentReasoningEffort"
           />
           <GithubUnprocessableProjectsPanel
-            :items="enrichmentStatus?.unprocessable_projects ?? []"
-            :total="enrichmentStatus?.unprocessable ?? 0"
-            :retained-items="enrichmentStatus?.retained_projects ?? []"
-            :retained-total="enrichmentStatus?.retained_total ?? 0"
+            :items="unprocessableProjects"
+            :total="unprocessableProjectsTotal"
+            :page="unprocessableProjectsPage"
+            :total-pages="unprocessableProjectsTotalPages"
+            :retained-items="retainedProjects"
+            :retained-total="retainedProjectsTotal"
+            :retained-page="retainedProjectsPage"
+            :retained-total-pages="retainedProjectsTotalPages"
+            :loading="loadingEnrichmentProjectPages"
+            :error="enrichmentProjectPagesError"
+            @go-page="goUnprocessableProjectsPage"
+            @go-retained-page="goRetainedProjectsPage"
           />
         </template>
 
@@ -475,7 +487,7 @@ onUnmounted(dispose)
 .monitor-page {
   position: relative;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 24px 24px 64px;
   color: var(--projects-accent);
   background: var(--projects-paper);

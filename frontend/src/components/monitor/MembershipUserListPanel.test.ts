@@ -24,6 +24,7 @@ describe('MembershipUserListPanel', () => {
       global: { plugins: [i18n] },
       props: { items: [user], total: 1, page: 1, totalPages: 1, loading: false, query: '', error: '' },
     })
+    expect(wrapper.classes()).toContain('shrink-0')
     expect(wrapper.text()).toContain('member@example.com')
     expect(wrapper.text()).toContain('13800000000')
     await wrapper.find('input[type="search"]').setValue('member')

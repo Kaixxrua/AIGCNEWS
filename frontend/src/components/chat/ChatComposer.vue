@@ -2,7 +2,7 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { ref } from 'vue'
-import { FileText, Image } from 'lucide-vue-next'
+import { Image } from 'lucide-vue-next'
 
 interface AttachmentDisplay {
   id: string
@@ -42,7 +42,7 @@ const openFilePicker = () => {
         :key="attachment.id"
         class="flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-1.5 text-xs text-stone-600"
       >
-        <component :is="attachment.type === 'pdf' ? FileText : Image" class="h-3.5 w-3.5 shrink-0" />
+        <Image class="h-3.5 w-3.5 shrink-0" />
         <span class="max-w-[180px] truncate">{{ attachment.filename || attachment.id }}</span>
         <span v-if="attachment.status !== 'ready'" class="text-cyan-600">{{ attachment.status }}</span>
         <button class="text-stone-400 hover:text-red-500" @click="emit('removeAttachment', attachment.id)">×</button>
@@ -77,7 +77,7 @@ const openFilePicker = () => {
         ref="fileInput"
         type="file"
         class="hidden"
-        accept="image/*,application/pdf"
+        accept="image/jpeg,image/png,image/gif,image/webp"
         @change="emit('fileChange', $event)"
       />
       <!-- 附件按钮（回形针矢量图标） -->

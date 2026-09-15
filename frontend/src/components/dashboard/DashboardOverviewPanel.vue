@@ -157,7 +157,7 @@ const emit = defineEmits<{
 .stat-cell-label {
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
   text-overflow: ellipsis;
@@ -171,4 +171,24 @@ const emit = defineEmits<{
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
+
+@media (max-width: 767px) {
+  .stat-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .stat-cell--btn { display: none; }
+  .stat-strip[aria-hidden='true'] .stat-cell:nth-child(n + 5) { display: none; }
+  .stat-cell-label { font-size: 11px; }
+  .stat-cell-head { gap: 4px; }
+  .stat-cell-icon { display: none; }
+}
+.stat-cell--btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
+.stat-cell--active:focus-visible { outline-color: var(--projects-on-acid); }
+.stat-cell:not(.stat-cell--active) .text-amber-600 { color: var(--tone-amber); }
+.stat-cell:not(.stat-cell--active) .text-orange-500 { color: var(--tone-orange); }
+.stat-cell .text-teal-600 { color: var(--tone-mint); }
+:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-blue-500, .text-blue-600) { color: var(--tone-blue); }
+:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-amber-500, .text-amber-600) { color: var(--tone-amber); }
+:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-rose-500, .text-rose-600) { color: var(--tone-coral); }
+:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) .text-orange-500 { color: var(--tone-orange); }
+:root[data-theme='dark'] .stat-cell :is(.text-purple-500, .text-purple-600, .text-indigo-500, .text-indigo-600) { color: var(--tone-violet); }
+:root[data-theme='dark'] .stat-cell :is(.text-teal-500, .text-teal-600) { color: var(--tone-mint); }
 </style>

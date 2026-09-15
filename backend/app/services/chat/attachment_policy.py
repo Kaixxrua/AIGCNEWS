@@ -9,7 +9,6 @@ import re
 from dataclasses import dataclass
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-MAX_PDF_BYTES = 50 * 1024 * 1024
 
 _ALLOWED_IMAGES = {
     "image/jpeg": (".jpg", lambda data: data.startswith(b"\xff\xd8\xff")),
@@ -39,13 +38,6 @@ class ValidatedImage:
     base64_data: str
     mime_type: str
     filename: str
-
-
-@dataclass(frozen=True)
-class ValidatedPdf:
-    data: bytes
-    filename: str
-    mime_type: str = "application/pdf"
 
 
 def safe_display_filename(filename: str, default: str) -> str:
@@ -130,13 +122,3 @@ def validate_image_attachment(
     return _validate_image_payload(decoded, declared_mime, filename)
 
 
-def validate_pdf_attachment(file_bytes: bytes, filename: str = "") -> ValidatedPdf:
-    """Validate PDF size and magic bytes and sanitize its display name."""
-    if len(file_bytes) > MAX_PDF_BYTES:
-        raise AttachmentValidationError("PDF 文件大小不能超过 50 MiB")
-    if not file_bytes.startswith(b"%PDF-"):
-        raise AttachmentValidationError("PDF 文件内容无效")
-    return ValidatedPdf(
-        data=file_bytes,
-        filename=safe_display_filename(filename, "upload.pdf"),
-    )

@@ -115,6 +115,10 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   const isActive = ref(true)
 
   const normalizedEndpoint = computed(() => endpointUrl.value.trim() || fallbackEndpoint)
+  // 游客可进入向导并选择客户端；前进到命令/验证步时由向导按此状态弹登录。
+  // 登录态经视图注入的 authStore getter 保持响应式，登录完成后即翻转为 true。
+  const isLoggedInState = computed(() => isLoggedIn())
+  const requestLogin = async () => { await options.navigateToLogin?.() }
   const endpointWarningKey = computed(() => {
     try {
       return ['http:', 'https:'].includes(new URL(normalizedEndpoint.value).protocol)
@@ -370,11 +374,13 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     endpointUrl,
     endpointWarningKey,
     isActive,
+    isLoggedIn: isLoggedInState,
     loadTokens,
     loadingTokens,
     normalizedEndpoint,
     quickCommand,
     removeToken,
+    requestLogin,
     resetDiscovery,
     selectedClient,
     selectedShell,

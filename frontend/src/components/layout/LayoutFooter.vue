@@ -6,6 +6,7 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 const { t } = useI18n()
 defineProps<{
   brandName: string
+  embedded?: boolean
 }>()
 
 // 工信部 ICP 备案号：按公示惯例链接至备案管理系统（备案号为固定登记文本，不做 i18n）
@@ -19,7 +20,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 
 <template>
   <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商务合作 / 侵权投诉） ═══ -->
-  <div v-show="!dockSuppressed" class="dock-footer">
+  <div v-show="!dockSuppressed" class="dock-footer" :class="{ 'dock-footer--embedded': embedded }">
     <span>{{ t('footer.poweredBy', { brandName }) }}</span>
     <span class="footer-sep">·</span>
     <RouterLink to="/disclaimer" class="footer-link">{{ t('footer.disclaimer') }}</RouterLink>
@@ -53,11 +54,11 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
      显式 max-content 让单行用满视口宽度，max-width 兜底窄屏折行 */
   width: max-content;
   max-width: calc(100vw - 24px);
-  font-size: 10px;
+  font-size: 12px;
   /* 两行时总高 24px + bottom 4px，恰好收进 dock 下方 28px 安全区 */
   line-height: 1.2;
   font-weight: 400;
-  color: rgb(var(--stone-400-rgb) / 0.7);
+  color: var(--ink-secondary);
   letter-spacing: 0.02em;
   white-space: nowrap;
   pointer-events: auto;
@@ -70,29 +71,32 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 }
 
 .footer-link {
-  color: rgb(var(--stone-400-rgb) / 0.7);
+  color: var(--ink-secondary);
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .footer-link:hover {
-  color: rgb(var(--stone-500-rgb));
+  color: var(--ink);
   text-decoration: underline;
 }
 
-@media (max-width: 639px) {
-  .dock-footer {
-    left: 12px;
-    right: 12px;
-    bottom: calc(66px + env(safe-area-inset-bottom));
-    transform: none;
-    /* 移动端 left/right 双约束撑满，撤掉桌面的 max-content 定宽 */
-    width: auto;
-    max-width: calc(100vw - 24px);
-    line-height: 1.5;
-    white-space: normal;
-    text-align: center;
-    overflow-wrap: anywhere;
-  }
+
+.dock-footer--embedded {
+  position: static;
+  width: 100%;
+  max-width: none;
+  transform: none;
+  justify-content: flex-start;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+.dock-footer--embedded .footer-link { color: var(--ink-secondary); }
+@media (max-width: 1023px) { .dock-footer:not(.dock-footer--embedded) { display: none; } }
 </style>

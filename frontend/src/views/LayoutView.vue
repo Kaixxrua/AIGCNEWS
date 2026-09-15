@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
+import { useTrackingUnreadStore } from '@/stores/trackingUnreadStore'
 import BrandWordmark from '@/components/layout/BrandWordmark.vue'
 import MastheadMeta from '@/components/layout/MastheadMeta.vue'
 import MastheadUser from '@/components/layout/MastheadUser.vue'
@@ -26,12 +28,17 @@ import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
 
+const isMobile = useMediaQuery('(max-width: 767px)')
 const route = useRoute()
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
 const enrichmentAlert = useEnrichmentAlertStore()
-const dockAlertItems = computed(() => (enrichmentAlert.hasFailures ? ['/monitor'] : []))
+const trackingUnread = useTrackingUnreadStore()
+const dockAlertItems = computed(() => [
+  ...(enrichmentAlert.hasFailures ? ['/monitor'] : []),
+  ...(trackingUnread.hasUnread ? ['/subscriptions'] : []),
+])
 
 // 账户设置入口：dock 账户按钮打开账户信息面板，面板内可进入改密子流程。
 const accountSettingsOpen = ref(false)
@@ -64,7 +71,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="relative flex h-screen w-full items-start justify-center overflow-hidden">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -72,30 +79,31 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <div class="main-canvas">
       <!-- 顶部品牌条：左侧报头信息 + 右侧用户信息，故障特效字标与工具图标居中成组 -->
       <div
-        class="absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
+        class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <MastheadMeta />
-        <MastheadUser />
-        <div class="flex items-center gap-3">
-          <FavoritesLink />
-          <PwaInstallLink />
-          <BrandWordmark :text="brandName" />
+        <MastheadMeta v-if="!isMobile" />
+        <MastheadUser v-if="!isMobile" />
+        <div class="app-masthead__tools flex items-center gap-3">
+          <FavoritesLink v-if="!isMobile" />
+          <PwaInstallLink v-if="!isMobile" />
+          <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
           <span class="topbar-divider" aria-hidden="true"></span>
-          <div class="flex items-center gap-2">
-            <GitHubLink />
+          <div class="app-masthead__actions flex items-center gap-2">
+            <PwaInstallLink v-if="isMobile" />
+            <GitHubLink v-if="!isMobile" />
             <ThemeToggle />
             <LocaleToggle />
           </div>
         </div>
       </div>
 
-      <!-- 内容区（顶栏占位 44px；pb-7 保证末端内容不被悬浮 dock 遮挡，
+      <!-- 内容区（顶栏占位 56px；pb-7 保证末端内容不被悬浮 dock 遮挡，
            部分浏览器不会把滚动容器的 end padding 计入可滚动区域） -->
-      <div class="absolute inset-0 pt-[44px] pb-7 flex flex-col">
+      <div class="app-content absolute inset-0 pt-[56px] pb-7 flex flex-col">
         <router-view v-slot="{ Component }">
           <KeepAlive :include="KEEP_ALIVE_VIEW_NAMES" :max="KEEP_ALIVE_MAX">
-            <component :is="Component" :key="route.path" class="view-container" />
+            <component :is="Component" :key="route.name === 'ui-library' ? 'ui-library' : route.path" class="view-container" />
           </KeepAlive>
         </router-view>
       </div>
@@ -105,6 +113,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <AppDock
       v-show="!dockSuppressed"
       :items="visibleNavItems"
+      :brand-name="brandName"
       :current-path="route.path"
       :current-query="route.query"
       :is-admin="authStore.isAdmin"
@@ -139,13 +148,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </template>
 
 <style scoped>
-/* ═══ 视图容器：只控制 flex 撑满 + 溢出裁剪 ═══ */
+/* 各页面管理自己的滚动容器；布局层只限定可用尺寸。 */
 :deep(.view-container) {
   width: 100%;
   height: 100%;
   flex: 1 1 0;
   min-height: 0;
-  overflow: hidden;
 }
 
 /* ═══ 顶栏：品牌字标与工具图标之间的细分隔线 ═══ */
@@ -159,7 +167,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 .main-canvas {
   width: calc(100% - 40px);
   max-width: none;
-  height: calc(100dvh - 90px);
+  height: calc(100dvh - 116px);
   margin-top: 20px;
   border-radius: 14px;
   background: var(--paper-raised);
@@ -172,7 +180,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   z-index: 1;
 }
 
-@media (max-width: 639px) {
+@media (max-width: 1023px) {
+  .app-masthead__tools,
+  .app-masthead__actions {
+    gap: 4px;
+  }
+
   .main-canvas {
     width: 100%;
     height: 100dvh;
@@ -188,15 +201,15 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   }
 
   .main-canvas > .absolute.inset-0 {
-    padding-top: 48px;
-    padding-bottom: 86px;
+    padding-top: 56px;
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
   }
 }
 
 /* ═══ 默认密码警示条：悬浮于 dock 上方，点击即打开改密对话框 ═══ */
 .default-pwd-banner {
   position: fixed;
-  bottom: 88px;
+  bottom: 112px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
@@ -221,9 +234,16 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   white-space: nowrap;
 }
 
-@media (max-width: 639px) {
+@media (max-width: 1023px) {
   .default-pwd-banner {
-    bottom: max(72px, calc(env(safe-area-inset-bottom) + 64px));
+    bottom: max(84px, calc(env(safe-area-inset-bottom) + 76px));
   }
+}
+@media (max-width: 767px) {
+  .main-canvas { border: 0; box-shadow: none; }
+  .app-masthead { height: calc(52px + env(safe-area-inset-top)); padding-top: calc(8px + env(safe-area-inset-top)); }
+  .main-canvas > .app-content { padding-top: calc(52px + env(safe-area-inset-top)); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .app-masthead__tools { gap: 8px; }
+  .topbar-divider { display: none; }
 }
 </style>

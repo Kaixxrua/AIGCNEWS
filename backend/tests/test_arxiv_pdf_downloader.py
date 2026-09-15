@@ -206,14 +206,10 @@ class TestExtractText:
     def test_missing_file_returns_empty(self, tmp_path) -> None:
         assert _extract_text_from_local_pdf(str(tmp_path / "nope.pdf")) == ""
 
-    def test_extracts_text_with_pymupdf(self, tmp_path) -> None:
-        fitz = pytest.importorskip("fitz")
-        doc = fitz.open()
-        page = doc.new_page()
-        page.insert_text((72, 72), "Hello arXiv world")
-        pdf_path = tmp_path / "paper.pdf"
-        doc.save(str(pdf_path))
-        doc.close()
+    def test_extracts_text_without_pymupdf(self, tmp_path) -> None:
+        from backend.tests.pdf_fixtures import write_text_pdf
+
+        pdf_path = write_text_pdf(tmp_path / "paper.pdf", ["Hello arXiv world"])
         text = _extract_text_from_local_pdf(str(pdf_path))
         assert "Hello arXiv world" in text
 

@@ -32,11 +32,14 @@ from backend.app.api import (
     routes_report,
     routes_site,
     routes_sitemap,
+    routes_tracking,
+    routes_ui_library,
     routes_vision,
     routes_wechat,
     routes_wechat_media,
     routes_x_media,
 )
+from backend.app.api.dashboard_cache_warmup import maintain_dashboard_cache
 from backend.app.api.exception_handlers import register_exception_handlers
 from backend.app.api.routes_dashboard import (
     build_dashboard_live_stats_compute,
@@ -145,6 +148,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     project_search_runtime: ApplicationProjectSearchRuntime | None = None
     rag_provider: RagChatServiceProvider | None = None
     semantic_warmup_task: asyncio.Task[object] | None = None
+    dashboard_warmup_task: asyncio.Task[None] | None = None
     live_stats_task: asyncio.Task[None] | None = None
     live_stats_broadcaster: LiveStatsBroadcaster | None = None
     redis_client: Redis | None = None
@@ -156,6 +160,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.postgres_database = postgres_database
     app.state.application_database_backend = "postgres"
     app.state.redis = None
+    app.state.dashboard_warmup_task = None
     app.state.mcp_tool_call_metrics = None
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
@@ -252,8 +257,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "[Startup] 默认管理员种子失败（非阻断），全新部署将无法登录管理端: %s",
                 exc,
             )
-        # 附件元数据已落 PostgreSQL：启动时对账无元数据的孤儿 PDF 文件与
-        # TTL 到期元数据行，失败不阻塞启动。
+        # 附件元数据已落 PostgreSQL：启动时清理 TTL 到期元数据行，失败不阻塞启动。
         try:
             attachment_reconcile = await asyncio.to_thread(
                 attachment_service.reconcile_orphan_attachments
@@ -353,6 +357,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.live_stats_broadcaster = live_stats_broadcaster
         set_live_stats_broadcaster(live_stats_broadcaster)
         live_stats_task = asyncio.create_task(live_stats_broadcaster.run())
+        if app.state.redis is not None:
+            dashboard_warmup_task = asyncio.create_task(
+                maintain_dashboard_cache(app.state.application_repositories)
+            )
+            app.state.dashboard_warmup_task = dashboard_warmup_task
 
         scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
         job_configs = {}
@@ -402,6 +411,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             live_stats_task,
             name="Live stats broadcaster",
         )
+        await _cancel_background_task(
+            dashboard_warmup_task,
+            name="Dashboard cache warmup",
+        )
+        app.state.dashboard_warmup_task = None
         if live_stats_broadcaster is not None:
             try:
                 await live_stats_broadcaster.aclose()
@@ -501,15 +515,6 @@ async def api_version() -> dict[str, str]:
     """返回应用真实版本（与 server.json / MCP serverInfo 同源）。"""
     return {"name": "aigc-radar", "version": _APP_VERSION}
 
-# ── 静态文件：挂载 PDF 存储目录，前端可通过 /api/media/papers/{arxiv_id}.pdf 访问 ──
-_papers_dir = settings.papers_storage_dir
-os.makedirs(_papers_dir, exist_ok=True)
-app.mount(
-    "/api/media/papers",
-    StaticFiles(directory=_papers_dir),
-    name="papers",
-)
-
 # ── 站点公开素材（联系合作页二维码、正文插图）：匿名可读是有意选择，仅放公开图片 ──
 _site_assets_dir = settings.site_assets_storage_dir
 os.makedirs(_site_assets_dir, exist_ok=True)
@@ -541,9 +546,11 @@ app.include_router(routes_attachments.router, prefix="/api", tags=["Attachments"
 app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])
 app.include_router(routes_papers.router, prefix="/api", tags=["Papers"])
 app.include_router(routes_push.router, prefix="/api", tags=["Push"])
+app.include_router(routes_tracking.router, prefix="/api")
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])
 app.include_router(routes_features.router, prefix="/api", tags=["Features"])
 app.include_router(routes_site.router, prefix="/api", tags=["Site"])
+app.include_router(routes_ui_library.router, prefix="/api")
 app.include_router(routes_github_projects.router, prefix="/api", tags=["GitHub Projects"])
 app.include_router(routes_projects_api.router, prefix="/api", tags=["Projects API"])
 # /api/mcp 不再由本进程服务：生产流量经 frontend 精确路由到 Go 网关

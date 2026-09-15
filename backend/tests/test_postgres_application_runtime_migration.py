@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 64
-    assert migrations[-1].filename == "0064_user_mcp_token_dsh_purpose.sql"
+    assert migrations[-1].version == 68
+    assert migrations[-1].filename == "0068_ui_library.sql"
 
 
 def test_user_mcp_token_dsh_purpose_migration_is_additive_and_idempotent() -> None:

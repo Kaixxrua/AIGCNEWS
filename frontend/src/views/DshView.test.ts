@@ -68,18 +68,19 @@ beforeEach(() => {
 })
 
 describe('DshView', () => {
-  it('requests the login modal for anonymous visitors without leaving /dsh', async () => {
+  it('renders the wizard for anonymous visitors without requesting login on mount', async () => {
     const auth = useAuthStore()
     auth.status = 'anonymous'
     const wrapper = await mountView()
 
     expect(router.currentRoute.value.path).toBe('/dsh')
-    expect(requestLogin).toHaveBeenCalledWith('/dsh')
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
+    expect(requestLogin).not.toHaveBeenCalled()
+    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
+    expect(wrapper.text()).toContain('npm 最新版')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
   })
 
-  it('requests login for late-resolving anonymous sessions too', async () => {
+  it('shows the wizard to late-resolving anonymous sessions without forcing login', async () => {
     const auth = useAuthStore()
     auth.status = 'initializing'
     const wrapper = await mountView()
@@ -89,8 +90,40 @@ describe('DshView', () => {
     auth.status = 'anonymous'
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/dsh')
-    expect(requestLogin).toHaveBeenCalledWith('/dsh')
+    expect(requestLogin).not.toHaveBeenCalled()
+    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
+  })
+
+  it('defers the login prompt to the wizard next step for guests', async () => {
+    const auth = useAuthStore()
+    auth.status = 'anonymous'
+    const wrapper = await mountView()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('下一步'))!.trigger('click')
+    await flushPromises()
+
+    expect(requestLogin).toHaveBeenCalledWith('/dsh')
+    expect(wrapper.text()).toContain('1/2')
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+  })
+
+  it('auto-ensures the token when a guest signs in while staying on the page', async () => {
+    ensureDshMcpToken.mockResolvedValue({
+      token: 'aigc_mcp_view', reused: false,
+      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
+    })
+    const auth = useAuthStore()
+    auth.status = 'anonymous'
+    const wrapper = await mountView()
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+
+    auth.status = 'authenticated'
+    auth.user = freeUser
+    await flushPromises()
+
+    expect(ensureDshMcpToken).toHaveBeenCalledOnce()
+    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
   })
 
   it('fails closed while auth is degraded and never touches the token API', async () => {

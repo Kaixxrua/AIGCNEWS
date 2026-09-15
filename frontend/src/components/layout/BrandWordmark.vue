@@ -17,7 +17,7 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
-const props = defineProps<{ text: string }>()
+const props = defineProps<{ text: string; compact?: boolean }>()
 
 /** 字形池：块元素重复加权（数字衰变感），符号少量点缀 */
 const GLYPHS = '▓▒░█▄▀▓▒░█#%&*+=@<>/\\'
@@ -38,6 +38,7 @@ let burstTimer: ReturnType<typeof setInterval> | null = null
 let burstFirstTimer: ReturnType<typeof setTimeout> | null = null
 let burstUntil = 0
 let reducedMotion = false
+let disposed = false
 
 const randomGlyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)] ?? '░'
 
@@ -53,14 +54,16 @@ const tick = () => {
     }
   }
   const bursting = Date.now() < burstUntil
-  const probability = (bursting ? 0.22 : 0.035) * (hovered.value ? 4 : 1)
+  const probability = (bursting ? 0.22 : 0.035) * (hovered.value ? 4 : 1) * (props.compact ? 0.35 : 1)
   chars.value.forEach((ch, i) => {
     if (ch === ' ' || active.has(i)) return
+    if (props.compact && active.size >= 1) return
     if (Math.random() < probability) active.set(i, 2 + Math.floor(Math.random() * 3))
   })
 }
 
 const start = () => {
+  if (disposed || reducedMotion || document.hidden) return
   if (tickTimer === null) tickTimer = setInterval(tick, TICK_MS)
 }
 const stop = () => {
@@ -74,26 +77,28 @@ const onVisibilityChange = () => (document.hidden ? stop() : start())
 /** 量宽固定每个字符，扰动换字形时邻字零位移 */
 const lockCharWidths = async () => {
   await nextTick()
-  textEl.value
-    ?.querySelectorAll<HTMLElement>('.brand-wordmark__char')
-    .forEach((el) => {
-      el.style.width = `${el.getBoundingClientRect().width}px`
-    })
+  const elements = textEl.value?.querySelectorAll<HTMLElement>('.brand-wordmark__char')
+  elements?.forEach(el => { el.style.width = '' })
+  elements?.forEach(el => { el.style.width = `${el.getBoundingClientRect().width}px` })
 }
 
 watch(
   () => props.text,
   async (next) => {
+    stop()
     active.clear()
     displayChars.value = next.split('')
     await lockCharWidths()
+    start()
   },
 )
 
 onMounted(async () => {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // 字体到位后再锁宽，避免故障层与字标本体逐字错位。
+  if (document.fonts) await document.fonts.ready
   await lockCharWidths()
-  if (reducedMotion) return
+  if (reducedMotion || disposed) return
   start()
   burstFirstTimer = setTimeout(() => {
     burstUntil = Date.now() + BURST_WINDOW_MS
@@ -105,6 +110,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  disposed = true
   stop()
   if (burstTimer !== null) clearInterval(burstTimer)
   if (burstFirstTimer !== null) clearTimeout(burstFirstTimer)
@@ -121,6 +127,14 @@ onUnmounted(() => {
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
+    <svg v-if="compact" class="brand-wordmark__logo" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
+      <rect width="128" height="128" rx="24" fill="var(--acid)" />
+      <g transform="translate(4 4) scale(0.9375)" fill="var(--acid-ink)">
+        <path d="M64 10A54 54 0 1 0 118 64H100A36 36 0 1 1 64 28Z" />
+        <path d="M54 62 85 31 97 43 66 74Z" />
+        <circle cx="109" cy="19" r="9" />
+      </g>
+    </svg>
     <span ref="textEl" class="brand-wordmark__text" aria-hidden="true"><span class="bw-fringe bw-fringe--cyan">{{ text }}</span><span class="bw-fringe bw-fringe--magenta">{{ text }}</span><span class="bw-slice bw-slice--cyan">{{ text }}</span><span class="bw-slice bw-slice--magenta">{{ text }}</span><span
       v-for="(_, i) in chars"
       :key="i"
@@ -142,17 +156,28 @@ onUnmounted(() => {
 
   display: inline-flex;
   align-items: center;
-  padding: 4px 2px;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 2px;
   border-radius: 6px;
   color: var(--ink);
   text-decoration: none;
   user-select: none;
 }
 
+.brand-wordmark__logo {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
 .brand-wordmark__text {
   position: relative;
   display: inline-block;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-kerning: none;
+  font-variant-ligatures: none;
   font-size: 17px;
   font-weight: 800;
   line-height: 1;
@@ -331,12 +356,19 @@ onUnmounted(() => {
   mix-blend-mode: overlay;
 }
 
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .brand-wordmark {
-    --bw-tracking: 0.14em;
+    --bw-tracking: 0.04em;
   }
   .brand-wordmark__text {
-    font-size: 14px;
+    font-size: 15px;
+  }
+  .bw-fringe { opacity: 0.18; }
+  .bw-slice { filter: opacity(0.55); }
+  .brand-wordmark__logo {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
   }
 }
 

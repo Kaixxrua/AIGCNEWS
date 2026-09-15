@@ -33,6 +33,7 @@ from backend.app.repositories.payment_plan_overrides_repository import (
     PaymentPlanOverridesRepository,
 )
 from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
+from backend.app.repositories.postgres_ui_library_repository import PostgresUiLibraryRepository
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -124,6 +125,7 @@ from backend.app.repositories.postgres_telegram_link_attempt_repository import (
 from backend.app.repositories.postgres_telegram_settings_repository import (
     PostgresTelegramSettingsRepository,
 )
+from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
@@ -211,6 +213,7 @@ class ApplicationIngestionTaskRepository(
 
 @dataclass(frozen=True)
 class ApplicationRepositories:
+    ui_library: PostgresUiLibraryRepository
     users: UserAccountRepository
     oauth_identities: OAuthIdentityRepository
     orders: PaymentOrderRepository
@@ -253,6 +256,7 @@ class ApplicationRepositories:
     push_deliveries: PushDeliveryRepository
     telegram_link_attempts: TelegramLinkAttemptRepository
     telegram_settings: TelegramSettingsRepository
+    tracking: PostgresTrackingRepository | None = None
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -297,6 +301,7 @@ def create_application_repositories(
     postgres: PostgresDatabaseLifecycle,
 ) -> ApplicationRepositories:
     return ApplicationRepositories(
+        ui_library=PostgresUiLibraryRepository(postgres),
         users=PostgresUserAccountRepository(postgres),
         oauth_identities=PostgresOAuthIdentityRepository(postgres),
         orders=PostgresPaymentOrderRepository(postgres),
@@ -351,4 +356,5 @@ def create_application_repositories(
         push_deliveries=PostgresPushDeliveryRepository(postgres),
         telegram_link_attempts=PostgresTelegramLinkAttemptRepository(postgres),
         telegram_settings=PostgresTelegramSettingsRepository(postgres),
+        tracking=PostgresTrackingRepository(postgres),
     )

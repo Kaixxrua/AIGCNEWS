@@ -1,16 +1,11 @@
 import { computed, nextTick, ref, watch, type Ref } from 'vue'
-import type { SseConnectParams, SseConnection } from './useEventSource'
 import {
   filterAndSortGlobalConversations,
   getMessageWatcherSignature,
   mapChatStoreMessage,
   type PaperReaderMessage,
-  type VisionPopup,
-  type VisionRegionCapture,
 } from '@/features/papers/paperReaderModel'
-import { CHAT_SERVICE_ENABLED } from '@/features/chat/chatFeatureFlags'
 import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
-import type { PdfProgress } from '@/features/papers/pdfViewerModel'
 import { i18n } from '@/i18n'
 
 export interface PaperReaderPaper {
@@ -19,7 +14,6 @@ export interface PaperReaderPaper {
   url?: string
   summary?: string
   published_date?: string
-  pdf_media_url?: string | null
 }
 
 interface PaperReaderControllerOptions<TPaper extends PaperReaderPaper> {
@@ -33,13 +27,8 @@ interface PaperReaderControllerOptions<TPaper extends PaperReaderPaper> {
   openConversation: (conversationId: string) => Promise<unknown>
   ensureGlobalConversation: (title?: string) => Promise<unknown>
   deleteActiveConversation: () => Promise<unknown>
-  appendLocalMessage: (conversationId: string, message: ChatMessage) => void
-  patchMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void
   sendMessage: (text: string, paperId?: string, conversationId?: string) => Promise<unknown>
-  uploadScreenshot: (payload: { image_base64: string; mime_type: string }) => Promise<{ image_id: string }>
-  connectEventSource: (params: SseConnectParams) => SseConnection
-  visionRelayUrl: string
-  /** 游客只读模式：false 时不引导会话、不出截图追问弹窗、不发送消息（默认 true）。 */
+  /** 游客只读模式：false 时不引导会话、不发送消息（默认 true）。 */
   conversationEnabled?: Ref<boolean>
 }
 
@@ -52,9 +41,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const inputText = ref('')
   const chatListRef = ref<HTMLElement | null>(null)
   const thinkingExpanded = ref<Record<string, boolean>>({})
-  const visionPopup = ref<VisionPopup | null>(null)
-  const popupInputRef = ref<HTMLInputElement | null>(null)
-  const pdfProgress = ref<PdfProgress>({ phase: 'idle', loadedPages: 0, totalPages: 0, percent: 0 })
 
   const currentConversationId = computed(() => options.activeConversationId.value)
   const conversationList = computed(() => filterAndSortGlobalConversations(Object.values(options.conversationMap.value)))
@@ -96,7 +82,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   }
 
   const handlePaperIdChange = (newId: string) => {
-    visionPopup.value = null
     void initializePaperContext(newId)
   }
 
@@ -122,9 +107,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const setChatListRef = (element: Element | null) => {
     chatListRef.value = element instanceof HTMLElement ? element : null
   }
-  const setPopupInputRef = (element: Element | null) => {
-    popupInputRef.value = element instanceof HTMLInputElement ? element : null
-  }
   const scrollBottom = async () => {
     await nextTick()
     if (chatListRef.value) chatListRef.value.scrollTop = chatListRef.value.scrollHeight
@@ -136,131 +118,6 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     thinkingExpanded.value = { ...thinkingExpanded.value, [messageId]: !thinkingExpanded.value[messageId] }
   }
   const isThinkingExpanded = (messageId: string) => !!thinkingExpanded.value[messageId]
-
-  const onRightclickRegion = async (payload: VisionRegionCapture) => {
-    if (!CHAT_SERVICE_ENABLED || !conversationEnabled.value) {
-      visionPopup.value = null
-      return
-    }
-    // TODO: CHAT_SERVICE_ENABLED=false 期间以下为不可达代码；服务恢复后删除此注释并验证截图追问链路
-    visionPopup.value = { visible: true, base64: payload.base64, question: '', pageIndex: payload.pageIndex }
-    await nextTick()
-    popupInputRef.value?.focus()
-  }
-  const closePopup = () => { visionPopup.value = null }
-
-  const createTemporaryMessage = (
-    conversationId: string,
-    id: string,
-    role: ChatMessage['role'],
-    content: string,
-    isStreaming: boolean,
-  ): ChatMessage => ({
-    id,
-    conversationId,
-    role,
-    content,
-    thinking: '',
-    thinkingPreview: '',
-    hasThinking: false,
-    isThinking: false,
-    thinkingDurationSec: 0,
-    isStreaming,
-    sources: [],
-    attachments: [],
-  })
-
-  const sendVision = async () => {
-    if (!conversationEnabled.value) return
-    if (!visionPopup.value?.question.trim() || isSending.value || !currentConversationId.value) return
-    const question = visionPopup.value.question.trim()
-    const base64 = visionPopup.value.base64
-    const conversationId = currentConversationId.value
-    const history = (options.messageMap.value[conversationId] || [])
-      .filter((message) => message.role !== 'assistant' || message.content)
-      .slice(-12)
-      .map((message) => ({ role: message.role, content: message.content }))
-    closePopup()
-
-    const requestId = Date.now()
-    const userId = `vision_user_${requestId}`
-    const assistantId = `vision_assistant_${requestId}`
-    options.appendLocalMessage(
-      conversationId,
-      createTemporaryMessage(conversationId, userId, 'user', i18n.global.t('paper.screenshotQuestion', { question }), false),
-    )
-    options.appendLocalMessage(
-      conversationId,
-      createTemporaryMessage(conversationId, assistantId, 'assistant', '', true),
-    )
-
-    let imageId: string
-    try {
-      const upload = await options.uploadScreenshot({ image_base64: base64, mime_type: 'image/jpeg' })
-      imageId = upload.image_id
-    } catch (error) {
-      options.patchMessage(conversationId, assistantId, {
-        isStreaming: false,
-        content: i18n.global.t('paper.uploadFailed', { detail: String(error) }),
-      })
-      return
-    }
-
-    let terminalConversationReceived = false
-    let terminalSync: Promise<unknown> | null = null
-    const connection = options.connectEventSource({
-      url: options.visionRelayUrl,
-      body: {
-        conversation_id: conversationId,
-        paper_id: options.paperId.value || null,
-        question,
-        image_id: imageId,
-        history,
-      },
-      onMessage: (payload: unknown) => {
-        const event = payload as { type: string; data?: unknown }
-        if (event.type === 'status') return
-        if (event.type === 'conversation' && event.data && typeof event.data === 'object') {
-          terminalConversationReceived = true
-          const persistedId = String((event.data as { conversation_id?: string | number }).conversation_id ?? conversationId)
-          terminalSync = (async () => {
-            await options.loadConversations()
-            await options.openConversation(persistedId)
-          })()
-          return
-        }
-        if (event.type === 'content') {
-          const current = (options.messageMap.value[conversationId] || []).find((item) => item.id === assistantId)
-          options.patchMessage(conversationId, assistantId, {
-            content: `${current?.content || ''}${String(event.data ?? '')}`,
-          })
-          void scrollBottom()
-        }
-        if (event.type === 'error') {
-          options.patchMessage(conversationId, assistantId, {
-            isStreaming: false,
-            content: i18n.global.t('paper.streamError', { detail: String(event.data ?? i18n.global.t('paper.unknownError')) }),
-          })
-        }
-      },
-      onDone: () => {
-        if (terminalConversationReceived) return
-        const current = (options.messageMap.value[conversationId] || []).find((item) => item.id === assistantId)
-        options.patchMessage(conversationId, assistantId, {
-          isStreaming: false,
-          content: current?.content || i18n.global.t('paper.modelEmpty'),
-        })
-      },
-      onError: (error: unknown) => {
-        options.patchMessage(conversationId, assistantId, {
-          isStreaming: false,
-          content: i18n.global.t('paper.requestFailed', { detail: String(error) }),
-        })
-      },
-    })
-    await connection.promise
-    await terminalSync
-  }
 
   const sendText = async () => {
     if (!conversationEnabled.value) return
@@ -275,25 +132,12 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
       void sendText()
     }
   }
-  const handlePopupKeydown = (event: KeyboardEvent) => {
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      void sendVision()
-    }
-    if (event.key === 'Escape') closePopup()
-  }
-  const onPdfProgress = (payload: PdfProgress) => { pdfProgress.value = payload }
-  const downloadPdf = () => {
-    const url = paper.value?.pdf_media_url
-    if (url) window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
   return {
     paper, paperLoading, paperError, showConvPanel, currentConversationId, conversationList,
     activeConversationTitle, inputText, setChatListRef, isSending, messages,
-    visionPopup, setPopupInputRef, pdfProgress, initializePaperContext, handlePaperIdChange,
+    initializePaperContext, handlePaperIdChange,
     switchConversation, newConversation, deleteCurrentConversation, toggleThinking,
-    isThinkingExpanded, onRightclickRegion, closePopup, sendVision, sendText,
-    handleKeydown, handlePopupKeydown, onPdfProgress, downloadPdf,
+    isThinkingExpanded, sendText,
+    handleKeydown,
   }
 }

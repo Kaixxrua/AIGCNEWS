@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 SOURCE_LABELS = {
+    "personal": "我的 AI 情报",
     "all": "综合简报",
     "arxiv": "学术报告",
     "github": "工程报告",

@@ -53,6 +53,7 @@ const i18n = createI18n({
           price: '¥0',
           currentPlan: '当前默认方案',
           features: {
+            tracking: '1 条追踪规则',
             mcpFree: 'MCP/API 共用：每 24 小时 60 次 + 滚动 30 天 1,200 次',
             websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏',
             briefingFree: '简报订阅全部 8 个日报模块',
@@ -71,7 +72,8 @@ const i18n = createI18n({
           features: {
             mcpMember: 'MCP/API 共用：每 24 小时 400 次 + 滚动 30 天 8,000 次',
             websiteMember: '个人网页收藏添加不限量',
-            support: '优先支持与后续 vip 权益',
+            tracking: '10 条关键词或项目追踪',
+            personalDigest: '每日个人简报',
           },
         },
         currentMember: '当前已是 vip',
@@ -167,9 +169,12 @@ describe('MembershipView', () => {
     expect(freeRssRow?.classes()).not.toContain('tier-feature--excluded')
     expect(freeRssRow?.find('.tier-check').exists()).toBe(true)
 
-    // vip 卡只保留工具权益（MCP 额度 / 网页收藏 / 支持），简报 RSS 不再单列
-    expect(memberCard.findAll('.tier-check')).toHaveLength(3)
+    // VIP 展示个人追踪和个人简报，公共 RSS 仍属于免费权益
+    expect(memberCard.findAll('.tier-check')).toHaveLength(4)
     expect(memberCard.text()).not.toContain('RSS')
+    expect(memberCard.text()).toContain('10 条关键词或项目追踪')
+    expect(memberCard.text()).toContain('每日个人简报')
+    expect(memberCard.text()).not.toContain('后续 vip 权益')
 
     // 排除项图标总数 = guest 的 3 项
     expect(wrapper.findAll('.tier-x')).toHaveLength(3)
@@ -180,7 +185,7 @@ describe('MembershipView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const link = wrapper.findComponent(RouterLinkStub)
+    const link = wrapper.find('.tier-card--member').findComponent(RouterLinkStub)
     expect(link.exists()).toBe(true)
     expect(link.props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'monthly' } })
     expect(link.text()).toContain('立即开通')
@@ -192,7 +197,7 @@ describe('MembershipView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const link = wrapper.findComponent(RouterLinkStub)
+    const link = wrapper.find('.tier-card--member').findComponent(RouterLinkStub)
     expect(link.exists()).toBe(true)
     expect(link.props('to')).toBe('/contact')
     expect(link.classes()).toContain('tier-cta')
@@ -214,7 +219,7 @@ describe('MembershipView', () => {
     expect(wrapper.find('.tier-badge').text()).toBe('当前已是 vip')
     expect(wrapper.text()).toContain('感谢支持！vip 权益已生效。')
     expect(wrapper.find('a.tier-cta').exists()).toBe(false)
-    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
+    expect(wrapper.find('.tier-card--member').findComponent(RouterLinkStub).exists()).toBe(false)
   })
 
   it('marks the member card with the recommended badge for non-members', () => {
@@ -229,7 +234,7 @@ describe('MembershipView', () => {
     await flushPromises()
     const button = wrapper.find('.tier-card--member .tier-billing-btn')
     await button.trigger('click')
-    const link = wrapper.findComponent(RouterLinkStub)
+    const link = wrapper.find('.tier-card--member').findComponent(RouterLinkStub)
     expect(link.props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'yearly' } })
   })
 

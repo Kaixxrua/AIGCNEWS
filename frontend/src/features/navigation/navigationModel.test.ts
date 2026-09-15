@@ -63,6 +63,7 @@ describe('website collection navigation item', () => {
     expect(isNavigationItemActive(item!, '/projects', { source: 'website' })).toBe(true)
     expect(isNavigationItemActive(item!, '/projects', { source: 'favorites' })).toBe(false)
     expect(isNavigationItemActive(item!, '/projects', {})).toBe(false)
+    expect(isNavigationItemActive(item!, '/websites')).toBe(true)
   })
 
   it('keeps the general projects item inactive for the website collection', () => {
@@ -70,12 +71,17 @@ describe('website collection navigation item', () => {
     expect(isNavigationItemActive(item, '/projects', { source: 'website' })).toBe(false)
     expect(isNavigationItemActive(item, '/projects', { source: 'favorites' })).toBe(true)
     expect(isNavigationItemActive(item, '/projects', {})).toBe(true)
+    expect(isNavigationItemActive(item, '/websites')).toBe(false)
   })
 })
 
 describe('subscriptions navigation item', () => {
-  it('keeps subscriptions routable without exposing it in the navigation model', () => {
-    expect(NAV_ITEMS.some((item) => item.to === '/subscriptions')).toBe(false)
+  it('exposes tracking to guests while the route handles login', () => {
+    const item = NAV_ITEMS.find((entry) => entry.to === '/subscriptions')!
+    expect(item.labelKey).toBe('navigation.tracking')
+    expect(item.requiresAuth).toBeUndefined()
+    expect(item.requiresAdmin).toBeUndefined()
+    expect(isNavigationItemActive(item, '/subscriptions')).toBe(true)
   })
 })
 

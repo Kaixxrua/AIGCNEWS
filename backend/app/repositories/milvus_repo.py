@@ -184,33 +184,50 @@ class MilvusRepository:
             logger.warning("[Milvus] 删除 Collection 失败: %s", exc)
             return False
 
+    def _search_documents(self, query: str, top_k: int = 5) -> List[Document]:
+        vector_store = Milvus(
+            embedding_function=self._embeddings,
+            collection_name=self._collection_name,
+            connection_args=self._connection_args,
+            consistency_level="Strong",
+            auto_id=True,
+            drop_old=False,
+            metadata_field=_METADATA_FIELD,
+        )
+        # HNSW 要求 ef >= k，否则会报 out of range 错误
+        ef = max(top_k, 64)
+        results = vector_store.similarity_search_with_score(
+            query, k=top_k, param={"ef": ef}
+        )
+        docs: List[Document] = []
+        for doc, score in results:
+            doc.metadata = dict(doc.metadata or {})
+            doc.metadata.setdefault("source", "milvus")
+            doc.metadata["score"] = float(score)
+            docs.append(doc)
+        return docs
+
     def search(self, query: str, top_k: int = 5) -> List[Document]:
         try:
-            vector_store = Milvus(
-                embedding_function=self._embeddings,
-                collection_name=self._collection_name,
-                connection_args=self._connection_args,
-                consistency_level="Strong",
-                auto_id=True,
-                drop_old=False,
-                metadata_field=_METADATA_FIELD,
-            )
-            # HNSW 要求 ef >= k，否则会报 out of range 错误
-            # ef 越大结果越准确，建议 ef = max(k, 64)
-            ef = max(top_k, 64)
-            results = vector_store.similarity_search_with_score(
-                query, k=top_k, param={"ef": ef}
-            )
-            docs: List[Document] = []
-            for doc, score in results:
-                doc.metadata = dict(doc.metadata or {})
-                doc.metadata.setdefault("source", "milvus")
-                doc.metadata["score"] = float(score)
-                docs.append(doc)
-            return docs
+            return self._search_documents(query, top_k)
         except Exception as exc:
             logger.warning("[Milvus] Failed to search documents: %s", exc)
             return []
+
+    def search_with_status(
+        self, query: str, top_k: int = 5
+    ) -> tuple[List[Document], str | None]:
+        """Return semantic hits plus an explicit runtime error, if any.
+
+        ``search`` predates the dashboard contract and intentionally remains
+        fail-open.  New callers that must distinguish an empty result from an
+        unavailable vector runtime use this method instead.
+        """
+        try:
+            return self._search_documents(query, top_k), None
+        except Exception as exc:
+            logger.warning("[Milvus] Failed to search documents: %s", exc)
+            return [], str(exc)
 
     def search_by_source(self, source: str, top_k: int = 3) -> List[Document]:
         """按 source 字段过滤，返回该来源的 top_k 条文档（用于保证每源都有代表）。"""

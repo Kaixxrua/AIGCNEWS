@@ -47,7 +47,7 @@ const emit = defineEmits<{
       <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
       <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
     </div>
-    <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0">
+    <div class="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
       <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
         <span class="status-dot bg-brand-green" />
         <span class="text-2xs font-medium text-green-700">{{ t('report.cached') }}</span>

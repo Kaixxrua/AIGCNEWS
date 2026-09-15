@@ -75,6 +75,29 @@ def test_unrecommend_projects_removed_message_and_reads_status() -> None:
     status.get_github_project_enrichment_status.assert_called_once_with()
 
 
+def test_enrichment_pages_forwards_independent_page_state() -> None:
+    status = MagicMock()
+    status.list_github_project_enrichment_pages.return_value = {
+        "unprocessable": {"items": [], "total": 0, "page": 2, "page_size": 15},
+        "retained": {"items": [], "total": 0, "page": 3, "page_size": 15},
+    }
+    service = GitHubProjectRecommendationAdminService(MagicMock(), status)
+
+    result = asyncio.run(service.get_enrichment_pages(
+        unprocessable_page=2,
+        retained_page=3,
+        page_size=15,
+    ))
+
+    assert result["unprocessable"]["page"] == 2
+    assert result["retained"]["page"] == 3
+    status.list_github_project_enrichment_pages.assert_called_once_with(
+        unprocessable_page=2,
+        retained_page=3,
+        page_size=15,
+    )
+
+
 def test_enrichment_status_marks_running_batch() -> None:
     status = MagicMock()
     status.get_github_project_enrichment_status.return_value = {"total": 3, "enriched": 1}

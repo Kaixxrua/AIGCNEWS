@@ -1,13 +1,10 @@
 """
 附件上传与管理服务。
 
-支持两种附件类型：
-  - image: 图片（base64 存 Redis，TTL 10min）
-  - pdf:   本地 PDF（落盘 + 文本提取 + 可选向量切片）
+支持图片附件（base64 存内存，TTL 10min）。
 
 设计约束：
   - 图片沿用 Zero-Disk 策略，仅存内存/Redis
-  - PDF 落盘到临时安全目录，提取文本后存入 PostgreSQL
   - 每个附件有唯一 attachment_id（UUID4）
   - 附件元数据持久化到 PostgreSQL chat_attachment_meta 表
     （替代原进程内内存字典，重启/多 worker 可见）
@@ -17,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple
@@ -35,47 +31,13 @@ from backend.app.services.chat.attachment_lifecycle import (
     AttachmentStatus as AttachmentStatus,
     AttachmentType,
 )
-from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
-from backend.app.services.chat.attachment_storage import (
-    DEFAULT_PDF_UPLOAD_DIR,
-    ImageCache,
-    PdfStorage,
-    extract_pdf_text,
-)
+from backend.app.services.chat.attachment_policy import ValidatedImage
+from backend.app.services.chat.attachment_storage import ImageCache
 
 logger = logging.getLogger(__name__)
 
 # Public compatibility view used by existing tests and in-process callers.
 _image_cache: Dict[str, Tuple[str, str, float]] = {}
-
-
-# ---------------------------------------------------------------------------
-# PDF 临时存储目录
-# ---------------------------------------------------------------------------
-# 统一以 attachment_storage 的私有目录为准（历史上本模块各自推导同一路径，
-# 曾指向 papers_storage_dir/_chat_uploads 的匿名静态挂载树内，属越权隐患）。
-
-_PDF_UPLOAD_DIR = DEFAULT_PDF_UPLOAD_DIR
-try:
-    os.makedirs(_PDF_UPLOAD_DIR, exist_ok=True)
-except OSError:
-    # 与 attachment_storage 同口径：尽力预建，写入侧 PdfStorage.write 仍会按需创建
-    logger.warning(
-        "[Attachment] 附件目录预建失败（写入时重试）: %s",
-        _PDF_UPLOAD_DIR,
-        exc_info=True,
-    )
-
-
-# ---------------------------------------------------------------------------
-# 附件元数据持久化（PostgreSQL）
-# ---------------------------------------------------------------------------
-
-
-def _meta_storage_path(meta: AttachmentMeta) -> Optional[str]:
-    if meta.type != AttachmentType.PDF:
-        return None
-    return _pdf_storage().path_for(meta.id)
 
 
 def _meta_to_row(meta: AttachmentMeta) -> dict:
@@ -89,7 +51,7 @@ def _meta_to_row(meta: AttachmentMeta) -> dict:
         "size_bytes": meta.size_bytes,
         "page_count": meta.page_count,
         "text_preview": meta.text_preview,
-        "storage_path": _meta_storage_path(meta),
+        "storage_path": None,
         "error_msg": meta.error_msg,
         "created_at": meta.created_at,
         "expires_at": meta.expires_at,
@@ -133,7 +95,7 @@ class _PostgresMetaStore:
         row = await asyncio.to_thread(
             self._repository.get_attachment_meta, attachment_id, user_id=user_id
         )
-        return _meta_from_row(row) if row is not None else None
+        return _meta_from_row(row) if row is not None and row["attachment_type"] == "image" else None
 
     async def list_owned(
         self, attachment_ids: List[str], user_id: int
@@ -141,7 +103,7 @@ class _PostgresMetaStore:
         rows = await asyncio.to_thread(
             self._repository.list_attachment_meta, list(attachment_ids), user_id=user_id
         )
-        return [_meta_from_row(row) for row in rows]
+        return [_meta_from_row(row) for row in rows if row["attachment_type"] == "image"]
 
 
 class _MetaStoreRegistry:
@@ -164,10 +126,6 @@ _attachment_lifecycle = AttachmentLifecycle(
     id_factory=lambda: uuid.uuid4(),
     clock=lambda: time.time(),
 )
-
-
-def _pdf_storage() -> PdfStorage:
-    return PdfStorage(_PDF_UPLOAD_DIR, extractor=extract_pdf_text)
 
 
 # ---------------------------------------------------------------------------
@@ -196,40 +154,6 @@ async def upload_image(
     )
 
 
-async def upload_pdf(
-    content: ValidatedPdf,
-    user_id: int,
-) -> AttachmentMeta:
-    """
-    上传 PDF 附件：落盘 → 提取文本 → 返回附件元数据。
-    """
-    attachment_id = _attachment_lifecycle.new_id()
-    meta = await _attachment_lifecycle.register_pdf(
-        attachment_id=attachment_id,
-        user_id=user_id,
-        filename=content.filename,
-        mime_type=content.mime_type,
-        size_bytes=len(content.data),
-    )
-    storage = _pdf_storage()
-
-    try:
-        storage.write(attachment_id, content.data)
-    except Exception:
-        _attachment_lifecycle.mark_error(meta, "附件保存失败")
-        await _meta_store.save(meta)
-        return meta
-
-    try:
-        text, page_count = await storage.extract_text(attachment_id)
-        _attachment_lifecycle.mark_pdf_ready(meta, text, page_count)
-    except Exception:
-        _attachment_lifecycle.mark_error(meta, "PDF 解析失败")
-    await _meta_store.save(meta)
-
-    return meta
-
-
 async def get_attachment(
     attachment_id: str, user_id: int
 ) -> Optional[AttachmentMeta]:
@@ -246,27 +170,6 @@ async def get_image_base64(
     return await _image_store.get(attachment_id)
 
 
-async def get_pdf_text(attachment_id: str, user_id: int) -> Optional[str]:
-    """获取当前用户 PDF 附件的全文文本。"""
-    meta = await get_attachment(attachment_id, user_id)
-    if meta is None or meta.type != AttachmentType.PDF:
-        return None
-    storage = _pdf_storage()
-    if not storage.exists(attachment_id):
-        return None
-    try:
-        text, _ = await storage.extract_text(attachment_id)
-        return text
-    except Exception as exc:
-        logger.warning(
-            "[Attachment] PDF 文本提取失败 attachment_id=%s: %s",
-            attachment_id,
-            exc,
-            exc_info=True,
-        )
-        return None
-
-
 async def list_attachments(
     attachment_ids: List[str], user_id: int
 ) -> List[AttachmentMeta]:
@@ -279,48 +182,10 @@ async def list_attachments(
 # ---------------------------------------------------------------------------
 
 
-def reconcile_orphan_attachments(
-    *,
-    now: Optional[float] = None,
-    upload_dir: Optional[str] = None,
-) -> Dict[str, int]:
-    """启动对账：清理无元数据的孤儿 PDF 文件与 TTL 到期的元数据行。
-
-    最小可用策略：
-      1. 扫描 PDF 上传目录，删除 chat_attachment_meta 中无对应行的文件；
-      2. 删除 expires_at 已过期（> 0 且 < now）的元数据行（当前为图片附件）。
-    返回清理计数，调用方负责记录日志。
-    """
+def reconcile_orphan_attachments(*, now: Optional[float] = None) -> Dict[str, int]:
+    """Expire attachment metadata without reading or deleting historical files."""
     now_ts = time.time() if now is None else now
-    directory = _PDF_UPLOAD_DIR if upload_dir is None else upload_dir
-
-    orphan_files_removed = 0
-    if os.path.isdir(directory):
-        disk_ids = [
-            name[: -len(".pdf")]
-            for name in os.listdir(directory)
-            if name.endswith(".pdf")
-        ]
-        if disk_ids:
-            existing = _meta_repository.existing_attachment_ids(disk_ids)
-            for attachment_id in disk_ids:
-                if attachment_id in existing:
-                    continue
-                try:
-                    os.remove(os.path.join(directory, f"{attachment_id}.pdf"))
-                    orphan_files_removed += 1
-                except OSError as exc:
-                    logger.warning(
-                        "[Attachment] 删除孤儿附件文件失败 %s: %s", attachment_id, exc
-                    )
-
-    expired_rows_removed = _meta_repository.delete_expired_attachment_meta(now_ts)
-    logger.info(
-        "[Attachment] 孤儿对账完成：删除孤儿文件 %d 个，过期元数据 %d 行",
-        orphan_files_removed,
-        expired_rows_removed,
-    )
     return {
-        "orphan_files_removed": orphan_files_removed,
-        "expired_rows_removed": expired_rows_removed,
+        "orphan_files_removed": 0,
+        "expired_rows_removed": _meta_repository.delete_expired_attachment_meta(now_ts),
     }

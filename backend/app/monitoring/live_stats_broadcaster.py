@@ -135,9 +135,10 @@ class LiveStatsBroadcaster:
             return self._last_payload
         cached = await self._read_redis()
         if cached is not None:
-            self._last_payload = cached
-            return cached
-        payload = await self._recompute_and_publish("cold-start")
+            if self._last_payload is None:
+                self._last_payload = cached
+            return self._last_payload
+        payload = await self._recompute_and_publish("cold-start", only_if_missing=True)
         return payload if payload is not None else {}
 
     async def subscribe(self) -> AsyncIterator[dict[str, Any] | None]:
@@ -160,15 +161,8 @@ class LiveStatsBroadcaster:
 
     async def run(self) -> None:
         """lifespan 后台 task：先 ensure-warm，再进入 tick 循环直到被取消。"""
-        if self._last_payload is None:
-            cached = await self._read_redis()
-            if cached is not None:
-                self._last_payload = cached
-                logger.info("[LiveStats] 启动预热：命中 Redis 常驻值，跳过重算。")
-            else:
-                payload = await self._recompute_and_publish("startup-warm")
-                if payload is not None:
-                    logger.info("[LiveStats] 启动预热完成：Redis 常驻值已重建。")
+        if await self.get_current():
+            logger.info("[LiveStats] 启动预热完成：统计常驻值已就绪。")
         last_full = self._monotonic()
         while True:
             await asyncio.sleep(self._mcp_tick)
@@ -214,8 +208,13 @@ class LiveStatsBroadcaster:
         await self._store_redis(updated)
         self._broadcast(updated)
 
-    async def _recompute_and_publish(self, trigger: str) -> dict[str, Any] | None:
+    async def _recompute_and_publish(
+        self, trigger: str, *, only_if_missing: bool = False,
+    ) -> dict[str, Any] | None:
         async with self._recompute_lock:
+            # 启动任务、SSE 首帧和 REST 同时冷读时，只由第一个请求重算。
+            if only_if_missing and self._last_payload is not None:
+                return self._last_payload
             try:
                 payload = await self._compute()
             except Exception:  # noqa: BLE001 - 重算失败保留旧值
