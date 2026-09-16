@@ -33,7 +33,6 @@ from backend.app.repositories.payment_plan_overrides_repository import (
     PaymentPlanOverridesRepository,
 )
 from backend.app.repositories.payment_settings_repository import PaymentSettingsRepository
-from backend.app.repositories.postgres_ui_library_repository import PostgresUiLibraryRepository
 from backend.app.repositories.postgres_attachment_repository import (
     PostgresAttachmentRepository,
 )
@@ -126,6 +125,7 @@ from backend.app.repositories.postgres_telegram_settings_repository import (
     PostgresTelegramSettingsRepository,
 )
 from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
+from backend.app.repositories.postgres_ui_library_repository import PostgresUiLibraryRepository
 from backend.app.repositories.postgres_user_account_repository import (
     PostgresUserAccountRepository,
 )
