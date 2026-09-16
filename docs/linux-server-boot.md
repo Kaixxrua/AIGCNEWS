@@ -34,6 +34,7 @@ PriceAI 的现有环境文件 `${HOME}/.priceai-node.env` 必须提供：
 不要在日志或终端输出变量值。
 
 管理脚本会按 dotenv 语义读取项目 `.env` 和 `${HOME}/.priceai-node.env`，无需用 shell `source`（配置中可能包含空格或 cron 表达式）。
+脚本始终启用 `mcp-go` profile，确保开机和发布协调不会将公网 `/api/mcp` 的唯一服务者当作 orphan 移除；检测到私有 overlay 时同时启用 `dailyhot`。调用方在 `COMPOSE_PROFILES` 中提供的其他 profile 会保留。
 
 ```bash
 scripts/manage_main_stack.sh config

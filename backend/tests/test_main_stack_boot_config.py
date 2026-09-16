@@ -63,6 +63,9 @@ def test_main_stack_orchestrator_has_static_safety_guards() -> None:
     assert "--remove-orphans --no-build --pull never --wait --wait-timeout 300" in text
     assert '--env-file "${APP_ENV_FILE}"' in text
     assert '--env-file "${PRICEAI_ENV_FILE}"' in text
+    assert 'ensure_profile "mcp-go"' in text
+    assert 'ensure_profile "dailyhot"' in text
+    assert "ensure_required_profiles" in text
     assert "sudo" not in text
     assert "down --volumes" not in text
     assert "down -v" not in text

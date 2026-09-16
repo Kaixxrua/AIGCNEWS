@@ -67,25 +67,31 @@ compose() {
   docker compose "${args[@]}" "$@"
 }
 
-# 生产 boot 路径（存在私有 overlay 时）必须启用 dailyhot profile：
-# scheduler_registry.py 注册了 dailyhot_hotlists 采集任务，需要编排内的
-# DailyHotApi 上游；不显式启用时 `up --remove-orphans` 会把手动启动的
-# aigc-dailyhot 当 orphan 拆除。开源核心部署无 overlay 则不强制，
-# 需要 dailyhot 时自行设置 COMPOSE_PROFILES（见 docs/dailyhot-source.md）。
-# 调用方已设置 COMPOSE_PROFILES 时保留其值，仅补齐 dailyhot。
-ensure_dailyhot_profile() {
-  has_private_overlay || return 0
+# Go MCP 是核心入站服务，即使 Compose 使用 profile 隔离历史迁移路径，
+# 生产 boot/reconcile 也必须始终启用 mcp-go。否则 `up --remove-orphans`
+# 会拆掉已运行的 aigc-mcp-go，使公网 /api/mcp 返回 502。
+# 存在私有 overlay 时还必须启用 dailyhot：调度器依赖编排内的
+# DailyHotApi 上游。调用方已设置的其他 profiles 原样保留。
+ensure_profile() {
+  local profile="$1"
   case ",${COMPOSE_PROFILES:-}," in
-    *,dailyhot,*) ;;
-    *) COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}dailyhot" ;;
+    *,"${profile}",*) ;;
+    *) COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}${profile}" ;;
   esac
+}
+
+ensure_required_profiles() {
+  ensure_profile "mcp-go"
+  if has_private_overlay; then
+    ensure_profile "dailyhot"
+  fi
   export COMPOSE_PROFILES
 }
 
 main() {
   require_command docker
   [[ -f "${COMPOSE_FILE}" ]] || fail "compose file not found: ${COMPOSE_FILE}"
-  ensure_dailyhot_profile
+  ensure_required_profiles
 
   local action="${1:-}"
   [[ $# -eq 1 ]] || { usage >&2; exit 2; }
