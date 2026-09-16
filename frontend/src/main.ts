@@ -31,7 +31,7 @@ void import('./stores/authStore').then(({ useAuthStore }) => {
 
 // PWA Service Worker：仅生产环境注册（开发态预缓存会污染 HMR 调试）。
 // 动态导入与 beacon/authStore 同款风格，注册逻辑不进首屏关键路径；
-// 检测到新版本时右下角提示卡片由用户确认后刷新。
+// 检测到新版本后由新 Service Worker 自动接管并刷新页面。
 if (import.meta.env.PROD) {
   void import('./pwa/registerPwa').then(({ registerPwa }) => {
     registerPwa()

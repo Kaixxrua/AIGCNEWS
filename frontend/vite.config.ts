@@ -15,18 +15,19 @@ export default defineConfig({
     // - injectRegister: false：注册由 src/pwa/registerPwa.ts 手动完成，不向
     //   index.html 注入任何脚本（CSP 对内联脚本有 sha256 白名单契约）。
     // - manifest: false：manifest 走 public/ 下手写版，不由插件生成。
-    // - registerType: 'prompt'：新 SW 进入 waiting 后由用户确认再刷新。
+    // - registerType: 'autoUpdate'：新 SW 安装后立即接管并刷新，无需用户确认。
     // - /api 一律不经 SW（SSE 长连接 + JWT Authorization 头，缓存/拦截会
     //   出事故）：导航回退用 denylist 兜底，且故意不配 runtimeCaching。
     VitePWA({
       injectRegister: false,
       manifest: false,
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       workbox: {
         navigateFallback: '/index.html',
         globIgnores: ['**/ui-library/**'],
         navigateFallbackDenylist: [/^\/api\//, /^\/ui-library\/(?:previews|sources|licenses|posters|clips|assets)\//],
         clientsClaim: true,
+        skipWaiting: true,
         // 默认 globPatterns 只含 js/css/html；自托管字体与 logo 必须入预缓存，
         // 否则离线打开外壳时字体/图标回退。robots.txt / sitemap.xml 面向
         // 爬虫，不属于外壳，不预缓存。
