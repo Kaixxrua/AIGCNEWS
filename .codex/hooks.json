@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/mcp-first-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Classifying MCP-first route..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(Agent|WebSearch|WebFetch|web__run|Bash|Skill|multi_tool_use\\..*|Task.*|Batch.*|mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/mcp-first-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking MCP-first route..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/mcp-first-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Recording MCP-first result..."
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^(mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)/.codex/hooks/mcp-first-guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Recording MCP-first failure..."
+          }
+        ]
+      }
+    ]
+  }
+}
