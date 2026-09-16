@@ -8,7 +8,23 @@ request = json.load(sys.stdin)
 with db.transaction() as conn:
     if request['action'] == 'snapshot':
         sources = conn.execute("SELECT source_id,last_success_at,error FROM ui_discovery_sources WHERE source_id='hyperui'").fetchall()
-        candidates = conn.execute("SELECT candidate_id,revision,payload,review_status FROM ui_discovery_candidates WHERE source_id='hyperui' AND review_status IN ('pending','held_quality') ORDER BY CASE review_status WHEN 'pending' THEN 0 ELSE 1 END, CASE change_kind WHEN 'new' THEN 0 WHEN 'updated' THEN 1 ELSE 2 END, candidate_id").fetchall()
+        candidates = conn.execute("""
+            SELECT c.candidate_id,c.revision,c.payload,c.review_status
+            FROM ui_discovery_candidates c
+            LEFT JOIN ui_discovery_source_configs cfg
+              ON cfg.id::text = c.payload->>'discovery_source_config_id'
+            WHERE c.review_status IN ('pending','held_quality') AND (
+              c.source_id='hyperui' OR (
+                c.source_id LIKE 'x:%' AND c.payload->>'kind'='x_github_html'
+                AND c.payload->>'auto_publish_eligible'='true'
+                AND cfg.enabled AND cfg.x_auto_publish
+                AND lower(cfg.repository)=lower(c.payload->>'repo')
+              )
+            )
+            ORDER BY CASE c.review_status WHEN 'pending' THEN 0 ELSE 1 END,
+              CASE c.change_kind WHEN 'new' THEN 0 WHEN 'updated' THEN 1 ELSE 2 END,
+              c.candidate_id
+        """).fetchall()
         print(json.dumps({'sources': sources, 'candidates': candidates}, default=str))
     elif request['action'] == 'record':
         for item in request.get('items', []):

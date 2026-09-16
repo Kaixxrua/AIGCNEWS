@@ -9,7 +9,7 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录，生产 job 使用固定 concurrency group 排队。
+6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品，逐文件校验清单与黑边修复契约后才允许构建。生产 job 使用固定 concurrency group 排队。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
@@ -20,6 +20,7 @@
 配置 Repository variable：
 
 - `AIGCNEWS_PRODUCTION_ROOT`：部署机稳定检出的绝对路径，例如 `/home/deploy/AIGCNEWS`。
+- `AIGCNEWS_GODOT_RELEASE_ROOT`：部署机上私有 Godot 发布目录的绝对路径。目录必须包含 `frontend-current-parent-v4/frontend/src/`、`cn-current-godot-release/camp-scene/` 和 `cn-current-godot-release-source-manifest.json`，且仅允许 runner 读取，不得复制进 AIGCNEWS Git 历史。
 
 注册一台只能由本仓库使用的自托管 runner，并添加标签：
 
@@ -34,11 +35,12 @@ runner 用户必须能够：
 - 读取并更新 `AIGCNEWS_PRODUCTION_ROOT` 的 Git checkout；
 - 使用 Docker，但不要求 root shell；
 - 读取部署目录已有的 `.env`、证书和私有 overlay；
+- 读取 `AIGCNEWS_GODOT_RELEASE_ROOT` 中的私有 Godot 发布源码、制品和 SHA-256 清单；
 - 访问 GHCR 和 `origin`；
 - 在部署目录创建 `.release.env` 与 `.aigcnews-deploy/`。
 - 读取生产目录中的 `mcp-go/internal/uicatalog/data/` 和 `frontend/.ui-previews/previews/`；这些私有发布素材不会提交到 Git，普通 PR CI 使用合成夹具验证同一构建契约。
 
-生产目录必须保持 tracked 文件干净。`.env`、`.release.env` 和 `.aigcnews-deploy/` 不进入 Git。
+生产目录必须是专用、稳定且 tracked 文件干净的 checkout，不能复用 Codex 开发 worktree。`.env`、`.release.env` 和 `.aigcnews-deploy/` 不进入 Git。私有 Godot 发布目录不能位于 AIGCNEWS checkout 内，也不能被 Git 暂存。
 
 ## 并发语义
 
@@ -63,9 +65,9 @@ repository@sha256:<digest>
 
 本变更自己的 workflow 在进入默认分支前不会运行，因此第一次合并需要沿用现有受控 landing。合并后：
 
-1. 配置 GitHub Actions 的 PR 写权限和上述 repository variable。
+1. 配置 GitHub Actions 的 PR 写权限和上述两个 repository variable。
 2. 注册并锁定生产 runner。
-3. 确认生产 checkout tracked 文件干净，`.env`、TLS 文件、存储目录和私有 overlay 已就绪。
+3. 确认生产 checkout tracked 文件干净，`.env`、TLS 文件、存储目录、私有 UI overlay 和私有 Godot 发布目录已就绪。
 4. 手工运行 `scripts/manage_main_stack.sh config`。
 5. 触发一次 `Contract Baseline` 的 `main` push 或后续正常合并；第一次自动部署会建立生产状态文件。
 

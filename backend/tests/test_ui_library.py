@@ -231,6 +231,7 @@ def test_hyperui_discovers_original_examples_not_blog_articles():
 def test_x_discovery_requires_complete_requested_window(failure):
     from backend.app.services.source_plugins.x_source import XWindowFetchResult, XWindowHandleResult
     repo = MagicMock()
+    repo.list_source_configs.return_value = []
     async def fetch(handles, *, window_start, window_end, count_per_user):
         assert tuple(handles) == X_HANDLES and count_per_user == 20
         assert (window_end - window_start).total_seconds() == 86400
@@ -256,6 +257,45 @@ def test_x_discovery_requires_complete_requested_window(failure):
             assert candidate['links'] == ['https://example.test/demo']
             assert candidate['license_status'] == 'needs_review'
         repo.record_failure.assert_not_called()
+
+
+def test_x_promotes_only_direct_links_to_opted_in_github_html_sources():
+    from backend.app.services.source_plugins.x_source import XWindowFetchResult, XWindowHandleResult
+    repo = MagicMock()
+    repo.list_source_configs.return_value = [{
+        'id': 9, 'name': 'Trusted HTML', 'kind': 'github', 'repository': 'Acme/UI',
+        'path_patterns': ['examples/*.html'], 'enabled': True, 'x_auto_publish': True,
+    }]
+    repo.source_candidates.return_value = [{
+        'id': 'acme/ui:examples/card.html', 'revision': 'blob:license',
+        'repo': 'acme/ui', 'path': 'examples/card.html', 'source_revision': 'a' * 40,
+        'source_blob_sha': 'b' * 40, 'license_files': [{'path': 'LICENSE', 'sha': 'c' * 40}],
+        'source_url': 'https://github.com/acme/ui/blob/' + 'a' * 40 + '/examples/card.html',
+        'license_status': 'needs_review',
+    }]
+
+    async def fetch(handles, *, window_start, window_end, count_per_user):
+        return XWindowFetchResult(
+            requested_handles=X_HANDLES, window_start=window_start, window_end=window_end,
+            by_handle={handle: XWindowHandleResult(
+                complete=True, reason='timeline_exhausted',
+                tweets=(SimpleNamespace(
+                    id='123', text='New component',
+                    urls=['https://github.com/Acme/UI', 'https://example.test/demo'],
+                ),),
+            ) for handle in X_HANDLES},
+        )
+
+    transport = SimpleNamespace(fetch_watchlist_tweets_window=AsyncMock(side_effect=fetch))
+    assert asyncio.run(discover_x(repo, transport)) is True
+    repo.source_candidates.assert_called_with('custom:9')
+    for call in repo.record_discovery.call_args_list:
+        social, promoted = call.args[2]
+        assert social['kind'] == 'social_link'
+        assert promoted['kind'] == 'x_github_html'
+        assert promoted['auto_publish_eligible'] is True
+        assert promoted['discovery_source_config_id'] == 9
+        assert promoted['x_source_url'].startswith('https://x.com/')
 
 
 def test_discovery_schedule_times_and_x_feature_gate():

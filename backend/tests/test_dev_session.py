@@ -250,6 +250,25 @@ def test_start_creates_real_linked_worktree_with_local_hooks(tmp_path):
         assert os.access(session / ".githooks" / hook, os.X_OK)
 
 
+def test_post_commit_pushes_session_to_same_name_despite_main_upstream(tmp_path):
+    bare, root = _temporary_remote(tmp_path)
+    session = Path(_session.start("push-test", root)["worktree"])
+    branch = _run_git(session, "branch", "--show-current").stdout.strip()
+    assert _run_git(session, "rev-parse", "--abbrev-ref", "@{upstream}").stdout.strip() == "origin/main"
+    _run_git(session, "config", "user.name", "test")
+    _run_git(session, "config", "user.email", "test@example.invalid")
+    (session / "PUSHED.md").write_text("published\n", encoding="utf-8")
+    _run_git(session, "add", "PUSHED.md")
+
+    committed = _run_git(session, "commit", "--no-verify", "-m", "test(workflow): publish session")
+
+    assert "push failed" not in committed.stderr
+    assert _run_git(bare, "rev-parse", f"refs/heads/{branch}").stdout.strip() == _run_git(
+        session, "rev-parse", "HEAD"
+    ).stdout.strip()
+    assert _run_git(session, "rev-parse", "--abbrev-ref", "@{upstream}").stdout.strip() == f"origin/{branch}"
+
+
 def test_land_success_uses_non_force_push_and_cleans_nonce(tmp_path):
     root, session, commit = _session_checkout(tmp_path)
     expected = _run_git(root, "rev-parse", "origin/main").stdout.strip()

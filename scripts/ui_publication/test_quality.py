@@ -10,6 +10,20 @@ from quality import approve_rendered_candidate, private_hyperui_seed
 
 
 class QualityTests(unittest.TestCase):
+    def test_strict_x_html_can_receive_automated_verified_review(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); data = root / 'data'; source = b'<body>card</body>'
+            item = {'id':'x-acme-ui-card','provider_id':'xgithub-9','revision':'a'*40,
+                    'files':[{'path':'sources/xgithub-9/card.html','sha256':sha(source)}],
+                    'assets':[],'notices':[],'poster_url':'/ui-library/posters/x-acme-ui-card.png',
+                    'rights_evidence_url':'/ui-library/assets/xgithub-9/evidence/'+'a'*40+'/manifest.json'}
+            values = {'sources/xgithub-9/card.html':source,'previews/x-acme-ui-card.html':b'render','posters/x-acme-ui-card.png':b'picture'}
+            for name, raw in values.items():
+                path=data/name; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(raw)
+            write_json(data/item['rights_evidence_url'].removeprefix('/ui-library/'), {'revision':item['revision'],'source_files':{item['files'][0]['path']:sha(source)}})
+            approve_rendered_candidate(root,data,item)
+            self.assertEqual(item['editorial']['status'],'verified')
+
     def test_empty_public_catalog_can_still_build_private_candidates(self):
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)

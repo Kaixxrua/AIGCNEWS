@@ -17,10 +17,10 @@ if ! git remote get-url origin >/dev/null 2>&1; then
   exit 0
 fi
 
-if git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
-  git push || echo "[post-commit] push failed; the commit remains local" >&2
-else
-  git push -u origin "$branch" || echo "[post-commit] push failed; the commit remains local" >&2
-fi
+# A session created from origin/main initially inherits origin/main as its
+# upstream. Never let that metadata choose the destination: publish HEAD to the
+# exact same-name session ref, without force, and record that ref as upstream.
+git push -u origin "HEAD:refs/heads/$branch" \
+  || echo "[post-commit] push failed; the commit remains local" >&2
 
 exit 0

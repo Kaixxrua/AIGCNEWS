@@ -207,6 +207,15 @@ async def discover_x(repo: PostgresUiLibraryRepository, transport: Any) -> bool:
                 or set(result.by_handle) != set(X_HANDLES)
                 or result.window_start != start or result.window_end != now):
             raise DiscoveryError('x_window_incomplete')
+        publish_sources = {
+            str(source['repository']).lower(): source
+            for source in await asyncio.to_thread(repo.list_source_configs, enabled_only=True)
+            if source['kind'] == 'github' and source.get('x_auto_publish')
+        }
+        resolved = {
+            repository: await asyncio.to_thread(repo.source_candidates, f"custom:{config['id']}")
+            for repository, config in publish_sources.items()
+        }
         for handle in X_HANDLES:
             candidates = []
             for tweet in result.by_handle[handle].tweets:
@@ -222,6 +231,26 @@ async def discover_x(repo: PostgresUiLibraryRepository, transport: Any) -> bool:
                                    'title': str(getattr(tweet, 'text', ''))[:500], 'author': handle,
                                    'source_url': f'https://x.com/{handle}/status/{tweet_id}',
                                    'links': links, 'license_status': 'needs_review', 'kind': 'social_link'})
+                linked_repositories = set()
+                for link in links:
+                    parsed = urlsplit(link)
+                    if parsed.hostname not in {'github.com', 'www.github.com'}:
+                        continue
+                    parts = [part for part in parsed.path.split('/') if part]
+                    if len(parts) >= 2:
+                        linked_repositories.add(f'{parts[0]}/{parts[1]}'.removesuffix('.git').lower())
+                for repository in linked_repositories:
+                    config = publish_sources.get(repository)
+                    for item in resolved.get(repository, []):
+                        promoted = dict(item)
+                        promoted.update({
+                            'id': f"x:{tweet_id}:{item['id']}", 'kind': 'x_github_html',
+                            'x_tweet_id': tweet_id, 'x_author': handle,
+                            'x_source_url': f'https://x.com/{handle}/status/{tweet_id}',
+                            'discovery_source_config_id': config['id'],
+                            'auto_publish_eligible': True,
+                        })
+                        candidates.append(promoted)
             await asyncio.to_thread(repo.record_discovery, f'x:{handle}', now.isoformat(), candidates)
         return True
     except Exception as exc:
