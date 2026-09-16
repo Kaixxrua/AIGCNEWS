@@ -18,68 +18,17 @@ from __future__ import annotations
 
 import re
 from html import unescape
-from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
+
+from backend.app.domain.public_content import (
+    sanitize_public_resource_url,
+    sanitize_public_text,
+)
 
 # 标题里的标签行内代码：如 `# 标题 `#news` `#LLM`` 中的 `` `#news` ``。
 _TAG_CODE_SPAN = re.compile(r"\s*`#[^`]+`")
 _MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
-_UNSAFE_RESOURCE = re.compile(
-    r"(?<![\w])(?:"
-    r"file://[^\s<>]*|javascript:[^\s<>]*|data:[^\s<>]*|ftp://[^\s<>]*|"
-    r"(?<!:)//[^\s<>]*|/home/[^\s<>]*|/tmp/[^\s<>]*|/var/[^\s<>]*|"
-    r"/etc/[^\s<>]*|/root/[^\s<>]*|storage/[^\s<>]*|"
-    r"[A-Za-z]:[\\/][^\s<>]*|\\\\[^\s<>]*|"
-    r"/[^\s<>]*\.\.?/[^\s<>]*)",
-    re.IGNORECASE,
-)
-
-
-def sanitize_public_resource_url(value: str) -> str | None:
-    """Return a URL safe for public RSS resources, or ``None``.
-
-    RSS is a public serialization boundary, so this deliberately allows only
-    HTTPS and the application's public media path.  In particular, relative
-    filesystem paths and unknown schemes must not be guessed into URLs.
-    """
-    candidate = unescape(str(value or "")).strip()
-    if not candidate or any(ord(char) < 0x20 for char in candidate):
-        return None
-    if "\\" in candidate or candidate.startswith("//"):
-        return None
-    parts = urlsplit(candidate)
-    if parts.scheme.lower() == "https":
-        if not parts.netloc or parts.username or parts.password:
-            return None
-        path_parts = [part for part in parts.path.split("/") if part]
-        if ".." in path_parts:
-            return None
-        return candidate
-    if parts.scheme:
-        return None
-    if not candidate.startswith("/api/media/"):
-        return None
-    if ".." in [part for part in parts.path.split("/") if part]:
-        return None
-    return candidate
-
-
-def sanitize_public_text(value: str) -> str:
-    """Remove unsafe Markdown resources and leaked local resource strings."""
-    text = str(value or "")
-
-    def replace_image(match: re.Match[str]) -> str:
-        return match.group(0) if sanitize_public_resource_url(match.group(2)) else ""
-
-    def replace_link(match: re.Match[str]) -> str:
-        return match.group(0) if sanitize_public_resource_url(match.group(2)) else match.group(1)
-
-    text = _MARKDOWN_IMAGE.sub(replace_image, text)
-    text = _MARKDOWN_LINK.sub(replace_link, text)
-    return _UNSAFE_RESOURCE.sub("", text)
-
-
 def _render_safe_inline_resources(body: str) -> str:
     """Render only allow-listed Markdown links/images after HTML escaping."""
     def image(match: re.Match[str]) -> str:

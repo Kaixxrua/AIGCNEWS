@@ -52,7 +52,7 @@ class PaperRouteTests(unittest.TestCase):
         app.dependency_overrides[get_document_repository] = lambda: self.repository
         self.client = TestClient(app)
 
-    def test_rest_search_trims_query_and_enriches_pdf(self) -> None:
+    def test_rest_search_trims_query_and_retires_local_pdf_delivery(self) -> None:
         self.repository.search_documents.return_value = [
             {
                 "id": "paper-1",
@@ -71,7 +71,7 @@ class PaperRouteTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["q"], "Agent")
         self.assertEqual(payload["total"], 1)
-        self.assertTrue(payload["items"][0]["pdf_media_url"].endswith("/api/media/papers/agent.pdf"))
+        self.assertIsNone(payload["items"][0]["pdf_media_url"])
 
     def test_rest_search_rejects_whitespace_query(self) -> None:
         response = self.client.get("/api/papers/search", params={"q": "   "})
