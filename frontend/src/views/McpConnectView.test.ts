@@ -135,6 +135,10 @@ const i18n = createI18n({
           },
         },
       },
+      mcpAutoCommand: {
+        label: '账号配置命令 · 自动包含 Token', description: '自动生成带 Token 的命令。',
+        creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令',
+      },
     },
   },
   missingWarn: false,
@@ -284,19 +288,14 @@ describe('McpConnectView localized rendering', () => {
 })
 
 describe('McpConnectView privacy and auth behavior', () => {
-  it('renders the secret-free quick command visibly and forwards quick copy', async () => {
-    controller().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
+  it('automatically starts authenticated command creation on the command step', async () => {
     const wrapper = await mountView()
     await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('claude mcp add --scope user --transport http aigc-news')
-    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制配置命令')
-    expect(copyButton).toBeDefined()
-    expect(copyButton!.attributes('disabled')).toBeUndefined()
-
-    await copyButton!.trigger('click')
-    expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('账号配置命令 · 自动包含 Token')
+    expect(controller().startSetup).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('收藏授权')
   })
 
   it('renders the guest shell for anonymous visitors without requesting login on mount', async () => {
@@ -345,11 +344,11 @@ describe('McpConnectView privacy and auth behavior', () => {
     await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('命令只显示一次')
+    expect(wrapper.text()).toContain('配置命令已自动包含你的 MCP Token')
     expect(wrapper.text()).not.toContain('SECRET-TOKEN-VALUE')
     expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
 
-    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制一次性命令')
+    const copyButton = wrapper.findAll('button').find((button) => button.text() === '复制配置命令')
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
     expect(controller().copyGeneratedCommand).toHaveBeenCalledTimes(1)
@@ -404,7 +403,6 @@ describe('McpConnectView privacy and auth behavior', () => {
 
     await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text() === 'mcp.generateCommand')!.trigger('click')
     expect(controller().startSetup).toHaveBeenCalledOnce()
 
     auth().status = 'anonymous'

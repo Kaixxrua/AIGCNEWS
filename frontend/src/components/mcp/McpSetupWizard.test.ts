@@ -90,6 +90,10 @@ const i18n = createI18n({
           repository: 'GitHub 仓库',
         },
       },
+      mcpAutoCommand: {
+        label: '账号配置命令 · 自动包含 Token', description: '自动生成带 Token 的命令。',
+        creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令',
+      },
     },
   },
   missingWarn: false,
@@ -133,7 +137,8 @@ describe('McpSetupWizard navigation', () => {
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
-    expect(wrapper.text()).toContain('生成的配置命令')
+    expect(wrapper.text()).toContain('账号配置命令 · 自动包含 Token')
+    expect(ctl().startSetup).toHaveBeenCalledOnce()
 
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
@@ -201,17 +206,20 @@ describe('McpSetupWizard guest gating', () => {
 })
 
 describe('McpSetupWizard step content', () => {
-  it('renders the quick command and forwards quick copy on the command step', async () => {
-    ctl().quickCommand.value = 'claude mcp add --scope user --transport http aigc-news https://aigcnews.cn/api/mcp'
+  it('copies the automatically generated authenticated command without rendering its token', async () => {
+    ctl().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
     const wrapper = await mountWizard()
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('claude mcp add --scope user --transport http aigc-news')
+    expect(wrapper.text()).toContain('配置命令已自动包含你的 MCP Token')
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
     const copyButton = buttonByText(wrapper, '复制配置命令')
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
-    expect(ctl().copyQuickCommand).toHaveBeenCalledTimes(1)
+    expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('收藏授权')
+    expect(wrapper.find('#mcp-device-label').exists()).toBe(false)
   })
 
   it('runs the public handshake from the verify step', async () => {
@@ -226,20 +234,13 @@ describe('McpSetupWizard step content', () => {
     expect(ctl().testPublicHandshake).toHaveBeenCalledTimes(1)
   })
 
-  it('never renders the transient command while offering one-time copy', async () => {
-    ctl().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
+  it('shows progress while automatically creating the token-bearing command', async () => {
+    ctl().creating.value = true
     const wrapper = await mountWizard()
     await nextButton(wrapper)!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('命令只显示一次')
-    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
-    await buttonByText(wrapper, '复制一次性命令')!.trigger('click')
-    expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('#mcp-device-label').exists()).toBe(false)
-    await buttonByText(wrapper, '重新配置')!.trigger('click')
-    expect(ctl().clearTransientCommand).toHaveBeenCalledOnce()
-    expect(wrapper.find('#mcp-device-label').exists()).toBe(true)
-    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
+    expect(wrapper.text()).toContain('正在创建专属 MCP Token 并生成配置命令…')
+    expect(wrapper.text()).not.toContain('收藏授权')
   })
 })
