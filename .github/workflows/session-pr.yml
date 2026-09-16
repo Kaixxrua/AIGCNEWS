@@ -1,0 +1,36 @@
+name: Session PR
+
+on:
+  push:
+    branches:
+      - "session/**"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create:
+    name: Create or refresh PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out session commit
+        uses: actions/checkout@v4
+
+      - name: Create pull request when absent
+        shell: bash
+        run: |
+          existing=$(gh pr list --state open --head "$GITHUB_REF_NAME" --json number --jq '.[0].number // empty')
+          if [[ -n "$existing" ]]; then
+            echo "PR #$existing already tracks $GITHUB_REF_NAME"
+            exit 0
+          fi
+          title=$(git log -1 --pretty=%s)
+          gh pr create \
+            --base main \
+            --head "$GITHUB_REF_NAME" \
+            --title "$title" \
+            --body $'Automated PR for a validated session branch.\n\nThe Contract Baseline workflow remains the merge gate.'

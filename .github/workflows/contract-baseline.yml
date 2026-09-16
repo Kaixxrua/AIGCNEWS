@@ -175,8 +175,8 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
-      - name: Prepare deterministic UI catalog fixture
-        run: cp -R internal/uicatalog/testdata/runtime internal/uicatalog/data
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
 
       - name: Build
         run: go build ./...
@@ -225,12 +225,13 @@ jobs:
           POSTGRES_DATABASE: staging
         run: docker compose --file deploy/staging/docker-compose.yml config --quiet
 
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python scripts/ci/materialize_ui_catalog_fixture.py --frontend-copy
+
       # The frontend image must build from a clean checkout: SSL material is
       # gitignored and mounted at runtime, never copied into the image.
       - name: Build frontend image from clean checkout
-        run: |
-          cp -R mcp-go/internal/uicatalog/testdata/runtime mcp-go/internal/uicatalog/data
-          docker build --file frontend/Dockerfile --tag aigcnews-frontend-ci .
+        run: docker build --tag aigcnews-frontend-ci frontend/
 
   frontend-build:
     name: Frontend build
@@ -253,8 +254,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Prepare deterministic UI catalog fixture
-        run: cp -R ../mcp-go/internal/uicatalog/testdata/runtime ../mcp-go/internal/uicatalog/data
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
 
       - name: Run frontend unit tests
         run: npm run test:unit

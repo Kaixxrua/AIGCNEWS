@@ -8,13 +8,12 @@ import { previewFiles } from './uiPreviewManifest'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const roots = [
-  { folder: resolve(root, '../mcp-go/internal/uicatalog/data'), prefix: '' },
+  { folder: process.env.UI_LIBRARY_DATA_ROOT ? resolve(process.env.UI_LIBRARY_DATA_ROOT) : resolve(root, '../mcp-go/internal/uicatalog/data'), prefix: '' },
   // Only deploy runtime previews, never local screenshots, reports or test fixtures.
   { folder: resolve(root, '.ui-previews/previews'), prefix: 'previews/' },
 ]
 const mime: Record<string, string> = { json: 'application/json', html: 'text/html', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif', ico: 'image/x-icon', woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', webm: 'video/webm', mp4: 'video/mp4', mp3: 'audio/mpeg', wasm: 'application/wasm', zip: 'application/zip' }
 function filesIn(folder: string): string[] {
-  if (!existsSync(folder)) return []
   return readdirSync(folder).filter(name => !name.startsWith('.')).flatMap(name => {
     const path = resolve(folder, name)
     return statSync(path).isDirectory() ? filesIn(path) : [path]

@@ -37,8 +37,6 @@ ThreeUI 只使用仓库中的 Community 代码和有独立许可的本地字体�
 
 前端与 Go MCP 共享 `mcp-go/internal/uicatalog/data`，没有重复维护的已发布目录数据库。Go 启动时验证嵌入的原始源码哈希，网站构建时打包同一份文件。静态目录与预览独立运行；账号点赞、复制额度和每日发现依赖后端与 PostgreSQL 迁移 `0065_ui_library.sql`。
 
-完整发布目录由 UI 发布流程维护，不进入 Git。CI 从 `mcp-go/internal/uicatalog/testdata/runtime` 复制一个带固定哈希、许可证和授权证据的最小夹具，只验证构建与目录契约；生产构建仍必须从仓库根执行并提供完整的 `mcp-go/internal/uicatalog/data`，缺失时直接失败，不能回退到测试夹具。
-
 ```sh
 cd frontend
 npm ci

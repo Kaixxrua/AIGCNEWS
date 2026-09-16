@@ -102,7 +102,7 @@ Reverts: <commit-sha>
 
 ## 4. “PR 完成”的自动推送语义
 
-在 Claude Code 工作流中，“PR 完成”定义为：
+在受管 session 工作流中，“PR 完成”定义为：
 
 1. 当前 PR-sized 工作单元实现完成；
 2. 影响范围检查全部通过；
@@ -110,15 +110,15 @@ Reverts: <commit-sha>
 4. Conventional Commit 创建成功；
 5. 当前分支是唯一的 `session/<slug>-<id>` 任务分支，并已通过对应风险等级的验证。
 
-成功执行 `git commit` 后，项目的 Claude Code `PostToolUse` hook 可自动推送当前任务分支：
+成功执行 `git commit` 后，tracked `.githooks/post-commit` 自动推送当前任务分支：
 
 - 仅允许推送 `session/*` 任务分支；
 - 禁止直接推送 `main`，也禁止 force push；
 - detached HEAD、无 `origin` 或非任务分支时跳过并报告；
-- push 失败必须如实报告，提交仍保留在本地；
+- push 失败必须如实报告，提交仍保留在本地；可用 `AIGCNEWS_SKIP_AUTO_PUSH=1` 显式跳过；
 - 需要进入 `main` 时，必须使用经过验证的 serialized landing 命令，执行 non-force CAS，并由远端分支保护规则完成最终拒绝/接受。
 
-该 hook 只响应 Claude Code 成功完成的 Bash `git commit` 操作，不会自动创建或合并 GitHub PR，也不会自动发布。开发者在 Claude Code 外部创建的提交不受该 hook 影响。
+推送 `session/*` 后，GitHub Actions 自动创建 PR；PR 的 `Contract Baseline` 对精确 head SHA 验证成功后启用 squash auto-merge。合并后的 `main` 再次通过基线才会构建 digest 镜像并进入串行生产部署。完整前置条件、并发和回滚语义见 [`automatic-delivery.md`](automatic-delivery.md)。
 
 ### 任务完成后的自主合并与部署
 
@@ -159,7 +159,7 @@ git config --worktree core.hooksPath .githooks
 git config --worktree --get core.hooksPath
 ```
 
-`.githooks/pre-commit` 按暂存文件的影响面执行三段门禁，任一失败即阻断提交：
+`.githooks/pre-commit` 按暂存文件的影响面执行三段门禁，任一失败即阻断提交；`post-commit` 只对 `session/*` 执行普通 push，`pre-push` 拒绝未持有 landing nonce 的 `main` 推送：
 
 1. **ruff 快检**：仅检查暂存的 Python 文件（基线配置 `backend/pyproject.toml`）；
 2. **后端受影响测试快筛**：`backend/app` 变更映射同名测试文件、`backend/tests` 变更直接运行；

@@ -1,0 +1,161 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: ["Contract Baseline"]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  metadata:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.names.outputs.backend }}
+      mcp: ${{ steps.names.outputs.mcp }}
+      frontend: ${{ steps.names.outputs.frontend }}
+    steps:
+      - id: names
+        name: Normalize package names
+        shell: bash
+        run: |
+          repository=${GITHUB_REPOSITORY,,}
+          echo "backend=ghcr.io/$repository/backend" >> "$GITHUB_OUTPUT"
+          echo "mcp=ghcr.io/$repository/mcp" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/$repository/frontend" >> "$GITHUB_OUTPUT"
+
+  build-backend:
+    needs: metadata
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ${{ needs.metadata.outputs.backend }}:${{ github.event.workflow_run.head_sha }}
+
+  build-mcp:
+    needs: metadata
+    runs-on: [self-hosted, linux, aigcnews-production]
+    env:
+      PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Inject the production UI catalog
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
+            echo "AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
+            exit 1
+          fi
+          mkdir -p mcp-go/internal/uicatalog/data
+          cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." mcp-go/internal/uicatalog/data/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: mcp-go/Dockerfile
+          push: true
+          tags: ${{ needs.metadata.outputs.mcp }}:${{ github.event.workflow_run.head_sha }}
+
+  build-frontend:
+    needs: metadata
+    runs-on: [self-hosted, linux, aigcnews-production]
+    env:
+      PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Inject the production UI catalog
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
+            echo "AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
+            exit 1
+          fi
+          mkdir -p frontend/.ui-library-data frontend/.ui-previews/previews
+          cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." frontend/.ui-library-data/
+          cp -a "$PRODUCTION_ROOT/frontend/.ui-previews/previews/." frontend/.ui-previews/previews/
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: ${{ needs.metadata.outputs.frontend }}:${{ github.event.workflow_run.head_sha }}
+
+  deploy:
+    needs: [metadata, build-backend, build-mcp, build-frontend]
+    concurrency:
+      group: aigcnews-production
+      cancel-in-progress: false
+    runs-on: [self-hosted, linux, aigcnews-production]
+    timeout-minutes: 30
+    environment: production
+    env:
+      PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
+    steps:
+      - name: Require unattended deployment configuration
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
+            echo "Repository variable AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
+            exit 1
+          fi
+
+      - name: Check out the trusted deployment controller
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Authenticate production host to GHCR
+        shell: bash
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Apply immutable release under host lock
+        shell: bash
+        run: |
+          python3 scripts/release/deploy_production.py \
+            --root "$PRODUCTION_ROOT" \
+            --source-sha "${{ github.event.workflow_run.head_sha }}" \
+            --backend-image "${{ needs.metadata.outputs.backend }}@${{ needs.build-backend.outputs.digest }}" \
+            --mcp-image "${{ needs.metadata.outputs.mcp }}@${{ needs.build-mcp.outputs.digest }}" \
+            --frontend-image "${{ needs.metadata.outputs.frontend }}@${{ needs.build-frontend.outputs.digest }}"
