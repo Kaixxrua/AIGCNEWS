@@ -7,7 +7,7 @@
 1. Codex 在 `session/<slug>-<id>` 分支完成实现和验证后必须自行暂存本工作单元并提交，不把正常提交或“创建 PR”按钮留给用户；tracked `post-commit` hook 随后自动执行普通 push，失败只保留本地提交，绝不强推或推送 `main`。
 2. `Session PR` 为尚无 PR 的 session 分支创建 PR。
 3. `Contract Baseline` 在 PR 上运行完整门禁。
-4. `Auto Merge Validated Session PR` 只为与成功 CI 完全相同的 head SHA 启用自动合并；分支在验证后发生变化时拒绝合并，其他远端保护条件仍由 GitHub 等待并执行。
+4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
 6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录，生产 job 使用固定 concurrency group 排队。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。

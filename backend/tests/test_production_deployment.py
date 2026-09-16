@@ -128,6 +128,7 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert deployment.index("  deploy:") < deployment.index("    concurrency:")
     assert "--match-head-commit \"$HEAD_SHA\"" in auto_merge
     assert "--head \"$HEAD_BRANCH\"" in auto_merge
+    assert "--auto" not in auto_merge
     assert "startsWith(github.event.workflow_run.head_branch, 'session/')" in auto_merge
     assert 'branches:\n      - "session/**"' in session_pr
 
