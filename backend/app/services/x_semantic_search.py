@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from backend.app.core.config import settings
-from backend.app.repositories.milvus_repo import MilvusRepository
 from backend.app.repositories.document_repository import DocumentSearchReader
+from backend.app.repositories.milvus_repo import MilvusRepository
 
 
 class XSemanticVectorReader(Protocol):

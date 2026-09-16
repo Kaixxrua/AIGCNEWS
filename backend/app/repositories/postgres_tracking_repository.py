@@ -7,8 +7,14 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.domain.tracking import (
+    CST,
+    DIGEST_ITEM_LIMIT,
+    TrackingError,
+    active_rules,
+    rule_limit,
+)
 from backend.app.repositories.tracking_matches import find_matches
-from backend.app.services.tracking.policy import CST, DIGEST_ITEM_LIMIT, TrackingError, active_rules, rule_limit
 
 _RULE_FIELDS = "id, kind, query, source, excludes, star_threshold, enabled, created_at"
 _DIGEST_FIELDS = "id, issue_date, items, truncated, delivery_status, created_at"

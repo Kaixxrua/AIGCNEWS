@@ -44,7 +44,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.lock
-          python -m pip install "pytest>=8.2,<9" "pytest-cov>=6,<8" "ruff>=0.16,<0.17"
+          python -m pip install "pytest>=8.2,<9" "pytest-asyncio>=0.24,<2" "pytest-cov>=6,<8" "ruff>=0.16,<0.17"
 
       - name: Lint backend with ruff
         run: ruff check backend/app backend/tests
@@ -175,6 +175,9 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
+
       - name: Build
         run: go build ./...
 
@@ -222,6 +225,9 @@ jobs:
           POSTGRES_DATABASE: staging
         run: docker compose --file deploy/staging/docker-compose.yml config --quiet
 
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python scripts/ci/materialize_ui_catalog_fixture.py --frontend-copy
+
       # The frontend image must build from a clean checkout: SSL material is
       # gitignored and mounted at runtime, never copied into the image.
       - name: Build frontend image from clean checkout
@@ -247,6 +253,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
 
       - name: Run frontend unit tests
         run: npm run test:unit

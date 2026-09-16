@@ -246,6 +246,8 @@ def test_start_creates_real_linked_worktree_with_local_hooks(tmp_path):
     assert _run_git(session, "branch", "--show-current").stdout.strip().startswith("session/")
     assert _run_git(session, "config", "--worktree", "--get", "core.hooksPath").stdout.strip() == ".githooks"
     assert (session / ".githooks" / "pre-push").is_file()
+    for hook in ("pre-commit", "commit-msg", "pre-push", "post-commit"):
+        assert os.access(session / ".githooks" / hook, os.X_OK)
 
 
 def test_land_success_uses_non_force_push_and_cleans_nonce(tmp_path):

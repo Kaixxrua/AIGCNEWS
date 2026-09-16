@@ -1,5 +1,7 @@
 # 环境变量（极度机密）
 .env
+.release.env
+.aigcnews-deploy/
 **/.env
 
 # Python 虚拟环境与缓存
@@ -11,6 +13,8 @@ __pycache__/
 # Node.js 依赖与前端打包产物
 **/node_modules/
 frontend/dist/
+frontend/.ui-library-data/
+frontend/.ui-previews/
 dist/
 
 # 数据库本地真实数据与日志 (核心隔离)

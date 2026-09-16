@@ -11,7 +11,9 @@ import { buildQualityPreview } from './quality-previews.mjs'
 import { buildOriginalPreview } from './original-react-previews.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const data = resolve(root, '../mcp-go/internal/uicatalog/data')
+const data = process.env.UI_LIBRARY_DATA_ROOT
+  ? resolve(process.env.UI_LIBRARY_DATA_ROOT)
+  : resolve(root, '../mcp-go/internal/uicatalog/data')
 const output = resolve(root, '.ui-previews/previews')
 const { items } = JSON.parse(await readFile(resolve(data, 'catalog.json'), 'utf8'))
 const selectedPrefixes = process.env.UI_PREVIEW_IDS_FILE ? JSON.parse(await readFile(process.env.UI_PREVIEW_IDS_FILE, 'utf8')) : process.argv.slice(2)

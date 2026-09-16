@@ -16,6 +16,7 @@ x-default-logging: &default-logging
 services:
 
   backend-api:
+    image: ${AIGCNEWS_BACKEND_IMAGE_DIGEST:-docker-backend-api}
     build: ../backend
     container_name: aigc-backend
     restart: always
@@ -63,7 +64,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ../backend:/src/backend
       - ../storage/papers:/src/storage/papers
       # 站点公开素材（联系合作页二维码/插图）：经 /api/media/site 匿名服务，仅放公开图片
       # （uid 1000 写入；首次部署前宿主机预建并属主 1000）
@@ -98,6 +98,7 @@ services:
   # 精确路由承载全部 MCP 流量，Python 侧 mcp-api 已随 W6-U3 移除）。
   # 无状态（计数聚合在 Redis，不写本地文件），环境/安全口径与 backend-api 对齐。
   mcp-api-go:
+    image: ${AIGCNEWS_MCP_IMAGE_DIGEST:-docker-mcp-api-go}
     build:
       context: ..
       dockerfile: mcp-go/Dockerfile
@@ -182,6 +183,7 @@ services:
       - no-new-privileges:true
 
   frontend-web:
+    image: ${AIGCNEWS_FRONTEND_IMAGE_DIGEST:-docker-frontend-web}
     build: ../frontend
     container_name: aigc-frontend
     restart: always
@@ -383,4 +385,3 @@ volumes:
   project_catalog_postgres_data:
 
 # 外部编排网（如私有 LLM 中转网）由 overlay 以 external 形式声明并挂接。
-
