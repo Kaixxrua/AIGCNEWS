@@ -94,7 +94,7 @@ python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 
 - **Multi-source dashboard** — papers / GitHub / news / Product Hunt / Hacker News / X rankings on one board (daily / weekly / monthly), snapshot archives replayable by date, and a GitHub hot score that goes beyond raw stars
 - **GitHub AI project library** — 18,000+ curated projects and tool sites with a ≥ 500-star admission bar, bilingual taxonomy & tags, PostgreSQL keyword × Milvus semantic hybrid search, today +N star growth on every card, and URL-synced shareable filters
-- **Paper discovery & reading** — arXiv / HuggingFace daily hot papers, in-browser paginated PDF reader with region capture, background full-text chunking and vector indexing
+- **Paper discovery & reading** — arXiv / HuggingFace daily hot papers, paper summaries and original links, background PDF text/figure extraction, full-text indexing, and daily reports
 - **X board & WeChat official accounts** — curated timelines with per-date snapshots and embargo windows, Chinese translations with restored @ mentions, unified in-site reading feed
 - **Smart briefs & subscriptions** — SSE-streamed daily / weekly / monthly briefs per direction (zh/en), email subscriptions per source & frequency with send-now delivery
 - **Favorites & private bookshelf** — optimistic favorites with personal tags and cross-device sync, URL-submit tool shelf with AI enrichment, strict public/private data separation

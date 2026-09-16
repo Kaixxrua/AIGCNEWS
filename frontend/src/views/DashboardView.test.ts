@@ -3,6 +3,8 @@ import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 
+vi.mock('@/composables/useLiveStatsStream', () => ({ subscribeLiveStats: vi.fn() }))
+
 vi.mock('@/composables/useDashboardData', async () => {
   const { ref } = await import('vue')
   return {
@@ -23,6 +25,7 @@ vi.mock('@/composables/useDashboardData', async () => {
       onDateChange: vi.fn(),
       hasData: ref(true),
       refreshLiveStats: vi.fn(),
+      applyLiveStats: vi.fn(),
     }),
   }
 })

@@ -15,8 +15,6 @@ from backend.app.services.chat.attachment_service import AttachmentStatus, Attac
 from backend.app.services.chat.conversation_service import ConversationService
 from backend.app.services.rag.chat_service import ChatService
 
-# PDF 附件注入上下文的最大字符数：防止整篇文档撑爆模型上下文窗口。
-PDF_CONTEXT_MAX_CHARS = 8000
 # 自动命名会话标题时取用户消息前缀的最大长度。
 CONVERSATION_TITLE_MAX_CHARS = 60
 # 请求未显式提供 temperature 时的默认采样温度。
@@ -41,18 +39,10 @@ async def _resolve_attachment_context(
         meta = await attachment_service.get_attachment(aid, user_id)
         if meta is None or meta.status != AttachmentStatus.READY:
             continue
+        if meta.type != AttachmentType.IMAGE:
+            continue
         owned_attachment_ids.append(aid)
-        if meta.type == AttachmentType.PDF:
-            pdf_text = await attachment_service.get_pdf_text(aid, user_id)
-            if pdf_text:
-                truncated = pdf_text[:PDF_CONTEXT_MAX_CHARS]
-                attachment_context += (
-                    f"\n\n[用户上传的 PDF 文件: {meta.filename}]\n"
-                    f"{truncated}\n"
-                    f"[PDF 内容结束，共 {meta.page_count} 页]\n"
-                )
-        elif meta.type == AttachmentType.IMAGE:
-            attachment_context += f"\n\n[用户上传了图片: {meta.filename}，如需视觉分析请使用视觉问答功能]\n"
+        attachment_context += f"\n\n[用户上传了图片: {meta.filename}，如需视觉分析请使用视觉问答功能]\n"
     return attachment_context, owned_attachment_ids
 
 

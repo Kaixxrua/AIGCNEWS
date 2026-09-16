@@ -2,7 +2,7 @@ import { api } from '@/services/http/apiClient'
 
 export interface AttachmentMeta {
   id: string
-  type: 'image' | 'pdf'
+  type: 'image'
   status: 'uploading' | 'processing' | 'ready' | 'error' | 'expired'
   filename: string
   mime_type: string
@@ -21,16 +21,6 @@ export async function uploadImageAttachment(
     image_base64: imageBase64,
     mime_type: mimeType,
     filename,
-  })
-  return res.data
-}
-
-export async function uploadPdfAttachment(file: File): Promise<AttachmentMeta> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const res = await api.post('/chat/attachments/pdf', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 120_000,
   })
   return res.data
 }

@@ -7,7 +7,8 @@ import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 const buildController = () => ({
   clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
   clientLabel: ref(''),
-  clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
+  clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
+  clearTransientCommand: vi.fn(() => { controllerBox.transientCommand.value = '' }),
   copiedKey: ref(''),
   copyGeneratedCommand: vi.fn(),
   copyQuickCommand: vi.fn(),
@@ -60,6 +61,7 @@ const i18n = createI18n({
         hiddenConfig: '配置内容不渲染到页面。{result}',
         copyOneTime: '复制一次性命令',
         copiedClipboard: '已复制到剪贴板',
+        configureAgain: '重新配置',
         resultClaudeCode: '写入 Claude Code 用户级 MCP 配置。',
         hintClaudeCode: '随后可运行 claude mcp list 验证。',
         loginRequiredTitle: '登录后授权个人收藏',
@@ -234,5 +236,10 @@ describe('McpSetupWizard step content', () => {
     expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
     await buttonByText(wrapper, '复制一次性命令')!.trigger('click')
     expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#mcp-device-label').exists()).toBe(false)
+    await buttonByText(wrapper, '重新配置')!.trigger('click')
+    expect(ctl().clearTransientCommand).toHaveBeenCalledOnce()
+    expect(wrapper.find('#mcp-device-label').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
   })
 })

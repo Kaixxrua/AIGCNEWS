@@ -189,6 +189,24 @@ describe('project card rail behavior', () => {
     expect(events).toHaveLength(1)
     expect(events![0]![0]).toMatchObject({ value: expect.any(String), type: expect.any(String) })
   })
+
+  it('lets readers expand tags and still filter by a previously hidden tag', async () => {
+    const wrapper = mount(ProjectResultCard, {
+      ...mountOptions,
+      props: cardProps({ repo: githubRepo({ tags: ['agent', 'rag', 'tools', 'chat', 'image'] }) }),
+    })
+    const toggle = wrapper.get('.project-chip--more')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('.project-chip:not(.project-chip--more)')).toHaveLength(3)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    const chips = wrapper.findAll('.project-chip:not(.project-chip--more)')
+    expect(chips.length).toBeGreaterThan(3)
+    await chips[3]!.trigger('click')
+    expect(wrapper.emitted('chipClick')).toHaveLength(1)
+    await toggle.trigger('click')
+    expect(wrapper.findAll('.project-chip:not(.project-chip--more)')).toHaveLength(3)
+  })
 })
 
 describe('filters panel behavior', () => {

@@ -347,12 +347,6 @@ class DatabaseDependencyTests(unittest.TestCase):
         ):
             dependencies.get_application_repositories(request)
 
-    def test_get_pdf_relay_builds_httpx_adapter(self) -> None:
-        relay = MagicMock()
-        with patch.object(dependencies, "HttpxPdfRelay", return_value=relay) as relay_type:
-            result = dependencies.get_pdf_relay()
-        self.assertIs(result, relay)
-        relay_type.assert_called_once_with()
 
     def test_task_repository_dependency_can_be_overridden(self) -> None:
         app = FastAPI()

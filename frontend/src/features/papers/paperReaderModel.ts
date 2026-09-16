@@ -16,22 +16,6 @@ export interface PaperReaderMessage {
   showRaw?: boolean
 }
 
-export interface VisionPopup {
-  visible: boolean
-  base64: string
-  question: string
-  pageIndex: number
-}
-
-export interface VisionRegionCapture {
-  pageIndex: number
-  base64: string
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
 export function filterAndSortGlobalConversations(
   conversations: ConversationSummary[],
 ): ConversationSummary[] {

@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict'
+import { chromium } from 'playwright'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+const base=process.env.UI_LIBRARY_BASE_URL||'http://127.0.0.1:18784'
+const out=resolve('../test-results/ui-expansion')
+await mkdir(out,{recursive:true})
+const {items}=JSON.parse(await readFile('../mcp-go/internal/uicatalog/data/catalog.json','utf8'))
+assert.ok(items.length>=3000)
+const browser=await chromium.launch({channel:'chrome',headless:true,ignoreDefaultArgs:['--hide-scrollbars'],args:['--enable-unsafe-swiftshader']})
+const page=await browser.newPage({viewport:{width:1920,height:1080},locale:'zh-CN'})
+const errors=[];page.on('pageerror',error=>errors.push(error.message))
+try{
+ await page.goto(base+'/ui-library?rank=new',{waitUntil:'domcontentloaded'})
+ const recent=items.filter(item=>Date.parse(item.added_at)>Date.now()-86400000&&Date.parse(item.added_at)<=Date.now()).sort((a,b)=>Date.parse(b.added_at)-Date.parse(a.added_at))
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-library__card').length===96)
+ assert.equal(await page.getByRole('button',{name:'今日新增',exact:true}).getAttribute('aria-pressed'),'true')
+ assert.deepEqual(await page.locator('.ui-library__card').evaluateAll(els=>els.map(el=>el.dataset.templateId)),recent.slice(0,96).map(item=>item.id))
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-card-frame.is-ready').length>=4)
+ await page.screenshot({path:resolve(out,'new-today-desktop.png')})
+ const first=page.locator('.ui-library__card').first()
+ await first.locator('.ui-library__poster').hover()
+ await first.locator('iframe').contentFrame().locator('[data-ui-hover]').first().waitFor()
+ await page.getByRole('button',{name:'暂停全部',exact:true}).click()
+ assert.equal(await page.locator('.ui-card-frame').count(),0)
+ await page.getByRole('button',{name:'播放全部',exact:true}).click()
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-card-frame.is-ready').length>=4)
+ await page.locator('.ui-library__load-more button').click()
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-library__card').length===192)
+ assert.ok(await page.locator('.ui-card-frame').count()<30)
+ await page.goto(base+'/ui-library/'+recent[0].id+'?rank=new')
+ const dialog=page.locator('dialog.ui-detail');await dialog.waitFor()
+ await dialog.locator('pre code .hljs-tag').first().waitFor()
+ await dialog.locator('.ui-detail__preview-status').waitFor({state:'hidden'})
+ assert.equal(await dialog.locator('.ui-detail__preview-error').count(),0)
+ assert.equal(await dialog.getByRole('link',{name:'查看授权与版本存档'}).getAttribute('href'),recent[0].rights_evidence_url)
+ await page.screenshot({path:resolve(out,'html-detail.png')})
+ await dialog.locator('.ui-detail__copy-prompt').click()
+ await page.getByRole('dialog').locator('input[autocomplete="current-password"]').waitFor()
+ assert.equal(await page.locator('dialog.ui-detail').count(),0)
+ for(const q of ['hyperui 进度条','hyperui progress']){
+  await page.goto(base+'/ui-library?framework=html&q='+encodeURIComponent(q))
+  await page.waitForFunction(()=>document.querySelectorAll('.ui-library__card').length===1)
+  assert.equal(await page.locator('.ui-library__card').getAttribute('data-template-id'),'hyperui-application-progress-bars-1')
+ }
+ await page.goto(base+'/ui-library?framework=react&q=magnetic')
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-library__card').length===1)
+ assert.equal(await page.locator('.ui-library__card').getAttribute('data-template-id'),'motion-magnetic-magnetic-basic')
+ for(const width of [320,768,1024]){
+  await page.setViewportSize({width,height:900})
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'page overflow at '+width)
+ }
+ await page.goto(base+'/ui-library?rank=new')
+ await page.setViewportSize({width:390,height:844})
+ await page.waitForFunction(()=>document.querySelectorAll('.ui-card-frame.is-ready').length>0)
+ await page.screenshot({path:resolve(out,'new-today-mobile.png')})
+ assert.deepEqual(errors,[])
+ await writeFile(resolve(out,'browser-checks.json'),JSON.stringify({base,total:items.length,recent:recent.length,initialBatch:96,loadMore:192,bilingual:true,htmlPreview:true,hover:true,loginRequired:true,rightsArchive:true,responsive:[320,390,768,1024,1920],errors},null,2))
+ console.log('Expansion browser checks passed: '+items.length)
+}finally{await browser.close()}

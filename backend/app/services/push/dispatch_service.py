@@ -260,6 +260,16 @@ class SubscriptionDispatchService:
         )
         return "sent"
 
+    async def send_personal_digest(
+        self, *, channel: dict[str, Any], content: str, issue_date: str,
+    ) -> None:
+        """Send an already owner-verified tracking delivery through existing adapters."""
+        if channel["channel_type"] not in _SUPPORTED_CHANNEL_TYPES:
+            raise ValueError("unsupported tracking channel")
+        await self._send(
+            subscription=channel, content=content, source="personal", frequency="daily", issue_date=issue_date,
+        )
+
     async def _send(
         self,
         *,

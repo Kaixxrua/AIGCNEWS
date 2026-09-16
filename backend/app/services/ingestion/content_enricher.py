@@ -75,7 +75,7 @@ def enrich_arxiv(paper: Dict[str, Any]) -> Dict[str, Any]:
     第一阶段：直接使用已抓好的摘要 (abstract) 入库，让 RAG 可以立即检索。
     第二阶段：由 pipeline._start_arxiv_pdf_background() 调用
               arxiv_pdf_downloader.download_and_index_arxiv_pdfs() 在后台
-              落盘 PDF → PyMuPDF 解析 → 切片写入 Milvus。
+              落盘 PDF → pdfplumber / pypdf 解析 → 切片写入 Milvus。
 
     如果本地 PDF 已存在（local_pdf_path），直接读取全文作为 full_text。
 

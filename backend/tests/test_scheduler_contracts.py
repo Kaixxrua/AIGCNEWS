@@ -108,6 +108,8 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "daily_briefing",
                 "subscription_dispatch",
                 "conversation_cleanup",
+                "ui_library_discovery",
+                "ui_library_x_discovery",
             ],
         )
 
@@ -454,6 +456,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
     def test_module_jobs_forward_redis_client_to_dispatch_layer(self) -> None:
         """模块级 job 函数把 redis_client 继续透传到 services 派发层。"""
         repositories = MagicMock()
+        repositories.tracking = None
         sentinel = object()
 
         with patch.object(

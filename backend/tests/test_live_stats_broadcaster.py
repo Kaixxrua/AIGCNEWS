@@ -92,6 +92,48 @@ class GetCurrentTests(unittest.IsolatedAsyncioTestCase):
         broadcaster = _make(compute=AsyncMock(side_effect=RuntimeError("pg down")))
         self.assertEqual(await broadcaster.get_current(), {})
 
+    async def test_concurrent_startup_and_cold_readers_share_one_recompute(self) -> None:
+        started = asyncio.Event()
+        finish = asyncio.Event()
+
+        async def compute_value() -> dict[str, int]:
+            started.set()
+            await finish.wait()
+            return {"total_documents": 7}
+
+        compute = AsyncMock(side_effect=compute_value)
+        broadcaster = _make(compute=compute)
+        startup = asyncio.create_task(broadcaster.run())
+        await started.wait()
+        readers = [asyncio.create_task(broadcaster.get_current()) for _ in range(8)]
+        await asyncio.sleep(0)
+        finish.set()
+        self.assertEqual(await asyncio.gather(*readers), [{"total_documents": 7}] * 8)
+        compute.assert_awaited_once()
+        startup.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await startup
+        await broadcaster.aclose()
+
+    async def test_warm_reads_do_not_wait_for_an_in_progress_refresh(self) -> None:
+        finish = asyncio.Event()
+        started = asyncio.Event()
+
+        async def compute() -> dict[str, int]:
+            started.set()
+            await finish.wait()
+            return {"total_documents": 8}
+
+        broadcaster = _make(compute=compute)
+        broadcaster._last_payload = {"total_documents": 7}
+        refresh = asyncio.create_task(broadcaster._recompute_and_publish("notify"))
+        await started.wait()
+        self.assertEqual(await broadcaster.get_current(), {"total_documents": 7})
+        finish.set()
+        await refresh
+        self.assertEqual(await broadcaster.get_current(), {"total_documents": 8})
+        await broadcaster.aclose()
+
     async def test_redis_read_failure_falls_back_to_recompute(self) -> None:
         redis = _FakeRedis()
         redis.fail_get = True
@@ -122,6 +164,9 @@ class NotifyAndRecomputeTests(unittest.IsolatedAsyncioTestCase):
     async def test_min_interval_defers_second_recompute(self) -> None:
         compute = AsyncMock(return_value={"v": 2})
         broadcaster = _make(compute=compute, debounce=0.01, min_interval=0.15)
+        # 注入业务时钟，避免繁忙机器的调度延迟跨过节流窗口。
+        clock = [10.0]
+        broadcaster._monotonic = lambda: clock[0]
         # 直接种入「很久以前算过」的旧值，让首个 notify 立即重算（绕过 get_current
         # 冷启动会刷新 _last_recompute_at，导致首个 notify 同样被节流）。
         broadcaster._last_payload = {"v": 1}
@@ -137,6 +182,7 @@ class NotifyAndRecomputeTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.05)
         # 仍在最小间隔内：不得立即重算
         compute.assert_awaited_once()
+        clock[0] += 0.2
         await asyncio.sleep(0.25)
         self.assertEqual(compute.await_count, 2)
         self.assertEqual(broadcaster._last_payload, {"v": 3})
@@ -215,7 +261,15 @@ class SubscribeTests(unittest.IsolatedAsyncioTestCase):
 
         compute.return_value = {"v": 2}
         broadcaster.notify("update")
-        self.assertEqual(await asyncio.wait_for(stream.__anext__(), timeout=1), {"v": 2})
+
+        async def next_update() -> dict[str, Any]:
+            # 心跳允许先于更新到达；测试数据帧，不依赖机器调度快于 50ms。
+            async for payload in stream:
+                if payload is not HEARTBEAT:
+                    return payload
+            self.fail("stream ended before the update")
+
+        self.assertEqual(await asyncio.wait_for(next_update(), timeout=1), {"v": 2})
         await stream.aclose()
         await broadcaster.aclose()
 

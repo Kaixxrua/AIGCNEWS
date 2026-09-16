@@ -461,7 +461,7 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
-    # 对外站点 origin（如 https://aigcnews.cn），用于生成绝对 pdf_media_url。
+    # 对外站点 origin（如 https://aigcnews.cn），用于 RSS、sitemap 等公开链接。
     # 留空则返回相对路径；绝不从 Host / X-Forwarded-Proto 头派生（可伪造）。
     public_base_url: str | None = None
 
@@ -495,6 +495,8 @@ class Settings(BaseSettings):
     # 双通道同时满足才放行；settings 启动时从环境读取一次）。
     github_watcher_repair_production_authorized: bool = False
 
+    ui_library_catalog_path: str = "mcp-go/internal/uicatalog/data/catalog.json"
+
     scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"
 
@@ -508,16 +510,14 @@ class Settings(BaseSettings):
     # 运行环境：development / production（开发环境热重载时自动清除 Redis 缓存）
     env: str = "production"
 
-    # PDF 持久化存储目录（容器内路径，对应 docker-compose volume 映射）
-    # 注意：该目录经 /api/media/papers 匿名静态挂载对外服务，禁止存放私有文件
+    # 后台论文 PDF 缓存目录（下载、全文索引和日报图文提取，不提供 HTTP 文件访问）
     papers_storage_dir: str = "storage/papers"
 
     # 站点公开素材（联系合作页二维码、正文插图）存储目录（容器内路径，对应 volume 映射）
     # 注意：该目录经 /api/media/site 匿名静态挂载对外服务，仅存放站点公开图片
     site_assets_storage_dir: str = "storage/site"
 
-    # 聊天私有附件（PDF）存储目录（容器内路径，对应 docker-compose volume 映射）
-    # 必须位于 papers_storage_dir 的静态挂载树之外，附件仅允许经带鉴权的元数据 API 访问
+    # 历史聊天 PDF 配置兼容；当前版本不再读写或清理该目录。
     chat_uploads_storage_dir: str = "storage/chat_uploads"
 
     # X 视频封面抽帧缓存目录（容器内路径，对应 docker-compose volume 映射）

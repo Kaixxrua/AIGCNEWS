@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -11,7 +12,9 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 from backend.app.api import routes_dashboard
 from backend.app.api.dashboard_cache_warmup import (
     _DASHBOARD_TAB_SOURCES,
+    _next_warmup_delay,
     _stub_request,
+    maintain_dashboard_cache,
     warm_dashboard_cache,
 )
 
@@ -106,17 +109,16 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         instances_after_warm = _FakeQueryService.instances
         self.assertGreater(instances_after_warm, 0)
 
-        # 模拟前端首屏真实请求（useDashboardData: tab=github, limit=10, date=今天）
+        # 模拟当前前端首屏真实请求：当天不传日期，允许回溯最近快照。
         # 命中预热缓存则不会再实例化查询服务
-        today = _today()
         result = await routes_dashboard.get_top_list(
             request=_stub_request(
                 "/api/dashboard/top",
-                f"limit=10&source=github&period=daily&date={today}",
+                "limit=10&source=github&period=daily",
             ),
             limit=10,
             source="github",
-            date=today,
+            date=None,
             rank_snapshots=repositories.rank_snapshots,
             github_hot=None,
         )
@@ -129,13 +131,12 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         await warm_dashboard_cache(repositories)
         instances_after_warm = _FakeQueryService.instances
 
-        today = _today()
         result = await routes_dashboard.get_dashboard_summary_static(
-            date=today,
+            date=None,
             rank_snapshots=repositories.rank_snapshots,
             github_hot=None,
             __fastapi_cache_request=_stub_request(
-                "/api/dashboard/summary-static", f"date={today}"
+                "/api/dashboard/summary-static", "period=daily"
             ),
         )
 
@@ -143,6 +144,44 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("top_list", result)
         self.assertIn("radar", result)
         self.assertEqual(_FakeQueryService.instances, instances_after_warm)
+
+    async def test_explicit_today_keeps_a_separate_exact_date_cache(self) -> None:
+        repositories = _make_repositories()
+        await warm_dashboard_cache(repositories)
+        before = _FakeQueryService.instances
+        await routes_dashboard.get_top_list(
+            request=_stub_request("/api/dashboard/top", f"limit=10&source=github&date={_today()}"),
+            limit=10, source="github", date=_today(),
+            rank_snapshots=repositories.rank_snapshots, github_hot=None,
+        )
+        self.assertEqual(_FakeQueryService.instances, before + 1)
+
+    async def test_refresh_replaces_warm_entries_before_their_expiry(self) -> None:
+        repositories = _make_repositories()
+        await warm_dashboard_cache(repositories)
+        before = _FakeQueryService.instances
+        keys = _dashboard_keys()
+        await warm_dashboard_cache(repositories, refresh=True)
+        self.assertEqual(_FakeQueryService.instances, before * 2)
+        self.assertEqual(_dashboard_keys(), keys)
+
+    async def test_maintenance_warms_at_startup_and_retries_after_failure(self) -> None:
+        repositories = _make_repositories()
+        with (
+            patch("backend.app.api.dashboard_cache_warmup.warm_dashboard_cache",
+                  new=AsyncMock(side_effect=[RuntimeError("temporary"), None])) as warm,
+            patch("backend.app.api.dashboard_cache_warmup.asyncio.sleep",
+                  new=AsyncMock(side_effect=[None, asyncio.CancelledError])) as sleep,
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await maintain_dashboard_cache(repositories)
+        self.assertEqual(warm.await_count, 2)
+        warm.assert_awaited_with(repositories, refresh=True)
+        self.assertTrue(all(0 < call.args[0] <= 1800 for call in sleep.await_args_list))
+
+    def test_next_refresh_is_before_expiry_and_just_after_midnight(self) -> None:
+        self.assertEqual(_next_warmup_delay(datetime(2026, 9, 11, 12, tzinfo=_CST)), 1800)
+        self.assertEqual(_next_warmup_delay(datetime(2026, 9, 11, 23, 59, 58, tzinfo=_CST)), 3)
 
     async def test_single_endpoint_failure_does_not_break_others(self) -> None:
         # 动态 X recent 不参与预热；即使 documents 查询故障，也不影响

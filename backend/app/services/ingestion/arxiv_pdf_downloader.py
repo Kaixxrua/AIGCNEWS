@@ -5,7 +5,7 @@ from __future__ import annotations
 职责：
   1. 通过 arXiv 官方 XML API 批量拉取论文元数据（标题/摘要/作者/日期/PDF URL）
   2. 以"低频慢速"策略将 PDF 落盘到本地 storage/papers/{arxiv_id}.pdf
-  3. 用 PyMuPDF (fitz) 解析本地 PDF，提取纯文本
+  3. 用 pdfplumber / pypdf 解析本地 PDF，提取纯文本
   4. 更新 PostgreSQL documents.local_pdf_path 字段
   5. 将 PDF 全文切片（RecursiveCharacterTextSplitter）后写入 Milvus
 
@@ -247,100 +247,14 @@ def _download_one_pdf(
         return None
 
 
-# ── 模块三：PyMuPDF 本地解析 ──────────────────────────────────────────────────
+# ── 模块三：PDF 本地解析 ──────────────────────────────────────────────────
 
 
 def _extract_text_from_local_pdf(local_path: str) -> str:
-    """用 PyMuPDF (fitz) 读取本地 PDF，提取前 N 页纯文本。
+    """Extract bounded paper text with pdfplumber and pypdf."""
+    from backend.app.services.papers.pdf_content import extract_text
 
-    优先使用 PyMuPDF，回退到 pdfplumber，再回退到 pypdf。
-    """
-    if not local_path or not os.path.exists(local_path):
-        return ""
-
-    # 优先尝试 PyMuPDF
-    try:
-        import fitz  # type: ignore  # PyMuPDF
-
-        doc = fitz.open(local_path)
-        pages = doc[:_PDF_MAX_PAGES]
-        parts = []
-        for page in pages:
-            try:
-                text = page.get_text("text")
-                if text:
-                    parts.append(text)
-            except Exception as exc:
-                logger.debug("[ArxivDownloader] PyMuPDF 跳过无法解析的页面: %s", exc)
-        doc.close()
-        full_text = "\n".join(parts)
-        full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
-        if full_text:
-            logger.debug(
-                "[ArxivDownloader] PyMuPDF 解析成功: %s (%d chars)",
-                local_path,
-                len(full_text),
-            )
-            return full_text[:_MAX_CONTENT_CHARS]
-    except ImportError:
-        logger.debug("[ArxivDownloader] PyMuPDF 未安装，尝试 pdfplumber...")
-    except Exception as exc:
-        logger.warning("[ArxivDownloader] PyMuPDF 解析失败 %s: %s", local_path, exc)
-
-    # 回退到 pdfplumber
-    try:
-        import pdfplumber  # type: ignore
-
-        parts = []
-        with pdfplumber.open(local_path) as pdf:
-            for page in pdf.pages[:_PDF_MAX_PAGES]:
-                try:
-                    text = page.extract_text()
-                    if text:
-                        parts.append(text)
-                except Exception as exc:
-                    logger.debug(
-                        "[ArxivDownloader] pdfplumber 跳过无法解析的页面: %s", exc
-                    )
-        full_text = "\n".join(parts)
-        full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
-        if full_text:
-            logger.debug(
-                "[ArxivDownloader] pdfplumber 解析成功: %s (%d chars)",
-                local_path,
-                len(full_text),
-            )
-            return full_text[:_MAX_CONTENT_CHARS]
-    except ImportError:
-        logger.debug("[ArxivDownloader] pdfplumber 未安装，尝试 pypdf...")
-    except Exception as exc:
-        logger.warning("[ArxivDownloader] pdfplumber 解析失败 %s: %s", local_path, exc)
-
-    # 最终回退到 pypdf
-    try:
-        import io
-
-        import pypdf  # type: ignore
-
-        with open(local_path, "rb") as f:
-            reader = pypdf.PdfReader(io.BytesIO(f.read()))
-        parts = []
-        for page in reader.pages[:_PDF_MAX_PAGES]:
-            try:
-                parts.append(page.extract_text() or "")
-            except Exception as exc:
-                logger.debug("[ArxivDownloader] pypdf 跳过无法解析的页面: %s", exc)
-        full_text = "\n".join(parts)
-        full_text = re.sub(r"\n{3,}", "\n\n", full_text).strip()
-        return full_text[:_MAX_CONTENT_CHARS]
-    except ImportError:
-        logger.error(
-            "[ArxivDownloader] pypdf 也未安装，无法解析 PDF。pip install pymupdf"
-        )
-    except Exception as exc:
-        logger.warning("[ArxivDownloader] pypdf 解析失败 %s: %s", local_path, exc)
-
-    return ""
+    return extract_text(local_path, max_pages=_PDF_MAX_PAGES, max_chars=_MAX_CONTENT_CHARS)
 
 
 # ── 模块四：切片 + Milvus 写入 ────────────────────────────────────────────────

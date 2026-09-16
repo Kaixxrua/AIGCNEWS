@@ -9,6 +9,8 @@ import { startRouteProgress, stopRouteProgress } from '@/composables/useRoutePro
 
 const DashboardView = () => import('@/views/DashboardView.vue')
 const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
+const RecommendedWebsitesView = () => import('@/views/RecommendedWebsitesView.vue')
+const UiLibraryView = () => import('@/views/UiLibraryView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
@@ -67,6 +69,16 @@ const router = createRouter({
           component: GitHubProjectsView,
         },
         {
+          path: 'websites',
+          name: 'recommended-websites',
+          component: RecommendedWebsitesView,
+        },
+        {
+          path: 'ui-library/:id?',
+          name: 'ui-library',
+          component: UiLibraryView,
+        },
+        {
           path: 'chat',
           name: 'chat',
           component: ChatView,
@@ -81,7 +93,7 @@ const router = createRouter({
           path: 'subscriptions',
           name: 'subscriptions',
           component: SubscriptionsView,
-          // 复杂渠道与单条 Push 订阅管理兼容深链；主 Dock 不展示该入口。
+        // Dock 情报追踪入口；未登录时提示登录并保留目标路径。
           meta: { requiresAuth: true },
         },
         {

@@ -45,6 +45,14 @@ describe('paper read guest access contract', () => {
 })
 
 describe('projects website collection deep link contract', () => {
+  it('opens editor websites on a distinct public route without a project scope', () => {
+    const resolved = router.resolve('/websites')
+    expect(resolved.name).toBe('recommended-websites')
+    expect(resolved.query).toEqual({})
+    const projects = router.resolve('/projects')
+    expect(resolved.matched[resolved.matched.length - 1]?.components?.default).not.toBe(projects.matched[projects.matched.length - 1]?.components?.default)
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
+  })
   it('keeps the website collection on the shared projects route', () => {
     const resolved = router.resolve('/projects?source=website')
     expect(resolved.name).toBe('github-projects')

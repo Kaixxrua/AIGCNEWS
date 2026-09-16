@@ -613,3 +613,30 @@ describe('GitHubProjectsView MCP guidance', () => {
     expect(controller().loadProjects).toHaveBeenCalled()
   })
 })
+
+
+describe('GitHubProjectsView collection navigation', () => {
+  it('links personal websites to the standalone website recommendations', async () => {
+    const wrapper = await mountView()
+    const filters = wrapper.findComponent(ProjectFiltersPanel)
+    expect(filters.props('sourceOptions').map((option) => option.value)).toEqual(['all', 'website'])
+    await wrapper.findAll('.projects-source-tab')[1]!.trigger('click')
+    expect(filters.props('source')).toBe('website')
+    expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
+    expect(wrapper.find('.website-tabs a[href="/websites"]').exists()).toBe(true)
+    expect(wrapper.find('.website-tabs a[aria-current="page"]').attributes('href')).toBe('/projects?source=website')
+    expect(wrapper.find('.website-tabs a[href="/projects?scope=recommended"]').exists()).toBe(false)
+    filters.vm.$emit('changeSource', 'all')
+    await nextTick()
+    expect(routerPush).toHaveBeenCalledWith('/websites')
+    expect(filters.props('source')).toBe('website')
+  })
+
+  it('keeps the GitHub source active without changing its current project scope', async () => {
+    const wrapper = await mountView()
+    const beforeScope = wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')
+    expect(wrapper.findAll('.projects-source-tab')[0]!.attributes('aria-pressed')).toBe('true')
+    await wrapper.findAll('.projects-source-tab')[0]!.trigger('click')
+    expect(wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')).toBe(beforeScope)
+  })
+})

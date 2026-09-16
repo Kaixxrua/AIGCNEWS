@@ -16,7 +16,7 @@ class AttachmentLifecycleTests(unittest.TestCase):
     def test_public_enums_and_meta_defaults_remain_stable(self) -> None:
         self.assertEqual(
             [member.value for member in AttachmentType],
-            ["image", "pdf"],
+            ["image"],
         )
         self.assertEqual(
             [member.value for member in AttachmentStatus],
@@ -58,28 +58,6 @@ class AttachmentLifecycleTests(unittest.TestCase):
         self.assertEqual(meta.status, AttachmentStatus.READY)
         self.assertEqual(meta.expires_at, 723.0)
 
-    def test_pdf_registers_processing_then_transitions_ready_or_error(self) -> None:
-        lifecycle = AttachmentLifecycle(
-            AttachmentRegistry(), id_factory=lambda: "pdf", clock=lambda: 100.0
-        )
-        meta = asyncio.run(
-            lifecycle.register_pdf(
-                attachment_id=lifecycle.new_id(),
-                user_id=7,
-                filename="report.pdf",
-                mime_type="application/pdf",
-                size_bytes=10,
-            )
-        )
-
-        self.assertEqual(meta.status, AttachmentStatus.PROCESSING)
-        lifecycle.mark_pdf_ready(meta, "preview" * 100, 3)
-        self.assertEqual(meta.status, AttachmentStatus.READY)
-        self.assertEqual(meta.text_preview, ("preview" * 100)[:500])
-        self.assertEqual(meta.page_count, 3)
-        lifecycle.mark_error(meta, "PDF 解析失败")
-        self.assertEqual(meta.status, AttachmentStatus.ERROR)
-        self.assertEqual(meta.error_msg, "PDF 解析失败")
 
     def test_registry_enforces_owner_and_preserves_list_order_duplicates(self) -> None:
         entries: dict[str, AttachmentMeta] = {}
@@ -93,7 +71,7 @@ class AttachmentLifecycleTests(unittest.TestCase):
         second = AttachmentMeta(
             id="second",
             user_id=7,
-            type=AttachmentType.PDF,
+            type=AttachmentType.IMAGE,
             status=AttachmentStatus.PROCESSING,
         )
         other = AttachmentMeta(

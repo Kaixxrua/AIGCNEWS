@@ -1,25 +1,38 @@
 <script setup lang="ts">
+import { nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { usePwaInstall } from '@/pwa/installPrompt'
 
 const { t } = useI18n()
-const { showIOSGuide, closeIOSGuide } = usePwaInstall()
+const { showInstallGuide, isIOS, closeInstallGuide } = usePwaInstall()
+const closeButton = ref<HTMLButtonElement | null>(null)
+let previousFocus: HTMLElement | null = null
+
+watch(showInstallGuide, async (open) => {
+  if (open) {
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    await nextTick()
+    if (showInstallGuide.value) closeButton.value?.focus()
+  } else if (previousFocus?.isConnected) {
+    previousFocus.focus()
+  }
+})
 </script>
 
 <template>
-  <!-- iOS 安装指引：右下角小卡片（与更新提示同族），安静但可发现；
-       安装本身无系统弹窗，只能给两步指引。 -->
+  <!-- 没有原生安装弹窗时，提供当前设备可用的手动安装指引。 -->
   <Transition name="pwa-ios-guide">
     <div
-      v-if="showIOSGuide"
+      v-if="showInstallGuide"
       class="pwa-ios-card"
       role="dialog"
       aria-modal="false"
-      :aria-label="t('pwa.iosGuideTitle')"
+      :aria-label="t(isIOS ? 'pwa.iosGuideTitle' : 'pwa.browserGuideTitle')"
+      @keydown.esc="closeInstallGuide"
     >
-      <p class="pwa-ios-card__title">{{ t('pwa.iosGuideTitle') }}</p>
-      <ol class="pwa-ios-card__steps">
+      <p class="pwa-ios-card__title">{{ t(isIOS ? 'pwa.iosGuideTitle' : 'pwa.browserGuideTitle') }}</p>
+      <ol v-if="isIOS" class="pwa-ios-card__steps">
         <li>
           <span class="pwa-ios-card__step-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -41,12 +54,17 @@ const { showIOSGuide, closeIOSGuide } = usePwaInstall()
           <span>{{ t('pwa.iosGuideStepAdd') }}</span>
         </li>
       </ol>
-      <p class="pwa-ios-card__note">{{ t('pwa.iosGuideNote') }}</p>
+      <ol v-else class="pwa-ios-card__steps">
+        <li>{{ t('pwa.browserGuideStepOpen') }}</li>
+        <li>{{ t('pwa.browserGuideStepInstall') }}</li>
+      </ol>
+      <p class="pwa-ios-card__note">{{ t(isIOS ? 'pwa.iosGuideNote' : 'pwa.browserGuideNote') }}</p>
       <div class="pwa-ios-card__actions">
         <button
+          ref="closeButton"
           type="button"
           class="pwa-ios-card__btn pwa-ios-card__btn--primary"
-          @click="closeIOSGuide"
+          @click="closeInstallGuide"
         >
           {{ t('pwa.gotIt') }}
         </button>
@@ -149,13 +167,24 @@ const { showIOSGuide, closeIOSGuide } = usePwaInstall()
 }
 
 /* 移动端：卡片落在 dock 上方，避开底部导航与 home 指示条。 */
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .pwa-ios-card {
     right: 12px;
     left: 12px;
     bottom: max(76px, calc(env(safe-area-inset-bottom) + 68px));
     width: auto;
+    max-height: calc(100dvh - 144px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    padding: 20px;
+    gap: 16px;
+    box-shadow: none;
   }
+
+  .pwa-ios-card__title { font-size: 18px; }
+  .pwa-ios-card__steps { font-size: 16px; line-height: 1.7; gap: 12px; }
+  .pwa-ios-card__note { font-size: 14px; line-height: 1.6; color: var(--ink-secondary); }
+  .pwa-ios-card__btn { min-height: 44px; font-size: 16px; }
+  .pwa-ios-card__step-icon { margin-top: 4px; color: var(--ink-secondary); }
 }
 
 .pwa-ios-guide-enter-active,

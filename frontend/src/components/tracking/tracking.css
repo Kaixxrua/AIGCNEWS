@@ -1,0 +1,77 @@
+.tracking-section {
+  @apply flex flex-col gap-4 p-4 text-ink sm:p-5;
+}
+.tracking-hint {
+  @apply text-xs leading-relaxed text-ink-secondary;
+}
+.tracking-loading {
+  @apply py-6 text-sm text-ink-muted;
+  /* Fast responses should not flash a loading indicator; slow requests stay legible. */
+  animation: tracking-loading-reveal 0s 200ms both;
+}
+@keyframes tracking-loading-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tracking-toolbar {
+  @apply flex flex-wrap items-center justify-between gap-3;
+}
+.tracking-quota {
+  @apply rounded border border-ink px-2 py-1 text-xs font-bold;
+}
+.tracking-button {
+  @apply inline-flex items-center justify-center gap-1.5 rounded border border-ink px-3 py-2 text-xs font-bold transition-colors hover:bg-accent hover:text-accent-ink disabled:cursor-not-allowed disabled:opacity-40;
+}
+.tracking-button-primary {
+  @apply bg-ink text-accent;
+}
+.tracking-button:focus-visible,
+.tracking-input:focus-visible {
+  @apply outline outline-2 outline-offset-2 outline-ink;
+}
+.tracking-input {
+  @apply w-full min-w-0 rounded border border-rule bg-paper-raised px-3 py-2 text-sm text-ink;
+}
+.tracking-field {
+  @apply flex min-w-0 flex-col gap-1.5;
+}
+.tracking-field label {
+  @apply text-xs font-bold;
+}
+.tracking-form-grid {
+  @apply grid min-w-0 gap-3 sm:grid-cols-2;
+}
+.tracking-rule-form {
+  @apply flex flex-col gap-3 rounded border border-ink bg-accent-soft p-4;
+}
+.tracking-rules {
+  @apply divide-y divide-rule border-y border-rule;
+}
+.tracking-rules > li {
+  @apply flex flex-wrap items-center justify-between gap-3 py-3;
+}
+.tracking-empty {
+  @apply border-y border-dashed border-rule py-5 text-sm leading-relaxed text-ink-secondary;
+}
+.tracking-bottom {
+  @apply grid min-w-0 gap-5 border-t border-rule pt-4 xl:grid-cols-2;
+}
+.tracking-delivery {
+  @apply flex min-w-0 flex-col gap-3;
+}
+.tracking-digest {
+  @apply min-w-0;
+}
+.tracking-results {
+  @apply mt-3 divide-y divide-rule;
+}
+.tracking-results > li {
+  @apply break-words py-3;
+  overflow-wrap: anywhere;
+}
+.tracking-preview {
+  @apply rounded border border-rule p-4;
+}
+.tracking-error {
+  @apply rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200;
+}

@@ -35,6 +35,8 @@ JobSource = Literal[
     "conversation_cleanup",
     "x_media_warmup",
     "payment_order_closing",
+    "ui_library_discovery",
+    "ui_library_x_discovery",
 ]
 
 
@@ -307,12 +309,22 @@ PAYMENT_ORDER_CLOSING_JOB = IntervalJobDescriptor(
 )
 
 
+UI_LIBRARY_JOBS: tuple[CronJobDescriptor, ...] = (
+    CronJobDescriptor(id="ui_library_discovery", source="ui_library_discovery",
+        name="UI 素材库每日发现（开源组件与 Codrops）", schedule=CronSchedule(hour=9, minute=0), coalesce=True),
+    CronJobDescriptor(id="ui_library_x_discovery", source="ui_library_x_discovery",
+        name="UI 素材库设计师 X 新作发现", schedule=CronSchedule(hour=9, minute=10), coalesce=True),
+)
+
+
 def resolve_source_job_callback(
     source: JobSource,
     namespace: Mapping[str, Any],
 ) -> SchedulerCallback:
     """Resolve a source callback lazily from the scheduler module namespace."""
     callback_name = {
+        "ui_library_discovery": "_run_ui_library_discovery_job",
+        "ui_library_x_discovery": "_run_ui_library_x_discovery_job",
         "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
         "github_project_metrics_closing": "_run_github_project_metrics_closing_job",

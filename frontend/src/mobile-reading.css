@@ -1,0 +1,88 @@
+/* 手机阅读层：用清晰的文本和分隔线承载内容，保留桌面信息密度。 */
+@media (max-width: 767px) {
+  #app .app-shell { --mobile-font: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif; font-family: var(--mobile-font); }
+  #app .app-shell .dashboard-page, #app .app-shell .projects-page, #app .app-shell .prose-content,
+  #app .app-shell button, #app .app-shell input, #app .app-shell select,
+  #app .app-shell h1, #app .app-shell h2, #app .app-shell h3 { font-family: var(--mobile-font); }
+  #app .app-shell .app-masthead { padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: 4px; }
+  #app .app-shell .app-masthead__tools { width: 100%; gap: 4px; }
+  #app .app-shell .app-masthead .brand-wordmark { margin-right: auto; min-height: 44px; }
+  #app .app-shell .app-masthead__actions { gap: 4px; flex-shrink: 0; }
+  #app .app-shell .theme-toggle, #app .app-shell .locale-toggle { width: 44px; height: 44px; flex-basis: 44px; color: var(--ink-secondary); }
+  #app .app-shell .locale-icon__accent { stroke: currentColor; }
+  #app .app-shell .stagger-enter, #app .app-shell .project-card { animation: none; }
+
+  #app .app-shell .dashboard-page { display: flex; flex-direction: column; gap: 0; padding: 16px; background: var(--paper-raised); }
+  #app .app-shell .dashboard-page h1 { font-size: 22px; line-height: 1.4; font-weight: 700; letter-spacing: -0.02em; }
+  #app .app-shell .dashboard-main { order: 2; margin-top: 16px; gap: 24px; }
+  #app .app-shell .dashboard-overview { order: 3; flex: none; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--rule); }
+  #app .app-shell .dashboard-overview > summary { display: list-item; min-height: 44px; padding: 10px 0; color: var(--ink-secondary); font-size: 15px; cursor: pointer; }
+  #app .app-shell .dashboard-page .glass-card { border-color: var(--rule); box-shadow: none; }
+  #app .app-shell .dashboard-page .dashboard-ranking-panel { border: 0; border-radius: 0; background: transparent; }
+  #app .app-shell .ranking-toolbar { padding: 0 0 12px; gap: 0; }
+  #app .app-shell .ranking-source-status > [role='status'] { display: none; }
+  #app .app-shell .ranking-toolbar [role='tablist'] { gap: 4px; padding-bottom: 0; }
+  #app .app-shell .ranking-toolbar [role='tab'] { min-height: 44px; padding: 8px; border: 0; border-radius: 6px; font-size: 14px; }
+  #app .app-shell .ranking-toolbar [role='tab'] svg { display: none; }
+  #app .app-shell .ranking-toolbar .tab-active { background: var(--acid-soft); color: var(--ink); box-shadow: inset 0 -3px 0 var(--acid-strong); font-weight: 700; }
+  #app .app-shell .ranking-list ol > li { border-top-color: var(--rule) !important; }
+  #app .app-shell .ranking-link { gap: 8px; padding: 16px 0; }
+  #app .app-shell .ranking-link > svg { display: none; }
+  #app .app-shell .ranking-number { margin-top: 4px; background: transparent; color: var(--ink-muted); font-size: 15px; font-weight: 500; }
+  #app .app-shell .ranking-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 17px; font-weight: 600; line-height: 1.5; color: var(--ink); }
+  #app .app-shell .ranking-badges { display: none; }
+  #app .app-shell .ranking-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 8px; color: var(--ink-secondary); font-size: 15px; font-weight: 400; line-height: 1.65; }
+  #app .app-shell .ranking-meta { margin-top: 8px; gap: 8px 12px; }
+  #app .app-shell .ranking-meta .badge, #app .app-shell .ranking-meta > span { padding: 0; border: 0; background: transparent; color: var(--ink-secondary); font-size: 13px; line-height: 1.6; }
+
+  #app .app-shell .projects-page { padding: 20px; background: var(--projects-paper-light); background-image: none; }
+  #app .app-shell .projects-page .projects-hero { margin-bottom: 16px; }
+  #app .app-shell .projects-hero h1 { font-size: 24px; font-weight: 700; line-height: 1.4; }
+  #app .app-shell .projects-page .projects-toolbar.glass-card { padding: 0; gap: 12px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  #app .app-shell .projects-source-tabs { gap: 20px; }
+  #app .app-shell .projects-source-tab { flex: none; padding: 8px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  #app .app-shell .projects-source-tab strong { color: var(--ink-secondary); font-size: 16px; font-weight: 500; }
+  #app .app-shell .projects-source-tab--active { box-shadow: inset 0 -3px 0 var(--acid-strong); }
+  #app .app-shell .projects-source-tab--active strong { color: var(--ink); font-weight: 700; }
+  #app .app-shell .projects-search .input, #app .app-shell .projects-sort select { border-color: var(--rule); border-radius: 8px; color: var(--ink); background: var(--paper); }
+  #app .app-shell .projects-search .input { height: 48px; font-size: 16px; }
+  #app .app-shell .projects-sort { flex-basis: 116px; width: 116px; }
+  #app .app-shell .projects-sort select { height: 48px; font-size: 16px; }
+  #app .app-shell .projects-page .projects-category-panel.glass-card { display: block; margin: 0 0 8px; padding: 0; overflow: visible; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: transparent; box-shadow: none; }
+  #app .app-shell .projects-category-panel::before { display: none; }
+  #app .app-shell .projects-category-panel > summary { display: list-item; min-height: 44px; padding: 10px 0; color: var(--ink); font-size: 15px; cursor: pointer; }
+  #app .app-shell .projects-category-panel > summary span { margin-left: 12px; color: var(--ink-secondary); font-size: 14px; }
+  #app .app-shell .projects-category-panel .projects-categories { flex-wrap: wrap; gap: 8px; padding: 8px 0 16px; overflow: visible; }
+  #app .app-shell .projects-category-panel .projects-category { min-height: 44px; padding: 8px 12px; border-color: var(--rule); box-shadow: none; }
+  #app .app-shell .projects-category-panel .tab-active { background: var(--acid-soft); color: var(--ink); border-color: var(--ink-muted); }
+  #app .app-shell .projects-grid, #app .app-shell .projects-col { gap: 0; }
+  #app .app-shell .projects-page .project-card { min-height: 0; margin: 0; padding: 20px 0; border-radius: 0; border-bottom: 1px solid var(--rule); }
+  #app .app-shell .projects-page .project-card .project-card__body { min-height: 0; padding: 0; gap: 12px; border: 0; border-radius: 0; box-shadow: none; transform: none; }
+  #app .app-shell .project-card__body::before { display: none; }
+  #app .app-shell .project-card__header h2 { color: var(--ink); font-size: 20px; font-weight: 700; line-height: 1.45; letter-spacing: -0.02em; }
+  #app .app-shell .project-card__source { padding: 2px 7px; border: 1px solid var(--projects-accent); border-radius: 4px; background: var(--projects-acid); color: var(--projects-on-acid); font-size: 11px; font-weight: 750; }
+  #app .app-shell .project-card__description { color: var(--ink); font-size: 17px; line-height: 1.8; }
+  #app .app-shell .project-card__details { margin: 0; }
+  #app .app-shell .project-card__details > summary { display: list-item; min-height: 44px; padding: 10px 0; color: var(--ink-secondary); font-size: 14px; cursor: pointer; }
+  #app .app-shell .project-card__metadata { padding: 8px 0; }
+  #app .app-shell .project-card__stats { padding-top: 12px; border-top-color: var(--rule); color: var(--ink-secondary); font-size: 13px; font-weight: 400; }
+  #app .app-shell .project-chip { min-height: 44px; padding: 8px 12px; border-color: var(--badge-default-border); color: var(--badge-default-ink); background: var(--badge-default-bg); font-size: 14px; }
+  #app .app-shell .project-card__rail { padding-top: 8px; gap: 12px; }
+  #app .app-shell .project-card .project-card__action { min-height: 44px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; box-shadow: none; animation: none; transform: none; font-size: 14px; }
+  #app .app-shell .project-card__action.project-card__link { background: var(--projects-acid); color: var(--projects-on-acid); border-color: var(--projects-accent); }
+
+  #app .app-shell .report-shell { padding: 20px; background: var(--paper-raised); }
+  #app .app-shell .report-shell .glass-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  #app .app-shell .report-shell > .glass-card:first-child { padding: 0; }
+  #app .app-shell .report-shell button { font-size: 14px; }
+  #app .app-shell .report-shell input { font-size: 16px; }
+  #app .app-shell .report-reading { margin-top: 24px; }
+  #app .app-shell .report-content { padding: 0; }
+  #app .app-shell .prose-content { font-size: 18px; line-height: 1.85; color: var(--ink); }
+  #app .app-shell .prose-content p, #app .app-shell .prose-content li, #app .app-shell .prose-content ul, #app .app-shell .prose-content ol, #app .app-shell .prose-content blockquote { color: var(--ink); }
+  #app .app-shell .prose-content h1 { font-size: 28px; line-height: 1.4; }
+  #app .app-shell .prose-content h2 { font-size: 23px; line-height: 1.5; }
+  #app .app-shell .prose-content h3 { font-size: 20px; line-height: 1.5; }
+  #app .app-shell .mcp-connect-page .glass-card { border-color: var(--rule); box-shadow: none; }
+  #app .app-shell .mcp-connect-page p { font-size: 16px; line-height: 1.75; }
+}

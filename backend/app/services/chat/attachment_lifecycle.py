@@ -13,7 +13,6 @@ from typing import Dict, List, Optional
 
 class AttachmentType(str, Enum):
     IMAGE = "image"
-    PDF = "pdf"
 
 
 class AttachmentStatus(str, Enum):
@@ -113,33 +112,6 @@ class AttachmentLifecycle:
         await self.registry.register(meta)
         return meta
 
-    async def register_pdf(
-        self,
-        *,
-        attachment_id: str,
-        user_id: int,
-        filename: str,
-        mime_type: str,
-        size_bytes: int,
-    ) -> AttachmentMeta:
-        meta = AttachmentMeta(
-            id=attachment_id,
-            user_id=user_id,
-            type=AttachmentType.PDF,
-            status=AttachmentStatus.PROCESSING,
-            filename=filename,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            created_at=self._clock(),
-        )
-        await self.registry.register(meta)
-        return meta
-
-    @staticmethod
-    def mark_pdf_ready(meta: AttachmentMeta, text: str, page_count: int) -> None:
-        meta.page_count = page_count
-        meta.text_preview = text[:500] if text else ""
-        meta.status = AttachmentStatus.READY
 
     @staticmethod
     def mark_error(meta: AttachmentMeta, error_msg: str) -> None:

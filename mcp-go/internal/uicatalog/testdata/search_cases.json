@@ -1,0 +1,134 @@
+[
+  {
+    "q": "液态金属",
+    "ids": [
+      "paper-liquid-metal",
+      "threeui-liquid-form"
+    ]
+  },
+  {
+    "q": "liquid metal",
+    "ids": [
+      "paper-liquid-metal",
+      "threeui-liquid-form"
+    ]
+  },
+  {
+    "q": "ＬＩＱＵＩＤ　ＭＥＴＡＬ",
+    "ids": [
+      "paper-liquid-metal",
+      "threeui-liquid-form"
+    ]
+  },
+  {
+    "q": "想要一个液态金属背景",
+    "ids": [
+      "paper-liquid-metal",
+      "threeui-liquid-form"
+    ]
+  },
+  {
+    "q": "silk",
+    "ids": [
+      "inspira-bg-silk"
+    ]
+  },
+  {
+    "q": "丝绸",
+    "ids": [
+      "inspira-bg-silk"
+    ]
+  },
+  {
+    "q": "Vue 粒子",
+    "ids": [
+      "inspira-bg-particle-whirlpool"
+    ]
+  },
+  {
+    "q": "光束",
+    "ids": [
+      "paper-god-rays"
+    ]
+  },
+  {
+    "q": "light rays",
+    "ids": [
+      "paper-god-rays"
+    ]
+  },
+  {
+    "q": "气泡",
+    "ids": [
+      "inspira-bg-bubbles"
+    ]
+  },
+  {
+    "q": "bubbles",
+    "ids": [
+      "inspira-bg-bubbles"
+    ]
+  },
+  {
+    "q": "shader",
+    "framework": "vue",
+    "ids": [
+      "inspira-bg-silk",
+      "inspira-bg-particle-whirlpool",
+      "inspira-bg-bubbles",
+      "inspira-bg-neural"
+    ]
+  },
+  {
+    "q": "",
+    "category": "text",
+    "ids": [
+      "threeui-typography-vortex",
+      "uilayouts-text-randomized",
+      "motion-text-shimmer-text-shimmer-basic",
+      "motion-text-shimmer-text-shimmer-color",
+      "motion-text-shimmer-wave-text-shimmer-wave-basic",
+      "motion-text-loop-text-loop-basic",
+      "motion-spinning-text-spinning-text-basic",
+      "motion-text-roll-text-roll-basic",
+      "motion-text-scramble-text-scramble-basic"
+    ]
+  },
+  {
+    "q": "no-such-effect-q93",
+    "ids": []
+  },
+  {
+    "q": "liquid metal",
+    "framework": "vue",
+    "ids": []
+  },
+  {
+    "q": "磁吸按钮",
+    "ids": [
+      "motion-magnetic-magnetic-basic"
+    ],
+    "framework": "react"
+  },
+  {
+    "q": "magnetic button",
+    "ids": [
+      "motion-magnetic-magnetic-basic"
+    ],
+    "framework": "react"
+  },
+  {
+    "q": "hyperui 进度条",
+    "framework": "html",
+    "ids": [
+      "hyperui-application-progress-bars-1"
+    ]
+  },
+  {
+    "q": "hyperui progress",
+    "framework": "html",
+    "ids": [
+      "hyperui-application-progress-bars-1"
+    ]
+  }
+]

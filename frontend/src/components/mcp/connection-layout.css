@@ -1,0 +1,68 @@
+/* The app shell reserves the masthead and dock; use the remaining canvas. */
+.connection-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.connection-layout {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.connection-layout > *,
+.connection-intro-content > * { min-width: 0; }
+.connection-aside { display: grid; gap: 16px; min-width: 0; }
+.connection-page pre,
+.connection-page code { overflow-wrap: anywhere; white-space: pre-wrap; }
+
+@media (min-width: 960px) and (min-height: 640px) {
+  .connection-scroll { padding: 16px 24px; }
+  .connection-layout {
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .connection-aside {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .connection-intro-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr);
+    align-items: center;
+    gap: 24px;
+    height: 100%;
+  }
+  .connection-layout--dsh .connection-intro-content {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  }
+  .connection-page .connection-layout .connection-intro h1 {
+    font-size: clamp(24px, 2.2vw, 32px);
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+  .connection-page .connection-intro p { line-height: 1.5; }
+  .connection-summary > p { margin-top: 0; }
+  .connection-page .connection-details { display: flex; align-items: center; }
+  .connection-layout > .mcp-wizard,
+  .connection-layout > .dsh-wizard { min-height: 0; }
+  .connection-details > div:first-child { display: none; }
+  .connection-page .connection-details h2 { font-size: 16px; }
+  .connection-page .connection-details p { font-size: 12px; line-height: 1.5; }
+}
+
+@media (min-width: 960px) and (max-height: 799px) {
+  .connection-scroll { padding-top: 12px; padding-bottom: 12px; }
+  .connection-page .connection-intro,
+  .connection-page .connection-details { padding: 12px 16px; }
+  .connection-page .connection-layout .connection-intro h1 { font-size: 24px; }
+  .connection-page .connection-intro p { font-size: 12px; }
+  .mcp-connect-page .connection-heading > p { display: none; }
+  .mcp-connect-page .connection-heading > div { margin-bottom: 8px; }
+  .connection-intro-content { gap: 16px; }
+}

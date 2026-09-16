@@ -17,6 +17,7 @@ from starlette.responses import StreamingResponse
 
 from backend.app.api.dependencies import (
     get_document_repository,
+    get_document_vector_repository,
     get_github_hot_board_reader,
     get_project_catalog_query_service,
     get_rank_snapshot_repository,
@@ -49,6 +50,7 @@ from backend.app.services.dashboard.visitor_deduplication import (
     mark_new_daily_visitor,
 )
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
+from backend.app.services.x_semantic_search import XSemanticSearchService
 
 router = APIRouter()
 
@@ -416,6 +418,32 @@ async def get_x_recent(
     }
 
 
+@router.get("/dashboard/x/search")
+async def search_x_dashboard(
+    query: str = Query(..., min_length=1, max_length=500),
+    limit: int = Query(default=20, ge=1, le=100),
+    documents: Any = Depends(get_document_repository),
+    vectors: Any = Depends(get_document_vector_repository),
+):
+    """Semantic search over indexed X documents.
+
+    Vector disablement and runtime failures are returned as explicit statuses;
+    the endpoint never substitutes lexical results without saying so.
+    """
+    result = await XSemanticSearchService(documents=documents, vectors=vectors).search(query, limit)
+    if result.status == "invalid_query":
+        raise HTTPException(status_code=422, detail=result.error)
+    return {
+        "items": result.items,
+        "total": len(result.items),
+        "query": query,
+        "status": result.status,
+        "degraded": result.degraded,
+        "error": result.error,
+        "semantic": result.status == "ok",
+    }
+
+
 @router.get("/dashboard/radar")
 @cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_trend_radar(
@@ -662,6 +690,12 @@ async def get_dashboard_live_stats(
     响应 Cache-Control 由 @cache 装饰器输出 max-age=10（23c7ff6 事故修复：
     短缓存聚合并发访客的兜底轮询，SSE 路径不经过该缓存）。
     """
+    broadcaster = getattr(request.app.state, "live_stats_broadcaster", None)
+    if broadcaster is not None:
+        current = await broadcaster.get_current()
+        if current:
+            return current
+    # 未装配广播器或常驻值不可用时，保留兼容部署的原查询回退。
     return await _get_dashboard_stats(
         request.app,
         user_statistics=user_statistics,

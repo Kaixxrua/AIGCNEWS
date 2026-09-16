@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from starlette.requests import Request
@@ -24,28 +23,17 @@ def public_base_url(request: Request) -> str:
 
     绝不从请求派生 origin：request.base_url 由 Host 头构建，X-Forwarded-Proto
     同样可被匿名请求伪造；此前直接采信二者，攻击者可用伪造头污染缓存响应与
-    MCP 结果中的 pdf_media_url 域名（缓存投毒/钓鱼链接）。Host 一律不采信，
+    公开响应中的链接域名（缓存投毒/钓鱼链接）。Host 一律不采信，
     X-Forwarded-Proto 在 Host 不可信后单独无法构成绝对 URL，故也不再读取。
     需要绝对 URL 的消费方（MCP 客户端、跨域部署）应配置 PUBLIC_BASE_URL。
-    返回空串时调用方生成相对路径（浏览器/pdf.js 按同源解析，前端 /api 同源）。
+    返回空串时调用方生成相对路径（浏览器按同源解析，前端 /api 同源）。
     """
     del request  # 保留签名以兼容既有调用方；不再从请求读取任何内容。
     return (settings.public_base_url or "").rstrip("/")
 
 
 def project_pdf_media_url(document: dict[str, Any], request: Request) -> dict[str, Any]:
-    """Attach the existing local-media or Papers proxy URL to a document."""
-    local_path = document.get("local_pdf_path") or ""
-    base_url = public_base_url(request)
-    if local_path:
-        filename = os.path.basename(local_path)
-        document["pdf_media_url"] = f"{base_url}/api/media/papers/{filename}"
-    elif document.get("source") == "arxiv" and document.get("id"):
-        document["pdf_media_url"] = f"{base_url}/api/papers/{document['id']}/pdf"
-    else:
-        document["pdf_media_url"] = None
+    """Preserve the response shape while retiring local PDF delivery."""
+    document["pdf_media_url"] = None
     return document
 
-
-def local_pdf_redirect_url(local_path: str, request: Request) -> str:
-    return f"{public_base_url(request)}/api/media/papers/{os.path.basename(local_path)}"

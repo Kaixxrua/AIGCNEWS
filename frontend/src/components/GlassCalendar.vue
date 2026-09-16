@@ -15,6 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const today = new Date()
+const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 const viewYear = ref(today.getFullYear())
 const viewMonth = ref(today.getMonth())
 
@@ -41,13 +42,15 @@ interface CalendarDay {
   hasSnapshot: boolean
 }
 
+// 快照清单只用于提示数据可用性；缺少快照的历史日期仍可查询并展示空态。
+const canSelectDate = (day: CalendarDay) => day.date <= todayStr
+
 const calendarDays = computed<CalendarDay[]>(() => {
   const year = viewYear.value
   const month = viewMonth.value
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const daysInPrevMonth = new Date(year, month, 0).getDate()
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   const days: CalendarDay[] = []
 
   for (let i = firstDay - 1; i >= 0; i--) {
@@ -79,7 +82,7 @@ const calendarDays = computed<CalendarDay[]>(() => {
 const selectedDate = computed(() => props.modelValue || '')
 
 const selectDate = (day: CalendarDay) => {
-  if (!day.hasSnapshot) return
+  if (!canSelectDate(day)) return
   emit('update:modelValue', day.date)
 }
 </script>
@@ -112,7 +115,7 @@ const selectDate = (day: CalendarDay) => {
       <span
         v-for="(label, weekdayIndex) in weekdayLabels"
         :key="weekdayIndex"
-        class="text-center font-medium text-stone-400 select-none" style="font-size: 9px; line-height: 16px"
+        class="text-center font-medium text-stone-400 select-none" style="font-size: 12px; line-height: 20px"
       >
         {{ label }}
       </span>
@@ -125,13 +128,15 @@ const selectDate = (day: CalendarDay) => {
         class="calendar-day"
         :class="{
           'text-stone-300': !day.inMonth,
-          'text-stone-600': day.inMonth && selectedDate !== day.date && !day.isToday && day.hasSnapshot,
+          'text-stone-600': day.inMonth && selectedDate !== day.date && !day.isToday && canSelectDate(day),
           'calendar-day--today': day.isToday && selectedDate !== day.date,
           'calendar-day--active': selectedDate === day.date,
           'calendar-day--has-snapshot': day.hasSnapshot && selectedDate !== day.date,
-          'calendar-day--disabled': !day.hasSnapshot && selectedDate !== day.date,
+          'calendar-day--disabled': !canSelectDate(day) && selectedDate !== day.date,
         }"
-        :disabled="!day.hasSnapshot"
+        :disabled="!canSelectDate(day)"
+        :aria-label="day.date"
+        :aria-pressed="selectedDate === day.date"
         :title="day.hasSnapshot ? t('dashboard.snapshotAvailable', { date: day.date }) : day.date"
         @click="selectDate(day)"
       >
@@ -146,22 +151,22 @@ const selectDate = (day: CalendarDay) => {
 </template>
 
 <style scoped>
-/* 硬边日历：与 dashboard 纸面/墨线/酸橙主题一致（变量由 .dashboard-page 提供） */
+/* 使用共享纸面与控件尺寸，日期选择保留强调色。 */
 .dash-calendar {
-  border: 1px solid var(--ink);
-  border-radius: 5px;
+  border: 1px solid var(--rule);
+  border-radius: var(--module-radius);
   background: var(--paper-light);
-  box-shadow: 3px 3px 0 var(--shadow-hard);
+  box-shadow: none;
 }
 
 .cal-nav {
   display: flex;
-  height: 20px;
-  width: 20px;
+  height: 28px;
+  width: 28px;
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 4px;
   color: var(--muted, #797a70);
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
@@ -178,17 +183,17 @@ const selectDate = (day: CalendarDay) => {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 22px;
-  font-size: 10px;
+  height: 26px;
+  font-size: 12px;
   font-weight: 500;
-  border-radius: 3px;
+  border-radius: 4px;
   transition: background-color 0.15s ease, color 0.15s ease;
   cursor: pointer;
   user-select: none;
 }
 
 .calendar-day:hover:not(:disabled) {
-  color: var(--acid-ink);
+  color: var(--ink);
   background: var(--acid-soft);
   box-shadow: inset 0 0 0 1px var(--ink);
 }
@@ -232,5 +237,9 @@ const selectDate = (day: CalendarDay) => {
   border-radius: 1px;
   background: var(--ink);
   pointer-events: none;
+}
+@media (max-width: 1023px) {
+  .cal-nav { width: 44px; height: 44px; }
+  .calendar-day { height: 44px; }
 }
 </style>

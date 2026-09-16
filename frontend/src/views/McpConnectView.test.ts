@@ -35,7 +35,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
   ctlBox.current = {
     clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
     clientLabel: ref(''),
-    clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude' }),
+    clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
     copiedKey: ref(''),
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
@@ -243,25 +243,26 @@ describe('McpConnectView localized rendering', () => {
 
     expect(text).toContain('把 AIGC 雷达接入你的 Agent')
     expect(text).toContain('AIGC RADAR MCP')
-    expect(text).toContain('公开端点')
+    expect(text).not.toContain('公开端点')
     expect(text).toContain('选择客户端与终端')
     expect(text).toContain('复制接入命令')
     expect(text).toContain('验证连接')
-    expect(text).toContain('在 dsh 中原生使用 AIGC Radar')
-    expect(text).toContain('令牌管理')
-    expect(text).toContain('工具清单 · 示例提问 · 路由规则')
-    expect(text).toContain('MCP 优先路由')
-    expect(text).toContain('AI 工程产物')
+    expect(text).not.toContain('在 dsh 中原生使用 AIGC Radar')
+    expect(text).not.toContain('令牌管理')
+    expect(text).not.toContain('工具清单 · 示例提问 · 路由规则')
+    expect(text).not.toContain('MCP 优先路由')
     expect(text).toContain('Streamable HTTP')
   })
 
-  it('renders the normalized endpoint and triggers the public handshake', async () => {
+  it('shows the endpoint only in the verification step and triggers the handshake', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('https://aigcnews.cn/api/mcp')
+    expect(wrapper.text()).not.toContain('https://aigcnews.cn/api/mcp')
 
     await wrapper.findAll('.mcp-step-dot')[2]!.trigger('click')
     await flushPromises()
+
+    expect(wrapper.text()).toContain('https://aigcnews.cn/api/mcp')
 
     const handshake = wrapper.findAll('button').find((button) => button.text() === 'mcp.publicHandshake')
     expect(handshake).toBeDefined()
@@ -271,27 +272,14 @@ describe('McpConnectView localized rendering', () => {
     expect(controller().testPublicHandshake).toHaveBeenCalledTimes(1)
   })
 
-  it('renders the public tool catalog with localized descriptions', async () => {
-    const wrapper = await mountView()
-    const text = wrapper.text()
-
-    expect(text).toContain('search_github_ai_projects')
-    expect(text).toContain('搜索站内精选 AI 项目')
-    expect(text).toContain('search_papers')
-    expect(text).toContain('检索 arXiv 论文')
-  })
-
-  it('orders hero, wizard and tokens ahead of the collapsed resources area', async () => {
+  it('keeps the hero, wizard and authenticated token controls in order', async () => {
     const wrapper = await mountView()
     const sections = wrapper.findAll('section')
 
-    expect(sections.length).toBe(6)
-    expect(sections[0]!.text()).toContain('公开端点')
+    expect(sections.length).toBe(2)
+    expect(sections[0]!.text()).toContain('AIGC RADAR MCP')
     expect(sections[1]!.text()).toContain('选择客户端与终端')
-    expect(sections[2]!.text()).toContain('在 dsh 中原生使用 AIGC Radar')
-    expect(sections[3]!.text()).toContain('令牌管理')
-    expect(sections[4]!.text()).toContain('search_github_ai_projects')
-    expect(sections[5]!.text()).toContain('MCP 优先路由')
+    expect(wrapper.text()).not.toContain('令牌管理')
   })
 })
 
@@ -311,15 +299,6 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().copyQuickCommand).toHaveBeenCalledTimes(1)
   })
 
-  it('links to the standalone dsh page without rendering install commands', async () => {
-    const wrapper = await mountView()
-    expect(wrapper.text()).toContain('在 dsh 中原生使用 AIGC Radar')
-    expect(wrapper.findAll('[data-install-method]')).toHaveLength(0)
-    const link = wrapper.get('a[href="/dsh"]')
-    expect(link.text()).toContain('打开 dsh 安装页')
-    expect(wrapper.text()).not.toContain('dsh-aigc-radar@0.2.0')
-  })
-
   it('renders the guest shell for anonymous visitors without requesting login on mount', async () => {
     auth().status = 'anonymous'
     auth().isLoggedIn = false
@@ -334,15 +313,11 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(controller().loadTokens).not.toHaveBeenCalled()
     expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
 
-    // Token 管理区降级为登录引导卡，不渲染令牌列表
-    expect(wrapper.text()).toContain('登录后管理 Token 与收藏授权')
-    expect(wrapper.text()).toContain('游客可查看本页并选择客户端')
+    // 游客页面只保留介绍和接入向导，登录在向导下一步按需触发。
+    expect(wrapper.findAll('section')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('登录后管理 Token 与收藏授权')
     expect(wrapper.find('.mcp-token-list').exists()).toBe(false)
-
-    const cta = wrapper.findAll('button').find((button) => button.text() === '登录提升额度')
-    expect(cta).toBeDefined()
-    await cta!.trigger('click')
-    expect(requestLogin).toHaveBeenCalledWith('/mcp')
+    expect(wrapper.text()).not.toContain('登录提升额度')
   })
 
   it('gates wizard forward navigation behind the login prompt for guests', async () => {
@@ -419,26 +394,23 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(auth().initFromStorage).toHaveBeenCalledOnce()
   })
 
-  it('renders tokens from controller state and forwards removal', async () => {
-    const token = {
-      id: 3,
-      client_label: '工作笔记本',
-      client_type: 'claude-code',
-      token_hint: 'aigc_...9f',
-      created_at: '2026-07-01T08:00:00Z',
-      last_used_at: null,
-    }
-    controller().tokens.value = [token]
+  it('omits the token management list while preserving token creation and auth cleanup', async () => {
+    controller().tokens.value = [{ id: 3, client_label: '工作笔记本', token_hint: 'aigc_...9f' }]
     const wrapper = await mountView()
+    expect(wrapper.find('.mcp-token-list').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('工作笔记本')
+    expect(controller().removeToken).not.toHaveBeenCalled()
+    expect(controller().loadTokens).toHaveBeenCalledOnce()
 
-    expect(wrapper.text()).toContain('工作笔记本')
-    expect(wrapper.text()).toContain('aigc_...9f')
-    expect(wrapper.text()).toContain('有效')
+    await wrapper.findAll('.mcp-step-dot')[1]!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === 'mcp.generateCommand')!.trigger('click')
+    expect(controller().startSetup).toHaveBeenCalledOnce()
 
-    const deleteButton = wrapper.findAll('button').find((button) => button.text() === 'common.delete')
-    expect(deleteButton).toBeDefined()
-    await deleteButton!.trigger('click')
-    expect(controller().removeToken).toHaveBeenCalledWith(token)
+    auth().status = 'anonymous'
+    auth().isLoggedIn = false
+    await flushPromises()
+    expect(controller().clearAuthenticatedState).toHaveBeenCalledOnce()
   })
 })
 
@@ -463,7 +435,7 @@ describe('McpConnectView quota upsell notice', () => {
     expect(cta.text()).toContain('开通 vip')
   })
 
-  it('hides the quota notice for guests; the login CTA lives in the token section', async () => {
+  it('hides quota notices and the token login card for guests', async () => {
     auth().status = 'anonymous'
     auth().isLoggedIn = false
     controller().isLoggedIn.value = false
@@ -474,10 +446,8 @@ describe('McpConnectView quota upsell notice', () => {
     expect(wrapper.text()).not.toContain('开通 vip')
     expect(wrapper.text()).not.toContain('当前 Free 的')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-    // 游客的登录引导由 Token 管理区的引导卡承担
-    expect(wrapper.text()).toContain('登录后管理 Token 与收藏授权')
-    const cta = wrapper.findAll('button').find((button) => button.text() === '登录提升额度')
-    expect(cta).toBeDefined()
+    expect(wrapper.text()).not.toContain('登录后管理 Token 与收藏授权')
+    expect(wrapper.text()).not.toContain('登录提升额度')
   })
 
   it('hides the notice for active VIP members', async () => {

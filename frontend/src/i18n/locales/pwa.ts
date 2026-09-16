@@ -18,6 +18,10 @@ type PwaMessages = {
     iosGuideStepShare: string
     iosGuideStepAdd: string
     iosGuideNote: string
+    browserGuideTitle: string
+    browserGuideStepOpen: string
+    browserGuideStepInstall: string
+    browserGuideNote: string
     gotIt: string
   }
 }
@@ -32,6 +36,10 @@ const enUS: PwaMessages = {
     iosGuideStepShare: 'Tap the Share button in Safari’s toolbar.',
     iosGuideStepAdd: 'Choose “Add to Home Screen” from the share sheet.',
     iosGuideNote: 'iOS installs this site from Safari; there is no native prompt.',
+    browserGuideTitle: 'Install AIGCNEWS',
+    browserGuideStepOpen: 'Open this site in Chrome or Edge.',
+    browserGuideStepInstall: 'In the browser menu, choose “Install app” or “Add to Home Screen”.',
+    browserGuideNote: 'If installation is unavailable, bookmark this page to return anytime.',
     gotIt: 'Got it',
   },
 }
@@ -58,6 +66,10 @@ const zhCN = deepMerge(enUS, {
     iosGuideStepShare: '在 Safari 工具栏中点击「分享」按钮。',
     iosGuideStepAdd: '在分享菜单中选择「添加到主屏幕」。',
     iosGuideNote: 'iOS 需要通过 Safari 手动安装本站点，没有系统弹窗。',
+    browserGuideTitle: '安装 AIGCNEWS',
+    browserGuideStepOpen: '使用 Chrome 或 Edge 浏览器打开本站。',
+    browserGuideStepInstall: '在浏览器菜单中选择「安装应用」或「添加到主屏幕」。',
+    browserGuideNote: '如果没有安装选项，可以先收藏网页，随时回来访问。',
     gotIt: '知道了',
   },
 }) as PwaMessages

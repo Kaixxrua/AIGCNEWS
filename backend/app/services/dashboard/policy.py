@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Sequence, TypedDict
 
 from starlette.requests import Request
-
-from backend.app.services.papers.presentation import public_base_url
 
 RADAR_CATEGORIES = {
     "大模型": [
@@ -182,14 +179,8 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
 
 
 def enrich_doc_pdf_url(doc: dict[str, Any], request: Request) -> dict[str, Any]:
-    local_path = doc.get("local_pdf_path") or ""
-    if local_path:
-        filename = os.path.basename(local_path)
-        # origin 只来自 PUBLIC_BASE_URL 配置（未配置则相对路径）；
-        # Host / X-Forwarded-Proto 一律不采信，防伪造头污染缓存响应。
-        doc["pdf_media_url"] = f"{public_base_url(request)}/api/media/papers/{filename}"
-    else:
-        doc["pdf_media_url"] = None
+    """Keep legacy clients compatible without advertising retired PDF endpoints."""
+    doc["pdf_media_url"] = None
     return doc
 
 

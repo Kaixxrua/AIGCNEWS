@@ -91,6 +91,14 @@ func run() int {
 	categories := mcpapp.NewProjectCategoriesService(mcpapp.StaticProjectCategoriesRepository{})
 	registry["get_project_categories"] = categories.Get
 	publicBaseURL := strings.TrimRight(cfg.PublicBaseURL, "/")
+	uiHandlers, err := mcpapp.NewUITemplateHandlers(publicBaseURL)
+	if err != nil {
+		slog.Error("[Startup] UI catalog validation failed", "err", err)
+		return 1
+	}
+	for name, handler := range uiHandlers {
+		registry[name] = handler
+	}
 	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool), publicBaseURL) {
 		registry[name] = handler
 	}

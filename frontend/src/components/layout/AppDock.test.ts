@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import AppDock from './AppDock.vue'
 import i18n, { setAppLocale } from '@/i18n'
@@ -51,6 +52,15 @@ describe('AppDock enrichment alert dot', () => {
     setAppLocale('zh-CN')
     const host = mountDock([])
     expect(host.querySelector('.dock-alert-dot')).toBeNull()
+  })
+
+  it('labels tracking updates independently from administrative failures', () => {
+    setAppLocale('zh-CN')
+    const host = mountDock(['/subscriptions', '/monitor'])
+    const tracking = host.querySelector('a[href="/subscriptions"]')
+    expect(tracking?.querySelector('.dock-alert-dot')?.getAttribute('aria-label')).toBe('有未读追踪结果，查看结果后清除')
+    expect(tracking?.getAttribute('aria-label')).toContain('未读追踪结果')
+    expect(host.querySelector('a[href="/monitor"] .dock-alert-dot')?.getAttribute('aria-label')).toContain('富化失败')
   })
 
   it('exposes the website collection link and keeps its active state query-aware', () => {
@@ -106,5 +116,66 @@ describe('AppDock account settings entry', () => {
     const host = mountDock()
 
     expect(host.querySelector('button[aria-label="Account settings"]')).not.toBeNull()
+  })
+})
+
+describe('AppDock more menu', () => {
+  afterEach(() => {
+    unmount?.()
+    unmount = undefined
+  })
+
+  const mountMenu = (isAdmin = false) => {
+    setAppLocale('zh-CN')
+    const wrapper = mount(AppDock, {
+      attachTo: document.body,
+      props: { items: NAV_ITEMS, currentPath: '/', isAdmin, isLoggedIn: false },
+      global: {
+        plugins: [i18n],
+        stubs: { RouterLink: { props: ['to'], template: '<a :href="to" @click.prevent><slot /></a>' } },
+      },
+    })
+    // jsdom does not implement the native dialog methods; focus and Escape are
+    // checked in the browser alongside this component's open/close wiring.
+    const dialog = wrapper.get('dialog').element as HTMLDialogElement
+    Object.defineProperties(dialog, {
+      showModal: { value: () => { dialog.open = true } },
+      close: { value: () => { dialog.open = false; dialog.dispatchEvent(new Event('close')) } },
+    })
+    unmount = () => wrapper.unmount()
+    return wrapper
+  }
+
+  it('opens a modal menu and closes it when a destination is selected', async () => {
+    const wrapper = mountMenu()
+    const more = wrapper.get('button.dock-item--more')
+    const dialog = wrapper.get('dialog').element as HTMLDialogElement
+    await more.trigger('click')
+    expect(dialog.open).toBe(true)
+    expect(more.attributes('aria-expanded')).toBe('true')
+    await wrapper.get('.dock-more a[href="/mcp"]').trigger('click')
+    expect(dialog.open).toBe(false)
+    expect(more.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('closes on route changes and marks collection pages as active in More', async () => {
+    const wrapper = mountMenu()
+    await wrapper.get('button.dock-item--more').trigger('click')
+    await wrapper.setProps({ currentPath: '/projects', currentQuery: { source: 'website' } })
+    expect((wrapper.get('dialog').element as HTMLDialogElement).open).toBe(false)
+    expect(wrapper.get('button.dock-item--more').classes()).toContain('dock-item--active')
+    expect(wrapper.get('.dock-more a[href="/projects?source=website"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('.dock a[href="/projects"]').attributes('aria-current')).toBeUndefined()
+  })
+
+  it('preserves permission gates and the direct login entry for guests', async () => {
+    const wrapper = mountMenu()
+    expect(wrapper.find('a[href="/monitor"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/chat"]').exists()).toBe(false)
+    await wrapper.get('button.dock-item--account').trigger('click')
+    expect(wrapper.emitted('login')).toHaveLength(1)
+    await wrapper.setProps({ isAdmin: true, isLoggedIn: true, alertItems: ['/monitor'] })
+    expect(wrapper.find('.dock-more a[href="/monitor"]').exists()).toBe(true)
+    expect(wrapper.find('.dock-item--more .dock-alert-dot').exists()).toBe(true)
   })
 })

@@ -148,7 +148,7 @@ describe('estimateProjectCardHeight', () => {
   const longZh = '这是一段用来撑高卡片的中文描述，反复铺陈项目用途与亮点细节，足足数行'
 
   it('floors at the card min-height even for an empty project', () => {
-    expect(estimateProjectCardHeight(bareRepo, 280)).toBe(260) // 248 min + 12 gap
+    expect(estimateProjectCardHeight(bareRepo, 280)).toBe(292) // 280 min + 12 gap
   })
 
   it('grows with longer descriptions', () => {
@@ -163,12 +163,13 @@ describe('estimateProjectCardHeight', () => {
   })
 
   it('grows when tags wrap onto more rows', () => {
-    const tagged = { ...bareRepo, tags: ['代码助手', 'IDE 插件', '模型上下文协议', '自动化工作流', '向量数据库'] }
-    expect(estimateProjectCardHeight(tagged, 280, 'zh-CN')).toBeGreaterThan(estimateProjectCardHeight(bareRepo, 280, 'zh-CN'))
+    const described = { ...bareRepo, description_zh: longZh }
+    const tagged = { ...described, tags: ['代码助手', 'IDE 插件', '模型上下文协议', '自动化工作流', '向量数据库'] }
+    expect(estimateProjectCardHeight(tagged, 280, 'zh-CN')).toBeGreaterThan(estimateProjectCardHeight(described, 280, 'zh-CN'))
   })
 
   it('adds a domain row for website projects', () => {
-    const site = { source: 'website' as const, website_id: 3, full_name: 'Example Website', title: 'Example', description_zh: longZh } // 长描述先顶过 248 min-height，域名行才显形
+    const site = { source: 'website' as const, website_id: 3, full_name: 'Example Website', title: 'Example', description_zh: longZh.repeat(3) } // 长描述先顶过卡片最小高度，域名行才显形
     expect(estimateProjectCardHeight({ ...site, domain: 'example.com' }, 280, 'zh-CN'))
       .toBeGreaterThan(estimateProjectCardHeight(site, 280, 'zh-CN'))
   })

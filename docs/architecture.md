@@ -59,10 +59,10 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_auth.py` | 公开 + RequireUser | 邮箱 OTP 注册 / 登录 / 忘记密码重置；`/auth/me`；`/auth/me/mcp-tokens` CRUD（IP 与账号双维限流） |
 | `routes_dashboard.py` | 公开，Redis 缓存 | top / radar / summary / live-stats / snapshot-dates / visitor-count / x/recent；静默期读侧拦截 |
 | `routes_github_projects.py` | OptionalUser / RequireUser | 公共项目库检索、分类、taxonomy；我的收藏、工具书架 CRUD |
-| `routes_papers.py` | 公开 | 论文搜索、top10-today、详情、PDF 代理（本地重定向或 arxiv 回源） |
+| `routes_papers.py` | 公开 | 论文搜索、top10-today、详情（PDF 仅供后台处理） |
 | `routes_report.py` | 公开 + RequireUser + RequireAdmin | 简报读取（公开）；订阅 / 立即发送（用户）；SSE 生成、评估记录（管理员） |
 | `routes_push.py` | RequireUser | 推送渠道（邮箱 OTP / webhook 验证、测试）与订阅 CRUD |
-| `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、附件（图片入 Redis 零落盘 / PDF 落盘解析）、视觉问答 |
+| `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、图片附件（零落盘）、视觉问答 |
 | —（独立 Go 服务 `mcp-go/`，nginx `location = /api/mcp` 直达） | MCP token | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节；Python 入站已随 W6 退役删除） |
 | `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
 | `routes_ops.py` + 子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行）、`routes_ops_payments.py`（支付订单列表、详情、补单、关单） |

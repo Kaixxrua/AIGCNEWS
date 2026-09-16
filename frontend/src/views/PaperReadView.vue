@@ -3,10 +3,8 @@ import { computed, onMounted, onUnmounted, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PaperConversationPanel from '@/components/papers/PaperConversationPanel.vue'
 import PaperDocumentPanel from '@/components/papers/PaperDocumentPanel.vue'
-import { useEventSource } from '@/composables/useEventSource'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { usePaperReaderController } from '@/composables/usePaperReaderController'
-import { api } from '@/services/http/apiClient'
 import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
@@ -17,11 +15,9 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const chatStore = useChatStore()
-const { connect } = useEventSource()
 const { renderMarkdown, copyFormulas, handleFormulaCopy } = useLatexRenderer()
 const paperId = computed(() => String(route.params.id ?? ''))
-const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
-// 游客只读：论文内容公开，对话/截图追问引导登录（会话 API 需鉴权，
+// 游客只读：论文内容公开，对话引导登录（会话 API 需鉴权，
 // 匿名调用会触发全局 401 跳登录，故在控制器层整体关闭）。
 const conversationEnabled = computed(() => authStore.status === 'authenticated')
 
@@ -36,26 +32,17 @@ const controller = usePaperReaderController<PaperItem>({
   openConversation: (conversationId) => chatStore.openConversation(conversationId),
   ensureGlobalConversation: (title) => chatStore.ensureGlobalConversation(title),
   deleteActiveConversation: () => chatStore.deleteActiveConversation(),
-  appendLocalMessage: (conversationId, message) => chatStore.appendLocalMessage(conversationId, message),
-  patchMessage: (conversationId, messageId, patch) => chatStore.patchMessage(conversationId, messageId, patch),
   sendMessage: (text, contextPaperId, conversationId) => chatStore.sendMessage(text, contextPaperId, conversationId),
-  uploadScreenshot: async (payload) => {
-    const response = await api.post<{ image_id: string }>('/chat/upload-screenshot', payload)
-    return response.data
-  },
-  connectEventSource: connect,
-  visionRelayUrl: `${baseURL}/chat/vision-relay`,
   conversationEnabled,
 })
 
 const {
   paper, paperLoading, paperError, showConvPanel, currentConversationId,
   conversationList, activeConversationTitle, inputText, isSending, messages,
-  visionPopup, pdfProgress, initializePaperContext, handlePaperIdChange,
+  initializePaperContext, handlePaperIdChange,
   switchConversation, newConversation, deleteCurrentConversation, toggleThinking,
-  isThinkingExpanded, onRightclickRegion, closePopup, sendVision, sendText,
-  handleKeydown, handlePopupKeydown, onPdfProgress, downloadPdf, setChatListRef,
-  setPopupInputRef,
+  isThinkingExpanded, sendText,
+  handleKeydown, setChatListRef,
 } = controller
 
 onMounted(() => { void initializePaperContext(paperId.value) })
@@ -98,16 +85,7 @@ const openLogin = () => requestLogin(loginRedirect.value)
       :paper="paper"
       :paper-loading="paperLoading"
       :paper-error="paperError"
-      :pdf-progress="pdfProgress"
-      v-model:vision-popup="visionPopup"
-      :is-sending="isSending"
-      @download-pdf="downloadPdf"
-      @rightclick-region="onRightclickRegion"
-      @progress="onPdfProgress"
-      @popup-keydown="handlePopupKeydown"
-      @send-vision="sendVision"
-      @close-popup="closePopup"
-      @popup-input-ref="setPopupInputRef"
+      :render-markdown="renderMarkdown"
     />
   </div>
 </template>

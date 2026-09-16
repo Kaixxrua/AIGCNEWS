@@ -1,6 +1,5 @@
-import { computed, ref, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
-import type { SseConnectParams } from './useEventSource'
 import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
 import { usePaperReaderController } from './usePaperReaderController'
 
@@ -33,12 +32,6 @@ const message = (
   attachments,
 })
 
-const deferred = () => {
-  let resolve!: () => void
-  const promise = new Promise<void>((done) => { resolve = done })
-  return { promise, resolve }
-}
-
 const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}) => {
   const activeConversationId = ref<string | null>('1')
   const conversationMap = ref<Record<string, ConversationSummary>>({ '1': conversation('1'), '2': conversation('2') })
@@ -46,9 +39,6 @@ const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}
     '1': [message('1', 'existing', 'user', 'Existing message')],
     '2': [message('2', 'second', 'assistant', 'Second conversation')],
   })
-  const stream = deferred()
-  let streamParams: SseConnectParams | null = null
-
   const loadConversations = vi.fn(async () => undefined)
   const ensureGlobalConversation = vi.fn(async () => undefined)
   const fetchPaper = vi.fn(async (id: string) => ({ id, title: 'Paper' }))
@@ -78,27 +68,7 @@ const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}
     openConversation,
     ensureGlobalConversation,
     deleteActiveConversation,
-    appendLocalMessage: (conversationId, localMessage) => {
-      messageMap.value = {
-        ...messageMap.value,
-        [conversationId]: [...(messageMap.value[conversationId] || []), localMessage],
-      }
-    },
-    patchMessage: (conversationId, messageId, patch) => {
-      messageMap.value = {
-        ...messageMap.value,
-        [conversationId]: (messageMap.value[conversationId] || []).map((item) => (
-          item.id === messageId ? { ...item, ...patch } : item
-        )),
-      }
-    },
     sendMessage,
-    uploadScreenshot: vi.fn(async () => ({ image_id: 'uploaded-image' })),
-    connectEventSource: (params) => {
-      streamParams = params
-      return { controller: new AbortController(), promise: stream.promise }
-    },
-    visionRelayUrl: '/chat/vision-relay',
     ...(overrides.conversationEnabled ? { conversationEnabled: overrides.conversationEnabled } : {}),
   })
 
@@ -112,67 +82,10 @@ const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}
     messageMap,
     openConversation,
     sendMessage,
-    stream,
-    streamParams: computed(() => streamParams),
   }
 }
 
-describe('usePaperReaderController persisted visual messages', () => {
-  it('replaces optimistic visual messages from the server on the terminal conversation event', async () => {
-    const fixture = createController()
-    fixture.controller.visionPopup.value = {
-      visible: true,
-      base64: 'data:image/jpeg;base64,raw-image-must-not-be-restored',
-      question: 'Explain this figure',
-      pageIndex: 0,
-    }
-
-    const pending = fixture.controller.sendVision()
-    await Promise.resolve()
-    await Promise.resolve()
-
-    expect(fixture.messageMap.value['1']).toHaveLength(3)
-    expect(JSON.stringify(fixture.messageMap.value['1'])).not.toContain('raw-image-must-not-be-restored')
-
-    fixture.streamParams.value?.onMessage({ type: 'content', data: 'temporary answer' })
-    fixture.openConversation.mockImplementationOnce(async (id: string) => {
-      fixture.activeConversationId.value = id
-      fixture.messageMap.value = {
-        ...fixture.messageMap.value,
-        [id]: [
-          message(id, 'server-user', 'user', 'Explain this figure', [{
-            id: '',
-            name: '',
-            mimeType: '',
-            modality: 'vision',
-            parseStatus: 'uploaded',
-            imageRetained: false,
-            regenerationRequiresNewImage: true,
-          }]),
-          message(id, 'server-assistant', 'assistant', 'Persisted answer'),
-        ],
-      }
-    })
-    fixture.streamParams.value?.onMessage({
-      type: 'conversation',
-      data: { conversation_id: 1, message_id: 22 },
-    })
-    fixture.streamParams.value?.onDone?.()
-    fixture.stream.resolve()
-    await pending
-
-    expect(fixture.loadConversations).toHaveBeenCalledOnce()
-    expect(fixture.openConversation).toHaveBeenCalledWith('1')
-    expect(fixture.messageMap.value['1']?.map((item) => item.id)).toEqual(['server-user', 'server-assistant'])
-    expect(fixture.controller.messages.value[0]).toMatchObject({
-      isVisual: true,
-      screenshotRetained: false,
-      regenerationRequiresNewImage: true,
-    })
-    expect(JSON.stringify(fixture.controller.messages.value)).not.toContain('base64')
-    expect(JSON.stringify(fixture.controller.messages.value)).not.toContain('raw-image-must-not-be-restored')
-  })
-
+describe('usePaperReaderController paper conversations', () => {
   it('uses active store state when switching and deleting conversations', async () => {
     const fixture = createController()
 
@@ -200,24 +113,23 @@ describe('usePaperReaderController guest read-only mode', () => {
     expect(fixture.loadConversations).not.toHaveBeenCalled()
   })
 
-  it('suppresses the vision popup and all send paths for guests', async () => {
+  it('does not send a message for guests', async () => {
     const fixture = createController({ conversationEnabled: ref(false) })
-
-    await fixture.controller.onRightclickRegion({ base64: 'x', pageIndex: 0 } as never)
-    expect(fixture.controller.visionPopup.value).toBeNull()
-
-    fixture.controller.visionPopup.value = {
-      visible: true,
-      base64: 'x',
-      question: 'q',
-      pageIndex: 0,
-    }
-    await fixture.controller.sendVision()
-    expect(fixture.loadConversations).not.toHaveBeenCalled()
 
     fixture.controller.inputText.value = 'hello'
     await fixture.controller.sendText()
     expect(fixture.sendMessage).not.toHaveBeenCalled()
     expect(fixture.controller.inputText.value).toBe('hello')
+  })
+})
+
+
+describe('paper context after PDF reader retirement', () => {
+  it('sends text with the current paper and conversation', async () => {
+    const fixture = createController()
+    fixture.controller.inputText.value = ' Explain the method '
+    await fixture.controller.sendText()
+    expect(fixture.sendMessage).toHaveBeenCalledWith('Explain the method', 'paper-1', '1')
+    expect(fixture.controller.inputText.value).toBe('')
   })
 })

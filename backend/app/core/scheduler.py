@@ -33,6 +33,7 @@ from backend.app.core.scheduler_registry import (
     DAILY_BRIEFING_JOB,
     PAYMENT_ORDER_CLOSING_JOB,
     SOURCE_JOB_DESCRIPTORS,
+    UI_LIBRARY_JOBS,
     SUBSCRIPTION_DISPATCH_JOB,
     JobDescriptor,
     SchedulerCallback,
@@ -108,7 +109,7 @@ _DEFAULT_ZERO_INGEST_WATCH_SOURCES = (
 
 # X 链路源任务集合：x_source_enabled=False 时不注册、也不允许经在线配置启用
 _X_SOURCE_JOB_SOURCES = frozenset(
-    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor", "x_media_warmup"}
+    {"x", "x_credentials_probe", "x_closing", "x_deleted_janitor", "x_media_warmup", "ui_library_x_discovery"}
 )
 
 # 简报维度失败自动补跑：单维度每日最多补跑 3 次，距上次失败确认 5 分钟后
@@ -875,10 +876,22 @@ async def _run_subscription_dispatch_job(
     try:
         summary = await service.dispatch_all()
         logger.info("[Scheduler] 订阅简报派发完成：%s", summary)
-        return True
+        succeeded = True
     except Exception as exc:
         logger.error("[Scheduler] 订阅简报派发失败: %s", exc, exc_info=True)
-        return False
+        succeeded = False
+    tracking = getattr(repositories, "tracking", None)
+    if tracking is not None:
+        from backend.app.services.tracking.dispatch import dispatch_tracking
+
+        try:
+            result = await dispatch_tracking(tracking, service)
+            logger.info("[Scheduler] 个人情报派发完成：%s", result)
+            succeeded = succeeded and result["failed"] == 0
+        except Exception:
+            logger.exception("[Scheduler] 个人情报派发失败")
+            succeeded = False
+    return succeeded
 
 
 async def _run_project_semantic_warmup_job(
@@ -1446,6 +1459,28 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_ui_library_discovery_job(self) -> None:
+        from backend.app.core.config import settings
+        from backend.app.services.ui_discovery import discover_web
+        async def run() -> bool:
+            async with asyncio.timeout(900):
+                async with self._github_job_lock:
+                    return await discover_web(self.repositories.ui_library, token=settings.github_token, proxy=settings.outbound_proxy)
+        await self._run_tracked(lambda: self._guarded("ui_library_discovery", run))
+
+    async def _run_ui_library_x_discovery_job(self) -> None:
+        from backend.app.services.source_plugins import load_x_transport_class
+        from backend.app.services.ui_discovery import discover_x
+        async def run() -> bool:
+            async with asyncio.timeout(900):
+                async with self._x_operation_lock:
+                    transport_class = load_x_transport_class()
+                    if transport_class is None:
+                        raise RuntimeError("X transport unavailable")
+                    transport = transport_class(credential_provider=self.repositories.x_credentials.list_enabled_x_credentials)
+                    return await discover_x(self.repositories.ui_library, transport)
+        await self._run_tracked(lambda: self._guarded("ui_library_x_discovery", run))
+
     def _is_source_job_suppressed(self, descriptor: JobDescriptor) -> bool:
         """特性开关关闭的源任务不注册、不允许在线启用（X 链路透出前不占调度面）。"""
         return (
@@ -1465,6 +1500,8 @@ class ApplicationSchedulerRuntime:
     def _job_callbacks(self) -> Dict[str, Any]:
         return {
             "_run_single_source_job": self._run_single_source_job,
+            "_run_ui_library_discovery_job": self._run_ui_library_discovery_job,
+            "_run_ui_library_x_discovery_job": self._run_ui_library_x_discovery_job,
             "_run_github_project_daily_pipeline_job": (
                 self._run_github_project_daily_pipeline_job
             ),
@@ -1496,7 +1533,7 @@ class ApplicationSchedulerRuntime:
             return self._payments_enabled
 
     def _base_descriptor(self, job_id: str) -> JobDescriptor | None:
-        for descriptor in SOURCE_JOB_DESCRIPTORS:
+        for descriptor in (*SOURCE_JOB_DESCRIPTORS, *UI_LIBRARY_JOBS):
             if descriptor.id == job_id:
                 return descriptor
         if job_id == DAILY_BRIEFING_JOB.id:
@@ -1687,6 +1724,11 @@ class ApplicationSchedulerRuntime:
                 logger.info("[Scheduler] 跳过已停用的支付关单任务: payment_order_closing")
         else:
             logger.info("[Scheduler] 支付开关关闭，跳过支付订单超时关单任务。")
+
+        for base in UI_LIBRARY_JOBS:
+            descriptor = self._effective_descriptor(base)
+            if descriptor is not None and not self._is_source_job_suppressed(descriptor):
+                _register_job(self.scheduler, descriptor, self._resolve_callback(descriptor))
 
         self.scheduler.start()
         # 登记为活动运行时：手动运维入口（IngestionAdminService）借此复用

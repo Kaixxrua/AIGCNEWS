@@ -23,6 +23,9 @@ export const projectName = (project: GitHubProjectItem) => {
   return name.trim()
 }
 
+// Keep owner/repository segments together when each segment fits the card.
+export const projectNameParts = (project: GitHubProjectItem) => projectName(project).split(/(?<=\/)/)
+
 export const projectUrl = (project: GitHubProjectItem) => {
   if (project.url) return project.url
   if (!isWebsite(project) && project.full_name) return `https://github.com/${project.full_name}`
@@ -274,19 +277,19 @@ export interface ProjectCardHeightEstimateOptions {
 }
 
 const CARD_BORDER_PX = 2
-const CARD_PADDING_PX = 44 // 上下 22×2
-const CARD_SECTION_GAPS_PX = 18 * 3 // body flex gap 18px ×（徽标/描述/标签/统计 4 段 − 1）
-const CARD_MIN_HEIGHT_PX = 248 // .project-card__body min-height
-const CARD_RAIL_MARGIN_PX = 34 // --projects-card-action-size：桌面右侧动作轨外探，挤压卡体宽
-const BADGE_ROW_PX = 27 // 徽标 ~20 + margin-bottom 7
-const TITLE_LINE_PX = 22.5 // 18px × 1.25
+const CARD_PADDING_PX = 36 // 上下 18×2
+const CARD_SECTION_GAPS_PX = 14 * 3 // header / description / tags / stats
+const CARD_MIN_HEIGHT_PX = 280 // .project-card__body min-height
+const CARD_RAIL_WIDTH_PX = 40 // 侧边操作预留宽度
+const BADGE_ROW_PX = 32 // 来源 24px + 标题 margin-top 8px
+const TITLE_LINE_PX = 24.3 // 18px × 1.35
 const DOMAIN_ROW_PX = 18 // 12px 行 + margin-top 4
-const DESC_LINE_PX = 19.5 // 13px × 1.5
+const DESC_LINE_PX = 23.8 // 14px × 1.7
 const CHIP_GAP_PX = 6
-const CHIP_TEXT_PADDING_PX = 18 // 左右 padding 16 + 边框 2
-const CHIP_LINE_PX = 16 // 11px×1.45 行高：芯片 white-space:normal，长标签会在芯片内部折行
+const CHIP_TEXT_PADDING_PX = 14 // 左右 padding 12 + 边框 2
+const CHIP_LINE_PX = 15.95 // 11px × 1.45
 const CHIP_VERTICAL_PADDING_PX = 4
-const STATS_HEAD_PX = 15 // padding-top 14 + 上边框 1
+const STATS_HEAD_PX = 13 // padding-top 12 + 上边框 1
 const STATS_LINE_PX = 18 // 12px 字 / 14px 图标取整
 const STATS_GAP_PX = 10
 
@@ -297,7 +300,7 @@ const chipGeometry = (label: string, contentWidth: number): { width: number; hei
   const lines = Math.max(1, Math.ceil(textWidth / innerWidth))
   return {
     width: Math.min(textWidth + CHIP_TEXT_PADDING_PX, contentWidth),
-    height: lines * CHIP_LINE_PX + CHIP_VERTICAL_PADDING_PX,
+    height: Math.max(20, lines * CHIP_LINE_PX + CHIP_VERTICAL_PADDING_PX),
   }
 }
 
@@ -329,21 +332,26 @@ export const estimateProjectCardHeight = (
   locale: AppLocale = 'zh-CN',
   options: ProjectCardHeightEstimateOptions = {},
 ): number => {
-  const cardWidth = Math.max(200, columnWidth)
-  const contentWidth = Math.max(80, cardWidth - CARD_RAIL_MARGIN_PX - CARD_BORDER_PX - CARD_PADDING_PX)
+  const cardWidth = Math.max(200, columnWidth - CARD_RAIL_WIDTH_PX)
+  const contentWidth = Math.max(80, cardWidth - CARD_BORDER_PX - CARD_PADDING_PX)
   let height = CARD_BORDER_PX + CARD_PADDING_PX + CARD_SECTION_GAPS_PX
   // 头部：徽标 + 标题折行（徽标+标题恒高于 42px logo，logo 不主导行高）
-  height += BADGE_ROW_PX + estimateTextLines(projectName(project), contentWidth, 18) * TITLE_LINE_PX
+  height += BADGE_ROW_PX + packRowHeights(projectNameParts(project).map(part => ({
+    width: Math.min(textAdvancePx(part, 18), contentWidth),
+    height: Math.max(1, estimateTextLines(part, contentWidth, 18)) * TITLE_LINE_PX,
+  })), contentWidth, 0)
   if (isWebsite(project) && project.domain) height += DOMAIN_ROW_PX
   const description = projectDescription(project, locale, options.descriptionFallback ?? '')
-  height += estimateTextLines(description, contentWidth, 13) * DESC_LINE_PX
+  height += estimateTextLines(description, contentWidth, 14) * DESC_LINE_PX
   const chips = projectDisplayTags(
     project,
     options.isPersonalView ?? false,
     locale,
     options.genericTagLabels ?? { project: 'AI 项目', website: '网页收藏' },
   )
-  height += packRowHeights(chips.map((chip) => chipGeometry(chip.label, contentWidth)), contentWidth, CHIP_GAP_PX)
+  const tagListWidth = chips.length > 3 ? contentWidth - 24 - CHIP_GAP_PX : contentWidth
+  const visibleChips = chips.slice(0, 3).map((chip) => chipGeometry(chip.label, tagListWidth))
+  height += packRowHeights(visibleChips, tagListWidth, CHIP_GAP_PX)
   const stats: number[] = []
   if (isWebsite(project)) {
     stats.push(statsItemWidthPx(project.domain || 'website'))

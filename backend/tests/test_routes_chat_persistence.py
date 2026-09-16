@@ -191,7 +191,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             "pdf": AttachmentMeta(
                 id="pdf",
                 user_id=3,
-                type=AttachmentType.PDF,
+                type="pdf",
                 status=AttachmentStatus.READY,
                 filename="report.pdf",
                 page_count=4,
@@ -199,7 +199,7 @@ class ChatPersistenceRouteTests(unittest.TestCase):
             "processing": AttachmentMeta(
                 id="processing",
                 user_id=3,
-                type=AttachmentType.PDF,
+                type="pdf",
                 status=AttachmentStatus.PROCESSING,
             ),
             "image": AttachmentMeta(
@@ -230,10 +230,6 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                     "backend.app.services.chat.attachment_service.get_attachment",
                     new=AsyncMock(side_effect=lambda aid, user_id: metas.get(aid)),
                 ),
-                patch(
-                    "backend.app.services.chat.attachment_service.get_pdf_text",
-                    new=AsyncMock(return_value="x" * 9000),
-                ) as get_pdf_text,
             ):
                 _ = [
                     event
@@ -244,20 +240,15 @@ class ChatPersistenceRouteTests(unittest.TestCase):
                         rag_service=rag_service,
                     )
                 ]
-                get_pdf_text.assert_awaited_once_with("pdf", 3)
                 return to_thread
 
         to_thread = asyncio.run(collect())
 
-        self.assertIn("[用户上传的 PDF 文件: report.pdf]", seen_messages[0])
-        self.assertIn("x" * 8000, seen_messages[0])
-        self.assertNotIn("x" * 8001, seen_messages[0])
-        self.assertIn("[PDF 内容结束，共 4 页]", seen_messages[0])
+        self.assertNotIn("report.pdf", seen_messages[0])
         self.assertIn("[用户上传了图片: photo.png", seen_messages[0])
-        self.assertLess(seen_messages[0].index("report.pdf"), seen_messages[0].index("photo.png"))
         self.assertEqual(
             to_thread.await_args.kwargs["attachments"],
-            [{"id": "pdf"}, {"id": "image"}],
+            [{"id": "image"}],
         )
 
     def test_stream_error_still_emits_error_and_done(self) -> None:

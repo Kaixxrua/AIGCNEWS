@@ -104,7 +104,6 @@ from backend.app.services.github_project_recommendation_admin import (
 from backend.app.services.ingestion_admin import IngestionAdminService
 from backend.app.services.mcp.admin_service import McpAdminService
 from backend.app.services.ops_diagnostics import OpsDiagnosticsService
-from backend.app.services.papers.pdf_relay import HttpxPdfRelay
 from backend.app.services.payments.config_admin import PaymentConfigAdminService
 from backend.app.services.payments.plan_overrides_admin import PaymentPlanOverridesAdminService
 from backend.app.services.payments.providers.base import PaymentProvider
@@ -561,6 +560,13 @@ def get_document_repository(
     return repositories.documents
 
 
+def get_document_vector_repository():
+    """Return the legacy document-level semantic reader for dashboard search."""
+    from backend.app.repositories.milvus_repo import MilvusRepository
+
+    return MilvusRepository()
+
+
 def get_papers_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> PapersReader:
@@ -654,9 +660,6 @@ def get_github_project_semantic_source_repository(
     return repositories.github_semantic_sources
 
 
-def get_pdf_relay() -> HttpxPdfRelay:
-    """Return the remote PDF streaming adapter."""
-    return HttpxPdfRelay()
 
 
 def get_rank_snapshot_repository(

@@ -40,8 +40,8 @@ const emit = defineEmits<{
 .projects-pagination__button { min-width: 104px; height: var(--projects-control-height, 44px); box-sizing: border-box; justify-content: center; padding: 0 14px; white-space: nowrap; }
 .projects-pagination__button--jump { min-width: 82px; }
 .projects-pagination__jump { display: flex; align-items: center; gap: 7px; margin: 0 2px; color: rgb(var(--stone-500-rgb)); font-size: 12px; font-weight: 700; }
-.projects-pagination__jump input { width: 58px; height: var(--projects-control-height, 44px); box-sizing: border-box; padding: 0 8px; color: rgb(var(--stone-700-rgb)); font-size: 13px; font-weight: 700; text-align: center; background: var(--projects-paper-light); border: 1px solid var(--projects-accent); border-radius: 4px; box-shadow: none; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease; }
-.projects-pagination__jump input:focus { border-color: var(--projects-accent); box-shadow: 0 0 0 3px var(--projects-acid); }
+.projects-pagination__jump input { width: 58px; height: var(--projects-control-height, 44px); box-sizing: border-box; padding: 0 8px; color: rgb(var(--stone-700-rgb)); font-size: 13px; font-weight: 700; text-align: center; background: var(--projects-paper-light); border: 1px solid var(--rule); border-radius: var(--control-radius); box-shadow: none; outline: none; transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease; }
+.projects-pagination__jump input:focus { border-color: var(--projects-accent); box-shadow: 0 0 0 3px var(--acid-soft); }
 .projects-pagination__jump input::-webkit-inner-spin-button, .projects-pagination__jump input::-webkit-outer-spin-button { margin: 0; appearance: none; }
 
 @media (max-width: 720px) {

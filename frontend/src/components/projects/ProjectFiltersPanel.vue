@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
 import type { AppLocale } from '@/i18n'
 import { localizedCategoryName, localizedPersonalTagLabel } from '@/features/projects/projectPresentation'
 import type {
@@ -10,7 +11,7 @@ import type {
   ProjectViewSource,
 } from '@/services/projects/projectApi'
 
-type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
+type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean; scope?: ProjectScope }
 
 const { locale, t } = useI18n()
 const label = (item: GitHubProjectCategory | undefined) => localizedCategoryName(item, locale.value as AppLocale)
@@ -50,23 +51,26 @@ const emit = defineEmits<{
   selectPersonalTag: [tag: string]
   clearPersonalTag: []
 }>()
+const isMobile = useMediaQuery('(max-width: 767px)')
 </script>
 
 <template>
   <section class="projects-toolbar glass-card">
+    <slot name="source-tabs">
     <div class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
-      <button v-for="item in sourceOptions" :key="item.value" type="button" class="projects-source-tab" :class="source === item.value ? 'projects-source-tab--active' : ''" @click="emit('changeSource', item.value)">
+      <button v-for="item in sourceOptions" :key="item.value" type="button" class="projects-source-tab" :class="source === item.value && (!item.scope || selectedScope === item.scope) ? 'projects-source-tab--active' : ''" :aria-pressed="source === item.value && (!item.scope || selectedScope === item.scope)" :title="item.hint" @click="emit('changeSource', item.value)">
         <strong>{{ item.label }}</strong>
         <small>{{ item.hint }}</small>
       </button>
     </div>
+    </slot>
 
-    <div v-if="!requiresPersonalLogin" class="projects-search">
+    <div v-if="!requiresPersonalLogin" class="projects-search" :class="{ 'projects-search--filtered': selectedLanguage }">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
       </svg>
-      <input :value="searchQuery" class="input" :class="selectedLanguage ? 'projects-search__input--with-filter' : ''" type="search" :placeholder="t('projects.searchPlaceholder')" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
+      <input :value="searchQuery" class="input" :class="selectedLanguage ? 'projects-search__input--with-filter' : ''" type="search" :aria-label="t('projects.searchPlaceholder')" :placeholder="t(isMobile ? 'projects.mobileSearch' : 'projects.searchPlaceholder')" @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)" />
       <button
         v-if="searchQuery"
         type="button"
@@ -79,9 +83,9 @@ const emit = defineEmits<{
       <button v-if="selectedLanguage" type="button" class="projects-search__filter" @click="emit('clearLanguage')">{{ selectedLanguage }} ×</button>
     </div>
 
-    <label v-if="!requiresPersonalLogin && !isPersonalView" class="projects-sort">
+    <label v-if="!requiresPersonalLogin && !isPersonalView && (!isMobile || selectedScope !== 'today')" class="projects-sort">
       <span>{{ t('projects.sort') }}</span>
-      <select :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
+      <select :aria-label="t('projects.sort')" :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
         <option v-if="!isWebsiteOnlyView && !isPersonalView" value="relevance">{{ t('projects.sortRelevance') }}</option>
         <option v-if="!isWebsiteOnlyView" value="hot">{{ t(selectedScope === 'today' ? 'projects.sortHotTop' : 'projects.sortHot') }}</option>
         <option value="stars">{{ t('projects.sortStars') }}</option>
@@ -92,7 +96,8 @@ const emit = defineEmits<{
     </label>
   </section>
 
-  <section v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :aria-label="t('projects.categoryFilter')">
+  <details v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :open="!isMobile" :aria-label="t('projects.categoryFilter')">
+    <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'today' ? label(todayScope) || t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
     <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
       <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ label(todayScope) || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
@@ -104,7 +109,7 @@ const emit = defineEmits<{
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
       <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ label(subcategory) }}</span><small>{{ subcategory.count }}</small></button>
     </div>
-  </section>
+  </details>
 
   <section v-else-if="!requiresPersonalLogin && (personalTags.length > 1 || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
     <div class="projects-categories" :aria-label="t('projects.personalTagFilter')">
@@ -115,50 +120,65 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.projects-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; padding: 14px; }
-.projects-source-tabs { display: flex; gap: 8px; flex: 0 1 auto; min-width: 0; }
-.projects-source-tab { display: inline-flex; width: auto; min-width: 0; min-height: var(--projects-control-height, 44px); box-sizing: border-box; flex: 0 0 auto; align-items: center; gap: 6px; border: 1px solid var(--projects-accent); border-radius: 4px; padding: 5px 12px; color: rgb(var(--stone-500-rgb)); background: var(--projects-paper-light); box-shadow: none; text-align: left; white-space: nowrap; transition: all 160ms ease; }
-.projects-source-tab strong { color: rgb(var(--stone-700-rgb)); font-size: 13px; white-space: nowrap; }
-.projects-source-tab small { font-size: 10px; opacity: .72; white-space: nowrap; }
-.projects-source-tab:hover { border-color: var(--projects-accent); color: var(--projects-accent); background: var(--projects-acid-soft); transform: none; }
-.projects-source-tab--active { border-color: var(--projects-accent); color: var(--projects-on-acid); background: var(--projects-acid); box-shadow: inset 0 0 0 1px var(--projects-accent); transform: none; }
-.projects-source-tab--active strong { color: var(--projects-on-acid); }
-.projects-search { position: relative; min-width: 180px; flex: 1 1 260px; }
-.projects-search svg { position: absolute; left: 16px; top: 50%; z-index: 1; width: 17px; height: 17px; color: rgb(var(--stone-400-rgb)); transform: translateY(-50%); }
-.projects-search .input { width: 100%; height: var(--projects-control-height, 44px); box-sizing: border-box; padding-right: 42px; padding-left: 44px; border: 1px solid var(--projects-accent); border-radius: 4px; background: var(--projects-paper-light); box-shadow: none; }
+.projects-category-panel > summary { display: none; }
+
+.projects-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }
+.projects-source-tabs { display: flex; min-width: 0; gap: 4px; padding: 3px; border-radius: var(--control-radius); background: var(--paper-muted); }
+.projects-source-tab { display: flex; justify-content: center; align-items: center; min-width: 0; min-height: 38px; padding: 4px 12px; border: 1px solid transparent; border-radius: 6px; color: var(--ink-secondary); white-space: nowrap; }
+.projects-source-tab strong { font-size: 13px; font-weight: 600; }
+.projects-source-tab small { display: none; }
+.projects-source-tab--active { color: var(--projects-on-acid); border-color: var(--projects-accent); background: var(--projects-acid); box-shadow: 2px 2px 0 var(--shadow-hard); }
+.projects-source-tab:hover { color: var(--ink); }
+.projects-toolbar :is(button, select):focus-visible, .projects-category:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.projects-search { position: relative; min-width: 0; }
+.projects-search > svg { position: absolute; top: 50%; left: 14px; width: 18px; height: 18px; color: var(--ink-muted); transform: translateY(-50%); pointer-events: none; }
+.projects-search .input { height: 44px; padding: 0 44px; border: 1px solid var(--ink-muted); border-radius: 6px; background: var(--paper-raised); }
+.projects-search .input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px var(--acid-soft); }
 .projects-search .input.projects-search__input--with-filter { padding-right: 142px; }
-.projects-search .input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-.projects-search__clear { position: absolute; right: 10px; top: 50%; z-index: 2; display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 4px; padding: 0; color: rgb(var(--stone-400-rgb)); background: transparent; font-size: 16px; line-height: 1; transform: translateY(-50%); transition: color 160ms ease, background 160ms ease, border-color 160ms ease; }
-.projects-search__clear:hover, .projects-search__clear:focus-visible { border-color: var(--projects-accent); color: var(--projects-accent); background: var(--projects-acid-soft); outline: none; }
-.projects-search__clear--with-filter { right: 112px; }
-.projects-search .input:focus { border-color: var(--projects-accent); box-shadow: 0 0 0 3px var(--projects-acid); }
-.projects-search__filter { position: absolute; right: 8px; top: 50%; z-index: 2; max-width: 96px; min-height: 28px; overflow: hidden; transform: translateY(-50%); border: 1px solid var(--projects-accent); border-radius: 4px; padding: 3px 8px; color: var(--projects-warm); background: var(--projects-paper-light); box-shadow: none; font-size: 11px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.projects-sort { display: inline-flex; min-width: 0; align-items: center; gap: 8px; color: rgb(var(--stone-500-rgb)); font-size: 12px; font-weight: 700; }
-.projects-sort select { min-width: 138px; height: var(--projects-control-height, 44px); box-sizing: border-box; border: 1px solid var(--projects-accent); border-radius: 4px; padding: 0 34px 0 14px; color: rgb(var(--stone-700-rgb)); background: var(--projects-paper-light); box-shadow: none; outline: none; }
-.projects-category-panel { position: relative; display: grid; gap: 12px; overflow: hidden; margin-bottom: 18px; padding: 14px; }
-.projects-category-panel::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .22; mask-image: none; background: radial-gradient(circle at 10% 10%, var(--projects-warm-soft), transparent 26%), radial-gradient(circle at 88% 0%, var(--projects-accent-soft), transparent 30%); }
-.projects-category-panel > * { position: relative; z-index: 1; }
-.projects-categories, .projects-subcategories { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 3px; }
-.projects-subcategories { align-items: center; padding-top: 11px; border-top: 1px solid var(--projects-accent); }
-.projects-subcategories__label { display: inline-flex; min-height: var(--projects-control-compact-height, 36px); box-sizing: border-box; flex-shrink: 0; align-items: center; border: 1px solid var(--projects-accent); border-radius: 4px; padding: 0 10px; color: rgb(var(--stone-500-rgb)); background: var(--projects-paper-light); box-shadow: none; font-size: 11px; font-weight: 800; letter-spacing: .04em; }
-.projects-category { display: inline-flex; min-height: var(--projects-control-compact-height, 36px); box-sizing: border-box; align-items: center; gap: 8px; flex-shrink: 0; border-radius: 4px; padding: 0 12px; font-size: 13px; font-weight: 700; transition: all 160ms ease; }
-.projects-category--scope, .projects-category--recommend, .projects-category--today { box-shadow: inset 0 0 0 1px rgb(var(--stone-400-rgb) / 0.18); }
-.projects-category--sub { padding: 0 11px; font-size: 12px; }
-.projects-category small { font-size: 11px; opacity: .68; }
-.projects-category:hover, .projects-category:focus-visible, :deep(.tab-inactive:hover) { border-color: var(--projects-accent); color: var(--projects-accent); background: var(--projects-acid-soft); transform: none; }
-:deep(.tab-active) { border-color: var(--projects-accent); color: var(--projects-on-acid); background: var(--projects-acid); box-shadow: inset 0 0 0 1px var(--projects-accent); transform: none; }
-:deep(.tab-inactive) { border: 1px solid var(--projects-accent); border-radius: 4px; background: var(--projects-paper-light); }
-
-@media (max-width: 1040px) {
-  .projects-toolbar { flex-wrap: wrap; }
-  .projects-search { order: 3; flex-basis: 100%; }
+.projects-search .input::-webkit-search-cancel-button { appearance: none; }
+.projects-search__clear, .projects-search__filter { position: absolute; top: 50%; right: 4px; display: flex; align-items: center; justify-content: center; height: 36px; min-width: 36px; border-radius: 6px; transform: translateY(-50%); color: var(--ink-secondary); }
+.projects-search__clear:hover, .projects-search__filter:hover { background: var(--paper-muted); }
+.projects-search__filter { right: 8px; max-width: 96px; padding: 0 8px; overflow: hidden; background: var(--paper-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.projects-search__clear--with-filter { right: 106px; }
+.projects-sort { display: flex; align-items: center; gap: 8px; color: var(--ink-secondary); font-size: 12px; }
+.projects-sort select { min-width: 124px; max-width: 100%; height: 44px; padding: 0 8px; color: var(--ink-secondary); background: var(--paper-raised); border: 1px solid var(--rule); border-radius: var(--control-radius); font-size: 13px; }
+.projects-category-panel { display: grid; gap: 8px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }
+.projects-categories, .projects-subcategories { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.projects-categories::-webkit-scrollbar, .projects-subcategories::-webkit-scrollbar { display: none; }
+.projects-subcategories { border-top: 1px solid var(--rule); padding-top: 8px; }
+.projects-subcategories__label { flex-shrink: 0; font-size: 12px; color: var(--ink-secondary); }
+.projects-category { display: inline-flex; align-items: center; flex-shrink: 0; gap: 6px; min-height: 36px; padding: 4px 10px; border: 1px solid var(--rule); border-radius: 5px; color: var(--ink-secondary); background: var(--paper-raised); font-size: 13px; font-weight: 550; white-space: nowrap; }
+.projects-category small { font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
+.projects-category:hover { background: var(--paper-muted); color: var(--ink); }
+.projects-category.tab-active, .projects-category.tab-active:hover { color: var(--projects-on-acid); background: var(--projects-acid); border-color: var(--projects-accent); font-weight: 750; box-shadow: 2px 2px 0 var(--shadow-hard); }
+@media (max-width: 1023px) {
+  .projects-toolbar { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .projects-source-tabs { width: fit-content; max-width: 100%; }
+  .projects-sort { grid-column: 2; grid-row: 1; }
+  .projects-search { grid-column: 1 / -1; grid-row: 2; }
+  .projects-category { min-height: 44px; }
+}
+@media (max-width: 639px) {
+  .projects-sort > span { display: none; }
+  .projects-sort select { min-width: 100px; width: 108px; font-size: 12px; }
+  .projects-source-tabs { width: 100%; }
+  .projects-source-tab { flex: 1 1 0; padding: 4px; }
+  .projects-source-tab strong { font-size: 12px; white-space: nowrap; }
+  .projects-search .input { font-size: 16px; }
+}
+@media (max-width: 767px) {
+  .projects-toolbar { flex-direction: row; flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .projects-source-tabs { flex: 1 0 100%; width: 100%; overflow-x: auto; }
+  .projects-source-tab { flex: 1; justify-content: center; }
+  .projects-source-tab small { display: none; }
+  .projects-search { order: initial; flex: 1 1 0; min-width: 0; }
+  .projects-search--filtered { flex-basis: 100%; }
+  .projects-search .input { padding-left: 34px; }
+  .projects-search svg { left: 12px; }
+  .projects-sort { flex: 0 0 108px; width: 108px; }
+  .projects-sort select { width: 100%; min-width: 0; padding-left: 8px; padding-right: 24px; font-size: 14px; }
+  .projects-sort span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
-@media (max-width: 720px) {
-  .projects-toolbar { align-items: flex-start; flex-direction: column; }
-  .projects-toolbar, .projects-source-tabs, .projects-search, .projects-sort, .projects-sort select { width: 100%; }
-  .projects-source-tabs { overflow-x: auto; }
-  .projects-search { order: initial; min-width: 0; }
-  .projects-sort span { flex-shrink: 0; }
-}
+@media (max-width: 767px) { .projects-toolbar { display: flex; } .projects-source-tabs { background: transparent; } }
 </style>

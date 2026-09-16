@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.app.services.chat import attachment_service
-from backend.app.services.chat.attachment_policy import ValidatedImage, ValidatedPdf
+from backend.app.services.chat.attachment_policy import ValidatedImage
 from backend.app.services.chat.attachment_service import _PostgresMetaStore
 
 
@@ -157,100 +157,9 @@ class AttachmentServiceTests(unittest.TestCase):
         self.assertIn("boundary", attachment_service._image_cache)
         self.assertIn(meta.id, attachment_service._image_cache)
 
-    def test_pdf_text_is_absent_for_other_owner(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\n", filename="report.pdf")
-        with tempfile.TemporaryDirectory() as upload_dir:
-            with (
-                patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-                patch.object(
-                    attachment_service,
-                    "extract_pdf_text",
-                    return_value=("secret", 1),
-                ),
-            ):
-                async def exercise() -> None:
-                    meta = await attachment_service.upload_pdf(content, user_id=7)
-                    self.assertEqual(meta.status, attachment_service.AttachmentStatus.READY)
-                    self.assertEqual(await attachment_service.get_pdf_text(meta.id, 7), "secret")
-                    self.assertIs(await attachment_service.get_pdf_text(meta.id, 8), None)
-                    self.assertTrue(os.path.exists(os.path.join(upload_dir, f"{meta.id}.pdf")))
 
-                asyncio.run(exercise())
 
-    def test_pdf_registers_processing_before_sync_write_and_threaded_parse(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\nbody", filename="report.pdf")
-        observed: dict[str, object] = {}
-        store = self._store
 
-        class RecordingFile:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return None
-
-            def write(self, data: bytes) -> int:
-                meta = next(iter(store.entries.values()))
-                observed["status_at_write"] = meta.status
-                observed["bytes"] = data
-                return len(data)
-
-        async def run_in_thread(function, *args):
-            observed["thread_call"] = (function, args)
-            return "preview" * 100, 3
-
-        with (
-            patch.object(attachment_service, "_PDF_UPLOAD_DIR", "/tmp/contracts"),
-            patch("builtins.open", return_value=RecordingFile()) as opened,
-            patch(
-                "backend.app.services.chat.attachment_storage.asyncio.to_thread",
-                new=run_in_thread,
-            ),
-        ):
-            meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-
-        opened.assert_called_once_with(f"/tmp/contracts/{meta.id}.pdf", "wb")
-        self.assertEqual(observed["status_at_write"], attachment_service.AttachmentStatus.PROCESSING)
-        self.assertEqual(observed["bytes"], content.data)
-        self.assertEqual(
-            observed["thread_call"],
-            (attachment_service.extract_pdf_text, (f"/tmp/contracts/{meta.id}.pdf",)),
-        )
-        self.assertEqual(meta.status, attachment_service.AttachmentStatus.READY)
-        self.assertEqual(meta.page_count, 3)
-        self.assertEqual(meta.text_preview, ("preview" * 100)[:500])
-
-    def test_pdf_write_failure_keeps_registration_without_file_cleanup(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\n", filename="report.pdf")
-        with (
-            tempfile.TemporaryDirectory() as upload_dir,
-            patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-            patch("builtins.open", side_effect=OSError("disk detail")),
-        ):
-            meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-
-        self.assertIs(self._store.entries[meta.id], meta)
-        self.assertEqual(meta.status, attachment_service.AttachmentStatus.ERROR)
-        self.assertEqual(meta.error_msg, "附件保存失败")
-
-    def test_pdf_parse_failure_leaves_written_file_and_registration(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\n", filename="report.pdf")
-        with tempfile.TemporaryDirectory() as upload_dir:
-            with (
-                patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-                patch.object(
-                    attachment_service,
-                    "extract_pdf_text",
-                    side_effect=RuntimeError("parse detail"),
-                ),
-            ):
-                meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-                path = os.path.join(upload_dir, f"{meta.id}.pdf")
-                self.assertTrue(os.path.exists(path))
-
-        self.assertIs(self._store.entries[meta.id], meta)
-        self.assertEqual(meta.status, attachment_service.AttachmentStatus.ERROR)
-        self.assertEqual(meta.error_msg, "PDF 解析失败")
 
     def test_list_preserves_requested_order_duplicates_and_owner_filter(self) -> None:
         first = attachment_service.AttachmentMeta(
@@ -262,7 +171,7 @@ class AttachmentServiceTests(unittest.TestCase):
         second = attachment_service.AttachmentMeta(
             id="second",
             user_id=7,
-            type=attachment_service.AttachmentType.PDF,
+            type=attachment_service.AttachmentType.IMAGE,
             status=attachment_service.AttachmentStatus.PROCESSING,
         )
         other = attachment_service.AttachmentMeta(
@@ -281,22 +190,6 @@ class AttachmentServiceTests(unittest.TestCase):
 
         self.assertEqual(result, [second, first, second])
 
-    def test_service_errors_do_not_expose_exception_details(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\n", filename="report.pdf")
-        with tempfile.TemporaryDirectory() as upload_dir:
-            with (
-                patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-                patch.object(
-                    attachment_service,
-                    "extract_pdf_text",
-                    side_effect=RuntimeError("sensitive path"),
-                ),
-            ):
-                meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-
-        self.assertEqual(meta.status, attachment_service.AttachmentStatus.ERROR)
-        self.assertEqual(meta.error_msg, "PDF 解析失败")
-        self.assertNotIn("sensitive", meta.error_msg)
 
 
 class AttachmentMetaPersistenceTests(unittest.TestCase):
@@ -310,44 +203,6 @@ class AttachmentMetaPersistenceTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         attachment_service._image_cache.clear()
 
-    def test_pdf_metadata_survives_restart_with_owner_scope(self) -> None:
-        content = ValidatedPdf(data=b"%PDF-1.7\nbody", filename="report.pdf")
-        with tempfile.TemporaryDirectory() as upload_dir:
-            with (
-                patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-                patch.object(
-                    attachment_service,
-                    "extract_pdf_text",
-                    return_value=("full text", 4),
-                ),
-            ):
-                meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-                pdf_path = os.path.join(upload_dir, f"{meta.id}.pdf")
-                self.assertTrue(os.path.exists(pdf_path))
-
-                # 模拟进程重启：同一“数据库”上的全新仓储/服务适配实例。
-                restarted = _PostgresMetaStore(self._repository)
-                patcher = patch.object(attachment_service, "_meta_store", restarted)
-                patcher.start()
-                self.addCleanup(patcher.stop)
-
-                async def exercise() -> None:
-                    restored = await attachment_service.get_attachment(meta.id, 7)
-                    self.assertIsNotNone(restored)
-                    self.assertEqual(restored.id, meta.id)
-                    self.assertEqual(restored.user_id, 7)
-                    self.assertEqual(restored.type, attachment_service.AttachmentType.PDF)
-                    self.assertEqual(restored.status, attachment_service.AttachmentStatus.READY)
-                    self.assertEqual(restored.filename, "report.pdf")
-                    self.assertEqual(restored.page_count, 4)
-                    self.assertEqual(restored.text_preview, "full text"[:500])
-                    self.assertIs(await attachment_service.get_attachment(meta.id, 8), None)
-                    # 落盘文件仍在，下载/引用链路正常。
-                    self.assertEqual(
-                        await attachment_service.get_pdf_text(meta.id, 7), "full text"
-                    )
-
-                asyncio.run(exercise())
 
     def test_image_metadata_row_carries_ttl_expiry(self) -> None:
         content = ValidatedImage(
@@ -364,59 +219,23 @@ class AttachmentMetaPersistenceTests(unittest.TestCase):
         self.assertEqual(row["expires_at"], 1600.0)
         self.assertIsNone(row["storage_path"])
 
-    def test_reconcile_removes_orphan_files_and_expired_rows(self) -> None:
-        repository = FakeMetaRepository()
-        content = ValidatedPdf(data=b"%PDF-1.7\n", filename="keep.pdf")
-        with tempfile.TemporaryDirectory() as upload_dir:
-            with (
-                patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-                patch.object(
-                    attachment_service,
-                    "extract_pdf_text",
-                    return_value=("text", 1),
-                ),
-                patch.object(attachment_service, "_meta_repository", repository),
-                patch.object(
-                    attachment_service, "_meta_store", _PostgresMetaStore(repository)
-                ),
-            ):
-                meta = asyncio.run(attachment_service.upload_pdf(content, user_id=7))
-                # 过期图片元数据行（TTL 到期）与未过期行各一。
-                repository.upsert_attachment_meta(
-                    attachment_id="expired-image",
-                    user_id=7,
-                    attachment_type="image",
-                    status="ready",
-                    created_at=100.0,
-                    expires_at=700.0,
-                )
-                repository.upsert_attachment_meta(
-                    attachment_id="fresh-image",
-                    user_id=7,
-                    attachment_type="image",
-                    status="ready",
-                    created_at=100.0,
-                    expires_at=1700.0,
-                )
-                orphan_path = os.path.join(upload_dir, "orphan-id.pdf")
-                with open(orphan_path, "wb") as file:
-                    file.write(b"%PDF-1.7\norphan")
 
-                with patch.object(attachment_service.time, "time", return_value=1000.0):
-                    result = attachment_service.reconcile_orphan_attachments(
-                        upload_dir=upload_dir
-                    )
 
-                self.assertEqual(
-                    result, {"orphan_files_removed": 1, "expired_rows_removed": 1}
-                )
-                self.assertFalse(os.path.exists(orphan_path))
-                self.assertTrue(
-                    os.path.exists(os.path.join(upload_dir, f"{meta.id}.pdf"))
-                )
-                self.assertNotIn("expired-image", repository.rows)
-                self.assertIn("fresh-image", repository.rows)
-                self.assertIn(meta.id, repository.rows)
+
+    def test_legacy_pdf_metadata_is_not_exposed_or_parsed(self) -> None:
+        self._repository.rows["old"] = {"attachment_id": "old", "user_id": 7, "attachment_type": "pdf"}
+        self.assertIsNone(asyncio.run(self._store.get_owned("old", 7)))
+        self.assertEqual(asyncio.run(self._store.list_owned(["old"], 7)), [])
+
+    def test_reconciliation_preserves_historical_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "old.pdf")
+            with open(path, "wb") as file:
+                file.write(b"historical data")
+            with patch.object(attachment_service, "_meta_repository", self._repository):
+                result = attachment_service.reconcile_orphan_attachments(now=100.0)
+            self.assertTrue(os.path.isfile(path))
+        self.assertEqual(result, {"orphan_files_removed": 0, "expired_rows_removed": 0})
 
 
 if __name__ == "__main__":

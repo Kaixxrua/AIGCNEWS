@@ -9,6 +9,8 @@ from backend.app.repositories.scheduler_job_config_repository import (
 )
 
 DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
+    "ui_library_discovery": SchedulerJobConfig(job_id="ui_library_discovery", start_time=time(9), end_time=time(9), interval_minutes=1440),
+    "ui_library_x_discovery": SchedulerJobConfig(job_id="ui_library_x_discovery", start_time=time(9, 10), end_time=time(9, 10), interval_minutes=1440),
     "arxiv_papers": SchedulerJobConfig(
         job_id="arxiv_papers",
         start_time=time(0, 0),
@@ -103,6 +105,8 @@ DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
 
 
 _JOB_NAMES: dict[str, str] = {
+    "ui_library_discovery": "UI 素材库每日发现（开源组件与 Codrops）",
+    "ui_library_x_discovery": "UI 素材库设计师 X 新作发现",
     "arxiv_papers": "HuggingFace Papers 论文采集",
     "github_trending": "GitHub Trending 热榜采集",
     "news_techmeme": "Techmeme 科技新闻采集",

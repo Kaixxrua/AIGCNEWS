@@ -173,6 +173,7 @@ class PostgresXTranslationTaskRepository:
                         FOR UPDATE SKIP LOCKED
                         LIMIT %s
                     )
+                    , claimed AS (
                     UPDATE x_translation_tasks AS task
                     SET status = 'running', started_at = CURRENT_TIMESTAMP,
                         updated_at = CURRENT_TIMESTAMP,
@@ -181,6 +182,13 @@ class PostgresXTranslationTaskRepository:
                     FROM candidates
                     WHERE task.id = candidates.id
                     RETURNING task.*
+                    )
+                    SELECT claimed.*, document.media AS document_media,
+                           document.quote AS document_quote,
+                           document.summary AS document_source_text,
+                           document.url AS document_url
+                    FROM claimed
+                    LEFT JOIN documents AS document ON document.id = claimed.document_id
                     """,
                     (batch_limit, str(uuid.uuid4()), lease),
                 )

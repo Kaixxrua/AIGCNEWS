@@ -563,16 +563,13 @@ pymilvus==3.0.0
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
     #   -r backend/requirements.txt
-pymupdf==1.28.0
-    # via
-    #   -c /tmp/aigcnews-x-constraints.txt
-    #   -r backend/requirements.txt
 pypdf==6.14.2
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
     #   -r backend/requirements.txt
 pypdfium2==5.12.0
     # via
+    #   -r backend/requirements.txt
     #   -c /tmp/aigcnews-x-constraints.txt
     #   pdfplumber
 python-dateutil==2.9.0.post0

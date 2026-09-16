@@ -19,6 +19,7 @@ import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
+import WebsiteCollectionTabs from '@/components/websites/WebsiteCollectionTabs.vue'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
@@ -67,7 +68,7 @@ const SYNC_POLL_INTERVAL = 30_000
 let hasActivatedOnce = false
 let searchTimer: number | undefined
 
-type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean }
+type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean; scope?: ProjectScope }
 
 const { applyRouteState, currentProjectsRedirect, endStateBatch, isApplyingRouteState, isReplacingRoute, replaceRouteFromState, routeStateMatchesRoute } = useProjectRouteState(route, router, {
   source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page,
@@ -100,8 +101,8 @@ const { pause: pauseSyncPoll, resume: resumeSyncPoll } = useIntervalFn(() => {
   void refreshReads({ clearSuccess: false, preserveContent: true })
 }, SYNC_POLL_INTERVAL, { immediate: false })
 const sourceOptions = computed<SourceOption[]>(() => [
-  { value: 'all', label: t('projects.source.allLabel'), hint: t('projects.source.allHint') },
-  { value: 'favorites', label: t('projects.source.favoritesLabel'), hint: t('projects.source.favoritesHint'), authOnly: true },
+  { value: 'all', label: source.value === 'website' ? t('recommendedWebsites.title') : t('projects.source.allLabel'), hint: source.value === 'website' ? t('recommendedWebsites.subtitle') : t('projects.source.allHint') },
+  { value: 'website', label: t('projects.source.websiteLabel'), hint: t('projects.source.websiteHint'), authOnly: true },
 ])
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const hasPrev = computed(() => page.value > 1)
@@ -245,6 +246,10 @@ const resetAndLoad = () => {
 }
 const resetScopeToAll = () => { selectedScope.value = 'all' }
 const changeSource = (nextSource: ProjectViewSource) => {
+  if (source.value === 'website' && nextSource === 'all') {
+    void router.push('/websites')
+    return
+  }
   if (source.value === nextSource) return
   isApplyingRouteState.value = true
   source.value = nextSource
@@ -501,9 +506,17 @@ onBeforeUnmount(stopViewReads)
       @select-subcategory="selectSubcategory"
       @select-personal-tag="selectPersonalTag"
       @clear-personal-tag="clearPersonalTag"
-    />
+    >
+      <template v-if="isWebsiteOnlyView" #source-tabs><WebsiteCollectionTabs active="personal" /></template>
+    </ProjectFiltersPanel>
 
-    <section v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card" aria-labelledby="mcp-promo-title">
+    <details v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card">
+      <summary class="projects-mcp-promo__summary">
+        <span class="projects-mcp-promo__title">{{ t('projects.mcpPromo.title') }}</span>
+        <span class="projects-mcp-promo__expand">{{ t('projects.mcpPromo.expand') }}</span>
+        <svg class="projects-mcp-promo__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+      </summary>
+      <div class="projects-mcp-promo__content">
       <div class="projects-mcp-promo__controls">
         <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
           {{ t('projects.mcpPromo.dismissWeek') }}
@@ -529,7 +542,8 @@ onBeforeUnmount(stopViewReads)
           <path d="m14 7 5 5-5 5" />
         </svg>
       </RouterLink>
-    </section>
+      </div>
+    </details>
 
     <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
       {{ successMsg }}
@@ -668,42 +682,17 @@ onBeforeUnmount(stopViewReads)
   position: relative;
   height: 100%;
   overflow-y: auto;
-  padding: 24px 24px 96px;
+  padding: 16px 24px 24px;
   color: var(--projects-accent);
   background: var(--projects-paper);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
-.projects-page :deep(.glass-card) {
-  border: 1px solid var(--projects-accent);
-  border-radius: 6px;
-  background: var(--projects-paper-light);
-  box-shadow: 4px 4px 0 var(--shadow-hard);
-  backdrop-filter: none;
-}
+.projects-page :deep(.glass-card) { border: 1px solid var(--rule); border-radius: var(--module-radius); background: var(--projects-paper-light); box-shadow: none; backdrop-filter: none; }
 
-.projects-hero {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  overflow: hidden;
-  margin-bottom: 10px;
-  padding: 10px 16px;
-}
+.projects-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }
 
-.projects-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.22;
-  background-image:
-    linear-gradient(rgb(var(--stone-400-rgb) / 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--stone-400-rgb) / 0.09) 1px, transparent 1px);
-  background-size: 28px 28px;
-}
+.projects-hero::after { display: none; }
 
 .projects-hero__text {
   position: relative;
@@ -735,13 +724,11 @@ onBeforeUnmount(stopViewReads)
   letter-spacing: -0.055em;
 }
 
-.projects-hero h1 {
-  font-size: clamp(18px, 2.4vw, 26px);
-  line-height: 1;
-}
+.projects-hero h1 { display: flex; align-items: center; gap: 10px; font-size: var(--text-page); font-weight: 800; letter-spacing: -.03em; line-height: 1.3; }
+.projects-hero h1::before { content: ''; display: block; width: 10px; height: 26px; border: 1px solid var(--projects-accent); border-radius: 2px; background: var(--projects-acid); box-shadow: 2px 2px 0 var(--shadow-hard); }
 
 /* 网页收藏视图：h1 直接展示「我的网页收藏」，隐藏重复的小 kicker */
-.projects-hero--website .projects-kicker {
+.projects-hero .projects-kicker {
   display: none;
 }
 
@@ -927,185 +914,26 @@ onBeforeUnmount(stopViewReads)
   height: 16px;
 }
 
-.projects-mcp-promo {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 10px;
-  padding: 16px 20px;
-}
 
-.projects-mcp-promo__copy {
-  max-width: 720px;
-}
+.projects-page .projects-mcp-promo { margin-bottom: 18px; border-color: var(--projects-accent); border-radius: 6px; background: var(--projects-acid-soft); }
+.projects-mcp-promo__summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.projects-mcp-promo__summary::-webkit-details-marker { display: none; }
+.projects-mcp-promo__title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
+.projects-mcp-promo__title::before { content: '✦'; color: var(--tone-lime); font-size: 18px; }
+.projects-mcp-promo__expand { margin-left: auto; color: var(--ink-secondary); font-size: 12px; }
+.projects-mcp-promo__chevron { width: 26px; height: 26px; flex: 0 0 26px; padding: 5px; border: 1px solid var(--projects-accent); border-radius: 4px; color: var(--projects-on-acid); background: var(--projects-acid); }
+.projects-mcp-promo[open] .projects-mcp-promo__chevron { transform: rotate(180deg); }
+.projects-mcp-promo__content { padding: 4px 16px 16px; border-top: 1px solid var(--rule); }
+.projects-mcp-promo__controls { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 0; }
+.projects-mcp-promo__dismiss, .projects-mcp-promo__dismiss-week { min-height: 36px; padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--control-radius); font-size: 12px; }
+.projects-mcp-promo__dismiss { min-width: 36px; }
+.projects-mcp-promo__copy h2 { display: none; }
+.projects-mcp-promo__copy > p { color: var(--ink-secondary); font-size: 14px; line-height: 1.7; margin: 8px 0; }
+.projects-mcp-promo__copy .projects-kicker { display: none; }
+.projects-mcp-promo__action { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin-top: 12px; color: var(--ink); font-size: 13px; font-weight: 650; text-decoration: underline; text-underline-offset: 4px; }
+.projects-mcp-promo__action svg { width: 16px; height: 16px; }
+.projects-mcp-promo__action:hover { color: var(--ink-secondary); }
 
-.projects-mcp-promo__copy h2 {
-  color: var(--projects-accent);
-  font-weight: 900;
-  letter-spacing: -0.045em;
-  font-size: clamp(18px, 2vw, 22px);
-  line-height: 1.1;
-}
-
-.projects-mcp-promo__copy > p:not(.projects-kicker) {
-  margin-top: 8px;
-  color: rgb(var(--stone-500-rgb));
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.projects-mcp-promo__try {
-  font-size: 12px;
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-list) {
-  margin-top: 12px;
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-demo),
-.projects-mcp-promo :deep(.mcp-prompt-text--static),
-.empty-state :deep(.mcp-prompt-demo),
-.empty-state :deep(.mcp-prompt-text--static) {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  padding: 6px 10px;
-  color: rgb(var(--stone-600-rgb));
-  background: var(--projects-paper-light);
-  font-size: 11px;
-  font-weight: 800;
-  text-align: left;
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-demo),
-.empty-state :deep(.mcp-prompt-demo) {
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-demo):hover,
-.empty-state :deep(.mcp-prompt-demo):hover {
-  background: var(--projects-acid-soft);
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-copy),
-.empty-state :deep(.mcp-prompt-copy) {
-  display: inline-flex;
-  min-height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  padding: 4px 8px;
-  color: var(--projects-accent);
-  background: var(--projects-paper-light);
-  font-size: 11px;
-  font-weight: 800;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-
-.projects-mcp-promo :deep(.mcp-prompt-copy):hover,
-.empty-state :deep(.mcp-prompt-copy):hover {
-  background: var(--projects-acid-soft);
-}
-
-.projects-mcp-promo__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: var(--projects-control-height);
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  padding: 0 19px;
-  color: var(--projects-on-acid);
-  background: var(--projects-acid);
-  font-size: 13px;
-  font-weight: 800;
-  white-space: nowrap;
-  transition: background 160ms ease;
-}
-
-.projects-mcp-promo__action:hover {
-  color: var(--projects-paper-light);
-  background: var(--projects-accent);
-}
-
-.projects-mcp-promo__action svg {
-  width: 16px;
-  height: 16px;
-}
-
-.projects-mcp-promo__controls {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.projects-mcp-promo__dismiss {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  color: var(--projects-accent);
-  background: var(--projects-paper-light);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-
-.projects-mcp-promo__dismiss-week {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 10px;
-  border: 1px solid var(--projects-accent);
-  border-radius: 4px;
-  color: var(--projects-accent);
-  background: var(--projects-paper-light);
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 160ms ease;
-}
-
-.projects-mcp-promo__dismiss:hover,
-.projects-mcp-promo__dismiss-week:hover {
-  background: var(--projects-acid-soft);
-}
-
-.empty-state__mcp {
-  margin-top: 24px;
-}
-
-.empty-state__mcp-lead {
-  margin-bottom: 10px;
-  color: rgb(var(--stone-500-rgb));
-  font-size: 13px;
-}
-
-.empty-state :deep(.mcp-prompt-list) {
-  justify-content: center;
-}
-
-/* 估高贪心瀑布流（与 X 页同一套 distributeColumns）：JS 按卡片估高把
-   每项放进当前最矮列，列高各自独立、卡片按内容高度堆叠；列数跟随容器
-   宽（镜像旧 auto-fill minmax(260px,1fr) 的断档）。轨道为 JS 分配的整数
-   像素（余数从左起每列 +1），避免 1fr 半像素轨道让 1px 边框发虚。 */
 .projects-grid {
   position: relative;
   display: grid;
@@ -1157,7 +985,7 @@ onBeforeUnmount(stopViewReads)
 
 @media (max-width: 720px) {
   .projects-page {
-    padding: 16px 16px 96px;
+    padding: 16px;
   }
 
   .projects-hero,
@@ -1166,17 +994,15 @@ onBeforeUnmount(stopViewReads)
     flex-direction: column;
   }
 
-  .projects-mcp-promo {
-    grid-template-columns: 1fr;
-    padding: 16px;
-  }
+  .projects-mcp-promo__expand { display: none; }
+  .projects-mcp-promo__chevron { margin-left: auto; }
 
   .projects-mcp-promo__action {
     width: 100%;
   }
 
   .projects-hero {
-    padding: 10px 14px;
+    padding: 0;
   }
 
   .projects-login-prompt {
@@ -1204,11 +1030,11 @@ onBeforeUnmount(stopViewReads)
    空状态标题收小避免撑破；h1 已有 clamp(18px,…) 兜底，无需再压 */
 @media (max-width: 639px) {
   .projects-page {
-    padding: 12px 12px 96px;
+    padding: 12px;
   }
 
   .projects-hero {
-    padding: 10px 12px;
+    padding: 0;
   }
 
   .projects-grid,
@@ -1216,7 +1042,6 @@ onBeforeUnmount(stopViewReads)
     gap: 10px;
   }
 
-  .projects-mcp-promo,
   .projects-login-prompt {
     padding: 14px;
   }
@@ -1228,6 +1053,14 @@ onBeforeUnmount(stopViewReads)
   .empty-state h2 {
     font-size: 26px;
   }
+}
+
+@media (max-width: 767px) {
+  .projects-page .projects-hero { padding: 0; border: 0; background: transparent; box-shadow: none; }
+  .projects-hero::after { display: none; }
+  .projects-hero h1 { font-size: 22px; line-height: 1.3; }
+  .projects-hero .projects-kicker { display: none; }
+  .projects-mcp-promo { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
