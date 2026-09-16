@@ -26,6 +26,9 @@ def test_ci_jobs_materialize_fixture_before_catalog_consumers() -> None:
     assert deployment.count("Inject the production UI catalog") == 2
     assert 'cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/."' in deployment
 
+    dockerfile = (ROOT / "frontend/Dockerfile").read_text(encoding="utf-8")
+    assert "npm_config_ignore_scripts=true npm run build" in dockerfile
+
 
 def test_fixture_script_has_valid_python_syntax() -> None:
     result = subprocess.run(
