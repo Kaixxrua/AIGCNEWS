@@ -88,7 +88,7 @@ const emit = defineEmits<{
         <span class="stat-cell-label">{{ t('dashboard.stats.todayUiMaterials') }}</span>
       </span>
       <span v-if="todayUiCountLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
-      <RollingNumber v-else :value="todayUiCount" grouping class="stat-cell-num stat-cell-ui-num" />
+      <span v-else class="stat-cell-num stat-cell-ui-num">{{ todayUiCount.toLocaleString() }}</span>
     </RouterLink>
   </div>
 </template>
