@@ -7,6 +7,7 @@ import { subscribeLiveStats } from '@/composables/useLiveStatsStream'
 import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
+import DashboardDailyUi from '@/components/dashboard/DashboardDailyUi.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRadarCard from '@/components/dashboard/DashboardRadarCard.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
@@ -87,6 +88,8 @@ subscribeLiveStats(applyLiveStats)
       :visitor-values="visitorValues"
       @select-source="selectSourceTab"
     />
+
+    <DashboardDailyUi v-if="!loading" />
 
     <!-- 主区域：榜单/空态占满剩余高度，日历与订阅入口收入右侧栏 -->
     <div class="dashboard-main dashboard-content flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">

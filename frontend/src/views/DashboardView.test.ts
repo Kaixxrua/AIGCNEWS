@@ -77,6 +77,7 @@ const mountView = async () => {
       },
       stubs: {
         GlassCalendar: { template: '<div />' },
+        DashboardDailyUi: { template: '<section class="daily-ui-stub" />' },
         DashboardOverviewPanel: { template: '<div />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { template: '<div />' },
@@ -96,6 +97,7 @@ describe('DashboardView', () => {
   it('renders a single digest CTA that opens the report subscription wizard', async () => {
     const wrapper = await mountView()
 
+    expect(wrapper.find('.daily-ui-stub').exists()).toBe(true)
     expect(wrapper.text()).toContain(messages.dashboard.digest.title)
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
     expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)

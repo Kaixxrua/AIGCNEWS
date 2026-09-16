@@ -59,6 +59,8 @@ const createApi = (): MonitorApi => ({
   fetchEmailPoolConfig: vi.fn(), saveEmailPoolConfig: vi.fn(), testEmailPoolConfig: vi.fn(async () => ({ status: 'success', message: '' })),
   fetchEmailDeliveryStats: vi.fn(async () => ({ days: [] })),
   fetchSiteContactPageConfig: vi.fn(), saveSiteContactPageConfig: vi.fn(), uploadSiteImage: vi.fn(),
+  fetchUiDiscoverySources: vi.fn(async () => ({ builtin: [], custom: [] })),
+  saveUiDiscoverySource: vi.fn(), deleteUiDiscoverySource: vi.fn(),
   grantMembership: vi.fn(async () => ({ user_id: 7, email: 'member@example.com', membership_tier: 'member', membership_expires_at: null, revoked: false })),
   listMembershipUsers: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 20 })),
   fetchPaymentPlanPricing: vi.fn(async () => ({ plans: [] as PaymentPlanPricing[] })),

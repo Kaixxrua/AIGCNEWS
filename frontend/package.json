@@ -24,6 +24,7 @@
     "katex": "^0.16.22",
     "lucide-vue-next": "^0.577.0",
     "markdown-it": "^14.1.1",
+    "pdfjs-dist": "^5.7.284",
     "pinia": "^3.0.4",
     "three": "^0.180.0",
     "vue": "^3.5.25",
