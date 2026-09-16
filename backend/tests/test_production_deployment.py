@@ -126,6 +126,9 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert "group: aigcnews-production" in deployment
     assert "cancel-in-progress: false" in deployment
     assert deployment.index("  deploy:") < deployment.index("    concurrency:")
+    assert "AIGCNEWS_GODOT_RELEASE_ROOT" in deployment
+    assert "stage_private_frontend.py" in deployment
+    assert "GodotContactScene.test.ts" in deployment
     assert "--match-head-commit \"$HEAD_SHA\"" in auto_merge
     assert "--head \"$HEAD_BRANCH\"" in auto_merge
     assert "--auto" not in auto_merge

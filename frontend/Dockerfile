@@ -7,7 +7,10 @@ COPY package*.json ./
 # npm ci 严格按 package-lock.json 复现安装
 RUN npm ci --registry=https://registry.npmmirror.com
 COPY . .
-RUN UI_LIBRARY_DATA_ROOT=/app/.ui-library-data npm run build
+# Production receives immutable, reviewed preview packages from the private
+# release overlay. Run the requested build script without npm's prebuild hook,
+# which is the developer-only preview generator for upstream source snapshots.
+RUN UI_LIBRARY_DATA_ROOT=/app/.ui-library-data npm_config_ignore_scripts=true npm run build
 
 # 阶段二：使用轻量级 Nginx 提供网页访问服务（含 HTTPS）
 FROM nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
