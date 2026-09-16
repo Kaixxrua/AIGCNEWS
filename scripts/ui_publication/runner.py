@@ -12,18 +12,24 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote
 
 from adapter import CSS_SHA, Hold, checked_path, make_item, sha, validate_license, validate_source, write_json
-from release import Release
 from policy import withdrawn_ids
 from quality import approve_rendered_candidate, private_hyperui_seed
+from release import Release
+from x_adapter import (
+    checked_payload as checked_x_payload,
+    license_path as x_license_path,
+    make_item as make_x_item,
+    provider_id as x_provider_id,
+    validate_mit_license,
+    validate_static_html,
+)
 
 HERE = Path(__file__).resolve().parent
 
@@ -51,13 +57,14 @@ def bridge(request):
     return json.loads(result.stdout)
 
 
-def fetch(revision, path, cache):
-    if not re.fullmatch('[a-f0-9]{40}', revision) or '..' in Path(path).parts:
+def fetch_repository(repository, revision, path, cache):
+    if (not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository)
+            or not re.fullmatch('[a-f0-9]{40}', revision) or '..' in Path(path).parts):
         raise Hold('unsafe_upstream_path')
-    target = cache / revision / path
+    target = cache / repository.replace('/', '--') / revision / path
     headers_path = target.with_suffix(target.suffix + '.headers')
     target.parent.mkdir(parents=True, exist_ok=True)
-    url = f'https://raw.githubusercontent.com/markmead/hyperui/{revision}/{quote(path, safe="/")}'
+    url = f'https://raw.githubusercontent.com/{repository}/{revision}/{quote(path, safe="/")}'
     if not target.exists():
         temp = target.with_suffix(target.suffix + '.download')
         result = subprocess.run(['curl.exe','--fail','--silent','--show-error','--max-time','45','--max-filesize','2097152','--retry','2','--dump-header',str(headers_path),'--output',str(temp),url], capture_output=True, timeout=155)
@@ -73,6 +80,10 @@ def fetch(revision, path, cache):
         if key.lower() in ('date','etag','last-modified','content-type'):
             headers[key] = value.strip()
     return raw, {'name':path,'url':url,'sha256':sha(raw),'http_headers':headers}
+
+
+def fetch(revision, path, cache):
+    return fetch_repository('markmead/hyperui', revision, path, cache)
 
 
 def archive_evidence(data, items, payload, cache):
@@ -110,6 +121,53 @@ def archive_evidence(data, items, payload, cache):
                 raise Hold('source_archive_mismatch')
             captured = datetime.fromtimestamp((cache/revision/source['name']).stat().st_mtime,timezone.utc).isoformat()
             record.setdefault('source_captures',{}).setdefault(source['path'],{**response,'captured_at':captured})
+    write_json(manifest, record)
+
+
+def archive_x_evidence(data, item, payload, license_name, cache):
+    repository, _, revision = checked_x_payload(payload)
+    provider = x_provider_id(payload)
+    base = data / 'assets' / provider / 'evidence' / revision
+    manifest = base / 'manifest.json'
+    if manifest.exists():
+        record = json.loads(manifest.read_text())
+        if record['repository'].lower() != repository.lower() or record['revision'] != revision:
+            raise Hold('existing_evidence_mismatch')
+        for resource in record['resources']:
+            if sha((base / resource['name']).read_bytes()) != resource['sha256']:
+                raise Hold('evidence_integrity_failure')
+    else:
+        license_raw, resource = fetch_repository(repository, revision, license_name, cache)
+        base.mkdir(parents=True, exist_ok=True)
+        (base / 'LICENSE').write_bytes(license_raw)
+        resource['name'] = 'LICENSE'
+        record = {
+            'repository': repository, 'revision': revision,
+            'captured_at': datetime.now(timezone.utc).isoformat(),
+            'license': 'MIT', 'license_source': license_name,
+            'license_grants': ['commercial-use', 'redistribution'],
+            'conditions': ['Preserve the original copyright and MIT license.'],
+            'resources': [resource], 'source_files': {},
+            'license_page_url': f'https://github.com/{repository}/blob/{revision}/{quote(license_name, safe="/")}',
+            'screenshot': 'license-page.png',
+            'scope': 'Pinned static HTML source only; scripts and external resources are excluded.',
+        }
+    source = item['files'][0]
+    original, response = fetch_repository(repository, revision, source['name'], cache)
+    if sha(original) != source['sha256']:
+        raise Hold('source_archive_mismatch')
+    record['source_files'][source['path']] = source['sha256']
+    archived_name = 'source-' + item['id'] + Path(source['name']).suffix
+    archived = base / archived_name
+    archived.write_bytes(original)
+    resource = {'name': archived_name, 'url': response['url'], 'sha256': source['sha256'],
+                'http_headers': response['http_headers']}
+    if not any(entry['name'] == archived_name for entry in record['resources']):
+        record['resources'].append(resource)
+    record.setdefault('source_captures', {})[source['path']] = {
+        **response, 'captured_at': datetime.now(timezone.utc).isoformat(),
+        'discovered_via': payload['x_source_url'],
+    }
     write_json(manifest, record)
 
 
@@ -273,8 +331,16 @@ def execute(args):
                         fingerprints.add(validate_source(raw, blob_sha(raw)))
                     except Hold:
                         pass
+                elif item['provider_id'].startswith('xgithub-') and item.get('frameworks') == ['html']:
+                    raw = (data / item['files'][0]['path']).read_bytes()
+                    from adapter import blob_sha
+                    try:
+                        fingerprints.add(validate_static_html(raw, blob_sha(raw)))
+                    except Hold:
+                        pass
             cache = state / 'upstream-cache'
             reviewed = {}
+            x_evidence = {}
             withdrawn = withdrawn_ids(args.root)
             for candidate in snapshot['candidates']:
                 if len(additions) >= args.limit:
@@ -282,6 +348,31 @@ def execute(args):
                 payload = candidate['payload']
                 row = {'candidate_id':candidate['candidate_id'],'revision':candidate['revision']}
                 try:
+                    if payload.get('kind') == 'x_github_html':
+                        repository, path, revision = checked_x_payload(payload)
+                        license_name = x_license_path(payload)
+                        license_raw, _ = fetch_repository(repository, revision, license_name, cache)
+                        validate_mit_license(payload, license_raw, license_name)
+                        raw, _ = fetch_repository(repository, revision, path, cache)
+                        digest = validate_static_html(raw, payload['source_blob_sha'])
+                        item = make_x_item(data, payload, raw, license_raw, datetime.now(timezone.utc).isoformat())
+                        item_id = item['id']
+                        if item_id in withdrawn:
+                            raise Hold('operator_withdrawn')
+                        existing = baseline.get(item_id)
+                        if existing:
+                            if existing['revision'] != revision or existing['files'][0]['sha256'] != sha(raw):
+                                raise Hold('existing_component_update_requires_review')
+                            row.update(status='published', reason='already_in_catalog')
+                        elif digest in fingerprints:
+                            row.update(status='held_duplicate', reason='duplicate_original_body')
+                        else:
+                            additions.append(item)
+                            fingerprints.add(digest)
+                            x_evidence[item_id] = (payload, license_name)
+                            row.update(status='published', item_id=item_id)
+                        rows.append(row)
+                        continue
                     path = checked_path(payload['path'])
                     item_id = 'hyperui-' + path.removeprefix('public/examples/').removesuffix('.html').replace('/','-')
                     if item_id in withdrawn:
@@ -322,13 +413,20 @@ def execute(args):
                 checkpoint({'status':'no_changes','published':0,'held':sum(row['status']!='published' for row in rows)})
                 return
             for revision in {item['revision'] for item in additions}:
-                payload = next(c['payload'] for c in snapshot['candidates'] if c['payload']['source_revision']==revision)
-                archive_evidence(data,[item for item in additions if item['revision']==revision],payload,cache)
+                hyperui_items = [item for item in additions if item['revision']==revision and item['provider_id']=='hyperui']
+                if hyperui_items:
+                    payload = next(c['payload'] for c in snapshot['candidates'] if c['payload']['source_revision']==revision and c['payload'].get('kind') != 'x_github_html')
+                    archive_evidence(data,hyperui_items,payload,cache)
+            for item in additions:
+                if item['id'] in x_evidence:
+                    payload, license_name = x_evidence[item['id']]
+                    archive_x_evidence(data, item, payload, license_name, cache)
             catalog['items'] += additions
             write_json(data / 'catalog.json',catalog)
             # Screenshot helper reads current provider revision; old evidence remains pinned per item.
             locks = json.loads((data / 'upstreams.json').read_text())
-            locks['hyperui']['revision'] = additions[-1]['revision']
+            for item in additions:
+                locks.setdefault(item['provider_id'], {})['revision'] = item['revision']
             write_json(data / 'upstreams.json',locks)
             checkpoint({'status':'rendering','approved':len(additions)})
             passed = render(release,additions,args.node_modules)

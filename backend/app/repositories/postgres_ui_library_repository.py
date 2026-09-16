@@ -93,11 +93,12 @@ class PostgresUiLibraryRepository:
         with self._database.transaction() as conn, conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO ui_discovery_source_configs
-                    (name, kind, repository, path_patterns, feed_url, enabled)
-                VALUES (%s,%s,%s,%s,%s,%s) RETURNING *
+                    (name, kind, repository, path_patterns, feed_url, enabled, x_auto_publish)
+                VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *
             """, (
                 values['name'], values['kind'], values.get('repository'),
                 values.get('path_patterns') or [], values.get('feed_url'), values['enabled'],
+                values.get('x_auto_publish', False),
             ))
             return cur.fetchone()
 
@@ -106,11 +107,12 @@ class PostgresUiLibraryRepository:
             cur.execute("""
                 UPDATE ui_discovery_source_configs SET
                     name=%s, kind=%s, repository=%s, path_patterns=%s,
-                    feed_url=%s, enabled=%s, updated_at=now()
+                    feed_url=%s, enabled=%s, x_auto_publish=%s, updated_at=now()
                 WHERE id=%s RETURNING *
             """, (
                 values['name'], values['kind'], values.get('repository'),
-                values.get('path_patterns') or [], values.get('feed_url'), values['enabled'], config_id,
+                values.get('path_patterns') or [], values.get('feed_url'), values['enabled'],
+                values.get('x_auto_publish', False), config_id,
             ))
             return cur.fetchone()
 
@@ -118,6 +120,16 @@ class PostgresUiLibraryRepository:
         with self._database.transaction() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM ui_discovery_source_configs WHERE id=%s", (config_id,))
             return cur.rowcount > 0
+
+    def source_candidates(self, source_id: str) -> list[dict[str, Any]]:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT c.payload FROM ui_discovery_candidates c
+                JOIN ui_discovery_sources s ON s.source_id=c.source_id
+                WHERE c.source_id=%s AND c.payload->>'source_revision'=s.revision
+                ORDER BY c.candidate_id
+            """, (source_id,))
+            return [row['payload'] for row in cur.fetchall()]
 
     def record_discovery(self, source_id: str, revision: str,
                          candidates: list[dict[str, Any]]) -> dict[str, int]:

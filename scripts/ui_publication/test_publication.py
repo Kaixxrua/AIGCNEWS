@@ -12,6 +12,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).parent))
 from adapter import Hold, blob_sha, checked_path, make_item, sha, validate_license, validate_source
 from release import Release
+from x_adapter import make_item as make_x_item, validate_mit_license, validate_static_html
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / 'mcp-go/internal/uicatalog/data'
@@ -19,6 +20,29 @@ SEED = Path(__file__).parent / 'fixtures/hyperui'
 
 
 class PolicyTests(unittest.TestCase):
+    def test_x_static_html_requires_pinned_mit_and_rejects_active_content(self):
+        license_raw = b'''MIT License\n\nCopyright (c) 2026 Example\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY.\n'''
+        payload = {
+            'kind':'x_github_html','auto_publish_eligible':True,'repo':'acme/ui',
+            'path':'examples/card.html','source_revision':'a'*40,
+            'source_blob_sha':'b'*40,'source_url':'https://github.com/acme/ui/blob/'+'a'*40+'/examples/card.html',
+            'x_source_url':'https://x.com/example/status/123','discovery_source_config_id':9,
+            'license_files':[{'path':'LICENSE','sha':blob_sha(license_raw)}],
+        }
+        validate_mit_license(payload,license_raw,'LICENSE')
+        safe=b'<html><body><style>.card{color:red}</style><div class="card">Original</div></body></html>'
+        validate_static_html(safe,blob_sha(safe))
+        for content in (b'<body><script>alert(1)</script></body>', b'<body><img src="https://example.test/a.png"></body>', b'<body><style>@import "https://example.test/a.css"</style></body>'):
+            with self.subTest(content=content), self.assertRaises(Hold):
+                validate_static_html(content,blob_sha(content))
+        with self.assertRaises(Hold):
+            validate_mit_license(payload,license_raw+b' Non-commercial only.','LICENSE')
+        with tempfile.TemporaryDirectory() as folder:
+            item=make_x_item(Path(folder),payload,safe,license_raw,'2026-09-16T00:00:00Z')
+            self.assertEqual(item['provider_id'],'xgithub-9')
+            self.assertEqual(item['license'],'MIT')
+            self.assertEqual((Path(folder)/item['files'][0]['path']).read_bytes(),safe)
+
     def test_original_license_and_scoped_notices(self):
         license_raw = (SEED/'licenses/hyperui/LICENSE').read_bytes()
         helper = (SEED/'sources/hyperui/public/component.js').read_bytes()

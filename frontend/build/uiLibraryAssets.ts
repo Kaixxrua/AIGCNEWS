@@ -33,7 +33,7 @@ export function uiLibraryAssets(): Plugin {
       for (const file of [...item.files, ...item.notices, ...item.assets]) allowed.add(file.path)
       for (const url of [item.poster_url, item.clip_url]) if (url) allowed.add(url.replace('/ui-library/', ''))
       if (item.rights_evidence_url) evidence.add(item.rights_evidence_url.replace('/ui-library/', ''))
-      if (item.editorial?.status === 'approved') {
+      if (item.editorial && ['approved', 'verified'].includes(item.editorial.status)) {
         const reviewPath = item.editorial.evidence.replace('/ui-library/', '')
         const review = JSON.parse(readFileSync(resolve(data, reviewPath), 'utf8')) as {
           preview_files?: Record<string, string>
@@ -92,7 +92,7 @@ export function uiLibraryAssets(): Plugin {
         if (item.editorial) {
           const review = item.editorial
           const expectedReview = expected.replace('manifest.json', 'review-' + item.id + '.json')
-          if (review.status !== 'approved' || review.revision !== item.revision || review.source_sha256 !== item.files[0]?.sha256 || review.evidence !== expectedReview) throw new Error('Stale visual review: ' + item.id)
+          if (!['approved', 'verified'].includes(review.status) || review.revision !== item.revision || review.source_sha256 !== item.files[0]?.sha256 || review.evidence !== expectedReview) throw new Error('Stale visual review: ' + item.id)
           const record = JSON.parse(readFileSync(assets.get(review.evidence)!, 'utf8'))
           if (record.id !== item.id || record.revision !== item.revision || item.files.some(file => record.source_files[file.path] !== file.sha256)) throw new Error('Visual review source mismatch: ' + item.id)
           for (const [name, digest] of [[record.screenshot, record.screenshot_sha256], ...(record.dark_screenshot ? [[record.dark_screenshot, record.dark_screenshot_sha256]] : [])]) {

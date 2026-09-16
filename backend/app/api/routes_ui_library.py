@@ -57,6 +57,7 @@ class DiscoverySourceInput(BaseModel):
     path_patterns: list[str] = Field(default_factory=list)
     feed_url: str | None = None
     enabled: bool = True
+    x_auto_publish: bool = False
 
 
 _REPOSITORY_RE = re.compile(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
@@ -73,8 +74,13 @@ def validate_discovery_source(body: DiscoverySourceInput) -> dict[str, Any]:
             raise HTTPException(422, 'GitHub 仓库应填写 owner/repository')
         if not patterns or len(patterns) > 20 or any(len(pattern) > 200 or '..' in pattern or pattern.startswith('/') for pattern in patterns):
             raise HTTPException(422, '请填写 1–20 个安全的仓库文件匹配规则')
+        if body.x_auto_publish and any(not pattern.lower().endswith('.html') for pattern in patterns):
+            raise HTTPException(422, 'X 自动发布仅支持 HTML 文件规则')
         return {'name': name, 'kind': 'github', 'repository': repository_name,
-                'path_patterns': patterns, 'feed_url': None, 'enabled': body.enabled}
+                'path_patterns': patterns, 'feed_url': None, 'enabled': body.enabled,
+                'x_auto_publish': body.x_auto_publish}
+    if body.x_auto_publish:
+        raise HTTPException(422, 'X 自动发布只能用于 GitHub 来源')
     try:
         feed_url = normalize_http_url(body.feed_url or '', allowed_ports={443})
         if not feed_url.startswith('https://'):
@@ -83,7 +89,8 @@ def validate_discovery_source(body: DiscoverySourceInput) -> dict[str, Any]:
     except OutboundTargetPolicyError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {'name': name, 'kind': 'feed', 'repository': None,
-            'path_patterns': [], 'feed_url': feed_url, 'enabled': body.enabled}
+            'path_patterns': [], 'feed_url': feed_url, 'enabled': body.enabled,
+            'x_auto_publish': False}
 
 
 @router.get('/ui-library/engagement')
