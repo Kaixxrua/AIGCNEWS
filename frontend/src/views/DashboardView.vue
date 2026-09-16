@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -7,17 +8,20 @@ import { subscribeLiveStats } from '@/composables/useLiveStatsStream'
 import GlassCalendar from '@/components/GlassCalendar.vue'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
-import DashboardDailyUi from '@/components/dashboard/DashboardDailyUi.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRadarCard from '@/components/dashboard/DashboardRadarCard.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import { CalendarDays, ArrowRight, MailPlus, Plug, Terminal } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
+import { addedOnCalendarDay, loadCatalog } from '@/features/ui-library/catalog'
 
 defineOptions({ name: 'DashboardView' })
 const { t } = useI18n()
 const isMobile = useMediaQuery('(max-width: 767px)')
+const todayUiCount = ref(0)
+const todayUiCountLoading = ref(true)
+const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
 const {
   statValues,
@@ -54,6 +58,18 @@ currentStats = () => stats.value
 // 与顶栏共用 SSE；断流后的轮询由共享订阅统一管理。
 subscribeLiveStats(applyLiveStats)
 
+onMounted(async () => {
+  try {
+    todayUiCount.value = addedOnCalendarDay(await loadCatalog(uiCatalogController.signal)).length
+  } catch {
+    // 仪表盘主体不应因静态素材目录暂时不可用而失败；卡片保留为 0。
+  } finally {
+    todayUiCountLoading.value = false
+  }
+})
+
+onBeforeUnmount(() => uiCatalogController.abort())
+
 </script>
 
 <template>
@@ -86,10 +102,10 @@ subscribeLiveStats(applyLiveStats)
       :active-tab="activeTab"
       :stat-values="statValues"
       :visitor-values="visitorValues"
+      :today-ui-count="todayUiCount"
+      :today-ui-count-loading="todayUiCountLoading"
       @select-source="selectSourceTab"
     />
-
-    <DashboardDailyUi v-if="!loading" />
 
     <!-- 主区域：榜单/空态占满剩余高度，日历与订阅入口收入右侧栏 -->
     <div class="dashboard-main dashboard-content flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
@@ -200,6 +216,8 @@ subscribeLiveStats(applyLiveStats)
         :active-tab="activeTab"
         :stat-values="statValues"
         :visitor-values="visitorValues"
+        :today-ui-count="todayUiCount"
+        :today-ui-count-loading="todayUiCountLoading"
         @select-source="selectSourceTab"
       />
     </details>

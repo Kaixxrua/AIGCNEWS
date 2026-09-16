@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { recentlyAdded, searchTemplates, integrationPrompt, loadCatalog, loadSources, type UiTemplate } from './catalog'
+import { addedOnCalendarDay, recentlyAdded, searchTemplates, integrationPrompt, loadCatalog, loadSources, type UiTemplate } from './catalog'
 
 const dataRoot = pathToFileURL(resolve(process.cwd(), '../mcp-go/internal/uicatalog/data') + '/')
 const items: UiTemplate[] = JSON.parse(readFileSync(new URL('catalog.json', dataRoot), 'utf8')).items
@@ -38,6 +38,18 @@ describe('UI catalog shared Chinese/English contract', () => {
     expect(recentlyAdded(rows, now).map(item => item.id)).toEqual(['5', '4'])
     expect(rows.map(item => item.id)).toEqual(['0', '1', '2', '3', '4', '5'])
     expect(recentlyAdded(rows, now + 24 * 60 * 60 * 1000)).toEqual([rows[2]])
+  })
+  it('counts imports by the Beijing calendar day instead of a rolling window', () => {
+    const now = Date.parse('2026-09-16T02:00:00Z')
+    const rows = [
+      '2026-09-15T15:59:59Z',
+      '2026-09-15T16:00:00Z',
+      '2026-09-16T01:30:00Z',
+      '2026-09-16T03:00:00Z',
+      'invalid',
+    ].map((added_at, index) => ({ ...items[0]!, id: String(index), added_at }))
+
+    expect(addedOnCalendarDay(rows, now).map(item => item.id)).toEqual(['2', '1'])
   })
   it('copies a useful bilingual prompt with all supplied files and provenance', () => {
     vi.stubGlobal('window', { location: { origin: 'https://catalog.test' } })

@@ -173,6 +173,7 @@ const enUSCatalog = {
     },
     errors: { 'load-failed': 'Failed to load, please try again', 'request-failed': 'Request failed, please try again', 'telegram-unavailable': 'Telegram push is not configured or temporarily unavailable. Please try again later.' },
   },
+  'dashboard.stats.todayUiMaterials': 'UI added today',
   'monitor.nav.uiSources': 'UI asset sources',
   'monitor.uiSources.title': 'UI asset discovery sources',
   'monitor.uiSources.description': 'See which open-source repositories and websites are checked each day, and add your own.',
