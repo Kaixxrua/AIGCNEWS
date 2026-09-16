@@ -11,8 +11,8 @@ APScheduler 09:00 的 `ui_library_discovery` 保留发现职责。部署机上�
 1. OS 文件锁防重入，要求 HyperUI 最近 36 小时发现成功；失败可以重试。
 2. 导出运行中的前端产物，在私有目录中组装；不重构、重建其他页面。
 3. 保留原始源码、许可证、README、固定版本链接、HTTP 响应元数据和 SHA-256。许可证页面保留真实截图，历史证据不删除。
-4. 仅运行固定的预览适配代码，在禁止联网的 sandbox iframe 中渲染；生成真实截图，空白、异常预览留待核查。
-5. HyperUI 继续要求逐项视觉审核；未审核素材以 `held_quality` 保存于私有候选目录。仅 X 严格静态 HTML 适配器可在源码策略、许可、隔离渲染和非空截图全部通过后生成 `verified` 自动记录。所有记录都绑定 commit、源码 SHA-256、预览文件与截图哈希；版本或画面改变即失效。通过后才构建 MCP 和前端镜像，再校验双边缘目录哈希和 MCP 原始源码。
+4. 仅运行固定的预览适配代码，在禁止联网的隔离浏览器上下文中渲染；自动生成真实截图、版本化 WebP 封面与 6 秒 H.264 MP4。空白画面、浏览器异常、缺失素材或超过 3 MiB 的视频会被拦截。
+5. 技术检查通过后写入绑定 commit、全部源码 SHA-256、预览文件、封面和视频哈希的自动验证记录并进入当日发布。X 严格静态 HTML 适配器还必须通过白名单仓库、固定 MIT 许可、无脚本和无外部资源核查。若存在 `local/ui-publication/quality-approvals/<id>.json`，则仍优先校验并保留人工视觉审核；版本或画面改变即失效。随后构建 MCP 和前端镜像，再校验双边缘目录哈希和 MCP 原始源码。
 6. 更新后端目录和候选状态，保存发布回执。后端按文件版本更新 ID 缓存，无需每日重启。
 
 任何发布失败回滚本轮镜像、目录和边缘版本。中断后下次运行根据持久日志恢复；检测到第三方并发发布时停止回滚，避免覆盖其他发布。候选状态按 `candidate_id + revision` 条件更新，避免把后续发现的新版本标为已发布。
@@ -21,7 +21,7 @@ APScheduler 09:00 的 `ui_library_discovery` 保留发现职责。部署机上�
 
 MCP 验证遇到部署机匿名 IP 的日额度耗尽时，单独记录 RPC 未完成，保留全部配额限制；同时要求线上二进制与通过目录/MCP 契约测试的构建一致，并从两个生产节点取回原始源码核对哈希。其他 RPC、鉴权、内容或哈希错误仍阻止发布。手动撤下的 ID 可保存在 `local/ui-publication/withdrawn.json`（`version: 1`、`ids` 数组），跨上游修订持续生效；历史版权证据应留在私有归档。
 
-部署依赖：部署账户可访问 Docker、已安装 Chrome、Python（Pillow）、Node、现有 SSH 凭据。渲染依赖使用本目录 `renderer/package-lock.json`，安装到 `local/ui-publication/renderer`，不依赖临时开发 worktree。
+部署依赖：部署账户可访问 Docker、已安装 Chrome、FFmpeg（含 `libx264` 与 `libwebp`）、Python（Pillow）、Node、现有 SSH 凭据。渲染依赖使用本目录 `renderer/package-lock.json`，安装到 `local/ui-publication/renderer`，不依赖临时开发 worktree。FFmpeg 不在 PATH 时向任务命令传 `--ffmpeg E:/ffmpeg/bin/ffmpeg.exe`。
 
 ```powershell
 npm ci --prefix local/ui-publication/renderer --ignore-scripts --no-audit --no-fund
