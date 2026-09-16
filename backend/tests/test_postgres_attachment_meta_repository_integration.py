@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -11,7 +9,7 @@ from backend.app.repositories.postgres_attachment_meta_repository import (
     PostgresAttachmentMetaRepository,
 )
 from backend.app.services.chat import attachment_service
-from backend.app.services.chat.attachment_policy import ValidatedPdf
+from backend.app.services.chat.attachment_policy import ValidatedImage
 from backend.app.services.chat.attachment_service import _PostgresMetaStore
 from backend.tests.postgres_test_safety import postgres_test_sandbox
 
@@ -144,51 +142,46 @@ def test_attachment_meta_enforces_user_foreign_key(database) -> None:
     assert getattr(user_error.value, "sqlstate", None) == "23503"
 
 
-def test_service_full_chain_survives_restart_and_reconciles_orphans(database) -> None:
-    """上传 → 元数据落库 → 新实例（重启模拟）→ 元数据仍在 → 引用正常 → 孤儿对账。"""
+def test_image_service_full_chain_survives_restart_and_expires_metadata(database) -> None:
+    """上传 → 元数据落库 → 新实例（重启模拟）→ owner 隔离 → 到期清理。"""
     repository = PostgresAttachmentMetaRepository(database)
     store = _PostgresMetaStore(repository)
-    content = ValidatedPdf(data=b"%PDF-1.7\nbody", filename="report.pdf")
+    content = ValidatedImage(
+        data=b"\xff\xd8\xfffixture",
+        base64_data="/9j/Zml4dHVyZQ==",
+        mime_type="image/jpeg",
+        filename="photo.jpg",
+    )
 
-    with tempfile.TemporaryDirectory() as upload_dir:
+    with (
+        patch.object(attachment_service.time, "time", return_value=1000.0),
+        patch.object(attachment_service, "_meta_repository", repository),
+        patch.object(attachment_service, "_meta_store", store),
+    ):
+        meta = asyncio.run(attachment_service.upload_image(content, user_id=1))
+        assert meta.status == attachment_service.AttachmentStatus.READY
+
+        # 重启模拟：同一数据库上的全新仓储与服务适配实例。
+        restarted_repository = PostgresAttachmentMetaRepository(database)
+        restarted_store = _PostgresMetaStore(restarted_repository)
         with (
-            patch.object(attachment_service, "_PDF_UPLOAD_DIR", upload_dir),
-            patch.object(attachment_service, "_meta_repository", repository),
-            patch.object(attachment_service, "_meta_store", store),
-            patch.object(
-                attachment_service,
-                "extract_pdf_text",
-                return_value=("persisted text", 2),
-            ),
+            patch.object(attachment_service, "_meta_repository", restarted_repository),
+            patch.object(attachment_service, "_meta_store", restarted_store),
         ):
-            meta = asyncio.run(attachment_service.upload_pdf(content, user_id=1))
-            assert meta.status == attachment_service.AttachmentStatus.READY
 
-            # 重启模拟：同一数据库上的全新仓储与服务适配实例。
-            restarted_repository = PostgresAttachmentMetaRepository(database)
-            restarted_store = _PostgresMetaStore(restarted_repository)
-            with (
-                patch.object(attachment_service, "_meta_repository", restarted_repository),
-                patch.object(attachment_service, "_meta_store", restarted_store),
-            ):
+            async def exercise() -> None:
+                restored = await attachment_service.get_attachment(meta.id, 1)
+                assert restored is not None
+                assert restored.status == attachment_service.AttachmentStatus.READY
+                assert restored.expires_at == 1600.0
+                assert await attachment_service.get_attachment(meta.id, 2) is None
+                assert await attachment_service.get_image_base64(meta.id, 1) == (
+                    content.base64_data,
+                    content.mime_type,
+                )
 
-                async def exercise() -> None:
-                    restored = await attachment_service.get_attachment(meta.id, 1)
-                    assert restored is not None
-                    assert restored.status == attachment_service.AttachmentStatus.READY
-                    assert restored.page_count == 2
-                    assert restored.text_preview == "persisted text"
-                    assert await attachment_service.get_attachment(meta.id, 2) is None
-                    assert await attachment_service.get_pdf_text(meta.id, 1) == "persisted text"
+            asyncio.run(exercise())
 
-                asyncio.run(exercise())
-
-                orphan_path = os.path.join(upload_dir, "orphan-id.pdf")
-                with open(orphan_path, "wb") as orphan_file:
-                    orphan_file.write(b"%PDF-1.7\norphan")
-
-                result = attachment_service.reconcile_orphan_attachments(now=meta.created_at + 1, upload_dir=upload_dir)
-                assert result["orphan_files_removed"] == 1
-                assert not os.path.exists(orphan_path)
-                assert os.path.exists(os.path.join(upload_dir, f"{meta.id}.pdf"))
-                assert restarted_repository.get_attachment_meta(meta.id) is not None
+            result = attachment_service.reconcile_orphan_attachments(now=1600.001)
+            assert result == {"orphan_files_removed": 0, "expired_rows_removed": 1}
+            assert restarted_repository.get_attachment_meta(meta.id) is None
