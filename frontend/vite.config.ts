@@ -17,15 +17,20 @@ export default defineConfig({
     // - manifest: false：manifest 走 public/ 下手写版，不由插件生成。
     // - registerType: 'autoUpdate'：新 SW 安装后立即接管并刷新，无需用户确认。
     // - /api 一律不经 SW（SSE 长连接 + JWT Authorization 头，缓存/拦截会
-    //   出事故）：导航回退用 denylist 兜底，且故意不配 runtimeCaching。
+    //   出事故）；/camp-scene 是独立 Godot 文档与大体积资源，也不能被
+    //   SPA 导航回退或预缓存接管。两者均只由同源服务器直接提供。
     VitePWA({
       injectRegister: false,
       manifest: false,
       registerType: 'autoUpdate',
       workbox: {
         navigateFallback: '/index.html',
-        globIgnores: ['**/ui-library/**'],
-        navigateFallbackDenylist: [/^\/api\//, /^\/ui-library\/(?:previews|sources|licenses|posters|clips|assets)\//],
+        globIgnores: ['**/ui-library/**', '**/camp-scene/**'],
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/camp-scene(?:\/|$)/,
+          /^\/ui-library\/(?:previews|sources|licenses|posters|clips|assets)\//,
+        ],
         clientsClaim: true,
         skipWaiting: true,
         // 默认 globPatterns 只含 js/css/html；自托管字体与 logo 必须入预缓存，
