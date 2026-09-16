@@ -79,7 +79,7 @@ _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 #   2) 富化补跑整体封顶：超时即放锁，悬挂线程在终止信号/请求超时处收尾；
 #   3) 每日流水线整体封顶（刷新+快照+打分+富化全链）。
 _JOB_LOCK_WAIT_TIMEOUT = 3 * 3600
-_GITHUB_ENRICH_TOP_UP_TIMEOUT = 45 * 60
+_GITHUB_ENRICH_TOP_UP_TIMEOUT = 20 * 60
 _GITHUB_DAILY_PIPELINE_TIMEOUT = 2 * 3600
 
 # 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
