@@ -5,8 +5,8 @@
 
 | 层 | 文件 | 内容 | LLM 消耗 |
 |---|---|---|---|
-| 契约层 | `test_contract.py` | 直接调用全部 8 个工具（legacy `get_project_library` 已于 e703a17 删除），断言无错误、载荷非空、关键字段在 | 无 |
-| 场景层 | `test_scenarios.py` | 真实 LLM 客户端挂 MCP 跑 8 个场景，断言工具路由正确 + LLM judge 按 rubric 打分 | 每场景 2~5 次调用 |
+| 契约层 | `test_contract.py` | 直接调用公开与认证工具，包含 UI 长提示词自动降级检索与源码元数据链路，断言无错误、载荷非空、关键字段在 | 无 |
+| 场景层 | `test_scenarios.py` | 真实 LLM 客户端挂 MCP 跑路由场景；前端用例不提 MCP、搜索、模板或素材库，仍断言主动搜索并取得源码 | 每场景 2~5 次调用 |
 
 报告输出到 `test-reports/`（json + markdown，git 忽略）。
 

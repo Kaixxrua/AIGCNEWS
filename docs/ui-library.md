@@ -88,7 +88,7 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 
 生产 Go 服务器注册两个匿名可读工具；它们沿用既有 HTTP 鉴权、限流与计数入口。没有新增写操作。普通工程搜索工具定义和调用行为保持原状。
 
-- `search_ui_templates({q, category?, framework?, language?, limit?})`：支持中英文混合关键词；`language` 是返回语言（`zh` / `en`），`framework` 是 React / Vue / Nuxt。返回来源、许可和可打开的预览链接。
+- `search_ui_templates({q, category?, framework?, language?, limit?})`：支持中英文混合关键词和长自然语言需求；精确匹配为空时自动按最强命中词降级，显式提供 `category` 时还可降级到该分类。返回的 `search_mode` 为 `exact`、`relaxed_terms` 或 `category_fallback`。`language` 是返回语言（`zh` / `en`），`framework` 是 React / Vue / Nuxt。返回来源、许可和可打开的预览链接。
 - `get_ui_template({id, language?, include_source?, file?})`：返回原版源码、依赖、资源、许可全文与接入提示。较大的条目按完整文件拆分，`omitted_files` 指出剩余文件；逐个用 `file` 精确文件名取回。不会给出被全局截断的半段代码。
 
 示例：
@@ -98,7 +98,7 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_ui_template","arguments":{"id":"threeui-liquid-form","language":"zh"}}}
 ```
 
-配置了 UI 工具的应用在 initialize instructions 中增加“前端效果先搜索素材，再取原源码”的指引；未注册扩展的应用保留原协议快照。客户端是否主动调用仍取决于客户端指令与工具可用性，服务端不能强制客户端。
+配置了 UI 工具的应用在 initialize instructions 中增加强制路由指引：只要用户要求新建或大幅重设面向用户的前端，即使没有提到模板、素材库、搜索或 MCP，也要在写实现代码前先调用 `search_ui_templates`，命中后再用 `get_ui_template` 取原源码。局部文案、小幅 CSS 调整和定位明确的 Bug 修复不触发。客户端是否主动调用仍取决于客户端指令与工具可用性，服务端不能强制客户端。
 
 目前检索是共享双语词表、关键词匹配和权重排序，没有调用翻译模型或声称提供向量语义搜索。前端和 Go 使用同一组中英文查询契约测试。
 

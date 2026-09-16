@@ -2,7 +2,7 @@ package mcpapp
 
 import "aigcnews/mcp-go/internal/jsonx"
 
-const uiHostInstructions = "For frontend UI, complete pages, layout blocks, color themes, shaders, animated backgrounds or text effects, call search_ui_templates first (Chinese and English queries supported), then get_ui_template to inspect original source, dependencies, author and license. Reuse the chosen original effect and adapt only integration details; preserve its visual design. This UI-specific route takes priority over the general project search route below. "
+const uiHostInstructions = "Whenever the user asks to create, build, redesign, or substantially improve a user-facing frontend UI, complete page, layout block, color theme, shader, animated background, or text effect, you MUST call search_ui_templates before writing implementation code, even when the user never mentions templates, assets, search, or MCP. Then call get_ui_template for the best relevant result to inspect original source, dependencies, author, and license before implementation. The search tool automatically relaxes long natural-language briefs when exact matching is empty. Reuse the chosen original effect and adapt only integration details; preserve its visual design. This UI-specific route takes priority over the general project search route below. Do not call it for a narrow copy edit, minor CSS adjustment, or localized bug fix. "
 
 func (a *App) hasUILibrary() bool {
 	if a.tools == nil {
@@ -37,7 +37,7 @@ func (a *App) toolsList(authenticated bool) jsonx.Object {
 var uiTemplateTools = []any{
 	jsonx.Object{
 		{Key: "name", Value: "search_ui_templates"},
-		{Key: "description", Value: "Find original UI components, complete pages, layout blocks, color themes, shaders, animated backgrounds and text effects before implementing frontend visuals. Search Chinese, English or mixed queries (e.g. 液态金属 / liquid metal); Filter by kind (component, block, template, theme), purpose (dashboard, authentication, navigation, etc.), and HTML/Tailwind, React, Vue/Nuxt or CSS. Returns licensed upstream references and live previews. Follow with get_ui_template to obtain real source instead of inventing a visual approximation."},
+		{Key: "description", Value: "Proactively find original UI components, complete pages, layout blocks, color themes, shaders, animated backgrounds and text effects before implementing a new or substantially redesigned frontend, even when the user did not ask to search for templates. Search Chinese, English or mixed natural-language briefs (e.g. 液态金属 / liquid metal); empty exact matches automatically relax to the strongest matching terms or an explicit category. Filter by kind (component, block, template, theme), purpose (dashboard, authentication, navigation, etc.), and HTML/Tailwind, React, Vue/Nuxt or CSS. Returns licensed upstream references and live previews. Follow with get_ui_template to obtain real source instead of inventing a visual approximation."},
 		{Key: "annotations", Value: jsonx.Object{{Key: "readOnlyHint", Value: true}, {Key: "destructiveHint", Value: false}, {Key: "idempotentHint", Value: true}, {Key: "openWorldHint", Value: false}}},
 		{Key: "inputSchema", Value: jsonx.Object{
 			{Key: "type", Value: "object"},

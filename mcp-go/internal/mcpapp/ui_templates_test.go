@@ -83,8 +83,11 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 		t.Fatal("private tool authentication fork changed")
 	}
 	init := uiRPC(t, app, "initialize", map[string]any{})
-	if !strings.Contains(init["instructions"].(string), "search_ui_templates first") {
-		t.Fatal("missing proactive UI discovery instruction")
+	instructions := init["instructions"].(string)
+	for _, required := range []string{"MUST call search_ui_templates before writing implementation code", "even when the user never mentions templates", "Do not call it for a narrow copy edit"} {
+		if !strings.Contains(instructions, required) {
+			t.Fatalf("missing proactive UI discovery instruction %q", required)
+		}
 	}
 }
 
@@ -195,5 +198,19 @@ func TestUISearchAndErrorsThroughHTTP(t *testing.T) {
 		if _, found := raw.(map[string]any)["content"]; found {
 			t.Fatal("metadata-only request returned source")
 		}
+	}
+}
+
+func TestUISearchAutomaticallyRelaxesLongFrontendBrief(t *testing.T) {
+	app := uiApp(t)
+	result := uiCall(t, app, "search_ui_templates", map[string]any{
+		"q":        "深色 科技感 AI dashboard 趋势图 指标卡",
+		"category": "dashboard",
+		"language": "zh",
+		"limit":    8,
+	})
+	data := result["structuredContent"].(map[string]any)
+	if data["search_mode"] != "relaxed_terms" || data["total"].(float64) < 1 {
+		t.Fatalf("natural-language fallback did not run: %v", data)
 	}
 }

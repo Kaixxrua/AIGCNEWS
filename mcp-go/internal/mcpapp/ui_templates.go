@@ -111,7 +111,7 @@ func (s *uiTemplateService) search(args map[string]any) (any, error) {
 		}
 		limit = int(value)
 	}
-	matches := s.catalog.Search(q, category, framework)
+	matches, searchMode := s.catalog.SearchAdaptive(q, category, framework)
 	if kind != "" {
 		filtered := matches[:0]
 		for _, item := range matches {
@@ -129,6 +129,7 @@ func (s *uiTemplateService) search(args map[string]any) (any, error) {
 		{Key: "items", Value: items},
 		{Key: "total", Value: len(matches)},
 		{Key: "query", Value: q},
+		{Key: "search_mode", Value: searchMode},
 		{Key: "next_step", Value: "Call get_ui_template with a returned id to retrieve the original source files, dependencies and integration prompt. Inspect its live preview before changing visuals."},
 		{Key: "attribution", Value: "Curated by AIGC Radar · aigcnews.cn; original authors and licenses are listed per item."},
 	}, nil

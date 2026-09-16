@@ -77,3 +77,37 @@ func TestPinnedSourcesAndLocalFileBoundary(t *testing.T) {
 		}
 	}
 }
+
+func TestAdaptiveSearchRelaxesNaturalLanguageButNotUnrelatedQueries(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/search_catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Items []Template `json:"items"`
+	}
+	if err := json.Unmarshal(fixture, &payload); err != nil {
+		t.Fatal(err)
+	}
+	catalog := &Catalog{items: payload.Items}
+
+	items, mode := catalog.SearchAdaptive("dark futuristic liquid metal dashboard metrics", "", "")
+	if mode != "relaxed_terms" || len(items) != 2 {
+		t.Fatalf("relaxed search = %s/%v, want two liquid-metal items", mode, items)
+	}
+	for _, item := range items {
+		if !slices.Contains([]string{"paper-liquid-metal", "threeui-liquid-form"}, item.ID) {
+			t.Fatalf("unexpected relaxed result %q", item.ID)
+		}
+	}
+
+	items, mode = catalog.SearchAdaptive("no-such-effect-q93 extra words", "", "")
+	if mode != "exact" || len(items) != 0 {
+		t.Fatalf("unrelated query leaked results: %s/%v", mode, items)
+	}
+
+	items, mode = catalog.SearchAdaptive("no-such-effect-q93 extra words", "shader", "")
+	if mode != "category_fallback" || len(items) == 0 {
+		t.Fatalf("explicit category did not provide a safe fallback: %s/%v", mode, items)
+	}
+}

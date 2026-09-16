@@ -107,6 +107,21 @@ async def test_route_non_ai_software(mcp_session):
     )
 
 
+async def test_route_frontend_build_proactively_discovers_ui_template(mcp_session):
+    """用户只提实现需求，不提 MCP、搜索、模板或素材库，仍应主动取原版素材。"""
+    session = mcp_session.session
+    await mcp_session.agent.generate_str(
+        "帮我做一个深色科技感 AI 项目分析 Dashboard 首页，"
+        "包含侧边栏、指标卡、趋势图和最近项目列表。"
+    )
+    await session.assert_that(
+        ToolWasCalled("search_ui_templates"), name="路由:前端实现主动发现 UI 素材"
+    )
+    await session.assert_that(
+        ToolWasCalled("get_ui_template"), name="路由:命中后取得原版源码与许可"
+    )
+
+
 async def test_route_categories(mcp_session):
     """分类咨询 → 路由到 get_project_categories"""
     session = mcp_session.session

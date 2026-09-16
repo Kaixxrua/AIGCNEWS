@@ -175,6 +175,7 @@ func (c *Catalog) Source(id, name string) (string, error) {
 var tokens = regexp.MustCompile(`[a-z0-9]+|\p{Han}+`)
 var han = regexp.MustCompile(`\p{Han}`)
 var stopWords = strings.Fields("a an the for with and in make build please show me")
+var adaptiveStopWords = strings.Fields("ui component components template templates effect effects frontend page pages website web design make build create dark futuristic modern clean professional ai 组件 素材 模板 效果 前端 页面 网站 设计 做 实现 创建 深色 科技感 高级")
 
 func normalize(value string) string {
 	return strings.ToLower(strings.TrimSpace(norm.NFKC.String(value)))
@@ -251,4 +252,81 @@ func (c *Catalog) Search(query, category, framework string) []Template {
 		items = append(items, result.item)
 	}
 	return items
+}
+
+// SearchAdaptive keeps the strict all-terms contract as its first pass, then
+// relaxes only an empty multi-term result. This lets agents send a natural
+// language design brief without having to guess the catalog's exact aliases.
+// A category fallback is intentionally available only when the caller supplied
+// a category; an unrelated free-text query must still return no results.
+func (c *Catalog) SearchAdaptive(query, category, framework string) ([]Template, string) {
+	if items := c.Search(query, category, framework); len(items) > 0 || normalize(query) == "" {
+		return items, "exact"
+	}
+
+	terms := []string{}
+	for _, term := range c.Terms(query) {
+		if (!han.MatchString(term) && len(term) < 3) || slices.Contains(adaptiveStopWords, term) || slices.Contains(terms, term) {
+			continue
+		}
+		terms = append(terms, term)
+	}
+	if len(terms) > 1 {
+		type candidate struct {
+			item    Template
+			matches int
+			score   int
+		}
+		results := []candidate{}
+		for _, item := range c.items {
+			if category != "" && item.Category != category && item.Subcategory != category || framework != "" && !slices.Contains(item.Frameworks, framework) {
+				continue
+			}
+			title := normalize(item.Name["zh"] + " " + item.Name["en"] + " " + item.ID)
+			core := normalize(title + " " + item.Provider + " " + strings.Join(item.Aliases, " ") + " " + strings.Join(item.Frameworks, " ") + " " + item.Category)
+			all := core + " " + normalize(item.Description["zh"]+" "+item.Description["en"])
+			matches, score := 0, 0
+			for _, term := range terms {
+				if !strings.Contains(all, term) {
+					continue
+				}
+				matches++
+				switch {
+				case strings.Contains(title, term):
+					score += 20
+				case strings.Contains(core, term):
+					score += 10
+				default:
+					score++
+				}
+			}
+			if matches > 0 {
+				results = append(results, candidate{item: item, matches: matches, score: score})
+			}
+		}
+		sort.SliceStable(results, func(i, j int) bool {
+			if results[i].matches != results[j].matches {
+				return results[i].matches > results[j].matches
+			}
+			return results[i].score > results[j].score
+		})
+		if len(results) > 0 {
+			bestMatches := results[0].matches
+			items := []Template{}
+			for _, result := range results {
+				if result.matches != bestMatches {
+					break
+				}
+				items = append(items, result.item)
+			}
+			return items, "relaxed_terms"
+		}
+	}
+
+	if category != "" {
+		if items := c.Search("", category, framework); len(items) > 0 {
+			return items, "category_fallback"
+		}
+	}
+	return []Template{}, "exact"
 }

@@ -1,4 +1,4 @@
-"""契约层测评：绕开 LLM，直接调用 aigc-radar 的全部 8 个工具。
+"""契约层测评：绕开 LLM，直接调用 aigc-radar 的公开与认证工具。
 
 （legacy 工具 get_project_library 已于 e703a17 从 server 删除，不在覆盖范围。）
 
@@ -76,6 +76,30 @@ async def test_contract_search_documents(mcp_session):
         )
     )
     assert isinstance(data.get("items"), list), "items 应为列表（允许为空）"
+
+
+async def test_contract_ui_template_discovery(mcp_session):
+    search = _payload(
+        await _raw(mcp_session).call_tool(
+            "search_ui_templates",
+            {
+                "q": "深色 科技感 AI dashboard 趋势图 指标卡",
+                "category": "dashboard",
+                "language": "zh",
+                "limit": 3,
+            },
+        )
+    )
+    assert search.get("search_mode") in {"relaxed_terms", "category_fallback"}
+    assert isinstance(search.get("items"), list) and search["items"]
+    template = _payload(
+        await _raw(mcp_session).call_tool(
+            "get_ui_template",
+            {"id": search["items"][0]["id"], "language": "zh", "include_source": False},
+        )
+    )
+    assert template.get("source_url") and template.get("license")
+    assert isinstance(template.get("files"), list) and template["files"]
 
 
 async def test_contract_get_paper_detail(mcp_session):
