@@ -80,6 +80,45 @@ class PostgresUiLibraryRepository:
             cur.execute("SELECT * FROM ui_discovery_sources WHERE source_id=%s", (source_id,))
             return cur.fetchone()
 
+    def list_source_configs(self, *, enabled_only: bool = False) -> list[dict[str, Any]]:
+        query = "SELECT * FROM ui_discovery_source_configs"
+        if enabled_only:
+            query += " WHERE enabled=TRUE"
+        query += " ORDER BY name, id"
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute(query)
+            return list(cur.fetchall())
+
+    def create_source_config(self, values: dict[str, Any]) -> dict[str, Any]:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO ui_discovery_source_configs
+                    (name, kind, repository, path_patterns, feed_url, enabled)
+                VALUES (%s,%s,%s,%s,%s,%s) RETURNING *
+            """, (
+                values['name'], values['kind'], values.get('repository'),
+                values.get('path_patterns') or [], values.get('feed_url'), values['enabled'],
+            ))
+            return cur.fetchone()
+
+    def update_source_config(self, config_id: int, values: dict[str, Any]) -> dict[str, Any] | None:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("""
+                UPDATE ui_discovery_source_configs SET
+                    name=%s, kind=%s, repository=%s, path_patterns=%s,
+                    feed_url=%s, enabled=%s, updated_at=now()
+                WHERE id=%s RETURNING *
+            """, (
+                values['name'], values['kind'], values.get('repository'),
+                values.get('path_patterns') or [], values.get('feed_url'), values['enabled'], config_id,
+            ))
+            return cur.fetchone()
+
+    def delete_source_config(self, config_id: int) -> bool:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM ui_discovery_source_configs WHERE id=%s", (config_id,))
+            return cur.rowcount > 0
+
     def record_discovery(self, source_id: str, revision: str,
                          candidates: list[dict[str, Any]]) -> dict[str, int]:
         counts = {'baseline': 0, 'new': 0, 'updated': 0}

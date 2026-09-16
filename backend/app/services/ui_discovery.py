@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 import httpx
 
 from backend.app.repositories.postgres_ui_library_repository import PostgresUiLibraryRepository
+from backend.app.services.outbound_target_policy import OutboundTargetPolicyError, normalize_http_url, pin_http_target
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,31 @@ async def read_upstream(client: httpx.AsyncClient, url: str, token: str = '') ->
         return bytes(data)
 
 
+async def read_configured_feed(client: httpx.AsyncClient, url: str) -> bytes:
+    """Fetch an administrator-configured feed through the shared SSRF-safe pinned target policy."""
+    if urlsplit(url).scheme != 'https':
+        raise DiscoveryError('unsafe_feed_target')
+    try:
+        target = await asyncio.to_thread(
+            pin_http_target, url, allowed_ports={443}, reject_mixed=True,
+        )
+    except OutboundTargetPolicyError as exc:
+        raise DiscoveryError('unsafe_feed_target') from exc
+    headers = {'User-Agent': 'AIGCNEWS-UI-Discovery/1.0', 'Accept': 'application/rss+xml, application/atom+xml, application/xml, text/xml'}
+    async with client.stream(
+        'GET', target.request_url, headers={**headers, **target.headers},
+        extensions=target.extensions, follow_redirects=False,
+    ) as response:
+        if response.status_code != 200:
+            raise DiscoveryError(f'upstream_http_{response.status_code}')
+        data = bytearray()
+        async for chunk in response.aiter_bytes():
+            data.extend(chunk)
+            if len(data) > MAX_BYTES:
+                raise DiscoveryError('upstream_too_large')
+        return bytes(data)
+
+
 def tree_candidates(source: RepositorySource, tree: dict[str, Any]) -> list[dict[str, Any]]:
     if tree.get('truncated'):
         raise DiscoveryError('github_tree_truncated')
@@ -87,22 +113,41 @@ def tree_candidates(source: RepositorySource, tree: dict[str, Any]) -> list[dict
     return candidates
 
 
-def rss_candidates(raw: bytes) -> list[dict[str, Any]]:
+def feed_candidates(raw: bytes, feed_url: str) -> list[dict[str, Any]]:
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
         raise DiscoveryError('unsafe_feed_xml')
     root = ElementTree.fromstring(raw)
     result = []
-    for item in root.findall('./channel/item'):
+    entries = list(root.findall('./channel/item'))
+    if not entries:
+        entries = list(root.findall('.//{http://www.w3.org/2005/Atom}entry'))
+    feed_host = urlsplit(feed_url).hostname
+    for item in entries:
         url = item.findtext('link', '')
-        if urlsplit(url).hostname != 'tympanus.net' or urlsplit(url).scheme != 'https':
+        if not url:
+            link = item.find('{http://www.w3.org/2005/Atom}link')
+            url = str(link.get('href', '')) if link is not None else ''
+        parsed = urlsplit(url)
+        if parsed.scheme != 'https' or not parsed.hostname:
             continue
-        title = item.findtext('title', '')
+        if feed_host == 'tympanus.net' and parsed.hostname != feed_host:
+            continue
+        title = item.findtext('title', '') or item.findtext('{http://www.w3.org/2005/Atom}title', '')
+        published_at = (
+            item.findtext('pubDate', '')
+            or item.findtext('{http://www.w3.org/2005/Atom}published', '')
+            or item.findtext('{http://www.w3.org/2005/Atom}updated', '')
+        )
         result.append({'id': url, 'revision': hashlib.sha256(ElementTree.tostring(item)).hexdigest(),
-                       'title': title, 'source_url': url, 'published_at': item.findtext('pubDate', ''),
+                       'title': title, 'source_url': url, 'published_at': published_at,
                        'license_status': 'needs_review', 'kind': 'article_link'})
     if not result:
         raise DiscoveryError('empty_or_invalid_feed')
     return result
+
+
+def rss_candidates(raw: bytes) -> list[dict[str, Any]]:
+    return feed_candidates(raw, CODROPS_FEED)
 
 
 async def discover_web(repo: PostgresUiLibraryRepository, *, token: str = '', proxy: str = '',
@@ -111,17 +156,31 @@ async def discover_web(repo: PostgresUiLibraryRepository, *, token: str = '', pr
         async with httpx.AsyncClient(timeout=30, trust_env=False, proxy=proxy or None) as owned:
             return await discover_web(repo, token=token, client=owned)
     succeeded = True
-    for source in (*SOURCES, None):
-        source_id = source.id if source else 'codrops'
+    configured = await asyncio.to_thread(repo.list_source_configs, enabled_only=True)
+    sources: list[RepositorySource | dict[str, Any] | None] = [*SOURCES, None, *configured]
+    for source in sources:
+        custom = isinstance(source, dict)
+        if custom:
+            source_id = f"custom:{source['id']}"
+        else:
+            source_id = source.id if source else 'codrops'
         try:
             async with asyncio.timeout(90):
-                if source:
-                    commit = json.loads(await read_upstream(client, f'https://api.github.com/repos/{source.repo}/commits/HEAD', token))
+                if custom and source['kind'] == 'feed':
+                    feed_url = normalize_http_url(source['feed_url'], allowed_ports={443})
+                    raw = await read_configured_feed(client, feed_url)
+                    candidates = feed_candidates(raw, feed_url)
+                    revision = hashlib.sha256(raw).hexdigest()
+                elif source:
+                    repository = source['repository'] if custom else source.repo
+                    paths = tuple(source['path_patterns']) if custom else source.paths
+                    repository_source = RepositorySource(source_id, repository, paths)
+                    commit = json.loads(await read_upstream(client, f'https://api.github.com/repos/{repository}/commits/HEAD', token))
                     commit_sha = commit['sha']
-                    raw = await read_upstream(client, f'https://api.github.com/repos/{source.repo}/git/trees/{commit_sha}?recursive=1', token)
+                    raw = await read_upstream(client, f'https://api.github.com/repos/{repository}/git/trees/{commit_sha}?recursive=1', token)
                     tree = json.loads(raw)
                     tree['commit_sha'] = commit_sha
-                    candidates = tree_candidates(source, tree)
+                    candidates = tree_candidates(repository_source, tree)
                     revision = tree.get('commit_sha', tree['sha'])
                 else:
                     raw = await read_upstream(client, CODROPS_FEED)

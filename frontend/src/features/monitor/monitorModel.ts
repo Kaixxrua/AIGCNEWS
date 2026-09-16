@@ -68,6 +68,41 @@ export interface SchedulerStatus {
   jobs: Array<{ id: string; name: string; next_run_time: string | null }>
 }
 
+export type UiDiscoverySourceKind = 'github' | 'feed' | 'x'
+
+export interface UiDiscoverySource {
+  id: number | string
+  name: string
+  kind: UiDiscoverySourceKind
+  repository?: string | null
+  path_patterns: string[]
+  feed_url?: string | null
+  profile_url?: string | null
+  handle?: string | null
+  enabled: boolean
+  editable?: boolean
+}
+
+export interface UiDiscoverySourceForm {
+  id: number | null
+  name: string
+  kind: Exclude<UiDiscoverySourceKind, 'x'>
+  repository: string
+  pathPatterns: string
+  feedUrl: string
+  enabled: boolean
+}
+
+export const createUiDiscoverySourceForm = (source?: UiDiscoverySource): UiDiscoverySourceForm => ({
+  id: typeof source?.id === 'number' ? source.id : null,
+  name: source?.name || '',
+  kind: source?.kind === 'feed' ? 'feed' : 'github',
+  repository: source?.repository || '',
+  pathPatterns: source?.path_patterns?.join('\n') || '',
+  feedUrl: source?.feed_url || '',
+  enabled: source?.enabled ?? true,
+})
+
 export interface RevenueWindowStats {
   cny_amount_cents: number
   usd_amount_cents: number

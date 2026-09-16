@@ -610,6 +610,31 @@ const explicitBusinessTranslations: Record<string, string> = {
   
   
   
+  'monitor.nav.uiSources': 'UI 素材来源',
+  'monitor.uiSources.title': 'UI 素材发现来源',
+  'monitor.uiSources.description': '查看每天会检查哪些开源仓库和网站，并添加自己的来源。',
+  'monitor.uiSources.schedule': '仓库/网站 09:00 · X 09:10（北京时间）',
+  'monitor.uiSources.publicationHint': '这里负责发现候选。当前只有符合规则并通过视觉审核的 HyperUI HTML 可由 09:20 发布流程自动上线；其他来源仍需人工核查。',
+  'monitor.uiSources.name': '来源名称',
+  'monitor.uiSources.type': '来源类型',
+  'monitor.uiSources.location': '仓库 / 网站',
+  'monitor.uiSources.scope': '抓取范围',
+  'monitor.uiSources.builtin': '内置',
+  'monitor.uiSources.github': 'GitHub 仓库',
+  'monitor.uiSources.feed': 'RSS / Atom 网站',
+  'monitor.uiSources.x': 'X 账号',
+  'monitor.uiSources.xWindow': '滚动 24 小时完整窗口 · 每日 09:10',
+  'monitor.uiSources.addTitle': '添加发现来源',
+  'monitor.uiSources.editTitle': '编辑发现来源',
+  'monitor.uiSources.repository': 'GitHub 仓库',
+  'monitor.uiSources.patterns': '文件匹配规则',
+  'monitor.uiSources.patternsHint': '每行或逗号分隔一个 glob，例如 components/*.tsx。',
+  'monitor.uiSources.feedUrl': 'Feed 地址',
+  'monitor.uiSources.feedHint': '仅支持公网 HTTPS RSS/Atom，不执行网站脚本。',
+  'monitor.uiSources.loadFailed': '加载 UI 素材来源失败。',
+  'monitor.uiSources.saveFailed': '保存 UI 素材来源失败。',
+  'monitor.uiSources.deleteFailed': '删除 UI 素材来源失败。',
+  'monitor.uiSources.deleteConfirm': '删除发现来源“{name}”？',
   'monitor.schedulerConfig.title': '定时任务配置',
   'monitor.schedulerConfig.count': '{count} 个任务',
   'monitor.schedulerConfig.jobName': '任务名称',
@@ -817,7 +842,11 @@ const applyFlat = (target: MessageTree, values: Record<string, string>): Message
   for (const [path, value] of Object.entries(values)) {
     const parts = path.split('.')
     const key = parts.pop()!
-    const parent = parts.reduce<MessageTree>((node, part) => node[part] as MessageTree, target)
+    const parent = parts.reduce<MessageTree>((node, part) => {
+      const existing = node[part]
+      if (!existing || typeof existing !== 'object' || Array.isArray(existing)) node[part] = {}
+      return node[part] as MessageTree
+    }, target)
     parent[key] = value
   }
   return target

@@ -622,4 +622,29 @@ describe('Monitor API contract', () => {
       params: { query: undefined, page: 1, page_size: 20 },
     })
   })
+
+  it('lists and mutates configurable UI discovery sources', async () => {
+    const item = { id: 7, name: 'Cards', kind: 'github', repository: 'acme/ui', path_patterns: ['components/*.tsx'], enabled: true }
+    transport.get.mockResolvedValueOnce({ data: { builtin: [{ id: 'hyperui' }], custom: [item] } })
+    await expect(monitorApi.fetchUiDiscoverySources()).resolves.toEqual({ builtin: [{ id: 'hyperui' }], custom: [item] })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/ui-library/discovery-sources')
+
+    transport.post.mockResolvedValueOnce({ data: { item } })
+    await monitorApi.saveUiDiscoverySource({ id: null, name: ' Cards ', kind: 'github', repository: ' acme/ui ', pathPatterns: 'components/*.tsx, demos/*.tsx', feedUrl: '', enabled: true })
+    expect(transport.post).toHaveBeenLastCalledWith('/ops/ui-library/discovery-sources', {
+      name: 'Cards', kind: 'github', enabled: true, repository: 'acme/ui',
+      path_patterns: ['components/*.tsx', 'demos/*.tsx'], feed_url: null,
+    })
+
+    transport.put.mockResolvedValueOnce({ data: { item: { ...item, kind: 'feed' } } })
+    await monitorApi.saveUiDiscoverySource({ id: 7, name: 'News', kind: 'feed', repository: '', pathPatterns: '', feedUrl: ' https://example.com/feed.xml ', enabled: false })
+    expect(transport.put).toHaveBeenLastCalledWith('/ops/ui-library/discovery-sources/7', {
+      name: 'News', kind: 'feed', enabled: false, repository: null,
+      path_patterns: [], feed_url: 'https://example.com/feed.xml',
+    })
+
+    transport.delete.mockResolvedValueOnce({ data: null })
+    await monitorApi.deleteUiDiscoverySource(7)
+    expect(transport.delete).toHaveBeenLastCalledWith('/ops/ui-library/discovery-sources/7')
+  })
 })

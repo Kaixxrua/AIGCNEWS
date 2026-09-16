@@ -24,6 +24,7 @@ import MonitorSectionNav from '@/components/monitor/MonitorSectionNav.vue'
 import MonitorTaskPanel from '@/components/monitor/MonitorTaskPanel.vue'
 import ProviderConfigPanel from '@/components/monitor/ProviderConfigPanel.vue'
 import SchedulerConfigPanel from '@/components/monitor/SchedulerConfigPanel.vue'
+import UiDiscoverySourcesPanel from '@/components/monitor/UiDiscoverySourcesPanel.vue'
 import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
 import UserStatsPanel from '@/components/monitor/UserStatsPanel.vue'
@@ -297,6 +298,9 @@ onUnmounted(dispose)
             @go-page="goUnprocessableProjectsPage"
             @go-retained-page="goRetainedProjectsPage"
           />
+        </template>
+        <template v-else-if="currentSection === 'ui-sources'">
+          <UiDiscoverySourcesPanel v-if="authStore.isAdmin" />
         </template>
 
         <!-- ═══ 账号源（Admin 专属） ═══ -->

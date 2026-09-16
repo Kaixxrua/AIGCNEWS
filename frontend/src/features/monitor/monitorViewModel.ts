@@ -59,7 +59,7 @@ export const SOURCE_LIST: SourceItem[] = [
 
 export type MonitorSectionKey =
   | 'tasks' | 'mcp-calls' | 'errors' | 'visit-stats'
-  | 'collect' | 'crawl' | 'enrichment'
+  | 'collect' | 'crawl' | 'enrichment' | 'ui-sources'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server' | 'oauth-config' | 'telegram-push'
   | 'contact-page' | 'membership' | 'user-stats' | 'revenue' | 'payment-config' | 'payment-orders'
@@ -89,6 +89,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'collect', labelKey: 'monitor.nav.collect', adminOnly: true },
     { key: 'crawl', labelKey: 'monitor.nav.crawl', adminOnly: true },
     { key: 'enrichment', labelKey: 'monitor.nav.enrichment', adminOnly: true },
+    { key: 'ui-sources', labelKey: 'monitor.nav.uiSources', adminOnly: true },
   ] },
   { key: 'accounts', labelKey: 'monitor.nav.group.accounts', icon: Users, children: [
     { key: 'x-watch', labelKey: 'monitor.nav.xWatch', adminOnly: true },
