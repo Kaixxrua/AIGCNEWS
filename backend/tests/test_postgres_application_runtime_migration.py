@@ -29,8 +29,20 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 68
-    assert migrations[-1].filename == "0068_ui_library.sql"
+    assert migrations[-1].version == 72
+    assert migrations[-1].filename == "0072_mcp_metrics_checkpoint.sql"
+
+
+def test_mcp_metrics_checkpoint_is_singleton_and_monotonic_ready() -> None:
+    sql = (MIGRATIONS_DIR / "0072_mcp_metrics_checkpoint.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE mcp_metrics_checkpoint" in sql
+    assert "id SMALLINT PRIMARY KEY CHECK (id = 1)" in sql
+    assert "total_calls BIGINT NOT NULL" in sql
+    assert "dsh_calls BIGINT NOT NULL" in sql
+    assert "snapshot JSONB NOT NULL" in sql
 
 
 def test_user_mcp_token_dsh_purpose_migration_is_additive_and_idempotent() -> None:

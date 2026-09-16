@@ -65,6 +65,7 @@ from backend.app.monitoring.live_stats_broadcaster import (
     LiveStatsBroadcaster,
     set_live_stats_broadcaster,
 )
+from backend.app.monitoring.mcp_metrics_checkpoint import McpMetricsCheckpointRuntime
 from backend.app.monitoring.mcp_redis_metrics import create_redis_mcp_tool_call_metrics
 from backend.app.monitoring.mcp_tools import MCP_TOOL_NAMES, JsonMcpToolCallStore
 from backend.app.repositories.application_repository_context import (
@@ -75,6 +76,9 @@ from backend.app.repositories.application_repository_factory import (
 )
 from backend.app.repositories.postgres_error_event_repository import (
     PostgresErrorEventRepository,
+)
+from backend.app.repositories.postgres_mcp_metrics_checkpoint_repository import (
+    PostgresMcpMetricsCheckpointRepository,
 )
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.auth.oauth.runtime_config import configure_oauth_settings_reader
@@ -151,6 +155,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     dashboard_warmup_task: asyncio.Task[None] | None = None
     live_stats_task: asyncio.Task[None] | None = None
     live_stats_broadcaster: LiveStatsBroadcaster | None = None
+    mcp_metrics_checkpoint_runtime: McpMetricsCheckpointRuntime | None = None
+    mcp_metrics_checkpoint_task: asyncio.Task[None] | None = None
     redis_client: Redis | None = None
     operations_runtime: ApplicationOperationsRuntime | None = None
     model_provider_runtime: ApplicationModelProviderRuntime | None = None
@@ -167,6 +173,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.operations_runtime = None
     app.state.model_provider_runtime = None
     app.state.live_stats_broadcaster = None
+    app.state.mcp_metrics_checkpoint_runtime = None
 
     try:
         await asyncio.to_thread(postgres_database.open)
@@ -330,6 +337,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
             app.state.mcp_tool_call_metrics = mcp_tool_call_metrics
             await mcp_tool_call_metrics.seed_from_json(MCP_TOOL_NAMES)
+            # Redis 继续承担热路径；PostgreSQL 仅做单行耐久快照。启动时选择
+            # 两边较新的总量，之后周期 checkpoint，避免 Redis 数据盘丢失回退。
+            mcp_metrics_checkpoint_runtime = McpMetricsCheckpointRuntime(
+                mcp_tool_call_metrics,
+                PostgresMcpMetricsCheckpointRepository(postgres_database),
+                interval_seconds=float(
+                    getattr(settings, "mcp_metrics_checkpoint_interval_seconds", 30.0)
+                ),
+            )
+            app.state.mcp_metrics_checkpoint_runtime = mcp_metrics_checkpoint_runtime
+            await mcp_metrics_checkpoint_runtime.restore_then_checkpoint()
+            mcp_metrics_checkpoint_task = asyncio.create_task(
+                mcp_metrics_checkpoint_runtime.run()
+            )
             logger.info("[Startup] Redis cache initialized.")
         except Exception as exc:
             app.state.redis = None
@@ -433,6 +454,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 logger.warning("[Shutdown] Project search runtime close failed (non-fatal): %s", exc)
             finally:
                 app.state.project_search_runtime = None
+
+        if mcp_metrics_checkpoint_runtime is not None:
+            await mcp_metrics_checkpoint_runtime.stop()
+        await _cancel_background_task(
+            mcp_metrics_checkpoint_task,
+            name="MCP metrics PostgreSQL checkpoint",
+        )
+        app.state.mcp_metrics_checkpoint_runtime = None
 
         FastAPICache.reset()
         if redis_client is not None:

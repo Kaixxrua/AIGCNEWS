@@ -95,6 +95,32 @@ merge(KEYS[5], KEYS[6])
 return 1
 """
 
+# PostgreSQL checkpoint 回灌：仅当 checkpoint 比 Redis 更新时整组替换。
+# 比较与替换在同一段 Lua 内完成，启动期间即使仍有 MCP 写入也不会倒退。
+# KEYS: 同 _RECORD_SCRIPT
+# ARGV: total, since, n_tools, [name, calls, last_iso]*n, n_clients, [同上]*n
+_RESTORE_SCRIPT = """
+local incoming = tonumber(ARGV[1]) or 0
+local current = tonumber(redis.call('GET', KEYS[1])) or -1
+if current >= incoming then return 0 end
+redis.call('SET', KEYS[1], incoming)
+if ARGV[2] ~= '' then redis.call('SET', KEYS[2], ARGV[2]) else redis.call('DEL', KEYS[2]) end
+redis.call('DEL', KEYS[3], KEYS[4], KEYS[5], KEYS[6])
+local i = 3
+local function restore(calls_key, last_key)
+  local n = tonumber(ARGV[i]) or 0
+  i = i + 1
+  for _ = 1, n do
+    redis.call('HSET', calls_key, ARGV[i], ARGV[i + 1])
+    redis.call('HSET', last_key, ARGV[i], ARGV[i + 2])
+    i = i + 3
+  end
+end
+restore(KEYS[3], KEYS[4])
+restore(KEYS[5], KEYS[6])
+return 1
+"""
+
 
 class McpToolCallMetricsRecorder(Protocol):
     """MCP 分派层依赖的异步计数接口（record/snapshot 均在事件循环内 await）。"""
@@ -273,6 +299,56 @@ class RedisMcpToolCallMetrics:
                 await self._redis.delete(marker)
             except Exception:
                 logger.warning("mcp tool call metrics seed marker release failed", exc_info=True)
+
+    async def restore_if_newer(self, payload: Dict[str, Any]) -> bool:
+        """从持久化快照回灌 Redis；Redis 已持平或更新时保持原样。"""
+        args = self._restore_args(payload)
+        try:
+            restored = await self._redis.eval(
+                _RESTORE_SCRIPT,
+                6,
+                *self._keys(),
+                *args,
+            )
+        except Exception:
+            logger.warning(
+                "mcp tool call metrics checkpoint restore failed (redis kept)",
+                exc_info=True,
+            )
+            return False
+        return bool(restored)
+
+    @staticmethod
+    def _restore_args(payload: Dict[str, Any]) -> tuple[Any, ...]:
+        total = int(payload.get("total_calls", 0))
+        if total < 0:
+            raise ValueError("MCP metrics total_calls must be non-negative")
+        since = payload.get("since", "")
+        if not isinstance(since, str):
+            raise ValueError("MCP metrics since must be a string")
+        if since:
+            datetime.fromisoformat(since)
+
+        args: list[Any] = [total, since]
+        for field in ("tools", "clients"):
+            entries = payload.get(field, {})
+            if not isinstance(entries, dict):
+                raise ValueError(f"MCP metrics {field} must be an object")
+            normalized: list[tuple[str, int, str]] = []
+            for name in sorted(entries):
+                entry = entries[name]
+                if not isinstance(name, str) or not isinstance(entry, dict):
+                    raise ValueError(f"MCP metrics {field} entry is invalid")
+                calls = int(entry.get("calls", 0))
+                last = entry.get("last_called_at", "")
+                if calls <= 0 or not isinstance(last, str) or not last:
+                    raise ValueError(f"MCP metrics {field} entry is invalid")
+                datetime.fromisoformat(last)
+                normalized.append((name, calls, last))
+            args.append(len(normalized))
+            for entry in normalized:
+                args.extend(entry)
+        return tuple(args)
 
     @staticmethod
     def _seed_args(

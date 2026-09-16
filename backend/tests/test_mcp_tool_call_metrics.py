@@ -12,6 +12,7 @@ from backend.app.api import routes_dashboard
 from backend.app.monitoring import mcp_redis_metrics, metrics as monitor_metrics
 from backend.app.monitoring.mcp_redis_metrics import (
     _RECORD_SCRIPT,
+    _RESTORE_SCRIPT,
     _SEED_SCRIPT,
     LocalMcpToolCallMetrics,
     RedisMcpToolCallMetrics,
@@ -402,7 +403,7 @@ class CollectMetricsMcpToolCallsTests(unittest.TestCase):
 
 
 class FakeRedis:
-    """最小内存 Redis 仿真：字符串/哈希原语 + 本模块两段 Lua 脚名的语义回放。
+    """最小内存 Redis 仿真：字符串/哈希原语 + 本模块 Lua 脚本的语义回放。
 
     eval 按脚本对象身份分发（_RECORD_SCRIPT / _SEED_SCRIPT），在 Python 侧
     复刻 Lua 的原子语义；fail=True 时所有操作抛 ConnectionError 模拟故障。
@@ -501,6 +502,31 @@ class FakeRedis:
                         self._hincrby(calls_key, name, calls)
                     if last:
                         self._hset_max(last_key, name, last)
+            return 1
+        if script == _RESTORE_SCRIPT:
+            incoming = int(argv[0])
+            current = int(self.strings.get(total, b"-1"))
+            if current >= incoming:
+                return 0
+            self.strings[total] = str(incoming).encode()
+            if argv[1]:
+                self.strings[since] = argv[1]
+            else:
+                self.strings.pop(since, None)
+            for key in (tool_calls, tool_last, client_calls, client_last):
+                self.hashes.pop(key, None)
+            i = 2
+            for calls_key, last_key in (
+                (tool_calls, tool_last),
+                (client_calls, client_last),
+            ):
+                n = int(argv[i])
+                i += 1
+                for _ in range(n):
+                    name, calls, last = argv[i], argv[i + 1], argv[i + 2]
+                    i += 3
+                    self.hashes.setdefault(calls_key, {})[name] = calls
+                    self.hashes.setdefault(last_key, {})[name] = last
             return 1
         raise AssertionError(f"unexpected lua script: {script!r}")
 
@@ -635,6 +661,46 @@ class RedisMcpToolCallMetricsSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(snapshot["tools"]), ["good"])
         # total 以 Redis 计数器为准（聚合口径），不因坏条目回退
         self.assertEqual(snapshot["total_calls"], 2)
+
+
+class RedisMcpToolCallMetricsRestoreTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.redis = FakeRedis()
+        self.metrics = RedisMcpToolCallMetrics(self.redis, McpToolCallMetrics())
+        self.payload = {
+            "since": "2026-08-04T05:28:50+00:00",
+            "total_calls": 4149,
+            "tools": {
+                "search_papers": {
+                    "calls": 4149,
+                    "last_called_at": "2026-09-11T09:49:33+00:00",
+                }
+            },
+            "clients": {
+                DSH_PLUGIN_CLIENT: {
+                    "calls": 423,
+                    "last_called_at": "2026-09-11T09:49:33+00:00",
+                }
+            },
+        }
+
+    async def test_restore_replaces_older_redis_snapshot(self) -> None:
+        self.redis.strings[b"mcpmetrics:total"] = b"4041"
+
+        restored = await self.metrics.restore_if_newer(self.payload)
+        snapshot = await self.metrics.snapshot()
+
+        self.assertTrue(restored)
+        self.assertEqual(snapshot["total_calls"], 4149)
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 423)
+
+    async def test_restore_never_overwrites_newer_redis(self) -> None:
+        self.redis.strings[b"mcpmetrics:total"] = b"4200"
+
+        restored = await self.metrics.restore_if_newer(self.payload)
+
+        self.assertFalse(restored)
+        self.assertEqual(self.redis.strings[b"mcpmetrics:total"], b"4200")
 
 
 class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):
