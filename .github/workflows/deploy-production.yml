@@ -54,13 +54,24 @@ jobs:
 
   build-mcp:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-production]
+    env:
+      PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Inject the production UI catalog
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
+            echo "AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
+            exit 1
+          fi
+          mkdir -p mcp-go/internal/uicatalog/data
+          cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." mcp-go/internal/uicatalog/data/
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -77,13 +88,25 @@ jobs:
 
   build-frontend:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-production]
+    env:
+      PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Inject the production UI catalog
+        shell: bash
+        run: |
+          if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
+            echo "AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
+            exit 1
+          fi
+          mkdir -p frontend/.ui-library-data frontend/.ui-previews/previews
+          cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." frontend/.ui-library-data/
+          cp -a "$PRODUCTION_ROOT/frontend/.ui-previews/previews/." frontend/.ui-previews/previews/
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io

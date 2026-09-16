@@ -175,6 +175,9 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
+
       - name: Build
         run: go build ./...
 
@@ -222,6 +225,9 @@ jobs:
           POSTGRES_DATABASE: staging
         run: docker compose --file deploy/staging/docker-compose.yml config --quiet
 
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python scripts/ci/materialize_ui_catalog_fixture.py --frontend-copy
+
       # The frontend image must build from a clean checkout: SSL material is
       # gitignored and mounted at runtime, never copied into the image.
       - name: Build frontend image from clean checkout
@@ -247,6 +253,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Materialize clean-checkout UI catalog fixture
+        run: python ../scripts/ci/materialize_ui_catalog_fixture.py
 
       - name: Run frontend unit tests
         run: npm run test:unit

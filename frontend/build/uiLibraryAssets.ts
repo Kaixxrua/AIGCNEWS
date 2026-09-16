@@ -8,7 +8,7 @@ import { previewFiles } from './uiPreviewManifest'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const roots = [
-  { folder: resolve(root, '../mcp-go/internal/uicatalog/data'), prefix: '' },
+  { folder: process.env.UI_LIBRARY_DATA_ROOT ? resolve(process.env.UI_LIBRARY_DATA_ROOT) : resolve(root, '../mcp-go/internal/uicatalog/data'), prefix: '' },
   // Only deploy runtime previews, never local screenshots, reports or test fixtures.
   { folder: resolve(root, '.ui-previews/previews'), prefix: 'previews/' },
 ]

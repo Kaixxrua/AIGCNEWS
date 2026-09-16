@@ -13,6 +13,8 @@ __pycache__/
 # Node.js 依赖与前端打包产物
 **/node_modules/
 frontend/dist/
+frontend/.ui-library-data/
+frontend/.ui-previews/
 dist/
 
 # 数据库本地真实数据与日志 (核心隔离)

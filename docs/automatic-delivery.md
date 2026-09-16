@@ -9,7 +9,7 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 只为与成功 CI 完全相同的 head SHA 启用自动合并；分支在验证后发生变化时拒绝合并，其他远端保护条件仍由 GitHub 等待并执行。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 并行构建 backend、MCP 和 frontend 镜像并推送 GHCR；生产 job 使用固定 concurrency group 排队。
+6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录，生产 job 使用固定 concurrency group 排队。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
@@ -36,12 +36,13 @@ runner 用户必须能够：
 - 读取部署目录已有的 `.env`、证书和私有 overlay；
 - 访问 GHCR 和 `origin`；
 - 在部署目录创建 `.release.env` 与 `.aigcnews-deploy/`。
+- 读取生产目录中的 `mcp-go/internal/uicatalog/data/` 和 `frontend/.ui-previews/previews/`；这些私有发布素材不会提交到 Git，普通 PR CI 使用合成夹具验证同一构建契约。
 
 生产目录必须保持 tracked 文件干净。`.env`、`.release.env` 和 `.aigcnews-deploy/` 不进入 Git。
 
 ## 并发语义
 
-- 三个应用镜像并行构建。
+- backend 镜像可在 GitHub 托管 runner 构建；MCP 与 frontend 镜像在生产 runner 上构建，并按可用 runner 容量并行或排队。
 - GitHub job 级 `aigcnews-production` concurrency 只串行生产切换，不阻塞构建。
 - `cancel-in-progress: false`，已经开始的生产切换不会被新提交取消。
 - 控制器拿到主机锁后重新 fetch `origin/main`；候选已是最新 main 的祖先时标记 `superseded`，不触碰生产。
