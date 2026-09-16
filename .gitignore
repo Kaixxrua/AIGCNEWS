@@ -1,5 +1,7 @@
 # 环境变量（极度机密）
 .env
+.release.env
+.aigcnews-deploy/
 **/.env
 
 # Python 虚拟环境与缓存

@@ -4,6 +4,7 @@ set -Eeuo pipefail
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly COMPOSE_FILE="${ROOT_DIR}/docker/docker-compose.yml"
 readonly APP_ENV_FILE="${ROOT_DIR}/.env"
+readonly RELEASE_ENV_FILE="${AIGCNEWS_RELEASE_ENV:-${ROOT_DIR}/.release.env}"
 readonly PRICEAI_ENV_FILE="${ROOT_DIR}/../.priceai-node.env"
 # 私有部署 overlay（不随开源仓库发布）：存在时自动并入编排，
 # 承载姊妹服务、外部编排网与私有 nginx 挂载；不存在则核心栈独立可用。
@@ -49,6 +50,14 @@ compose() {
     --project-name "${EXPECTED_PROJECT}"
     --file "${COMPOSE_FILE}"
   )
+  if [[ -f "${RELEASE_ENV_FILE}" ]]; then
+    args=(
+      --env-file "${APP_ENV_FILE}"
+      --env-file "${RELEASE_ENV_FILE}"
+      --project-name "${EXPECTED_PROJECT}"
+      --file "${COMPOSE_FILE}"
+    )
+  fi
   if has_private_overlay; then
     args+=(
       --env-file "${PRICEAI_ENV_FILE}"

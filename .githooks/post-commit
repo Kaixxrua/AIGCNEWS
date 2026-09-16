@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Publish completed session commits without ever pushing main or forcing refs.
+set -u
+
+if [[ "${AIGCNEWS_SKIP_AUTO_PUSH:-}" == "1" ]]; then
+  echo "[post-commit] auto-push skipped by AIGCNEWS_SKIP_AUTO_PUSH=1" >&2
+  exit 0
+fi
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [[ "$branch" != session/* ]]; then
+  echo "[post-commit] auto-push skipped for non-session branch: ${branch:-detached}" >&2
+  exit 0
+fi
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "[post-commit] auto-push skipped: origin is not configured" >&2
+  exit 0
+fi
+
+if git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
+  git push || echo "[post-commit] push failed; the commit remains local" >&2
+else
+  git push -u origin "$branch" || echo "[post-commit] push failed; the commit remains local" >&2
+fi
+
+exit 0

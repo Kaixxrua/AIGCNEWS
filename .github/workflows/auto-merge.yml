@@ -1,0 +1,49 @@
+name: Auto Merge Validated Session PR
+
+on:
+  workflow_run:
+    workflows: ["Contract Baseline"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'session/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_PROMPT_DISABLED: "1"
+    steps:
+      - name: Merge the exact validated head
+        shell: bash
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [[ ! "$HEAD_BRANCH" =~ ^session/[a-z0-9][a-z0-9-]{1,127}$ ]]; then
+            echo "Refusing unexpected session branch name" >&2
+            exit 1
+          fi
+          pr=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --head "$HEAD_BRANCH" \
+            --json number,headRefOid | \
+            jq -r --arg sha "$HEAD_SHA" '.[] | select(.headRefOid == $sha) | .number' | head -n1)
+          if [[ -z "$pr" ]]; then
+            echo "No open PR has the exact validated head $HEAD_SHA; refusing merge" >&2
+            exit 1
+          fi
+          gh pr merge "$pr" \
+            --repo "$GITHUB_REPOSITORY" \
+            --auto \
+            --squash \
+            --delete-branch \
+            --match-head-commit "$HEAD_SHA"
