@@ -16,9 +16,20 @@ const output = resolve(root, '.ui-previews/previews')
 const { items } = JSON.parse(await readFile(resolve(data, 'catalog.json'), 'utf8'))
 const selectedPrefixes = process.env.UI_PREVIEW_IDS_FILE ? JSON.parse(await readFile(process.env.UI_PREVIEW_IDS_FILE, 'utf8')) : process.argv.slice(2)
 await mkdir(output, { recursive: true })
-// Remove only stale flat outputs. Reviewed application packages use subdirectories.
+const reviewedIds = new Set(
+  items.filter(item => item.editorial?.status === 'approved').map(item => item.id),
+)
+// Remove stale flat outputs and locally generated copies of reviewed previews.
+// Reviewed previews are immutable catalog assets whose hashes are verified later;
+// a local rebuild must never shadow those pinned files.
 for (const entry of await readdir(output, { withFileTypes: true })) {
-  if (entry.isFile() && !items.some(item => entry.name.startsWith(`${item.id}.`))) await unlink(resolve(output, entry.name))
+  if (
+    entry.isFile()
+    && (
+      !items.some(item => entry.name.startsWith(`${item.id}.`))
+      || [...reviewedIds].some(id => entry.name.startsWith(`${id}.`))
+    )
+  ) await unlink(resolve(output, entry.name))
 }
 
 const vuePlugin = {
@@ -62,6 +73,7 @@ if (gpu) gpu.getExtension('WEBGL_lose_context')?.loseContext();
 `
 for (const item of items) {
   if (selectedPrefixes.length && !selectedPrefixes.some(prefix => item.id.startsWith(prefix))) continue
+  if (reviewedIds.has(item.id)) continue
   // These complete applications already have pinned, visually reviewed builds.
   // uiLibraryAssets verifies their files and hashes during the production build.
   if (item.preview_package && Object.keys(item.preview_files ?? {}).length) continue

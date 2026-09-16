@@ -22,8 +22,9 @@ const nginxConf = readFileSync(`${frontendRoot}/nginx.conf`, 'utf-8')
 const viteConfig = readFileSync(`${frontendRoot}/vite.config.ts`, 'utf-8')
 // 剥离注释后的代码视图：配置项断言只看真实代码，注释中提及不算命中。
 const viteConfigCode = viteConfig
-  .replace(/\/\*[\s\S]*?\*\//g, '')
-  .replace(/^\s*\/\/[^\n]*$/gm, '')
+  .split(/\r?\n/)
+  .filter(line => !line.trimStart().startsWith('//'))
+  .join('\n')
 
 // 提取精确匹配 location 块（location = /path { ... }）的花括号体。
 function extractExactLocationBody(conf: string, path: string): string {

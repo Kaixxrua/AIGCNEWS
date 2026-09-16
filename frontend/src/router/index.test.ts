@@ -119,12 +119,12 @@ describe('mcp guest access contract', () => {
 })
 
 describe('subscriptions management compatibility contract', () => {
-  it('keeps the authenticated deep-link route without a Dock entry', () => {
+  it('keeps the authenticated route with a guest-visible Dock entry', () => {
     const record = router.getRoutes().find((r) => r.path === '/subscriptions')
     expect(record, 'missing route /subscriptions').toBeDefined()
     expect(record?.name).toBe('subscriptions')
     expect(record?.meta.requiresAuth).toBe(true)
-    expect(NAV_ITEMS.some((item) => item.to === '/subscriptions')).toBe(false)
+    expect(NAV_ITEMS.some((item) => item.to === '/subscriptions')).toBe(true)
   })
 
   it('redirects anonymous visitors while allowing authenticated visitors', () => {

@@ -33,6 +33,14 @@ export function uiLibraryAssets(): Plugin {
       for (const file of [...item.files, ...item.notices, ...item.assets]) allowed.add(file.path)
       for (const url of [item.poster_url, item.clip_url]) if (url) allowed.add(url.replace('/ui-library/', ''))
       if (item.rights_evidence_url) evidence.add(item.rights_evidence_url.replace('/ui-library/', ''))
+      if (item.editorial?.status === 'approved') {
+        const reviewPath = item.editorial.evidence.replace('/ui-library/', '')
+        const review = JSON.parse(readFileSync(resolve(data, reviewPath), 'utf8')) as {
+          preview_files?: Record<string, string>
+        }
+        allowed.add(item.preview_url.replace('/ui-library/', ''))
+        for (const name of Object.keys(review.preview_files ?? {})) allowed.add(`previews/${name}`)
+      }
     }
     for (const filename of evidence) {
       allowed.add(filename)

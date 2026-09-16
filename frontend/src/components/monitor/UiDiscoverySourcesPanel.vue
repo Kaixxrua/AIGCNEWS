@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import axios from 'axios'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
@@ -37,8 +38,9 @@ const save = async () => {
     await monitorApi.saveUiDiscoverySource(form.value)
     reset()
     await load()
-  } catch (reason: any) {
-    error.value = reason?.response?.data?.detail || t('monitor.uiSources.saveFailed')
+  } catch (reason: unknown) {
+    const detail = axios.isAxiosError(reason) ? reason.response?.data?.detail : ''
+    error.value = typeof detail === 'string' && detail ? detail : t('monitor.uiSources.saveFailed')
   } finally {
     saving.value = false
   }

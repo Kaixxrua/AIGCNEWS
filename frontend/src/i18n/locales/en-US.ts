@@ -1,6 +1,6 @@
 import { trackingEn } from './tracking'
 
-const enUS = {
+const enUSCatalog = {
   recommendedWebsites: {
     title: "Editor's picks", subtitle: 'Websites I recommend, and why.', collectionNav: 'Website collections',
     add: 'Add website', edit: 'Edit website', remove: 'Remove pick', removing: 'Removing…',
@@ -199,5 +199,26 @@ const enUS = {
   'monitor.uiSources.deleteFailed': 'Failed to delete the UI asset source.',
   'monitor.uiSources.deleteConfirm': 'Delete discovery source “{name}”?',
 } as const
+
+type MessageTree = Record<string, unknown>
+
+// 恢复导入可能带来的扁平点号键，把它们展开到与常规 locale 相同的树形结构。
+// 这样新增业务文案既能沿用扁平补丁格式，也不会在运行时生成字面量点号键。
+const expandFlatMessages = <T extends MessageTree>(source: T): T => {
+  const result: MessageTree = {}
+  for (const [path, value] of Object.entries(source)) {
+    const parts = path.split('.')
+    const key = parts.pop()!
+    const parent = parts.reduce<MessageTree>((node, part) => {
+      const existing = node[part]
+      if (!existing || typeof existing !== 'object' || Array.isArray(existing)) node[part] = {}
+      return node[part] as MessageTree
+    }, result)
+    parent[key] = value
+  }
+  return result as T
+}
+
+const enUS = expandFlatMessages(enUSCatalog)
 export default enUS
 export { enUS }
