@@ -91,22 +91,39 @@ jobs:
     runs-on: [self-hosted, linux, aigcnews-production]
     env:
       PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
+      PRIVATE_FRONTEND_ROOT: ${{ vars.AIGCNEWS_GODOT_RELEASE_ROOT }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - name: Inject the production UI catalog
+      - name: Inject the production UI catalog and private frontend
         shell: bash
         run: |
           if [[ -z "$PRODUCTION_ROOT" || "$PRODUCTION_ROOT" != /* ]]; then
             echo "AIGCNEWS_PRODUCTION_ROOT must be an absolute path" >&2
             exit 1
           fi
+          if [[ -z "$PRIVATE_FRONTEND_ROOT" || "$PRIVATE_FRONTEND_ROOT" != /* ]]; then
+            echo "AIGCNEWS_GODOT_RELEASE_ROOT must be an absolute path" >&2
+            exit 1
+          fi
           mkdir -p frontend/.ui-library-data frontend/.ui-previews/previews
           cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." frontend/.ui-library-data/
           cp -a "$PRODUCTION_ROOT/frontend/.ui-previews/previews/." frontend/.ui-previews/previews/
+          python3 scripts/release/stage_private_frontend.py \
+            --private-root "$PRIVATE_FRONTEND_ROOT" \
+            --frontend-root frontend
+      - name: Validate the protected frontend overlay
+        working-directory: frontend
+        shell: bash
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:unit -- \
+            src/components/contact/GodotContactScene.test.ts \
+            src/views/ContactPageView.test.ts
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
