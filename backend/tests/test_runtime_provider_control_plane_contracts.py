@@ -22,7 +22,7 @@ def _model_settings(**overrides):
         "llm_provider": "ollama",
         "llm_temperature": 0.25,
         "llm_max_tokens": 2048,
-        "llm_request_timeout": 300.0,
+        "llm_request_timeout": 1200.0,
         "openai_api_key": "static-openai-key",
         "openai_base_url": "https://static-openai.test/v1",
         "anthropic_api_key": "static-anthropic-key",
@@ -71,7 +71,7 @@ class RuntimeProviderModelFactoryContracts(unittest.TestCase):
             max_tokens=2048,
             streaming=True,
             max_retries=2,
-            request_timeout=300.0,
+            request_timeout=1200.0,
             default_headers={
                 "User-Agent": model_factory.COMPATIBLE_RELAY_USER_AGENT
             },
