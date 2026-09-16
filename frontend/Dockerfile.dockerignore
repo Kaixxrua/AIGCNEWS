@@ -1,0 +1,13 @@
+**
+!frontend/
+!frontend/**
+!mcp-go/
+!mcp-go/internal/
+!mcp-go/internal/uicatalog/
+!mcp-go/internal/uicatalog/data/
+!mcp-go/internal/uicatalog/data/**
+
+frontend/node_modules/
+frontend/dist/
+frontend/.ui-previews/
+frontend/ssl/

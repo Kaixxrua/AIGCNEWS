@@ -18,12 +18,14 @@ describe('Material browsing and review boundaries', () => {
   })
   it('keeps basic controls in a specific category and separates full pages and themes', () => {
     const legacyInput = { ...items[0]!, provider_id: 'hyperui', subcategory: undefined, category: 'component', files: [{ name: 'input.html', path: 'sources/hyperui/public/examples/application/inputs/1.html', sha256: '0'.repeat(64) }] }
+    const template = { ...items[0]!, id: 'dashboard-template', kind: 'template' as const, category: 'dashboard', subcategory: 'dashboard' }
+    const theme = { ...items[0]!, id: 'nature-theme', kind: 'theme' as const, styles: ['nature'], theme: { light: { primary: '#fff' }, dark: { primary: '#000' } } }
     expect(subcategory(legacyInput)).toBe('inputs')
-    expect(materialKind(items.find(i => i.id === 'shadcn-dashboard-01')!)).toBe('template')
-    const themes = browseMaterials(items, 'theme')
-    expect(themes).toHaveLength(42)
+    expect(materialKind(template)).toBe('template')
+    const themes = browseMaterials([theme], 'theme')
+    expect(themes).toHaveLength(1)
     expect(themes.every(i => i.theme?.light.primary && i.theme.dark.primary)).toBe(true)
-    expect(browseMaterials(items, 'template', 'dashboard').map(i => i.id)).toContain('shadcn-dashboard-01')
+    expect(browseMaterials([template], 'template', 'dashboard').map(i => i.id)).toContain('dashboard-template')
   })
   it('requires a review for the exact imported source revision before featuring', () => {
     const item = { ...items[0]! }

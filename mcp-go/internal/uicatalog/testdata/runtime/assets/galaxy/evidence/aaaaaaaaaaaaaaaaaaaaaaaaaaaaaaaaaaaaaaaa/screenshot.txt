@@ -1,0 +1,1 @@
+Fixture screenshot bytes for CI contract validation.

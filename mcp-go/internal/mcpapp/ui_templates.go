@@ -30,6 +30,21 @@ type uiTemplateService struct {
 	baseURL string
 }
 
+const uiSourcePageCharacters = 16000
+
+func uiSourcePage(content string, offset int) (string, any, int, error) {
+	runes := []rune(content)
+	if offset < 0 || offset >= len(runes) {
+		return "", nil, len(runes), ToolInputError{Message: "file_offset is outside the source file."}
+	}
+	end := min(offset+uiSourcePageCharacters, len(runes))
+	var next any
+	if end < len(runes) {
+		next = end
+	}
+	return string(runes[offset:end]), next, len(runes), nil
+}
+
 func uiString(args map[string]any, key, fallback string, max int, choices ...string) (string, error) {
 	raw, exists := args[key]
 	if !exists {
@@ -191,16 +206,11 @@ func (s *uiTemplateService) get(args map[string]any) (any, error) {
 				return nil, err
 			}
 			if selectedFile != "" && (len(content) > sourceBudget || fileOffset > 0) {
-				runes := []rune(content)
-				if fileOffset >= len(runes) {
-					return nil, ToolInputError{Message: "file_offset is outside the source file."}
+				page, next, total, err := uiSourcePage(content, fileOffset)
+				if err != nil {
+					return nil, err
 				}
-				end := min(fileOffset+16000, len(runes))
-				var next any
-				if end < len(runes) {
-					next = end
-				}
-				entry = append(entry, jsonx.Pair{Key: "content", Value: string(runes[fileOffset:end])}, jsonx.Pair{Key: "content_offset", Value: fileOffset}, jsonx.Pair{Key: "next_offset", Value: next}, jsonx.Pair{Key: "total_characters", Value: len(runes)})
+				entry = append(entry, jsonx.Pair{Key: "content", Value: page}, jsonx.Pair{Key: "content_offset", Value: fileOffset}, jsonx.Pair{Key: "next_offset", Value: next}, jsonx.Pair{Key: "total_characters", Value: total})
 				files = append(files, entry)
 				continue
 			}

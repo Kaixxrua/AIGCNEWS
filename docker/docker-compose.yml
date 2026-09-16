@@ -182,7 +182,9 @@ services:
       - no-new-privileges:true
 
   frontend-web:
-    build: ../frontend
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
     container_name: aigc-frontend
     restart: always
     logging: *default-logging
@@ -383,4 +385,3 @@ volumes:
   project_catalog_postgres_data:
 
 # 外部编排网（如私有 LLM 中转网）由 overlay 以 external 形式声明并挂接。
-

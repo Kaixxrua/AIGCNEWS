@@ -1,0 +1,21 @@
+{
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "license": "MIT",
+  "captured_at": "2026-09-16T00:00:00Z",
+  "license_grants": ["commercial-use", "redistribution"],
+  "source_files": {
+    "sources/galaxy/fixture.html": "d0b2707f658607a2b760ea562e94993e3798f23a60258e4c4fc849fc0366ddcc"
+  },
+  "resources": [
+    {
+      "name": "license-response.txt",
+      "sha256": "3541f5b8c85eec1b6c15654db4712813915a1e6a1010cd81c55e25ebfbfc5e97"
+    },
+    {
+      "name": "source-response.txt",
+      "sha256": "989f2335a6ee91c36cb1914bea5aba3a6fe50eca47331d33d4891299585f3782"
+    }
+  ],
+  "screenshot": "screenshot.txt",
+  "screenshot_sha256": "87810b585dc27eb6b38e6be84890029f81f7137f798d5cdfc7315d5e2f4f902c"
+}
