@@ -13,6 +13,8 @@ defineProps<{
   activeTab: TabKey
   statValues: number[]
   visitorValues: number[]
+  todayUiCount: number
+  todayUiCountLoading: boolean
 }>()
 
 const { t } = useI18n()
@@ -70,6 +72,24 @@ const emit = defineEmits<{
       </span>
       <RollingNumber :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
     </div>
+    <RouterLink
+      :to="{ name: 'ui-library', query: { rank: 'new' } }"
+      class="stat-cell stat-cell--ui stagger-enter"
+      :aria-label="t('dashboard.stats.todayUiMaterials')"
+      style="animation-delay: 0.6s"
+    >
+      <span class="stat-cell-head">
+        <span class="stat-cell-icon stat-cell-ui-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M8 3v18M8 9h13" />
+          </svg>
+        </span>
+        <span class="stat-cell-label">{{ t('dashboard.stats.todayUiMaterials') }}</span>
+      </span>
+      <span v-if="todayUiCountLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
+      <RollingNumber v-else :value="todayUiCount" grouping class="stat-cell-num stat-cell-ui-num" />
+    </RouterLink>
   </div>
 </template>
 
@@ -126,6 +146,12 @@ const emit = defineEmits<{
 
 .stat-cell--btn { cursor: pointer; transition: background-color 0.15s ease; }
 .stat-cell--btn:hover { background: var(--acid-soft); }
+.stat-cell--ui { color: var(--ink); cursor: pointer; text-decoration: none; transition: background-color 0.15s ease; }
+.stat-cell--ui:hover { background: var(--acid-soft); }
+.stat-cell-ui-icon,
+.stat-cell-ui-num { color: var(--tone-mint); }
+.stat-cell-num--loading { width: 28px; height: 15px; border-radius: 3px; background: var(--paper-muted, #e7e9e4); animation: stat-pulse 1.2s ease-in-out infinite; }
+@keyframes stat-pulse { 50% { opacity: .45; } }
 
 .stat-cell--active,
 .stat-cell--active:hover { background: var(--acid); box-shadow: inset 0 -3px 0 var(--ink); }
@@ -180,7 +206,8 @@ const emit = defineEmits<{
   .stat-cell-head { gap: 4px; }
   .stat-cell-icon { display: none; }
 }
-.stat-cell--btn:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
+.stat-cell--btn:focus-visible,
+.stat-cell--ui:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
 .stat-cell--active:focus-visible { outline-color: var(--projects-on-acid); }
 .stat-cell:not(.stat-cell--active) .text-amber-600 { color: var(--tone-amber); }
 .stat-cell:not(.stat-cell--active) .text-orange-500 { color: var(--tone-orange); }
