@@ -1,0 +1,235 @@
+{
+  "schema": "godot-reflection-depth-web-v128-pins-v1",
+  "upstreamCommit": "ed1daf0bf001b61586d9930840f2f1394092c079",
+  "upstreamArchiveSha256": "098b0a71e95ad98ab44651199d55c3f085e4e02c735514e284a2d5263ac81fb2",
+  "parentVariant": "text-gui-01 with unchanged mode5 and lazy-web-variants",
+  "source": {
+    "path": "drivers/gles3/rasterizer_scene_gles3.cpp",
+    "beforeSha256": "6d0719c9cd2caf685a9825028183bdf058081d7bc92d4b27ed2587f39b081221",
+    "afterSha256": "5df472583b1e9f3ba74ea2a584fb1e85ae0550432017a66342ba83811dc64239",
+    "onlyChange": "if (ssao_enabled) -> if (ssao_enabled && !is_reflection_probe)",
+    "invariant": "Gate only SSAO-forced depth requests. Material-requested depth remains independently true. Reflection probes already skip SSAO post-processing. Main-view SSAO, water, formats, shader loops and settings are unchanged."
+  },
+  "patch": {
+    "file": "godot/engine-patches/reflection-depth-web-v128.patch",
+    "bytes": 455,
+    "sha256": "9363796de7d4481d008de546c1694396c981d2456b07afdaf505c26b6ce7d7b5"
+  },
+  "tests": {
+    "file": "godot/engine-patches/test_reflection_depth_web_v128.py",
+    "sha256": "3624c03dcd971bc854cf3cd7012732120469e0c51c84da2c945cfbb07ff64117",
+    "passed": 6,
+    "report": {
+      "file": "E:\\Projects\\Godot-Octopath2\\artifacts\\startup-v128\\engine\\reflection-depth-01\\scope-tests.json",
+      "bytes": 909,
+      "sha256": "f8564e1a6e6867a812548a345898e5ad80da94911edb2f8cf1c1b2f88fbef1e1"
+    }
+  },
+  "toolchain": {
+    "python": "3.12.4",
+    "scons": "4.9.1",
+    "emscripten": "4.0.11",
+    "emsdkCommit": "5eb0bde7585670252e8ba05e9d361627bffd08b5",
+    "provenance": {
+      "file": "artifacts/startup-v126/engine/acquisition.json",
+      "sha256": "381ca31186cacadf4bdded532e918a8158a5e4cdaf23cdc2f042f09d937bc119"
+    }
+  },
+  "build": {
+    "command": [
+      "E:\\Anaconda3\\python.exe",
+      "-B",
+      "-m",
+      "SCons",
+      "platform=web",
+      "target=template_release",
+      "threads=no",
+      "arch=wasm32",
+      "production=yes",
+      "lto=thin",
+      "optimize=size",
+      "debug_symbols=no",
+      "use_closure_compiler=no",
+      "javascript_eval=yes",
+      "dlink_enabled=no",
+      "wasm_simd=yes",
+      "progress=no",
+      "linkflags=-Wl,--threads=4 -Wl,--thinlto-jobs=4",
+      "-j4",
+      "disable_physics_2d=yes",
+      "disable_navigation_2d=yes",
+      "disable_xr=yes",
+      "minizip=no",
+      "disable_3d=no",
+      "disable_advanced_gui=yes",
+      "disable_physics_3d=no",
+      "disable_navigation_3d=no",
+      "deprecated=yes",
+      "brotli=yes",
+      "opengl3=yes",
+      "module_astcenc_enabled=no",
+      "module_basis_universal_enabled=no",
+      "module_bcdec_enabled=no",
+      "module_bmp_enabled=no",
+      "module_dds_enabled=no",
+      "module_etcpak_enabled=no",
+      "module_hdr_enabled=no",
+      "module_jpg_enabled=no",
+      "module_ktx_enabled=no",
+      "module_tga_enabled=no",
+      "module_tinyexr_enabled=no",
+      "module_csg_enabled=no",
+      "module_fbx_enabled=no",
+      "module_gltf_enabled=no",
+      "module_gridmap_enabled=no",
+      "module_meshoptimizer_enabled=no",
+      "module_vhacd_enabled=no",
+      "module_visual_shader_enabled=no",
+      "module_noise_enabled=no",
+      "module_interactive_music_enabled=no",
+      "module_mp3_enabled=no",
+      "module_ogg_enabled=no",
+      "module_theora_enabled=no",
+      "module_vorbis_enabled=no",
+      "module_enet_enabled=no",
+      "module_jsonrpc_enabled=no",
+      "module_multiplayer_enabled=no",
+      "module_upnp_enabled=no",
+      "module_webrtc_enabled=no",
+      "module_zip_enabled=no",
+      "module_godot_physics_2d_enabled=no",
+      "module_navigation_2d_enabled=no",
+      "module_jolt_physics_enabled=no",
+      "module_mobile_vr_enabled=no",
+      "module_webxr_enabled=no",
+      "module_regex_enabled=no",
+      "module_freetype_enabled=yes",
+      "module_gdscript_enabled=yes",
+      "module_godot_physics_3d_enabled=yes",
+      "module_mbedtls_enabled=yes",
+      "module_msdfgen_enabled=yes",
+      "module_navigation_3d_enabled=yes",
+      "module_svg_enabled=yes",
+      "module_text_server_adv_enabled=no",
+      "module_webp_enabled=yes",
+      "module_websocket_enabled=yes",
+      "module_text_server_fb_enabled=yes",
+      "build_profile=E:\\Projects\\Godot-Octopath2\\godot\\engine-patches\\text-gui-web-v128.json"
+    ],
+    "cwd": "E:\\Projects\\Godot-Octopath2\\.tools\\godot-web-v126\\src",
+    "environment": {
+      "BUILD_NAME": "v128_text_gui_lazy",
+      "EMCC_CORES": "4",
+      "BINARYEN_CORES": "4",
+      "EMSDK_NUM_CORES": "4",
+      "CMAKE_BUILD_PARALLEL_LEVEL": "4"
+    },
+    "workerCaps": {
+      "scons": 4,
+      "linker": 4,
+      "thinLTO": 4,
+      "emcc": 4,
+      "binaryen": 4
+    },
+    "exactParentFlags": true,
+    "incrementalBuilds": 1,
+    "compiledUnits": [
+      "drivers/gles3/rasterizer_scene_gles3.cpp"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 378.296,
+    "startedUtc": "2026-09-12T04:24:57.330529+00:00",
+    "finishedUtc": "2026-09-12T04:31:15.640986+00:00",
+    "log": {
+      "file": "artifacts/startup-v128/engine/reflection-depth-01/build.log.json",
+      "sha256": "24a5e5865b9802191197034eae883bd9420a9252b3d6d204469fae4f79167eb4"
+    }
+  },
+  "release": {
+    "templateZip": {
+      "file": "E:\\Projects\\Godot-Octopath2\\artifacts\\startup-v128\\engine\\reflection-depth-01\\release\\godot.web.template_release.wasm32.nothreads.zip",
+      "bytes": 6621898,
+      "sha256": "1344c8aecdc55404e560240a7dd22b3a4734e85a2a04efef7617416acf3b6858"
+    },
+    "previousTemplateZipSha256": "13f72c12a9fe98aa67156016a55ad7c81b89890e42e3f6af1d72ef9bada131c5",
+    "engineFiles": [
+      {
+        "path": "index.js",
+        "bytes": 247836,
+        "sha256": "aa5b17fbdc5f5e72ca7f5bf05c186623d6a86b1ab0aaf87e7dc15ade1d3e1a52",
+        "gzipBytes": 62606,
+        "brotliBytes": 59654
+      },
+      {
+        "path": "index.wasm",
+        "bytes": 26609407,
+        "sha256": "52d3ad52fd004291970d1ef02b0f818500f4f57500e20aadcb911373e4a78716",
+        "gzipBytes": 6550622,
+        "brotliBytes": 5248696
+      },
+      {
+        "path": "index.audio.worklet.js",
+        "bytes": 7298,
+        "sha256": "5b476a9c9ce642c0ee4256436d1bc31d9c38f868aca0f9a8e2a57c18d2dec2a3",
+        "gzipBytes": 2204,
+        "brotliBytes": 2093
+      },
+      {
+        "path": "index.audio.position.worklet.js",
+        "bytes": 2973,
+        "sha256": "be33985bc7160d6bf9646f259cd86b259cd67b02ccb297ee5c44f8ac84327bc8",
+        "gzipBytes": 1167,
+        "brotliBytes": 1097
+      }
+    ],
+    "totals": {
+      "beforeRawBytes": 26867388,
+      "afterRawBytes": 26867514,
+      "beforeGzipBytes": 6615716,
+      "afterGzipBytes": 6616599,
+      "beforeBrotliBytes": 5310531,
+      "afterBrotliBytes": 5311540
+    },
+    "transportMethod": "gzip level6 mtime0; Brotli quality6 1MiB streaming, same method before/after",
+    "manifest": {
+      "file": "artifacts/startup-v128/engine/reflection-depth-01/engine-manifest.json",
+      "sha256": "45d6787ddcf0ed921a94cfbfb6552d83c670661696b74109686eea8e851a6e21"
+    }
+  },
+  "proof": {
+    "source": {
+      "file": "E:\\Projects\\Godot-Octopath2\\artifacts\\startup-v128\\engine\\reflection-depth-01\\source-proof.json",
+      "bytes": 1368,
+      "sha256": "8edff4d684124074639aff855989dd1fe9ec9d7581f6e1fed6579b5682ed98bd"
+    },
+    "frozenInputs": {
+      "file": "artifacts/startup-v128/engine/reflection-depth-01/frozen-inputs.json",
+      "sha256": "935bb1315cc1f249030218240f9cc7b619c55d74fa9d3fd1a89380b3d028b1f5"
+    },
+    "frozenCounts": {
+      "project": 393,
+      "oldReleases": 44,
+      "policies": 4,
+      "stagedInputs": 24
+    },
+    "allFrozenFilesExact": true,
+    "upstreamFilesChecked": 13989,
+    "moduleValidation": {
+      "file": "E:\\Projects\\Godot-Octopath2\\artifacts\\startup-v128\\engine\\reflection-depth-01\\module-validation.json",
+      "bytes": 2233,
+      "sha256": "f28e9528a25ba1f04a3948a6878267dbf05cd6fce717bacce9be1a9f89b5107a"
+    },
+    "instantiationValidation": {
+      "file": "E:\\Projects\\Godot-Octopath2\\artifacts\\startup-v128\\engine\\reflection-depth-01\\instantiation-validation.json",
+      "bytes": 1387,
+      "sha256": "0fdb10eee050d520f71115131a74e73ebeb9ec60ed72f42c63b06018e8d7524a"
+    }
+  },
+  "integration": "Stage matching JS/WASM/worklets from this ZIP. Keep original PCK, render settings and host helper for engine-only A/B.",
+  "limitations": [
+    "Offline JS/WASM instantiation, heap and FS checks do not call main or create a GL context.",
+    "Main owns warning absence, day/night/water and whole-frame validation; no browser result or performance claim here.",
+    "Not a general depth-reading-material-in-reflection-probe format fix.",
+    "BUILD_NAME deliberately remains v128_text_gui_lazy; identify this revision by ZIP/WASM hashes."
+  ]
+}

@@ -1,6 +1,6 @@
 # aigcnews_private
 
-AIGCNEWS 私有配套仓（不随开源仓库发布）。承载两类内容：
+AIGCNEWS 私有配套仓（不随开源仓库发布）。承载三类内容：
 
 1. **源插件包 `aigcnews_private/`** —— 开源版剥离的敏感采集实现：
    - `sources/x_transport.py`：X/Twitter 传输层（twitter-cli 内部
@@ -16,6 +16,12 @@ AIGCNEWS 私有配套仓（不随开源仓库发布）。承载两类内容：
 2. **部署 overlay `deploy/`** —— 宿主机专用编排与 nginx 私有面
    （sub2api 网络、PriceAI 姊妹服务、插件包 bind-mount）。
 
+3. **Godot 联系页 `godot/` + `GodotContactScene.vue`** —— 线上联系页的
+   Godot 工程、网页桥接组件和私有发布验证工具。该实现及其导出物只允许
+   存放在本私有仓库；AIGCNEWS 公共仓不得提交 Godot 源码、PCK/WASM、场景
+   资源或专用构建脚本。发布必须以线上 Godot 版本为基线，并保留黑边修复，
+   不得回退到 `ContactFieldScene` 或其他 Three.js/CSS 旧实现。
+
 ## 目录
 
 ```
@@ -24,6 +30,8 @@ deploy/             # docker-compose overlay + nginx inc
 scripts/            # 运维脚本（x_ingestion_spike.py 等）
 tests/              # 私有实现契约测试（含 fixtures/）
 pylibs/             # 运行时依赖供给（gitignored，见下）
+godot/              # 联系页 Godot 源工程（导出目录 gitignored）
+GodotContactScene.vue # 联系页 iframe/消息桥接组件
 ```
 
 ## 运行时依赖供给（pylibs）

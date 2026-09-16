@@ -1,0 +1,15 @@
+/* Keep the Godot iframe interactive beneath the contact-page content overlay. */
+.hero-field[data-v-3003e7fe] {
+  z-index: 0 !important;
+  pointer-events: auto !important;
+}
+
+.hero-overlay[data-v-3003e7fe],
+.hero-dock[data-v-3003e7fe] {
+  pointer-events: none !important;
+}
+
+.contact-hero-note[data-v-3003e7fe],
+.entry-list[data-v-3003e7fe] {
+  pointer-events: auto !important;
+}

@@ -1,0 +1,37 @@
+; Engine configuration file.
+; Modular meadow scene, Godot Web compatibility renderer.
+
+config_version=5
+
+[application]
+
+config/name="风起原野"
+run/main_scene="res://scenes/main.tscn"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/resizable=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.015, 0.027, 0.063, 1)
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+meadow_clock={
+"type": "float",
+"value": 0.0
+}
+meadow_night={
+"type": "float",
+"value": 0.0
+}

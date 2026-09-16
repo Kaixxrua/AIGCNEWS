@@ -1,0 +1,62 @@
+/* Isolated, optional detail status. No canvas/layout/loader selectors. */
+.meadow-detail-status {
+  position: fixed;
+  inset-inline-start: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  max-inline-size: calc(100vw - 2rem);
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border, #7b795d);
+  border-radius: 0.25rem;
+  background: var(--surface, #19231ef2);
+  color: var(--text, #f0e4c4);
+  font: 0.8125rem/1.5 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  pointer-events: none;
+}
+.meadow-detail-status[hidden], .meadow-detail-status [hidden] { display: none !important; }
+.meadow-detail-status__message { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
+.meadow-detail-status__count { color: var(--muted, #c4c5b8); font-variant-numeric: tabular-nums; }
+.meadow-detail-status__progress {
+  appearance: none;
+  inline-size: 5rem;
+  max-inline-size: 100%;
+  block-size: 0.25rem;
+  border: 0;
+  background: var(--surface-hover, #29382e);
+  color: var(--focus, #f8d48a);
+  accent-color: var(--focus, #f8d48a);
+}
+.meadow-detail-status__progress::-webkit-progress-bar { background: var(--surface-hover, #29382e); }
+.meadow-detail-status__progress::-webkit-progress-value { background: var(--focus, #f8d48a); }
+.meadow-detail-status__progress::-moz-progress-bar { background: var(--focus, #f8d48a); }
+.meadow-detail-status__retry {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border, #7b795d);
+  border-radius: 0.25rem;
+  background: var(--surface, #19231ef2);
+  color: var(--text, #f0e4c4);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+}
+.meadow-detail-status__retry:hover:not(:disabled) { background: var(--surface-hover, #29382e); }
+.meadow-detail-status__retry:disabled { cursor: default; opacity: 0.65; }
+.meadow-detail-status__retry:focus-visible { outline: 2px solid var(--focus, #f8d48a); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .meadow-detail-status, .meadow-detail-status * { animation: none !important; transition: none !important; }
+}
+@media (forced-colors: active) {
+  .meadow-detail-status { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .meadow-detail-status__count { color: CanvasText; }
+  .meadow-detail-status__retry { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
+  .meadow-detail-status__retry:focus-visible { outline-color: Highlight; }
+  .meadow-detail-status__progress { color: Highlight; accent-color: Highlight; }
+}
