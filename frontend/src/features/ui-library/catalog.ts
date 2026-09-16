@@ -67,6 +67,19 @@ export function recentlyAdded(items: UiTemplate[], now = Date.now()): UiTemplate
     return Number.isFinite(added) && added <= now && added > now - 24 * 60 * 60 * 1000
   }).sort((a, b) => Date.parse(b.added_at!) - Date.parse(a.added_at!))
 }
+export function addedOnCalendarDay(items: UiTemplate[], now = Date.now(), timeZone = 'Asia/Shanghai'): UiTemplate[] {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const targetDay = formatter.format(now)
+  return items.filter(item => {
+    const added = Date.parse(item.added_at ?? '')
+    return Number.isFinite(added) && added <= now && formatter.format(added) === targetDay
+  }).sort((a, b) => Date.parse(b.added_at!) - Date.parse(a.added_at!))
+}
 export async function loadCatalog(signal?: AbortSignal): Promise<UiTemplate[]> {
   const response = await fetch('/ui-library/catalog.json', { signal })
   if (!response.ok) throw new Error('Catalog unavailable')

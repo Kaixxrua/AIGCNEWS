@@ -611,6 +611,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   
   
   
+  'dashboard.stats.todayUiMaterials': '今日入库 UI',
   'monitor.nav.uiSources': 'UI 素材来源',
   'monitor.uiSources.title': 'UI 素材发现来源',
   'monitor.uiSources.description': '查看每天会检查哪些开源仓库和网站，并添加自己的来源。',
