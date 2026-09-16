@@ -1,6 +1,6 @@
 // Packaging for reviewed upstream examples. Source files remain byte-for-byte original.
 import {readFile,writeFile} from 'node:fs/promises'
-import {resolve} from 'node:path'
+import {posix,resolve} from 'node:path'
 import {build} from 'esbuild'
 import postcss from 'postcss'
 import {compile} from 'tailwindcss4'
@@ -39,6 +39,25 @@ export async function buildOriginalPreview(item,data,output,root){
    const name=(item.preview_root?item.preview_root+'/':'')+args.path.slice(2)
    const file=item.files.find(file=>[name,name+'.tsx',name+'.ts',name+'.jsx',name+'.js',name+'/index.tsx',name+'/index.ts'].includes(file.name))
    if(!file)throw Error('Missing original import: '+args.path)
+   return {path:resolve(data,file.path)}
+  })
+  builder.onResolve({filter:/^@repo\//},args=>{
+   const name=args.path.slice('@repo/'.length)
+   const candidates=name.startsWith('elements/')
+    ?[`packages/elements/src/${name.slice('elements/'.length)}.tsx`,`packages/elements/src/${name.slice('elements/'.length)}.ts`]
+    :name.startsWith('shadcn-ui/')
+      ?[`packages/${name}.tsx`,`packages/${name}.ts`,`packages/${name}/index.tsx`,`packages/${name}/index.ts`]
+      :[`packages/${name}/index.tsx`,`packages/${name}/index.ts`]
+   const file=item.files.find(file=>candidates.includes(file.name))
+   if(!file)throw Error('Missing original workspace import: '+args.path)
+   return {path:resolve(data,file.path)}
+  })
+  builder.onResolve({filter:/^\.\.?\//},args=>{
+   const importer=item.files.find(file=>resolve(data,file.path)===args.importer)
+   if(!importer)return
+   const name=posix.normalize(posix.join(posix.dirname(importer.name),args.path))
+   const file=item.files.find(file=>[name,name+'.tsx',name+'.ts',name+'.jsx',name+'.js',name+'/index.tsx',name+'/index.ts'].includes(file.name))
+   if(!file)return
    return {path:resolve(data,file.path)}
   })
   builder.onResolve({filter:/^next\/link$/},()=>({path:'next-link',namespace:'standalone'}))

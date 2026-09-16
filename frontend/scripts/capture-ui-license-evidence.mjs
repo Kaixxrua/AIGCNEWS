@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 const data=resolve('../mcp-go/internal/uicatalog/data')
 const locks=JSON.parse(await readFile(resolve(data,'upstreams.json'),'utf8'))
-const browser=await chromium.launch({channel:'chrome',headless:true})
+const channel=process.env.PLAYWRIGHT_CHANNEL
+const executablePath=process.env.PLAYWRIGHT_EXECUTABLE_PATH
+const browser=await chromium.launch({...channel?{channel}:{},...executablePath?{executablePath}:{},headless:true})
 try {
  const page=await browser.newPage({viewport:{width:1440,height:1080}})
  for(const [provider,lock] of Object.entries(locks)){

@@ -14,6 +14,7 @@ const posters = resolve(data, 'posters')
 await mkdir(posters, { recursive: true })
 const browser = await chromium.launch({
   ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+  ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}),
   headless: true,
   args: ['--enable-unsafe-swiftshader'],
 })
