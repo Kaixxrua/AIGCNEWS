@@ -4,6 +4,7 @@
 # docker volumes 等容器创建的 root 属主目录并报权限错误。
 [tool.pytest.ini_options]
 addopts = "-ra"
+asyncio_mode = "auto"
 [tool.coverage.run]
 # 相对仓库根目录（与 CI 及上文注释约定的运行方式一致）。
 source = ["backend/app"]

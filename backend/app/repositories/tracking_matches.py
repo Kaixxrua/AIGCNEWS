@@ -6,8 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.app.domain.project_visibility import PUBLIC_PROJECT_MIN_STARS
-from backend.app.services.tracking.content import clean_item
-from backend.app.services.tracking.policy import CST, DIGEST_ITEM_LIMIT
+from backend.app.domain.tracking import CST, DIGEST_ITEM_LIMIT, clean_item
 
 
 def _timestamp(column: str) -> str:
