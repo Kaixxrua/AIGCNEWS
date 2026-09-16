@@ -118,6 +118,11 @@ jobs:
       - name: Validate the protected frontend overlay
         working-directory: frontend
         shell: bash
+        env:
+          # uiLibraryAssets() 默认读取 ../mcp-go/internal/uicatalog/data（仅 build-mcp
+          # 注入）；本 job 的生产目录注入在 frontend/.ui-library-data，显式指过去，
+          # 让 vitest 校验真实覆盖层而不是找不到 catalog.json。
+          UI_LIBRARY_DATA_ROOT: ${{ github.workspace }}/frontend/.ui-library-data
         run: |
           npm ci
           npm run typecheck
