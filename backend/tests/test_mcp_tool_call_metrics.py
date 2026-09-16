@@ -506,7 +506,7 @@ class FakeRedis:
         if script == _RESTORE_SCRIPT:
             incoming = int(argv[0])
             current = int(self.strings.get(total, b"-1"))
-            if current >= incoming:
+            if current > incoming:
                 return 0
             self.strings[total] = str(incoming).encode()
             if argv[1]:
@@ -701,6 +701,15 @@ class RedisMcpToolCallMetricsRestoreTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(restored)
         self.assertEqual(self.redis.strings[b"mcpmetrics:total"], b"4200")
+
+    async def test_restore_repairs_missing_dsh_hash_when_total_is_equal(self) -> None:
+        self.redis.strings[b"mcpmetrics:total"] = b"4149"
+
+        restored = await self.metrics.restore_if_newer(self.payload)
+        snapshot = await self.metrics.snapshot()
+
+        self.assertTrue(restored)
+        self.assertEqual(snapshot["clients"][DSH_PLUGIN_CLIENT]["calls"], 423)
 
 
 class RedisMcpToolCallMetricsSeedTests(unittest.IsolatedAsyncioTestCase):

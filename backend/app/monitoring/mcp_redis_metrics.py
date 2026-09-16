@@ -102,7 +102,7 @@ return 1
 _RESTORE_SCRIPT = """
 local incoming = tonumber(ARGV[1]) or 0
 local current = tonumber(redis.call('GET', KEYS[1])) or -1
-if current >= incoming then return 0 end
+if current > incoming then return 0 end
 redis.call('SET', KEYS[1], incoming)
 if ARGV[2] ~= '' then redis.call('SET', KEYS[2], ARGV[2]) else redis.call('DEL', KEYS[2]) end
 redis.call('DEL', KEYS[3], KEYS[4], KEYS[5], KEYS[6])
@@ -301,7 +301,7 @@ class RedisMcpToolCallMetrics:
                 logger.warning("mcp tool call metrics seed marker release failed", exc_info=True)
 
     async def restore_if_newer(self, payload: Dict[str, Any]) -> bool:
-        """从持久化快照回灌 Redis；Redis 已持平或更新时保持原样。"""
+        """从持久化快照校准 Redis；仅 Redis 总量严格更新时保持原样。"""
         args = self._restore_args(payload)
         try:
             restored = await self._redis.eval(
