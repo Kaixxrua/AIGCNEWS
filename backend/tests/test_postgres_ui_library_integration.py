@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 
 from backend.app.repositories.postgres_ui_library_repository import (
-    CopyLimitExceeded, PostgresUiLibraryRepository,
+    CopyLimitExceeded,
+    PostgresUiLibraryRepository,
 )
 from backend.tests.postgres_test_safety import postgres_test_sandbox
 
@@ -74,3 +75,23 @@ def test_discovery_baseline_new_update_and_failure_recovery(store):
     assert report['total'] == 2
     assert report['sources'][0]['error'] is None
     assert all(row['review_status'] == 'pending' for row in report['candidates'])
+
+
+def test_configurable_discovery_source_crud(store):
+    repo, _ = store
+    created = repo.create_source_config({
+        'name': 'Custom components', 'kind': 'github', 'repository': 'acme/ui',
+        'path_patterns': ['components/*.tsx'], 'feed_url': None, 'enabled': True,
+    })
+    assert created['id'] > 0
+    assert repo.list_source_configs(enabled_only=True)[0]['repository'] == 'acme/ui'
+
+    updated = repo.update_source_config(created['id'], {
+        'name': 'Custom feed', 'kind': 'feed', 'repository': None,
+        'path_patterns': [], 'feed_url': 'https://example.test/feed.xml', 'enabled': False,
+    })
+    assert updated['kind'] == 'feed'
+    assert repo.list_source_configs(enabled_only=True) == []
+    assert repo.list_source_configs()[0]['feed_url'] == 'https://example.test/feed.xml'
+    assert repo.delete_source_config(created['id']) is True
+    assert repo.delete_source_config(created['id']) is False

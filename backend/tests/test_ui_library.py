@@ -12,9 +12,19 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_ui_library import repository, router
-from backend.app.core.auth import OptionalUser, RequireUser
+from backend.app.core.auth import OptionalUser, RequireAdmin, RequireUser
 from backend.app.repositories.postgres_ui_library_repository import CopyLimitExceeded, CopyRequestConflict
-from backend.app.services.ui_discovery import SOURCES, X_HANDLES, DiscoveryError, RepositorySource, discover_web, discover_x, rss_candidates, tree_candidates
+from backend.app.services.ui_discovery import (
+    SOURCES,
+    X_HANDLES,
+    DiscoveryError,
+    RepositorySource,
+    discover_web,
+    discover_x,
+    feed_candidates,
+    rss_candidates,
+    tree_candidates,
+)
 from backend.app.services.ui_library import quota_policy
 
 
@@ -39,6 +49,16 @@ def client(user=None):
     app.dependency_overrides[OptionalUser] = lambda: user
     if user is not None:
         app.dependency_overrides[RequireUser] = lambda: user
+    return TestClient(app), repo
+
+
+def admin_client():
+    app = FastAPI()
+    app.include_router(router, prefix='/api')
+    repo = MagicMock()
+    repo.list_source_configs.return_value = []
+    app.dependency_overrides[repository] = lambda: repo
+    app.dependency_overrides[RequireAdmin] = lambda: {'sub': '1', 'role': 'admin'}
     return TestClient(app), repo
 
 
@@ -106,6 +126,54 @@ def test_rss_rejects_entities_and_keeps_only_original_site():
     assert result[0]['license_status'] == 'needs_review'
 
 
+def test_atom_feed_is_supported_for_configured_websites():
+    raw = b'''<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Demo</title>
+      <link href="https://example.test/demos/one"/><updated>2026-09-16T00:00:00Z</updated></entry></feed>'''
+    result = feed_candidates(raw, 'https://example.test/feed.xml')
+    assert result[0]['source_url'] == 'https://example.test/demos/one'
+    assert result[0]['published_at'] == '2026-09-16T00:00:00Z'
+
+
+def test_admin_can_list_create_update_and_delete_discovery_sources(monkeypatch):
+    monkeypatch.setattr('backend.app.api.routes_ui_library.resolve_public_ips', lambda *_args, **_kwargs: ('203.0.113.1',))
+    c, repo = admin_client()
+    repo.list_source_configs.return_value = [{'id': 7, 'name': 'Custom'}]
+    response = c.get('/api/ops/ui-library/discovery-sources')
+    assert response.status_code == 200
+    assert response.json()['builtin'][0]['repository'] == 'uiverse-io/galaxy'
+    assert response.json()['custom'][0]['id'] == 7
+
+    repo.create_source_config.return_value = {'id': 8, 'name': 'Cards', 'kind': 'github'}
+    response = c.post('/api/ops/ui-library/discovery-sources', json={
+        'name': 'Cards', 'kind': 'github', 'repository': 'acme/ui',
+        'path_patterns': ['components/*.tsx'], 'enabled': True,
+    })
+    assert response.status_code == 201
+    assert repo.create_source_config.call_args.args[0]['repository'] == 'acme/ui'
+
+    repo.update_source_config.return_value = {'id': 8, 'name': 'Feed', 'kind': 'feed'}
+    response = c.put('/api/ops/ui-library/discovery-sources/8', json={
+        'name': 'Feed', 'kind': 'feed', 'feed_url': 'https://example.test/feed.xml', 'enabled': False,
+    })
+    assert response.status_code == 200
+    assert repo.update_source_config.call_args.args[1]['feed_url'] == 'https://example.test/feed.xml'
+
+    repo.delete_source_config.return_value = True
+    assert c.delete('/api/ops/ui-library/discovery-sources/8').status_code == 204
+    repo.delete_source_config.assert_called_once_with(8)
+
+
+@pytest.mark.parametrize('payload', [
+    {'name': 'Bad repo', 'kind': 'github', 'repository': 'missing-owner', 'path_patterns': ['*.tsx']},
+    {'name': 'Bad path', 'kind': 'github', 'repository': 'acme/ui', 'path_patterns': ['../*.tsx']},
+    {'name': 'Unsafe feed', 'kind': 'feed', 'feed_url': 'http://127.0.0.1/feed'},
+])
+def test_discovery_source_validation_rejects_unsafe_inputs(payload):
+    c, repo = admin_client()
+    assert c.post('/api/ops/ui-library/discovery-sources', json=payload).status_code == 422
+    repo.create_source_config.assert_not_called()
+
+
 def test_one_source_failure_does_not_erase_or_block_other_sources():
     repo = MagicMock()
     def handler(request):
@@ -120,6 +188,34 @@ def test_one_source_failure_does_not_erase_or_block_other_sources():
     assert repo.record_failure.call_count == 5
     assert repo.record_discovery.call_args.args[0] == 'codrops'
     assert 'secret-test-token' not in str(repo.mock_calls)
+
+
+def test_daily_discovery_includes_enabled_custom_github_sources(monkeypatch):
+    monkeypatch.setattr('backend.app.services.ui_discovery.SOURCES', ())
+    repo = MagicMock()
+    repo.list_source_configs.return_value = [{
+        'id': 9, 'name': 'Custom', 'kind': 'github', 'repository': 'acme/ui',
+        'path_patterns': ['components/*.tsx'], 'enabled': True,
+    }]
+
+    def handler(request):
+        if request.url.path.endswith('/commits/HEAD'):
+            return httpx.Response(200, json={'sha': 'commit'})
+        if '/git/trees/' in request.url.path:
+            return httpx.Response(200, json={'sha': 'tree', 'tree': [
+                {'path': 'components/card.tsx', 'type': 'blob', 'mode': '100644', 'sha': 'blob'},
+            ]})
+        return httpx.Response(200, content=b'<rss><channel><item><title>Demo</title><link>https://tympanus.net/codrops/demo</link></item></channel></rss>')
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as custom_client:
+            return await discover_web(repo, client=custom_client)
+
+    assert asyncio.run(run()) is True
+    assert [call.args[0] for call in repo.record_discovery.call_args_list] == ['codrops', 'custom:9']
+    custom_candidate = repo.record_discovery.call_args_list[1].args[2][0]
+    assert custom_candidate['repo'] == 'acme/ui'
+    assert custom_candidate['path'] == 'components/card.tsx'
 
 
 def test_hyperui_discovers_original_examples_not_blog_articles():

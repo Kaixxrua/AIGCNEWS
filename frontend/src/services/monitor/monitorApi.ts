@@ -5,7 +5,7 @@ import type {
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentProjectPages, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult, GithubRetainedProject, GithubUnprocessableProject,
   McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, OAuthConfig, OAuthConfigForm, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
-  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, TelegramConfig, TelegramConfigForm, RevenueStatsResponse, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm,
+  SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, TelegramConfig, TelegramConfigForm, RevenueStatsResponse, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm, UiDiscoverySource, UiDiscoverySourceForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildOAuthConfigPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildTelegramConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
 
@@ -31,6 +31,9 @@ export interface MonitorApi {
   fetchSchedulerStatus(): Promise<SchedulerStatus>
   fetchSchedulerConfigs(): Promise<SchedulerJobConfig[]>
   saveSchedulerConfig(form: SchedulerJobConfigForm): Promise<{ item?: SchedulerJobConfig; message?: string }>
+  fetchUiDiscoverySources(): Promise<{ builtin: UiDiscoverySource[]; custom: UiDiscoverySource[] }>
+  saveUiDiscoverySource(form: UiDiscoverySourceForm): Promise<UiDiscoverySource>
+  deleteUiDiscoverySource(id: number): Promise<void>
   fetchMcpToolCalls(): Promise<McpToolCallMetricsSnapshot>
   fetchProviderConfig(): Promise<ProviderConfig>
   saveProviderConfig(form: ProviderForm): Promise<ProviderConfig>
@@ -122,6 +125,28 @@ export const monitorApi: MonitorApi = {
     const payload = buildSchedulerJobConfigPayload(form)
     const { data } = await api.put(`/ops/scheduler/config/${encodeURIComponent(form.job_id)}`, payload)
     return { item: data?.item, message: typeof data?.message === 'string' ? data.message : undefined }
+  },
+  async fetchUiDiscoverySources() {
+    const { data } = await api.get('/ops/ui-library/discovery-sources')
+    return {
+      builtin: Array.isArray(data?.builtin) ? data.builtin : [],
+      custom: Array.isArray(data?.custom) ? data.custom : [],
+    }
+  },
+  async saveUiDiscoverySource(form) {
+    const payload = {
+      name: form.name.trim(), kind: form.kind, enabled: form.enabled,
+      repository: form.kind === 'github' ? form.repository.trim() : null,
+      path_patterns: form.kind === 'github' ? form.pathPatterns.split(/[,\n]/).map(value => value.trim()).filter(Boolean) : [],
+      feed_url: form.kind === 'feed' ? form.feedUrl.trim() : null,
+    }
+    const response = form.id === null
+      ? await api.post('/ops/ui-library/discovery-sources', payload)
+      : await api.put(`/ops/ui-library/discovery-sources/${form.id}`, payload)
+    return response.data.item
+  },
+  async deleteUiDiscoverySource(id) {
+    await api.delete(`/ops/ui-library/discovery-sources/${id}`)
   },
   async fetchMcpToolCalls() {
     const { data } = await api.get('/monitor/metrics')

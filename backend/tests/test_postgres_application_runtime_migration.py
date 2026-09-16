@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 72
-    assert migrations[-1].filename == "0072_mcp_metrics_checkpoint.sql"
+    assert migrations[-1].version == 73
+    assert migrations[-1].filename == "0073_ui_discovery_source_configs.sql"
 
 
 def test_mcp_metrics_checkpoint_is_singleton_and_monotonic_ready() -> None:
@@ -43,6 +43,13 @@ def test_mcp_metrics_checkpoint_is_singleton_and_monotonic_ready() -> None:
     assert "total_calls BIGINT NOT NULL" in sql
     assert "dsh_calls BIGINT NOT NULL" in sql
     assert "snapshot JSONB NOT NULL" in sql
+def test_ui_discovery_source_config_migration_is_constrained_and_idempotent() -> None:
+    sql = (MIGRATIONS_DIR / "0073_ui_discovery_source_configs.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS ui_discovery_source_configs" in sql
+    assert "kind IN ('github', 'feed')" in sql
+    assert "cardinality(path_patterns) > 0" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_ui_discovery_source_configs_github" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_ui_discovery_source_configs_feed" in sql
 
 
 def test_user_mcp_token_dsh_purpose_migration_is_additive_and_idempotent() -> None:
