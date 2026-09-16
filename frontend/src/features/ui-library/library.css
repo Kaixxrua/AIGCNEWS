@@ -169,3 +169,18 @@ section.ui-library.view-container { overflow-y:auto; overflow-x:hidden; scrollba
 .ui-library__all-kinds { margin-left:auto; }
 .ui-library__sidebar .ui-library__group-title { margin-top:18px; }
 @media (min-width:768px) { .ui-library__sidebar { max-height:calc(100dvh - 40px); overflow-y:auto; scrollbar-width:thin; padding-right:10px; } }
+/* Icon sets: dense SVG browsing with the same provenance and quota contracts. */
+.ui-library__icon-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,128px),1fr)); gap:14px 10px; }
+.ui-library__icon-card { min-width:0; position:relative; }
+.ui-library__icon-open { display:flex; width:100%; flex-direction:column; align-items:center; gap:8px; padding:16px 8px 10px; border:1px solid var(--line,rgb(0 0 0 / .08)); border-radius:10px; background:transparent; color:inherit; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+.ui-library__icon-open:hover,.ui-library__icon-open:focus-visible { border-color:var(--accent,#6366f1); box-shadow:0 2px 10px rgb(0 0 0 / .06); }
+.ui-library__icon-glyph { width:32px; height:32px; color:currentColor; }
+.ui-library__icon-name { max-width:100%; overflow:hidden; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.ui-library__icon-copy { display:inline-flex; align-items:center; gap:4px; margin-top:4px; padding:2px 6px; border:1px solid var(--line,rgb(0 0 0 / .1)); border-radius:6px; background:transparent; color:inherit; font-size:9px; cursor:pointer; }
+.ui-library__icon-copy:disabled { opacity:.6; cursor:default; }
+.ui-library__icon-stage { display:flex; align-items:center; justify-content:center; min-height:220px; border:1px solid var(--line,rgb(0 0 0 / .08)); border-radius:12px; }
+.ui-library__icon-stage img { width:128px; height:128px; }
+.ui-library__icon-facts { display:flex; flex-wrap:wrap; gap:6px; font-size:10px; color:var(--ink-secondary); }
+.ui-library__icon-facts span { padding:2px 8px; border:1px solid var(--line,rgb(0 0 0 / .1)); border-radius:999px; }
+.ui-library__icon-license summary { cursor:pointer; font-size:11px; }
+.ui-library__icon-license pre { max-height:220px; overflow:auto; font-size:10px; white-space:pre-wrap; }

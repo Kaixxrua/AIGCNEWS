@@ -15,15 +15,25 @@ PERIOD_HOURS = {'daily': 24, 'weekly': 168, 'monthly': 720}
 
 def catalog_ids(path: str) -> frozenset[str]:
     stat = Path(path).stat()
-    return _catalog_ids(path, stat.st_mtime_ns, stat.st_size)
+    icons = Path(path).with_name('icons.json')
+    try:
+        icons_stat: tuple[int, int] | None = (icons.stat().st_mtime_ns, icons.stat().st_size)
+    except FileNotFoundError:
+        icons_stat = None
+    return _catalog_ids(path, stat.st_mtime_ns, stat.st_size, icons_stat)
 
 
 @lru_cache(maxsize=4)
-def _catalog_ids(path: str, modified_ns: int, size: int) -> frozenset[str]:
+def _catalog_ids(path: str, modified_ns: int, size: int, icons_stat: tuple[int, int] | None) -> frozenset[str]:
     # The publisher atomically replaces catalog.json. Account APIs see new IDs
     # without interrupting unrelated scheduler jobs to restart the backend.
     data = json.loads(Path(path).read_text(encoding='utf-8'))
-    return frozenset(item['id'] for item in data['items'])
+    ids = {item['id'] for item in data['items']}
+    if icons_stat is not None:
+        # Icon ids share the same account, like and copy-quota contracts.
+        payload = json.loads(Path(path).with_name('icons.json').read_text(encoding='utf-8'))
+        ids.update(icon['id'] for icon_set in payload['sets'] for icon in icon_set['icons'])
+    return frozenset(ids)
 
 
 def known_template(template_id: str) -> bool:

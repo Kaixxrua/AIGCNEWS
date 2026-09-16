@@ -4,10 +4,11 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { addedOnCalendarDay, recentlyAdded, searchTemplates, integrationPrompt, loadCatalog, loadSources, type UiTemplate } from './catalog'
+import { addedOnCalendarDay, recentlyAdded, searchTemplates, integrationPrompt, loadCatalog, loadSources, iconUrl, loadIconSets, searchIcons, type UiIconSet, type UiTemplate } from './catalog'
 
 const dataRoot = pathToFileURL(resolve(process.cwd(), '../mcp-go/internal/uicatalog/data') + '/')
 const items: UiTemplate[] = JSON.parse(readFileSync(new URL('catalog.json', dataRoot), 'utf8')).items
+const iconSets: UiIconSet[] = JSON.parse(readFileSync(new URL('icons.json', dataRoot), 'utf8')).sets
 const searchItems: UiTemplate[] = JSON.parse(readFileSync(new URL('../testdata/search_catalog.json', dataRoot), 'utf8')).items
 const cases: { q: string; category?: string; framework?: string; ids: string[] }[] = JSON.parse(readFileSync(new URL('../testdata/search_cases.json', dataRoot), 'utf8'))
 afterEach(() => vi.unstubAllGlobals())
@@ -64,11 +65,44 @@ describe('UI catalog shared Chinese/English contract', () => {
       for (const file of files) { expect(prompt).toContain(file.name); expect(prompt).toContain(file.content) }
     }
   })
+  it('keeps every icon pinned, hashed and license-covered like component sources', () => {
+    expect(iconSets.length).toBeGreaterThan(0)
+    for (const set of iconSets) {
+      expect(set.revision).toMatch(/^[a-f0-9]{40}$/)
+      expect(set.icons.length).toBeGreaterThan(0)
+      expect(readFileSync(new URL(`licenses/${set.provider_id}/LICENSE`, dataRoot), 'utf8')).toBeTruthy()
+      const manifest = JSON.parse(readFileSync(new URL(set.rights_evidence_url.replace('/ui-library/', ''), dataRoot), 'utf8'))
+      expect(manifest.license_grants).toContain('commercial-use')
+      expect(manifest.license_grants).toContain('redistribution')
+      expect(manifest.screenshot_sha256).toBeTruthy()
+      for (const icon of set.icons) {
+        expect(icon.id).toBe(`${set.provider_id}:${icon.name}`)
+        expect(icon.file.startsWith(`sources/${set.provider_id}/`)).toBe(true)
+        expect(manifest.source_files[icon.file]).toBe(icon.sha256)
+        const bytes = readFileSync(new URL(icon.file, dataRoot))
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(icon.sha256)
+        expect(bytes.byteLength).toBeLessThanOrEqual(64 * 1024)
+        const text = bytes.toString('utf8')
+        expect(text).not.toMatch(/<script|onload=|javascript:/i)
+      }
+    }
+  }, 120000)
+  it('searches icons with the same strict all-terms contract as components', () => {
+    const set = iconSets[0]!
+    const probe = set.icons[0]!
+    const matches = searchIcons(iconSets, probe.name)
+    expect(matches.map(icon => icon.id)).toContain(probe.id)
+    expect(searchIcons(iconSets, '', set.provider_id).every(icon => icon.id.startsWith(set.provider_id + ':'))).toBe(true)
+    expect(searchIcons(iconSets, probe.name, '', probe.style).every(icon => icon.style === probe.style)).toBe(true)
+    expect(searchIcons(iconSets, 'definitely-not-an-icon-xyz')).toEqual([])
+    expect(iconUrl(probe)).toBe(`/ui-library/${probe.file}`)
+  })
   it('fails visibly on bad catalog or unavailable source instead of copying HTML', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
     await expect(loadCatalog()).rejects.toThrow()
     await expect(loadSources(items[0]!)).rejects.toThrow()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: 2, items: [] }) }))
     await expect(loadCatalog()).rejects.toThrow('Invalid catalog')
+    await expect(loadIconSets()).rejects.toThrow('Invalid icon catalog')
   })
 })

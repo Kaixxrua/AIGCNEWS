@@ -53,7 +53,7 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 	app := uiApp(t)
 	result := uiRPC(t, app, "tools/list", map[string]any{})
 	tools := result["tools"].([]any)
-	if len(tools) != 10 {
+	if len(tools) != 12 {
 		t.Fatalf("got %d tools", len(tools))
 	}
 	// Every existing public definition remains byte-identical in order.
@@ -66,7 +66,7 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 			t.Fatalf("legacy tool %d changed", i)
 		}
 	}
-	for i, name := range []string{"search_ui_templates", "get_ui_template"} {
+	for i, name := range []string{"search_ui_templates", "get_ui_template", "search_ui_icons", "get_ui_icon"} {
 		tool := tools[len(publicTools)+i].(map[string]any)
 		if tool["name"] != name {
 			t.Fatalf("missing %s", name)
@@ -79,7 +79,7 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 	r := app.DispatchWithIdentity(rpc(7, "tools/list", "{}"), authn.Identity{UserID: 1}, true)
 	var authenticated map[string]any
 	_ = json.Unmarshal(r.Body, &authenticated)
-	if len(authenticated["result"].(map[string]any)["tools"].([]any)) != 11 {
+	if len(authenticated["result"].(map[string]any)["tools"].([]any)) != 13 {
 		t.Fatal("private tool authentication fork changed")
 	}
 	init := uiRPC(t, app, "initialize", map[string]any{})

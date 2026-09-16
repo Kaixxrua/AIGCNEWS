@@ -23,9 +23,15 @@ type rightsEvidence struct {
 }
 
 func loadRightsEvidence(files fs.FS, item Template) (*rightsEvidence, error) {
-	expected := "/ui-library/assets/" + item.ProviderID + "/evidence/" + item.Revision + "/manifest.json"
-	if item.RightsEvidenceURL != expected || !fs.ValidPath(strings.TrimPrefix(expected, "/ui-library/")) {
-		return nil, fmt.Errorf("missing or invalid rights evidence: %s", item.ID)
+	return verifyRightsEvidence(files, item.ProviderID, item.Revision, item.License, item.RightsEvidenceURL, item.ID)
+}
+
+// verifyRightsEvidence applies the same archived-license, grants, resource
+// and screenshot integrity standard to component and icon set providers.
+func verifyRightsEvidence(files fs.FS, providerID, revision, license, evidenceURL, owner string) (*rightsEvidence, error) {
+	expected := "/ui-library/assets/" + providerID + "/evidence/" + revision + "/manifest.json"
+	if evidenceURL != expected || !fs.ValidPath(strings.TrimPrefix(expected, "/ui-library/")) {
+		return nil, fmt.Errorf("missing or invalid rights evidence: %s", owner)
 	}
 	filename := "data/" + strings.TrimPrefix(expected, "/ui-library/")
 	raw, err := fs.ReadFile(files, filename)
@@ -36,10 +42,10 @@ func loadRightsEvidence(files fs.FS, item Template) (*rightsEvidence, error) {
 	if err = json.Unmarshal(raw, &proof); err != nil {
 		return nil, err
 	}
-	if proof.Revision != item.Revision || proof.License != item.License || proof.CapturedAt == "" ||
+	if proof.Revision != revision || proof.License != license || proof.CapturedAt == "" ||
 		!slices.Contains(proof.Grants, "commercial-use") || !slices.Contains(proof.Grants, "redistribution") ||
 		len(proof.Resources) < 2 || proof.ScreenshotSHA256 == "" {
-		return nil, fmt.Errorf("incomplete rights evidence: %s", item.ID)
+		return nil, fmt.Errorf("incomplete rights evidence: %s", owner)
 	}
 	verify := func(name, expectedHash string) error {
 		if !fs.ValidPath(name) || strings.Contains(name, "/") {

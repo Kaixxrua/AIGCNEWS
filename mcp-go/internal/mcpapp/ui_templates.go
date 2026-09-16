@@ -17,12 +17,22 @@ func NewUITemplateHandlers(publicBaseURL string) (Handlers, error) {
 	if err != nil {
 		return nil, err
 	}
+	icons, err := uicatalog.LoadIcons()
+	if err != nil {
+		return nil, err
+	}
 	baseURL := strings.TrimRight(publicBaseURL, "/")
 	if baseURL == "" {
 		baseURL = "https://aigcnews.cn"
 	}
 	service := &uiTemplateService{catalog: catalog, baseURL: baseURL}
-	return Handlers{"search_ui_templates": service.search, "get_ui_template": service.get}, nil
+	iconService := &uiIconService{catalog: icons, baseURL: baseURL}
+	return Handlers{
+		"search_ui_templates": service.search,
+		"get_ui_template":     service.get,
+		"search_ui_icons":     iconService.search,
+		"get_ui_icon":         iconService.get,
+	}, nil
 }
 
 type uiTemplateService struct {
