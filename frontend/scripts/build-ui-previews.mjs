@@ -19,7 +19,7 @@ const { items } = JSON.parse(await readFile(resolve(data, 'catalog.json'), 'utf8
 const selectedPrefixes = process.env.UI_PREVIEW_IDS_FILE ? JSON.parse(await readFile(process.env.UI_PREVIEW_IDS_FILE, 'utf8')) : process.argv.slice(2)
 await mkdir(output, { recursive: true })
 const reviewedIds = new Set(
-  items.filter(item => item.editorial?.status === 'approved').map(item => item.id),
+  items.filter(item => ['approved', 'verified'].includes(item.editorial?.status)).map(item => item.id),
 )
 // Remove stale flat outputs and locally generated copies of reviewed previews.
 // Reviewed previews are immutable catalog assets whose hashes are verified later;
@@ -103,8 +103,10 @@ for (const item of items) {
     const content = original.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1]
     const classes = original.match(/<body[^>]*class="([^"]*)"/i)?.[1] ?? ''
     if (!content) throw new Error(`Missing original HTML body: ${item.id}`)
-    const css = await readFile(resolve(data, item.assets[0].path), 'utf8')
-    const helper = await readFile(resolve(data, item.files[1].path), 'utf8')
+    const standalone = item.provider_id.startsWith('xgithub-')
+    const inlineCSS = [...original.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(match => match[1]).join('\n')
+    const css = standalone ? inlineCSS : await readFile(resolve(data, item.assets[0].path), 'utf8')
+    const helper = standalone ? '' : await readFile(resolve(data, item.files[1].path), 'utf8')
     await writeFile(resolve(output, `${item.id}.css`), css + '\nhtml,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{background:#fff;color:#111827}#preview-mount{min-height:100vh;display:grid;place-items:center;padding:20px}.original-body{max-width:100%;width:100%}')
     await writeFile(resolve(output, `${item.id}.js`), helper + statusCode.replace('ITEM_ID', JSON.stringify(item.id)).replace('NEEDS_GPU', 'false'))
     const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'"

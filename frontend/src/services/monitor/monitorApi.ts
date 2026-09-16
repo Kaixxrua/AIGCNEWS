@@ -139,6 +139,7 @@ export const monitorApi: MonitorApi = {
       repository: form.kind === 'github' ? form.repository.trim() : null,
       path_patterns: form.kind === 'github' ? form.pathPatterns.split(/[,\n]/).map(value => value.trim()).filter(Boolean) : [],
       feed_url: form.kind === 'feed' ? form.feedUrl.trim() : null,
+      x_auto_publish: form.kind === 'github' && form.xAutoPublish,
     }
     const response = form.id === null
       ? await api.post('/ops/ui-library/discovery-sources', payload)

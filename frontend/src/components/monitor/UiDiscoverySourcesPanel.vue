@@ -104,7 +104,10 @@ onMounted(load)
                 </a>
               </td>
               <td class="max-w-[280px] truncate text-xs monitor-caption" :title="detail(source)">{{ detail(source) }}</td>
-              <td><span class="badge" :class="source.enabled ? 'monitor-status-success' : 'monitor-status-unknown'">{{ source.enabled ? t('monitor.schedulerConfig.active') : t('monitor.schedulerConfig.paused') }}</span></td>
+              <td>
+                <span class="badge" :class="source.enabled ? 'monitor-status-success' : 'monitor-status-unknown'">{{ source.enabled ? t('monitor.schedulerConfig.active') : t('monitor.schedulerConfig.paused') }}</span>
+                <span v-if="source.x_auto_publish" class="monitor-badge ml-1">{{ t('monitor.uiSources.xAutoPublishBadge') }}</span>
+              </td>
               <td class="text-right whitespace-nowrap">
                 <template v-if="source.editable !== false">
                   <button class="monitor-btn-ghost" @click="edit(source)">{{ t('common.edit') }}</button>
@@ -142,6 +145,10 @@ onMounted(load)
             <span class="monitor-caption">{{ t('monitor.uiSources.patterns') }}</span>
             <textarea v-model="form.pathPatterns" required rows="4" placeholder="components/*.tsx" class="input mt-1 w-full rounded border px-3 py-2" />
             <span class="monitor-caption mt-1 block text-2xs">{{ t('monitor.uiSources.patternsHint') }}</span>
+          </label>
+          <label class="flex items-start gap-2 text-xs">
+            <input v-model="form.xAutoPublish" class="mt-0.5" type="checkbox" />
+            <span><strong>{{ t('monitor.uiSources.xAutoPublish') }}</strong><span class="monitor-caption mt-1 block text-2xs">{{ t('monitor.uiSources.xAutoPublishHint') }}</span></span>
           </label>
         </template>
         <label v-else class="block text-xs">

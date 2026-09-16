@@ -80,6 +80,7 @@ export interface UiDiscoverySource {
   profile_url?: string | null
   handle?: string | null
   enabled: boolean
+  x_auto_publish?: boolean
   editable?: boolean
 }
 
@@ -91,6 +92,7 @@ export interface UiDiscoverySourceForm {
   pathPatterns: string
   feedUrl: string
   enabled: boolean
+  xAutoPublish: boolean
 }
 
 export const createUiDiscoverySourceForm = (source?: UiDiscoverySource): UiDiscoverySourceForm => ({
@@ -101,6 +103,7 @@ export const createUiDiscoverySourceForm = (source?: UiDiscoverySource): UiDisco
   pathPatterns: source?.path_patterns?.join('\n') || '',
   feedUrl: source?.feed_url || '',
   enabled: source?.enabled ?? true,
+  xAutoPublish: source?.x_auto_publish ?? false,
 })
 
 export interface RevenueWindowStats {

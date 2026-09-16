@@ -10,7 +10,7 @@ export interface UiTemplate {
   subcategory?: string
   styles?: string[]
   theme?: { light: Record<string, string>; dark: Record<string, string> }
-  editorial?: { status: 'approved'; revision: string; source_sha256: string; reviewed_at: string; evidence: string; reason: string; position?: number }
+  editorial?: { status: 'approved' | 'verified'; revision: string; source_sha256: string; reviewed_at: string; evidence: string; reason: string; position?: number }
   rights_evidence_url?: string
   name: Record<UiLanguage, string>
   description: Record<UiLanguage, string>
