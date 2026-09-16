@@ -133,6 +133,8 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 
 发现结果保存在候选表，通过管理员 `GET /api/ops/ui-library/discovery?limit=100` 查看。部署机的 `AIGCNEWS-UI-Publication` 计划任务每天北京时间 09:20 承接候选核查、证据归档、预览构建及网站/MCP 发布；失败后重试，发布异常回滚。当前自动发布适配器支持 HyperUI 无外部素材的原版 HTML，完整许可证或配套代码变化则停在待核查。X、Codrops 及尚无适配器的来源仍需人工核查，不自动抓取或执行任意链接。每天最多发布 64 个通过核查的新素材，保留旧素材首次入库时间；每天检查不保证来源每天都有新作品。安装、恢复、审计记录和运行依赖见 [每日发布说明](../scripts/ui_publication/README.md)。
 
+管理员可在监控页的“采集 → UI 素材来源”查看全部内置来源，并新增、编辑、停用或删除自定义来源。自定义来源支持 GitHub `owner/repository` 加文件 glob，以及公网 HTTPS RSS/Atom；保存与每次请求均执行出站目标校验，不执行网站脚本。配置通过 `/api/ops/ui-library/discovery-sources` 管理，并由每日 09:00 的 `ui_library_discovery` 任务读取。自定义来源只产生待核查候选，不自动扩大 09:20 发布器的适配范围。
+
 部署后先按项目流程运行 `python scripts/migrate_postgres.py apply`，再启动后端；确认调度状态中有上述任务及下次执行时间。修改了后端配置、权限和迁移，应在可用的 Docker/PostgreSQL 测试环境中执行下面的真实集成测试。
 
 ```sh

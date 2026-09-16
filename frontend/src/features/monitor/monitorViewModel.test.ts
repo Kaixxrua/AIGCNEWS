@@ -69,6 +69,7 @@ describe('monitor presentation localization boundary', () => {
       ['collect', 'monitor.nav.collect', true],
       ['crawl', 'monitor.nav.crawl', true],
       ['enrichment', 'monitor.nav.enrichment', true],
+      ['ui-sources', 'monitor.nav.uiSources', true],
       ['x-watch', 'monitor.nav.xWatch', true],
       ['x-credentials', 'monitor.nav.xCredentials', true],
       ['wechat', 'monitor.nav.wechat', true],
@@ -91,6 +92,7 @@ describe('monitor presentation localization boundary', () => {
 
   it('normalizes unknown or malformed section query values to the default', () => {
     expect(normalizeMonitorSection('enrichment')).toBe('enrichment')
+    expect(normalizeMonitorSection('ui-sources')).toBe('ui-sources')
     expect(normalizeMonitorSection('mcp-server')).toBe('mcp-server')
     expect(normalizeMonitorSection('oauth-config')).toBe('oauth-config')
     expect(normalizeMonitorSection('telegram-push')).toBe('telegram-push')
