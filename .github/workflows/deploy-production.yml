@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   metadata:
@@ -15,7 +14,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-ci]
     outputs:
       backend: ${{ steps.names.outputs.backend }}
       mcp: ${{ steps.names.outputs.mcp }}
@@ -32,24 +31,23 @@ jobs:
 
   build-backend:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-production]
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@v3
       - id: build
         uses: docker/build-push-action@v6
         with:
+          # The trusted production runner retains Docker's local build cache.
+          # Load the exact digest here; deployment uses the same Docker daemon.
+          builder: default
+          load: true
+          provenance: false
           context: backend
-          push: true
+          push: false
           tags: ${{ needs.metadata.outputs.backend }}:${{ github.event.workflow_run.head_sha }}
 
   build-mcp:
@@ -72,18 +70,15 @@ jobs:
           fi
           mkdir -p mcp-go/internal/uicatalog/data
           cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." mcp-go/internal/uicatalog/data/
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@v3
       - id: build
         uses: docker/build-push-action@v6
         with:
+          builder: default
+          load: true
+          provenance: false
           context: .
           file: mcp-go/Dockerfile
-          push: true
+          push: false
           tags: ${{ needs.metadata.outputs.mcp }}:${{ github.event.workflow_run.head_sha }}
           # 生产 runner 无法直连 proxy.golang.org；按 mcp-go/Dockerfile 预留的
           # GOPROXY 出口改用境内镜像源，避免 go mod download 确定性超时。
@@ -133,17 +128,14 @@ jobs:
           npm run test:unit -- \
             src/components/contact/GodotContactScene.test.ts \
             src/views/ContactPageView.test.ts
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@v3
       - id: build
         uses: docker/build-push-action@v6
         with:
+          builder: default
+          load: true
+          provenance: false
           context: frontend
-          push: true
+          push: false
           tags: ${{ needs.metadata.outputs.frontend }}:${{ github.event.workflow_run.head_sha }}
 
   deploy:
@@ -169,12 +161,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
-
-      - name: Authenticate production host to GHCR
-        shell: bash
-        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Apply immutable release under host lock
         shell: bash
