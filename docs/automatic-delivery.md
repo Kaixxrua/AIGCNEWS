@@ -9,15 +9,15 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品，逐文件校验清单与黑边修复契约后才允许构建。生产 job 使用固定 concurrency group 排队。
-7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。
+6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品，逐文件校验清单与黑边修复契约后才允许构建。生产 job 使用固定 concurrency group 排队。
+7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按精确 digest 检查本机镜像（缺失时才从 registry 拉取）并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
 Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核对工作区、同名远端分支、与 `origin/main` 的补丁等价关系以及生产状态文件。任一阶段尚未完成时，hook 阻止提前结束并要求 Agent 继续跟踪上述既定流水线，不得把“创建 PR”、合并或是否部署留给用户决定。只有生产 active release 已包含本任务，或者 Agent 已核实并报告带证据的外部阻塞，回合才允许结束。hook 只做验证和持续执行约束，不直接绕过 GitHub 门禁、手工合并或抢占其他任务的部署。
 
 ## GitHub 配置
 
-仓库需要允许 GitHub Actions 创建 PR、写入 PR 和推送 GHCR。`production` Environment 不设置 required reviewers，从而把仓库管理员的启用行为作为持续部署授权，而不是每次发布授权。
+仓库需要允许 GitHub Actions 创建 PR、写入 PR。本地镜像发布不需要 GHCR 写入权限。`production` Environment 不设置 required reviewers，从而把仓库管理员的启用行为作为持续部署授权，而不是每次发布授权。
 
 配置 Repository variable：
 
@@ -38,7 +38,7 @@ runner 用户必须能够：
 - 使用 Docker，但不要求 root shell；
 - 读取部署目录已有的 `.env`、证书和私有 overlay；
 - 读取 `AIGCNEWS_GODOT_RELEASE_ROOT` 中的私有 Godot 发布源码、制品和 SHA-256 清单；
-- 访问 GHCR 和 `origin`；
+- 访问 `origin`；仅在恢复远端历史镜像时需要 GHCR；
 - 在部署目录创建 `.release.env` 与 `.aigcnews-deploy/`。
 - 读取生产目录中的 `mcp-go/internal/uicatalog/data/` 和 `frontend/.ui-previews/previews/`；这些私有发布素材不会提交到 Git，普通 PR CI 使用合成夹具验证同一构建契约。
 
@@ -46,7 +46,9 @@ runner 用户必须能够：
 
 ## 并发语义
 
-- backend 镜像可在 GitHub 托管 runner 构建；MCP 与 frontend 镜像在生产 runner 上构建，并按可用 runner 容量并行或排队。
+- 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试继续在隔离的 `aigcnews-ci` runner 中执行。
+- 构建使用持久化 `default` builder 和 `load: true`，关闭 push；镜像名称保留 GHCR 命名以兼容后续备份，但本流程不上传 GHCR。升级 Docker/Buildx 时必须验证导出的 manifest digest 可以在本机 `docker image inspect repository@sha256:...` 解析。
+- 若扩为多台生产 runner，应先设计共享制品分发，不能只复用 runner 标签。
 - GitHub job 级 `aigcnews-production` concurrency 只串行生产切换，不阻塞构建。
 - `cancel-in-progress: false`，已经开始的生产切换不会被新提交取消。
 - 控制器拿到主机锁后重新 fetch `origin/main`；候选已是最新 main 的祖先时标记 `superseded`，不触碰生产。

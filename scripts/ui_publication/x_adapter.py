@@ -147,7 +147,8 @@ def make_item(data: Path, payload: dict, raw: bytes, license_raw: bytes, added_a
         'notes': {'zh': '保留原版 HTML/CSS 和 MIT 许可；自动发布不允许脚本或外部资源。',
                   'en': 'Preserve the original HTML/CSS and MIT notice; automated publication forbids scripts and external resources.'},
         'preview_kind': 'html', 'preview_url': f'/ui-library/previews/{item_id}.html',
-        'poster_url': f'/ui-library/posters/{item_id}.png', 'clip_url': '',
+        'poster_url': f'/ui-library/posters/{item_id}-{revision[:12]}.webp',
+        'clip_url': f'/ui-library/clips/{item_id}-{revision[:12]}.mp4',
         'added_at': added_at, 'subcategory': 'other', 'kind': 'component', 'styles': [],
         'rights_evidence_url': f'/ui-library/assets/{provider}/evidence/{revision}/manifest.json',
     }

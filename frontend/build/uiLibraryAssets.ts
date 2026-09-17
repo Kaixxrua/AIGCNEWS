@@ -131,6 +131,7 @@ export function uiLibraryAssets(): Plugin {
           for (const [name, digest] of [[record.screenshot, record.screenshot_sha256], ...(record.dark_screenshot ? [[record.dark_screenshot, record.dark_screenshot_sha256]] : [])]) {
             if (typeof name !== 'string' || /[/\\]/.test(name) || name === '..' || createHash('sha256').update(readFileSync(resolve(data, review.evidence.replace('/ui-library/', ''), '..', name))).digest('hex') !== digest) throw new Error('Visual review evidence mismatch: ' + item.id)
           }
+          if (review.status === 'verified' && (record.clip !== item.clip_url || hash(assets.get(item.clip_url)!) !== record.clip_sha256 || hash(assets.get(item.poster_url)!) !== record.screenshot_sha256)) throw new Error('Verified media changed: ' + item.id)
           if (createHash('sha256').update(readFileSync(assets.get(item.preview_url)!)).digest('hex') !== record.preview_html_sha256) throw new Error('Preview changed after visual review: ' + item.id)
           for (const [filename, digest] of Object.entries(record.preview_files ?? {})) {
             const path = assets.get('/ui-library/previews/' + filename)
@@ -164,9 +165,9 @@ export function uiLibraryAssets(): Plugin {
         if (!path) { res.statusCode = 404; res.end(); return }
         const reviewedSvg = key.endsWith('.svg') && iconFiles.has(key)
         const extension = /^\/ui-library\/(sources|licenses)\//.test(key) && !reviewedSvg ? '' : path.split('.').pop() ?? ''
-        res.setHeader('Content-Type', `${mime[extension] ?? 'text/plain'}${extension === 'webm' ? '' : '; charset=utf-8'}`)
+        res.setHeader('Content-Type', `${mime[extension] ?? 'text/plain'}${['webm', 'mp4'].includes(extension) ? '' : '; charset=utf-8'}`)
         res.setHeader('X-Content-Type-Options', 'nosniff')
-        if (extension === 'webm') {
+        if (['webm', 'mp4'].includes(extension)) {
           const size = statSync(path).size
           res.setHeader('Accept-Ranges', 'bytes')
           if (req.headers.range) {

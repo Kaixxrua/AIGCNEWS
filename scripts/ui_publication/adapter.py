@@ -124,8 +124,9 @@ def make_item(data: Path, template: dict, payload: dict, raw: bytes, added_at: s
                 revision=payload['source_revision'], source_url=payload['source_url'],
                 demo_url='https://www.hyperui.dev/components/' + slug.rsplit('/', 1)[0],
                 aliases=[category, en, TRANSLATIONS[category], 'html', 'tailwind', 'component', '组件', '素材', '模板'],
-                added_at=added_at, clip_url='', preview_kind='html', preview_url=f'/ui-library/previews/{item_id}.html',
-                poster_url=f'/ui-library/posters/{item_id}.png',
+                added_at=added_at, clip_url=f'/ui-library/clips/{item_id}-{payload["source_revision"][:12]}.mp4',
+                preview_kind='html', preview_url=f'/ui-library/previews/{item_id}.html',
+                poster_url=f'/ui-library/posters/{item_id}-{payload["source_revision"][:12]}.webp',
                 rights_evidence_url=f'/ui-library/assets/hyperui/evidence/{payload["source_revision"]}/manifest.json')
     relative = 'sources/hyperui/' + path
     target = data / relative

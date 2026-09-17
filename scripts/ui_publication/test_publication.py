@@ -41,6 +41,8 @@ class PolicyTests(unittest.TestCase):
             item=make_x_item(Path(folder),payload,safe,license_raw,'2026-09-16T00:00:00Z')
             self.assertEqual(item['provider_id'],'xgithub-9')
             self.assertEqual(item['license'],'MIT')
+            self.assertEqual(item['poster_url'],'/ui-library/posters/x-acme-ui-examples-card-html-aaaaaaaaaaaa.webp')
+            self.assertEqual(item['clip_url'],'/ui-library/clips/x-acme-ui-examples-card-html-aaaaaaaaaaaa.mp4')
             self.assertEqual((Path(folder)/item['files'][0]['path']).read_bytes(),safe)
 
     def test_original_license_and_scoped_notices(self):
@@ -84,7 +86,8 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(item['files'][0]['sha256'],sha(raw))
             self.assertEqual(item['added_at'],'2026-09-11T00:00:00Z')
             self.assertEqual(item['preview_kind'],'html')
-            self.assertEqual(item['clip_url'],'')
+            self.assertEqual(item['clip_url'],'/ui-library/clips/hyperui-application-badges-999-aaaaaaaaaaaa.mp4')
+            self.assertEqual(item['poster_url'],'/ui-library/posters/hyperui-application-badges-999-aaaaaaaaaaaa.webp')
             self.assertNotIn('editorial',item)
             self.assertEqual(item['kind'],'component')
             self.assertEqual(item['subcategory'],'badges')

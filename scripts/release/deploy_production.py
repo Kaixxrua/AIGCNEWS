@@ -136,7 +136,12 @@ def checkout(root: Path, source_sha: str) -> None:
 
 def reconcile(root: Path, release: Release) -> None:
     for image in (release.backend_image, release.mcp_image, release.frontend_image):
-        run(["docker", "pull", image], cwd=root)
+        # Inspect the immutable reference, never a tag: a local build can be
+        # deployed without uploading and downloading the same layers via GHCR.
+        try:
+            run(["docker", "image", "inspect", image], cwd=root)
+        except DeployError:
+            run(["docker", "pull", image], cwd=root)
     environment = os.environ.copy()
     environment["AIGCNEWS_RELEASE_ENV"] = str(root / ".release.env")
     run([str(root / "scripts" / "manage_main_stack.sh"), "up"], cwd=root, env=environment)

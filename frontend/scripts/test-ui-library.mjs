@@ -35,7 +35,7 @@ const waitCount = count => page.waitForFunction(n => document.querySelectorAll('
 const clipboard = async () => (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n')
 let releaseSlowPreview
 const slowPreview = new Promise(resolve => { releaseSlowPreview = resolve })
-await page.route('**/ui-library/clips/' + items[0].id + '.webm', async route => { await slowPreview; await route.continue() })
+await page.route('**' + items[0].clip_url, async route => { await slowPreview; await route.continue() })
 try {
   await page.goto(base + '/ui-library', { waitUntil: 'domcontentloaded' })
   await waitCount(30)
@@ -64,14 +64,14 @@ try {
   const waitVisiblePlayback = async () => {
     const ids = await visibleIds()
     await page.waitForFunction(expected => {
-      const frames = [...document.querySelectorAll('.ui-library__card-preview')]
-      return JSON.stringify(frames.map(frame => frame.closest('[data-template-id]').dataset.templateId).sort()) === JSON.stringify(expected)
+      return expected.every(id => document.querySelector(`[data-template-id="${id}"] video.ui-library__card-preview`))
     }, ids)
     return ids
   }
   assert.equal(await page.locator('.ui-library iframe').count(), 0, 'dense gallery should not allocate WebGL contexts')
   const initialVisible = await waitVisiblePlayback()
-  assert.ok(initialVisible.length >= 3 && initialVisible.length < 30, 'all visible cards autoplay without loading the entire catalog')
+  assert.ok(initialVisible.length >= 3 && initialVisible.length < 30, 'all visible cards receive MP4 previews')
+  assert.ok(await hoverFrames.count() < 30, 'only the viewport and a small look-ahead window attach media')
   // Exceed the old 15-second cutoff: pending downloads must remain recoverable.
   await page.waitForTimeout(16000)
   assert.equal(await first.getAttribute('data-preview-state'), 'loading')
@@ -80,22 +80,22 @@ try {
   assert.ok(await page.locator('.ui-library__card-preview.is-ready').count() > 0, 'ready cards play independently of pending cards')
   await page.screenshot({ path: resolve(output, 'gallery-loading-cover.png') })
   releaseSlowPreview()
-  await page.waitForFunction(count => document.querySelectorAll('.ui-library__card-preview.is-ready').length === count, initialVisible.length, { timeout: 30000 })
   await first.locator('video.is-ready').waitFor()
   await page.screenshot({ path: resolve(output, 'gallery-autoplay.png') })
   await search.hover()
-  assert.equal(await hoverFrames.count(), initialVisible.length, 'playback continues without hover')
+  assert.ok(await hoverFrames.count() >= initialVisible.length, 'playback and look-ahead loading continue without hover')
   await page.locator('.ui-library').evaluate(el => { el.scrollTop = el.scrollHeight })
   await cards.last().locator('.ui-library__poster').scrollIntoViewIfNeeded()
   const bottomVisible = await waitVisiblePlayback()
   assert.ok(bottomVisible.includes(items.at(-1).id))
   assert.ok(!bottomVisible.includes(items[0].id))
-  assert.equal(await first.locator('video').count(), 0, 'offscreen effects must release their renderer')
+  assert.equal(await first.locator('video').count(), 1, 'loaded MP4 stays warm for instant back-scroll')
+  assert.equal(await first.locator('video').evaluate(video => video.paused), true, 'offscreen MP4 pauses')
   await page.locator('.ui-library').evaluate(el => { el.scrollTop = 0 })
   await first.locator('.ui-library__poster').scrollIntoViewIfNeeded()
   await waitVisiblePlayback()
   await page.getByRole('button', { name: '暂停全部', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('.ui-library__card-preview').length === 0)
+  await page.waitForFunction(() => [...document.querySelectorAll('video.ui-library__card-preview')].every(video => video.paused))
   await page.getByRole('button', { name: '播放全部', exact: true }).click()
   await waitVisiblePlayback()
   await first.locator('.ui-library__copy-source').click()
@@ -122,7 +122,7 @@ try {
   await page.getByRole('button', { name: '预览效果: 液态金属', exact: true }).click()
   await dialog.waitFor()
   await dialog.locator('pre code').waitFor()
-  assert.equal(await hoverFrames.count(), 0, 'detail preview replaces gallery preview')
+  assert.ok(await hoverFrames.evaluateAll(videos => videos.every(video => video.paused)), 'detail preview pauses gallery videos')
   assert.ok(await dialog.locator('pre code .hljs-keyword').count() > 0, 'source must be syntax highlighted')
   await dialog.locator('.ui-detail__preview-status').waitFor({ state: 'hidden', timeout: 30000 })
   assert.equal(await dialog.locator('.ui-detail__preview-error').count(), 0)
@@ -175,8 +175,10 @@ try {
       const bounds = el.getBoundingClientRect()
       return [...el.querySelectorAll('.ui-library__card')].filter(card => { const rect = card.getBoundingClientRect(); return rect.top >= bounds.top && rect.bottom <= bounds.bottom }).length
     }) >= columns * 2, 'show at least two complete rows at ' + width)
-    await page.waitForFunction(count => document.querySelectorAll('.ui-library__card-preview.is-ready').length === count, visible.length, { timeout: 30000 })
-    assert.equal(await hoverFrames.evaluateAll(videos => videos.filter(video => !video.paused && video.currentTime > 0).length), visible.length, 'every visible preview should actually play')
+    await page.waitForFunction(ids => ids.every(id => {
+      const video = document.querySelector(`[data-template-id="${id}"] video.is-ready`)
+      return video && !video.paused && video.currentTime > 0
+    }), visible, { timeout: 30000 })
     await page.screenshot({ path: resolve(output, 'gallery-dense-' + width + '.png') })
   }
   await page.setViewportSize({ width: 1440, height: 1000 })
