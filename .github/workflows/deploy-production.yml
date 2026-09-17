@@ -85,6 +85,10 @@ jobs:
           file: mcp-go/Dockerfile
           push: true
           tags: ${{ needs.metadata.outputs.mcp }}:${{ github.event.workflow_run.head_sha }}
+          # 生产 runner 无法直连 proxy.golang.org；按 mcp-go/Dockerfile 预留的
+          # GOPROXY 出口改用境内镜像源，避免 go mod download 确定性超时。
+          build-args: |
+            GOPROXY=https://goproxy.cn,direct
 
   build-frontend:
     needs: metadata
