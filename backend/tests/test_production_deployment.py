@@ -137,6 +137,27 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert 'branches:\n      - "session/**"' in session_pr
 
 
+def test_workflows_use_isolated_self_hosted_runners():
+    workflows = {
+        path.name: path.read_text(encoding="utf-8")
+        for path in (ROOT / ".github" / "workflows").glob("*.yml")
+    }
+    ci_runner = "runs-on: [self-hosted, linux, aigcnews-ci]"
+    production_runner = "runs-on: [self-hosted, linux, aigcnews-production]"
+
+    assert all("runs-on: ubuntu-latest" not in text for text in workflows.values())
+    assert workflows["contract-baseline.yml"].count(ci_runner) == 5
+    assert workflows["deploy-production.yml"].count(ci_runner) == 2
+    assert workflows["deploy-production.yml"].count(production_runner) == 3
+    assert workflows["session-pr.yml"].count(ci_runner) == 1
+    assert workflows["auto-merge.yml"].count(ci_runner) == 1
+    assert workflows["evals-contract.yml"].count(ci_runner) == 2
+    assert production_runner not in workflows["contract-baseline.yml"]
+    assert "cache: pip" not in workflows["contract-baseline.yml"]
+    assert "cache: npm" not in workflows["contract-baseline.yml"]
+    assert "cache: false" in workflows["contract-baseline.yml"]
+
+
 def test_main_compose_uses_digest_overrides_without_backend_source_mount():
     compose = (ROOT / "docker/docker-compose.yml").read_text(encoding="utf-8")
     assert "AIGCNEWS_BACKEND_IMAGE_DIGEST" in compose

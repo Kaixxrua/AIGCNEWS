@@ -15,7 +15,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-ci]
     outputs:
       backend: ${{ steps.names.outputs.backend }}
       mcp: ${{ steps.names.outputs.mcp }}
@@ -32,7 +32,7 @@ jobs:
 
   build-backend:
     needs: metadata
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-ci]
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
