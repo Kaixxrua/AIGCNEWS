@@ -23,7 +23,7 @@ jobs:
   # 求值，secrets 不可用），因此用前置 job 探测并把结果作为 output 传递。
   check-secrets:
     name: Gate on eval secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 5
     outputs:
       enabled: ${{ steps.gate.outputs.enabled }}
@@ -46,7 +46,7 @@ jobs:
     name: MCP contract eval (8 tools, no LLM)
     needs: check-secrets
     if: needs.check-secrets.outputs.enabled == '1'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 20
     env:
       EVAL_MCP_URL: ${{ secrets.AIGC_RADAR_MCP_URL }}
