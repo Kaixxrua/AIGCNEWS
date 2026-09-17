@@ -1,0 +1,28 @@
+name: Delivery Sweeper
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: aigcnews-delivery-sweeper
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: [self-hosted, linux, aigcnews-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Reconcile exact-head session deliveries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/delivery_sweeper.py --apply

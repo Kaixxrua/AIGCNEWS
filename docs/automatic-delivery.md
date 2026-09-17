@@ -15,6 +15,8 @@
 
 Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核对工作区、同名远端分支、与 `origin/main` 的补丁等价关系以及生产状态文件。任一阶段尚未完成时，hook 阻止提前结束并要求 Agent 继续跟踪上述既定流水线，不得把“创建 PR”、合并或是否部署留给用户决定。只有生产 active release 已包含本任务，或者 Agent 已核实并报告带证据的外部阻塞，回合才允许结束。hook 只做验证和持续执行约束，不直接绕过 GitHub 门禁、手工合并或抢占其他任务的部署。
 
+`Delivery Sweeper` 每 10 分钟对开放的同仓库 `session/*` PR 做一次补偿协调。它只合并当前 head SHA 在最近 12 小时内已有成功 `Contract Baseline` 的 PR，并且每轮最多合并一个，避免并行推进主分支或复活陈旧验证。若所有失败 job 都未分配 runner 且没有执行步骤，则把它识别为基础设施启动故障并最多重试到第三次；真实测试失败、审批等待、fork PR、非 session 分支、旧 head 和过期成功结果都保持阻塞。该定时器是事件驱动 `Auto Merge` 的补偿路径，不降低任何测试或分支保护门禁。
+
 ## GitHub 配置
 
 仓库需要允许 GitHub Actions 创建 PR、写入 PR。本地镜像发布不需要 GHCR 写入权限。`production` Environment 不设置 required reviewers，从而把仓库管理员的启用行为作为持续部署授权，而不是每次发布授权。
