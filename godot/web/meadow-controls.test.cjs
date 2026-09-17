@@ -45,6 +45,25 @@ function harness({ reduced = false, missing = [], loadError = null, clock = () =
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
+test("FPS readout accepts native samples without sending scene commands", () => {
+  const { ui, element, calls, document } = harness();
+  const readout = element("scene-fps");
+  document.hidden = false;
+  ui.reportFps(59.6);
+  assert.equal(readout.textContent, "60 FPS");
+  assert.equal(readout.hidden, false);
+  ui.reportFps(24);
+  assert.equal(readout.textContent, "24 FPS");
+  for (const invalid of [NaN, Infinity, -1, "60", null]) ui.reportFps(invalid);
+  assert.equal(readout.textContent, "24 FPS");
+  ui.reportFps(0);
+  assert.equal(readout.textContent, "0 FPS");
+  document.hidden = true;
+  ui.reportFps(12);
+  assert.equal(readout.hidden, true);
+  assert.deepEqual(calls, []);
+});
+
 test("buttons stay disabled until Godot binds; reduced motion is forwarded", () => {
   const h = harness({ reduced: true });
   assert.equal(h.element("time-control").disabled, true);

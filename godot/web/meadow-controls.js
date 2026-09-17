@@ -88,6 +88,12 @@
   }, true);
 
   window.meadowTimeUI = {
+    reportFps(value) {
+      const readout = document.getElementById("scene-fps");
+      if (!readout || failed || !Number.isFinite(value) || value < 0) return;
+      readout.textContent = `${Math.round(value)} FPS`;
+      readout.hidden = document.hidden;
+    },
     sceneReady(sceneBuildMs) {
       sceneReported = true;
       canvas.dataset.sceneBuildMs = Math.round(sceneBuildMs).toString();

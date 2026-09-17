@@ -23,6 +23,22 @@ body { margin: 0; overflow: hidden; }
 }
 #canvas { display: block; width: 100vw; height: 100dvh; }
 #canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+#scene-fps {
+  position: fixed;
+  right: max(0.5rem, env(safe-area-inset-right));
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 2;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  background: var(--surface);
+  color: var(--muted);
+  font: 0.6875rem/1.4 ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 8ch;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+}
 #scene-controls {
   position: fixed;
   top: 1rem;

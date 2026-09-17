@@ -859,9 +859,16 @@ func set_animation_paused(paused: bool) -> void:
 	_animation_paused = paused
 	_sync_boss_hud()
 
+var _fps_report_at := 0
+
 func _process(delta: float) -> void:
 	if not _configured:
 		return
+	if OS.has_feature("web"):
+		var now := Time.get_ticks_msec()
+		if now >= _fps_report_at:
+			_fps_report_at = now + 1000
+			JavaScriptBridge.eval("window.meadowTimeUI?.reportFps?.(%d)" % roundi(Engine.get_frames_per_second()))
 	# Weather keeps transitioning while choreography is paused or server state
 	# is stale. Sync lighting before those gates without advancing any pose/time.
 	_sync_actor_lighting()

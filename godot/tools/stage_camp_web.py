@@ -132,6 +132,7 @@ def stage(binding_path, presentation_path, output):
             regular_input(sidecar)
             require(decode(sidecar.read_bytes()) == raw, message)
     html = (FROZEN/"index.html").read_text("utf-8")
+    html = html.replace('<div id="scene-controls"', '<span id="scene-fps" aria-live="off" hidden></span>\n  <div id="scene-controls"', 1)
     engine_build = assignment(html, "MEADOW_ENGINE_BUILD")
     quality = assignment(html, "MEADOW_QUALITY")
     contracts = assignment(html, "MEADOW_RENDER_CONTRACTS")

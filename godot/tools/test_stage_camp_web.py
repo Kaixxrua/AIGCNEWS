@@ -127,7 +127,9 @@ class StageCampWebTests(unittest.TestCase):
             '<script data-meadow-engine-preload>' + self.preload + '</script>\n'
             + "\n".join(f'  <script src="{name}"></script>' for name in stager.UPDATED[:4])
             + '\n  <script src="index.js"></script>\n</head><body>\n'
+            '<div id="scene-controls">\n'
             '    <button id="quality-control" type="button">quality</button>\n'
+            '</div>\n'
             '<p>中央保留未来行走和 Boss 战区域。</p><p>不含 HTML 和响应头。</p>\n'
             '<script>\n' + inline + '\n</script>\n</body></html>')
         self.file(self.frozen, "index.html", self.html.encode())
@@ -266,6 +268,8 @@ class StageCampWebTests(unittest.TestCase):
     def test_externalizes_both_inline_scripts_and_preserves_preload_body(self):
         self.assemble()
         html = (self.output / "index.html").read_text("utf-8")
+        self.assertEqual(html.count('id="scene-fps"'), 1)
+        self.assertIn('id="scene-fps" aria-live="off" hidden', html)
         parsed = EntryHTML(html)
         self.assertTrue(parsed.scripts)
         self.assertNotIn(None, parsed.scripts)
