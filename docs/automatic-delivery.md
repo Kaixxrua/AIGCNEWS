@@ -13,6 +13,8 @@
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
+Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核对工作区、同名远端分支、与 `origin/main` 的补丁等价关系以及生产状态文件。任一阶段尚未完成时，hook 阻止提前结束并要求 Agent 继续跟踪上述既定流水线，不得把“创建 PR”、合并或是否部署留给用户决定。只有生产 active release 已包含本任务，或者 Agent 已核实并报告带证据的外部阻塞，回合才允许结束。hook 只做验证和持续执行约束，不直接绕过 GitHub 门禁、手工合并或抢占其他任务的部署。
+
 ## GitHub 配置
 
 仓库需要允许 GitHub Actions 创建 PR、写入 PR 和推送 GHCR。`production` Environment 不设置 required reviewers，从而把仓库管理员的启用行为作为持续部署授权，而不是每次发布授权。
