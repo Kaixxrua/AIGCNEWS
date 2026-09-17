@@ -140,7 +140,7 @@ func (s *uiTemplateService) search(args map[string]any) (any, error) {
 		{Key: "total", Value: len(matches)},
 		{Key: "query", Value: q},
 		{Key: "search_mode", Value: searchMode},
-		{Key: "next_step", Value: "Call get_ui_template with a returned id to retrieve the original source files, dependencies and integration prompt. Inspect its live preview before changing visuals."},
+		{Key: "next_step", Value: "For a relevant new page, replacement, substantial redesign, or reusable component, call get_ui_template with the best returned id before implementation; do not stop at this search summary. For a narrow style adjustment, call it only when a candidate is directly reusable. Inspect the live preview before changing visuals."},
 		{Key: "attribution", Value: "Curated by AIGC Radar · aigcnews.cn; original authors and licenses are listed per item."},
 	}, nil
 }

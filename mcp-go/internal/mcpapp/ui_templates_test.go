@@ -84,10 +84,25 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 	}
 	init := uiRPC(t, app, "initialize", map[string]any{})
 	instructions := init["instructions"].(string)
-	for _, required := range []string{"MUST call search_ui_templates before writing implementation code", "even when the user never mentions templates", "Do not call it for a narrow copy edit"} {
+	for _, required := range []string{
+		"MUST call search_ui_templates before writing implementation code",
+		"change the visual styling",
+		"existing-component changes to colors, spacing, typography",
+		"MUST then call get_ui_template for the best result",
+		"For a narrow style adjustment, search once",
+		"Do not call it for a copy-only edit or a behavior-only localized bug fix",
+	} {
 		if !strings.Contains(instructions, required) {
 			t.Fatalf("missing proactive UI discovery instruction %q", required)
 		}
+	}
+	searchTool := tools[len(publicTools)].(map[string]any)
+	if !strings.Contains(searchTool["description"].(string), "existing-component changes") {
+		t.Fatal("search tool description does not cover component style changes")
+	}
+	getTool := tools[len(publicTools)+1].(map[string]any)
+	if !strings.Contains(getTool["description"].(string), "rather than stopping at the search summary") {
+		t.Fatal("source tool description does not enforce the second step")
 	}
 }
 
@@ -212,5 +227,9 @@ func TestUISearchAutomaticallyRelaxesLongFrontendBrief(t *testing.T) {
 	data := result["structuredContent"].(map[string]any)
 	if data["search_mode"] != "relaxed_terms" || data["total"].(float64) < 1 {
 		t.Fatalf("natural-language fallback did not run: %v", data)
+	}
+	if !strings.Contains(data["next_step"].(string), "do not stop at this search summary") ||
+		!strings.Contains(data["next_step"].(string), "narrow style adjustment") {
+		t.Fatalf("search result does not explain source-fetch policy: %v", data["next_step"])
 	}
 }
