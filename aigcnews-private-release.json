@@ -1,0 +1,11 @@
+{
+  "manifest_sha256": "b01255d5959792125354c7a05573ffce3740da5c2f4c4fa715da145750e8c304",
+  "release_id": "20260916T065639721903Z-3e9034b45c29",
+  "schema": "aigcnews.private-frontend-release.v1",
+  "source_files": {
+    "components/contact/GodotContactScene.test.ts": "bcd80c3f22f5313a8f186765fb97e148b186a1d0d55bd2f99cede44fb01d487a",
+    "components/contact/GodotContactScene.vue": "55b3729789d5f7d52c53510dcc17060e3c6357e99348306a9bf0f89f4cd1b4ae",
+    "views/ContactPageView.test.ts": "55a9bd896512a1742bc0e20060eee514d3af57a1ecca6e46bfc920a7b85d04d4",
+    "views/ContactPageView.vue": "e5889c0a73ef62d52d17a14c5f7dc693aaa4fe9709d8eb2299696e2e3cd1162b"
+  }
+}
