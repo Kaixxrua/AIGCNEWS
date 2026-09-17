@@ -99,6 +99,14 @@ export const retweetedByHandle = (doc: TopDoc): string => {
 }
 
 /**
+ * 推文在关注筛选里的归属账号。纯转贴仍属于采集它的关注账号，而不是
+ * 被转贴的原作者；普通推文则按 URL 中的作者 handle 归属。
+ */
+export const followedAccountHandle = (doc: TopDoc): string => (
+  retweetedByHandle(doc).toLowerCase() || extractXHandle(doc.url)
+)
+
+/**
  * 正文按界面语言切换：zh 系界面语言优先展示采集期落库的 X 中文翻译
  * （translation_zh，来自 X 自带 translateTweet），其余语言或无译文回退原文。
  */

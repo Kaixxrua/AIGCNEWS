@@ -20,7 +20,13 @@ vi.mock('@/composables/useXBoardController', async () => {
   const { clampPage, pageCount } = await import('@/features/xboard/xBoardViewModel')
   const pageSize = 20
   const page = ref(1)
+  const unfollowedAccounts = ref<Set<string>>(new Set())
   const box: Record<string, any> = {
+    availableAccounts: computed(() => Array.from(new Set(
+      box.docs.value.map((tweet: TopDoc) => {
+        const retweetedBy = typeof tweet.retweeted_by === 'string' ? tweet.retweeted_by.toLowerCase() : ''
+        return retweetedBy || tweet.url?.match(/x\.com\/([^/]+)\/status/)?.[1]?.toLowerCase() || ''
+      }))).filter(Boolean).sort()),
     availableDates: ref<string[]>([]),
     clearSelection: vi.fn(() => { box.selectedIds.value = new Set() }),
     currentPage: computed(() => clampPage(page.value, box.totalPages.value)),
@@ -30,6 +36,8 @@ vi.mock('@/composables/useXBoardController', async () => {
     dispose: vi.fn(),
     docs: ref<TopDoc[]>([]),
     errorMsg: ref(''),
+    followAllAccounts: vi.fn(() => { unfollowedAccounts.value = new Set(); page.value = 1 }),
+    followedAccounts: computed(() => box.availableAccounts.value.filter((handle: string) => !unfollowedAccounts.value.has(handle))),
     goPage: vi.fn((next: number) => { page.value = clampPage(next, box.totalPages.value) }),
     hasNext: computed(() => box.currentPage.value < box.totalPages.value),
     hasPrev: computed(() => box.currentPage.value > 1),
@@ -49,13 +57,27 @@ vi.mock('@/composables/useXBoardController', async () => {
       else ids.forEach((id) => next.add(id))
       box.selectedIds.value = next
     }),
+    toggleFollowAccount: vi.fn((handle: string) => {
+      const next = new Set(unfollowedAccounts.value)
+      if (next.has(handle)) next.delete(handle)
+      else next.add(handle)
+      unfollowedAccounts.value = next
+      page.value = 1
+    }),
     toggleSelection: vi.fn((docId: string) => {
       const next = new Set<string>(box.selectedIds.value)
       if (next.has(docId)) next.delete(docId)
       else next.add(docId)
       box.selectedIds.value = next
     }),
-    totalPages: computed(() => pageCount(box.docs.value.length, pageSize)),
+    totalPages: computed(() => pageCount(box.visibleDocs.value.length, pageSize)),
+    unfollowAllAccounts: vi.fn(() => { unfollowedAccounts.value = new Set(box.availableAccounts.value); page.value = 1 }),
+    unfollowedAccounts,
+    visibleDocs: computed(() => box.docs.value.filter((tweet: TopDoc) => {
+      const retweetedBy = typeof tweet.retweeted_by === 'string' ? tweet.retweeted_by.toLowerCase() : ''
+      const handle = retweetedBy || tweet.url?.match(/x\.com\/([^/]+)\/status/)?.[1]?.toLowerCase() || ''
+      return !handle || !unfollowedAccounts.value.has(handle)
+    })),
     // 测试专用：视图不消费，供 beforeEach 复位页码
     __page: page,
   }
@@ -119,6 +141,7 @@ beforeEach(() => {
   ctl.loading.value = false
   ctl.deleting.value = false
   ctl.availableDates.value = []
+  ctl.unfollowedAccounts.value = new Set()
   ctl.selectedDate.value = '2026-08-04'
   ctl.__page.value = 1
   authBox.current!.isAdmin = true
@@ -138,6 +161,24 @@ const nextPageButton = (wrapper: VueWrapper) => {
 }
 
 describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
+  it('默认关注全部账号，并可按账号即时筛选推文', async () => {
+    const tweets = makeTweets(3)
+    tweets[1]!.url = 'https://x.com/openai/status/1001'
+    tweets[2]!.url = 'https://x.com/anthropic/status/1002'
+    controller().docs.value = tweets
+    const wrapper = await mountView()
+
+    const chips = wrapper.findAll('.xboard-account-chip')
+    expect(chips.map((chip) => chip.text())).toEqual(['@alice', '@anthropic', '@openai'])
+    expect(chips.every((chip) => (chip.find('input').element as HTMLInputElement).checked)).toBe(true)
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(3)
+
+    await chips[0]!.find('input').trigger('change')
+    await nextTick()
+    expect(controller().toggleFollowAccount).toHaveBeenCalledWith('alice')
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
+  })
+
   it('挂载即调用 load，并把当前页推文按估高贪心分进 JS 列', async () => {
     controller().docs.value = makeTweets(25)
     const wrapper = await mountView()

@@ -19,10 +19,11 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 
 const {
-  docs, selectedDate, today, loading, deleting, errorMsg,
+  docs, visibleDocs, selectedDate, today, loading, deleting, errorMsg,
   selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
-  availableDates,
+  availableDates, availableAccounts, followedAccounts, unfollowedAccounts,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
+  toggleFollowAccount, followAllAccounts, unfollowAllAccounts,
 } = useXBoardController({ translate: t })
 
 // 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
@@ -31,7 +32,7 @@ const isToday = computed(() => selectedDate.value === today)
 // 时间序（新→旧）+ 估高贪心分列：每条进当前最矮列，列内保持时间降序、
 // 左上角是最新一条。纯轮询不管卡高（纯文字 ~200px vs 多图 >1000px），
 // 列高失衡会在短列尾部留下大片空白；CSS columns 是列主序，两者都不用。
-const timelineDocs = computed(() => timelineTweets(docs.value))
+const timelineDocs = computed(() => timelineTweets(visibleDocs.value))
 // 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行
 const pagedTimelineDocs = computed(() => paginateItems(timelineDocs.value, currentPage.value, pageSize))
 const totalTweets = computed(() => timelineDocs.value.length)
@@ -246,6 +247,46 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- 账号关注筛选：默认全部关注；按账号即时过滤当前窗口推文。 -->
+      <section
+        v-if="availableAccounts.length"
+        class="xboard-follow-panel stagger-enter shrink-0 px-4 py-3"
+        :aria-label="t('xboard.followAccounts')"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-bold text-stone-600">{{ t('xboard.followAccounts') }}</h2>
+            <p class="mt-0.5 text-2xs text-stone-400">
+              {{ t('xboard.followSummary', { selected: followedAccounts.length, total: availableAccounts.length }) }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn-secondary text-xs" :disabled="followedAccounts.length === availableAccounts.length" @click="followAllAccounts">
+              {{ t('xboard.followAll') }}
+            </button>
+            <button class="btn-secondary text-xs" :disabled="followedAccounts.length === 0" @click="unfollowAllAccounts">
+              {{ t('xboard.clearFollowed') }}
+            </button>
+          </div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <label
+            v-for="handle in availableAccounts"
+            :key="handle"
+            class="xboard-account-chip flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs"
+            :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(handle) }"
+          >
+            <input
+              type="checkbox"
+              class="h-3.5 w-3.5"
+              :checked="!unfollowedAccounts.has(handle)"
+              @change="toggleFollowAccount(handle)"
+            />
+            <span>@{{ handle }}</span>
+          </label>
+        </div>
+      </section>
+
       <!-- 管理员多选工具栏 -->
       <div v-if="isAdmin" class="xboard-toolbar stagger-enter flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-2">
         <div class="flex items-center gap-3 text-sm text-stone-600">
@@ -290,8 +331,14 @@ onBeforeUnmount(() => {
       <!-- 加载 / 空态 -->
       <SpinnerLoader v-if="loading && !docs.length" class="min-h-[240px]" :label="t('xboard.loading')" />
       <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
-        <p class="font-medium text-stone-500">{{ t(emptyCopy.titleKey) }}</p>
-        <p class="mt-1 text-xs">{{ t(emptyCopy.hintKey, { earliest: earliestSnapshotDate }) }}</p>
+        <template v-if="docs.length && followedAccounts.length === 0">
+          <p class="font-medium text-stone-500">{{ t('xboard.emptyFollowed') }}</p>
+          <p class="mt-1 text-xs">{{ t('xboard.emptyFollowedHint') }}</p>
+        </template>
+        <template v-else>
+          <p class="font-medium text-stone-500">{{ t(emptyCopy.titleKey) }}</p>
+          <p class="mt-1 text-xs">{{ t(emptyCopy.hintKey, { earliest: earliestSnapshotDate }) }}</p>
+        </template>
       </div>
 
       <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序） -->
@@ -645,6 +692,28 @@ onBeforeUnmount(() => {
   border-radius: 5px;
   background: var(--projects-paper-light);
   box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.xboard-follow-panel {
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--projects-paper-light);
+  box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+.xboard-account-chip {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink-secondary);
+  background: var(--projects-paper-light);
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.xboard-account-chip:hover,
+.xboard-account-chip-active {
+  border-color: var(--ink);
+  background: var(--acid-soft);
+  color: var(--ink);
 }
 
 .xboard-pagination {
