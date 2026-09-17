@@ -151,6 +151,8 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 /* 各页面管理自己的滚动容器；布局层只限定可用尺寸。 */
 :deep(.view-container) {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 100%;
   flex: 1 1 0;
   min-height: 0;
