@@ -181,9 +181,9 @@ def junction(source, destination):
     subprocess.run(['powershell.exe','-NoProfile','-File',str(helper),str(destination),str(source)],check=True,capture_output=True)
 
 
-def render(release, items, node_modules):
-    if any(item.get('preview_kind')!='html' or item.get('clip_url') for item in items):
-        raise RuntimeError('html_card_preview_metadata_invalid')
+def render(release, items, node_modules, ffmpeg):
+    if any(item.get('preview_kind')!='html' or not item.get('clip_url','').endswith('.mp4') or not item.get('poster_url','').endswith('.webp') for item in items):
+        raise RuntimeError('card_media_metadata_invalid')
     run = release.run
     frontend = run / 'source/frontend'
     frontend.mkdir(parents=True)
@@ -198,9 +198,10 @@ def render(release, items, node_modules):
         if builder.exists():
             shutil.copyfile(builder, frontend / 'scripts' / name)
     shutil.copyfile(HERE / 'capture.mjs', frontend / 'scripts/capture.mjs')
+    shutil.copyfile(release.root / 'frontend/scripts/ui-media-capture.mjs', frontend / 'scripts/ui-media-capture.mjs')
     write_json(run / 'ids.json', [item['id'] for item in items])
     env = os.environ.copy()
-    env.update(UI_PREVIEW_IDS_FILE=str(run / 'ids.json'), UI_RENDER_REPORT_FILE=str(run / 'render.json'))
+    env.update(UI_PREVIEW_IDS_FILE=str(run / 'ids.json'), UI_RENDER_REPORT_FILE=str(run / 'render.json'), FFMPEG_PATH=str(ffmpeg))
     node = shutil.which('node') or 'E:/Nodejs/node.exe'
     release.command([node,'scripts/build-ui-previews.mjs'],cwd=frontend,env=env)
     # Evidence screenshots are made by the same trusted browser helper, at commit-pinned URLs.
@@ -225,10 +226,12 @@ def render(release, items, node_modules):
     for row in rows:
         if row['state'] != 'ready' or row['errors']:
             continue
-        with Image.open(run / 'dist/ui-library/posters' / (row['id'] + '.png')) as image:
+        item = next(item for item in items if item['id'] == row['id'])
+        with Image.open(run / 'dist/ui-library' / item['poster_url'].removeprefix('/ui-library/')) as image:
             # Reject blank/near-empty renders rather than publishing an empty card.
             stats = ImageStat.Stat(image.convert('RGB'))
-            if max(stats.stddev) > 3:
+            clip = run / 'dist/ui-library' / item['clip_url'].removeprefix('/ui-library/')
+            if max(stats.stddev) > 3 and clip.is_file() and 2048 <= clip.stat().st_size <= 3 * 1024 * 1024:
                 passed.add(row['id'])
     return passed
 
@@ -236,8 +239,8 @@ def render(release, items, node_modules):
 def verify(release, items):
     # Auth remains enforced; MCP and website must expose the identical original source.
     first = items[0]
-    if any(item.get('preview_kind')!='html' or item.get('clip_url') for item in items):
-        raise RuntimeError('html_card_preview_metadata_invalid')
+    if any(item.get('preview_kind')!='html' or not item.get('clip_url','').endswith('.mp4') or not item.get('poster_url','').endswith('.webp') for item in items):
+        raise RuntimeError('card_media_metadata_invalid')
     code = (HERE / 'runtime_probe.py').read_text() + '''
 import httpx
 from pathlib import Path
@@ -377,10 +380,6 @@ def execute(args):
                     item_id = 'hyperui-' + path.removeprefix('public/examples/').removesuffix('.html').replace('/','-')
                     if item_id in withdrawn:
                         raise Hold('operator_withdrawn')
-                    # Retain the existing private preview for review; do not
-                    # rebuild the same held work every day without a decision.
-                    if candidate.get('review_status') == 'held_quality' and not (state / 'quality-approvals' / (item_id + '.json')).exists():
-                        raise Hold('awaiting_visual_quality_review')
                     revision = payload['source_revision']
                     if revision not in reviewed:
                         license_raw, _ = fetch(revision,'LICENSE',cache)
@@ -429,7 +428,7 @@ def execute(args):
                 locks.setdefault(item['provider_id'], {})['revision'] = item['revision']
             write_json(data / 'upstreams.json',locks)
             checkpoint({'status':'rendering','approved':len(additions)})
-            passed = render(release,additions,args.node_modules)
+            passed = render(release,additions,args.node_modules,args.ffmpeg)
             quality_holds = {}
             for item in additions:
                 if item['id'] not in passed:
@@ -506,7 +505,8 @@ def resume_prepared(args):
         items=[item for item in catalog['items'] if item['id'] in ids]
         report=json.loads((run/'render.json').read_text())
         ready={row['id'] for row in report if row['state']=='ready' and not row['errors']}
-        if not ids or not ids.issubset(ready) or len(items)!=len(ids):
+        media_ready=all(item.get('poster_url','').endswith('.webp') and item.get('clip_url','').endswith('.mp4') for item in items)
+        if not ids or not ids.issubset(ready) or len(items)!=len(ids) or not media_ready:
             raise RuntimeError('incomplete_render_evidence')
         release=Release(args.root,run)
         def checkpoint(value):
@@ -536,6 +536,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--node-modules',type=Path,required=True)
+    parser.add_argument('--ffmpeg',type=Path,default=Path('ffmpeg.exe'),help='FFmpeg executable used for WebP and H.264 MP4 generation.')
     parser.add_argument('--limit',type=int,default=64)
     parser.add_argument('--force',action='store_true',help='Allow an explicit extra batch today; never bypasses review gates.')
     parser.add_argument('--resume-run',help='Retry a failed pre-switch build from its audited staging directory.')

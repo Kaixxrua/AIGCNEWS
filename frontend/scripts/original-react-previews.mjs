@@ -1,5 +1,6 @@
 // Packaging for reviewed upstream examples. Source files remain byte-for-byte original.
 import {readFile,writeFile} from 'node:fs/promises'
+import {realpathSync} from 'node:fs'
 import {posix,resolve} from 'node:path'
 import {build} from 'esbuild'
 import postcss from 'postcss'
@@ -65,7 +66,8 @@ export async function buildOriginalPreview(item,data,output,root){
    return {path:resolve(data,file.path)}
   })
   builder.onResolve({filter:/^\.\.?\//},args=>{
-   const importer=item.files.find(file=>resolve(data,file.path)===args.importer)
+   let importer
+   try{importer=item.files.find(file=>realpathSync(resolve(data,file.path))===realpathSync(args.importer))}catch{return}
    if(!importer)return
    const name=posix.normalize(posix.join(posix.dirname(importer.name),args.path))
    const file=item.files.find(file=>[name,name+'.tsx',name+'.ts',name+'.jsx',name+'.js',name+'/index.tsx',name+'/index.ts'].includes(file.name))

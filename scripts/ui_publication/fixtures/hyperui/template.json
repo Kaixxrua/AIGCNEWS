@@ -72,8 +72,8 @@
     "en": "Preserve the original source and MIT notice.Serve the supplied component.css and component.js at the site root. Bundled CSS only removes the remote font import; previews use system fonts. HTML works with any framework; links and submissions are demo-only."
   },
   "preview_url": "/ui-library/previews/hyperui-marketing-buttons-1.html",
-  "poster_url": "/ui-library/posters/hyperui-marketing-buttons-1.png",
-  "clip_url": "/ui-library/clips/hyperui-marketing-buttons-1.webm",
+  "poster_url": "/ui-library/posters/hyperui-marketing-buttons-1-ae5038979b77.webp",
+  "clip_url": "/ui-library/clips/hyperui-marketing-buttons-1-ae5038979b77.mp4",
   "added_at": "2026-09-10T15:56:21.380169+00:00",
   "rights_evidence_url": "/ui-library/assets/hyperui/evidence/ae5038979b77320793360a46b85e7c71a73beda6/manifest.json",
   "subcategory": "buttons",

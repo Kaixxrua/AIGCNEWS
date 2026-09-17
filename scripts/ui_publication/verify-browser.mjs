@@ -9,6 +9,8 @@ try{
  const card=page.locator(`[data-template-id="${id}"]`)
  await card.waitFor({timeout:120000})
  await card.scrollIntoViewIfNeeded()
- await card.locator('.ui-card-frame.is-ready iframe').waitFor({timeout:45000})
- console.log('Published card uses a ready HTML iframe: '+id)
+ await card.locator('video.ui-library__card-preview.is-ready').waitFor({timeout:45000})
+ const source=await card.locator('video').getAttribute('src')
+ if(!source?.endsWith('.mp4')) throw Error('Published card does not use MP4')
+ console.log('Published card uses a ready MP4 preview: '+id)
 }finally{await browser.close()}

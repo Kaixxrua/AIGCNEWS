@@ -25,11 +25,11 @@ function request(path, headers = {}, method = 'GET') {
 for (const item of items) {
   const response = await request(item.clip_url)
   assert.equal(response.status, 200)
-  assert.ok(response.headers['content-type'].startsWith('video/webm'))
-  assert.deepEqual(response.body, await readFile(resolve(data, 'clips', item.id + '.webm')))
+  assert.ok(response.headers['content-type'].startsWith('video/mp4'))
+  assert.deepEqual(response.body, await readFile(resolve(data, item.clip_url.replace('/ui-library/', ''))))
 }
 const item = items[0]
-const original = await readFile(resolve(data, 'clips', item.id + '.webm'))
+const original = await readFile(resolve(data, item.clip_url.replace('/ui-library/', '')))
 const head = await request(item.clip_url, {}, 'HEAD')
 assert.equal(head.status, 200)
 assert.equal(Number(head.headers['content-length']), original.length)
@@ -41,5 +41,5 @@ for (const [range, content] of [['bytes=0-31', original.subarray(0, 32)], ['byte
   assert.deepEqual(response.body, content)
 }
 assert.equal((await request(item.clip_url, { Range: 'bytes=' + original.length + '-' })).status, 416)
-assert.equal((await request('/ui-library/clips/missing.webm')).status, 404)
-console.log('All 30 original clips served correctly; MIME, HEAD, byte ranges, 416 and missing-file 404 passed.')
+assert.equal((await request('/ui-library/clips/missing.mp4')).status, 404)
+console.log(`All ${items.length} original MP4 clips served correctly; MIME, HEAD, byte ranges, 416 and missing-file 404 passed.`)
