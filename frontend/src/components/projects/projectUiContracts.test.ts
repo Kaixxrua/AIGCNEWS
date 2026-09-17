@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { describe, expect, it } from 'vitest'
 import ProjectFiltersPanel from './ProjectFiltersPanel.vue'
+import projectFiltersSource from './ProjectFiltersPanel.vue?raw'
 import ProjectPagination from './ProjectPagination.vue'
 import ProjectResultCard from './ProjectResultCard.vue'
 import ToolWebsiteAddDialog from './ToolWebsiteAddDialog.vue'
@@ -325,6 +326,25 @@ describe('filters panel behavior', () => {
 
     expect(wrapper.emitted('selectScope')).toEqual([['all'], ['recommended']])
     expect(wrapper.emitted('selectCategory')).toEqual([['agents']])
+  })
+
+  it('wraps desktop category rows so every category stays visible', () => {
+    const wrapper = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({
+        semanticCategories: Array.from({ length: 12 }, (_, index) => ({
+          slug: `category-${index}`,
+          name: `Category ${index}`,
+          count: index,
+          children: [],
+        })),
+      }),
+    })
+
+    const categories = wrapper.get('.projects-categories')
+    expect(categories.findAll('button.projects-category')).toHaveLength(15)
+    expect(projectFiltersSource).toMatch(/\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/)
+    expect(projectFiltersSource).toMatch(/@media \(max-width: 767px\)[\s\S]*\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/)
   })
 })
 

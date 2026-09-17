@@ -143,7 +143,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 .projects-sort { display: flex; align-items: center; gap: 8px; color: var(--ink-secondary); font-size: 12px; }
 .projects-sort select { min-width: 124px; max-width: 100%; height: 44px; padding: 0 8px; color: var(--ink-secondary); background: var(--paper-raised); border: 1px solid var(--rule); border-radius: var(--control-radius); font-size: 13px; }
 .projects-category-panel { display: grid; gap: 8px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }
-.projects-categories, .projects-subcategories { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
+.projects-categories, .projects-subcategories { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; overflow: visible; padding: 2px 2px 6px; }
 .projects-categories::-webkit-scrollbar, .projects-subcategories::-webkit-scrollbar { display: none; }
 .projects-subcategories { border-top: 1px solid var(--rule); padding-top: 8px; }
 .projects-subcategories__label { flex-shrink: 0; font-size: 12px; color: var(--ink-secondary); }
@@ -178,6 +178,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
   .projects-sort { flex: 0 0 108px; width: 108px; }
   .projects-sort select { width: 100%; min-width: 0; padding-left: 8px; padding-right: 24px; font-size: 14px; }
   .projects-sort span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .projects-categories, .projects-subcategories { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 }
 
 @media (max-width: 767px) { .projects-toolbar { display: flex; } .projects-source-tabs { background: transparent; } }
