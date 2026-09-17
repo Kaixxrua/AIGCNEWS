@@ -1,0 +1,11 @@
+[Unit]
+Description=Safely reclaim completed AIGCNEWS worktrees
+After=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ExecStart=/usr/bin/python3 %h/.local/lib/aigcnews/worktree_gc.py collect --repo %h/AIGCNEWS --managed-root %h/AIGCNEWS/.claude/worktrees --grace-hours 24 --apply
+ExecStart=/usr/bin/python3 %h/.local/lib/aigcnews/worktree_gc.py collect --repo %h/aigcnews_private --managed-root %h/.private-worktrees --private-authorizations %h/.config/aigcnews/private-worktree-cleanup --grace-hours 24 --apply
