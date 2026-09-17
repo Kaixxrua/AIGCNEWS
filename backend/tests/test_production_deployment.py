@@ -153,6 +153,9 @@ def test_workflows_use_isolated_self_hosted_runners():
     assert workflows["auto-merge.yml"].count(ci_runner) == 1
     assert workflows["evals-contract.yml"].count(ci_runner) == 2
     assert production_runner not in workflows["contract-baseline.yml"]
+    assert "cache: pip" not in workflows["contract-baseline.yml"]
+    assert "cache: npm" not in workflows["contract-baseline.yml"]
+    assert "cache: false" in workflows["contract-baseline.yml"]
 
 
 def test_main_compose_uses_digest_overrides_without_backend_source_mount():
