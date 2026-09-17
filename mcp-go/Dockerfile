@@ -10,7 +10,10 @@ COPY mcp-go/go.mod mcp-go/go.sum ./
 ARG GOPROXY=https://proxy.golang.org,direct
 RUN go mod download
 COPY mcp-go/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+# The production UI catalog embeds more than a gigabyte of reviewed assets.
+# Bound compiler concurrency so a cold BuildKit worker cannot exhaust memory
+# while compiling the catalog and the rest of the server in parallel.
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build -p 2 -trimpath -ldflags="-s -w" \
       -o /out/mcp-server ./cmd/mcp-server
 
 FROM alpine:3.20
