@@ -80,12 +80,89 @@ export function addedOnCalendarDay(items: UiTemplate[], now = Date.now(), timeZo
     return Number.isFinite(added) && added <= now && formatter.format(added) === targetDay
   }).sort((a, b) => Date.parse(b.added_at!) - Date.parse(a.added_at!))
 }
-export async function loadCatalog(signal?: AbortSignal): Promise<UiTemplate[]> {
+export interface UiIcon {
+  id: string
+  name: string
+  display: Record<UiLanguage, string>
+  style: string
+  category: string
+  aliases: string[]
+  file: string
+  sha256: string
+}
+export interface UiIconSet {
+  provider: string
+  provider_id: string
+  author: string
+  license: string
+  license_url: string
+  license_note: string
+  scope_note: string
+  repository: string
+  revision: string
+  source_url: string
+  format: string
+  dependencies: Record<string, string>
+  added_at: string
+  rights_evidence_url: string
+  icons: UiIcon[]
+}
+export async function loadIconSets(signal?: AbortSignal): Promise<UiIconSet[]> {
+  const response = await fetch('/ui-library/icons.json', { signal })
+  if (!response.ok) throw new Error('Icon catalog unavailable')
+  const data = await response.json()
+  if (data.version !== 1 || !Array.isArray(data.sets)) throw new Error('Invalid icon catalog')
+  return data.sets
+}
+export function searchIcons(sets: UiIconSet[], query = '', provider = '', style = '', category = ''): UiIcon[] {
+  const terms = normalize(query).match(/[a-z0-9]+|[\p{Script=Han}]+/gu)?.filter(term => !iconStopWords.has(term)) ?? []
+  const results: { icon: UiIcon; index: number; score: number }[] = []
+  sets.forEach((set, setIndex) => {
+    if (provider && set.provider_id !== provider) return
+    set.icons.forEach((icon, iconIndex) => {
+      if (style && icon.style !== style) return
+      if (category && icon.category !== category) return
+      const title = normalize(`${icon.display.zh} ${icon.display.en} ${icon.id}`)
+      const core = normalize(`${title} ${set.provider} ${icon.aliases.join(' ')} ${icon.style} ${icon.category}`)
+      if (!terms.every(term => core.includes(term))) return
+      const score = terms.reduce((total, term) => total + (title.includes(term) ? 20 : 10), 0)
+      results.push({ icon, index: setIndex * 1000000 + iconIndex, score })
+    })
+  })
+  return results.sort((a, b) => b.score - a.score || a.index - b.index).map(({ icon }) => icon)
+}
+const iconStopWords = new Set(['a', 'an', 'the', 'icon', 'icons', 'for', 'with', 'and', 'in', 'of'])
+export function iconUrl(icon: UiIcon): string {
+  return `/ui-library/${icon.file}`
+}
+export async function loadIconSource(icon: UiIcon, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(iconUrl(icon), { signal })
+  if (!response.ok) throw new Error('Icon source unavailable')
+  return response.text()
+}
+export function iconIntegrationPrompt(icon: UiIcon, set: UiIconSet, svg: string, lang: UiLanguage): string {
+  const instruction = lang === 'zh'
+    ? '请在当前项目中使用这个原版 SVG 图标。保留 viewBox、路径和无障碍属性，只调整尺寸与 currentColor 配色。按图标集许可证要求，随复制的图标保留许可文本。'
+    : 'Use this original SVG icon in the current project. Keep the viewBox, paths and accessibility attributes unchanged, adapting only size and currentColor styling. Keep the license notice with the copied icon as the set license requires.'
+  return `${instruction}\n\nicon: ${icon.id} (${icon.style} · ${icon.category})\nset: ${set.provider} by ${set.author} · ${set.license} · ${set.license_url}\nsource: ${set.source_url}\nrevision: ${set.revision}\nsha256: ${icon.sha256}\n\n--- ${icon.name}.svg ---\n\`\`\`svg\n${svg}\n\`\`\``
+}
+
+export async function loadIconLicense(set: UiIconSet, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(set.license_url, { signal })
+  if (!response.ok) throw new Error('Icon license unavailable')
+  return response.text()
+}
+
+export async function loadCatalogWithMeta(signal?: AbortSignal): Promise<{ items: UiTemplate[]; iconCount: number }> {
   const response = await fetch('/ui-library/catalog.json', { signal })
   if (!response.ok) throw new Error('Catalog unavailable')
   const data = await response.json()
   if (data.version !== 1 || !Array.isArray(data.items)) throw new Error('Invalid catalog')
-  return data.items
+  return { items: data.items, iconCount: Number(data.icon_count) || 0 }
+}
+export async function loadCatalog(signal?: AbortSignal): Promise<UiTemplate[]> {
+  const { items } = await loadCatalogWithMeta(signal)
+  return items
 }
 export async function loadSources(item: UiTemplate, signal?: AbortSignal): Promise<UiSourceFile[]> {
   return Promise.all([...item.files, ...(item.notices ?? [])].map(async file => {

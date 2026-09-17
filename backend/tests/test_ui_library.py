@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -26,6 +27,25 @@ from backend.app.services.ui_discovery import (
     tree_candidates,
 )
 from backend.app.services.ui_library import quota_policy
+
+
+def test_catalog_ids_include_pinned_icon_sets(tmp_path):
+    from backend.app.services.ui_library import catalog_ids
+
+    catalog = tmp_path / 'catalog.json'
+    catalog.write_text(json.dumps({'version': 1, 'items': [{'id': 'tmpl-1'}]}), encoding='utf-8')
+    # A catalog without icons.json still works for older deployments.
+    assert catalog_ids(str(catalog)) == frozenset({'tmpl-1'})
+    icons = tmp_path / 'icons.json'
+    icons.write_text(json.dumps({'version': 1, 'sets': [
+        {'provider_id': 'fix', 'icons': [{'id': 'fix:check', 'name': 'check'}]},
+    ]}), encoding='utf-8')
+    assert {'tmpl-1', 'fix:check'} <= catalog_ids(str(catalog))
+    # Icon set updates are picked up without a backend restart.
+    icons.write_text(json.dumps({'version': 1, 'sets': [
+        {'provider_id': 'fix', 'icons': [{'id': 'fix:check', 'name': 'check'}, {'id': 'fix:menu', 'name': 'menu'}]},
+    ]}), encoding='utf-8')
+    assert 'fix:menu' in catalog_ids(str(catalog))
 
 
 def test_calendar_quota_and_expired_vip():

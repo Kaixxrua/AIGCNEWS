@@ -1,5 +1,5 @@
 """Archive commit-pinned license evidence; never overwrite an existing record."""
-import hashlib,json,subprocess,urllib.request
+import argparse,hashlib,json,subprocess,time,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -7,9 +7,22 @@ from urllib.parse import quote
 ROOT=Path(__file__).resolve().parents[1]
 DATA=ROOT/'mcp-go/internal/uicatalog/data'
 
+def download(request):
+ for attempt in range(3):
+  try:
+   with urllib.request.urlopen(request,timeout=40) as response:
+    return response.read(),{k:response.headers.get(k) for k in ['Date','ETag','Last-Modified','Content-Type']}
+  except OSError:
+   if attempt==2:raise
+   time.sleep(attempt+1)
+
 def main():
+ parser=argparse.ArgumentParser(description=__doc__)
+ parser.add_argument('providers',nargs='*',help='provider IDs to archive (default: all)')
+ args=parser.parse_args()
  catalog=json.loads((DATA/'catalog.json').read_text(encoding='utf-8'));locks=json.loads((DATA/'upstreams.json').read_text())
  for provider,lock in locks.items():
+  if args.providers and provider not in args.providers:continue
   items=[i for i in catalog['items'] if i['provider_id']==provider]
   if not items:continue
   revision=lock['revision'];repo=lock['repository'];base=DATA/f'assets/{provider}/evidence/{revision}'
@@ -18,15 +31,14 @@ def main():
   old=json.loads(path.read_text()) if path.exists() else None
   sources={f['path']:f['sha256'] for i in items for f in i['files']}
   downloads=[]
-  names=list(dict.fromkeys([lock.get('license_source','LICENSE'),'README.md']+[Path(f['path']).name for i in items for f in i['notices']]))
-  if lock.get('license_source')=='LICENCE.md':names=[n for n in names if n!='LICENSE']
+  names=list(dict.fromkeys([lock.get('license_source','LICENSE'),'README.md']+lock.get('notice_sources',[])))
   for name in names:
    url=f'https://raw.githubusercontent.com/{repo}/{revision}/{quote(name)}'
    target=base/name
    if target.exists():raw=target.read_bytes();headers={}
    else:
     request=urllib.request.Request(url,headers={'User-Agent':'AIGCNEWS-license-archive/1.0'})
-    with urllib.request.urlopen(request,timeout=40) as response:raw=response.read();headers={k:response.headers.get(k) for k in ['Date','ETag','Last-Modified','Content-Type']}
+    raw,headers=download(request)
     target.write_bytes(raw)
    if name==lock.get('license_source','LICENSE'):
     assert hashlib.sha256(raw).hexdigest()==hashlib.sha256((DATA/f'licenses/{provider}/LICENSE').read_bytes()).hexdigest(),provider+' license mismatch'

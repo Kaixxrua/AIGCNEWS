@@ -1,7 +1,7 @@
 import type { UiTemplate, UiLanguage } from './catalog'
 import { detailedCategories, detailedStyles } from './taxonomyData'
 export const libraryKinds = [
-  ['component', '组件', 'Components'], ['template', '模板', 'Templates'], ['theme', '主题', 'Themes'],
+  ['component', '组件', 'Components'], ['template', '模板', 'Templates'], ['theme', '主题', 'Themes'], ['icon', '图标', 'Icons'],
 ] as const
 export type LibraryKind = typeof libraryKinds[number][0] | 'all' | 'block'
 export function resolveLibraryKind(value: string): LibraryKind {

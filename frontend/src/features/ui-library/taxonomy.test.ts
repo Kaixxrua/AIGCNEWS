@@ -7,7 +7,7 @@ import { browseMaterials, isFeatured, libraryKinds, materialKind, resolveLibrary
 const items: UiTemplate[] = JSON.parse(readFileSync(resolve('../mcp-go/internal/uicatalog/data/catalog.json'), 'utf8')).items
 describe('Material browsing and review boundaries', () => {
   it('defaults to all materials and keeps legacy featured links usable', () => {
-    expect(libraryKinds.map(([key]) => key)).toEqual(['component', 'template', 'theme'])
+    expect(libraryKinds.map(([key]) => key)).toEqual(['component', 'template', 'theme', 'icon'])
     for (const value of ['', 'featured', 'unknown']) {
       expect(browseMaterials(items, resolveLibraryKind(value))).toEqual(items)
     }

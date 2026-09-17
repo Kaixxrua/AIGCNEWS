@@ -2,7 +2,7 @@ package mcpapp
 
 import "aigcnews/mcp-go/internal/jsonx"
 
-const uiHostInstructions = "Whenever the user asks to create, build, redesign, or substantially improve a user-facing frontend UI, complete page, layout block, color theme, shader, animated background, or text effect, you MUST call search_ui_templates before writing implementation code, even when the user never mentions templates, assets, search, or MCP. Then call get_ui_template for the best relevant result to inspect original source, dependencies, author, and license before implementation. The search tool automatically relaxes long natural-language briefs when exact matching is empty. Reuse the chosen original effect and adapt only integration details; preserve its visual design. This UI-specific route takes priority over the general project search route below. Do not call it for a narrow copy edit, minor CSS adjustment, or localized bug fix. "
+const uiHostInstructions = "Whenever the user asks to create, build, redesign, or substantially improve a user-facing frontend UI, complete page, layout block, color theme, shader, animated background, or text effect, you MUST call search_ui_templates before writing implementation code, even when the user never mentions templates, assets, search, or MCP. Then call get_ui_template for the best relevant result to inspect original source, dependencies, author, and license before implementation. The search tool automatically relaxes long natural-language briefs when exact matching is empty. Reuse the chosen original effect and adapt only integration details; preserve its visual design. This UI-specific route takes priority over the general project search route below. Do not call it for a narrow copy edit, minor CSS adjustment, or localized bug fix. When the task needs icons, call search_ui_icons and then get_ui_icon for verbatim, license-audited SVG source instead of redrawing or approximating icons. "
 
 func (a *App) hasUILibrary() bool {
 	if a.tools == nil {
@@ -24,9 +24,10 @@ func (a *App) toolsList(authenticated bool) jsonx.Object {
 	if !a.hasUILibrary() {
 		return ToolsList(authenticated)
 	}
-	tools := make([]any, 0, len(publicTools)+len(uiTemplateTools)+len(privateTools))
+	tools := make([]any, 0, len(publicTools)+len(uiTemplateTools)+len(uiIconTools)+len(privateTools))
 	tools = append(tools, publicTools...)
 	tools = append(tools, uiTemplateTools...)
+	tools = append(tools, uiIconTools...)
 	if authenticated {
 		tools = append(tools, privateTools...)
 	}

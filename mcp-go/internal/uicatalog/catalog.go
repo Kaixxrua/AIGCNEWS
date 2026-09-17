@@ -16,7 +16,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-//go:embed data/catalog.json data/upstreams.json data/sources data/licenses data/assets
+//go:embed data/catalog.json data/icons.json data/upstreams.json data/sources data/licenses data/assets
 var assets embed.FS
 
 // Explicit file requests can retrieve complete upstream configuration files.

@@ -6,6 +6,14 @@ import type { Plugin } from 'vite'
 import type { UiTemplate } from '../src/features/ui-library/catalog'
 import { previewFiles } from './uiPreviewManifest'
 
+interface UiIconSetAssets {
+  provider_id: string
+  license: string
+  revision: string
+  rights_evidence_url: string
+  icons: { file: string; sha256: string }[]
+}
+
 const root = fileURLToPath(new URL('../', import.meta.url))
 const roots = [
   { folder: process.env.UI_LIBRARY_DATA_ROOT ? resolve(process.env.UI_LIBRARY_DATA_ROOT) : resolve(root, '../mcp-go/internal/uicatalog/data'), prefix: '' },
@@ -22,12 +30,33 @@ function filesIn(folder: string): string[] {
 export function uiLibraryAssets(): Plugin {
   const assets = new Map<string, string>()
   let productionBuild = false
+  let iconCatalog: UiIconSetAssets[] = []
+  const iconFiles = new Set<string>()
   const collect = () => {
     assets.clear()
     const data = roots[0]!.folder
     const { items } = JSON.parse(readFileSync(resolve(data, 'catalog.json'), 'utf8')) as { items: UiTemplate[] }
     const allowed = new Set(['catalog.json', 'upstreams.json'])
     const evidence = new Set<string>()
+    iconCatalog = []
+    iconFiles.clear()
+    const iconsPayload = resolve(data, 'icons.json')
+    if (existsSync(iconsPayload)) {
+      // Pinned icon sets follow the same evidence and integrity contract as components.
+      const parsed = JSON.parse(readFileSync(iconsPayload, 'utf8')) as { version?: number; sets?: UiIconSetAssets[] }
+      if (parsed.version === 1 && Array.isArray(parsed.sets)) {
+        iconCatalog = parsed.sets
+        allowed.add('icons.json')
+        for (const set of parsed.sets) {
+          allowed.add(`licenses/${set.provider_id}/LICENSE`)
+          evidence.add(set.rights_evidence_url.replace('/ui-library/', ''))
+          for (const icon of set.icons) {
+            allowed.add(icon.file)
+            iconFiles.add('/ui-library/' + icon.file)
+          }
+        }
+      }
+    }
     for (const item of items) {
       for (const [name] of previewFiles(item)) allowed.add(name)
       for (const file of [...item.files, ...item.notices, ...item.assets]) allowed.add(file.path)
@@ -67,15 +96,12 @@ export function uiLibraryAssets(): Plugin {
         if (!checked.has(path)) checked.set(path, createHash('sha256').update(readFileSync(path)).digest('hex'))
         return checked.get(path)!
       }
-      for (const item of items) {
-        for (const [name, digest] of previewFiles(item)) if (hash(resolve(data, name)) !== digest) throw new Error('Preview integrity failure: ' + name)
-        const expected = '/ui-library/assets/' + item.provider_id + '/evidence/' + item.revision + '/manifest.json'
-        if (item.rights_evidence_url !== expected) throw new Error('Missing rights evidence: ' + item.id)
+      const loadProof = (expected: string, owner: string) => {
         let proof = proofs.get(expected)
         if (!proof) {
           const path = assets.get(expected)!
           const record = JSON.parse(readFileSync(path, 'utf8'))
-          if (!record.license_grants?.includes('commercial-use') || !record.license_grants?.includes('redistribution') || !record.screenshot_sha256) throw new Error('Incomplete rights evidence: ' + item.id)
+          if (!record.license_grants?.includes('commercial-use') || !record.license_grants?.includes('redistribution') || !record.screenshot_sha256) throw new Error('Incomplete rights evidence: ' + owner)
           for (const resource of [...record.resources, { name: record.screenshot, sha256: record.screenshot_sha256 }]) {
             if (resource.name.includes('/') || resource.name.includes('\\') || resource.name === '..') throw new Error('Invalid evidence path')
             if (createHash('sha256').update(readFileSync(resolve(path, '..', resource.name))).digest('hex') !== resource.sha256) throw new Error('Evidence integrity failure')
@@ -83,6 +109,13 @@ export function uiLibraryAssets(): Plugin {
           proof = record
           proofs.set(expected, proof!)
         }
+        return proof!
+      }
+      for (const item of items) {
+        for (const [name, digest] of previewFiles(item)) if (hash(resolve(data, name)) !== digest) throw new Error('Preview integrity failure: ' + name)
+        const expected = '/ui-library/assets/' + item.provider_id + '/evidence/' + item.revision + '/manifest.json'
+        if (item.rights_evidence_url !== expected) throw new Error('Missing rights evidence: ' + item.id)
+        const proof = loadProof(expected, item.id)
         if (proof!.revision !== item.revision || proof!.license !== item.license) throw new Error('Rights evidence mismatch')
         for (const file of [...item.files, ...item.notices, ...item.assets]) {
           if (hash(resolve(data, file.path)) !== file.sha256) throw new Error('Source integrity failure: ' + file.path)
@@ -106,18 +139,31 @@ export function uiLibraryAssets(): Plugin {
           }
         }
       }
+      for (const set of iconCatalog) {
+        const expected = '/ui-library/assets/' + set.provider_id + '/evidence/' + set.revision + '/manifest.json'
+        if (set.rights_evidence_url !== expected) throw new Error('Missing rights evidence: icon set ' + set.provider_id)
+        const proof = loadProof(expected, 'icon set ' + set.provider_id)
+        if (proof.revision !== set.revision || proof.license !== set.license) throw new Error('Rights evidence mismatch')
+        const license = assets.get('/ui-library/licenses/' + set.provider_id + '/LICENSE')
+        if (!license || !existsSync(license)) throw new Error('Missing icon license: ' + set.provider_id)
+        for (const icon of set.icons) {
+          if (hash(resolve(data, icon.file)) !== icon.sha256) throw new Error('Source integrity failure: ' + icon.file)
+          if (proof.source_files[icon.file] !== icon.sha256) throw new Error('Source not covered by rights evidence: ' + icon.file)
+        }
+      }
     },
     configureServer(server) {
       collect()
       server.middlewares.use((req, res, next) => {
         let key: string
         try { key = decodeURIComponent(req.url?.split('?')[0] ?? '') } catch { res.statusCode = 400; res.end(); return }
-        if (!/^\/ui-library\/(?:catalog\.json|upstreams\.json|previews\/|posters\/|clips\/|sources\/|licenses\/|assets\/)/.test(key)) return next()
+        if (!/^\/ui-library\/(?:catalog\.json|icons\.json|upstreams\.json|previews\/|posters\/|clips\/|sources\/|licenses\/|assets\/)/.test(key)) return next()
         if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.setHeader('Allow', 'GET, HEAD'); res.end(); return }
         let path = assets.get(key)
         if (!path) { collect(); path = assets.get(key) }
         if (!path) { res.statusCode = 404; res.end(); return }
-        const extension = /^\/ui-library\/(sources|licenses)\//.test(key) ? '' : path.split('.').pop() ?? ''
+        const reviewedSvg = key.endsWith('.svg') && iconFiles.has(key)
+        const extension = /^\/ui-library\/(sources|licenses)\//.test(key) && !reviewedSvg ? '' : path.split('.').pop() ?? ''
         res.setHeader('Content-Type', `${mime[extension] ?? 'text/plain'}${extension === 'webm' ? '' : '; charset=utf-8'}`)
         res.setHeader('X-Content-Type-Options', 'nosniff')
         if (extension === 'webm') {

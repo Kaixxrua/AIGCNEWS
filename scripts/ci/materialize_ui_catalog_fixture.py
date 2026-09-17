@@ -44,6 +44,16 @@ def materialize(data: Path) -> None:
     resource_b_hash = write(evidence_dir / "resource-b.txt", resource_b)
     screenshot_hash = write(evidence_dir / "screenshot.png", png)
 
+    icon_svgs = {}
+    for icon_name in ("check", "menu"):
+        icon_path = f"sources/ci/icons/{icon_name}.svg"
+        icon_svgs[icon_name] = (
+            icon_path,
+            write(
+                data / icon_path,
+                f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>\n'.encode(),
+            ),
+        )
     evidence = {
         "revision": REVISION,
         "license": "MIT",
@@ -52,6 +62,7 @@ def materialize(data: Path) -> None:
         "source_files": {
             source_path: source_hash,
             large_source_path: large_source_hash,
+            **{icon_path: icon_hash for icon_path, icon_hash in icon_svgs.values()},
         },
         "resources": [
             {"name": "resource-a.txt", "sha256": resource_a_hash},
@@ -154,6 +165,39 @@ def materialize(data: Path) -> None:
         ).encode(),
     )
     write(data / "upstreams.json", b"{}\n")
+    icon_set = {
+        "provider": "CI",
+        "provider_id": "ci",
+        "author": "AIGCNEWS",
+        "license": "MIT",
+        "license_url": "/ui-library/licenses/ci/LICENSE",
+        "license_note": "",
+        "scope_note": "",
+        "repository": "ci/fixture",
+        "revision": REVISION,
+        "source_url": "https://example.invalid/ci-fixture",
+        "format": "svg",
+        "dependencies": {},
+        "added_at": "2026-09-16T00:00:00Z",
+        "rights_evidence_url": f"/ui-library/assets/ci/evidence/{REVISION}/manifest.json",
+        "icons": [
+            {
+                "id": f"ci:{icon_name}",
+                "name": icon_name,
+                "display": {"zh": icon_name, "en": icon_name},
+                "style": "outline",
+                "category": "interface",
+                "aliases": [icon_name],
+                "file": icon_path,
+                "sha256": icon_hash,
+            }
+            for icon_name, (icon_path, icon_hash) in icon_svgs.items()
+        ],
+    }
+    write(
+        data / "icons.json",
+        (json.dumps({"version": 1, "sets": [icon_set]}, ensure_ascii=False) + "\n").encode(),
+    )
 
 
 def main() -> None:

@@ -8,12 +8,13 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const data = resolve(root, '../mcp-go/internal/uicatalog/data')
 const base = process.env.UI_LIBRARY_BASE_URL || 'http://127.0.0.1:18782'
 const { items } = JSON.parse(await readFile(resolve(data, 'catalog.json'), 'utf8'))
-const prefixes = process.argv.slice(2)
+const prefixes = process.env.UI_CAPTURE_IDS_FILE ? JSON.parse(await readFile(process.env.UI_CAPTURE_IDS_FILE, 'utf8')) : process.argv.slice(2)
 const selected = items.filter(item => !prefixes.length || prefixes.some(prefix => item.id.startsWith(prefix)))
 const posters = resolve(data, 'posters')
 await mkdir(posters, { recursive: true })
 const browser = await chromium.launch({
   ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+  ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}),
   headless: true,
   args: ['--enable-unsafe-swiftshader'],
 })
@@ -26,7 +27,16 @@ try {
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     page.on('requestfailed', request => errors.push(request.url() + ': ' + request.failure()?.errorText))
     await page.setContent(`<!doctype html><html lang="en"><style>html,body{margin:0;width:100%;height:100%}iframe{width:100%;height:100%;border:0;display:block}</style><script>window.previewState='loading';window.addEventListener('message',e=>{if(e.data?.type==='ui-library-preview')window.previewState=e.data.state})</script><iframe title="Original effect" sandbox="allow-scripts" src="${base}${item.preview_url}"></iframe></html>`)
-    await page.waitForFunction(() => window.previewState !== 'loading', null, { timeout: 30000 })
+    // A preview whose bundle throws during module evaluation never reports a
+    // state; record the timeout instead of aborting the whole capture run.
+    try {
+      await page.waitForFunction(() => window.previewState !== 'loading', null, { timeout: 30000 })
+    } catch {
+      results.push({ id: item.id, state: 'error', errors: ['preview-state-timeout'] })
+      console.log(JSON.stringify(results.at(-1)))
+      await page.close()
+      continue
+    }
     // Let the original animation progress before taking a real screenshot.
     await page.mouse.move(380, 240)
     await page.waitForTimeout(2200)
