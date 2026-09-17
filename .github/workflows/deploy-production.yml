@@ -96,6 +96,8 @@ jobs:
     env:
       PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
       PRIVATE_FRONTEND_ROOT: ${{ vars.AIGCNEWS_GODOT_RELEASE_ROOT }}
+      PRIVATE_FRONTEND_RELEASE_ID: ${{ vars.AIGCNEWS_GODOT_RELEASE_ID }}
+      PRIVATE_FRONTEND_DESCRIPTOR_SHA256: ${{ vars.AIGCNEWS_GODOT_RELEASE_DESCRIPTOR_SHA256 }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
@@ -113,12 +115,22 @@ jobs:
             echo "AIGCNEWS_GODOT_RELEASE_ROOT must be an absolute path" >&2
             exit 1
           fi
+          if [[ -z "$PRIVATE_FRONTEND_RELEASE_ID" ]]; then
+            echo "AIGCNEWS_GODOT_RELEASE_ID must pin an immutable private release" >&2
+            exit 1
+          fi
+          if [[ ! "$PRIVATE_FRONTEND_DESCRIPTOR_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "AIGCNEWS_GODOT_RELEASE_DESCRIPTOR_SHA256 must be a lowercase SHA-256 digest" >&2
+            exit 1
+          fi
           mkdir -p frontend/.ui-library-data frontend/.ui-previews/previews
           cp -a "$PRODUCTION_ROOT/mcp-go/internal/uicatalog/data/." frontend/.ui-library-data/
           cp -a "$PRODUCTION_ROOT/frontend/.ui-previews/previews/." frontend/.ui-previews/previews/
           python3 scripts/release/stage_private_frontend.py \
             --private-root "$PRIVATE_FRONTEND_ROOT" \
-            --frontend-root frontend
+            --frontend-root frontend \
+            --expected-release-id "$PRIVATE_FRONTEND_RELEASE_ID" \
+            --expected-descriptor-sha256 "$PRIVATE_FRONTEND_DESCRIPTOR_SHA256"
       - name: Validate the protected frontend overlay
         working-directory: frontend
         shell: bash

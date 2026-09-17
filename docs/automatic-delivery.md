@@ -9,7 +9,7 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品，逐文件校验清单与黑边修复契约后才允许构建。生产 job 使用固定 concurrency group 排队。
+6. `Deploy Production` 构建 backend、MCP 和 frontend 镜像并推送 GHCR；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 job 使用固定 concurrency group 排队。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按 digest 拉取镜像并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
@@ -23,6 +23,26 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 - `AIGCNEWS_PRODUCTION_ROOT`：部署机稳定检出的绝对路径，例如 `/home/deploy/AIGCNEWS`。
 - `AIGCNEWS_GODOT_RELEASE_ROOT`：部署机上私有 Godot 发布目录的绝对路径。目录必须包含 `frontend-current-parent-v4/frontend/src/`、`cn-current-godot-release/camp-scene/` 和 `cn-current-godot-release-source-manifest.json`，且仅允许 runner 读取，不得复制进 AIGCNEWS Git 历史。
+- `AIGCNEWS_GODOT_RELEASE_ID`：当前获准上线的私有 Godot release ID，必须与场景清单及发布描述文件一致。
+- `AIGCNEWS_GODOT_RELEASE_DESCRIPTOR_SHA256`：`aigcnews-private-release.json` 的小写 SHA-256；描述文件固定 release ID、场景清单 SHA-256 和四个联系页源码 SHA-256，防止部署读取到开发中的半成品。
+
+发布描述文件采用以下结构，且必须先在私有仓库或私有制品发布流程中生成并验证，再以一次配置变更同时提升 release ID 和描述文件摘要：
+
+```json
+{
+  "schema": "aigcnews.private-frontend-release.v1",
+  "release_id": "20260916T065639721903Z-3e9034b45c29",
+  "manifest_sha256": "<cn-current-godot-release-source-manifest.json sha256>",
+  "source_files": {
+    "components/contact/GodotContactScene.vue": "<sha256>",
+    "components/contact/GodotContactScene.test.ts": "<sha256>",
+    "views/ContactPageView.vue": "<sha256>",
+    "views/ContactPageView.test.ts": "<sha256>"
+  }
+}
+```
+
+不得把变量指向开发中的可变目录后再通过改写描述文件“追平”内容。提升私有 release 时先在新目录完整生成源码、场景、manifest 和 descriptor，执行 staging 校验成功后再更新三个 Godot 变量；旧目录至少保留到引用它的构建全部结束。任何不匹配都 fail-closed，禁止回退到 Three.js、CSS 或公开仓库中的旧联系页。
 
 注册一台只能由本仓库使用的自托管 runner，并添加标签：
 
@@ -37,7 +57,7 @@ runner 用户必须能够：
 - 读取并更新 `AIGCNEWS_PRODUCTION_ROOT` 的 Git checkout；
 - 使用 Docker，但不要求 root shell；
 - 读取部署目录已有的 `.env`、证书和私有 overlay；
-- 读取 `AIGCNEWS_GODOT_RELEASE_ROOT` 中的私有 Godot 发布源码、制品和 SHA-256 清单；
+- 只读访问 `AIGCNEWS_GODOT_RELEASE_ROOT` 中由 release ID 和描述文件摘要固定的私有 Godot 发布源码、制品和 SHA-256 清单；
 - 访问 GHCR 和 `origin`；
 - 在部署目录创建 `.release.env` 与 `.aigcnews-deploy/`。
 - 读取生产目录中的 `mcp-go/internal/uicatalog/data/` 和 `frontend/.ui-previews/previews/`；这些私有发布素材不会提交到 Git，普通 PR CI 使用合成夹具验证同一构建契约。
