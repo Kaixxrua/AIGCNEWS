@@ -54,6 +54,54 @@ describe('useXBoardController', () => {
     expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
 
+  it('follows every available account by default and filters by the watched account', async () => {
+    const api = createApi({
+      fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({
+        items: [
+          doc('x:1', 'https://x.com/openai/status/1', 5),
+          doc('x:2', 'https://x.com/original/status/2', 4, { retweeted_by: 'Karpathy' }),
+          doc('x:3', 'not-a-tweet-url', 3),
+        ],
+        total: 3,
+        windowHours: 24,
+        hasMore: false,
+        nextCursor: null,
+      })),
+    })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+
+    expect(controller.availableAccounts.value).toEqual(['karpathy', 'openai'])
+    expect(controller.followedAccounts.value).toEqual(['karpathy', 'openai'])
+    expect(controller.visibleDocs.value).toHaveLength(3)
+
+    controller.toggleFollowAccount('karpathy')
+    expect(controller.followedAccounts.value).toEqual(['openai'])
+    // 无法识别账号的旧数据保留，纯转贴则按转贴者 karpathy 被过滤。
+    expect(controller.visibleDocs.value.map((item) => item.id)).toEqual(['x:1', 'x:3'])
+
+    controller.unfollowAllAccounts()
+    expect(controller.followedAccounts.value).toEqual([])
+    expect(controller.visibleDocs.value.map((item) => item.id)).toEqual(['x:3'])
+
+    controller.followAllAccounts()
+    expect(controller.visibleDocs.value).toHaveLength(3)
+  })
+
+  it('returns to page one and clears hidden admin selections when an account is unfollowed', async () => {
+    const api = createPagedApi(45)
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    controller.goPage(2)
+    controller.toggleSelection('x:1')
+
+    controller.toggleFollowAccount('openai')
+
+    expect(controller.currentPage.value).toBe(1)
+    expect(controller.selectedIds.value.size).toBe(0)
+    expect(controller.visibleDocs.value).toHaveLength(0)
+  })
+
   it('keeps today selected even when the snapshot listing lacks today', async () => {
     // 滑动窗口语义：今天永远有定义（覆盖过去 24h），不再回退到最近快照日
     const api = createApi({ fetchSnapshotDates: vi.fn(async () => ['2026-08-02', '2026-08-01']) })
@@ -373,4 +421,3 @@ describe('useXBoardController', () => {
     expect(controller.docs.value).toHaveLength(8)
   })
 })
-

@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import { clampPage, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
+import { clampPage, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
   fetchRecentX: DashboardApi['fetchRecentX']
@@ -58,13 +58,27 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const errorMsg = ref('')
   const isActive = ref(true)
   const selectedIds = ref<Set<string>>(new Set())
+  // 以“排除集”保存选择：初始为空即默认全部关注；后续加载出现的新账号也
+  // 会自然保持关注，不需要在每次请求后补写选中集。
+  const unfollowedAccounts = ref<Set<string>>(new Set())
   const page = ref(1)
 
   // 选中日期 → 整数天位移（未来日期已被 onDateChange 拦截，这里夹取兜底）
   const daysBack = computed(() => Math.max(0, dayDiff(today, selectedDate.value)))
 
-  const sections = computed(() => groupTweetsByHandle(docs.value))
-  const totalPages = computed(() => pageCount(docs.value.length, XBOARD_PAGE_SIZE))
+  const availableAccounts = computed(() => Array.from(new Set(
+    docs.value.map(followedAccountHandle).filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b)))
+  const followedAccounts = computed(() => availableAccounts.value.filter(
+    (handle) => !unfollowedAccounts.value.has(handle),
+  ))
+  const visibleDocs = computed(() => docs.value.filter((doc) => {
+    const handle = followedAccountHandle(doc)
+    // 无法识别归属账号的旧数据不静默丢弃。
+    return !handle || !unfollowedAccounts.value.has(handle)
+  }))
+  const sections = computed(() => groupTweetsByHandle(visibleDocs.value))
+  const totalPages = computed(() => pageCount(visibleDocs.value.length, XBOARD_PAGE_SIZE))
   // 只读夹取页：删除清空末页等场景自动回落，无需 watcher
   const currentPage = computed(() => clampPage(page.value, totalPages.value))
   const hasPrev = computed(() => currentPage.value > 1)
@@ -183,6 +197,32 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     selectedIds.value = new Set()
   }
 
+  const removeHiddenTweetSelections = () => {
+    const visibleIds = new Set(visibleDocs.value.map((doc) => String(doc.id ?? '')).filter(Boolean))
+    selectedIds.value = new Set([...selectedIds.value].filter((id) => visibleIds.has(id)))
+  }
+
+  const toggleFollowAccount = (handle: string) => {
+    const normalized = handle.toLowerCase()
+    const next = new Set(unfollowedAccounts.value)
+    if (next.has(normalized)) next.delete(normalized)
+    else next.add(normalized)
+    unfollowedAccounts.value = next
+    page.value = 1
+    removeHiddenTweetSelections()
+  }
+
+  const followAllAccounts = () => {
+    unfollowedAccounts.value = new Set()
+    page.value = 1
+  }
+
+  const unfollowAllAccounts = () => {
+    unfollowedAccounts.value = new Set(availableAccounts.value)
+    page.value = 1
+    removeHiddenTweetSelections()
+  }
+
   const deleteSelected = async (): Promise<{ deleted: number; notFound: number }> => {
     const ids = Array.from(selectedIds.value)
     if (!ids.length) return { deleted: 0, notFound: 0 }
@@ -207,6 +247,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   }
 
   return {
+    availableAccounts,
     availableDates,
     clearSelection,
     currentPage,
@@ -216,6 +257,8 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     dispose,
     docs,
     errorMsg,
+    followAllAccounts,
+    followedAccounts,
     goPage,
     hasNext,
     hasPrev,
@@ -232,8 +275,12 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     showRecent,
     today,
     toggleSelectAll,
+    toggleFollowAccount,
     toggleSelection,
     totalPages,
+    unfollowAllAccounts,
+    unfollowedAccounts,
+    visibleDocs,
   }
 }
 
