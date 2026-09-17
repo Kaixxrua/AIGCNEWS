@@ -147,8 +147,8 @@ def test_workflows_use_isolated_self_hosted_runners():
 
     assert all("runs-on: ubuntu-latest" not in text for text in workflows.values())
     assert workflows["contract-baseline.yml"].count(ci_runner) == 5
-    assert workflows["deploy-production.yml"].count(ci_runner) == 2
-    assert workflows["deploy-production.yml"].count(production_runner) == 3
+    assert workflows["deploy-production.yml"].count(ci_runner) == 1
+    assert workflows["deploy-production.yml"].count(production_runner) == 4
     assert workflows["session-pr.yml"].count(ci_runner) == 1
     assert workflows["auto-merge.yml"].count(ci_runner) == 1
     assert workflows["evals-contract.yml"].count(ci_runner) == 2
@@ -168,3 +168,42 @@ def test_main_compose_uses_digest_overrides_without_backend_source_mount():
 
 def test_deployment_entrypoint_can_execute_stack_controller():
     assert os.access(ROOT / "scripts/manage_main_stack.sh", os.X_OK)
+
+
+def test_reconcile_reuses_exact_local_digests_without_registry(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(deploy, "run", lambda command, **kwargs: calls.append(command))
+    monkeypatch.setattr(deploy, "probe_backend", lambda: calls.append(["probe"]))
+    candidate = release()
+    deploy.reconcile(tmp_path, candidate)
+    assert calls[:3] == [["docker", "image", "inspect", image] for image in
+                         (candidate.backend_image, candidate.mcp_image, candidate.frontend_image)]
+    assert not any(command[:2] == ["docker", "pull"] for command in calls)
+    assert calls[-1] == ["probe"]
+
+
+def test_reconcile_pulls_only_missing_digest_before_switch(tmp_path, monkeypatch):
+    calls = []
+    candidate = release()
+
+    def invoke(command, **kwargs):
+        calls.append(command)
+        if command == ["docker", "image", "inspect", candidate.backend_image]:
+            raise deploy.DeployError("missing image")
+
+    monkeypatch.setattr(deploy, "run", invoke)
+    monkeypatch.setattr(deploy, "probe_backend", lambda: None)
+    deploy.reconcile(tmp_path, candidate)
+    assert [c for c in calls if c[:2] == ["docker", "pull"]] == [
+        ["docker", "pull", candidate.backend_image]]
+    assert calls.index(["docker", "pull", candidate.backend_image]) < len(calls) - 1
+
+
+def test_trusted_builds_keep_images_and_cache_on_production_daemon():
+    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text()
+    assert workflow.count("builder: default") == 3
+    assert workflow.count("load: true") == 3
+    assert workflow.count("push: false") == 3
+    assert "docker/setup-buildx-action" not in workflow
+    assert "docker/login-action" not in workflow
+    assert "packages: write" not in workflow
