@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ContactHeroVisual from '@/components/contact/ContactHeroVisual.vue'
+import GodotContactScene from '@/components/contact/GodotContactScene.vue'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import type { SiteContactEntry } from '@/services/site/contactPageApi'
 
@@ -38,10 +38,10 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 
 <template>
   <div v-if="config.enabled" class="contact-page">
-    <!-- 像素 HD-2D 原野（WebGL2 实时渲染）占满整张卡片：标题在左上，联系方式条目收进底部像素框面板。 -->
+    <!-- Godot HD-2D 原野占满整张卡片：标题在左上，联系方式条目收进底部像素框面板。 -->
     <header class="contact-hero">
-      <div class="hero-field" aria-hidden="true">
-        <ContactHeroVisual />
+      <div class="hero-field">
+        <GodotContactScene />
         <div class="hero-overlay" />
         <!-- 旧契约节点：仅为兼容既有选择器保留，不再渲染任何可见内容。 -->
         <span class="hero-beam hero-beam--a" hidden aria-hidden="true" />
@@ -94,7 +94,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 </template>
 
 <style scoped>
-/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: three.js 正交 2.5D 像素原野，昼夜随主题（亮=昼 暗=夜），切换播 1.8s 恒速时间过渡；reduced-motion → 静态单帧
+/* Hallmark · macrostructure: Atmosphere-First contact landing · theme: project-managed (style.css tokens) · voice: signal-led editorial · motion: Godot HD-2D 实时原野，昼夜与环境动画由场景内控制；reduced-motion 由宿主桥接到场景
  * Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5
  * contrast: pass · honest: pass · chrome: pass · tokens: pass（纸色经 --contact-scene-bg 与场景边缘融合严格同色）· responsive: pass · icons: pass · nav/footer: app-shell（不在本次范围） */
 .contact-page {
@@ -162,14 +162,15 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 .hero-field {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   overflow: hidden;
-  pointer-events: none;
+  pointer-events: auto;
 }
 /* 可读性遮罩：只压上缘标题区与下缘条目区，中间场景完整露出 */
 .hero-overlay {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--contact-scene-bg) 42%, transparent) 0%, transparent 26%),
     linear-gradient(0deg, color-mix(in srgb, var(--contact-scene-bg) 34%, transparent) 0%, transparent 30%);
@@ -245,24 +246,27 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   max-height: 100%;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--cs-3);
+  gap: var(--cs-2);
   grid-row: 3; /* 只有 heading+dock 两个子项：钉进第三行（底部 auto 行），1fr 中行只吃余量 */
   justify-self: end;
   padding-bottom: var(--cs-dock-clear);
-  pointer-events: auto;
+  pointer-events: none;
   overflow-y: auto;
   scrollbar-width: none; /* 任何情况下不露出滚动条 */
 }
 .hero-dock::-webkit-scrollbar { display: none; }
 .contact-hero-note {
-  margin: 0;
-  color: var(--contact-hero-muted);
+  align-self: flex-end;
+  margin: 0 var(--cs-3) 0 0;
+  color: #efe4bd;
   font-family: var(--contact-mono);
   font-size: 0.6875rem;
   line-height: 1.6;
   text-align: right;
-  text-shadow: 1px 1px 0 color-mix(in srgb, var(--contact-scene-bg) 66%, transparent);
+  text-shadow: 0 1px 3px rgb(0 0 0/.9);
 }
+.contact-hero-note,
+.entry-list { pointer-events: auto; }
 .contact-hero-note::before {
   content: '＋';
   margin-right: var(--cs-2);
@@ -282,12 +286,19 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   position: relative;
   min-width: 0;
   /* 像素框面板：纸色 88% 底 + 硬描边 + 3px 硬偏移投影 */
-  background: color-mix(in srgb, var(--paper-raised) 88%, transparent);
-  border: 2px solid var(--rule-strong);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--rule-strong) 82%, transparent);
+  overflow: hidden;
+  color: #f6efd8;
+  background:
+    linear-gradient(135deg, rgb(64 70 45/.94), rgb(25 36 27/.94)),
+    rgb(25 36 27/.94);
+  border: 1px solid rgb(232 207 137/.74);
+  box-shadow: 0 12px 28px rgb(5 12 8/.32), inset 0 0 0 3px rgb(10 18 13/.36);
+  backdrop-filter: blur(9px) saturate(.85);
 }
 .entry-item--primary {
-  background: var(--contact-primary-surface);
+  background:
+    linear-gradient(135deg, rgb(70 76 48/.95), rgb(27 39 29/.95)),
+    rgb(27 39 29/.95);
 }
 /* primary 酸性角标：右上角折角 */
 .entry-item--primary::after {
@@ -298,8 +309,8 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 0 1.5rem 1.5rem 0;
-  border-color: transparent var(--acid) transparent transparent;
+  border-width: 0 1.35rem 1.35rem 0;
+  border-color: transparent #d8c06f transparent transparent;
   pointer-events: none;
 }
 .entry-body {
@@ -328,7 +339,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 }
 .entry-label {
   min-width: 0;
-  color: var(--ink);
+  color: #fff8df;
   font-family: var(--contact-display);
   font-size: 0.9375rem;
   font-weight: 700;
@@ -338,9 +349,9 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 }
 .entry-badge {
   padding: var(--cs-1) var(--cs-2);
-  color: var(--acid-ink);
-  background: var(--acid);
-  border: 1px solid var(--rule-strong);
+  color: #172019;
+  background: #dcc676;
+  border: 1px solid #f3dda0;
   font-family: var(--contact-mono);
   font-size: 0.625rem;
   font-weight: 700;
@@ -350,7 +361,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 }
 .entry-value {
   max-width: 100%;
-  color: var(--ink);
+  color: #f7eed1;
   font-family: var(--contact-display);
   font-size: 0.875rem;
   font-weight: 600;
@@ -378,14 +389,14 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   gap: var(--cs-2);
   min-height: 2.25rem;
   padding: 0.45rem 0.75rem;
-  color: var(--acid-ink);
-  background: var(--acid);
-  border: 1px solid var(--rule-strong);
+  color: #172019;
+  background: #dbc570;
+  border: 1px solid #f0dda0;
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
 }
-.entry-action--primary:hover { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+.entry-action--primary:hover { color:#fff8df;background:#52603d;border-color:#f0dda0; }
 .entry-action--primary:active { color: var(--ink); background: var(--paper-muted); }
 .entry-link-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .entry-arrow { flex: 0 0 auto; font-size: 1rem; line-height: 0.8; }
@@ -398,8 +409,9 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   box-sizing: border-box;
   place-items: center;
   padding: var(--cs-1);
-  background: var(--paper-raised);
-  border: 2px solid var(--rule-strong);
+  background:#f3edcf;
+  border:1px solid #d5bf79;
+  box-shadow:inset 0 0 0 3px rgb(95 76 38/.16);
 }
 .entry-qr { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .entry-qr-fallback {
@@ -413,7 +425,7 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 .entry-qr-fallback::before { content: '[!] '; color: var(--ink-muted); }
 .entry-qr-hint {
   grid-area: hint;
-  color: var(--ink-muted);
+  color:#d2c8a5;
   font-family: var(--contact-mono);
   font-size: 0.6875rem;
   line-height: 1.5;
@@ -421,8 +433,8 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
 .entry-qr-hint::before { content: '› '; color: var(--acid-strong); }
 
 @media (min-width: 48rem) {
-  .hero-dock { width: min(21rem, 40%); }
-  .entry-qr-frame { width: clamp(96px, 16vh, 132px); }
+  .hero-dock { width: min(22rem, 42%); }
+  .entry-qr-frame { width: clamp(84px, 13vh, 116px); }
   .entry-body { padding: var(--cs-4); }
 }
 @media (max-width: 47.99rem) {
@@ -430,6 +442,19 @@ const treeBranch = (isLast: boolean): string => (isLast ? '└──' : '├─�
   .hero-heading { max-width: 100%; }
   .hero-dock { width: 100%; justify-self: stretch; }
   .contact-hero-note { text-align: left; }
+  .entry-qr-frame,
+  .entry-qr-hint { display: none; }
+  .entry-item--qr .entry-body {
+    display: flex;
+    padding: var(--cs-2) var(--cs-3);
+  }
+}
+@media (max-width: 30rem) {
+  .contact-hero-note,
+  .entry-label,
+  .entry-badge { display: none; }
+  .hero-dock { width: auto; max-width: calc(100% - 1rem); justify-self: end; }
+  .entry-action--primary { min-height: 2.75rem; }
 }
 /* 矮屏（横持手机等）：dock 压缩间距，QR 已被 vh 钳制自动缩小 */
 @media (max-height: 30rem) {

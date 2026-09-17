@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest'
  * - index.html 必须 no-cache——SPA fallback 经 try_files 内部重定向命中
  *   location = /index.html，入口文档被缓存会让预缓存外壳永远发旧版；
  * - /assets/ 仍保持 immutable（防回归）；
- * - vite.config.ts 中 /api 走 navigateFallbackDenylist 且不配
- *   runtimeCaching（SSE 长连接 + JWT Authorization 头，API 一律不经 SW）。
+ * - vite.config.ts 中 /api 与 /camp-scene 走 navigateFallbackDenylist，
+ *   场景目录不进预缓存，且不配 runtimeCaching。
  */
 
 // vitest 从 frontend 根目录运行（npm scripts 与 CI 一致）。
@@ -81,6 +81,11 @@ describe('PWA 缓存头契约', () => {
 
   it('vite.config.ts：导航回退 denylist 排除 /api，API 一律不经 SW', () => {
     expect(viteConfigCode).toMatch(/navigateFallbackDenylist:\s*\[[^\]]*\/api/)
+  })
+
+  it('vite.config.ts：Godot 场景不走 SPA 导航回退，也不进入 PWA 预缓存', () => {
+    expect(viteConfigCode).toMatch(/navigateFallbackDenylist:\s*\[[^\]]*\/camp-scene/)
+    expect(viteConfigCode).toMatch(/globIgnores:\s*\[[^\]]*camp-scene/)
   })
 
   it('vite.config.ts：不配 runtimeCaching（SSE/JWT 不被 SW 拦截缓存）', () => {

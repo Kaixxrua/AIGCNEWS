@@ -5,6 +5,10 @@ import ContactPageView from './ContactPageView.vue'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
 import { messages, DEFAULT_LOCALE } from '@/i18n'
 
+vi.mock('@/components/contact/GodotContactScene.vue', () => ({
+  default: { template: '<section class="godot-contact-scene" aria-label="风起原野实时场景" />' },
+}))
+
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
 
 vi.mock('@/composables/useContactPageConfig', async () => {
@@ -218,18 +222,16 @@ describe('ContactPageView', () => {
     expect(entryBranches).toEqual(['├──', '└──'])
   })
 
-  it('renders the WebGL hero layer with static fallback and inert legacy nodes', () => {
+  it('renders the Godot hero layer and inert legacy nodes', () => {
     const wrapper = mountView()
 
     const field = wrapper.find('.hero-field')
     expect(field.exists()).toBe(true)
-    expect(field.attributes('aria-hidden')).toBe('true')
-    // 三层合成：场景视觉层（无 WebGL2 的 jsdom 下停在静态兜底）→ 遮罩 → 内容
-    const visual = field.find('.hero-visual')
+    expect(field.attributes('aria-hidden')).toBeUndefined()
+    // 三层合成：Godot 实时场景 → 遮罩 → 内容
+    const visual = field.find('.godot-contact-scene')
     expect(visual.exists()).toBe(true)
-    expect(visual.attributes('aria-hidden')).toBe('true')
-    expect(visual.find('canvas.hero-canvas').exists()).toBe(true)
-    expect(visual.find('.hero-fallback').exists()).toBe(true)
+    expect(visual.attributes('aria-label')).toBe('风起原野实时场景')
     expect(field.find('.hero-overlay').exists()).toBe(true)
     // 旧 beam/scanline 契约节点保留但不可见、无动画职责
     const beams = field.findAll('.hero-beam')
@@ -242,7 +244,7 @@ describe('ContactPageView', () => {
     setConfig({ enabled: false })
     const wrapper = mountView()
 
-    expect(wrapper.find('.hero-visual').exists()).toBe(false)
+    expect(wrapper.find('.godot-contact-scene').exists()).toBe(false)
     expect(wrapper.find('.hero-field').exists()).toBe(false)
   })
 })
