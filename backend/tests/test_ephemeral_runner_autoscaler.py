@@ -337,6 +337,7 @@ def test_terminal_job_cache_is_attempt_scoped_and_active_runs_refresh():
 
 
 def test_shared_controller_can_launch_eighth_runner_despite_legacy_maximum(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
     import shared_runner_pool as pool
     monkeypatch.setattr(autoscaler.Path, "home", lambda: tmp_path)
     clock = iter([0, 60, 61, 62])
@@ -380,3 +381,96 @@ def test_ambiguous_jit_start_preserves_payload_and_registration(tmp_path):
     fake.launch = uncertain
     with pytest.raises(autoscaler.LaunchUncertain): build(github, fake).reconcile(apply=True)
     assert not github.deleted
+
+
+def test_truncated_get_retries_with_bounded_backoff(monkeypatch):
+    import http.client
+    from unittest.mock import MagicMock
+    client = autoscaler.ApiClient('owner/repository', 'secret-token')
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.side_effect = [http.client.IncompleteRead(b'secret-payload', 3), b'{"ok": true}']
+    calls = []
+    monkeypatch.setattr(autoscaler.urllib.request, 'urlopen', lambda *a, **kw: calls.append(a) or response)
+    sleeps = []
+    monkeypatch.setattr(autoscaler.time, 'sleep', sleeps.append)
+    assert client.request('GET', '/actions/runs') == {'ok': True}
+    assert len(calls) == 2 and sleeps == [1]
+
+
+def test_exhausted_get_is_transient_but_post_is_never_replayed(monkeypatch):
+    import http.client
+    import pytest
+    client = autoscaler.ApiClient('owner/repository', 'secret-token')
+    calls = []
+    def fail(*args, **kwargs):
+        calls.append(args)
+        raise http.client.IncompleteRead(b'secret-payload', 10)
+    monkeypatch.setattr(autoscaler.urllib.request, 'urlopen', fail)
+    sleeps = []
+    monkeypatch.setattr(autoscaler.time, 'sleep', sleeps.append)
+    with pytest.raises(autoscaler.TransientGitHubError) as error:
+        client.request('GET', '/actions/runs')
+    assert len(calls) == 4 and sleeps == [1, 2, 4]
+    assert 'secret' not in str(error.value)
+    calls.clear(); sleeps.clear()
+    with pytest.raises(autoscaler.AutoscalerError) as error:
+        client.request('POST', '/actions/runners/generate-jitconfig', {'secret': 'payload'})
+    assert not isinstance(error.value, autoscaler.TransientGitHubError)
+    assert len(calls) == 1 and not sleeps and 'secret' not in str(error.value)
+
+
+def test_auth_error_is_not_retried_or_body_logged(monkeypatch):
+    import io
+    import pytest
+    client = autoscaler.ApiClient('owner/repository', 'secret-token')
+    calls = []
+    def fail(*args, **kwargs):
+        calls.append(args)
+        raise autoscaler.urllib.error.HTTPError('url', 403, 'forbidden', {}, io.BytesIO(b'secret-body'))
+    monkeypatch.setattr(autoscaler.urllib.request, 'urlopen', fail)
+    with pytest.raises(autoscaler.AutoscalerError) as error:
+        client.request('GET', '/actions/runs')
+    assert not isinstance(error.value, autoscaler.TransientGitHubError)
+    assert len(calls) == 1 and 'secret' not in str(error.value)
+
+
+def test_loop_keeps_controller_and_adaptive_warmup_after_transient_get(monkeypatch, tmp_path, capsys):
+    import pytest
+    monkeypatch.setattr(autoscaler.Path, 'home', lambda: tmp_path)
+    state = object()
+    class Controller:
+        adaptive = state
+        calls = 0
+        def reconcile(self, **kwargs):
+            self.calls += 1
+            assert self.adaptive is state
+            if self.calls == 1:
+                raise autoscaler.TransientGitHubError('GitHub API GET exhausted 4 attempts; admission deferred')
+            return autoscaler.Plan(0, 0, 0)
+    controller = Controller()
+    builds = []
+    monkeypatch.setattr(autoscaler, 'build_autoscaler', lambda: builds.append(1) or controller)
+    sleeps = []
+    def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2: raise KeyboardInterrupt
+    monkeypatch.setattr(autoscaler.time, 'sleep', sleep)
+    with pytest.raises(KeyboardInterrupt): autoscaler.main(['--apply', '--loop'])
+    assert builds == [1] and controller.calls == 2 and sleeps == [20, 20]
+    assert 'next_poll' in capsys.readouterr().err
+
+
+def test_queue_scan_bounds_history_and_tracks_disappeared_active_run(monkeypatch):
+    client = autoscaler.ApiClient('owner/repository', 'token')
+    client.previous_active_runs = {999: {'id': 999, 'name': 'old active'}}
+    calls = []
+    def request(method, path):
+        calls.append(path)
+        if '/jobs?' in path: return {'jobs': []}
+        return {'workflow_runs': []}
+    client.request = request
+    client.queued_jobs(autoscaler.DEFAULT_LABEL)
+    assert any('status=completed&per_page=10&' in path for path in calls)
+    assert all('exclude_pull_requests=true' in path for path in calls if '/actions/runs?' in path)
+    assert any('/runs/999/jobs?' in path for path in calls)

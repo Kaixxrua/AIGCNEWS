@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import http.client
 import json
 import os
 import secrets
@@ -25,6 +26,10 @@ DEFAULT_RUNNER_LABELS = ("self-hosted", "linux", "x64")
 
 class AutoscalerError(RuntimeError):
     pass
+
+
+class TransientGitHubError(AutoscalerError):
+    """Read-only request exhausted bounded retries; safe to poll again."""
 
 
 class LaunchUncertain(AutoscalerError):
@@ -97,6 +102,7 @@ class ApiClient:
         self.base = f"https://api.github.com/repos/{repository}"
         self.runner_group_id = runner_group_id
         self.completed_jobs = {}
+        self.previous_active_runs = {}
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -122,28 +128,41 @@ class ApiClient:
                     body = response.read()
                 return json.loads(body) if body else None
             except urllib.error.HTTPError as exc:
-                detail = exc.read().decode(errors="replace")[:1000]
-                if method != "GET" or exc.code not in {429, 500, 502, 503, 504}:
-                    raise AutoscalerError(
-                        f"GitHub API {method} {path} failed ({exc.code}): {detail}"
-                    ) from None
-            except OSError as exc:
+                # Do not read or print error bodies: they can contain payloads.
+                code = exc.code
+                exc.close()
+                if method != "GET" or code not in {429, 500, 502, 503, 504}:
+                    raise AutoscalerError(f"GitHub API {method} failed ({code})") from None
+            except (OSError, http.client.IncompleteRead, http.client.RemoteDisconnected,
+                    http.client.BadStatusLine, json.JSONDecodeError, UnicodeDecodeError) as exc:
                 if method != "GET":
                     raise AutoscalerError(
-                        f"GitHub API {method} {path} failed: {exc}"
+                        f"GitHub API {method} transport failed ({type(exc).__name__}); not replayed"
                     ) from None
             if attempt + 1 < attempts:
                 time.sleep(2**attempt)
-        raise AutoscalerError(f"GitHub API {method} {path} exhausted retries")
+        raise TransientGitHubError("GitHub API GET exhausted 4 attempts; admission deferred")
 
     def queued_jobs(self, label: str, compat_labels: tuple[str, ...] = ()) -> list[int]:
-        runs: dict[int, dict[str, Any]] = {}
+        runs: dict[int, dict[str, Any]] = dict(self.previous_active_runs)
+        active_runs = {}
         for status in ("queued", "in_progress", "completed"):
-            document = self.request(
-                "GET", f"/actions/runs?status={status}&per_page=100"
-            )
-            for run in document.get("workflow_runs", []):
-                runs[int(run["id"])] = run
+            # Small pages avoid megabyte bodies. Only recent completions are
+            # needed for fast jobs; previously active runs are followed exactly.
+            size = 10 if status == "completed" else 20
+            page = 1
+            while True:
+                document = self.request(
+                    "GET", f"/actions/runs?status={status}&per_page={size}&page={page}&exclude_pull_requests=true"
+                )
+                batch = document.get("workflow_runs", [])
+                for run in batch:
+                    runs[int(run["id"])] = run
+                    if status != "completed":
+                        active_runs[int(run["id"])] = run
+                if status == "completed" or len(batch) < size:
+                    break
+                page += 1
         supported = {item.strip().lower() for item in (label, *compat_labels) if item.strip()}
         jobs: dict[int, dict[str, Any]] = {}
         # Terminal run jobs are immutable within an attempt. Cache them so a
@@ -165,6 +184,7 @@ class ApiClient:
                 if job.get("status") in {"queued", "in_progress", "completed"} and supported.intersection(labels):
                     jobs[int(job["id"])] = {**job, "workflow_name": runs[run_id].get("name", ""), "run_id": run_id}
         self.completed_jobs = {key: value for key, value in self.completed_jobs.items() if key in current_keys}
+        self.previous_active_runs = active_runs
         self.job_metadata = list(jobs.values())
         return sorted(key for key, job in jobs.items() if job["status"] == "queued")
 
@@ -612,8 +632,16 @@ def main(argv: list[str] | None = None) -> int:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         autoscaler = build_autoscaler()
         while True:
-            plan = autoscaler.reconcile(apply=args.apply, drain=args.drain)
-            print(json.dumps(asdict(plan)), flush=True)
+            try:
+                plan = autoscaler.reconcile(apply=args.apply, drain=args.drain)
+                print(json.dumps(asdict(plan)), flush=True)
+            except TransientGitHubError as exc:
+                if not args.loop:
+                    raise
+                # No mutation is replayed. Next poll revalidates queue and live
+                # cgroups; the singleton controller retains its settling state.
+                print(json.dumps({"error": str(exc), "retry": "next_poll"}),
+                      file=sys.stderr, flush=True)
             if not args.loop:
                 return 0
             time.sleep(args.poll_seconds)
