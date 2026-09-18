@@ -61,3 +61,28 @@ own AO ID. It holds until the coordinator validates the receipt. Use
 only after verifying no competing writer. This is coordinator responsibility,
 not a new per-task user approval. Activation refuses dirty/changed branches or
 busy AO controllers. The watcher attaches newly opened PRs by exact branch.
+
+## 合并后 main CI 失败恢复
+
+适配器只把当前 `main` 的精确 landing SHA 上最新一次 `Contract Baseline`
+`push` 失败派发给该 landing PR 的已登记 AO 任务。任务是修复调查负责人，
+不代表其代码一定造成故障；禁止把祖先提交的失败广播给其他任务。
+已上线、已有更新 main、验证正在重试、任务忙碌、工作树脏或归属变化时不派发。
+同一个 run/attempt 只派发一次，网络结果不明不盲目重发。
+
+任务应先读取失败日志，再通过 `dev_session.py start` 创建干净后继工作树，
+执行安装目录中 `ao_delivery_adapter.py recover --old-branch ... --branch ...
+--worktree ... --event ...`。该命令核对 AO_SESSION_ID、创建时任务归属、
+旧 PR/head、当前失败证据和最新 main，原子保存 `recovery_lineage` 后迁移绑定。
+不需要协调者或用户再次批准，旧工作树与事件保留；修复仍经测试、提交、普通
+push、自动 PR、CI、合并及生产门禁。明确外部配置/权限阻塞仍须如实报告。
+
+事件状态区分：`accepted` 为 AO 接受发送；`responded` 为同一自动化消息
+turn 内出现 Agent 回复；`executed` 为同一 turn 内至少一个命令成功完成。
+回执记录 turn、消息与命令 ID。`executed` **不表示修复成功或已部署**，
+修复需以新 PR/精确 SHA 的 CI 和生产 active release 为准。
+这些 AO 任务在 AO 中运行，不保证桌面原历史对话会显示新的唤醒消息。
+
+安装/升级时须一并复制 `ao_delivery_adapter.py`、`ao_recovery.py` 和
+`delivery_ownership.py` 到同一受控运行目录；保留已有数据库、凭据及 lineage
+probe。重启适配器只恢复观察，不重启 CI runner 或生产服务。
