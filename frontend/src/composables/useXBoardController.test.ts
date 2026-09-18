@@ -59,7 +59,10 @@ describe('useXBoardController', () => {
       fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({
         items: [
           doc('x:1', 'https://x.com/openai/status/1', 5),
-          doc('x:2', 'https://x.com/original/status/2', 4, { retweeted_by: 'Karpathy' }),
+          doc('x:2', 'https://x.com/original/status/2', 4, {
+            retweeted_by: 'Karpathy',
+            followed_account_name: 'Andrej Karpathy',
+          }),
           doc('x:3', 'not-a-tweet-url', 3),
         ],
         total: 3,
@@ -72,6 +75,10 @@ describe('useXBoardController', () => {
     await controller.load()
 
     expect(controller.availableAccounts.value).toEqual(['karpathy', 'openai'])
+    expect(controller.availableAccountOptions.value).toEqual([
+      { handle: 'openai', displayName: '@openai' },
+      { handle: 'karpathy', displayName: 'Andrej Karpathy' },
+    ])
     expect(controller.followedAccounts.value).toEqual(['karpathy', 'openai'])
     expect(controller.visibleDocs.value).toHaveLength(3)
 
@@ -307,6 +314,48 @@ describe('useXBoardController', () => {
     expect(controller.currentPage.value).toBe(3)
     controller.goPage(0)
     expect(controller.currentPage.value).toBe(1)
+  })
+
+  it('renders the first keyset page while the next page is still loading', async () => {
+    let resolveSecond!: (value: DashboardRecentX) => void
+    const secondPage = new Promise<DashboardRecentX>((resolve) => { resolveSecond = resolve })
+    const fetchRecentX = vi.fn()
+      .mockResolvedValueOnce({
+        items: docPage(2), total: 2, windowHours: 24, hasMore: true, nextCursor: 'next',
+      })
+      .mockReturnValueOnce(secondPage)
+    const api = createApi({ fetchRecentX })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+
+    const loading = controller.load()
+    await vi.waitFor(() => expect(controller.docs.value).toHaveLength(2))
+    expect(controller.loading.value).toBe(true)
+
+    resolveSecond({
+      items: [doc('x:3', 'https://x.com/openai/status/3', 3)],
+      total: 1,
+      windowHours: 24,
+      hasMore: false,
+      nextCursor: null,
+    })
+    await loading
+    expect(controller.docs.value).toHaveLength(3)
+    expect(controller.loading.value).toBe(false)
+  })
+
+  it('loads snapshot dates and tweets in parallel', async () => {
+    let resolveDates!: (value: string[]) => void
+    const fetchSnapshotDates = vi.fn(() => new Promise<string[]>((resolve) => { resolveDates = resolve }))
+    const api = createApi({ fetchSnapshotDates })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+
+    const loading = controller.load()
+    await vi.waitFor(() => expect(controller.docs.value).toHaveLength(2))
+    expect(api.fetchRecentX).toHaveBeenCalledOnce()
+
+    resolveDates(['2026-08-04'])
+    await loading
+    expect(controller.availableDates.value).toEqual(['2026-08-04'])
   })
 
   it('resets to page 1 on date change and refresh', async () => {

@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import { clampPage, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
+import { clampPage, followedAccountDisplayName, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
   fetchRecentX: DashboardApi['fetchRecentX']
@@ -69,6 +69,22 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const availableAccounts = computed(() => Array.from(new Set(
     docs.value.map(followedAccountHandle).filter(Boolean),
   )).sort((a, b) => a.localeCompare(b)))
+  const availableAccountOptions = computed(() => {
+    const labels = new Map<string, string>()
+    for (const doc of docs.value) {
+      const handle = followedAccountHandle(doc)
+      if (!handle) continue
+      const label = followedAccountDisplayName(doc)
+      const current = labels.get(handle)
+      // A configured/name label wins over an @handle fallback from older rows.
+      if (!current || (current.startsWith('@') && !label.startsWith('@'))) {
+        labels.set(handle, label || `@${handle}`)
+      }
+    }
+    return availableAccounts.value
+      .map((handle) => ({ handle, displayName: labels.get(handle) || `@${handle}` }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+  })
   const followedAccounts = computed(() => availableAccounts.value.filter(
     (handle) => !unfollowedAccounts.value.has(handle),
   ))
@@ -112,6 +128,8 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
         })
         if (!isActive.value || request !== generation) return
         pages.push(result.items)
+        // 首批到达即渲染；后续 keyset 页在后台渐进合并，避免大窗口一直空转。
+        docs.value = mergePagedTweets(pages)
         if (!result.hasMore || !result.nextCursor) break
         cursor = result.nextCursor
       }
@@ -139,8 +157,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
 
   const load = async () => {
     if (!isActive.value) return
-    await loadDates()
-    await loadTweets()
+    await Promise.all([loadDates(), loadTweets()])
   }
 
   const onDateChange = (date: string) => {
@@ -247,6 +264,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   }
 
   return {
+    availableAccountOptions,
     availableAccounts,
     availableDates,
     clearSelection,

@@ -10,6 +10,7 @@ import {
   estimateTweetCardHeight,
   extractXHandle,
   flattenTweets,
+  followedAccountDisplayName,
   formatLocalTime,
   groupTweetsByHandle,
   hasMedia,
@@ -86,6 +87,24 @@ describe('xBoardViewModel', () => {
     expect(authorDisplayName({ author_name: '  ', url: 'https://x.com/openai/status/1' })).toBe('@openai')
     expect(authorDisplayName({ author_name: 'Karpathy' })).toBe('Karpathy')
     expect(authorDisplayName({})).toBe('')
+  })
+
+  it('uses the configured followed-account display name with safe fallbacks', () => {
+    expect(followedAccountDisplayName({
+      followed_account_name: 'OpenAI 中文',
+      retweeted_by: 'openai',
+      author_name: 'Original Author',
+      url: 'https://x.com/original/status/1',
+    })).toBe('OpenAI 中文')
+    expect(followedAccountDisplayName({
+      author_name: 'OpenAI',
+      url: 'https://x.com/openai/status/1',
+    })).toBe('OpenAI')
+    expect(followedAccountDisplayName({
+      retweeted_by: 'openai',
+      author_name: 'Original Author',
+      url: 'https://x.com/original/status/1',
+    })).toBe('@openai')
   })
 
   it('normalizes retweeted_by handle and blanks absent/bad values', () => {
