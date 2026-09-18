@@ -26,6 +26,7 @@ def _clean_git_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "01a0a9b2-7db0-78a2-a960-cfc652157d21")
 
 
 def test_start_rejects_unsafe_slug(tmp_path):
@@ -266,13 +267,12 @@ def test_start_records_owner_without_allowing_rebind(tmp_path, monkeypatch):
     assert resolve_owner(result["branch"], root) is None
 
 
-def test_legacy_session_without_owner_is_not_inferred(tmp_path, monkeypatch):
-    from scripts.ci.delivery_ownership import resolve_owner
-
+def test_new_session_without_owner_is_rejected(tmp_path, monkeypatch):
     root = _temporary_remote(tmp_path)[1]
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    result = _session.start("no-owner", root)
-    assert resolve_owner(result["branch"], root) is None
+    with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID is required"):
+        _session.start("no-owner", root)
+    assert not (root / ".claude/worktrees").exists()
 
 
 def test_bad_owner_rejected_before_worktree_creation(tmp_path, monkeypatch):

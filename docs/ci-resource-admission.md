@@ -75,7 +75,8 @@ before dispatch. It never falls back to the current task, branch mentions or a
 dashboard-supplied thread ID. Missing receipts report `ownership_unverified`.
 Legacy branches (including PR #66) require independently verified ownership
 before any migration; no old receipt is fabricated from the current environment.
-Tasks started without `CODEX_THREAD_ID` remain ineligible for automatic wakeup.
+New tasks without a valid `CODEX_THREAD_ID` are rejected before worktree creation;
+start from the owning Codex task rather than silently creating an unowned branch.
 
 The earlier one-shot acceptance hardcoded the observing task and demonstrated
 transport only, not correct ownership. It must not be reused. Turn receipt/read

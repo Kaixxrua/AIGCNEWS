@@ -193,11 +193,12 @@ def start(slug: str, root: Path) -> dict[str, str]:
     if not SLUG_RE.fullmatch(slug):
         raise SessionError("slug must be lowercase kebab-case (2-40 characters)")
     owner = os.environ.get("CODEX_THREAD_ID")
-    if owner:
-        try:
-            uuid.UUID(owner)
-        except ValueError:
-            raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
+    if not owner:
+        raise SessionError("CODEX_THREAD_ID is required: create the session from its owning Codex task")
+    try:
+        uuid.UUID(owner)
+    except ValueError:
+        raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
     # Refresh the remote-tracking base on every start; stale bases undermine
     # the branch-backed session contract.
     git("fetch", "origin", "main", cwd=root)
@@ -221,8 +222,7 @@ def start(slug: str, root: Path) -> dict[str, str]:
     # Git rejects --worktree and every linked checkout inherits one global path.
     git("config", "extensions.worktreeConfig", "true", cwd=root)
     git("worktree", "add", "-b", branch, str(path), "origin/main", cwd=root)
-    if owner:
-        record_owner(path, branch, owner)
+    record_owner(path, branch, owner)
     # A shared absolute hooksPath points at the primary checkout and is unsafe
     # for linked worktrees. Store the tracked relative path in worktree config.
     git("config", "extensions.worktreeConfig", "true", cwd=path)
