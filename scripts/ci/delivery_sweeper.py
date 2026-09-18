@@ -182,6 +182,7 @@ def reconcile(
     now: datetime | None = None,
 ) -> list[Result]:
     results: list[Result] = []
+    non_landing_mutated = False
     now = now or datetime.now(UTC)
     pulls = sorted(client.open_pulls(), key=lambda item: item["number"])
     for pr in pulls:
@@ -209,6 +210,17 @@ def reconcile(
             if not validation_is_fresh(run, now):
                 results.append(
                     Result(number, head, "hold", "successful baseline is stale", run_id)
+                )
+                continue
+            if non_landing_mutated:
+                results.append(
+                    Result(
+                        number,
+                        head,
+                        "hold",
+                        "waiting for approved validations before landing",
+                        run_id,
+                    )
                 )
                 continue
             if apply:
@@ -253,9 +265,11 @@ def reconcile(
                     run_id,
                 )
             )
-            # Approval starts the baseline asynchronously. Reconsider every PR
-            # after that state transition on the next event or scheduled sweep.
-            break
+            # Approvals do not advance main, so release every independently
+            # verified request in this sweep. A successful PR encountered
+            # later must wait for the next sweep before landing.
+            non_landing_mutated = True
+            continue
         jobs = client.jobs(run_id)
         attempt = int(run.get("run_attempt") or 1)
         if (
@@ -275,8 +289,8 @@ def reconcile(
                     run_id,
                 )
             )
-            # As with merges and approvals, perform one mutation per sweep.
-            break
+            non_landing_mutated = True
+            continue
         results.append(
             Result(number, head, "hold", f"baseline concluded {conclusion}", run_id)
         )

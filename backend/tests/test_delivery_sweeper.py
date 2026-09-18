@@ -136,7 +136,23 @@ def test_never_retries_real_test_failure():
     assert not test_failure.rerun
 
 
-def test_approves_fresh_exact_head_run_and_serializes_mutations():
+def test_approves_all_fresh_exact_head_runs_without_serializing_ci():
+    approval = FakeClient(
+        [pull(7), pull(8)],
+        [
+            run(7, conclusion="action_required"),
+            run(8, conclusion="action_required"),
+        ],
+    )
+
+    results = sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)
+
+    assert [result.action for result in results] == ["approved", "approved"]
+    assert approval.approved == [99, 99]
+    assert not approval.merged
+
+
+def test_approval_prevents_a_later_success_from_landing_in_same_sweep():
     approval = FakeClient(
         [pull(7), pull(8)],
         [run(7, conclusion="action_required"), run(8)],
@@ -144,8 +160,8 @@ def test_approves_fresh_exact_head_run_and_serializes_mutations():
 
     results = sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)
 
-    assert [result.action for result in results] == ["approved"]
-    assert approval.approved == [99]
+    assert [result.action for result in results] == ["approved", "hold"]
+    assert results[1].reason == "waiting for approved validations before landing"
     assert not approval.merged
 
 
