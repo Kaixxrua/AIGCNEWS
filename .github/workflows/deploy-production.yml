@@ -1,4 +1,5 @@
 name: Deploy Production
+run-name: "production-source:${{ github.event.workflow_run.head_sha }}"
 
 on:
   workflow_run:

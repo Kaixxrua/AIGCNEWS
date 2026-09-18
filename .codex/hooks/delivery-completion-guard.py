@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -157,6 +158,30 @@ def evaluate(payload: dict[str, object]) -> dict[str, object]:
     ).stdout.strip()
     if positive and remote != head:
         return _block("the current session commit has not been pushed to the same-name remote branch.")
+    # A squash merge combines several commits, so git cherry alone cannot
+    # establish task delivery. Resolve the exact merged PR before falling back.
+    try:
+        spec = importlib.util.spec_from_file_location("delivery_probe", root / "scripts/release/delivery_probe.py")
+        probe = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(probe)
+        state = _read_production_state(_production_root(root))
+        delivery = probe.inspect_session(root, branch, state)
+        if delivery["status"] == "active":
+            return {}
+        if delivery["status"] in {"superseded_waiting", "replacement_failed"}:
+            reason = (
+                "Carrier deployment failed; report the verified failure and await coordinator instructions. "
+                if delivery["status"] == "replacement_failed"
+                else "Task is carried by a newer deployment; wait for verified production completion. "
+            )
+            reason += (
+                "Notify only: do not edit, commit, push, retry deployment or deploy. "
+                + json.dumps(delivery, ensure_ascii=True)
+            )
+            return {"decision": "block", "reason": reason, "systemMessage": reason}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, GuardError, subprocess.SubprocessError) as exc:
+        # Missing API evidence never counts as delivered; preserve local checks.
+        print(f"Delivery lineage unavailable: {type(exc).__name__}", file=sys.stderr)
     if positive:
         return _block("the pushed session changes are not yet patch-equivalent to origin/main.")
 

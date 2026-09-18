@@ -37,6 +37,17 @@ timing must also include exact-head workflow run/job timestamps and the active
 production release. Held tasks and local tests are not a deployment success.
 `watch` polls only explicitly active bindings, rechecks live PR SHA and local
 clean head, then delivers base-update or exact-head CI failure feedback via AO.
+Merged tasks additionally receive notify-only active-production completion or
+verified containing-carrier status/failure. These events use the lineage probe,
+explicit task bindings, durable identities and a second evidence/ownership check;
+carrier task names are never inferred. Completion deduplicates across later
+active releases; carrier events distinguish source, run, attempt and status.
+The prompts prohibit edits and deployments, and failures await coordinator action.
+Run the adapter from the repository scripts tree (with its sibling
+`../release/delivery_probe.py`), preserving that layout if packaged separately.
+The production root comes from `aigcnews.productionRoot` or the shared Git
+repository's sibling `AIGCNEWS-production`; unavailable state or Git ancestry
+fails closed. No service installation or live notification is implied by tests.
 Inactive migration entries remain held. CI pause still pauses this loop. On this
 host `aigcnews-ao-delivery.service` replaces the desktop feedback watcher; never
 run both for the same tasks. Only one controller may own a branch for writing.

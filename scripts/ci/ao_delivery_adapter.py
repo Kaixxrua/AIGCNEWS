@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import importlib.util
 import json
 import re
 import sqlite3
@@ -70,19 +71,34 @@ def bind(db, branch, session, worktree, source, repository, pr=None):
     db.commit()
 
 
-def send(db, branch, identity, message, repository, *, read=ao_read, deliver=None):
+def send(db, branch, identity, message, repository, *, read=ao_read, deliver=None,
+         expected_owner=None, validate=None):
     if (Path.home() / ".config/aigcnews/ci-paused").exists():
         return "paused"
-    row = db.execute("SELECT session,worktree,stage FROM tasks WHERE branch=?", (branch,)).fetchone()
+    row = db.execute("SELECT session,worktree,stage,source,pr FROM tasks WHERE branch=?", (branch,)).fetchone()
     if not row:
         return "unowned"
-    session, path, stage = row
+    session, path, stage = row[:3]
+    if expected_owner is not None and row[:3] != expected_owner:
+        return "ownership_changed"
     if stage != "active":
         return "held"
     verify_workspace(path, branch, repository)
     info = read(session)["session"]
     if info.get("id") != session or info.get("isTerminated") or info.get("activity", {}).get("state") != "idle":
         return "waiting"
+    if validate is not None and not validate():
+        return "obsolete"
+    # Recheck after remote evidence reads; neither a changed owner nor a pause
+    # or a newly busy target may consume the event or receive a notification.
+    if db.execute("SELECT session,worktree,stage,source,pr FROM tasks WHERE branch=?", (branch,)).fetchone() != row:
+        return "ownership_changed"
+    verify_workspace(path, branch, repository)
+    info = read(session)["session"]
+    if info.get("id") != session or info.get("isTerminated") or info.get("activity", {}).get("state") != "idle":
+        return "waiting"
+    if (Path.home() / ".config/aigcnews/ci-paused").exists():
+        return "paused"
     cursor = db.execute("INSERT OR IGNORE INTO events(branch,identity,status) VALUES(?,?,'dispatching')", (branch, identity))
     db.commit()
     if not cursor.rowcount:
@@ -127,6 +143,118 @@ def observe(db, github, repository):
     return facts
 
 
+def lineage_probe():
+    spec = importlib.util.spec_from_file_location(
+        "delivery_probe", Path(__file__).resolve().parents[1] / "release/delivery_probe.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def production_state(repository):
+    configured = subprocess.run(
+        ["git", "-C", str(repository), "config", "--get", "aigcnews.productionRoot"],
+        capture_output=True, text=True, check=False, timeout=15,
+    )
+    if configured.returncode not in (0, 1):
+        raise ValueError("production root unavailable")
+    common = Path(git(repository, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    root = Path(configured.stdout.strip()).expanduser() if configured.stdout.strip() else common.parent.with_name(
+        common.parent.name + "-production"
+    )
+    return json.loads((root / ".aigcnews-deploy/state.json").read_text())
+
+
+def merged_task(pr, branch, head, number):
+    return (pr.get("number") == number and pr.get("state") == "closed" and bool(pr.get("merged_at"))
+            and pr.get("base", {}).get("ref") == "main"
+            and (pr.get("base", {}).get("repo") or {}).get("full_name") == "Kaixxrua/AIGCNEWS"
+            and pr.get("head", {}).get("ref") == branch and pr["head"].get("sha") == head
+            and (pr["head"].get("repo") or {}).get("full_name") == "Kaixxrua/AIGCNEWS")
+
+
+def production_evidence(db, github, repository, pr):
+    probe = lineage_probe()
+    landing = pr["merge_commit_sha"]
+    state = production_state(repository)
+    result = probe.evaluate(Path(repository), landing, state)
+    if result["status"] == "active":
+        return result
+    runs = github.request("GET", "/actions/workflows/deploy-production.yml/runs?event=workflow_run&per_page=100")
+    replacement = probe.queued_replacement(Path(repository), landing, runs.get("workflow_runs", []))
+    candidate = replacement["source_sha"] if replacement else state.get("in_progress")
+    if not candidate or candidate == landing:
+        return result
+    # Establish containment before associating any task with a carrier.
+    if not probe.contains(Path(repository), landing, candidate):
+        return result
+    replacement = dict(replacement or {"source_sha": candidate, "status": "in_progress"})
+    owners = []
+    for owner in github.request("GET", f"/commits/{candidate}/pulls"):
+        branch = owner.get("head", {}).get("ref")
+        head = owner.get("head", {}).get("sha")
+        number = owner.get("number")
+        if not merged_task(owner, branch, head, number) or owner.get("merge_commit_sha") != candidate:
+            continue
+        row = db.execute(
+            "SELECT session,worktree,source FROM tasks WHERE branch=? AND pr=? AND stage='active'",
+            (branch, number),
+        ).fetchone()
+        if not row or not row[2].strip():
+            continue
+        session, path, _ = row
+        try:
+            verify_workspace(path, branch, repository)
+            if git(path, "rev-parse", "HEAD") != head:
+                continue
+        except (ValueError, OSError, subprocess.SubprocessError):
+            continue
+        owners.append({"pr": number, "branch": branch, "ao_session": session})
+    replacement["owners"] = sorted(owners, key=lambda item: (item["pr"], item["ao_session"]))
+    return probe.evaluate(Path(repository), landing, state, replacement)
+
+
+def production_notification(db, github, repository, pr, branch, session, path):
+    head, number = pr["head"]["sha"], pr["number"]
+    binding = db.execute("SELECT session,worktree,stage,source,pr FROM tasks WHERE branch=?", (branch,)).fetchone()
+    if not binding or binding[:3] != (session, path, "active") or not binding[3].strip() or binding[4] != number:
+        return "ownership_unverified"
+    if not merged_task(pr, branch, head, number):
+        return "unverified"
+    evidence = production_evidence(db, github, repository, pr)
+    status = evidence["status"]
+    if status not in {"active", "superseded_waiting", "replacement_failed"}:
+        return "waiting"
+    # Active is terminal for this task landing, regardless of later releases.
+    identity = f"{number}:{head}:production:{pr['merge_commit_sha']}:{status}"
+    if status != "active":
+        carrier = evidence["replacement"]
+        identity += f":{carrier['source_sha']}:{carrier.get('run_id', 'state')}:{carrier.get('run_attempt', 1)}"
+        identity += f":{carrier['status']}"
+    message = (
+        f"Verified production notification for PR #{number} at {head}: {status}. "
+        f"Evidence: {json.dumps(evidence, sort_keys=True)}. "
+        "Notify only. Do not edit files, commit, push, merge, retry deployments or deploy in response. "
+        "If active, this task is delivered; report completion and stop. If superseded, stop development and "
+        "duplicate publishing; await a verified completion notification. If the carrier failed, report "
+        "the failure and wait for coordinator instructions. Never infer an owner from a title or branch name."
+    )
+
+    def current():
+        if db.execute("SELECT session,worktree,stage,source,pr FROM tasks WHERE branch=?", (branch,)).fetchone() != binding:
+            return False
+        latest = github.request("GET", f"/pulls/{number}")
+        if not merged_task(latest, branch, head, number) or latest.get("merge_commit_sha") != pr["merge_commit_sha"]:
+            return False
+        if git(path, "rev-parse", "HEAD") != head or git(path, "status", "--porcelain"):
+            return False
+        return production_evidence(db, github, repository, latest) == evidence
+
+    return send(db, branch, identity, message, repository,
+                expected_owner=(session, path, "active"), validate=current)
+
+
 def reconcile(db, github, repository):
     results = []
     # Newly created tasks bind before their PR exists. Attach only one exact
@@ -142,7 +270,9 @@ def reconcile(db, github, repository):
         db.commit()
     for branch, session, number in db.execute("SELECT branch,session,pr FROM tasks WHERE stage='active' AND pr IS NOT NULL").fetchall():
         pr = github.request("GET", f"/pulls/{number}")
-        if pr["head"]["ref"] != branch or pr["state"] != "open" or pr.get("draft"):
+        if pr["head"]["ref"] != branch or pr.get("draft"):
+            continue
+        if pr["state"] != "open" and not pr.get("merged_at"):
             continue
         if (pr["head"].get("repo") or {}).get("full_name") != "Kaixxrua/AIGCNEWS":
             continue
@@ -151,6 +281,12 @@ def reconcile(db, github, repository):
         if git(path, "rev-parse", "HEAD") != pr["head"]["sha"] or git(path, "status", "--porcelain"):
             continue
         head = pr["head"]["sha"]
+        if pr.get("merged_at"):
+            if pr.get("number") != number:
+                continue
+            results.append({"pr": number, "session": session,
+                            "result": production_notification(db, github, repository, pr, branch, session, path)})
+            continue
         kind = None
         evidence = pr["html_url"]
         main = github.request("GET", "/git/ref/heads/main")["object"]["sha"]
