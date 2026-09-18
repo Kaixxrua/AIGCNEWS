@@ -79,3 +79,22 @@ def test_pending_replacement_uses_explicit_source_not_workflow_head(monkeypatch)
     assert replacement["run_id"] == 1
     assert replacement["source_sha"] == "b" * 40
     assert replacement["status"] == "queued"
+
+
+def test_failed_replacement_remains_visible_until_newer_attempt(monkeypatch):
+    monkeypatch.setattr(probe, "contains", lambda *args: True)
+    failed = {
+        "id": 2,
+        "event": "workflow_run",
+        "status": "completed",
+        "conclusion": "failure",
+        "display_title": "production-source:" + "b" * 40,
+    }
+    replacement = probe.queued_replacement(Path("."), "a" * 40, [failed])
+    assert replacement["status"] == "failed"
+    result = probe.evaluate(
+        Path("."), "a" * 40, {"schema": "aigcnews.production-state.v1"}, replacement
+    )
+    assert result["status"] == "replacement_failed"
+    retry = {**failed, "id": 3, "status": "queued", "conclusion": None}
+    assert probe.queued_replacement(Path("."), "a" * 40, [failed, retry])["run_id"] == 3

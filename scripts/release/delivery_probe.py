@@ -70,13 +70,18 @@ def queued_replacement(root: Path, landing: str, runs: list[dict]) -> dict | Non
         )
         if not match or run.get("event") != "workflow_run":
             continue
-        if run.get("status") not in {"queued", "pending", "waiting", "in_progress"}:
+        failed = run.get("status") == "completed" and run.get("conclusion") in {
+            "failure", "timed_out", "startup_failure",
+        }
+        if not failed and run.get("status") not in {"queued", "pending", "waiting", "in_progress"}:
             continue
         source = match[1]
         if source != landing and contains(root, landing, source):
             return {
                 "source_sha": source,
-                "status": "in_progress" if run["status"] == "in_progress" else "queued",
+                "status": "failed" if failed else (
+                    "in_progress" if run["status"] == "in_progress" else "queued"
+                ),
                 "run_id": run["id"],
                 "url": run.get("html_url"),
             }
