@@ -35,5 +35,10 @@ Ambiguous delivery is not retried blindly. Busy tasks wait.
 `observe` collects live PR states and appends timestamped evidence. Completion
 timing must also include exact-head workflow run/job timestamps and the active
 production release. Held tasks and local tests are not a deployment success.
-Native ownership import, automatic handoff activation and the full production
+`watch` polls only explicitly active bindings, rechecks live PR SHA and local
+clean head, then delivers base-update or exact-head CI failure feedback via AO.
+Inactive migration entries remain held. CI pause still pauses this loop. On this
+host `aigcnews-ao-delivery.service` replaces the desktop feedback watcher; never
+run both for the same tasks. Only one controller may own a branch for writing.
+Native ownership import, automatic handoff activation and full production
 acceptance remain pending; the adapter deliberately has no implicit activation.

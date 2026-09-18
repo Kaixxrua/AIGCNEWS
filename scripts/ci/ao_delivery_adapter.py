@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import re
 import sqlite3
 import subprocess
+import time
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
@@ -123,6 +125,49 @@ def observe(db, github, repository):
     return facts
 
 
+def reconcile(db, github, repository):
+    results = []
+    for branch, session, number in db.execute("SELECT branch,session,pr FROM tasks WHERE stage='active' AND pr IS NOT NULL").fetchall():
+        pr = github.request("GET", f"/pulls/{number}")
+        if pr["head"]["ref"] != branch or pr["state"] != "open" or pr.get("draft"):
+            continue
+        if (pr["head"].get("repo") or {}).get("full_name") != "Kaixxrua/AIGCNEWS":
+            continue
+        # Let the agent finish its just-pushed update before observing remote CI.
+        path = db.execute("SELECT worktree FROM tasks WHERE branch=?", (branch,)).fetchone()[0]
+        if git(path, "rev-parse", "HEAD") != pr["head"]["sha"] or git(path, "status", "--porcelain"):
+            continue
+        head = pr["head"]["sha"]
+        kind = None
+        evidence = pr["html_url"]
+        main = github.request("GET", "/git/ref/heads/main")["object"]["sha"]
+        comparison = github.request("GET", f"/compare/{main}...{head}")
+        if comparison.get("status") in {"diverged", "behind"}:
+            kind = "base_update"
+        else:
+            runs = [r for r in github.contract_runs(branch) if r.get("head_sha") == head
+                    and r.get("event") == "pull_request"
+                    and any(p.get("number") == number for p in r.get("pull_requests", []))]
+            latest = max(runs, key=lambda r: (r["id"], r.get("run_attempt", 1)), default=None)
+            if latest and latest.get("conclusion") == "failure":
+                kind = "ci_failure"
+                evidence = latest["html_url"]
+        if kind is None:
+            continue
+        latest_pr = github.request("GET", f"/pulls/{number}")
+        if latest_pr["head"]["sha"] != head or latest_pr["state"] != "open":
+            continue
+        message = (f"PR #{number} at {head} requires {kind}. Evidence: {evidence}. "
+                   "Verify live evidence first. Work only in the bound existing session worktree; preserve other tasks. "
+                   "Fetch latest origin/main and merge it into your branch if needed; never rebase or force-push. "
+                   "Inspect failure logs before fixing, distinguish infrastructure failures from code failures. "
+                   "Run relevant checks and dev_session check; commit only the scoped validated change and normal push. "
+                   "Do not weaken gates, change credentials, manually merge or deploy. Report exact SHA and UTC completion time.")
+        results.append({"pr": number, "session": session,
+                        "result": send(db, branch, f"{number}:{head}:{kind}", message, repository)})
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, default=ROOT / "delivery.sqlite")
@@ -134,8 +179,25 @@ def main():
     register.add_argument("--pr", type=int)
     sub.add_parser("list")
     sub.add_parser("observe")
+    sub.add_parser("watch")
     args = parser.parse_args()
     with database(args.state) as db:
+        if args.command == "watch":
+            from delivery_sweeper import ApiClient
+
+            lock = (args.state.parent / "adapter.lock").open("a")
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            token = (Path.home() / ".config/aigcnews/delivery-read-token").read_text().strip()
+            client = ApiClient("Kaixxrua/AIGCNEWS", token)
+            while True:
+                try:
+                    if (Path.home() / ".config/aigcnews/ci-paused").exists():
+                        print(json.dumps({"status": "paused"}), flush=True)
+                    else:
+                        print(json.dumps({"results": reconcile(db, client, args.repository)}), flush=True)
+                except Exception as exc:  # noqa: BLE001 - daemon boundary fails closed without replay
+                    print(json.dumps({"error_type": type(exc).__name__}), flush=True)
+                time.sleep(30)
         if args.command == "bind":
             bind(db, args.branch, args.session, args.worktree, args.source, args.repository, args.pr)
         if args.command == "observe":

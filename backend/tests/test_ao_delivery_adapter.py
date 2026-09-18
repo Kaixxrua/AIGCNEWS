@@ -65,3 +65,27 @@ def test_branch_change_prevents_send(db, monkeypatch):
     with pytest.raises(ValueError):
         adapter.send(db, "session/example", "event", "message", ".", read=ready, deliver=deliver)
     deliver.assert_not_called()
+
+
+def test_reconcile_detects_new_main_and_rechecks_head(db, monkeypatch):
+    db.execute("UPDATE tasks SET stage='active'")
+    monkeypatch.setattr(adapter, "git", lambda _, *args: "a" * 40 if args[0] == "rev-parse" else "")
+    pr = {"state": "open", "head": {"ref": "session/example", "sha": "a" * 40,
+          "repo": {"full_name": "Kaixxrua/AIGCNEWS"}}, "html_url": "https://github.com/Kaixxrua/AIGCNEWS/pull/69"}
+    client = Mock()
+    client.request.side_effect = [pr, {"object": {"sha": "b" * 40}}, {"status": "diverged"}, pr]
+    sender = Mock(return_value="accepted")
+    monkeypatch.setattr(adapter, "send", sender)
+    assert adapter.reconcile(db, client, ".")[0]["result"] == "accepted"
+    assert sender.call_args.args[2] == "69:" + "a" * 40 + ":base_update"
+    client.contract_runs.assert_not_called()
+
+
+def test_reconcile_does_not_interrupt_dirty_task(db, monkeypatch):
+    db.execute("UPDATE tasks SET stage='active'")
+    monkeypatch.setattr(adapter, "git", lambda _, *args: "a" * 40 if args[0] == "rev-parse" else " M file")
+    client = Mock()
+    client.request.return_value = {"state": "open", "head": {"ref": "session/example", "sha": "a" * 40,
+        "repo": {"full_name": "Kaixxrua/AIGCNEWS"}}}
+    assert adapter.reconcile(db, client, ".") == []
+    assert client.request.call_count == 1
