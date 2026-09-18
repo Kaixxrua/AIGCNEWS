@@ -39,6 +39,10 @@ find /opt/actions-runner/_work -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 find /opt/actions-runner/_diag -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 systemctl stop docker.service docker.socket containerd.service || true
 rm -rf /var/lib/docker/* /var/lib/containerd/*
+# The persistent source runner uses a localhost registry cache. A clean JIT
+# instance does not inherit that container, so it must pull through its own
+# proxied Docker daemon instead of pointing at a dead loopback mirror.
+printf '{}\n' > /etc/docker/daemon.json
 apt-get clean
 SCRIPT
 

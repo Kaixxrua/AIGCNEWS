@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / "scripts" / "ci" / "ephemeral_runner_autoscaler.py"
+PREPARE_SCRIPT = ROOT / "scripts" / "ci" / "prepare_ephemeral_runner_template.sh"
 
 
 def load_module():
@@ -161,3 +162,10 @@ def test_jit_registration_includes_labels_required_by_workflows():
         "x64",
         "aigcnews-ci-ephemeral",
     ]
+
+
+def test_template_does_not_keep_the_persistent_runners_loopback_registry():
+    source = PREPARE_SCRIPT.read_text(encoding="utf-8")
+
+    assert "printf '{}\\n' > /etc/docker/daemon.json" in source
+    assert "rm -rf /var/lib/docker/* /var/lib/containerd/*" in source
