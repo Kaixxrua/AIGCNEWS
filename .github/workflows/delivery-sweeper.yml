@@ -1,6 +1,9 @@
 name: Delivery Sweeper
 
 on:
+  workflow_run:
+    workflows: ["Session PR", "Contract Baseline"]
+    types: [completed]
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
@@ -24,5 +27,7 @@ jobs:
           ref: main
       - name: Reconcile exact-head session deliveries
         env:
-          GH_TOKEN: ${{ github.token }}
+          # A repository-owner token is required to approve bot-authored runs.
+          # It is exposed only to this default-branch workflow, never to PR jobs.
+          GH_TOKEN: ${{ secrets.AIGCNEWS_DELIVERY_TOKEN }}
         run: python3 scripts/ci/delivery_sweeper.py --apply
