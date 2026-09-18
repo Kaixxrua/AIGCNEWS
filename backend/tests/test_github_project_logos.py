@@ -145,3 +145,28 @@ def test_logo_route_is_database_only_and_supports_cache_validation():
         assert client.get("/api/projects/github/logo/acme/demo", headers={"if-none-match": '"abc"'}).status_code == 304
         repository.get.return_value = None
         assert client.get("/api/projects/github/logo/acme/missing").status_code == 404
+
+
+@pytest.mark.parametrize("addresses", [
+    ["127.0.0.1"], ["169.254.169.254"], ["::1"], ["10.0.0.1"],
+    ["93.184.216.34", "10.0.0.1"],
+])
+def test_logo_download_rejects_unsafe_dns_before_request(monkeypatch, addresses):
+    from backend.app.services import outbound_target_policy
+
+    monkeypatch.setattr(outbound_target_policy, "_system_resolver", lambda host: addresses)
+    client = Mock()
+    with pytest.raises(ValueError):
+        logos.download_logo(BASE, client)
+    client.stream.assert_not_called()
+
+
+def test_logo_download_rejects_stream_over_limit(monkeypatch):
+    from backend.app.services import outbound_target_policy
+
+    monkeypatch.setattr(outbound_target_policy, "_system_resolver", lambda host: ["93.184.216.34"])
+    with httpx.Client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, content=b"x" * (logos.MAX_DOWNLOAD + 1)),
+    )) as client:
+        with pytest.raises(ValueError, match="artwork too large"):
+            logos.download_logo(BASE, client)

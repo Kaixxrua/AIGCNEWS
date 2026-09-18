@@ -132,6 +132,7 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
     expect(wrapper.find('.radar-card').exists()).toBe(false)
+    expect(wrapper.get('aside').find('.ui-inspiration').exists()).toBe(true)
     expect(wrapper.find('.ui-inspiration').exists()).toBe(true)
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')

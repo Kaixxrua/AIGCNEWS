@@ -16,6 +16,7 @@ import secrets
 import subprocess
 import sys
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from typing import Any
 # sys.path; anchor the worktree root so ``scripts.risk_controls`` imports.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.ci.delivery_ownership import record_owner
 from scripts.risk_controls import RiskLevel, ValidationReceipt, classify_paths
 
 SESSION_RE = re.compile(r"^session/(?P<name>[a-z0-9][a-z0-9-]{1,127})$")
@@ -69,7 +71,11 @@ def git(*args: str, cwd: Path) -> str:
     if result.returncode:
         detail = result.stderr.strip() or result.stdout.strip()
         raise SessionError(f"git {' '.join(args)} failed: {detail}")
-    return result.stdout.strip()
+    # Keep leading porcelain whitespace: in `git status --porcelain=v1` the
+    # first column is the index state, so stripping it turns an unstaged-only
+    # first entry into a false staged entry. Git command output only needs its
+    # trailing record separator removed here.
+    return result.stdout.rstrip()
 
 
 def repo_root(cwd: Path | None = None) -> Path:
@@ -103,6 +109,19 @@ def current_worktree(root: Path) -> Worktree:
     return matches[0]
 
 
+def _git_common_dir(root: Path) -> Path:
+    raw = Path(git("rev-parse", "--git-common-dir", cwd=root))
+    # A primary checkout prints a relative path (".git"); a linked worktree
+    # prints an absolute one. Anchor relative output to root, never to the
+    # caller's process cwd.
+    return raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+
+
+def primary_worktree(root: Path) -> Path:
+    """Return the primary checkout that owns the shared Git common dir."""
+    return _git_common_dir(root).parent
+
+
 def base_exists(root: Path) -> bool:
     result = subprocess.run(
         ["git", "show-ref", "--verify", "--quiet", "refs/remotes/origin/main"],
@@ -114,6 +133,9 @@ def base_exists(root: Path) -> bool:
 def status(root: Path) -> dict[str, Any]:
     item = current_worktree(root)
     risks: list[str] = []
+    primary = primary_worktree(root)
+    if item.path == primary:
+        risks.append("primary_worktree")
     if item.branch is None:
         risks.append("detached")
     elif item.branch == "main":
@@ -153,6 +175,7 @@ def status(root: Path) -> dict[str, Any]:
 
     return {
         "worktree": str(item.path),
+        "primary_worktree": str(primary),
         "branch": item.branch,
         "base": base,
         "current": current,
@@ -169,6 +192,13 @@ def status(root: Path) -> dict[str, Any]:
 def start(slug: str, root: Path) -> dict[str, str]:
     if not SLUG_RE.fullmatch(slug):
         raise SessionError("slug must be lowercase kebab-case (2-40 characters)")
+    owner = os.environ.get("CODEX_THREAD_ID")
+    if not owner:
+        raise SessionError("CODEX_THREAD_ID is required: create the session from its owning Codex task")
+    try:
+        uuid.UUID(owner)
+    except ValueError:
+        raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
     # Refresh the remote-tracking base on every start; stale bases undermine
     # the branch-backed session contract.
     git("fetch", "origin", "main", cwd=root)
@@ -178,7 +208,10 @@ def start(slug: str, root: Path) -> dict[str, str]:
     session_id = f"{int(time.time())}-{os.getpid()}-{random.SystemRandom().randint(1000, 9999)}"
     name = f"{slug}-{session_id}"
     branch = f"session/{name}"
-    path = (root / ".claude" / "worktrees" / name).resolve()
+    # Always place new sessions below the primary checkout. Calling `start`
+    # from an existing linked worktree must not create nested worktrees.
+    primary = primary_worktree(root)
+    path = (primary / ".claude" / "worktrees" / name).resolve()
     existing = worktrees(root)
     if any(item.branch == branch for item in existing) or any(item.path == path for item in existing):
         raise SessionError("session branch or worktree already exists; refusing reuse")
@@ -189,11 +222,17 @@ def start(slug: str, root: Path) -> dict[str, str]:
     # Git rejects --worktree and every linked checkout inherits one global path.
     git("config", "extensions.worktreeConfig", "true", cwd=root)
     git("worktree", "add", "-b", branch, str(path), "origin/main", cwd=root)
+    record_owner(path, branch, owner)
     # A shared absolute hooksPath points at the primary checkout and is unsafe
     # for linked worktrees. Store the tracked relative path in worktree config.
     git("config", "extensions.worktreeConfig", "true", cwd=path)
     git("config", "--worktree", "core.hooksPath", ".githooks", cwd=path)
-    return {"worktree": str(path), "branch": branch, "base": "origin/main"}
+    return {
+        "worktree": str(path),
+        "branch": branch,
+        "base": "origin/main",
+        "primary_worktree": str(primary),
+    }
 
 
 def _session_branch(item: Worktree) -> None:
@@ -218,14 +257,6 @@ def _receipt_from_file(path: Path) -> ValidationReceipt:
     if receipt.schema != "aigcnews.validation-receipt.v1" or not receipt.passed:
         raise SessionError("validation receipt is not a passed v1 receipt")
     return receipt
-
-
-def _git_common_dir(root: Path) -> Path:
-    raw = Path(git("rev-parse", "--git-common-dir", cwd=root))
-    # A primary checkout prints a relative path (".git"); a linked worktree
-    # prints an absolute one. Anchor relative output to root, never to the
-    # caller's process cwd.
-    return raw.resolve() if raw.is_absolute() else (root / raw).resolve()
 
 
 @contextmanager
