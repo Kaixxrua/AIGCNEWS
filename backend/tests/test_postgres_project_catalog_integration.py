@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+from datetime import date, datetime, tzinfo
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -61,24 +62,62 @@ EXPECTED_PUBLIC_FIELDS = {
 }
 
 
+@pytest.fixture(scope="module", params=[
+    ("2026-09-18T15:59:00+00:00", "2026-09-18"),
+    ("2026-09-18T16:01:00+00:00", "2026-09-19"),
+    ("2026-12-31T16:01:00+00:00", "2027-01-01"),
+], ids=["before-shanghai-midnight", "after-shanghai-midnight", "shanghai-new-year"])
+def catalog_clock(request: pytest.FixtureRequest) -> tuple[datetime, date]:
+    instant, business_date = request.param
+    return datetime.fromisoformat(instant), date.fromisoformat(business_date)
+
+
 @pytest.fixture(scope="module")
-def catalog() -> Iterator[Any]:
-    with postgres_test_sandbox() as sandbox:
+def catalog(catalog_clock: tuple[datetime, date]) -> Iterator[Any]:
+    instant, business_date = catalog_clock
+    adapter_module = importlib.import_module("backend.app.repositories.postgres_project_catalog")
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> "FrozenDateTime":
+            return cls.fromtimestamp(instant.timestamp(), tz)
+
+    # Freeze the input clock, not _today(): exercise the real business timezone
+    # conversion, independent of the host clock and the database session zone.
+    with pytest.MonkeyPatch.context() as patch, postgres_test_sandbox() as sandbox:
+        patch.setattr(adapter_module, "datetime", FrozenDateTime)
+        patch.setattr(adapter_module.settings, "scheduler_timezone", "Asia/Shanghai")
+        assert adapter_module._today() == business_date.isoformat()
         database = sandbox.database
         with database.transaction() as connection:
-            connection.execute(SEED_PATH.read_text(encoding="utf-8"))
+            connection.execute("SET LOCAL TIME ZONE 'UTC'")
+            connection.execute(psycopg.sql.SQL(SEED_PATH.read_text(encoding="utf-8")).format(
+                metric_date=psycopg.sql.Literal(business_date),
+            ))
+        yield adapter_module.PostgresProjectCatalogRepository(database=database)
 
-        try:
-            adapter_module = importlib.import_module("backend.app.repositories.postgres_project_catalog")
-        except ModuleNotFoundError as exc:
-            if exc.name == "backend.app.repositories.postgres_project_catalog":
-                pytest.skip("PostgresProjectCatalogRepository is not available yet")
-            raise
-        repository_type = adapter_module.PostgresProjectCatalogRepository
-        try:
-            yield repository_type(database=database)
-        except TypeError:
-            yield repository_type(database)
+
+def test_seed_date_matches_business_day_in_utc_database(
+    catalog: Any, catalog_clock: tuple[datetime, date],
+) -> None:
+    instant, business_date = catalog_clock
+    with catalog._database.transaction() as connection:
+        connection.execute("SET LOCAL TIME ZONE 'UTC'")
+        row = connection.execute(
+            "SELECT (%s::timestamptz AT TIME ZONE 'UTC')::date AS utc_date, "
+            "(%s::timestamptz AT TIME ZONE 'Asia/Shanghai')::date AS business_date",
+            (instant, instant),
+        ).fetchone()
+        metrics = connection.execute(
+            "SELECT metric_date::date AS metric_date, "
+            "previous_snapshot_date::date AS previous_snapshot_date FROM github_repo_daily_metrics"
+        ).fetchall()
+    assert row["business_date"] == business_date
+    assert row["utc_date"] == instant.date()
+    assert (row["utc_date"] != business_date) == (instant.hour >= 16)
+    assert len(metrics) == 2
+    assert all(item["metric_date"] == business_date for item in metrics)
+    assert all((item["metric_date"] - item["previous_snapshot_date"]).days == 1 for item in metrics)
 
 
 def test_real_catalog_queries_match_committed_expected_results(catalog: Any) -> None:
@@ -305,12 +344,10 @@ def test_real_favorites_visibility_matches_category_counts(catalog: Any) -> None
     assert counts.get("other") == 1
 
 
-def test_real_github_hot_board_reads_v5_metrics(catalog: Any) -> None:
+def test_real_github_hot_board_reads_v5_metrics(catalog: Any, catalog_clock: tuple[datetime, date]) -> None:
     # 看板 github 今日暴涨榜：公开口径为 succeeded canonical + active + 正增长
     # （无星数门槛），hot_score(v5) 降序；夹具中 acme/draft 无增强无指标，永不出现。
-    from datetime import date as _date
-
-    today = _date.today().isoformat()  # 夹具指标日落 CURRENT_DATE
+    today = catalog_clock[1].isoformat()
     rows = catalog.list_github_hot_for_date(metric_date=today, limit=10)
 
     assert [row["repo_id"] for row in rows] == ["acme/alpha", "acme/beta"]
