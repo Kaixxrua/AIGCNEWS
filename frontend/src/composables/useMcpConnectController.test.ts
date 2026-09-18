@@ -240,7 +240,7 @@ describe('MCP connect controller', () => {
   })
 
   it('copies a natural-language Agent prompt with the selected setup context', async () => {
-    const copy = vi.fn(async () => undefined)
+    const copy = vi.fn(async (_text: string) => undefined)
     const { controller } = createController({ copy })
     controller.selectedShell.value = 'bash'
     controller.transientCommand.value = 'setup-command-with-secret'
