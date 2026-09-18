@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
 SESSION_BRANCH = re.compile(r"session/[a-z0-9][a-z0-9-]{1,127}")
+SESSION_PR_ACTOR = "github-actions[bot]"
 RETRYABLE_CONCLUSIONS = {"failure", "cancelled", "timed_out", "startup_failure"}
 MAX_RUN_ATTEMPTS = 3
 MAX_VALIDATION_AGE = timedelta(hours=12)
@@ -43,6 +44,8 @@ class GitHub(Protocol):
     def jobs(self, run_id: int) -> list[dict[str, Any]]: ...
 
     def merge(self, number: int, head: str, title: str) -> None: ...
+
+    def approve(self, run_id: int) -> None: ...
 
     def rerun_failed_jobs(self, run_id: int) -> None: ...
 
@@ -122,6 +125,9 @@ class ApiClient:
                 f"GitHub refused PR #{number} merge: {result.get('message', 'unknown')}"
             )
 
+    def approve(self, run_id: int) -> None:
+        self.request("POST", f"/actions/runs/{run_id}/approve", {})
+
     def rerun_failed_jobs(self, run_id: int) -> None:
         self.request("POST", f"/actions/runs/{run_id}/rerun-failed-jobs", {})
 
@@ -159,6 +165,13 @@ def validation_is_fresh(run: dict[str, Any], now: datetime) -> bool:
         return False
     age = now - completed
     return timedelta(0) <= age <= MAX_VALIDATION_AGE
+
+
+def bot_authored_approval(pr: dict[str, Any], run: dict[str, Any]) -> bool:
+    return (
+        pr.get("user", {}).get("login") == SESSION_PR_ACTOR
+        and run.get("actor", {}).get("login") == SESSION_PR_ACTOR
+    )
 
 
 def reconcile(
@@ -213,15 +226,42 @@ def reconcile(
             # newly advanced main on the next sweep.
             break
         if conclusion == "action_required":
+            if not bot_authored_approval(pr, run):
+                results.append(
+                    Result(
+                        number,
+                        head,
+                        "hold",
+                        "workflow approval requires repository owner",
+                        run_id,
+                    )
+                )
+                continue
+            if not validation_is_fresh(run, now):
+                results.append(
+                    Result(number, head, "hold", "approval request is stale", run_id)
+                )
+                continue
+            if apply:
+                client.approve(run_id)
             results.append(
-                Result(number, head, "hold", "workflow approval is required", run_id)
+                Result(
+                    number,
+                    head,
+                    "approved" if apply else "approve",
+                    "fresh exact-head workflow approval required",
+                    run_id,
+                )
             )
-            continue
+            # Approval starts the baseline asynchronously. Reconsider every PR
+            # after that state transition on the next event or scheduled sweep.
+            break
         jobs = client.jobs(run_id)
         attempt = int(run.get("run_attempt") or 1)
         if (
             conclusion in RETRYABLE_CONCLUSIONS
             and attempt < MAX_RUN_ATTEMPTS
+            and validation_is_fresh(run, now)
             and runner_assignment_failure(jobs)
         ):
             if apply:
@@ -235,7 +275,8 @@ def reconcile(
                     run_id,
                 )
             )
-            continue
+            # As with merges and approvals, perform one mutation per sweep.
+            break
         results.append(
             Result(number, head, "hold", f"baseline concluded {conclusion}", run_id)
         )
