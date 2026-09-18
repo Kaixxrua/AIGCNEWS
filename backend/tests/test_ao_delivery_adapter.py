@@ -115,9 +115,33 @@ def test_discovery_requires_unique_same_repository_branch(db, monkeypatch, repos
 def test_activation_rejects_changed_or_busy_task(db, monkeypatch, head, dirty, state):
     monkeypatch.setattr(adapter, "database", lambda _: db)
     monkeypatch.setattr(adapter, "git", lambda _, *args: head if args[0] == "rev-parse" else dirty)
-    monkeypatch.setattr(adapter, "ao_read", lambda _: {"session": {"activity": {"state": state}}})
+    monkeypatch.setattr(adapter, "ao_read", lambda _: {"session": {"id": "standalone-2", "activity": {"state": state}}})
     monkeypatch.setattr("sys.argv", ["adapter", "activate", "--branch", "session/example",
                                    "--expect-head", "expected", "--handoff-evidence", "audit"])
     with pytest.raises(ValueError):
         adapter.main()
     assert db.execute("SELECT stage FROM tasks").fetchone()[0] == "audit"
+
+
+def test_activation_preserves_owner_and_records_handoff(db, monkeypatch):
+    monkeypatch.setattr(adapter, "database", lambda _: db)
+    monkeypatch.setattr(adapter, "git", lambda _, *args: "expected" if args[0] == "rev-parse" else "")
+    monkeypatch.setattr(adapter, "ao_read", ready)
+    monkeypatch.setattr("sys.argv", ["adapter", "activate", "--branch", "session/example",
+                                   "--expect-head", "expected", "--handoff-evidence", "writer released"])
+    adapter.main()
+    session, stage, source = db.execute("SELECT session,stage,source FROM tasks").fetchone()
+    assert (session, stage) == ("standalone-2", "active")
+    assert "writer released" in source
+
+
+def test_pause_prevents_dispatch(db, monkeypatch, tmp_path):
+    monkeypatch.setattr(adapter.Path, "home", lambda: tmp_path)
+    marker = tmp_path / ".config/aigcnews/ci-paused"
+    marker.parent.mkdir(parents=True)
+    marker.touch()
+    db.execute("UPDATE tasks SET stage='active'")
+    deliver = Mock()
+    assert adapter.send(db, "session/example", "event", "message", ".", read=ready, deliver=deliver) == "paused"
+    deliver.assert_not_called()
+    assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
