@@ -21,7 +21,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
       startsWith(github.event.workflow_run.head_branch, 'session/')
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: [self-hosted, linux, aigcnews-control]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4

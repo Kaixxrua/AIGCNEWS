@@ -125,9 +125,11 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     auto_merge = (ROOT / ".github/workflows/auto-merge.yml").read_text(encoding="utf-8")
     session_pr = (ROOT / ".github/workflows/session-pr.yml").read_text(encoding="utf-8")
 
-    assert "group: aigcnews-production" in deployment
+    assert "'aigcnews-production-latest'" in deployment
+    assert "format('aigcnews-production-skip-{0}', github.run_id)" in deployment
     assert "cancel-in-progress: false" in deployment
-    assert deployment.index("  deploy:") < deployment.index("    concurrency:")
+    assert deployment.index("concurrency:") < deployment.index("jobs:")
+    assert deployment.count("concurrency:") == 1
     assert "AIGCNEWS_GODOT_RELEASE_ROOT" in deployment
     assert "AIGCNEWS_GODOT_RELEASE_ID" in deployment
     assert "AIGCNEWS_GODOT_RELEASE_DESCRIPTOR_SHA256" in deployment
@@ -144,12 +146,14 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert 'branches:\n      - "session/**"' in session_pr
 
 
-def test_workflows_use_isolated_self_hosted_runners():
+def test_workflows_use_ephemeral_ci_and_isolated_production_runner():
     workflows = {
         path.name: path.read_text(encoding="utf-8")
         for path in (ROOT / ".github" / "workflows").glob("*.yml")
-    }
-    ci_runner = "runs-on: [self-hosted, linux, aigcnews-ci]"
+    }  # fmt: skip
+    control_runner = "runs-on: [self-hosted, linux, aigcnews-control]"
+    ephemeral_runner = "runs-on: [self-hosted, linux, aigcnews-ci-ephemeral]"
+    legacy_ci_runner = "runs-on: [self-hosted, linux, aigcnews-ci]"
     production_runner = "runs-on: [self-hosted, linux, aigcnews-production]"
 
     assert all("runs-on: ubuntu-latest" not in text for text in workflows.values())
@@ -158,18 +162,22 @@ def test_workflows_use_isolated_self_hosted_runners():
         "backend-tests", "postgres-integration", "mcp-go", "compose-smoke", "frontend-build"
     }
     assert set(baseline_jobs) == test_jobs | {"pr-admission"}
-    assert workflows["contract-baseline.yml"].count(ci_runner) == 6
+    assert all(legacy_ci_runner not in text for text in workflows.values())
+    assert workflows["contract-baseline.yml"].count(ephemeral_runner) == 6
     for job in baseline_jobs.values():
-        assert job["runs-on"] == ["self-hosted", "linux", "aigcnews-ci"]
+        assert job["runs-on"] == ["self-hosted", "linux", "aigcnews-ci-ephemeral"]
     admission = baseline_jobs["pr-admission"]
     assert any(step.get("uses") == "./.github/actions/check-pr-base" for step in admission["steps"])
     for name in test_jobs:
         assert baseline_jobs[name]["needs"] == "pr-admission"
-    assert workflows["deploy-production.yml"].count(ci_runner) == 1
+        assert any(step.get("uses") == "./.github/actions/check-pr-base"
+                   for step in baseline_jobs[name]["steps"])
+    assert workflows["deploy-production.yml"].count(control_runner) == 1
     assert workflows["deploy-production.yml"].count(production_runner) == 4
-    assert workflows["session-pr.yml"].count(ci_runner) == 1
-    assert workflows["auto-merge.yml"].count(ci_runner) == 1
-    assert workflows["evals-contract.yml"].count(ci_runner) == 2
+    assert workflows["session-pr.yml"].count(control_runner) == 1
+    assert workflows["auto-merge.yml"].count(control_runner) == 1
+    assert workflows["delivery-sweeper.yml"].count(control_runner) == 1
+    assert workflows["evals-contract.yml"].count(ephemeral_runner) == 2
     assert production_runner not in workflows["contract-baseline.yml"]
     assert "cache: pip" not in workflows["contract-baseline.yml"]
     assert "cache: npm" not in workflows["contract-baseline.yml"]
@@ -225,3 +233,12 @@ def test_trusted_builds_keep_images_and_cache_on_production_daemon():
     assert "docker/setup-buildx-action" not in workflow
     assert "docker/login-action" not in workflow
     assert "packages: write" not in workflow
+
+
+def test_failed_baseline_cannot_evict_pending_production_and_stale_builds_skip():
+    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text()
+    group = workflow.split("concurrency:", 1)[1].split("jobs:", 1)[0]
+    assert "github.event.workflow_run.conclusion == 'success'" in group
+    assert workflow.count("if: needs.metadata.outputs.eligible == 'true'") == 3
+    assert 'git merge-base --is-ancestor "$SOURCE_SHA" "$latest"' in workflow
+    assert workflow.index("Reject stale candidates") < workflow.index("build-backend:")

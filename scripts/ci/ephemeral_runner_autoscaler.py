@@ -44,9 +44,9 @@ class Plan:
 
 
 class GitHub(Protocol):
-    def queued_jobs(self, label: str) -> list[int]: ...
+    def queued_jobs(self, label: str, compat_labels: tuple[str, ...] = ()) -> list[int]: ...
 
-    def generate_jit(self, name: str, label: str) -> tuple[int, str]: ...
+    def generate_jit(self, name: str, label: str, compat_labels: tuple[str, ...] = ()) -> tuple[int, str]: ...
 
     def delete_runner(self, runner_id: int) -> None: ...
 
@@ -128,7 +128,7 @@ class ApiClient:
                 time.sleep(2**attempt)
         raise AutoscalerError(f"GitHub API {method} {path} exhausted retries")
 
-    def queued_jobs(self, label: str) -> list[int]:
+    def queued_jobs(self, label: str, compat_labels: tuple[str, ...] = ()) -> list[int]:
         runs: dict[int, dict[str, Any]] = {}
         for status in ("queued", "in_progress"):
             document = self.request(
@@ -136,25 +136,30 @@ class ApiClient:
             )
             for run in document.get("workflow_runs", []):
                 runs[int(run["id"])] = run
-        jobs: list[int] = []
+        supported = {item.strip().lower() for item in (label, *compat_labels) if item.strip()}
+        jobs: set[int] = set()
         for run_id in sorted(runs):
             document = self.request(
                 "GET", f"/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
             )
             for job in document.get("jobs", []):
                 labels = {str(item).lower() for item in job.get("labels", [])}
-                if job.get("status") == "queued" and label.lower() in labels:
-                    jobs.append(int(job["id"]))
-        return jobs
+                if job.get("status") == "queued" and supported.intersection(labels):
+                    jobs.add(int(job["id"]))
+        return sorted(jobs)
 
-    def generate_jit(self, name: str, label: str) -> tuple[int, str]:
+    def generate_jit(self, name: str, label: str, compat_labels: tuple[str, ...] = ()) -> tuple[int, str]:
         result = self.request(
             "POST",
             "/actions/runners/generate-jitconfig",
             {
                 "name": name,
                 "runner_group_id": self.runner_group_id,
-                "labels": [*DEFAULT_RUNNER_LABELS, label],
+                "labels": list(dict.fromkeys(
+                    item.strip().lower()
+                    for item in (*DEFAULT_RUNNER_LABELS, label, *compat_labels)
+                    if item.strip()
+                )),
                 "work_folder": "_work",
             },
         )
@@ -325,10 +330,12 @@ class Autoscaler:
         cpu: str,
         memory: str,
         idle_timeout: timedelta,
+        compat_labels: tuple[str, ...] = (),
     ):
         self.github = github
         self.runtime = runtime
         self.label = label
+        self.compat_labels = compat_labels
         self.prefix = prefix
         self.maximum = maximum
         self.cpu = cpu
@@ -342,7 +349,7 @@ class Autoscaler:
         if apply:
             self.runtime.reap(idle_timeout=self.idle_timeout, github=self.github)
         instances = self.runtime.instances()
-        jobs = self.github.queued_jobs(self.label)
+        jobs = self.github.queued_jobs(self.label, self.compat_labels)
         plan = make_plan(len(jobs), len(instances), self.maximum)
         if self.resource_budget:
             from runner_resource_budget import allocate, sample
@@ -355,7 +362,7 @@ class Autoscaler:
             return plan
         for _ in range(plan.spawn):
             name = f"{self.prefix}{int(time.time())}-{secrets.token_hex(3)}"
-            runner_id, jit_config = self.github.generate_jit(name, self.label)
+            runner_id, jit_config = self.github.generate_jit(name, self.label, self.compat_labels)
             try:
                 self.runtime.launch(
                     name,
@@ -396,6 +403,10 @@ def build_autoscaler() -> Autoscaler:
         github,
         runtime,
         label=label,
+        compat_labels=tuple(
+            item.strip() for item in os.environ.get("AIGCNEWS_RUNNER_COMPAT_LABELS", "").split(",")
+            if item.strip()
+        ),
         prefix=prefix,
         maximum=maximum,
         cpu=os.environ.get("AIGCNEWS_RUNNER_CPU", "4"),
