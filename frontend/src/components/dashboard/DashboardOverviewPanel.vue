@@ -1,221 +1,66 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import {
-  isSourceStatCard,
-  statCards,
-  visitorCards,
-  type TabKey,
-} from '@/features/dashboard/dashboardViewModel'
+import RollingNumber from './RollingNumber.vue'
+import { statCards, visitorCards, type TabKey } from '@/features/dashboard/dashboardViewModel'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   activeTab: TabKey
   statValues: number[]
   visitorValues: number[]
-  todayUiCount: number
-  todayUiCountLoading: boolean
+  uiCount: number | null
+  uiLoading: boolean
 }>()
-
 const { t } = useI18n()
-
-const emit = defineEmits<{
-  selectSource: [key: TabKey]
-}>()
+const emit = defineEmits<{ selectSource: [key: TabKey] }>()
+const metrics = computed(() => [
+  { key: 'total', label: 'dashboard.editorial.total', value: props.statValues[0], icon: statCards[0]!.icon },
+  { key: 'github', label: 'dashboard.editorial.github', value: props.statValues[1], icon: statCards[1]!.icon },
+  { key: 'new', label: 'dashboard.stats.newDocuments', value: props.visitorValues[2], icon: visitorCards[2]!.icon },
+  { key: 'visitors', label: 'dashboard.stats.todayVisitors', value: props.visitorValues[0], icon: visitorCards[0]!.icon },
+  { key: 'total-visitors', label: 'dashboard.stats.totalVisitors', value: props.visitorValues[1], icon: visitorCards[1]!.icon },
+])
 </script>
 
 <template>
-  <!-- 统计带：单条分段条（lg+）/ 迷你卡片网格（<lg） -->
-  <div v-if="loading" class="stat-strip shrink-0" aria-hidden="true">
-    <div v-for="i in 9" :key="i" class="stat-cell animate-pulse" />
-  </div>
-
-  <div v-else class="stat-strip shrink-0">
-    <template v-for="(card, index) in statCards" :key="card.key">
-      <button
-        v-if="isSourceStatCard(card.key)"
-        type="button"
-        class="stat-cell stat-cell--btn stagger-enter"
-        :class="{ 'stat-cell--active': activeTab === card.key }"
-        :style="{ animationDelay: (index * 0.05 + 0.05) + 's' }"
-        :aria-pressed="activeTab === card.key"
-        :aria-label="t('dashboard.sourceRanking', { source: t(`dashboard.stats.${card.labelKey}`) })"
-        @click="emit('selectSource', card.key)"
-      >
-        <span class="stat-cell-head">
-          <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
-          <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
-        </span>
-        <RollingNumber :value="statValues[index] ?? 0" class="stat-cell-num" :class="card.numColor" />
-      </button>
-      <div
-        v-else
-        class="stat-cell stat-cell--total stagger-enter"
-        :style="{ animationDelay: (index * 0.05 + 0.05) + 's' }"
-      >
-        <span class="stat-cell-head">
-          <span class="stat-cell-icon"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
-          <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
-        </span>
-        <RollingNumber :value="statValues[index] ?? 0" class="stat-cell-num" />
-      </div>
-    </template>
-    <div
-      v-for="(card, index) in visitorCards"
-      :key="card.key"
-      class="stat-cell stagger-enter"
-      :style="{ animationDelay: (index * 0.05 + 0.45) + 's' }"
-    >
-      <span class="stat-cell-head">
-        <span class="stat-cell-icon" :class="card.iconColor"><span class="flex h-3 w-3 items-center justify-center" v-html="card.icon" /></span>
-        <span class="stat-cell-label">{{ t(`dashboard.stats.${card.labelKey}`) }}</span>
+  <div class="stat-strip" :aria-busy="loading">
+    <component :is="card.key === 'github' ? 'button' : 'div'" v-for="card in metrics" :key="card.key"
+      class="stat-cell" :class="`stat-cell--${card.key}`"
+      :type="card.key === 'github' ? 'button' : undefined"
+      :aria-pressed="card.key === 'github' ? activeTab === 'github' : undefined"
+      @click="card.key === 'github' && emit('selectSource', 'github')">
+      <span class="stat-cell-icon" aria-hidden="true" v-html="card.icon" />
+      <span class="stat-cell-body"><span class="stat-cell-label">{{ t(card.label) }}</span>
+        <RollingNumber :value="card.value ?? 0" grouping class="stat-cell-num" />
       </span>
-      <RollingNumber :value="visitorValues[index] ?? 0" grouping class="stat-cell-num" :class="card.numColor" />
-    </div>
-    <RouterLink
-      :to="{ name: 'ui-library', query: { rank: 'new' } }"
-      class="stat-cell stat-cell--ui stagger-enter"
-      :aria-label="t('dashboard.stats.todayUiMaterials')"
-      style="animation-delay: 0.6s"
-    >
-      <span class="stat-cell-head">
-        <span class="stat-cell-icon stat-cell-ui-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <path d="M8 3v18M8 9h13" />
-          </svg>
-        </span>
-        <span class="stat-cell-label">{{ t('dashboard.stats.todayUiMaterials') }}</span>
+    </component>
+    <RouterLink :to="{ name: 'ui-library' }" class="stat-cell stat-cell--ui" :aria-label="t('dashboard.editorial.uiTotal')" :aria-busy="uiLoading">
+      <span class="stat-cell-icon stat-cell-icon--ui" aria-hidden="true"><span /><span /><span /><span /></span>
+      <span class="stat-cell-body"><span class="stat-cell-label">{{ t('dashboard.editorial.uiTotal') }}</span>
+        <span v-if="uiLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
+        <span v-else class="stat-cell-num">{{ uiCount === null ? '—' : uiCount.toLocaleString() }}</span>
       </span>
-      <span v-if="todayUiCountLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
-      <span v-else class="stat-cell-num stat-cell-ui-num">{{ todayUiCount.toLocaleString() }}</span>
     </RouterLink>
   </div>
 </template>
 
 <style scoped>
-/* 硬边统计带：小屏为迷你卡片网格，lg 起合并为单条分段条（变量由 .dashboard-page 提供） */
-.stat-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-@media (min-width: 640px) {
-  .stat-strip { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-}
-
-@media (min-width: 1024px) {
-  .stat-strip {
-    display: flex;
-    gap: 0;
-    border: 1px solid var(--ink);
-    border-radius: 5px;
-    background: var(--paper-light);
-    box-shadow: 3px 3px 0 var(--shadow-hard);
-    overflow: hidden;
-  }
-}
-
-.stat-cell {
-  display: flex;
-  min-width: 0;
-  height: 48px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 0 10px;
-  border: 1px solid var(--ink);
-  border-radius: 4px;
-  background: var(--paper-light);
-  box-shadow: 2px 2px 0 var(--shadow-hard);
-  text-align: left;
-}
-
-@media (min-width: 1024px) {
-  .stat-cell {
-    height: 48px;
-    flex: 1 1 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  .stat-cell + .stat-cell { border-left: 1px solid var(--ink); }
-}
-
-.stat-cell--btn { cursor: pointer; transition: background-color 0.15s ease; }
-.stat-cell--btn:hover { background: var(--acid-soft); }
-.stat-cell--ui { color: var(--ink); cursor: pointer; text-decoration: none; transition: background-color 0.15s ease; }
-.stat-cell--ui:hover { background: var(--acid-soft); }
-.stat-cell-ui-icon,
-.stat-cell-ui-num { color: var(--tone-mint); }
-.stat-cell-num--loading { width: 28px; height: 15px; border-radius: 3px; background: var(--paper-muted, #e7e9e4); animation: stat-pulse 1.2s ease-in-out infinite; }
-@keyframes stat-pulse { 50% { opacity: .45; } }
-
-.stat-cell--active,
-.stat-cell--active:hover { background: var(--acid); box-shadow: inset 0 -3px 0 var(--ink); }
-
-@media (max-width: 1023.98px) {
-  .stat-cell--active,
-  .stat-cell--active:hover { box-shadow: 2px 2px 0 var(--shadow-hard), inset 0 -3px 0 var(--ink); }
-}
-
-.stat-cell--active .stat-cell-num,
-.stat-cell--active .stat-cell-label,
-.stat-cell--active .stat-cell-icon { color: var(--projects-on-acid); }
-
-.stat-cell--total { background: var(--ink); }
-.stat-cell--total .stat-cell-num { color: var(--paper); }
-.stat-cell--total .stat-cell-label,
-.stat-cell--total .stat-cell-icon { color: var(--paper); opacity: 0.6; }
-
-.stat-cell-head {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  line-height: 1;
-}
-
-.stat-cell-icon { display: flex; flex-shrink: 0; align-items: center; }
-
-.stat-cell-label {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stat-cell-num {
-  font-size: 17px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-
-@media (max-width: 767px) {
-  .stat-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-  .stat-cell--btn { display: none; }
-  .stat-strip[aria-hidden='true'] .stat-cell:nth-child(n + 5) { display: none; }
-  .stat-cell-label { font-size: 11px; }
-  .stat-cell-head { gap: 4px; }
-  .stat-cell-icon { display: none; }
-}
-.stat-cell--btn:focus-visible,
-.stat-cell--ui:focus-visible { outline: 2px solid var(--ink); outline-offset: -4px; }
-.stat-cell--active:focus-visible { outline-color: var(--projects-on-acid); }
-.stat-cell:not(.stat-cell--active) .text-amber-600 { color: var(--tone-amber); }
-.stat-cell:not(.stat-cell--active) .text-orange-500 { color: var(--tone-orange); }
-.stat-cell .text-teal-600 { color: var(--tone-mint); }
-:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-blue-500, .text-blue-600) { color: var(--tone-blue); }
-:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-amber-500, .text-amber-600) { color: var(--tone-amber); }
-:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) :is(.text-rose-500, .text-rose-600) { color: var(--tone-coral); }
-:root[data-theme='dark'] .stat-cell:not(.stat-cell--active) .text-orange-500 { color: var(--tone-orange); }
-:root[data-theme='dark'] .stat-cell :is(.text-purple-500, .text-purple-600, .text-indigo-500, .text-indigo-600) { color: var(--tone-violet); }
-:root[data-theme='dark'] .stat-cell :is(.text-teal-500, .text-teal-600) { color: var(--tone-mint); }
+.stat-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.stat-cell { display: flex; align-items: center; gap: 8px; padding: 14px 10px; min-width: 0; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); text-align: left; color: var(--ink); }
+.stat-cell-icon { flex: 0 0 30px; width: 30px; height: 30px; padding: 7px; border-radius: 50%; background: var(--paper); }
+.stat-cell-icon :deep(svg) { width: 100%; height: 100%; }
+.stat-cell--github .stat-cell-icon, .stat-cell--ui .stat-cell-icon { background: var(--acid-soft); }
+.stat-cell--new .stat-cell-icon { color: var(--tone-mint); }
+.stat-cell--visitors .stat-cell-icon, .stat-cell--total-visitors .stat-cell-icon { color: var(--tone-violet); }
+.stat-cell-icon--ui { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.stat-cell-icon--ui span { border: 1px solid currentColor; border-radius: 1px; }
+.stat-cell-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stat-cell-label { font-size: 10px; color: var(--muted); line-height: 1.3; }
+.stat-cell-num { font-size: clamp(17px, 1.4vw, 23px); font-weight: 800; line-height: 1.2; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.stat-cell--github:hover, .stat-cell--ui:hover { border-color: var(--muted); background: var(--acid-soft); }
+.stat-cell--github:focus-visible, .stat-cell--ui:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.stat-cell-num--loading { width: 35px; height: 20px; border-radius: 4px; background: var(--rule); }
+@media (min-width: 1200px) and (max-width: 1799px) { .stat-cell { gap: 6px; padding: 12px 9px; } .stat-cell-icon { display: none; } }
+@media (max-width: 639px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat-cell { padding: 12px 8px; } .stat-cell-icon { display: none; } }
 </style>
