@@ -1,4 +1,6 @@
 self-hosted-runner:
   labels:
     - aigcnews-ci
+    - aigcnews-ci-ephemeral
+    - aigcnews-control
     - aigcnews-production

@@ -19,9 +19,10 @@ capacity, with a conservative 1 CPU / 3 GiB minimum per general-purpose job.
 One, two or three new jobs can be admitted into an empty pool. This minimum is
 not a measured guarantee for every test suite. Existing reservations are not
 shrunk under running processes. Job-class profiling and reserved control-plane
-capacity are not implemented by this change. Legacy workflow labels also still
-need migration; this change does not silently route privileged control jobs to
-general-purpose runners.
+capacity are not implemented by this change. Workflow routing uses ephemeral runners for PR admission, tests and contract
+evaluations, with separate trusted control and production runners. Before
+activating these labels, drain legacy CI and establish the control runner;
+privileged control jobs must not run on general-purpose PR runners.
 
 `~/.config/aigcnews/ci-paused` is a persistent admission pause. It is checked
 before runner cleanup or creation. Stopping the service alone is not a durable
@@ -86,3 +87,21 @@ for PR #66 in the observing task's history (call
 `call_bbzGzhsUOB4mpK4XPP8nxR18`). This means #66 was an unsuitable cross-task
 acceptance target, not proof that the transport routed to a different task.
 No legacy receipt has been minted or automatic wake enabled on that basis.
+
+### Temporary queue-label compatibility
+
+During migration, the coordinator may set
+`AIGCNEWS_RUNNER_COMPAT_LABELS=aigcnews-ci` in the autoscaler environment.
+The optional comma-separated labels augment `AIGCNEWS_RUNNER_LABEL` (default:
+`aigcnews-ci-ephemeral`). Queued jobs matching either the primary label or an
+alias are counted once by job ID, case-insensitively. Each temporary JIT runner
+registers all supported labels so it can serve either workflow generation.
+The default has no aliases. Resource admission, quotas, singleton locking and
+LXD isolation are unchanged; aliases never create a separate resource pool.
+
+Keep the small trusted control runner control-only; do not give it the classic
+CI label. Remove `AIGCNEWS_RUNNER_COMPAT_LABELS` after all workflows have migrated
+and remaining classic-label runs, including queued older runs, have drained.
+Removing the setting affects newly created runners; existing one-job runners
+retain their registration until completion. Runtime changes belong to the
+coordinator and are separate from installing this code.
