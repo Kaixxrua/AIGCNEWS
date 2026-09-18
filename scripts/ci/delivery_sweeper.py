@@ -27,6 +27,10 @@ class SweepError(RuntimeError):
     pass
 
 
+class UpdateRefused(SweepError):
+    """A definitively rejected update must not starve unrelated PRs."""
+
+
 @dataclass(frozen=True)
 class Result:
     pr: int
@@ -82,6 +86,8 @@ class ApiClient:
                 break
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode(errors="replace")[:1000]
+                if method == "PUT" and path.endswith("/update-branch") and exc.code == 422:
+                    raise UpdateRefused(f"Branch update rejected (422): {detail}") from None
                 if (
                     method != "GET"
                     or exc.code not in {429, 500, 502, 503, 504}
@@ -228,7 +234,12 @@ def reconcile(
                     Result(number, head, "hold", "successful baseline is stale", run_id)
                 )
                 continue
-            if apply and not client.prepare_merge(number, head):
+            try:
+                prepared = not apply or client.prepare_merge(number, head)
+            except UpdateRefused as exc:
+                results.append(Result(number, head, "hold", str(exc), run_id))
+                continue
+            if not prepared:
                 results.append(
                     Result(
                         number,

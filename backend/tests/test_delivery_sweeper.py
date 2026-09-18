@@ -228,3 +228,31 @@ def test_api_checks_current_main_before_landing():
     client.request = request
     assert not client.prepare_merge(7, HEAD)
     assert calls[-1] == ("PUT", "/pulls/7/update-branch", {"expected_head_sha": HEAD})
+
+
+def test_conflicting_pr_does_not_starve_later_eligible_pr():
+    client = FakeClient([pull(7), pull(8)], [run(7), run(8)])
+
+    def prepare(number, head):
+        if number == 7:
+            raise sweeper.UpdateRefused("Branch update rejected (422)")
+        return True
+
+    client.prepare_merge = prepare
+    results = sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
+    assert [result.action for result in results] == ["hold", "merged"]
+    assert client.merged[0][0] == 8
+
+
+def test_ambiguous_update_failure_still_stops_landing():
+    import pytest
+
+    client = FakeClient([pull(7), pull(8)], [run(7), run(8)])
+
+    def prepare(number, head):
+        raise sweeper.SweepError("network outcome unknown")
+
+    client.prepare_merge = prepare
+    with pytest.raises(sweeper.SweepError):
+        sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
+    assert not client.merged
