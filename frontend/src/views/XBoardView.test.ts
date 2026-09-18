@@ -27,6 +27,15 @@ vi.mock('@/composables/useXBoardController', async () => {
         const retweetedBy = typeof tweet.retweeted_by === 'string' ? tweet.retweeted_by.toLowerCase() : ''
         return retweetedBy || tweet.url?.match(/x\.com\/([^/]+)\/status/)?.[1]?.toLowerCase() || ''
       }))).filter(Boolean).sort()),
+    availableAccountOptions: computed(() => box.availableAccounts.value.map((handle: string) => {
+      const doc = box.docs.value.find((tweet: TopDoc) => {
+        const owner = typeof tweet.retweeted_by === 'string'
+          ? tweet.retweeted_by.toLowerCase()
+          : tweet.url?.match(/x\.com\/([^/]+)\/status/)?.[1]?.toLowerCase()
+        return owner === handle
+      })
+      return { handle, displayName: doc?.followed_account_name || doc?.author_name || `@${handle}` }
+    })),
     availableDates: ref<string[]>([]),
     clearSelection: vi.fn(() => { box.selectedIds.value = new Set() }),
     currentPage: computed(() => clampPage(page.value, box.totalPages.value)),
@@ -163,13 +172,16 @@ const nextPageButton = (wrapper: VueWrapper) => {
 describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
   it('默认关注全部账号，并可按账号即时筛选推文', async () => {
     const tweets = makeTweets(3)
+    tweets[0]!.author_name = 'Alice Zhang'
     tweets[1]!.url = 'https://x.com/openai/status/1001'
+    tweets[1]!.followed_account_name = 'OpenAI'
     tweets[2]!.url = 'https://x.com/anthropic/status/1002'
+    tweets[2]!.author_name = 'Anthropic'
     controller().docs.value = tweets
     const wrapper = await mountView()
 
     const chips = wrapper.findAll('.xboard-account-chip')
-    expect(chips.map((chip) => chip.text())).toEqual(['@alice', '@anthropic', '@openai'])
+    expect(chips.map((chip) => chip.text())).toEqual(['Alice Zhang', 'Anthropic', 'OpenAI'])
     expect(chips.every((chip) => (chip.find('input').element as HTMLInputElement).checked)).toBe(true)
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(3)
 

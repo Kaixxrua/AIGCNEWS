@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -19,6 +20,7 @@ from backend.app.api.dependencies import (
     get_document_repository,
     get_document_vector_repository,
     get_github_hot_board_reader,
+    get_optional_x_watch_account_repository,
     get_project_catalog_query_service,
     get_rank_snapshot_repository,
     get_user_account_repository,
@@ -39,6 +41,7 @@ from backend.app.repositories.site_visit_repository import (
     SiteVisitStatsReader,
 )
 from backend.app.repositories.user_account_repository import UserStatisticsReader
+from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.dashboard import policy
 from backend.app.services.dashboard.query_service import (
     DashboardQueryService,
@@ -365,6 +368,35 @@ def _parse_x_recent_cursor(value: str) -> Optional[tuple[str, float, str]]:
     return payload[1], score_value, payload[3]
 
 
+def _x_followed_account_handle(doc: dict[str, Any]) -> str:
+    """Resolve the watchlist handle that caused an X document to be collected."""
+    retweeted_by = str(doc.get("retweeted_by") or "").strip().lstrip("@").lower()
+    if retweeted_by:
+        return retweeted_by
+    url = str(doc.get("url") or "")
+    match = re.match(r"^(?:https?://)?(?:www\.)?(?:x|twitter)\.com/([^/?\s]+)/status/", url)
+    return match.group(1).lower() if match else ""
+
+
+def _with_x_followed_account_names(
+    docs: list[dict[str, Any]],
+    accounts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    labels = {
+        str(account.get("screen_name") or "").strip().lstrip("@").lower():
+        str(account.get("display_name") or "").strip()
+        for account in accounts
+        if str(account.get("screen_name") or "").strip()
+    }
+    return [
+        {
+            **doc,
+            "followed_account_name": labels.get(_x_followed_account_handle(doc), ""),
+        }
+        for doc in docs
+    ]
+
+
 @router.get("/dashboard/x/recent")
 async def get_x_recent(
     hours: int = Query(default=24, ge=1, le=72),
@@ -375,6 +407,9 @@ async def get_x_recent(
         description="keyset 续页游标（上一页响应的 next_cursor），不传返回第一页",
     ),
     documents: DocumentRecentReader = Depends(get_document_repository),
+    watch_accounts: XWatchAccountRepository | None = Depends(
+        get_optional_x_watch_account_repository
+    ),
 ):
     """滚动 N 小时（默认 24）发布的 X 推文，按发布时间新到旧；days_back 整体回移窗口。
 
@@ -392,7 +427,7 @@ async def get_x_recent(
     end = datetime.now(timezone.utc) - timedelta(days=days_back)
     cutoff = end - timedelta(hours=hours)
     keyset_after = _parse_x_recent_cursor(cursor) if cursor else None
-    docs = await asyncio.to_thread(
+    docs_task = asyncio.to_thread(
         lambda: documents.list_recent_by_source(
             "x",
             since_iso=cutoff.isoformat(),
@@ -401,7 +436,14 @@ async def get_x_recent(
             keyset_after=keyset_after,
         )
     )
+    accounts_task = (
+        asyncio.to_thread(watch_accounts.list_x_watch_accounts)
+        if watch_accounts is not None
+        else asyncio.sleep(0, result=[])
+    )
+    docs, account_rows = await asyncio.gather(docs_task, accounts_task)
     items = [doc for doc in docs if _published_at_within(doc.get("published_at"), cutoff, end)]
+    items = _with_x_followed_account_names(items, account_rows)
     has_more = len(items) >= limit
     next_cursor = _x_recent_cursor_from_doc(items[-1]) if has_more and items else None
     return {
