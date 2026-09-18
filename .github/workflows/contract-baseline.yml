@@ -17,7 +17,7 @@ concurrency:
 jobs:
   backend-tests:
     name: Backend tests
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out repository
@@ -62,7 +62,7 @@ jobs:
 
   postgres-integration:
     name: PostgreSQL 16 integration
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
@@ -151,7 +151,7 @@ jobs:
 
   mcp-go:
     name: MCP Go build and tests
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -186,7 +186,7 @@ jobs:
 
   compose-smoke:
     name: Compose and image smoke
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       POSTGRES_DATABASE: ci_placeholder
@@ -231,7 +231,7 @@ jobs:
 
   frontend-build:
     name: Frontend build
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
