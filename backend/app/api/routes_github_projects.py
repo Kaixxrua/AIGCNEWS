@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 
 from backend.app.api.dependencies import (
     get_personal_projects_service,
@@ -48,6 +48,35 @@ from backend.app.services.project_catalog.query_service import (
 )
 
 router = APIRouter()
+
+
+def get_github_logo_repository():
+    from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
+
+    return PostgresGitHubLogoRepository()
+
+
+@router.get("/projects/github/logo/{owner}/{repo}")
+def github_project_logo(
+    owner: str, repo: str, request: Request,
+    repository: Any = Depends(get_github_logo_repository),
+) -> Response:
+    import re
+
+    if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", f"{owner}/{repo}"):
+        raise HTTPException(404, "Logo not found")
+    row = repository.get(f"{owner}/{repo}")
+    if not row:
+        raise HTTPException(404, "Logo not found")
+    etag = f'"{row["sha256"]}"'
+    headers = {
+        "ETag": etag, "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; style-src 'none'; sandbox",
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=bytes(row["content"]), media_type=row["content_type"], headers=headers)
 
 
 def _membership_inputs(user: dict[str, Any]) -> dict[str, str]:

@@ -2,13 +2,14 @@
 import { computed, ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
+import ProjectLogo from './ProjectLogo.vue'
+import ProjectHeat from './ProjectHeat.vue'
 import { ExternalLink, Pencil, Sparkles, Star, Trash2 } from 'lucide-vue-next'
 import type { AppLocale } from '@/i18n'
 import type { GitHubProjectItem, GitHubProjectSort, ProjectScope } from '@/services/projects/projectApi'
 import {
   projectDescription,
   favoriteButtonLabelKey,
-  formattedProjectHotScore,
   formatProjectCount,
   formatProjectLastPush,
   formatProjectShortDate,
@@ -24,7 +25,6 @@ import {
   projectSourceBadgeKey,
   projectUrl,
   recommendButtonLabelKey,
-  shouldShowProjectHotScore,
   websiteLogoInitial,
   type ProjectChip,
 } from '@/features/projects/projectPresentation'
@@ -93,6 +93,7 @@ const description = computed(() => projectDescription(
     <div class="project-card__body">
       <header class="project-card__header">
         <div class="project-card__identity">
+          <ProjectLogo v-if="!isWebsite(repo)" class="project-card__github-logo" :logo="repo.image_url" :repository-url="projectUrl(repo)" :name="projectName(repo)" />
           <div v-if="isWebsite(repo)" class="project-card__logo-shell">
             <span class="project-card__logo-placeholder" aria-hidden="true">
               {{ websiteLogoInitial(repo) }}
@@ -186,9 +187,7 @@ const description = computed(() => projectDescription(
             </svg>
             {{ t('projects.todayGrowth', { count: formatProjectCount(projectDailyGrowth(repo), locale as AppLocale) }) }}
           </span>
-          <span v-if="shouldShowProjectHotScore(repo, sort, scope)" :title="t('projects.hotScoreTitle')">
-            {{ t('projects.hotScore', { score: formattedProjectHotScore(repo) }) }}
-          </span>
+          <ProjectHeat :score="repo.hot_score" :available="repo.daily_growth_available" />
           <span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="6" cy="5" r="2" />
@@ -298,6 +297,7 @@ const description = computed(() => projectDescription(
 </template>
 
 <style scoped>
+.project-card__github-logo { width: 42px; height: 42px; flex-basis: 42px; }
 .project-card { position: relative; display: flex; flex-direction: column; min-width: 0; margin-right: 40px; border-radius: 7px; }
 .project-card__body { position: relative; display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; min-height: 280px; padding: 18px; border: 1px solid var(--projects-accent); border-radius: 7px; background: var(--projects-paper-light); box-shadow: 3px 3px 0 var(--shadow-hard); transition: box-shadow 160ms ease, transform 160ms ease; }
 .project-card:hover .project-card__body, .project-card:focus-within .project-card__body { box-shadow: 4px 4px 0 var(--shadow-hard); }

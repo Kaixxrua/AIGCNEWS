@@ -231,6 +231,7 @@ class PostgresGitHubProjectIngestionRepository:
     )
     # 单行子表：canonical 已有行则弃用旧行副本，否则整体迁移
     _SINGLETON_CHILD_TABLES = (
+        "github_project_logos",
         "github_repo_recommendations",
         "github_project_semantic_sources",
     )
