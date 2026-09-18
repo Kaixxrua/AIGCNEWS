@@ -1,0 +1,19 @@
+[Unit]
+Description=AIGCNEWS delegated shared CI resource parent
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 %h/.local/lib/aigcnews-ci-autoscaler/runner_pool_owner.py
+Delegate=cpu memory pids
+DelegateSubgroup=supervisor
+CPUQuota=600%
+MemoryHigh=11596411699
+MemoryMax=12G
+MemorySwapMax=0
+KillMode=mixed
+TimeoutStopSec=infinity
+Restart=no
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,73 @@
+[
+  {
+    "existing_reservations": {
+      "cpu": 2.1399999999999997,
+      "memory": 4581298449
+    }
+  },
+  {
+    "owner_verified": [
+      [
+        "ed0116e9017c492792615b37bc8cc34c",
+        3432944,
+        1943703
+      ],
+      134217728
+    ]
+  },
+  {
+    "limits": [
+      1943703,
+      "600000",
+      "100000",
+      12884901888
+    ]
+  },
+  {
+    "started": "aigcnews-pool-accept-pr66"
+  },
+  {
+    "payload_cgroup": "0::/user.slice/user-1000.slice/user@1000.service/app.slice/aigcnews-pool-accept-pr66.service/aigcnews-pool-accept-pr66/payload/init.scope\n"
+  },
+  {
+    "monitor_cmdline": "[lxc monitor] /var/snap/lxd/common/lxd/containers aigcnews-pool-accept-pr66 "
+  },
+  {
+    "docker_info": "2 systemd"
+  },
+  {
+    "nested_pid": "909"
+  },
+  {
+    "parent_during_load": {
+      "cpu.stat": "usage_usec 11234836\nuser_usec 6909562\nsystem_usec 4325273\ncore_sched.force_idle_usec 0\nnr_periods 449\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+      "memory.current": "538365952",
+      "memory.events": "low 0\nhigh 0\nmax 905\noom 0\noom_kill 0\noom_group_kill 0",
+      "memory.swap.current": "0"
+    }
+  },
+  {
+    "drain_state": "deactivating"
+  },
+  {
+    "payload_survives_stop": "Running"
+  },
+  {
+    "docker_exit": "137"
+  },
+  {
+    "docker_oom": "true"
+  },
+  {
+    "final_peak": "536875008"
+  },
+  {
+    "final_events": "low 0\nhigh 0\nmax 1618\noom 1\noom_kill 1\noom_group_kill 0"
+  },
+  {
+    "canary_removed": true
+  },
+  {
+    "cleanup_error": "systemctl --user stop aigcnews-pool-accept-pr66.service: Failed to stop aigcnews-pool-accept-pr66.service: Unit aigcnews-pool-accept-pr66.service not loaded.\n"
+  }
+]

@@ -65,7 +65,8 @@ def reservations(items):
     names = []
     for item in items:
         name = item["name"]
-        if not (name == "aigcnews-ci" or name.startswith("aigcnews-ci-")):
+        if not (name == "aigcnews-ci" or name.startswith("aigcnews-ci-")
+                or item["expanded_config"].get("user.aigcnews.ci") == "true"):
             continue
         if item["status"].upper() == "STOPPED":
             continue

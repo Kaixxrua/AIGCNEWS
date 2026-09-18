@@ -23,6 +23,11 @@ fi
 mkdir -p "$install_root" "$unit_root"
 install -m 0755 "$root/scripts/ci/ephemeral_runner_autoscaler.py" "$install_root/autoscaler.py"
 install -m 0644 "$root/scripts/ci/runner_resource_budget.py" "$install_root/runner_resource_budget.py"
+install -m 0644 "$root/scripts/ci/shared_runner_pool.py" "$install_root/shared_runner_pool.py"
+install -m 0644 "$root/scripts/ci/runner_pool_owner.py" "$install_root/runner_pool_owner.py"
+install -m 0644 "$root/scripts/ci/runner_workloads.py" "$install_root/runner_workloads.py"
+install -m 0644 "$root/scripts/ci/runner_pool_receipts.py" "$install_root/runner_pool_receipts.py"
+# The coordinator installs/starts aigcnews-ci-pool.service separately after review.
 cat > "$unit_root/aigcnews-ci-autoscaler.service" <<UNIT
 [Unit]
 Description=AIGCNEWS ephemeral CI runner autoscaler
