@@ -58,6 +58,8 @@ const messages = {
       tokenRecovery: '旧版 Token 无法自动恢复，请重新生成。', tokenRotate: '重新生成 Token',
       commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。',
       tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变。',
+      copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '提示词同样包含 Token。',
+      agentSetupPrompt: '请配置 dsh。安装方式：{method}\n配置命令：\n{command}',
       vipHint: 'VIP 会员享更高调用次数。', vipCta: '升级 VIP',
       memberStatus: '当前账号为 VIP 会员。',
     },
@@ -210,6 +212,23 @@ describe('DshSetupWizard', () => {
     expect(copied.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
     expect(copied).toContain("mcpToken: 'aigc_mcp_demo'")
     expect(copied).toContain('> ~/.dsh/profiles/web/cordis.patch.yml')
+  })
+
+  it('copies a natural-language Agent prompt with the selected install command', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_agent'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('复制给 Agent 的配置提示词'))!.trigger('click')
+    await flushPromises()
+
+    expect(copy).toHaveBeenCalledTimes(1)
+    const copied = String(copy.mock.calls[0]![0])
+    expect(copied).toContain('请配置 dsh。')
+    expect(copied).toContain('安装方式：npm 最新版')
+    expect(copied).toContain('dsh plugin --profile web add dsh-aigc-radar')
+    expect(copied).toContain("mcpToken: 'aigc_mcp_agent'")
   })
 
   it('regenerates the token in place from the ready state', async () => {
