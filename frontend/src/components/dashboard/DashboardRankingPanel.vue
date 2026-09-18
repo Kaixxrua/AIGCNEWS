@@ -3,7 +3,9 @@ import { computed } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import DashboardTweetPreview from './DashboardTweetPreview.vue'
-import { CheckCircle2, Zap } from 'lucide-vue-next'
+import RankingAvatar from './RankingAvatar.vue'
+import ProjectHeat from '@/components/projects/ProjectHeat.vue'
+import { ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
 import {
   TABS,
   aiScoreDisplay,
@@ -60,16 +62,14 @@ const boardDateHint = computed(() => {
           <component :is="tab.icon" class="h-3.5 w-3.5" />{{ t(`dashboard.stats.${tab.labelKey}`) }}
         </button>
       </div>
-      <div v-if="boardDateHint || (tabStatus && tabStatusHint)" class="ranking-source-status flex items-center gap-2">
+      <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
-        <span v-if="tabStatus && tabStatusHint" class="flex items-center gap-1 text-2xs" :class="tabStatus.isFinalized ? 'text-emerald-600' : 'text-amber-600'" role="status">
-          <CheckCircle2 v-if="tabStatus.isFinalized" class="h-3 w-3 shrink-0" /><Zap v-else class="h-3 w-3 shrink-0" :class="tabStatus.isEmbargoed ? '' : 'animate-pulse'" />{{ tabStatusHint }}
+        <span class="ranking-live-status" role="status" :title="tabStatusHint || undefined">
+          <CheckCircle2 v-if="tabStatus?.isFinalized ?? isFinalized" :size="12" /><span v-else class="live-dot" />
+          {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft') }}
         </span>
       </div>
     </div>
-
-    <div v-if="!isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1 text-xs" style="border-bottom: 1px solid var(--notice-warn-border); background: var(--notice-warn-bg)"><Zap class="h-3.5 w-3.5 animate-pulse text-amber-500"/><span class="text-stone-600">{{ t('dashboard.liveDraft') }}</span></div>
-    <div v-else-if="isFinalized && !tabLoading" class="flex items-center gap-2 px-4 py-1 text-xs" style="border-bottom: 1px solid var(--notice-ok-border); background: var(--notice-ok-bg)"><CheckCircle2 class="h-3.5 w-3.5 text-emerald-500"/><span class="text-stone-400">{{ t('dashboard.finalized') }}</span></div>
 
     <div class="ranking-list flex-1 overflow-y-auto">
       <div v-if="tabLoading" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
@@ -77,17 +77,18 @@ const boardDateHint = computed(() => {
         <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center"><svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
       </div>
-      <ol v-else>
-        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="idx % 2 === 0 ? '' : 'bg-stone-50/50'" style="border: none">
+      <ol v-else :class="{ 'editorial-list': !(isMobile && activeTab === 'x') }">
+        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0 }">
           <DashboardTweetPreview v-if="isMobile && activeTab === 'x'" :doc="doc" :rank="idx + 1" />
           <a v-else :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="ranking-link flex items-start gap-2.5 px-4 py-1.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
-            <span class="ranking-number mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ idx + 1 }}</span>
-            <div class="min-w-0 flex-1">
+            <span class="ranking-number mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ String(idx + 1).padStart(2, '0') }}</span>
+            <RankingAvatar :doc="doc" />
+            <div class="ranking-body min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="ranking-title min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="ranking-badges flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border ranking-source-badge" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
               <p v-if="hasDistinctSummary(doc)" class="ranking-summary">{{ doc.summary }}</p>
-              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span class="flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc).text }}</span><span v-if="doc.language" class="badge bg-card text-stone-500 border border-stone-200">{{ doc.language }}</span><span v-for="tag in getModuleTags(doc)" :key="tag" class="badge bg-card text-stone-500 border border-stone-200">{{ tag }}</span></div>
+              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span><span v-if="doc.language" class="badge bg-card text-stone-500 border border-stone-200">{{ doc.language }}</span><span v-for="tag in getModuleTags(doc)" :key="tag" class="badge bg-card text-stone-500 border border-stone-200">{{ tag }}</span></div>
             </div>
-            <svg v-if="doc.url" class="mt-1 h-3.5 w-3.5 shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            <ArrowUpRight v-if="doc.url" class="ranking-arrow" :size="18" />
           </a>
         </li>
       </ol>
@@ -96,6 +97,8 @@ const boardDateHint = computed(() => {
 </template>
 
 <style scoped>
+.ranking-row--featured .ranking-heat { position: absolute; top: 15px; right: 44px; }
+.ranking-row--lead .ranking-heat { color: #cefc50; }
 .ranking-summary { display: none; }
 .tab-active { border: 1px solid var(--ink); border-radius: 4px; color: var(--projects-on-acid); background: var(--acid); box-shadow: none; }
 .tab-inactive { border: 1px solid transparent; border-radius: 4px; color: var(--ink); }
@@ -115,7 +118,7 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
   .ranking-link { padding-block: 4px; }
   .ranking-number { margin-top: 0; font-variant-numeric: tabular-nums; }
   .ranking-meta { column-gap: 8px; }
-  .ranking-meta > span:first-child { color: var(--ink-secondary); }
+  .ranking-score { color: var(--ink-secondary); }
 }
 
 @media (max-width: 1023px) {
@@ -133,4 +136,104 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
 .ranking-tabs button { min-height: 32px; }
 .ranking-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (max-width: 1023px) { .ranking-tabs button { min-height: 44px; } }
+
+/* Editorial cards share the same ordered list and links as compact rows. */
+.dashboard-ranking-panel { flex: none; overflow: visible; padding: 12px; }
+.ranking-toolbar { padding: 0 0 12px; border-bottom: 0 !important; }
+.ranking-tabs { gap: 6px; }
+.ranking-tabs button { border-radius: 9px; padding: 9px 16px; min-height: 38px; }
+.tab-active { border-color: transparent; box-shadow: none; }
+.tab-inactive { border-color: var(--rule); }
+.ranking-list { overflow: visible; flex: none; }
+.editorial-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 12px; }
+.editorial-list > .ranking-row { min-width: 0; border: 1px solid var(--rule) !important; border-radius: 9px; background: var(--paper-light); overflow: hidden; }
+.editorial-list > .ranking-row:not(.ranking-row--featured) { grid-column: 1 / -1; }
+.editorial-list .ranking-link { position: relative; align-items: center; gap: 12px; padding: 10px 12px; min-height: 52px; height: 100%; }
+.editorial-list .ranking-number { flex: 0 0 24px; font-size: 14px; font-weight: 500; background: transparent; color: var(--muted); }
+.editorial-list .ranking-title { font-size: 13px; line-height: 1.5; font-weight: 700; overflow-wrap: anywhere; }
+.editorial-list .ranking-summary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 1.65; margin: 4px 0; }
+.editorial-list .ranking-meta { gap: 6px; }
+.editorial-list .ranking-score { font-size: 12px; color: inherit; }
+.editorial-list .ranking-source-badge { display: none; }
+.editorial-list .ranking-badges { margin-left: 0; }
+.editorial-list .ranking-link > svg { opacity: 1; color: var(--muted); margin: 0; width: 14px; height: 14px; }
+.editorial-list .ranking-row--featured .ranking-link { min-height: 170px; padding: 48px 14px 16px; align-items: start; gap: 12px; }
+.editorial-list .ranking-row--featured .ranking-number { position: absolute; left: 16px; top: 15px; font-size: 20px; font-weight: 750; color: var(--ink); }
+.editorial-list .ranking-row--featured .ranking-link > svg { position: absolute; right: 16px; top: 17px; width: 18px; height: 18px; }
+.editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: 58px; height: 58px; flex-basis: 58px; font-size: 22px; }
+.editorial-list .ranking-row--featured .ranking-title { -webkit-line-clamp: 2; font-size: 14px; }
+.editorial-list .ranking-row--featured .ranking-summary { -webkit-line-clamp: 2; margin: 7px 0 10px; }
+.editorial-list > .ranking-row--lead { background: radial-gradient(ellipse at top left, #293c2b, transparent 70%), #131916; color: #f4f5ed; border-color: #19261b !important; }
+.editorial-list .ranking-row--lead .ranking-title { color: #f4f5ed; }
+.editorial-list .ranking-row--lead .ranking-summary { color: #bbc8b8; }
+.editorial-list .ranking-row--lead .ranking-number, .editorial-list .ranking-row--lead .ranking-link > svg { color: #d6fb53; }
+.editorial-list .ranking-row--lead :deep(.badge) { background: #ffffff12; color: #d5dfd2; border-color: #ffffff0a; }
+.editorial-list .ranking-row--lead .ranking-link:hover, .editorial-list .ranking-row--lead .ranking-link:focus-visible { background: #ffffff08; color: #f4f5ed; }
+.editorial-list .ranking-row--lead .ranking-link:focus-visible { outline-color: #d6fb53; }
+@media (min-width: 1500px) {
+  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { display: grid; grid-template-columns: minmax(210px, 1fr) minmax(180px, 1.2fr) 190px; align-items: center; gap: 16px; }
+  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-summary { margin: 0; }
+  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta { max-width: 220px; justify-content: flex-end; }
+}
+@media (min-width: 900px) and (max-width: 1249px) {
+  .editorial-list .ranking-row--featured .ranking-link { display: block; padding: 42px 12px 14px; }
+  .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: 42px; height: 42px; margin-bottom: 10px; }
+}
+@media (max-width: 639px) {
+  .editorial-list { grid-template-columns: minmax(0, 1fr); }
+  .editorial-list .ranking-row--featured .ranking-link { min-height: 160px; }
+  .editorial-list .ranking-title { font-size: 14px; }
+  .editorial-list .ranking-link { gap: 9px; }
+  .ranking-tabs button { padding: 9px; min-height: 44px; }
+  .ranking-source-status { font-size: 11px; }
+}
+
+/* Reference geometry: 164px feature cards, contiguous 52px compact rows. */
+.dashboard-ranking-panel { padding: 11px 15px 16px; }
+.ranking-toolbar { min-height: 52px; padding: 0 5px 13px 12px; }
+.ranking-tabs { gap: 5px; }
+.ranking-tabs button { min-height: 39px; min-width: 94px; justify-content: center; padding: 9px 18px; border-radius: 12px; font-size: 14px; }
+.ranking-live-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.live-dot { width: 8px; height: 8px; border: 2px solid #baf342; background: #293511; border-radius: 50%; }
+.editorial-list { column-gap: 10px; row-gap: 0; padding-top: 0; }
+.editorial-list > .ranking-row:not(.ranking-row--featured) { margin-top: -1px; }
+.editorial-list > .ranking-row:nth-child(4) { margin-top: 14px; }
+.editorial-list .ranking-link { gap: 16px; padding: 8px 16px; color: var(--ink); }
+.editorial-list .ranking-number { flex-basis: 32px; font-size: 17px; font-weight: 400; }
+.editorial-list .ranking-title { font-size: 14px; font-weight: 650; line-height: 1.4; }
+.editorial-list .ranking-summary { font-size: 13px; }
+.editorial-list .ranking-score { font-size: 14px !important; white-space: nowrap; }
+.editorial-list .ranking-score svg { width: 16px; height: 16px; }
+:deep(.badge) { border: 0; border-radius: 5px; background: #f0f0ef; color: #3e424a; padding: 2px 9px; font-size: 11px; line-height: 18px; }
+.editorial-list .ranking-row--featured .ranking-link { height: 163px; min-height: 163px; padding: 40px 16px 14px; align-items: center; gap: 17px; }
+.editorial-list .ranking-row--featured .ranking-number { left: 15px; top: 15px; font-size: 22px; font-weight: 650; }
+.editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: 92px; height: 92px; flex-basis: 92px; font-size: 30px; background: #f0f0ed; }
+.editorial-list .ranking-row--featured .ranking-title { -webkit-line-clamp: 1; font-size: 16px; font-weight: 700; }
+.editorial-list .ranking-row--featured .ranking-summary { margin: 7px 0 12px; font-size: 14px; line-height: 1.5; }
+.editorial-list .ranking-row--featured .ranking-score { font-size: 15px !important; margin-right: 8px; }
+.editorial-list > .ranking-row--lead { background: radial-gradient(ellipse at top left, #202622, transparent 70%), #111614; }
+.editorial-list .ranking-row--lead .ranking-link { color: #f4f5ed; }
+.editorial-list .ranking-row--lead .ranking-summary { color: #dedfdc; }
+@media (min-width: 1500px) {
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { grid-template-columns: minmax(210px, 1fr) minmax(230px, 1.12fr) 32%; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta { flex-wrap: nowrap; max-width: none; justify-content: flex-start; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-score { order: 1; margin-left: auto; padding-left: 10px; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-title { white-space: nowrap; display: block; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (min-width: 900px) and (max-width: 1499px) {
+ .ranking-tabs button { min-width: 65px; padding-inline: 10px; }
+ .ranking-live-status { font-size: 10px; }
+ .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: 56px; height: 56px; flex-basis: 56px; }
+ .editorial-list .ranking-row--featured .ranking-link { display: flex; gap: 10px; padding-inline: 12px; }
+ .editorial-list .ranking-row--featured .ranking-title { font-size: 14px; }
+ .editorial-list .ranking-row--featured .ranking-summary { font-size: 12px; }
+}
+@media (max-width: 767px) {
+ .ranking-toolbar { padding-inline: 0; }
+ .ranking-tabs button { min-width: 0; min-height: 44px; padding: 9px; }
+ .editorial-list { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
+ .editorial-list .ranking-row--featured .ranking-link { height: auto; min-height: 164px; }
+ .editorial-list .ranking-link { padding-inline: 10px; gap: 10px; }
+ .editorial-list .ranking-row:nth-child(4) { margin-top: 0; }
+}
 </style>

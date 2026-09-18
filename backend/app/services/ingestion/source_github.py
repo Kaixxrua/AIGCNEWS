@@ -110,6 +110,7 @@ class GitHubReadmeSnapshot:
     error: str = ""
     rate_limit_remaining: int | None = None
     rate_limit_reset: str = ""
+    logo_candidates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -182,12 +183,16 @@ def fetch_github_readme_snapshot(
         if not content or payload.get("encoding") != "base64":
             return GitHubReadmeSnapshot(status="failed", error="README content is not base64")
         decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
+        from backend.app.services.ingestion.github_project_logos import discover_logos
+
+        logos = discover_logos(decoded, str(payload.get("download_url") or ""))
         cleaned = _clean_readme_text(decoded)[: max(1, int(max_chars))]
         return GitHubReadmeSnapshot(
             status="succeeded",
             text=cleaned,
             etag=resp.headers.get("etag", ""),
             sha256=hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
+            logo_candidates=logos,
             rate_limit_remaining=remaining,
             rate_limit_reset=rate_limit_reset,
         )
@@ -623,5 +628,4 @@ def fetch_github_candidate_repos(limit: int = 60) -> List[dict]:
 
     logger.info("[GitHub][Candidates] 最终返回 %d 个候选仓库。", len(parsed))
     return parsed
-
 

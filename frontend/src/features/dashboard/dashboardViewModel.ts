@@ -36,6 +36,9 @@ export interface TopDoc {
   language?: string
   feed_name?: string
   ai_score?: number
+  image_url?: string | null
+  hot_score?: number | null
+  daily_growth_available?: boolean
   ai_reason?: string
   likes?: number
   downloads?: number

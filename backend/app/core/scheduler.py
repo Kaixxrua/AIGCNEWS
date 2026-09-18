@@ -508,6 +508,7 @@ async def _run_github_project_daily_pipeline_job(
     active_repositories = repositories
     lock = github_lock or asyncio.Lock()
     try:
+        from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
         from backend.app.services.ingestion.github_project_enricher import (
             run_github_project_daily_pipeline,
         )
@@ -528,6 +529,7 @@ async def _run_github_project_daily_pipeline_job(
                         ingestion=active_repositories.github_ingestion,
                         enrichment=active_repositories.github_enrichment,
                         semantic_sources=active_repositories.github_semantic_sources,
+                        logo_repository=PostgresGitHubLogoRepository(),
                     ),
                     timeout=_GITHUB_DAILY_PIPELINE_TIMEOUT,
                 )

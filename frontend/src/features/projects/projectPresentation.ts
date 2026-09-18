@@ -250,9 +250,9 @@ export const projectDailyGrowthTitle = (project: GitHubProjectItem, t: ProjectTr
 
 export const shouldShowProjectHotScore = (
   project: GitHubProjectItem,
-  sort: GitHubProjectSort,
-  scope: ProjectScope,
-) => !isWebsite(project) && (sort === 'hot' || scope === 'today')
+  _sort: GitHubProjectSort,
+  _scope: ProjectScope,
+) => !isWebsite(project)
 
 export const formattedProjectHotScore = (project: GitHubProjectItem) => (
   projectHotScore(project).toFixed(1).replace(/\.0$/, '')

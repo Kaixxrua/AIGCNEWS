@@ -2,6 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
+import { loadCatalog } from '@/features/ui-library/catalog'
+
+vi.mock('@/features/ui-library/catalog', () => ({
+  loadCatalog: vi.fn().mockResolvedValue([
+    { id: 'example', name: { zh: '示例组件', en: 'Example' }, poster_url: '/ui-library/posters/example.webp' },
+    { id: 'featured', name: { zh: '精选组件', en: 'Featured' }, poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
+  ]),
+}))
 
 vi.mock('@/composables/useLiveStatsStream', () => ({ subscribeLiveStats: vi.fn() }))
 
@@ -47,6 +55,7 @@ vi.mock('@/composables/useDashboardStats', async () => {
 const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
+    editorial: { digestTitle: '每日 AI 简报' },
     digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
   },
@@ -77,13 +86,10 @@ const mountView = async () => {
       },
       stubs: {
         GlassCalendar: { template: '<div />' },
-        DashboardOverviewPanel: { template: '<div />' },
+        DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { template: '<div />' },
-        DashboardRadarCard: {
-          props: ['seedDate', 'live'],
-          template: '<div class="radar-card-stub" :data-seed="seedDate" :data-live="live" />',
-        },
+        DigestGeometry: { template: '<div />' },
         RollingNumber: { template: '<span />' },
       },
     },
@@ -93,6 +99,24 @@ const mountView = async () => {
 }
 
 describe('DashboardView', () => {
+  it('loads the total catalog count and selects a real editorial preview', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.get('.overview-stub').attributes('data-count')).toBe('2')
+    expect(wrapper.get('.ui-inspiration img').attributes('src')).toBe('/ui-library/posters/featured.webp')
+    await wrapper.get('.ui-inspiration img').trigger('error')
+    expect(wrapper.find('.ui-inspiration img').exists()).toBe(false)
+    expect(wrapper.find('.ui-inspiration__fallback').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the dashboard usable when the UI catalog is unavailable', async () => {
+    vi.mocked(loadCatalog).mockRejectedValueOnce(new Error('Unavailable'))
+    const wrapper = await mountView()
+    expect(wrapper.get('.overview-stub').attributes('data-count')).toBeUndefined()
+    expect(wrapper.get('.overview-stub').attributes('data-loading')).toBe('false')
+    expect(wrapper.find('.ui-inspiration').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('renders a single digest CTA that opens the report subscription wizard', async () => {
     const wrapper = await mountView()
 
@@ -107,15 +131,8 @@ describe('DashboardView', () => {
     expect(wrapper.get('a[href="/dsh"]').classes()).not.toContain('flex-1')
     expect(wrapper.get('a[href="/dsh"]').classes()).toContain('items-center')
 
-    // 侧栏末端雷达装饰卡：flex-1 min-h-0 精确吸满剩余高度——卡片随行高伸缩，
-    // 底部始终与排行榜下边缘对齐（不设最小高度，避免撑出侧栏内部滚动导致底边错位）
-    const radar = wrapper.get('.radar-card-stub')
-    expect(radar.classes()).toContain('flex-1')
-    expect(radar.classes()).toContain('min-h-0')
-    expect(radar.attributes('data-seed')).toBe('2026-08-19')
-    expect(radar.attributes('data-live')).toBe('true')
-    const aside = wrapper.get('aside')
-    expect(aside.element.lastElementChild).toBe(radar.element)
+    expect(wrapper.find('.radar-card').exists()).toBe(false)
+    expect(wrapper.find('.ui-inspiration').exists()).toBe(true)
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
     expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
