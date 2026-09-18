@@ -400,6 +400,7 @@ def test_truncated_get_retries_with_bounded_backoff(monkeypatch):
 
 def test_exhausted_get_is_transient_but_post_is_never_replayed(monkeypatch):
     import http.client
+
     import pytest
     client = autoscaler.ApiClient('owner/repository', 'secret-token')
     calls = []
@@ -422,6 +423,7 @@ def test_exhausted_get_is_transient_but_post_is_never_replayed(monkeypatch):
 
 def test_auth_error_is_not_retried_or_body_logged(monkeypatch):
     import io
+
     import pytest
     client = autoscaler.ApiClient('owner/repository', 'secret-token')
     calls = []
