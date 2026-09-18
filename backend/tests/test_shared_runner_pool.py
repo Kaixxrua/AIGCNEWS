@@ -392,10 +392,18 @@ def test_invalid_prediction_evidence_never_admits(field, value):
     with pytest.raises(ValueError): ready().decide(10, evidence(**{field: value}), 60)
 
 
-def test_staging_installer_imports_operator_tools_without_activation(tmp_path):
+@pytest.mark.parametrize("inherited_runtime", [None, "/nonexistent-runner-runtime"])
+def test_staging_installer_imports_operator_tools_without_activation(tmp_path, monkeypatch, inherited_runtime):
     import os
     import subprocess
+    if inherited_runtime is None:
+        monkeypatch.delenv('XDG_RUNTIME_DIR', raising=False)
+    else:
+        monkeypatch.setenv('XDG_RUNTIME_DIR', inherited_runtime)
     stage = tmp_path / 'stage'
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir(mode=0o700)
+    calls = tmp_path / 'commands.log'
     script = r'''set -euo pipefail
 map_args() {
   mapped=()
@@ -406,10 +414,18 @@ map_args() {
 mkdir() { map_args "$@"; command mkdir "${mapped[@]}"; }
 install() { map_args "$@"; command install "${mapped[@]}"; }
 systemctl() {
+  echo "systemctl $*" >> "$TASK_COMMANDS"
   [[ "$*" == '--user is-active aigcnews-ci-autoscaler.service' ]] || exit 91
   echo inactive
   return 3
 }
+deny_mutation() { echo "forbidden $*" >> "$TASK_COMMANDS"; exit 92; }
+chmod() { deny_mutation chmod "$@"; }
+chown() { deny_mutation chown "$@"; }
+chgrp() { deny_mutation chgrp "$@"; }
+setfacl() { deny_mutation setfacl "$@"; }
+loginctl() { deny_mutation loginctl "$@"; }
+sudo() { deny_mutation sudo "$@"; }
 source scripts/ci/install_shared_runner_pool.sh
 python3 "$TASK_STAGE/review_pool_recovery.py" --help
 python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import check_shared_runner_pool, review_pool_recovery, autoscaler" "$TASK_STAGE"
@@ -418,9 +434,13 @@ python3 -c "import sys; sys.path.insert(0, sys.argv[1]); import check_shared_run
     # remain untouched; real systemd-analyze verifies the staged unit.
     result = subprocess.run(['bash', '-c', script], cwd=Path(__file__).parents[2],
                             env={**os.environ, 'TASK_STAGE': str(stage),
+                                 'TASK_COMMANDS': str(calls), 'XDG_RUNTIME_DIR': str(runtime),
                                  'XDG_CONFIG_HOME': str(tmp_path / 'config')},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+    assert calls.read_text().splitlines() == [
+        'systemctl --user is-active aigcnews-ci-autoscaler.service']
+    assert runtime.stat().st_mode & 0o777 == 0o700
     assert (stage / 'ephemeral_runner_autoscaler.py').is_file()
     dependency = (tmp_path / 'config/systemd/user/aigcnews-ci-autoscaler.service.d/shared-pool.conf').read_text()
     assert 'BindsTo=aigcnews-ci-pool.service' in dependency
