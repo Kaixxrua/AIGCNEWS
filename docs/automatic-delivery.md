@@ -110,3 +110,11 @@ repository@sha256:<digest>
 ```
 
 `in_progress` 非空表示上一次进程在完成状态提交前异常退出。控制器会 fail-closed，不会猜测生产状态。此时应核对容器实际 digest、`.release.env`、Git HEAD 和健康端点后，再由运维人员修复状态；不要直接删除锁或状态文件后盲目重跑。
+
+## 任务部署归属探针
+
+` scripts/release/delivery_probe.py` 使用任务 PR 合并后的 landing SHA 检查祖先关系，支持多提交 squash 合并。Stop hook 通过只读 GitHub API 核对当前 session HEAD 对应的已合并 PR；无法核实身份时保持未完成，不以提交标题或时间推断包含关系。
+
+生产 active SHA 包含 landing SHA 即完成，即使另一版本正在发布也无需继续等它。若正在发布的新 SHA 包含本任务，则输出 `superseded_waiting`、承接版本 SHA、对应 PR、session 分支和任务标题，要求 Agent 暂停重复发布并跟踪承接版本。只有 active 状态证明包含本任务才允许结束。这里的“暂停”是停止重复发布动作，hook 不会直接暂停或唤醒桌面任务。
+
+当前探针覆盖已进入部署控制器的承接版本；尚未进入控制器的 GitHub 等待队列归属仍需额外的候选登记机制，不能把最新 main 直接当作已接管发布的版本。
