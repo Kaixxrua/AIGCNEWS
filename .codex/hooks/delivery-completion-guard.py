@@ -168,8 +168,17 @@ def evaluate(payload: dict[str, object]) -> dict[str, object]:
         delivery = probe.inspect_session(root, branch, state)
         if delivery["status"] == "active":
             return {}
-        if delivery["status"] == "superseded_waiting":
-            return _block("Task is carried by a newer deployment: " + json.dumps(delivery, ensure_ascii=True))
+        if delivery["status"] in {"superseded_waiting", "replacement_failed"}:
+            reason = (
+                "Carrier deployment failed; report the verified failure and await coordinator instructions. "
+                if delivery["status"] == "replacement_failed"
+                else "Task is carried by a newer deployment; wait for verified production completion. "
+            )
+            reason += (
+                "Notify only: do not edit, commit, push, retry deployment or deploy. "
+                + json.dumps(delivery, ensure_ascii=True)
+            )
+            return {"decision": "block", "reason": reason, "systemMessage": reason}
     except (OSError, ValueError, KeyError, TypeError, AttributeError, GuardError, subprocess.SubprocessError) as exc:
         # Missing API evidence never counts as delivered; preserve local checks.
         print(f"Delivery lineage unavailable: {type(exc).__name__}", file=sys.stderr)

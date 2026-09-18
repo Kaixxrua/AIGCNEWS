@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / "scripts" / "release" / "deploy_production.py"
@@ -134,8 +135,8 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert "--expected-release-id" in deployment
     assert "--expected-descriptor-sha256" in deployment
     assert "GodotContactScene.test.ts" in deployment
-    assert '--match-head-commit "$HEAD_SHA"' in auto_merge
-    assert '--head "$HEAD_BRANCH"' in auto_merge
+    assert "group: aigcnews-delivery-sweeper" in auto_merge
+    assert "python3 scripts/ci/delivery_sweeper.py --apply" in auto_merge
     assert "--auto" not in auto_merge
     assert "startsWith(github.event.workflow_run.head_branch, 'session/')" in auto_merge
     assert "GH_TOKEN: ${{ secrets.AIGCNEWS_DELIVERY_TOKEN }}" in auto_merge
@@ -152,7 +153,18 @@ def test_workflows_use_isolated_self_hosted_runners():
     production_runner = "runs-on: [self-hosted, linux, aigcnews-production]"
 
     assert all("runs-on: ubuntu-latest" not in text for text in workflows.values())
-    assert workflows["contract-baseline.yml"].count(ci_runner) == 5
+    baseline_jobs = yaml.safe_load(workflows["contract-baseline.yml"])["jobs"]
+    test_jobs = {
+        "backend-tests", "postgres-integration", "mcp-go", "compose-smoke", "frontend-build"
+    }
+    assert set(baseline_jobs) == test_jobs | {"pr-admission"}
+    assert workflows["contract-baseline.yml"].count(ci_runner) == 6
+    for job in baseline_jobs.values():
+        assert job["runs-on"] == ["self-hosted", "linux", "aigcnews-ci"]
+    admission = baseline_jobs["pr-admission"]
+    assert any(step.get("uses") == "./.github/actions/check-pr-base" for step in admission["steps"])
+    for name in test_jobs:
+        assert baseline_jobs[name]["needs"] == "pr-admission"
     assert workflows["deploy-production.yml"].count(ci_runner) == 1
     assert workflows["deploy-production.yml"].count(production_runner) == 4
     assert workflows["session-pr.yml"].count(ci_runner) == 1

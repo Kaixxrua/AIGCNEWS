@@ -98,3 +98,13 @@ def test_failed_replacement_remains_visible_until_newer_attempt(monkeypatch):
     assert result["status"] == "replacement_failed"
     retry = {**failed, "id": 3, "status": "queued", "conclusion": None}
     assert probe.queued_replacement(Path("."), "a" * 40, [failed, retry])["run_id"] == 3
+
+
+def test_rerun_attempt_orders_same_run_id(monkeypatch):
+    monkeypatch.setattr(probe, "contains", lambda *args: True)
+    failed = {"id": 7, "run_attempt": 1, "event": "workflow_run", "status": "completed",
+              "conclusion": "failure", "display_title": "production-source:" + "b" * 40}
+    retry = {**failed, "run_attempt": 2, "status": "queued", "conclusion": None}
+    replacement = probe.queued_replacement(Path("."), "a" * 40, [failed, retry])
+    assert replacement["run_attempt"] == 2
+    assert replacement["status"] == "queued"

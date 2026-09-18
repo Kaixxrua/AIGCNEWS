@@ -113,8 +113,26 @@ repository@sha256:<digest>
 
 ## 任务部署归属探针
 
-` scripts/release/delivery_probe.py` 使用任务 PR 合并后的 landing SHA 检查祖先关系，支持多提交 squash 合并。Stop hook 通过只读 GitHub API 核对当前 session HEAD 对应的已合并 PR；无法核实身份时保持未完成，不以提交标题或时间推断包含关系。
+`scripts/release/delivery_probe.py` 使用任务 PR 合并后的 landing SHA 检查祖先关系，支持多提交 squash 合并。Stop hook 通过只读 GitHub API 核对当前 session HEAD 对应的已合并 PR；无法核实身份时保持未完成，不以提交标题或时间推断包含关系。
 
 生产 active SHA 包含 landing SHA 即完成，即使另一版本正在发布也无需继续等它。若正在发布的新 SHA 包含本任务，则输出 `superseded_waiting`、承接版本 SHA、对应 PR、session 分支和任务标题，要求 Agent 暂停重复发布并跟踪承接版本。只有 active 状态证明包含本任务才允许结束。这里的“暂停”是停止重复发布动作，hook 不会直接暂停或唤醒桌面任务。
 
-发布工作流的 run-name 固定记录触发基线的源 SHA。探针读取尚未结束的发布 run，逐一验证提交包含关系，输出最新承接项的 run URL、源 SHA 和任务归属；已取消、失败或缺少源 SHA 的旧 run 不作为有效承接项。承接项若再次被取代，下次探测重新选择并验证，避免无限沿用旧关联。只有生产 active 状态证明包含本任务才标记完成。
+发布工作流的 run-name 固定记录触发基线的源 SHA。探针读取尚未结束的发布 run，逐一验证提交包含关系，输出最新承接项的 run URL、源 SHA 和任务归属；已取消或缺少源 SHA 的 run 不作为有效承接项；失败、超时或启动失败的最新承接尝试保留为 `replacement_failed`，直到更新的可验证尝试取代它。承接项若再次被取代，下次探测重新选择并验证，避免无限沿用旧关联。只有生产 active 状态证明包含本任务才标记完成。
+
+## 合并顺序与重新验证
+
+自动合并事件和定时 Sweeper 使用同一 concurrency group、同一个默认分支控制器。每轮最多合并一个 PR。Contract Baseline 先在轻量 admission job 检查 PR head 是否包含当前 main，各测试 job 开始时再次检查，避免排队期间主分支更新后继续执行昂贵测试。失败门禁不得作为成功 CI 合并。
+
+主分支更新后，已核实归属的任务由本机监听器收到 `base_update` 或冲突通知；忙碌任务等待空闲，相同任务/PR/head/原因只通知一次，通知要求获取最新 main，以合并连续更新。任务保留自身工作树和 session 分支，把最新 origin/main 合入自身分支，解决冲突、本地验证、正常推送新 SHA 后重新进入 CI。不得切到 main 开发或强推。没有创建时归属记录的旧分支阻断通知，不能猜测任务 ID。
+
+通过 CI 的 PR 若尚未包含当前 main，合并控制器只 hold，继续检查其他候选，不再在 CI 后调用 update-branch。只有包含当前 main 的精确已验证 SHA 才可合并。CI 期间 main 再次变化仍可能需要重新验证；本变更保留合并后的 main 基线及部署门禁，并不承诺每个任务永远只运行一次 CI。
+
+该互斥只覆盖本仓库既定自动入口。仓库管理员的外部直接推送/合并不受 Actions concurrency 控制，完整服务端保障还需要 main 的严格状态检查或 GitHub 原生 merge queue；无法读取或配置保护规则时，不宣称已消除这一外部竞争窗口。
+
+## AO 生产通知
+
+AO adapter 对显式绑定并激活的原任务发送只读生产通知。已合并 PR 的仓库、base、分支及精确 head 必须匹配绑定工作树；以 landing SHA 的 Git 祖先关系验证生产 active 或承接版本，不根据标题、时间或 workflow head 猜测归属。生产状态从配置的 production root 读取，缺失对象或证据时不发送。
+
+完成通知按原任务 head/landing 去重；承接通知按源 SHA、run ID、run attempt 和状态去重，允许新尝试、承接变化或失败状态产生独立通知。发送前再次验证 PR、生产证据、绑定、工作树、空闲状态和暂停标记。持久化发送意图后才调用 AO；结果不明的事件保留为 unconfirmed，不自动重发。忙碌或暂停时等待下一轮，不消耗事件。
+
+承接 PR/分支/AO 会话只在独立显式绑定且工作树验证通过时标注；没有归属证据仍可报告已验证的承接 SHA，但不能猜测承接任务。通知只送原任务绑定的精确 AO session，不唤醒推测的承接者。已交付、已承接及承接失败的通知均禁止据此修改文件、提交、推送或部署；失败只报告并等待协调者指令。Stop hook 对 `replacement_failed` 明确报告失败，不退回重复交付指令。线上端到端验收须单独授权，单元测试不代表服务已更新。

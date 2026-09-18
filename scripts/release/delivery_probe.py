@@ -64,7 +64,7 @@ def queued_replacement(root: Path, landing: str, runs: list[dict]) -> dict | Non
     # run-name is emitted by the trusted deployment workflow using the
     # triggering baseline SHA; workflow_run.head_sha itself refers to main
     # at trigger time and must never be treated as the source being built.
-    for run in sorted(runs, key=lambda item: item["id"], reverse=True):
+    for run in sorted(runs, key=lambda item: (item["id"], item.get("run_attempt", 1)), reverse=True):
         match = re.fullmatch(
             r"production-source:([0-9a-f]{40})", run.get("display_title", "")
         )
@@ -83,6 +83,7 @@ def queued_replacement(root: Path, landing: str, runs: list[dict]) -> dict | Non
                     "in_progress" if run["status"] == "in_progress" else "queued"
                 ),
                 "run_id": run["id"],
+                "run_attempt": run.get("run_attempt", 1),
                 "url": run.get("html_url"),
             }
     return None

@@ -27,6 +27,10 @@ class SweepError(RuntimeError):
     pass
 
 
+class UpdateRefused(SweepError):
+    """A definitively rejected update must not starve unrelated PRs."""
+
+
 @dataclass(frozen=True)
 class Result:
     pr: int
@@ -42,6 +46,8 @@ class GitHub(Protocol):
     def contract_runs(self, branch: str) -> list[dict[str, Any]]: ...
 
     def jobs(self, run_id: int) -> list[dict[str, Any]]: ...
+
+    def prepare_merge(self, number: int, head: str) -> bool: ...
 
     def merge(self, number: int, head: str, title: str) -> None: ...
 
@@ -80,6 +86,8 @@ class ApiClient:
                 break
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode(errors="replace")[:1000]
+                if method == "PUT" and path.endswith("/update-branch") and exc.code == 422:
+                    raise UpdateRefused(f"Branch update rejected (422): {detail}") from None
                 if (
                     method != "GET"
                     or exc.code not in {429, 500, 502, 503, 504}
@@ -113,6 +121,20 @@ class ApiClient:
             "GET", f"/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
         )
         return document.get("jobs", [])
+
+    def prepare_merge(self, number: int, head: str) -> bool:
+        main = self.request("GET", "/git/ref/heads/main")["object"]["sha"]
+        comparison = self.request("GET", f"/compare/{main}...{head}")
+        if comparison.get("status") not in {"ahead", "identical"}:
+            # The owning task updates its branch before CI; landing never
+            # creates a surprise merge commit after tests have completed.
+            return False
+        # All automated landings share one workflow concurrency group. Recheck
+        # main immediately before the exact-head merge as a fail-closed guard.
+        latest = self.request("GET", "/git/ref/heads/main")["object"]["sha"]
+        if latest != main:
+            raise SweepError("main advanced during merge validation")
+        return True
 
     def merge(self, number: int, head: str, title: str) -> None:
         result = self.request(
@@ -209,6 +231,22 @@ def reconcile(
             if not validation_is_fresh(run, now):
                 results.append(
                     Result(number, head, "hold", "successful baseline is stale", run_id)
+                )
+                continue
+            try:
+                prepared = not apply or client.prepare_merge(number, head)
+            except UpdateRefused as exc:
+                results.append(Result(number, head, "hold", str(exc), run_id))
+                continue
+            if not prepared:
+                results.append(
+                    Result(
+                        number,
+                        head,
+                        "hold",
+                        "base update required in owning task before new CI",
+                        run_id,
+                    )
                 )
                 continue
             if apply:
