@@ -1,0 +1,147 @@
+"""Durable exact-SHA feedback and fail-closed wakeups through Codex app-server."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import selectors
+import sqlite3
+import subprocess
+import time
+import uuid
+
+
+class BridgeError(RuntimeError):
+    pass
+
+
+class CodexBridge:
+    def __enter__(self):
+        self.process = subprocess.Popen(
+            ["codex", "app-server", "proxy"], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        self.sequence = 0
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.process.stdout, selectors.EVENT_READ)
+        try:
+            self.call("initialize", {"clientInfo": {"name": "delivery-feedback", "version": "1"}})
+            self.send({"method": "initialized"})
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+        return self
+
+    def __exit__(self, *_):
+        self.selector.close()
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+
+    def send(self, message):
+        self.process.stdin.write(json.dumps(message) + "\n")
+        self.process.stdin.flush()
+
+    def call(self, method, params):
+        self.sequence += 1
+        self.send({"id": self.sequence, "method": method, "params": params})
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if not self.selector.select(max(0, deadline - time.monotonic())):
+                break
+            line = self.process.stdout.readline()
+            if not line:
+                break
+            response = json.loads(line)
+            if response.get("id") == self.sequence:
+                if "error" in response:
+                    raise BridgeError(f"{method} rejected")
+                return response["result"]
+        raise BridgeError(f"{method} response unavailable")
+
+    def idle(self, thread_id):
+        thread = self.call("thread/read", {"threadId": thread_id, "includeTurns": False})["thread"]
+        return thread.get("status", {}).get("type") == "idle"
+
+    def wake(self, thread_id, prompt):
+        # Inherit the existing thread's model, permissions and workspace.
+        return self.call("turn/start", {"threadId": thread_id, "input": [
+            {"type": "text", "text": prompt, "text_elements": []}
+        ]})
+
+
+def enqueue(db, *, thread_id, pr, sha, kind, url):
+    uuid.UUID(thread_id)
+    if kind not in {"conflict", "test_failure"} or len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
+        raise ValueError("invalid feedback identity")
+    if not url.startswith("https://github.com/Kaixxrua/AIGCNEWS/"):
+        raise ValueError("feedback evidence must belong to this repository")
+    key = hashlib.sha256(f"{thread_id}:{pr}:{sha}:{kind}".encode()).hexdigest()
+    payload = json.dumps({"thread_id": thread_id, "pr": pr, "sha": sha, "kind": kind, "url": url})
+    db.execute("INSERT OR IGNORE INTO feedback VALUES (?, ?, 'pending', NULL)", (key, payload))
+    db.commit()
+    return key
+
+
+def open_db(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(path)
+    path.chmod(0o600)
+    db.execute("CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, payload TEXT, status TEXT, detail TEXT)")
+    return db
+
+
+def dispatch(db, key, bridge, *, current_sha, paused):
+    row = db.execute("SELECT payload,status FROM feedback WHERE id=?", (key,)).fetchone()
+    if not row or row[1] != "pending":
+        return "unchanged"
+    event = json.loads(row[0])
+    if current_sha != event["sha"]:
+        db.execute("UPDATE feedback SET status='obsolete' WHERE id=?", (key,))
+        db.commit()
+        return "obsolete"
+    if paused or not bridge.idle(event["thread_id"]):
+        return "waiting"
+    # Commit before side effect. Ambiguous transport failures never trigger a
+    # duplicate turn; the receipt must be reconciled before retrying.
+    cursor = db.execute("UPDATE feedback SET status='dispatching' WHERE id=? AND status='pending'", (key,))
+    db.commit()
+    if cursor.rowcount != 1:
+        return "unchanged"
+    prompt = (
+        f"Delivery feedback {key}: PR #{event['pr']} at exact SHA {event['sha']} "
+        f"has {event['kind']}. Evidence: {event['url']}. Return this PR to development. "
+        "Verify the failure and current branch first; preserve other tasks. Resolve conflicts "
+        "against current main or repair failing tests, then rerun validation and submit a new SHA "
+        "through the established pipeline. Do not bypass checks, force-push, or deploy manually."
+    )
+    try:
+        receipt = bridge.wake(event["thread_id"], prompt)
+        turn_id = receipt["turn"]["id"]
+    except Exception:
+        db.execute("UPDATE feedback SET status='unconfirmed',detail='wake receipt unavailable' WHERE id=?", (key,))
+        db.commit()
+        raise
+    db.execute("UPDATE feedback SET status='sent',detail=? WHERE id=?", (turn_id, key))
+    db.commit()
+    return "sent"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--probe", required=True, metavar="THREAD_ID")
+    args = parser.parse_args()
+    uuid.UUID(args.probe)
+    try:
+        with CodexBridge() as bridge:
+            print(json.dumps({"available": True, "idle": bridge.idle(args.probe)}))
+    except (BridgeError, OSError, ValueError) as exc:
+        print(json.dumps({"available": False, "error": str(exc)}))
+        raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    main()
