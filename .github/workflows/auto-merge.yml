@@ -18,7 +18,9 @@ jobs:
     runs-on: [self-hosted, linux, aigcnews-control]
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ github.token }}
+      # A repository-owner token makes the merge emit the main push event that
+      # starts baseline verification and production delivery.
+      GH_TOKEN: ${{ secrets.AIGCNEWS_DELIVERY_TOKEN }}
       GH_PROMPT_DISABLED: "1"
     steps:
       - name: Merge the exact validated head
