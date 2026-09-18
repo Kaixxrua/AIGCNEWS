@@ -59,6 +59,7 @@ def test_superseded_release_exits_before_checkout_or_reconcile(tmp_path: Path, m
     calls: list[str] = []
     monkeypatch.setattr(deploy, "ensure_clean_tracked_tree", lambda root: calls.append("clean"))
     monkeypatch.setattr(deploy, "refresh_and_classify", lambda root, sha: "superseded")
+    monkeypatch.setattr(deploy, "migrate_candidate", lambda *args: calls.append("migrate"))
     monkeypatch.setattr(deploy, "checkout", lambda *args: calls.append("checkout"))
     monkeypatch.setattr(deploy, "reconcile", lambda *args: calls.append("reconcile"))
 
@@ -80,6 +81,7 @@ def test_failed_release_rolls_back_only_its_owned_attempt(tmp_path: Path, monkey
     monkeypatch.setattr(deploy, "ensure_clean_tracked_tree", lambda root: None)
     monkeypatch.setattr(deploy, "refresh_and_classify", lambda root, sha: "current")
     monkeypatch.setattr(deploy, "run", lambda command, **kwargs: SHA_B)
+    monkeypatch.setattr(deploy, "migrate_candidate", lambda *args: None)
     monkeypatch.setattr(deploy, "checkout", lambda root, sha: checkouts.append(sha))
 
     def fake_reconcile(root, candidate):
@@ -105,6 +107,7 @@ def test_successful_release_commits_state_after_reconcile(tmp_path: Path, monkey
     monkeypatch.setattr(deploy, "ensure_clean_tracked_tree", lambda root: None)
     monkeypatch.setattr(deploy, "refresh_and_classify", lambda root, sha: "current")
     monkeypatch.setattr(deploy, "run", lambda command, **kwargs: SHA_B)
+    monkeypatch.setattr(deploy, "migrate_candidate", lambda *args: None)
     monkeypatch.setattr(deploy, "checkout", lambda root, sha: observed.append(f"checkout:{sha}"))
     monkeypatch.setattr(
         deploy,
@@ -112,11 +115,12 @@ def test_successful_release_commits_state_after_reconcile(tmp_path: Path, monkey
         lambda root, candidate: observed.append(f"reconcile:{candidate.source_sha}"),
     )
 
+    monkeypatch.setattr(deploy, "migrate_candidate", lambda *args: observed.append("migrate"))
     assert deploy.deploy(tmp_path, release(SHA_A), lock_timeout=0) == "deployed"
     state = deploy.read_state(tmp_path / ".aigcnews-deploy/state.json")
     assert state["active_release"] == SHA_A
     assert state["in_progress"] is None
-    assert observed == [f"checkout:{SHA_A}", f"reconcile:{SHA_A}"]
+    assert observed == [f"checkout:{SHA_A}", "migrate", f"reconcile:{SHA_A}"]
     assert deploy.parse_release_env((tmp_path / ".release.env").read_text(encoding="utf-8")) == release(SHA_A)
 
 
@@ -242,3 +246,112 @@ def test_failed_baseline_cannot_evict_pending_production_and_stale_builds_skip()
     assert workflow.count("if: needs.metadata.outputs.eligible == 'true'") == 3
     assert 'git merge-base --is-ancestor "$SOURCE_SHA" "$latest"' in workflow
     assert workflow.index("Reject stale candidates") < workflow.index("build-backend:")
+
+
+@pytest.mark.parametrize("previous_release", [False, True])
+def test_migration_failure_never_switches_runtime(tmp_path, monkeypatch, previous_release):
+    old = release(SHA_B)
+    state_path = tmp_path / ".aigcnews-deploy/state.json"
+    if previous_release:
+        (tmp_path / ".release.env").write_text(old.env_text())
+        deploy.write_state(state_path, {
+            "schema": deploy.SCHEMA, "active_release": SHA_B, "in_progress": None,
+        })
+    calls = []
+    monkeypatch.setattr(deploy, "ensure_clean_tracked_tree", lambda root: None)
+    monkeypatch.setattr(deploy, "refresh_and_classify", lambda *args: "current")
+    monkeypatch.setattr(deploy, "run", lambda *args, **kwargs: SHA_B)
+    monkeypatch.setattr(deploy, "checkout", lambda root, sha: calls.append(sha))
+
+    def failed_migration(root, candidate):
+        assert deploy.parse_release_env((root / ".release.env").read_text()) == candidate
+        assert deploy.read_state(state_path)["in_progress"] == SHA_A
+        raise deploy.DeployError("migration failed")
+
+    monkeypatch.setattr(deploy, "migrate_candidate", failed_migration)
+    monkeypatch.setattr(deploy, "reconcile", lambda *args: pytest.fail("runtime switched"))
+    monkeypatch.setattr(deploy, "reconcile_existing", lambda *args: pytest.fail("runtime restarted"))
+    with pytest.raises(deploy.DeployError, match="previous runtime was not switched"):
+        deploy.deploy(tmp_path, release(), lock_timeout=0)
+    state = deploy.read_state(state_path)
+    assert state.get("active_release") == (SHA_B if previous_release else None)
+    assert state["in_progress"] is None
+    assert state["last_failed_release"] == SHA_A
+    assert calls == [SHA_A, SHA_B]
+    if previous_release:
+        assert (tmp_path / ".release.env").read_text() == old.env_text()
+    else:
+        assert not (tmp_path / ".release.env").exists()
+
+
+@pytest.mark.parametrize("missing_image", [False, True])
+def test_migration_uses_exact_candidate_image_and_release_environment(tmp_path, monkeypatch, missing_image):
+    candidate = release()
+    calls = []
+
+    def invoke(command, **kwargs):
+        calls.append((command, kwargs))
+        if missing_image and command[:3] == ["docker", "image", "inspect"]:
+            raise deploy.DeployError("missing image")
+
+    monkeypatch.setattr(deploy, "run", invoke)
+    monkeypatch.setenv("AIGCNEWS_BACKEND_IMAGE_DIGEST", "wrong:latest")
+    deploy.migrate_candidate(tmp_path, candidate)
+    assert calls[0][0] == ["docker", "image", "inspect", candidate.backend_image]
+    assert [c for c, _ in calls if c[:2] == ["docker", "pull"]] == (
+        [["docker", "pull", candidate.backend_image]] if missing_image else []
+    )
+    command, kwargs = calls[-1]
+    assert command == [str(tmp_path / "scripts/manage_main_stack.sh"), "migrate"]
+    assert kwargs["env"]["AIGCNEWS_RELEASE_ENV"] == str(tmp_path / ".release.env")
+    assert kwargs["env"]["AIGCNEWS_BACKEND_IMAGE_DIGEST"] == candidate.backend_image
+
+
+@pytest.mark.parametrize("migration_exit", [0, 17])
+def test_stack_migration_entrypoint_preserves_compose_config_and_exit(tmp_path, migration_exit):
+    import shutil
+    import subprocess
+
+    root = tmp_path / "checkout"
+    (root / "scripts").mkdir(parents=True)
+    (root / "docker").mkdir()
+    script = root / "scripts/manage_main_stack.sh"
+    shutil.copy2(ROOT / "scripts/manage_main_stack.sh", script)
+    (root / ".env").write_text("")
+    (root / ".release.env").write_text(release().env_text())
+    (root / "docker/docker-compose.yml").write_text("services: {}")
+    overlay = tmp_path / "private.yml"
+    overlay.write_text("services: {}")
+    (tmp_path / ".priceai-node.env").write_text("")
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    log = tmp_path / "calls.jsonl"
+    docker = binary / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "with open(os.environ['CALL_LOG'], 'a') as f: f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "sys.exit(int(os.environ['MIGRATION_EXIT']) if 'run' in sys.argv else 0)\n"
+    )
+    docker.chmod(0o755)
+    env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+           "CALL_LOG": str(log), "MIGRATION_EXIT": str(migration_exit),
+           "AIGCNEWS_PRIVATE_COMPOSE": str(overlay),
+           "AIGCNEWS_RELEASE_ENV": str(root / ".release.env"), "COMPOSE_PROJECT_NAME": "docker"}
+    result = subprocess.run([str(script), "migrate"], env=env, capture_output=True, text=True)
+    assert result.returncode == migration_exit, result.stderr
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(calls) == 2
+    assert calls[0][-2:] == ["config", "--quiet"]
+    command = calls[1]
+    assert command[:command.index("run")] == calls[0][:-2]
+    for path in (root / ".env", root / ".release.env", overlay, tmp_path / ".priceai-node.env"):
+        assert path.resolve() in [Path(arg).resolve() for arg in command if arg.startswith("/")]
+    assert command[command.index("run"):-1] == [
+        "run", "--rm", "--no-deps", "--pull", "never", "--entrypoint", "python", "backend-api", "-c",
+    ]
+    assert "PostgresMigrationRunner" in command[-1]
+    assert "runner.apply()" in command[-1]
+    assert "runner.status()" in command[-1]
+    assert "postgres_database.close()" in command[-1]
+    compile(command[-1], "migration-gate", "exec")

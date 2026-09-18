@@ -134,6 +134,19 @@ def checkout(root: Path, source_sha: str) -> None:
     run(["git", "checkout", "--detach", source_sha], cwd=root)
 
 
+def migrate_candidate(root: Path, release: Release) -> None:
+    """Use the candidate image's runner before any application service switches."""
+    try:
+        run(["docker", "image", "inspect", release.backend_image], cwd=root)
+    except DeployError:
+        run(["docker", "pull", release.backend_image], cwd=root)
+    environment = os.environ.copy()
+    environment["AIGCNEWS_RELEASE_ENV"] = str(root / ".release.env")
+    # Shell interpolation must not override the exact digest in the release file.
+    environment["AIGCNEWS_BACKEND_IMAGE_DIGEST"] = release.backend_image
+    run([str(root / "scripts" / "manage_main_stack.sh"), "migrate"], cwd=root, env=environment)
+
+
 def reconcile(root: Path, release: Release) -> None:
     for image in (release.backend_image, release.mcp_image, release.frontend_image):
         # Inspect the immutable reference, never a tag: a local build can be
@@ -188,9 +201,12 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
         state["in_progress"] = release.source_sha
         write_state(state_path, state)
 
+        runtime_attempted = False
         try:
             checkout(root, release.source_sha)
             atomic_write(env_path, release.env_text())
+            migrate_candidate(root, release)
+            runtime_attempted = True
             reconcile(root, release)
         except Exception as deploy_error:
             current = read_state(state_path)
@@ -202,11 +218,13 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
                     checkout(root, old_sha)
                     atomic_write(env_path, old_env)
                     previous = parse_release_env(old_env)
-                    reconcile(root, previous)
+                    if runtime_attempted:
+                        reconcile(root, previous)
                 elif old_env is None:
                     checkout(root, old_checkout)
                     env_path.unlink(missing_ok=True)
-                    reconcile_existing(root)
+                    if runtime_attempted:
+                        reconcile_existing(root)
             except Exception as exc:  # preserve both deployment and rollback evidence
                 rollback_error = exc
             state["in_progress"] = None
@@ -214,7 +232,8 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
             write_state(state_path, state)
             if rollback_error is not None:
                 raise DeployError(f"deployment failed ({deploy_error}); rollback also failed ({rollback_error})") from deploy_error
-            raise DeployError(f"deployment failed and previous runtime was restored: {deploy_error}") from deploy_error
+            outcome = "previous runtime was restored" if runtime_attempted else "previous runtime was not switched"
+            raise DeployError(f"deployment failed and {outcome}: {deploy_error}") from deploy_error
 
         state.update({
             "active_release": release.source_sha,
