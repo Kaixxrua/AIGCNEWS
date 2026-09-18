@@ -82,7 +82,8 @@ describe('BrandWordmark', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0)
     vi.advanceTimersByTime(250)
     await nextTick()
-    expect(charText()).toBe('AIGC NEWS'.replace(/[^ ]/g, '▓'))
+    // Keep the brand readable: at most one character glitches at a time.
+    expect(charText()).toBe('▓IGC NEWS')
 
     // random→0.9999：不再触发新扰动，存量扰动在数帧内全部还原
     vi.spyOn(Math, 'random').mockReturnValue(0.9999)
