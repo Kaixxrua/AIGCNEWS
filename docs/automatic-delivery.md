@@ -113,6 +113,10 @@ repository@sha256:<digest>
 
 ## 合并顺序与重新验证
 
-自动合并事件和定时 Sweeper 使用同一 concurrency group、同一个默认分支控制器。每轮最多推进一个 PR。通过 CI 的 PR 若尚未包含当前 main，控制器通过 GitHub update-branch 接口普通合并 main，并指定 expected_head_sha 防止覆盖并发更新；新 SHA 必须重新通过 CI。只有包含当前 main 的精确已验证 SHA 才可合并。
+自动合并事件和定时 Sweeper 使用同一 concurrency group、同一个默认分支控制器。每轮最多合并一个 PR。Contract Baseline 先在轻量 admission job 检查 PR head 是否包含当前 main，各测试 job 开始时再次检查，避免排队期间主分支更新后继续执行昂贵测试。失败门禁不得作为成功 CI 合并。
+
+主分支更新后，已核实归属的任务由本机监听器收到 `base_update` 或冲突通知；忙碌任务等待空闲，相同任务/PR/head/原因只通知一次，通知要求获取最新 main，以合并连续更新。任务保留自身工作树和 session 分支，把最新 origin/main 合入自身分支，解决冲突、本地验证、正常推送新 SHA 后重新进入 CI。不得切到 main 开发或强推。没有创建时归属记录的旧分支阻断通知，不能猜测任务 ID。
+
+通过 CI 的 PR 若尚未包含当前 main，合并控制器只 hold，继续检查其他候选，不再在 CI 后调用 update-branch。只有包含当前 main 的精确已验证 SHA 才可合并。CI 期间 main 再次变化仍可能需要重新验证；本变更保留合并后的 main 基线及部署门禁，并不承诺每个任务永远只运行一次 CI。
 
 该互斥只覆盖本仓库既定自动入口。仓库管理员的外部直接推送/合并不受 Actions concurrency 控制，完整服务端保障还需要 main 的严格状态检查或 GitHub 原生 merge queue；无法读取或配置保护规则时，不宣称已消除这一外部竞争窗口。

@@ -1,0 +1,15 @@
+[Unit]
+Description=AIGCNEWS verified conflict feedback to Codex tasks
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/AIGCNEWS/backend/.venv/bin/python %h/.local/lib/aigcnews-delivery-feedback/watch_delivery_feedback.py
+Restart=on-failure
+RestartSec=30
+UMask=0077
+NoNewPrivileges=true
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
