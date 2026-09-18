@@ -13,9 +13,10 @@ readonly EXPECTED_PROJECT="docker"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/manage_main_stack.sh <config|up|status|logs>
+Usage: scripts/manage_main_stack.sh <config|migrate|up|status|logs>
 
 config  Validate the main Compose configuration without printing secrets.
+migrate Apply candidate-image PostgreSQL migrations without starting services.
 up      Reconcile the complete stack and wait for healthy services.
 status  Show main stack service status.
 logs    Follow main stack logs.
@@ -100,6 +101,28 @@ main() {
       validate_inputs
       compose config --quiet
       printf 'main stack compose configuration is valid\n'
+      ;;
+    migrate)
+      validate_inputs
+      compose config --quiet
+      # Never use the running backend (which still belongs to the old release).
+      # run publishes no service ports; --no-deps keeps existing services intact.
+      compose run --rm --no-deps --pull never --entrypoint python backend-api -c '
+from backend.app.core.postgres_database import postgres_database
+from backend.app.core.postgres_migrations import PostgresMigrationRunner
+import sys
+try:
+    runner = PostgresMigrationRunner()
+    applied = runner.apply()
+    if any(not item.applied for item in runner.status()):
+        raise RuntimeError("pending migrations remain")
+    print("PostgreSQL migration gate passed; applied:", len(applied))
+except Exception:
+    print("PostgreSQL migration gate failed; inspect database logs", file=sys.stderr)
+    sys.exit(1)
+finally:
+    postgres_database.close()
+'
       ;;
     up)
       validate_inputs

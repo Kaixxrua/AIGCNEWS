@@ -10,7 +10,7 @@
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
 6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 workflow 使用固定 concurrency group：当前候选不中断，等待区只保留最新的已验证 `main` 候选，并在任何镜像构建开始前淘汰旧候选。
-7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按精确 digest 检查本机镜像（缺失时才从 registry 拉取）并切换 Compose。
+7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按精确 digest 检查本机镜像（缺失时才从 registry 拉取）并在切换 Compose 前用候选 backend 精确 digest 的一次性容器执行 PostgreSQL 迁移门禁。迁移复用 `PostgresMigrationRunner` 的历史校验、数据库锁及逐迁移事务，成功且无 pending 后才切换服务；失败保留原 active release，不启动或重启服务。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
 Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核对工作区、同名远端分支、与 `origin/main` 的补丁等价关系以及生产状态文件。任一阶段尚未完成时，hook 阻止提前结束并要求 Agent 继续跟踪上述既定流水线，不得把“创建 PR”、合并或是否部署留给用户决定。只有生产 active release 已包含本任务，或者 Agent 已核实并报告带证据的外部阻塞，回合才允许结束。hook 只做验证和持续执行约束，不直接绕过 GitHub 门禁、手工合并或抢占其他任务的部署。
@@ -146,3 +146,6 @@ AO adapter 对显式绑定并激活的原任务发送只读生产通知。已合
 完成通知按原任务 head/landing 去重；承接通知按源 SHA、run ID、run attempt 和状态去重，允许新尝试、承接变化或失败状态产生独立通知。发送前再次验证 PR、生产证据、绑定、工作树、空闲状态和暂停标记。持久化发送意图后才调用 AO；结果不明的事件保留为 unconfirmed，不自动重发。忙碌或暂停时等待下一轮，不消耗事件。
 
 承接 PR/分支/AO 会话只在独立显式绑定且工作树验证通过时标注；没有归属证据仍可报告已验证的承接 SHA，但不能猜测承接任务。通知只送原任务绑定的精确 AO session，不唤醒推测的承接者。已交付、已承接及承接失败的通知均禁止据此修改文件、提交、推送或部署；失败只报告并等待协调者指令。Stop hook 对 `replacement_failed` 明确报告失败，不退回重复交付指令。线上端到端验收须单独授权，单元测试不代表服务已更新。
+
+
+生产迁移门禁不依赖 `/api/ready`：该探针不保证迁移台账最新。一次性容器使用既有 Compose 环境和网络，`--no-deps` 不启动依赖，迁移 CLI 来自候选镜像中的 Python runner。数据库依赖必须已经可连接，否则部署失败且不切换服务。迁移可能逐个提交；后续失败或应用恢复旧镜像均不逆向迁移数据库，因此进入自动发布的迁移必须兼容仍运行的旧版本，破坏性变更需独立受控方案。`already-active` 和过期候选不执行补迁移，线上历史缺失迁移需单独协调处理。
