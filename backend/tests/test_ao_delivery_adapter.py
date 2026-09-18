@@ -89,3 +89,35 @@ def test_reconcile_does_not_interrupt_dirty_task(db, monkeypatch):
         "repo": {"full_name": "Kaixxrua/AIGCNEWS"}}}
     assert adapter.reconcile(db, client, ".") == []
     assert client.request.call_count == 1
+
+
+@pytest.mark.parametrize("repos,expected", [
+    (["Kaixxrua/AIGCNEWS"], 71),
+    (["someone/fork"], None),
+    (["Kaixxrua/AIGCNEWS", "Kaixxrua/AIGCNEWS"], None),
+])
+def test_discovery_requires_unique_same_repository_branch(db, monkeypatch, repos, expected):
+    db.execute("UPDATE tasks SET stage='active',pr=NULL")
+    client = Mock()
+    client.open_pulls.return_value = [
+        {"number": 71 + i, "head": {"ref": "session/example", "repo": {"full_name": repo}}}
+        for i, repo in enumerate(repos)
+    ]
+    client.request.return_value = {"head": {"ref": "session/example"}, "state": "closed"}
+    adapter.reconcile(db, client, ".")
+    assert db.execute("SELECT pr FROM tasks").fetchone()[0] == expected
+
+
+@pytest.mark.parametrize("head,dirty,state", [
+    ("wrong", "", "idle"), ("expected", " M file", "idle"),
+    ("expected", "", "working"),
+])
+def test_activation_rejects_changed_or_busy_task(db, monkeypatch, head, dirty, state):
+    monkeypatch.setattr(adapter, "database", lambda _: db)
+    monkeypatch.setattr(adapter, "git", lambda _, *args: head if args[0] == "rev-parse" else dirty)
+    monkeypatch.setattr(adapter, "ao_read", lambda _: {"session": {"activity": {"state": state}}})
+    monkeypatch.setattr("sys.argv", ["adapter", "activate", "--branch", "session/example",
+                                   "--expect-head", "expected", "--handoff-evidence", "audit"])
+    with pytest.raises(ValueError):
+        adapter.main()
+    assert db.execute("SELECT stage FROM tasks").fetchone()[0] == "audit"

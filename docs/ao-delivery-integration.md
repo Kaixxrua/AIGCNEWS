@@ -42,3 +42,11 @@ host `aigcnews-ao-delivery.service` replaces the desktop feedback watcher; never
 run both for the same tasks. Only one controller may own a branch for writing.
 Native ownership import, automatic handoff activation and full production
 acceptance remain pending; the adapter deliberately has no implicit activation.
+
+For new work, `new --name <name> --prompt-file <file>` launches an AO controller
+that first creates its real session worktree through dev_session and binds its
+own AO ID. It holds until the coordinator validates the receipt. Use
+`activate --branch <branch> --expect-head <sha> --handoff-evidence <evidence>`
+only after verifying no competing writer. This is coordinator responsibility,
+not a new per-task user approval. Activation refuses dirty/changed branches or
+busy AO controllers. The watcher attaches newly opened PRs by exact branch.

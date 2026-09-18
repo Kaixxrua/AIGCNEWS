@@ -71,6 +71,8 @@ def bind(db, branch, session, worktree, source, repository, pr=None):
 
 
 def send(db, branch, identity, message, repository, *, read=ao_read, deliver=None):
+    if (Path.home() / ".config/aigcnews/ci-paused").exists():
+        return "paused"
     row = db.execute("SELECT session,worktree,stage FROM tasks WHERE branch=?", (branch,)).fetchone()
     if not row:
         return "unowned"
@@ -127,6 +129,17 @@ def observe(db, github, repository):
 
 def reconcile(db, github, repository):
     results = []
+    # Newly created tasks bind before their PR exists. Attach only one exact
+    # same-repository branch match, never a title or an inferred conversation.
+    unlinked = db.execute("SELECT branch FROM tasks WHERE stage='active' AND pr IS NULL").fetchall()
+    if unlinked:
+        pulls = github.open_pulls()
+        for (branch,) in unlinked:
+            matches = [p for p in pulls if p["head"]["ref"] == branch
+                       and (p["head"].get("repo") or {}).get("full_name") == "Kaixxrua/AIGCNEWS"]
+            if len(matches) == 1:
+                db.execute("UPDATE tasks SET pr=? WHERE branch=? AND pr IS NULL", (matches[0]["number"], branch))
+        db.commit()
     for branch, session, number in db.execute("SELECT branch,session,pr FROM tasks WHERE stage='active' AND pr IS NOT NULL").fetchall():
         pr = github.request("GET", f"/pulls/{number}")
         if pr["head"]["ref"] != branch or pr["state"] != "open" or pr.get("draft"):
@@ -180,8 +193,48 @@ def main():
     sub.add_parser("list")
     sub.add_parser("observe")
     sub.add_parser("watch")
+    new = sub.add_parser("new")
+    new.add_argument("--name", required=True)
+    new.add_argument("--prompt-file", type=Path, required=True)
+    activate = sub.add_parser("activate")
+    activate.add_argument("--branch", required=True)
+    activate.add_argument("--expect-head", required=True)
+    activate.add_argument("--handoff-evidence", required=True)
     args = parser.parse_args()
+    if args.command == "new":
+        import os
+
+        prompt = args.prompt_file.read_text()
+        instructions = (
+            "You are an authorized AIGCNEWS development task controlled by AO. "
+            f"First read {args.repository}/AGENTS.md and docs/git-workflow.md. "
+            "Before editing any project file, run scripts/dev_session.py start with a unique task slug "
+            "from the repository, preserving your own CODEX_THREAD_ID. Work exclusively in its returned worktree. "
+            f"Immediately register that branch using python3 {Path(__file__).resolve()} bind "
+            "--branch <returned branch> --worktree <returned worktree> --session $AO_SESSION_ID "
+            "--source 'new AO task: dev_session creation receipt'. "
+            "Registration starts held; report the exact creation receipt and wait for coordinator activation "
+            "before implementing. Do not write to main, force push, rebase, or change production/private Godot artifacts. "
+            "Requested task for after activation:\n" + prompt)
+        env = dict(os.environ, AO_DATA_DIR=str(ROOT / "data"), AO_RUN_FILE=str(ROOT / "running.json"))
+        subprocess.run([str(AO), "spawn", "--standalone", "--name", args.name, "--agent", "codex",
+                        "--mode", "chat", "--prompt", instructions], env=env, check=True)
+        return
     with database(args.state) as db:
+        if args.command == "activate":
+            row = db.execute("SELECT session,worktree FROM tasks WHERE branch=?", (args.branch,)).fetchone()
+            if not row or not args.handoff_evidence.strip():
+                raise ValueError("task binding and writer handoff evidence required")
+            session, path = row
+            verify_workspace(path, args.branch, args.repository)
+            if git(path, "rev-parse", "HEAD") != args.expect_head or git(path, "status", "--porcelain"):
+                raise ValueError("task changed since handoff audit")
+            info = ao_read(session)["session"]
+            if info.get("id") != session or info.get("isTerminated") or info.get("activity", {}).get("state") != "idle":
+                raise ValueError("AO task must be idle before ownership activation")
+            db.execute("UPDATE tasks SET stage='active',source=source || ? WHERE branch=?",
+                       (" ; handoff: " + args.handoff_evidence, args.branch))
+            db.commit()
         if args.command == "watch":
             from delivery_sweeper import ApiClient
 
