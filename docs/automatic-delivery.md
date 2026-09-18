@@ -15,7 +15,9 @@
 
 Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核对工作区、同名远端分支、与 `origin/main` 的补丁等价关系以及生产状态文件。任一阶段尚未完成时，hook 阻止提前结束并要求 Agent 继续跟踪上述既定流水线，不得把“创建 PR”、合并或是否部署留给用户决定。只有生产 active release 已包含本任务，或者 Agent 已核实并报告带证据的外部阻塞，回合才允许结束。hook 只做验证和持续执行约束，不直接绕过 GitHub 门禁、手工合并或抢占其他任务的部署。
 
-`Delivery Sweeper` 每 10 分钟对开放的同仓库 `session/*` PR 做一次补偿协调。它只合并当前 head SHA 在最近 12 小时内已有成功 `Contract Baseline` 的 PR，并且每轮最多合并一个，避免并行推进主分支或复活陈旧验证。若所有失败 job 都未分配 runner 且没有执行步骤，则把它识别为基础设施启动故障并最多重试到第三次；真实测试失败、审批等待、fork PR、非 session 分支、旧 head 和过期成功结果都保持阻塞。该定时器是事件驱动 `Auto Merge` 的补偿路径，不降低任何测试或分支保护门禁。
+`Delivery Sweeper` 在 `Session PR` / `Contract Baseline` 完成后立即运行，并每 10 分钟对开放的同仓库 `session/*` PR 做一次补偿协调。它只合并当前 head SHA 在最近 12 小时内已有成功 `Contract Baseline` 的 PR，并且每轮最多执行一次批准、重试或合并，避免并行推进主分支或复活陈旧验证。若 GitHub 把同仓库机器人创建的 PR 标成 `action_required`，Sweeper 只批准当前 head SHA 对应且不超过 12 小时的门禁；若所有失败 job 都未分配 runner 且没有执行步骤，则把它识别为基础设施启动故障并最多重试到第三次。真实测试失败、fork PR、非 session 分支、旧 head 和过期结果都保持阻塞。它是事件驱动 `Auto Merge` 的受信任补偿路径，不降低任何测试或分支保护门禁。
+
+仓库必须配置 Actions secret `AIGCNEWS_DELIVERY_TOKEN`。该凭据应属于仓库所有者，并至少具备 Actions 写入和 Pull Requests / Contents 写入权限；它只注入默认分支上的 `Delivery Sweeper`，不得注入 `Session PR`、`Contract Baseline` 或任何运行 PR 代码的 job。这样机器人 PR 可以自动获批，而待审 PR 无法读取或篡改批准凭据。
 
 ## GitHub 配置
 
