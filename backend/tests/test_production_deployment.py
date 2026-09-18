@@ -218,3 +218,12 @@ def test_trusted_builds_keep_images_and_cache_on_production_daemon():
     assert "docker/setup-buildx-action" not in workflow
     assert "docker/login-action" not in workflow
     assert "packages: write" not in workflow
+
+
+def test_failed_baseline_cannot_evict_pending_production_and_stale_builds_skip():
+    workflow = (ROOT / ".github/workflows/deploy-production.yml").read_text()
+    group = workflow.split("concurrency:", 1)[1].split("jobs:", 1)[0]
+    assert "github.event.workflow_run.conclusion == 'success'" in group
+    assert workflow.count("if: needs.metadata.outputs.eligible == 'true'") == 3
+    assert 'git merge-base --is-ancestor "$SOURCE_SHA" "$latest"' in workflow
+    assert workflow.index("Reject stale candidates") < workflow.index("build-backend:")

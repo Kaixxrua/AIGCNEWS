@@ -52,7 +52,7 @@ class GitHub(Protocol):
 class Runtime(Protocol):
     def instances(self) -> list[Instance]: ...
 
-    def reap(self, *, idle_timeout: timedelta) -> list[str]: ...
+    def reap(self, *, idle_timeout: timedelta, github: GitHub) -> list[str]: ...
 
     def launch(
         self, name: str, jit_config: str, runner_id: int, *, cpu: str, memory: str
@@ -220,6 +220,8 @@ class LxdRuntime:
             ],
             check=False,
         )
+        if result.returncode not in (0, 1):
+            raise AutoscalerError(f"Cannot establish worker state for {name}")
         return result.returncode == 0
 
     def archive_logs(self, name: str) -> None:
@@ -243,7 +245,7 @@ class LxdRuntime:
         self.archive_logs(name)
         self.command(["delete", "--force", name])
 
-    def reap(self, *, idle_timeout: timedelta) -> list[str]:
+    def reap(self, *, idle_timeout: timedelta, github: GitHub) -> list[str]:
         removed: list[str] = []
         now = datetime.now(UTC)
         for instance in self.instances():
@@ -254,6 +256,11 @@ class LxdRuntime:
                 and not self.has_worker(instance.name)
             )
             if instance.status == "STOPPED" or stale_idle:
+                # Unregister first: GitHub refuses removal of a busy runner.
+                # A failed/ambiguous request must never lead to killing a job.
+                if instance.runner_id is None:
+                    continue
+                github.delete_runner(instance.runner_id)
                 self.destroy(instance.name)
                 removed.append(instance.name)
         return removed
@@ -326,7 +333,7 @@ class Autoscaler:
 
     def reconcile(self, *, apply: bool) -> Plan:
         if apply:
-            self.runtime.reap(idle_timeout=self.idle_timeout)
+            self.runtime.reap(idle_timeout=self.idle_timeout, github=self.github)
         instances = self.runtime.instances()
         jobs = self.github.queued_jobs(self.label)
         plan = make_plan(len(jobs), len(instances), self.maximum)

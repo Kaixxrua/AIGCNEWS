@@ -227,7 +227,12 @@ jobs:
       # The frontend image must build from a clean checkout: SSL material is
       # gitignored and mounted at runtime, never copied into the image.
       - name: Build frontend image from clean checkout
-        run: docker build --tag aigcnews-frontend-ci frontend/
+        run: |
+          docker build \
+            --add-host host.docker.internal:host-gateway \
+            --build-arg HTTP_PROXY=http://host.docker.internal:7895 \
+            --build-arg HTTPS_PROXY=http://host.docker.internal:7895 \
+            --tag aigcnews-frontend-ci frontend/
 
   frontend-build:
     name: Frontend build

@@ -37,7 +37,7 @@ rm -f /opt/actions-runner/.credentials \
   /opt/actions-runner/.service
 find /opt/actions-runner/_work -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 find /opt/actions-runner/_diag -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-# Preserve only the public pull-through registry and its cache. Every cloned
+# Preserve only the public registry cache and explicitly pinned public bases. Every cloned
 # JIT runner gets an isolated CoW copy; no job can write back to this template.
 systemctl start docker.service
 for _ in $(seq 1 30); do
@@ -59,8 +59,24 @@ mapfile -t volumes < <(docker volume ls --quiet)
 for volume in "${volumes[@]}"; do
   [[ "$volume" == "$registry_volume" ]] || docker volume rm --force "$volume"
 done
+# Temporary stopped containers protect approved base manifests from image prune.
+# Saving/loading tar archives loses RepoDigests with some Docker backends.
+base_images=(
+  node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+  nginx:alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
+  postgres:16-alpine@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571
+)
+keepers=()
+for base in "${base_images[@]}"; do
+  docker image inspect "$base" >/dev/null
+  keepers+=("$(docker create "$base")")
+done
 docker builder prune --all --force
 docker image prune --all --force
+docker rm --volumes "${keepers[@]}"
+for base in "${base_images[@]}"; do
+  docker image inspect "$base" >/dev/null
+done
 docker network prune --force
 systemctl stop docker.service docker.socket containerd.service || true
 apt-get clean

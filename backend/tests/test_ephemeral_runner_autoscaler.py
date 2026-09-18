@@ -50,7 +50,7 @@ class FakeRuntime:
     def instances(self):
         return self.data
 
-    def reap(self, *, idle_timeout):
+    def reap(self, *, idle_timeout, github):
         assert idle_timeout == timedelta(minutes=5)
         self.reaped += 1
         return []
@@ -175,3 +175,51 @@ def test_template_keeps_only_the_isolated_public_registry_cache():
     assert "docker info >/dev/null" in source
     assert "docker builder prune --all --force" in source
     assert "rm -rf /var/lib/docker" not in source
+
+
+def test_worker_probe_error_never_means_idle(tmp_path):
+    import pytest
+
+    runtime = autoscaler.LxdRuntime("template", "job-", tmp_path)
+    runtime.command = lambda *args, **kwargs: autoscaler.subprocess.CompletedProcess(
+        [], 2, b"", b"unavailable"
+    )
+    with pytest.raises(autoscaler.AutoscalerError, match="worker state"):
+        runtime.has_worker("job-one")
+
+
+def test_template_preserves_pinned_public_bases_without_business_images():
+    source = PREPARE_SCRIPT.read_text()
+    assert "node:22-alpine@sha256:c610" in source
+    assert "nginx:alpine@sha256:4a730" in source
+    assert 'docker create "$base"' in source
+    assert 'docker rm --volumes "${keepers[@]}"' in source
+    assert source.index('docker create "$base"') < source.index("docker image prune")
+
+
+def test_reap_deregisters_before_destroy_and_fails_closed(tmp_path):
+    import pytest
+
+    runtime = autoscaler.LxdRuntime("template", "job-", tmp_path)
+    runtime.instances = lambda: [autoscaler.Instance("job-one", "STOPPED", runner_id=7)]
+    events = []
+    runtime.destroy = lambda name: events.append(("destroy", name))
+    github = FakeGitHub([])
+    github.delete_runner = lambda runner_id: events.append(("unregister", runner_id))
+    assert runtime.reap(idle_timeout=timedelta(minutes=5), github=github) == ["job-one"]
+    assert events == [("unregister", 7), ("destroy", "job-one")]
+    events.clear()
+
+    def busy(_runner_id):
+        raise autoscaler.AutoscalerError("busy or unreachable")
+
+    github.delete_runner = busy
+    with pytest.raises(autoscaler.AutoscalerError):
+        runtime.reap(idle_timeout=timedelta(minutes=5), github=github)
+    assert not events
+
+
+def test_smoke_build_uses_isolated_runner_proxy():
+    workflow = (ROOT / ".github/workflows/contract-baseline.yml").read_text()
+    assert "--add-host host.docker.internal:host-gateway" in workflow
+    assert "--build-arg HTTPS_PROXY=http://host.docker.internal:7895" in workflow

@@ -52,9 +52,9 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 Sweeper 可以在同一轮批准所有满足同仓库、`session/*`、机器人创建、精确 head SHA 且未过期约束的门禁，使任务并行进入临时 CI；推进 `main` 的合并仍保持每轮最多一个。若本轮已经批准或重试任何门禁，则不会再合并后续 PR，避免先启动旧基线又立刻改变合并基线。
 
-临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区和诊断日志。Docker 侧仅保留公共基础镜像的 pull-through registry 容器及其缓存 volume，删除其他容器、业务镜像、构建缓存、网络和 volume；每个 JIT 实例获得独立 CoW 副本，不能把写入带回模板或传给后续任务。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。默认最多同时创建两个 4 CPU / 8 GiB 实例；这是宿主机安全上限而不是固定 runner 数量，空闲时实例数为零。
+临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区和诊断日志。Docker 侧仅保留公共镜像缓存 registry 容器及其 volume，以及模板脚本明确列出的固定摘要 Node、Nginx、PostgreSQL 公共基础镜像，删除其他容器、业务镜像、构建缓存、网络和 volume；每个 JIT 实例获得独立 CoW 副本，不能把写入带回模板或传给后续任务。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。默认最多同时创建两个 4 CPU / 8 GiB 实例；这是宿主机安全上限而不是固定 runner 数量，空闲时实例数为零。
 
-临时 runner 不挂载生产 checkout、私有 Godot 目录或宿主机 Docker socket。每个实例使用自己的 nested Docker daemon；退出后 runner 自动从 GitHub 注销，控制器把 `_diag` 保存到 `$HOME/.local/state/aigcnews-ci-runners/` 后删除 LXD。超过 5 分钟仍未领取 job 且没有 `Runner.Worker` 的实例会被回收；正在执行 job 的实例不受该阈值影响，避免取消、注册或网络故障长期占用并发名额。
+临时 runner 不挂载生产 checkout、私有 Godot 目录或宿主机 Docker socket。每个实例使用自己的 nested Docker daemon；退出后 runner 自动从 GitHub 注销，控制器把 `_diag` 保存到 `$HOME/.local/state/aigcnews-ci-runners/` 后删除 LXD。超过 5 分钟仍未领取 job 且没有 `Runner.Worker` 的实例，只有成功从 GitHub 注销后才会被回收；探测异常或注销失败时不删除实例；正在执行 job 的实例不受该阈值影响，避免取消、注册或网络故障长期占用并发名额。
 
 只注册一台只能由本仓库使用的生产自托管 runner，并添加标签：
 
