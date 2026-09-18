@@ -76,7 +76,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
-    <div class="main-canvas">
+    <div class="main-canvas" :class="{ 'main-canvas--editorial': route.path === '/' }">
       <!-- 顶部品牌条：左侧报头信息 + 右侧用户信息，故障特效字标与工具图标居中成组 -->
       <div
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
@@ -85,12 +85,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
         <div class="app-masthead__tools flex items-center gap-3">
-          <FavoritesLink v-if="!isMobile" />
-          <PwaInstallLink v-if="!isMobile" />
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
+          <span v-if="!isMobile" class="masthead-tagline">{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
-            <PwaInstallLink v-if="isMobile" />
+            <FavoritesLink v-if="!isMobile" />
+            <PwaInstallLink />
             <GitHubLink v-if="!isMobile" />
             <ThemeToggle />
             <LocaleToggle />
@@ -148,6 +148,16 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </template>
 
 <style scoped>
+.main-canvas.main-canvas--editorial { width: 100%; height: calc(100dvh - 90px); margin-top: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.main-canvas--editorial .app-masthead { height: 70px; border-bottom: 0 !important; background: transparent !important; padding-inline: 42px; }
+.main-canvas--editorial :deep(.masthead-meta) { left: 42px; font-size: 13px; line-height: 1.45; }
+.main-canvas--editorial > .app-content { padding-top: 70px; padding-bottom: 0; left: 18px; right: 16px; }
+.masthead-tagline { font-size: 14px; color: var(--ink-muted); border-left: 1px solid var(--rule); padding-left: 24px; margin-left: 12px; }
+@media (min-width: 1100px) {
+  .app-masthead__actions { position: absolute; right: 112px; }
+  .topbar-divider { display: none; }
+}
+@media (max-width: 1399px) { .masthead-tagline { display: none; } }
 /* 各页面管理自己的滚动容器；布局层只限定可用尺寸。 */
 :deep(.view-container) {
   width: 100%;
@@ -242,6 +252,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   }
 }
 @media (max-width: 767px) {
+  .main-canvas.main-canvas--editorial { height: 100dvh; }
+  .main-canvas--editorial .app-masthead { height: 52px; padding-inline: 14px; }
+  .main-canvas--editorial > .app-content { left: 0; right: 0; padding-top: 52px; padding-bottom: 76px; }
   .main-canvas { border: 0; box-shadow: none; }
   .app-masthead { height: calc(52px + env(safe-area-inset-top)); padding-top: calc(8px + env(safe-area-inset-top)); }
   .main-canvas > .app-content { padding-top: calc(52px + env(safe-area-inset-top)); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
