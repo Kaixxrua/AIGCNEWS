@@ -147,18 +147,19 @@ def test_workflows_use_ephemeral_ci_and_isolated_production_runner():
     workflows = {
         path.name: path.read_text(encoding="utf-8")
         for path in (ROOT / ".github" / "workflows").glob("*.yml")
-    }
-    ephemeral_runner = "runs-on: ubuntu-latest"
+    }  # fmt: skip
+    control_runner = "runs-on: [self-hosted, linux, aigcnews-control]"
+    ephemeral_runner = "runs-on: [self-hosted, linux, aigcnews-ci-ephemeral]"
     legacy_ci_runner = "runs-on: [self-hosted, linux, aigcnews-ci]"
     production_runner = "runs-on: [self-hosted, linux, aigcnews-production]"
 
     assert all(legacy_ci_runner not in text for text in workflows.values())
     assert workflows["contract-baseline.yml"].count(ephemeral_runner) == 5
-    assert workflows["deploy-production.yml"].count(ephemeral_runner) == 1
+    assert workflows["deploy-production.yml"].count(control_runner) == 1
     assert workflows["deploy-production.yml"].count(production_runner) == 4
-    assert workflows["session-pr.yml"].count(ephemeral_runner) == 1
-    assert workflows["auto-merge.yml"].count(ephemeral_runner) == 1
-    assert workflows["delivery-sweeper.yml"].count(ephemeral_runner) == 1
+    assert workflows["session-pr.yml"].count(control_runner) == 1
+    assert workflows["auto-merge.yml"].count(control_runner) == 1
+    assert workflows["delivery-sweeper.yml"].count(control_runner) == 1
     assert workflows["evals-contract.yml"].count(ephemeral_runner) == 2
     assert production_runner not in workflows["contract-baseline.yml"]
     assert "cache: pip" not in workflows["contract-baseline.yml"]

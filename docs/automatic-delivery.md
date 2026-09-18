@@ -48,7 +48,11 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 不得把变量指向开发中的可变目录后再通过改写描述文件“追平”内容。提升私有 release 时先在新目录完整生成源码、场景、manifest 和 descriptor，执行 staging 校验成功后再更新三个 Godot 变量；旧目录至少保留到引用它的构建全部结束。任何不匹配都 fail-closed，禁止回退到 Three.js、CSS 或公开仓库中的旧联系页。
 
-PR 门禁、建 PR、自动批准、自动合并和部署元数据 job 使用 `ubuntu-latest`。每个 job 由 GitHub 按需提供一次性干净虚拟机，完成后销毁；它们不挂载生产目录、私有 Godot 制品或宿主机 Docker daemon，因而不会与其他任务争抢固定 CI runner，也不需要维护常驻 `aigcnews-ci` 数量。
+建 PR、自动批准、自动合并和部署元数据 job 使用常驻的轻量 `aigcnews-control` runner。PR 门禁和定时契约测评使用 `aigcnews-ci-ephemeral`：宿主机控制器根据排队 job 按需创建干净的 LXD JIT runner，每个实例只执行一个 job，结束后注销、留存诊断日志并销毁。控制任务不再被大型测试堵住，也不需要人工维护常驻 CI runner 数量。
+
+临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区、诊断日志和 Docker 数据。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。默认最多同时创建两个 4 CPU / 8 GiB 实例；这是宿主机安全上限而不是固定 runner 数量，空闲时实例数为零。
+
+临时 runner 不挂载生产 checkout、私有 Godot 目录或宿主机 Docker socket。每个实例使用自己的 nested Docker daemon；退出后 runner 自动从 GitHub 注销，控制器把 `_diag` 保存到 `$HOME/.local/state/aigcnews-ci-runners/` 后删除 LXD。超过 20 分钟仍未领取 job 且没有 `Runner.Worker` 的实例会被回收，避免注册或网络故障形成泄漏。
 
 只注册一台只能由本仓库使用的生产自托管 runner，并添加标签：
 
@@ -72,7 +76,7 @@ runner 用户必须能够：
 
 ## 并发语义
 
-- 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试和交付控制任务在 GitHub 托管的一次性 runner 中执行。
+- 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试在按需 LXD JIT runner 中执行，交付控制任务在隔离的轻量控制 runner 中执行。
 - 构建使用持久化 `default` builder 和 `load: true`，关闭 push；镜像名称保留 GHCR 命名以兼容后续备份，但本流程不上传 GHCR。升级 Docker/Buildx 时必须验证导出的 manifest digest 可以在本机 `docker image inspect repository@sha256:...` 解析。
 - 若扩为多台生产 runner，应先设计共享制品分发，不能只复用 runner 标签。
 - GitHub workflow 级 `aigcnews-production-latest` concurrency 覆盖元数据、镜像构建和生产切换；同一时间最多一个 active 和一个最新 pending 候选，新的 pending 候选替代旧 pending 候选，从而避免为已被后续 `main` 包含的版本重复构建。PR 等非 `main push` 事件使用按 run ID 隔离的组，不能淘汰真实生产候选。
