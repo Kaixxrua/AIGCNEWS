@@ -20,6 +20,16 @@ if [[ "$branch" != session/* ]]; then
 fi
 
 repo_root=$(git rev-parse --show-toplevel)
+common_dir=$(git rev-parse --git-common-dir)
+if [[ "$common_dir" != /* ]]; then
+  common_dir="$repo_root/$common_dir"
+fi
+primary_root=$(cd "$common_dir/.." && pwd -P)
+if [[ "$(cd "$repo_root" && pwd -P)" == "$primary_root" ]]; then
+  echo "[pre-commit] 拒绝在 primary checkout 提交；请使用 scripts/dev_session.py start <slug> 创建 linked worktree" >&2
+  exit 1
+fi
+
 cd "$repo_root"
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
