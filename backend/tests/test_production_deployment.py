@@ -134,8 +134,8 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     assert "--expected-release-id" in deployment
     assert "--expected-descriptor-sha256" in deployment
     assert "GodotContactScene.test.ts" in deployment
-    assert '--match-head-commit "$HEAD_SHA"' in auto_merge
-    assert '--head "$HEAD_BRANCH"' in auto_merge
+    assert "group: aigcnews-delivery-sweeper" in auto_merge
+    assert "python3 scripts/ci/delivery_sweeper.py --apply" in auto_merge
     assert "--auto" not in auto_merge
     assert "startsWith(github.event.workflow_run.head_branch, 'session/')" in auto_merge
     assert "GH_TOKEN: ${{ secrets.AIGCNEWS_DELIVERY_TOKEN }}" in auto_merge
