@@ -134,7 +134,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
   --paper: #f3f2ec; --paper-light: #fffefa; --ink: #10131e; --muted: #666b70;
   --acid: #c8fc4c; --acid-soft: #f0f8d8; --rule: #e5e3dd;
   --sidebar-width: 24%; --column-gap: 14px;
-  position: relative; isolation: isolate; padding: 22px 9px 18px; overflow-y: auto;
+  position: relative; isolation: isolate; padding: 22px 9px 8px; overflow-y: auto;
   color: var(--ink); background: transparent; font-family: Inter, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
 }
 .dashboard-page::before, .dashboard-page::after { content: ''; position: absolute; z-index: -1; top: 0; bottom: 0; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); pointer-events: none; }
@@ -146,7 +146,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-heading p { color: #51545b; font-size: 20px; line-height: 1.4; }
 .dashboard-history { display: flex; gap: 5px; align-items: center; font-size: 12px; margin-top: 5px; }
 .dashboard-heading :deep(.stat-strip) { flex: 1; }
-.dashboard-main { display: grid; grid-template-columns: minmax(0, 1fr) var(--sidebar-width); gap: var(--column-gap); align-items: start; }
+.dashboard-main { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--sidebar-width) - 14px); gap: calc(var(--column-gap) + 14px); align-items: start; }
 .dashboard-main > * { min-width: 0; }
 .dashboard-sidebar { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 0 0 0 1px; }
 .dashboard-page :deep(.glass-card) { border: 1px solid var(--rule); border-radius: 11px; box-shadow: none; background: var(--paper-light); backdrop-filter: none; }
@@ -182,7 +182,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .integration-card > svg { color: #172015; border-radius: 50%; background: #e9fcc0; padding: 7px; width: 34px; height: 34px; flex-shrink: 0; }
 .integration-card > span { min-width: 0; font-size: 12px; color: #4e525a; }
 .integration-card :deep(span > span), .integration-card :deep(number-flow-vue) { display: block; font-size: 24px; font-weight: 750; color: var(--ink); line-height: 1.3; }
-.ui-inspiration { display: grid; grid-template-columns: 90px minmax(0, 1fr); grid-template-rows: 24px 1fr; column-gap: 14px; height: 98px; padding: 12px 15px; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); }
+.ui-inspiration { display: grid; grid-template-columns: 90px minmax(0, 1fr); grid-template-rows: 24px 1fr; column-gap: 14px; height: 94px; padding: 12px 15px; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); }
 .ui-inspiration__heading { grid-column: 2; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; }
 .ui-inspiration__preview { grid-column: 1; grid-row: 1 / 3; overflow: hidden; border-radius: 7px; background: var(--acid-soft); }
 .ui-inspiration__preview img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }

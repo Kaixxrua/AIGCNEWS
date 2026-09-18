@@ -215,6 +215,12 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
 .editorial-list .ranking-row--lead .ranking-link { color: #f4f5ed; }
 .editorial-list .ranking-row--lead .ranking-summary { color: #dedfdc; }
 @media (min-width: 1500px) {
+ .editorial-list > .ranking-row--featured { height: 164px; }
+ .editorial-list .ranking-row--featured .ranking-link { height: 100%; min-height: 0; }
+ .editorial-list > .ranking-row:not(.ranking-row--featured) { height: 52px; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-link { min-height: 0; }
+}
+@media (min-width: 1500px) {
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { grid-template-columns: minmax(210px, 1fr) minmax(230px, 1.12fr) 32%; }
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta { flex-wrap: nowrap; max-width: none; justify-content: flex-start; }
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-score { order: 1; margin-left: auto; padding-left: 10px; }

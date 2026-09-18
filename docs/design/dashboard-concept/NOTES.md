@@ -17,7 +17,9 @@ routes and live data are retained; layout is reconstructed from the image.
 ## Requested differences
 
 - Six real metrics, including total visitors and total UI catalog items.
-- Existing Dock is unchanged.
+- Existing Dock icons and interactions are preserved; following the footer review, the homepage Dock is enlarged with responsive sizing between the two footer groups.
+- Homepage footer matches the concept's brand/tagline and navigation/copyright split, retaining ICP filing and access to legal/MCP links.
+- Dashboard rows and sidebar gutters reserve space for hard borders and offset shadows instead of clipping them at the bottom or overlapping the outer frame.
 - Cyberpunk logo glitch remains, limited to one changed glyph for readability.
 - Brief geometry remains animated; reduced-motion and hidden-page pause apply.
 - UI inspiration replaces hot topics; the radar is removed.

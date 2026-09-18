@@ -71,7 +71,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': route.path === '/' }">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -142,12 +142,20 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
     <AccountSettingsDialog v-model="accountSettingsOpen" />
 
-    <LayoutFooter :brand-name="brandName" />
+    <LayoutFooter :brand-name="brandName" :editorial="route.path === '/'" />
 
   </div>
 </template>
 
 <style scoped>
+@media (min-width: 1024px) {
+  .app-shell--editorial :deep(.dock) { bottom: 8px; padding: 10px; }
+  .app-shell--editorial :deep(.dock-item) { width: 52px; min-width: 52px; height: 52px; flex-basis: 52px; }
+  .app-shell--editorial :deep(.dock-icon), .app-shell--editorial :deep(.dock-icon svg) { width: 24px; height: 24px; }
+}
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .app-shell--editorial :deep(.dock-item) { width: 48px; min-width: 48px; height: 48px; flex-basis: 48px; }
+}
 .main-canvas.main-canvas--editorial { width: 100%; height: calc(100dvh - 90px); margin-top: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .main-canvas--editorial .app-masthead { height: 70px; border-bottom: 0 !important; background: transparent !important; padding-inline: 42px; }
 .main-canvas--editorial :deep(.masthead-meta) { left: 42px; font-size: 13px; line-height: 1.45; }
