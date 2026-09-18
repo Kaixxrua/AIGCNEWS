@@ -21,6 +21,26 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 ## GitHub 配置
 
+### 公网静态边缘
+
+源站 Compose 更新后，生产 job 运行 `scripts/release/publish_frontend_edges.py`，
+在同一宿主部署锁内核对 active SHA，从该 release 的 frontend 精确 digest 导出静态产物，
+调用宿主私有静态发布控制器逐站上传、校验、切换并执行 smoke。
+不重新构建前端，不读取开发目录的 dist。旧 SHA 被跳过；配置缺失或任何边缘失败会使发布 job 失败。
+源站状态与边缘状态分别记录，源站健康不代表公网已更新。
+私有控制器负责单站失败回滚；多站部分成功保存在 `.aigcnews-deploy/edge-state.json`，
+重跑会重新发布所有配置站点，不回滚已经成功的其他站点。
+
+部署目录需要私有运行配置 `.aigcnews-deploy/edge-config.json`：
+
+```json
+{"controller":"/absolute/private/deploy.py","inventory":"/absolute/private/inventory.json","sites":["aigcnews","aigcnews-cn"]}
+```
+
+凭据只保存在宿主私有 inventory，不能进入 Git 或 PR job。可用同一脚本
+`--root PRODUCTION_ROOT --source-sha ACTIVE_SHA --dry-run` 校验真实镜像产物及 inventory；
+该模式不上传、不切换边缘。完整上线必须同时核对源站 state 和 edge-state。
+
 仓库需要允许 GitHub Actions 创建 PR、写入 PR。本地镜像发布不需要 GHCR 写入权限。`production` Environment 不设置 required reviewers，从而把仓库管理员的启用行为作为持续部署授权，而不是每次发布授权。
 
 配置 Repository variable：
