@@ -10,6 +10,7 @@ const buildController = () => ({
   clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
   clearTransientCommand: vi.fn(() => { controllerBox.transientCommand.value = '' }),
   copiedKey: ref(''),
+  copyAgentSetupPrompt: vi.fn(),
   copyGeneratedCommand: vi.fn(),
   copyQuickCommand: vi.fn(),
   creating: ref(false),
@@ -93,6 +94,7 @@ const i18n = createI18n({
       mcpAutoCommand: {
         label: '账号配置命令 · 自动包含 Token', description: '自动生成带 Token 的命令。',
         creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令',
+        copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '粘贴给 Agent 自动配置。',
       },
     },
   },
@@ -218,6 +220,10 @@ describe('McpSetupWizard step content', () => {
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
     expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+    const agentPromptButton = buttonByText(wrapper, '复制给 Agent 的配置提示词')
+    expect(agentPromptButton).toBeDefined()
+    await agentPromptButton!.trigger('click')
+    expect(ctl().copyAgentSetupPrompt).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).not.toContain('收藏授权')
     expect(wrapper.find('#mcp-device-label').exists()).toBe(false)
   })

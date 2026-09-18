@@ -239,6 +239,27 @@ describe('MCP connect controller', () => {
     expect(JSON.stringify(controller.setupError.value)).not.toContain('aigc-news')
   })
 
+  it('copies a natural-language Agent prompt with the selected setup context', async () => {
+    const copy = vi.fn(async () => undefined)
+    const { controller } = createController({ copy })
+    controller.selectedShell.value = 'bash'
+    controller.transientCommand.value = 'setup-command-with-secret'
+
+    await controller.copyAgentSetupPrompt()
+
+    const prompt = vi.mocked(copy).mock.calls[0]?.[0] ?? ''
+    expect(prompt).toContain('mcp.agentSetup.prompt')
+    expect(prompt).toContain('Claude Code')
+    expect(prompt).toContain('https://example.test/api/mcp')
+    expect(prompt).toContain('setup-command-with-secret')
+    expect(controller.copiedKey.value).toBe('agent-prompt')
+
+    controller.selectedShell.value = 'powershell'
+    await nextTick()
+    expect(controller.transientCommand.value).toBe('')
+    expect(controller.copiedKey.value).toBe('')
+  })
+
   it('exposes a reactive isLoggedIn state derived from the injected getter', async () => {
     const loggedIn = ref(false)
     const { controller } = createController({ isLoggedIn: () => loggedIn.value })
