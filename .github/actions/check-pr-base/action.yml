@@ -1,0 +1,9 @@
+name: Check PR base before expensive CI
+description: Reject stale heads and bases without modifying any branch
+runs:
+  using: composite
+  steps:
+    - uses: actions/github-script@v7
+      with:
+        script: |
+          await require(`${process.env.GITHUB_WORKSPACE}/scripts/ci/check_pr_base.cjs`)({github, context, core});

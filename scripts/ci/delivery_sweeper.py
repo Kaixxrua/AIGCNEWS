@@ -126,9 +126,8 @@ class ApiClient:
         main = self.request("GET", "/git/ref/heads/main")["object"]["sha"]
         comparison = self.request("GET", f"/compare/{main}...{head}")
         if comparison.get("status") not in {"ahead", "identical"}:
-            self.request(
-                "PUT", f"/pulls/{number}/update-branch", {"expected_head_sha": head}
-            )
+            # The owning task updates its branch before CI; landing never
+            # creates a surprise merge commit after tests have completed.
             return False
         # All automated landings share one workflow concurrency group. Recheck
         # main immediately before the exact-head merge as a fail-closed guard.
@@ -244,12 +243,12 @@ def reconcile(
                     Result(
                         number,
                         head,
-                        "updated",
-                        "branch updated to current main; new SHA must pass CI",
+                        "hold",
+                        "base update required in owning task before new CI",
                         run_id,
                     )
                 )
-                break
+                continue
             if apply:
                 client.merge(number, head, title)
             results.append(

@@ -26,6 +26,7 @@ def _clean_git_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "01a0a9b2-7db0-78a2-a960-cfc652157d21")
 
 
 def test_start_rejects_unsafe_slug(tmp_path):
@@ -250,6 +251,34 @@ def test_start_creates_real_linked_worktree_with_local_hooks(tmp_path):
     assert (session / ".githooks" / "pre-push").is_file()
     for hook in ("pre-commit", "commit-msg", "pre-push", "post-commit"):
         assert os.access(session / ".githooks" / hook, os.X_OK)
+
+
+def test_start_records_owner_without_allowing_rebind(tmp_path, monkeypatch):
+    from scripts.ci.delivery_ownership import record_owner, resolve_owner
+
+    root = _temporary_remote(tmp_path)[1]
+    owner = "01a0a9b2-7db0-78a2-a960-cfc652157d21"
+    monkeypatch.setenv("CODEX_THREAD_ID", owner)
+    result = _session.start("owner-test", root)
+    assert resolve_owner(result["branch"], root) == owner
+    with pytest.raises(FileExistsError):
+        record_owner(result["worktree"], result["branch"], owner)
+    _run_git(Path(result["worktree"]), "checkout", "--detach")
+    assert resolve_owner(result["branch"], root) is None
+
+
+def test_new_session_without_owner_is_rejected(tmp_path, monkeypatch):
+    root = _temporary_remote(tmp_path)[1]
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID is required"):
+        _session.start("no-owner", root)
+    assert not (root / ".claude/worktrees").exists()
+
+
+def test_bad_owner_rejected_before_worktree_creation(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_THREAD_ID", "not-a-task-id")
+    with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID"):
+        _session.start("bad-owner", tmp_path)
 
 
 def test_start_from_linked_worktree_does_not_nest_sessions(tmp_path):

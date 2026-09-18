@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).parents[2]
 SCRIPT = ROOT / "scripts" / "release" / "deploy_production.py"
@@ -152,7 +153,18 @@ def test_workflows_use_isolated_self_hosted_runners():
     production_runner = "runs-on: [self-hosted, linux, aigcnews-production]"
 
     assert all("runs-on: ubuntu-latest" not in text for text in workflows.values())
-    assert workflows["contract-baseline.yml"].count(ci_runner) == 5
+    baseline_jobs = yaml.safe_load(workflows["contract-baseline.yml"])["jobs"]
+    test_jobs = {
+        "backend-tests", "postgres-integration", "mcp-go", "compose-smoke", "frontend-build"
+    }
+    assert set(baseline_jobs) == test_jobs | {"pr-admission"}
+    assert workflows["contract-baseline.yml"].count(ci_runner) == 6
+    for job in baseline_jobs.values():
+        assert job["runs-on"] == ["self-hosted", "linux", "aigcnews-ci"]
+    admission = baseline_jobs["pr-admission"]
+    assert any(step.get("uses") == "./.github/actions/check-pr-base" for step in admission["steps"])
+    for name in test_jobs:
+        assert baseline_jobs[name]["needs"] == "pr-admission"
     assert workflows["deploy-production.yml"].count(ci_runner) == 1
     assert workflows["deploy-production.yml"].count(production_runner) == 4
     assert workflows["session-pr.yml"].count(ci_runner) == 1
