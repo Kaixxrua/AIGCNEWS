@@ -459,7 +459,7 @@ def test_loop_keeps_controller_and_adaptive_warmup_after_transient_get(monkeypat
         if len(sleeps) == 2: raise KeyboardInterrupt
     monkeypatch.setattr(autoscaler.time, 'sleep', sleep)
     with pytest.raises(KeyboardInterrupt): autoscaler.main(['--apply', '--loop'])
-    assert builds == [1] and controller.calls == 2 and sleeps == [20, 20]
+    assert builds == [1] and controller.calls == 2 and sleeps == [5, 5]
     assert 'next_poll' in capsys.readouterr().err
 
 
@@ -476,3 +476,174 @@ def test_queue_scan_bounds_history_and_tracks_disappeared_active_run(monkeypatch
     assert any('status=completed&per_page=10&' in path for path in calls)
     assert all('exclude_pull_requests=true' in path for path in calls if '/actions/runs?' in path)
     assert any('/runs/999/jobs?' in path for path in calls)
+
+
+def test_snapshot_refresh_is_nonblocking_and_stale_queue_cannot_admit(monkeypatch):
+    import threading
+    gate = threading.Event()
+    entered = threading.Event()
+    now = [0.0]
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: now[0])
+    class Client:
+        job_metadata = []
+        def queued_jobs(self, *args):
+            entered.set()
+            assert gate.wait(2)
+            return [1, 2]
+        def runners(self): return []
+    cache = autoscaler.QueueSnapshot(Client())
+    assert cache.read('ci', ()) == ([], [], [], False)
+    assert entered.wait(1)
+    worker = cache.worker
+    now[0] = 5
+    assert cache.read('ci', ())[-1] is False and cache.worker is worker
+    gate.set(); worker.join(1)
+    assert cache.read('ci', ()) == ([1, 2], [], [], True)
+    cache.launched(7); cache.launched(8)
+    assert len(cache.pending) == 2
+    # Lagged queue refresh must not restore spent launch credits.
+    cache.snapshot = (5, [1, 2], [], [])
+    assert cache.read('ci', ())[-1] and len(cache.pending) == 2
+    now[0] = 66
+    assert cache.read('ci', ())[-1] is False
+    cache.worker.join(1)
+
+
+def test_snapshot_pending_credit_released_only_by_exact_assignment(monkeypatch):
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: 10)
+    cache = autoscaler.QueueSnapshot(None)
+    cache.started = 10
+    cache.launched(7); cache.launched(8)
+    cache.snapshot = (5, [1], [{'runner_id': 7, 'status': 'in_progress'}], [])
+    cache.read('ci', ())
+    assert cache.pending == {8}
+
+
+def test_cached_queue_stale_or_spent_credit_never_launches(monkeypatch, tmp_path):
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts/ci'))
+    import shared_runner_pool as pool
+    monkeypatch.setattr(autoscaler.Path, 'home', lambda: tmp_path)
+    now = [10]
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: now[0])
+    sample_calls = []
+    def sample(*args, **kwargs):
+        sample_calls.append(1)
+        return pool.Evidence(('stable',), 0, 0, 12 * pool.GIB, 0, False)
+    monkeypatch.setattr(pool, 'sample', sample)
+    github = FakeGitHub([1])
+    github.queued_jobs = lambda *args: (_ for _ in ()).throw(AssertionError('must use cache'))
+    runtime = FakeRuntime()
+    scaler = build(github, runtime)
+    scaler.shared_parent = '/not-live'
+    scaler.adaptive = pool.AdaptiveAdmission(settling_seconds=10)
+    cache = autoscaler.QueueSnapshot(None)
+    cache.started = 1000  # no refresh needed for this snapshot-only regression
+    cache.snapshot = (10, [1], [], [])
+    cache.launched(7)
+    scaler.queue_snapshot = cache
+    for current in [10, 15, 20, 25]:
+        now[0] = current
+        assert scaler.reconcile(apply=True).spawn == 0
+    cache.pending.clear()
+    now[0] = 80
+    assert scaler.reconcile(apply=True).spawn == 0
+    assert len(sample_calls) == 5 and not github.generated
+
+
+def test_confirmed_reaped_registration_stays_excluded_on_cached_ticks(monkeypatch):
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: 10)
+    cache = autoscaler.QueueSnapshot(None)
+    cache.started = 10
+    cache.snapshot = (5, [], [], [{'id': 7}, {'id': 8}])
+    cache.retired.add(7)
+    assert cache.read('ci', ())[2] == [{'id': 8}]
+    assert cache.read('ci', ())[2] == [{'id': 8}]
+
+
+def test_retired_unassigned_runner_releases_pending_credit():
+    cache = autoscaler.QueueSnapshot(None)
+    cache.launched(7)
+    cache.retired_runner(7)
+    assert not cache.pending and cache.retired == {7}
+
+
+def test_first_empty_snapshot_waits_before_coverage_or_reaping(monkeypatch, tmp_path):
+    monkeypatch.setattr(autoscaler.Path, 'home', lambda: tmp_path)
+    class Cache:
+        snapshot = None
+        def read(self, *args): return [], [], [], False
+    runtime = FakeRuntime()
+    scaler = build(FakeGitHub([1]), runtime)
+    scaler.queue_snapshot = Cache()
+    scaler.shared_parent = '/not-live'
+    scaler.verify_accounting = True
+    assert scaler.reconcile(apply=True).reason == 'waiting for initial API coverage'
+    assert runtime.reaped == 0 and not runtime.launched
+
+
+def test_slow_discovery_revalidates_exact_queue_instead_of_refreshing_old_timestamp(monkeypatch):
+    now = [0.0]
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: now[0])
+    class Client:
+        job_metadata = [{'id': 1, 'status': 'queued'}, {'id': 2, 'status': 'queued'}]
+        def queued_jobs(self, *args):
+            now[0] = 75
+            return [1, 2]
+        def request(self, method, path):
+            assert method == 'GET'
+            return {'id': int(path.rsplit('/', 1)[1]),
+                    'status': 'completed' if path.endswith('/1') else 'queued'}
+        def runners(self): return []
+    cache = autoscaler.QueueSnapshot(Client())
+    cache.read('ci', ())
+    cache.worker.join(1)
+    cache.started = 75
+    jobs, metadata, runners, fresh = cache.read('ci', ())
+    assert jobs == [2] and fresh and cache.snapshot[0] == 75
+    now[0] = 136
+    cache.started = 136
+    assert not cache.read('ci', ())[-1]
+
+
+def test_failed_launch_releases_pending_only_after_successful_unregister(monkeypatch, tmp_path):
+    import pytest
+    monkeypatch.syspath_prepend(str(ROOT / 'scripts/ci'))
+    import shared_runner_pool as pool
+    from runner_pool_receipts import Receipts
+    monkeypatch.setattr(autoscaler.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: 10)
+    monkeypatch.setattr(pool, 'sample', lambda *a, **k: pool.Evidence(('stable',), 0, 0, 12 * pool.GIB, 0, False))
+    class Policy:
+        def decide(self, *args): return 1
+        def launched(self, *args): pass
+    for unregister_fails in (False, True):
+        github = FakeGitHub([1])
+        runtime = FakeRuntime(fail=True)
+        runtime.receipts = Receipts(tmp_path / str(unregister_fails))
+        scaler = build(github, runtime)
+        scaler.shared_parent = '/not-live'; scaler.adaptive = Policy()
+        cache = autoscaler.QueueSnapshot(None); cache.started = 10
+        cache.snapshot = (10, [1], [], [])
+        scaler.queue_snapshot = cache
+        if unregister_fails:
+            def fail(*args): raise autoscaler.AutoscalerError('unregister uncertain')
+            github.delete_runner = fail
+        with pytest.raises(autoscaler.AutoscalerError): scaler.reconcile(apply=True)
+        assert cache.pending == ({101} if unregister_fails else set())
+
+
+def test_confirmed_idle_reap_releases_pending_demand(monkeypatch, tmp_path):
+    monkeypatch.setattr(autoscaler.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(autoscaler.time, 'monotonic', lambda: 10)
+    cache = autoscaler.QueueSnapshot(None); cache.started = 10
+    cache.snapshot = (10, [], [], [])
+    cache.launched(7)
+    runtime = FakeRuntime([autoscaler.Instance('idle', 'RUNNING', runner_id=7)])
+    def reap(**kwargs):
+        runtime.data.clear()
+        return ['idle']
+    runtime.reap = reap
+    scaler = build(FakeGitHub([]), runtime)
+    scaler.queue_snapshot = cache
+    scaler.reconcile(apply=True, drain=True)
+    assert not cache.pending and cache.retired == {7}

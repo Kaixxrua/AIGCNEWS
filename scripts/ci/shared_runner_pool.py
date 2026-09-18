@@ -231,7 +231,7 @@ def sample(parent, runners, labels, *, interval=1, owner_unit=None, history=None
         if float(fields["avg10"]) > 0:
             pressure = True
     growth, startup, bootstraps, oom = workload_evidence(after, jobs, parent, history, runners)
-    return Evidence((bound, identities, fingerprint(after)), delta / 1e6 / elapsed,
+    return Evidence((bound, identities), delta / 1e6 / elapsed,
                     memory, bound[3], committed, pressure, growth, startup, bootstraps,
                     oom or int(counters(parent / "memory.events").get("oom_kill", 0)) > 0)
 
@@ -281,7 +281,7 @@ class AdaptiveAdmission:
     Overcommit can OOM; pressure and OOM evidence stop admission. Never resize running jobs. Inventory changes restart the settling window.
     """
     def __init__(self, *, settling_seconds=60, startup_memory=3 * GIB, startup_cpu=1.0):
-        if settling_seconds < 30 or startup_memory < 3 * GIB or startup_cpu < 1:
+        if settling_seconds < 10 or startup_memory < 3 * GIB or startup_cpu < 1:
             raise ValueError("unsafe startup headroom")
         self.settling = settling_seconds
         self.startup_memory = startup_memory
@@ -290,6 +290,8 @@ class AdaptiveAdmission:
         self.until = 0.0
         self.cpu = self.memory = None
         self.blocked = True
+        self.last_sample = None
+        self.valid_samples = 0
 
     def decide(self, queued, evidence, now):
         import math
@@ -300,11 +302,23 @@ class AdaptiveAdmission:
             raise ValueError("invalid admission evidence")
         if evidence.memory_ceiling != MEMORY_LIMIT:
             raise ValueError("unexpected shared memory ceiling")
-        if self.identity != evidence.identity:
+        if self.settling < 30:
+            if self.last_sample is None or now - self.last_sample > 15:
+                self.valid_samples = 0
+                self.until = now + self.settling
+            self.valid_samples += 1
+            self.last_sample = now
+        changed = self.identity != evidence.identity
+        if changed and self.identity and len(self.identity) == len(evidence.identity) == 2:
+            old_bound, old_members = self.identity
+            new_bound, new_members = evidence.identity
+            changed = old_bound != new_bound or not set(new_members).issubset(set(old_members))
+        if changed:
             self.identity = evidence.identity
             self.until = now + self.settling
             self.cpu, self.memory = evidence.cpu, evidence.memory
             self.blocked = True
+        self.identity = evidence.identity
         self.cpu = .5 * evidence.cpu + .5 * self.cpu
         self.memory = .5 * evidence.memory + .5 * self.memory
         cpu = max(evidence.cpu, self.cpu)
@@ -314,7 +328,7 @@ class AdaptiveAdmission:
             self.until = now + self.settling
         if cpu < CPU_LIMIT * .8 and memory < evidence.memory_ceiling * .8 and not evidence.pressure and not evidence.oom:
             self.blocked = False
-        if not queued or self.blocked or now < self.until:
+        if not queued or self.blocked or now < self.until or (self.settling < 30 and self.valid_samples < 2):
             return 0
         if cpu + self.startup_cpu >= CPU_LIMIT * .9:
             return 0

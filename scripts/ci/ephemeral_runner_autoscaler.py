@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import fcntl
 import http.client
 import json
@@ -11,6 +12,7 @@ import os
 import secrets
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -221,6 +223,71 @@ class ApiClient:
         except AutoscalerError as exc:
             if "(404)" not in str(exc):
                 raise
+
+
+class QueueSnapshot:
+    """One read-only refresh worker; main thread alone owns runtime mutations."""
+    def __init__(self, client, *, refresh=20, max_age=60):
+        self.client = client
+        self.refresh = refresh
+        self.max_age = max_age
+        self.snapshot = None
+        self.result = None
+        self.worker = None
+        self.started = float('-inf')
+        self.pending = set()
+        self.retired = set()
+
+    def read(self, label, compat):
+        now = time.monotonic()
+        if self.worker is not None and not self.worker.is_alive():
+            result = self.result
+            self.worker = None
+            if isinstance(result, Exception):
+                if not isinstance(result, TransientGitHubError):
+                    raise result
+            else:
+                self.snapshot = result
+                self.retired.intersection_update(r["id"] for r in result[3])
+        if self.worker is None and now - self.started >= self.refresh:
+            self.started = now
+            def refresh():
+                try:
+                    jobs = self.client.queued_jobs(label, compat)
+                    metadata = copy.deepcopy(self.client.job_metadata)
+                    observed = now
+                    if time.monotonic() - now > self.max_age / 2:
+                        # A slow discovery scan cannot renew old evidence by
+                        # timestamp alone. Revalidate a bounded admission batch
+                        # by exact job ID, then refresh registration coverage.
+                        observed = time.monotonic()
+                        checked = [self.client.request("GET", f"/actions/jobs/{job_id}")
+                                   for job_id in jobs[:2]]
+                        checked_ids = {job['id'] for job in checked}
+                        metadata = [job for job in metadata if job['id'] not in checked_ids] + checked
+                        jobs = [job['id'] for job in checked if job['status'] == 'queued']
+                    runners = self.client.runners()
+                    self.result = (observed, jobs, metadata, runners)
+                except Exception as exc:
+                    self.result = exc
+            self.worker = threading.Thread(target=refresh, daemon=True)
+            self.worker.start()
+        if self.snapshot is None:
+            return [], [], [], False
+        started, jobs, metadata, runners = self.snapshot
+        assigned = {job.get('runner_id') for job in metadata
+                    if job['status'] in {'in_progress', 'completed'}}
+        self.pending.difference_update(assigned)
+        fresh = now - started <= self.max_age
+        return jobs, metadata, [r for r in runners if r["id"] not in self.retired], fresh
+
+    def launched(self, runner_id):
+        self.pending.add(runner_id)
+
+    def retired_runner(self, runner_id):
+        # Called only after confirmed deregistration and local cleanup.
+        self.pending.discard(runner_id)
+        self.retired.add(runner_id)
 
 
 class LxdRuntime:
@@ -479,34 +546,57 @@ class Autoscaler:
         self.adaptive = None
         self.verify_accounting = False
         self.history = None
+        self.queue_snapshot = None
 
     def reconcile(self, *, apply: bool, drain: bool = False) -> Plan:
         if (Path.home() / ".config/aigcnews/ci-paused").exists() and not drain:
             return Plan(0, len(self.runtime.instances()), 0, "operator pause")
-        jobs = self.github.queued_jobs(self.label, self.compat_labels)
+        fresh = True
+        metadata = None
+        runners = None
+        if self.queue_snapshot:
+            jobs, metadata, runners, fresh = self.queue_snapshot.read(self.label, self.compat_labels)
+            if self.queue_snapshot.snapshot is None:
+                return Plan(0, len(self.runtime.instances()), 0, "waiting for initial API coverage")
+        else:
+            jobs = self.github.queued_jobs(self.label, self.compat_labels)
+        if metadata is None:
+            metadata = getattr(self.github, "job_metadata", [])
         if self.shared_parent and apply:
             owned_ids = {instance.runner_id for instance in self.runtime.instances()}
-            for job in getattr(self.github, "job_metadata", []):
+            for job in metadata:
                 if job.get("runner_id") in owned_ids and job["status"] in {"in_progress", "completed"}:
                     self.runtime.receipts.bind(job["runner_id"], job)
         if apply:
-            self.runtime.reap(idle_timeout=self.idle_timeout, github=self.github)
+            before_reap = {item.name: item.runner_id for item in self.runtime.instances()}
+            removed = self.runtime.reap(idle_timeout=self.idle_timeout, github=self.github)
+            if self.queue_snapshot and removed:
+                removed_ids = {before_reap[name] for name in removed}
+                # Only locally confirmed unregister/delete results supersede
+                # the older online-registration snapshot.
+                for runner_id in removed_ids:
+                    self.queue_snapshot.retired_runner(runner_id)
+                runners = [runner for runner in runners if runner['id'] not in removed_ids]
         instances = self.runtime.instances()
         if drain:
             return Plan(len(jobs), len(instances), 0, "draining; admission disabled")
         plan = make_plan(len(jobs), len(instances), self.maximum)
+        if runners is None and (self.verify_accounting or self.shared_parent):
+            runners = self.github.runners()
         if self.verify_accounting:
             from shared_runner_pool import inventory, registered_coverage
-            registered_coverage(inventory(), self.github.runners(), (self.label, *self.compat_labels))
+            registered_coverage(inventory(), runners, (self.label, *self.compat_labels))
         if self.shared_parent:
             from shared_runner_pool import sample
-            evidence = sample(self.shared_parent, self.github.runners(), (self.label, *self.compat_labels), owner_unit=self.shared_unit, history=self.history, jobs=getattr(self.github, "job_metadata", []))
-            count = self.adaptive.decide(len(jobs), evidence, time.monotonic())
+            evidence = sample(self.shared_parent, runners, (self.label, *self.compat_labels), owner_unit=self.shared_unit, history=self.history, jobs=metadata)
+            demand = max(0, len(jobs) - len(self.queue_snapshot.pending)) if self.queue_snapshot else len(jobs)
+            count = self.adaptive.decide(demand if fresh else 0, evidence, time.monotonic())
             plan = Plan(len(jobs), len(instances), count, "shared pool; predicted memory overcommit risk", {
                 "cpu": evidence.cpu, "memory": evidence.memory,
                 "predicted_growth": evidence.predicted_growth,
                 "startup_prediction": evidence.startup_prediction,
                 "bootstraps": evidence.bootstraps, "pressure": evidence.pressure,
+                "queue_fresh": fresh, "admission_demand": demand,
                 "oom_hold": evidence.oom, "memory_high": int(evidence.memory_ceiling * .9),
                 "hard_limit_sum": evidence.committed_memory,
                 "memory_overcommit": evidence.committed_memory > evidence.memory_ceiling,
@@ -528,12 +618,16 @@ class Autoscaler:
             if self.shared_parent:
                 # Re-sample immediately before registration; a changed inventory
                 # restarts settling instead of consuming stale capacity.
-                evidence = sample(self.shared_parent, self.github.runners(), (self.label, *self.compat_labels), owner_unit=self.shared_unit, history=self.history, jobs=getattr(self.github, "job_metadata", []))
-                if not self.adaptive.decide(len(jobs), evidence, time.monotonic()):
+                evidence = sample(self.shared_parent, runners, (self.label, *self.compat_labels), owner_unit=self.shared_unit, history=self.history, jobs=metadata)
+                if self.queue_snapshot and time.monotonic() - self.queue_snapshot.snapshot[0] > self.queue_snapshot.max_age:
+                    return Plan(len(jobs), len(instances), 0, "queue snapshot expired before launch")
+                if not self.adaptive.decide(demand, evidence, time.monotonic()):
                     return Plan(len(jobs), len(instances), 0, "pool changed before launch")
                 self.adaptive.launched(time.monotonic())
             name = f"{self.prefix}{int(time.time())}-{secrets.token_hex(3)}"
             runner_id, jit_config = self.github.generate_jit(name, self.label, self.compat_labels)
+            if self.queue_snapshot:
+                self.queue_snapshot.launched(runner_id)
             try:
                 if self.shared_parent:
                     self.runtime.receipts.register(runner_id, name)
@@ -548,6 +642,8 @@ class Autoscaler:
                 raise
             except (AutoscalerError, OSError, ValueError, KeyError, subprocess.SubprocessError):
                 self.github.delete_runner(runner_id)
+                if self.queue_snapshot:
+                    self.queue_snapshot.retired_runner(runner_id)
                 raise
         return plan
 
@@ -605,7 +701,9 @@ def build_autoscaler() -> Autoscaler:
         runtime.shared_unit = unit
         scaler.shared_parent = parent
         runtime.shared_parent = parent
-        scaler.adaptive = AdaptiveAdmission()
+        scaler.adaptive = AdaptiveAdmission(settling_seconds=10)
+        scaler.queue_snapshot = QueueSnapshot(ApiClient(
+            repository, os.environ.get("GH_TOKEN", ""), github.runner_group_id))
         scaler.history = History(Path.home() / ".local/state/aigcnews-ci-runners/workload-history.json")
         runtime.history = scaler.history
         runtime.receipts = Receipts(Path.home() / ".local/state/aigcnews-ci-runners/job-receipts")
@@ -620,7 +718,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--poll-seconds",
         type=int,
-        default=int(os.environ.get("AIGCNEWS_RUNNER_POLL_SECONDS", "20")),
+        default=int(os.environ.get("AIGCNEWS_RUNNER_POLL_SECONDS", "5")),
     )
     args = parser.parse_args(argv)
     if args.poll_seconds < 5:

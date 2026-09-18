@@ -457,3 +457,22 @@ def test_persistence_preflight_reads_existing_policy_without_enabling_linger(mon
     assert calls[0][:2] == ['loginctl', 'show-user']
     monkeypatch.setattr(preflight.subprocess, 'check_output', lambda *args, **kwargs: 'Linger=no\n')
     with pytest.raises(ValueError, match='persistence'): preflight.persistence()
+
+
+def test_fast_policy_requires_recent_samples_and_restarts_on_new_payload():
+    policy = pool.AdaptiveAdmission(settling_seconds=10)
+    state = evidence(identity=(('bound',), (('owner', 1), ('job', 2))))
+    assert policy.decide(20, state, 0) == 0
+    assert policy.decide(20, state, 5) == 0
+    assert policy.decide(20, state, 10) == 1
+    policy.launched(10)
+    assert policy.decide(20, state, 11) == 0
+    assert policy.decide(20, replace(state, bootstraps=2), 20) == 0
+    # Removal releases capacity without global warmup reset.
+    removed = replace(state, identity=(('bound',), (('owner', 1),)))
+    assert policy.decide(20, removed, 21) == 1
+    assert policy.decide(20, state, 22) == 0
+    assert policy.decide(20, state, 32) == 1
+    # A stalled local loop cannot count old samples as current evidence.
+    assert policy.decide(20, state, 100) == 0
+    assert policy.decide(20, state, 110) == 1
