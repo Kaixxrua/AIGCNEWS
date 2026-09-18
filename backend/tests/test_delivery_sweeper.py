@@ -79,6 +79,9 @@ class FakeClient:
     def jobs(self, run_id: int):
         return self.job_data
 
+    def prepare_merge(self, number: int, head: str):
+        return True
+
     def merge(self, number: int, head: str, title: str):
         self.merged.append((number, head, title))
 
@@ -200,3 +203,28 @@ def test_never_merges_stale_successful_validation():
     assert result.action == "hold"
     assert result.reason == "successful baseline is stale"
     assert not client.merged
+
+
+def test_stale_base_updates_branch_without_merging():
+    client = FakeClient([pull()], [run()])
+    client.prepare_merge = lambda number, head: False
+    results = sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
+    assert results[0].action == "updated"
+    assert not client.merged
+
+
+def test_api_checks_current_main_before_landing():
+    client = sweeper.ApiClient(REPOSITORY, "test")
+    calls = []
+
+    def request(method, path, document=None):
+        calls.append((method, path, document))
+        if path == "/git/ref/heads/main":
+            return {"object": {"sha": "b" * 40}}
+        if path.startswith("/compare/"):
+            return {"status": "diverged"}
+        return {}
+
+    client.request = request
+    assert not client.prepare_merge(7, HEAD)
+    assert calls[-1] == ("PUT", "/pulls/7/update-branch", {"expected_head_sha": HEAD})

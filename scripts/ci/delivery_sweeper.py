@@ -43,6 +43,8 @@ class GitHub(Protocol):
 
     def jobs(self, run_id: int) -> list[dict[str, Any]]: ...
 
+    def prepare_merge(self, number: int, head: str) -> bool: ...
+
     def merge(self, number: int, head: str, title: str) -> None: ...
 
     def approve(self, run_id: int) -> None: ...
@@ -113,6 +115,21 @@ class ApiClient:
             "GET", f"/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
         )
         return document.get("jobs", [])
+
+    def prepare_merge(self, number: int, head: str) -> bool:
+        main = self.request("GET", "/git/ref/heads/main")["object"]["sha"]
+        comparison = self.request("GET", f"/compare/{main}...{head}")
+        if comparison.get("status") not in {"ahead", "identical"}:
+            self.request(
+                "PUT", f"/pulls/{number}/update-branch", {"expected_head_sha": head}
+            )
+            return False
+        # All automated landings share one workflow concurrency group. Recheck
+        # main immediately before the exact-head merge as a fail-closed guard.
+        latest = self.request("GET", "/git/ref/heads/main")["object"]["sha"]
+        if latest != main:
+            raise SweepError("main advanced during merge validation")
+        return True
 
     def merge(self, number: int, head: str, title: str) -> None:
         result = self.request(
@@ -211,6 +228,17 @@ def reconcile(
                     Result(number, head, "hold", "successful baseline is stale", run_id)
                 )
                 continue
+            if apply and not client.prepare_merge(number, head):
+                results.append(
+                    Result(
+                        number,
+                        head,
+                        "updated",
+                        "branch updated to current main; new SHA must pass CI",
+                        run_id,
+                    )
+                )
+                break
             if apply:
                 client.merge(number, head, title)
             results.append(

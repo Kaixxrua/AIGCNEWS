@@ -110,3 +110,9 @@ repository@sha256:<digest>
 ```
 
 `in_progress` 非空表示上一次进程在完成状态提交前异常退出。控制器会 fail-closed，不会猜测生产状态。此时应核对容器实际 digest、`.release.env`、Git HEAD 和健康端点后，再由运维人员修复状态；不要直接删除锁或状态文件后盲目重跑。
+
+## 合并顺序与重新验证
+
+自动合并事件和定时 Sweeper 使用同一 concurrency group、同一个默认分支控制器。每轮最多推进一个 PR。通过 CI 的 PR 若尚未包含当前 main，控制器通过 GitHub update-branch 接口普通合并 main，并指定 expected_head_sha 防止覆盖并发更新；新 SHA 必须重新通过 CI。只有包含当前 main 的精确已验证 SHA 才可合并。
+
+该互斥只覆盖本仓库既定自动入口。仓库管理员的外部直接推送/合并不受 Actions concurrency 控制，完整服务端保障还需要 main 的严格状态检查或 GitHub 原生 merge queue；无法读取或配置保护规则时，不宣称已消除这一外部竞争窗口。
