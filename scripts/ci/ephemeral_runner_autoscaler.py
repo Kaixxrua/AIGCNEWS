@@ -380,7 +380,7 @@ def build_autoscaler() -> Autoscaler:
         cpu=os.environ.get("AIGCNEWS_RUNNER_CPU", "4"),
         memory=os.environ.get("AIGCNEWS_RUNNER_MEMORY", "8GiB"),
         idle_timeout=timedelta(
-            minutes=int(os.environ.get("AIGCNEWS_RUNNER_IDLE_MINUTES", "20"))
+            minutes=int(os.environ.get("AIGCNEWS_RUNNER_IDLE_MINUTES", "5"))
         ),
     )
 

@@ -51,7 +51,7 @@ class FakeRuntime:
         return self.data
 
     def reap(self, *, idle_timeout):
-        assert idle_timeout == timedelta(minutes=20)
+        assert idle_timeout == timedelta(minutes=5)
         self.reaped += 1
         return []
 
@@ -74,7 +74,7 @@ def build(github, runtime, maximum=2):
         maximum=maximum,
         cpu="4",
         memory="8GiB",
-        idle_timeout=timedelta(minutes=20),
+        idle_timeout=timedelta(minutes=5),
     )
 
 
