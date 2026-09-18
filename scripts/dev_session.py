@@ -16,6 +16,7 @@ import secrets
 import subprocess
 import sys
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from typing import Any
 # sys.path; anchor the worktree root so ``scripts.risk_controls`` imports.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.ci.delivery_ownership import record_owner
 from scripts.risk_controls import RiskLevel, ValidationReceipt, classify_paths
 
 SESSION_RE = re.compile(r"^session/(?P<name>[a-z0-9][a-z0-9-]{1,127})$")
@@ -190,6 +192,12 @@ def status(root: Path) -> dict[str, Any]:
 def start(slug: str, root: Path) -> dict[str, str]:
     if not SLUG_RE.fullmatch(slug):
         raise SessionError("slug must be lowercase kebab-case (2-40 characters)")
+    owner = os.environ.get("CODEX_THREAD_ID")
+    if owner:
+        try:
+            uuid.UUID(owner)
+        except ValueError:
+            raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
     # Refresh the remote-tracking base on every start; stale bases undermine
     # the branch-backed session contract.
     git("fetch", "origin", "main", cwd=root)
@@ -213,6 +221,8 @@ def start(slug: str, root: Path) -> dict[str, str]:
     # Git rejects --worktree and every linked checkout inherits one global path.
     git("config", "extensions.worktreeConfig", "true", cwd=root)
     git("worktree", "add", "-b", branch, str(path), "origin/main", cwd=root)
+    if owner:
+        record_owner(path, branch, owner)
     # A shared absolute hooksPath points at the primary checkout and is unsafe
     # for linked worktrees. Store the tracked relative path in worktree config.
     git("config", "extensions.worktreeConfig", "true", cwd=path)

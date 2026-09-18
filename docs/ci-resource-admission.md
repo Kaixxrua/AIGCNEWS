@@ -36,13 +36,13 @@ replayed. It inherits thread configuration and does not change model or approval
 policy. Failure prompts send the PR back to development and require fresh CI.
 
 `watch_delivery_feedback.py` reads the independent observatory snapshot (maximum
-age 180 seconds), requires unique verified ownership and exact branch/SHA, then
+age 180 seconds), requires creation-time ownership and exact branch/SHA, then
 reads the live PR twice. Only same-repository, open, non-draft conflicts targeting
 main are dispatched. GitHub access is GET-only. Test-failure classification is
 not enabled: infrastructure/network failures must not be reported as code faults.
 The CI pause marker also pauses wakeups, and is rechecked after GitHub requests.
 
-Install the watcher, `delivery_feedback.py` and `delivery_sweeper.py` under
+Install the watcher, `delivery_feedback.py`, `delivery_ownership.py` and `delivery_sweeper.py` under
 `~/.local/lib/aigcnews-delivery-feedback/`, then install the supplied user service.
 It uses the existing backend venv with `websockets==15.0.1`, the existing private
 `~/.config/aigcnews/delivery-read-token`, and a singleton lock and SQLite outbox
@@ -60,3 +60,25 @@ concurrent desktop input behavior remains an integration-test limitation.
 Do not use a second CLI agent or modify Codex's SQLite state to simulate success.
 The service may be installed while CI remains paused; installation does not imply
 end-to-end wakeup, CI or production-delivery acceptance.
+
+### Directed ownership
+
+Dashboard `association=verified` and `session-links.json` are NOT wakeup authority.
+At worktree creation, `dev_session.py start` records the caller's UUID from
+`CODEX_THREAD_ID` in a private, exclusively created receipt under the Git common
+directory's `delivery-owners/`. Receipts bind thread, branch and worktree. The
+watcher verifies the current worktree branch and repository and rechecks ownership
+before dispatch. It never falls back to the current task, branch mentions or a
+dashboard-supplied thread ID. Missing receipts report `ownership_unverified`.
+Legacy branches (including PR #66) require independently verified ownership
+before any migration; no old receipt is fabricated from the current environment.
+Tasks started without `CODEX_THREAD_ID` remain ineligible for automatic wakeup.
+
+The earlier one-shot acceptance hardcoded the observing task and demonstrated
+transport only, not correct ownership. It must not be reused. Turn receipt/read
+inconsistency also remains unverified; directed end-to-end acceptance is pending.
+Subsequent inspection found the original `dev_session.py start` call and receipt
+for PR #66 in the observing task's history (call
+`call_bbzGzhsUOB4mpK4XPP8nxR18`). This means #66 was an unsuitable cross-task
+acceptance target, not proof that the transport routed to a different task.
+No legacy receipt has been minted or automatic wake enabled on that basis.

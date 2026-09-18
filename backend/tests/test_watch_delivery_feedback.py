@@ -12,7 +12,9 @@ import pytest
 def watcher(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).parents[2] / "scripts/ci"))
     sys.modules.pop("watch_delivery_feedback", None)
-    return importlib.import_module("watch_delivery_feedback")
+    module = importlib.import_module("watch_delivery_feedback")
+    monkeypatch.setattr(module, "resolve_owner", Mock(return_value="01a0a9b2-7db0-78a2-a960-cfc652157d21"))
+    return module
 
 
 @pytest.fixture
@@ -41,7 +43,7 @@ def test_conflict_wakes_once(watcher, inputs, tmp_path):
     assert all(call.args[0] == "GET" for call in client.request.call_args_list)
 
 
-@pytest.mark.parametrize("case", ["paused", "stale", "errors", "ambiguous", "unlinked", "fork",
+@pytest.mark.parametrize("case", ["paused", "stale", "errors", "ambiguous", "missing_owner", "fork",
                                        "draft", "closed", "unknown", "sha", "branch", "base", "busy", "late_pause"])
 def test_unsafe_events_never_wake(watcher, inputs, tmp_path, case):
     snapshot, pr, client, bridge = inputs
@@ -52,9 +54,10 @@ def test_unsafe_events_never_wake(watcher, inputs, tmp_path, case):
     elif case == "ambiguous":
         other = copy.deepcopy(snapshot["sessions"][0])
         other["thread_id"] = "01a0a9b2-7db0-78a2-a960-cfc652157d22"
+        other["deliveries"][0]["branch"] = "session/another"
         snapshot["sessions"].append(other)
-    elif case == "unlinked":
-        snapshot["sessions"][0]["association"] = "unlinked"
+    elif case == "missing_owner":
+        watcher.resolve_owner.return_value = None
     elif case == "fork":
         pr["head"]["repo"]["full_name"] = "other/AIGCNEWS"
     elif case == "draft":
@@ -73,6 +76,22 @@ def test_unsafe_events_never_wake(watcher, inputs, tmp_path, case):
         bridge.idle.return_value = False
     with watcher.open_db(tmp_path / "events.db") as db:
         watcher.tick(db, snapshot, client, bridge, paused=case == "paused", pause_check=lambda: case == "late_pause")
+    bridge.wake.assert_not_called()
+
+
+def test_manual_dashboard_owner_cannot_redirect(watcher, inputs, tmp_path):
+    snapshot, _, client, bridge = inputs
+    snapshot["sessions"][0]["thread_id"] = "01a0a9b2-7db0-78a2-a960-cfc652157d22"
+    with watcher.open_db(tmp_path / "events.db") as db:
+        watcher.tick(db, snapshot, client, bridge, paused=False)
+    assert bridge.wake.call_args.args[0] == "01a0a9b2-7db0-78a2-a960-cfc652157d21"
+
+
+def test_changed_owner_blocks_dispatch(watcher, inputs, tmp_path):
+    snapshot, _, client, bridge = inputs
+    watcher.resolve_owner.side_effect = ["01a0a9b2-7db0-78a2-a960-cfc652157d21", None]
+    with watcher.open_db(tmp_path / "events.db") as db:
+        assert watcher.tick(db, snapshot, client, bridge, paused=False) == [{"pr": 66, "status": "ownership_changed"}]
     bridge.wake.assert_not_called()
 
 

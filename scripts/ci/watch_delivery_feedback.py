@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from delivery_feedback import CodexBridge, dispatch, enqueue, open_db
+from delivery_ownership import resolve_owner
 from delivery_sweeper import ApiClient
 
 
@@ -32,15 +33,17 @@ def tick(db, snapshot, client, bridge, *, paused, pause_check=lambda: False):
         return []
     owners = {}
     for session in snapshot.get("sessions", []):
-        if session.get("association") != "verified" or not session.get("thread_id"):
-            continue
         for item in session.get("deliveries", []):
-            owners.setdefault(item["pr"], set()).add((session["thread_id"], item["sha"], item["branch"]))
+            owners.setdefault(item["pr"], set()).add((item["sha"], item["branch"]))
     results = []
     for number, threads in owners.items():
         if len(threads) != 1:
             continue
-        thread, expected_sha, branch = next(iter(threads))
+        expected_sha, branch = next(iter(threads))
+        thread = resolve_owner(branch)
+        if thread is None:
+            results.append({"pr": number, "status": "ownership_unverified"})
+            continue
         pr = client.request("GET", f"/pulls/{number}")
         if not conflict(pr) or pr["head"]["sha"] != expected_sha or pr["head"]["ref"] != branch:
             continue
@@ -53,6 +56,9 @@ def tick(db, snapshot, client, bridge, *, paused, pause_check=lambda: False):
                       kind="conflict", url=pr["html_url"])
         latest = client.request("GET", f"/pulls/{number}")
         if not conflict(latest) or latest["head"]["ref"] != branch:
+            continue
+        if resolve_owner(branch) != thread:
+            results.append({"pr": number, "status": "ownership_changed"})
             continue
         result = dispatch(db, key, bridge, current_sha=latest["head"]["sha"], paused=pause_check())
         results.append({"pr": number, "status": result})

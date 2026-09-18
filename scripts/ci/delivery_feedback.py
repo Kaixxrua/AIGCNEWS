@@ -52,7 +52,7 @@ class CodexBridge:
 
     def idle(self, thread_id):
         thread = self.call("thread/read", {"threadId": thread_id, "includeTurns": False})["thread"]
-        return thread.get("status", {}).get("type") == "idle"
+        return thread.get("id") == thread_id and thread.get("status", {}).get("type") == "idle"
 
     def wake(self, thread_id, prompt):
         # Inherit the existing thread's model, permissions and workspace.

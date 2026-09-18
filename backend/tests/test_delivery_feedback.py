@@ -67,7 +67,7 @@ def test_bridge_protocol_and_inherited_configuration(monkeypatch):
     connection.recv.side_effect = [
         json.dumps({"id": 1, "result": {}}),
         json.dumps({"method": "notification"}),
-        json.dumps({"id": 2, "result": {"thread": {"status": {"type": "idle"}}}}),
+        json.dumps({"id": 2, "result": {"thread": {"id": THREAD, "status": {"type": "idle"}}}}),
         json.dumps({"id": 3, "result": {"turn": {"id": "receipt"}}}),
     ]
     connect = Mock(return_value=connection)
@@ -88,3 +88,11 @@ def test_bridge_rechecks_busy_before_start():
     with pytest.raises(feedback.BridgeError):
         bridge.wake(THREAD, "test")
     bridge.call.assert_called_once_with("thread/read", {"threadId": THREAD, "includeTurns": False})
+
+
+def test_mismatched_server_thread_never_wakes():
+    bridge = feedback.CodexBridge()
+    bridge.call = Mock(return_value={"thread": {"id": "another-task", "status": {"type": "idle"}}})
+    with pytest.raises(feedback.BridgeError):
+        bridge.wake(THREAD, "test")
+    assert bridge.call.call_count == 1
