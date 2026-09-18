@@ -612,6 +612,15 @@ const explicitBusinessTranslations: Record<string, string> = {
   
   
   'dashboard.stats.todayUiMaterials': '今日入库 UI',
+  'dashboard.editorial.title': '今日 AI 动态',
+  'dashboard.editorial.subtitle': '值得关注的项目与新进展',
+  'dashboard.editorial.total': '内容总量',
+  'dashboard.editorial.github': 'GitHub 项目',
+  'dashboard.editorial.uiTotal': 'UI 库总量',
+  'dashboard.editorial.inspiration': 'UI 灵感',
+  'dashboard.editorial.explore': '探索素材库',
+  'dashboard.editorial.motto': '更好的工具\n让更多人创造',
+  'dashboard.editorial.tagline': '发现更好的 AI 世界',
   'monitor.nav.uiSources': 'UI 素材来源',
   'monitor.uiSources.title': 'UI 素材发现来源',
   'monitor.uiSources.description': '查看每天会检查哪些开源仓库和网站，并添加自己的来源。',

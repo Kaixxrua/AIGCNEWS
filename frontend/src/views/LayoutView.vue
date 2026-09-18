@@ -76,7 +76,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
-    <div class="main-canvas">
+    <div class="main-canvas" :class="{ 'main-canvas--editorial': route.path === '/' }">
       <!-- 顶部品牌条：左侧报头信息 + 右侧用户信息，故障特效字标与工具图标居中成组 -->
       <div
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
@@ -85,12 +85,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
         <div class="app-masthead__tools flex items-center gap-3">
-          <FavoritesLink v-if="!isMobile" />
-          <PwaInstallLink v-if="!isMobile" />
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
+          <span v-if="!isMobile" class="masthead-tagline">{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
-            <PwaInstallLink v-if="isMobile" />
+            <FavoritesLink v-if="!isMobile" />
+            <PwaInstallLink />
             <GitHubLink v-if="!isMobile" />
             <ThemeToggle />
             <LocaleToggle />
@@ -148,6 +148,13 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </template>
 
 <style scoped>
+.main-canvas.main-canvas--editorial { border-color: var(--rule); box-shadow: none; }
+.masthead-tagline { font-size: 12px; color: var(--muted); border-left: 1px solid var(--rule); padding-left: 18px; margin-left: 10px; }
+@media (min-width: 1100px) {
+  .app-masthead__actions { position: absolute; right: 112px; }
+  .topbar-divider { display: none; }
+}
+@media (max-width: 1399px) { .masthead-tagline { display: none; } }
 /* 各页面管理自己的滚动容器；布局层只限定可用尺寸。 */
 :deep(.view-container) {
   width: 100%;

@@ -42,6 +42,23 @@ const render = async (doc = tweet) => {
 }
 
 describe('mobile ranking reading', () => {
+  it('preserves ten ordered links and actual summaries with three featured entries', async () => {
+    viewport.mobile = false
+    const panel = await render()
+    const docs = Array.from({ length: 10 }, (_, i) => ({
+      id: i, source: 'github', title: `owner/project-${i}`,
+      url: `https://github.com/owner/project-${i}`, summary: `Project description ${i}`, stars: 1000 + i,
+    }))
+    await panel.setProps({ activeTab: 'github', tabList: docs })
+    expect(panel.findAll('.ranking-row--featured')).toHaveLength(3)
+    expect(panel.findAll('.ranking-link').map(link => link.attributes('href'))).toEqual(docs.map(doc => doc.url))
+    expect(panel.findAll('.ranking-summary').map(el => el.text())).toEqual(docs.map(doc => doc.summary))
+    const avatar = panel.get('.ranking-avatar img')
+    expect(avatar.attributes('src')).toBe('https://github.com/owner.png?size=128')
+    await avatar.trigger('error')
+    expect(panel.get('.ranking-avatar').text()).toBe('O')
+    expect(panel.get('.ranking-number').text()).toBe('01')
+  })
   it('renders a tweet once as body text, with independent expand and original-link actions', async () => {
     const panel = await render()
     expect(panel.find('.ranking-title').exists()).toBe(false)
