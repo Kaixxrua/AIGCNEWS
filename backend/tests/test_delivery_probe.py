@@ -41,8 +41,12 @@ def test_superseded_is_not_reported_as_deployed(monkeypatch):
     assert result["replacement"] == replacement
 
 
-def test_real_git_ancestry_distinguishes_unrelated_commits(tmp_path):
+def test_real_git_ancestry_distinguishes_unrelated_commits(tmp_path, monkeypatch):
     import subprocess
+
+    # Keep temporary repository commits isolated when pytest runs from a Git hook.
+    for name in subprocess.check_output(["git", "rev-parse", "--local-env-vars"], text=True).splitlines():
+        monkeypatch.delenv(name, raising=False)
 
     def git(*args):
         return subprocess.run(["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.strip()

@@ -23,7 +23,7 @@ const props = defineProps<{ text: string; compact?: boolean }>()
 const GLYPHS = '▓▒░█▄▀▓▒░█#%&*+=@<>/\\'
 const TICK_MS = 110
 const BURST_PERIOD_MS = 4000 // 与 CSS bw-jitter 4s 周期对齐
-const BURST_WINDOW_MS = 650
+const BURST_WINDOW_MS = 260
 const BURST_FIRST_DELAY_MS = 1400
 
 const chars = computed(() => props.text.split(''))
@@ -54,10 +54,10 @@ const tick = () => {
     }
   }
   const bursting = Date.now() < burstUntil
-  const probability = (bursting ? 0.22 : 0.035) * (hovered.value ? 4 : 1) * (props.compact ? 0.35 : 1)
+  const probability = (bursting ? 0.12 : 0.008) * (hovered.value ? 4 : 1) * (props.compact ? 0.35 : 1)
   chars.value.forEach((ch, i) => {
     if (ch === ' ' || active.has(i)) return
-    if (props.compact && active.size >= 1) return
+    if (active.size >= 1) return
     if (Math.random() < probability) active.set(i, 2 + Math.floor(Math.random() * 3))
   })
 }
@@ -152,7 +152,7 @@ onUnmounted(() => {
   --glitch-glow: rgb(0 0 0 / 0.35);
   --glitch-idle-glow: transparent;
   --glitch-scan: rgb(0 0 0 / 0.05);
-  --bw-tracking: 0.22em;
+  --bw-tracking: -0.035em;
 
   display: inline-flex;
   align-items: center;
@@ -178,8 +178,8 @@ onUnmounted(() => {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-kerning: none;
   font-variant-ligatures: none;
-  font-size: 17px;
-  font-weight: 800;
+  font-size: 29px;
+  font-weight: 900;
   line-height: 1;
   white-space: nowrap;
   text-shadow: 0 0 12px var(--glitch-idle-glow);
@@ -387,4 +387,14 @@ onUnmounted(() => {
     opacity: 0;
   }
 }
+
+/* Slanted acid cuts retain the live chromatic glitch layers above. */
+.brand-wordmark__text { font-style: normal; isolation: isolate; }
+.brand-wordmark__text::before { content: ''; position: absolute; z-index: -2; left: -5px; top: 0; width: 20px; height: 100%; background: var(--acid); clip-path: polygon(65% 0, 100% 0, 36% 100%, 0 100%); }
+.brand-wordmark__text::after { content: ''; position: absolute; pointer-events: none; left: 49%; top: 5%; width: 7px; height: 88%; background: var(--acid); transform: skewX(-25deg); opacity: .75; mix-blend-mode: multiply; }
+.bw-slice { animation-timing-function: steps(1, end); }
+.brand-wordmark:not(:hover) .bw-slice { animation-duration: 8s; }
+.brand-wordmark:not(:hover) .bw-fringe { opacity: .14; }
+:root[data-theme='dark'] .brand-wordmark__text::after { mix-blend-mode: screen; }
+@media (max-width: 767px) { .brand-wordmark__text { font-size: 20px; } .brand-wordmark { --bw-tracking: -.035em; } }
 </style>

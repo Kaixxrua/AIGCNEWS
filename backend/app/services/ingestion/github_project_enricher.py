@@ -757,6 +757,7 @@ def run_github_project_daily_pipeline(
     ingestion: GitHubProjectIngestionRepository,
     enrichment: GitHubProjectEnrichmentRepository,
     semantic_sources: GitHubProjectSemanticSourceRepository,
+    logo_repository: Any = None,
 ) -> Dict[str, Any]:
     """Daily GitHub library pipeline: ingest/discover, snapshot, score, then enrich.
 
@@ -799,6 +800,15 @@ def run_github_project_daily_pipeline(
         )
 
     readme_bootstrap_result: Dict[str, Any] = {"status": "disabled"}
+    logo_result: Dict[str, Any] = {"status": "disabled"}
+    if not dry_run and logo_repository is not None:
+        try:
+            from backend.app.services.ingestion.github_project_logos import refresh_project_logos
+
+            logo_result = refresh_project_logos(logo_repository, limit=500)
+        except Exception as exc:
+            logger.warning("GitHub logo batch failed: %s", type(exc).__name__)
+            logo_result = {"status": "failed"}
     if not dry_run:
         readme_bootstrap_result = _bootstrap_github_readmes(
             semantic_sources=semantic_sources,
@@ -844,6 +854,7 @@ def run_github_project_daily_pipeline(
         "metric_refresh": (metric_result or {}).get("refresh"),
         "daily_metrics": (metric_result or {}).get("metrics"),
         "readme_bootstrap": readme_bootstrap_result,
+        "logos": logo_result,
         "enrichment": enrich_result,
         "semantic_index": semantic_result,
         "policy": "new_or_failed_only",

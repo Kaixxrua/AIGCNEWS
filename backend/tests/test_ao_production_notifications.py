@@ -13,6 +13,9 @@ spec.loader.exec_module(adapter)
 
 @pytest.fixture
 def delivery(tmp_path, monkeypatch):
+    # Hooks export repository-local Git variables; sandbox repos must not inherit them.
+    for name in subprocess.check_output(["git", "rev-parse", "--local-env-vars"], text=True).splitlines():
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(adapter.Path, "home", lambda: tmp_path)
     repo = tmp_path / "repository"
     repo.mkdir()

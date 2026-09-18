@@ -162,6 +162,8 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
         # raw_score 兜底取日增（doc_weight 也读它），score 承载 hot_score。
         "raw_score": float(daily_growth),
         "score": hot_score,
+        "image_url": row.get("image_url"),
+        "daily_growth_available": True,
         "rank_in_period": rank,
         "source_channel": GITHUB_METRICS_DAILY_CHANNEL,
         "snapshot_date": metric_date,

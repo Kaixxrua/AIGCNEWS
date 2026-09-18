@@ -79,7 +79,7 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     ("c.title", "{title} title"),
     ("c.url", "w.canonical_url url"),
     ("NULL::text domain", "w.domain"),
-    ("NULL::text image_url", "{image} image_url"),
+    ("(SELECT '/api/projects/github/logo/' || c.repo_id FROM github_project_logos gl WHERE gl.repo_id = c.repo_id AND gl.content IS NOT NULL) image_url", "{image} image_url"),
     ("c.description", "{description} description"),
     ("ge.description_zh", "{description_zh} description_zh"),
     ("ge.description_en", "{description_en} description_en"),
@@ -869,6 +869,9 @@ class PostgresProjectCatalogRepository:
         params.append(limit)
         sql = f"""
             SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
+                   (SELECT '/api/projects/github/logo/' || c.repo_id
+                    FROM github_project_logos gl WHERE gl.repo_id = c.repo_id
+                    AND gl.content IS NOT NULL) AS image_url,
                    c.language, c.topics_json::text AS topics_json,
                    gm.stars, gm.forks, gm.watchers,
                    gm.daily_star_growth, gm.daily_growth_source,
