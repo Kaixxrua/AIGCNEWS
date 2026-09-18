@@ -217,3 +217,10 @@ jobs:
             --backend-image "${{ needs.metadata.outputs.backend }}@${{ needs.build-backend.outputs.digest }}" \
             --mcp-image "${{ needs.metadata.outputs.mcp }}@${{ needs.build-mcp.outputs.digest }}" \
             --frontend-image "${{ needs.metadata.outputs.frontend }}@${{ needs.build-frontend.outputs.digest }}"
+
+      - name: Publish the active frontend artifact to public edges
+        shell: bash
+        run: |
+          python3 scripts/release/publish_frontend_edges.py \
+            --root "$PRODUCTION_ROOT" \
+            --source-sha "${{ github.event.workflow_run.head_sha }}"
