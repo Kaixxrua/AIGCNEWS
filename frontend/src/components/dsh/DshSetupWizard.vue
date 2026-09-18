@@ -28,6 +28,11 @@ const controller = proxyRefs(useDshSetupController())
 const installMethods = DSH_PLUGIN_INSTALL_METHODS
 const stepKeys = ['dsh.wizard.stepInstall', 'dsh.wizard.stepCommand'] as const
 const currentTitle = computed(() => stepKeys[controller.step])
+const selectedMethod = computed(() => installMethods.find((method) => method.id === controller.selectedMethod)!)
+const agentSetupPrompt = computed(() => t('dsh.wizard.agentSetupPrompt', {
+  command: controller.installLine,
+  method: t(selectedMethod.value.titleKey),
+}))
 
 // 前进（「下一步」按钮或前方步骤点）：游客先弹登录并留在当前步
 const advance = () => {
@@ -98,10 +103,12 @@ onBeforeUnmount(() => {
         <div class="dsh-command-ready">
         <div class="dsh-command-main">
         <code class="dsh-install-command block border border-stone-700 bg-stone-900 p-3 font-mono text-xs text-white">{{ controller.installLine }}</code>
-        <div class="mt-3 flex flex-wrap items-center gap-3">
+        <div class="mt-3 grid gap-2 sm:grid-cols-2">
           <button type="button" class="btn-primary text-xs" @click="installCopy.copyValue('dsh-install-line', controller.installLine)">{{ t(installCopy.copiedKey === 'dsh-install-line' ? 'mcp.copied' : 'dsh.copy') }}</button>
-          <button type="button" class="text-xs text-stone-500 underline" @click="controller.rotate">{{ t('dsh.wizard.tokenRotate') }}</button>
+          <button type="button" class="btn-secondary text-xs" @click="installCopy.copyValue('dsh-agent-prompt', agentSetupPrompt)">{{ t(installCopy.copiedKey === 'dsh-agent-prompt' ? 'mcp.copied' : 'dsh.wizard.copyAgentPrompt') }}</button>
         </div>
+        <p class="mt-2 text-2xs leading-4 text-amber-700">{{ t('dsh.wizard.agentPromptHint') }}</p>
+        <button type="button" class="mt-2 text-xs text-stone-500 underline" @click="controller.rotate">{{ t('dsh.wizard.tokenRotate') }}</button>
         </div>
         <div class="dsh-command-notes space-y-3">
         <p class="text-xs text-stone-500">{{ t('dsh.wizard.tokenCommandNote') }}</p>
