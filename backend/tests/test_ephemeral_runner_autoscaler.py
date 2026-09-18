@@ -164,8 +164,14 @@ def test_jit_registration_includes_labels_required_by_workflows():
     ]
 
 
-def test_template_does_not_keep_the_persistent_runners_loopback_registry():
+def test_template_keeps_only_the_isolated_public_registry_cache():
     source = PREPARE_SCRIPT.read_text(encoding="utf-8")
 
-    assert "printf '{}\\n' > /etc/docker/daemon.json" in source
-    assert "rm -rf /var/lib/docker/* /var/lib/containerd/*" in source
+    assert "docker inspect --format '{{.Id}}' ci-registry" in source
+    assert '[[ "$container" == "$registry_id" ]]' in source
+    assert "docker ps --all --quiet --no-trunc" in source
+    assert '[[ "$volume" == "$registry_volume" ]]' in source
+    assert "systemctl start docker.service" in source
+    assert "docker info >/dev/null" in source
+    assert "docker builder prune --all --force" in source
+    assert "rm -rf /var/lib/docker" not in source

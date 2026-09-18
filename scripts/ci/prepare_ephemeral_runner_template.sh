@@ -37,12 +37,32 @@ rm -f /opt/actions-runner/.credentials \
   /opt/actions-runner/.service
 find /opt/actions-runner/_work -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 find /opt/actions-runner/_diag -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+# Preserve only the public pull-through registry and its cache. Every cloned
+# JIT runner gets an isolated CoW copy; no job can write back to this template.
+systemctl start docker.service
+for _ in $(seq 1 30); do
+  docker info >/dev/null 2>&1 && break
+  sleep 1
+done
+docker info >/dev/null
+registry_id=$(docker inspect --format '{{.Id}}' ci-registry)
+registry_volume=$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/registry"}}{{.Name}}{{end}}{{end}}' ci-registry)
+if [[ -z "$registry_id" || -z "$registry_volume" ]]; then
+  echo "source runner lacks the required ci-registry cache" >&2
+  exit 1
+fi
+mapfile -t containers < <(docker ps --all --quiet --no-trunc)
+for container in "${containers[@]}"; do
+  [[ "$container" == "$registry_id" ]] || docker rm --force "$container"
+done
+mapfile -t volumes < <(docker volume ls --quiet)
+for volume in "${volumes[@]}"; do
+  [[ "$volume" == "$registry_volume" ]] || docker volume rm --force "$volume"
+done
+docker builder prune --all --force
+docker image prune --all --force
+docker network prune --force
 systemctl stop docker.service docker.socket containerd.service || true
-rm -rf /var/lib/docker/* /var/lib/containerd/*
-# The persistent source runner uses a localhost registry cache. A clean JIT
-# instance does not inherit that container, so it must pull through its own
-# proxied Docker daemon instead of pointing at a dead loopback mirror.
-printf '{}\n' > /etc/docker/daemon.json
 apt-get clean
 SCRIPT
 
