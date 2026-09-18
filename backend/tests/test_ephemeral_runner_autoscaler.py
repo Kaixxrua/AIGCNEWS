@@ -28,11 +28,11 @@ class FakeGitHub:
         self.generated: list[str] = []
         self.deleted: list[int] = []
 
-    def queued_jobs(self, label: str):
+    def queued_jobs(self, label: str, compat_labels=()):
         assert label == "aigcnews-ci-ephemeral"
         return self.jobs
 
-    def generate_jit(self, name: str, label: str):
+    def generate_jit(self, name: str, label: str, compat_labels=()):
         self.generated.append(name)
         return 100 + len(self.generated), f"jit-{name}"
 
@@ -258,3 +258,55 @@ def test_resource_measurement_failure_never_launches(monkeypatch):
     with pytest.raises(ValueError):
         scaler.reconcile(apply=True)
     assert not runtime.launched
+
+
+def test_compatibility_queue_matches_alias_and_deduplicates_jobs():
+    client = autoscaler.ApiClient("owner/repository", "token")
+    jobs = [
+        {"id": 1, "status": "queued", "labels": ["aigcnews-ci-ephemeral"]},
+        {"id": 2, "status": "queued", "labels": ["AIGCNEWS-CI"]},
+        {"id": 3, "status": "queued", "labels": ["aigcnews-ci", "aigcnews-ci-ephemeral"]},
+        {"id": 2, "status": "queued", "labels": ["aigcnews-ci"]},
+        {"id": 4, "status": "in_progress", "labels": ["aigcnews-ci"]},
+        {"id": 5, "status": "queued", "labels": ["aigcnews-control"]},
+    ]
+    client.request = lambda method, path: (
+        {"jobs": jobs} if "/jobs?" in path else {"workflow_runs": [{"id": 10}]}
+    )
+    assert client.queued_jobs(autoscaler.DEFAULT_LABEL) == [1, 3]
+    assert client.queued_jobs(autoscaler.DEFAULT_LABEL, ("aigcnews-ci",)) == [1, 2, 3]
+
+
+def test_configured_alias_reaches_queue_and_jit_registration(monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "unused-test-token")
+    monkeypatch.setenv("AIGCNEWS_RUNNER_LABEL", autoscaler.DEFAULT_LABEL)
+    monkeypatch.setenv("AIGCNEWS_RUNNER_COMPAT_LABELS", " aigcnews-ci, AIGCNEWS-CI, ,aigcnews-ci-ephemeral")
+    monkeypatch.setattr(autoscaler.Path, "home", lambda: Path("/nonexistent-test-home"))
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
+    import runner_resource_budget as budget
+
+    monkeypatch.setattr(budget, "sample", lambda: budget.Usage(0, 0, 0, 0))
+    scaler = autoscaler.build_autoscaler()
+    scaler.runtime = FakeRuntime()
+    registrations = []
+
+    def request(method, path, document=None):
+        if method == "POST":
+            registrations.append(document)
+            return {"runner": {"id": 7}, "encoded_jit_config": "jit"}
+        if "/jobs?" in path:
+            return {"jobs": [{"id": 1, "status": "queued", "labels": ["aigcnews-ci"]}]}
+        return {"workflow_runs": [{"id": 10}]}
+
+    scaler.github.request = request
+    plan = scaler.reconcile(apply=True)
+    assert plan.queued_jobs == plan.spawn == 1
+    assert registrations[0]["labels"] == [
+        "self-hosted", "linux", "x64", "aigcnews-ci-ephemeral", "aigcnews-ci"
+    ]
+    assert len(scaler.runtime.launched) == 1
+    assert float(scaler.runtime.launched[0][3]) <= 5.4
+    assert int(scaler.runtime.launched[0][4]) <= 12 * budget.GIB * .9
+
+    monkeypatch.delenv("AIGCNEWS_RUNNER_COMPAT_LABELS")
+    assert autoscaler.build_autoscaler().compat_labels == ()

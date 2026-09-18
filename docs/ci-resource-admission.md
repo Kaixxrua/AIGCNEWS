@@ -87,3 +87,21 @@ for PR #66 in the observing task's history (call
 `call_bbzGzhsUOB4mpK4XPP8nxR18`). This means #66 was an unsuitable cross-task
 acceptance target, not proof that the transport routed to a different task.
 No legacy receipt has been minted or automatic wake enabled on that basis.
+
+### Temporary queue-label compatibility
+
+During migration, the coordinator may set
+`AIGCNEWS_RUNNER_COMPAT_LABELS=aigcnews-ci` in the autoscaler environment.
+The optional comma-separated labels augment `AIGCNEWS_RUNNER_LABEL` (default:
+`aigcnews-ci-ephemeral`). Queued jobs matching either the primary label or an
+alias are counted once by job ID, case-insensitively. Each temporary JIT runner
+registers all supported labels so it can serve either workflow generation.
+The default has no aliases. Resource admission, quotas, singleton locking and
+LXD isolation are unchanged; aliases never create a separate resource pool.
+
+Keep the small trusted control runner control-only; do not give it the classic
+CI label. Remove `AIGCNEWS_RUNNER_COMPAT_LABELS` after all workflows have migrated
+and remaining classic-label runs, including queued older runs, have drained.
+Removing the setting affects newly created runners; existing one-job runners
+retain their registration until completion. Runtime changes belong to the
+coordinator and are separate from installing this code.
