@@ -17,6 +17,13 @@ ROOT = Path.home() / ".local/state/aigcnews-ao"
 AO = Path.home() / ".local/lib/aigcnews-ao/ao"
 
 
+def peer(name):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def ao_read(session, resource=""):
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", session):
         raise ValueError("invalid AO session")
@@ -48,6 +55,8 @@ def database(path):
     db = sqlite3.connect(path)
     path.chmod(0o600)
     db.executescript("""
+      CREATE TABLE IF NOT EXISTS recovery_lineage (
+        old_branch TEXT PRIMARY KEY, new_branch TEXT UNIQUE, event TEXT, binding TEXT);
       CREATE TABLE IF NOT EXISTS tasks (
         branch TEXT PRIMARY KEY, session TEXT UNIQUE NOT NULL, worktree TEXT NOT NULL,
         source TEXT NOT NULL, stage TEXT NOT NULL DEFAULT 'audit', pr INTEGER,
@@ -284,8 +293,13 @@ def reconcile(db, github, repository):
         if pr.get("merged_at"):
             if pr.get("number") != number:
                 continue
-            results.append({"pr": number, "session": session,
-                            "result": production_notification(db, github, repository, pr, branch, session, path)})
+            result = production_notification(db, github, repository, pr, branch, session, path)
+            if result == "waiting":
+                from types import SimpleNamespace
+                ao_recovery = peer("ao_recovery")
+                result = ao_recovery.notify(SimpleNamespace(**globals()), db, github, repository,
+                                            pr, branch, session, path)
+            results.append({"pr": number, "session": session, "result": result})
             continue
         kind = None
         evidence = pr["html_url"]
@@ -329,6 +343,9 @@ def main():
     sub.add_parser("list")
     sub.add_parser("observe")
     sub.add_parser("watch")
+    recovery = sub.add_parser("recover")
+    for field in ("old-branch", "branch", "worktree", "event"):
+        recovery.add_argument("--" + field, required=True)
     new = sub.add_parser("new")
     new.add_argument("--name", required=True)
     new.add_argument("--prompt-file", type=Path, required=True)
@@ -357,6 +374,15 @@ def main():
                         "--mode", "chat", "--prompt", instructions], env=env, check=True)
         return
     with database(args.state) as db:
+        if args.command == "recover":
+            from types import SimpleNamespace
+            ao_recovery = peer("ao_recovery")
+            from delivery_sweeper import ApiClient
+            token = (Path.home() / ".config/aigcnews/delivery-read-token").read_text().strip()
+            client = ApiClient("Kaixxrua/AIGCNEWS", token)
+            print(json.dumps(ao_recovery.recover(SimpleNamespace(**globals()), db, client, args.repository,
+                                                args.old_branch, args.branch, args.worktree, args.event)))
+            return
         if args.command == "activate":
             row = db.execute("SELECT session,worktree FROM tasks WHERE branch=?", (args.branch,)).fetchone()
             if not row or not args.handoff_evidence.strip():
@@ -383,6 +409,11 @@ def main():
                     if (Path.home() / ".config/aigcnews/ci-paused").exists():
                         print(json.dumps({"status": "paused"}), flush=True)
                     else:
+                        from types import SimpleNamespace
+                        ao_recovery = peer("ao_recovery")
+                        receipt_errors = ao_recovery.receipts(SimpleNamespace(**globals()), db)
+                        if receipt_errors:
+                            print(json.dumps({"receipt_errors": receipt_errors}), flush=True)
                         print(json.dumps({"results": reconcile(db, client, args.repository)}), flush=True)
                 except Exception as exc:  # noqa: BLE001 - daemon boundary fails closed without replay
                     print(json.dumps({"error_type": type(exc).__name__}), flush=True)
