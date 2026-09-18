@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import secrets
@@ -39,6 +40,7 @@ class Plan:
     queued_jobs: int
     active_instances: int
     spawn: int
+    reason: str = ""
 
 
 class GitHub(Protocol):
@@ -272,8 +274,10 @@ class LxdRuntime:
         self.command(["copy", self.template, name])
         try:
             for key, value in (
-                ("limits.cpu", cpu),
+                ("limits.cpu", "6"),
+                ("limits.cpu.allowance", f"{int(float(cpu) * 100)}ms/100ms"),
                 ("limits.memory", memory),
+                ("limits.memory.swap", "false"),
                 ("user.aigcnews.created_at", created_at),
                 ("user.aigcnews.runner_id", str(runner_id)),
             ):
@@ -330,13 +334,23 @@ class Autoscaler:
         self.cpu = cpu
         self.memory = memory
         self.idle_timeout = idle_timeout
+        self.resource_budget = False
 
     def reconcile(self, *, apply: bool) -> Plan:
+        if (Path.home() / ".config/aigcnews/ci-paused").exists():
+            return Plan(0, len(self.runtime.instances()), 0, "operator pause")
         if apply:
             self.runtime.reap(idle_timeout=self.idle_timeout, github=self.github)
         instances = self.runtime.instances()
         jobs = self.github.queued_jobs(self.label)
         plan = make_plan(len(jobs), len(instances), self.maximum)
+        if self.resource_budget:
+            from runner_resource_budget import allocate, sample
+
+            allocation = allocate(len(jobs), sample())
+            plan = Plan(len(jobs), len(instances), allocation.count, allocation.reason)
+            self.cpu = str(allocation.cpu)
+            self.memory = str(allocation.memory)
         if not apply:
             return plan
         for _ in range(plan.spawn):
@@ -378,7 +392,7 @@ def build_autoscaler() -> Autoscaler:
             )
         ),
     )
-    return Autoscaler(
+    scaler = Autoscaler(
         github,
         runtime,
         label=label,
@@ -390,6 +404,8 @@ def build_autoscaler() -> Autoscaler:
             minutes=int(os.environ.get("AIGCNEWS_RUNNER_IDLE_MINUTES", "5"))
         ),
     )
+    scaler.resource_budget = True
+    return scaler
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -405,6 +421,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.poll_seconds < 5:
         parser.error("--poll-seconds must be at least 5")
     try:
+        lock_path = Path.home() / ".local/state/aigcnews-ci-runners/controller.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock = lock_path.open("a")
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         autoscaler = build_autoscaler()
         while True:
             plan = autoscaler.reconcile(apply=args.apply)

@@ -79,6 +79,9 @@ class FakeClient:
     def jobs(self, run_id: int):
         return self.job_data
 
+    def prepare_merge(self, number: int, head: str):
+        return True
+
     def merge(self, number: int, head: str, title: str):
         self.merged.append((number, head, title))
 
@@ -215,4 +218,57 @@ def test_never_merges_stale_successful_validation():
 
     assert result.action == "hold"
     assert result.reason == "successful baseline is stale"
+    assert not client.merged
+
+
+def test_stale_base_waits_for_owner_without_merging():
+    client = FakeClient([pull()], [run()])
+    client.prepare_merge = lambda number, head: False
+    results = sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
+    assert results[0].action == "hold"
+    assert not client.merged
+
+
+def test_api_checks_current_main_before_landing():
+    client = sweeper.ApiClient(REPOSITORY, "test")
+    calls = []
+
+    def request(method, path, document=None):
+        calls.append((method, path, document))
+        if path == "/git/ref/heads/main":
+            return {"object": {"sha": "b" * 40}}
+        if path.startswith("/compare/"):
+            return {"status": "diverged"}
+        return {}
+
+    client.request = request
+    assert not client.prepare_merge(7, HEAD)
+    assert all(method == "GET" for method, _, _ in calls)
+
+
+def test_conflicting_pr_does_not_starve_later_eligible_pr():
+    client = FakeClient([pull(7), pull(8)], [run(7), run(8)])
+
+    def prepare(number, head):
+        if number == 7:
+            raise sweeper.UpdateRefused("Branch update rejected (422)")
+        return True
+
+    client.prepare_merge = prepare
+    results = sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
+    assert [result.action for result in results] == ["hold", "merged"]
+    assert client.merged[0][0] == 8
+
+
+def test_ambiguous_update_failure_still_stops_landing():
+    import pytest
+
+    client = FakeClient([pull(7), pull(8)], [run(7), run(8)])
+
+    def prepare(number, head):
+        raise sweeper.SweepError("network outcome unknown")
+
+    client.prepare_merge = prepare
+    with pytest.raises(sweeper.SweepError):
+        sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
     assert not client.merged

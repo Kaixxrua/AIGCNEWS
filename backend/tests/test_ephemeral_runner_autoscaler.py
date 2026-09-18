@@ -132,7 +132,11 @@ def test_lxd_launch_starts_runner_without_blocking_autoscaler(tmp_path):
         return autoscaler.subprocess.CompletedProcess(arguments, 0, b"", b"")
 
     runtime.command = command
-    runtime.launch("job-one", "jit", 7, cpu="4", memory="8GiB")
+    runtime.launch("job-one", "jit", 7, cpu="1.8", memory="3865470566")
+
+    assert ["config", "set", "job-one", "limits.cpu.allowance", "180ms/100ms"] in commands
+    assert ["config", "set", "job-one", "limits.memory", "3865470566"] in commands
+    assert ["config", "set", "job-one", "limits.memory.swap", "false"] in commands
 
     assert [
         "exec",
@@ -223,3 +227,34 @@ def test_smoke_build_uses_isolated_runner_proxy():
     workflow = (ROOT / ".github/workflows/contract-baseline.yml").read_text()
     assert "--add-host host.docker.internal:host-gateway" in workflow
     assert "--build-arg HTTPS_PROXY=http://host.docker.internal:7895" in workflow
+
+
+def test_resource_gate_overrides_fixed_runner_count(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
+    import runner_resource_budget as budget
+
+    monkeypatch.setattr(budget, "sample", lambda: budget.Usage(0, 0, 0, 0))
+    runtime = FakeRuntime()
+    scaler = build(FakeGitHub([1, 2, 3, 4]), runtime)
+    scaler.resource_budget = True
+    assert scaler.reconcile(apply=True).spawn == 3
+    assert len(runtime.launched) == 3
+    assert sum(float(item[3]) for item in runtime.launched) <= 5.4
+    assert sum(int(item[4]) for item in runtime.launched) <= 12 * budget.GIB * .9
+
+
+def test_resource_measurement_failure_never_launches(monkeypatch):
+    import pytest
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/ci"))
+    import runner_resource_budget as budget
+
+    def failed():
+        raise ValueError("unknown memory")
+
+    monkeypatch.setattr(budget, "sample", failed)
+    runtime = FakeRuntime()
+    scaler = build(FakeGitHub([1]), runtime)
+    scaler.resource_budget = True
+    with pytest.raises(ValueError):
+        scaler.reconcile(apply=True)
+    assert not runtime.launched

@@ -22,6 +22,7 @@ fi
 
 mkdir -p "$install_root" "$unit_root"
 install -m 0755 "$root/scripts/ci/ephemeral_runner_autoscaler.py" "$install_root/autoscaler.py"
+install -m 0644 "$root/scripts/ci/runner_resource_budget.py" "$install_root/runner_resource_budget.py"
 cat > "$unit_root/aigcnews-ci-autoscaler.service" <<UNIT
 [Unit]
 Description=AIGCNEWS ephemeral CI runner autoscaler

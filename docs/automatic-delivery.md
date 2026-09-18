@@ -52,7 +52,9 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 Sweeper 可以在同一轮批准所有满足同仓库、`session/*`、机器人创建、精确 head SHA 且未过期约束的门禁，使任务并行进入临时 CI；推进 `main` 的合并仍保持每轮最多一个。若本轮已经批准或重试任何门禁，则不会再合并后续 PR，避免先启动旧基线又立刻改变合并基线。
 
-临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区和诊断日志。Docker 侧仅保留公共镜像缓存 registry 容器及其 volume，以及模板脚本明确列出的固定摘要 Node、Nginx、PostgreSQL 公共基础镜像，删除其他容器、业务镜像、构建缓存、网络和 volume；每个 JIT 实例获得独立 CoW 副本，不能把写入带回模板或传给后续任务。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。默认最多同时创建两个 4 CPU / 8 GiB 实例；这是宿主机安全上限而不是固定 runner 数量，空闲时实例数为零。
+临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区和诊断日志。Docker 侧仅保留公共镜像缓存 registry 容器及其 volume，以及模板脚本明确列出的固定摘要 Node、Nginx、PostgreSQL 公共基础镜像，删除其他容器、业务镜像、构建缓存、网络和 volume；每个 JIT 实例获得独立 CoW 副本，不能把写入带回模板或传给后续任务。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。安装器同时安装 `runner_resource_budget.py`。CI 总预算为 6 CPU / 12 GiB；仅在存在可运行的排队 job、实测 CPU 与内存均低于 90% 时准入，已有预留加新分配不得超过 5.4 CPU / 10.8 GiB。实例数量和 CPU 时间配额、内存字节上限按剩余容量动态分配（每个通用 job 至少 1 CPU / 3 GiB），禁用 swap；冻结的旧 CI 仍计入预留。控制器使用单实例锁，指标或资源证据异常时拒绝扩容，空闲时临时实例数为零。详见 `docs/ci-resource-admission.md`。
+
+标签切换前必须先暂停新准入，阻止旧 runner 领取新任务，并确认 GitHub 空闲且本地无 `Runner.Worker` 后安全停止旧 CI，才能释放其预算；冻结不释放预算。先准备独立受信任的 control runner，再启用临时标签。PR 的 `pr-admission` 与测试 job 都运行在临时 runner 上，保留最新 base/head 检查；不能把 PR checkout 放进受信任的 control runner。
 
 临时 runner 不挂载生产 checkout、私有 Godot 目录或宿主机 Docker socket。每个实例使用自己的 nested Docker daemon；退出后 runner 自动从 GitHub 注销，控制器把 `_diag` 保存到 `$HOME/.local/state/aigcnews-ci-runners/` 后删除 LXD。超过 5 分钟仍未领取 job 且没有 `Runner.Worker` 的实例，只有成功从 GitHub 注销后才会被回收；探测异常或注销失败时不删除实例；正在执行 job 的实例不受该阈值影响，避免取消、注册或网络故障长期占用并发名额。
 
@@ -118,3 +120,13 @@ repository@sha256:<digest>
 ```
 
 `in_progress` 非空表示上一次进程在完成状态提交前异常退出。控制器会 fail-closed，不会猜测生产状态。此时应核对容器实际 digest、`.release.env`、Git HEAD 和健康端点后，再由运维人员修复状态；不要直接删除锁或状态文件后盲目重跑。
+
+## 合并顺序与重新验证
+
+自动合并事件和定时 Sweeper 使用同一 concurrency group、同一个默认分支控制器。每轮最多合并一个 PR。Contract Baseline 先在轻量 admission job 检查 PR head 是否包含当前 main，各测试 job 开始时再次检查，避免排队期间主分支更新后继续执行昂贵测试。失败门禁不得作为成功 CI 合并。
+
+主分支更新后，已核实归属的任务由本机监听器收到 `base_update` 或冲突通知；忙碌任务等待空闲，相同任务/PR/head/原因只通知一次，通知要求获取最新 main，以合并连续更新。任务保留自身工作树和 session 分支，把最新 origin/main 合入自身分支，解决冲突、本地验证、正常推送新 SHA 后重新进入 CI。不得切到 main 开发或强推。没有创建时归属记录的旧分支阻断通知，不能猜测任务 ID。
+
+通过 CI 的 PR 若尚未包含当前 main，合并控制器只 hold，继续检查其他候选，不再在 CI 后调用 update-branch。只有包含当前 main 的精确已验证 SHA 才可合并。CI 期间 main 再次变化仍可能需要重新验证；本变更保留合并后的 main 基线及部署门禁，并不承诺每个任务永远只运行一次 CI。
+
+该互斥只覆盖本仓库既定自动入口。仓库管理员的外部直接推送/合并不受 Actions concurrency 控制，完整服务端保障还需要 main 的严格状态检查或 GitHub 原生 merge queue；无法读取或配置保护规则时，不宣称已消除这一外部竞争窗口。
