@@ -29,15 +29,34 @@ pause across reboots. Frozen legacy CI still holds its complete reservation;
 it must be safely drained before the new pool has capacity.
 
 `delivery_feedback.py` implements a durable per-thread/PR/SHA/fault outbox and a
-Codex app-server proxy adapter. Only a confirmed idle thread may be dispatched;
+Codex app-server Unix WebSocket adapter. Only a confirmed idle thread may be dispatched;
 pause and obsolete SHA checks suppress delivery. A receipt is required before
 marking a wakeup sent. Ambiguous failures stay unconfirmed, never blindly
 replayed. It inherits thread configuration and does not change model or approval
 policy. Failure prompts send the PR back to development and require fresh CI.
 
-The installed Codex CLI exposes `app-server proxy`, but the current local server
-did not acknowledge initialize during a bounded read-only probe. Therefore the
-adapter is NOT enabled as a watcher, no live task has been awakened, and automatic
-fault collection/dispatch is not yet connected. Verify the desktop bridge and
-its concurrent-turn semantics before enabling it; do not use a second CLI agent
-or modify Codex's SQLite state to simulate a successful wakeup.
+`watch_delivery_feedback.py` reads the independent observatory snapshot (maximum
+age 180 seconds), requires unique verified ownership and exact branch/SHA, then
+reads the live PR twice. Only same-repository, open, non-draft conflicts targeting
+main are dispatched. GitHub access is GET-only. Test-failure classification is
+not enabled: infrastructure/network failures must not be reported as code faults.
+The CI pause marker also pauses wakeups, and is rechecked after GitHub requests.
+
+Install the watcher, `delivery_feedback.py` and `delivery_sweeper.py` under
+`~/.local/lib/aigcnews-delivery-feedback/`, then install the supplied user service.
+It uses the existing backend venv with `websockets==15.0.1`, the existing private
+`~/.config/aigcnews/delivery-read-token`, and a singleton lock and SQLite outbox
+under `~/.local/state/aigcnews-delivery-feedback/`. Do not log credentials.
+Inspect `journalctl --user -u aigcnews-delivery-feedback.service` for receipts or
+pause/unavailable status. Unconfirmed/dispatching records need manual receipt
+reconciliation; never reset them to pending without verifying no turn was created.
+
+The local server has acknowledged initialize and thread/read in a real read-only
+probe. Automated tests cover turn/start transport, deduplication and rejection
+cases, but no live task has been awakened for acceptance testing. Busy and
+notLoaded tasks wait; the adapter does not resume unloaded or archived tasks.
+The second idle check reduces races but is not an atomic idle-and-start operation;
+concurrent desktop input behavior remains an integration-test limitation.
+Do not use a second CLI agent or modify Codex's SQLite state to simulate success.
+The service may be installed while CI remains paused; installation does not imply
+end-to-end wakeup, CI or production-delivery acceptance.

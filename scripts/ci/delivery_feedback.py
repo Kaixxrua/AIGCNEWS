@@ -4,11 +4,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import selectors
 import sqlite3
-import subprocess
 import time
 import uuid
+from pathlib import Path
 
 
 class BridgeError(RuntimeError):
@@ -17,13 +16,13 @@ class BridgeError(RuntimeError):
 
 class CodexBridge:
     def __enter__(self):
-        self.process = subprocess.Popen(
-            ["codex", "app-server", "proxy"], stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        from websockets.sync.client import unix_connect
+
+        self.connection = unix_connect(
+            str(Path.home() / ".codex/app-server-control/app-server-control.sock"),
+            uri="ws://localhost", proxy=None, compression=None, open_timeout=5,
         )
         self.sequence = 0
-        self.selector = selectors.DefaultSelector()
-        self.selector.register(self.process.stdout, selectors.EVENT_READ)
         try:
             self.call("initialize", {"clientInfo": {"name": "delivery-feedback", "version": "1"}})
             self.send({"method": "initialized"})
@@ -33,28 +32,17 @@ class CodexBridge:
         return self
 
     def __exit__(self, *_):
-        self.selector.close()
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait()
+        self.connection.close()
 
     def send(self, message):
-        self.process.stdin.write(json.dumps(message) + "\n")
-        self.process.stdin.flush()
+        self.connection.send(json.dumps(message))
 
     def call(self, method, params):
         self.sequence += 1
         self.send({"id": self.sequence, "method": method, "params": params})
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
-            if not self.selector.select(max(0, deadline - time.monotonic())):
-                break
-            line = self.process.stdout.readline()
-            if not line:
-                break
+            line = self.connection.recv(timeout=max(.01, deadline - time.monotonic()))
             response = json.loads(line)
             if response.get("id") == self.sequence:
                 if "error" in response:
@@ -68,6 +56,8 @@ class CodexBridge:
 
     def wake(self, thread_id, prompt):
         # Inherit the existing thread's model, permissions and workspace.
+        if not self.idle(thread_id):
+            raise BridgeError("thread is no longer idle")
         return self.call("turn/start", {"threadId": thread_id, "input": [
             {"type": "text", "text": prompt, "text_elements": []}
         ]})
