@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: contract-baseline-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
