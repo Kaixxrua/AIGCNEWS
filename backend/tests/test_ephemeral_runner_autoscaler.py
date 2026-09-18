@@ -120,3 +120,44 @@ def test_failed_launch_removes_registered_runner():
         raise AssertionError("expected launch failure")
 
     assert github.deleted == [101]
+
+
+def test_lxd_launch_starts_runner_without_blocking_autoscaler(tmp_path):
+    runtime = autoscaler.LxdRuntime("template", "job-", tmp_path)
+    commands: list[list[str]] = []
+
+    def command(arguments, **_kwargs):
+        commands.append(arguments)
+        return autoscaler.subprocess.CompletedProcess(arguments, 0, b"", b"")
+
+    runtime.command = command
+    runtime.launch("job-one", "jit", 7, cpu="4", memory="8GiB")
+
+    assert [
+        "exec",
+        "job-one",
+        "--",
+        "systemctl",
+        "start",
+        "--no-block",
+        "aigcnews-ephemeral-runner.service",
+    ] in commands
+
+
+def test_jit_registration_includes_labels_required_by_workflows():
+    client = autoscaler.ApiClient("owner/repository", "token")
+    documents = []
+
+    def request(method, path, document=None):
+        documents.append((method, path, document))
+        return {"runner": {"id": 7}, "encoded_jit_config": "jit"}
+
+    client.request = request
+
+    assert client.generate_jit("job-one", "aigcnews-ci-ephemeral") == (7, "jit")
+    assert documents[0][2]["labels"] == [
+        "self-hosted",
+        "linux",
+        "x64",
+        "aigcnews-ci-ephemeral",
+    ]

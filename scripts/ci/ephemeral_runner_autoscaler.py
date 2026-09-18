@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 DEFAULT_LABEL = "aigcnews-ci-ephemeral"
 DEFAULT_PREFIX = "aigcnews-ci-job-"
+DEFAULT_RUNNER_LABELS = ("self-hosted", "linux", "x64")
 
 
 class AutoscalerError(RuntimeError):
@@ -151,7 +152,7 @@ class ApiClient:
             {
                 "name": name,
                 "runner_group_id": self.runner_group_id,
-                "labels": [label],
+                "labels": [*DEFAULT_RUNNER_LABELS, label],
                 "work_folder": "_work",
             },
         )
@@ -292,6 +293,7 @@ class LxdRuntime:
                     "--",
                     "systemctl",
                     "start",
+                    "--no-block",
                     "aigcnews-ephemeral-runner.service",
                 ]
             )

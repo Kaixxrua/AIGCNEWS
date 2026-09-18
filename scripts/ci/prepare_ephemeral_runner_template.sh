@@ -67,6 +67,16 @@ Wants=network-online.target docker.service
 
 [Service]
 Type=oneshot
+Environment="HTTP_PROXY=http://127.0.0.1:7895"
+Environment="HTTPS_PROXY=http://127.0.0.1:7895"
+Environment="ALL_PROXY=socks5h://127.0.0.1:7895"
+Environment="NO_PROXY=localhost,127.0.0.1,::1"
+Environment="http_proxy=http://127.0.0.1:7895"
+Environment="https_proxy=http://127.0.0.1:7895"
+Environment="all_proxy=socks5h://127.0.0.1:7895"
+Environment="no_proxy=localhost,127.0.0.1,::1"
+Environment="RUNNER_TOOL_CACHE=/opt/hostedtoolcache"
+Environment="ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actions-runner/_action_archive_cache"
 ExecStart=/usr/local/sbin/aigcnews-run-ephemeral
 ExecStopPost=/usr/bin/systemctl poweroff
 TimeoutStartSec=infinity
