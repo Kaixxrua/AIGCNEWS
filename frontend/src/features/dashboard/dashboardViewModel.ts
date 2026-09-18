@@ -30,6 +30,8 @@ export interface TopDoc {
   author_name?: string
   /** 纯转贴的转贴者 handle（仅 X 转贴；卡片顶部据此标注「@xxx 转发了」，原作者仍为 author） */
   retweeted_by?: string | null
+  /** 触发采集的关注账号显示名；转贴时与原作者 author_name 不同。 */
+  followed_account_name?: string
   stars?: number
   language?: string
   feed_name?: string

@@ -21,7 +21,7 @@ const isAdmin = computed(() => authStore.isAdmin)
 const {
   docs, visibleDocs, selectedDate, today, loading, deleting, errorMsg,
   selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
-  availableDates, availableAccounts, followedAccounts, unfollowedAccounts,
+  availableDates, availableAccounts, availableAccountOptions, followedAccounts, unfollowedAccounts,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
   toggleFollowAccount, followAllAccounts, unfollowAllAccounts,
 } = useXBoardController({ translate: t })
@@ -271,18 +271,19 @@ onBeforeUnmount(() => {
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
           <label
-            v-for="handle in availableAccounts"
-            :key="handle"
+            v-for="account in availableAccountOptions"
+            :key="account.handle"
             class="xboard-account-chip flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs"
-            :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(handle) }"
+            :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
+            :title="`@${account.handle}`"
           >
             <input
               type="checkbox"
               class="h-3.5 w-3.5"
-              :checked="!unfollowedAccounts.has(handle)"
-              @change="toggleFollowAccount(handle)"
+              :checked="!unfollowedAccounts.has(account.handle)"
+              @change="toggleFollowAccount(account.handle)"
             />
-            <span>@{{ handle }}</span>
+            <span>{{ account.displayName }}</span>
           </label>
         </div>
       </section>

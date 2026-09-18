@@ -106,6 +106,20 @@ export const followedAccountHandle = (doc: TopDoc): string => (
   retweetedByHandle(doc).toLowerCase() || extractXHandle(doc.url)
 )
 
+/** 关注筛选的展示名：后端关注列表优先，旧数据回退作者昵称或 @handle。 */
+export const followedAccountDisplayName = (doc: TopDoc): string => {
+  const configured = typeof doc.followed_account_name === 'string'
+    ? doc.followed_account_name.trim()
+    : ''
+  if (configured) return configured
+  const handle = followedAccountHandle(doc)
+  if (!handle) return ''
+  if (handle === extractXHandle(doc.url)) {
+    return authorDisplayName(doc) || `@${handle}`
+  }
+  return `@${handle}`
+}
+
 /**
  * 正文按界面语言切换：zh 系界面语言优先展示采集期落库的 X 中文翻译
  * （translation_zh，来自 X 自带 translateTweet），其余语言或无译文回退原文。
