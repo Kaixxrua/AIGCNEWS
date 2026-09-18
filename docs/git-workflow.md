@@ -99,6 +99,8 @@ Reverts: <commit-sha>
 5. 开发工作必须通过 `scripts/dev_session.py start <slug>` 创建 branch-backed worktree；会话分支命名为唯一的 `session/<slug>-<id>`，以最新 `origin/main` 为基线。不得在 `main`、detached HEAD 或未注册的 worktree 中开展会话工作。
 6. 在提交前运行 `scripts/dev_session.py check`；它会拒绝 detached/main、ghost parent、分支或 worktree 复用，以及 dirty/staged/untracked 状态。该工具 fail-closed，不执行 reset、stash、rebase 或清理。
 7. 推送前仍须按 Green/Yellow/Red 风险等级完成相应验证；自动推送不等于自动发布。
+8. primary checkout 必须保持在 `main` 且不承载开发修改；即使它被误切到 `session/*`，`dev_session.py check` 和 `pre-commit` 也会拒绝把它当成合法会话。`start` 从任意 linked worktree 调用时仍统一在 primary checkout 的 `.claude/worktrees/` 下创建同级会话，禁止形成嵌套 worktree。
+9. 数据库备份、恢复快照和一次性工作区备份必须写到运行数据目录或仓库外；不得用仓库内备份替代 session worktree。
 
 ## 4. “PR 完成”的自动推送语义
 
@@ -159,7 +161,7 @@ git config --worktree core.hooksPath .githooks
 git config --worktree --get core.hooksPath
 ```
 
-`.githooks/pre-commit` 按暂存文件的影响面执行三段门禁，任一失败即阻断提交；`post-commit` 只对 `session/*` 执行普通 push，`pre-push` 拒绝未持有 landing nonce 的 `main` 推送：
+`.githooks/pre-commit` 先拒绝 detached、`main`、非 session 分支以及 primary checkout，再按暂存文件的影响面执行三段门禁，任一失败即阻断提交；`post-commit` 只对 linked `session/*` 执行普通 push，`pre-push` 拒绝未持有 landing nonce 的 `main` 推送。该检查不进入 PR 合并或部署 job，正常自动交付路径不增加偶发阻塞点：
 
 1. **ruff 快检**：仅检查暂存的 Python 文件（基线配置 `backend/pyproject.toml`）；
 2. **后端受影响测试快筛**：`backend/app` 变更映射同名测试文件、`backend/tests` 变更直接运行；

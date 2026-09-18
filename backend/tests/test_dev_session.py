@@ -57,6 +57,7 @@ branch refs/heads/session/demo-1
 def test_status_marks_main_and_dirty(monkeypatch, tmp_path):
     monkeypatch.setattr(_session, "current_worktree", lambda root: _session.Worktree(root, "abc", "main"))
     monkeypatch.setattr(_session, "worktrees", lambda root: [_session.Worktree(root, "abc", "main")])
+    monkeypatch.setattr(_session, "primary_worktree", lambda root: root)
     monkeypatch.setattr(_session, "base_exists", lambda root: True)
 
     def fake_git(*args, cwd):
@@ -73,7 +74,7 @@ def test_status_marks_main_and_dirty(monkeypatch, tmp_path):
     monkeypatch.setattr(_session, "git", fake_git)
     result = _session.status(tmp_path)
     assert result["ok"] is False
-    assert {"main", "dirty"} <= set(result["risk"])
+    assert {"main", "primary_worktree", "dirty"} <= set(result["risk"])
     assert result["untracked"] is True
     assert result["staged"] is False
 
@@ -81,11 +82,12 @@ def test_status_marks_main_and_dirty(monkeypatch, tmp_path):
 def test_status_marks_detached_and_ghost_parent(monkeypatch, tmp_path):
     monkeypatch.setattr(_session, "current_worktree", lambda root: _session.Worktree(root, "abc", None))
     monkeypatch.setattr(_session, "worktrees", lambda root: [_session.Worktree(root, "abc", None)])
+    monkeypatch.setattr(_session, "primary_worktree", lambda root: root)
     monkeypatch.setattr(_session, "base_exists", lambda root: False)
     monkeypatch.setattr(_session, "git", lambda *args, cwd: "")
     result = _session.status(tmp_path)
     assert result["ok"] is False
-    assert {"detached", "ghost_parent"} <= set(result["risk"])
+    assert {"detached", "primary_worktree", "ghost_parent"} <= set(result["risk"])
     assert result["divergence"] == {"ahead": None, "behind": None}
 
 
@@ -248,6 +250,49 @@ def test_start_creates_real_linked_worktree_with_local_hooks(tmp_path):
     assert (session / ".githooks" / "pre-push").is_file()
     for hook in ("pre-commit", "commit-msg", "pre-push", "post-commit"):
         assert os.access(session / ".githooks" / hook, os.X_OK)
+
+
+def test_start_from_linked_worktree_does_not_nest_sessions(tmp_path):
+    root = _temporary_remote(tmp_path)[1]
+    first = Path(_session.start("first-session", root)["worktree"])
+    second = Path(_session.start("second-session", first)["worktree"])
+    assert second.parent == root / ".claude" / "worktrees"
+    assert not str(second).startswith(str(first) + os.sep)
+
+
+def test_status_distinguishes_unstaged_from_staged_changes(tmp_path):
+    root = _temporary_remote(tmp_path)[1]
+    session = Path(_session.start("status-session", root)["worktree"])
+    (session / "README.md").write_text("unstaged\n", encoding="utf-8")
+
+    unstaged = _session.status(session)
+
+    assert unstaged["dirty"] is True
+    assert unstaged["staged"] is False
+    _run_git(session, "add", "README.md")
+    staged = _session.status(session)
+    assert staged["staged"] is True
+
+
+def test_pre_commit_rejects_session_branch_in_primary_checkout(tmp_path):
+    root = _temporary_remote(tmp_path)[1]
+    _run_git(root, "switch", "-c", "session/primary-misuse-1")
+    hook = root / ".githooks" / "pre-commit"
+
+    rejected = subprocess.run([str(hook)], cwd=root, text=True, capture_output=True, check=False)
+
+    assert rejected.returncode != 0
+    assert "primary checkout" in rejected.stderr
+
+
+def test_pre_commit_allows_clean_linked_session_without_staged_files(tmp_path):
+    root = _temporary_remote(tmp_path)[1]
+    session = Path(_session.start("hook-session", root)["worktree"])
+    hook = session / ".githooks" / "pre-commit"
+
+    accepted = subprocess.run([str(hook)], cwd=session, text=True, capture_output=True, check=False)
+
+    assert accepted.returncode == 0
 
 
 def test_post_commit_pushes_session_to_same_name_despite_main_upstream(tmp_path):

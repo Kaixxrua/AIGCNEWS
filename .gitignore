@@ -88,3 +88,5 @@ uv.lock
 # 运行态站点资源与 MCP 工具指标（本地/线上生成数据，不入 git）
 storage/site/
 storage/metrics_mcp/
+# 本地数据库安全备份可能达到数 GB，只能保留在运行环境或仓库外
+storage/backups/
