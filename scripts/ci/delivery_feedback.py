@@ -65,7 +65,7 @@ class CodexBridge:
 
 def enqueue(db, *, thread_id, pr, sha, kind, url):
     uuid.UUID(thread_id)
-    if kind not in {"conflict", "test_failure"} or len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
+    if kind not in {"conflict", "test_failure", "base_update"} or len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
         raise ValueError("invalid feedback identity")
     if not url.startswith("https://github.com/Kaixxrua/AIGCNEWS/"):
         raise ValueError("feedback evidence must belong to this repository")
@@ -104,8 +104,10 @@ def dispatch(db, key, bridge, *, current_sha, paused):
     prompt = (
         f"Delivery feedback {key}: PR #{event['pr']} at exact SHA {event['sha']} "
         f"has {event['kind']}. Evidence: {event['url']}. Return this PR to development. "
-        "Verify the failure and current branch first; preserve other tasks. Resolve conflicts "
-        "against current main or repair failing tests, then rerun validation and submit a new SHA "
+        "Verify the failure and current branch first; preserve other tasks. Stay in your own "
+        "worktree and session branch, fetch the latest origin/main and merge it into your branch. "
+        "Do not switch to main to develop. Coalesce intervening main updates into that latest fetch. "
+        "Resolve conflicts or repair failing tests, then rerun local validation and submit a new SHA "
         "through the established pipeline. Do not bypass checks, force-push, or deploy manually."
     )
     try:

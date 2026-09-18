@@ -105,7 +105,7 @@ def test_live_recheck_prevents_obsolete_wake(watcher, inputs, tmp_path, change):
         latest["draft"] = True
     else:
         latest["mergeable_state"] = "unknown"
-    client.request.side_effect = [pr, latest]
+    client.request.side_effect = [pr, latest, {}]
     with watcher.open_db(tmp_path / "events.db") as db:
         watcher.tick(db, snapshot, client, bridge, paused=False)
     bridge.wake.assert_not_called()
@@ -117,3 +117,27 @@ def test_api_failure_never_wakes(watcher, inputs, tmp_path):
     with watcher.open_db(tmp_path / "events.db") as db, pytest.raises(OSError):
         watcher.tick(db, snapshot, client, bridge, paused=False)
     bridge.wake.assert_not_called()
+
+
+def test_behind_main_wakes_owner_and_coalesces_updates(watcher, inputs, tmp_path):
+    snapshot, pr, client, bridge = inputs
+    pr["mergeable"] = True
+    pr["mergeable_state"] = "behind"
+    main = ["b" * 40]
+
+    def request(method, path):
+        assert method == "GET"
+        if path == "/git/ref/heads/main":
+            return {"object": {"sha": main[0]}}
+        if path.startswith("/compare/"):
+            return {"status": "diverged"}
+        return pr
+
+    client.request.side_effect = request
+    with watcher.open_db(tmp_path / "events.db") as db:
+        assert watcher.tick(db, snapshot, client, bridge, paused=False)[0]["status"] == "sent"
+        main[0] = "c" * 40
+        assert watcher.tick(db, snapshot, client, bridge, paused=False)[0]["status"] == "unchanged"
+    bridge.wake.assert_called_once()
+    assert "base_update" in bridge.wake.call_args.args[1]
+    assert "own worktree" in bridge.wake.call_args.args[1]

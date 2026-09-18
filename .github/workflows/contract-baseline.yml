@@ -15,13 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pr-admission:
+    name: Verify current PR base
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/check-pr-base
+
   backend-tests:
+    needs: pr-admission
     name: Backend tests
     runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/check-pr-base
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -61,6 +72,7 @@ jobs:
           backend/tests
 
   postgres-integration:
+    needs: pr-admission
     name: PostgreSQL 16 integration
     runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 20
@@ -86,6 +98,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/check-pr-base
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -150,6 +164,7 @@ jobs:
           EOF
 
   mcp-go:
+    needs: pr-admission
     name: MCP Go build and tests
     runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 15
@@ -159,6 +174,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/check-pr-base
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -185,6 +202,7 @@ jobs:
         run: go test ./... -count=1
 
   compose-smoke:
+    needs: pr-admission
     name: Compose and image smoke
     runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 20
@@ -200,6 +218,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/check-pr-base
 
       - name: Validate main compose file
         run: docker compose --file docker/docker-compose.yml config --quiet
@@ -230,6 +250,7 @@ jobs:
         run: docker build --tag aigcnews-frontend-ci frontend/
 
   frontend-build:
+    needs: pr-admission
     name: Frontend build
     runs-on: [self-hosted, linux, aigcnews-ci]
     timeout-minutes: 20
@@ -239,6 +260,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - uses: ./.github/actions/check-pr-base
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

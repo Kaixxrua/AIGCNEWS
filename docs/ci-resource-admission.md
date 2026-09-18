@@ -37,8 +37,11 @@ policy. Failure prompts send the PR back to development and require fresh CI.
 
 `watch_delivery_feedback.py` reads the independent observatory snapshot (maximum
 age 180 seconds), requires creation-time ownership and exact branch/SHA, then
-reads the live PR twice. Only same-repository, open, non-draft conflicts targeting
-main are dispatched. GitHub access is GET-only. Test-failure classification is
+reads the live PR twice. Only same-repository, open, non-draft PRs targeting
+main with conflicts or a head behind/diverged from current main are dispatched.
+Base-update notifications deduplicate by task/PR/head rather than every main SHA;
+the receiving task fetches latest main once before resolving and validating.
+GitHub access is GET-only. Test-failure classification is
 not enabled: infrastructure/network failures must not be reported as code faults.
 The CI pause marker also pauses wakeups, and is rechecked after GitHub requests.
 

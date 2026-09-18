@@ -21,11 +21,22 @@ def fresh(snapshot):
         return False
 
 
-def conflict(pr):
+def eligible(pr):
     return (pr.get("state") == "open" and not pr.get("draft")
             and pr.get("base", {}).get("ref") == "main"
-            and (pr.get("head", {}).get("repo") or {}).get("full_name") == "Kaixxrua/AIGCNEWS"
-            and pr.get("mergeable") is False and pr.get("mergeable_state") == "dirty")
+            and (pr.get("head", {}).get("repo") or {}).get("full_name") == "Kaixxrua/AIGCNEWS")
+
+
+def reason(pr, client):
+    if not eligible(pr):
+        return None
+    if pr.get("mergeable") is False and pr.get("mergeable_state") == "dirty":
+        return "conflict"
+    main = client.request("GET", "/git/ref/heads/main").get("object", {}).get("sha")
+    if not main:
+        return None
+    comparison = client.request("GET", f"/compare/{main}...{pr['head']['sha']}")
+    return "base_update" if comparison.get("status") in {"behind", "diverged"} else None
 
 
 def tick(db, snapshot, client, bridge, *, paused, pause_check=lambda: False):
@@ -45,17 +56,18 @@ def tick(db, snapshot, client, bridge, *, paused, pause_check=lambda: False):
             results.append({"pr": number, "status": "ownership_unverified"})
             continue
         pr = client.request("GET", f"/pulls/{number}")
-        if not conflict(pr) or pr["head"]["sha"] != expected_sha or pr["head"]["ref"] != branch:
+        if not eligible(pr) or pr["head"]["sha"] != expected_sha or pr["head"]["ref"] != branch:
             continue
         # Conflict is authoritative. Test failure classification requires logs;
         # don't wake developers to repair transient network failures.
-        if pr.get("mergeable") is not False or pr.get("mergeable_state") != "dirty":
+        kind = reason(pr, client)
+        if kind is None:
             continue
         sha = pr["head"]["sha"]
         key = enqueue(db, thread_id=thread, pr=number, sha=sha,
-                      kind="conflict", url=pr["html_url"])
+                      kind=kind, url=pr["html_url"])
         latest = client.request("GET", f"/pulls/{number}")
-        if not conflict(latest) or latest["head"]["ref"] != branch:
+        if not eligible(latest) or latest["head"]["ref"] != branch or reason(latest, client) != kind:
             continue
         if resolve_owner(branch) != thread:
             results.append({"pr": number, "status": "ownership_changed"})

@@ -205,11 +205,11 @@ def test_never_merges_stale_successful_validation():
     assert not client.merged
 
 
-def test_stale_base_updates_branch_without_merging():
+def test_stale_base_waits_for_owner_without_merging():
     client = FakeClient([pull()], [run()])
     client.prepare_merge = lambda number, head: False
     results = sweeper.reconcile(client, REPOSITORY, apply=True, now=NOW)
-    assert results[0].action == "updated"
+    assert results[0].action == "hold"
     assert not client.merged
 
 
@@ -227,7 +227,7 @@ def test_api_checks_current_main_before_landing():
 
     client.request = request
     assert not client.prepare_merge(7, HEAD)
-    assert calls[-1] == ("PUT", "/pulls/7/update-branch", {"expected_head_sha": HEAD})
+    assert all(method == "GET" for method, _, _ in calls)
 
 
 def test_conflicting_pr_does_not_starve_later_eligible_pr():
