@@ -288,6 +288,9 @@ def test_configured_alias_reaches_queue_and_jit_registration(monkeypatch):
     monkeypatch.setattr(budget, "sample", lambda: budget.Usage(0, 0, 0, 0))
     scaler = autoscaler.build_autoscaler()
     scaler.runtime = FakeRuntime()
+    monkeypatch.setattr(scaler.github, "runners", lambda: [])
+    import shared_runner_pool
+    monkeypatch.setattr(shared_runner_pool, "inventory", lambda: [])
     registrations = []
 
     def request(method, path, document=None):
@@ -310,3 +313,70 @@ def test_configured_alias_reaches_queue_and_jit_registration(monkeypatch):
 
     monkeypatch.delenv("AIGCNEWS_RUNNER_COMPAT_LABELS")
     assert autoscaler.build_autoscaler().compat_labels == ()
+
+
+def test_terminal_job_cache_is_attempt_scoped_and_active_runs_refresh():
+    client = autoscaler.ApiClient("owner/repository", "token")
+    calls = []
+    attempt = 1
+    def request(method, path):
+        calls.append(path)
+        if "/jobs?" in path:
+            return {"jobs": []}
+        if "status=completed" in path:
+            return {"workflow_runs": [{"id": 10, "status": "completed", "run_attempt": attempt}]}
+        return {"workflow_runs": [{"id": 11, "status": "in_progress"}]}
+    client.request = request
+    client.queued_jobs(autoscaler.DEFAULT_LABEL)
+    client.queued_jobs(autoscaler.DEFAULT_LABEL)
+    assert sum("/runs/10/jobs?" in path for path in calls) == 1
+    assert sum("/runs/11/jobs?" in path for path in calls) == 2
+    attempt = 2
+    client.queued_jobs(autoscaler.DEFAULT_LABEL)
+    assert sum("/runs/10/jobs?" in path for path in calls) == 2
+
+
+def test_shared_controller_can_launch_eighth_runner_despite_legacy_maximum(monkeypatch, tmp_path):
+    import shared_runner_pool as pool
+    monkeypatch.setattr(autoscaler.Path, "home", lambda: tmp_path)
+    clock = iter([0, 60, 61, 62])
+    monkeypatch.setattr(autoscaler.time, "monotonic", lambda: next(clock))
+    state = pool.Evidence(("stable",), 1, 2 * pool.GIB, 12 * pool.GIB,
+                          84 * pool.GIB, False, pool.GIB, pool.GIB // 4)
+    monkeypatch.setattr(pool, "sample", lambda *args, **kwargs: state)
+    github = FakeGitHub([1]); github.runners = lambda: []
+    runtime = FakeRuntime([autoscaler.Instance(f"job-{i}", "RUNNING") for i in range(7)])
+    from runner_pool_receipts import Receipts
+    runtime.receipts = Receipts(tmp_path / "receipts")
+    scaler = build(github, runtime, maximum=2)
+    scaler.shared_parent = "/not-live"
+    scaler.adaptive = pool.AdaptiveAdmission()
+    assert scaler.reconcile(apply=True).spawn == 0
+    assert scaler.reconcile(apply=True).spawn == 1
+    assert len(runtime.data) == 8
+    receipt = autoscaler.json.loads(runtime.receipts.path(101).read_text())
+    assert receipt["instance"] == runtime.launched[0][0]
+    assert receipt["state"] == "registered"
+    assert runtime.launched[0][3:] == ("6", str(12 * pool.GIB))
+
+
+def test_ambiguous_jit_start_preserves_payload_and_registration(tmp_path):
+    import pytest
+    runtime = autoscaler.LxdRuntime("template", "job-", tmp_path)
+    commands = []
+    def command(args, **kwargs):
+        commands.append(args)
+        if args[:5] == ['exec', 'job-one', '--', 'systemctl', 'start']:
+            raise autoscaler.subprocess.TimeoutExpired(args, 60)
+        return autoscaler.subprocess.CompletedProcess(args, 0, b'', b'')
+    runtime.command = command
+    runtime.destroy = lambda name: pytest.fail('possibly assigned job must survive')
+    with pytest.raises(autoscaler.LaunchUncertain):
+        runtime.launch('job-one', 'jit', 7, cpu='1', memory='3GiB')
+    github = FakeGitHub([1])
+    fake = FakeRuntime()
+    def uncertain(*args, **kwargs):
+        raise autoscaler.LaunchUncertain('start dispatched')
+    fake.launch = uncertain
+    with pytest.raises(autoscaler.LaunchUncertain): build(github, fake).reconcile(apply=True)
+    assert not github.deleted

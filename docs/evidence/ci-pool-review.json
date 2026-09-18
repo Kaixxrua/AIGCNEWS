@@ -1,0 +1,206 @@
+{
+  "base": "549d9bf4817c840cdab906683dd9325d28935a97",
+  "branch": "session/dynamic-pool-handoff-ao12-20260918-1789737389-3495300-7673",
+  "status": "validated after coordinator release; ready for standard commit/push",
+  "tests": [
+    {
+      "command": [
+        "/home/kaixxrua/AIGCNEWS/backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "backend/tests/test_runner_pool_receipts.py",
+        "backend/tests/test_shared_runner_pool.py",
+        "backend/tests/test_ephemeral_runner_autoscaler.py",
+        "backend/tests/test_runner_resource_budget.py",
+        "backend/tests/test_production_deployment.py",
+        "backend/tests/test_delivery_sweeper.py",
+        "backend/tests/test_private_frontend_staging.py",
+        "backend/tests/test_delivery_feedback.py",
+        "backend/tests/test_watch_delivery_feedback.py",
+        "backend/tests/test_dev_session.py",
+        "backend/tests/test_ao_delivery_adapter.py",
+        "backend/tests/test_ao_production_notifications.py",
+        "backend/tests/test_delivery_completion_guard.py",
+        "backend/tests/test_delivery_probe.py"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-1.txt",
+      "log_sha256": "41f3ce229a0bc0715af0d82cb93e7cb19c80ed4f4645d31281f510e5ea92a22f"
+    },
+    {
+      "command": [
+        "/home/kaixxrua/AIGCNEWS/backend/.venv/bin/ruff",
+        "check",
+        "--config",
+        "backend/pyproject.toml",
+        "backend/tests/test_ephemeral_runner_autoscaler.py",
+        "backend/tests/test_runner_pool_receipts.py",
+        "backend/tests/test_shared_runner_pool.py",
+        "scripts/ci/check_shared_runner_pool.py",
+        "scripts/ci/ephemeral_runner_autoscaler.py",
+        "scripts/ci/review_pool_recovery.py",
+        "scripts/ci/runner_pool_owner.py",
+        "scripts/ci/runner_pool_receipts.py",
+        "scripts/ci/runner_resource_budget.py",
+        "scripts/ci/runner_workloads.py",
+        "scripts/ci/shared_runner_pool.py"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-2.txt",
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "command": [
+        "/tmp/aigcnews-actionlint-bin/actionlint"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-3.txt",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "systemd-analyze",
+        "--user",
+        "verify",
+        "scripts/ci/aigcnews-ci-pool.service"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-4.txt",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "-n",
+        "scripts/ci/install_shared_runner_pool.sh",
+        "scripts/ci/install_ephemeral_runner_autoscaler.sh"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-5.txt",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "/tmp/dynamic-pool-ao12-validation/released-6.txt",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "files": [
+    {
+      "path": "backend/tests/test_ephemeral_runner_autoscaler.py",
+      "sha256": "b9d280cc83d243a1ce56ca151872fa8df74f6bbff495f39e824609bb2bcf0ec9",
+      "changed_since_import": true
+    },
+    {
+      "path": "backend/tests/test_runner_pool_receipts.py",
+      "sha256": "16c13a13d8aa7677bca2bb2a2f7dffcc163b4e5f5adb6008497a31650b81fda7",
+      "changed_since_import": true
+    },
+    {
+      "path": "backend/tests/test_shared_runner_pool.py",
+      "sha256": "034f3df7c73fced48d4ac81b5f83f33c842f5666ab017a05ed217f5f4324fa4f",
+      "changed_since_import": true
+    },
+    {
+      "path": "docs/ci-pool-operator-runbook.md",
+      "sha256": "9211434e24e66b707770c9dd57b7a855ee2695ea8024af4475ded6f5d9b1cf19",
+      "changed_since_import": true
+    },
+    {
+      "path": "docs/ci-resource-admission.md",
+      "sha256": "afcb02a6c139a90241ff7b60925fd252bb13b743d015a05d586eca9c1af1be55",
+      "changed_since_import": false
+    },
+    {
+      "path": "docs/ci-user-cgroup-feasibility.md",
+      "sha256": "0db97c51511d43b092f49e916dba3edb5b27b3a1ec6e418ce23c34a9dd541c7c",
+      "changed_since_import": false
+    },
+    {
+      "path": "docs/evidence/ci-pool-load-drain.json",
+      "sha256": "c122f1f1f76ac3be2bd4818b535ef6649f5f3f2de02a11a92f81c8e20607c7fe",
+      "changed_since_import": false
+    },
+    {
+      "path": "docs/evidence/ci-pool-oom.json",
+      "sha256": "3e69d3e6d9815278d417c975b74686d7f86c712cde936773d768b42c18754e03",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/aigcnews-ci-pool.service",
+      "sha256": "dba155f253a6d72d567b6386aebe02cf299dd4048e6f78de2ad4a684cb07d0fd",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/check_shared_runner_pool.py",
+      "sha256": "03636659585a76ab5a836393eae4f5452e2aa349b547365c60d343c3099d6ab6",
+      "changed_since_import": true
+    },
+    {
+      "path": "scripts/ci/ephemeral_runner_autoscaler.py",
+      "sha256": "c74380e48573a22222462160829eb2d59bc124e395475aba21b9fcab57fd60c0",
+      "changed_since_import": true
+    },
+    {
+      "path": "scripts/ci/install_ephemeral_runner_autoscaler.sh",
+      "sha256": "4d2694764732d3f9b836bfa3d86e155881cfd1bd3c1bb1f3d9126abca4522663",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/install_shared_runner_pool.sh",
+      "sha256": "5fe05ad799aa5e9f7861e47528ca0e6ab684e44a5d7e952f8bc4a67d89513edc",
+      "changed_since_import": true
+    },
+    {
+      "path": "scripts/ci/review_pool_recovery.py",
+      "sha256": "feb2fb019e1e3f0b586850a84ce46b84c7922a45dc2af3f4a47e77145f63a504",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/runner_pool_owner.py",
+      "sha256": "dcec957f4fe89e8b2568285dd03bb4863fb674591529cbcb0e90e9fef83290fa",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/runner_pool_receipts.py",
+      "sha256": "6c38b7c6dfc6a131f77343171d44fe6daffc876cd6b00b72332b0e29ba127c8d",
+      "changed_since_import": true
+    },
+    {
+      "path": "scripts/ci/runner_resource_budget.py",
+      "sha256": "9308370b63c37f7b98d7b8a7b6e2b8f1d2dbaede14a928cc8175b95432bb6ff4",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/runner_workloads.py",
+      "sha256": "7cff5c4272884ba15d81ee032efb0f4f000e75bac5ee2120a010cf48d3723d4c",
+      "changed_since_import": false
+    },
+    {
+      "path": "scripts/ci/shared_runner_pool.py",
+      "sha256": "d7369ae3cda33de1fe127b168e438881fe0164f9df2e4ba5ba88c2493dbbdf5f",
+      "changed_since_import": true
+    }
+  ],
+  "persistence": "Existing Linger=yes, active user@1000 and default.target; new pool not installed; no reboot/logout executed",
+  "live_mutations": false,
+  "verified_at": "2026-09-18T13:39:06.234688+00:00",
+  "tests_passed": 230,
+  "remote_main_observed": "549d9bf4817c840cdab906683dd9325d28935a97",
+  "release_gate": "Coordinator released commit/push; runtime installation remains coordinator-owned",
+  "original_source_19_files_unchanged": true,
+  "creation_owner_matches_current_thread": true,
+  "limitations": [
+    "No live runtime migration or services mutation",
+    "No host reboot/logout experiment; existing persistence policy verified read-only",
+    "Inherited isolated load/drain/OOM evidence; sustained 90 percent load and multi-job fairness calibration remain coordinator rollout checks",
+    "Missing task identity/final counters and stalled unassigned listeners require coordinator reconciliation"
+  ],
+  "pr68_files_preserved": true
+}
