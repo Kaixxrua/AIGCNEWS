@@ -60,3 +60,22 @@ def test_real_git_ancestry_distinguishes_unrelated_commits(tmp_path):
     assert not probe.contains(tmp_path, task, base)
     with pytest.raises(ValueError, match="cannot be verified"):
         probe.contains(tmp_path, task, "f" * 40)
+
+
+def test_pending_replacement_uses_explicit_source_not_workflow_head(monkeypatch):
+    monkeypatch.setattr(probe, "contains", lambda root, a, b: b == "b" * 40)
+    runs = [
+        {
+            "id": 1,
+            "event": "workflow_run",
+            "status": "pending",
+            "display_title": "production-source:" + "b" * 40,
+            "head_sha": "c" * 40,
+        },
+        {"id": 2, "event": "workflow_run", "status": "completed", "display_title": "production-source:" + "b" * 40},
+        {"id": 3, "event": "workflow_run", "status": "queued", "display_title": "old format", "head_sha": "b" * 40},
+    ]
+    replacement = probe.queued_replacement(Path("."), "a" * 40, runs)
+    assert replacement["run_id"] == 1
+    assert replacement["source_sha"] == "b" * 40
+    assert replacement["status"] == "queued"

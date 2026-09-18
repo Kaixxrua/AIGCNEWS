@@ -60,9 +60,38 @@ def evaluate(
     }
 
 
+def queued_replacement(root: Path, landing: str, runs: list[dict]) -> dict | None:
+    # run-name is emitted by the trusted deployment workflow using the
+    # triggering baseline SHA; workflow_run.head_sha itself refers to main
+    # at trigger time and must never be treated as the source being built.
+    for run in sorted(runs, key=lambda item: item["id"], reverse=True):
+        match = re.fullmatch(
+            r"production-source:([0-9a-f]{40})", run.get("display_title", "")
+        )
+        if not match or run.get("event") != "workflow_run":
+            continue
+        if run.get("status") not in {"queued", "pending", "waiting", "in_progress"}:
+            continue
+        source = match[1]
+        if source != landing and contains(root, landing, source):
+            return {
+                "source_sha": source,
+                "status": "in_progress" if run["status"] == "in_progress" else "queued",
+                "run_id": run["id"],
+                "url": run.get("html_url"),
+            }
+    return None
+
+
 def inspect_session(root: Path, branch: str, state: dict) -> dict:
     """Resolve squash landing and replacement ownership through read-only API calls."""
     token = os.environ.get("GH_TOKEN", "")
+    if not token:
+        token_file = Path.home() / ".config/aigcnews/delivery-read-token"
+        if token_file.exists():
+            if token_file.stat().st_mode & 0o077:
+                raise ValueError("delivery token file must be private")
+            token = token_file.read_text().strip()
     repository = os.environ.get("GITHUB_REPOSITORY", "Kaixxrua/AIGCNEWS")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("invalid repository")
@@ -113,7 +142,11 @@ def inspect_session(root: Path, branch: str, state: dict) -> dict:
     }
     if result["status"] == "active":
         return result
-    candidate = state.get("in_progress")
+    runs = get(
+        "/actions/workflows/deploy-production.yml/runs?event=workflow_run&per_page=100"
+    )
+    replacement = queued_replacement(root, landing, runs.get("workflow_runs", []))
+    candidate = replacement["source_sha"] if replacement else state.get("in_progress")
     if candidate and candidate != landing:
         if not isinstance(candidate, str) or not SHA.fullmatch(candidate):
             raise ValueError("invalid in-progress commit")
@@ -126,8 +159,9 @@ def inspect_session(root: Path, branch: str, state: dict) -> dict:
             and p["base"]["ref"] == "main"
         ]
         replacement = {
+            **(replacement or {}),
             "source_sha": candidate,
-            "status": "in_progress",
+            "status": replacement["status"] if replacement else "in_progress",
             "tasks": [
                 {
                     "pr": p["number"],
