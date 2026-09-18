@@ -45,6 +45,8 @@ def delivery(tmp_path, monkeypatch):
 
     def request(method, endpoint):
         assert method == "GET"
+        if endpoint == "/git/ref/heads/main":
+            return {"object": {"sha": carrier}}
         if endpoint == "/pulls/68":
             return pr.copy()
         if endpoint.startswith("/actions/workflows/"):
