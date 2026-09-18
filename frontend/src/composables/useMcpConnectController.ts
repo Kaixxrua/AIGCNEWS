@@ -159,7 +159,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
 
   const clearTransientCommand = () => {
     transientCommand.value = ''
-    if (copiedKey.value === 'command') copiedKey.value = ''
+    if (copiedKey.value === 'command' || copiedKey.value === 'agent-prompt') copiedKey.value = ''
   }
 
   const invalidateSetup = () => {
@@ -273,6 +273,20 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     if (transientCommand.value) await copyText(transientCommand.value, 'command')
   }
 
+  const copyAgentSetupPrompt = async () => {
+    if (!transientCommand.value) return
+    const option = clientOption.value
+    const target = option.configPathKey ? translate(option.configPathKey) : option.configPath
+    const prompt = translate('mcp.agentSetup.prompt', {
+      client: clientDisplayLabel(option),
+      command: transientCommand.value,
+      endpoint: normalizedEndpoint.value,
+      shell: selectedShell.value,
+      target,
+    })
+    await copyText(prompt, 'agent-prompt')
+  }
+
   const copyQuickCommand = async () => {
     if (quickCommand.value) await copyText(quickCommand.value, 'quick-command')
   }
@@ -363,6 +377,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     clearAuthenticatedState,
     clearTransientCommand,
     copiedKey,
+    copyAgentSetupPrompt,
     copyGeneratedCommand,
     copyHostInstruction,
     copyQuickCommand,
