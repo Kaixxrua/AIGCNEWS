@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Radar, Plus, RefreshCw } from 'lucide-vue-next'
+import { BellRing, CalendarClock, Check, Crown, Plus, Radar, RefreshCw, Zap } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useTrackingUnreadStore } from '@/stores/trackingUnreadStore'
 import { usePersonalTracking } from '@/composables/usePersonalTracking'
@@ -23,6 +23,17 @@ const formOpen = ref(false)
 const editing = ref<TrackingRule>()
 const deleting = ref<TrackingRule>()
 const addButton = ref<HTMLButtonElement>()
+const isMember = computed(() => (data.value?.limit ?? 1) > 1)
+const activeRules = computed(() => data.value?.rules.filter((rule) => rule.active).length ?? 0)
+const latestMatches = computed(() => data.value?.digests[0]?.items.length ?? 0)
+const nextRun = computed(() => {
+  if (!data.value?.settings.enabled) return t('tracking.statusPaused')
+  return `${String(data.value.settings.delivery_hour).padStart(2, '0')}:00`
+})
+const quotaPercent = computed(() => {
+  if (!data.value) return 0
+  return Math.min(100, Math.round((data.value.rules.length / data.value.limit) * 100))
+})
 watch(
   () => auth.token,
   () => {
@@ -57,86 +68,159 @@ async function closeDelete() {
 </script>
 
 <template>
-  <section id="personal-tracking" class="tracking-section glass-card shrink-0" aria-labelledby="tracking-title">
-    <header class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 id="tracking-title" class="flex items-center gap-2 text-lg font-bold">
-          <Radar class="h-5 w-5" />{{ t('tracking.title') }}
-        </h2>
-        <p class="tracking-hint mt-1">{{ t('tracking.description') }}</p>
-      </div>
-      <button type="button" class="tracking-button" :disabled="loading || busy" @click="ctl.load()">
-        <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />{{ t('common.refresh') }}
-      </button>
-    </header>
+  <section id="personal-tracking" class="tracking-section shrink-0" aria-labelledby="tracking-title">
     <p v-if="error" role="alert" class="tracking-error">{{ t('tracking.errors.' + error) }}</p>
     <p v-if="notice" role="status" class="tracking-hint">{{ t('tracking.saved') }}</p>
     <p v-if="loading && !data" role="status" aria-busy="true" class="tracking-loading">
       {{ t('common.loading') }}
     </p>
     <template v-if="data">
-      <div class="tracking-toolbar">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="tracking-quota">{{ t('tracking.quota', { used: data.rules.length, limit: data.limit }) }}</span>
-          <RouterLink v-if="data.limit === 1" to="/membership" class="text-sm font-bold underline underline-offset-4">{{
-            t('tracking.upgrade')
-          }}</RouterLink>
-        </div>
-        <button
-          ref="addButton"
-          type="button"
-          class="tracking-button tracking-button-primary"
-          :disabled="busy || atLimit"
-          @click="openForm()"
-        >
-          <Plus class="h-4 w-4" aria-hidden="true" />{{ t('tracking.addRule') }}
-        </button>
-      </div>
-      <p v-if="atLimit" class="tracking-hint">{{ t('tracking.limitHint') }}</p>
-      <p v-if="!data.rules.length" class="tracking-empty">{{ t('tracking.emptyRules') }}</p>
-      <ul v-else class="tracking-rules">
-        <li v-for="rule in data.rules" :key="rule.id">
-          <div class="min-w-0">
-            <p class="font-bold break-words">{{ rule.query }}</p>
-            <p class="tracking-hint mt-1">
-              {{ t('tracking.' + rule.kind) }} · {{ t('subscriptions.sources.' + rule.source) }}
-              <span v-if="rule.kind === 'project'"> · +{{ rule.star_threshold }} Stars</span>
-              ·
-              {{
-                t(
-                  rule.active
-                    ? 'tracking.active'
-                    : rule.enabled && data.settings.enabled
-                      ? 'tracking.overLimit'
-                      : 'tracking.paused',
-                )
-              }}
-            </p>
-            <p v-if="rule.excludes.length" class="tracking-hint mt-1">
-              {{ t('tracking.excluding', { terms: rule.excludes.join(' / ') }) }}
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              class="tracking-button"
-              type="button"
-              :disabled="busy || !rule.active"
-              @click="ctl.showPreview(rule)"
+      <section class="tracking-hero" :class="{ 'tracking-hero--member': isMember }">
+        <div class="tracking-radar" aria-hidden="true"><span></span><span></span><span></span><i></i></div>
+        <div class="tracking-hero__content">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="tracking-plan"
+              ><Crown v-if="isMember" class="h-3.5 w-3.5" />{{
+                t(isMember ? 'tracking.vipPlan' : 'tracking.freePlan')
+              }}</span
             >
-              {{ t('tracking.preview') }}
-            </button>
-            <button class="tracking-button" type="button" :disabled="busy" @click="openForm(rule)">
-              {{ t('common.edit') }}
-            </button>
-            <button class="tracking-button" type="button" :disabled="busy" @click="ctl.toggle(rule)">
-              {{ t(rule.enabled ? 'tracking.pause' : 'tracking.resume') }}
-            </button>
-            <button class="tracking-button" type="button" :disabled="busy" @click="deleting = rule">
-              {{ t('common.delete') }}
-            </button>
+            <span class="tracking-live"
+              ><i></i>{{ t(data.settings.enabled ? 'tracking.running' : 'tracking.statusPaused') }}</span
+            >
           </div>
-        </li>
-      </ul>
+          <h2 id="tracking-title" class="mt-4 text-2xl font-black tracking-[-0.035em] sm:text-3xl">
+            {{ t(isMember ? 'tracking.vipHeadline' : 'tracking.freeHeadline') }}
+          </h2>
+          <p class="mt-2 max-w-xl text-sm leading-relaxed text-ink-secondary">
+            {{ t(isMember ? 'tracking.vipDescription' : 'tracking.freeDescription') }}
+          </p>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <button
+              ref="addButton"
+              type="button"
+              class="tracking-button tracking-button-primary"
+              :disabled="busy || atLimit"
+              @click="openForm()"
+            >
+              <Plus class="h-4 w-4" aria-hidden="true" />{{ t('tracking.addRule') }}
+            </button>
+            <RouterLink v-if="!isMember" to="/membership" class="tracking-button tracking-upgrade">
+              <Zap class="h-4 w-4" />{{ t('tracking.upgradeAction') }}
+            </RouterLink>
+          </div>
+        </div>
+        <div class="tracking-stats">
+          <div>
+            <span>{{ activeRules }}</span
+            ><small>{{ t('tracking.activeRules') }}</small>
+          </div>
+          <div>
+            <span>{{ latestMatches }}</span
+            ><small>{{ t('tracking.latestMatches') }}</small>
+          </div>
+          <div>
+            <span>{{ nextRun }}</span
+            ><small>{{ t('tracking.nextDigest') }}</small>
+          </div>
+        </div>
+      </section>
+
+      <div class="tracking-grid">
+        <section class="tracking-panel tracking-rules-panel" aria-labelledby="tracking-rules-title">
+          <header class="tracking-panel__header">
+            <div>
+              <p class="tracking-kicker">{{ t('tracking.rulesKicker') }}</p>
+              <h3 id="tracking-rules-title">{{ t('tracking.rulesTitle') }}</h3>
+            </div>
+            <button
+              type="button"
+              class="tracking-icon-button"
+              :aria-label="t('common.refresh')"
+              :disabled="loading || busy"
+              @click="ctl.load()"
+            >
+              <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
+            </button>
+          </header>
+          <div class="tracking-usage">
+            <div class="flex items-center justify-between gap-3">
+              <span>{{ t('tracking.quota', { used: data.rules.length, limit: data.limit }) }}</span
+              ><strong>{{ quotaPercent }}%</strong>
+            </div>
+            <div class="tracking-usage__bar"><i :style="{ width: quotaPercent + '%' }"></i></div>
+          </div>
+          <p v-if="atLimit" class="tracking-limit">
+            {{ t('tracking.limitHint')
+            }}<RouterLink v-if="!isMember" to="/membership">{{ t('tracking.upgrade') }}</RouterLink>
+          </p>
+          <div v-if="!data.rules.length" class="tracking-empty">
+            <Radar class="h-7 w-7" /><strong>{{ t('tracking.emptyTitle') }}</strong
+            ><span>{{ t('tracking.emptyRules') }}</span>
+          </div>
+          <ul v-else class="tracking-rules">
+            <li v-for="rule in data.rules" :key="rule.id">
+              <div class="tracking-rule-main min-w-0">
+                <span class="tracking-rule-icon"><Radar class="h-4 w-4" /></span>
+                <div class="min-w-0">
+                  <p class="font-extrabold break-words">{{ rule.query }}</p>
+                  <p class="tracking-hint mt-1">
+                    {{ t('tracking.' + rule.kind) }} · {{ t('subscriptions.sources.' + rule.source) }}
+                    <span v-if="rule.kind === 'project'"> · +{{ rule.star_threshold }} Stars</span>
+                    ·
+                    {{
+                      t(
+                        rule.active
+                          ? 'tracking.active'
+                          : rule.enabled && data.settings.enabled
+                            ? 'tracking.overLimit'
+                            : 'tracking.paused',
+                      )
+                    }}
+                  </p>
+                  <p v-if="rule.excludes.length" class="tracking-hint mt-1">
+                    {{ t('tracking.excluding', { terms: rule.excludes.join(' / ') }) }}
+                  </p>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  class="tracking-button"
+                  type="button"
+                  :disabled="busy || !rule.active"
+                  @click="ctl.showPreview(rule)"
+                >
+                  {{ t('tracking.preview') }}
+                </button>
+                <button class="tracking-button" type="button" :disabled="busy" @click="openForm(rule)">
+                  {{ t('common.edit') }}
+                </button>
+                <button class="tracking-button" type="button" :disabled="busy" @click="ctl.toggle(rule)">
+                  {{ t(rule.enabled ? 'tracking.pause' : 'tracking.resume') }}
+                </button>
+                <button class="tracking-button" type="button" :disabled="busy" @click="deleting = rule">
+                  {{ t('common.delete') }}
+                </button>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <aside class="tracking-panel tracking-plan-panel" :class="{ 'tracking-plan-panel--member': isMember }">
+          <p class="tracking-kicker">{{ t('tracking.planKicker') }}</p>
+          <h3>{{ t(isMember ? 'tracking.vipBenefitsTitle' : 'tracking.unlockTitle') }}</h3>
+          <p class="tracking-hint mt-2">{{ t(isMember ? 'tracking.vipBenefitsHint' : 'tracking.unlockHint') }}</p>
+          <ul class="tracking-benefits">
+            <li><Check />{{ t('tracking.benefitRules') }}</li>
+            <li><Check />{{ t('tracking.benefitPreserve') }}</li>
+            <li><Check />{{ t('tracking.benefitQuota') }}</li>
+          </ul>
+          <RouterLink v-if="!isMember" to="/membership" class="tracking-button tracking-button-primary w-full"
+            ><Crown class="h-4 w-4" />{{ t('tracking.viewVip') }}</RouterLink
+          >
+          <div v-else class="tracking-member-active"><Check class="h-4 w-4" />{{ t('tracking.vipActive') }}</div>
+        </aside>
+      </div>
+
       <TrackingDeleteConfirmation
         v-if="deleting"
         :rule="deleting"
@@ -158,8 +242,14 @@ async function closeDelete() {
         <TrackingResults :items="preview.items" :truncated="preview.truncated" preview />
       </div>
       <div class="tracking-bottom">
-        <TrackingDeliveryForm :settings="data.settings" :channels="channels" :busy="busy" @save="ctl.saveSettings" />
-        <TrackingDigestHistory :digests="data.digests" @viewed="unread.markRead" />
+        <section class="tracking-panel tracking-digest-panel">
+          <p class="tracking-kicker"><BellRing class="h-3.5 w-3.5" />{{ t('tracking.resultsKicker') }}</p>
+          <TrackingDigestHistory :digests="data.digests" @viewed="unread.markRead" />
+        </section>
+        <section class="tracking-panel tracking-delivery-panel">
+          <p class="tracking-kicker"><CalendarClock class="h-3.5 w-3.5" />{{ t('tracking.deliveryKicker') }}</p>
+          <TrackingDeliveryForm :settings="data.settings" :channels="channels" :busy="busy" @save="ctl.saveSettings" />
+        </section>
       </div>
     </template>
   </section>
