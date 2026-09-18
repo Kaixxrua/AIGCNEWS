@@ -5,5 +5,7 @@ runs:
   steps:
     - uses: actions/github-script@v7
       with:
+        # The guard retries only transient read failures; avoid nested retries.
+        retries: 0
         script: |
           await require(`${process.env.GITHUB_WORKSPACE}/scripts/ci/check_pr_base.cjs`)({github, context, core});

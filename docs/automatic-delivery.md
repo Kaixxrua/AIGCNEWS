@@ -9,7 +9,7 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 job 使用固定 concurrency group 排队。
+6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 workflow 使用固定 concurrency group：当前候选不中断，等待区只保留最新的已验证 `main` 候选，并在任何镜像构建开始前淘汰旧候选。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按精确 digest 检查本机镜像（缺失时才从 registry 拉取）并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
@@ -48,7 +48,17 @@ Codex 的 `Stop` 生命周期 hook 会在 Agent 准备结束开发回合时核�
 
 不得把变量指向开发中的可变目录后再通过改写描述文件“追平”内容。提升私有 release 时先在新目录完整生成源码、场景、manifest 和 descriptor，执行 staging 校验成功后再更新三个 Godot 变量；旧目录至少保留到引用它的构建全部结束。任何不匹配都 fail-closed，禁止回退到 Three.js、CSS 或公开仓库中的旧联系页。
 
-注册一台只能由本仓库使用的自托管 runner，并添加标签：
+建 PR、自动批准、自动合并和部署元数据 job 使用常驻的轻量 `aigcnews-control` runner。PR 门禁和定时契约测评使用 `aigcnews-ci-ephemeral`：宿主机控制器根据排队 job 按需创建干净的 LXD JIT runner，每个实例只执行一个 job，结束后注销、留存诊断日志并销毁。控制任务不再被大型测试堵住，也不需要人工维护常驻 CI runner 数量。
+
+Sweeper 可以在同一轮批准所有满足同仓库、`session/*`、机器人创建、精确 head SHA 且未过期约束的门禁，使任务并行进入临时 CI；推进 `main` 的合并仍保持每轮最多一个。若本轮已经批准或重试任何门禁，则不会再合并后续 PR，避免先启动旧基线又立刻改变合并基线。
+
+临时 runner 控制器由 `scripts/ci/ephemeral_runner_autoscaler.py` 实现。首次启用时，以已安装完整测试工具链的 CI LXD 为来源运行 `scripts/ci/prepare_ephemeral_runner_template.sh`，脚本在模板首次启动前禁用克隆的持久 runner 身份，随后清除凭据、工作区和诊断日志。Docker 侧仅保留公共镜像缓存 registry 容器及其 volume，以及模板脚本明确列出的固定摘要 Node、Nginx、PostgreSQL 公共基础镜像，删除其他容器、业务镜像、构建缓存、网络和 volume；每个 JIT 实例获得独立 CoW 副本，不能把写入带回模板或传给后续任务。主机 mode-0600 的 `$HOME/.config/aigcnews/ci-autoscaler.env` 至少配置 `GH_TOKEN`；建议使用仅对本仓库具有 Administration 写权限的 GitHub App installation token，并通过 `scripts/ci/install_ephemeral_runner_autoscaler.sh` 安装用户级服务。安装器同时安装 `runner_resource_budget.py`。CI 总预算为 6 CPU / 12 GiB；仅在存在可运行的排队 job、实测 CPU 与内存均低于 90% 时准入，已有预留加新分配不得超过 5.4 CPU / 10.8 GiB。实例数量和 CPU 时间配额、内存字节上限按剩余容量动态分配（每个通用 job 至少 1 CPU / 3 GiB），禁用 swap；冻结的旧 CI 仍计入预留。控制器使用单实例锁，指标或资源证据异常时拒绝扩容，空闲时临时实例数为零。详见 `docs/ci-resource-admission.md`。
+
+标签切换前必须先暂停新准入，阻止旧 runner 领取新任务，并确认 GitHub 空闲且本地无 `Runner.Worker` 后安全停止旧 CI，才能释放其预算；冻结不释放预算。先准备独立受信任的 control runner，再启用临时标签。PR 的 `pr-admission` 与测试 job 都运行在临时 runner 上，保留最新 base/head 检查；不能把 PR checkout 放进受信任的 control runner。
+
+临时 runner 不挂载生产 checkout、私有 Godot 目录或宿主机 Docker socket。每个实例使用自己的 nested Docker daemon；退出后 runner 自动从 GitHub 注销，控制器把 `_diag` 保存到 `$HOME/.local/state/aigcnews-ci-runners/` 后删除 LXD。超过 5 分钟仍未领取 job 且没有 `Runner.Worker` 的实例，只有成功从 GitHub 注销后才会被回收；探测异常或注销失败时不删除实例；正在执行 job 的实例不受该阈值影响，避免取消、注册或网络故障长期占用并发名额。
+
+只注册一台只能由本仓库使用的生产自托管 runner，并添加标签：
 
 ```text
 self-hosted
@@ -70,11 +80,11 @@ runner 用户必须能够：
 
 ## 并发语义
 
-- 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试继续在隔离的 `aigcnews-ci` runner 中执行。
+- 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试在按需 LXD JIT runner 中执行，交付控制任务在隔离的轻量控制 runner 中执行。
 - 构建使用持久化 `default` builder 和 `load: true`，关闭 push；镜像名称保留 GHCR 命名以兼容后续备份，但本流程不上传 GHCR。升级 Docker/Buildx 时必须验证导出的 manifest digest 可以在本机 `docker image inspect repository@sha256:...` 解析。
 - 若扩为多台生产 runner，应先设计共享制品分发，不能只复用 runner 标签。
-- GitHub job 级 `aigcnews-production` concurrency 只串行生产切换，不阻塞构建。
-- `cancel-in-progress: false`，已经开始的生产切换不会被新提交取消。
+- GitHub workflow 级 `aigcnews-production-latest` concurrency 覆盖元数据、镜像构建和生产切换；同一时间最多一个 active 和一个最新 pending 候选，新的 pending 候选替代旧 pending 候选，从而避免为已被后续 `main` 包含的版本重复构建。PR 等非 `main push` 事件使用按 run ID 隔离的组，不能淘汰真实生产候选。
+- `cancel-in-progress: false`，已经开始构建或切换的生产候选不会被新提交取消；合并仅发生在尚未开始的等待队列。
 - 控制器拿到主机锁后重新 fetch `origin/main`；候选已是最新 main 的祖先时标记 `superseded`，不触碰生产。
 - 部署机 `.aigcnews-deploy/deploy.lock` 防止手工命令、其他 runner 或其他发布系统并发切换。
 - 状态文件的 `in_progress` 是回滚所有权；所有权发生变化时拒绝回滚，避免旧任务覆盖新版本。

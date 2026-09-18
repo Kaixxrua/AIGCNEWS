@@ -9,18 +9,51 @@ on:
 permissions:
   contents: read
 
+# Keep the active production candidate running, but retain only the newest
+# pending main candidate before any image build starts. Non-main workflow_run
+# events use an isolated group so their skipped jobs cannot evict a deployment.
+concurrency:
+  group: >-
+    ${{ github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        'aigcnews-production-latest' ||
+        format('aigcnews-production-skip-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   metadata:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
-    runs-on: [self-hosted, linux, aigcnews-ci]
+    runs-on: [self-hosted, linux, aigcnews-control]
     outputs:
+      eligible: ${{ steps.candidate.outputs.eligible }}
       backend: ${{ steps.names.outputs.backend }}
       mcp: ${{ steps.names.outputs.mcp }}
       frontend: ${{ steps.names.outputs.frontend }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - id: candidate
+        name: Reject stale candidates before building images
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          latest=$(git rev-parse origin/main)
+          if [[ "$SOURCE_SHA" == "$latest" ]]; then
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "$SOURCE_SHA" "$latest"; then
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            echo "Candidate is superseded by main $latest; no images will be built."
+          else
+            echo "Candidate is not in the current main lineage" >&2
+            exit 1
+          fi
       - id: names
         name: Normalize package names
         shell: bash
@@ -32,6 +65,7 @@ jobs:
 
   build-backend:
     needs: metadata
+    if: needs.metadata.outputs.eligible == 'true'
     runs-on: [self-hosted, linux, aigcnews-production]
     outputs:
       digest: ${{ steps.build.outputs.digest }}
@@ -53,6 +87,7 @@ jobs:
 
   build-mcp:
     needs: metadata
+    if: needs.metadata.outputs.eligible == 'true'
     runs-on: [self-hosted, linux, aigcnews-production]
     env:
       PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
@@ -88,6 +123,7 @@ jobs:
 
   build-frontend:
     needs: metadata
+    if: needs.metadata.outputs.eligible == 'true'
     runs-on: [self-hosted, linux, aigcnews-production]
     env:
       PRODUCTION_ROOT: ${{ vars.AIGCNEWS_PRODUCTION_ROOT }}
@@ -153,9 +189,6 @@ jobs:
 
   deploy:
     needs: [metadata, build-backend, build-mcp, build-frontend]
-    concurrency:
-      group: aigcnews-production
-      cancel-in-progress: false
     runs-on: [self-hosted, linux, aigcnews-production]
     timeout-minutes: 30
     environment: production
