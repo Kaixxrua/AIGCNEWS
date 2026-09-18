@@ -1,5 +1,5 @@
 .tracking-section {
-  @apply flex flex-col gap-4 p-4 text-ink sm:p-5;
+  @apply flex flex-col gap-5 text-ink;
 }
 .tracking-hint {
   @apply text-xs leading-relaxed text-ink-secondary;
@@ -10,11 +10,151 @@
   animation: tracking-loading-reveal 0s 200ms both;
 }
 @keyframes tracking-loading-reveal {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .tracking-toolbar {
   @apply flex flex-wrap items-center justify-between gap-3;
+}
+.tracking-hero {
+  @apply relative grid min-h-[280px] overflow-hidden rounded-[18px] border border-ink bg-paper-raised p-6 lg:grid-cols-[1fr_auto] lg:p-8;
+  box-shadow: 6px 6px 0 var(--ink);
+  background-image: radial-gradient(
+    circle at 85% 20%,
+    color-mix(in srgb, var(--acid) 32%, transparent),
+    transparent 34%
+  );
+}
+.tracking-hero--member {
+  background-image: radial-gradient(circle at 85% 18%, color-mix(in srgb, #f4c95d 34%, transparent), transparent 35%);
+}
+.tracking-hero__content {
+  @apply relative z-10 flex flex-col justify-center;
+}
+.tracking-plan {
+  @apply inline-flex items-center gap-1.5 rounded-full border border-ink bg-ink px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-paper;
+}
+.tracking-live {
+  @apply inline-flex items-center gap-1.5 text-[11px] font-bold text-ink-secondary;
+}
+.tracking-live i {
+  @apply h-2 w-2 rounded-full bg-emerald-500;
+  box-shadow: 0 0 0 4px rgb(16 185 129 / 0.12);
+}
+.tracking-radar {
+  @apply pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full border sm:right-3 sm:top-0;
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.tracking-radar span {
+  @apply absolute left-1/2 top-1/2 rounded-full border;
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
+  transform: translate(-50%, -50%);
+}
+.tracking-radar span:nth-child(1) {
+  width: 70%;
+  height: 70%;
+}
+.tracking-radar span:nth-child(2) {
+  width: 42%;
+  height: 42%;
+}
+.tracking-radar span:nth-child(3) {
+  width: 14%;
+  height: 14%;
+  background: var(--acid);
+}
+.tracking-radar::before,
+.tracking-radar::after {
+  content: '';
+  @apply absolute;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.tracking-radar::before {
+  width: 1px;
+  height: 100%;
+  left: 50%;
+}
+.tracking-radar::after {
+  height: 1px;
+  width: 100%;
+  top: 50%;
+}
+.tracking-radar i {
+  @apply absolute left-1/2 top-1/2 h-1/2 w-1/2 origin-top-left rounded-br-full;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--acid) 42%, transparent), transparent);
+}
+.tracking-stats {
+  @apply relative z-10 mt-7 grid grid-cols-3 self-end overflow-hidden rounded-xl border border-rule lg:mt-0 lg:w-[360px];
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
+}
+.tracking-stats div {
+  @apply flex min-w-0 flex-col gap-1 border-r border-rule px-4 py-4 last:border-r-0;
+}
+.tracking-stats span {
+  @apply truncate text-xl font-black tracking-tight;
+}
+.tracking-stats small {
+  @apply text-[10px] font-bold text-ink-muted;
+}
+.tracking-grid {
+  @apply grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px];
+}
+.tracking-panel {
+  @apply min-w-0 rounded-xl border border-rule bg-paper-raised p-5;
+}
+.tracking-panel__header {
+  @apply flex items-start justify-between gap-4;
+}
+.tracking-panel h3 {
+  @apply text-lg font-black tracking-tight;
+}
+.tracking-kicker {
+  @apply mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-ink-muted;
+}
+.tracking-icon-button {
+  @apply grid h-9 w-9 place-items-center rounded-full border border-rule transition hover:border-ink hover:bg-accent disabled:opacity-40;
+}
+.tracking-usage {
+  @apply mt-5 text-xs font-bold;
+}
+.tracking-usage__bar {
+  @apply mt-2 h-2 overflow-hidden rounded-full;
+  background: var(--paper-muted);
+}
+.tracking-usage__bar i {
+  @apply block h-full rounded-full bg-ink transition-all duration-500;
+}
+.tracking-limit {
+  @apply mt-3 rounded-lg bg-accent-soft px-3 py-2 text-xs leading-relaxed text-ink-secondary;
+}
+.tracking-limit a {
+  @apply ml-1 font-black text-ink underline underline-offset-2;
+}
+.tracking-plan-panel {
+  @apply flex flex-col;
+  background: linear-gradient(145deg, var(--paper-raised), var(--acid-soft));
+}
+.tracking-plan-panel--member {
+  box-shadow: inset 0 3px 0 #f4c95d;
+}
+.tracking-benefits {
+  @apply my-5 flex flex-col gap-3 text-sm font-bold;
+}
+.tracking-benefits li {
+  @apply flex items-start gap-2;
+}
+.tracking-benefits svg {
+  @apply mt-0.5 h-4 w-4 shrink-0 rounded-full bg-ink p-0.5 text-paper;
+}
+.tracking-member-active {
+  @apply mt-auto flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200;
+}
+.tracking-upgrade {
+  background: var(--acid);
 }
 .tracking-quota {
   @apply rounded border border-ink px-2 py-1 text-xs font-bold;
@@ -45,16 +185,26 @@
   @apply flex flex-col gap-3 rounded border border-ink bg-accent-soft p-4;
 }
 .tracking-rules {
-  @apply divide-y divide-rule border-y border-rule;
+  @apply mt-3 divide-y divide-rule;
 }
 .tracking-rules > li {
-  @apply flex flex-wrap items-center justify-between gap-3 py-3;
+  @apply flex flex-wrap items-center justify-between gap-4 py-4;
+}
+.tracking-rule-main {
+  @apply flex flex-1 items-start gap-3;
+}
+.tracking-rule-icon {
+  @apply mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-rule bg-accent-soft;
 }
 .tracking-empty {
-  @apply border-y border-dashed border-rule py-5 text-sm leading-relaxed text-ink-secondary;
+  @apply mt-4 flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-rule px-5 py-8 text-center text-sm leading-relaxed text-ink-secondary;
+  background: color-mix(in srgb, var(--paper-muted) 50%, transparent);
+}
+.tracking-empty strong {
+  @apply text-base text-ink;
 }
 .tracking-bottom {
-  @apply grid min-w-0 gap-5 border-t border-rule pt-4 xl:grid-cols-2;
+  @apply grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,.9fr)];
 }
 .tracking-delivery {
   @apply flex min-w-0 flex-col gap-3;
@@ -70,8 +220,28 @@
   overflow-wrap: anywhere;
 }
 .tracking-preview {
-  @apply rounded border border-rule p-4;
+  @apply rounded-xl border border-rule bg-paper-raised p-5;
 }
 .tracking-error {
   @apply rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200;
+}
+@media (max-width: 639px) {
+  .tracking-hero {
+    @apply min-h-0 p-5;
+  }
+  .tracking-radar {
+    @apply opacity-50;
+  }
+  .tracking-stats {
+    @apply mt-6;
+  }
+  .tracking-stats div {
+    @apply px-2.5 py-3;
+  }
+  .tracking-stats span {
+    @apply text-base;
+  }
+  .tracking-panel {
+    @apply p-4;
+  }
 }

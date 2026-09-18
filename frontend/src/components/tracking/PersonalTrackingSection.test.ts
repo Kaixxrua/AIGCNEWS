@@ -87,6 +87,17 @@ describe('personal tracking', () => {
     expect(wrapper.text()).toContain('仅在本站查看')
     expect(wrapper.text()).toContain('还没有简报')
     expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/membership')
+    expect(wrapper.text()).toContain('FREE 方案')
+    expect(wrapper.text()).toContain('让雷达覆盖更多方向')
+  })
+
+  it('shows the active VIP experience from the server-authoritative limit', async () => {
+    const wrapper = await render({ ...snapshot(), limit: 10, rules: [saved()] })
+    expect(wrapper.text()).toContain('VIP 方案')
+    expect(wrapper.text()).toContain('VIP 情报雷达已启动')
+    expect(wrapper.text()).toContain('VIP 情报能力已解锁')
+    expect(wrapper.text()).toContain('已保存 1 / 10 条规则')
+    expect(wrapper.text()).not.toContain('解锁 VIP 情报能力')
   })
 
   it('saves a usable rule then reflects the server quota', async () => {

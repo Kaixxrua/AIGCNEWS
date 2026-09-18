@@ -15,6 +15,7 @@ const {
   clientDisplayLabel,
   clientOption,
   copiedKey,
+  copyAgentSetupPrompt,
   copyGeneratedCommand,
   creating,
   endpointUrl,
@@ -163,7 +164,16 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcpAutoCommand.label') }}</p>
           <div class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
           <div v-if="creating" class="mt-4 rounded-2xl bg-stone-50 px-4 py-3 text-xs text-stone-600">{{ t('mcpAutoCommand.creating') }}</div>
-          <div v-else-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4"><p class="text-sm font-semibold text-amber-900">{{ t('mcpAutoCommand.ready') }}</p><p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p><p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p><button type="button" class="btn-primary mt-3 w-full justify-center text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copy') }}</button></div>
+          <div v-else-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+            <p class="text-sm font-semibold text-amber-900">{{ t('mcpAutoCommand.ready') }}</p>
+            <p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p>
+            <p class="mt-2 text-xs leading-5 text-amber-700">{{ t('mcp.hiddenConfig', { result: setupResultDescription }) }}</p>
+            <div class="mcp-command-actions mt-3 grid gap-2 sm:grid-cols-2">
+              <button type="button" class="btn-primary w-full justify-center text-xs" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copy') }}</button>
+              <button type="button" class="btn-secondary w-full justify-center text-xs" @click="copyAgentSetupPrompt">{{ t(copiedKey === 'agent-prompt' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copyAgentPrompt') }}</button>
+            </div>
+            <p class="mt-2 text-2xs leading-4 text-amber-700">{{ t('mcpAutoCommand.agentPromptHint') }}</p>
+          </div>
           <div v-else-if="setupErrorDisplay" class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700"><p>{{ setupErrorDisplay }}</p><button type="button" class="mt-2 underline" @click="startSetup">{{ t('common.retry') }}</button></div>
         </div>
 

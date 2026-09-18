@@ -9,25 +9,39 @@ import SubscriptionsView from './SubscriptionsView.vue'
 
 vi.mock('@/composables/useSubscriptionsController')
 
-const channels = ref([{
-  id: 1, channel_type: 'email' as const, target: 'me@example.com', verified: true,
-  status: 'active' as const, created_at: '2026-08-01T00:00:00Z',
-}])
+const channels = ref([
+  {
+    id: 1,
+    channel_type: 'email' as const,
+    target: 'me@example.com',
+    verified: true,
+    status: 'active' as const,
+    created_at: '2026-08-01T00:00:00Z',
+  },
+])
 const loading = ref(false)
 const error = ref('')
 const loadAll = vi.fn()
 const mountView = async () => {
   const wrapper = mount(SubscriptionsView, {
     global: {
-      plugins: [createI18n({
-        legacy: false, locale: 'zh-CN', messages: { 'zh-CN': {
-          tracking: trackingZh,
-          subscriptions: {
-            title: '我的订阅', refresh: '刷新', channels: { title: '推送渠道' },
-            errors: { 'load-failed': '加载失败，请稍后重试' },
+      plugins: [
+        createI18n({
+          legacy: false,
+          locale: 'zh-CN',
+          messages: {
+            'zh-CN': {
+              tracking: trackingZh,
+              subscriptions: {
+                title: '我的订阅',
+                refresh: '刷新',
+                channels: { title: '推送渠道' },
+                errors: { 'load-failed': '加载失败，请稍后重试' },
+              },
+            },
           },
-        } },
-      })],
+        }),
+      ],
       stubs: { PersonalTrackingSection: true },
     },
   })
@@ -40,7 +54,10 @@ beforeEach(() => {
   error.value = ''
   loading.value = false
   vi.mocked(useSubscriptionsController).mockReturnValue({
-    channels, loading, error, loadAll,
+    channels,
+    loading,
+    error,
+    loadAll,
   } as unknown as ReturnType<typeof useSubscriptionsController>)
 })
 
@@ -51,13 +68,11 @@ describe('SubscriptionsView', () => {
     expect(wrapper.getComponent(PersonalTrackingSection).props('channels')).toEqual(channels.value)
   })
 
-  it('retains the unavailable push-channel card without legacy subscription or RSS actions', async () => {
+  it('presents personal intelligence without a dead-end push-channel card', async () => {
     const wrapper = await mountView()
-    const card = wrapper.get('section[aria-labelledby="push-channels-title"]')
-    expect(card.get('h2').text()).toBe('推送渠道')
-    expect(card.text()).toContain('暂未开放')
-    expect(card.find('form, input, select, button, a').exists()).toBe(false)
-    expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual(['推送渠道'])
+    expect(wrapper.text()).toContain('个人情报中心')
+    expect(wrapper.text()).toContain('把分散的 AI 动态变成你的专属情报流')
+    expect(wrapper.find('section[aria-labelledby="push-channels-title"]').exists()).toBe(false)
     for (const label of ['RSS 简报订阅', '创建订阅', '重置 RSS 链接', '发送验证码']) {
       expect(wrapper.text()).not.toContain(label)
     }

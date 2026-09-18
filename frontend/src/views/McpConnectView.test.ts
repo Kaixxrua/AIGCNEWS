@@ -37,6 +37,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     clientLabel: ref(''),
     clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
     copiedKey: ref(''),
+    copyAgentSetupPrompt: vi.fn(),
     copyGeneratedCommand: vi.fn(),
     copyHostInstruction: vi.fn(),
     copyQuickCommand: vi.fn(),
@@ -138,6 +139,7 @@ const i18n = createI18n({
       mcpAutoCommand: {
         label: '账号配置命令 · 自动包含 Token', description: '自动生成带 Token 的命令。',
         creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令',
+        copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '粘贴给 Agent 自动配置。',
       },
     },
   },
@@ -352,6 +354,11 @@ describe('McpConnectView privacy and auth behavior', () => {
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
     expect(controller().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+
+    const agentPromptButton = wrapper.findAll('button').find((button) => button.text() === '复制给 Agent 的配置提示词')
+    expect(agentPromptButton).toBeDefined()
+    await agentPromptButton!.trigger('click')
+    expect(controller().copyAgentSetupPrompt).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the page fail-closed while authentication is initializing', async () => {
