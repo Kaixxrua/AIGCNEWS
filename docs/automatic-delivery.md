@@ -9,7 +9,7 @@
 3. `Contract Baseline` 在 PR 上运行完整门禁。
 4. `Auto Merge Validated Session PR` 在 CI 成功事件后立即 squash merge 与验证结果完全相同的 head SHA；分支在验证后发生变化时拒绝合并，不依赖仓库的 Auto-merge 开关。
 5. 合并进入 `main` 后，`Contract Baseline` 再验证受保护主分支。
-6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 job 使用固定 concurrency group 排队。
+6. `Deploy Production` 在同一台生产 runner 的 Docker daemon 构建并加载 backend、MCP 和 frontend 镜像，保留本机构建缓存；包含私有 UI 素材的 MCP、frontend 构建在生产 runner 上读取稳定生产目录。frontend 构建还会从私有 Godot 发布目录注入联系页源码和 `camp-scene` 制品；repository variables 固定 release ID 与发布描述文件 SHA-256，发布描述文件再固定四个受保护源码及场景清单，复制到临时 checkout 后逐文件校验哈希与黑边修复契约，全部通过才允许构建。生产 workflow 使用固定 concurrency group：当前候选不中断，等待区只保留最新的已验证 `main` 候选，并在任何镜像构建开始前淘汰旧候选。
 7. 自托管生产 runner 调用 `deploy_production.py`。控制器再次获取部署机文件锁，拒绝过期 main，按精确 digest 检查本机镜像（缺失时才从 registry 拉取）并切换 Compose。
 8. Compose 健康等待及 `/api/live`、`/api/ready` 探测通过后，才原子更新 active release；失败时只有仍拥有本次 `in_progress` 的任务可以恢复上一版本。
 
@@ -73,8 +73,8 @@ runner 用户必须能够：
 - 三个发布镜像和部署必须使用同一台生产 runner 的 Docker daemon；只有通过主分支基线的代码进入该 runner。PR 测试继续在隔离的 `aigcnews-ci` runner 中执行。
 - 构建使用持久化 `default` builder 和 `load: true`，关闭 push；镜像名称保留 GHCR 命名以兼容后续备份，但本流程不上传 GHCR。升级 Docker/Buildx 时必须验证导出的 manifest digest 可以在本机 `docker image inspect repository@sha256:...` 解析。
 - 若扩为多台生产 runner，应先设计共享制品分发，不能只复用 runner 标签。
-- GitHub job 级 `aigcnews-production` concurrency 只串行生产切换，不阻塞构建。
-- `cancel-in-progress: false`，已经开始的生产切换不会被新提交取消。
+- GitHub workflow 级 `aigcnews-production-latest` concurrency 覆盖元数据、镜像构建和生产切换；同一时间最多一个 active 和一个最新 pending 候选，新的 pending 候选替代旧 pending 候选，从而避免为已被后续 `main` 包含的版本重复构建。PR 等非 `main push` 事件使用按 run ID 隔离的组，不能淘汰真实生产候选。
+- `cancel-in-progress: false`，已经开始构建或切换的生产候选不会被新提交取消；合并仅发生在尚未开始的等待队列。
 - 控制器拿到主机锁后重新 fetch `origin/main`；候选已是最新 main 的祖先时标记 `superseded`，不触碰生产。
 - 部署机 `.aigcnews-deploy/deploy.lock` 防止手工命令、其他 runner 或其他发布系统并发切换。
 - 状态文件的 `in_progress` 是回滚所有权；所有权发生变化时拒绝回滚，避免旧任务覆盖新版本。

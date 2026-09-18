@@ -8,6 +8,17 @@ on:
 permissions:
   contents: read
 
+# Keep the active production candidate running, but retain only the newest
+# pending main candidate before any image build starts. Non-main workflow_run
+# events use an isolated group so their skipped jobs cannot evict a deployment.
+concurrency:
+  group: >-
+    ${{ github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        'aigcnews-production-latest' ||
+        format('aigcnews-production-skip-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
   metadata:
     if: >-
@@ -152,9 +163,6 @@ jobs:
 
   deploy:
     needs: [metadata, build-backend, build-mcp, build-frontend]
-    concurrency:
-      group: aigcnews-production
-      cancel-in-progress: false
     runs-on: [self-hosted, linux, aigcnews-production]
     timeout-minutes: 30
     environment: production

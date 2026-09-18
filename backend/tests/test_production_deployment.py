@@ -124,9 +124,11 @@ def test_workflows_serialize_only_production_and_merge_exact_validated_head():
     auto_merge = (ROOT / ".github/workflows/auto-merge.yml").read_text(encoding="utf-8")
     session_pr = (ROOT / ".github/workflows/session-pr.yml").read_text(encoding="utf-8")
 
-    assert "group: aigcnews-production" in deployment
+    assert "'aigcnews-production-latest'" in deployment
+    assert "format('aigcnews-production-skip-{0}', github.run_id)" in deployment
     assert "cancel-in-progress: false" in deployment
-    assert deployment.index("  deploy:") < deployment.index("    concurrency:")
+    assert deployment.index("concurrency:") < deployment.index("jobs:")
+    assert deployment.count("concurrency:") == 1
     assert "AIGCNEWS_GODOT_RELEASE_ROOT" in deployment
     assert "AIGCNEWS_GODOT_RELEASE_ID" in deployment
     assert "AIGCNEWS_GODOT_RELEASE_DESCRIPTOR_SHA256" in deployment
