@@ -29,6 +29,7 @@ def pull(number: int = 7, *, head: str = HEAD, branch: str = "session/example-10
     return {
         "number": number,
         "title": "fix(workflow): reconcile delivery",
+        "user": {"login": "github-actions[bot]"},
         "head": {"sha": head, "ref": branch, "repo": {"full_name": REPOSITORY}},
     }
 
@@ -50,6 +51,7 @@ def run(
         "run_attempt": attempt,
         "run_number": 10,
         "updated_at": "2026-09-17T11:55:00Z",
+        "actor": {"login": "github-actions[bot]"},
         "pull_requests": [{"number": number}],
     }
 
@@ -65,6 +67,7 @@ class FakeClient:
         self.runs = runs
         self.job_data = jobs or []
         self.merged: list[tuple[int, str, str]] = []
+        self.approved: list[int] = []
         self.rerun: list[int] = []
 
     def open_pulls(self):
@@ -78,6 +81,9 @@ class FakeClient:
 
     def merge(self, number: int, head: str, title: str):
         self.merged.append((number, head, title))
+
+    def approve(self, run_id: int):
+        self.approved.append(run_id)
 
     def rerun_failed_jobs(self, run_id: int):
         self.rerun.append(run_id)
@@ -117,17 +123,63 @@ def test_retries_runner_assignment_failure_at_most_three_attempts():
     assert not exhausted.rerun
 
 
-def test_never_retries_real_test_failure_or_approval_hold():
+def test_never_retries_real_test_failure():
     test_failure = FakeClient(
         [pull()],
         [run(conclusion="failure")],
         [{"conclusion": "failure", "runner_name": "ci-runner", "steps": [{"name": "test"}]}],
     )
+
+    result = sweeper.reconcile(test_failure, REPOSITORY, apply=True, now=NOW)[0]
+
+    assert result.action == "hold"
+    assert not test_failure.rerun
+
+
+def test_approves_fresh_exact_head_run_and_serializes_mutations():
+    approval = FakeClient(
+        [pull(7), pull(8)],
+        [run(7, conclusion="action_required"), run(8)],
+    )
+
+    results = sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)
+
+    assert [result.action for result in results] == ["approved"]
+    assert approval.approved == [99]
+    assert not approval.merged
+
+
+def test_dry_run_reports_approval_without_mutating():
     approval = FakeClient([pull()], [run(conclusion="action_required")])
 
-    assert sweeper.reconcile(test_failure, REPOSITORY, apply=True, now=NOW)[0].action == ("hold")
-    assert sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)[0].reason == ("workflow approval is required")
-    assert not test_failure.rerun and not approval.rerun
+    result = sweeper.reconcile(approval, REPOSITORY, apply=False, now=NOW)[0]
+
+    assert result.action == "approve"
+    assert not approval.approved
+
+
+def test_never_approves_stale_run():
+    stale = run(conclusion="action_required")
+    stale["updated_at"] = "2026-09-15T11:55:00Z"
+    approval = FakeClient([pull()], [stale])
+
+    result = sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)[0]
+
+    assert result.action == "hold"
+    assert result.reason == "approval request is stale"
+    assert not approval.approved
+
+
+def test_never_approves_non_bot_run():
+    manual_pull = pull()
+    manual_pull["user"]["login"] = "repository-owner"
+    approval = FakeClient([manual_pull], [run(conclusion="action_required")])
+
+    result = sweeper.reconcile(approval, REPOSITORY, apply=True, now=NOW)[0]
+
+    assert result.action == "hold"
+    assert result.reason == "workflow approval requires repository owner"
+    assert not approval.approved
 
 
 def test_ignores_forks_and_non_session_branches():

@@ -535,6 +535,47 @@ def test_x_recent_full_page_emits_next_cursor_and_continuation_uses_keyset() -> 
     assert keyset[2] == page_one[-1]["id"]
 
 
+def test_x_recent_adds_watchlist_display_name_without_exposing_account_row() -> None:
+    now = datetime.now(timezone.utc)
+
+    class FakeRecentReader:
+        def list_recent_by_source(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            return [
+                {
+                    "id": "x:rt",
+                    "source": "x",
+                    "url": "https://x.com/original/status/1",
+                    "retweeted_by": "OpenAI",
+                    "author_name": "Original Author",
+                    "published_at": (now - timedelta(minutes=5)).isoformat(),
+                }
+            ]
+
+    class FakeWatchAccounts:
+        def list_x_watch_accounts(self):  # type: ignore[no-untyped-def]
+            return [
+                {
+                    "screen_name": "openai",
+                    "display_name": "OpenAI 中文",
+                    "note": "must stay private",
+                }
+            ]
+
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: FakeRecentReader()
+    app.state.application_repositories = SimpleNamespace(
+        x_watch_accounts=FakeWatchAccounts()
+    )
+
+    response = TestClient(app).get("/api/dashboard/x/recent")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["followed_account_name"] == "OpenAI 中文"
+    assert "note" not in item
+
+
 def test_x_recent_malformed_cursor_falls_back_to_first_page() -> None:
     now = datetime.now(timezone.utc)
     docs = [

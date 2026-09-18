@@ -270,6 +270,19 @@ def get_x_watch_account_repository(
     return repositories.x_watch_accounts
 
 
+def get_optional_x_watch_account_repository(
+    request: Request,
+) -> XWatchAccountRepository | None:
+    """Return the watchlist store when the application runtime is available.
+
+    Dashboard contract tests intentionally mount the router without the full
+    repository container. Production always provides it; the optional seam
+    keeps those isolated readers and older compositions compatible.
+    """
+    repositories = getattr(request.app.state, "application_repositories", None)
+    return repositories.x_watch_accounts if repositories is not None else None
+
+
 def get_x_credential_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> XCredentialRepository:
