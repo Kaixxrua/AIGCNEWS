@@ -31,10 +31,20 @@ float meadow_cloud_light(vec2 p, float clock, float night) {
     vec2 warp = vec2(meadow_noise(broad_uv * 0.53 + vec2(8.1, 3.7)),
         meadow_noise(broad_uv * 0.47 + vec2(-5.4, 11.2))) - vec2(0.5);
     float broad = meadow_noise(broad_uv + warp * 1.35);
-    float detail = meadow_noise(broad_uv * 2.07 + warp * 0.72 + vec2(17.3, -9.6));
-    float cloud = smoothstep(0.29, 0.70, broad * 0.74 + detail * 0.26);
+    // Each finer octave uses another basis. Reusing broad_uv directly still
+    // leaves long horizontal/vertical shoulders visible when the slow field
+    // crosses one of value noise's cell boundaries.
+    vec2 detail_uv = mat2(vec2(0.39, 0.92), vec2(-0.92, 0.39))
+        * (broad_uv * 2.07 + warp * 0.72 + vec2(17.3, -9.6));
+    vec2 breakup_uv = mat2(vec2(-0.71, 0.70), vec2(-0.70, -0.71))
+        * (broad_uv * 4.19 - warp * 0.36 + vec2(-6.8, 21.4));
+    float detail = meadow_noise(detail_uv);
+    float breakup = meadow_noise(breakup_uv);
+    float cloud = smoothstep(0.27, 0.73, broad * 0.66 + detail * 0.24 + breakup * 0.10);
     // Weak at night: moonlit grass must not become a globally black blanket.
-    return mix(mix(0.84, 1.0, cloud), mix(0.96, 1.0, cloud), night);
+    // Day shade is deliberately limited to 11%: it should suggest passing
+    // cloud cover, never read as a second rectangular light source.
+    return mix(mix(0.89, 1.0, cloud), mix(0.97, 1.0, cloud), night);
 }
 float meadow_foothill_cover(vec2 p, vec2 origin) {
     float spread = 1.0 - smoothstep(70.0, 104.0, abs(p.x - origin.x));
