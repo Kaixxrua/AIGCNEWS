@@ -1,3 +1,4 @@
+-- metric_date is an explicit business date supplied by the test clock.
 -- 推荐人/收藏用户：0030 迁移为 recommended_by_user_id 与 project_favorites.user_id
 -- 补了 users 外键，夹具需预置对应用户行（在未应用 0030 的历史库上无害）。
 INSERT INTO users (id, hashed_password, role) VALUES
@@ -40,10 +41,10 @@ INSERT INTO github_repo_daily_metrics (
     daily_growth_available, daily_growth_source, daily_growth_observed_at,
     hot_score, updated_at
 ) VALUES
-    ('acme/alpha', CURRENT_DATE, 1200, 80, 25, 4,
-     CURRENT_DATE - 1, 1158, 42, TRUE, 'snapshot_delta', CURRENT_TIMESTAMP, 91.5, CURRENT_TIMESTAMP),
-    ('acme/beta', CURRENT_DATE, 800, 60, 20, 2,
-     CURRENT_DATE - 1, 788, 12, TRUE, 'snapshot_delta', CURRENT_TIMESTAMP, 70.0, CURRENT_TIMESTAMP);
+    ('acme/alpha', {metric_date}, 1200, 80, 25, 4,
+     {metric_date} - 1, 1158, 42, TRUE, 'snapshot_delta', CURRENT_TIMESTAMP, 91.5, CURRENT_TIMESTAMP),
+    ('acme/beta', {metric_date}, 800, 60, 20, 2,
+     {metric_date} - 1, 788, 12, TRUE, 'snapshot_delta', CURRENT_TIMESTAMP, 70.0, CURRENT_TIMESTAMP);
 
 INSERT INTO github_repo_recommendations (repo_id, active, recommended_by_user_id, recommended_at)
 VALUES ('acme/alpha', TRUE, 7, '2026-07-23T08:30:00Z');
