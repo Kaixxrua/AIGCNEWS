@@ -1,5 +1,6 @@
 """Local authority never depends on a GitHub response or unverified CI state."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,14 @@ import pytest
 
 sys.path.insert(0,str(Path(__file__).parents[2]/'scripts/ci'))
 import local_delivery as d
+
+
+@pytest.fixture(autouse=True)
+def isolate_git_environment(monkeypatch):
+    """Keep hook-provided Git state out of disposable test repositories."""
+    for name in tuple(os.environ):
+        if name.startswith('GIT_'):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture
