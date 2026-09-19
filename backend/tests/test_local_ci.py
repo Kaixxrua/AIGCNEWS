@@ -210,6 +210,7 @@ def mocked_execution(tmp_path, repository, monkeypatch, fail=False):
     cfg = config(tmp_path, repository)
     calls = []
     monkeypatch.setattr(ci.Runner, 'launch', lambda self: calls.append('launch'))
+    monkeypatch.setattr(ci.Runner, 'initialize', lambda self: calls.append('initialize'))
     monkeypatch.setattr(ci.Runner, 'cleanup', lambda self: calls.append('cleanup'))
     monkeypatch.setattr(ci.pool, 'counters', lambda path: {'oom_kill': '0'})
     def check(self, key, job, archive):
@@ -311,9 +312,10 @@ def test_launch_uses_shared_six_cpu_parent_without_touching_existing_runner(tmp_
     monkeypatch.setattr(ci.pool, 'inventory', lambda: ['existing-runner', runner.name])
     monkeypatch.setattr(ci.pool, 'membership', lambda *a, **kw: calls.append(('members', *a)))
     runner.launch()
-    assert ('config', 'set', runner.name, 'limits.cpu=6') in calls
-    assert ('config', 'set', runner.name, 'limits.cpu.allowance=100%') in calls
-    assert any(c[0:3] == ('config', 'set', runner.name) and c[3].startswith('user.aigcnews.runner_id=-') for c in calls)
+    settings = next(c[3:] for c in calls if c[:3] == ('config', 'set', runner.name))
+    assert 'limits.cpu=6' in settings
+    assert 'limits.cpu.allowance=100%' in settings
+    assert any(c.startswith('user.aigcnews.runner_id=-') for c in settings)
     assert calls[0] == ('admitted',)
     assert calls[1][-1] == 'user.aigcnews.local_ci=' + state['run_id']
     assert not any(c[0] in ('stop', 'delete') for c in calls)
@@ -814,3 +816,29 @@ def test_membership_only_retries_missing_pid_and_keeps_safety_checks(tmp_path, r
     with pytest.raises(ValueError, match='missing CI init PID'):
         runner.verify_membership()
     assert probe.call_count == 3
+
+
+def test_bootstrap_releases_global_admission_lock(tmp_path, repository, monkeypatch):
+    from contextlib import contextmanager
+    from threading import local
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    held = local()
+    original = ci.admission_lock
+    @contextmanager
+    def lock(root, timeout):
+        with original(root, timeout):
+            held.value = True
+            try:
+                yield
+            finally:
+                held.value = False
+    def initialize(self):
+        assert held.value is False
+        calls.append('bootstrap-outside-lock')
+    monkeypatch.setattr(ci, 'admission_lock', lock)
+    monkeypatch.setattr(ci.Runner, 'initialize', initialize)
+    ci.execute(repository, cfg['baseline_sha'], output, cfg)
+    assert calls.count('bootstrap-outside-lock') == len(ci.JOBS)
+    receipt = json.loads(output.read_text())
+    for check in receipt['checks']:
+        assert check['started_at'] <= check['admission_acquired_at'] <= check['launched_at'] <= check['initialized_at']
