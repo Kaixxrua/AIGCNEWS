@@ -185,7 +185,7 @@ def trusted_config(path, repository, output):
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', config['template']):
         raise ValueError('invalid template name')
     for key, default in (('admission_timeout', 600), ('settling_seconds', 60),
-                         ('command_timeout', 180), ('check_timeout', 1800)):
+                         ('queue_timeout', 3600), ('command_timeout', 180), ('check_timeout', 1800)):
         value = config.setdefault(key, default)
         if type(value) is not int or not 1 <= value <= 7200:
             raise ValueError(f'invalid timeout: {key}')
@@ -421,7 +421,7 @@ def run_job(config, state, check, job, archive, progress):
         runner.progress = lambda steps: progress.update(check, steps=steps)
         try:
             progress.update(check, conclusion='admitting', started_at=time.time())
-            with admission_lock(Path(config['state_dir']), config['admission_timeout']):
+            with admission_lock(Path(config['state_dir']), config.get('queue_timeout', 3600)):
                 runner.launch()
             with progress.lock:
                 state.update(ready=True, ready_at=state.get('ready_at', time.time()))

@@ -478,3 +478,12 @@ def test_success_does_not_spend_an_agent_turn(notification_setup,monkeypatch):
     d.update(db,db.execute('SELECT * FROM tasks').fetchone(),'delivered',landing_sha=head)
     monkeypatch.setattr(ao,'send',lambda *a,**kw:pytest.fail('success woke agent'))
     d.notify(c,db)
+
+
+def test_current_failure_stage_is_published_not_only_retry_link(setup):
+    c,db,base,head=setup
+    task=db.execute('SELECT * FROM tasks').fetchone()
+    d.update(db,task,'failed',error='CI validation failed: local_ci.py failed; see log')
+    assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='CI 验证'
+    d.update(db,task,'needs_update',error='main changed')
+    assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='合并基线'
