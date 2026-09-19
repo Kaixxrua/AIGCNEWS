@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { useDocumentVisibility, useElementVisibility, usePreferredReducedMotion } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -21,6 +22,14 @@ const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
 const uiPreview = ref<UiTemplate | null>(null)
 const previewFailed = ref(false)
+const clipFailed = ref(false)
+const previewElement = ref<HTMLElement>()
+const previewVisible = useElementVisibility(previewElement)
+const active = ref(true)
+onActivated(() => { active.value = true })
+onDeactivated(() => { active.value = false })
+const visibility = useDocumentVisibility()
+const motion = usePreferredReducedMotion()
 const previewName = computed(() => uiPreview.value?.name[locale.value.startsWith('zh') ? 'zh' : 'en'] ?? '')
 const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
@@ -63,7 +72,9 @@ onMounted(async () => {
   try {
     const items = await loadCatalog(uiCatalogController.signal)
     uiCount.value = items.length
-    uiPreview.value = items.find(item => item.poster_url && item.editorial) ?? items.find(item => item.poster_url) ?? null
+    const clips = items.filter(item => item.clip_url && item.poster_url)
+    const candidates = clips.length ? clips : items.filter(item => item.poster_url)
+    uiPreview.value = candidates[Math.floor(Math.random() * candidates.length)] ?? null
   } catch {
     // 目录不可用时显示未知，不把加载失败误报为零。
   } finally {
@@ -118,8 +129,9 @@ onBeforeUnmount(() => uiCatalogController.abort())
         </div>
         <RouterLink :to="uiPreview ? { name: 'ui-library', params: { id: uiPreview.id } } : { name: 'ui-library' }" class="ui-inspiration">
           <div class="ui-inspiration__heading"><span>{{ t('dashboard.editorial.inspiration') }}</span><ArrowRight :size="16" /></div>
-          <div class="ui-inspiration__preview">
-            <img v-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
+          <div ref="previewElement" class="ui-inspiration__preview">
+            <video v-if="uiPreview?.clip_url && !clipFailed && active && previewVisible && motion !== 'reduce' && visibility === 'visible'" :src="uiPreview.clip_url" :poster="uiPreview.poster_url" :aria-label="previewName" autoplay muted loop playsinline @error="clipFailed = true" />
+            <img v-else-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
             <span v-else class="ui-inspiration__fallback">UI / {{ t('dashboard.editorial.explore') }}</span>
           </div>
           <div class="ui-inspiration__caption"><span>{{ previewName || t('dashboard.editorial.explore') }}</span><span>UI LIBRARY ↗</span></div>
@@ -134,7 +146,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
   --paper: #f3f2ec; --paper-light: #fffefa; --ink: #10131e; --muted: #666b70;
   --acid: #c8fc4c; --acid-soft: #f0f8d8; --rule: #e5e3dd;
   --sidebar-width: 24%; --column-gap: 14px;
-  position: relative; isolation: isolate; padding: 22px 9px 8px; overflow-y: auto;
+  position: relative; isolation: isolate; padding: 22px 12px 14px; overflow: visible;
   color: var(--ink); background: transparent; font-family: Inter, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
 }
 .dashboard-page::before, .dashboard-page::after { content: ''; position: absolute; z-index: -1; top: 0; bottom: 0; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); pointer-events: none; }
@@ -185,7 +197,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .ui-inspiration { display: grid; grid-template-columns: 90px minmax(0, 1fr); grid-template-rows: 24px 1fr; column-gap: 14px; height: 94px; padding: 12px 15px; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); }
 .ui-inspiration__heading { grid-column: 2; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; }
 .ui-inspiration__preview { grid-column: 1; grid-row: 1 / 3; overflow: hidden; border-radius: 7px; background: var(--acid-soft); }
-.ui-inspiration__preview img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
+.ui-inspiration__preview video, .ui-inspiration__preview img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
 .ui-inspiration:hover img { transform: scale(1.04); }
 .ui-inspiration__fallback { display: grid; height: 100%; place-items: center; color: var(--muted); font-size: 10px; }
 .ui-inspiration__caption { display: flex; flex-direction: column; justify-content: center; gap: 5px; font-size: 12px; color: var(--muted); min-width: 0; }
@@ -222,5 +234,5 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .sidebar-motto { display: none; }
 }
 @media (max-width: 539px) { .dashboard-sidebar { display: flex; } }
-@media (prefers-reduced-motion: reduce) { .ui-inspiration__preview img { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ui-inspiration__preview video, .ui-inspiration__preview img { transition: none; } }
 </style>
