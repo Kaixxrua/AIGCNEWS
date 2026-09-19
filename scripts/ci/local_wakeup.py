@@ -12,6 +12,24 @@ def send(db, task, identity, message, repository, *, current, bridge_factory=Cod
     db.execute('CREATE TABLE IF NOT EXISTS desktop_wakeups (identity TEXT PRIMARY KEY, owner TEXT, status TEXT, turn_id TEXT)')
     db.commit()
     previous=db.execute('SELECT status,turn_id FROM desktop_wakeups WHERE identity=?',(identity,)).fetchone()
+    if previous and previous[0] in ('dispatching', 'unconfirmed'):
+        # Reconcile a positive exact marker; absence in a bounded response does
+        # not prove non-delivery and must not cause duplicate automation turns.
+        try:
+            with bridge_factory() as bridge:
+                thread = bridge.call('thread/read', {'threadId': task['owner'], 'includeTurns': True})['thread']
+            marker = '[delivery:'+identity+']'
+            for turn in thread.get('turns', []):
+                if any(item.get('type') == 'userMessage' and marker in json.dumps(item.get('content', []))
+                       for item in turn.get('items', [])):
+                    turn_id = turn.get('id')
+                    if isinstance(turn_id, str) and turn_id:
+                        db.execute("UPDATE desktop_wakeups SET status='accepted',turn_id=? WHERE identity=?",
+                                   (turn_id, identity))
+                        db.commit()
+                        return {'status': 'accepted', 'turn_id': turn_id, 'transport': 'codex'}
+        except Exception:
+            pass  # Keep uncertainty visible; no unsafe replay.
     if previous:
         return {'status':previous[0], 'turn_id':previous[1], 'transport':'codex'}
     if (Path.home()/'.config/aigcnews/ci-paused').exists():return {'status':'paused'}
@@ -31,7 +49,8 @@ def send(db, task, identity, message, repository, *, current, bridge_factory=Cod
         if not eligible():return {'status':'obsolete'}
         record=json.loads(receipt_path(repository,task['branch']).read_text())
         prompt=(f"[delivery:{identity}] Exact task owner {owner}. "
-                f"Work exclusively in {record['worktree']}, branch {task['branch']}.\n"+message)
+                f"Original owned workspace {record['worktree']}, branch {task['branch']}. "
+                "Preserve it; for already-landed code create a fresh owned session as instructed below.\n"+message)
         inserted=db.execute("INSERT OR IGNORE INTO desktop_wakeups VALUES(?,?,'dispatching',NULL)",(identity,owner))
         db.commit()
         if not inserted.rowcount:return {'status':'dispatching'}

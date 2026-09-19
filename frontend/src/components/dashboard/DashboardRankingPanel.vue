@@ -9,7 +9,6 @@ import { ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
 import {
   TABS,
   aiScoreDisplay,
-  getModuleTags,
   getSourceConfig,
   getTabBoardStatus,
   scoreDisplay,
@@ -30,7 +29,7 @@ const props = defineProps<{
 
 const { t, locale } = useI18n()
 const summary = (doc: TopDoc) => doc.source === 'github'
-  ? (locale.value.startsWith('zh') ? doc.description_zh : doc.description_en)?.trim() || t('projects.fallbackProject')
+  ? (locale.value.startsWith('zh') ? [doc.description_zh, doc.description_en] : [doc.description_en, doc.description_zh]).find(text => text?.trim())?.trim() || t('projects.fallbackProject')
   : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
 
@@ -81,15 +80,15 @@ const boardDateHint = computed(() => {
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
       </div>
       <ol v-else :class="{ 'editorial-list': !(isMobile && activeTab === 'x') }">
-        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0 }">
+        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
           <DashboardTweetPreview v-if="isMobile && activeTab === 'x'" :doc="doc" :rank="idx + 1" />
           <a v-else :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="ranking-link flex items-start gap-2.5 px-4 py-1.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
             <span class="ranking-number mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ String(idx + 1).padStart(2, '0') }}</span>
-            <RankingAvatar :doc="doc" />
+            <RankingAvatar :doc="doc" :crowned="idx === 0" />
             <div class="ranking-body min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="ranking-title min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="ranking-badges flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border ranking-source-badge" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
-              <p v-if="hasDistinctSummary(doc)" class="ranking-summary">{{ summary(doc) }}</p>
-              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span><span v-if="doc.language" class="badge bg-card text-stone-500 border border-stone-200">{{ doc.language }}</span><span v-for="tag in getModuleTags(doc)" :key="tag" class="badge bg-card text-stone-500 border border-stone-200">{{ tag }}</span></div>
+              <p v-if="hasDistinctSummary(doc)" :title="summary(doc)" class="ranking-summary">{{ summary(doc) }}</p>
+              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span></div>
             </div>
             <ArrowUpRight v-if="doc.url" class="ranking-arrow" :size="18" />
           </a>
@@ -253,4 +252,71 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
  .editorial-list > .ranking-row--featured { height: auto; }
  .editorial-list .ranking-row--featured .ranking-link { height: 100%; min-height: 164px; padding-top: 48px; padding-bottom: 16px; }
 }
+
+@media (min-width: 1024px) {
+ .dashboard-ranking-panel { height: 100%; padding: 6px 8px 8px; }
+ .ranking-toolbar { flex: 0 0 auto; min-height: 38px; padding: 0 0 7px; gap: 4px; }
+ .ranking-tabs { gap: 3px; }
+ .ranking-tabs button { min-width: 0; min-height: 30px; padding: 5px 8px; font-size: 12px; }
+ .ranking-live-status { font-size: 10px; }
+ .ranking-list { flex: 1; min-height: 0; }
+ .editorial-list { height: 100%; grid-template-rows: minmax(130px, 2.8fr) repeat(7, minmax(36px, 1fr)); gap: 0 8px; }
+ .editorial-list > .ranking-row { height: auto; }
+ .editorial-list > .ranking-row:nth-child(4) { margin-top: 6px; }
+ .editorial-list .ranking-link { min-height: 0; padding: 3px 8px; gap: 8px; }
+ .editorial-list .ranking-row--featured .ranking-link { min-height: 0; padding: 36px 10px 8px; gap: 10px; display: flex; }
+ .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: clamp(36px, 4vw, 70px); height: clamp(36px, 4vw, 70px); flex-basis: clamp(36px, 4vw, 70px); margin: 0; }
+ .editorial-list .ranking-row--featured .ranking-title { font-size: 13px; }
+ .editorial-list .ranking-row--featured .ranking-summary { font-size: 12px; line-height: 1.4; margin: 4px 0; }
+ .editorial-list .ranking-row--featured .ranking-number { top: 8px; font-size: 18px; }
+ .ranking-row--featured .ranking-heat { top: 9px; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: center; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-summary { grid-column: 1; grid-row: 2; margin: 0; font-size: 11px; line-height: 1.4; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta { grid-column: 2; grid-row: 1 / 3; max-width: none; flex-wrap: nowrap; }
+ .editorial-list .ranking-title { font-size: 12px; line-height: 1.4; }
+ .editorial-list .ranking-meta { gap: 4px; }
+ .editorial-list .ranking-score { font-size: 12px !important; margin: 0; }
+ .editorial-list .ranking-meta :deep(.badge) { font-size: 10px; padding: 0 4px; line-height: 16px; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta :deep(.badge) { display: none; }
+}
+@media (min-width: 1024px) and (max-height: 780px) {
+ .editorial-list .ranking-row--featured .ranking-link { display: block; }
+ .editorial-list .ranking-row--featured :deep(.ranking-avatar) { position: absolute; right: 10px; top: 14px; width: 25px; height: 25px; }
+ .editorial-list .ranking-row--featured .ranking-link > svg { display: none; }
+ .ranking-row--featured .ranking-heat { right: 42px; }
+ .editorial-list .ranking-row--featured .ranking-meta :deep(.badge) { display: none; }
+}
+
+
+/* Short windows use two columns of five; no entries disappear below the dock. */
+@media (min-width: 1024px) and (max-height: 700px) {
+ .editorial-list { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(5, minmax(58px, 1fr)); gap: 4px; }
+ .editorial-list > .ranking-row:not(.ranking-row--featured) { grid-column: auto; margin: 0; }
+ .editorial-list .ranking-link, .editorial-list .ranking-row--featured .ranking-link { display: flex; padding: 4px 6px; gap: 6px; align-items: center; }
+ .editorial-list .ranking-number, .editorial-list .ranking-row--featured .ranking-number { position: static; flex-basis: 20px; font-size: 13px; }
+ .editorial-list :deep(.ranking-avatar), .editorial-list .ranking-row--featured :deep(.ranking-avatar) { position: relative; width: 24px; height: 24px; flex-basis: 24px; font-size: 12px; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { display: block; }
+ .editorial-list .ranking-row .ranking-title { font-size: 12px; white-space: nowrap; display: block; overflow: hidden; text-overflow: ellipsis; }
+ .editorial-list .ranking-row .ranking-summary { -webkit-line-clamp: 1; margin: 1px 0; font-size: 11px; line-height: 1.3; }
+ .editorial-list .ranking-row .ranking-heat { position: static; }
+ .editorial-list .ranking-row .ranking-meta { margin: 0; flex-wrap: nowrap; gap: 4px; }
+ .editorial-list .ranking-row .ranking-meta, .ranking-growth { font-size: 10px; }
+ .editorial-list .ranking-row .ranking-score { font-size: 11px !important; padding: 0; }
+ .editorial-list .ranking-link > svg { display: none; }
+}
+
+
+/* Podium metals use dark ink for readable descriptions and metrics. */
+.editorial-list > .ranking-row--lead { background: linear-gradient(125deg, #f8e8b6, #e9c86e 58%, #f8e5aa); border-color: #a37c28 !important; }
+.editorial-list > .ranking-row--silver { background: linear-gradient(125deg, #f0f3f6, #cdd5de 58%, #edf0f4); border-color: #87939f !important; }
+.editorial-list > .ranking-row--bronze { background: linear-gradient(125deg, #f3dfcc, #d6ab85 58%, #ead0b6); border-color: #9a6942 !important; }
+.editorial-list .ranking-row--featured .ranking-link, .editorial-list .ranking-row--featured .ranking-title { color: #26231d; }
+.editorial-list .ranking-row--featured .ranking-summary { color: #514a3e; }
+.editorial-list .ranking-row--featured .ranking-number, .editorial-list .ranking-row--featured .ranking-link > svg { color: #64502a; }
+.editorial-list .ranking-row--featured .ranking-growth { color: #365b1e; }
+.editorial-list .ranking-row--featured .ranking-heat { color: #85400d; }
+.editorial-list .ranking-row--featured .ranking-link:hover, .editorial-list .ranking-row--featured .ranking-link:focus-visible { background: #ffffff25; color: #26231d; }
+.editorial-list .ranking-row--featured .ranking-link:focus-visible { outline-color: #70521c; }
+.editorial-list .ranking-row--featured :deep(.ranking-avatar) { border: 0; background: transparent; }
+
 </style>
