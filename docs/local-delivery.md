@@ -30,9 +30,9 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 
 ## 开发任务的停止边界
 
-本地影响面验证通过后，Agent 自动提交并推送。精确 SHA 入队、创建时归属一致、通知控制器在最近 120 秒核实唤醒通道后，Stop hook 允许结束；不等待 CI、合并或发布完成，不把已交接表述为已上线。任务成功只更新看板，失败才唤醒，修复提交再次交接。推送失败、归属未知、通道未就绪或已有待修复失败均不能冒充交接成功。已上线的生产证据仍可作为终态放行依据。基础设施修复的显式全链路验收要求保持。
+本地影响面验证通过后，Agent 自动提交并推送。精确 SHA 入队、创建时归属一致、通知控制器在最近 120 秒核实唤醒通道后，Stop hook 允许结束；不等待 CI、合并或发布完成，不把已交接表述为已上线。任务成功向原归属会话追加一次完成通知（不启动模型），失败才唤醒，修复提交再次交接。推送失败、归属未知、通道未就绪或已有待修复失败均不能冒充交接成功。已上线的生产证据仍可作为终态放行依据。基础设施修复的显式全链路验收要求保持。
 
-通知服务通过 `notifier_python` 指定包含 `websockets==15.0.1` 的独立 Python 环境。可信配置中的 `handoff_enabled=true` 启用只读通道检查，`desktop_wakeup=true` 允许没有 AO handoff 的任务使用创建时精确 Codex thread ID；存在 AO 绑定时绝不跨通道回退。新 AO 任务在 dev_session.start 时核对 provider thread ID 并自动激活自己的绑定。旧任务不能靠标题猜测绑定。发送超时保存 unconfirmed，不盲目重发；成功仅更新看板。发布失败只通知精确 release SHA 对应的承接任务。
+通知服务通过 `notifier_python` 指定包含 `websockets==15.0.1` 的独立 Python 环境。可信配置中的 `handoff_enabled=true` 启用只读通道检查，`desktop_wakeup=true` 允许没有 AO handoff 的任务使用创建时精确 Codex thread ID；存在 AO 绑定时绝不跨通道回退。新 AO 任务在 dev_session.start 时核对 provider thread ID 并自动激活自己的绑定。旧任务不能靠标题猜测绑定。发送超时保存 unconfirmed，不盲目重发；成功通过 thread/inject_items 追加原会话历史，不调用 turn/start。发布失败只通知精确 release SHA 对应的承接任务。
 
 ## 下载恢复与预验证复用
 
@@ -53,3 +53,7 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 发布失败仅在日志明确显示部署前 `ensure_clean_tracked_tree` 的裸仓库误识别、生产无切换进行中、当前工作树可读且 tracked clean 时，允许原 SHA 原 CI 结果下最多三次发布尝试。每次保留先前回执和日志；迁移、健康检查、权限或归因不明失败不会自动重放。
 
 设置 `git config aigcnews.preflightReuse true` 后，前端提交钩子自动改用安装后的隔离预验证入口，替代宿主快速类型检查/related 测试；正式 CI 执行未覆盖步骤，并明确记录 `reused_from`。后端文件子集测试不冒充全量覆盖。
+
+## 成功通知
+
+可信配置 `success_notifications=true` 和 `success_notifications_since`（UTC ISO 时间）开启启用时间之后的成功消息。通知仅接受控制器已标记 `delivered` 的任务，并核对创建时归属记录；使用 `thread/inject_items` 写入原会话，不新建会话、不启动模型 turn。每个交付 ID + SHA 仅一次，发送前持久化意图，超时标记 unconfirmed，禁止盲目重发。回执存于 `success_notifications` 表和 `success-notification:<id>` 元数据。不为启用前所有历史任务批量补发。接口保证历史持久化，客户端是否即时刷新由客户端决定。

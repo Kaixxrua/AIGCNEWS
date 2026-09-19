@@ -500,7 +500,20 @@ def notify(config,db):
                     proof={'ready':False,'sha':pending['sha'],'owner':pending['owner'],
                            'checked_at':now(),'reason':type(exc).__name__}
                 meta(db,f"handoff:{pending['id']}",proof)
-        # Success updates the dashboard only; do not spend a model turn on it.
+        if config.get('success_notifications', False):
+            from delivery_success import send as send_success
+            for row in db.execute("SELECT * FROM tasks WHERE status='delivered' AND owner IS NOT NULL").fetchall():
+                task = dict(row)
+                if task['updated_at'] < config.get('success_notifications_since', now()):
+                    continue
+                try:
+                    status = send_success(db, task, config['repository'])
+                except Exception as exc:  # noqa: BLE001 - feedback cannot block repair notifications
+                    status = 'unavailable'
+                    meta(db, f"success-notification-error:{task['id']}", {'error': type(exc).__name__, 'at': now()})
+                meta(db, f"success-notification:{task['id']}",
+                     {'status': status, 'sha': task['sha'], 'owner': task['owner'],
+                      'starts_turn': False, 'at': now()})
         tasks=[dict(row) for row in db.execute("SELECT * FROM tasks WHERE status IN ('needs_update','failed')").fetchall()]
         release=meta(db,'release')
         if release.get('status')=='failed':
