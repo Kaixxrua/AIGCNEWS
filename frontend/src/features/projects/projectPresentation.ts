@@ -118,7 +118,7 @@ export const localizedPersonalTagLabel = (tag: PersonalProjectTag, locale: AppLo
 }
 
 export const projectDescription = (
-  project: GitHubProjectItem,
+  project: Pick<GitHubProjectItem, 'description' | 'description_zh' | 'description_en'>,
   locale: AppLocale,
   fallback: string,
 ) => {

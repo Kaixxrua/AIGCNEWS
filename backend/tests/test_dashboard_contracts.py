@@ -171,7 +171,7 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
     payload = {
         "path": "/api/dashboard/top",
         "namespace": "dashboard",
-        "schema": "enriched-top-v2",
+        "schema": "enriched-top-v3",
         "query": {
             "source": "github",
             "limit": "7",
@@ -1344,6 +1344,7 @@ def test_top_route_github_metrics_doc_shape_is_wire_compatible() -> None:
     assert first["stars"] == 12000
     assert first["language"] == "Python"
     assert first["summary"] == "LLM agent framework"
+    assert first["description"] == first["summary"]
     assert first["description_zh"] == "富化中文简介"
     assert first["description_en"] == "Enriched English summary"
     assert first["tags"] == ["llm", "agents"]

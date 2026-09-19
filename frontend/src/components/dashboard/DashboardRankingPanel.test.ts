@@ -140,6 +140,17 @@ describe('enriched GitHub ranking', () => {
     await nextTick()
     expect(panel.get('.ranking-summary').text()).toBe('Available English')
   })
+  it('uses the catalog English short description before Chinese, while preferring enrichment', async () => {
+    const panel = await render({ source: 'github', title: 'latent-spaces/brag', summary: '# Raw README',
+      description: 'Turn your project into a short launch video.', description_zh: '中文富化简介' })
+    await panel.setProps({ activeTab: 'github' })
+    setAppLocale('en-US')
+    await nextTick()
+    expect(panel.get('.ranking-summary').text()).toBe('Turn your project into a short launch video.')
+    await panel.setProps({ tabList: [{ source: 'github', description: 'Repository short description', description_en: 'Enriched English' }] })
+    expect(panel.get('.ranking-summary').text()).toBe('Enriched English')
+    expect(panel.text()).not.toContain('Raw README')
+  })
   it('does not substitute raw README or invent unavailable growth', async () => {
     const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README' })
     await panel.setProps({ activeTab: 'github' })

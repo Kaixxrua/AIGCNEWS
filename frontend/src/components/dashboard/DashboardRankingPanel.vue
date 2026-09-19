@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { projectDescription } from '@/features/projects/projectPresentation'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import DashboardTweetPreview from './DashboardTweetPreview.vue'
@@ -29,7 +30,7 @@ const props = defineProps<{
 
 const { t, locale } = useI18n()
 const summary = (doc: TopDoc) => doc.source === 'github'
-  ? (locale.value.startsWith('zh') ? [doc.description_zh, doc.description_en] : [doc.description_en, doc.description_zh]).find(text => text?.trim())?.trim() || t('projects.fallbackProject')
+  ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
 

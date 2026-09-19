@@ -154,6 +154,7 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
         "title": row.get("full_name"),
         "url": row.get("url"),
         "summary": row.get("description") or "",
+        "description": row.get("description") or "",
         "description_zh": row.get("description_zh") or "",
         "description_en": row.get("description_en") or "",
         "stars": int(row.get("stars") or 0),
