@@ -64,7 +64,7 @@ def test_build_checkpoint_rejects_unverified_image_reference(tmp_path):
 def test_release_rejects_unselected_sha_before_build(tmp_path, monkeypatch):
     import local_delivery as delivery
     import local_release
-    config = {'state': str(tmp_path/'state'), 'runtime': str(tmp_path)}
+    config = {'state': str(tmp_path/'state'), 'runtime': str(Path(__file__).parents[2]/'scripts')}
     monkeypatch.setattr(local_release, 'deployment_environment', lambda config: None)
     db = delivery.database(config)
     delivery.meta(db, 'release', {'sha': 'b'*40, 'status': 'deploying'})
