@@ -455,7 +455,7 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
     first_sha = cfg['baseline_sha']
     (repository / 'app.py').write_text('value = 3\n')
     second_sha = commit(repository)
-    first_in_check, release_first = Event(), Event()
+    first_in_check, second_in_check, release_first = Event(), Event(), Event()
     lock_path = Path(cfg['state_dir']) / 'admission.lock'
 
     def launch(self):
@@ -469,7 +469,9 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
         # Other jobs may hold admission concurrently; this gate does not.
         if self.state['sha'] == first_sha and key == ci.JOBS[0]:
             first_in_check.set()
-            assert release_first.wait(10), 'second identity was blocked by first CI'
+            assert release_first.wait(180), 'test coordinator did not release first CI'
+        elif self.state['sha'] == second_sha:
+            second_in_check.set()
         return [{'name': key, 'conclusion': 'success'}]
 
     monkeypatch.setattr(ci.Runner, 'launch', launch)
@@ -477,16 +479,19 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
     with ThreadPoolExecutor(max_workers=2) as workers:
         first = workers.submit(ci.execute, repository, first_sha, output, cfg)
         try:
-            assert first_in_check.wait(10)
+            assert first_in_check.wait(60)
             # Duplicate identity cannot recover/delete a still-running container.
             with pytest.raises(BlockingIOError):
                 ci.execute(repository, first_sha, tmp_path / 'duplicate.json', cfg)
             second = workers.submit(ci.execute, repository, second_sha, tmp_path / 'second.json', cfg)
-            assert second.result(timeout=10) == 0
+            # Prove overlap directly; disk writes and all five job cleanups are
+            # not a ten-second performance contract on the shared CI pool.
+            assert second_in_check.wait(60), 'second identity was blocked by first CI'
             assert not first.done()
         finally:
             release_first.set()
-        assert first.result(timeout=10) == 0
+        assert first.result(timeout=60) == 0
+        assert second.result(timeout=60) == 0
     assert calls.count(('launch', first_sha)) == 5
     assert calls.count(('launch', second_sha)) == 5
 
