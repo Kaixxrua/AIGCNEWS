@@ -31,3 +31,11 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 本地影响面验证通过后，Agent 自动提交并推送。精确 SHA 入队、创建时归属一致、通知控制器在最近 120 秒核实唤醒通道后，Stop hook 允许结束；不等待 CI、合并或发布完成，不把已交接表述为已上线。任务成功只更新看板，失败才唤醒，修复提交再次交接。推送失败、归属未知、通道未就绪或已有待修复失败均不能冒充交接成功。已上线的生产证据仍可作为终态放行依据。基础设施修复的显式全链路验收要求保持。
 
 通知服务通过 `notifier_python` 指定包含 `websockets==15.0.1` 的独立 Python 环境。可信配置中的 `handoff_enabled=true` 启用只读通道检查，`desktop_wakeup=true` 允许没有 AO handoff 的任务使用创建时精确 Codex thread ID；存在 AO 绑定时绝不跨通道回退。新 AO 任务在 dev_session.start 时核对 provider thread ID 并自动激活自己的绑定。旧任务不能靠标题猜测绑定。发送超时保存 unconfirmed，不盲目重发；成功仅更新看板。发布失败只通知精确 release SHA 对应的承接任务。
+
+## 下载恢复与预验证复用
+
+执行器对依赖安装、Go tidy/build/vet、前端镜像构建中的明确网络暂态错误（EOF、连接重置、DNS 暂态、502/503/504、网络超时）最多执行三次，总计仍受原 job deadline 限制。断言失败、编译错误、校验和错误、测试、迁移不自动重放。Go 使用 `https://proxy.golang.org|https://goproxy.cn|direct`，竖线允许网络错误切换源，保留校验和验证。
+
+可信执行器支持 `--jobs mcp-go frontend-build` 预验证指定完整检查。预验证回执不是完整交付门禁；正式 CI 仍必须产生五项成功且清理完成的精确 SHA 回执。只有同一完整 Git tree、相同工作流/控制覆盖、执行器和可信配置的成功检查可以复用，复用时保留原 SHA/run ID，最长一小时且复用不续期。失败或未完成清理不缓存，源码变化使缓存失效。
+
+复用默认关闭，管理员必须在可信配置中设置 `verification_environment_digest`（64 位十六进制），指向已验证固定的 runner 模板/工具链环境；环境升级必须更换该值。普通宿主上的任意 pytest/npm 输出、Agent 自述测试通过均不能作为跳过 CI 的凭据。本地零散快速测试尚不等同于该隔离预验证入口。

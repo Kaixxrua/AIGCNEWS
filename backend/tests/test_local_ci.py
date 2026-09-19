@@ -450,7 +450,7 @@ def test_shell_sets_default_goproxy_without_disabling_sum_verification(tmp_path,
     monkeypatch.setattr(ci, 'command', lambda argv, **kw: calls.append((argv, kw)))
     runner.shell('go mod tidy\ngo build ./...\ngo vet ./...\ngo test ./... -count=1')
     argv, kwargs = calls[0]
-    assert 'GOPROXY=https://goproxy.cn,direct' in argv
+    assert 'GOPROXY=https://proxy.golang.org|https://goproxy.cn|direct' in argv
     assert not any('GOSUMDB=off' in a or 'GOINSECURE=' in a for a in argv)
     assert kwargs['data'].endswith(b'go test ./... -count=1')
 
@@ -705,3 +705,63 @@ def test_queue_budget_is_separate_from_resource_admission(tmp_path, repository, 
     monkeypatch.setattr(ci, 'admission_lock', gate)
     assert ci.execute(repository, cfg['baseline_sha'], output, cfg)==0
     assert waits==[3600]*5
+
+
+def test_transient_download_classifier_never_retries_tests_or_integrity():
+    assert ci.retryable_download('mcp-go', 'Verify go.mod/go.sum tidy', 'unexpected EOF')
+    assert ci.retryable_download('frontend-build', 'Install frontend dependencies', 'ECONNRESET')
+    assert not ci.retryable_download('mcp-go', 'Test (parity corpus gate included)', 'EOF')
+    assert not ci.retryable_download('mcp-go', 'Build', 'checksum mismatch unexpected EOF')
+    assert not ci.retryable_download('mcp-go', 'Build', 'undefined: broken')
+
+
+def test_preflight_reuses_only_successful_full_jobs(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cfg['verification_environment_digest'] = 'a' * 64
+    sha = cfg['baseline_sha']
+    assert ci.execute(repository, sha, output, cfg, ['mcp-go']) == 0
+    calls.clear()
+    assert ci.execute(repository, sha, output, cfg) == 0
+    assert calls.count('launch') == 4
+    row = next(c for c in json.loads(output.read_text())['checks'] if c['id'] == 'mcp-go')
+    assert row['reused_from']['sha'] == sha
+    assert 'instance' not in row
+
+
+def test_changed_source_invalidates_preflight(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg, ['mcp-go']) == 0
+    (repository / 'app.py').write_text('changed = True\n')
+    sha = commit(repository)
+    calls.clear()
+    assert ci.execute(repository, sha, output, cfg) == 0
+    assert calls.count('launch') == 5
+
+
+def test_expired_failed_or_public_cache_never_reused(tmp_path):
+    p = tmp_path / 'receipt.json'
+    value = {'key': 'key', 'at': ci.time.time(), 'check': {
+        'conclusion': 'success', 'cleanup': 'success', 'steps': [{'conclusion':'success'}]}}
+    ci.atomic_json(p, value)
+    assert ci.cached_check(p, 'key')
+    assert not ci.cached_check(p, 'other')
+    p.chmod(0o644)
+    assert not ci.cached_check(p, 'key')
+    p.chmod(0o600)
+    value['at'] -= 3601
+    ci.atomic_json(p, value)
+    assert not ci.cached_check(p, 'key')
+
+
+def test_hook_clears_git_selectors_before_tests(tmp_path):
+    import os
+    repo = tmp_path / 'outer'
+    repo.mkdir()
+    clean = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    subprocess.run(['git', 'init', '-q', str(repo)], env=clean, check=True)
+    hook = (Path(__file__).parents[2] / '.githooks/pre-commit').read_text()
+    block = hook[hook.index('while IFS= read -r git_local_var;'):hook.index('# 1. ruff')]
+    env = dict(clean, GIT_DIR=str(repo / '.git'), GIT_WORK_TREE=str(repo),
+               GIT_INDEX_FILE=str(repo / '.git/index'))
+    script = block + '\npython3 -c "import os; assert not any(k in os.environ for k in (\'GIT_DIR\', \'GIT_WORK_TREE\', \'GIT_INDEX_FILE\'))"'
+    subprocess.run(['bash', '-euc', script], cwd=repo, env=env, check=True)

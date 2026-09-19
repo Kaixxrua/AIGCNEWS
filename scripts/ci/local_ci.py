@@ -33,6 +33,7 @@ import shlex
 import signal
 import subprocess
 import tarfile
+import tempfile
 import threading
 import time
 import uuid
@@ -41,11 +42,66 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import shared_runner_pool as pool
-from runner_pool_receipts import atomic_json
+
+
+def atomic_json(path, data):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(data, stream, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
 
 JOBS = ('backend-tests', 'postgres-integration', 'mcp-go', 'compose-smoke', 'frontend-build')
 WORKFLOW = '.github/workflows/contract-baseline.yml'
 SHA = re.compile(r'[0-9a-f]{40}')
+
+
+TRANSIENT_DOWNLOAD = re.compile(
+    r'(?i)(?:unexpected EOF|\bEOF\b|connection reset|temporary failure in name resolution|'
+    r'TLS handshake timeout|i/o timeout|EAI_AGAIN|ECONNRESET|ETIMEDOUT|EIDLETIMEOUT|'
+    r'502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)')
+
+
+def retryable_download(key, step, output):
+    # Never replay test suites, migrations, or checksum/integrity failures.
+    allowed = (step.startswith('Install ') or step == 'Build frontend image from clean checkout'
+               or (key == 'mcp-go' and step in ('Verify go.mod/go.sum tidy', 'Build', 'Vet')))
+    denied = re.search(r'(?i)checksum mismatch|SECURITY ERROR|integrity checksum|EINTEGRITY', output)
+    return bool(allowed and not denied and TRANSIENT_DOWNLOAD.search(output))
+
+
+def verification_key(repository, sha, config, state, key):
+    # Full tree is conservative: even an unrelated source edit invalidates reuse.
+    # Commit messages/parents may change without invalidating identical content.
+    payload = [git(repository, 'rev-parse', sha + '^{tree}').decode().strip(),
+               config, state['workflow_sha256'], state['controls'], key,
+               hashlib.sha256(Path(__file__).read_bytes()).hexdigest()]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def cached_check(path, identity):
+    try:
+        info = path.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            return None
+        value = json.loads(path.read_text())
+        check = value['check']
+        if (value['key'] != identity or not 0 <= time.time() - value['at'] <= 3600
+                or check['conclusion'] != 'success' or check['cleanup'] != 'success'
+                or check.get('oom_kill', 0) or not check.get('steps')
+                or any(x.get('conclusion') != 'success' for x in check['steps'])):
+            return None
+        return check
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def command(argv, *, timeout=180, data=None, log=None):
@@ -233,7 +289,7 @@ class Runner:
     def shell(self, script, *, timeout=None):
         return command(['lxc', 'exec', self.name, '--', 'env', '-i',
                         'HOME=/root', 'PATH=/ci/venv/bin:' + self.config['tool_path'],
-                        'GOPROXY=https://goproxy.cn,direct',
+                        'GOPROXY=https://proxy.golang.org|https://goproxy.cn|direct',
                         'bash', '--noprofile', '--norc', '-euo', 'pipefail', '-s'],
                        data=script.encode(), timeout=timeout or self.config['command_timeout'],
                        log=self.log)
@@ -318,6 +374,7 @@ docker info >/dev/null
                    'cd /ci/work; git init -q; git add -A\n'
                    'git -c user.name=CI -c user.email=ci@localhost commit -qm baseline\n')
         env = {'GITHUB_WORKSPACE': '/ci/work', 'RUNNER_TEMP': '/ci/tmp',
+               'GOPROXY': 'https://proxy.golang.org|https://goproxy.cn|direct',
                'CI': 'true', 'HTTP_PROXY': 'http://127.0.0.1:7895',
                'HTTPS_PROXY': 'http://127.0.0.1:7895', 'NO_PROXY': 'localhost,127.0.0.1,::1',
                'RUNNER_TOOL_CACHE': '/opt/hostedtoolcache'}
@@ -355,7 +412,23 @@ docker info >/dev/null
             result.update(conclusion='running', started_at=time.time())
             self.progress(results)
             try:
-                self.shell(script, timeout=remaining)
+                for attempt in range(1, 4):
+                    offset = self.log.tell()
+                    result['attempts'] = attempt
+                    self.progress(results)
+                    try:
+                        self.shell(script, timeout=max(1, deadline - time.monotonic()))
+                        break
+                    except RuntimeError:
+                        self.log.flush()
+                        with Path(self.log.name).open('rb') as evidence:
+                            evidence.seek(offset)
+                            output = evidence.read()[-65536:].decode(errors='replace')
+                        if (attempt == 3 or deadline - time.monotonic() < 10
+                                or not retryable_download(key, step['name'], output)):
+                            raise
+                        self.log.write(f'\nTransient download failure; retry {attempt + 1}/3\n'.encode())
+                        time.sleep(attempt * 2)
                 result['conclusion'] = 'success'
             except BaseException as exc:
                 result.update(conclusion='failure', error=f'{type(exc).__name__}: {exc}')
@@ -483,13 +556,16 @@ def recover(config, state, progress):
     return 0 if state['status'] == 'success' else 2
 
 
-def execute(repository, sha, output, config):
+def execute(repository, sha, output, config, selected=None):
     repository, output = Path(repository).resolve(), Path(output).resolve()
+    selected = tuple(selected or JOBS)
+    if not selected or len(set(selected)) != len(selected) or any(k not in JOBS for k in selected):
+        raise ValueError('invalid selected checks')
     root = Path(config['state_dir'])
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     if root.stat().st_uid != os.getuid() or root.stat().st_mode & 0o077:
         raise ValueError('state directory must be private and controller-owned')
-    identity = hashlib.sha256(json.dumps([str(repository), sha, config], sort_keys=True).encode()).hexdigest()
+    identity = hashlib.sha256(json.dumps([str(repository), sha, config] + ([list(selected)] if selected != JOBS else []), sort_keys=True).encode()).hexdigest()
     receipt_path = root / (identity + '.json')
     with (root / (identity + '.execution.lock')).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -517,7 +593,7 @@ def execute(repository, sha, output, config):
                 state['controls_archive'] = str(control_path)
                 job_root = root / (identity + '.jobs')
                 job_root.mkdir(mode=0o700, exist_ok=True)
-                for key in JOBS:
+                for key in selected:
                     run_id = uuid.uuid4().hex
                     state['checks'].append({
                         'name': jobs[key]['name'], 'id': key, 'sha': sha,
@@ -526,14 +602,33 @@ def execute(repository, sha, output, config):
                         'conclusion': 'pending', 'status': 'pending', 'cleanup': 'pending', 'ready': False,
                         'steps': [], 'log': str(job_root / (key + '.log')),
                         'receipt': str(job_root / (key + '.json'))})
+                cache_root = root / 'verified-checks'
+                cache_root.mkdir(mode=0o700, exist_ok=True)
+                for check in state['checks']:
+                    fingerprint = verification_key(repository, sha, config, state, check['id'])
+                    check['verification_key'] = fingerprint
+                    prior = (cached_check(cache_root / (fingerprint + '.json'), fingerprint)
+                             if re.fullmatch(r'[0-9a-f]{64}', config.get('verification_environment_digest', ''))
+                             else None)
+                    if prior:
+                        check.update(conclusion='success', status='success', cleanup='success',
+                                     ready=True, steps=prior['steps'], oom_kill=0,
+                                     reused_from={'sha': prior['sha'], 'run_id': prior['run_id']})
+                        check.pop('instance', None)
+                        state['ready'] = True
                 progress.publish()  # Persist ownership of all five clones before any launch.
                 # Five job orchestrators, not a CPU allocation. Every launch still
                 # passes the same measured shared-pool admission and hard ceiling.
                 with ThreadPoolExecutor(max_workers=len(JOBS)) as workers:
                     futures = [workers.submit(run_job, config, state, check, jobs[check['id']], archive, progress)
-                               for check in state['checks']]
+                               for check in state['checks'] if not check.get('reused_from')]
                     for future in futures:
                         future.result()
+                for check in state['checks']:
+                    if (not check.get('reused_from') and check['conclusion'] == 'success'
+                            and check['cleanup'] == 'success'):
+                        atomic_json(cache_root / (check['verification_key'] + '.json'),
+                                    {'key': check['verification_key'], 'at': time.time(), 'check': check})
                 state['oom_kill'] = sum(c.get('oom_kill', 0) for c in state['checks'])
                 clean = all(c['cleanup'] == 'success' for c in state['checks'])
                 passed = all(c['conclusion'] == 'success' for c in state['checks'])
@@ -561,6 +656,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for flag in ('repository', 'sha', 'output', 'config'):
         parser.add_argument('--' + flag, required=True)
+    parser.add_argument('--jobs', nargs='+', choices=JOBS, help='Preflight: run selected full gates; never a full CI attestation')
     args = parser.parse_args()
     def interrupted(signum, _frame):
         raise InterruptedError(f'signal {signum}')
@@ -568,7 +664,7 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     try:
         config = trusted_config(Path(args.config), Path(args.repository), Path(args.output))
-        return execute(args.repository, args.sha, args.output, config)
+        return execute(args.repository, args.sha, args.output, config, args.jobs)
     except Exception as exc:  # noqa: BLE001 - CLI fails closed
         print(f'local-ci denied: {type(exc).__name__}: {exc}', file=__import__('sys').stderr)
         return 2

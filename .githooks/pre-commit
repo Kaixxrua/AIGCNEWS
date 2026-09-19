@@ -46,6 +46,12 @@ while IFS= read -r path; do
   esac
 done <<< "$staged"
 
+# Git exports repository selectors to hooks. Tests create temporary repositories;
+# never let their git init/config commands target this worktree's shared .git.
+while IFS= read -r git_local_var; do
+  unset "$git_local_var"
+done < <(git rev-parse --local-env-vars)
+
 # 1. ruff：只检查暂存的 Python 文件，规则基线见 backend/pyproject.toml。
 if [[ "$backend_changed" == "1" ]]; then
   ruff_bin="backend/.venv/bin/ruff"
