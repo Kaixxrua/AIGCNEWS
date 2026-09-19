@@ -113,7 +113,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <section class="digest-card">
           <div class="digest-heading"><MailPlus :size="27" /><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
           <span class="digest-edition">DAILY BRIEF <span>{{ currentDate.slice(5).replace('-', '.') }}</span></span>
-          <p>{{ t('dashboard.digest.description') }}</p>
+          <p>{{ t('dashboard.editorial.digestDescription') }}</p>
           <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
             {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
           </RouterLink>
@@ -237,4 +237,73 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 @media (max-width: 539px) { .dashboard-sidebar { display: flex; } }
 @media (prefers-reduced-motion: reduce) { .ui-inspiration__preview video, .ui-inspiration__preview img { transition: none; } }
+
+.digest-card { background: radial-gradient(ellipse at 100% 70%, #302047, transparent 70%), #14151d; }
+.digest-heading { position: relative; z-index: 1; }
+.digest-card :deep(.digest-geometry) { width: 190px; height: 190px; right: -12px; bottom: -24px; }
+@media (min-width: 1024px) {
+ .dashboard-page { display: flex; flex-direction: column; padding: 12px 12px 10px; --sidebar-width: 27%; }
+ .dashboard-heading { min-height: 0; flex: 0 0 auto; flex-wrap: nowrap; margin-bottom: 12px; gap: 16px; padding-left: 10px; }
+ .dashboard-heading__copy { flex: 0 0 190px; }
+ .dashboard-heading h1 { font-size: clamp(24px, 2.3vw, 36px); }
+ .dashboard-heading p { font-size: clamp(12px, 1.1vw, 17px); }
+ .dashboard-heading :deep(.stat-strip) { flex: 1; gap: 6px; }
+ .dashboard-heading :deep(.stat-cell) { min-height: 60px; padding: 8px 6px; }
+ .dashboard-heading :deep(.stat-cell-label) { font-size: 10px; }
+ .dashboard-main { flex: 1; min-height: 0; align-items: stretch; }
+ .dashboard-sidebar { height: 100%; gap: 6px; }
+ .sidebar-motto { bottom: calc(100% + 22px); left: 12px; font-size: 14px; padding-left: 12px; }
+ .dashboard-sidebar :deep(.dash-calendar) { height: auto; padding: 8px 12px; }
+ .dashboard-sidebar :deep(.dash-calendar > div:first-child) { margin-bottom: 4px; }
+ .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height: clamp(19px, 2.7dvh, 28px); font-size: 12px; }
+ .dashboard-sidebar :deep(.dash-calendar .grid > span) { line-height: 20px !important; font-size: 11px !important; }
+ .digest-card { flex: 1; min-height: 140px; padding: 12px; }
+ .digest-heading h2 { font-size: 17px; }
+ .digest-heading { gap: 8px; }
+ .digest-edition { display: none; }
+ .digest-card p { max-width: none; font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+ .digest-cta { left: 12px; bottom: 12px; padding: 5px 10px; font-size: 12px; }
+ .digest-card :deep(.digest-geometry) { width: 60%; height: calc(100% - 52px); min-height: 88px; right: -5%; bottom: -5%; }
+ .integration-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+ .integration-card { height: 50px; padding: 6px 8px; gap: 6px; }
+ .integration-card > svg { width: 26px; height: 26px; padding: 5px; }
+ .integration-card :deep(span > span), .integration-card :deep(number-flow-vue) { font-size: 19px; }
+ .ui-inspiration { height: 68px; grid-template-columns: 64px minmax(0, 1fr); padding: 7px 10px; column-gap: 10px; flex-shrink: 0; }
+ .ui-inspiration__caption { gap: 1px; font-size: 10px; }
+}
+
+
+.integration-card--mcp { background: #eaf4ff; }
+.integration-card--mcp > svg { background: #d3e7ff; color: #2860a1; }
+.integration-card--mcp :deep(number-flow-vue), .integration-card--mcp :deep(span > span) { color: #2860a1; }
+.integration-card--dsh { background: #f3edff; }
+.integration-card--dsh > svg { background: #e6d8ff; color: #7541ad; }
+.integration-card--dsh :deep(number-flow-vue), .integration-card--dsh :deep(span > span) { color: #7541ad; }
+
+@media (min-width: 1024px) and (max-height: 700px) {
+ .dashboard-page { padding-top: 8px; padding-bottom: 8px; }
+ .dashboard-heading { margin-bottom: 8px; gap: 8px; }
+ .dashboard-heading__copy { flex-basis: 170px; }
+ .dashboard-heading h1 { font-size: 23px; }
+ .dashboard-heading p { font-size: 11px; }
+ .dashboard-heading :deep(.stat-cell) { min-height: 48px; padding: 5px; }
+ .dashboard-heading :deep(.stat-cell-label) { font-size: 9px; }
+ .dashboard-sidebar { gap: 4px; }
+ .dashboard-sidebar :deep(.dash-calendar) { padding: 4px 10px; }
+ .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height: 17px; font-size: 11px; }
+ .dashboard-sidebar :deep(.dash-calendar .grid > span) { line-height: 16px !important; }
+ .dashboard-sidebar :deep(.dash-calendar h3) { font-size: 14px; }
+ .digest-card { min-height: 112px; padding: 8px 10px; }
+ .digest-heading h2 { font-size: 14px; }
+ .digest-heading > svg { width: 20px; height: 20px; }
+ .digest-card p { font-size: 11px; margin-top: 4px; }
+ .digest-cta { bottom: 8px; padding: 3px 8px; }
+ .integration-card { height: 46px; }
+ .integration-card > svg { display: none; }
+ .integration-card > span { font-size: 9px; }
+ .integration-card :deep(span > span), .integration-card :deep(number-flow-vue) { font-size: 16px; }
+ .ui-inspiration { height: 56px; padding: 4px 8px; }
+ .ui-inspiration__heading { font-size: 12px; }
+}
+
 </style>

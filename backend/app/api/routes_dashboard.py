@@ -201,6 +201,9 @@ def _dashboard_cache_key_builder(
         "namespace": namespace,
         "query": query_params,
     }
+    # Invalidate pre-enrichment top payloads while retaining namespace clearing.
+    if payload["path"].endswith("/dashboard/top"):
+        payload["schema"] = "enriched-top-v2"
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
     return f"{namespace}:{func.__name__}:{digest}"

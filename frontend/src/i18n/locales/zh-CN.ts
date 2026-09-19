@@ -624,6 +624,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   
   'dashboard.stats.todayUiMaterials': '今日入库 UI',
   'dashboard.editorial.title': '今日 AI 动态',
+  'dashboard.editorial.digestDescription': '每天精选 AI 动态，让值得关注的进展直达你。',
   'dashboard.editorial.digestTitle': '每日 AI 简报',
   'dashboard.editorial.subtitle': '值得关注的项目与新进展',
   'dashboard.editorial.total': '内容总量',
