@@ -528,3 +528,19 @@ def test_release_retry_only_after_proven_predeploy_environment_recovery(tmp_path
     state.write_text(json.dumps({'in_progress': None}))
     log.write_text('database migration failed')
     assert not d.recovered_worktree_failure(c, previous)
+
+
+def test_transient_release_retry_keeps_candidate_when_main_advances(setup, monkeypatch):
+    c, db, base, head = setup
+    d.git(c, 'update-ref', 'refs/heads/main', head, base)
+    d.meta(db, 'validated_main', {'sha': head})
+    d.meta(db, 'release', {'sha': base, 'status': 'retrying', 'attempt': 1, 'retry_at': 0})
+    calls = []
+    def finish(config, script, args, log, timeout):
+        calls.append(args[args.index('--sha')+1])
+        Path(config['production'], '.aigcnews-deploy/state.json').write_text(
+            json.dumps({'active_release': base, 'in_progress': None}))
+    monkeypatch.setattr(d, 'trusted_run', finish)
+    assert d.release_once(c, db)
+    assert calls == [base]
+    assert d.meta(db, 'release')['status'] == 'delivered'

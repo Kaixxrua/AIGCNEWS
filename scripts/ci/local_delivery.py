@@ -371,15 +371,24 @@ def recovered_worktree_failure(config, previous):
 
 
 def release_once(config,db):
+    from release_progress import retryable
+    previous=meta(db,'release')
+    resume = previous.get('status') == 'retrying'
+    if resume and time.time() < previous.get('retry_at', 0):
+        return False
     candidate=meta(db,'validated_main').get('sha')
     if not candidate:return False
     main=git(config,'rev-parse','refs/heads/main')
-    if candidate!=main:return False
-    previous=meta(db,'release')
+    if resume:
+        candidate = previous['sha']
+        if not ancestor(config, candidate, main):
+            raise RuntimeError('retry candidate no longer belongs to main')
+    elif candidate!=main:return False
     same = previous.get('sha') == candidate
     retry = same and recovered_worktree_failure(config, previous)
     if same and previous.get('status') in ('failed', 'delivered') and not retry:
         return False
+    retry = retry or resume
     attempt = previous.get('attempt', 1) + 1 if retry else 1
     # Reuse the single production writer and its ownership-aware rollback.
     root=Path(config['state'])/'releases'/candidate;root.mkdir(parents=True,exist_ok=True)
@@ -400,7 +409,10 @@ def release_once(config,db):
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
     except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
-        meta(db,'release',{'sha':candidate,'status':'failed','attempt':attempt,'error':str(exc),'finished_at':now()})
+        can_retry = attempt < 3 and retryable(config, candidate)
+        meta(db,'release',{'sha':candidate,'status':'retrying' if can_retry else 'failed',
+                          'attempt':attempt,'error':str(exc),'finished_at':now(),
+                          'retry_at':time.time() + min(30 * 2**(attempt-1), 120) if can_retry else None})
     return True
 
 
@@ -518,7 +530,10 @@ def main():
             meta(db,'release',{**meta(db,'release'),'status':'failed','error':'controller interrupted; inspect production ownership before retry'})
         while True:
             try:
-                if args.action=='release':release_once(config,db)
+                if args.action=='release':
+                    worked = release_once(config,db)
+                    snapshot(config,db)
+                    if worked and args.loop:continue
                 elif args.action=='mirror':mirror_once(config,db)
                 else:notify(config,db)
                 snapshot(config,db)
