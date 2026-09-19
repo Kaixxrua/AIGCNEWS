@@ -248,4 +248,9 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
  .editorial-list .ranking-link { padding-inline: 10px; gap: 10px; }
  .editorial-list .ranking-row:nth-child(4) { margin-top: 0; }
 }
+/* Featured metadata may wrap after localization or daily-growth badges. */
+@media (min-width: 768px) {
+ .editorial-list > .ranking-row--featured { height: auto; }
+ .editorial-list .ranking-row--featured .ranking-link { height: 100%; min-height: 164px; padding-top: 48px; padding-bottom: 16px; }
+}
 </style>

@@ -152,7 +152,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-page::before, .dashboard-page::after { content: ''; position: absolute; z-index: -1; top: 0; bottom: 0; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); pointer-events: none; }
 .dashboard-page::before { left: 0; right: calc(var(--sidebar-width) + var(--column-gap) - 1px); }
 .dashboard-page::after { right: 0; width: var(--sidebar-width); }
-.dashboard-heading { display: flex; align-items: center; height: 80px; gap: 20px; padding: 0 calc(var(--sidebar-width) + var(--column-gap) + 12px) 0 20px; margin-bottom: 23px; }
+.dashboard-heading { display: flex; align-items: center; min-height: 80px; gap: 20px; padding: 0 calc(var(--sidebar-width) + var(--column-gap) + 12px) 0 20px; margin-bottom: 23px; }
 .dashboard-heading__copy { flex: 0 0 290px; min-width: 0; }
 .dashboard-heading h1 { margin: 0 0 4px; font-size: 40px; line-height: 1.2; font-weight: 800; letter-spacing: -.035em; }
 .dashboard-heading p { color: #51545b; font-size: 20px; line-height: 1.4; }
@@ -171,13 +171,14 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.calendar-day--active) { width: 30px; justify-self: center; background: var(--acid); box-shadow: none; border-radius: 7px; }
 .dashboard-sidebar :deep(.snapshot-dot) { display: none; }
 .dashboard-error { padding: 12px; margin-bottom: 16px; color: var(--tone-coral); border: 1px solid currentColor; border-radius: 8px; }
-.digest-card { position: relative; isolation: isolate; overflow: hidden; padding: 22px 20px 18px; height: 186px; border-radius: 11px; color: #f3f5ef; background: radial-gradient(ellipse at 100% 100%, #272b26, transparent 65%), #141917; }
+.digest-card { position: relative; isolation: isolate; overflow: hidden; padding: 22px 20px 18px; min-height: 186px; border-radius: 11px; color: #f3f5ef; background: radial-gradient(ellipse at 100% 100%, #272b26, transparent 65%), #141917; }
 .digest-heading { display: flex; gap: 12px; align-items: center; }
 .digest-heading > svg { color: #cefc50; flex-shrink: 0; }
 .digest-heading h2 { font-size: 22px; font-weight: 750; letter-spacing: .02em; }
 .digest-edition { position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; color: #c1c5bf; font-size: 10px; }
-.digest-card p { position: relative; z-index: 1; max-width: 270px; font-size: 14px; line-height: 1.65; color: #c5cac4; margin: 16px 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.digest-card p { position: relative; z-index: 1; max-width: none; font-size: 14px; line-height: 1.65; color: #c5cac4; margin: 16px 0 100px; }
 .digest-cta { position: absolute; bottom: 18px; left: 20px; z-index: 1; display: inline-flex; align-items: center; gap: 12px; padding: 8px 19px; border-radius: 7px; background: #cefc50; color: #12190a; font-size: 14px; line-height: 20px; font-weight: 750; }
+.digest-card :deep(.digest-geometry) { width: 150px; height: 129px; right: -8px; bottom: -15px; }
 .digest-cta:hover { background: #e0ff80; }
 /* Keep the original hard-edged identity within the reference layout. */
 .dashboard-page::before, .dashboard-page::after { border-color: var(--rule-strong); border-radius: 8px; }
@@ -213,12 +214,13 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading p { font-size: 17px; }
   .digest-heading h2 { font-size: 18px; }
   .digest-edition { font-size: 8px; right: 12px; }
-  .digest-card p { font-size: 12px; max-width: 200px; }
+  .digest-card p { font-size: 12px; }
   .integration-card { padding: 10px; gap: 7px; }
   .integration-card > span { font-size: 10px; }
 }
 @media (max-width: 1199px) {
   .dashboard-page { --sidebar-width: 28%; }
+  .integration-grid { grid-template-columns: minmax(0, 1fr); }
   .dashboard-heading { height: auto; min-height: 125px; flex-shrink: 0; flex-wrap: wrap; gap: 14px; }
   .dashboard-heading__copy { flex-basis: 100%; }
   .dashboard-heading :deep(.stat-strip) { flex-basis: 100%; }

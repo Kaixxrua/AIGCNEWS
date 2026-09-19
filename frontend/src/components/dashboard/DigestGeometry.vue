@@ -22,7 +22,7 @@ onMounted(async () => {
   catch { return }
   const element = host.value
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5))
-  renderer.setSize(210, 180)
+  renderer.setSize(210, 180, false)
   renderer.setClearColor(0x000000, 0)
   element.appendChild(renderer.domElement)
   const scene = new THREE.Scene()
