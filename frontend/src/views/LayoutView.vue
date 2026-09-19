@@ -296,4 +296,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
  .app-shell--editorial :deep(.dock) { padding: 6px; bottom: 6px; }
 }
 
+
+/* Share a bounded center lane with the homepage footer, including signed-in items. */
+@media (min-width: 1024px) {
+ .app-shell--editorial { --home-dock-width: clamp(560px, 58vw, 900px); }
+ .app-shell--editorial :deep(.dock) { width: var(--home-dock-width); gap: 4px; }
+ .app-shell--editorial :deep(.dock-item) { flex: 1 1 0; width: auto; min-width: 0; }
+}
+
 </style>

@@ -165,4 +165,19 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 }
 @media (min-width: 1024px) and (max-width: 1199px) { .footer-brand__tagline { display: none; } .footer-wordmark { font-size: 14px; } .footer-nav { gap: 9px; font-size: 10px; } .footer-icp { font-size: 8px; } }
 @media (max-width: 1023px) { .dock-footer:not(.dock-footer--embedded) { display: none; } }
+
+/* Reserve the same center lane as the dock. Locale text wraps only in its own side. */
+@media (min-width: 1024px) {
+ .dock-footer--editorial { left: 16px; right: 16px; display: grid; grid-template-columns: minmax(0, 1fr) var(--home-dock-width, clamp(560px, 58vw, 900px)) minmax(0, 1fr); column-gap: 16px; }
+ .dock-footer--editorial .footer-brand { grid-column: 1; max-width: none; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; white-space: normal; }
+ .dock-footer--editorial .footer-brand__tagline { border: 0; padding: 0; font-size: 11px; }
+ .dock-footer--editorial .footer-right { grid-column: 3; min-width: 0; flex-direction: column; align-items: flex-end; gap: 6px; white-space: normal; }
+ .dock-footer--editorial .footer-nav { justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
+ .dock-footer--editorial .footer-link { white-space: nowrap; }
+ .dock-footer--editorial .footer-copyright { border: 0; padding: 0; text-align: right; gap: 3px; }
+}
+@media (min-width: 1024px) and (max-width: 1199px) {
+ .dock-footer--editorial .footer-nav { gap: 4px 8px; font-size: 10px; }
+}
+
 </style>
