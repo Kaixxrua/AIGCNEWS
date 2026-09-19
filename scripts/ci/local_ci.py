@@ -372,8 +372,8 @@ class Runner:
                     'limits.cpu.priority': '5', 'limits.memory': '12GiB',
                     'limits.memory.swap': 'false', 'security.privileged': 'false',
                     'raw.lxc': pool.parent_config(Path(self.config['shared_parent']), self.name, '')}
-        for key, value in settings.items():
-            self.lxc('config', 'set', self.name, key + '=' + value)
+        self.lxc('config', 'set', self.name,
+                 *(key + '=' + value for key, value in settings.items()))
         validate_instance(self.info(self.name), self.config, clone=True)
         # Prevent cloned runner units from registering/starting before any boot.
         self.lxc('file', 'push', '-p', '-',
@@ -382,6 +382,9 @@ class Runner:
         self.lxc('start', self.name)
         pool.limits(Path(self.config['shared_parent']))
         self.verify_membership()
+
+    def initialize(self):
+        # Only clone-local bootstrap remains; admission/membership stay serialized.
         self.shell('''
 # Clone only; no host directories/sockets are mounted.
 systemctl disable --now 'actions.runner.*.service' 2>/dev/null || true
@@ -564,6 +567,7 @@ def launch_with_retry(runner, config, check, progress):
         try:
             with admission_lock(Path(config['state_dir']), min(budget / 3, remaining)):
                 entered = True
+                progress.update(check, admission_acquired_at=time.time(), phase='launching')
                 runner.launch()
             return
         except TimeoutError as exc:
@@ -585,6 +589,9 @@ def run_job(config, state, check, job, archive, progress):
         try:
             progress.update(check, conclusion='admitting', started_at=time.time())
             launch_with_retry(runner, config, check, progress)
+            progress.update(check, launched_at=time.time(), phase='initializing')
+            runner.initialize()
+            progress.update(check, initialized_at=time.time(), phase='checking')
             with progress.lock:
                 state.update(ready=True, ready_at=state.get('ready_at', time.time()))
                 progress.update(check, ready=True, conclusion='running')

@@ -565,6 +565,9 @@ def main():
     parser.add_argument('--loop',action='store_true')
     args=parser.parse_args()
     config=json.loads(args.config.read_text());config['config_path']=str(args.config.resolve())
+    if args.action=='notify':
+        from notifier_runtime import validate
+        validate(config, current=True)
     if args.action=='ci':
         dispatch_ci(config,loop=args.loop)
         return

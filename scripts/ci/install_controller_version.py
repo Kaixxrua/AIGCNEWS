@@ -41,6 +41,8 @@ def main():
     p.add_argument('--config', type=Path, required=True)
     args = p.parse_args()
     config = json.loads(args.config.read_text())
+    from notifier_runtime import validate
+    validate(config)
     target = stage(args.source, config)
     subprocess.run(['/usr/bin/python3', '-m', 'compileall', '-q', str(target)], check=True)
     print(json.dumps({'runtime': str(target), 'status': 'staged',

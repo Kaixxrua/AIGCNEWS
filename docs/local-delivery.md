@@ -66,6 +66,15 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 
 可信配置 `success_notifications=true` 和 `success_notifications_since`（UTC ISO 时间）开启启用时间之后的成功消息。通知仅接受控制器已标记 `delivered` 的任务，并核对创建时归属记录；使用 `thread/inject_items` 写入原会话，不新建会话、不启动模型 turn。每个交付 ID + SHA 仅一次，发送前持久化意图，超时标记 unconfirmed，禁止盲目重发。回执存于 `success_notifications` 表和 `success-notification:<id>` 元数据。不为启用前所有历史任务批量补发。接口保证历史持久化，客户端是否即时刷新由客户端决定。
 
+### 临时执行器启动延迟
+
+启动锁仅覆盖资源准入、容器创建配置、启动和 cgroup 归属检查。
+容器内工具链检查、隔离清理与 Docker 就绪等待在释放启动锁后进行；
+这些动作不访问其他工作树或执行器。资源池的 6 CPU / 12 GiB 上限、
+90% 准入门槛以及启动中容器预算仍然生效。容器配置使用一次批量调用。
+
+检查回执中的 `admission_acquired_at`、`launched_at`、`initialized_at`
+分别定位排队、启动和初始化耗时，避免将全部等待误算为测试耗时。
 
 ## 固定候选、批量集成与缓存
 

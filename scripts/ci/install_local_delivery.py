@@ -11,6 +11,8 @@ from pathlib import Path
 
 def install(config_path):
     config=json.loads(config_path.read_text());runtime=Path(config['runtime'])
+    from notifier_runtime import validate
+    notifier_python = validate(config)
     runtime.mkdir(parents=True,exist_ok=True,mode=0o700)
     source=Path(__file__).resolve().parent
     # Copy trusted controllers and all their host-side helpers, never from candidate branches.
@@ -29,7 +31,7 @@ def install(config_path):
     units=Path.home()/'.config/systemd/user';units.mkdir(parents=True,exist_ok=True)
     for role in ('ci','release','mirror','notify'):
         # Explicit path config on host; no production credentials enter candidate CI.
-        interpreter=config.get('notifier_python','/usr/bin/python3') if role=='notify' else '/usr/bin/python3'
+        interpreter=notifier_python if role=='notify' else '/usr/bin/python3'
         (units/f'aigcnews-local-{role}.service').write_text(f'''[Unit]
 Description=AIGCNEWS local delivery {role}
 After=network-online.target
