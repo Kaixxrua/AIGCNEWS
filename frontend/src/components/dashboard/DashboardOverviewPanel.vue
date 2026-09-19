@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import RollingNumber from './RollingNumber.vue'
-import { DatabaseBackup, Github, FilePlus, UsersRound, Globe, PanelsTopLeft } from 'lucide-vue-next'
+import { LibraryBig, Github, FilePlus, CircleUserRound, UsersRound, Blocks } from 'lucide-vue-next'
 import type { TabKey } from '@/features/dashboard/dashboardViewModel'
 
 const props = defineProps<{
@@ -16,11 +16,11 @@ const props = defineProps<{
 const { t } = useI18n()
 const emit = defineEmits<{ selectSource: [key: TabKey] }>()
 const metrics = computed(() => [
-  { key: 'total', label: 'dashboard.editorial.total', value: props.statValues[0], icon: DatabaseBackup },
+  { key: 'total', label: 'dashboard.editorial.total', value: props.statValues[0], icon: LibraryBig },
   { key: 'github', label: 'dashboard.editorial.github', value: props.statValues[1], icon: Github },
   { key: 'new', label: 'dashboard.stats.newDocuments', value: props.visitorValues[2], icon: FilePlus },
-  { key: 'visitors', label: 'dashboard.stats.todayVisitors', value: props.visitorValues[0], icon: UsersRound },
-  { key: 'total-visitors', label: 'dashboard.stats.totalVisitors', value: props.visitorValues[1], icon: Globe },
+  { key: 'visitors', label: 'dashboard.stats.todayVisitors', value: props.visitorValues[0], icon: CircleUserRound },
+  { key: 'total-visitors', label: 'dashboard.stats.totalVisitors', value: props.visitorValues[1], icon: UsersRound },
 ])
 </script>
 
@@ -31,13 +31,13 @@ const metrics = computed(() => [
       :type="card.key === 'github' ? 'button' : undefined"
       :aria-pressed="card.key === 'github' ? activeTab === 'github' : undefined"
       @click="card.key === 'github' && emit('selectSource', 'github')">
-      <span class="stat-cell-icon" aria-hidden="true"><component :is="card.icon" :stroke-width="2.4" /></span>
+      <span class="stat-cell-icon" aria-hidden="true"><component :is="card.icon" :stroke-width="2.5" /></span>
       <span class="stat-cell-body"><span class="stat-cell-label">{{ t(card.label) }}</span>
         <RollingNumber :value="card.value ?? 0" grouping class="stat-cell-num" />
       </span>
     </component>
     <RouterLink :to="{ name: 'ui-library' }" class="stat-cell stat-cell--ui" :aria-label="t('dashboard.editorial.uiTotal')" :aria-busy="uiLoading">
-      <span class="stat-cell-icon" aria-hidden="true"><PanelsTopLeft :stroke-width="2.4" /></span>
+      <span class="stat-cell-icon" aria-hidden="true"><Blocks :stroke-width="2.5" /></span>
       <span class="stat-cell-body"><span class="stat-cell-label">{{ t('dashboard.editorial.uiTotal') }}</span>
         <span v-if="uiLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
         <span v-else class="stat-cell-num">{{ uiCount === null ? '—' : uiCount.toLocaleString() }}</span>
@@ -74,7 +74,7 @@ const metrics = computed(() => [
 .stat-cell--total-visitors .stat-cell-num { color: #4e61bb; }
 .stat-cell--ui .stat-cell-num { color: #bd601e; }
 
-.stat-cell-icon { width: 34px; height: 34px; flex-basis: 34px; padding: 6px; border-radius: 8px; }
+.stat-cell-icon { width: 40px; height: 40px; flex-basis: 40px; padding: 7px; border-radius: 8px; }
 .stat-cell--total .stat-cell-icon { color: #e0ff88; background: #354731; }
 .stat-cell--github .stat-cell-icon { color: #305916; background: #e5f2cd; }
 .stat-cell--new .stat-cell-icon { color: #006c5c; background: #d8f1e8; }

@@ -32,6 +32,15 @@ const moreDialog = ref<HTMLDialogElement | null>(null)
 const moreOpen = ref(false)
 const isActive = (item: NavigationItem) => isNavigationItemActive(item, props.currentPath, props.currentQuery)
 const label = (item: NavigationItem) => item.labelText || t(item.labelKey)
+// Compact Chinese captions are intentionally visible in either interface locale.
+const captions: Record<string, string> = {
+  '/': '首页', '/projects': '项目', '/ui-library': 'UI库', '/projects?source=website': '网页',
+  '/chat': '对话', '/report': '简报', '/x': 'X动态', '/wechat': '微信', '/mcp': 'MCP', '/dsh': 'DSH',
+  '/subscriptions': '追踪', '/membership': '会员', '/contact': '联系', '/monitor': '监控',
+}
+const caption = (item: NavigationItem) => captions[item.to] || label(item)
+
+
 
 function openMore() {
   moreDialog.value?.showModal()
@@ -72,22 +81,22 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
     >
       <span class="dock-icon" aria-hidden="true" v-html="item.icon" />
       <span v-if="props.alertItems?.includes(item.to)" class="dock-alert-dot" :aria-label="alertLabel(item.to)" />
-      <span class="dock-label">{{ label(item) }}</span>
+      <span class="dock-label">{{ caption(item) }}</span>
     </RouterLink>
     <div class="dock-auth-sep" aria-hidden="true" />
-    <button class="dock-item dock-item--account" :aria-label="t(isLoggedIn ? 'navigation.accountSettings' : 'navigation.loginAccount')" @click="account">
+    <button class="dock-item dock-item--account" :aria-label="t(isLoggedIn ? 'navigation.accountSettings' : 'navigation.loginAccount')" :title="t(isLoggedIn ? 'navigation.accountSettings' : 'navigation.loginAccount')" @click="account">
       <UserRound v-if="isLoggedIn" class="dock-icon" aria-hidden="true" />
       <LogIn v-else class="dock-icon" aria-hidden="true" />
-      <span class="dock-label">{{ t(isLoggedIn ? 'navigation.accountShort' : 'auth.login') }}</span>
+      <span class="dock-label">{{ isLoggedIn ? '账户' : '登录' }}</span>
     </button>
     <button v-if="isLoggedIn" class="dock-item dock-item--secondary dock-item--logout" :aria-label="t('navigation.logout')" @click="logout">
       <LogOut class="dock-icon" aria-hidden="true" />
-      <span class="dock-label">{{ t('auth.logout') }}</span>
+      <span class="dock-label">退出</span>
     </button>
     <button class="dock-item dock-item--more" :class="{ 'dock-item--active': moreActive }" :aria-label="t('navigation.more')" aria-haspopup="dialog" aria-controls="dock-more-menu" :aria-expanded="moreOpen" @click="openMore">
       <MoreHorizontal class="dock-icon" aria-hidden="true" />
       <span v-if="moreAlert" class="dock-alert-dot" :aria-label="t('navigation.monitorAlert')" />
-      <span class="dock-label">{{ t('navigation.more') }}</span>
+      <span class="dock-label">更多</span>
     </button>
   </nav>
 
@@ -178,4 +187,17 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
   .dock-item--more { display: flex; }
 }
 @media (prefers-reduced-motion: reduce) { .dock-item, .dock-label { transition: none; } .dock-item:hover { transform: none; } }
+
+/* Captions are navigation content, not hover-only tooltips. Full names stay in title. */
+@media (min-width: 1024px) {
+ .dock { gap: 4px; }
+ .dock-item { height: 52px; gap: 3px; padding: 3px 2px; }
+ .dock-label, .dock-item:hover .dock-label, .dock-item:focus-visible .dock-label {
+   position: static; width: auto; max-width: 100%; padding: 0; border: 0; border-radius: 0;
+   background: none; box-shadow: none; color: inherit; font-size: 10px; line-height: 14px;
+   opacity: 1; visibility: visible; transform: none; overflow: hidden; text-overflow: ellipsis;
+ }
+ .dock-icon { flex-shrink: 0; }
+}
+
 </style>

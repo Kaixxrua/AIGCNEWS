@@ -111,6 +111,18 @@ describe('AppDock account settings entry', () => {
     expect(events).toEqual(['accountSettings'])
   })
 
+  it('keeps short Chinese dock captions visible in English while preserving full accessible names', () => {
+    setAppLocale('en-US')
+    const host = mountDock()
+    const projects = host.querySelector('a[href="/projects"]')!
+    expect(projects.querySelector('.dock-label')?.textContent).toBe('项目')
+    expect(projects.getAttribute('title')).toBe('Projects')
+    expect(projects.getAttribute('aria-label')).toBe('Projects')
+    expect(host.querySelector('a[href="/ui-library"] .dock-label')?.textContent).toBe('UI库')
+    expect(host.querySelector('.dock-item--account .dock-label')?.textContent).toBe('账户')
+    expect(host.querySelector('.dock-item--logout .dock-label')?.textContent).toBe('退出')
+  })
+
   it('labels the entry in English under the en-US locale', () => {
     setAppLocale('en-US')
     const host = mountDock()
