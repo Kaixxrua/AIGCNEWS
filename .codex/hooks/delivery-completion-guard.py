@@ -127,6 +127,28 @@ def evaluate(payload: dict[str, object]) -> dict[str, object]:
     head = _git(root, "rev-parse", "HEAD")
     has_commits = _branch_has_commits(root, branch, head)
 
+    local_state = _run(["git", "config", "--get", "aigcnews.localDeliveryState"], cwd=root, check=False).stdout.strip()
+    if local_state:
+        if not has_commits:
+            return {}
+        try:
+            data = json.loads(Path(local_state).read_text())
+            if data.get("schema") != "aigcnews.local-delivery.v1" or data.get("mode") != "local":
+                raise GuardError("local authority is not active")
+            task = next((t for t in reversed(data["tasks"]) if t["branch"] == branch and t["sha"] == head), None)
+            production = _read_production_state(_production_root(root))
+            active = production.get("active_release")
+            landing = task.get("landing_sha") if task else None
+            if landing and active and _run(["git", "merge-base", "--is-ancestor", landing, active], cwd=root, check=False).returncode == 0:
+                release = data.get("release", {})
+                if release.get("sha") == active and release.get("status") == "delivered":
+                    return {}
+            reason = "Local delivery is incomplete. Follow the local queue and its exact SHA CI/landing/production receipts; GitHub is an asynchronous mirror and must not gate delivery. "
+            reason += json.dumps(task or {"status":"not_enqueued", "branch":branch, "sha":head}, ensure_ascii=True)
+            return {"decision":"block", "reason":reason, "systemMessage":reason}
+        except (OSError, ValueError, KeyError, TypeError, GuardError) as exc:
+            return _block(f"local delivery evidence unavailable: {exc}")
+
     try:
         _git(
             root,
