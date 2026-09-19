@@ -345,6 +345,20 @@ class Runner:
             time.sleep(2)
         raise TimeoutError('shared pool admission timed out; no runner interrupted; ' + last_error)
 
+    def verify_membership(self):
+        for attempt in range(3):
+            try:
+                pool.membership(pool.inventory(), [], (), Path(self.config['shared_parent']),
+                                owner_unit=self.config['shared_unit'])
+                break
+            except ValueError as exc:
+                # LXD list/state can straddle another clone's start/cleanup.
+                # Re-sample read-only evidence; never waive membership checks.
+                if str(exc) != 'missing CI init PID' or attempt == 2:
+                    raise
+                time.sleep(1)
+
+
     def launch(self):
         validate_instance(self.info(self.config['template']), self.config)
         self.admit()
@@ -367,8 +381,7 @@ class Runner:
                  data=b'[Unit]\nConditionPathExists=/run/local-ci-never-start-jit\n[Service]\nExecStart=/bin/false\n')
         self.lxc('start', self.name)
         pool.limits(Path(self.config['shared_parent']))
-        pool.membership(pool.inventory(), [], (), Path(self.config['shared_parent']),
-                        owner_unit=self.config['shared_unit'])
+        self.verify_membership()
         self.shell('''
 # Clone only; no host directories/sockets are mounted.
 systemctl disable --now 'actions.runner.*.service' 2>/dev/null || true

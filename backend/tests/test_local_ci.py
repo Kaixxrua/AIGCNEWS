@@ -792,3 +792,25 @@ def test_preflight_is_partial_and_cannot_be_full_gate(tmp_path, repository, monk
     assert json.loads(output.read_text())['preflight'] is True
     assert not list((Path(cfg['state_dir'])/'verified-checks').glob('*.json')) == []
     assert not [p for p in (Path(cfg['state_dir'])/'verified-checks').glob('*.json') if not p.name.endswith('.steps.json')]
+
+
+
+def test_membership_only_retries_missing_pid_and_keeps_safety_checks(tmp_path, repository, monkeypatch):
+    from unittest.mock import Mock
+    runner = ci.Runner(config(tmp_path, repository), {'instance': 'ours'}, io.BytesIO())
+    monkeypatch.setattr(ci.pool, 'inventory', lambda: [])
+    monkeypatch.setattr(ci.time, 'sleep', lambda seconds: None)
+    probe = Mock(side_effect=[ValueError('missing CI init PID'), None])
+    monkeypatch.setattr(ci.pool, 'membership', probe)
+    runner.verify_membership()
+    assert probe.call_count == 2
+    probe = Mock(side_effect=ValueError('CI/control payload outside shared parent'))
+    monkeypatch.setattr(ci.pool, 'membership', probe)
+    with pytest.raises(ValueError, match='outside shared parent'):
+        runner.verify_membership()
+    assert probe.call_count == 1
+    probe = Mock(side_effect=ValueError('missing CI init PID'))
+    monkeypatch.setattr(ci.pool, 'membership', probe)
+    with pytest.raises(ValueError, match='missing CI init PID'):
+        runner.verify_membership()
+    assert probe.call_count == 3
