@@ -126,6 +126,20 @@ describe('enriched GitHub ranking', () => {
     expect(panel.get('.ranking-summary').text()).toBe('Enriched English summary')
     expect(panel.text()).not.toContain('Raw README')
   })
+  it('keeps the available enriched language when the requested translation is missing', async () => {
+    const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README',
+      description_zh: '已有中文简介', description_en: '   ', language: 'Python', tags: ['agents'] })
+    await panel.setProps({ activeTab: 'github' })
+    setAppLocale('en-US')
+    await nextTick()
+    expect(panel.get('.ranking-summary').text()).toBe('已有中文简介')
+    expect(panel.text()).not.toContain('Raw README')
+    expect(panel.text()).not.toContain('Python')
+    await panel.setProps({ tabList: [{ source: 'github', description_en: 'Available English' }] })
+    setAppLocale('zh-CN')
+    await nextTick()
+    expect(panel.get('.ranking-summary').text()).toBe('Available English')
+  })
   it('does not substitute raw README or invent unavailable growth', async () => {
     const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README' })
     await panel.setProps({ activeTab: 'github' })

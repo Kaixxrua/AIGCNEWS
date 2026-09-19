@@ -171,6 +171,7 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
     payload = {
         "path": "/api/dashboard/top",
         "namespace": "dashboard",
+        "schema": "enriched-top-v2",
         "query": {
             "source": "github",
             "limit": "7",
