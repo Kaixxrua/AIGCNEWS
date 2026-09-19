@@ -4,8 +4,8 @@
 FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
 WORKDIR /app
 COPY package*.json ./
-# npm ci 严格按 package-lock.json 复现安装
-RUN npm ci --registry=https://registry.npmmirror.com
+# Keep the registry aligned with package-lock.json; builds use the supplied proxy.
+RUN npm ci --registry=https://registry.npmjs.org
 COPY . .
 # Production receives immutable, reviewed preview packages from the private
 # release overlay. Run the requested build script without npm's prebuild hook,

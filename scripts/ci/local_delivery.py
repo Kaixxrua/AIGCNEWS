@@ -142,6 +142,7 @@ def snapshot_tasks(db):
     tasks=[dict(r) for r in db.execute('SELECT * FROM tasks ORDER BY id')]
     previous={}
     for task in tasks:
+        task['failure_stage']=failure_stage(task)
         task['handoff']=meta(db,f"handoff:{task['id']}")
         task['notification']=meta(db,f"notification:{task['id']}") or {'status':'not_attempted','accepted':False}
         # Null ownership is unknown, not proof that two tasks share an owner.
