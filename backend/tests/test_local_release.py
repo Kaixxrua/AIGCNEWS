@@ -59,3 +59,15 @@ def test_build_checkpoint_rejects_unverified_image_reference(tmp_path):
     path = tmp_path / 'images.json'
     path.write_text(json.dumps({'identity': 'exact', 'images': {'frontend': 'latest'}}))
     assert release.verified_images(path, 'exact') is None
+
+
+def test_release_rejects_unselected_sha_before_build(tmp_path, monkeypatch):
+    import local_delivery as delivery
+    import local_release
+    config = {'state': str(tmp_path/'state'), 'runtime': str(Path(__file__).parents[2]/'scripts')}
+    monkeypatch.setattr(local_release, 'deployment_environment', lambda config: None)
+    db = delivery.database(config)
+    delivery.meta(db, 'release', {'sha': 'b'*40, 'status': 'deploying'})
+    db.close()
+    with pytest.raises(RuntimeError, match='controller-selected'):
+        local_release.release(config, 'a'*40)

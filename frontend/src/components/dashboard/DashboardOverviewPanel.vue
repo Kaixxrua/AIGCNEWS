@@ -64,4 +64,12 @@ const metrics = computed(() => [
 @media (min-width: 1200px) and (max-width: 1499px) { .stat-cell { gap: 5px; padding: 12px 7px; } .stat-cell-icon { flex-basis: 24px; width: 24px; height: 24px; padding: 5px; } .stat-cell-label { font-size: 10px; } }
 @media (max-width: 639px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat-cell { padding: 12px 8px; } .stat-cell-icon { display: none; } }
 @container (max-width: 900px) { .stat-cell-icon { display: none; } }
+/* Semantic colors remain visible even when compact layouts omit icons. */
+.stat-cell--total { background: #19251d; color: #f5f8ef; }
+.stat-cell--total .stat-cell-label { color: #dbe7d6; }
+.stat-cell--github .stat-cell-num { color: #437319; }
+.stat-cell--new .stat-cell-num { color: #087b69; }
+.stat-cell--visitors .stat-cell-num { color: #8b4db2; }
+.stat-cell--total-visitors .stat-cell-num { color: #4e61bb; }
+.stat-cell--ui .stat-cell-num { color: #bd601e; }
 </style>

@@ -180,6 +180,7 @@ const enUSCatalog = {
   },
   'dashboard.stats.todayUiMaterials': 'UI added today',
   'dashboard.editorial.title': 'Today in AI',
+  'dashboard.editorial.digestDescription': 'The AI developments worth your attention, delivered daily.',
   'dashboard.editorial.digestTitle': 'Daily AI Brief',
   'dashboard.editorial.subtitle': 'Projects and progress worth your attention',
   'dashboard.editorial.total': 'Total content',

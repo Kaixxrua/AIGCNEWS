@@ -9,7 +9,8 @@ WORKDIR /src
 COPY requirements.lock .
 
 # 极速安装依赖（腾讯云镜像源）
-RUN pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.lock
+RUN --mount=type=cache,id=aigcnews-pip,target=/root/.cache/pip,sharing=locked \
+    pip install --timeout 30 --retries 2 -i https://mirrors.cloud.tencent.com/pypi/simple -r requirements.lock
 
 # 【核心修复】把后端代码整个打包进一个叫 backend 的文件夹里！
 COPY . /src/backend
