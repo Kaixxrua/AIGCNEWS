@@ -93,3 +93,15 @@ def test_held_ao_binding_cannot_fall_back_to_desktop(tmp_path,monkeypatch):
     t={'owner':'owner','branch':'session/x','sha':'a'*40}
     assert not w.readiness(t,tmp_path,None,db,desktop_enabled=True,bridge_factory=factory)['ready']
     factory.assert_not_called()
+
+
+def test_uncertain_send_reconciles_exact_user_marker_without_replay(setup):
+    send, bridge, db = setup
+    bridge.wake.side_effect = TimeoutError()
+    assert send()['status'] == 'unconfirmed'
+    bridge.call.return_value = {'thread': {'turns': [{'id': 'recovered-turn', 'items': [
+        {'type': 'userMessage', 'content': [{'type': 'text', 'text': '[delivery:event-sha] repair'}]},
+    ]}]}}
+    result = send()
+    assert result['status'] == 'accepted' and result['turn_id'] == 'recovered-turn'
+    bridge.wake.assert_called_once()

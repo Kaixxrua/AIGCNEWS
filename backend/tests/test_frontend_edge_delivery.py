@@ -69,6 +69,7 @@ def test_records_publish_result_and_removes_export_container(tmp_path, fail):
             (Path(args[-1]) / "index.html").write_text("release")
         if "publish" in args and fail:
             raise edge.subprocess.CalledProcessError(1, args)
+        return edge.subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     with patch.object(edge, "command", return_value="c" * 64), patch.object(edge.subprocess, "run", side_effect=run):
         if fail:
@@ -89,9 +90,32 @@ def test_dry_run_never_publishes_or_updates_edge_state(tmp_path):
         calls.append(args)
         if args[:2] == ["docker", "cp"]:
             (Path(args[-1]) / "index.html").write_text("release")
+        return edge.subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     with patch.object(edge, "command", return_value="c" * 64), patch.object(edge.subprocess, "run", side_effect=run):
         assert edge.publish(tmp_path, SHA, dry_run=True) == "validated"
     assert not (control / "edge-state.json").exists()
     assert any("plan" in args for args in calls)
     assert not any("publish" in args for args in calls)
+
+
+def test_retry_skips_only_reconfirmed_published_site(tmp_path, monkeypatch):
+    control, _ = configure(tmp_path)
+    (control/'edge-state.json').write_text(json.dumps({
+        'source_sha': SHA, 'frontend_image': IMAGE, 'sites': {'app': 'published'},
+        'site_releases': {'app': '20260919T081804368945Z-c072f8734541'},
+    }))
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[:2] == ['docker', 'cp']:
+            (Path(args[-1])/'index.html').write_text('release')
+        return edge.subprocess.CompletedProcess(args, 0, stdout='', stderr='')
+    monkeypatch.setattr(edge, 'command', lambda *args: 'c'*64)
+    monkeypatch.setattr(edge.subprocess, 'run', run)
+    monkeypatch.setattr(edge, 'confirmed_site', lambda *args: True)
+    assert edge.publish(tmp_path, SHA) == 'published'
+    assert not any('publish' in args for args in calls)
+    monkeypatch.setattr(edge, 'confirmed_site', lambda *args: False)
+    edge.publish(tmp_path, SHA)
+    assert any('publish' in args for args in calls)
