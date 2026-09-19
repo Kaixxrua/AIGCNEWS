@@ -496,3 +496,15 @@ def test_current_failure_stage_is_published_not_only_retry_link(setup):
     assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='CI 验证'
     d.update(db,task,'needs_update',error='main changed')
     assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='合并基线'
+
+
+def test_duplicate_notification_preserves_exact_accepted_receipt(tmp_path):
+    c = {'state': str(tmp_path)}
+    db = d.database(c)
+    task = {'id': 1, 'sha': 'a'*40, 'status': 'failed'}
+    d.notification_result(db, task, 'accepted', identity='event', turn_id='turn')
+    d.notification_result(db, task, 'duplicate', identity='event')
+    assert d.meta(db, 'notification:1')['accepted'] is True
+    assert d.meta(db, 'notification:1')['turn_id'] == 'turn'
+    d.notification_result(db, task, 'duplicate', identity='different')
+    assert d.meta(db, 'notification:1')['accepted'] is False

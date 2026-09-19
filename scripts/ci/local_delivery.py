@@ -388,6 +388,11 @@ def notification_current(config,db,task):
 
 
 def notification_result(db,task,status,**details):
+    previous = meta(db, f"notification:{task['id']}")
+    if (status == 'duplicate' and previous.get('accepted') is True
+            and previous.get('sha') == task['sha']
+            and previous.get('identity') == details.get('identity')):
+        return  # Deduplication must not erase confirmed acceptance.
     meta(db,f"notification:{task['id']}",{
         'status':status,'accepted':status=='accepted','sha':task['sha'],
         'task_status':task['status'],'at':now(),**details})

@@ -38,6 +38,25 @@ def deployment_environment(config):
     os.environ['AIGCNEWS_PRIVATE_COMPOSE']=str(overlay)
 
 
+def build_identity(config, sha):
+    return hashlib.sha256(json.dumps([sha, config, Path(__file__).read_text()], sort_keys=True).encode()).hexdigest()
+
+
+def verified_images(path, identity):
+    try:
+        data = json.loads(path.read_text())
+        if data['identity'] != identity or set(data['images']) != {'backend', 'mcp', 'frontend'}:
+            return None
+        import re
+        for service, ref in data['images'].items():
+            if not re.fullmatch('ghcr.io/kaixxrua/aigcnews/' + service + r'@sha256:[0-9a-f]{64}', ref):
+                return None
+            run(['docker', 'image', 'inspect', ref])
+        return data['images']
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return None
+
+
 def release(config,sha):
     sys.path.insert(0,str(Path(config['runtime'])/'release'))
     from deploy_production import Release, deploy
@@ -53,6 +72,15 @@ def release(config,sha):
         if state.get('in_progress'):raise RuntimeError('unfinished production transition')
         if state.get('active_release')==sha:
             publish(production,sha)
+            return
+        checkpoint = Path(config['state']) / 'releases' / sha / 'verified-images.json'
+        identity = build_identity(config, sha)
+        images = verified_images(checkpoint, identity)
+        if images:
+            result = deploy(production, Release(sha, images['backend'], images['mcp'], images['frontend']))
+            if result not in ('deployed', 'already-active'):
+                raise RuntimeError('candidate superseded at deploy lock')
+            publish(production, sha)
             return
         with tempfile.TemporaryDirectory(prefix='local-release-',dir=config['state']) as name:
             checkout=Path(name)/'source'
@@ -81,12 +109,14 @@ def release(config,sha):
                 metadata=Path(name)/(service+'.json')
                 args=['docker','buildx','build','--builder','default','--load','--provenance=false',
                       '--metadata-file',metadata,'--tag',repository+':'+sha,'--file',dockerfile]
-                if service=='mcp':args+=['--build-arg','GOPROXY=https://goproxy.cn,direct']
+                if service=='mcp':args+=['--build-arg','GOPROXY=https://proxy.golang.org|https://goproxy.cn|direct']
                 run(args+[context],cwd=checkout)
                 digest=json.loads(metadata.read_text())['containerimage.digest']
                 ref=repository+'@'+digest
                 run(['docker','image','inspect',ref])
                 images[service]=ref
+            from local_delivery import atomic
+            atomic(checkpoint, {'identity': identity, 'images': images})
             result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend']))
             if result not in ('deployed','already-active'):raise RuntimeError('candidate superseded at deploy lock')
             publish(production,sha)
