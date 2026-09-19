@@ -30,3 +30,32 @@ def test_overlay_must_match_reviewed_production_configuration(tmp_path,monkeypat
     assert os.environ['AIGCNEWS_PRIVATE_COMPOSE']==str(path)
     path.write_text('changed')
     with pytest.raises(ValueError,match='changed'):deployment_environment(c)
+
+
+def test_build_checkpoint_requires_exact_identity_and_available_digests(tmp_path, monkeypatch):
+    import json
+
+    import local_release as release
+    path = tmp_path / 'images.json'
+    images = {k: 'ghcr.io/kaixxrua/aigcnews/' + k + '@sha256:' + 'a'*64
+              for k in ('backend', 'mcp', 'frontend')}
+    path.write_text(json.dumps({'identity': 'exact', 'images': images}))
+    calls = []
+    monkeypatch.setattr(release, 'run', lambda args: calls.append(args))
+    assert release.verified_images(path, 'changed') is None
+    assert calls == []
+    assert release.verified_images(path, 'exact') == images
+    assert len(calls) == 3
+    def missing(args):
+        raise release.subprocess.CalledProcessError(1, args)
+    monkeypatch.setattr(release, 'run', missing)
+    assert release.verified_images(path, 'exact') is None
+
+
+def test_build_checkpoint_rejects_unverified_image_reference(tmp_path):
+    import json
+
+    import local_release as release
+    path = tmp_path / 'images.json'
+    path.write_text(json.dumps({'identity': 'exact', 'images': {'frontend': 'latest'}}))
+    assert release.verified_images(path, 'exact') is None
