@@ -27,6 +27,11 @@ def stage(source, config):
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, dest)
         atomic(target/'version.json', {'identity': identity, 'files': hashes, 'staged_at': time.time()})
+    for relative, expected in hashes.items():
+        entry = Path(relative)
+        installed = target/(entry.name if entry.parts[0] == 'ci' else entry)
+        if not installed.is_file() or hashlib.sha256(installed.read_bytes()).hexdigest() != expected:
+            raise RuntimeError('controller bundle is incomplete or modified: '+relative)
     return target
 
 

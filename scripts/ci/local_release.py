@@ -62,7 +62,10 @@ def release(config,sha):
     sys.path.insert(0,str(Path(config['runtime'])/'release'))
     from deploy_production import Release, deploy
     from local_delivery import SHA, ancestor, database, lock, meta
-    from publish_frontend_edges import publish
+    from publish_frontend_edges import publish as edge_publish
+    def publish(root, source):
+        if edge_publish(root, source) != "published":
+            raise RuntimeError("edge publication did not finish selected candidate")
     from release_progress import stage
     if not SHA.fullmatch(sha):raise ValueError('invalid source SHA')
     deployment_environment(config)

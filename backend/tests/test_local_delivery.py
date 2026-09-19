@@ -539,7 +539,10 @@ def test_transient_release_retry_keeps_candidate_when_main_advances(setup, monke
     def finish(config, script, args, log, timeout):
         calls.append(args[args.index('--sha')+1])
         Path(config['production'], '.aigcnews-deploy/state.json').write_text(
-            json.dumps({'active_release': base, 'in_progress': None}))
+            json.dumps({'active_release': base, 'in_progress': None, 'images': {'frontend': 'digest'}}))
+        Path(config['production'], '.aigcnews-deploy/edge-config.json').write_text(json.dumps({'sites': ['app']}))
+        Path(config['production'], '.aigcnews-deploy/edge-state.json').write_text(json.dumps({
+            'source_sha': base, 'frontend_image': 'digest', 'sites': {'app': 'published'}}))
     monkeypatch.setattr(d, 'trusted_run', finish)
     assert d.release_once(c, db)
     assert calls == [base]

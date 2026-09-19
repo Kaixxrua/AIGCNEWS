@@ -64,6 +64,7 @@ def confirmed_site(controller, inventory, site, artifact, release_id):
     if spec is None or spec.loader is None:
         raise DeployError('edge controller cannot be loaded')
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     with module.site_lock(site):
         current = module.parse_status(module.remote(inventory, site, 'status', capture=True).stdout)
@@ -122,16 +123,20 @@ def publish(root: Path, source_sha: str, *, dry_run: bool = False) -> str:
                 try:
                     result = subprocess.run(args, check=True, capture_output=True, text=True, timeout=600)
                     if result.stdout:print(result.stdout, end="")
-                except subprocess.CalledProcessError as exc:
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                     if exc.stderr:print(exc.stderr, file=sys.stderr)
                     if not dry_run:
                         state["sites"][site] = "failed"
                         write_state(state_path, state)
                     raise
                 if not dry_run:
-                    state["sites"][site] = "published"
                     output = getattr(result, "stdout", "") or ""
                     state["site_releases"][site] = output.strip().splitlines()[-1] if output.strip() else None
+                    if not confirmed_site(controller, inventory, site, artifact, state["site_releases"][site]):
+                        state["sites"][site] = "failed"
+                        write_state(state_path, state)
+                        raise DeployError("edge publication lacks confirmed exact artifact")
+                    state["sites"][site] = "published"
                     write_state(state_path, state)
             return "validated" if dry_run else "published"
 

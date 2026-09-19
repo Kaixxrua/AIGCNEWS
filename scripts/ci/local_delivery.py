@@ -431,6 +431,13 @@ def release_once(config,db):
         state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
         if state.get('active_release')!=candidate or state.get('in_progress'):
             raise RuntimeError('release command returned without exact production receipt')
+        control = Path(config['production'])/'.aigcnews-deploy'
+        edge = json.loads((control/'edge-state.json').read_text())
+        sites = json.loads((control/'edge-config.json').read_text())['sites']
+        if (not sites or edge.get('source_sha') != candidate
+                or edge.get('frontend_image') != state.get('images', {}).get('frontend')
+                or any(edge.get('sites', {}).get(site) != 'published' for site in sites)):
+            raise RuntimeError('release command returned without exact edge receipts')
         meta(db,'release',{'sha':candidate,'status':'delivered','finished_at':now()})
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
