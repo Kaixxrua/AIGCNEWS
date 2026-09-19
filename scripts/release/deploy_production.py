@@ -178,7 +178,8 @@ def probe_backend() -> None:
             raise DeployError(f"production probe {path} failed: {exc}") from None
 
 
-def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
+def deploy(root: Path, release: Release, *, lock_timeout: float = 600,
+           pinned: bool = False) -> str:
     root = root.resolve()
     control = root / ".aigcnews-deploy"
     state_path = control / "state.json"
@@ -186,7 +187,7 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
     with deployment_lock(control / "deploy.lock", lock_timeout):
         ensure_clean_tracked_tree(root)
         classification = refresh_and_classify(root, release.source_sha)
-        if classification == "superseded":
+        if classification == "superseded" and not pinned:
             return "superseded"
 
         state = read_state(state_path)
@@ -196,6 +197,13 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600) -> str:
             raise DeployError("production state contains an unfinished deployment")
 
         old_sha = state.get("active_release")
+        if pinned and old_sha and old_sha != release.source_sha:
+            relation = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", str(old_sha), release.source_sha],
+                cwd=root, check=False, capture_output=True, timeout=30,
+            )
+            if relation.returncode != 0:
+                raise DeployError("pinned candidate would regress or diverge from active production")
         old_checkout = run(["git", "rev-parse", "HEAD"], cwd=root)
         old_env = env_path.read_text(encoding="utf-8") if env_path.exists() else None
         state["in_progress"] = release.source_sha

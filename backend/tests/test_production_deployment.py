@@ -355,3 +355,29 @@ def test_stack_migration_entrypoint_preserves_compose_config_and_exit(tmp_path, 
     assert "runner.status()" in command[-1]
     assert "postgres_database.close()" in command[-1]
     compile(command[-1], "migration-gate", "exec")
+
+
+def test_pinned_candidate_finishes_when_main_advances(tmp_path, monkeypatch):
+    monkeypatch.setattr(deploy, 'ensure_clean_tracked_tree', lambda root: None)
+    monkeypatch.setattr(deploy, 'refresh_and_classify', lambda root, sha: 'superseded')
+    monkeypatch.setattr(deploy, 'run', lambda *a, **kw: SHA_B)
+    events = []
+    monkeypatch.setattr(deploy, 'checkout', lambda root, sha: events.append('checkout'))
+    monkeypatch.setattr(deploy, 'migrate_candidate', lambda *a: events.append('migrate'))
+    monkeypatch.setattr(deploy, 'reconcile', lambda *a: events.append('healthy'))
+    assert deploy.deploy(tmp_path, release(), pinned=True) == 'deployed'
+    assert events == ['checkout', 'migrate', 'healthy']
+    assert deploy.read_state(tmp_path/'.aigcnews-deploy/state.json')['active_release'] == SHA_A
+
+
+def test_pinned_candidate_cannot_overwrite_newer_production(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    deploy.write_state(tmp_path/'.aigcnews-deploy/state.json', {
+        'schema': deploy.SCHEMA, 'active_release': SHA_B, 'in_progress': None,
+    })
+    monkeypatch.setattr(deploy, 'ensure_clean_tracked_tree', lambda root: None)
+    monkeypatch.setattr(deploy, 'refresh_and_classify', lambda root, sha: 'superseded')
+    monkeypatch.setattr(deploy.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=1))
+    with pytest.raises(deploy.DeployError, match='regress'):
+        deploy.deploy(tmp_path, release(), pinned=True)
+    assert deploy.read_state(tmp_path/'.aigcnews-deploy/state.json')['active_release'] == SHA_B

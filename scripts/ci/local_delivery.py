@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -143,6 +144,10 @@ def snapshot_tasks(db):
     previous={}
     for task in tasks:
         task['failure_stage']=failure_stage(task)
+        integration = meta(db, f"integration_task:{task['id']}")
+        if integration:
+            task['verification_sha'] = integration['sha']
+            task['integration_batch'] = integration['batch']
         task['handoff']=meta(db,f"handoff:{task['id']}")
         task['notification']=meta(db,f"notification:{task['id']}") or {'status':'not_attempted','accepted':False}
         # Null ownership is unknown, not proof that two tasks share an owner.
@@ -172,10 +177,17 @@ def snapshot(config,db):
 
 
 def trusted_run(config, script, args, logfile, timeout):
+    # A timeout must reap descendants before another attempt obtains ownership.
     with Path(logfile).open('a') as log:
-        process=subprocess.run([sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
-                               stdout=log,stderr=subprocess.STDOUT,timeout=timeout,check=False)
-    if process.returncode:
+        with subprocess.Popen([sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
+                              stdout=log,stderr=subprocess.STDOUT,start_new_session=True) as process:
+            try:
+                code = process.wait(timeout=timeout)
+            except BaseException:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise
+    if code:
         raise RuntimeError(f'{script} failed; see {logfile}')
 
 
@@ -288,6 +300,20 @@ def dispatch_ci(config, *, loop=False):
     admission lock, measurements and parent cgroup decide container starts.
     All workers inherit the same configuration/state_dir and distinct outputs.
     """
+    if config.get('integration_enabled', False):
+        from local_integration import once
+        with lock(config, 'ci'):
+            db = database(config)
+            try:
+                while True:
+                    discover(config, db)
+                    worked = once(config, db)
+                    snapshot(config, db)
+                    if not loop:break
+                    if not worked:time.sleep(1)
+            finally:
+                db.close()
+        return
     with lock(config,'ci'):
         db=database(config)
         workers={}
@@ -371,15 +397,24 @@ def recovered_worktree_failure(config, previous):
 
 
 def release_once(config,db):
+    from release_progress import retryable
+    previous=meta(db,'release')
+    resume = previous.get('status') == 'retrying'
+    if resume and time.time() < previous.get('retry_at', 0):
+        return False
     candidate=meta(db,'validated_main').get('sha')
     if not candidate:return False
     main=git(config,'rev-parse','refs/heads/main')
-    if candidate!=main:return False
-    previous=meta(db,'release')
+    if resume:
+        candidate = previous['sha']
+        if not ancestor(config, candidate, main):
+            raise RuntimeError('retry candidate no longer belongs to main')
+    elif candidate!=main:return False
     same = previous.get('sha') == candidate
     retry = same and recovered_worktree_failure(config, previous)
     if same and previous.get('status') in ('failed', 'delivered') and not retry:
         return False
+    retry = retry or resume
     attempt = previous.get('attempt', 1) + 1 if retry else 1
     # Reuse the single production writer and its ownership-aware rollback.
     root=Path(config['state'])/'releases'/candidate;root.mkdir(parents=True,exist_ok=True)
@@ -396,11 +431,21 @@ def release_once(config,db):
         state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
         if state.get('active_release')!=candidate or state.get('in_progress'):
             raise RuntimeError('release command returned without exact production receipt')
+        control = Path(config['production'])/'.aigcnews-deploy'
+        edge = json.loads((control/'edge-state.json').read_text())
+        sites = json.loads((control/'edge-config.json').read_text())['sites']
+        if (not sites or edge.get('source_sha') != candidate
+                or edge.get('frontend_image') != state.get('images', {}).get('frontend')
+                or any(edge.get('sites', {}).get(site) != 'published' for site in sites)):
+            raise RuntimeError('release command returned without exact edge receipts')
         meta(db,'release',{'sha':candidate,'status':'delivered','finished_at':now()})
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
     except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
-        meta(db,'release',{'sha':candidate,'status':'failed','attempt':attempt,'error':str(exc),'finished_at':now()})
+        can_retry = attempt < 3 and retryable(config, candidate)
+        meta(db,'release',{'sha':candidate,'status':'retrying' if can_retry else 'failed',
+                          'attempt':attempt,'error':str(exc),'finished_at':now(),
+                          'retry_at':time.time() + min(30 * 2**(attempt-1), 120) if can_retry else None})
     return True
 
 
@@ -528,10 +573,22 @@ def main():
     if args.action=='status':print(json.dumps(snapshot(config,db),ensure_ascii=False));return
     with lock(config,args.action):
         if args.action=='release' and meta(db,'release').get('status')=='deploying':
-            meta(db,'release',{**meta(db,'release'),'status':'failed','error':'controller interrupted; inspect production ownership before retry'})
+            from release_progress import read
+            prior = meta(db, 'release')
+            progress = read(config, prior['sha'])
+            production = json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
+            safe = (progress.get('stage') in ('build', 'edge') and not production.get('in_progress')
+                    and prior.get('attempt', 1) < 3)
+            meta(db,'release',{**prior,'status':'retrying' if safe else 'failed',
+                              'retry_at':time.time()+30,
+                              'error':'controller interrupted; safe-stage recovery' if safe else
+                                      'controller interrupted; inspect production ownership before retry'})
         while True:
             try:
-                if args.action=='release':release_once(config,db)
+                if args.action=='release':
+                    worked = release_once(config,db)
+                    snapshot(config,db)
+                    if worked and args.loop:continue
                 elif args.action=='mirror':mirror_once(config,db)
                 else:notify(config,db)
                 snapshot(config,db)

@@ -422,7 +422,17 @@ docker info >/dev/null
                'GOPROXY': 'https://proxy.golang.org|https://goproxy.cn|direct',
                'CI': 'true', 'HTTP_PROXY': 'http://127.0.0.1:7895',
                'HTTPS_PROXY': 'http://127.0.0.1:7895', 'NO_PROXY': 'localhost,127.0.0.1,::1',
-               'RUNNER_TOOL_CACHE': '/opt/hostedtoolcache'}
+               'RUNNER_TOOL_CACHE': '/opt/hostedtoolcache',
+               # Immutable template seed; each disposable clone owns all writes.
+               'GOMODCACHE': '/opt/aigcnews-dependencies/go',
+               'GOCACHE': '/ci/go-build',
+               'npm_config_cache': '/opt/aigcnews-dependencies/npm',
+               'npm_config_prefer_offline': 'true', 'npm_config_audit': 'false',
+               'npm_config_fetch_timeout': '30000',
+               'PIP_CACHE_DIR': '/opt/aigcnews-dependencies/pip',
+               'PIP_FIND_LINKS': '/opt/aigcnews-dependencies/wheels',
+               'PIP_DEFAULT_TIMEOUT': '30',
+               'UV_CACHE_DIR': '/opt/aigcnews-dependencies/uv'}
         env.update(job.get('env', {}))
         if key == 'postgres-integration':
             env['TEST_POSTGRES_RUN_ID'] = 'local-' + self.state['run_id']

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import importlib.util
 import json
 import re
 import subprocess
@@ -55,6 +56,27 @@ def command(args: list[str]) -> str:
     return subprocess.check_output(args, text=True).strip()
 
 
+def confirmed_site(controller, inventory, site, artifact, release_id):
+    """Recheck remote identity and smoke before skipping a previous site."""
+    if not isinstance(release_id, str) or not re.fullmatch(r'[0-9]{8}T[0-9]{12}Z-[0-9a-f]{12}', release_id):
+        return False
+    spec = importlib.util.spec_from_file_location('trusted_edge_controller', controller)
+    if spec is None or spec.loader is None:
+        raise DeployError('edge controller cannot be loaded')
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    with module.site_lock(site):
+        current = module.parse_status(module.remote(inventory, site, 'status', capture=True).stdout)
+        if current['active'] != release_id:
+            return False
+        files = module.validate_artifact(artifact)
+        if not release_id.endswith('-'+module.manifest_digest(files)[:12]):
+            return False
+        module.smoke_check(inventory['sites'][site], files, 15)
+        return True
+
+
 def publish(root: Path, source_sha: str, *, dry_run: bool = False) -> str:
     control = root / ".aigcnews-deploy"
     with deployment_lock(control / "deploy.lock", 600):
@@ -81,26 +103,39 @@ def publish(root: Path, source_sha: str, *, dry_run: bool = False) -> str:
             if not (artifact / "index.html").is_file():
                 raise DeployError("frontend artifact has no index.html")
             inventory_path = stage / "inventory.json"
-            write_state(inventory_path, prepare_inventory(config, artifact))
+            inventory = prepare_inventory(config, artifact)
+            write_state(inventory_path, inventory)
             state_path = control / "edge-state.json"
             previous = json.loads(state_path.read_text()) if state_path.exists() else {}
-            state = {"source_sha": source_sha, "frontend_image": image, "sites": {}}
+            state = {"source_sha": source_sha, "frontend_image": image, "sites": {}, "site_releases": {}}
             if previous.get("source_sha") == source_sha and previous.get("frontend_image") == image:
                 state["sites"] = previous.get("sites", {})
+                state["site_releases"] = previous.get("site_releases", {})
             for site in config["sites"]:
+                if not dry_run and state['sites'].get(site) == 'published' and confirmed_site(
+                        controller, inventory, site, artifact, state['site_releases'].get(site)):
+                    continue
                 args = [sys.executable, str(controller), "--inventory", str(inventory_path),
                         "plan" if dry_run else "publish", site, "--skip-build"]
                 if not dry_run:
                     state["sites"][site] = "publishing"
                     write_state(state_path, state)
                 try:
-                    subprocess.run(args, check=True)
-                except subprocess.CalledProcessError:
+                    result = subprocess.run(args, check=True, capture_output=True, text=True, timeout=600)
+                    if result.stdout:print(result.stdout, end="")
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    if exc.stderr:print(exc.stderr, file=sys.stderr)
                     if not dry_run:
                         state["sites"][site] = "failed"
                         write_state(state_path, state)
                     raise
                 if not dry_run:
+                    output = getattr(result, "stdout", "") or ""
+                    state["site_releases"][site] = output.strip().splitlines()[-1] if output.strip() else None
+                    if not confirmed_site(controller, inventory, site, artifact, state["site_releases"][site]):
+                        state["sites"][site] = "failed"
+                        write_state(state_path, state)
+                        raise DeployError("edge publication lacks confirmed exact artifact")
                     state["sites"][site] = "published"
                     write_state(state_path, state)
             return "validated" if dry_run else "published"
