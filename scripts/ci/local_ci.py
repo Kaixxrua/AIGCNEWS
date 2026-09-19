@@ -552,15 +552,43 @@ class Progress:
             self.publish()
 
 
+def launch_with_retry(runner, config, check, progress):
+    """Retry only before launch; a partial launch must be cleaned, never replayed."""
+    budget = config.get('queue_timeout', 3600)
+    deadline = time.monotonic() + budget
+    history = []
+    for attempt in range(1, 4):
+        entered = False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('admission retry budget exhausted')
+        progress.update(check, admission_attempt=attempt, admission_history=list(history),
+                        retry_at=None, conclusion='admitting')
+        try:
+            with admission_lock(Path(config['state_dir']), min(budget / 3, remaining)):
+                entered = True
+                progress.update(check, admission_acquired_at=time.time(), phase='launching')
+                runner.launch()
+            return
+        except TimeoutError as exc:
+            if entered:
+                raise
+            history.append({'attempt': attempt, 'error': str(exc), 'at': time.time()})
+            delay = min(2 ** attempt, max(0, deadline - time.monotonic()))
+            progress.update(check, admission_history=list(history),
+                            retry_at=time.time() + delay if attempt < 3 else None)
+            if attempt == 3 or delay <= 0:
+                raise
+            time.sleep(delay)
+
+
 def run_job(config, state, check, job, archive, progress):
     with Path(check['log']).open('ab') as log:
         runner = Runner(config, {**state, **check}, log)
         runner.progress = lambda steps: progress.update(check, steps=steps)
         try:
             progress.update(check, conclusion='admitting', started_at=time.time())
-            with admission_lock(Path(config['state_dir']), config.get('queue_timeout', 3600)):
-                progress.update(check, admission_acquired_at=time.time(), phase='launching')
-                runner.launch()
+            launch_with_retry(runner, config, check, progress)
             progress.update(check, launched_at=time.time(), phase='initializing')
             runner.initialize()
             progress.update(check, initialized_at=time.time(), phase='checking')
