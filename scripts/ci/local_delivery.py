@@ -240,7 +240,7 @@ def validate_and_land(config,db,task):
         proof=json.loads(receipt.read_text())
         expected={'backend-tests','postgres-integration','mcp-go','compose-smoke','frontend-build'}
         checks=proof.get('checks',[])
-        if (proof.get('sha')!=task['sha'] or proof.get('status')!='success' or proof.get('cleanup')!='success'
+        if (proof.get('preflight') or proof.get('sha')!=task['sha'] or proof.get('status')!='success' or proof.get('cleanup')!='success'
                 or {c.get('id') for c in checks}!=expected or len(checks)!=len(expected)
                 or any(c.get('sha')!=task['sha'] or c.get('conclusion')!='success' for c in checks)):
             raise RuntimeError('CI receipt does not attest exact successful SHA')
@@ -340,17 +340,57 @@ def dispatch_ci(config, *, loop=False):
             finally:db.close()
 
 
+def recovered_worktree_failure(config, previous):
+    """Only retry a proven pre-deploy worktree failure after read-only recovery.
+
+    No replay after migrations, health checks or an uncertain production switch.
+    """
+    if previous.get('status') != 'failed' or previous.get('attempt', 1) >= 3:
+        return False
+    sha = previous.get('sha', '')
+    if not SHA.fullmatch(sha):
+        return False
+    try:
+        log = Path(config['state'])/'releases'/sha/'release.log'
+        with log.open('rb') as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell()-16384))
+            tail = stream.read().decode(errors='replace')
+        if ('ensure_clean_tracked_tree' not in tail
+                or 'this operation must be run in a work tree' not in tail):
+            return False
+        production = Path(config['production'])
+        state = json.loads((production/'.aigcnews-deploy/state.json').read_text())
+        if state.get('in_progress') or state.get('active_release') == sha:
+            return False
+        if command(['git', 'rev-parse', '--is-inside-work-tree'], cwd=production) != 'true':
+            return False
+        return not command(['git', 'status', '--porcelain', '--untracked-files=no'], cwd=production)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        return False
+
+
 def release_once(config,db):
     candidate=meta(db,'validated_main').get('sha')
     if not candidate:return False
     main=git(config,'rev-parse','refs/heads/main')
     if candidate!=main:return False
     previous=meta(db,'release')
-    if previous.get('sha')==candidate and previous.get('status') in ('failed','delivered'):
+    same = previous.get('sha') == candidate
+    retry = same and recovered_worktree_failure(config, previous)
+    if same and previous.get('status') in ('failed', 'delivered') and not retry:
         return False
+    attempt = previous.get('attempt', 1) + 1 if retry else 1
     # Reuse the single production writer and its ownership-aware rollback.
     root=Path(config['state'])/'releases'/candidate;root.mkdir(parents=True,exist_ok=True)
-    meta(db,'release',{'sha':candidate,'status':'deploying','started_at':now()});snapshot(config,db)
+    if retry:
+        atomic(root/f'retry-{attempt}-prior.json', previous)
+        if (root/'release.log').exists():
+            import shutil
+            shutil.copy2(root/'release.log', root/f'attempt-{attempt-1}.log')
+    meta(db,'release',{'sha':candidate,'status':'deploying','attempt':attempt,
+                       'reason':'worktree environment recovered; retry release only' if retry else 'validated main',
+                       'started_at':now()});snapshot(config,db)
     try:
         trusted_run(config,'local_release.py',['--config',config['config_path'],'--sha',candidate],root/'release.log',7200)
         state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
@@ -360,7 +400,7 @@ def release_once(config,db):
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
     except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
-        meta(db,'release',{'sha':candidate,'status':'failed','error':str(exc),'finished_at':now()})
+        meta(db,'release',{'sha':candidate,'status':'failed','attempt':attempt,'error':str(exc),'finished_at':now()})
     return True
 
 

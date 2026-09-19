@@ -41,3 +41,11 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 复用默认关闭，管理员必须在可信配置中设置 `verification_environment_digest`（64 位十六进制），指向已验证固定的 runner 模板/工具链环境；环境升级必须更换该值。普通宿主上的任意 pytest/npm 输出、Agent 自述测试通过均不能作为跳过 CI 的凭据。本地零散快速测试尚不等同于该隔离预验证入口。
 
 本地发布在三个镜像构建并校验 digest 后保存 `verified-images.json`。同一源码 SHA、私有制品配置及发布脚本一致的再次执行，会先确认三个不可变镜像仍存在，再直接进入原有部署/健康门禁；不重复构建，也不重新运行 CI。该检查点不代表已部署，不绕过发布锁、生产状态、迁移或健康检查。
+
+### 提交前快速验证
+
+暂存本次工作后运行安装后的 `local_preflight.py --repository "$PWD" --jobs frontend-build`（也支持 `backend-tests`、`mcp-go`）。入口对暂存 tree 创建不移动分支的验证对象，随后调用可信隔离执行器。前端单测/lint/typecheck、后端 lint、Go vet/test 可按步骤复用；准备依赖、生成测试夹具及生产构建仍执行。代码、测试、依赖或控制配置变化全部失效，partial preflight 永远不能作为完整 CI 回执。零散 pytest 文件子集尚不覆盖完整后端套件，不能据此跳过该套件。
+
+可信配置可使用 `template_snapshot` 固定停止状态的 LXD 模板快照；执行器读取该快照的实时元数据生成环境指纹，克隆同一快照。快照替换会使回执失效。预验证和正式 CI 必须共用这份配置。
+
+发布失败仅在日志明确显示部署前 `ensure_clean_tracked_tree` 的裸仓库误识别、生产无切换进行中、当前工作树可读且 tracked clean 时，允许原 SHA 原 CI 结果下最多三次发布尝试。每次保留先前回执和日志；迁移、健康检查、权限或归因不明失败不会自动重放。

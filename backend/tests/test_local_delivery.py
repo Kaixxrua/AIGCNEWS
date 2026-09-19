@@ -508,3 +508,23 @@ def test_duplicate_notification_preserves_exact_accepted_receipt(tmp_path):
     assert d.meta(db, 'notification:1')['turn_id'] == 'turn'
     d.notification_result(db, task, 'duplicate', identity='different')
     assert d.meta(db, 'notification:1')['accepted'] is False
+
+
+def test_release_retry_only_after_proven_predeploy_environment_recovery(tmp_path, monkeypatch):
+    c = {'state': str(tmp_path/'state'), 'production': str(tmp_path/'production')}
+    sha = 'a'*40
+    previous = {'sha': sha, 'status': 'failed'}
+    log = Path(c['state'])/'releases'/sha/'release.log'
+    log.parent.mkdir(parents=True)
+    log.write_text('ensure_clean_tracked_tree\nthis operation must be run in a work tree')
+    state = Path(c['production'])/'.aigcnews-deploy/state.json'
+    state.parent.mkdir(parents=True)
+    state.write_text(json.dumps({'active_release': 'b'*40, 'in_progress': None}))
+    monkeypatch.setattr(d, 'command', lambda args, **kw: 'true' if 'rev-parse' in args else '')
+    assert d.recovered_worktree_failure(c, previous)
+    assert not d.recovered_worktree_failure(c, {**previous, 'attempt': 3})
+    state.write_text(json.dumps({'in_progress': {'sha': sha}}))
+    assert not d.recovered_worktree_failure(c, previous)
+    state.write_text(json.dumps({'in_progress': None}))
+    log.write_text('database migration failed')
+    assert not d.recovered_worktree_failure(c, previous)

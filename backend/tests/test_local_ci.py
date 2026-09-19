@@ -765,3 +765,30 @@ def test_hook_clears_git_selectors_before_tests(tmp_path):
                GIT_INDEX_FILE=str(repo / '.git/index'))
     script = block + '\npython3 -c "import os; assert not any(k in os.environ for k in (\'GIT_DIR\', \'GIT_WORK_TREE\', \'GIT_INDEX_FILE\'))"'
     subprocess.run(['bash', '-euc', script], cwd=repo, env=env, check=True)
+
+
+def test_staged_preflight_does_not_move_branch_or_include_unstaged_changes(repository):
+    from local_preflight import staged_snapshot
+    original = ci.git(repository, 'rev-parse', 'HEAD').decode().strip()
+    (repository/'app.py').write_text('staged = True\n')
+    ci.git(repository, 'add', 'app.py')
+    (repository/'app.py').write_text('unstaged = True\n')
+    sha, tree_id = staged_snapshot(repository)
+    assert ci.git(repository, 'rev-parse', 'HEAD').decode().strip() == original
+    assert ci.git(repository, 'show', sha+':app.py') == b'staged = True\n'
+    assert ci.git(repository, 'rev-parse', sha+'^{tree}').decode().strip() == tree_id
+
+
+def test_preflight_is_partial_and_cannot_be_full_gate(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    seen = []
+    def check(self, key, job, archive):
+        seen.extend(s['name'] for s in job['steps'] if 'run' in s)
+        return [{'name': name, 'conclusion': 'success'} for name in seen]
+    monkeypatch.setattr(ci.Runner, 'check', check)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg, ['backend-tests'], True) == 0
+    assert 'Lint backend with ruff' in seen
+    assert 'Run backend test suite' not in seen
+    assert json.loads(output.read_text())['preflight'] is True
+    assert not list((Path(cfg['state_dir'])/'verified-checks').glob('*.json')) == []
+    assert not [p for p in (Path(cfg['state_dir'])/'verified-checks').glob('*.json') if not p.name.endswith('.steps.json')]

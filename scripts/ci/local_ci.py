@@ -78,6 +78,30 @@ def retryable_download(key, step, output):
     return bool(allowed and not denied and TRANSIENT_DOWNLOAD.search(output))
 
 
+# Read-only verification steps whose outputs are not needed by subsequent steps.
+# Dependency installation, fixtures, builds and DB operations must execute anew.
+REUSABLE_STEPS = {
+    'backend-tests': {'Lint backend with ruff'},
+    'frontend-build': {'Run frontend unit tests', 'Lint frontend', 'Type-check frontend'},
+    'mcp-go': {'Vet', 'Test (parity corpus gate included)'},
+}
+
+
+def step_cache(path, identity):
+    try:
+        info = path.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077:
+            return None
+        value = json.loads(path.read_text())
+        if value['key'] != identity or not 0 <= time.time() - value['at'] <= 3600:
+            return None
+        if value.get('cleanup') != 'success' or value.get('oom_kill', 0):
+            return None
+        return value
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def verification_key(repository, sha, config, state, key):
     # Full tree is conservative: even an unrelated source edit invalidates reuse.
     # Commit messages/parents may change without invalidating identical content.
@@ -245,6 +269,13 @@ def trusted_config(path, repository, output):
         value = config.setdefault(key, default)
         if type(value) is not int or not 1 <= value <= 7200:
             raise ValueError(f'invalid timeout: {key}')
+    snapshot = config.get('template_snapshot')
+    if snapshot:
+        if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*', snapshot):
+            raise ValueError('invalid template snapshot')
+        raw = json.loads(command(['lxc', 'query', f"/1.0/instances/{config['template']}/snapshots/{snapshot}"]))
+        config['verification_environment_digest'] = hashlib.sha256(
+            json.dumps(raw, sort_keys=True).encode()).hexdigest()
     return config
 
 
@@ -317,7 +348,8 @@ class Runner:
     def launch(self):
         validate_instance(self.info(self.config['template']), self.config)
         self.admit()
-        self.lxc('copy', self.config['template'], self.name, '--config',
+        source = self.config['template'] + ('/' + self.config['template_snapshot'] if self.config.get('template_snapshot') else '')
+        self.lxc('copy', source, self.name, '--config',
                  'user.aigcnews.local_ci=' + self.state['run_id'])
         settings = {'boot.autostart': 'false', 'user.aigcnews.ci': 'true',
                     'user.aigcnews.local_ci': self.state['run_id'],
@@ -409,6 +441,12 @@ docker info >/dev/null
             self.log.write(('\nSTEP ' + key + ': ' + step['name'] + '\n').encode())
             self.log.flush()
             result = results[index]
+            previous = self.state.get('step_reuse', {}).get(step['name'])
+            if previous and step['name'] in REUSABLE_STEPS.get(key, set()):
+                result.update(conclusion='success', reused_from=previous)
+                self.progress(results)
+                index += 1
+                continue
             result.update(conclusion='running', started_at=time.time())
             self.progress(results)
             try:
@@ -556,7 +594,7 @@ def recover(config, state, progress):
     return 0 if state['status'] == 'success' else 2
 
 
-def execute(repository, sha, output, config, selected=None):
+def execute(repository, sha, output, config, selected=None, preflight=False):
     repository, output = Path(repository).resolve(), Path(output).resolve()
     selected = tuple(selected or JOBS)
     if not selected or len(set(selected)) != len(selected) or any(k not in JOBS for k in selected):
@@ -565,7 +603,7 @@ def execute(repository, sha, output, config, selected=None):
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     if root.stat().st_uid != os.getuid() or root.stat().st_mode & 0o077:
         raise ValueError('state directory must be private and controller-owned')
-    identity = hashlib.sha256(json.dumps([str(repository), sha, config] + ([list(selected)] if selected != JOBS else []), sort_keys=True).encode()).hexdigest()
+    identity = hashlib.sha256(json.dumps([str(repository), sha, config] + ([list(selected)] if selected != JOBS else []) + (['preflight'] if preflight else []), sort_keys=True).encode()).hexdigest()
     receipt_path = root / (identity + '.json')
     with (root / (identity + '.execution.lock')).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -573,7 +611,7 @@ def execute(repository, sha, output, config, selected=None):
             state = json.loads(receipt_path.read_text())
             return recover(config, state, Progress(state, receipt_path, output))
         state = {'schema_version': 2, 'sha': sha, 'repository': str(repository),
-                 'baseline_sha': config['baseline_sha'], 'run_id': uuid.uuid4().hex,
+                 'preflight': preflight, 'baseline_sha': config['baseline_sha'], 'run_id': uuid.uuid4().hex,
                  'config_sha256': hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
                  'conclusion': 'running', 'status': 'running', 'ready': False,
                  'checks': [], 'log': str(root / (identity + '.log')), 'started_at': time.time()}
@@ -607,15 +645,30 @@ def execute(repository, sha, output, config, selected=None):
                 for check in state['checks']:
                     fingerprint = verification_key(repository, sha, config, state, check['id'])
                     check['verification_key'] = fingerprint
+                    step_path = cache_root / (fingerprint + '.steps.json')
+                    step_proof = (step_cache(step_path, fingerprint)
+                                  if re.fullmatch(r'[0-9a-f]{64}', config.get('verification_environment_digest', ''))
+                                  else None)
+                    check['step_reuse'] = (step_proof or {}).get('steps', {})
                     prior = (cached_check(cache_root / (fingerprint + '.json'), fingerprint)
                              if re.fullmatch(r'[0-9a-f]{64}', config.get('verification_environment_digest', ''))
                              else None)
-                    if prior:
+                    if prior and not preflight:
                         check.update(conclusion='success', status='success', cleanup='success',
                                      ready=True, steps=prior['steps'], oom_kill=0,
                                      reused_from={'sha': prior['sha'], 'run_id': prior['run_id']})
                         check.pop('instance', None)
                         state['ready'] = True
+                if preflight:
+                    # Run prerequisites through the last reusable verification step.
+                    # Unselected later gates stay absent, never report partial CI as full.
+                    for key in selected:
+                        runnable = jobs[key]['steps']
+                        indexes = [i for i, st in enumerate(runnable)
+                                   if st.get('name') in REUSABLE_STEPS.get(key, set())]
+                        if not indexes:
+                            raise ValueError('no reusable preflight steps for ' + key)
+                        jobs[key] = {**jobs[key], 'steps': runnable[:max(indexes) + 1]}
                 progress.publish()  # Persist ownership of all five clones before any launch.
                 # Five job orchestrators, not a CPU allocation. Every launch still
                 # passes the same measured shared-pool admission and hard ceiling.
@@ -625,10 +678,19 @@ def execute(repository, sha, output, config, selected=None):
                     for future in futures:
                         future.result()
                 for check in state['checks']:
-                    if (not check.get('reused_from') and check['conclusion'] == 'success'
+                    if (not preflight and not check.get('reused_from') and check['conclusion'] == 'success'
                             and check['cleanup'] == 'success'):
                         atomic_json(cache_root / (check['verification_key'] + '.json'),
                                     {'key': check['verification_key'], 'at': time.time(), 'check': check})
+                    if check['cleanup'] == 'success' and not check.get('oom_kill'):
+                        completed = {step['name']: {'sha': sha, 'run_id': check['run_id']}
+                                     for step in check['steps'] if step.get('conclusion') == 'success'
+                                     and not step.get('reused_from')
+                                     and step['name'] in REUSABLE_STEPS.get(check['id'], set())}
+                        if completed:
+                            atomic_json(cache_root / (check['verification_key'] + '.steps.json'),
+                                        {'key': check['verification_key'], 'at': time.time(),
+                                         'cleanup': 'success', 'oom_kill': 0, 'steps': completed})
                 state['oom_kill'] = sum(c.get('oom_kill', 0) for c in state['checks'])
                 clean = all(c['cleanup'] == 'success' for c in state['checks'])
                 passed = all(c['conclusion'] == 'success' for c in state['checks'])
@@ -656,6 +718,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for flag in ('repository', 'sha', 'output', 'config'):
         parser.add_argument('--' + flag, required=True)
+    parser.add_argument('--preflight', action='store_true', help='Run reusable local validation steps and prerequisites')
     parser.add_argument('--jobs', nargs='+', choices=JOBS, help='Preflight: run selected full gates; never a full CI attestation')
     args = parser.parse_args()
     def interrupted(signum, _frame):
@@ -664,7 +727,7 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     try:
         config = trusted_config(Path(args.config), Path(args.repository), Path(args.output))
-        return execute(args.repository, args.sha, args.output, config, args.jobs)
+        return execute(args.repository, args.sha, args.output, config, args.jobs, args.preflight)
     except Exception as exc:  # noqa: BLE001 - CLI fails closed
         print(f'local-ci denied: {type(exc).__name__}: {exc}', file=__import__('sys').stderr)
         return 2
