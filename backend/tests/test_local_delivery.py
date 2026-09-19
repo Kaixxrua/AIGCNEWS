@@ -13,11 +13,10 @@ import local_delivery as d
 
 
 @pytest.fixture(autouse=True)
-def isolate_git_hook_environment(monkeypatch):
-    # Git hooks export GIT_DIR/GIT_INDEX_FILE. Child fixture repositories must
-    # never inherit them: even git -C would otherwise target the real checkout.
+def isolate_git_environment(monkeypatch):
+    """Keep hook-provided Git state out of disposable test repositories."""
     for name in tuple(os.environ):
-        if name.startswith("GIT_"):
+        if name.startswith('GIT_'):
             monkeypatch.delenv(name)
 
 
