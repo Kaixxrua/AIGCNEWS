@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -16,12 +17,34 @@ def run(args, *, cwd=None, env=None):
     subprocess.run(list(map(str,args)),cwd=cwd,env=env,check=True,timeout=3600)
 
 
+def normalize_build_permissions(checkout):
+    # systemd uses umask 0077; image USER app must read source and migrations.
+    # Only the disposable build context is normalized, never private source paths.
+    for path in checkout.rglob('*'):
+        if path.is_symlink():
+            continue
+        if path.is_dir():
+            path.chmod(0o755)
+        elif path.is_file():
+            path.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
+
+
+def deployment_environment(config):
+    overlay=Path(config['private_compose'])
+    if not overlay.is_absolute() or not overlay.is_file():
+        raise ValueError('verified production overlay missing')
+    if hashlib.sha256(overlay.read_bytes()).hexdigest()!=config['private_compose_sha256']:
+        raise ValueError('production overlay changed; reconcile before switching')
+    os.environ['AIGCNEWS_PRIVATE_COMPOSE']=str(overlay)
+
+
 def release(config,sha):
     sys.path.insert(0,str(Path(config['runtime'])/'release'))
     from deploy_production import Release, deploy
     from local_delivery import SHA, command, lock
     from publish_frontend_edges import publish
     if not SHA.fullmatch(sha):raise ValueError('invalid source SHA')
+    deployment_environment(config)
     with lock(config,'build-release'):
         current=command(['git','--git-dir',config['bare'],'rev-parse','refs/heads/main'])
         if current!=sha:raise RuntimeError('release superseded before build')
@@ -46,6 +69,7 @@ def release(config,sha):
             run([sys.executable,str(Path(config['runtime'])/'release/stage_private_frontend.py'),'--private-root',config['private_root'],'--frontend-root',str(checkout/'frontend'),
                         '--expected-release-id',config['private_release_id'],
                         '--expected-descriptor-sha256',config['private_descriptor_sha256']])
+            normalize_build_permissions(checkout)
             env=dict(os.environ,UI_LIBRARY_DATA_ROOT=str(checkout/'frontend/.ui-library-data'))
             run(['npm','ci'],cwd=checkout/'frontend',env=env)
             run(['npm','run','typecheck'],cwd=checkout/'frontend',env=env)

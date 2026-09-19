@@ -12,7 +12,7 @@ CI 使用现有独立 LXD 模板、nested Docker 和 6 CPU / 12 GiB 共享池；
 
 部署仅选择最新已验证 local main，已开始候选不中断。复用 `deploy_production.py` 的生产主机锁、digest、迁移、探针和所有权回滚，复用固定私有 Godot 制品及前端黑边契约，复用 PR75 的公网边缘制品发布。GitHub 同步失败存为 pending；只能普通快进推送，遇外部远端分叉必须报告，不强推覆盖。
 
-Stop hook 本地模式读取 localDeliveryState 与真实生产状态，不再调用 GitHub API。`release=delivered` 包含源站与边缘发布成功。旧会话在合入新本地 main 后获得新 hook；既有 AO 显式归属继续使用，未知归属不猜测唤醒。
+Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，终态可读取真实生产状态，不再调用 GitHub API。`release=delivered` 包含源站与边缘发布成功。旧会话在合入新本地 main 后获得新 hook；既有 AO 显式归属继续使用，未知归属不猜测唤醒。
 
 ## 切换步骤与恢复
 
@@ -25,3 +25,9 @@ Stop hook 本地模式读取 localDeliveryState 与真实生产状态，不再�
 切回旧体系必须先排空并停用本地控制器，再对齐两个 main（仅快进），恢复 origin 和旧工作流。两种体系不得同时获得合并/部署写权限。切换中断时保留已部署版本，不删锁、不清数据库、不强推。
 
 配置必须是仓库外可信 JSON，包含 bare/repository/state/production/runtime/github_url、私有制品固定 ID/hash、AO 注册表位置和 local_ci 所需共享池/模板参数。不把生产配置或私有制品提交进仓库。
+
+## 开发任务的停止边界
+
+本地影响面验证通过后，Agent 自动提交并推送。精确 SHA 入队、创建时归属一致、通知控制器在最近 120 秒核实唤醒通道后，Stop hook 允许结束；不等待 CI、合并或发布完成，不把已交接表述为已上线。任务成功只更新看板，失败才唤醒，修复提交再次交接。推送失败、归属未知、通道未就绪或已有待修复失败均不能冒充交接成功。已上线的生产证据仍可作为终态放行依据。基础设施修复的显式全链路验收要求保持。
+
+通知服务通过 `notifier_python` 指定包含 `websockets==15.0.1` 的独立 Python 环境。可信配置中的 `handoff_enabled=true` 启用只读通道检查，`desktop_wakeup=true` 允许没有 AO handoff 的任务使用创建时精确 Codex thread ID；存在 AO 绑定时绝不跨通道回退。新 AO 任务在 dev_session.start 时核对 provider thread ID 并自动激活自己的绑定。旧任务不能靠标题猜测绑定。发送超时保存 unconfirmed，不盲目重发；成功仅更新看板。发布失败只通知精确 release SHA 对应的承接任务。

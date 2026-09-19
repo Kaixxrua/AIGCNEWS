@@ -70,3 +70,35 @@ def test_local_mode_does_not_request_github(monkeypatch,tmp_path,release_status,
     monkeypatch.setattr(guard,'_read_production_state',lambda *a:{'active_release':head})
     monkeypatch.setattr(guard,'_production_root',lambda *a:tmp_path)
     assert (guard.evaluate({'hook_event_name':'Stop','cwd':str(tmp_path)})=={}) is allowed
+
+
+@pytest.mark.parametrize('status,ready,age,owner,remote,allowed',[
+    ('testing',True,0,'owner','a'*40,True),
+    ('queued',True,0,'owner','a'*40,True),
+    ('failed',True,0,'owner','a'*40,False),
+    ('testing',False,0,'owner','a'*40,False),
+    ('testing',True,121,'owner','a'*40,False),
+    ('testing',True,0,'other','a'*40,False),
+    ('testing',True,0,'owner','b'*40,False),
+])
+def test_stop_after_verified_handoff(monkeypatch,tmp_path,status,ready,age,owner,remote,allowed):
+    import json
+    from datetime import UTC, datetime, timedelta
+    head='a'*40; state=tmp_path/'state.json'
+    state.write_text(json.dumps({'schema':'aigcnews.local-delivery.v1','mode':'local',
+        'tasks':[{'branch':'session/task','sha':head,'status':status,'owner':owner,
+                  'handoff':{'owner':owner,'sha':head,'ready':ready,
+                  'checked_at':(datetime.now(UTC)-timedelta(seconds=age)).isoformat()}}]}))
+    monkeypatch.setenv('CODEX_THREAD_ID','owner')
+    def git(_, *args):
+        if args==('rev-parse','--show-toplevel'):return str(tmp_path)
+        if args[0]=='symbolic-ref':return 'session/task'
+        if args==('rev-parse','HEAD'):return head
+        return ''
+    monkeypatch.setattr(guard,'_git',git)
+    monkeypatch.setattr(guard,'_run',lambda args,**kw:SimpleNamespace(
+        stdout=str(state) if 'config' in args else remote+'\trefs/heads/session/task',returncode=0))
+    monkeypatch.setattr(guard,'_branch_has_commits',lambda *a:True)
+    monkeypatch.setattr(guard,'_production_root',lambda *a:tmp_path)
+    monkeypatch.setattr(guard,'_read_production_state',lambda *a:{})
+    assert (guard.evaluate({'hook_event_name':'Stop','cwd':str(tmp_path)})=={}) is allowed

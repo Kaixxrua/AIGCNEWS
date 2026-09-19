@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 BLOCKER_MARKER = "DELIVERY_BLOCKED:"
@@ -136,6 +137,17 @@ def evaluate(payload: dict[str, object]) -> dict[str, object]:
             if data.get("schema") != "aigcnews.local-delivery.v1" or data.get("mode") != "local":
                 raise GuardError("local authority is not active")
             task = next((t for t in reversed(data["tasks"]) if t["branch"] == branch and t["sha"] == head), None)
+            handoff = task.get("handoff", {}) if task else {}
+            owner = os.environ.get("CODEX_THREAD_ID")
+            checked = handoff.get("checked_at")
+            age = (datetime.now(UTC) - datetime.fromisoformat(checked)).total_seconds() if checked else None
+            if (task and task.get("status") in {"queued", "claimed", "testing", "landed", "delivered"}
+                    and owner and task.get("owner") == owner
+                    and handoff.get("owner") == owner and handoff.get("sha") == head
+                    and handoff.get("ready") is True and age is not None and 0 <= age <= 120):
+                remote = _run(["git", "ls-remote", "origin", f"refs/heads/{branch}"], cwd=root)
+                if remote.stdout.split()[:1] == [head]:
+                    return {}  # Durable handoff; background controller owns delivery.
             production = _read_production_state(_production_root(root))
             active = production.get("active_release")
             landing = task.get("landing_sha") if task else None
@@ -143,7 +155,7 @@ def evaluate(payload: dict[str, object]) -> dict[str, object]:
                 release = data.get("release", {})
                 if release.get("sha") == active and release.get("status") == "delivered":
                     return {}
-            reason = "Local delivery is incomplete. Follow the local queue and its exact SHA CI/landing/production receipts; GitHub is an asynchronous mirror and must not gate delivery. "
+            reason = "Automatic handoff is not verified. Require exact pushed SHA in the local queue and a fresh ready wakeup route for this owner; do not poll CI or production after a valid handoff. "
             reason += json.dumps(task or {"status":"not_enqueued", "branch":branch, "sha":head}, ensure_ascii=True)
             return {"decision":"block", "reason":reason, "systemMessage":reason}
         except (OSError, ValueError, KeyError, TypeError, GuardError) as exc:

@@ -1,4 +1,5 @@
 """Host executor contracts; never launch, stop or modify a real LXD instance."""
+import hashlib
 import io
 import json
 import subprocess
@@ -225,7 +226,7 @@ def test_exact_sha_results_and_restart_do_not_execute_twice(tmp_path, repository
     assert all(c['sha'] == sha and c['conclusion'] == 'success' for c in first['checks'])
     assert ci.execute(repository, sha, output, cfg) == 0
     assert json.loads(output.read_text()) == first
-    assert calls.count('launch') == 1
+    assert calls.count('launch') == 5
     assert calls.count('backend-tests') == 1
 
 
@@ -249,7 +250,7 @@ def test_interrupted_attempt_never_automatically_replays(tmp_path, repository, m
     ci.atomic_json(path, data)
     calls.clear()
     assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 2
-    assert calls == ['cleanup']
+    assert calls == ['cleanup'] * 5
     assert json.loads(output.read_text())['conclusion'] == 'interrupted'
 
 
@@ -352,7 +353,9 @@ def test_receipt_lock_prevents_overlapping_local_executors(tmp_path, repository,
     cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
     root = Path(cfg['state_dir'])
     root.mkdir(mode=0o700)
-    with (root / 'executor.lock').open('a') as lock:
+    identity = hashlib.sha256(json.dumps([str(repository.resolve()), cfg['baseline_sha'], cfg],
+                                        sort_keys=True).encode()).hexdigest()
+    with (root / (identity + '.execution.lock')).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pytest.raises(BlockingIOError):
             ci.execute(repository, cfg['baseline_sha'], output, cfg)
@@ -429,3 +432,247 @@ def test_progress_output_replaces_old_failure_and_publishes_each_completed_check
                    and r['checks'][index]['id'] == key
                    and r['checks'][index]['conclusion'] == 'success'
                    for r in publications)
+
+
+def test_shell_sets_default_goproxy_without_disabling_sum_verification(tmp_path, repository, monkeypatch):
+    cfg = config(tmp_path, repository)
+    runner = ci.Runner(cfg, {'instance': 'ours'}, io.BytesIO())
+    calls = []
+    monkeypatch.setattr(ci, 'command', lambda argv, **kw: calls.append((argv, kw)))
+    runner.shell('go mod tidy\ngo build ./...\ngo vet ./...\ngo test ./... -count=1')
+    argv, kwargs = calls[0]
+    assert 'GOPROXY=https://goproxy.cn,direct' in argv
+    assert not any('GOSUMDB=off' in a or 'GOINSECURE=' in a for a in argv)
+    assert kwargs['data'].endswith(b'go test ./... -count=1')
+
+
+def test_different_identities_run_checks_concurrently_but_admission_is_exclusive(tmp_path, repository, monkeypatch):
+    import fcntl
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    first_sha = cfg['baseline_sha']
+    (repository / 'app.py').write_text('value = 3\n')
+    second_sha = commit(repository)
+    first_in_check, release_first = Event(), Event()
+    lock_path = Path(cfg['state_dir']) / 'admission.lock'
+
+    def launch(self):
+        # Every launch is protected by the same real flock.
+        with lock_path.open('a') as probe:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        calls.append(('launch', self.state['sha']))
+
+    def check(self, key, job, archive):
+        # Other jobs may hold admission concurrently; this gate does not.
+        if self.state['sha'] == first_sha and key == ci.JOBS[0]:
+            first_in_check.set()
+            assert release_first.wait(10), 'second identity was blocked by first CI'
+        return [{'name': key, 'conclusion': 'success'}]
+
+    monkeypatch.setattr(ci.Runner, 'launch', launch)
+    monkeypatch.setattr(ci.Runner, 'check', check)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        first = workers.submit(ci.execute, repository, first_sha, output, cfg)
+        try:
+            assert first_in_check.wait(10)
+            # Duplicate identity cannot recover/delete a still-running container.
+            with pytest.raises(BlockingIOError):
+                ci.execute(repository, first_sha, tmp_path / 'duplicate.json', cfg)
+            second = workers.submit(ci.execute, repository, second_sha, tmp_path / 'second.json', cfg)
+            assert second.result(timeout=10) == 0
+            assert not first.done()
+        finally:
+            release_first.set()
+        assert first.result(timeout=10) == 0
+    assert calls.count(('launch', first_sha)) == 5
+    assert calls.count(('launch', second_sha)) == 5
+
+
+def test_admission_lock_timeout_does_not_launch_or_replay(tmp_path, repository, monkeypatch):
+    import fcntl
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    root = Path(cfg['state_dir'])
+    root.mkdir(mode=0o700)
+    # Deterministic bounded wait without sleeping or touching LXD.
+    ticks = iter(range(10000))
+    monkeypatch.setattr(ci.time, 'monotonic', lambda: next(ticks))
+    monkeypatch.setattr(ci.time, 'sleep', lambda _: None)
+    cfg['admission_timeout'] = 2
+    with (root / 'admission.lock').open('a') as held:
+        fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    receipt = json.loads(output.read_text())
+    assert receipt['status'] == 'failure'
+    assert 'admission lock timed out' in receipt['error']
+    assert 'launch' not in calls
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 2
+    assert 'launch' not in calls
+
+
+def test_launch_failure_releases_admission_lock_for_next_candidate(tmp_path, repository, monkeypatch):
+    import fcntl
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    def launch(self):
+        raise RuntimeError('launch failed')
+    monkeypatch.setattr(ci.Runner, 'launch', launch)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    with (Path(cfg['state_dir']) / 'admission.lock').open('a') as probe:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    assert json.loads(output.read_text())['status'] == 'failure'
+
+
+def test_five_jobs_have_independent_containers_receipts_and_overlap(tmp_path, repository, monkeypatch):
+    from threading import Barrier, Lock
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    barrier = Barrier(5)
+    seen = {}
+    guard = Lock()
+    cleaned = []
+    def check(self, key, job, archive):
+        with guard:
+            seen[key] = (self.name, self.state['run_id'], str(self.log.name))
+        barrier.wait(timeout=10)  # Serial implementations cannot satisfy this.
+        return [{'name': key, 'conclusion': 'success'}]
+    monkeypatch.setattr(ci.Runner, 'check', check)
+    monkeypatch.setattr(ci.Runner, 'cleanup', lambda self: cleaned.append(self.name))
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 0
+    receipt = json.loads(output.read_text())
+    assert set(seen) == set(ci.JOBS)
+    for index in range(3):
+        assert len({values[index] for values in seen.values()}) == 5
+    assert set(cleaned) == {values[0] for values in seen.values()}
+    assert receipt['cleanup'] == 'success'
+    for check in receipt['checks']:
+        assert check['cleanup'] == check['status'] == 'success'
+        assert check['candidate_run_id'] == receipt['run_id']
+        assert json.loads(Path(check['receipt']).read_text()) == check
+        assert Path(check['log']).exists()
+
+
+def test_one_job_failure_does_not_skip_other_four_and_all_are_reaped(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cleaned = []
+    def check(self, key, job, archive):
+        if key == 'mcp-go':
+            self.progress([{'name': 'Build', 'conclusion': 'failure', 'error': 'network EOF'}])
+            raise RuntimeError('network EOF')
+        return [{'name': key, 'conclusion': 'success'}]
+    monkeypatch.setattr(ci.Runner, 'check', check)
+    monkeypatch.setattr(ci.Runner, 'cleanup', lambda self: cleaned.append(self.name))
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    receipt = json.loads(output.read_text())
+    assert receipt['cleanup'] == 'success'
+    assert len(cleaned) == 5
+    checks = {c['id']: c for c in receipt['checks']}
+    assert checks['mcp-go']['steps'][0]['conclusion'] == 'failure'
+    assert all(c['conclusion'] == 'success' for key, c in checks.items() if key != 'mcp-go')
+    assert 'network EOF' in Path(checks['mcp-go']['log']).read_text()
+
+
+def test_step_progress_is_durable_before_completion_and_failure_keeps_previous_steps(tmp_path, repository, monkeypatch):
+    cfg = config(tmp_path, repository)
+    root = Path(cfg['state_dir']);root.mkdir(mode=0o700)
+    check = {'id': 'mcp-go', 'sha': cfg['baseline_sha'], 'conclusion': 'running',
+             'receipt': str(root / 'job.json')}
+    state = {'status': 'running', 'checks': [check]}
+    output = root / 'output.json'
+    progress = ci.Progress(state, root / 'candidate.json', output)
+    steps = [{'name': 'First', 'run': 'go build ./...'}, {'name': 'Second', 'run': 'go test ./...'},
+             {'name': 'Third', 'run': 'go vet ./...'}]
+    with (root / 'job.log').open('ab') as log:
+        runner = ci.Runner(cfg, {'instance': 'job', 'controls_archive': '/controls'}, log)
+        runner.progress = lambda values: progress.update(check, steps=values)
+        monkeypatch.setattr(runner, 'lxc', lambda *a, **kw: b'')
+        def shell(script, **kwargs):
+            if script.endswith('go build ./...'):
+                record = json.loads(output.read_text())['checks'][0]
+                assert record['steps'][0]['conclusion'] == 'running'
+            if script.endswith('go test ./...'):
+                record = json.loads(output.read_text())['checks'][0]
+                assert record['steps'][0]['conclusion'] == 'success'
+                assert record['steps'][1]['conclusion'] == 'running'
+                raise TimeoutError('step timeout')
+        monkeypatch.setattr(runner, 'shell', shell)
+        with pytest.raises(TimeoutError):
+            runner.check('mcp-go', {'steps': steps, 'timeout-minutes': 1}, root / 'source.tar')
+    record = json.loads(output.read_text())['checks'][0]
+    assert [s['conclusion'] for s in record['steps']] == ['success', 'failure', 'pending']
+    assert 'step timeout' in record['steps'][1]['error']
+    assert json.loads((root / 'job.json').read_text()) == record
+
+
+def test_one_cleanup_failure_rejects_whole_candidate(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cleaned = []
+    def cleanup(self):
+        cleaned.append(self.state['id'])
+        if self.state['id'] == 'frontend-build':
+            raise RuntimeError('cleanup unavailable')
+    monkeypatch.setattr(ci.Runner, 'cleanup', cleanup)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    receipt = json.loads(output.read_text())
+    assert receipt['status'] == 'error'
+    assert receipt['cleanup'] == 'failure'
+    assert set(cleaned) == set(ci.JOBS)
+
+
+def test_legacy_receipt_restart_reaps_only_old_container_without_launch(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    root = Path(cfg['state_dir']);root.mkdir(mode=0o700)
+    identity = hashlib.sha256(json.dumps([str(repository.resolve()), cfg['baseline_sha'], cfg], sort_keys=True).encode()).hexdigest()
+    state = {'schema_version': 1, 'instance': 'old-clone', 'run_id': 'old', 'conclusion': 'running',
+             'checks': [], 'log': str(root / 'old.log')}
+    ci.atomic_json(root / (identity + '.json'), state)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 2
+    assert calls == ['cleanup']
+    assert json.loads(output.read_text())['status'] == 'interrupted'
+
+
+def test_job_oom_rejects_even_when_step_commands_succeed(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    monkeypatch.setattr(ci.pool, 'counters', lambda path: {'oom_kill': '1'})
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    receipt = json.loads(output.read_text())
+    assert receipt['oom_kill'] == 5
+    assert receipt['status'] == 'failure'
+    assert receipt['cleanup'] == 'success'
+
+
+def test_inventory_change_during_admission_never_grants_capacity(tmp_path, repository, monkeypatch):
+    cfg = config(tmp_path, repository)
+    cfg['admission_timeout'] = 4
+    runner = ci.Runner(cfg, {'instance': 'queued-job'}, io.BytesIO())
+    ticks = iter(range(100))
+    monkeypatch.setattr(ci.time, 'monotonic', lambda: next(ticks))
+    monkeypatch.setattr(ci.time, 'sleep', lambda _: None)
+    def sample(*a, **kw):
+        raise ValueError('pool or inventory changed during sample')
+    monkeypatch.setattr(ci.pool, 'sample', sample)
+    with pytest.raises(TimeoutError, match='inventory changed'):
+        runner.admit()
+    assert b'Admission evidence unavailable' in runner.log.getvalue()
+
+
+def test_restart_attempts_all_owned_job_cleanups_even_if_one_fails(tmp_path, repository, monkeypatch):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 0
+    path = next(Path(cfg['state_dir']).glob('*.json'))
+    state = json.loads(path.read_text())
+    state.update(conclusion='running', status='running')
+    ci.atomic_json(path, state)
+    cleaned = []
+    def cleanup(self):
+        cleaned.append(self.state['id'])
+        if self.state['id'] == ci.JOBS[0]:
+            raise RuntimeError('unavailable')
+    monkeypatch.setattr(ci.Runner, 'cleanup', cleanup)
+    calls.clear()
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 2
+    assert cleaned == list(ci.JOBS)
+    assert not calls
+    receipt = json.loads(output.read_text())
+    assert receipt['status'] == 'error'
+    assert receipt['cleanup'] == 'failure'

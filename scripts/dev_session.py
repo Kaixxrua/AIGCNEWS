@@ -26,6 +26,7 @@ from typing import Any
 # sys.path; anchor the worktree root so ``scripts.risk_controls`` imports.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from scripts.ci import ao_delivery_adapter
 from scripts.ci.delivery_ownership import record_owner
 from scripts.risk_controls import RiskLevel, ValidationReceipt, classify_paths
 
@@ -189,7 +190,7 @@ def status(root: Path) -> dict[str, Any]:
     }
 
 
-def start(slug: str, root: Path) -> dict[str, str]:
+def start(slug: str, root: Path) -> dict[str, Any]:
     if not SLUG_RE.fullmatch(slug):
         raise SessionError("slug must be lowercase kebab-case (2-40 characters)")
     owner = os.environ.get("CODEX_THREAD_ID")
@@ -199,6 +200,13 @@ def start(slug: str, root: Path) -> dict[str, str]:
         uuid.UUID(owner)
     except ValueError:
         raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
+    ao_session = os.environ.get("AO_SESSION_ID")
+    ao_evidence = None
+    if ao_session is not None:
+        try:
+            ao_evidence = ao_delivery_adapter.provider_identity(ao_session, owner)
+        except Exception as exc:
+            raise SessionError(f"AO identity preflight failed; no worktree created: {exc}") from exc
     # Refresh the remote-tracking base on every start; stale bases undermine
     # the branch-backed session contract.
     git("fetch", "origin", "main", cwd=root)
@@ -227,12 +235,24 @@ def start(slug: str, root: Path) -> dict[str, str]:
     # for linked worktrees. Store the tracked relative path in worktree config.
     git("config", "extensions.worktreeConfig", "true", cwd=path)
     git("config", "--worktree", "core.hooksPath", ".githooks", cwd=path)
-    return {
+    result = {
         "worktree": str(path),
         "branch": branch,
         "base": "origin/main",
         "primary_worktree": str(primary),
     }
+    if ao_evidence is not None:
+        try:
+            result["ao_binding"] = ao_delivery_adapter.auto_bind_new(
+                branch, ao_session, path, primary, owner,
+                git("rev-parse", "HEAD", cwd=path), evidence=ao_evidence,
+            )
+        except Exception as exc:
+            raise SessionError(
+                f"AO automatic binding failed; preserve worktree {path} branch {branch}; "
+                f"do not start a second writer: {exc}"
+            ) from exc
+    return result
 
 
 def _session_branch(item: Worktree) -> None:

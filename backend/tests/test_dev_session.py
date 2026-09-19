@@ -26,6 +26,7 @@ def _clean_git_env(monkeypatch):
     for key in list(os.environ):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("AO_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "01a0a9b2-7db0-78a2-a960-cfc652157d21")
 
 
@@ -489,3 +490,55 @@ def test_land_preserves_foreign_refs_worktrees_and_dirty_files(tmp_path):
     assert (root / "README.md").read_text(encoding="utf-8") == "foreign dirty\n"
     assert (root / "scratch.txt").read_text(encoding="utf-8") == "keep me\n"
     assert _run_git(bare, "rev-parse", "refs/heads/main").stdout.strip() == commit
+
+
+def test_desktop_start_never_guesses_ao_owner(tmp_path,monkeypatch):
+    _,root=_temporary_remote(tmp_path)
+    def unexpected(*args,**kwargs):pytest.fail('desktop task queried or bound AO')
+    monkeypatch.setattr(_session.ao_delivery_adapter,'provider_identity',unexpected)
+    monkeypatch.setattr(_session.ao_delivery_adapter,'auto_bind_new',unexpected)
+    result=_session.start('desktop-task',root)
+    assert 'ao_binding' not in result
+
+
+def test_ao_preflight_failure_creates_no_worktree_or_binding(tmp_path,monkeypatch):
+    monkeypatch.setenv('AO_SESSION_ID','standalone-11')
+    def fail(*args):raise ValueError('provider thread mismatch')
+    monkeypatch.setattr(_session.ao_delivery_adapter,'provider_identity',fail)
+    monkeypatch.setattr(_session,'git',lambda *args,**kwargs:pytest.fail('git mutated before identity validation'))
+    with pytest.raises(_session.SessionError,match='no worktree created'):
+        _session.start('ao-task',tmp_path)
+
+
+def test_ao_start_binds_real_creation_receipt_and_clean_baseline(tmp_path,monkeypatch):
+    adapter=_session.ao_delivery_adapter
+    monkeypatch.setenv('AO_SESSION_ID','standalone-11')
+    monkeypatch.setattr(adapter,'ROOT',tmp_path/'ao-state')
+    evidence={'id':'standalone-11','provider_conversation_id':os.environ['CODEX_THREAD_ID'],
+              'conversation_id':'c','active_branch_id':'c:root','controller_generation':'g'}
+    monkeypatch.setattr(adapter,'provider_identity',lambda *args:evidence)
+    _,root=_temporary_remote(tmp_path)
+    result=_session.start('ao-new-task',root)
+    assert result['ao_binding']['stage']=='active'
+    with adapter.database(adapter.ROOT/'delivery.sqlite') as db:
+        row=db.execute('SELECT branch,session,worktree,stage,source FROM tasks').fetchone()
+        assert row[:4]==(result['branch'],'standalone-11',result['worktree'],'active')
+        source=json.loads(row[4])
+        assert source['owner_receipt']['thread_id']==os.environ['CODEX_THREAD_ID']
+        assert source['creation_head']==_session.git('rev-parse','HEAD',cwd=Path(result['worktree']))
+
+
+def test_binding_failure_preserves_created_worktree_and_reports_it(tmp_path,monkeypatch):
+    adapter=_session.ao_delivery_adapter
+    monkeypatch.setenv('AO_SESSION_ID','standalone-11')
+    monkeypatch.setattr(adapter,'provider_identity',lambda *args:{'verified':'identity'})
+    def fail(*args,**kwargs):raise ValueError('identity changed')
+    monkeypatch.setattr(adapter,'auto_bind_new',fail)
+    _,root=_temporary_remote(tmp_path)
+    with pytest.raises(_session.SessionError,match='preserve worktree') as error:
+        _session.start('ao-bind-failed',root)
+    worktrees=[w for w in _session.worktrees(root) if w.path!=root]
+    assert len(worktrees)==1
+    assert str(worktrees[0].path) in str(error.value)
+    assert worktrees[0].branch in str(error.value)
+    assert _session.git('status','--porcelain',cwd=worktrees[0].path)==''

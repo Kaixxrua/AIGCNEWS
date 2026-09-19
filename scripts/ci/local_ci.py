@@ -17,8 +17,8 @@ baseline_sha. The receipt records all overlays. GitHub PR admission is replaced
 by exact local SHA validation; base freshness belongs to the controller.
 Exit 0 = success, 1 = persisted failure/error, 2 = denied or prior failed attempt.
 Consumers must require exit 0, exact SHA, all checks successful and cleanup success. Receipts are
-immutable per repository/SHA/config; restarting an incomplete run FAILS CLOSED,
-reaps only its owned clone, and returns the same durable receipt (no new run).
+immutable per repository/SHA/config; all workers must share state_dir; restarting an incomplete run FAILS CLOSED,
+reaps only its owned job clones, and returns the same durable receipt (no new run).
 """
 from __future__ import annotations
 
@@ -33,8 +33,11 @@ import shlex
 import signal
 import subprocess
 import tarfile
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 import shared_runner_pool as pool
@@ -218,6 +221,7 @@ class Runner:
     def __init__(self, config, state, log):
         self.config, self.state, self.log = config, state, log
         self.name = state['instance']
+        self.progress = lambda steps: None
 
     def lxc(self, *args, data=None, timeout=None):
         return command(['lxc', *args], timeout=timeout or self.config['command_timeout'],
@@ -229,6 +233,7 @@ class Runner:
     def shell(self, script, *, timeout=None):
         return command(['lxc', 'exec', self.name, '--', 'env', '-i',
                         'HOME=/root', 'PATH=/ci/venv/bin:' + self.config['tool_path'],
+                        'GOPROXY=https://goproxy.cn,direct',
                         'bash', '--noprofile', '--norc', '-euo', 'pipefail', '-s'],
                        data=script.encode(), timeout=timeout or self.config['command_timeout'],
                        log=self.log)
@@ -236,13 +241,22 @@ class Runner:
     def admit(self):
         policy = pool.AdaptiveAdmission(settling_seconds=self.config['settling_seconds'])
         deadline = time.monotonic() + self.config['admission_timeout']
+        last_error = ''
         while time.monotonic() < deadline:
-            evidence = pool.sample(self.config['shared_parent'], [], (),
-                                   owner_unit=self.config['shared_unit'])
+            try:
+                evidence = pool.sample(self.config['shared_parent'], [], (),
+                                       owner_unit=self.config['shared_unit'])
+            except (ValueError, OSError, subprocess.SubprocessError) as exc:
+                last_error = str(exc)
+                self.log.write(('Admission evidence unavailable: ' + last_error + '\n').encode())
+                self.log.flush()
+                policy = pool.AdaptiveAdmission(settling_seconds=self.config['settling_seconds'])
+                time.sleep(2)
+                continue
             if policy.decide(1, evidence, time.monotonic()):
                 return evidence
             time.sleep(2)
-        raise TimeoutError('shared pool admission timed out; no runner interrupted')
+        raise TimeoutError('shared pool admission timed out; no runner interrupted; ' + last_error)
 
     def launch(self):
         validate_instance(self.info(self.config['template']), self.config)
@@ -317,7 +331,10 @@ docker info >/dev/null
                        'for i in {1..40}; do docker exec local-ci-postgres pg_isready '
                        '-U aigcnews_test -d aigcnews_test && exit 0; sleep 2; done; exit 1')
         deadline = time.monotonic() + min(job['timeout-minutes'] * 60, self.config['check_timeout'])
-        results = []
+        results = [{'name': step['name'], 'conclusion': 'pending'}
+                   for step in job['steps'] if 'run' in step]
+        self.progress(results)
+        index = 0
         for step in job['steps']:
             if 'run' not in step:
                 continue
@@ -334,11 +351,136 @@ docker info >/dev/null
                 raise TimeoutError(f'{key} timed out')
             self.log.write(('\nSTEP ' + key + ': ' + step['name'] + '\n').encode())
             self.log.flush()
-            self.shell(script, timeout=remaining)
-            results.append({'name': step['name'], 'conclusion': 'success'})
+            result = results[index]
+            result.update(conclusion='running', started_at=time.time())
+            self.progress(results)
+            try:
+                self.shell(script, timeout=remaining)
+                result['conclusion'] = 'success'
+            except BaseException as exc:
+                result.update(conclusion='failure', error=f'{type(exc).__name__}: {exc}')
+                raise
+            finally:
+                result['finished_at'] = time.time()
+                self.progress(results)
+            index += 1
         if not results:
             raise ValueError('empty gate')
         return results
+
+
+@contextmanager
+def admission_lock(root, timeout):
+    """Serialize sample/settle/create/start only; never hold during job checks.
+
+    All local workers for a pool must share state_dir. Waits are bounded and
+    interruptible; after acquiring the lock launch performs fresh pool sampling
+    and restart warmup, including containers started by earlier workers.
+    """
+    with (root / 'admission.lock').open('a') as lock:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('shared admission lock timed out; no automatic replay') from None
+                time.sleep(.2)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+class Progress:
+    """Serialize per-job receipts and aggregate progress within one identity."""
+    def __init__(self, state, receipt, output):
+        self.state, self.receipt, self.output = state, receipt, output
+        self.lock = threading.RLock()
+
+    def publish(self):
+        with self.lock:
+            for check in self.state['checks']:
+                if 'receipt' in check:
+                    atomic_json(Path(check['receipt']), check)
+            atomic_json(self.receipt, self.state)
+            atomic_json(self.output, self.state)
+
+    def update(self, check, **changes):
+        with self.lock:
+            # Step lists are private to Runner; freeze before another step mutates.
+            check.update(json.loads(json.dumps(changes)))
+            check['status'] = check['conclusion']
+            self.publish()
+
+
+def run_job(config, state, check, job, archive, progress):
+    with Path(check['log']).open('ab') as log:
+        runner = Runner(config, {**state, **check}, log)
+        runner.progress = lambda steps: progress.update(check, steps=steps)
+        try:
+            progress.update(check, conclusion='admitting', started_at=time.time())
+            with admission_lock(Path(config['state_dir']), config['admission_timeout']):
+                runner.launch()
+            with progress.lock:
+                state.update(ready=True, ready_at=state.get('ready_at', time.time()))
+                progress.update(check, ready=True, conclusion='running')
+            steps = runner.check(check['id'], job, archive)
+            child = Path(config['shared_parent']) / runner.name
+            oom = int(pool.counters(child / 'memory.events').get('oom_kill', 0))
+            progress.update(check, steps=steps, oom_kill=oom)
+            if oom:
+                raise RuntimeError('job container experienced OOM')
+            if not steps or any(step['conclusion'] != 'success' for step in steps):
+                raise RuntimeError('job steps incomplete')
+            progress.update(check, conclusion='success')
+        except BaseException as exc:  # noqa: BLE001 - preserve failed job and reclaim its clone
+            error = f'{type(exc).__name__}: {exc}'
+            log.write((error + '\n').encode())
+            progress.update(check, conclusion='failure', error=error)
+        finally:
+            try:
+                runner.cleanup()
+                progress.update(check, cleanup='success')
+            except Exception as exc:  # noqa: BLE001 - failed cleanup forbids success
+                progress.update(check, conclusion='error', cleanup='failure', cleanup_error=str(exc))
+            progress.update(check, finished_at=time.time())
+
+
+def recover(config, state, progress):
+    """Reap all recorded clones after interruption; never launch/replay jobs.
+
+    A v1 receipt is still understood, allowing rollout without replacing the
+    identity or accidentally rerunning an existing candidate.
+    """
+    checks = state['checks'] if state.get('schema_version') == 2 else [state]
+    interrupted = state['conclusion'] == 'running'
+    errors = []
+    for check in checks:
+        if 'instance' not in check:
+            continue
+        try:
+            with Path(check['log']).open('ab') as log:
+                Runner(config, {**state, **check}, log).cleanup()
+            if interrupted:
+                check['cleanup'] = 'success'
+                if check.get('conclusion') not in ('success', 'failure', 'error'):
+                    check['conclusion'] = 'interrupted'
+        except Exception as exc:  # noqa: BLE001 - attempt other owned clones too
+            check.update(cleanup='failure', cleanup_error=str(exc))
+            errors.append(str(exc))
+        if check is not state:
+            check['status'] = check['conclusion']
+    if interrupted:
+        state.update(conclusion='interrupted', error='previous attempt interrupted; no automatic replay')
+    if errors:
+        state.update(conclusion='error', cleanup='failure', cleanup_error='; '.join(errors))
+    elif interrupted:
+        state['cleanup'] = 'success'
+    state['status'] = state['conclusion']
+    progress.publish()
+    return 0 if state['status'] == 'success' else 2
 
 
 def execute(repository, sha, output, config):
@@ -349,82 +491,69 @@ def execute(repository, sha, output, config):
         raise ValueError('state directory must be private and controller-owned')
     identity = hashlib.sha256(json.dumps([str(repository), sha, config], sort_keys=True).encode()).hexdigest()
     receipt_path = root / (identity + '.json')
-    # Serialize local launches and recovery. Parent cgroup remains aggregate hard
-    # ceiling even while the existing GitHub autoscaler launches independently.
-    with (root / 'executor.lock').open('a') as lock:
+    with (root / (identity + '.execution.lock')).open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if receipt_path.exists():
             state = json.loads(receipt_path.read_text())
-            with (root / (identity + '.log')).open('ab') as log:
-                Runner(config, state, log).cleanup()
-            if state['conclusion'] == 'running':
-                state.update(conclusion='interrupted', error='previous attempt interrupted; no automatic replay')
-                atomic_json(receipt_path, state)
-            state['status'] = state['conclusion']
-            atomic_json(receipt_path, state)
-            atomic_json(output, state)
-            return 0 if state['conclusion'] == 'success' else 2
-        run_id = uuid.uuid4().hex
-        state = {'schema_version': 1, 'sha': sha, 'repository': str(repository),
-                 'baseline_sha': config['baseline_sha'], 'run_id': run_id,
+            return recover(config, state, Progress(state, receipt_path, output))
+        state = {'schema_version': 2, 'sha': sha, 'repository': str(repository),
+                 'baseline_sha': config['baseline_sha'], 'run_id': uuid.uuid4().hex,
                  'config_sha256': hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
-                 'instance': 'aigcnews-ci-local-' + run_id, 'conclusion': 'running', 'status': 'running',
-                 'ready': False, 'checks': [], 'log': str(root / (identity + '.log')),
-                 'started_at': time.time()}
-        atomic_json(receipt_path, state)
-        atomic_json(output, state)
+                 'conclusion': 'running', 'status': 'running', 'ready': False,
+                 'checks': [], 'log': str(root / (identity + '.log')), 'started_at': time.time()}
+        progress = Progress(state, receipt_path, output)
+        progress.publish()
         with Path(state['log']).open('ab') as log:
-            runner = Runner(config, state, log)
             try:
                 exact_sha(repository, sha)
                 jobs, digest = workflow(repository, sha, config)
                 state['workflow_sha256'] = digest
-                state['checks'] = [{'name': jobs[key]['name'], 'id': key, 'sha': sha,
-                                    'conclusion': 'pending'} for key in JOBS]
-                atomic_json(receipt_path, state)
                 archive = root / (identity + '.tar')
-                # Archive exact Git object without checkout, hooks, filters or credentials.
                 with archive.open('wb') as stream:
                     command(['git', '-C', str(repository), 'archive', '--format=tar', sha], log=stream)
                 verify_archive(archive, tree(repository, sha))
                 control_path = root / (identity + '.controls.tar')
                 state['controls'] = controls_archive(repository, sha, config, control_path)
                 state['controls_archive'] = str(control_path)
-                runner.launch()
-                state.update(ready=True, ready_at=time.time())
-                atomic_json(receipt_path, state)
-                atomic_json(output, state)
-                for check in state['checks']:
-                    check['conclusion'] = 'running'
-                    atomic_json(receipt_path, state)
-                    atomic_json(output, state)
-                    try:
-                        check['steps'] = runner.check(check['id'], jobs[check['id']], archive)
-                        check['conclusion'] = 'success'
-                    except Exception as exc:
-                        check.update(conclusion='failure', error=str(exc))
-                        raise
-                    finally:
-                        atomic_json(receipt_path, state)
-                        atomic_json(output, state)
-                child = Path(config['shared_parent']) / runner.name
-                state['oom_kill'] = int(pool.counters(child / 'memory.events').get('oom_kill', 0))
-                if state['oom_kill']:
-                    raise RuntimeError('candidate container experienced OOM')
-                state['conclusion'] = 'success'
-            except BaseException as exc:  # noqa: BLE001 - durable failure on interruption too
+                job_root = root / (identity + '.jobs')
+                job_root.mkdir(mode=0o700, exist_ok=True)
+                for key in JOBS:
+                    run_id = uuid.uuid4().hex
+                    state['checks'].append({
+                        'name': jobs[key]['name'], 'id': key, 'sha': sha,
+                        'run_id': run_id, 'candidate_run_id': state['run_id'],
+                        'instance': 'aigcnews-ci-local-' + run_id,
+                        'conclusion': 'pending', 'status': 'pending', 'cleanup': 'pending', 'ready': False,
+                        'steps': [], 'log': str(job_root / (key + '.log')),
+                        'receipt': str(job_root / (key + '.json'))})
+                progress.publish()  # Persist ownership of all five clones before any launch.
+                # Five job orchestrators, not a CPU allocation. Every launch still
+                # passes the same measured shared-pool admission and hard ceiling.
+                with ThreadPoolExecutor(max_workers=len(JOBS)) as workers:
+                    futures = [workers.submit(run_job, config, state, check, jobs[check['id']], archive, progress)
+                               for check in state['checks']]
+                    for future in futures:
+                        future.result()
+                state['oom_kill'] = sum(c.get('oom_kill', 0) for c in state['checks'])
+                clean = all(c['cleanup'] == 'success' for c in state['checks'])
+                passed = all(c['conclusion'] == 'success' for c in state['checks'])
+                state['cleanup'] = 'success' if clean else 'failure'
+                state['conclusion'] = 'success' if clean and passed else ('failure' if clean else 'error')
+                failures = [c.get('error') or c.get('cleanup_error') for c in state['checks']
+                            if c['conclusion'] != 'success']
+                if failures:
+                    state['error'] = '; '.join(filter(None, failures))
+                log.writelines((check['id'] + ': ' + check['conclusion'] + ' log=' + check['log']
+                               + ' ' + (check.get('error') or check.get('cleanup_error') or '') + '\n').encode() for check in state['checks'])
+            except BaseException as exc:  # noqa: BLE001 - executor drains workers before final failure
                 state.update(conclusion='failure', error=f'{type(exc).__name__}: {exc}')
                 log.write((state['error'] + '\n').encode())
+                state['cleanup'] = ('success' if all(c.get('cleanup') == 'success' for c in state['checks'])
+                                    else 'failure')
             finally:
-                try:
-                    runner.cleanup()
-                    state['cleanup'] = 'success'
-                except Exception as exc:  # noqa: BLE001 - cleanup errors forbid approval
-                    state.update(conclusion='error', cleanup='failure', cleanup_error=str(exc))
                 state['status'] = state['conclusion']
                 state['finished_at'] = time.time()
-                atomic_json(receipt_path, state)
-                atomic_json(output, state)
+                progress.publish()
         return 0 if state['conclusion'] == 'success' else 1
 
 

@@ -29,12 +29,13 @@ def install(config_path):
     units=Path.home()/'.config/systemd/user';units.mkdir(parents=True,exist_ok=True)
     for role in ('ci','release','mirror','notify'):
         # Explicit path config on host; no production credentials enter candidate CI.
+        interpreter=config.get('notifier_python','/usr/bin/python3') if role=='notify' else '/usr/bin/python3'
         (units/f'aigcnews-local-{role}.service').write_text(f'''[Unit]
 Description=AIGCNEWS local delivery {role}
 After=network-online.target
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 {runtime}/local_delivery.py --config {config_path} {role} --loop
+ExecStart={interpreter} {runtime}/local_delivery.py --config {config_path} {role} --loop
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=30

@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import importlib.util
 import json
+import os
 import re
 import sqlite3
 import subprocess
 import time
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -78,6 +81,97 @@ def bind(db, branch, session, worktree, source, repository, pr=None):
     db.execute("INSERT INTO tasks(branch,session,worktree,source,pr) VALUES(?,?,?,?,?)",
                (branch, session, str(Path(worktree).resolve()), source, pr))
     db.commit()
+
+
+def provider_identity(session, thread_id):
+    """Prove identity using live API context + AO's read-only native ID store.
+
+    The pinned AO API exposes conversationId/activeBranchId, NOT the Codex
+    thread ID. providerTurnId is a turn identifier and must never be parsed as
+    one. Missing/changed schema or evidence is a hard failure, not a fallback.
+    """
+    uuid.UUID(thread_id)
+    if not re.fullmatch(r'[a-zA-Z0-9_-]+',session):raise ValueError('invalid AO session')
+    info=ao_read(session)['session']
+    conversation=ao_read(session,'/conversation?limit=1')
+    if (info.get('id')!=session or info.get('harness')!='codex' or info.get('mode')!='chat'
+            or info.get('isTerminated') is not False
+            or conversation.get('sessionId')!=session or conversation.get('harness')!='codex'
+            or conversation.get('mode')!='chat' or conversation.get('controller') not in ('ready','busy')):
+        raise ValueError('live AO Codex controller unavailable')
+    path=ROOT/'data/ao.db'
+    with contextlib.closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=5)) as native:
+        native.row_factory=sqlite3.Row
+        rows=native.execute("""
+            SELECT s.id, s.harness, s.session_mode, s.is_terminated,
+                   s.provider_conversation_id, s.controller_generation,
+                   c.id AS conversation_id, c.current_session_id, c.active_branch_id,
+                   b.session_id AS branch_session, b.provider_conversation_id AS branch_provider
+              FROM sessions s JOIN conversations c ON c.session_id=s.id AND c.scope='session'
+              JOIN conversation_branches b ON b.id=c.active_branch_id AND b.conversation_id=c.id
+             WHERE s.id=?
+        """,(session,)).fetchall()
+        if len(rows)!=1:raise ValueError('unique AO native identity unavailable')
+        row=dict(rows[0])
+        if (row['harness']!='codex' or row['session_mode']!='chat' or row['is_terminated']
+                or row['current_session_id']!=session or row['branch_session']!=session
+                or row['conversation_id']!=conversation.get('conversationId')
+                or row['active_branch_id']!=conversation.get('activeBranchId')
+                or not row['controller_generation']
+                or row['provider_conversation_id']!=thread_id or row['branch_provider']!=thread_id):
+            raise ValueError('AO provider thread does not match CODEX_THREAD_ID/current branch')
+        owners=native.execute("SELECT id FROM sessions WHERE harness='codex' AND is_terminated=0 "
+                              "AND provider_conversation_id=?",(thread_id,)).fetchall()
+        if len(owners)!=1 or owners[0]['id']!=session:
+            raise ValueError('provider thread has ambiguous AO ownership')
+    return {key:row[key] for key in ('id','provider_conversation_id','controller_generation',
+                                     'conversation_id','active_branch_id')}
+
+
+def auto_bind_new(branch,session,worktree,repository,thread_id,expected_head,*,evidence):
+    """Only a fresh dev_session creation may self-bind; never adopt a legacy writer.
+
+    The creating AO turn may be busy: it is the proven owner, not a handoff.
+    Sending still requires idle. Existing manual bind/activate remain unchanged.
+    """
+    if os.environ.get('AO_SESSION_ID')!=session or os.environ.get('CODEX_THREAD_ID')!=thread_id:
+        raise ValueError('automatic binding requires the creating AO task environment')
+    ownership=peer('delivery_ownership')
+
+    def verify():
+        verify_workspace(worktree,branch,repository)
+        receipt=json.loads(ownership.receipt_path(repository,branch).read_text())
+        if (ownership.resolve_owner(branch,repository)!=thread_id
+                or Path(receipt['worktree']).resolve()!=Path(worktree).resolve()):
+            raise ValueError('creation-time owner/worktree mismatch')
+        if (not re.fullmatch(r'[0-9a-f]{40}',expected_head)
+                or git(worktree,'rev-parse','HEAD')!=expected_head
+                or git(worktree,'rev-parse','origin/main')!=expected_head
+                or git(worktree,'status','--porcelain')):
+            raise ValueError('new task must remain clean at its creation baseline')
+        if provider_identity(session,thread_id)!=evidence:
+            raise ValueError('AO provider identity changed during creation')
+        return receipt
+
+    receipt=verify()
+    source=json.dumps({'schema':'aigcnews.ao-self-binding.v1','source':'dev_session.start',
+                       'owner_receipt':receipt,'provider_identity':evidence,
+                       'creation_head':expected_head},sort_keys=True)
+    with contextlib.closing(database(ROOT/'delivery.sqlite')) as db:
+        db.execute('BEGIN IMMEDIATE')
+        try:
+            # Never overwrite audit/active bindings, even with a claimed matching
+            # environment. Legacy handoff/recovery keeps its explicit path.
+            if db.execute('SELECT 1 FROM tasks WHERE branch=? OR session=?',(branch,session)).fetchone():
+                raise ValueError('existing AO binding requires explicit handoff/recovery')
+            verify()
+            db.execute("INSERT INTO tasks(branch,session,worktree,source,stage) VALUES(?,?,?,?,'active')",
+                       (branch,session,str(Path(worktree).resolve()),source))
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+    return {'session':session,'stage':'active','provider_thread_id':thread_id}
 
 
 def send(db, branch, identity, message, repository, *, read=ao_read, deliver=None,
@@ -363,11 +457,10 @@ def main():
             f"First read {args.repository}/AGENTS.md and docs/git-workflow.md. "
             "Before editing any project file, run scripts/dev_session.py start with a unique task slug "
             "from the repository, preserving your own CODEX_THREAD_ID. Work exclusively in its returned worktree. "
-            f"Immediately register that branch using python3 {Path(__file__).resolve()} bind "
-            "--branch <returned branch> --worktree <returned worktree> --session $AO_SESSION_ID "
-            "--source 'new AO task: dev_session creation receipt'. "
-            "Registration starts held; report the exact creation receipt and wait for coordinator activation "
-            "before implementing. Do not write to main, force push, rebase, or change production/private Godot artifacts. "
+            "dev_session automatically binds a new AO task only after verifying its provider thread ID. "
+            "Require ao_binding.stage=active in its output before implementing; on a binding failure, "
+            "report the error and preserve the returned worktree. Do not guess ownership or create another writer. "
+            "Do not write to main, force push, rebase, or change production/private Godot artifacts. "
             "Requested task for after activation:\n" + prompt)
         env = dict(os.environ, AO_DATA_DIR=str(ROOT / "data"), AO_RUN_FILE=str(ROOT / "running.json"))
         subprocess.run([str(AO), "spawn", "--standalone", "--name", args.name, "--agent", "codex",
