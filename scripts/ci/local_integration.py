@@ -18,7 +18,7 @@ def attested(receipt, sha):
                 and proof.get('status') == proof.get('cleanup') == 'success'
                 and len(checks) == len(CHECKS) and {c.get('id') for c in checks} == CHECKS
                 and all(c.get('sha') == sha and c.get('conclusion') == 'success' for c in checks))
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         return False
 
 
@@ -39,6 +39,9 @@ def complete(db, batch):
 def recover(config, db):
     batch = d.meta(db, 'integration')
     if batch.get('phase') not in ('testing', 'landing'):
+        # Claimed rows can survive a crash while constructing the combination.
+        db.execute("UPDATE tasks SET status='queued' WHERE status='claimed'")
+        db.commit()
         return
     main = d.git(config, 'rev-parse', 'refs/heads/main')
     if attested(batch['receipt'], batch['sha']):

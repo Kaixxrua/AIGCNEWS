@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -176,10 +177,17 @@ def snapshot(config,db):
 
 
 def trusted_run(config, script, args, logfile, timeout):
+    # A timeout must reap descendants before another attempt obtains ownership.
     with Path(logfile).open('a') as log:
-        process=subprocess.run([sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
-                               stdout=log,stderr=subprocess.STDOUT,timeout=timeout,check=False)
-    if process.returncode:
+        with subprocess.Popen([sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
+                              stdout=log,stderr=subprocess.STDOUT,start_new_session=True) as process:
+            try:
+                code = process.wait(timeout=timeout)
+            except BaseException:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                raise
+    if code:
         raise RuntimeError(f'{script} failed; see {logfile}')
 
 
@@ -545,7 +553,16 @@ def main():
     if args.action=='status':print(json.dumps(snapshot(config,db),ensure_ascii=False));return
     with lock(config,args.action):
         if args.action=='release' and meta(db,'release').get('status')=='deploying':
-            meta(db,'release',{**meta(db,'release'),'status':'failed','error':'controller interrupted; inspect production ownership before retry'})
+            from release_progress import read
+            prior = meta(db, 'release')
+            progress = read(config, prior['sha'])
+            production = json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
+            safe = (progress.get('stage') in ('build', 'edge') and not production.get('in_progress')
+                    and prior.get('attempt', 1) < 3)
+            meta(db,'release',{**prior,'status':'retrying' if safe else 'failed',
+                              'retry_at':time.time()+30,
+                              'error':'controller interrupted; safe-stage recovery' if safe else
+                                      'controller interrupted; inspect production ownership before retry'})
         while True:
             try:
                 if args.action=='release':
