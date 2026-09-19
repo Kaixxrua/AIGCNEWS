@@ -77,6 +77,39 @@ class PostgresXWatchAccountRepository:
                 )
                 return [dict(row) for row in cursor.fetchall()]
 
+    def list_public_x_watch_accounts(self) -> list[dict[str, Any]]:
+        """Persistent enabled watchlist with the latest collected X nickname.
+
+        Resolve authors by their own URL, never by retweeted_by. There is no
+        timeline cutoff, so quiet accounts keep their name and remain selectable.
+        """
+        self._seed_default_x_watch_accounts()
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    r"""
+                    WITH authors AS (
+                        SELECT LOWER(SUBSTRING(url FROM
+                            '^https?://(?:www[.])?(?:x|twitter)[.]com/([^/]+)/status/')) AS handle,
+                            BTRIM(author_name) AS nickname, published_at, id
+                        FROM documents
+                        WHERE source = 'x' AND NULLIF(BTRIM(author_name), '') IS NOT NULL
+                    ), latest AS (
+                        SELECT DISTINCT ON (handle) handle, nickname
+                        FROM authors
+                        ORDER BY handle, published_at DESC NULLS LAST, id DESC
+                    )
+                    SELECT a.screen_name,
+                           COALESCE(n.nickname, NULLIF(BTRIM(a.display_name), ''),
+                                    '@' || a.screen_name) AS display_name
+                    FROM x_watch_accounts a
+                    LEFT JOIN latest n ON n.handle = LOWER(a.screen_name)
+                    WHERE a.enabled = TRUE
+                    ORDER BY a.sort_order, a.screen_name, a.id
+                    """
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def get_x_watch_account(self, account_id: int) -> dict[str, Any] | None:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

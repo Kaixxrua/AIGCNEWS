@@ -18,6 +18,8 @@ class XWatchAccountReader(Protocol):
 
     def list_x_watch_accounts(self) -> list[dict[str, Any]]: ...
 
+    def list_public_x_watch_accounts(self) -> list[dict[str, Any]]: ...
+
     def get_x_watch_account(
         self,
         account_id: int,

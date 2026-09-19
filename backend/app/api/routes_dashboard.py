@@ -437,7 +437,7 @@ async def get_x_recent(
         )
     )
     accounts_task = (
-        asyncio.to_thread(watch_accounts.list_x_watch_accounts)
+        asyncio.to_thread(watch_accounts.list_public_x_watch_accounts)
         if watch_accounts is not None
         else asyncio.sleep(0, result=[])
     )
@@ -448,6 +448,10 @@ async def get_x_recent(
     next_cursor = _x_recent_cursor_from_doc(items[-1]) if has_more and items else None
     return {
         "items": items,
+        "accounts": [
+            {"handle": row["screen_name"], "displayName": row["display_name"]}
+            for row in account_rows
+        ],
         "total": len(items),
         "period": "daily",
         "window_hours": hours,

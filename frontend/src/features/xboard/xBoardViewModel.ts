@@ -106,14 +106,16 @@ export const followedAccountHandle = (doc: TopDoc): string => (
   retweetedByHandle(doc).toLowerCase() || extractXHandle(doc.url)
 )
 
-/** 关注筛选的展示名：后端关注列表优先，旧数据回退作者昵称或 @handle。 */
+/** 关注筛选优先显示 X 本人的昵称；转贴不能借用原作者的昵称。 */
 export const followedAccountDisplayName = (doc: TopDoc): string => {
+  const handle = followedAccountHandle(doc)
+  if (!handle) return ''
+  const nickname = typeof doc.author_name === 'string' ? doc.author_name.trim() : ''
+  if (handle === extractXHandle(doc.url) && nickname) return nickname
   const configured = typeof doc.followed_account_name === 'string'
     ? doc.followed_account_name.trim()
     : ''
   if (configured) return configured
-  const handle = followedAccountHandle(doc)
-  if (!handle) return ''
   if (handle === extractXHandle(doc.url)) {
     return authorDisplayName(doc) || `@${handle}`
   }

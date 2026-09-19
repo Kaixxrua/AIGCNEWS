@@ -90,6 +90,7 @@ export const dashboardApi: DashboardApi = {
       items,
       total: response.data?.total ?? items.length,
       windowHours: response.data?.window_hours ?? hours,
+      accounts: Array.isArray(response.data?.accounts) ? response.data.accounts : [],
       hasMore: (response.data?.has_more ?? false) && nextCursor !== null,
       nextCursor,
     }

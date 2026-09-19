@@ -48,6 +48,7 @@ export interface DashboardSnapshotDatesWireResponse {
 }
 
 export interface DashboardRecentXWireResponse {
+  accounts?: { handle: string; displayName: string }[] | null
   items?: TopDoc[] | null
   total?: number | null
   window_hours?: number | null
@@ -93,6 +94,7 @@ export interface XSnapshotRebuildResponse {
 }
 
 export interface DashboardRecentX {
+  accounts?: { handle: string; displayName: string }[]
   items: TopDoc[]
   total: number
   windowHours: number

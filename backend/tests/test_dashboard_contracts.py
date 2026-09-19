@@ -552,7 +552,7 @@ def test_x_recent_adds_watchlist_display_name_without_exposing_account_row() -> 
             ]
 
     class FakeWatchAccounts:
-        def list_x_watch_accounts(self):  # type: ignore[no-untyped-def]
+        def list_public_x_watch_accounts(self):  # type: ignore[no-untyped-def]
             return [
                 {
                     "screen_name": "openai",
@@ -574,6 +574,10 @@ def test_x_recent_adds_watchlist_display_name_without_exposing_account_row() -> 
     item = response.json()["items"][0]
     assert item["followed_account_name"] == "OpenAI 中文"
     assert "note" not in item
+    assert response.json()["accounts"] == [{"handle": "openai", "displayName": "OpenAI 中文"}]
+    empty = TestClient(app).get("/api/dashboard/x/recent?days_back=30").json()
+    assert empty["items"] == []
+    assert empty["accounts"] == response.json()["accounts"]
 
 
 def test_x_recent_malformed_cursor_falls_back_to_first_page() -> None:

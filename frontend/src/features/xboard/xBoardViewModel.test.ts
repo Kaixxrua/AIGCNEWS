@@ -89,7 +89,12 @@ describe('xBoardViewModel', () => {
     expect(authorDisplayName({})).toBe('')
   })
 
-  it('uses the configured followed-account display name with safe fallbacks', () => {
+  it('prefers the X nickname over configured names without borrowing retweeted authors', () => {
+    expect(followedAccountDisplayName({
+      followed_account_name: 'thsottiaux',
+      author_name: 'Tibo',
+      url: 'https://x.com/thsottiaux/status/1',
+    })).toBe('Tibo')
     expect(followedAccountDisplayName({
       followed_account_name: 'OpenAI 中文',
       retweeted_by: 'openai',

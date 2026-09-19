@@ -1,8 +1,8 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
-import { clampPage, followedAccountDisplayName, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
+import { clampPage, extractXHandle, followedAccountDisplayName, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
 
 export interface XBoardApi {
   fetchRecentX: DashboardApi['fetchRecentX']
@@ -53,6 +53,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const selectedDate = ref(today)
   const availableDates = ref<string[]>([])
   const docs = ref<TopDoc[]>([])
+  const watchAccounts = ref<{ handle: string; displayName: string }[] | null>(null)
   const loading = ref(false)
   const deleting = ref(false)
   const errorMsg = ref('')
@@ -61,16 +62,32 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   // 以“排除集”保存选择：初始为空即默认全部关注；后续加载出现的新账号也
   // 会自然保持关注，不需要在每次请求后补写选中集。
   const unfollowedAccounts = ref<Set<string>>(new Set())
+  const preferenceKey = 'aigcnews.x.unfollowedAccounts'
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(preferenceKey) || '[]')
+    if (Array.isArray(saved)) unfollowedAccounts.value = new Set(saved.filter((v): v is string => typeof v === 'string'))
+  } catch { /* Storage may be unavailable in private browsing. */ }
+  watch(unfollowedAccounts, (value) => {
+    try { localStorage.setItem(preferenceKey, JSON.stringify([...value])) } catch { /* Keep in-memory selection. */ }
+  }, { flush: 'sync' })
   const page = ref(1)
 
   // 选中日期 → 整数天位移（未来日期已被 onDateChange 拦截，这里夹取兜底）
   const daysBack = computed(() => Math.max(0, dayDiff(today, selectedDate.value)))
 
-  const availableAccounts = computed(() => Array.from(new Set(
+  const availableAccounts = computed(() => watchAccounts.value?.map((account) => account.handle) ?? Array.from(new Set(
     docs.value.map(followedAccountHandle).filter(Boolean),
   )).sort((a, b) => a.localeCompare(b)))
   const availableAccountOptions = computed(() => {
+    if (watchAccounts.value !== null) return watchAccounts.value
     const labels = new Map<string, string>()
+    // API 按时间倒序返回；同一账号采用最新可用昵称，覆盖转贴上的后台备注名。
+    const nicknames = new Map<string, string>()
+    for (const doc of docs.value) {
+      const author = extractXHandle(doc.url)
+      const nickname = doc.author_name?.trim()
+      if (author && nickname && !nicknames.has(author)) nicknames.set(author, nickname)
+    }
     for (const doc of docs.value) {
       const handle = followedAccountHandle(doc)
       if (!handle) continue
@@ -82,7 +99,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
       }
     }
     return availableAccounts.value
-      .map((handle) => ({ handle, displayName: labels.get(handle) || `@${handle}` }))
+      .map((handle) => ({ handle, displayName: nicknames.get(handle) || labels.get(handle) || `@${handle}` }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName))
   })
   const followedAccounts = computed(() => availableAccounts.value.filter(
@@ -90,6 +107,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   ))
   const visibleDocs = computed(() => docs.value.filter((doc) => {
     const handle = followedAccountHandle(doc)
+    if (watchAccounts.value !== null && !availableAccounts.value.includes(handle)) return false
     // 无法识别归属账号的旧数据不静默丢弃。
     return !handle || !unfollowedAccounts.value.has(handle)
   }))
@@ -127,6 +145,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
           cacheBuster: Date.now(),
         })
         if (!isActive.value || request !== generation) return
+        if (result.accounts !== undefined) watchAccounts.value = result.accounts
         pages.push(result.items)
         // 首批到达即渲染；后续 keyset 页在后台渐进合并，避免大窗口一直空转。
         docs.value = mergePagedTweets(pages)

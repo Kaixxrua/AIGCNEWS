@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
 import type { DashboardRecentX } from '@/services/dashboard/dashboardContracts'
 
@@ -18,6 +18,53 @@ const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
 })
 
 describe('useXBoardController', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('keeps the backend watchlist on empty windows and remembers personal exclusions', async () => {
+    const accounts = [{ handle: 'thsottiaux', displayName: 'Tibo' }, { handle: 'quiet', displayName: 'Quiet Account' }]
+    const api = createApi({ fetchRecentX: vi.fn(async () => ({
+      items: [doc('x:1', 'https://x.com/outsider/status/1', 1)],
+      accounts, total: 1, windowHours: 24, hasMore: false, nextCursor: null,
+    })) })
+    const controller = useXBoardController({ api })
+    await controller.load()
+    expect(controller.availableAccountOptions.value).toEqual(accounts)
+    expect(controller.followedAccounts.value).toEqual(['thsottiaux', 'quiet'])
+    controller.toggleFollowAccount('thsottiaux')
+    vi.mocked(api.fetchRecentX).mockResolvedValue({ items: [], accounts, total: 0, windowHours: 24, hasMore: false, nextCursor: null })
+    const restored = useXBoardController({ api })
+    await restored.load()
+    expect(restored.availableAccountOptions.value).toEqual(accounts)
+    expect(restored.followedAccounts.value).toEqual(['quiet'])
+    restored.followAllAccounts()
+    expect(JSON.parse(localStorage.getItem('aigcnews.x.unfollowedAccounts')!)).toEqual([])
+    controller.dispose()
+    restored.dispose()
+  })
+
+  it('shows Tibo for thsottiaux even when a newer retweet carries a configured handle', async () => {
+    const api = createApi({
+      fetchRecentX: vi.fn(async () => ({
+        items: [
+          doc('x:3', 'https://x.com/other/status/3', 3, {
+            retweeted_by: 'thsottiaux', author_name: 'Other Person', followed_account_name: 'thsottiaux',
+          }),
+          doc('x:2', 'https://x.com/thsottiaux/status/2', 2, {
+            author_name: 'Tibo', followed_account_name: 'thsottiaux',
+          }),
+          doc('x:1', 'https://x.com/thsottiaux/status/1', 1, { author_name: 'Old nickname' }),
+        ],
+        total: 3, windowHours: 24, hasMore: false, nextCursor: null,
+      })),
+    })
+    const controller = useXBoardController({ api })
+    await controller.load()
+    expect(controller.availableAccountOptions.value).toEqual([{ handle: 'thsottiaux', displayName: 'Tibo' }])
+    expect(controller.followedAccounts.value).toEqual(['thsottiaux'])
+    controller.toggleFollowAccount('thsottiaux')
+    expect(controller.visibleDocs.value).toEqual([])
+  })
+
   it('defaults to today (rolling 24h window) and loads tweets grouped by handle', async () => {
     const api = createApi()
     const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })

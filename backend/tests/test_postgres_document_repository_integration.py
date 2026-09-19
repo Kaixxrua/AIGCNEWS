@@ -44,6 +44,39 @@ def _insert_document(repository: Any, doc_id: str) -> None:
     )
 
 
+def test_public_x_watchlist_keeps_quiet_accounts_and_uses_latest_real_nickname(
+    postgres_documents: tuple[Any, Any],
+) -> None:
+    from backend.app.repositories.postgres_x_watch_repository import PostgresXWatchAccountRepository
+
+    documents, database = postgres_documents
+    accounts = PostgresXWatchAccountRepository(database)
+    created = []
+    try:
+        for handle, enabled in (("thsottiaux", True), ("quiet", True), ("disabled", False)):
+            created.append(accounts.create_x_watch_account({"screen_name": handle, "display_name": handle, "enabled": enabled}))
+        for doc_id, handle, nickname, published in (
+            ("it:x-name-old", "thsottiaux", "Old Name", "2020-01-01T00:00:00Z"),
+            ("it:x-name-new", "thsottiaux", "Tibo", "2020-01-02T00:00:00Z"),
+            ("it:x-name-rt", "other", "Other Author", "2020-01-03T00:00:00Z"),
+        ):
+            documents.upsert_document({
+                "id": doc_id, "source": "x", "title": "test", "url": f"https://x.com/{handle}/status/1",
+                "author_name": nickname, "published_at": published,
+                "summary": "test", "published_date": published[:10], "tags": [],
+                "retweeted_by": "thsottiaux" if handle == "other" else None,
+            })
+        labels = {row["screen_name"]: row["display_name"] for row in accounts.list_public_x_watch_accounts()}
+        assert labels["thsottiaux"] == "Tibo"
+        assert "quiet" in labels
+        assert "disabled" not in labels
+    finally:
+        for account in created:
+            accounts.delete_x_watch_account(account["id"])
+        with database.transaction() as connection:
+            connection.execute("DELETE FROM documents WHERE id IN ('it:x-name-old', 'it:x-name-new', 'it:x-name-rt')")
+
+
 def _insert_rank_snapshot(database: Any, doc_id: str) -> None:
     with database.transaction() as connection:
         connection.execute(

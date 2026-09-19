@@ -6,6 +6,11 @@ vi.mock('../http/apiClient', () => ({ api: transport }))
 import { dashboardApi } from './dashboardApi'
 
 describe('Dashboard API contract', () => {
+  it('keeps the persistent watchlist when the recent window has no tweets', async () => {
+    const accounts = [{ handle: 'thsottiaux', displayName: 'Tibo' }]
+    transport.get.mockResolvedValueOnce({ data: { items: [], accounts } })
+    expect((await dashboardApi.fetchRecentX({})).accounts).toEqual(accounts)
+  })
   beforeEach(() => {
     transport.get.mockReset()
     transport.post.mockReset()
