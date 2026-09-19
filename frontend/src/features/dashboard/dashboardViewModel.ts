@@ -16,6 +16,8 @@ import { XLogoIcon } from '@/components/icons/XLogoIcon'
 export interface TopDoc {
   id?: number | string
   title?: string
+  /** Repository short description, never README content. */
+  description?: string
   description_zh?: string
   description_en?: string
   daily_star_growth?: number
