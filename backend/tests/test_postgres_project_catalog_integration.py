@@ -355,6 +355,8 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any, catalog_clock: tup
     assert first["full_name"] == "acme/alpha"
     assert first["url"] == "https://github.com/acme/alpha"
     assert first["description"] == "Local RAG workspace"
+    assert first["description_zh"] == "本地知识库"
+    assert "description_en" in first
     assert first["language"] == "Python"
     assert first["topics_json"] == '["rag", "knowledge-base"]'
     assert first["stars"] == 1200

@@ -4,10 +4,16 @@ import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadCatalog } from '@/features/ui-library/catalog'
 
+vi.mock('@vueuse/core', async (original) => {
+  const actual = await original<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return { ...actual, useElementVisibility: () => ref(true) }
+})
+
 vi.mock('@/features/ui-library/catalog', () => ({
   loadCatalog: vi.fn().mockResolvedValue([
     { id: 'example', name: { zh: '示例组件', en: 'Example' }, poster_url: '/ui-library/posters/example.webp' },
-    { id: 'featured', name: { zh: '精选组件', en: 'Featured' }, poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
+    { id: 'featured', name: { zh: '精选组件', en: 'Featured' }, clip_url: '/ui-library/clips/featured.mp4', poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
   ]),
 }))
 
@@ -102,6 +108,8 @@ describe('DashboardView', () => {
   it('loads the total catalog count and selects a real editorial preview', async () => {
     const wrapper = await mountView()
     expect(wrapper.get('.overview-stub').attributes('data-count')).toBe('2')
+    expect(wrapper.get('.ui-inspiration video').attributes('src')).toBe('/ui-library/clips/featured.mp4')
+    await wrapper.get('.ui-inspiration video').trigger('error')
     expect(wrapper.get('.ui-inspiration img').attributes('src')).toBe('/ui-library/posters/featured.webp')
     await wrapper.get('.ui-inspiration img').trigger('error')
     expect(wrapper.find('.ui-inspiration img').exists()).toBe(false)

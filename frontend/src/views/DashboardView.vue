@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { useDocumentVisibility, useElementVisibility, usePreferredReducedMotion } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -21,6 +22,14 @@ const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
 const uiPreview = ref<UiTemplate | null>(null)
 const previewFailed = ref(false)
+const clipFailed = ref(false)
+const previewElement = ref<HTMLElement>()
+const previewVisible = useElementVisibility(previewElement)
+const active = ref(true)
+onActivated(() => { active.value = true })
+onDeactivated(() => { active.value = false })
+const visibility = useDocumentVisibility()
+const motion = usePreferredReducedMotion()
 const previewName = computed(() => uiPreview.value?.name[locale.value.startsWith('zh') ? 'zh' : 'en'] ?? '')
 const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
@@ -63,7 +72,9 @@ onMounted(async () => {
   try {
     const items = await loadCatalog(uiCatalogController.signal)
     uiCount.value = items.length
-    uiPreview.value = items.find(item => item.poster_url && item.editorial) ?? items.find(item => item.poster_url) ?? null
+    const clips = items.filter(item => item.clip_url && item.poster_url)
+    const candidates = clips.length ? clips : items.filter(item => item.poster_url)
+    uiPreview.value = candidates[Math.floor(Math.random() * candidates.length)] ?? null
   } catch {
     // 目录不可用时显示未知，不把加载失败误报为零。
   } finally {
@@ -118,8 +129,9 @@ onBeforeUnmount(() => uiCatalogController.abort())
         </div>
         <RouterLink :to="uiPreview ? { name: 'ui-library', params: { id: uiPreview.id } } : { name: 'ui-library' }" class="ui-inspiration">
           <div class="ui-inspiration__heading"><span>{{ t('dashboard.editorial.inspiration') }}</span><ArrowRight :size="16" /></div>
-          <div class="ui-inspiration__preview">
-            <img v-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
+          <div ref="previewElement" class="ui-inspiration__preview">
+            <video v-if="uiPreview?.clip_url && !clipFailed && active && previewVisible && motion !== 'reduce' && visibility === 'visible'" :src="uiPreview.clip_url" :poster="uiPreview.poster_url" :aria-label="previewName" autoplay muted loop playsinline @error="clipFailed = true" />
+            <img v-else-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
             <span v-else class="ui-inspiration__fallback">UI / {{ t('dashboard.editorial.explore') }}</span>
           </div>
           <div class="ui-inspiration__caption"><span>{{ previewName || t('dashboard.editorial.explore') }}</span><span>UI LIBRARY ↗</span></div>
@@ -134,13 +146,13 @@ onBeforeUnmount(() => uiCatalogController.abort())
   --paper: #f3f2ec; --paper-light: #fffefa; --ink: #10131e; --muted: #666b70;
   --acid: #c8fc4c; --acid-soft: #f0f8d8; --rule: #e5e3dd;
   --sidebar-width: 24%; --column-gap: 14px;
-  position: relative; isolation: isolate; padding: 22px 9px 8px; overflow-y: auto;
+  position: relative; isolation: isolate; padding: 22px 12px 14px; overflow: visible;
   color: var(--ink); background: transparent; font-family: Inter, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
 }
 .dashboard-page::before, .dashboard-page::after { content: ''; position: absolute; z-index: -1; top: 0; bottom: 0; border: 1px solid var(--rule); border-radius: 12px; background: var(--paper); pointer-events: none; }
 .dashboard-page::before { left: 0; right: calc(var(--sidebar-width) + var(--column-gap) - 1px); }
 .dashboard-page::after { right: 0; width: var(--sidebar-width); }
-.dashboard-heading { display: flex; align-items: center; height: 80px; gap: 20px; padding: 0 calc(var(--sidebar-width) + var(--column-gap) + 12px) 0 20px; margin-bottom: 23px; }
+.dashboard-heading { display: flex; align-items: center; min-height: 80px; gap: 20px; padding: 0 calc(var(--sidebar-width) + var(--column-gap) + 12px) 0 20px; margin-bottom: 23px; }
 .dashboard-heading__copy { flex: 0 0 290px; min-width: 0; }
 .dashboard-heading h1 { margin: 0 0 4px; font-size: 40px; line-height: 1.2; font-weight: 800; letter-spacing: -.035em; }
 .dashboard-heading p { color: #51545b; font-size: 20px; line-height: 1.4; }
@@ -159,13 +171,14 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.calendar-day--active) { width: 30px; justify-self: center; background: var(--acid); box-shadow: none; border-radius: 7px; }
 .dashboard-sidebar :deep(.snapshot-dot) { display: none; }
 .dashboard-error { padding: 12px; margin-bottom: 16px; color: var(--tone-coral); border: 1px solid currentColor; border-radius: 8px; }
-.digest-card { position: relative; isolation: isolate; overflow: hidden; padding: 22px 20px 18px; height: 186px; border-radius: 11px; color: #f3f5ef; background: radial-gradient(ellipse at 100% 100%, #272b26, transparent 65%), #141917; }
+.digest-card { position: relative; isolation: isolate; overflow: hidden; padding: 22px 20px 18px; min-height: 186px; border-radius: 11px; color: #f3f5ef; background: radial-gradient(ellipse at 100% 100%, #272b26, transparent 65%), #141917; }
 .digest-heading { display: flex; gap: 12px; align-items: center; }
 .digest-heading > svg { color: #cefc50; flex-shrink: 0; }
 .digest-heading h2 { font-size: 22px; font-weight: 750; letter-spacing: .02em; }
 .digest-edition { position: absolute; right: 20px; top: 20px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; color: #c1c5bf; font-size: 10px; }
-.digest-card p { position: relative; z-index: 1; max-width: 270px; font-size: 14px; line-height: 1.65; color: #c5cac4; margin: 16px 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.digest-card p { position: relative; z-index: 1; max-width: none; font-size: 14px; line-height: 1.65; color: #c5cac4; margin: 16px 0 100px; }
 .digest-cta { position: absolute; bottom: 18px; left: 20px; z-index: 1; display: inline-flex; align-items: center; gap: 12px; padding: 8px 19px; border-radius: 7px; background: #cefc50; color: #12190a; font-size: 14px; line-height: 20px; font-weight: 750; }
+.digest-card :deep(.digest-geometry) { width: 150px; height: 129px; right: -8px; bottom: -15px; }
 .digest-cta:hover { background: #e0ff80; }
 /* Keep the original hard-edged identity within the reference layout. */
 .dashboard-page::before, .dashboard-page::after { border-color: var(--rule-strong); border-radius: 8px; }
@@ -185,7 +198,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .ui-inspiration { display: grid; grid-template-columns: 90px minmax(0, 1fr); grid-template-rows: 24px 1fr; column-gap: 14px; height: 94px; padding: 12px 15px; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); }
 .ui-inspiration__heading { grid-column: 2; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 650; }
 .ui-inspiration__preview { grid-column: 1; grid-row: 1 / 3; overflow: hidden; border-radius: 7px; background: var(--acid-soft); }
-.ui-inspiration__preview img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
+.ui-inspiration__preview video, .ui-inspiration__preview img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s ease; }
 .ui-inspiration:hover img { transform: scale(1.04); }
 .ui-inspiration__fallback { display: grid; height: 100%; place-items: center; color: var(--muted); font-size: 10px; }
 .ui-inspiration__caption { display: flex; flex-direction: column; justify-content: center; gap: 5px; font-size: 12px; color: var(--muted); min-width: 0; }
@@ -201,12 +214,13 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading p { font-size: 17px; }
   .digest-heading h2 { font-size: 18px; }
   .digest-edition { font-size: 8px; right: 12px; }
-  .digest-card p { font-size: 12px; max-width: 200px; }
+  .digest-card p { font-size: 12px; }
   .integration-card { padding: 10px; gap: 7px; }
   .integration-card > span { font-size: 10px; }
 }
 @media (max-width: 1199px) {
   .dashboard-page { --sidebar-width: 28%; }
+  .integration-grid { grid-template-columns: minmax(0, 1fr); }
   .dashboard-heading { height: auto; min-height: 125px; flex-shrink: 0; flex-wrap: wrap; gap: 14px; }
   .dashboard-heading__copy { flex-basis: 100%; }
   .dashboard-heading :deep(.stat-strip) { flex-basis: 100%; }
@@ -222,5 +236,5 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .sidebar-motto { display: none; }
 }
 @media (max-width: 539px) { .dashboard-sidebar { display: flex; } }
-@media (prefers-reduced-motion: reduce) { .ui-inspiration__preview img { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ui-inspiration__preview video, .ui-inspiration__preview img { transition: none; } }
 </style>

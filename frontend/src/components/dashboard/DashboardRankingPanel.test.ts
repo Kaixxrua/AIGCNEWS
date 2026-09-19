@@ -54,12 +54,12 @@ describe('mobile ranking reading', () => {
     const panel = await render()
     const docs = Array.from({ length: 10 }, (_, i) => ({
       id: i, source: 'github', title: `owner/project-${i}`,
-      url: `https://github.com/owner/project-${i}`, summary: `Project description ${i}`, stars: 1000 + i,
+      url: `https://github.com/owner/project-${i}`, summary: `Raw README ${i}`, description_zh: `项目简介 ${i}`, stars: 1000 + i,
     }))
     await panel.setProps({ activeTab: 'github', tabList: docs })
     expect(panel.findAll('.ranking-row--featured')).toHaveLength(3)
     expect(panel.findAll('.ranking-link').map(link => link.attributes('href'))).toEqual(docs.map(doc => doc.url))
-    expect(panel.findAll('.ranking-summary').map(el => el.text())).toEqual(docs.map(doc => doc.summary))
+    expect(panel.findAll('.ranking-summary').map(el => el.text())).toEqual(docs.map(doc => doc.description_zh))
     const avatar = panel.get('.ranking-avatar img')
     expect(avatar.attributes('src')).toBe('https://github.com/owner.png?size=128')
     await avatar.trigger('error')
@@ -110,5 +110,26 @@ describe('mobile ranking reading', () => {
     expect(panel.get('.ranking-link').attributes('href')).toBe(tweet.url)
     expect(panel.get('.ranking-title').text()).toBe(tweet.title)
     expect(panel.find('.ranking-summary').exists()).toBe(false)
+  })
+})
+
+describe('enriched GitHub ranking', () => {
+  it('switches enriched descriptions with locale and shows daily star growth', async () => {
+    const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README',
+      description_zh: '富化中文简介', description_en: 'Enriched English summary',
+      daily_star_growth: 514, daily_growth_available: true })
+    await panel.setProps({ activeTab: 'github' })
+    expect(panel.get('.ranking-summary').text()).toBe('富化中文简介')
+    expect(panel.get('.ranking-growth').text()).toContain('+514')
+    setAppLocale('en-US')
+    await nextTick()
+    expect(panel.get('.ranking-summary').text()).toBe('Enriched English summary')
+    expect(panel.text()).not.toContain('Raw README')
+  })
+  it('does not substitute raw README or invent unavailable growth', async () => {
+    const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README' })
+    await panel.setProps({ activeTab: 'github' })
+    expect(panel.text()).not.toContain('Raw README')
+    expect(panel.find('.ranking-growth').exists()).toBe(false)
   })
 })

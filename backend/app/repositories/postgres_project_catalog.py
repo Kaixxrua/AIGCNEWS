@@ -866,9 +866,14 @@ class PostgresProjectCatalogRepository:
             enrichment_join = (
                 " LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id"
             )
+        description_columns = (
+            "ge.description_zh, ge.description_en"
+            if enriched_only else "NULL AS description_zh, NULL AS description_en"
+        )
         params.append(limit)
         sql = f"""
             SELECT c.repo_id, c.full_name, c.title, c.url, c.description,
+                   {description_columns},
                    (SELECT '/api/projects/github/logo/' || c.repo_id
                     FROM github_project_logos gl WHERE gl.repo_id = c.repo_id
                     AND gl.content IS NOT NULL) AS image_url,
