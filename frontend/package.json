@@ -8,7 +8,7 @@
     "predev": "npm run build:ui-previews",
     "prebuild": "npm run build:ui-previews",
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/prepare-scene-delivery.mjs && vite build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json",
     "lint": "eslint src --no-warn-ignored",
     "format": "prettier --write src",
