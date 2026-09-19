@@ -197,6 +197,12 @@ fi
 
 # 3. 前端暂存变更：类型检查 + 受影响测试快筛（全量单测留给 CI）。
 if [[ "$frontend_changed" == "1" ]]; then
+  trusted_preflight="$HOME/.local/lib/aigcnews-local-delivery/local_preflight.py"
+  if [[ "$(git config --bool --get aigcnews.preflightReuse || true)" == "true" && -f "$trusted_preflight" ]]; then
+    echo "[pre-commit] 暂存树可信前端预验证（正式 CI 可复用）"
+    /usr/bin/python3 "$trusted_preflight" --repository "$repo_root" --jobs frontend-build
+    exit 0
+  fi
   echo "[pre-commit] 前端类型检查"
   (cd frontend && npx vue-tsc --noEmit)
   # vitest related 追踪模块依赖图，只跑与暂存文件相关的测试；

@@ -1310,7 +1310,7 @@ def test_top_route_github_metrics_doc_shape_is_wire_compatible() -> None:
     github_hot = FakeGitHubHotReader(
         {
             today: [
-                _github_metric_row(),
+                _github_metric_row(description_zh="富化中文简介", description_en="Enriched English summary"),
                 _github_metric_row(
                     repo_id="owner/other",
                     full_name="owner/other",
@@ -1343,6 +1343,8 @@ def test_top_route_github_metrics_doc_shape_is_wire_compatible() -> None:
     assert first["stars"] == 12000
     assert first["language"] == "Python"
     assert first["summary"] == "LLM agent framework"
+    assert first["description_zh"] == "富化中文简介"
+    assert first["description_en"] == "Enriched English summary"
     assert first["tags"] == ["llm", "agents"]
     # 既有语义字段：raw_score 兜底取日增，score 承载 hot_score，名次连续
     assert first["raw_score"] == 514.0

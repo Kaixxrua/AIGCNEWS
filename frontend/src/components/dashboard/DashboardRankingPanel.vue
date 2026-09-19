@@ -28,11 +28,14 @@ const props = defineProps<{
   sourceStatus: SourceStatusMap
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const summary = (doc: TopDoc) => doc.source === 'github'
+  ? (locale.value.startsWith('zh') ? doc.description_zh : doc.description_en)?.trim() || t('projects.fallbackProject')
+  : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
 
-const hasDistinctSummary = (doc: TopDoc) => Boolean(doc.summary?.trim())
-  && doc.summary?.replace(/\s+/g, ' ').trim() !== doc.title?.replace(/\s+/g, ' ').trim()
+const hasDistinctSummary = (doc: TopDoc) => Boolean(summary(doc)?.trim())
+  && summary(doc)?.replace(/\s+/g, ' ').trim() !== doc.title?.replace(/\s+/g, ' ').trim()
 
 const emit = defineEmits<{
   selectSource: [key: TabKey]
@@ -85,8 +88,8 @@ const boardDateHint = computed(() => {
             <RankingAvatar :doc="doc" />
             <div class="ranking-body min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="ranking-title min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="ranking-badges flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border ranking-source-badge" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
-              <p v-if="hasDistinctSummary(doc)" class="ranking-summary">{{ doc.summary }}</p>
-              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span><span v-if="doc.language" class="badge bg-card text-stone-500 border border-stone-200">{{ doc.language }}</span><span v-for="tag in getModuleTags(doc)" :key="tag" class="badge bg-card text-stone-500 border border-stone-200">{{ tag }}</span></div>
+              <p v-if="hasDistinctSummary(doc)" class="ranking-summary">{{ summary(doc) }}</p>
+              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span><span v-if="doc.language" class="badge bg-card text-stone-500 border border-stone-200">{{ doc.language }}</span><span v-for="tag in getModuleTags(doc)" :key="tag" class="badge bg-card text-stone-500 border border-stone-200">{{ tag }}</span></div>
             </div>
             <ArrowUpRight v-if="doc.url" class="ranking-arrow" :size="18" />
           </a>
@@ -97,6 +100,9 @@ const boardDateHint = computed(() => {
 </template>
 
 <style scoped>
+.ranking-growth { color: #53701b; white-space: nowrap; font-size: 11px; font-weight: 650; }
+.ranking-row--lead .ranking-growth { color: #cefc50; }
+
 .ranking-row--featured .ranking-heat { position: absolute; top: 15px; right: 44px; }
 .ranking-row--lead .ranking-heat { color: #cefc50; }
 .ranking-summary { display: none; }
@@ -221,7 +227,7 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-link { min-height: 0; }
 }
 @media (min-width: 1500px) {
- .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { grid-template-columns: minmax(210px, 1fr) minmax(230px, 1.12fr) 32%; }
+ .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-body { grid-template-columns: minmax(210px, 1fr) minmax(140px, 1fr) auto; }
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-meta { flex-wrap: nowrap; max-width: none; justify-content: flex-start; }
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-score { order: 1; margin-left: auto; padding-left: 10px; }
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-title { white-space: nowrap; display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -241,5 +247,10 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
  .editorial-list .ranking-row--featured .ranking-link { height: auto; min-height: 164px; }
  .editorial-list .ranking-link { padding-inline: 10px; gap: 10px; }
  .editorial-list .ranking-row:nth-child(4) { margin-top: 0; }
+}
+/* Featured metadata may wrap after localization or daily-growth badges. */
+@media (min-width: 768px) {
+ .editorial-list > .ranking-row--featured { height: auto; }
+ .editorial-list .ranking-row--featured .ranking-link { height: 100%; min-height: 164px; padding-top: 48px; padding-bottom: 16px; }
 }
 </style>

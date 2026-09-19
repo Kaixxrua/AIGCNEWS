@@ -46,8 +46,8 @@ const metrics = computed(() => [
 </template>
 
 <style scoped>
-.stat-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; min-width: 0; }
-.stat-cell { display: flex; align-items: center; gap: 9px; padding: 12px 10px; height: 78px; min-width: 0; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); text-align: left; color: var(--ink); }
+.stat-strip { container-type: inline-size; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; min-width: 0; }
+.stat-cell { display: flex; align-items: center; gap: 9px; padding: 12px 10px; min-height: 78px; min-width: 0; border: 1px solid var(--rule); border-radius: 11px; background: var(--paper-light); text-align: left; color: var(--ink); }
 .stat-cell-icon { flex: 0 0 30px; width: 30px; height: 30px; padding: 7px; border-radius: 50%; background: var(--paper); }
 .stat-cell-icon :deep(svg) { width: 100%; height: 100%; }
 .stat-cell--github .stat-cell-icon, .stat-cell--ui .stat-cell-icon { background: var(--acid-soft); }
@@ -56,11 +56,12 @@ const metrics = computed(() => [
 .stat-cell-icon--ui { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
 .stat-cell-icon--ui span { border: 1px solid currentColor; border-radius: 1px; }
 .stat-cell-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.stat-cell-label { font-size: 12px; color: var(--ink); line-height: 1.3; white-space: nowrap; }
-.stat-cell-num { font-size: clamp(17px, 1.4vw, 23px); font-weight: 800; line-height: 1.2; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.stat-cell-label { font-size: 12px; color: var(--ink); line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.stat-cell-num { font-size: clamp(16px, 2.3cqw, 23px); font-weight: 800; line-height: 1.2; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
 .stat-cell--github:hover, .stat-cell--ui:hover { border-color: var(--muted); background: var(--acid-soft); }
 .stat-cell--github:focus-visible, .stat-cell--ui:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .stat-cell-num--loading { width: 35px; height: 20px; border-radius: 4px; background: var(--rule); }
 @media (min-width: 1200px) and (max-width: 1499px) { .stat-cell { gap: 5px; padding: 12px 7px; } .stat-cell-icon { flex-basis: 24px; width: 24px; height: 24px; padding: 5px; } .stat-cell-label { font-size: 10px; } }
 @media (max-width: 639px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat-cell { padding: 12px 8px; } .stat-cell-icon { display: none; } }
+@container (max-width: 900px) { .stat-cell-icon { display: none; } }
 </style>

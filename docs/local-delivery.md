@@ -49,3 +49,5 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 可信配置可使用 `template_snapshot` 固定停止状态的 LXD 模板快照；执行器读取该快照的实时元数据生成环境指纹，克隆同一快照。快照替换会使回执失效。预验证和正式 CI 必须共用这份配置。
 
 发布失败仅在日志明确显示部署前 `ensure_clean_tracked_tree` 的裸仓库误识别、生产无切换进行中、当前工作树可读且 tracked clean 时，允许原 SHA 原 CI 结果下最多三次发布尝试。每次保留先前回执和日志；迁移、健康检查、权限或归因不明失败不会自动重放。
+
+设置 `git config aigcnews.preflightReuse true` 后，前端提交钩子自动改用安装后的隔离预验证入口，替代宿主快速类型检查/related 测试；正式 CI 执行未覆盖步骤，并明确记录 `reused_from`。后端文件子集测试不冒充全量覆盖。

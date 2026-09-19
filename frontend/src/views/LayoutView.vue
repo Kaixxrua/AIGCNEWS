@@ -269,4 +269,14 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
   .app-masthead__tools { gap: 8px; }
   .topbar-divider { display: none; }
 }
+/* The homepage frame grows with its cards; only the outer page scrolls on small screens. */
+.app-shell--editorial { height: calc(100dvh - 90px); overflow-y: auto; scrollbar-width: none; }
+.app-shell--editorial::-webkit-scrollbar { display: none; }
+.main-canvas.main-canvas--editorial { height: auto; min-height: calc(100dvh - 90px); overflow: visible; margin-bottom: 0; }
+.main-canvas--editorial > .app-content { position: relative; inset: auto; padding: 70px 16px 0 18px; }
+.main-canvas--editorial :deep(.view-container) { height: auto; flex: none; }
+@media (max-width: 1023px) {
+  .main-canvas--editorial > .app-content { padding: calc(52px + env(safe-area-inset-top)) 8px 0; }
+  .main-canvas.main-canvas--editorial { min-height: calc(100dvh - 90px); }
+}
 </style>

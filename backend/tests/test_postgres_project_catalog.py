@@ -108,6 +108,7 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     assert "gm.daily_star_growth > 0" in sql
     assert "ge.status = 'succeeded'" in sql
     assert "github_repo_enrichments ge" in sql
+    assert "ge.description_zh, ge.description_en" in sql
     assert "NOT EXISTS" in sql and "github_repo_aliases ga" in sql
     assert "COALESCE(c.stars, 0) >= %s" not in sql
     assert "c.availability_status = 'active'" in sql
