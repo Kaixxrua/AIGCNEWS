@@ -111,7 +111,9 @@ def release(config,sha):
                             '--expected-release-id',config['private_release_id'],
                             '--expected-descriptor-sha256',config['private_descriptor_sha256']])
                 normalize_build_permissions(checkout)
-                env=dict(os.environ,UI_LIBRARY_DATA_ROOT=str(checkout/'frontend/.ui-library-data'))
+                env=dict(os.environ,UI_LIBRARY_DATA_ROOT=str(checkout/'frontend/.ui-library-data'),
+                         npm_config_cache=str(Path(config['state'])/'dependency-cache/npm'),
+                         npm_config_prefer_offline='true', npm_config_audit='false', npm_config_fetch_timeout='30000')
                 run(['npm','ci'],cwd=checkout/'frontend',env=env)
                 run(['npm','run','typecheck'],cwd=checkout/'frontend',env=env)
                 run(['npm','run','test:unit','--','src/components/contact/GodotContactScene.test.ts',

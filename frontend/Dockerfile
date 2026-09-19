@@ -5,7 +5,8 @@ FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a55
 WORKDIR /app
 COPY package*.json ./
 # Keep the registry aligned with package-lock.json; builds use the supplied proxy.
-RUN npm ci --registry=https://registry.npmjs.org
+RUN --mount=type=cache,id=aigcnews-npm,target=/root/.npm,sharing=locked \
+    npm ci --prefer-offline --no-audit --fetch-retries=2 --fetch-timeout=30000 --registry=https://registry.npmjs.org
 COPY . .
 # Production receives immutable, reviewed preview packages from the private
 # release overlay. Run the requested build script without npm's prebuild hook,
