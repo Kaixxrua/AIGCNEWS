@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -11,6 +12,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2] / 'scripts/ci'))
 import local_ci as ci
+
+
+@pytest.fixture(autouse=True)
+def isolate_git_environment(monkeypatch):
+    """Keep hook-provided Git state out of disposable test repositories."""
+    for name in tuple(os.environ):
+        if name.startswith('GIT_'):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture
@@ -455,7 +464,7 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
     first_sha = cfg['baseline_sha']
     (repository / 'app.py').write_text('value = 3\n')
     second_sha = commit(repository)
-    first_in_check, release_first = Event(), Event()
+    first_in_check, second_in_check, release_first = Event(), Event(), Event()
     lock_path = Path(cfg['state_dir']) / 'admission.lock'
 
     def launch(self):
@@ -469,7 +478,9 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
         # Other jobs may hold admission concurrently; this gate does not.
         if self.state['sha'] == first_sha and key == ci.JOBS[0]:
             first_in_check.set()
-            assert release_first.wait(10), 'second identity was blocked by first CI'
+            assert release_first.wait(180), 'test coordinator did not release first CI'
+        elif self.state['sha'] == second_sha:
+            second_in_check.set()
         return [{'name': key, 'conclusion': 'success'}]
 
     monkeypatch.setattr(ci.Runner, 'launch', launch)
@@ -477,16 +488,19 @@ def test_different_identities_run_checks_concurrently_but_admission_is_exclusive
     with ThreadPoolExecutor(max_workers=2) as workers:
         first = workers.submit(ci.execute, repository, first_sha, output, cfg)
         try:
-            assert first_in_check.wait(10)
+            assert first_in_check.wait(60)
             # Duplicate identity cannot recover/delete a still-running container.
             with pytest.raises(BlockingIOError):
                 ci.execute(repository, first_sha, tmp_path / 'duplicate.json', cfg)
             second = workers.submit(ci.execute, repository, second_sha, tmp_path / 'second.json', cfg)
-            assert second.result(timeout=10) == 0
+            # Prove overlap directly; disk writes and all five job cleanups are
+            # not a ten-second performance contract on the shared CI pool.
+            assert second_in_check.wait(60), 'second identity was blocked by first CI'
             assert not first.done()
         finally:
             release_first.set()
-        assert first.result(timeout=10) == 0
+        assert first.result(timeout=60) == 0
+        assert second.result(timeout=60) == 0
     assert calls.count(('launch', first_sha)) == 5
     assert calls.count(('launch', second_sha)) == 5
 
@@ -501,6 +515,7 @@ def test_admission_lock_timeout_does_not_launch_or_replay(tmp_path, repository, 
     monkeypatch.setattr(ci.time, 'monotonic', lambda: next(ticks))
     monkeypatch.setattr(ci.time, 'sleep', lambda _: None)
     cfg['admission_timeout'] = 2
+    cfg['queue_timeout'] = 2
     with (root / 'admission.lock').open('a') as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
@@ -676,3 +691,17 @@ def test_restart_attempts_all_owned_job_cleanups_even_if_one_fails(tmp_path, rep
     receipt = json.loads(output.read_text())
     assert receipt['status'] == 'error'
     assert receipt['cleanup'] == 'failure'
+
+
+def test_queue_budget_is_separate_from_resource_admission(tmp_path, repository, monkeypatch):
+    from contextlib import contextmanager
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cfg.update(admission_timeout=10, queue_timeout=3600)
+    waits=[]
+    @contextmanager
+    def gate(root, timeout):
+        waits.append(timeout)
+        yield
+    monkeypatch.setattr(ci, 'admission_lock', gate)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg)==0
+    assert waits==[3600]*5

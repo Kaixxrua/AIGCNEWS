@@ -1,5 +1,6 @@
 """Local authority never depends on a GitHub response or unverified CI state."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,6 +10,14 @@ import pytest
 
 sys.path.insert(0,str(Path(__file__).parents[2]/'scripts/ci'))
 import local_delivery as d
+
+
+@pytest.fixture(autouse=True)
+def isolate_git_environment(monkeypatch):
+    """Keep hook-provided Git state out of disposable test repositories."""
+    for name in tuple(os.environ):
+        if name.startswith('GIT_'):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture
@@ -478,3 +487,12 @@ def test_success_does_not_spend_an_agent_turn(notification_setup,monkeypatch):
     d.update(db,db.execute('SELECT * FROM tasks').fetchone(),'delivered',landing_sha=head)
     monkeypatch.setattr(ao,'send',lambda *a,**kw:pytest.fail('success woke agent'))
     d.notify(c,db)
+
+
+def test_current_failure_stage_is_published_not_only_retry_link(setup):
+    c,db,base,head=setup
+    task=db.execute('SELECT * FROM tasks').fetchone()
+    d.update(db,task,'failed',error='CI validation failed: local_ci.py failed; see log')
+    assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='CI 验证'
+    d.update(db,task,'needs_update',error='main changed')
+    assert d.snapshot(c,db)['tasks'][0]['failure_stage']=='合并基线'
