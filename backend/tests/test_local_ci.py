@@ -501,6 +501,7 @@ def test_admission_lock_timeout_does_not_launch_or_replay(tmp_path, repository, 
     monkeypatch.setattr(ci.time, 'monotonic', lambda: next(ticks))
     monkeypatch.setattr(ci.time, 'sleep', lambda _: None)
     cfg['admission_timeout'] = 2
+    cfg['queue_timeout'] = 2
     with (root / 'admission.lock').open('a') as held:
         fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
         assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
@@ -676,3 +677,17 @@ def test_restart_attempts_all_owned_job_cleanups_even_if_one_fails(tmp_path, rep
     receipt = json.loads(output.read_text())
     assert receipt['status'] == 'error'
     assert receipt['cleanup'] == 'failure'
+
+
+def test_queue_budget_is_separate_from_resource_admission(tmp_path, repository, monkeypatch):
+    from contextlib import contextmanager
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cfg.update(admission_timeout=10, queue_timeout=3600)
+    waits=[]
+    @contextmanager
+    def gate(root, timeout):
+        waits.append(timeout)
+        yield
+    monkeypatch.setattr(ci, 'admission_lock', gate)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg)==0
+    assert waits==[3600]*5
