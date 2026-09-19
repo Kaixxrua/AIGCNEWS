@@ -143,6 +143,10 @@ def snapshot_tasks(db):
     previous={}
     for task in tasks:
         task['failure_stage']=failure_stage(task)
+        integration = meta(db, f"integration_task:{task['id']}")
+        if integration:
+            task['verification_sha'] = integration['sha']
+            task['integration_batch'] = integration['batch']
         task['handoff']=meta(db,f"handoff:{task['id']}")
         task['notification']=meta(db,f"notification:{task['id']}") or {'status':'not_attempted','accepted':False}
         # Null ownership is unknown, not proof that two tasks share an owner.
@@ -288,6 +292,20 @@ def dispatch_ci(config, *, loop=False):
     admission lock, measurements and parent cgroup decide container starts.
     All workers inherit the same configuration/state_dir and distinct outputs.
     """
+    if config.get('integration_enabled', False):
+        from local_integration import once
+        with lock(config, 'ci'):
+            db = database(config)
+            try:
+                while True:
+                    discover(config, db)
+                    worked = once(config, db)
+                    snapshot(config, db)
+                    if not loop:break
+                    if not worked:time.sleep(1)
+            finally:
+                db.close()
+        return
     with lock(config,'ci'):
         db=database(config)
         workers={}
