@@ -60,13 +60,20 @@ def verified_images(path, identity):
 def release(config,sha):
     sys.path.insert(0,str(Path(config['runtime'])/'release'))
     from deploy_production import Release, deploy
-    from local_delivery import SHA, command, lock
+    from local_delivery import SHA, ancestor, database, lock, meta
     from publish_frontend_edges import publish
     if not SHA.fullmatch(sha):raise ValueError('invalid source SHA')
     deployment_environment(config)
     with lock(config,'build-release'):
-        current=command(['git','--git-dir',config['bare'],'rev-parse','refs/heads/main'])
-        if current!=sha:raise RuntimeError('release superseded before build')
+        # Only the controller's durable selected candidate may publish an older
+        # validated ancestor. A newer main does not cancel an admitted release.
+        with database(config) as db:
+            selected = meta(db, 'release')
+        if selected.get('sha') != sha or selected.get('status') != 'deploying':
+            raise RuntimeError('release is not the controller-selected candidate')
+        from local_delivery import git
+        if not ancestor(config, sha, git(config, 'rev-parse', 'refs/heads/main')):
+            raise RuntimeError('selected release is no longer on local main')
         production=Path(config['production'])
         state=json.loads((production/'.aigcnews-deploy/state.json').read_text())
         if state.get('in_progress'):raise RuntimeError('unfinished production transition')
@@ -77,7 +84,7 @@ def release(config,sha):
         identity = build_identity(config, sha)
         images = verified_images(checkpoint, identity)
         if images:
-            result = deploy(production, Release(sha, images['backend'], images['mcp'], images['frontend']))
+            result = deploy(production, Release(sha, images['backend'], images['mcp'], images['frontend']), pinned=True)
             if result not in ('deployed', 'already-active'):
                 raise RuntimeError('candidate superseded at deploy lock')
             publish(production, sha)
@@ -117,7 +124,7 @@ def release(config,sha):
                 images[service]=ref
             from local_delivery import atomic
             atomic(checkpoint, {'identity': identity, 'images': images})
-            result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend']))
+            result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend']), pinned=True)
             if result not in ('deployed','already-active'):raise RuntimeError('candidate superseded at deploy lock')
             publish(production,sha)
 
