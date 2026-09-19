@@ -704,7 +704,7 @@ def test_queue_budget_is_separate_from_resource_admission(tmp_path, repository, 
         yield
     monkeypatch.setattr(ci, 'admission_lock', gate)
     assert ci.execute(repository, cfg['baseline_sha'], output, cfg)==0
-    assert waits==[3600]*5
+    assert waits==[1200]*5  # Three bounded attempts share the original queue budget.
 
 
 def test_transient_download_classifier_never_retries_tests_or_integrity():
