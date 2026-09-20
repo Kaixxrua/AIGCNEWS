@@ -86,10 +86,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
         <span class="comic-masthead-creation" aria-hidden="true">
-          <svg class="comic-creation-brush" viewBox="0 0 120 96" fill="none">
-            <path class="comic-creation-brush__ink" d="M9 26 38 2 29 18 47 6 31 26 38 20 13 44 23 28 0 41ZM42 32 72 5 59 24 69 19 45 48 49 33 29 51ZM88 4 68 35 77 26 61 53 80 36 91 15ZM111 23 105 45 96 54 101 32Z" />
-            <path class="comic-creation-brush__lime" d="m26 76 21-37 11-2 2 17-11 2-1-8-12 25Zm25-18 13-4 3 33-13 4-2-18-20 4 7-10 14-4Zm31-4 14-7-13 38-12 4Zm17-19 10-5-8 18-10 5ZM18 82 25 73 29 94 22 87ZM61 27 68 30 67 43 63 38Z" />
-            <path class="comic-creation-brush__paper" d="m28 63 63-20-3 5-64 18Zm19 15 38-10-3 4-37 10ZM40 43l20-8-1 4-22 8Z" />
+          <svg class="comic-creation-mark" viewBox="0 0 48 56" aria-hidden="true">
+            <path d="m25 5 5 15 13 7-15 5-7 18-4-18L4 25l15-5Z" />
+            <path class="comic-creation-mark__spark" d="m39 4 1.5 5L46 11l-5.5 2-2 5-1-5L32 11l5-2Z" />
           </svg>
           <span>让创造更自由</span>
         </span>
