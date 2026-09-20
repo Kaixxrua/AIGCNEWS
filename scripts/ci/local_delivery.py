@@ -178,15 +178,15 @@ def snapshot(config,db):
 
 def trusted_run(config, script, args, logfile, timeout):
     # A timeout must reap descendants before another attempt obtains ownership.
-    with Path(logfile).open('a') as log:
-        with subprocess.Popen([sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
-                              stdout=log,stderr=subprocess.STDOUT,start_new_session=True) as process:
-            try:
-                code = process.wait(timeout=timeout)
-            except BaseException:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                raise
+    with Path(logfile).open('a') as log, subprocess.Popen(
+            [sys.executable,str(Path(config['runtime'])/script),*map(str,args)],
+            stdout=log,stderr=subprocess.STDOUT,start_new_session=True) as process:
+        try:
+            code = process.wait(timeout=timeout)
+        except BaseException:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            raise
     if code:
         raise RuntimeError(f'{script} failed; see {logfile}')
 
@@ -399,6 +399,10 @@ def recovered_worktree_failure(config, previous):
 def release_once(config,db):
     from release_progress import retryable
     previous=meta(db,'release')
+    if previous.get('status') == 'failed':
+        from edge_recovery import consider
+        consider(config, db, previous)
+        previous = meta(db, 'release')
     resume = previous.get('status') == 'retrying'
     if resume and time.time() < previous.get('retry_at', 0):
         return False
@@ -539,7 +543,7 @@ def notify(config,db):
                      f"Evidence: {task['ci_receipt'] or task['error'] or task['landing_sha']}. "
                      'GitHub is an asynchronous mirror; do not wait on GitHub Actions. ')
                 if task['status']=='release_failed':
-                    msg+='This is the exact release carrier, not every included ancestor. Inspect source and edge receipts separately. Source may already be active. Diagnose first; do not repeat a successful deployment or weaken health checks. Use a fresh branch-backed session for code fixes to a landed task. Submit through the existing pipeline and stop after verified handoff. '
+                    msg+='Return to release fault recovery, not development by default. If origin is already active and only edge transport failed, the controller probes connectivity and queues a bounded edge-only retry after two successful checks. Do not create empty commits or repeat CI/source deployment. If recovery budget is exhausted, diagnose and record the infrastructure blocker; code changes require a fresh owned session. This is the exact release carrier, not every included ancestor. Inspect source and edge receipts separately. Source may already be active. Diagnose first; do not repeat a successful deployment or weaken health checks. Use a fresh branch-backed session for code fixes to a landed task. Submit through the existing pipeline and stop after verified handoff. '
                 else:msg+='Fetch local origin/main, merge it into your owned session branch, fix the reported issue, validate and push normally. Never force push or edit another worktree. Stop after verified handoff; do not poll deployment.'
                 result=ao.send(adb,task['branch'],identity,msg,Path(config['repository']),
                                validate=lambda t=task:notification_current(config,db,t))
