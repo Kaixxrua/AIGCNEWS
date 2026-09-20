@@ -85,7 +85,14 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <svg class="comic-masthead-rule" viewBox="0 0 1721 25" preserveAspectRatio="none" aria-hidden="true"><path d="M0 7 L420 3 Q449 2 465 13 L480 22 Q483 24 499 24 L1247 24 Q1266 24 1275 21 L1698 21 Q1712 21 1721 25" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
-        <span class="comic-masthead-creation" aria-hidden="true"><b>AI</b><span>让创造更自由</span></span>
+        <span class="comic-masthead-creation" aria-hidden="true">
+          <svg class="comic-creation-brush" viewBox="0 0 120 96" fill="none">
+            <path class="comic-creation-brush__ink" d="M9 26 38 2 29 18 47 6 31 26 38 20 13 44 23 28 0 41ZM42 32 72 5 59 24 69 19 45 48 49 33 29 51ZM88 4 68 35 77 26 61 53 80 36 91 15ZM111 23 105 45 96 54 101 32Z" />
+            <path class="comic-creation-brush__lime" d="m26 76 21-37 11-2 2 17-11 2-1-8-12 25Zm25-18 13-4 3 33-13 4-2-18-20 4 7-10 14-4Zm31-4 14-7-13 38-12 4Zm17-19 10-5-8 18-10 5ZM18 82 25 73 29 94 22 87ZM61 27 68 30 67 43 63 38Z" />
+            <path class="comic-creation-brush__paper" d="m28 63 63-20-3 5-64 18Zm19 15 38-10-3 4-37 10ZM40 43l20-8-1 4-22 8Z" />
+          </svg>
+          <span>让创造更自由</span>
+        </span>
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
           <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M14 24 L297 3 L280 55 L35 60 L7 71 L11 56 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>

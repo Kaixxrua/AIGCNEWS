@@ -11,7 +11,7 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { ArrowRight, MailPlus, Plug, Terminal, Check, ChevronRight } from 'lucide-vue-next'
+import { ArrowRight, Mail, Plug, Terminal, Check, ChevronRight } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
 
@@ -111,13 +111,13 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <p class="sidebar-motto"><span>{{ t('dashboard.editorial.motto') }}</span><ChevronRight :size="22" aria-hidden="true" /></p>
         <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />
         <section class="digest-card">
-          <div class="digest-heading"><MailPlus :size="27" /><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
+          <div class="digest-heading"><span class="digest-mail"><Mail :size="30" :stroke-width="2.8" /></span><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
           <p>{{ t('dashboard.editorial.digestDescription') }}</p>
           <ul class="digest-features"><li v-for="feature in digestFeatures" :key="feature"><Check :size="16" aria-hidden="true" />{{ feature }}</li></ul>
           <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
             {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
           </RouterLink>
-          <img class="digest-robot" :src="'/assets/comic/digest-robot.webp'" alt="" aria-hidden="true" />
+          <img class="digest-robot" src="/assets/comic/digest-robot-integrated.webp" alt="" aria-hidden="true" />
         </section>
         <div class="integration-grid">
           <RouterLink to="/mcp" class="integration-card integration-card--mcp" :aria-label="t('dashboard.mcpCalls.title')">
@@ -225,4 +225,35 @@ onBeforeUnmount(() => uiCatalogController.abort())
 @media (max-width:899px) { .dashboard-page { display:flex;flex-direction:column;padding:14px 10px; }.dashboard-page::before { right:0; }.dashboard-page::after { display:none; }.dashboard-sidebar { display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto;gap:12px; }.sidebar-motto { display:none; }.dashboard-sidebar :deep(.dash-calendar) { min-height:270px; }.dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:35px; }.digest-card { min-height:270px; }.integration-grid,.ui-inspiration { min-height:78px; }.dashboard-heading__copy { padding-bottom:5px; }.dashboard-heading h1 { font-size:39px; }.dashboard-heading p { font-size:18px; } }
 @media (max-width:539px) { .dashboard-sidebar { display:flex;flex-direction:column; }.dashboard-sidebar :deep(.dash-calendar) { min-height:290px; }.dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:38px; }.digest-card { min-height:270px; }.digest-heading h2 { font-size:25px; }.digest-card p { font-size:12px; }.digest-features { font-size:16px;gap:5px; }.digest-cta { font-size:18px;height:40px; }.dashboard-heading h1 { font-size:35px; }.dashboard-heading p { font-size:16px; } }
 
+/* The illustration shares the panel baseline, while its ink burst breaks the rim. */
+.digest-card { padding:11px 13px;background:var(--paper);border-radius:6px 8px 5px 9px;box-shadow:none; }
+.digest-card::before { opacity:.38;background-image:radial-gradient(#159ec7 .65px,transparent .9px);background-size:3px 3px;mask-image:linear-gradient(125deg,transparent 30%,#000 90%); }
+.digest-card::after { display:none; }
+.digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--acid);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--acid) 40%,transparent); }
+.digest-mail svg { width:31px;height:29px;filter:drop-shadow(1px 1px 0 var(--paper)); }
+.digest-heading { gap:11px; }
+.digest-heading h2 { font-size:26px;font-weight:950;letter-spacing:0; }
+.digest-card p { z-index:4;display:table;max-width:100%;padding:2px 5px 3px 0;background:var(--paper);font-size:12px;white-space:normal;line-height:1.5; }
+.digest-features { gap:5px;margin-top:11px;font-size:15px;line-height:1.3;font-weight:750; }
+.digest-features li { gap:10px; }
+.digest-robot { width:67%;height:111%;right:-20px;bottom:0;object-fit:fill;z-index:2; }
+.digest-cta { width:49%;height:40px;bottom:8px;border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;font-size:17px; }
+.dashboard-page::after { border-width:2px 2.5px 2px 2px;border-radius:16px 14px 20px 12px; }
+.integration-grid { gap:10px; }
+.dashboard-sidebar { gap:12px;grid-template-rows:70px 214px minmax(180px,226px) 60px 81px; }
+.dashboard-page::after { background:var(--paper); }
+.sidebar-motto,.dashboard-sidebar :deep(.dash-calendar),.integration-card,.ui-inspiration { background:var(--paper); }
+.digest-robot { bottom:-2px; }
+:root[data-theme='dark'] .digest-card { background:var(--paper-raised); }
+:root[data-theme='dark'] .digest-card p { background:var(--paper-raised); }
+:root[data-theme='dark'] .digest-mail { background:transparent;color:var(--acid);box-shadow:none; }
+:root[data-theme='dark'] .digest-mail svg { filter:none; }
+:root[data-theme='dark'] .digest-robot { filter:saturate(.64) brightness(.77); }
+:root[data-theme='dark'] .sidebar-motto,:root[data-theme='dark'] .dashboard-sidebar :deep(.dash-calendar),:root[data-theme='dark'] .integration-card,:root[data-theme='dark'] .ui-inspiration { background:var(--paper-raised); }
+@media (max-height:820px) and (min-width:1200px) {
+  .digest-heading h2 { font-size:22px; }.digest-mail { width:30px;height:28px; }.digest-mail svg { width:27px;height:25px; }
+  .digest-card { padding:8px 11px; }.digest-card p { font-size:10px;margin-top:3px; }.digest-features { font-size:11px;gap:3px;margin-top:5px; }
+  .digest-cta { height:29px;font-size:14px;bottom:6px; }.digest-robot { width:62%;height:107%; }
+  .dashboard-sidebar { gap:9px;grid-template-rows:58px 187px 170px 52px 62px; }
+}
 </style>

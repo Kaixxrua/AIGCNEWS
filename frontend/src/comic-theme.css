@@ -50,7 +50,7 @@
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic { filter:saturate(.72) brightness(.88); }
 :root[data-theme='dark'] #app .app-shell--editorial .masthead-meta::before { color:var(--acid); }
 :root[data-theme='dark'] #app .app-shell--editorial .masthead-meta::after { display:none; }
-:root[data-theme='dark'] #app .app-shell--editorial .comic-masthead-creation b { visibility:hidden; }
+:root[data-theme='dark'] #app .app-shell--editorial .comic-creation-brush { visibility:hidden; }
 :root[data-theme='dark'] #app .app-shell--editorial .app-masthead .masthead-user::before { background:var(--paper-raised); }
 
 #app .app-shell { letter-spacing: 0; }
@@ -87,9 +87,9 @@
   #app .app-shell--editorial .masthead-meta::before {
     content: 'AI\a MAKES A BRIGHTER\a TOMORROW!'; white-space: pre;
     position: absolute; left: 0; top: 14px;
-    color: var(--ink); font: italic 900 21px/1 'DM Sans',sans-serif;
-    transform: rotate(-8deg); padding: 2px 24px 9px;
-    border-bottom: 3px solid var(--acid);
+    color: var(--ink); font: italic 950 20px/.95 'DM Sans',sans-serif;
+    transform: rotate(-10deg) skewX(-8deg) scaleX(.88); transform-origin: 24px 50%; padding: 2px 24px 9px;
+    text-shadow: .35px 0 currentColor;
   }
   #app .app-shell--editorial .masthead-meta__today::after {
     content: ''; width: 8px; height: 8px; border-radius: 50%; background: #31a854;
@@ -124,11 +124,22 @@
 }
 
 @media (min-width: 1600px) {
-  #app .app-shell--editorial .comic-masthead-creation { display:flex;position:absolute;right:195px;top:14px;width:265px;height:76px;align-items:center;gap:14px;transform:rotate(-7deg);color:var(--ink); }
-  .comic-masthead-creation b { font:italic 950 68px/1 'DM Sans',sans-serif;color:var(--paper);-webkit-text-stroke:2px var(--rule-strong);text-shadow:4px 3px 0 var(--acid);transform:skew(-9deg); }
-  .comic-masthead-creation > span { font-size:21px;font-style:italic;font-weight:800;white-space:nowrap;border-bottom:6px solid var(--acid); }
+  #app .app-shell--editorial .comic-masthead-creation { display:flex;position:absolute;right:180px;top:2px;width:282px;height:94px;align-items:center;gap:4px;color:var(--ink);pointer-events:none; }
+  .comic-creation-brush { width:112px;height:94px;flex-shrink:0; }
+  .comic-creation-brush__ink { fill:var(--ink); }
+  .comic-creation-brush__lime { fill:var(--acid); }
+  .comic-creation-brush__paper { fill:var(--paper); }
+  .comic-masthead-creation > span { position:relative;isolation:isolate;font-size:21px;font-style:italic;font-weight:800;white-space:nowrap;transform:rotate(-7deg);padding:0 0 13px; }
+  .comic-masthead-creation > span::before,
+  .comic-masthead-creation > span::after { content:'';position:absolute;left:-12px;right:-8px;bottom:0;height:10px;z-index:-1;transform:skewX(-18deg); }
+  .comic-masthead-creation > span::before { background:#0b5533;clip-path:polygon(2% 14%,100% 0,99% 82%,0 100%); }
+  .comic-masthead-creation > span::after { bottom:2px;height:6px;background:var(--acid);clip-path:polygon(2% 47%,23% 9%,20% 49%,53% 0,45% 49%,81% 4%,78% 38%,100% 0,94% 52%,67% 90%,69% 61%,29% 100%,32% 62%,0 100%); }
+  :root[data-theme='dark'] .comic-masthead-creation > span::before { background:#377b42; }
+  :root[data-theme='dark'] .comic-masthead-creation > span::after { background:#65a648;opacity:.65; }
   #app .app-shell--editorial .footer-right { margin-right:114px; }
-  #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';white-space:pre;position:absolute;right:-20px;bottom:-3px;width:112px;height:83px;padding:10px 5px 0 23px;box-sizing:border-box;background:var(--acid);color:var(--acid-ink);font:italic 950 13px/1.02 'DM Sans',sans-serif;clip-path:polygon(25% 0,100% 0,100% 100%,0 100%);transform:rotate(-4deg);border-left:8px solid var(--ink); }
+  #app .app-shell--editorial .dock-footer--editorial::before { content:'';position:absolute;right:-24px;bottom:-3px;width:123px;height:84px;background:var(--ink);clip-path:polygon(23% 0,100% 0,100% 100%,0 100%); }
+  #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';white-space:pre;position:absolute;right:-24px;bottom:-3px;width:111px;height:84px;padding:10px 4px 0 24px;box-sizing:border-box;background:var(--acid);color:var(--acid-ink);font:italic 950 14px/.95 'DM Sans',sans-serif;clip-path:polygon(25% 0,100% 0,100% 100%,0 100%); }
+  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::before { background:#41464e; }
   #app .app-shell--editorial .masthead-meta::after { content:'';position:absolute;left:-24px;top:0;width:200px;height:95px;z-index:-1;background:var(--acid);clip-path:polygon(0 0,100% 0,0 100%); }
 }
 
