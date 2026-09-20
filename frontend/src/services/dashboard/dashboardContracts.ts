@@ -39,6 +39,9 @@ export type SourceStatusMap = Partial<Record<TabKey, SourceBoardStatus>>
 
 export interface DashboardTopWireResponse {
   items?: TopDoc[] | null
+  is_finalized?: boolean | null
+  resolved_date?: string | null
+  stale?: boolean | null
   is_embargoed?: boolean | null
   source_status?: SourceStatusMap | null
 }
@@ -75,7 +78,10 @@ export interface DashboardSummary {
 
 export interface DashboardTop {
   items: TopDoc[]
-  /** 昨日榜单在 CST 15:00 定稿前处于静默期（后端直接放空 items） */
+  isFinalized?: boolean
+  resolvedDate?: string
+  stale?: boolean
+  /** 兼容旧服务端；新服务端的未定稿快照也持续可读。 */
   isEmbargoed: boolean
   /** 分源定稿状态（tab 级徽章数据源）；后端旧版本缺省时为空对象 */
   sourceStatus: SourceStatusMap

@@ -11,8 +11,8 @@ package mcpapp
 //   - dashboard/top、projects/library、papers/{id} 经 _validated_tool_args
 //     全量 pydantic 校验，McpToolInputError 翻译为 McpResourceInputError
 //     （Go 侧 ToolInputError → ResourceInputError，dispatch 映射 -32602）；
-//   - 看板语义移植 dashboard/policy.py + query_service.py：FINALIZE_HOUR=15
-//     embargo、radar 按 doc_weight 加权 + round() 银行家舍入（Go
+//   - 看板语义移植 dashboard/policy.py + query_service.py：未定稿快照可读、
+//     radar 按 doc_weight 加权 + round() 银行家舍入（Go
 //     math.RoundToEven）、github 同周期 fallback 链、HN 日榜昨日去重并
 //     按 raw_score/score 降序移到榜尾；
 //   - report/latest 的内容选择复刻 select_briefing_content（按 locale 前缀
@@ -313,7 +313,7 @@ func (s *ResourceService) dashboardSummary(uri string, q map[string]string) (any
 	if snapshotDate == "" {
 		snapshotDate = s.now().Format("2006-01-02")
 	}
-	finalized, embargoed := boardStatus(snapshotDate, s.now())
+	finalized, _ := boardStatus(snapshotDate, s.now())
 	if s.stats == nil {
 		return nil, errors.New("document statistics reader unavailable")
 	}
@@ -330,17 +330,6 @@ func (s *ResourceService) dashboardSummary(uri string, q map[string]string) (any
 		return nil, err
 	}
 	stats := summaryStats(counts, total, todayCount)
-	if embargoed {
-		return resourceContent(uri, jsonx.Object{
-			{Key: "top_list", Value: []any{}},
-			{Key: "radar", Value: []any{}},
-			{Key: "stats", Value: stats},
-			{Key: "period", Value: period},
-			{Key: "snapshot_date", Value: snapshotDate},
-			{Key: "is_finalized", Value: finalized},
-			{Key: "is_embargoed", Value: true},
-		}, "application/json"), nil
-	}
 	docs, err := s.top.getDocs(snapshotDate, period, "all")
 	if err != nil {
 		return nil, err

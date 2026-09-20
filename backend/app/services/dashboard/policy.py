@@ -81,9 +81,7 @@ FINALIZE_HOUR = 15
 
 # ── 分源定稿契约 ────────────────────────────────────────────────────────
 #
-# 每个源的自然日界：决定"这个源的一天何时真正结束"。定稿必须等到源日界
-# 结束后的末次采集完成，而不是统一的整榜时钟标签（compute_board_status
-# 的 FINALIZE_HOUR 一刀切语义保持不动，作为整榜可见性闸门继续服役）。
+# 每个源的自然日界与预计定稿时刻。定稿状态不再控制快照可见性。
 SOURCE_DAY_BOUNDARY: dict[str, str] = {
     "arxiv": "PT",  # HF Daily Papers 页面日期（美国日界）
     "github": "CST",  # v5 热度指标（自有数据，CST 日界）
@@ -229,26 +227,17 @@ def today_local() -> date:
     return datetime.now(tz_cst).date()
 
 
-def compute_board_status(snapshot_date_str: str) -> dict[str, bool]:
-    tz_cst = timezone(timedelta(hours=8))
-    now_cst = datetime.now(tz_cst)
-    today = now_cst.date()
-    yesterday = today - timedelta(days=1)
-
-    try:
-        query_date = date.fromisoformat(snapshot_date_str)
-    except ValueError:
-        query_date = today
-
-    if query_date == today:
-        return {"is_finalized": False, "is_embargoed": False}
-    if query_date == yesterday:
-        if now_cst.hour < FINALIZE_HOUR:
-            return {"is_finalized": False, "is_embargoed": True}
-        return {"is_finalized": True, "is_embargoed": False}
-    if query_date < yesterday:
-        return {"is_finalized": True, "is_embargoed": False}
-    return {"is_finalized": False, "is_embargoed": False}
+def compute_board_status(
+    snapshot_date_str: str, source: str | None = None
+) -> dict[str, bool]:
+    sources = [source] if source and source != "all" else SOURCE_FINALIZE_HOUR
+    return {
+        "is_finalized": all(
+            compute_source_board_status(snapshot_date_str, item)["is_finalized"]
+            for item in sources
+        ),
+        "is_embargoed": False,
+    }
 
 
 def is_finalized(snapshot_date_str: str) -> bool:
@@ -262,12 +251,7 @@ def is_embargoed(snapshot_date_str: str) -> bool:
 def compute_source_board_status(
     snapshot_date_str: str, source: str
 ) -> SourceBoardStatus:
-    """按源自然日界计算单源榜单状态（draft/embargoed/finalized）。
-
-    与 compute_board_status 的整榜口径并存：整榜继续充当既有可见性
-    闸门（行为不变），本函数产出分源契约，供后续分源可见性切换与前端
-    状态提示消费。未知源回退旧版整榜时刻（FINALIZE_HOUR），保持保守。
-    """
+    """按源日界计算预计定稿状态；未定稿快照持续可读。"""
     boundary = SOURCE_DAY_BOUNDARY.get(source, DEFAULT_SOURCE_DAY_BOUNDARY)
     hour = SOURCE_FINALIZE_HOUR.get(source, FINALIZE_HOUR)
     tz_cst = timezone(timedelta(hours=8))
@@ -290,9 +274,7 @@ def compute_source_board_status(
     if query_date == today:
         return status
     if query_date == yesterday:
-        if now_cst.hour < hour:
-            status["is_embargoed"] = True
-        else:
+        if now_cst.hour >= hour:
             status["is_finalized"] = True
         return status
     if query_date < yesterday:

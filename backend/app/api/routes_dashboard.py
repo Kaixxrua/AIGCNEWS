@@ -201,9 +201,15 @@ def _dashboard_cache_key_builder(
         "namespace": namespace,
         "query": query_params,
     }
-    # Invalidate pre-enrichment top payloads while retaining namespace clearing.
-    if payload["path"].endswith("/dashboard/top"):
-        payload["schema"] = "enriched-top-v3"
+    if payload["path"].rsplit("/", 1)[-1] in {"top", "radar", "summary-static"}:
+        now_cst = datetime.now(timezone(timedelta(hours=8)))
+        payload["schema"] = "visible-drafts-v1"
+        # Explicit historical requests also change state at midnight / source close.
+        payload["board_clock"] = (
+            now_cst.date().isoformat(),
+            [hour for hour in sorted({policy.FINALIZE_HOUR, *policy.SOURCE_FINALIZE_HOUR.values()})
+             if now_cst.hour >= hour],
+        )
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
     digest = hashlib.md5(raw.encode("utf-8")).hexdigest()
     return f"{namespace}:{func.__name__}:{digest}"
@@ -243,7 +249,7 @@ def _score_categories(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 @router.get("/dashboard/top")
-@cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+@cache(expire=60, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_top_list(
     request: Request,
     limit: int = Query(default=10, ge=1, le=500),
@@ -266,23 +272,7 @@ async def get_top_list(
     )
     snapshot_date = resolution["resolved_date"]
 
-    board = policy.compute_board_status(snapshot_date)
-
-    # 静默期拦截：直接返回空列表，防止前端泄露未解禁数据
-    if board["is_embargoed"]:
-        return {
-            "items": [],
-            "total": 0,
-            "period": "daily",
-            "snapshot_date": snapshot_date,
-            "requested_date": resolution["requested_date"],
-            "resolved_date": resolution["resolved_date"],
-            "stale": resolution["stale"],
-            "is_finalized": board["is_finalized"],
-            "is_embargoed": True,
-            # 分源状态仅作信息透出：整榜闸门不变，CST 源可能已先定稿
-            "source_status": policy.compute_source_status_map(snapshot_date),
-        }
+    board = policy.compute_board_status(snapshot_date, source_type)
 
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date, snapshot_date, "daily", source_type, 500
@@ -494,7 +484,7 @@ async def search_x_dashboard(
 
 
 @router.get("/dashboard/radar")
-@cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+@cache(expire=60, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_trend_radar(
     limit: int = Query(default=50, ge=10, le=200),
     source: Optional[str] = Query(
@@ -516,21 +506,7 @@ async def get_trend_radar(
     )
     snapshot_date = resolution["resolved_date"]
 
-    board = policy.compute_board_status(snapshot_date)
-
-    # 静默期拦截
-    if board["is_embargoed"]:
-        return {
-            "radar": [],
-            "doc_count": 0,
-            "period": "daily",
-            "snapshot_date": snapshot_date,
-            "requested_date": resolution["requested_date"],
-            "resolved_date": resolution["resolved_date"],
-            "stale": resolution["stale"],
-            "is_finalized": board["is_finalized"],
-            "is_embargoed": True,
-        }
+    board = policy.compute_board_status(snapshot_date, source_type)
 
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date,
@@ -575,9 +551,6 @@ async def _build_dashboard_static_payload(
         "is_finalized": board["is_finalized"],
         "is_embargoed": board["is_embargoed"],
     }
-    if board["is_embargoed"]:
-        return {"top_list": [], "radar": [], **base}
-
     docs = await asyncio.to_thread(
         query_service.get_docs_for_date, snapshot_date, "daily", None, 500
     )
@@ -590,7 +563,7 @@ async def _build_dashboard_static_payload(
 
 
 @router.get("/dashboard/summary-static")
-@cache(expire=3600, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
+@cache(expire=60, namespace="dashboard", key_builder=_dashboard_cache_key_builder)
 async def get_dashboard_summary_static(
     date: Optional[str] = Query(
         default=None,

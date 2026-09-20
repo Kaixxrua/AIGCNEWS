@@ -35,6 +35,8 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
+const cstDate = (timestamp: number) => new Date(timestamp + 8 * 3_600_000).toISOString().slice(0, 10)
+
 /* 动态计数由实时推送和 live-stats 常驻值提供，静态 summary 只负责快照元数据。
    保留已知的较新计数，避免旧客户端或兼容接口响应把数字从 4001 回退到 3993。 */
 const MONOTONIC_COUNTER_FIELDS = [
@@ -75,8 +77,10 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   let dashboardController: AbortController | null = null
   let dashboardGeneration = 0
   let liveStatsRevision = 0
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined
 
   const beginDashboardRequest = () => {
+    clearTimeout(refreshTimer)
     dashboardController?.abort()
     dashboardController = createAbortController()
     dashboardGeneration += 1
@@ -86,13 +90,13 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const isCurrentDashboardRequest = (controller: AbortController, generation: number) =>
     dashboardController === controller && dashboardGeneration === generation && !controller.signal.aborted
 
-  const date = new Date(now())
-  const todayStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  const currentDate = ref<string>(todayStr)
+  const todayStr = ref(cstDate(now()))
+  const currentDate = ref<string>(todayStr.value)
+  const resolvedDate = ref<string>(todayStr.value)
   const availableDates = ref<string[]>([])
   let availabilityController: AbortController | null = null
   let availabilityGeneration = 0
-  const isViewingHistory = computed(() => currentDate.value !== todayStr)
+  const isViewingHistory = computed(() => currentDate.value !== todayStr.value)
   const isFinalized = ref(false)
   const isEmbargoed = ref(false)
   const sourceStatus = ref<SourceStatusMap>({})
@@ -109,28 +113,35 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     selectedDate: string,
     controller: AbortController,
     generation: number,
+    refresh = false,
   ) => {
     // 今天不显式传 date，让后端回溯到最近一个可展示快照；历史日期仍精确查询。
-    const requestDate = selectedDate === todayStr ? undefined : selectedDate
+    const requestDate = selectedDate === todayStr.value ? undefined : selectedDate
     void loadLiveStats(controller, generation)
     const staticSummaryRequest = dashboardApi.fetchSummaryStatic
       ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: requestDate, signal: controller.signal })
       : dashboardApi.fetchSummary({ period: PERIOD, date: requestDate, signal: controller.signal })
     const [summary, top] = await Promise.all([
-      staticSummaryRequest,
-      dashboardApi.fetchTop({ limit: 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal }),
+      staticSummaryRequest.catch(() => null),
+      dashboardApi.fetchTop({
+        limit: 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal,
+        ...(refresh ? { cacheBuster: now() } : {}),
+      }),
     ])
     if (!isCurrentDashboardRequest(controller, generation)) return false
     const legacySummary = summary as { stats?: Stats }
-    if (legacySummary.stats) {
+    if (legacySummary?.stats) {
       // 实时计数可能先到；旧版 summary 只补齐尚未取得的字段。
       stats.value = mergeLiveStats(legacySummary.stats, stats.value)
     }
     tabList.value = top.items
-    isFinalized.value = summary.isFinalized
-    isEmbargoed.value = summary.isEmbargoed
+    isFinalized.value = top.sourceStatus[tab]?.is_finalized ?? top.isFinalized ?? summary?.isFinalized ?? false
+    isEmbargoed.value = top.isEmbargoed ?? false
+    resolvedDate.value = top.resolvedDate || selectedDate
     sourceStatus.value = top.sourceStatus
+    errorMsg.value = ''
     lastSuccessfulFetchAt = now()
+    scheduleRefresh()
     return true
   }
 
@@ -152,6 +163,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
 
 
   const stopDashboardRequests = () => {
+    clearTimeout(refreshTimer)
+    document.removeEventListener('visibilitychange', onVisibilityChange)
     dashboardController?.abort()
     dashboardController = null
     dashboardGeneration += 1
@@ -161,20 +174,44 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   }
 
   const refreshDashboardInBackground = async () => {
+    const nextToday = cstDate(now())
+    if (currentDate.value === todayStr.value) currentDate.value = nextToday
+    todayStr.value = nextToday
     const { controller, generation } = beginDashboardRequest()
     try {
       void fetchAvailableDates()
-      await fetchDashboardData(activeTab.value, currentDate.value, controller, generation)
+      await fetchDashboardData(activeTab.value, currentDate.value, controller, generation, true)
       if (isCurrentDashboardRequest(controller, generation)) options.updateStatSources(stats.value)
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.warn('[Dashboard] 后台刷新失败', error)
+      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
         tabLoading.value = false
+        scheduleRefresh()
       }
     }
+  }
+
+  const scheduleRefresh = () => {
+    clearTimeout(refreshTimer)
+    const timestamp = now()
+    const nextMidnight = Date.parse(cstDate(timestamp) + 'T00:00:00+08:00') + 86_400_000
+    const closeHour = sourceStatus.value[activeTab.value]?.finalize_hour
+    const closeAt = closeHour == null ? 0
+      : Date.parse(resolvedDate.value + 'T00:00:00+08:00') + (24 + closeHour) * 3_600_000
+    const delay = Math.min(viewRefreshInterval, nextMidnight - timestamp + 50,
+      closeAt > timestamp ? closeAt - timestamp + 50 : viewRefreshInterval)
+    refreshTimer = setTimeout(() => {
+      if (document.visibilityState === 'hidden') scheduleRefresh()
+      else void refreshDashboardInBackground()
+    }, delay)
+  }
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') void refreshDashboardInBackground()
   }
 
   const loadLiveStats = async (controller: AbortController, generation: number) => {
@@ -210,6 +247,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   }
 
   onMounted(async () => {
+    document.addEventListener('visibilitychange', onVisibilityChange)
     const { controller, generation } = beginDashboardRequest()
     try {
       void fetchAvailableDates()
@@ -220,17 +258,20 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
         options.updateStatSources(stats.value)
+        scheduleRefresh()
       }
     }
   })
 
   onActivated(() => {
+    document.addEventListener('visibilitychange', onVisibilityChange)
     if (!hasActivatedOnce) {
       hasActivatedOnce = true
       return
     }
     if (!dashboardController) beginDashboardRequest()
-    if (loading.value || tabLoading.value || now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
+    scheduleRefresh()
+    if (cstDate(now()) !== todayStr.value || loading.value || tabLoading.value || now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
     else void refreshLiveStats()
   })
 
@@ -248,16 +289,19 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data', error)
+      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
         tabLoading.value = false
+        scheduleRefresh()
       }
     }
   })
 
   const onDateChange = async (selectedDate: string) => {
     currentDate.value = selectedDate
+    resolvedDate.value = selectedDate
     tabLoading.value = true
     tabList.value = []
     const { controller, generation } = beginDashboardRequest()
@@ -267,10 +311,12 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data by date', error)
+      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
         tabLoading.value = false
+        scheduleRefresh()
       }
     }
   }
@@ -292,6 +338,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     tabLoading,
     errorMsg,
     currentDate,
+    todayStr,
+    resolvedDate,
     availableDates,
     isViewingHistory,
     isFinalized,

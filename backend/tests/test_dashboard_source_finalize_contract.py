@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi_cache import FastAPICache
@@ -15,11 +16,7 @@ from backend.app.api.dependencies import (
 )
 from backend.app.services.dashboard import policy
 
-# 分源定稿契约（PR1）：
-# 每个源有自己的自然日界（SOURCE_DAY_BOUNDARY）与关榜时刻
-# （SOURCE_FINALIZE_HOUR，次日 CST 整点）。CST 源次日 01:00 揭榜，
-# PT 源（HF/PH）次日 17:00 揭榜。整榜 is_finalized/is_embargoed
-# 一刀切语义不变；source_status 只增不破地透出分源状态。
+# 定稿状态按来源计算，所有已有快照在定稿前后均可读。
 
 EXPECTED_SOURCE_ORDER = ["arxiv", "github", "news", "producthunt", "hackernews", "x"]
 PT_SOURCES = {"arxiv", "producthunt"}
@@ -113,20 +110,20 @@ def test_source_status_today_is_draft_for_all_sources(monkeypatch: Any) -> None:
         assert status["day_boundary"] in ("PT", "CST")
 
 
-def test_source_status_yesterday_before_any_close_all_embargoed(
+def test_source_status_yesterday_before_any_close_all_visible(
     monkeypatch: Any,
 ) -> None:
     _freeze_now(monkeypatch, 2026, 8, 11, 0)
     status_map = policy.compute_source_status_map("2026-08-10")
     for status in status_map.values():
         assert status["is_finalized"] is False
-        assert status["is_embargoed"] is True
+        assert status["is_embargoed"] is False
 
 
 def test_source_status_yesterday_cst_sources_finalize_before_pt_sources(
     monkeypatch: Any,
 ) -> None:
-    """分源发散的核心契约：同一时刻，CST 源已定稿而 PT 源仍在静默期。"""
+    """CST 源已定稿而 PT 源仍在更新，两者都可读。"""
     _freeze_now(monkeypatch, 2026, 8, 11, 10)
     status_map = policy.compute_source_status_map("2026-08-10")
     for source in CST_SOURCES:
@@ -134,7 +131,7 @@ def test_source_status_yesterday_cst_sources_finalize_before_pt_sources(
         assert status_map[source]["is_embargoed"] is False, source
     for source in PT_SOURCES:
         assert status_map[source]["is_finalized"] is False, source
-        assert status_map[source]["is_embargoed"] is True, source
+        assert status_map[source]["is_embargoed"] is False, source
 
 
 def test_source_status_yesterday_after_pt_close_all_finalized(
@@ -160,8 +157,8 @@ def test_source_status_unknown_source_falls_back_to_legacy_envelope(
 ) -> None:
     _freeze_now(monkeypatch, 2026, 8, 11, 10)
     status = policy.compute_source_board_status("2026-08-10", "weibo")
-    # 未知源回退旧版整榜口径：FINALIZE_HOUR(15) 之前仍静默
-    assert status["is_embargoed"] is True
+    # 未知源保留预计定稿时刻，但不隐藏快照。
+    assert status["is_embargoed"] is False
     assert status["is_finalized"] is False
     assert status["finalize_hour"] == policy.FINALIZE_HOUR
     assert status["day_boundary"] == policy.DEFAULT_SOURCE_DAY_BOUNDARY
@@ -172,14 +169,18 @@ def test_source_status_unknown_source_falls_back_to_legacy_envelope(
     assert status["is_embargoed"] is False
 
 
-def test_aggregate_board_status_semantics_unchanged(monkeypatch: Any) -> None:
-    """整榜一刀切口径回归 pin：昨日 15 点前静默、之后定稿，与旧版一致。"""
+def test_aggregate_board_waits_for_latest_source_without_hiding(monkeypatch: Any) -> None:
     _freeze_now(monkeypatch, 2026, 8, 11, 10)
     assert policy.compute_board_status("2026-08-10") == {
         "is_finalized": False,
-        "is_embargoed": True,
+        "is_embargoed": False,
     }
     _freeze_now(monkeypatch, 2026, 8, 11, 16)
+    assert policy.compute_board_status("2026-08-10") == {
+        "is_finalized": False,
+        "is_embargoed": False,
+    }
+    _freeze_now(monkeypatch, 2026, 8, 11, 17)
     assert policy.compute_board_status("2026-08-10") == {
         "is_finalized": True,
         "is_embargoed": False,
@@ -241,10 +242,10 @@ def test_top_route_response_adds_source_status_and_keeps_legacy_fields(
     assert status_map["producthunt"]["finalize_hour"] == 17
 
 
-def test_top_route_embargoed_response_carries_divergent_source_status(
+def test_top_route_visible_response_carries_divergent_source_status(
     monkeypatch: Any,
 ) -> None:
-    """整榜静默期拦截不变，但 source_status 如实透出分源发散状态。"""
+    """分源状态不再与整榜可见性矛盾。"""
     from backend.app.core.config import settings
 
     monkeypatch.setattr(settings, "x_source_enabled", True)
@@ -258,16 +259,25 @@ def test_top_route_embargoed_response_carries_divergent_source_status(
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"] == []
-    assert payload["is_embargoed"] is True
+    assert payload["is_embargoed"] is False
     assert payload["is_finalized"] is False
 
     status_map = payload["source_status"]
-    # CST 源已过 01:00 关榜点：分源视角已定稿；整榜闸门仍静默
+    # CST 源已过 01:00 关榜点。
     assert status_map["github"]["is_finalized"] is True
     assert status_map["x"]["is_finalized"] is True
-    # PT 源未到 17:00：仍在静默期
-    assert status_map["arxiv"]["is_embargoed"] is True
-    assert status_map["producthunt"]["is_embargoed"] is True
+    assert status_map["arxiv"]["is_embargoed"] is False
+    assert status_map["producthunt"]["is_embargoed"] is False
+    assert status_map["producthunt"]["is_finalized"] is False
+
+
+@pytest.mark.parametrize("source,close_hour", [("github", 1), ("news", 1), ("hackernews", 1), ("x", 1), ("arxiv", 17), ("producthunt", 17)])
+@pytest.mark.parametrize("hour", [0, 1, 10, 15, 16, 17, 23])
+def test_source_envelope_tracks_source_close_without_embargo(monkeypatch, source, close_hour, hour):
+    _freeze_now(monkeypatch, 2026, 8, 11, hour)
+    assert policy.compute_board_status("2026-08-10", source) == {
+        "is_finalized": hour >= close_hour, "is_embargoed": False,
+    }
 
 
 def test_source_status_marks_disabled_pluggable_sources(monkeypatch: Any) -> None:

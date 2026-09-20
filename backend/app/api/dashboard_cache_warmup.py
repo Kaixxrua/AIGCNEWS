@@ -118,8 +118,8 @@ async def warm_dashboard_cache(
 
 def _next_warmup_delay(now: datetime) -> float:
     midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    # 3600s 缓存提前刷新；跨日后立即建立新日期的默认缓存键。
-    return min(1800.0, (midnight - now).total_seconds() + 1.0)
+    # 60s 榜单缓存提前刷新；跨日后立即建立新日期的默认缓存键。
+    return min(45.0, (midnight - now).total_seconds() + 1.0)
 
 
 async def maintain_dashboard_cache(repositories: ApplicationRepositories) -> None:
