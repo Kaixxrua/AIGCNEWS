@@ -151,7 +151,7 @@ def test_apply_batch_quarantines_snapshots_and_rebuilds_only_community_contribut
     assert "daily_watcher_growth=0" in rebuild_sql
     assert "community_engagement_score=0.0" in rebuild_sql
     assert "0.55*scale_corrected_growth_score" in rebuild_sql
-    assert "score_version" not in rebuild_sql
+    assert "score_version='daily_hot_v6'" in rebuild_sql
     assert calls[3].args[1] == (
         ["acme/repo", "acme/repo"],
         ["2026-07-28", "2026-07-29"],

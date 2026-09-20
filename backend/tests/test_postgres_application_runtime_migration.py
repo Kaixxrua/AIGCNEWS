@@ -29,8 +29,8 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
         range(1, migrations[-1].version + 1)
     )
     assert migrations[5].filename == "0006_application_runtime.sql"
-    assert migrations[-1].version == 77
-    assert migrations[-1].filename == "0077_user_avatar.sql"
+    assert migrations[76].filename == "0077_user_avatar.sql"
+    assert migrations[77].filename == "0078_ai_ops_recovery.sql"
 
 
 def test_x_ui_auto_publication_migration_is_opt_in_and_idempotent() -> None:

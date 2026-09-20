@@ -212,10 +212,11 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertIsNone(payload["previous_snapshot_date"])
         self.assertEqual(computed["result"]["available"], 0)
 
-    def test_recomputed_rows_use_v5(self) -> None:
+    def test_missing_rate_history_keeps_versioned_v5_fallback(self) -> None:
         computed = self._compute()
         self.assertEqual(computed["payload"]["score_version"], "daily_hot_v5")
-        self.assertEqual(computed["result"]["score_version"], "daily_hot_v5")
+        self.assertEqual(computed["result"]["score_version"], "daily_hot_v6")
+        self.assertEqual(computed["result"]["legacy_fallback"], 1)
 
     def test_snapshot_payload_propagates_community_metrics_completeness(self) -> None:
         complete = metrics._snapshot_payload(

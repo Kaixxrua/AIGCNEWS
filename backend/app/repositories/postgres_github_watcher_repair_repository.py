@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.app.domain.github_heat import DISPLAY_ANCHORS
+
 
 class PostgresGitHubWatcherRepairRepository:
     """PostgreSQL statements for the GitHub watcher corruption repair tool.
@@ -156,21 +158,30 @@ class PostgresGitHubWatcherRepairRepository:
         repo_ids: list[str],
         metric_dates: list[str],
     ) -> int:
+        v6_display = "CASE " + " ".join(
+            f"WHEN affected.raw <= {upper} THEN {start}+({end}-{start})*(affected.raw-{lower})/({upper}-{lower})"
+            for (lower, start), (upper, end) in zip(DISPLAY_ANCHORS, DISPLAY_ANCHORS[1:])
+        ) + " ELSE 100 END"
         with connection.cursor() as cursor:
             cursor.execute(
                 "WITH affected(repo_id,metric_date) AS ("
-                "SELECT * FROM UNNEST(%s::text[],%s::text[])) "
+                "SELECT * FROM UNNEST(%s::text[],%s::text[])), "
+                "recalculated AS (SELECT metrics.repo_id,metrics.metric_date,"
+                "0.50*scale_corrected_growth_score+0.30*absolute_growth_score+"
+                "0.10*growth_acceleration_score+0.05*maintenance_activity_score AS raw "
+                "FROM github_repo_daily_metrics metrics JOIN affected USING(repo_id,metric_date)) "
                 "UPDATE github_repo_daily_metrics AS metrics SET "
                 "daily_fork_growth=0,daily_watcher_growth=0,"
                 "community_engagement_score=0.0,"
-                "hot_score=ROUND(("
+                "hot_score=ROUND((CASE WHEN score_version='daily_hot_v6' THEN "
+                + v6_display + " ELSE "
                 "0.55*scale_corrected_growth_score+"
                 "0.20*growth_acceleration_score+"
                 "0.10*absolute_growth_score+"
                 "0.10*maintenance_activity_score"
-                ")::numeric,4)::double precision,"
+                " END)::numeric,4)::double precision,"
                 "updated_at=CURRENT_TIMESTAMP::text "
-                "FROM affected WHERE metrics.repo_id=affected.repo_id "
+                "FROM recalculated affected WHERE metrics.repo_id=affected.repo_id "
                 "AND metrics.metric_date=affected.metric_date",
                 (repo_ids, metric_dates),
             )

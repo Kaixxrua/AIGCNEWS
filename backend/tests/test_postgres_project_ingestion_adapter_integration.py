@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -642,6 +643,8 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert inputs[0]["previous_stars"] == 710
     assert inputs[0]["trending_daily_star_growth"] == 50
     assert inputs[0]["baseline_sample_count"] == 1
+    assert inputs[0]["heat_snapshot_history"][-1]["snapshot_date"] == "2026-07-28"
+    assert inputs[0]["heat_snapshot_history"][-1]["captured_at"] == "2026-07-28T12:00:00+00:00"
 
     # 基线回溯（断供日无精确昨日快照）：07-26 无快照时取窗口内最近的 07-25
     repository.insert_github_repo_snapshot(
@@ -664,6 +667,7 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert len(gap_inputs) == 1
     assert gap_inputs[0]["previous_snapshot_date"] == "2026-07-25"
     assert gap_inputs[0]["previous_stars"] == 690
+    assert all(s["snapshot_date"] <= "2026-07-27" for s in gap_inputs[0]["heat_snapshot_history"])
     # 窗口下界之外不回溯：baseline_start=07-26 时 07-25 出窗 → 无基线
     out_of_window = repository.get_github_daily_metric_inputs(
         metric_date="2026-07-27",
@@ -703,6 +707,46 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
         ).fetchone()
     assert stored["hot_score"] == 10.5
     assert stored["daily_growth_available"] is True
+
+
+def test_v6_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
+    from backend.app.domain.github_heat import display_score
+    from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
+    from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
+
+    repository, database = postgres_ingestion
+    repo_id = "heat/velocity"
+    repository.upsert_github_repo_candidate({"repo_id": repo_id, "full_name": repo_id, "stars": 1740})
+    start = datetime(2026, 7, 10, 15, tzinfo=timezone.utc)
+    for i in range(5):
+        observed = start + timedelta(days=min(i, 3), hours=2 if i == 4 else 0)
+        repository.insert_github_repo_snapshot(dict(repo_id=repo_id,
+            snapshot_date=(start.date()+timedelta(days=i)).isoformat(),
+            captured_at=observed.isoformat(), stars=1000+240*i if i<4 else 1740,
+            forks=100+24*i, watchers=10+i, community_metrics_complete=True,
+            repo_pushed_at="2026-07-14T00:00:00+00:00"))
+    result = compute_github_daily_metrics(metric_date="2026-07-14", repo_ids=[repo_id], db=repository)
+    assert result["speed_scored"] == 1 and result["legacy_fallback"] == 0
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
+            before = cursor.fetchone()
+        assert before["score_version"] == "daily_hot_v6"
+        assert before["daily_star_growth"] == 20
+        assert before["community_engagement_score"] > 0
+        assert PostgresGitHubWatcherRepairRepository().rebuild_daily_community_metrics(
+            connection, [repo_id], ["2026-07-14"]
+        ) == 1
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
+            after = cursor.fetchone()
+        expected = display_score(0.5*before["scale_corrected_growth_score"]
+            +0.3*before["absolute_growth_score"]+0.1*before["growth_acceleration_score"]
+            +0.05*before["maintenance_activity_score"])
+        assert after["hot_score"] == pytest.approx(expected, abs=0.0001)
+        assert after["hot_score"] < before["hot_score"]
+        assert after["score_version"] == "daily_hot_v6"
+        assert after["community_engagement_score"] == 0
 
 
 def test_snapshot_created_at_backfilled_from_candidate(

@@ -1174,6 +1174,14 @@ class PostgresGitHubProjectIngestionRepository:
         sql = (
             """
             SELECT s.repo_id,c.full_name,s.snapshot_date metric_date,COALESCE(s.stars,0) stars,
+                (SELECT jsonb_agg(jsonb_build_object(
+                    'snapshot_date', h.snapshot_date, 'captured_at', h.captured_at,
+                    'stars', h.stars, 'forks', h.forks, 'watchers', h.watchers,
+                    'community_metrics_complete', h.community_metrics_complete,
+                    'repo_pushed_at', h.repo_pushed_at) ORDER BY h.snapshot_date)
+                 FROM github_repo_snapshots h WHERE h.repo_id=s.repo_id
+                   AND h.snapshot_date BETWEEN (s.snapshot_date::date-12)::text AND s.snapshot_date
+                ) AS heat_snapshot_history,
                 COALESCE(s.forks,0) forks,COALESCE(s.watchers,0) watchers,
                 s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,
                 COALESCE(NULLIF(s.repo_created_at,''),NULLIF(c.created_at,''),'') repo_created_at,

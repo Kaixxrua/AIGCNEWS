@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
+from backend.app.domain.github_heat import SCORE_VERSION, score_snapshots
 from backend.app.repositories.project_write_repository import (
     GitHubProjectIngestionRepository,
 )
@@ -18,7 +19,7 @@ from backend.app.services.ingestion.source_github import fetch_github_repo_metri
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
-DEFAULT_SCORE_VERSION = "daily_hot_v5"
+DEFAULT_SCORE_VERSION = SCORE_VERSION
 _FULL_ACCELERATION_CONFIDENCE_SAMPLES = 3
 _SCALE_GROWTH_REFERENCE = math.log1p(4.0)
 _ABSOLUTE_GROWTH_REFERENCE = math.log1p(1000.0)
@@ -566,6 +567,7 @@ def compute_github_daily_metrics(
                 "_has_complete_community_pair": has_complete_community_pair,
                 "_baseline_7d": baseline_7d,
                 "_repo_created_at": row.get("repo_created_at"),
+                "_speed_score": score_snapshots(row.get("heat_snapshot_history") or [], metric_date_str),
             }
         )
 
@@ -639,10 +641,14 @@ def compute_github_daily_metrics(
                     suspicion_signals, ensure_ascii=False
                 ),
                 "growth_corroborated": corroborated,
-                "score_version": DEFAULT_SCORE_VERSION,
+                "score_version": "daily_hot_v5",
                 "updated_at": _utcnow(),
             }
         )
+        # Preserve observed day deltas and suspicion contracts; only heat changes.
+        speed_score = item.pop("_speed_score")
+        if speed_score is not None:
+            item.update(speed_score)
         metrics.append(item)
 
     affected = db.upsert_github_daily_metrics(metrics)
@@ -664,6 +670,8 @@ def compute_github_daily_metrics(
         "targeted": bool(repo_ids),
         "affected": affected,
         "score_version": DEFAULT_SCORE_VERSION,
+        "speed_scored": sum(item["score_version"] == SCORE_VERSION for item in metrics),
+        "legacy_fallback": sum(item["score_version"] != SCORE_VERSION for item in metrics),
     }
     logger.info("[GitHubProjectMetrics] 每日热度指标计算完成：%s", result)
     return result
