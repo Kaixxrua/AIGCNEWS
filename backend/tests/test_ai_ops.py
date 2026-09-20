@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from backend.app.services.ai_ops import AiOpsService, delivery_snapshot, parse_decision
+from backend.app.services.ai_ops import (
+    AiOpsService,
+    create_ai_ops_service,
+    delivery_snapshot,
+    parse_decision,
+)
 from scripts.ai_ops_delivery_bridge import publish
 
 
@@ -88,3 +93,25 @@ def test_conflicting_gateway_reply_uses_explicit_read_only_checklist():
     svc.tools["tasks"].assert_called_once()
     assert any(call.args[1] == "warning" for call in repo.event.call_args_list)
     repo.finish.assert_called_once_with("id", "completed", "最终结论")
+
+
+def test_composition_uses_injected_dependencies_and_limits_evidence():
+    database, repositories, health, scheduler, provider = (MagicMock() for _ in range(5))
+    health.run.return_value = {"status": "ok"}
+    repositories.ingestion_tasks.list_tasks.return_value = {"items": [
+        {"id": 7, "status": "failed", "error_msg": "private task detail"}]}
+    repositories.error_events.list_events.return_value = {"items": [
+        {"id": 8, "exception_type": "TimeoutError", "message": "private error"}]}
+    scheduler.running = True
+    scheduler.get_jobs.return_value = []
+    svc = create_ai_ops_service(database=database, repositories=repositories,
+                                health_checks=health, scheduler=scheduler, model_provider=provider)
+    assert svc.repository.database is database
+    assert svc.tools["health"]() == {"status": "ok"}
+    assert svc.tools["tasks"]()[0]["id"] == 7
+    assert "error_msg" not in svc.tools["tasks"]()[0]
+    assert svc.tools["errors"]()[0]["exception_type"] == "TimeoutError"
+    assert "message" not in svc.tools["errors"]()[0]
+    assert svc.tools["scheduler"]() == {"running": True, "jobs": [], "job_count": 0}
+    assert svc.model() is provider.get_chat_model.return_value.model_copy.return_value
+    provider.get_chat_model.assert_called_once_with(reasoning_effort="low")

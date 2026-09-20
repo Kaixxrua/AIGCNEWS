@@ -209,9 +209,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(
                 "[Startup] PostgreSQL 迁移台账校验失败（非阻断）: %s", exc
             )
-        app.state.monitoring_runtime = create_application_monitoring_runtime(
+        monitoring_runtime = create_application_monitoring_runtime(
             postgres=postgres_database,
         )
+        app.state.monitoring_runtime = monitoring_runtime
         app.state.application_repositories = create_application_repositories(
             postgres=postgres_database,
         )
@@ -411,7 +412,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if scheduler_enabled:
             scheduler_runtime.start()
 
-        app.state.ai_ops_service = create_ai_ops_service(app)
+        app.state.ai_ops_service = create_ai_ops_service(
+            database=postgres_database,
+            repositories=app.state.application_repositories,
+            health_checks=monitoring_runtime.health_checks,
+            scheduler=scheduler_runtime.scheduler,
+            model_provider=model_provider_runtime,
+        )
         ai_ops_task = asyncio.create_task(app.state.ai_ops_service.watch())
 
         yield

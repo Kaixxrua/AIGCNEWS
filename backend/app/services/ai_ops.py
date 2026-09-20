@@ -164,30 +164,28 @@ class AiOpsService:
             await asyncio.sleep(30)
 
 
-def create_ai_ops_service(app):
-    state = app.state
-    repos = state.application_repositories
+def create_ai_ops_service(*, database, repositories, health_checks, scheduler, model_provider):
 
     def tasks():
-        rows = repos.ingestion_tasks.list_tasks(1, 15)["items"]
+        rows = repositories.ingestion_tasks.list_tasks(1, 15)["items"]
         return [{k: row.get(k) for k in ("id", "task_name", "status", "item_count", "started_at", "finished_at")}
                 for row in rows]
 
     def errors():
-        rows = repos.error_events.list_events(1, 20)["items"]
+        rows = repositories.error_events.list_events(1, 20)["items"]
         return [{k: row.get(k) for k in ("id", "occurred_at", "level", "logger_name", "exception_type")}
                 for row in rows]
 
     def model():
         # Structured decisions do not need token streaming. Some compatible relays
         # emit both deltas and a complete message, corrupting aggregated JSON.
-        provider = state.model_provider_runtime.get_chat_model(reasoning_effort="low")
+        provider = model_provider.get_chat_model(reasoning_effort="low")
         copy = provider.model_copy(update={"streaming": False, "disable_streaming": True})
         return copy
 
-    return AiOpsService(PostgresAiOpsRepository(state.postgres_database), {
-        "health": state.monitoring_runtime.health_checks.run,
+    return AiOpsService(PostgresAiOpsRepository(database), {
+        "health": health_checks.run,
         "tasks": tasks, "errors": errors,
-        "scheduler": SchedulerAdminService(state.scheduler_runtime.scheduler).status,
+        "scheduler": SchedulerAdminService(scheduler).status,
         "delivery": delivery_snapshot,
     }, model)

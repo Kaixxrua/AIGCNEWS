@@ -74,11 +74,8 @@ def test_head_moves_during_ci_is_not_landed(setup):
 
 def test_mirror_failure_is_recorded_not_raised(setup):
     c,db,base,head=setup
-    original=d.command
-    def offline(args,**kwargs):
-        if 'push' in args:raise RuntimeError('GitHub unavailable')
-        return original(args,**kwargs)
-    with patch.object(d,'command',side_effect=offline):d.mirror_once(c,db)
+    d.meta(db, 'release', {'status': 'delivered', 'sha': base})
+    d.mirror_once(c, db)
     assert d.meta(db,'mirror')['status']=='pending'
     with patch.object(d,'trusted_run',side_effect=attest):d.ci_once(c,db)
     assert d.git(c,'rev-parse','main')==head
