@@ -199,5 +199,5 @@ def test_rebuild_daily_community_metrics_recomputes_hot_score_without_version_ch
     assert "0.10*absolute_growth_score" in sql
     assert "0.10*maintenance_activity_score" in sql
     assert "updated_at=CURRENT_TIMESTAMP::text" in sql
-    assert "score_version" not in sql
+    assert "score_version='daily_hot_v6'" in sql
     assert params == (["acme/repo"], ["2026-07-28", "2026-07-29"])
