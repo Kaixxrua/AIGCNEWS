@@ -551,12 +551,15 @@ def test_five_jobs_have_independent_containers_receipts_and_overlap(tmp_path, re
     def check(self, key, job, archive):
         with guard:
             seen[key] = (self.name, self.state['run_id'], str(self.log.name))
-        barrier.wait(timeout=10)  # Serial implementations cannot satisfy this.
+        # CI may contend for CPU and durable-receipt I/O with four other jobs.
+        # Keep a bounded rendezvous: a serial executor still cannot satisfy it.
+        barrier.wait(timeout=60)
         return [{'name': key, 'conclusion': 'success'}]
     monkeypatch.setattr(ci.Runner, 'check', check)
     monkeypatch.setattr(ci.Runner, 'cleanup', lambda self: cleaned.append(self.name))
-    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 0
+    result = ci.execute(repository, cfg['baseline_sha'], output, cfg)
     receipt = json.loads(output.read_text())
+    assert result == 0, receipt.get('checks', receipt)
     assert set(seen) == set(ci.JOBS)
     for index in range(3):
         assert len({values[index] for values in seen.values()}) == 5

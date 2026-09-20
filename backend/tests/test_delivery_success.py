@@ -24,7 +24,7 @@ class Bridge:
             return {'thread': {'id': params['threadId'], 'status': {'type': 'idle'}}}
         if self.fail:
             raise TimeoutError('ambiguous send')
-        return {}
+        return {'turn': {'id': 'ack-turn'}}
 
 
 @pytest.fixture
@@ -38,13 +38,13 @@ def setup(monkeypatch):
     return db, task
 
 
-def test_success_injects_original_thread_once_without_model_turn(setup):
+def test_success_wakes_original_thread_once(setup):
     db, task = setup
     assert success.send(db, task, '/repo', Bridge) == 'accepted'
     assert success.send(db, task, '/repo', Bridge) == 'accepted'
-    assert [c[0] for c in Bridge.calls] == ['thread/read', 'thread/inject_items']
+    assert [c[0] for c in Bridge.calls] == ['thread/read', 'turn/start']
     assert Bridge.calls[-1][1]['threadId'] == task['owner']
-    assert '部署成功通知' in Bridge.calls[-1][1]['items'][0]['content'][0]['text']
+    assert '部署成功通知' in Bridge.calls[-1][1]['input'][0]['text']
 
 
 def test_missing_owner_or_failed_task_cannot_send(setup, monkeypatch):
@@ -62,3 +62,32 @@ def test_uncertain_response_never_replayed(setup):
     count = len(Bridge.calls)
     assert success.send(db, task, '/repo', Bridge) == 'unconfirmed'
     assert len(Bridge.calls) == count
+
+
+def test_busy_owner_is_deferred_without_consuming_notification(setup):
+    db, task = setup
+    class Busy(Bridge):
+        def call(self, method, params):
+            assert method == 'thread/read'
+            return {'thread': {'id': task['owner'], 'status': {'type': 'active'}}}
+    assert success.send(db, task, '/repo', Busy) == 'waiting_owner_idle'
+    assert db.execute('SELECT COUNT(*) FROM success_notifications').fetchone()[0] == 0
+    assert success.send(db, task, '/repo', Bridge) == 'accepted'
+
+
+def test_missing_turn_receipt_is_not_success_or_replayed(setup):
+    db, task = setup
+    class NoReceipt(Bridge):
+        def call(self, method, params):
+            return super().call(method, params) if method == 'thread/read' else {}
+    assert success.send(db, task, '/repo', NoReceipt) == 'unconfirmed'
+    assert success.send(db, task, '/repo', Bridge) == 'unconfirmed'
+
+
+def test_wrong_thread_cannot_receive_success(setup):
+    db, task = setup
+    class Wrong(Bridge):
+        def call(self, method, params):
+            return {'thread': {'id': 'someone-else'}}
+    assert success.send(db, task, '/repo', Wrong) == 'owner_mismatch'
+    assert db.execute('SELECT COUNT(*) FROM success_notifications').fetchone()[0] == 0
