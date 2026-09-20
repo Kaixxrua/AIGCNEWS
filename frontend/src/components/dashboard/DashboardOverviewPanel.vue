@@ -50,16 +50,16 @@ const metrics = computed(() => [
 
 <style scoped>
 
-.stat-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:7px; min-width:0; }
-.stat-cell { --metric:#b7ef44; position:relative;isolation:isolate;display:flex; align-items:center; gap:10px; min-width:0; min-height:94px; padding:12px 10px; border:2px solid transparent; border-radius:5px 8px 4px 6px; background:linear-gradient(130deg,var(--paper-raised),color-mix(in srgb,var(--metric) 5%,var(--paper-raised))); color:var(--ink); text-align:left; }
+.stat-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; min-width:0; }
+.stat-cell { --metric:#b7ef44; position:relative;isolation:isolate;display:flex; align-items:center; gap:8px; min-width:0; min-height:94px; padding:12px 13px; border:2px solid transparent; border-radius:5px 8px 4px 6px; background:linear-gradient(130deg,var(--paper-raised),color-mix(in srgb,var(--metric) 5%,var(--paper-raised))); color:var(--ink); text-align:left; }
 .stat-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:1.5;pointer-events:none; }
 .stat-ink-frame path { vector-effect:non-scaling-stroke; }
 .stat-cell:nth-child(even) .stat-ink-frame { transform:scaleX(-1); }
-.stat-cell-icon { display:grid; place-items:center; flex:0 0 49px; width:49px; height:53px; padding:9px; border-radius:45%; background:color-mix(in srgb,var(--metric) 30%,var(--paper-raised)); color:var(--ink); }
+.stat-cell-icon { display:grid; place-items:center; flex:0 0 42px; width:42px; height:48px; padding:8px; border-radius:45%; background:color-mix(in srgb,var(--metric) 30%,var(--paper-raised)); color:var(--ink); }
 .stat-cell-icon :deep(svg) { width:100%; height:100%; }
 .stat-cell-body { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .stat-cell-label { font-size:12px; line-height:1.35; white-space:nowrap; }
-.stat-cell-num { font-size:clamp(18px,1.45vw,25px); font-weight:850; line-height:1.15; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.stat-cell-num { font-size:clamp(18px,1.3vw,23px); font-weight:850; line-height:1.15; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
 .stat-cell--github { --metric:#67ef85; }
 .stat-cell--new,.stat-cell--total-visitors { --metric:#6bd4ff; }
 .stat-cell--visitors { --metric:#b0a0ff; }

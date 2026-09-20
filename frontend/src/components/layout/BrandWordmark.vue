@@ -39,6 +39,31 @@ let burstFirstTimer: ReturnType<typeof setTimeout> | null = null
 let burstUntil = 0
 let reducedMotion = false
 let disposed = false
+let desktopQuery: MediaQueryList | null = null
+const comicFrame = ref<Record<string, string>>({})
+
+// Reuse the original cadence and burst window, while tearing only the existing
+// bitmap pixels. No chromatic fringe, tint, glow or expensive SVG filter.
+const tickComic = (bursting: boolean) => {
+  comicFrame.value = {}
+  if (!desktopQuery?.matches || props.compact || props.text !== 'AIGC NEWS') return
+  if (Math.random() >= (bursting ? .95 : hovered.value ? .6 : .09)) return
+  const upper = 10 + Math.floor(Math.random() * 54)
+  const band = (bursting ? 8 : 3) + Math.floor(Math.random() * 7)
+  const lower = 66 + Math.floor(Math.random() * 18)
+  const shift = (Math.random() < .5 ? -1 : 1) * (bursting ? 4 + Math.random() * 4 : 2 + Math.random() * 2)
+  comicFrame.value = {
+    '--comic-slip-visible': '1',
+    '--comic-cut-top': `${upper}%`,
+    '--comic-cut-bottom': `${upper + band}%`,
+    '--comic-cut-rest': `${100 - upper - band}%`,
+    '--comic-second-top': `${lower}%`,
+    '--comic-second-rest': `${100 - lower - 3}%`,
+    '--comic-slip-x': `${shift.toFixed(1)}px`,
+    '--comic-return-x': `${(-shift * .65).toFixed(1)}px`,
+    '--comic-body-x': bursting ? `${(shift * .18).toFixed(1)}px` : '0px',
+  }
+}
 
 const randomGlyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)] ?? '░'
 
@@ -54,6 +79,7 @@ const tick = () => {
     }
   }
   const bursting = Date.now() < burstUntil
+  tickComic(bursting)
   const probability = (bursting ? 0.12 : 0.008) * (hovered.value ? 4 : 1) * (props.compact ? 0.35 : 1)
   chars.value.forEach((ch, i) => {
     if (ch === ' ' || active.has(i)) return
@@ -67,6 +93,7 @@ const start = () => {
   if (tickTimer === null) tickTimer = setInterval(tick, TICK_MS)
 }
 const stop = () => {
+  comicFrame.value = {}
   if (tickTimer !== null) {
     clearInterval(tickTimer)
     tickTimer = null
@@ -96,6 +123,7 @@ watch(
 
 onMounted(async () => {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  desktopQuery = window.matchMedia('(min-width: 1024px)')
   // 字体到位后再锁宽，避免故障层与字标本体逐字错位。
   if (document.fonts) await document.fonts.ready
   await lockCharWidths()
@@ -129,7 +157,7 @@ onUnmounted(() => {
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
-    <span v-if="text === 'AIGC NEWS'" class="brand-comic" aria-hidden="true">
+    <span v-if="text === 'AIGC NEWS'" class="brand-comic" :style="comicFrame" aria-hidden="true">
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__base" />
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--upper" />
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--lower" />
@@ -410,19 +438,15 @@ onUnmounted(() => {
   .brand-wordmark--comic .brand-wordmark__text { display:none; }
   .brand-comic { display:block;position:relative;width:420px;height:102px; }
   .brand-comic img { position:absolute;inset:0;width:100%;height:100%;object-fit:contain; }
-  .brand-comic__slice { opacity:0;pointer-events:none;animation:comic-print-slip 7s steps(1,end) infinite; }
-  .brand-comic__slice--lower { animation-delay:.08s;animation-direction:reverse; }
-  .brand-wordmark:hover .brand-comic__slice { animation-duration:2.5s; }
-}
-@keyframes comic-print-slip {
-  0%,92%,100% { opacity:0;transform:none;clip-path:inset(44% 0 45%); }
-  93% { opacity:1;transform:translateX(-4px);clip-path:inset(24% 0 62%); }
-  94% { opacity:1;transform:translateX(3px);clip-path:inset(65% 0 23%); }
-  95% { opacity:0; }
-  96% { opacity:1;transform:translateX(-2px);clip-path:inset(45% 0 46%); }
-  97% { opacity:0; }
+  .brand-comic__base {
+    transform:translateX(var(--comic-body-x, 0px));
+    mask-image:linear-gradient(to bottom,#000 0 var(--comic-cut-top, 0%),transparent var(--comic-cut-top, 0%) var(--comic-cut-bottom, 0%),#000 var(--comic-cut-bottom, 0%) 100%);
+  }
+  .brand-comic__slice { opacity:var(--comic-slip-visible, 0);pointer-events:none; }
+  .brand-comic__slice--upper { clip-path:inset(var(--comic-cut-top, 0%) 0 var(--comic-cut-rest, 100%));transform:translateX(var(--comic-slip-x, 0px)); }
+  .brand-comic__slice--lower { clip-path:inset(var(--comic-second-top, 0%) 0 var(--comic-second-rest, 100%));transform:translateX(var(--comic-return-x, 0px)); }
 }
 @media (min-width:1024px) and (max-width:1499px) { .brand-comic { width:330px;height:90px; } }
 @media (min-width:1024px) and (max-width:1199px) { .brand-comic { width:280px;height:78px; } }
-@media (prefers-reduced-motion:reduce) { .brand-comic__slice,.brand-wordmark:hover .brand-comic__slice { display:none;animation:none; } }
+@media (prefers-reduced-motion:reduce) { .brand-comic__base { transform:none;mask-image:none; }.brand-comic__slice,.brand-wordmark:hover .brand-comic__slice { display:none;animation:none; } }
 </style>

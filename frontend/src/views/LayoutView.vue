@@ -95,7 +95,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         </span>
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
-          <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M14 24 L297 3 L280 55 L35 60 L7 71 L11 56 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
+          <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
             <FavoritesLink v-if="!isMobile" />
