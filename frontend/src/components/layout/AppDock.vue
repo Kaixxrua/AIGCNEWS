@@ -34,9 +34,9 @@ const isActive = (item: NavigationItem) => isNavigationItemActive(item, props.cu
 const label = (item: NavigationItem) => item.labelText || t(item.labelKey)
 // Compact Chinese captions are intentionally visible in either interface locale.
 const captions: Record<string, string> = {
-  '/': '首页', '/projects': '项目', '/ui-library': 'UI库', '/projects?source=website': '网页',
+  '/': '首页', '/projects': '项目库', '/ui-library': 'UI库', '/projects?source=website': '网页',
   '/chat': '对话', '/report': '简报', '/x': 'X动态', '/wechat': '微信', '/mcp': 'MCP', '/dsh': 'DSH',
-  '/subscriptions': '追踪', '/membership': '会员', '/contact': '联系', '/monitor': '监控',
+  '/subscriptions': '情报追踪', '/membership': '会员', '/contact': '联系我们', '/monitor': '监控',
 }
 const caption = (item: NavigationItem) => captions[item.to] || label(item)
 
@@ -77,7 +77,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
       :aria-label="props.alertItems?.includes(item.to) ? label(item) + '，' + alertLabel(item.to) : label(item)" :title="label(item)"
       :aria-current="isActive(item) ? 'page' : undefined"
       class="dock-item"
-      :class="{ 'dock-item--active': isActive(item), 'dock-item--secondary': !primaryPaths.has(item.to) }"
+      :class="{ 'dock-item--wide': caption(item).length > 3, 'dock-item--active': isActive(item), 'dock-item--secondary': !primaryPaths.has(item.to) }"
     >
       <span class="dock-icon" aria-hidden="true" v-html="item.icon" />
       <span v-if="props.alertItems?.includes(item.to)" class="dock-alert-dot" :aria-label="alertLabel(item.to)" />
@@ -190,14 +190,21 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
 
 /* Captions are navigation content, not hover-only tooltips. Full names stay in title. */
 @media (min-width: 1024px) {
- .dock { gap: 4px; }
- .dock-item { height: 52px; gap: 3px; padding: 3px 2px; }
+ .dock { width: var(--home-dock-width, clamp(760px, 58vw, 900px)); gap: 4px; padding: 10px; }
+ .dock-item { flex: 1 1 0; width: auto; min-width: 0; height: 52px; gap: 3px; padding: 3px 2px; }
  .dock-label, .dock-item:hover .dock-label, .dock-item:focus-visible .dock-label {
    position: static; width: auto; max-width: 100%; padding: 0; border: 0; border-radius: 0;
    background: none; box-shadow: none; color: inherit; font-size: 10px; line-height: 14px;
    opacity: 1; visibility: visible; transform: none; overflow: hidden; text-overflow: ellipsis;
  }
- .dock-icon { flex-shrink: 0; }
+ .dock-item--wide { flex-grow: 1.3; }
+ .dock-icon, .dock-icon :deep(svg) { width: 24px; height: 24px; flex-shrink: 0; }
+}
+@media (min-width: 1024px) and (max-width: 1199px) {
+ .dock-item { height: 48px; }
+}
+@media (min-width: 1024px) and (max-height: 700px) {
+ .dock { padding: 6px; }
 }
 
 </style>
