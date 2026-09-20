@@ -115,7 +115,7 @@ describe('AppDock account settings entry', () => {
     setAppLocale('en-US')
     const host = mountDock()
     const projects = host.querySelector('a[href="/projects"]')!
-    expect(projects.querySelector('.dock-label')?.textContent).toBe('项目')
+    expect(projects.querySelector('.dock-label')?.textContent).toBe('项目库')
     expect(projects.getAttribute('title')).toBe('Projects')
     expect(projects.getAttribute('aria-label')).toBe('Projects')
     expect(host.querySelector('a[href="/ui-library"] .dock-label')?.textContent).toBe('UI库')

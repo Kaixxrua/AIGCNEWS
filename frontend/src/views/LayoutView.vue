@@ -148,21 +148,13 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </template>
 
 <style scoped>
-@media (min-width: 1024px) {
-  .app-shell--editorial :deep(.dock) { bottom: 8px; padding: 10px; }
-  .app-shell--editorial :deep(.dock-item) { width: 52px; min-width: 52px; height: 52px; flex-basis: 52px; }
-  .app-shell--editorial :deep(.dock-icon), .app-shell--editorial :deep(.dock-icon svg) { width: 24px; height: 24px; }
-}
-@media (min-width: 1024px) and (max-width: 1199px) {
-  .app-shell--editorial :deep(.dock-item) { width: 48px; min-width: 48px; height: 48px; flex-basis: 48px; }
-}
 .main-canvas.main-canvas--editorial { width: 100%; height: calc(100dvh - 90px); margin-top: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .main-canvas--editorial .app-masthead { height: 70px; border-bottom: 0 !important; background: transparent !important; padding-inline: 42px; }
 .main-canvas--editorial :deep(.masthead-meta) { left: 42px; font-size: 13px; line-height: 1.45; }
 .main-canvas--editorial > .app-content { padding-top: 70px; padding-bottom: 0; left: 18px; right: 16px; }
 .masthead-tagline { font-size: 14px; color: var(--ink-muted); border-left: 1px solid var(--rule); padding-left: 24px; margin-left: 12px; }
 @media (min-width: 1100px) {
-  .app-masthead__actions { position: absolute; right: 112px; }
+  .app-masthead__actions { flex-shrink: 0; }
   .topbar-divider { display: none; }
 }
 @media (max-width: 1399px) { .masthead-tagline { display: none; } }
@@ -293,15 +285,27 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
  .main-canvas--editorial .app-masthead { height: 52px; }
  .main-canvas--editorial > .app-content { padding-top: 52px; }
  .main-canvas.main-canvas--editorial { height: calc(100dvh - 80px); }
- .app-shell--editorial :deep(.dock) { padding: 6px; bottom: 6px; }
+ .app-shell--editorial :deep(.dock) { bottom: 6px; }
 }
 
 
 /* Share a bounded center lane with the homepage footer, including signed-in items. */
 @media (min-width: 1024px) {
- .app-shell--editorial { --home-dock-width: clamp(560px, 58vw, 900px); }
- .app-shell--editorial :deep(.dock) { width: var(--home-dock-width); gap: 4px; }
- .app-shell--editorial :deep(.dock-item) { flex: 1 1 0; width: auto; min-width: 0; }
+ .app-shell { --home-dock-width: clamp(760px, 58vw, 900px); }
+ .app-shell--editorial :deep(.dock) { bottom: 8px; }
+
 }
 
+/* Header regions participate in layout so long account names cannot cover controls. */
+@media (min-width: 768px) {
+ .app-masthead { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; }
+ .app-masthead :deep(.masthead-meta), .app-masthead :deep(.masthead-user) { position: static; transform: none; min-width: 0; }
+ .app-masthead :deep(.masthead-meta) { grid-column: 1; grid-row: 1; overflow: hidden; }
+ .app-masthead__tools { grid-column: 2; grid-row: 1; }
+ .app-masthead :deep(.masthead-user) { grid-column: 3; grid-row: 1; overflow: hidden; }
+ .app-masthead :deep(.masthead-user__status), .app-masthead :deep(.masthead-user__identity) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+ .app-masthead { gap: 8px; }
+}
 </style>
