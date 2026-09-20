@@ -26,6 +26,7 @@ query GetPosts($first: Int!, $after: String, $order: PostsOrder!) {
                 votesCount
                 commentsCount
                 featuredAt
+                thumbnail { url }
                 topics {
                     edges {
                         node {

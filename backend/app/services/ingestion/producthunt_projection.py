@@ -2,12 +2,30 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 from backend.app.services.ingestion.producthunt_policy import (
     parse_featured_at,
     published_date,
     within_period,
 )
+
+
+def _logo_card(item: Dict[str, Any], url: str, name: str) -> Dict[str, Any]:
+    """Keep the product thumbnail in the existing persisted link-card field."""
+    thumbnail = item.get("thumbnail")
+    if not isinstance(thumbnail, dict):
+        return {}
+    image = thumbnail.get("url")
+    if not isinstance(image, str):
+        return {}
+    try:
+        parsed = urlsplit(image)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            return {}
+    except ValueError:
+        return {}
+    return {"link_card": {"url": url, "title": name, "image_url": image}}
 
 
 def _topics(item: Dict[str, Any]) -> List[str]:
@@ -61,6 +79,7 @@ def project_api_items(
 
         results.append(
             {
+                **_logo_card(node, url, name),
                 "title": name,
                 "abstract": abstract,
                 "summary": abstract,
@@ -121,6 +140,7 @@ def project_html_items(
 
         results.append(
             {
+                **_logo_card(post, url, name),
                 "title": name,
                 "abstract": abstract,
                 "summary": abstract,
