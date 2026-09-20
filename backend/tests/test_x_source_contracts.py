@@ -287,6 +287,7 @@ class XPolicyContracts(unittest.TestCase):
         )
         # 与 x_transport 封面补丁同一姿势：无 slots dataclass 后置赋值
         video.poster_url = "https://pbs.twimg.com/amplify_video_thumb/b.jpg"
+        video.playback_url = "https://video.twimg.com/small.mp4"
         photo = TweetMedia(
             type="photo", url="https://pbs.twimg.com/media/a.jpg", width=1, height=1
         )
@@ -301,6 +302,7 @@ class XPolicyContracts(unittest.TestCase):
                     "width": 640,
                     "height": 360,
                     "poster_url": "https://pbs.twimg.com/amplify_video_thumb/b.jpg",
+                    "playback_url": "https://video.twimg.com/small.mp4",
                 },
                 # 照片无 poster_url 属性 → 不带该键，旧形状不变
                 {
@@ -1594,6 +1596,7 @@ class XMediaPosterPatchContracts(unittest.TestCase):
         self.assertEqual([item.type for item in items], ["photo", "video", "animated_gif"])
         # 原行为保留：视频 url 仍取最高码率 mp4
         self.assertEqual(items[1].url, "https://video.twimg.com/amplify_video/v1/vid/1280x720/a.mp4?tag=29")
+        self.assertEqual(items[1].playback_url, items[1].url)
         self.assertFalse(hasattr(items[0], "poster_url"))
         self.assertEqual(
             items[1].poster_url, "https://pbs.twimg.com/amplify_video_thumb/v1.jpg"
@@ -1601,6 +1604,17 @@ class XMediaPosterPatchContracts(unittest.TestCase):
         self.assertEqual(
             items[2].poster_url, "https://pbs.twimg.com/amplify_video_thumb/g1.jpg"
         )
+
+    def test_patch_keeps_4k_original_and_adds_720p_playback(self) -> None:
+        self._install()
+        raw = _video_media_item("v4k")
+        original = "https://video.twimg.com/amplify_video/v4k/vid/3840x2160/original.mp4"
+        raw["video_info"]["variants"].append({
+            "content_type": "video/mp4", "bitrate": 12000000, "url": original,
+        })
+        item = self._tw_parser._extract_media(_legacy_with_media([raw]))[0]
+        self.assertEqual(item.url, original)
+        self.assertEqual(item.playback_url, raw["video_info"]["variants"][0]["url"])
 
     def test_patch_skips_backfill_when_poster_missing(self) -> None:
         self._install()

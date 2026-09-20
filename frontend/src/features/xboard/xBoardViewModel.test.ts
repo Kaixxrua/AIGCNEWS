@@ -177,6 +177,17 @@ describe('xBoardViewModel', () => {
     expect(items[1]?.poster_url).toBeUndefined()
   })
 
+  it('proxies the advertised playback variant while retaining the original', () => {
+    const doc = tweet('qwen', '1', { media: [{ type: 'video',
+      url: 'https://video.twimg.com/3840x2160/original.mp4',
+      playback_url: 'https://video.twimg.com/1280x720/different.mp4?tag=29',
+    }] })
+    const item = mediaItems(doc)[0]!
+    expect(item.url).toBe('/api/media/x/img/video.twimg.com/3840x2160/original.mp4')
+    expect(item.playback_url).toBe('/api/media/x/img/video.twimg.com/1280x720/different.mp4?tag=29')
+    expect(mediaItems(tweet('qwen', '2', { media: [{ type: 'video', url: 'https://video.twimg.com/old.mp4' }] }))[0]?.playback_url).toBeUndefined()
+  })
+
   it('mediaItems prefers the crawled poster_url over the extraction endpoint', () => {
     const poster = 'https://pbs.twimg.com/amplify_video_thumb/1/img/x.jpg'
     const doc = tweet('openai', '1', {

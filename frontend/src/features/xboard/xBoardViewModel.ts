@@ -352,6 +352,7 @@ const proxyMediaList = (items: NonNullable<TopDoc['media']>): NonNullable<TopDoc
     return {
       ...item,
       url: proxiedMediaUrl(item.url),
+      ...(item.playback_url ? { playback_url: proxiedMediaUrl(item.playback_url) } : {}),
       ...(thumb ? { thumb_url: proxiedMediaUrl(thumb) } : {}),
       ...(item.type === 'video' || item.type === 'animated_gif'
         ? { poster_url: posterThumb ? proxiedMediaUrl(posterThumb) : resolvePosterUrl(item) }

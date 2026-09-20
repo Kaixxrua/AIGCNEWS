@@ -47,7 +47,7 @@ const isPlaying = (key: string) => props.playingMedia.has(key)
       <!-- 视频：未点击时渲染零流量占位，点击后挂载 <video> 经代理加载播放 -->
       <video
         v-else-if="isPlaying(mediaKey(tweet, index))"
-        :src="item.url"
+        :src="item.playback_url || item.url"
         controls
         autoplay
         playsinline

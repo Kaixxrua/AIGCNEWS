@@ -46,6 +46,7 @@ from backend.app.services.source_plugins.x_source import (
     XWindowFetchResult,
     XWindowHandleResult,
 )
+from backend.app.services.x_video_variants import select_playback_url
 
 logger = logging.getLogger(__name__)
 
@@ -153,12 +154,15 @@ _CARD_IMAGE_KEYS = (
 
 
 def _install_media_poster_patch() -> None:
-    """给 twitter-cli 的 _extract_media 打补丁：视频/GIF 回填官方封面 URL。
+    """给 twitter-cli 的 _extract_media 打补丁：回填封面和低码率播放 URL。
 
     twitter-cli 0.8.5 的 TweetMedia 只有 url（视频取最高码率 mp4 直链），
     丢弃了 legacy.extended_entities.media[].media_url_https —— 即 X 官方
     封面图。前端点击播放占位优先用官方封面；本补丁让新采集数据直接落库，
     存量数据仍由服务端抽帧端点 /api/media/x/poster 兜底。
+
+    playback_url 从上游实际提供的 MP4 变体中选择 <=720p/2.5Mbps 版本；
+    url 保留最高码率原视频，缺变体时保持旧形状。
 
     补丁策略：包装原函数（调用点在 parser.py 内部，模块级查找可拦截），
     按序配对原始 media 列表回填 poster_url（TweetMedia 无 slots，可后置
@@ -185,6 +189,9 @@ def _install_media_poster_patch() -> None:
                 return items
             for item, raw in zip(items, raw_items):
                 if item.type in _MEDIA_VIDEO_TYPES:
+                    playback = select_playback_url((raw.get("video_info") or {}).get("variants"))
+                    if playback:
+                        item.playback_url = playback
                     poster = str(raw.get("media_url_https") or "")
                     if poster:
                         item.poster_url = poster

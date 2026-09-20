@@ -169,6 +169,22 @@ const nextPageButton = (wrapper: VueWrapper) => {
   return buttons[buttons.length - 1]!
 }
 
+describe('XBoardView video playback', () => {
+  it.each([true, false])('loads the advertised variant when available=%s', async (hasVariant) => {
+    const [doc] = makeTweets(1)
+    doc!.media = [{ type: 'video', url: 'https://video.twimg.com/original.mp4',
+      ...(hasVariant ? { playback_url: 'https://video.twimg.com/small.mp4' } : {}),
+    }]
+    controller().docs.value = [doc]
+    const wrapper = await mountView()
+    expect(wrapper.find('video').exists()).toBe(false)
+    await wrapper.get('.tweet-video-btn').trigger('click')
+    expect(wrapper.get('video').attributes('src')).toBe(
+      `/api/media/x/img/video.twimg.com/${hasVariant ? 'small' : 'original'}.mp4`,
+    )
+  })
+})
+
 describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
   it('默认关注全部账号，并可按账号即时筛选推文', async () => {
     const tweets = makeTweets(3)

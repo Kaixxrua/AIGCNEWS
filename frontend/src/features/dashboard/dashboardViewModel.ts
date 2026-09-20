@@ -93,6 +93,8 @@ export interface TweetQuote {
 export interface TweetMediaItem {
   type: 'photo' | 'video' | 'animated_gif'
   url: string
+  /** Advertised lower bitrate MP4 for inline playback; url retains the original. */
+  playback_url?: string
   width?: number
   height?: number
   /** 视频封面（服务端抽帧代理地址，仅 video/animated_gif；由 mediaItems 注入） */

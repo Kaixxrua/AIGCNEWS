@@ -262,7 +262,7 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
 
     结构: [{"type": "photo|video|animated_gif", "url": "...", "width": 123, "height": 456}]
     视频/GIF 经 x_transport 封面补丁回填 poster_url（X 官方封面图）时
-    带出该键；无补丁对象/照片不带，保持旧形状不变。
+    带出该键及可选低码率 playback_url；无补丁对象/照片保持旧形状。
     """
     media = getattr(tweet, "media", None) or []
     items: list[dict] = []
@@ -278,6 +278,9 @@ def _project_tweet_media(tweet: Any) -> list[dict]:
         poster = str(getattr(item, "poster_url", "") or "")
         if poster:
             entry["poster_url"] = poster
+        playback = str(getattr(item, "playback_url", "") or "")
+        if playback:
+            entry["playback_url"] = playback
         items.append(entry)
     return items
 
