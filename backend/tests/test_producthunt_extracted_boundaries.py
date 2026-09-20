@@ -320,3 +320,25 @@ def test_html_transports_preserve_retries_parameters_and_order(
     monkeypatch.setattr(transport, "fetch_html_httpx", yes_httpx)
     assert asyncio.run(transport.fetch_html("https://synthetic.invalid")) == "x" * 1001
     assert order == ["curl", "httpx"]
+
+
+@pytest.mark.parametrize("kind", ["api", "html"])
+@pytest.mark.parametrize("thumbnail", [None, {}, {"url": "javascript:alert(1)"}, {"url": "https://ph-files.imgix.net/logo.png"}])
+def test_product_logo_survives_projection_and_persistence(kind, thumbnail):
+    import json
+
+    from langchain_core.documents import Document
+
+    from backend.app.services.ingestion.persistence_adapter import project_document_write
+
+    post = _post(thumbnail=thumbnail)
+    args = ("daily", date(2026, 7, 26), "producthunt_daily_html", "2026-07-27")
+    rows = (projection.project_api_items([{"node": post}], *args) if kind == "api"
+            else projection.project_html_items([post], 10, *args))
+    row = rows[0]
+    if thumbnail and thumbnail.get("url", "").startswith("https:"):
+        assert row["link_card"]["image_url"] == thumbnail["url"]
+        payload = project_document_write(row, Document(page_content="", metadata={"id": "product"}), "producthunt")
+        assert json.loads(payload["link_card"])["image_url"] == thumbnail["url"]
+    else:
+        assert "link_card" not in row

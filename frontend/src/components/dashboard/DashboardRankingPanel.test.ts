@@ -42,6 +42,33 @@ const render = async (doc = tweet) => {
 }
 
 describe('mobile ranking reading', () => {
+  it.each([true, false])('shows the stored tweet avatar (mobile=%s) and recovers after a row changes', async (mobile) => {
+    viewport.mobile = mobile
+    const panel = await render({ ...tweet, author_avatar_url: 'https://pbs.twimg.com/profile_images/one.jpg' })
+    expect(panel.get('.ranking-avatar img').attributes('src')).toBe('/api/media/x/img/pbs.twimg.com/profile_images/one.jpg')
+    await panel.get('.ranking-avatar img').trigger('error')
+    expect(panel.find('.ranking-avatar img').exists()).toBe(false)
+    expect(panel.get('.ranking-avatar').text()).toBe('O')
+    await panel.setProps({ tabList: [{ ...tweet, author_avatar_url: 'https://pbs.twimg.com/profile_images/two.jpg' }] })
+    expect(panel.get('.ranking-avatar img').attributes('src')).toContain('two.jpg')
+  })
+
+  it('shows product thumbnails and falls back when unavailable', async () => {
+    const panel = await render()
+    const product: TopDoc = { source: 'producthunt', title: 'Product', url: 'https://www.producthunt.com/posts/product',
+      link_card: { url: 'https://www.producthunt.com/posts/product', title: 'Product', image_url: 'https://ph-files.imgix.net/product.png' } }
+    await panel.setProps({ activeTab: 'producthunt', tabList: [product] })
+    expect(panel.get('.ranking-avatar img').attributes('src')).toBe(product.link_card!.image_url)
+    await panel.get('.ranking-avatar img').trigger('load')
+    expect(panel.get('.ranking-avatar img').classes()).toContain('loaded')
+    await panel.get('.ranking-avatar img').trigger('error')
+    expect(panel.get('.ranking-avatar').text()).toBe('P')
+    await panel.setProps({ tabList: [{ ...product, link_card: null }] })
+    expect(panel.find('.ranking-avatar img').exists()).toBe(false)
+    await panel.setProps({ tabList: [{ ...product, image_url: 'javascript:alert(1)', link_card: null }] })
+    expect(panel.find('.ranking-avatar img').exists()).toBe(false)
+  })
+
   it('keeps one board status in the toolbar instead of a duplicate banner', async () => {
     const panel = await render()
     expect(panel.findAll('[role="status"]')).toHaveLength(1)

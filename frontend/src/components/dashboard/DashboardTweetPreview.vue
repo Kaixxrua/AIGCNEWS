@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
+import RankingAvatar from './RankingAvatar.vue'
 import { useI18n } from 'vue-i18n'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 import { authorDisplayName, displayTweetText } from '@/features/xboard/xBoardViewModel'
@@ -37,6 +38,7 @@ onMounted(async () => {
   <article class="tweet-preview">
     <header class="tweet-preview__author">
       <span class="tweet-preview__rank">{{ String(rank).padStart(2, '0') }}</span>
+      <RankingAvatar :doc="doc" />
       <strong>{{ author }}</strong>
     </header>
     <p :id="contentId" ref="content" class="tweet-preview__text" :class="{ 'tweet-preview__text--expanded': expanded }">{{ text }}</p>
