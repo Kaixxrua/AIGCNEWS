@@ -1,6 +1,7 @@
 import { trackingEn } from './tracking'
 
 const enUSCatalog = {
+  aiOpsTitle: 'AI Operations',
   recommendedWebsites: {
     title: "Editor's picks", subtitle: 'Websites I recommend, and why.', collectionNav: 'Website collections',
     add: 'Add website', edit: 'Edit website', remove: 'Remove pick', removing: 'Removing…',

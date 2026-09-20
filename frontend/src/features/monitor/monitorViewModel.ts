@@ -58,7 +58,7 @@ export const SOURCE_LIST: SourceItem[] = [
 ]
 
 export type MonitorSectionKey =
-  | 'tasks' | 'mcp-calls' | 'errors' | 'visit-stats'
+  | 'tasks' | 'mcp-calls' | 'errors' | 'visit-stats' | 'ai-ops'
   | 'collect' | 'crawl' | 'enrichment' | 'ui-sources'
   | 'x-watch' | 'x-credentials' | 'wechat'
   | 'provider' | 'scheduler' | 'smtp' | 'mcp-server' | 'oauth-config' | 'telegram-push'
@@ -83,6 +83,7 @@ export const MONITOR_NAV: MonitorNavCategory[] = [
     { key: 'tasks', labelKey: 'monitor.nav.tasks', adminOnly: false },
     { key: 'mcp-calls', labelKey: 'monitor.nav.mcpCalls', adminOnly: false },
     { key: 'errors', labelKey: 'monitor.nav.errors', adminOnly: true },
+    { key: 'ai-ops', labelKey: 'aiOpsTitle', adminOnly: true },
     { key: 'visit-stats', labelKey: 'monitor.nav.visitStats', adminOnly: true },
   ] },
   { key: 'ingestion', labelKey: 'monitor.nav.group.ingestion', icon: CloudDownload, children: [

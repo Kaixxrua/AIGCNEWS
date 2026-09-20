@@ -2,6 +2,7 @@ import { enUS } from './en-US'
 import { trackingZh } from './tracking'
 
 const overrides = {
+  aiOpsTitle: 'AI 运维',
   recommendedWebsites: {
     title: '站长推荐', subtitle: '我挑选的网站，以及推荐它们的理由。', collectionNav: '网站收藏',
     add: '添加网站', edit: '编辑网站', remove: '移出推荐', removing: '移出中…',
