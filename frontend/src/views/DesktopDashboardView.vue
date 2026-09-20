@@ -111,6 +111,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <p class="sidebar-motto"><span>{{ t('dashboard.editorial.motto') }}</span><ChevronRight :size="22" aria-hidden="true" /></p>
         <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />
         <section class="digest-card">
+          <svg class="digest-ink-frame" viewBox="0 0 400 230" preserveAspectRatio="none" aria-hidden="true"><path d="M10 3 Q5 2 4 12 L3 216 Q2 225 13 226 L387 228 Q396 227 396 216 L398 14 Q399 5 388 4 Z" /></svg>
           <div class="digest-heading"><span class="digest-mail"><Mail :size="30" :stroke-width="2.8" /></span><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
           <p>{{ t('dashboard.editorial.digestDescription') }}</p>
           <ul class="digest-features"><li v-for="feature in digestFeatures" :key="feature"><Check :size="16" aria-hidden="true" />{{ feature }}</li></ul>
@@ -233,7 +234,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .digest-mail svg { width:31px;height:29px;filter:drop-shadow(1px 1px 0 var(--paper)); }
 .digest-heading { gap:11px; }
 .digest-heading h2 { font-size:26px;font-weight:950;letter-spacing:0; }
-.digest-card p { z-index:4;display:table;max-width:100%;padding:2px 5px 3px 0;background:var(--paper);font-size:12px;white-space:normal;line-height:1.5; }
+.digest-card p { z-index:4;display:table;max-width:100%;padding:2px 5px 3px 0;background:transparent;font-size:12px;white-space:normal;line-height:1.5; }
 .digest-features { gap:5px;margin-top:11px;font-size:15px;line-height:1.3;font-weight:750; }
 .digest-features li { gap:10px; }
 .digest-robot { width:67%;height:111%;right:-20px;bottom:0;object-fit:fill;z-index:2; }
@@ -245,7 +246,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .sidebar-motto,.dashboard-sidebar :deep(.dash-calendar),.integration-card,.ui-inspiration { background:var(--paper); }
 .digest-robot { bottom:-2px; }
 :root[data-theme='dark'] .digest-card { background:var(--paper-raised); }
-:root[data-theme='dark'] .digest-card p { background:var(--paper-raised); }
+:root[data-theme='dark'] .digest-card p { background:transparent; }
 :root[data-theme='dark'] .digest-mail { background:transparent;color:var(--acid);box-shadow:none; }
 :root[data-theme='dark'] .digest-mail svg { filter:none; }
 :root[data-theme='dark'] .digest-robot { filter:saturate(.64) brightness(.77); }
@@ -255,5 +256,28 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .digest-card { padding:8px 11px; }.digest-card p { font-size:10px;margin-top:3px; }.digest-features { font-size:11px;gap:3px;margin-top:5px; }
   .digest-cta { height:29px;font-size:14px;bottom:6px; }.digest-robot { width:62%;height:107%; }
   .dashboard-sidebar { gap:9px;grid-template-rows:58px 187px 170px 52px 62px; }
+}
+/* Keep the copy in its own rhythm; artwork flows behind the frame, never the text. */
+.digest-card { border-color:transparent;box-shadow:none;padding:12px 14px; }
+.digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:1; }
+.digest-ink-frame path { vector-effect:non-scaling-stroke; }
+.digest-heading { margin-bottom:5px; }
+.digest-heading h2 { font-size:25px;letter-spacing:-.025em; }
+.digest-card p { margin-top:0;font-size:12px;line-height:1.55;max-width:96%; }
+.digest-features { margin-top:5px;gap:2px;font-size:15px;line-height:18px;max-width:48%; }
+.digest-features li { height:19px;min-height:19px;white-space:nowrap; }
+.digest-cta { bottom:12px;left:14px;height:36px;width:48%; }
+.digest-robot { width:64%;height:108%;right:-17px;bottom:1px;object-fit:contain;object-position:right bottom; }
+.digest-card::before { background-image:linear-gradient(135deg,transparent 0 67%,#34c6e9 67% 70%,transparent 70% 73%,#34c6e955 73% 74%,transparent 74%),radial-gradient(#147d9d .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
+.sidebar-motto { box-shadow:none;transform:rotate(-.45deg);border-left:4px solid var(--acid); }
+.integration-card { border-width:1.5px;padding-inline:10px;border-radius:8px 5px 7px 6px; }
+.ui-inspiration { border-width:1.5px;padding:8px; }
+:root[data-theme='dark'] .digest-ink-frame { stroke-width:1; }
+:root[data-theme='dark'] .sidebar-motto { border-left-color:color-mix(in srgb,var(--acid) 45%,var(--paper)); }
+:root[data-theme='dark'] .digest-card::before { opacity:.12; }
+@media (min-width:1200px) and (max-height:820px) {
+ .digest-card { padding:9px 11px; }.digest-heading { margin-bottom:2px; }.digest-heading h2 { font-size:21px; }
+ .digest-card p { font-size:10px;line-height:1.3; }.digest-features { margin-top:5px;gap:2px;font-size:11px;line-height:13px; }.digest-features li { height:14px;min-height:14px; }
+ .digest-cta { bottom:8px;left:11px;height:27px; }.digest-robot { width:62%;height:104%;right:-14px; }
 }
 </style>

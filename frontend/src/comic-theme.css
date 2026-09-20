@@ -57,7 +57,7 @@
 #app .app-shell--editorial .dashboard-heading h1 { -webkit-text-stroke:.65px currentColor; }
 #app .app-shell--editorial .digest-heading h2 { -webkit-text-stroke:.25px currentColor; }
 #app .app-shell--editorial {
-  background: radial-gradient(circle, var(--comic-dots) 1px, transparent 1.5px) 0 0 / 8px 8px, var(--paper);
+  background: var(--paper);
 }
 #app .app-shell--editorial .brand-wordmark__text { font-size: 94px; }
 
@@ -80,8 +80,25 @@
   #app .app-shell--editorial .comic-speech-outline path { fill:var(--paper-raised);stroke:var(--ink);stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:miter; }
   #app .app-shell--editorial .app-masthead::before {
     content: ''; position: absolute; inset: 0; z-index: -1;
-    background: radial-gradient(circle, var(--comic-dots) 1px, transparent 1.7px) 38% 0 / 7px 7px;
-    clip-path: polygon(23% 0,52% 0,46% 100%,31% 100%);
+    background:
+      radial-gradient(circle, #071735 1.05px, transparent 1.6px) 0 0 / 7px 7px,
+      radial-gradient(circle, #26cbed 1.6px, transparent 2px) 3px 3px / 7px 7px;
+    mask-image: radial-gradient(ellipse 170px 83px at 29% -8%, #000 12%, transparent 92%), radial-gradient(ellipse 130px 80px at 99% 8%, #000 0%, transparent 96%);
+    opacity:.78;
+  }
+  :root[data-theme='dark'] #app .app-shell--editorial .app-masthead::before { opacity:.035; }
+  #app .app-shell--editorial::before {
+    content:'';position:absolute;left:0;right:0;bottom:0;height:85px;pointer-events:none;
+    background:radial-gradient(circle,#25c8e9 1.2px,transparent 1.7px) 0 0 / 6px 6px;
+    mask-image:radial-gradient(ellipse 135px 40px at 0 110%,#000 25%,transparent 100%),radial-gradient(ellipse 100px 75px at 79% 0%,#000 0%,transparent 100%);
+  }
+  :root[data-theme='dark'] #app .app-shell--editorial::before { display:none; }
+  #app .app-shell--editorial .app-masthead::after {
+    content:'';position:absolute;left:20%;top:0;width:11%;height:60px;z-index:-1;pointer-events:none;
+    background:repeating-linear-gradient(132deg,transparent 0 18px,#36cee742 19px 20px,transparent 21px 33px);
+    mask-image:linear-gradient(140deg,#000,transparent 70%);
+  }
+  :root[data-theme='dark'] #app .app-shell--editorial .app-masthead::after { display:none;
   }
   #app .app-shell--editorial .masthead-meta { margin-left: 215px; font-size: 14px; line-height: 1.5; overflow: visible !important; }
   #app .app-shell--editorial .masthead-meta::before {
@@ -140,7 +157,7 @@
   #app .app-shell--editorial .dock-footer--editorial::before { content:'';position:absolute;right:-24px;bottom:-3px;width:123px;height:84px;background:var(--ink);clip-path:polygon(23% 0,100% 0,100% 100%,0 100%); }
   #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';white-space:pre;position:absolute;right:-24px;bottom:-3px;width:111px;height:84px;padding:10px 4px 0 24px;box-sizing:border-box;background:var(--acid);color:var(--acid-ink);font:italic 950 14px/.95 'DM Sans',sans-serif;clip-path:polygon(25% 0,100% 0,100% 100%,0 100%); }
   :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::before { background:#41464e; }
-  #app .app-shell--editorial .masthead-meta::after { content:'';position:absolute;left:-24px;top:0;width:200px;height:95px;z-index:-1;background:var(--acid);clip-path:polygon(0 0,100% 0,0 100%); }
+  #app .app-shell--editorial .masthead-meta::after { content:'';position:absolute;left:-24px;top:0;width:200px;height:95px;z-index:-1;background:radial-gradient(circle,#07173530 .7px,transparent 1.3px) 0 0 / 5px 5px,linear-gradient(154deg,var(--acid) 0 42%,transparent 43% 47%,var(--acid) 48% 49%,transparent 50%);mask-image:linear-gradient(100deg,#000 0 48%,transparent 100%); }
 }
 
 @media (min-width: 1024px) and (max-width: 1499px) {
