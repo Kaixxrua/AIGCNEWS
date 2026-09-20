@@ -62,3 +62,31 @@ def test_missing_logos_prioritize_daily_ranking_then_new_projects_and_retry_lega
         assert repo.enqueue_all() == 2
         assert {r['repo_id'] for r in repo.pending()} == {'a/hot', 'a/new', 'a/old'}
         assert bytes(repo.get('a/hot')['content']) == b'avatar'
+
+
+def test_cached_default_avatars_retry_before_thirty_days_without_busy_loop():
+    from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
+
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('a/bad', 'a/bad', 'Bad', 2000), ('a/good', 'a/good', 'Good', 2000)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('a/bad', {'status': 'found', 'content': b'placeholder',
+                          'sha256': GITHUB_DEFAULT_AVATAR_SHA256, 'content_type': 'image/webp'})
+        repo.save('a/good', {'status': 'found', 'content': b'artwork',
+                           'sha256': 'good', 'content_type': 'image/webp'})
+        assert [r['repo_id'] for r in repo.pending()] == ['a/bad']
+        repo.save('a/bad', {'status': 'failed'})
+        assert repo.pending() == []
+        with db.transaction() as connection:
+            connection.execute("UPDATE github_project_logos SET next_check_at = CURRENT_TIMESTAMP WHERE repo_id = 'a/bad'")
+        assert [r['repo_id'] for r in repo.pending()] == ['a/bad']
+        repo.save('a/bad', {'status': 'found', 'content': b'correct',
+                          'sha256': 'correct', 'content_type': 'image/webp'})
+        assert repo.pending() == []
+        assert bytes(repo.get('a/bad')['content']) == b'correct'
+        assert bytes(repo.get('a/good')['content']) == b'artwork'

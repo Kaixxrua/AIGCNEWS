@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 from backend.app.core.config import settings
+from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 from backend.app.services.outbound_target_policy import normalize_http_url, pin_http_target
 
 MAX_DOWNLOAD = 1_000_000
@@ -46,6 +47,8 @@ def logo_url(raw: str, base: str) -> str:
     }:
         raise ValueError("unsupported artwork host")
     if parts.hostname == "github.com":
+        if re.fullmatch(r"/[A-Za-z0-9-]+\.png", parts.path):
+            return url
         if "/blob/" not in parts.path and "/raw/" not in parts.path:
             raise ValueError("not a GitHub file URL")
         url = url.replace("https://github.com/", "https://raw.githubusercontent.com/", 1)
@@ -133,6 +136,17 @@ def download_logo(url: str, client: httpx.Client) -> tuple[bytes, str]:
 def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str]:
     with client.stream("GET", target.request_url, headers=target.headers,
                        extensions=target.extensions, follow_redirects=False) as response:
+        # Only the official owner-avatar entry point may redirect, and only once
+        # to a numeric avatar ID. The second hop is independently validated/pinned.
+        if (target.headers.get("Host") == "github.com"
+                and re.fullmatch(r"/[A-Za-z0-9-]+\.png", urlsplit(target.request_url).path)
+                and response.status_code in {301, 302, 303, 307, 308}):
+            location = response.headers.get("location", "")
+            safe = logo_url(location, location)
+            parts = urlsplit(safe)
+            if parts.hostname != "avatars.githubusercontent.com" or not re.fullmatch(r"/u/[0-9]+", parts.path):
+                raise ValueError("unsupported avatar redirect")
+            return download_logo(safe, client)
         response.raise_for_status()
         if response.status_code != 200:
             raise ValueError("artwork redirects are not followed")
@@ -141,7 +155,10 @@ def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str
             chunks.extend(chunk)
             if len(chunks) > MAX_DOWNLOAD:
                 raise ValueError("artwork too large")
-        return sanitize_image(bytes(chunks))
+        content, content_type = sanitize_image(bytes(chunks))
+        if hashlib.sha256(content).hexdigest() == GITHUB_DEFAULT_AVATAR_SHA256:
+            raise ValueError("GitHub default avatar is not project artwork")
+        return content, content_type
 
 
 def collect_logo(
@@ -155,7 +172,7 @@ def collect_logo(
     rate_limited = snapshot is not None and snapshot.status == "rate_limited"
     candidates = snapshot.logo_candidates if snapshot and snapshot.status == "succeeded" else ()
     # Cache the owner avatar too: browsers must not depend on GitHub connectivity.
-    avatar = f"https://avatars.githubusercontent.com/{full_name.split('/')[0]}?s=128"
+    avatar = f"https://github.com/{full_name.split('/')[0]}.png?size=128"
     for url in (*candidates, avatar):
         try:
             content, content_type = download_logo(url, image_client)

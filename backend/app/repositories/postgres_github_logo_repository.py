@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 from backend.app.core.postgres_database import postgres_database
 
 
@@ -25,7 +26,8 @@ class PostgresGitHubLogoRepository:
                   AND m.metric_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date::text
                 WHERE c.availability_status = 'active'
                   AND (l.repo_id IS NULL OR l.next_check_at <= CURRENT_TIMESTAMP
-                       OR (l.status = 'not_found' AND l.content IS NULL))
+                       OR (l.status = 'not_found' AND l.content IS NULL)
+                       OR (l.status = 'found' AND l.sha256 = %s))
                   AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
                       WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
                 ORDER BY (l.content IS NULL) DESC,
@@ -34,7 +36,7 @@ class PostgresGitHubLogoRepository:
                          (NULLIF(c.first_seen_at, '')::timestamptz >= CURRENT_TIMESTAMP - INTERVAL '1 day') DESC NULLS LAST,
                          l.checked_at ASC NULLS FIRST, c.stars DESC, c.repo_id
                 LIMIT %s
-            """, (max(1, min(limit, 1000)),))
+            """, (GITHUB_DEFAULT_AVATAR_SHA256, max(1, min(limit, 1000))))
             return [dict(row) for row in cursor.fetchall()]
 
     def save(self, repo_id: str, result: dict[str, Any]) -> None:

@@ -196,7 +196,7 @@ def test_missing_or_broken_readme_logo_caches_owner_avatar(monkeypatch, status, 
     monkeypatch.setattr(logos, "download_logo", download)
     result = logos.collect_logo("acme/demo", Mock(), Mock())
     assert result["status"] == "found"
-    assert result["source_url"] == "https://avatars.githubusercontent.com/acme?s=128"
+    assert result["source_url"] == "https://github.com/acme.png?size=128"
     assert result["content"] == b"avatar"
     assert calls == [*candidates, result["source_url"]]
 
@@ -266,3 +266,72 @@ def test_other_tls_errors_are_not_retried(monkeypatch):
     monkeypatch.setattr(logos, "_download_pinned_logo", Mock(side_effect=httpx.ConnectError("certificate expired")))
     with pytest.raises(httpx.ConnectError, match="expired"):
         logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", Mock())
+
+
+def test_official_avatar_redirect_is_pinned_and_downloaded_without_credentials(monkeypatch):
+    from backend.app.services import outbound_target_policy
+
+    resolved = []
+    def resolve(host):
+        resolved.append(host)
+        return ['93.184.216.34']
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver', resolve)
+    seen = []
+    def handler(request):
+        seen.append(request)
+        assert request.url.host == '93.184.216.34'
+        assert 'authorization' not in request.headers
+        if request.headers['host'] == 'github.com':
+            return httpx.Response(302, headers={'location': 'https://avatars.githubusercontent.com/u/314135?s=128&v=4'})
+        return httpx.Response(200, content=b'<svg><path d="M0 0h10v10z"/></svg>')
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        body, mime = logos.download_logo('https://github.com/cloudflare.png?size=128', client)
+    assert mime == 'image/svg+xml' and b'<path' in body
+    assert resolved == ['github.com', 'avatars.githubusercontent.com']
+    assert len(seen) == 2
+
+
+@pytest.mark.parametrize('location', [
+    'http://avatars.githubusercontent.com/u/1', 'https://127.0.0.1/u/1',
+    'https://avatars.githubusercontent.com.evil.example/u/1',
+    'https://avatars.githubusercontent.com/cloudflare', 'https://github.com/login',
+    'https://user:pass@avatars.githubusercontent.com/u/1',
+    'https://avatars.githubusercontent.com:444/u/1', '',
+])
+def test_avatar_redirect_rejects_untrusted_destinations(monkeypatch, location):
+    from backend.app.services import outbound_target_policy
+
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver', lambda host: ['93.184.216.34'])
+    handler = Mock(return_value=httpx.Response(302, headers={'location': location}))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError):
+            logos.download_logo('https://github.com/cloudflare.png?size=128', client)
+    assert handler.call_count == 1
+
+
+def test_avatar_redirect_revalidates_dns_and_does_not_follow_a_second_redirect(monkeypatch):
+    from backend.app.services import outbound_target_policy
+
+    for avatar_ips in (['127.0.0.1'], ['93.184.216.34', '10.0.0.1'], ['93.184.216.34']):
+        monkeypatch.setattr(outbound_target_policy, '_system_resolver',
+                            lambda host: ['93.184.216.34'] if host == 'github.com' else avatar_ips)
+        handler = Mock(return_value=httpx.Response(302, headers={
+            'location': 'https://avatars.githubusercontent.com/u/314135?s=128',
+        }))
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises((ValueError, httpx.HTTPError)):
+                logos.download_logo('https://github.com/cloudflare.png?size=128', client)
+        assert handler.call_count == (2 if avatar_ips == ['93.184.216.34'] else 1)
+
+
+def test_default_avatar_is_rejected_even_when_http_succeeds(monkeypatch):
+    import hashlib
+
+    from backend.app.services import outbound_target_policy
+
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver', lambda host: ['93.184.216.34'])
+    monkeypatch.setattr(logos, 'sanitize_image', lambda body: (b'placeholder', 'image/webp'))
+    monkeypatch.setattr(logos, 'GITHUB_DEFAULT_AVATAR_SHA256', hashlib.sha256(b'placeholder').hexdigest())
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'image'))) as client:
+        with pytest.raises(ValueError, match='default avatar'):
+            logos.download_logo('https://avatars.githubusercontent.com/u/1?s=128', client)
