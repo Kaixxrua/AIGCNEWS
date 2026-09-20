@@ -71,12 +71,13 @@ cd frontend && npm run dev
 
 ## 6) Default admin & SMTP configuration
 
-**On an empty users table, the first backend startup seeds a default admin** so a brand-new deployment without a mail channel can still reach the admin console:
+**Administrator bootstrap is disabled by default.** To initialize an empty installation without SMTP, explicitly configure an owner-controlled password before starting the backend:
 
-- Email `admin@aigcnews.internal`, password `admin123456` (see the `DEFAULT_ADMIN_*` block in `.env.example` to override; blanking either value disables the seed);
+- Generate a fresh password with `openssl rand -hex 32` and set `DEFAULT_ADMIN_PASSWORD` in your private environment file. Use a different secret from `JWT_SECRET_KEY`.
+- Set `DEFAULT_ADMIN_EMAIL` to your administrator address (default `admin@aigcnews.internal`). Leaving either setting blank disables the seed; the historical public password `admin123456` is refused for new bootstrap accounts.
 - The seed runs once and only on an empty database: existing deployments (non-empty users table) are never touched, and a seed failure does not block startup (logged as critical).
 
-**The default password is a public credential — change it immediately after logging in.** While it is still in use, a persistent warning banner appears at the bottom of every page; click the banner or the key button in the dock to open "Change password", which only requires the current password and **does not depend on SMTP**. The banner disappears once the password is changed.
+After bootstrap, sign in with the configured credentials and change the password using the banner or dock key button; this **does not depend on SMTP**. Remove the bootstrap password from the environment file once setup is complete. Upgrading does not rotate existing accounts: installations still using the historical public credentials must change that password immediately. The warning for those credentials remains active even when the bootstrap password setting is empty.
 
 Registering additional users and password recovery still require email OTPs, so configuring SMTP early is still recommended. Pick one:
 

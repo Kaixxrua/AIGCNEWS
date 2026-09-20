@@ -6,10 +6,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from backend.app.api import routes_ui_library
 from backend.app.core.auth import (
+    OptionalUser,
     RequireAdmin,
     RequireUser,
     create_access_token,
@@ -256,6 +258,86 @@ class TokenRevocationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"role": "admin"})
         self.assertEqual(repository.queries, [5])
+
+
+class OptionalTokenRevocationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.users = FakeUserAccountRepository()
+        self.users.records[7] = {"id": 7, "role": "user", "pwd_ver": 1}
+        self.app = FastAPI()
+        self.likes = MagicMock()
+        self.likes.engagement.side_effect = lambda user_id, *_: [{"template_id": "test", "liked": user_id == 7}]
+        self.app.state.application_repositories = SimpleNamespace(users=self.users, ui_library=self.likes)
+        self.app.include_router(routes_ui_library.router, prefix="/api")
+
+        @self.app.get("/optional")
+        async def optional(user: dict | None = Depends(OptionalUser)):
+            return user
+
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+        self.headers = _bearer({"user_id": 7, "role": "admin", "pwd_ver": 1, "membership_tier": "member"})
+
+    def test_current_identity_personalizes_using_live_role(self) -> None:
+        response = self.client.get("/optional", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["role"], "user")
+        self.assertEqual(response.json()["membership_tier"], "free")
+        response = self.client.get("/api/ui-library/engagement", headers=self.headers)
+        self.assertTrue(response.json()["items"][0]["liked"])
+
+    def test_password_change_disable_and_delete_remove_personalization(self) -> None:
+        # Reuse the same issued token before and after each independent change.
+        for revoked_record in (
+            {"id": 7, "role": "user", "pwd_ver": 2},
+            {"id": 7, "role": "user", "pwd_ver": 1, "disabled": True},
+            None,
+        ):
+            with self.subTest(record=revoked_record):
+                self.users.records[7] = {"id": 7, "role": "user", "pwd_ver": 1}
+                before = self.client.get("/api/ui-library/engagement", headers=self.headers)
+                self.assertTrue(before.json()["items"][0]["liked"])
+                self.users.records[7] = revoked_record
+                after = self.client.get("/api/ui-library/engagement", headers=self.headers)
+                self.assertEqual(after.status_code, 200)
+                self.assertFalse(after.json()["items"][0]["liked"])
+                self.assertIsNone(self.likes.engagement.call_args.args[0])
+
+    def test_missing_password_version_is_anonymous(self) -> None:
+        response = self.client.get("/optional", headers=_bearer({"user_id": 7, "role": "user"}))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json())
+
+    def test_unmigrated_record_without_password_version_keeps_required_auth_compatibility(self) -> None:
+        self.users.records[7] = {"id": 7, "role": "user"}
+        response = self.client.get("/optional", headers=_bearer({"user_id": 7}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user_id"], 7)
+
+    def test_absent_and_invalid_credentials_need_no_identity_repository(self) -> None:
+        del self.app.state.application_repositories
+        for headers in ({}, {"Authorization": "Basic ignored"}, {"Authorization": "Bearer invalid"}):
+            with self.subTest(headers=headers):
+                response = self.client.get("/optional", headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertIsNone(response.json())
+        self.assertEqual(self.users.queries, [])
+
+    def test_valid_credentials_require_wiring_and_database_availability(self) -> None:
+        del self.app.state.application_repositories
+        self.assertEqual(self.client.get("/optional", headers=self.headers).status_code, 500)
+        failed_users = MagicMock()
+        failed_users.get_user_by_id.side_effect = RuntimeError("database unavailable")
+        self.app.dependency_overrides[get_user_identity_repository] = lambda: failed_users
+        self.assertEqual(self.client.get("/optional", headers=self.headers).status_code, 500)
+        failed_users.get_user_by_id.side_effect = HTTPException(503, "database unavailable")
+        self.assertEqual(self.client.get("/optional", headers=self.headers).status_code, 503)
+
+    def test_optional_dependency_override_still_bypasses_identity_lookup(self) -> None:
+        del self.app.state.application_repositories
+        self.app.dependency_overrides[OptionalUser] = lambda: {"user_id": 9, "role": "user"}
+        response = self.client.get("/optional")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["user_id"], 9)
 
 
 class _FakeDatabase:

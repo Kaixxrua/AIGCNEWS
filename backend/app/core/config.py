@@ -435,10 +435,10 @@ class Settings(BaseSettings):
 
     # 开源自托管引导：用户表为空的首启动种子一个默认管理员，
     # 让无法配置 SMTP（注册 OTP 依赖邮件投递）的部署也能获得管理入口。
-    # 默认值是公开凭据：仅空库种子一次，登录后必须立即改密（免 SMTP）；
+    # 密码默认留空；管理员必须显式提供独立强随机密码才会种子（免 SMTP）。
     # 任一值置空则禁用种子。既有部署（用户表非空）完全不触发。
     DEFAULT_ADMIN_EMAIL: str = "admin@aigcnews.internal"
-    DEFAULT_ADMIN_PASSWORD: str = "admin123456"
+    DEFAULT_ADMIN_PASSWORD: str = ""
 
     # SMTP 邮件配置（Phase 4 邮箱验证码）
     # SMTP_HOST 为空时进入 dev 模式，验证码打印到日志

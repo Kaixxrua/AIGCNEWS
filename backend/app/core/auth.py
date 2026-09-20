@@ -110,9 +110,9 @@ def get_user_identity_repository(request: Request) -> UserAccountReader | None:
         return None
 
     repositories = getattr(request.app.state, "application_repositories", None)
-    if repositories is None:
-        raise RuntimeError("Application repositories are not configured")
-    return repositories.users
+    # Defer missing wiring until after token validation so optional reads with
+    # absent/invalid credentials can still use their anonymous contract.
+    return repositories.users if repositories is not None else None
 
 
 async def RequireUser(
@@ -142,8 +142,7 @@ async def RequireUser(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if repository is None:
-        # 携带 Bearer 头时 get_user_identity_repository 必然返回仓储或抛错，
-        # 此分支仅防御仓储依赖被异常覆盖的场景。
+        # Valid credentials never fall back to trusting JWT claims alone.
         raise RuntimeError("User account repository is not configured")
     record = await asyncio.to_thread(repository.get_user_by_id, user_id)
     if record is None or record.get("disabled"):
@@ -181,13 +180,16 @@ async def RequireUser(
 
 async def OptionalUser(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    repository: UserAccountReader | None = Depends(get_user_identity_repository),
 ) -> dict[str, Any] | None:
     """FastAPI 依赖：可选登录态；缺失或无效 token 都按匿名访问处理。"""
     if credentials is None:
         return None
     try:
-        return decode_access_token(credentials.credentials)
-    except HTTPException:
+        return await RequireUser(credentials=credentials, repository=repository)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_401_UNAUTHORIZED:
+            raise
         return None
 
 

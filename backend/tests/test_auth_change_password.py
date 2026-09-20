@@ -399,6 +399,27 @@ class DefaultAdminCredentialFlagTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIs(response.json()["password_change_required"], False)
 
+    def test_custom_legacy_admin_warns_on_login_and_me_with_empty_bootstrap_password(self) -> None:
+        email = "owner@example.com"
+        self.repository.users_by_email[email] = {
+            "id": 1, "email": email, "role": "admin",
+            "hashed_password": hash_password("admin123456"),
+        }
+        with (
+            patch.object(routes_auth.settings, "DEFAULT_ADMIN_EMAIL", email),
+            patch.object(routes_auth.settings, "DEFAULT_ADMIN_PASSWORD", ""),
+        ):
+            logged_in = self.client.post(
+                "/api/auth/login", json={"email": email, "password": "admin123456"},
+            )
+            self.assertEqual(logged_in.status_code, 200)
+            self.assertIs(logged_in.json()["password_change_required"], True)
+            profile = self.client.get(
+                "/api/auth/me", headers={"Authorization": f"Bearer {logged_in.json()['access_token']}"},
+            )
+            self.assertEqual(profile.status_code, 200)
+            self.assertIs(profile.json()["password_change_required"], True)
+
     def test_me_flags_default_password_from_stored_hash(self) -> None:
         self._seed_default_admin()
 

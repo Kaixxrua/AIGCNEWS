@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
+from backend.app.core.config import Settings
 from backend.app.services.auth.default_admin_bootstrap import (
     ensure_default_admin,
     password_change_required_for_email,
@@ -51,6 +52,27 @@ def fake_verify(password: str, hashed: str) -> bool:
 
 
 class EnsureDefaultAdminTests(unittest.TestCase):
+    def test_default_settings_do_not_seed_an_administrator(self) -> None:
+        repository = FakeRepository(user_count=0)
+        self.assertEqual(Settings.model_fields["DEFAULT_ADMIN_PASSWORD"].default, "")
+        self.assertFalse(ensure_default_admin(
+            repository=repository,
+            email=Settings.model_fields["DEFAULT_ADMIN_EMAIL"].default,
+            password=Settings.model_fields["DEFAULT_ADMIN_PASSWORD"].default,
+            hash_password=fake_hash,
+        ))
+        self.assertEqual(repository.create_calls, [])
+
+    def test_explicit_legacy_public_password_cannot_seed_any_admin_email(self) -> None:
+        for email in ("admin@aigcnews.internal", "owner@example.com"):
+            with self.subTest(email=email):
+                repository = FakeRepository(user_count=0)
+                self.assertFalse(ensure_default_admin(
+                    repository=repository, email=email,
+                    password="admin123456", hash_password=fake_hash,
+                ))
+                self.assertEqual(repository.create_calls, [])
+
     def test_empty_users_table_seeds_admin_with_normalized_email(self) -> None:
         repository = FakeRepository(user_count=0)
 
@@ -146,12 +168,54 @@ class DefaultCredentialPredicatesTests(unittest.TestCase):
             {"password": "other-secret"},
             {"email": ""},
             {"password": ""},
-            {"configured_password": ""},
         ):
             with self.subTest(override=override):
                 self.assertFalse(
                     uses_configured_default_credentials(**(base | override))
                 )
+
+    def test_legacy_warning_survives_removed_or_changed_bootstrap_config(self) -> None:
+        repository = FakeRepository(user_count=1)
+        repository.users["admin@aigcnews.internal"] = {"hashed_password": "hashed:admin123456"}
+        for configured_email, configured_password in (("", ""), ("owner@example.com", "owner-secret")):
+            with self.subTest(configured_email=configured_email):
+                self.assertTrue(uses_configured_default_credentials(
+                    email="admin@aigcnews.internal", password="admin123456",
+                    configured_email=configured_email, configured_password=configured_password,
+                ))
+                self.assertTrue(password_change_required_for_email(
+                    repository=repository, email="admin@aigcnews.internal",
+                    configured_email=configured_email, configured_password=configured_password,
+                    verify_password=fake_verify,
+                ))
+
+    def test_owner_configured_secret_still_warns_until_rotated(self) -> None:
+        repository = FakeRepository(user_count=1)
+        repository.users["owner@example.com"] = {"hashed_password": "hashed:owner-secret"}
+        self.assertTrue(uses_configured_default_credentials(
+            email="owner@example.com", password="owner-secret",
+            configured_email="owner@example.com", configured_password="owner-secret",
+        ))
+        self.assertTrue(password_change_required_for_email(
+            repository=repository, email="owner@example.com",
+            configured_email="owner@example.com", configured_password="owner-secret",
+            verify_password=fake_verify,
+        ))
+
+    def test_custom_bootstrap_email_keeps_legacy_warning_after_password_config_changes(self) -> None:
+        repository = FakeRepository(user_count=1)
+        repository.users["owner@example.com"] = {"hashed_password": "hashed:admin123456"}
+        for configured_password in ("", "new-owner-secret"):
+            with self.subTest(configured_password=configured_password):
+                self.assertTrue(uses_configured_default_credentials(
+                    email="owner@example.com", password="admin123456",
+                    configured_email="owner@example.com", configured_password=configured_password,
+                ))
+                self.assertTrue(password_change_required_for_email(
+                    repository=repository, email="owner@example.com",
+                    configured_email="owner@example.com", configured_password=configured_password,
+                    verify_password=fake_verify,
+                ))
 
     def test_password_change_required_short_circuits_before_repository(self) -> None:
         repository = FakeRepository(user_count=1)
