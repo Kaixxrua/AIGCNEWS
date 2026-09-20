@@ -36,4 +36,18 @@ describe('AI operations console', () => {
     expect(wrapper.find('img').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('saves explicit recovery revocation and shows admitted action results', async () => {
+    vi.mocked(api.get).mockImplementation(async (path) => ({ data: path.endsWith('/runs')
+      ? { items: [run], config: { enabled: true, interval_minutes: 15, recovery_enabled: true } }
+      : { ...run, events: [{ at: run.started_at, kind: 'action_result', title: '公共资讯补跑', data: { status: 'scheduled' } }], report: '' } }))
+    const wrapper = mount(AiOpsPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('有限自愈')
+    expect(wrapper.text()).toContain('补跑提交结果')
+    await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(false)
+    await wrapper.get('[aria-label="保存巡检计划"]').trigger('click')
+    await flushPromises()
+    expect(api.put).toHaveBeenCalledWith('/ops/ai/config', { enabled: true, interval_minutes: 15, recovery_enabled: false })
+    wrapper.unmount()
+  })
 })

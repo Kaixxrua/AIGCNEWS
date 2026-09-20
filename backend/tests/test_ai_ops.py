@@ -95,6 +95,26 @@ def test_conflicting_gateway_reply_uses_explicit_read_only_checklist():
     repo.finish.assert_called_once_with("id", "completed", "最终结论")
 
 
+def test_recovery_uses_fresh_delivery_and_report_receives_real_outcome():
+    svc, repo, model = service([{"tool": "tasks"}, "最终结论"])
+    svc.tools["delivery"] = MagicMock(return_value={"status": "ok", "release_status": "delivered"})
+    svc.recovery = MagicMock()
+    svc.recovery.run.return_value = {"status": "scheduled", "task_id": 7}
+    asyncio.run(svc.run("id"))
+    assert svc.tools["delivery"].call_count == 2
+    svc.recovery.run.assert_called_once_with("id", {"status": "ok", "release_status": "delivered"})
+    report_input = model.ainvoke.call_args.args[0][-1].content
+    assert json.loads(report_input)["recovery"] == {"status": "scheduled", "task_id": 7}
+
+
+def test_cancel_before_policy_never_admits_action():
+    svc, repo, _ = service([{"tool": "tasks"}, "unused"])
+    svc.recovery = MagicMock()
+    repo.event.side_effect = lambda run, kind, *args: kind != "policy"
+    asyncio.run(svc.run("id"))
+    svc.recovery.run.assert_not_called()
+
+
 def test_composition_uses_injected_dependencies_and_limits_evidence():
     database, repositories, health, scheduler, provider = (MagicMock() for _ in range(5))
     health.run.return_value = {"status": "ok"}

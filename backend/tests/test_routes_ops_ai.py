@@ -55,3 +55,12 @@ def test_config_validation_and_missing_run():
     assert client.put("/ops/ai/config", json={"enabled": True, "interval_minutes": 15}).status_code == 200
     svc.repository.get.return_value = None
     assert client.get(f"/ops/ai/runs/{uuid4()}").status_code == 404
+
+
+def test_admin_can_revoke_recovery_and_old_clients_preserve_permission():
+    client, svc, _ = setup()
+    assert client.put("/ops/ai/config", json={"enabled": True, "interval_minutes": 15,
+                                             "recovery_enabled": False}).status_code == 200
+    svc.repository.configure.assert_called_with(True, 15, False)
+    assert client.put("/ops/ai/config", json={"enabled": True, "interval_minutes": 15}).status_code == 200
+    svc.repository.configure.assert_called_with(True, 15, None)
