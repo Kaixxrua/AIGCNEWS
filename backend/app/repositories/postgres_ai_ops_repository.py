@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from psycopg.types.json import Jsonb
 
+RECOVERY_JOBS = {"single:news": "news_techmeme", "single:hackernews": "hackernews",
+                 "single:dailyhot": "dailyhot_hotlists"}
 
 class PostgresAiOpsRepository:
     def __init__(self, database):
@@ -12,13 +14,66 @@ class PostgresAiOpsRepository:
 
     def config(self):
         with self.database.transaction() as conn, conn.cursor() as cur:
-            cur.execute("SELECT enabled, interval_minutes FROM ai_ops_config WHERE id = 1")
+            cur.execute("SELECT enabled, interval_minutes, recovery_enabled FROM ai_ops_config WHERE id = 1")
             return dict(cur.fetchone())
 
-    def configure(self, enabled, interval_minutes):
+    def configure(self, enabled, interval_minutes, recovery_enabled=None):
         with self.database.transaction() as conn, conn.cursor() as cur:
-            cur.execute("UPDATE ai_ops_config SET enabled=%s, interval_minutes=%s WHERE id=1",
-                        (enabled, interval_minutes))
+            cur.execute("UPDATE ai_ops_config SET enabled=%s, interval_minutes=%s, "
+                        "recovery_enabled=COALESCE(%s,recovery_enabled) WHERE id=1",
+                        (enabled, interval_minutes, recovery_enabled))
+
+    def reserve_recovery(self, run_id, task_name, job_id, eligible):
+        if RECOVERY_JOBS.get(task_name) != job_id:
+            return None
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("SELECT recovery_enabled FROM ai_ops_config WHERE id=1 FOR UPDATE")
+            if not cur.fetchone()["recovery_enabled"]:
+                return None
+            cur.execute("SELECT status FROM ai_ops_runs WHERE id=%s FOR UPDATE", (run_id,))
+            run = cur.fetchone()
+            if not run or run["status"] != "running":
+                return None
+            cur.execute("SELECT COUNT(*) AS daily, COUNT(*) FILTER "
+                        "(WHERE created_at > now()-interval '1 hour') AS hourly "
+                        "FROM ai_ops_recovery_actions WHERE created_at > now()-interval '24 hours'")
+            budget = cur.fetchone()
+            if budget["daily"] >= 3 or budget["hourly"]:
+                return None
+            cur.execute("SELECT 1 FROM ingestion_tasks WHERE starts_with(task_name,%s) "
+                        "AND status IN ('running','pending') LIMIT 1", (task_name,))
+            if cur.fetchone():
+                return None
+            cur.execute("SELECT * FROM ingestion_tasks WHERE task_name=%s ORDER BY id DESC LIMIT 1",
+                        (task_name,))
+            task = cur.fetchone()
+            if not eligible(task, datetime.now(timezone.utc)):
+                return None
+            action = {"id": str(uuid4()), "task_id": task["id"], "job_id": job_id}
+            cur.execute("INSERT INTO ai_ops_recovery_actions (id,run_id,task_id,job_id,status) "
+                        "VALUES (%s,%s,%s,%s,'reserved') ON CONFLICT (task_id) DO NOTHING",
+                        (action["id"], run_id, task["id"], job_id))
+            if not cur.rowcount:
+                return None
+            event = {"at": datetime.now(timezone.utc).isoformat(), "kind": "action_start",
+                     "title": "公共资讯补跑", "data": action}
+            cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
+                        (Jsonb([event]), run_id))
+            return action
+
+    def finish_recovery(self, run_id, action, status):
+        if status not in {"scheduled", "uncertain"}:
+            raise ValueError("invalid_recovery_status")
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE ai_ops_recovery_actions SET status=%s WHERE id=%s AND run_id=%s "
+                        "AND status='reserved'", (status, action["id"], run_id))
+            if not cur.rowcount:
+                return
+            event = {"at": datetime.now(timezone.utc).isoformat(), "kind": "action_result",
+                     "title": "公共资讯补跑", "data": {**action, "status": status}}
+            # Preserve an admitted action's outcome even if the investigation was cancelled.
+            cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
+                        (Jsonb([event]), run_id))
 
     def create(self, trigger, *, scheduled=False):
         with self.database.transaction() as conn, conn.cursor() as cur:

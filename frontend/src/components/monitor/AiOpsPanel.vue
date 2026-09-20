@@ -10,6 +10,8 @@ const runs = ref<Run[]>([])
 const selected = ref('')
 const detail = ref<Detail | null>(null)
 const enabled = ref(false)
+const recoveryEnabled = ref(false)
+const recoveryActive = ref(false)
 const interval = ref(15)
 const busy = ref(false)
 const loading = ref(true)
@@ -37,7 +39,8 @@ async function refresh(initial = false) {
     const { data } = await api.get('/ops/ai/runs')
     if (disposed) return
     runs.value = data.items
-    if (initial) { enabled.value = data.config.enabled; interval.value = data.config.interval_minutes }
+    recoveryActive.value = data.config.recovery_enabled === true
+    if (initial) { enabled.value = data.config.enabled; interval.value = data.config.interval_minutes; recoveryEnabled.value = recoveryActive.value }
     error.value = ''
     const id = selected.value || runs.value[0]?.id
     if (id) await select(id)
@@ -59,7 +62,7 @@ async function command(action: 'start' | 'cancel' | 'save') {
     } else if (action === 'cancel') {
       await api.post(`/ops/ai/runs/${selected.value}/cancel`)
     } else {
-      await api.put('/ops/ai/config', { enabled: enabled.value, interval_minutes: interval.value })
+      await api.put('/ops/ai/config', { enabled: enabled.value, interval_minutes: interval.value, recovery_enabled: recoveryEnabled.value })
       saved.value = '巡检计划已保存'
     }
     await refresh()
@@ -73,7 +76,7 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
 <template>
   <section class="ai-ops" aria-label="AI 运维">
     <header class="ai-ops-toolbar monitor-divider">
-      <div class="flex items-center gap-2"><Activity :size="18" /><h2 class="text-base font-semibold">AI 运维</h2><span class="monitor-badge">只读调查</span></div>
+      <div class="flex items-center gap-2"><Activity :size="18" /><h2 class="text-base font-semibold">AI 运维</h2><span class="monitor-badge">{{ recoveryActive ? '有限自愈' : '只读调查' }}</span></div>
       <div class="flex items-center gap-2">
         <button class="monitor-pagination-btn inline-flex items-center gap-2" :disabled="busy || running || loading" @click="command('start')"><Play :size="14" />立即巡检</button>
         <button class="monitor-pagination-btn" title="刷新" aria-label="刷新" @click="refresh()"><RefreshCw :size="16" /></button>
@@ -81,6 +84,8 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
     </header>
     <div class="ai-ops-toolbar monitor-divider">
       <label class="flex items-center gap-2 text-sm"><input v-model="enabled" type="checkbox" :disabled="busy || loading" />自动巡检</label>
+      <label class="flex items-center gap-2 text-sm"><input v-model="recoveryEnabled" type="checkbox" :disabled="busy || loading" />公共资讯失败补跑</label>
+      <span class="text-xs monitor-caption">Techmeme / Hacker News / DailyHot · 每小时最多 1 次 · 每日最多 3 次</span>
       <label class="flex items-center gap-2 text-sm">间隔（分钟）<input v-model.number="interval" class="monitor-input w-20" type="number" min="5" max="120" :disabled="busy || loading" /></label>
       <button class="monitor-pagination-btn" :disabled="busy || loading || !Number.isInteger(interval) || interval < 5 || interval > 120" title="保存巡检计划" aria-label="保存巡检计划" @click="command('save')"><Save :size="16" /></button>
       <span class="text-xs monitor-caption" role="status">{{ saved }}</span>
@@ -103,7 +108,7 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
           </div>
           <ol aria-live="polite" aria-relevant="additions" class="ai-ops-events">
             <li v-for="(event, index) in detail.events" :key="index" class="monitor-divider py-3 border-b">
-              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '使用固定清单', error: '失败' }[event.kind] || event.kind }}</span></div>
+              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '使用固定清单', error: '失败', policy: '权限检查', action_start: '已准入', action_result: '补跑提交结果' }[event.kind] || event.kind }}</span></div>
               <details v-if="event.data" class="mt-2 text-xs"><summary class="cursor-pointer monitor-caption">查看记录</summary><pre class="monitor-surface-dim p-3 mt-2">{{ JSON.stringify(event.data, null, 2) }}</pre></details>
             </li>
           </ol>

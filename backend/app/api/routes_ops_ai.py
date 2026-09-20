@@ -23,6 +23,7 @@ def get_ai_ops(request: Request):
 class Config(BaseModel):
     enabled: bool
     interval_minutes: int = Field(15, ge=5, le=120)
+    recovery_enabled: bool | None = None
 
 
 @router.get("/runs")
@@ -33,7 +34,8 @@ async def list_runs(service=Depends(get_ai_ops)):
 
 @router.put("/config")
 async def configure(config: Config, service=Depends(get_ai_ops)):
-    await asyncio.to_thread(service.repository.configure, config.enabled, config.interval_minutes)
+    await asyncio.to_thread(service.repository.configure, config.enabled, config.interval_minutes,
+                           config.recovery_enabled)
     return config
 
 
