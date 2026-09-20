@@ -45,7 +45,8 @@ describe('mobile ranking reading', () => {
   it('keeps one board status in the toolbar instead of a duplicate banner', async () => {
     const panel = await render()
     expect(panel.findAll('[role="status"]')).toHaveLength(1)
-    expect(panel.get('.ranking-toolbar [role="status"]').text()).toContain('实时初榜')
+    expect(panel.get('.ranking-toolbar [role="status"]').text()).toBe('初榜 · 采集中')
+    expect(panel.get('[role="status"]').attributes('title')).toContain('数据仍在采集中')
     await panel.setProps({ isFinalized: true })
     expect(panel.get('[role="status"]').text()).toContain('定稿')
   })
@@ -98,8 +99,14 @@ describe('mobile ranking reading', () => {
     expect(panel.find('.tweet-preview__actions button').exists()).toBe(false)
     const sources = panel.findAll('[role="tab"]')
     expect(sources).toHaveLength(6)
-    await sources[0]!.trigger('click')
-    expect(panel.emitted('selectSource')).toEqual([['github']])
+    expect(sources.map(source => source.attributes('aria-label'))).toEqual([
+      'GitHub', '论文', '新闻', 'AI 产品', '极客热议', 'X 推文动态',
+    ])
+    expect(sources[4]!.attributes('title')).toBe('Hacker News')
+    for (const source of sources) await source.trigger('click')
+    expect(panel.emitted('selectSource')).toEqual([
+      ['github'], ['arxiv'], ['news'], ['producthunt'], ['hackernews'], ['x'],
+    ])
   })
 
   it('preserves desktop links and suppresses a summary that differs only in whitespace', async () => {

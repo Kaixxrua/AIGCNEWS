@@ -1,12 +1,12 @@
 import {
   ArrowUp,
-  Circle,
-  Code2,
-  FileText,
+  BookOpenText,
+  Bot,
   Flame,
+  FolderGit2,
   Heart,
+  MessagesSquare,
   Newspaper,
-  Rocket,
   Star,
   ThumbsUp,
   type LucideIcon,
@@ -134,11 +134,11 @@ const MODULE_KEYWORDS: Record<string, string[]> = {
 }
 
 export const TABS = [
-  { key: 'github',      labelKey: 'github',   icon: Code2,      color: 'ink' },
-  { key: 'arxiv',       labelKey: 'papers',   icon: FileText,   color: 'brand-blue' },
+  { key: 'github',      labelKey: 'github',   icon: FolderGit2, color: 'ink' },
+  { key: 'arxiv',       labelKey: 'papers',   icon: BookOpenText, color: 'brand-blue' },
   { key: 'news',        labelKey: 'news',     icon: Newspaper,  color: 'brand-amber' },
-  { key: 'producthunt', labelKey: 'products', icon: Rocket,     color: 'brand-rose' },
-  { key: 'hackernews',  labelKey: 'hn',       icon: Circle,     color: 'brand-amber' },
+  { key: 'producthunt', labelKey: 'products', icon: Bot,        color: 'brand-rose' },
+  { key: 'hackernews',  labelKey: 'hn',       icon: MessagesSquare, color: 'brand-amber' },
   { key: 'x',           labelKey: 'x',        icon: XLogoIcon,  color: 'brand-blue' },
 ] as const
 

@@ -187,7 +187,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 .dashboard-page :deep(.stat-cell) { border-color: var(--rule-strong); border-radius: 5px; box-shadow: 2px 2px 0 #171a14; }
 .dashboard-page :deep(.ranking-row--featured) { border-color: var(--rule-strong) !important; border-radius: 5px; }
-.dashboard-page :deep(.ranking-tabs button), .digest-cta { border: 1px solid var(--rule-strong); border-radius: 4px; }
+.digest-cta { border: 1px solid var(--rule-strong); border-radius: 4px; }
 .dashboard-sidebar :deep(.dash-calendar) { border: 1px solid var(--rule-strong); border-radius: 5px; box-shadow: 3px 3px 0 #171a14; }
 .dashboard-sidebar :deep(.calendar-day--active) { border: 1px solid var(--rule-strong); border-radius: 4px; }
 .integration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

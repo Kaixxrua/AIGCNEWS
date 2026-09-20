@@ -623,6 +623,14 @@ const explicitBusinessTranslations: Record<string, string> = {
   
   
   'dashboard.stats.todayUiMaterials': '今日入库 UI',
+  'dashboard.sources.github': 'GitHub',
+  'dashboard.sources.papers': '论文',
+  'dashboard.sources.news': '新闻',
+  'dashboard.sources.products': 'AI 产品',
+  'dashboard.sources.hn': '极客热议',
+  'dashboard.sources.x': 'X 推文动态',
+  'dashboard.sources.xCaption': '推文动态',
+  'dashboard.liveDraftShort': '初榜 · 采集中',
   'dashboard.editorial.title': '今日 AI 动态',
   'dashboard.editorial.digestDescription': '每天精选 AI 动态，让值得关注的进展直达你。',
   'dashboard.editorial.digestTitle': '每日 AI 简报',

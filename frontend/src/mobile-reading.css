@@ -19,12 +19,6 @@
   #app .app-shell .dashboard-overview > summary { display: list-item; min-height: 44px; padding: 10px 0; color: var(--ink-secondary); font-size: 15px; cursor: pointer; }
   #app .app-shell .dashboard-page .glass-card { border-color: var(--rule); box-shadow: none; }
   #app .app-shell .dashboard-page .dashboard-ranking-panel { border: 0; border-radius: 0; background: transparent; }
-  #app .app-shell .ranking-toolbar { padding: 0 0 12px; gap: 0; }
-  #app .app-shell .ranking-source-status > [role='status'] { display: none; }
-  #app .app-shell .ranking-toolbar [role='tablist'] { gap: 4px; padding-bottom: 0; }
-  #app .app-shell .ranking-toolbar [role='tab'] { min-height: 44px; padding: 8px; border: 0; border-radius: 6px; font-size: 14px; }
-  #app .app-shell .ranking-toolbar [role='tab'] svg { display: none; }
-  #app .app-shell .ranking-toolbar .tab-active { background: var(--acid-soft); color: var(--ink); box-shadow: inset 0 -3px 0 var(--acid-strong); font-weight: 700; }
   #app .app-shell .ranking-list ol > li { border-top-color: var(--rule) !important; }
   #app .app-shell ol:not(.editorial-list) .ranking-link { gap: 8px; padding: 16px 0; }
   #app .app-shell ol:not(.editorial-list) .ranking-link > svg { display: none; }

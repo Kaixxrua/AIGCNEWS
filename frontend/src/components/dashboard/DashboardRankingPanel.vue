@@ -59,22 +59,27 @@ const boardDateHint = computed(() => {
 
 <template>
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
-    <div class="ranking-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-2" style="border-bottom: 1px solid rgb(var(--stone-400-rgb) / 0.15)">
-      <div class="ranking-tabs flex gap-1" role="tablist" :aria-label="t('dashboard.rankingSources')">
-        <button v-for="tab in TABS" :key="tab.key" class="flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200" :class="activeTab === tab.key ? 'tab-active' : 'tab-inactive'" role="tab" :aria-selected="activeTab === tab.key" @click="emit('selectSource', tab.key)">
-          <component :is="tab.icon" class="h-3.5 w-3.5" />{{ t(`dashboard.stats.${tab.labelKey}`) }}
+    <div class="ranking-toolbar">
+      <div class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
+        <button v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
+          type="button" class="ranking-tab" role="tab" aria-controls="ranking-content"
+          :aria-selected="activeTab === tab.key" :aria-label="t(`dashboard.sources.${tab.labelKey}`)"
+          :title="tab.key === 'hackernews' ? 'Hacker News' : undefined"
+          @click="emit('selectSource', tab.key)">
+          <component :is="tab.icon" class="ranking-tab-icon" :size="18" :stroke-width="1.75" aria-hidden="true" />
+          <span>{{ t(`dashboard.sources.${tab.key === 'x' ? 'xCaption' : tab.labelKey}`) }}</span>
         </button>
       </div>
       <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
-        <span class="ranking-live-status" role="status" :title="tabStatusHint || undefined">
+        <span class="ranking-live-status" role="status" :title="tabStatus?.isEmbargoed ? tabStatusHint || undefined : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft')">
           <CheckCircle2 v-if="tabStatus?.isFinalized ?? isFinalized" :size="12" /><span v-else class="live-dot" />
-          {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft') }}
+          {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.tabFinalized' : 'dashboard.liveDraftShort') }}
         </span>
       </div>
     </div>
 
-    <div class="ranking-list flex-1 overflow-y-auto">
+    <div id="ranking-content" class="ranking-list flex-1 overflow-y-auto" role="tabpanel" :aria-labelledby="`ranking-tab-${activeTab}`" :aria-busy="tabLoading">
       <div v-if="tabLoading" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
       <div v-else-if="!tabList.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
         <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center"><svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
@@ -106,9 +111,26 @@ const boardDateHint = computed(() => {
 .ranking-row--featured .ranking-heat { position: absolute; top: 15px; right: 44px; }
 .ranking-row--lead .ranking-heat { color: #cefc50; }
 .ranking-summary { display: none; }
-.tab-active { border: 1px solid var(--ink); border-radius: 4px; color: var(--projects-on-acid); background: var(--acid); box-shadow: none; }
-.tab-inactive { border: 1px solid transparent; border-radius: 4px; color: var(--ink); }
-.tab-inactive:hover { border-color: var(--ink); color: var(--ink); background: var(--acid-soft); }
+.ranking-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding-bottom: 20px; }
+.ranking-tabs { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 100%; padding: 4px; border-radius: 7px; background: color-mix(in srgb, var(--paper) 92%, var(--ink)); }
+.ranking-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; min-height: 38px; padding: 7px 10px; border: 1px solid transparent; border-radius: 4px; color: var(--ink-secondary); background: transparent; font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; letter-spacing: 0; transition: background-color .15s, color .15s; }
+.ranking-tab-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.ranking-tab:hover { color: var(--ink); background: var(--paper-light); }
+.ranking-tab[aria-selected='true'] { border-color: var(--projects-on-acid); color: var(--projects-on-acid); background: var(--acid); box-shadow: 1px 1px 0 var(--projects-on-acid); }
+.ranking-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.ranking-source-status { min-width: 0; flex-wrap: wrap; }
+.ranking-live-status { display: flex; align-items: center; gap: 7px; color: var(--ink-secondary); font-size: 12px; line-height: 18px; }
+.ranking-live-status > svg, .live-dot { flex-shrink: 0; }
+@media (max-width: 1023px), (pointer: coarse) {
+  .ranking-tab { min-height: 44px; }
+}
+@media (max-width: 767px) {
+  .ranking-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .ranking-tab { padding-inline: 6px; }
+}
+@media (max-width: 419px) {
+  .ranking-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 ol > li { border-top: 1px solid var(--rule) !important; background: transparent; }
 ol > li:first-child { border-top: 0 !important; }
 ol > li a:hover { color: var(--ink); background: var(--acid-soft); }
@@ -132,24 +154,13 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
 }
 
 @media (max-width: 767px) {
-  [role='tablist'] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; overflow: visible; }
-  [role='tab'] { min-width: 0; justify-content: center; min-height: 44px; font-size: 14px; white-space: nowrap; }
   .ranking-link { gap: 10px; padding: 16px 12px; }
   .ranking-link p { font-size: 16px; line-height: 1.55; overflow-wrap: anywhere; }
   :deep(.badge) { font-size: 11px; line-height: 20px; }
 }
-.ranking-tabs { min-width: 0; max-width: 100%; flex-wrap: wrap; }
-.ranking-tabs button { min-height: 32px; }
-.ranking-tabs button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-@media (max-width: 1023px) { .ranking-tabs button { min-height: 44px; } }
 
 /* Editorial cards share the same ordered list and links as compact rows. */
 .dashboard-ranking-panel { flex: none; overflow: visible; padding: 12px; }
-.ranking-toolbar { padding: 0 0 12px; border-bottom: 0 !important; }
-.ranking-tabs { gap: 6px; }
-.ranking-tabs button { border-radius: 9px; padding: 9px 16px; min-height: 38px; }
-.tab-active { border-color: transparent; box-shadow: none; }
-.tab-inactive { border-color: var(--rule); }
 .ranking-list { overflow: visible; flex: none; }
 .editorial-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-top: 12px; }
 .editorial-list > .ranking-row { min-width: 0; border: 1px solid var(--rule) !important; border-radius: 9px; background: var(--paper-light); overflow: hidden; }
@@ -190,16 +201,11 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
   .editorial-list .ranking-row--featured .ranking-link { min-height: 160px; }
   .editorial-list .ranking-title { font-size: 14px; }
   .editorial-list .ranking-link { gap: 9px; }
-  .ranking-tabs button { padding: 9px; min-height: 44px; }
   .ranking-source-status { font-size: 11px; }
 }
 
 /* Reference geometry: 164px feature cards, contiguous 52px compact rows. */
 .dashboard-ranking-panel { padding: 11px 15px 16px; }
-.ranking-toolbar { min-height: 52px; padding: 0 5px 13px 12px; }
-.ranking-tabs { gap: 5px; }
-.ranking-tabs button { min-height: 39px; min-width: 94px; justify-content: center; padding: 9px 18px; border-radius: 12px; font-size: 14px; }
-.ranking-live-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
 .live-dot { width: 8px; height: 8px; border: 2px solid #baf342; background: #293511; border-radius: 50%; }
 .editorial-list { column-gap: 10px; row-gap: 0; padding-top: 0; }
 .editorial-list > .ranking-row:not(.ranking-row--featured) { margin-top: -1px; }
@@ -233,16 +239,12 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
  .editorial-list .ranking-row:not(.ranking-row--featured) .ranking-title { white-space: nowrap; display: block; overflow: hidden; text-overflow: ellipsis; }
 }
 @media (min-width: 900px) and (max-width: 1499px) {
- .ranking-tabs button { min-width: 65px; padding-inline: 10px; }
- .ranking-live-status { font-size: 10px; }
  .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width: 56px; height: 56px; flex-basis: 56px; }
  .editorial-list .ranking-row--featured .ranking-link { display: flex; gap: 10px; padding-inline: 12px; }
  .editorial-list .ranking-row--featured .ranking-title { font-size: 14px; }
  .editorial-list .ranking-row--featured .ranking-summary { font-size: 12px; }
 }
 @media (max-width: 767px) {
- .ranking-toolbar { padding-inline: 0; }
- .ranking-tabs button { min-width: 0; min-height: 44px; padding: 9px; }
  .editorial-list { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
  .editorial-list .ranking-row--featured .ranking-link { height: auto; min-height: 164px; }
  .editorial-list .ranking-link { padding-inline: 10px; gap: 10px; }
@@ -256,10 +258,6 @@ ol > li a:hover :deep(.text-stone-700), ol > li a:hover :deep(.text-stone-500), 
 
 @media (min-width: 1024px) {
  .dashboard-ranking-panel { height: 100%; padding: 6px 8px 8px; }
- .ranking-toolbar { flex: 0 0 auto; min-height: 38px; padding: 0 0 7px; gap: 4px; }
- .ranking-tabs { gap: 3px; }
- .ranking-tabs button { min-width: 0; min-height: 30px; padding: 5px 8px; font-size: 12px; }
- .ranking-live-status { font-size: 10px; }
  .ranking-list { flex: 1; min-height: 0; }
  .editorial-list { height: 100%; grid-template-rows: minmax(130px, 2.8fr) repeat(7, minmax(36px, 1fr)); gap: 0 8px; }
  .editorial-list > .ranking-row { height: auto; }
