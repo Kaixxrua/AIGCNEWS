@@ -400,7 +400,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             enrichment=repositories.github_enrichment,
             documents=repositories.documents,
             github_lock=runtime._github_job_lock,
+            logo_repository=metrics_refresh.await_args.kwargs["logo_repository"],
         )
+        from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
+
+        self.assertIsInstance(metrics_refresh.await_args.kwargs["logo_repository"], PostgresGitHubLogoRepository)
         x_credentials_probe.assert_awaited_once_with(
             repositories=repositories,
             x_lock=runtime._x_operation_lock,

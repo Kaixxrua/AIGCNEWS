@@ -12,6 +12,39 @@ from backend.app.services.ingestion import github_project_metrics_service as met
 
 
 class GitHubMetricDateTests(unittest.TestCase):
+    def test_intraday_refresh_repairs_artwork_under_shared_lock_before_enrichment(self):
+        lock = asyncio.Lock()
+        artwork = MagicMock()
+        order = []
+
+        async def refresh(*args):
+            order.append('metrics')
+            return {}
+
+        def logos(repo, **kwargs):
+            self.assertIs(repo, artwork)
+            self.assertTrue(lock.locked())
+            self.assertEqual(kwargs, {'limit': 0, 'interval': 0.1, 'max_seconds': 120})
+            order.append('logos')
+            raise RuntimeError('temporary image failure')
+
+        async def enrich(*args):
+            order.append('enrichment')
+            return {}
+
+        with (
+            patch.object(scheduler, '_refresh_current_github_project_metrics', side_effect=refresh),
+            patch.object(scheduler, '_enrich_newly_eligible_github_projects', side_effect=enrich),
+            patch('backend.app.services.ingestion.github_project_logos.refresh_project_logos', side_effect=logos),
+        ):
+            result = asyncio.run(scheduler._run_github_project_metrics_refresh_job(
+                repository=MagicMock(), enrichment=MagicMock(),
+                github_lock=lock, logo_repository=artwork,
+            ))
+        self.assertTrue(result)
+        self.assertEqual(order, ['metrics', 'logos', 'enrichment'])
+        self.assertFalse(lock.locked())
+
     def test_combined_refresh_passes_one_current_date_to_both_stages(self) -> None:
         repository = MagicMock()
         with (

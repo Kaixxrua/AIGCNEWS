@@ -649,6 +649,7 @@ async def _run_github_project_metrics_refresh_job(
     enrichment: Any,
     documents: Any = None,
     github_lock: asyncio.Lock | None = None,
+    logo_repository: Any = None,
 ) -> bool:
     from backend.app.services.ingestion.github_project_metrics_service import (
         current_github_metric_date,
@@ -670,6 +671,17 @@ async def _run_github_project_metrics_refresh_job(
                 repository,
                 documents,
             )
+            if logo_repository is not None:
+                from backend.app.services.ingestion.github_project_logos import refresh_project_logos
+
+                try:
+                    logos = await asyncio.to_thread(
+                        refresh_project_logos, logo_repository,
+                        limit=0, interval=0.1, max_seconds=120,
+                    )
+                    logger.info("[Scheduler] GitHub ranking artwork refresh: %s", logos)
+                except Exception:
+                    logger.exception("[Scheduler] GitHub artwork refresh failed; metrics remain available")
             # 补跑与每日流水线的富化阶段共用同一把 github 锁，杜绝并发批次
             # 重复烧模型调用；补跑失败不拖累已完成的指标刷新
             top_up: Dict[str, Any] | None = None
@@ -1254,6 +1266,8 @@ class ApplicationSchedulerRuntime:
         )
 
     async def _run_github_project_metrics_refresh_job(self) -> None:
+        from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
+
         await self._run_tracked(
             lambda: self._guarded(
                 "github_project_metrics_refresh",
@@ -1262,6 +1276,7 @@ class ApplicationSchedulerRuntime:
                     enrichment=self.repositories.github_enrichment,
                     documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
+                    logo_repository=PostgresGitHubLogoRepository(),
                 ),
             )
         )

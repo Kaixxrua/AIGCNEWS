@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=100, help="Maximum projects; 0 drains the due queue")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--all", action="store_true", help="Schedule all existing logos once, preserving cached images")
+    parser.add_argument("--repair", action="store_true", help="Retry missing and default images now, preserving good artwork")
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("--limit must be nonnegative")
@@ -27,6 +28,8 @@ def main() -> None:
         return
     if args.all:
         print(json.dumps({"rescheduled": repository.enqueue_all()}), flush=True)
+    elif args.repair:
+        print(json.dumps({"rescheduled": repository.enqueue_missing()}), flush=True)
     remaining = args.limit
     while True:
         count = min(remaining, 100) if args.limit else 100
