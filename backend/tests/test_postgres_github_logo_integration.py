@@ -90,3 +90,47 @@ def test_cached_default_avatars_retry_before_thirty_days_without_busy_loop():
         assert repo.pending() == []
         assert bytes(repo.get('a/bad')['content']) == b'correct'
         assert bytes(repo.get('a/good')['content']) == b'artwork'
+
+
+def test_recovery_requeues_only_missing_artwork_and_failures_retry_in_one_hour():
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('a/missing', 'a/missing', 'Missing', 2000),
+                       ('a/good', 'a/good', 'Good', 3000)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('a/missing', {'status': 'failed'})
+        repo.save('a/good', {'status': 'found', 'content': b'good', 'sha256': 'good',
+                           'content_type': 'image/webp'})
+        with db.transaction() as connection:
+            row = connection.execute("""
+                SELECT EXTRACT(EPOCH FROM (next_check_at - checked_at)) AS delay
+                FROM github_project_logos WHERE repo_id = 'a/missing'
+            """).fetchone()
+        assert 3590 <= float(row['delay']) <= 3610
+        assert repo.pending() == []
+        assert repo.enqueue_missing() == 1
+        assert [r['repo_id'] for r in repo.pending()] == ['a/missing']
+        assert repo.get('a/good')['sha256'] == 'good'
+
+
+def test_hot_placeholder_is_repaired_before_cold_missing_artwork():
+    from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
+
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('a/hot', 'a/hot', 'Hot', 2000), ('a/cold', 'a/cold', 'Cold', 5000);
+                INSERT INTO github_repo_daily_metrics
+                    (repo_id, metric_date, hot_score, daily_growth_available, daily_star_growth)
+                VALUES ('a/hot', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 99, TRUE, 500)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('a/hot', {'status': 'found', 'content': b'placeholder',
+                          'sha256': GITHUB_DEFAULT_AVATAR_SHA256, 'content_type': 'image/webp'})
+        assert [r['repo_id'] for r in repo.pending()] == ['a/hot', 'a/cold']

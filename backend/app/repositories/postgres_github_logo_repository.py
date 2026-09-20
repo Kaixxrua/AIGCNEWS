@@ -30,9 +30,9 @@ class PostgresGitHubLogoRepository:
                        OR (l.status = 'found' AND l.sha256 = %s))
                   AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
                       WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
-                ORDER BY (l.content IS NULL) DESC,
-                         CASE WHEN m.daily_growth_available AND m.daily_star_growth > 0
+                ORDER BY CASE WHEN m.daily_growth_available AND m.daily_star_growth > 0
                               THEN m.hot_score END DESC NULLS LAST,
+                         (l.content IS NULL) DESC,
                          (NULLIF(c.first_seen_at, '')::timestamptz >= CURRENT_TIMESTAMP - INTERVAL '1 day') DESC NULLS LAST,
                          l.checked_at ASC NULLS FIRST, c.stars DESC, c.repo_id
                 LIMIT %s
@@ -40,13 +40,13 @@ class PostgresGitHubLogoRepository:
             return [dict(row) for row in cursor.fetchall()]
 
     def save(self, repo_id: str, result: dict[str, Any]) -> None:
-        # Failed refreshes retain the last good artwork; missing logos retry weekly.
-        days = 30 if result["status"] == "found" else 7 if result["status"] == "not_found" else 1
+        # Transient failures must be retryable by the next intraday ranking refresh.
+        hours = 720 if result["status"] == "found" else 168 if result["status"] == "not_found" else 1
         with self.database.transaction() as connection, connection.cursor() as cursor:
             cursor.execute("""
                 INSERT INTO github_project_logos
                     (repo_id, status, source_url, content, content_type, sha256, next_check_at)
-                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + %s * INTERVAL '1 day')
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + %s * INTERVAL '1 hour')
                 ON CONFLICT (repo_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     source_url = CASE WHEN EXCLUDED.content IS NULL THEN github_project_logos.source_url ELSE EXCLUDED.source_url END,
@@ -55,7 +55,16 @@ class PostgresGitHubLogoRepository:
                     sha256 = CASE WHEN EXCLUDED.content IS NULL THEN github_project_logos.sha256 ELSE EXCLUDED.sha256 END,
                     checked_at = CURRENT_TIMESTAMP, next_check_at = EXCLUDED.next_check_at
             """, (repo_id, result["status"], result.get("source_url", ""),
-                  result.get("content"), result.get("content_type", ""), result.get("sha256", ""), days))
+                  result.get("content"), result.get("content_type", ""), result.get("sha256", ""), hours))
+
+    def enqueue_missing(self) -> int:
+        """Recover historical failures without invalidating successful artwork."""
+        with self.database.transaction() as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE github_project_logos SET next_check_at = CURRENT_TIMESTAMP
+                WHERE content IS NULL OR sha256 = %s
+            """, (GITHUB_DEFAULT_AVATAR_SHA256,))
+            return cursor.rowcount
 
     def get(self, repo_id: str) -> dict[str, Any] | None:
         with self.database.transaction() as connection, connection.cursor() as cursor:
