@@ -252,13 +252,25 @@ class TestDailyPipelineGrowthObserve:
             lambda: "2026-08-08",
         )
 
+        from backend.app.services.ingestion import github_project_logos
+        logo_repository = object()
+        def collect_logos(repository, **kwargs):
+            assert repository is logo_repository
+            assert "metrics" in calls
+            calls["logos"] = kwargs
+            return {"selected": 1, "found": 1}
+        monkeypatch.setattr(github_project_logos, "refresh_project_logos", collect_logos)
         ingestion, enrichment, semantic = self._repositories()
         result = run_github_project_daily_pipeline(
+            logo_repository=logo_repository,
             enrich_concurrency=5,
             ingestion=ingestion,
             enrichment=enrichment,
             semantic_sources=semantic,
         )
+
+        assert result["logos"] == {"selected": 1, "found": 1}
+        assert calls["logos"]["limit"] == 0
 
         # 旧 7 查询 Search 发现在流水线内关闭，由增长口径全量爬取接管
         assert calls["refresh"]["include_search"] is False

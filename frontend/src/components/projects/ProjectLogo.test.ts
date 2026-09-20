@@ -5,15 +5,17 @@ import ProjectHeat from './ProjectHeat.vue'
 import i18n from '@/i18n'
 
 describe('project identity and heat', () => {
-  it('prefers stored project artwork, then owner avatar, then initial', async () => {
+  it('uses stored artwork and falls back to initials without external requests', async () => {
     const logo = mount(ProjectLogo, { props: { logo: '/api/projects/github/logo/acme/demo', repositoryUrl: 'https://github.com/acme/demo', name: 'Demo' } })
     expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/demo')
-    await logo.get('img').trigger('error')
-    expect(logo.get('img').attributes('src')).toBe('https://github.com/acme.png?size=128')
     await logo.get('img').trigger('error')
     expect(logo.text()).toBe('D')
     await logo.setProps({ logo: '/api/projects/github/logo/acme/next' })
     expect(logo.get('img').attributes('src')).toContain('/acme/next')
+  })
+  it('resolves a local cache URL when the ranking has no image URL', () => {
+    const logo = mount(ProjectLogo, { props: { repositoryUrl: 'https://github.com/acme/demo', name: 'Demo' } })
+    expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/demo')
   })
   it('does not trust arbitrary logo hosts', () => {
     const logo = mount(ProjectLogo, { props: { logo: 'https://evil.example/logo', name: 'Demo' } })

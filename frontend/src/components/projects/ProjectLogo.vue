@@ -3,17 +3,17 @@ import { computed, ref, watch } from 'vue'
 const props = defineProps<{ logo?: string | null; repositoryUrl?: string; name?: string }>()
 const failed = ref<string[]>([])
 const loaded = ref(false)
-const ownerAvatar = computed(() => {
+const cachedLogo = computed(() => {
   try {
     const url = new URL(props.repositoryUrl || '')
-    const owner = url.pathname.split('/')[1]
-    return url.hostname === 'github.com' && owner && /^[a-z\d-]+$/i.test(owner)
-      ? `https://github.com/${owner}.png?size=128` : ''
+    const repository = url.pathname.replace(/^\/|\/$/g, '')
+    return url.hostname === 'github.com' && /^[a-z\d-]+\/[a-z\d_.-]+$/i.test(repository)
+      ? `/api/projects/github/logo/${repository}` : ''
   } catch { return '' }
 })
 const candidates = computed(() => [
   /^\/api\/projects\/github\/logo\/[a-z\d-]+\/[a-z\d_.-]+$/i.test(props.logo || '') ? props.logo! : '',
-  ownerAvatar.value,
+  cachedLogo.value,
 ].filter(Boolean))
 const source = computed(() => candidates.value.find(url => !failed.value.includes(url)))
 watch(source, () => { loaded.value = false })

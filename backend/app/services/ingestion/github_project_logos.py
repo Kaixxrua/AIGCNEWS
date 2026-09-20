@@ -8,9 +8,11 @@ from __future__ import annotations
 import hashlib
 import io
 import re
+import threading
 import time
 import warnings
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -40,7 +42,7 @@ def logo_url(raw: str, base: str) -> str:
     parts = urlsplit(url)
     if parts.scheme != "https" or parts.hostname not in {
         "raw.githubusercontent.com", "github.com", "user-images.githubusercontent.com",
-        "camo.githubusercontent.com",
+        "camo.githubusercontent.com", "avatars.githubusercontent.com",
     }:
         raise ValueError("unsupported artwork host")
     if parts.hostname == "github.com":
@@ -130,43 +132,64 @@ def download_logo(url: str, client: httpx.Client) -> tuple[bytes, str]:
         return sanitize_image(bytes(chunks))
 
 
-def collect_logo(full_name: str, api_client: httpx.Client, image_client: httpx.Client) -> dict[str, Any]:
+def collect_logo(
+    full_name: str, api_client: httpx.Client, image_client: httpx.Client, readme_enabled: bool = True,
+) -> dict[str, Any]:
     from backend.app.services.ingestion.source_github import fetch_github_readme_snapshot
 
     if not _REPO.fullmatch(full_name):
         return {"status": "failed"}
-    snapshot = fetch_github_readme_snapshot(full_name, api_client)
-    if snapshot.status != "succeeded":
-        return {"status": "not_found" if snapshot.status == "not_found" else
-                "rate_limited" if snapshot.status == "rate_limited" else "failed"}
-    for url in snapshot.logo_candidates:
+    snapshot = fetch_github_readme_snapshot(full_name, api_client) if readme_enabled else None
+    rate_limited = snapshot is not None and snapshot.status == "rate_limited"
+    candidates = snapshot.logo_candidates if snapshot and snapshot.status == "succeeded" else ()
+    # Cache the owner avatar too: browsers must not depend on GitHub connectivity.
+    avatar = f"https://avatars.githubusercontent.com/{full_name.split('/')[0]}?s=128"
+    for url in (*candidates, avatar):
         try:
             content, content_type = download_logo(url, image_client)
             return {"status": "found", "source_url": url, "content": content,
-                    "content_type": content_type, "sha256": hashlib.sha256(content).hexdigest()}
+                    "content_type": content_type, "sha256": hashlib.sha256(content).hexdigest(),
+                    "readme_rate_limited": rate_limited}
         except (ValueError, httpx.HTTPError, OSError, ET.ParseError,
                 Image.DecompressionBombError, Image.DecompressionBombWarning):
             continue
-    return {"status": "failed" if snapshot.logo_candidates else "not_found"}
+    return {"status": "failed", "readme_rate_limited": rate_limited}
 
 
 def refresh_project_logos(
     repository: Any, *, limit: int = 100, interval: float = 1.0, max_seconds: float = 300,
+    workers: int = 4,
 ) -> dict[str, int]:
+    # limit=0 drains the due queue within the time budget. Deferred rows remain durable.
     counts = {"selected": 0, "found": 0, "not_found": 0, "failed": 0, "rate_limited": 0}
     deadline = time.monotonic() + max_seconds
-    # API authorization is attached by source_github only; image client is separate.
+    readme_limited = threading.Event()
     with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as api, httpx.Client(
         timeout=15, follow_redirects=False, trust_env=False, proxy=settings.outbound_proxy or None,
-    ) as images:
-        for row in repository.pending(limit):
+    ) as images, ThreadPoolExecutor(max_workers=max(1, min(workers, 8))) as pool:
+        def collect(row):
             if time.monotonic() >= deadline:
-                break
-            result = collect_logo(row["full_name"], api, images)
-            repository.save(row["repo_id"], result)
-            counts["selected"] += 1
-            counts[result["status"]] += 1
-            if result["status"] == "rate_limited":
-                break
+                return None
+            result = collect_logo(row["full_name"], api, images, not readme_limited.is_set())
+            if result.get("readme_rate_limited"):
+                readme_limited.set()
             time.sleep(max(0.0, interval))
+            return row, result
+
+        while True:
+            remaining = max(0, limit - counts["selected"]) if limit else 100
+            rows = repository.pending(min(remaining, 100))
+            if not rows:
+                break
+            attempted = 0
+            for item in pool.map(collect, rows):
+                if item is None:
+                    continue
+                row, result = item
+                repository.save(row["repo_id"], result)
+                counts["selected"] += 1
+                counts[result["status"]] += 1
+                attempted += 1
+            if not attempted or time.monotonic() >= deadline or (limit and counts["selected"] >= limit):
+                break
     return counts

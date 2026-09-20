@@ -805,7 +805,7 @@ def run_github_project_daily_pipeline(
         try:
             from backend.app.services.ingestion.github_project_logos import refresh_project_logos
 
-            logo_result = refresh_project_logos(logo_repository, limit=500)
+            logo_result = refresh_project_logos(logo_repository, limit=0, interval=0.1, max_seconds=900)
         except Exception as exc:
             logger.warning("GitHub logo batch failed: %s", type(exc).__name__)
             logo_result = {"status": "failed"}

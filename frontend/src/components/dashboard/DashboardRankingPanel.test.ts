@@ -89,7 +89,7 @@ describe('mobile ranking reading', () => {
     expect(panel.findAll('.ranking-link').map(link => link.attributes('href'))).toEqual(docs.map(doc => doc.url))
     expect(panel.findAll('.ranking-summary').map(el => el.text())).toEqual(docs.map(doc => doc.description_zh))
     const avatar = panel.get('.ranking-avatar img')
-    expect(avatar.attributes('src')).toBe('https://github.com/owner.png?size=128')
+    expect(avatar.attributes('src')).toBe('/api/projects/github/logo/owner/project-0')
     await avatar.trigger('error')
     expect(panel.get('.ranking-avatar').text()).toBe('O')
     expect(panel.get('.ranking-number').text()).toBe('01')

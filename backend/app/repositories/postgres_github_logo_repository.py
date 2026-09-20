@@ -9,17 +9,30 @@ class PostgresGitHubLogoRepository:
     def __init__(self, database: Any = postgres_database) -> None:
         self.database = database
 
+    def enqueue_all(self) -> int:
+        """Schedule one full refresh without deleting the last good artwork."""
+        with self.database.transaction() as connection, connection.cursor() as cursor:
+            cursor.execute("UPDATE github_project_logos SET next_check_at = CURRENT_TIMESTAMP")
+            return cursor.rowcount
+
     def pending(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.database.transaction() as connection, connection.cursor() as cursor:
             cursor.execute("""
                 SELECT c.repo_id, c.full_name
                 FROM github_repo_candidates c
                 LEFT JOIN github_project_logos l ON l.repo_id = c.repo_id
+                LEFT JOIN github_repo_daily_metrics m ON m.repo_id = c.repo_id
+                  AND m.metric_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date::text
                 WHERE c.availability_status = 'active'
-                  AND (l.repo_id IS NULL OR l.next_check_at <= CURRENT_TIMESTAMP)
+                  AND (l.repo_id IS NULL OR l.next_check_at <= CURRENT_TIMESTAMP
+                       OR (l.status = 'not_found' AND l.content IS NULL))
                   AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
                       WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
-                ORDER BY l.checked_at ASC NULLS FIRST, c.stars DESC, c.repo_id
+                ORDER BY (l.content IS NULL) DESC,
+                         CASE WHEN m.daily_growth_available AND m.daily_star_growth > 0
+                              THEN m.hot_score END DESC NULLS LAST,
+                         (NULLIF(c.first_seen_at, '')::timestamptz >= CURRENT_TIMESTAMP - INTERVAL '1 day') DESC NULLS LAST,
+                         l.checked_at ASC NULLS FIRST, c.stars DESC, c.repo_id
                 LIMIT %s
             """, (max(1, min(limit, 1000)),))
             return [dict(row) for row in cursor.fetchall()]

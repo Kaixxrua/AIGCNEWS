@@ -100,13 +100,18 @@ def test_download_pins_public_ip_and_does_not_forward_authorization(monkeypatch)
     assert "authorization" not in seen[0].headers
 
 
-def test_rate_limit_stops_batch_and_preserves_unattempted_queue(monkeypatch):
+def test_readme_rate_limit_continues_caching_avatars_without_more_api_calls(monkeypatch):
     repository = Mock()
     repository.pending.return_value = [{"repo_id": "a/a", "full_name": "a/a"}, {"repo_id": "b/b", "full_name": "b/b"}]
-    monkeypatch.setattr(logos, "collect_logo", lambda *a: {"status": "rate_limited"})
-    result = logos.refresh_project_logos(repository, interval=0)
-    assert result["selected"] == 1 and result["rate_limited"] == 1
-    repository.save.assert_called_once_with("a/a", {"status": "rate_limited"})
+    calls = []
+    def collect(name, api, images, readme_enabled):
+        calls.append(readme_enabled)
+        return {"status": "found", "content": b"avatar", "readme_rate_limited": True}
+    monkeypatch.setattr(logos, "collect_logo", collect)
+    result = logos.refresh_project_logos(repository, limit=2, interval=0, workers=1)
+    assert result["selected"] == 2 and result["found"] == 2
+    assert calls == [True, False]
+    assert repository.save.call_count == 2
 
 
 def test_collection_downloads_and_hashes_project_logo(monkeypatch):
@@ -170,3 +175,63 @@ def test_logo_download_rejects_stream_over_limit(monkeypatch):
     )) as client:
         with pytest.raises(ValueError, match="artwork too large"):
             logos.download_logo(BASE, client)
+
+
+@pytest.mark.parametrize("status,candidates", [
+    ("not_found", ()), ("succeeded", ()), ("rate_limited", ()), ("failed", ()),
+    ("succeeded", ("https://raw.githubusercontent.com/acme/demo/main/logo.svg",)),
+])
+def test_missing_or_broken_readme_logo_caches_owner_avatar(monkeypatch, status, candidates):
+    from backend.app.services.ingestion import source_github
+
+    monkeypatch.setattr(source_github, "fetch_github_readme_snapshot", lambda *a: SimpleNamespace(
+        status=status, logo_candidates=candidates,
+    ))
+    calls = []
+    def download(url, client):
+        calls.append(url)
+        if "raw.githubusercontent.com" in url:
+            raise ValueError("unsupported artwork")
+        return b"avatar", "image/webp"
+    monkeypatch.setattr(logos, "download_logo", download)
+    result = logos.collect_logo("acme/demo", Mock(), Mock())
+    assert result["status"] == "found"
+    assert result["source_url"] == "https://avatars.githubusercontent.com/acme?s=128"
+    assert result["content"] == b"avatar"
+    assert calls == [*candidates, result["source_url"]]
+
+
+@pytest.mark.parametrize("host", ["avatars.githubusercontent.com.evil.example", "evil.example"])
+def test_avatar_allowlist_is_exact(host):
+    with pytest.raises(ValueError):
+        logos.logo_url(f"https://{host}/acme?s=128", BASE)
+
+
+def test_avatar_download_uses_pinning_and_sanitization(monkeypatch):
+    from backend.app.services import outbound_target_policy
+
+    monkeypatch.setattr(outbound_target_policy, "_system_resolver", lambda host: ["93.184.216.34"])
+    buf = io.BytesIO()
+    Image.new("RGB", (128, 128)).save(buf, format="PNG")
+    def handler(request):
+        assert request.url.host == "93.184.216.34"
+        assert request.headers["host"] == "avatars.githubusercontent.com"
+        assert "authorization" not in request.headers
+        return httpx.Response(200, content=buf.getvalue())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        body, mime = logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", client)
+    assert mime == "image/webp"
+    assert Image.open(io.BytesIO(body)).size == (128, 128)
+
+
+
+def test_unbounded_daily_collection_drains_multiple_batches(monkeypatch):
+    repository = Mock()
+    repository.pending.side_effect = [
+        [{"repo_id": "a/a", "full_name": "a/a"}],
+        [{"repo_id": "b/b", "full_name": "b/b"}], [],
+    ]
+    monkeypatch.setattr(logos, "collect_logo", lambda *a: {"status": "found"})
+    result = logos.refresh_project_logos(repository, limit=0, interval=0)
+    assert result["selected"] == 2
+    assert repository.save.call_count == 2

@@ -36,3 +36,29 @@ def test_persistent_logo_queue_cache_catalog_and_size_constraint():
         with db.transaction() as connection:
             connection.execute("DELETE FROM github_repo_candidates WHERE repo_id='acme/demo'")
         assert repo.get("acme/demo") is None
+
+
+
+def test_missing_logos_prioritize_daily_ranking_then_new_projects_and_retry_legacy_misses():
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars, first_seen_at)
+                VALUES ('a/old', 'a/old', 'Old', 100000, '2020-01-01'),
+                       ('a/new', 'a/new', 'New', 1000, CURRENT_TIMESTAMP::text),
+                       ('a/hot', 'a/hot', 'Hot', 2000, '2020-01-01');
+                INSERT INTO github_repo_daily_metrics
+                    (repo_id, metric_date, hot_score, daily_growth_available, daily_star_growth)
+                VALUES ('a/hot', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date, 99, TRUE, 500);
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('a/hot', {"status": "not_found"})
+        assert [r['repo_id'] for r in repo.pending()] == ['a/hot', 'a/new', 'a/old']
+        repo.save('a/hot', {"status": "found", "content": b'avatar', "content_type": 'image/webp'})
+        assert [r['repo_id'] for r in repo.pending()] == ['a/new', 'a/old']
+        repo.save('a/new', {"status": "failed"})
+        assert [r['repo_id'] for r in repo.pending()] == ['a/old']
+        assert repo.enqueue_all() == 2
+        assert {r['repo_id'] for r in repo.pending()} == {'a/hot', 'a/new', 'a/old'}
+        assert bytes(repo.get('a/hot')['content']) == b'avatar'

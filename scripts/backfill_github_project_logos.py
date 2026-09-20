@@ -17,6 +17,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100, help="Maximum projects; 0 drains the due queue")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--all", action="store_true", help="Schedule all existing logos once, preserving cached images")
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("--limit must be nonnegative")
@@ -24,13 +25,15 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({"due_sample": len(repository.pending(min(args.limit or 1000, 1000)))}))
         return
+    if args.all:
+        print(json.dumps({"rescheduled": repository.enqueue_all()}), flush=True)
     remaining = args.limit
     while True:
         count = min(remaining, 100) if args.limit else 100
-        result = refresh_project_logos(repository, limit=count)
+        result = refresh_project_logos(repository, limit=count, interval=0.1)
         print(json.dumps(result), flush=True)
         remaining -= result["selected"]
-        if result["rate_limited"] or not result["selected"] or (args.limit and remaining <= 0):
+        if not result["selected"] or (args.limit and remaining <= 0):
             break
 
 
