@@ -12,6 +12,7 @@ export interface AuthUserDTO {
   email: string | null
   /** 用户名（注册必填 / OAuth 首次登录自动回填）；旧数据可能为 null 或空串 */
   username?: string | null
+  avatar_url?: string | null
   role: 'user' | 'admin'
   email_verified?: boolean
   /** 会员档位（0045）：free / member；缺省按 free 处理 */
@@ -117,5 +118,15 @@ export interface OAuthBindConsumeResponse {
 /** 完成渠道绑定：消费一次性绑定 handoff（cookie 流），绝不签发/轮换会话令牌 */
 export async function consumeOAuthBindHandoff(): Promise<OAuthBindConsumeResponse> {
   const res = await api.post<OAuthBindConsumeResponse>('/auth/oauth/bind/consume', undefined)
+  return res.data
+}
+
+/** Multipart upload; the browser supplies the boundary instead of the JSON default. */
+export async function uploadAvatar(file: File): Promise<AuthUserDTO> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post<AuthUserDTO>('/auth/me/avatar', form, {
+    headers: { 'Content-Type': undefined },
+  })
   return res.data
 }

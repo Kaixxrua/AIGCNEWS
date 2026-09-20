@@ -93,7 +93,7 @@ class PostgresUserAccountRepository:
             """
             SELECT id, phone, email, username, role, disabled, pwd_ver,
                    email_verified, password_login_enabled,
-                   membership_tier, membership_expires_at, created_at
+                   membership_tier, membership_expires_at, created_at, avatar_digest
             FROM users
             WHERE id = %s
             """,
@@ -178,6 +178,22 @@ class PostgresUserAccountRepository:
                     (hashed_password, int(user_id), email.lower()),
                 )
                 return int(cursor.rowcount)
+
+    def update_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE users SET avatar_png = %s, avatar_digest = %s WHERE id = %s AND NOT disabled",
+                    (png, digest, int(user_id)),
+                )
+                return int(cursor.rowcount)
+
+    def get_user_avatar(self, *, user_id: int, digest: str) -> bytes | None:
+        row = self._fetchone(
+            "SELECT avatar_png FROM users WHERE id = %s AND avatar_digest = %s AND NOT disabled",
+            (int(user_id), digest),
+        )
+        return bytes(row["avatar_png"]) if row and row.get("avatar_png") else None
 
     def update_user_username(
         self,

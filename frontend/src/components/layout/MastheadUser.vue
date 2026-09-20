@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import UserAvatar from '@/components/auth/UserAvatar.vue'
 import { useAuthStore } from '@/stores/authStore'
 
 /* 顶栏右上角用户标识：用户名 + 用户组（free / vip），与左侧 MastheadMeta
@@ -39,17 +40,20 @@ const groupLabel = computed(() => t('masthead.userGroup', { tier: tierLabel.valu
 
 <template>
   <div class="masthead-user">
-    <template v-if="authStore.isLoggedIn">
-      <span class="masthead-user__status">{{ userName }}</span>
-      <span class="masthead-user__identity">
-        <span>{{ groupLabel }}</span>
-        <span v-if="expiryText" class="masthead-user__expiry">{{ `  ${expiryText}` }}</span>
-      </span>
-    </template>
-    <template v-else>
-      <span class="masthead-user__status">未登录</span>
-      <span class="masthead-user__identity">guest</span>
-    </template>
+    <UserAvatar :src="authStore.isLoggedIn ? authStore.user?.avatar_url : null" :name="userName || '?'" />
+    <div class="masthead-user__copy">
+      <template v-if="authStore.isLoggedIn">
+        <span class="masthead-user__status">{{ userName }}</span>
+        <span class="masthead-user__identity">
+          <span>{{ groupLabel }}</span>
+          <span v-if="expiryText" class="masthead-user__expiry">{{ `  ${expiryText}` }}</span>
+        </span>
+      </template>
+      <template v-else>
+        <span class="masthead-user__status">未登录</span>
+        <span class="masthead-user__identity">guest</span>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -60,29 +64,34 @@ const groupLabel = computed(() => t('masthead.userGroup', { tier: tierLabel.valu
   top: 50%;
   transform: translateY(-50%);
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
-  font-size: 10px;
+  align-items: center;
+  gap: 8px;
+  max-width: 165px;
+  font-size: 11px;
   line-height: 1.25;
   letter-spacing: 0.04em;
   color: var(--ink-muted);
   user-select: none;
   pointer-events: none;
   white-space: nowrap;
-  text-align: right;
+  text-align: left;
 }
 
+.masthead-user__copy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
 .masthead-user__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 800;
   color: var(--ink);
 }
 
-/* 到期日期与档位保持同行，并用明确间距拉开；等宽数字避免逐年跳动 */
+/* 会员到期信息在紧凑刊头中允许换行，避免挤压用户名或越出屏幕。 */
 .masthead-user__identity {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
+  gap: 2px;
 }
 
 .masthead-user__expiry {

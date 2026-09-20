@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   fetchCurrentUser,
+  uploadAvatar,
   consumeOAuthHandoff,
   consumeOAuthBindHandoff,
   loginWithPassword,
@@ -180,6 +181,16 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchMeForContext(revision, expectedToken)
   }
 
+  /** A completed upload must not overwrite a newer login or restore a logged-out user. */
+  async function updateAvatar(file: File): Promise<void> {
+    const revision = authRevision.value
+    const expectedToken = token.value
+    if (!expectedToken || !isLoggedIn.value) throw staleAuthOperation()
+    const updated = await uploadAvatar(file)
+    if (!isCurrent(revision, expectedToken)) throw staleAuthOperation()
+    user.value = updated
+  }
+
   /** 从 localStorage 恢复 token；仅服务端确认 401 时清除凭据。 */
   async function initFromStorage(): Promise<void> {
     const revision = nextRevision()
@@ -239,6 +250,7 @@ export const useAuthStore = defineStore('auth', () => {
     consumeOAuthBinding,
     logout,
     fetchMe,
+    updateAvatar,
     initFromStorage,
     ensureInitialized,
   }

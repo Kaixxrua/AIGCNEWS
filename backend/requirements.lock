@@ -492,6 +492,7 @@ pendulum==3.2.0
     #   fastapi-cache2
 pillow==12.3.0
     # via
+    #   -r backend/requirements.txt
     #   -c /tmp/aigcnews-x-constraints.txt
     #   pdfplumber
 primp==1.3.1

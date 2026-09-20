@@ -29,6 +29,8 @@ twitter-cli==0.8.5
 curl-cffi>=0.16
 pypdf
 pdfplumber
+# Raster avatar validation and normalization (also used transitively by pdfplumber).
+pillow
 pypdfium2
 
 psycopg[binary]>=3.2,<4

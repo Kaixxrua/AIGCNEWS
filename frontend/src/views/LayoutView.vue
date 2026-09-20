@@ -82,11 +82,13 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
+        <svg class="comic-masthead-rule" viewBox="0 0 1721 25" preserveAspectRatio="none" aria-hidden="true"><path d="M0 7 L420 3 Q449 2 465 13 L480 22 Q483 24 499 24 L1247 24 Q1266 24 1275 21 L1698 21 Q1712 21 1721 25" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
+        <span class="comic-masthead-creation" aria-hidden="true"><b>AI</b><span>让创造更自由</span></span>
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
-          <span v-if="!isMobile" class="masthead-tagline">{{ $t('dashboard.editorial.tagline') }}</span>
+          <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M14 24 L297 3 L280 55 L35 60 L7 71 L11 56 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
             <FavoritesLink v-if="!isMobile" />

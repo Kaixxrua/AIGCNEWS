@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import MastheadUser from './MastheadUser.vue'
 import i18n, { setAppLocale } from '@/i18n'
@@ -6,7 +6,7 @@ import i18n, { setAppLocale } from '@/i18n'
 /* authStore 以 hoisted 盒子桩化：直控登录态与档位，绕过 pinia/token 存储。 */
 const authBox = vi.hoisted(() => ({
   isLoggedIn: false,
-  user: null as null | { email: string; username?: string | null; membership_tier?: 'free' | 'member'; membership_expires_at?: string | null },
+  user: null as null | { email: string; username?: string | null; avatar_url?: string | null; membership_tier?: 'free' | 'member'; membership_expires_at?: string | null },
 }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
@@ -62,6 +62,23 @@ describe('MastheadUser', () => {
     const host = mountMastheadUser()
 
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('读者甲')
+  })
+
+  it('uses the username initial when no avatar exists and when its image fails', async () => {
+    authBox.isLoggedIn = true
+    authBox.user = { email: 'reader@example.com', username: ' reader' }
+    let host = mountMastheadUser()
+    expect(host.querySelector('.user-avatar')?.textContent).toBe('R')
+    unmount?.()
+    authBox.user = { ...authBox.user, avatar_url: '/missing.png' }
+    host = mountMastheadUser()
+    const image = host.querySelector('.user-avatar img') as HTMLImageElement
+    expect(image.getAttribute('src')).toBe('/missing.png')
+    image.dispatchEvent(new Event('error'))
+    await nextTick()
+    expect(host.querySelector('.user-avatar')?.textContent).toBe('R')
+    expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader')
+    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
   })
 
   it('falls back to the email when the username is null, empty, or blank', () => {

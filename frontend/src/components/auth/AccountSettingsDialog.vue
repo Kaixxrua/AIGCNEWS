@@ -11,6 +11,7 @@ import {
   updateProfile,
   type AuthUserDTO,
 } from '@/services/auth/authApi'
+import AvatarUpload from '@/components/auth/AvatarUpload.vue'
 import ChangePasswordDialog from '@/components/auth/ChangePasswordDialog.vue'
 import OAuthProviderIcon from '@/components/auth/OAuthProviderIcon.vue'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
@@ -144,6 +145,7 @@ watch(() => props.modelValue, async open => {
           </div>
 
           <div class="space-y-5 p-5">
+            <AvatarUpload />
             <section aria-labelledby="account-overview-title" class="space-y-3">
               <h4 id="account-overview-title" class="text-xs font-semibold uppercase tracking-wider text-stone-500">{{ t('auth.accountOverview') }}</h4>
               <dl class="grid gap-3 text-sm sm:grid-cols-2">

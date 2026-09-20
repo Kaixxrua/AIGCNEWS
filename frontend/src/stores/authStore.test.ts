@@ -1,12 +1,13 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { consumeOAuthHandoff, fetchCurrentUser } from '@/services/auth/authApi'
+import { consumeOAuthHandoff, fetchCurrentUser, uploadAvatar } from '@/services/auth/authApi'
 import { useAuthStore } from './authStore'
 
 vi.mock('../services/auth/authApi', () => ({
   consumeOAuthHandoff: vi.fn(),
   fetchCurrentUser: vi.fn(),
   loginWithPassword: vi.fn(),
+  uploadAvatar: vi.fn(),
 }))
 
 const routerPush = vi.hoisted(() => vi.fn())
@@ -22,6 +23,20 @@ describe('auth store bootstrap', () => {
     mockedConsumeOAuthHandoff.mockReset()
     mockedFetchCurrentUser.mockReset()
     setActivePinia(createPinia())
+  })
+
+  it('does not restore a signed-out account when its avatar upload completes', async () => {
+    localStorage.setItem('auth_token', 'saved-token')
+    mockedFetchCurrentUser.mockResolvedValue(user)
+    const store = useAuthStore()
+    await store.ensureInitialized()
+    let resolveUpload!: (value: typeof user) => void
+    vi.mocked(uploadAvatar).mockImplementation(() => new Promise(resolve => { resolveUpload = resolve }))
+    const upload = store.updateAvatar(new File(['png'], 'avatar.png'))
+    store.invalidateSession()
+    resolveUpload(user)
+    await expect(upload).rejects.toThrow('Authentication context changed')
+    expect(store.user).toBeNull()
   })
 
   it('becomes anonymous without a stored token', async () => {

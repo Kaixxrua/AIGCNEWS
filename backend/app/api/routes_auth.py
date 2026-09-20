@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -8,7 +9,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from psycopg import errors as pg_errors
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -44,6 +45,7 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 from backend.app.repositories.user_account_repository import UserAccountRepository
 from backend.app.services.auth import account_lifecycle
 from backend.app.services.auth.adapters import build_account_lifecycle
+from backend.app.services.auth.avatar import MAX_AVATAR_BYTES, normalize_avatar
 from backend.app.services.auth.default_admin_bootstrap import (
     password_change_required_for_email,
     uses_configured_default_credentials,
@@ -1113,6 +1115,10 @@ async def _account_view(
         "user_id": user_id,
         "email": record.get("email"),
         "username": record.get("username"),
+        "avatar_url": (
+            f"/api/auth/avatars/{user_id}/{record['avatar_digest']}.png"
+            if record.get("avatar_digest") else None
+        ),
         "email_verified": bool(record.get("email_verified", False)),
         "role": record.get("role"),
         "membership_tier": resolve_effective_tier(
@@ -1170,3 +1176,55 @@ async def me(
         repository=repository,
         oauth_repository=oauth_repository,
     )
+
+
+@router.post("/auth/me/avatar", summary="上传当前用户头像")
+async def upload_avatar(
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    file: UploadFile = File(...),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+    oauth_repository: Any = Depends(get_oauth_identity_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    user_id = _user_id(current_user)
+    await _enforce_rate_limit(request, action="avatar_upload", limit=10, identity=str(user_id))
+    try:
+        payload = await file.read(MAX_AVATAR_BYTES + 1)
+    finally:
+        await file.close()
+    if len(payload) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=413, detail="头像不能超过 2 MB")
+    try:
+        png = await asyncio.to_thread(normalize_avatar, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    digest = hashlib.sha256(png).hexdigest()
+    updated = await asyncio.to_thread(
+        repository.update_user_avatar, user_id=user_id, png=png, digest=digest
+    )
+    if updated != 1:
+        raise HTTPException(status_code=401, detail="用户身份无效")
+    return await _account_view(
+        current_user=current_user, repository=repository, oauth_repository=oauth_repository
+    )
+
+
+@router.get("/auth/avatars/{user_id}/{digest}.png", summary="读取用户头像")
+async def avatar_image(
+    user_id: int,
+    digest: str,
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> Response:
+    if user_id < 1 or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise HTTPException(status_code=404, detail="头像不存在")
+    png = await asyncio.to_thread(repository.get_user_avatar, user_id=user_id, digest=digest)
+    if png is None:
+        raise HTTPException(status_code=404, detail="头像不存在")
+    return Response(png, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+    })

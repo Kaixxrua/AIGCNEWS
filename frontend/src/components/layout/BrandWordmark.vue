@@ -78,6 +78,7 @@ const onVisibilityChange = () => (document.hidden ? stop() : start())
 const lockCharWidths = async () => {
   await nextTick()
   const elements = textEl.value?.querySelectorAll<HTMLElement>('.brand-wordmark__char')
+  if (!textEl.value?.getBoundingClientRect().width) return
   elements?.forEach(el => { el.style.width = '' })
   elements?.forEach(el => { el.style.width = `${el.getBoundingClientRect().width}px` })
 }
@@ -124,9 +125,15 @@ onUnmounted(() => {
     to="/"
     class="brand-wordmark"
     :aria-label="text"
+    :class="{ 'brand-wordmark--comic': text === 'AIGC NEWS' }"
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
+    <span v-if="text === 'AIGC NEWS'" class="brand-comic" aria-hidden="true">
+      <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__base" />
+      <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--upper" />
+      <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--lower" />
+    </span>
     <svg v-if="compact" class="brand-wordmark__logo" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
       <rect width="128" height="128" rx="24" fill="var(--acid)" />
       <g transform="translate(4 4) scale(0.9375)" fill="var(--acid-ink)">
@@ -397,4 +404,25 @@ onUnmounted(() => {
 .brand-wordmark:not(:hover) .bw-fringe { opacity: .14; }
 :root[data-theme='dark'] .brand-wordmark__text::after { mix-blend-mode: screen; }
 @media (max-width: 767px) { .brand-wordmark__text { font-size: 20px; } .brand-wordmark { --bw-tracking: -.035em; } }
+/* Desktop artwork follows the supplied comic letterforms; compact remains original. */
+.brand-comic { display:none; }
+@media (min-width:1024px) {
+  .brand-wordmark--comic .brand-wordmark__text { display:none; }
+  .brand-comic { display:block;position:relative;width:420px;height:102px; }
+  .brand-comic img { position:absolute;inset:0;width:100%;height:100%;object-fit:contain; }
+  .brand-comic__slice { opacity:0;pointer-events:none;animation:comic-print-slip 7s steps(1,end) infinite; }
+  .brand-comic__slice--lower { animation-delay:.08s;animation-direction:reverse; }
+  .brand-wordmark:hover .brand-comic__slice { animation-duration:2.5s; }
+}
+@keyframes comic-print-slip {
+  0%,92%,100% { opacity:0;transform:none;clip-path:inset(44% 0 45%); }
+  93% { opacity:1;transform:translateX(-4px);clip-path:inset(24% 0 62%); }
+  94% { opacity:1;transform:translateX(3px);clip-path:inset(65% 0 23%); }
+  95% { opacity:0; }
+  96% { opacity:1;transform:translateX(-2px);clip-path:inset(45% 0 46%); }
+  97% { opacity:0; }
+}
+@media (min-width:1024px) and (max-width:1499px) { .brand-comic { width:330px;height:90px; } }
+@media (min-width:1024px) and (max-width:1199px) { .brand-comic { width:280px;height:78px; } }
+@media (prefers-reduced-motion:reduce) { .brand-comic__slice,.brand-wordmark:hover .brand-comic__slice { display:none;animation:none; } }
 </style>
