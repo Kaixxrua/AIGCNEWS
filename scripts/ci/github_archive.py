@@ -111,8 +111,8 @@ def archive_task(config, db, api, task, release, remote_main):
         receipt = {'number': pr['number'], 'url': pr['html_url'], 'head': head,
                    'base': base, 'sha': sha, 'release_sha': release, 'status': 'created'}
         d.meta(db, key, receipt)
-        db.execute('UPDATE tasks SET pr=? WHERE id=?', (pr['number'], task['id']))
-        db.commit()
+    db.execute('UPDATE tasks SET pr=? WHERE id=?', (pr['number'], task['id']))
+    db.commit()
     # A retry must never adopt a PR whose refs/commit were changed externally.
     if (pr['head']['sha'] != sha or pr['head']['ref'] != receipt['head']
             or pr['base']['ref'] != receipt['base']
@@ -122,15 +122,16 @@ def archive_task(config, db, api, task, release, remote_main):
     if not pr.get('merged_at'):
         if pr['state'] != 'open':
             raise RuntimeError('archive PR was closed without merging')
+        if receipt['base'] == 'main':
+            return  # Prepare every PR before advancing main once for the batch.
         if deployed(config, db) != release:
             raise RuntimeError('deployment changed while preparing archive')
         # Fast-forwarding the base with the exact head marks the PR merged on
         # GitHub, without introducing GitHub-generated commits into local main.
-        target = sha if receipt['base'] != 'main' else release
-        push(config, api, target+':refs/heads/'+receipt['base'])
+        push(config, api, sha+':refs/heads/'+receipt['base'])
         pr = api.call('GET', f"pulls/{pr['number']}")
         if not pr.get('merged_at'):
-            raise RuntimeError('waiting for GitHub to recognize the mirrored merge')
+            return  # GitHub recognizes fast-forward merges asynchronously.
     d.meta(db, key, {**receipt, 'status': 'merged', 'merged_at': pr['merged_at']})
 
 
@@ -152,14 +153,25 @@ def mirror(config, db):
                     and d.ancestor(config, task['landing_sha'], release)]
         pending = [task for task in eligible
                    if d.meta(db, f"github_archive:{task['id']}").get('status') != 'merged']
-        for task in pending[:5]:
+        # Prioritize new records; existing main PRs wait for the shared main push.
+        work = [task for task in pending
+                if not d.meta(db, f"github_archive:{task['id']}")]
+        work += [task for task in pending if d.meta(db, f"github_archive:{task['id']}").get('base')
+                 not in (None, 'main')]
+        for task in work[:5]:
             archive_task(config, db, api, task, release, remote)
-            remote = api.call('GET', 'git/ref/heads/main')['object']['sha']
-        remaining = len(pending) - min(5, len(pending))
-        if not remaining and remote != release:
+        all_created = all(d.meta(db, f"github_archive:{task['id']}") for task in eligible)
+        if all_created and remote != release:
             if deployed(config, db) != release:
                 raise RuntimeError('deployment changed before mirror push')
             push(config, api, release+':refs/heads/main')
+        if all_created:
+            for task in pending:
+                receipt = d.meta(db, f"github_archive:{task['id']}")
+                if receipt.get('base') == 'main' and receipt.get('status') != 'merged':
+                    archive_task(config, db, api, task, release, remote)
+        remaining = sum(d.meta(db, f"github_archive:{task['id']}").get('status') != 'merged'
+                        for task in eligible)
         d.meta(db, 'mirror', {'status': 'archiving' if remaining else 'synced', 'sha': release,
                              'remaining_prs': remaining, 'actions_enabled': False,
                              'last_success': d.now()})

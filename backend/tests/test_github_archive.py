@@ -34,7 +34,11 @@ class API:
         if path == 'git/ref/heads/main':
             return {'object': {'sha': self.refs['main']}}
         if path.startswith('pulls?'):
-            return self.prs
+            from urllib.parse import parse_qs
+            query = parse_qs(path.split('?', 1)[1])
+            head = query['head'][0].split(':', 1)[1]
+            return [pr for pr in self.prs if pr['head']['ref'] == head
+                    and pr['base']['ref'] == query['base'][0]]
         if method == 'GET' and path.startswith('pulls/'):
             return self.prs[int(path.split('/')[1])-1]
         assert method == 'POST' and path == 'pulls'
@@ -153,3 +157,44 @@ def test_push_rechecks_actions_and_never_forces(setup):
         with pytest.raises(RuntimeError):
             a.push(c, api, head+':refs/heads/main')
         assert command.call_count == 1
+
+
+def test_batch_prepares_all_prs_before_advancing_main(setup):
+    c, db, base, head = ready(setup)
+    tree = d.git(c, 'rev-parse', head+'^{tree}')
+    import subprocess
+    second = subprocess.check_output(
+        ['git', '--git-dir', c['bare'], '-c', 'user.name=test', '-c', 'user.email=test@example.test',
+         'commit-tree', tree, '-p', head, '-m', 'fix(ci): second task'], text=True).strip()
+    d.git(c, 'update-ref', 'refs/heads/main', second)
+    fixtures.enqueue(db, 'session/second-task', second, status='delivered')
+    db.execute("UPDATE tasks SET landing_sha=sha,title='fix(ci): second task' WHERE sha=?", (second,)); db.commit()
+    d.meta(db, 'release', {'status': 'delivered', 'sha': second})
+    control = Path(c['production'])/'.aigcnews-deploy'
+    for filename, key in [('state.json', 'active_release'), ('edge-state.json', 'source_sha')]:
+        content = json.loads((control/filename).read_text()); content[key] = second
+        (control/filename).write_text(json.dumps(content))
+    api = API(base)
+    with patch.object(a, 'GitHub', return_value=api), patch.object(a, 'push', side_effect=api.push):
+        a.mirror(c, db)
+    assert len(api.prs) == 2
+    assert all(pr['base']['ref'] == 'main' and pr['merged_at'] for pr in api.prs)
+    assert api.refs['main'] == second
+    assert d.meta(db, 'mirror')['status'] == 'synced'
+
+
+def test_async_merge_recognition_is_retried(setup):
+    c, db, base, head = ready(setup)
+    api = API(head)
+    def delayed(config, client, *refs):
+        api.push(config, client, *refs)
+        for pr in api.prs:
+            pr.update(state='open', merged_at=None)
+    with patch.object(a, 'GitHub', return_value=api), patch.object(a, 'push', side_effect=delayed):
+        a.mirror(c, db)
+    assert d.meta(db, 'mirror')['status'] == 'archiving'
+    api.prs[0].update(state='closed', merged_at='now')
+    with patch.object(a, 'GitHub', return_value=api), patch.object(a, 'push') as push:
+        a.mirror(c, db)
+        push.assert_not_called()
+    assert d.meta(db, 'mirror')['status'] == 'synced'
