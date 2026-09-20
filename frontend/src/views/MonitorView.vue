@@ -8,6 +8,7 @@ import GithubCrawlControls from '@/components/monitor/GithubCrawlControls.vue'
 import GithubEnrichmentPanel from '@/components/monitor/GithubEnrichmentPanel.vue'
 import GithubUnprocessableProjectsPanel from '@/components/monitor/GithubUnprocessableProjectsPanel.vue'
 import ErrorLogPanel from '@/components/monitor/ErrorLogPanel.vue'
+import AiOpsPanel from '@/components/monitor/AiOpsPanel.vue'
 import McpServerConfigPanel from '@/components/monitor/McpServerConfigPanel.vue'
 import McpToolCallsPanel from '@/components/monitor/McpToolCallsPanel.vue'
 import MembershipGrantPanel from '@/components/monitor/MembershipGrantPanel.vue'
@@ -226,6 +227,7 @@ onUnmounted(dispose)
             :loading="loading"
           />
         </template>
+        <AiOpsPanel v-else-if="currentSection === 'ai-ops'" />
         <template v-else-if="currentSection === 'errors'">
           <ErrorLogPanel
             v-if="authStore.isAdmin"

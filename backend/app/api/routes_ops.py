@@ -7,6 +7,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from backend.app.api import (
+    routes_ops_ai,
     routes_ops_email_pool,
     routes_ops_github,
     routes_ops_mcp,
@@ -128,6 +129,7 @@ async def test_provider_config(
 # ── 按资源域拆分的子路由（mcp-servers / x-* / github-* / smtp）────────────────
 
 router.include_router(routes_ops_mcp.router)
+router.include_router(routes_ops_ai.router)
 router.include_router(routes_ops_x.router)
 router.include_router(routes_ops_x_translation.router)
 router.include_router(routes_ops_smtp.router)

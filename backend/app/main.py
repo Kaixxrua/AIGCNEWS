@@ -80,6 +80,7 @@ from backend.app.repositories.postgres_error_event_repository import (
 from backend.app.repositories.postgres_mcp_metrics_checkpoint_repository import (
     PostgresMcpMetricsCheckpointRepository,
 )
+from backend.app.services.ai_ops import create_ai_ops_service
 from backend.app.services.auth.default_admin_bootstrap import ensure_default_admin
 from backend.app.services.auth.oauth.runtime_config import configure_oauth_settings_reader
 from backend.app.services.chat import attachment_service
@@ -161,6 +162,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     operations_runtime: ApplicationOperationsRuntime | None = None
     model_provider_runtime: ApplicationModelProviderRuntime | None = None
     scheduler_runtime = None
+    ai_ops_task = None
 
     app.state.database = postgres_database
     app.state.postgres_database = postgres_database
@@ -207,9 +209,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(
                 "[Startup] PostgreSQL 迁移台账校验失败（非阻断）: %s", exc
             )
-        app.state.monitoring_runtime = create_application_monitoring_runtime(
+        monitoring_runtime = create_application_monitoring_runtime(
             postgres=postgres_database,
         )
+        app.state.monitoring_runtime = monitoring_runtime
         app.state.application_repositories = create_application_repositories(
             postgres=postgres_database,
         )
@@ -409,8 +412,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if scheduler_enabled:
             scheduler_runtime.start()
 
+        app.state.ai_ops_service = create_ai_ops_service(
+            database=postgres_database,
+            repositories=app.state.application_repositories,
+            health_checks=monitoring_runtime.health_checks,
+            scheduler=scheduler_runtime.scheduler,
+            model_provider=model_provider_runtime,
+        )
+        ai_ops_task = asyncio.create_task(app.state.ai_ops_service.watch())
+
         yield
     finally:
+        await _cancel_background_task(ai_ops_task, name="AI operations")
         if scheduler_runtime is not None:
             try:
                 await scheduler_runtime.stop()

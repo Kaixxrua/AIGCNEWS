@@ -65,6 +65,7 @@ describe('monitor presentation localization boundary', () => {
       ['tasks', 'monitor.nav.tasks', false],
       ['mcp-calls', 'monitor.nav.mcpCalls', false],
       ['errors', 'monitor.nav.errors', true],
+      ['ai-ops', 'aiOpsTitle', true],
       ['visit-stats', 'monitor.nav.visitStats', true],
       ['collect', 'monitor.nav.collect', true],
       ['crawl', 'monitor.nav.crawl', true],
