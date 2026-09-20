@@ -515,9 +515,12 @@ def notify(config,db):
                 except Exception as exc:  # noqa: BLE001 - feedback cannot block repair notifications
                     status = 'unavailable'
                     meta(db, f"success-notification-error:{task['id']}", {'error': type(exc).__name__, 'at': now()})
+                receipt = db.execute('SELECT detail FROM success_notifications WHERE identity=?',
+                                     (f"delivered:{task['id']}:{task['sha']}",)).fetchone()
+                starts_turn = bool(receipt and json.loads(receipt[0]).get('starts_turn'))
                 meta(db, f"success-notification:{task['id']}",
                      {'status': status, 'sha': task['sha'], 'owner': task['owner'],
-                      'starts_turn': False, 'at': now()})
+                      'starts_turn': starts_turn, 'at': now()})
         tasks=[dict(row) for row in db.execute("SELECT * FROM tasks WHERE status IN ('needs_update','failed')").fetchall()]
         release=meta(db,'release')
         if release.get('status')=='failed':
