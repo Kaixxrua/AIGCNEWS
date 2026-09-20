@@ -3,7 +3,7 @@ import {
   BookOpenText,
   Bot,
   Flame,
-  FolderGit2,
+  Github,
   Heart,
   MessagesSquare,
   Newspaper,
@@ -134,7 +134,7 @@ const MODULE_KEYWORDS: Record<string, string[]> = {
 }
 
 export const TABS = [
-  { key: 'github',      labelKey: 'github',   icon: FolderGit2, color: 'ink' },
+  { key: 'github',      labelKey: 'github',   icon: Github,     color: 'ink' },
   { key: 'arxiv',       labelKey: 'papers',   icon: BookOpenText, color: 'brand-blue' },
   { key: 'news',        labelKey: 'news',     icon: Newspaper,  color: 'brand-amber' },
   { key: 'producthunt', labelKey: 'products', icon: Bot,        color: 'brand-rose' },
