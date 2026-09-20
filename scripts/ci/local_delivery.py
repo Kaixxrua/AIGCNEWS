@@ -454,18 +454,8 @@ def release_once(config,db):
 
 
 def mirror_once(config,db):
-    # No force, no API; mirror failure cannot change CI/production decisions.
-    main=git(config,'rev-parse','refs/heads/main')
-    branches=[r[0] for r in db.execute("SELECT DISTINCT branch FROM tasks WHERE branch != 'main'")]
-    refs=['refs/heads/main', *['refs/heads/'+b for b in branches]]
-    refs_hash=hashlib.sha256(git(config,'for-each-ref','--format=%(refname) %(objectname)',*refs).encode()).hexdigest()
-    if meta(db,'mirror').get('refs_hash')==refs_hash and meta(db,'mirror').get('status')=='synced':return
-    try:
-        command(['git','--git-dir',config['bare'],'push',config['github_url'],
-                 *[ref+':'+ref for ref in refs]],timeout=90)
-        meta(db,'mirror',{'status':'synced','sha':main,'refs_hash':refs_hash,'last_success':now()})
-    except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
-        meta(db,'mirror',{'status':'pending','sha':main,'error':str(exc),'last_attempt':now()})
+    from github_archive import mirror
+    mirror(config, db)
 
 
 def notification_current(config,db,task):

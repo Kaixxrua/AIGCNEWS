@@ -98,3 +98,13 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 预算耗尽标记“需要修复”，不无限重复唤醒和发布。更新 main、源站切换、
 未完成切换或不可重试的错误都不能进入这条恢复路径。
 需要修改代码或受版本管理的配置时才回到开发验证流程。
+
+## GitHub 代码与 PR 留档（不运行 Actions）
+
+mirror 控制器仅在 `release=delivered`，且生产 active SHA、frontend digest 与所有公网边缘回执一致后写入 GitHub。仓库级 Actions 必须关闭；每次 Git push 和创建 PR 前再次检查，配置被重新开启时同步失败并保留 pending，不影响本地 CI/发布。不依赖提交消息中的 skip-ci，不调用 Actions 或 GitHub 合并 API。
+
+每个已上线任务的精确源码 SHA 使用不可变 `archive/task-<id>-<sha>` 分支创建 PR，随后普通快进推送已上线版本到目标基线，让 GitHub 识别为已合并。尚未上线的主分支或任务分支不再被镜像。已同步过的历史任务无法再针对 main 创建有差异的 PR，改用 `archive/base-<id>-<sha>` 独立留档基线；PR 正文明确注明历史补档，不回退 main，也不制造空提交。
+
+队列保存任务 PR 编号，metadata 的 `github_archive:<id>` 保存 URL、源码/上线 SHA 和合并回执。请求超时后先按确定的 head/base 查询恢复，不能重复建 PR；每轮最多补档五项，失败保留 pending。GitHub main 分叉或领先当前上线版本时拒绝写入，不强推。
+
+可信配置 `github_archive_token_file` 指向控制器用户拥有、无组/其他用户权限的纯 token 文件。凭据需要本仓库 Contents、Pull requests 写权限及 Actions 设置读取权限；仓库级 Actions 的关闭通过管理员配置完成。凭据不进入仓库、命令行或日志。镜像角色可单独切换到经验证的不可变控制器版本，不重启 CI 和生产发布角色。
