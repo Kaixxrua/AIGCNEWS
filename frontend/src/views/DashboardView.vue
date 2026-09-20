@@ -50,6 +50,8 @@ const {
   tabLoading,
   errorMsg,
   currentDate,
+  resolvedDate,
+  todayStr,
   availableDates,
   isViewingHistory,
   isFinalized,
@@ -92,7 +94,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
       <div class="dashboard-heading__copy">
         <h1>{{ t('dashboard.editorial.title') }}</h1>
         <p>{{ t('dashboard.editorial.subtitle') }}</p>
-        <span v-if="!loading && isViewingHistory" class="dashboard-history"><CalendarDays :size="14" />{{ currentDate }}</span>
+        <span v-if="!loading" class="dashboard-history"><CalendarDays :size="14" />{{ resolvedDate || currentDate }}</span>
       </div>
       <DashboardOverviewPanel v-if="!loading" :loading="loading" :active-tab="activeTab"
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
@@ -109,7 +111,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 
       <aside v-if="!loading" class="dashboard-sidebar min-h-0">
         <p class="sidebar-motto">{{ t('dashboard.editorial.motto') }}</p>
-        <GlassCalendar :model-value="currentDate" :available-dates="availableDates" @update:model-value="onDateChange" />
+        <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />
         <section class="digest-card">
           <div class="digest-heading"><MailPlus :size="27" /><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
           <span class="digest-edition">DAILY BRIEF <span>{{ currentDate.slice(5).replace('-', '.') }}</span></span>

@@ -44,16 +44,13 @@ func (s *GetTopItemsService) Get(arguments map[string]any) (any, error) {
 	if date == "" {
 		date = s.now().Format("2006-01-02")
 	}
-	finalized, embargoed := boardStatus(date, s.now())
+	finalized, _ := boardStatus(date, s.now(), input.source)
 	base := func(items []any, total int, isEmbargoed bool) jsonx.Object {
 		return jsonx.Object{
 			{Key: "items", Value: items}, {Key: "total", Value: total}, {Key: "period", Value: input.period}, {Key: "source", Value: input.source},
 			{Key: "snapshot_date", Value: date}, {Key: "is_finalized", Value: finalized}, {Key: "is_embargoed", Value: isEmbargoed},
 			{Key: "attribution", Value: "Data provided by AIGC Radar · " + s.documents.attributionBase()},
 		}
-	}
-	if embargoed {
-		return base([]any{}, 0, true), nil
 	}
 	docs, err := s.getDocs(date, input.period, input.source)
 	if err != nil {
@@ -146,15 +143,19 @@ func contains(values []string, value string) bool {
 	}
 	return false
 }
-func boardStatus(date string, now time.Time) (bool, bool) {
+func boardStatus(date string, now time.Time, source ...string) (bool, bool) {
+	hour := 17
+	if len(source) > 0 {
+		switch source[0] {
+		case "github", "news", "hackernews", "x":
+			hour = 1
+		case "arxiv", "producthunt", "all", "":
+		default:
+			hour = 15
+		}
+	}
 	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
-	if date == yesterday && now.Hour() < 15 {
-		return false, true
-	}
-	if date < yesterday {
-		return true, false
-	}
-	return false, false
+	return date < yesterday || (date == yesterday && now.Hour() >= hour), false
 }
 
 var sourceChannels = map[string]map[string]string{

@@ -180,7 +180,7 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(0 < call.args[0] <= 1800 for call in sleep.await_args_list))
 
     def test_next_refresh_is_before_expiry_and_just_after_midnight(self) -> None:
-        self.assertEqual(_next_warmup_delay(datetime(2026, 9, 11, 12, tzinfo=_CST)), 1800)
+        self.assertEqual(_next_warmup_delay(datetime(2026, 9, 11, 12, tzinfo=_CST)), 45)
         self.assertEqual(_next_warmup_delay(datetime(2026, 9, 11, 23, 59, 58, tzinfo=_CST)), 3)
 
     async def test_single_endpoint_failure_does_not_break_others(self) -> None:

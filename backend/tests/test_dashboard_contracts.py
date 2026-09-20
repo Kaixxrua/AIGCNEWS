@@ -156,7 +156,9 @@ def test_dashboard_compatibility_helpers_remain_importable() -> None:
         assert callable(getattr(routes_dashboard, helper_name))
 
 
-def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
+def test_cache_key_preserves_namespace_function_path_and_sorted_query(monkeypatch) -> None:
+    now_cst = datetime(2026, 9, 20, 10, tzinfo=timezone(timedelta(hours=8)))
+    monkeypatch.setattr(routes_dashboard, "datetime", SimpleNamespace(now=lambda tz: now_cst))
     request = _request(
         "/api/dashboard/top",
         "source=github&limit=7&date=2025-01-02",
@@ -171,7 +173,8 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query() -> None:
     payload = {
         "path": "/api/dashboard/top",
         "namespace": "dashboard",
-        "schema": "enriched-top-v3",
+        "schema": "visible-drafts-v1",
+        "board_clock": ("2026-09-20", [1]),
         "query": {
             "source": "github",
             "limit": "7",
@@ -1214,7 +1217,7 @@ def test_display_date_default_uses_today_when_snapshots_exist() -> None:
     }
 
 
-def test_display_date_default_skips_embargoed_fallback_and_marks_stale(monkeypatch) -> None:
+def test_display_date_default_includes_yesterday_and_marks_stale(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
@@ -1229,10 +1232,10 @@ def test_display_date_default_skips_embargoed_fallback_and_marks_stale(monkeypat
 
     assert resolution == {
         "requested_date": "2026-08-10",
-        "resolved_date": "2026-08-08",
+        "resolved_date": "2026-08-09",
         "stale": True,
     }
-    # 回溯查询按 source+period 口径且有界；昨日静默期日期不可作为展示候选
+    # 回溯查询按 source+period 口径且有界，昨天仍可展示。
     assert reader.date_calls == [
         (policy.DEFAULT_SNAPSHOT_LOOKBACK_DAYS, "github", "daily")
     ]
@@ -1417,7 +1420,7 @@ def test_top_route_github_metricless_date_returns_honest_empty_board() -> None:
     assert reader.document_calls == []
 
 
-def test_top_route_github_default_view_skips_embargoed_fallback_date(monkeypatch) -> None:
+def test_top_route_github_default_view_uses_yesterday(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
@@ -1425,10 +1428,10 @@ def test_top_route_github_default_view_skips_embargoed_fallback_date(monkeypatch
             return value.replace(tzinfo=tz) if tz else value
 
     monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
-    # today=2026-08-10 无指标；昨天 08-09 仍在静默期，应继续回溯到已定稿的 08-08。
+    # 今日无指标时优先展示昨天。
     reader = FakeRankSnapshotReader()
     github_hot = FakeGitHubHotReader(
-        {"2026-08-08": [_github_metric_row(metric_date="2026-08-08")]},
+        {"2026-08-09": [_github_metric_row(metric_date="2026-08-09")]},
         dates=["2026-08-09", "2026-08-08"],
     )
 
@@ -1444,10 +1447,10 @@ def test_top_route_github_default_view_skips_embargoed_fallback_date(monkeypatch
     payload = response.json()
     assert [item["id"] for item in payload["items"]] == ["owner/repo"]
     assert payload["requested_date"] == "2026-08-10"
-    assert payload["resolved_date"] == "2026-08-08"
+    assert payload["resolved_date"] == "2026-08-09"
     assert payload["stale"] is True
     assert payload["is_embargoed"] is False
-    assert github_hot.hot_calls == [("2026-08-08", 500)]
+    assert github_hot.hot_calls == [("2026-08-09", 500)]
 
 
 def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
@@ -1605,7 +1608,7 @@ def test_summary_mix_view_github_items_come_from_metrics(monkeypatch) -> None:
     assert all(call[1] != "github_trending_daily" for call in reader.document_calls)
 
 
-def test_top_route_explicit_date_still_respects_embargo(monkeypatch) -> None:
+def test_top_route_explicit_yesterday_remains_readable(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
@@ -1629,10 +1632,10 @@ def test_top_route_explicit_date_still_respects_embargo(monkeypatch) -> None:
     assert payload["requested_date"] == "2026-08-09"
     assert payload["resolved_date"] == "2026-08-09"
     assert payload["stale"] is False
-    assert payload["is_embargoed"] is True
-    # 显式请求仍不回溯；静默期拦截先于文档查询，未解禁数据不外泄
+    assert payload["is_embargoed"] is False
+    # 显式请求仍不回溯，且正常读取所选日期。
     assert reader.date_calls == []
-    assert reader.document_calls == []
+    assert reader.document_calls
 
 
 def test_radar_route_default_view_carries_resolution_markers() -> None:

@@ -8,16 +8,16 @@ const { t } = useI18n()
 const props = defineProps<{
   modelValue?: string
   availableDates?: string[]
+  todayDate?: string
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [date: string]
 }>()
 
-const today = new Date()
-const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-const viewYear = ref(today.getFullYear())
-const viewMonth = ref(today.getMonth())
+const todayStr = computed(() => props.todayDate || new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10))
+const viewYear = ref(Number(todayStr.value.slice(0, 4)))
+const viewMonth = ref(Number(todayStr.value.slice(5, 7)) - 1)
 
 const monthLabel = computed(() => formatLocaleDate(new Date(viewYear.value, viewMonth.value, 1), { year: 'numeric', month: 'long' }))
 const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, day) => formatLocaleDate(new Date(2023, 0, day + 1), { weekday: 'narrow' })))
@@ -43,7 +43,7 @@ interface CalendarDay {
 }
 
 // 快照清单只用于提示数据可用性；缺少快照的历史日期仍可查询并展示空态。
-const canSelectDate = (day: CalendarDay) => day.date <= todayStr
+const canSelectDate = (day: CalendarDay) => day.date <= todayStr.value
 
 const calendarDays = computed<CalendarDay[]>(() => {
   const year = viewYear.value
@@ -58,12 +58,12 @@ const calendarDays = computed<CalendarDay[]>(() => {
     const m = month === 0 ? 12 : month
     const y = month === 0 ? year - 1 : year
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: dateStr, day: d, inMonth: false, isToday: dateStr === todayStr, hasSnapshot: availableSet.value.has(dateStr) })
+    days.push({ date: dateStr, day: d, inMonth: false, isToday: dateStr === todayStr.value, hasSnapshot: availableSet.value.has(dateStr) })
   }
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: dateStr, day: d, inMonth: true, isToday: dateStr === todayStr, hasSnapshot: availableSet.value.has(dateStr) })
+    days.push({ date: dateStr, day: d, inMonth: true, isToday: dateStr === todayStr.value, hasSnapshot: availableSet.value.has(dateStr) })
   }
 
   // 最多显示 35 格（5 行），减少日历高度
@@ -73,7 +73,7 @@ const calendarDays = computed<CalendarDay[]>(() => {
     const m = month === 11 ? 1 : month + 2
     const y = month === 11 ? year + 1 : year
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    days.push({ date: dateStr, day: d, inMonth: false, isToday: dateStr === todayStr, hasSnapshot: availableSet.value.has(dateStr) })
+    days.push({ date: dateStr, day: d, inMonth: false, isToday: dateStr === todayStr.value, hasSnapshot: availableSet.value.has(dateStr) })
   }
 
   return days

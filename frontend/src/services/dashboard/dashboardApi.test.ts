@@ -31,20 +31,20 @@ describe('Dashboard API contract', () => {
       isFinalized: true, isEmbargoed: false,
     })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/summary-static', {
-      params: { date: '2026-07-27' }, signal,
+      params: { date: '2026-07-27', _board: 'visible-v1' }, signal,
     })
 
     transport.get.mockResolvedValueOnce({ data: { items: null } })
-    await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-07-27', signal })).resolves.toEqual({ items: [], isEmbargoed: false, sourceStatus: {} })
+    await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-07-27', signal })).resolves.toEqual({ items: [], isEmbargoed: false, sourceStatus: {}, isFinalized: false, resolvedDate: undefined, stale: false })
     expect(transport.get).toHaveBeenLastCalledWith('/dashboard/top', {
-      params: { limit: 10, source: 'arxiv', date: '2026-07-27' }, signal,
+      params: { limit: 10, source: 'arxiv', date: '2026-07-27', _board: 'visible-v1' }, signal,
     })
   })
 
   it('surfaces the embargo flag from top responses for embargo-aware empty states', async () => {
     transport.get.mockResolvedValueOnce({ data: { items: [], is_embargoed: true } })
     await expect(dashboardApi.fetchTop({ source: 'x', date: '2026-08-07' })).resolves.toEqual({
-      items: [], isEmbargoed: true, sourceStatus: {},
+      items: [], isEmbargoed: true, sourceStatus: {}, isFinalized: false, resolvedDate: undefined, stale: false,
     })
   })
 
@@ -53,6 +53,9 @@ describe('Dashboard API contract', () => {
       data: {
         items: [{ id: 1, title: 'Synthetic' }],
         is_embargoed: false,
+        is_finalized: false,
+        resolved_date: '2026-08-09',
+        stale: true,
         source_status: {
           arxiv: { is_finalized: false, is_embargoed: true, day_boundary: 'PT', finalize_hour: 17 },
           github: { is_finalized: true, is_embargoed: false, day_boundary: 'CST', finalize_hour: 1 },
@@ -62,6 +65,9 @@ describe('Dashboard API contract', () => {
     await expect(dashboardApi.fetchTop({ source: 'arxiv', date: '2026-08-10' })).resolves.toEqual({
       items: [{ id: 1, title: 'Synthetic' }],
       isEmbargoed: false,
+      isFinalized: false,
+      resolvedDate: '2026-08-09',
+      stale: true,
       sourceStatus: {
         arxiv: { is_finalized: false, is_embargoed: true, day_boundary: 'PT', finalize_hour: 17 },
         github: { is_finalized: true, is_embargoed: false, day_boundary: 'CST', finalize_hour: 1 },

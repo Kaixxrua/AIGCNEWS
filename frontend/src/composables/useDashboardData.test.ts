@@ -375,4 +375,87 @@ describe('Dashboard request lifecycle contract', () => {
     expect(mounted.dashboard.tabList.value).toHaveLength(1)
     mounted.app.unmount()
   })
+
+  it('uses the selected source status and resolved date even when summary differs or fails', async () => {
+    defaultDashboardApi.fetchTop.mockResolvedValue({
+      items: [{ id: 1 }], isFinalized: true, isEmbargoed: false,
+      resolvedDate: '2026-07-26', stale: true,
+      sourceStatus: { github: { is_finalized: true, finalize_hour: 1 } },
+    })
+    defaultDashboardApi.fetchSummaryStatic.mockResolvedValue({ isFinalized: false, isEmbargoed: true })
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.isEmbargoed.value).toBe(false)
+    expect(mounted.dashboard.isFinalized.value).toBe(true)
+    expect(mounted.dashboard.resolvedDate.value).toBe('2026-07-26')
+    expect(mounted.dashboard.currentDate.value).toBe('2026-07-27')
+    defaultDashboardApi.fetchSummaryStatic.mockRejectedValue(new Error('summary unavailable'))
+    await mounted.dashboard.onDateChange('2026-07-26')
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: 1 }])
+    expect(mounted.dashboard.errorMsg.value).toBe('')
+    mounted.app.unmount()
+  })
+
+  it('refreshes at the source close and preserves existing rows on a failed refresh', async () => {
+    vi.setSystemTime(new Date('2026-07-27T00:59:30+08:00'))
+    defaultDashboardApi.fetchTop.mockResolvedValue({
+      items: [{ id: 1 }], isFinalized: false, isEmbargoed: false,
+      resolvedDate: '2026-07-26', sourceStatus: { github: { is_finalized: false, finalize_hour: 1 } },
+    })
+    const mounted = mountDashboard()
+    await flush()
+    await mounted.dashboard.onDateChange('2026-07-26')
+    defaultDashboardApi.fetchTop.mockResolvedValue({
+      items: [{ id: 2 }], isFinalized: true, isEmbargoed: false,
+      resolvedDate: '2026-07-26', sourceStatus: { github: { is_finalized: true, finalize_hour: 1 } },
+    })
+    await vi.advanceTimersByTimeAsync(30_100)
+    expect(mounted.dashboard.isFinalized.value).toBe(true)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({
+      date: '2026-07-26', cacheBuster: expect.any(Number),
+    }))
+    defaultDashboardApi.fetchTop.mockRejectedValueOnce(new Error('temporary outage'))
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: 2 }])
+    expect(mounted.dashboard.errorMsg.value).toContain('temporary outage')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mounted.dashboard.errorMsg.value).toBe('')
+    mounted.app.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('follows the CST date at midnight but keeps an explicit history selection', async () => {
+    vi.setSystemTime(new Date('2026-07-27T23:59:50+08:00'))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.currentDate.value).toBe('2026-07-27')
+    await vi.advanceTimersByTimeAsync(10_100)
+    expect(mounted.dashboard.currentDate.value).toBe('2026-07-28')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: undefined }))
+    await mounted.dashboard.onDateChange('2026-07-26')
+    vi.setSystemTime(new Date('2026-07-28T23:59:50+08:00'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    await vi.advanceTimersByTimeAsync(10_100)
+    expect(mounted.dashboard.todayStr.value).toBe('2026-07-29')
+    expect(mounted.dashboard.currentDate.value).toBe('2026-07-26')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-07-26' }))
+    mounted.app.unmount()
+  })
+
+  it('pauses requests in a hidden page and refreshes when visible, with no work after unmount', async () => {
+    const mounted = mountDashboard()
+    await flush()
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(1)
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(2)
+    mounted.app.unmount()
+    await vi.advanceTimersByTimeAsync(120_000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(2)
+  })
 })

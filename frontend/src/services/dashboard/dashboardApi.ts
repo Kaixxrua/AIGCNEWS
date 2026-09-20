@@ -50,7 +50,7 @@ export const dashboardApi: DashboardApi = {
   },
 
   async fetchSummaryStatic({ period, date, signal }): Promise<DashboardStaticSummary> {
-    const params: Record<string, unknown> = {}
+    const params: Record<string, unknown> = { _board: 'visible-v1' }
     if (period) params.period = period
     if (date) params.date = date
     const response = await api.get<DashboardStaticSummaryWireResponse>('/dashboard/summary-static', {
@@ -64,12 +64,15 @@ export const dashboardApi: DashboardApi = {
   },
 
   async fetchTop({ source, period, date, limit = 10, signal, cacheBuster }) {
-    const params: Record<string, unknown> = { limit, source, period }
+    const params: Record<string, unknown> = { limit, source, period, _board: 'visible-v1' }
     if (date) params.date = date
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardTopWireResponse>('/dashboard/top', { params, signal })
     return {
       items: Array.isArray(response.data?.items) ? response.data.items : [],
+      isFinalized: response.data?.is_finalized ?? false,
+      resolvedDate: response.data?.resolved_date ?? undefined,
+      stale: response.data?.stale ?? false,
       // 静默期标记必须透出：X 看板日期模式靠它区分「无数据」与「定稿前静默」
       isEmbargoed: response.data?.is_embargoed ?? false,
       // 分源定稿状态（tab 级徽章）；缺省视为全部未定稿

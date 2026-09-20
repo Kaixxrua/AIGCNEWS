@@ -1,7 +1,7 @@
 {
   "version": 1,
   "frozen_instant": "2026-08-10T12:00:00+08:00",
-  "frozen_instant_note": "全部用例在此时刻冻结时间（CST）。昨日 2026-08-09 处于 embargo 窗口（FINALIZE_HOUR=15，冻结在 12 点），2026-08-08 已定稿，当日 2026-08-10 为草稿——三种榜单状态同批钉住。",
+  "frozen_instant_note": "全部用例冻结在 CST 12 点。昨日 2026-08-09 的 PT 源未定稿但已有快照可读，CST 源已定稿；2026-08-08 已定稿，2026-08-10 为草稿。历史命名含 embargoed 的两例现验证昨日快照持续可读，其响应以同组可见快照 fixture 和新状态契约更新。",
   "recorded_apps": ["main", "mcp"],
   "recorded_apps_note": "app=both 的用例在 main.app 与 mcp_main.app 上各跑一次并要求逐字节一致后才入库；app=mcp 的用例（探活/挂载面/CORS）只钉独立进程。",
   "header_semantics": "响应头按 小写名字→值 的字典比较，名字排序落盘；不捕捉同名多值头与头顺序。content-length 由 body 字节派生，Go 回放时由 HTTP 栈自动一致。",
