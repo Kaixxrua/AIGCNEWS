@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowUpRight, Check, Code2, LoaderCircle, Play, Sparkles } from 'lucide-vue-next'
 import { integrationPrompt, loadSources, sourceBundle, type UiLanguage, type UiTemplate } from './catalog'
 import { uiLibraryMessages } from './messages'
@@ -16,6 +16,7 @@ const text = computed(() => uiLibraryMessages[props.lang])
 const poster = ref<HTMLElement>()
 const { attached, playing } = useViewportPreview(poster, () => props.previewEnabled && Boolean(props.item.clip_url))
 const previewState = ref<'loading' | 'ready' | 'error'>('loading')
+watch(attached, () => { previewState.value = 'loading' })
 const busy = ref('')
 const copied = ref('')
 const feedback = ref('')
