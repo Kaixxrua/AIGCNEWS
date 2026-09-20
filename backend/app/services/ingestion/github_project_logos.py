@@ -119,6 +119,18 @@ def download_logo(url: str, client: httpx.Client) -> tuple[bytes, str]:
     # DNS pinning uses the existing SSRF policy, including when a proxy is used.
     safe = logo_url(url, url)
     target = pin_http_target(safe, reject_mixed=True, allowed_ports={443})
+    try:
+        return _download_pinned_logo(target, client)
+    except httpx.ConnectError as exc:
+        # HTTP CONNECT in httpcore ignores sni_hostname and verifies the pinned IP.
+        # Retry directly with the SAME pinned target; never disable TLS verification.
+        if "CERTIFICATE_VERIFY_FAILED" not in str(exc) or "IP address mismatch" not in str(exc):
+            raise
+        with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as direct:
+            return _download_pinned_logo(target, direct)
+
+
+def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str]:
     with client.stream("GET", target.request_url, headers=target.headers,
                        extensions=target.extensions, follow_redirects=False) as response:
         response.raise_for_status()
