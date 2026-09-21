@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from urllib.parse import quote
@@ -104,6 +105,19 @@ def upgrade_one(snapshot, images):
     return {'status': 'download_failed' if errors else 'no_logo', 'errors': errors}
 
 
+def _fetch_readme_batch(names, api):
+    for attempt in range(3):
+        try:
+            return readme_candidates(names, api)
+        except httpx.HTTPError as exc:
+            transient = isinstance(exc, (httpx.TransportError,)) or (
+                isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in {502, 503, 504})
+            if not transient or attempt == 2:
+                raise
+            time.sleep(attempt + 1)
+    raise AssertionError("unreachable")
+
+
 def _readme_batches(rows, api, workers=4):
     batches = iter(rows[offset:offset + 25] for offset in range(0, len(rows), 25))
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -112,7 +126,7 @@ def _readme_batches(rows, api, workers=4):
         def submit():
             batch = next(batches, None)
             if batch:
-                pending[pool.submit(readme_candidates, [r['full_name'] for r in batch], api)] = batch
+                pending[pool.submit(_fetch_readme_batch, [r['full_name'] for r in batch], api)] = batch
 
         for _ in range(workers):
             submit()

@@ -70,3 +70,25 @@ def test_alternate_readme_paths_are_only_queried_when_root_readme_is_missing(mon
         result = upgrade.readme_candidates(['a/demo'], client)
     assert len(calls) == 2
     assert result['a/demo']['candidates'] == ['https://raw.githubusercontent.com/a/demo/' + 'b' * 40 + '/.github/logo.svg']
+
+
+def test_disconnected_readme_batches_retry_but_authentication_errors_do_not(monkeypatch):
+    monkeypatch.setattr(upgrade.time, 'sleep', lambda _: None)
+    lookup = Mock(side_effect=[httpx.RemoteProtocolError('disconnected'), {'a/demo': {'status': 'checked'}}])
+    monkeypatch.setattr(upgrade, 'readme_candidates', lookup)
+    assert upgrade._fetch_readme_batch(['a/demo'], Mock())['a/demo']['status'] == 'checked'
+    assert lookup.call_count == 2
+    lookup.reset_mock(side_effect=True)
+    lookup.side_effect = httpx.HTTPStatusError('unauthorized', request=httpx.Request('POST', 'https://api.github.com/graphql'), response=httpx.Response(401))
+    with pytest.raises(httpx.HTTPStatusError):
+        upgrade._fetch_readme_batch(['a/demo'], Mock())
+    assert lookup.call_count == 1
+
+
+def test_readme_network_retries_are_bounded(monkeypatch):
+    monkeypatch.setattr(upgrade.time, 'sleep', lambda _: None)
+    lookup = Mock(side_effect=httpx.ReadTimeout('timeout'))
+    monkeypatch.setattr(upgrade, 'readme_candidates', lookup)
+    with pytest.raises(httpx.ReadTimeout):
+        upgrade._fetch_readme_batch(['a/demo'], Mock())
+    assert lookup.call_count == 3
