@@ -7,6 +7,7 @@ frontend/src/features/xboard/xBoardViewModel.test.ts 的 URL 形态断言
 """
 
 from backend.app.services.x_media_urls import (
+    avatar_variant_url,
     collect_doc_warmup_paths,
     collect_poster_backfill_candidates,
     collect_warmup_paths,
@@ -16,6 +17,23 @@ from backend.app.services.x_media_urls import (
 )
 
 # --- is_twimg_url / proxied_media_url --------------------------------------
+
+
+def test_avatar_variants_match_rendering_and_warmup_for_historical_documents():
+    for size in ['normal', 'bigger', 'mini']:
+        url = f'https://pbs.twimg.com/profile_images/123/name__{size}.jpg?tag=1'
+        expected = 'https://pbs.twimg.com/profile_images/123/name__400x400.jpg?tag=1'
+        assert avatar_variant_url(url) == expected
+        assert collect_doc_warmup_paths({
+            'author_avatar_url': url, 'quote': {'author_avatar_url': url},
+        }) == [proxied_media_url(expected)] * 2
+    for url in [
+        'https://pbs.twimg.com/media/photo_normal.jpg',
+        'https://pbs.twimg.com/profile_images/123/name_400x400.png',
+        'https://pbs.twimg.com/profile_images/123/name.jpg',
+        'https://elsewhere.test/profile_images/123/name_normal.jpg', 'invalid',
+    ]:
+        assert avatar_variant_url(url) == url
 
 
 def test_is_twimg_url_whitelist_only() -> None:
@@ -148,7 +166,7 @@ def test_collect_avatar_and_link_card_as_is() -> None:
         # 非 twimg 头像不进首屏代理，不预热
     }
     assert collect_doc_warmup_paths(doc) == [
-        "/api/media/x/img/pbs.twimg.com/profile_images/1/a_normal.jpg",
+        "/api/media/x/img/pbs.twimg.com/profile_images/1/a_400x400.jpg",
         "/api/media/x/img/pbs.twimg.com/card_img/1/c.jpg",
     ]
 
@@ -165,7 +183,7 @@ def test_collect_quote_media_and_avatar() -> None:
         },
     }
     assert collect_doc_warmup_paths(doc) == [
-        "/api/media/x/img/pbs.twimg.com/profile_images/2/q_normal.jpg",
+        "/api/media/x/img/pbs.twimg.com/profile_images/2/q_400x400.jpg",
         "/api/media/x/img/pbs.twimg.com/media/q.jpg?name=small",
     ]
     assert collect_poster_backfill_candidates([doc]) == [
@@ -187,7 +205,7 @@ def test_collect_warmup_paths_dedupes_and_truncates() -> None:
     ]
     # 同作者头像跨推去重，保序
     assert collect_warmup_paths(docs, max_urls=10) == [
-        "/api/media/x/img/pbs.twimg.com/profile_images/1/a_normal.jpg",
+        "/api/media/x/img/pbs.twimg.com/profile_images/1/a_400x400.jpg",
         "/api/media/x/img/pbs.twimg.com/media/1.jpg?name=small",
         "/api/media/x/img/pbs.twimg.com/media/2.jpg?name=small",
     ]

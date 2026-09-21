@@ -67,9 +67,20 @@ export const compareTweetTimeDescending = (a: TopDoc, b: TopDoc): number => {
  * 历史 unavatar.io 回退已移除：它是第三方 302 重定向服务，与媒体代理的
  * 禁止重定向策略不兼容（经代理只会 502），且自身在国内稳定性差。
  */
+export const avatarVariantUrl = (value: string): string => {
+  try {
+    const url = new URL(value)
+    if (url.hostname === 'pbs.twimg.com' && url.pathname.startsWith('/profile_images/')) {
+      url.pathname = url.pathname.replace(/_(?:normal|bigger|mini)(\.[a-zA-Z0-9]+)$/, '_400x400$1')
+      return url.href
+    }
+  } catch { /* Invalid URLs retain the existing placeholder behavior. */ }
+  return value
+}
+
 export const authorAvatarUrl = (doc: TopDoc): string | undefined => {
   const url = typeof doc.author_avatar_url === 'string' ? doc.author_avatar_url : ''
-  return isTwimgUrl(url) ? proxiedMediaUrl(url) : undefined
+  return isTwimgUrl(url) ? proxiedMediaUrl(avatarVariantUrl(url)) : undefined
 }
 
 /**
@@ -251,7 +262,7 @@ export const quoteAsDoc = (quote: NonNullable<TopDoc['quote']>): TopDoc => ({
 /** 引用作者头像：与外推同一策略——仅 twimg 落库地址经同源代理，其余回退占位。 */
 export const quoteAvatarUrl = (quote: NonNullable<TopDoc['quote']>): string | undefined => {
   const url = typeof quote.author_avatar_url === 'string' ? quote.author_avatar_url : ''
-  return isTwimgUrl(url) ? proxiedMediaUrl(url) : undefined
+  return isTwimgUrl(url) ? proxiedMediaUrl(avatarVariantUrl(url)) : undefined
 }
 
 /**

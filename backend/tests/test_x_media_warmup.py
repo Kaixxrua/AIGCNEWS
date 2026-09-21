@@ -49,7 +49,7 @@ _PHOTO_DOC = {
 }
 
 _EXPECTED_PATHS = [
-    "/api/media/x/img/pbs.twimg.com/profile_images/1/a_normal.jpg",
+    "/api/media/x/img/pbs.twimg.com/profile_images/1/a_400x400.jpg",
     "/api/media/x/img/pbs.twimg.com/media/a.jpg?name=small",
     "/api/media/x/img/pbs.twimg.com/amplify_video_thumb/1/img/x.jpg?name=small",
 ]

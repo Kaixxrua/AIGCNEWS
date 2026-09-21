@@ -85,10 +85,22 @@ def _media_item_warmup_path(item: Mapping[str, Any]) -> str:
     return ""
 
 
-def _append(paths: list[str], url: Any, *, variant: bool = False) -> None:
-    """as-is 代理规则（头像 / 链接卡片图）：仅 twimg 地址进首屏，非 twimg 跳过。"""
+def avatar_variant_url(url: str) -> str:
+    """Match the UI's 400px avatar variant, including historical stored URLs."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return url
+    if parsed.hostname != "pbs.twimg.com" or not parsed.path.startswith("/profile_images/"):
+        return url
+    path = re.sub(r"_(?:normal|bigger|mini)(\.[a-zA-Z0-9]+)$", r"_400x400\1", parsed.path)
+    return urlunsplit(parsed._replace(path=path))
+
+
+def _append(paths: list[str], url: Any, *, avatar: bool = False) -> None:
+    """Proxy allowlisted media; avatar variants must match the UI cache key."""
     if isinstance(url, str) and url and is_twimg_url(url):
-        paths.append(proxied_media_url(url))
+        paths.append(proxied_media_url(avatar_variant_url(url) if avatar else url))
 
 
 def collect_doc_warmup_paths(doc: Mapping[str, Any]) -> list[str]:
@@ -99,7 +111,7 @@ def collect_doc_warmup_paths(doc: Mapping[str, Any]) -> list[str]:
     GET 代价大）；无 poster_url 的存量视频归封面回填通道。
     """
     paths: list[str] = []
-    _append(paths, doc.get("author_avatar_url"))
+    _append(paths, doc.get("author_avatar_url"), avatar=True)
     link_card = doc.get("link_card")
     if isinstance(link_card, Mapping):
         _append(paths, link_card.get("image_url"))
@@ -112,7 +124,7 @@ def collect_doc_warmup_paths(doc: Mapping[str, Any]) -> list[str]:
                     paths.append(path)
     quote = doc.get("quote")
     if isinstance(quote, Mapping):
-        _append(paths, quote.get("author_avatar_url"))
+        _append(paths, quote.get("author_avatar_url"), avatar=True)
         quote_media = quote.get("media")
         if isinstance(quote_media, list):
             for item in quote_media:
