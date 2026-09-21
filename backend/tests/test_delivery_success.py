@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -61,7 +62,8 @@ def test_uncertain_response_never_replayed(setup):
     assert success.send(db, task, '/repo', Bridge) == 'unconfirmed'
     count = len(Bridge.calls)
     assert success.send(db, task, '/repo', Bridge) == 'unconfirmed'
-    assert len(Bridge.calls) == count
+    assert len(Bridge.calls) == count + 1
+    assert Bridge.calls[-1][0] == 'thread/read'
 
 
 def test_busy_owner_is_deferred_without_consuming_notification(setup):
@@ -91,3 +93,52 @@ def test_wrong_thread_cannot_receive_success(setup):
             return {'thread': {'id': 'someone-else'}}
     assert success.send(db, task, '/repo', Wrong) == 'owner_mismatch'
     assert db.execute('SELECT COUNT(*) FROM success_notifications').fetchone()[0] == 0
+
+
+def test_subagent_success_reaches_root_without_rebinding_execution_owner(setup):
+    db, task = setup
+    class Child(Bridge):
+        def call(self, method, params):
+            result = super().call(method, params)
+            if method == 'thread/read' and params['threadId'] == task['owner']:
+                result['thread'].update(threadSource='subagent', parentThreadId='root',
+                                        canAcceptDirectInput=False)
+            return result
+    assert success.send(db, task, '/repo', Child) == 'accepted'
+    assert Bridge.calls[-1][1]['threadId'] == 'root'
+    owner, detail = db.execute('SELECT owner,detail FROM success_notifications').fetchone()
+    assert owner == task['owner']
+    assert json.loads(detail)['owner_chain'] == [task['owner'], 'root']
+
+
+@pytest.mark.parametrize('parent', [None, 'original-owner'])
+def test_missing_or_cyclic_parent_never_sends(setup, parent):
+    db, task = setup
+    class Invalid(Bridge):
+        def call(self, method, params):
+            assert method == 'thread/read'
+            return {'thread': {'id': task['owner'], 'threadSource': 'subagent',
+                               'parentThreadId': parent}}
+    assert success.send(db, task, '/repo', Invalid) == 'owner_mismatch'
+
+
+def test_uncertain_send_reconciles_positive_user_message_only(setup, tmp_path, monkeypatch):
+    db, task = setup
+    Bridge.fail = True
+    assert success.send(db, task, '/repo', Bridge) == 'unconfirmed'
+    record = json.loads(db.execute('SELECT detail FROM success_notifications').fetchone()[0])
+    assert record['error_type'] == 'TimeoutError'
+    path = tmp_path / '.codex/sessions/receipt.jsonl'
+    path.parent.mkdir(parents=True)
+    monkeypatch.setattr(success.Path, 'home', lambda: tmp_path)
+    identity = f"delivered:{task['id']}:{task['sha']}"
+    events = [{'type': 'event_msg', 'payload': {'type': 'task_started', 'turn_id': 'confirmed'}},
+              {'type': 'response_item', 'payload': {'type': 'message', 'role': 'user',
+               'content': [{'text': f'[{identity}]\ncompletion'}]}}]
+    path.write_text('\n'.join(json.dumps(e) for e in events))
+    class Evidence(Bridge):
+        def call(self, method, params):
+            assert method == 'thread/read'
+            return {'thread': {'id': task['owner'], 'path': str(path)}}
+    assert success.send(db, task, '/repo', Evidence) == 'accepted'
+    assert json.loads(db.execute('SELECT detail FROM success_notifications').fetchone()[0])['turn_id'] == 'confirmed'
