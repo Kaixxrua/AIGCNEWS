@@ -26,28 +26,41 @@ from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 from backend.app.services.ingestion.github_artwork_transport import ARTWORK_HOSTS, GitHubArtworkTransport
 from backend.app.services.outbound_target_policy import normalize_http_url, pin_http_target, resolve_public_ips
 
-MAX_DOWNLOAD = 1_000_000
+MAX_DOWNLOAD = 4_000_000
 MAX_STORED = 262144
 _preferred_ips: dict[str, str] = {}
+_image_decode_slots = threading.BoundedSemaphore(4)
+_GITHUB_ASSET = re.compile(r"^/(?:user-attachments/assets|[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/assets/[0-9]+)/[a-f0-9-]{36}$", re.I)
+_ASSET_CDN = "github-production-user-asset-6210df.s3.amazonaws.com"
 _REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
 _LOGO = re.compile(r"(?:^|[^a-z])(logo|logomark|wordmark|icon)(?:[^a-z]|$)", re.I)
-_EXCLUDE = re.compile(r"badge|shield|sponsor|visitor|star-history|screenshot|open.?graph", re.I)
+_EXCLUDE = re.compile(r"badge|shield|sponsor|visitor|star-history|screenshot|open.?graph|thumbnail|processing|(?:^|[/_.-])og(?:[_.-]|$)|desktop.chat|diagram|architecture|workflow", re.I)
 _SVG_TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline",
-             "polygon", "defs", "linearGradient", "radialGradient", "stop", "title", "desc"}
+             "polygon", "defs", "clipPath", "mask", "use", "text", "tspan", "linearGradient", "radialGradient", "stop", "title", "desc"}
 _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "cx",
               "cy", "r", "rx", "ry", "d", "points", "fill", "fill-rule", "fill-opacity",
               "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-opacity",
               "opacity", "transform", "id", "offset", "stop-color", "stop-opacity",
-              "gradientUnits", "gradientTransform", "fx", "fy", "preserveAspectRatio"}
+              "gradientUnits", "gradientTransform", "fx", "fy", "preserveAspectRatio",
+              "clip-path", "clip-rule", "clipPathUnits", "mask", "maskUnits", "maskContentUnits",
+              "font-family", "font-size", "font-weight", "font-style", "text-anchor", "letter-spacing",
+              "dominant-baseline", "dx", "dy", "color", "stroke-miterlimit", "stroke-dasharray",
+              "stroke-dashoffset", "vector-effect", "enable-background"}
 
 
 def logo_url(raw: str, base: str) -> str:
+    # GitHub renders /assets/logo.svg relative to the repository, not the CDN host.
+    base_parts = urlsplit(base)
+    if raw.startswith("/") and not raw.startswith("//") and base_parts.hostname == "raw.githubusercontent.com":
+        segments = base_parts.path.strip("/").split("/")
+        if len(segments) >= 4:
+            raw = "/" + "/".join(segments[:3]) + raw
     url = normalize_http_url(urljoin(base, raw), allowed_ports={443})
     parts = urlsplit(url)
     if parts.scheme != "https" or parts.hostname not in ARTWORK_HOSTS:
         raise ValueError("unsupported artwork host")
     if parts.hostname == "github.com":
-        if re.fullmatch(r"/[A-Za-z0-9-]+\.png", parts.path):
+        if re.fullmatch(r"/[A-Za-z0-9-]+\.png", parts.path) or _GITHUB_ASSET.fullmatch(parts.path):
             return url
         if "/blob/" not in parts.path and "/raw/" not in parts.path:
             raise ValueError("not a GitHub file URL")
@@ -66,12 +79,32 @@ def discover_logos(markdown: str, download_url: str) -> tuple[str, ...]:
     soup = BeautifulSoup(text, "html.parser")
     candidates += [(str(tag.get("alt") or ""), str(tag.get("src") or "")) for tag in soup.find_all("img")]
     found: list[str] = []
+    repo_name = urlsplit(download_url).path.split("/")[2] if len(urlsplit(download_url).path.split("/")) > 2 else ""
+    def normalize_name(value):
+        return re.sub(r"[^a-z0-9]", "", value.lower())
     for alt, source in candidates:
         try:
             evidence = f"{alt} {urlsplit(source).path}"
-            if not _LOGO.search(evidence) or _EXCLUDE.search(evidence):
+            brand_header = (normalize_name(alt) == normalize_name(repo_name)
+                            and bool(repo_name) and 0 <= text.find(source) < 1500
+                            and not re.search(r"(?:^|[^a-z])(hero|splash)(?:[^a-z]|$)", evidence, re.I))
+            if (not _LOGO.search(evidence) and not brand_header) or _EXCLUDE.search(evidence):
                 continue
             url = logo_url(source, download_url)
+            # Logos of dependencies and sponsors are common in READMEs too.
+            position = text.find(source)
+            if not source or position < 0 or position > 6000:
+                continue
+            base_parts = urlsplit(download_url).path.strip("/").split("/")
+            image_parts = urlsplit(url).path.strip("/").split("/")
+            if urlsplit(url).hostname == "raw.githubusercontent.com" and image_parts[0].lower() != base_parts[0].lower():
+                continue
+            filename = image_parts[-1].rsplit(".", 1)[0]
+            brand = normalize_name(repo_name)
+            identity = normalize_name(alt + " " + filename)
+            generic = re.fullmatch(r"(?:logo|icon|logomark|wordmark|app|project|brand|dark|light|white|black|color|full|text|horizontal|vertical|transparent|solid|with|background|main|core|outline|[\d_-])+", filename, re.I)
+            if _LOGO.search(evidence) and not brand_header and brand not in identity and not generic:
+                continue
         except ValueError:
             continue
         if url not in found:
@@ -79,20 +112,81 @@ def discover_logos(markdown: str, download_url: str) -> tuple[str, ...]:
     return tuple(found[:4])
 
 
+def _svg_presentation_style(style: str) -> dict[str, str]:
+    # Deliberately limited CSS: flatten presentation declarations into attributes.
+    # No CSS is retained in the served SVG (imports, selectors, escapes, functions).
+    result = {}
+    for declaration in style.split(";"):
+        if not declaration.strip():
+            continue
+        name, separator, value = declaration.partition(":")
+        name, value = name.strip(), value.strip()
+        if (not separator or name not in _SVG_ATTRS or name in {"id", "d", "points"}
+                or not (re.fullmatch(r"[a-zA-Z0-9#.,% +\-]+", value)
+                        or re.fullmatch(r"url\(#[\w-]+\)", value)
+                        or re.fullmatch(r"rgba?\([0-9.,% ]+\)", value)
+                        or (name == "font-family" and re.fullmatch(r"[a-zA-Z0-9 ,\-'\"]+", value)))):
+            raise ValueError("unsupported SVG style")
+        result[name] = value
+    return result
+
+
+def _flatten_svg_styles(root: ET.Element) -> None:
+    rules = []
+    for parent in root.iter():
+        for node in list(parent):
+            if node.tag.rsplit("}", 1)[-1] != "style":
+                continue
+            text = re.sub(r"/\*.*?\*/", "", node.text or "", flags=re.S)
+            position = 0
+            for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", text):
+                if text[position:match.start()].strip():
+                    raise ValueError("unsupported SVG stylesheet")
+                selectors = [part.strip() for part in match[1].split(",")]
+                if any(not re.fullmatch(r"[.#][a-zA-Z_][\w-]*", part) for part in selectors):
+                    raise ValueError("unsupported SVG selector")
+                rules.append((selectors, _svg_presentation_style(match[2])))
+                position = match.end()
+            if text[position:].strip():
+                raise ValueError("unsupported SVG stylesheet")
+            parent.remove(node)
+    for node in root.iter():
+        classes = node.get("class", "").split()
+        applicable = []
+        for order, (selectors, attrs) in enumerate(rules):
+            matching = [part for part in selectors if (part[0] == "." and part[1:] in classes)
+                        or (part[0] == "#" and part[1:] == node.get("id"))]
+            if matching:
+                applicable.append((max(100 if part[0] == "#" else 10 for part in matching), order, attrs))
+        for _, _, attrs in sorted(applicable):
+            node.attrib.update(attrs)
+        if "style" in node.attrib:
+            node.attrib.update(_svg_presentation_style(node.attrib.pop("style")))
+
+
 def sanitize_image(body: bytes) -> tuple[bytes, str]:
     if not body or len(body) > MAX_DOWNLOAD:
         raise ValueError("invalid image size")
-    if b"<svg" in body[:1024].lower():
+    if body.lstrip().startswith(b"<"):
         if len(body) > MAX_STORED or re.search(br"<!\s*(DOCTYPE|ENTITY)", body, re.I):
             raise ValueError("unsafe SVG declaration")
         root = ET.fromstring(body)
         if root.tag.rsplit("}", 1)[-1] != "svg":
             raise ValueError("not SVG")
+        for parent in root.iter():
+            for node in list(parent):
+                if node.tag.rsplit("}", 1)[-1] in {"metadata", "namedview"}:
+                    parent.remove(node)
+        _flatten_svg_styles(root)
         # Reject active/unknown nodes rather than serving partially altered artwork.
         for node in root.iter():
             if node.tag.rsplit("}", 1)[-1] not in _SVG_TAGS:
                 raise ValueError("unsupported SVG element")
             for name, value in list(node.attrib.items()):
+                if name in {"href", "{http://www.w3.org/1999/xlink}href"}:
+                    if not re.fullmatch(r"#[\w-]+", value):
+                        raise ValueError("external SVG reference")
+                    continue
                 if name not in _SVG_ATTRS:
                     del node.attrib[name]
                     continue
@@ -103,10 +197,10 @@ def sanitize_image(body: bytes) -> tuple[bytes, str]:
         if len(sanitized) > MAX_STORED:
             raise ValueError("SVG too large")
         return sanitized, "image/svg+xml"
-    with warnings.catch_warnings():
+    with _image_decode_slots, warnings.catch_warnings():
         warnings.simplefilter("error", Image.DecompressionBombWarning)
         with Image.open(io.BytesIO(body)) as image:
-            if image.width * image.height > 4_000_000:
+            if image.width * image.height > 16_000_000:
                 raise ValueError("image dimensions too large")
             image.seek(0)
             image.thumbnail((256, 256))
@@ -169,6 +263,13 @@ def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str
             if parts.hostname != "avatars.githubusercontent.com" or not re.fullmatch(r"/u/[0-9]+", parts.path):
                 raise ValueError("unsupported avatar redirect")
             return download_logo(safe, client)
+        if (target.headers.get("Host") == "github.com"
+                and _GITHUB_ASSET.fullmatch(urlsplit(target.request_url).path)
+                and response.status_code in {301, 302, 303, 307, 308}):
+            location = logo_url(response.headers.get("location", ""), "")
+            if urlsplit(location).hostname != _ASSET_CDN:
+                raise ValueError("unsupported GitHub asset redirect")
+            return download_logo(location, client)
         response.raise_for_status()
         if response.status_code != 200:
             raise ValueError("artwork redirects are not followed")

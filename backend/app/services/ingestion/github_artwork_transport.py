@@ -13,6 +13,7 @@ from backend.app.services.outbound_target_policy import is_safe_public_ip
 ARTWORK_HOSTS = frozenset({
     "raw.githubusercontent.com", "github.com", "user-images.githubusercontent.com",
     "camo.githubusercontent.com", "avatars.githubusercontent.com",
+    "github-production-user-asset-6210df.s3.amazonaws.com",
 })
 
 

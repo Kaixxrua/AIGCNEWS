@@ -39,14 +39,36 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--all", action="store_true", help="Schedule all existing logos once, preserving cached images")
     parser.add_argument("--repair", action="store_true", help="Retry missing and default images now, preserving good artwork")
+    parser.add_argument("--upgrade-avatars", action="store_true", help="Replace avatar fallbacks with confirmed README logos")
+    parser.add_argument("--resume-from", type=Path, help="Skip completed avatar checks from a prior JSONL report; retry failures")
     parser.add_argument("--report", type=Path, help="Write per-project repair outcomes to a new JSONL file")
     parser.add_argument("--workers", type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("--limit must be nonnegative")
-    if args.all and args.repair:
-        parser.error("--all and --repair are mutually exclusive")
+    if sum((args.all, args.repair, args.upgrade_avatars)) > 1:
+        parser.error("--all, --repair and --upgrade-avatars are mutually exclusive")
+    if args.resume_from and not args.upgrade_avatars:
+        parser.error("--resume-from requires --upgrade-avatars")
     repository = PostgresGitHubLogoRepository()
+    if args.upgrade_avatars:
+        from backend.app.services.ingestion.github_logo_upgrade import upgrade_avatars
+        rows = repository.avatar_targets()
+        if args.resume_from:
+            with args.resume_from.open() as previous:
+                completed = {record["repo_id"] for line in previous
+                             if (record := json.loads(line))["status"] in {"found", "no_logo"}}
+            rows = [row for row in rows if row["repo_id"] not in completed]
+        if args.limit:
+            rows = rows[:args.limit]
+        if args.dry_run:
+            print(json.dumps({"avatar_targets": len(rows)}))
+            return
+        if not args.report:
+            parser.error("--upgrade-avatars requires --report")
+        with args.report.open("x") as report:
+            upgrade_avatars(repository, rows, report, args.workers)
+        return
     targets = repository.repair_targets() if args.repair else None
     if args.dry_run:
         print(json.dumps({"repair_targets": len(targets)} if targets is not None else

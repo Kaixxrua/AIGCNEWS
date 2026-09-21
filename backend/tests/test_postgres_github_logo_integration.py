@@ -170,3 +170,41 @@ def test_logo_route_name_resolves_artwork_stored_under_github_node_id():
         assert bytes(repo.get('acme/demo')['content']) == b'artwork'
         assert repo.get('R_kgDOexample')['sha256'] == 'good'
         assert repo.get('acme/missing') is None
+
+
+def test_avatar_upgrade_snapshot_excludes_project_logos_and_inactive_rows():
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('a/avatar', 'a/avatar', 'Avatar', 1000),
+                       ('a/logo', 'a/logo', 'Logo', 1000),
+                       ('a/gone', 'a/gone', 'Gone', 1000)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        for name, source in [('a/avatar', 'https://avatars.githubusercontent.com/u/123'),
+                             ('a/logo', 'https://raw.githubusercontent.com/a/logo/main/logo.svg'),
+                             ('a/gone', 'https://github.com/a.png?size=128')]:
+            repo.save(name, {'status': 'found', 'content': b'image', 'sha256': name,
+                             'content_type': 'image/webp', 'source_url': source})
+        assert {r['repo_id'] for r in repo.avatar_targets()} == {'a/avatar', 'a/gone'}
+        with db.transaction() as connection:
+            connection.execute("UPDATE github_repo_candidates SET availability_status='not_found' WHERE repo_id='a/gone'")
+        assert [r['repo_id'] for r in repo.avatar_targets()] == ['a/avatar']
+
+
+def test_avatar_fallback_cannot_overwrite_cached_project_artwork():
+    with postgres_test_sandbox() as sandbox:
+        with sandbox.database.transaction() as connection:
+            connection.execute("INSERT INTO github_repo_candidates (repo_id, full_name, title) VALUES ('a/demo', 'a/demo', 'Demo')")
+        repo = PostgresGitHubLogoRepository(sandbox.database)
+        repo.save('a/demo', {'status': 'found', 'content': b'logo', 'sha256': 'logo',
+                             'content_type': 'image/svg+xml', 'source_url': 'https://raw.githubusercontent.com/a/demo/main/logo.svg'})
+        repo.save('a/demo', {'status': 'found', 'content': b'avatar', 'sha256': 'avatar',
+                             'content_type': 'image/webp', 'source_url': 'https://avatars.githubusercontent.com/u/123'})
+        assert repo.get('a/demo')['sha256'] == 'logo'
+        assert repo.pending() == []
+        repo.save('a/demo', {'status': 'found', 'content': b'new logo', 'sha256': 'new',
+                             'content_type': 'image/svg+xml', 'source_url': 'https://raw.githubusercontent.com/a/demo/new/logo.svg'})
+        assert repo.get('a/demo')['sha256'] == 'new'

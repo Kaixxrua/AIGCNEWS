@@ -54,8 +54,24 @@ class PostgresGitHubLogoRepository:
                     content_type = CASE WHEN EXCLUDED.content IS NULL THEN github_project_logos.content_type ELSE EXCLUDED.content_type END,
                     sha256 = CASE WHEN EXCLUDED.content IS NULL THEN github_project_logos.sha256 ELSE EXCLUDED.sha256 END,
                     checked_at = CURRENT_TIMESTAMP, next_check_at = EXCLUDED.next_check_at
+                WHERE NOT (
+                    github_project_logos.content IS NOT NULL
+                    AND github_project_logos.source_url <> ''
+                    AND github_project_logos.source_url NOT LIKE 'https://avatars.githubusercontent.com/%%'
+                    AND github_project_logos.source_url NOT LIKE 'https://github.com/%%.png%%'
+                    AND (EXCLUDED.source_url LIKE 'https://avatars.githubusercontent.com/%%'
+                         OR EXCLUDED.source_url LIKE 'https://github.com/%%.png%%')
+                )
             """, (repo_id, result["status"], result.get("source_url", ""),
                   result.get("content"), result.get("content_type", ""), result.get("sha256", ""), hours))
+            if cursor.rowcount == 0:
+                # A fallback was deliberately ignored. Still defer the next probe
+                # so the same successful logo cannot monopolize the due queue.
+                cursor.execute("""
+                    UPDATE github_project_logos SET checked_at = CURRENT_TIMESTAMP,
+                        next_check_at = CURRENT_TIMESTAMP + %s * INTERVAL '1 hour'
+                    WHERE repo_id = %s
+                """, (hours, repo_id))
 
     def repair_targets(self) -> list[dict[str, Any]]:
         """Snapshot every active broken/missing image once, independent of hot rank."""
@@ -70,6 +86,22 @@ class PostgresGitHubLogoRepository:
                       WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
                 ORDER BY c.stars DESC, c.repo_id
             """, (GITHUB_DEFAULT_AVATAR_SHA256,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def avatar_targets(self) -> list[dict[str, Any]]:
+        """Inspect active avatar fallbacks without scheduling or invalidating them."""
+        with self.database.transaction() as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT c.repo_id, c.full_name
+                FROM github_repo_candidates c
+                JOIN github_project_logos l ON l.repo_id = c.repo_id
+                WHERE c.availability_status = 'active' AND l.content IS NOT NULL
+                  AND (l.source_url LIKE 'https://avatars.githubusercontent.com/%%'
+                       OR l.source_url LIKE 'https://github.com/%%.png%%')
+                  AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
+                      WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
+                ORDER BY c.stars DESC, c.repo_id
+            """)
             return [dict(row) for row in cursor.fetchall()]
 
     def enqueue_missing(self) -> int:

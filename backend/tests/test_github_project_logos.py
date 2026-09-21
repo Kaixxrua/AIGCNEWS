@@ -363,3 +363,86 @@ def test_slow_download_does_not_block_persisting_other_completed_artwork(monkeyp
     repository.save.side_effect = lambda repo_id, result: release.set() if repo_id == 'b/fast' else None
     monkeypatch.setattr(logos, 'collect_logo', collect)
     assert logos.refresh_project_logos(repository, limit=2, interval=0, workers=2)['found'] == 2
+
+
+def test_brand_header_and_attachment_logos_without_screenshots():
+    attachment = 'https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7'
+    assert logos.discover_logos(f'<img alt="ollama" src="{attachment}">',
+                                'https://raw.githubusercontent.com/ollama/ollama/main/README.md') == (attachment,)
+    for source in ('hero.png', 'splash.png', 'screenshot.png', 'badge.png'):
+        assert not logos.discover_logos(f'![demo]({source})', BASE)
+    assert not logos.discover_logos('x' * 1600 + '![demo](header.png)', BASE)
+    assert logos.discover_logos('![demo](header.png)', BASE)
+
+
+def test_svg_local_clip_path_is_supported_external_reference_rejected():
+    body, mime = logos.sanitize_image(b'<svg><defs><clipPath id="crop"><rect width="10" height="10"/></clipPath></defs><g clip-path="url(#crop)"><path d="M0 0"/></g></svg>')
+    assert b'clipPath' in body and b'url(#crop)' in body and mime == 'image/svg+xml'
+    with pytest.raises(ValueError, match='external'):
+        logos.sanitize_image(b'<svg><g clip-path="url(https://example.com/crop)"/></svg>')
+
+
+@pytest.mark.parametrize('destination', ['https://127.0.0.1/logo.png', 'https://example.com/logo.png',
+    'https://github-production-user-asset-6210df.s3.amazonaws.com.evil.example/logo.png'])
+def test_attachment_redirect_rejects_unapproved_hosts(destination):
+    target = SimpleNamespace(request_url='https://93.184.216.34/user-attachments/assets/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7',
+                             headers={'Host': 'github.com'}, extensions={})
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(302, headers={'location': destination}))) as client:
+        with pytest.raises(ValueError):
+            logos._download_pinned_logo(target, client)
+
+
+def test_attachment_cdn_second_redirect_is_rejected():
+    target = SimpleNamespace(request_url='https://93.184.216.34/logo.png',
+                             headers={'Host': logos._ASSET_CDN}, extensions={})
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(302, headers={'location': 'https://github.com/foo.png'}))) as client:
+        with pytest.raises((ValueError, httpx.HTTPStatusError)):
+            logos._download_pinned_logo(target, client)
+
+
+def test_svg_simple_class_styles_are_flattened_with_cascade():
+    body, _ = logos.sanitize_image(b'<svg><style>.logo { fill: red; stroke-width: 1px; } #brand {fill: blue} .logo {fill: green}</style><path id="brand" class="logo" d="M0 0"/><path class="logo" style="fill: white"/></svg>')
+    assert b'<style' not in body and b'class=' not in body and b'style=' not in body
+    assert b'fill="blue"' in body and b'fill="white"' in body and b'stroke-width="1px"' in body
+
+
+@pytest.mark.parametrize('style', ['@import url(https://evil.example);',
+    '.x {fill: url(https://evil.example)}', '.x {fill: expression(alert(1))}',
+    '.x {background: red}', 'svg path {fill: red}', '.x {fill: r\\65 d}',
+    '@font-face {src: url(https://evil.example)}'])
+def test_svg_styles_cannot_load_resources_or_retain_active_css(style):
+    with pytest.raises(ValueError):
+        logos.sanitize_image(f'<svg><style>{style}</style><path class="x"/></svg>'.encode())
+
+
+def test_repository_root_paths_and_third_party_logos():
+    assert logos.discover_logos('![logo](/assets/logo.svg)', BASE) == (
+        'https://raw.githubusercontent.com/acme/demo/main/assets/logo.svg',)
+    assert not logos.discover_logos('![Qodo logo](images/qodo-logo.svg)', BASE)
+    assert not logos.discover_logos('![TypeScript logo](https://raw.githubusercontent.com/microsoft/TypeScript/main/logo.svg)', BASE)
+    assert not logos.discover_logos('![demo](docs/demo_processing.png)', BASE)
+    assert not logos.discover_logos('x' * 6100 + '![logo](logo.svg)', BASE)
+
+
+def test_svg_after_long_xml_comment_is_still_recognized():
+    body, mime = logos.sanitize_image(b'<?xml version="1.0"?><!--' + b'x' * 1500 + b'--><svg><path d="M0 0"/></svg>')
+    assert mime == 'image/svg+xml' and b'<path' in body
+
+
+def test_svg_local_reuse_text_and_presentation_styles():
+    body, mime = logos.sanitize_image(b'<svg xmlns:xlink="http://www.w3.org/1999/xlink"><metadata><irrelevant/></metadata><defs><path id="mark" d="M0 0"/></defs><use xlink:href="#mark"/><text style="font-size: 12px; fill: rgb(10, 20, 30)">Demo</text></svg>')
+    assert mime == 'image/svg+xml' and b'metadata' not in body and b'#mark' in body and b'Demo' in body
+    with pytest.raises(ValueError, match='external SVG'):
+        logos.sanitize_image(b'<svg><use href="https://evil.example/image.svg#logo"/></svg>')
+
+
+def test_github_attachment_redirect_revalidates_the_cdn_dns(monkeypatch):
+    target = SimpleNamespace(request_url='https://93.184.216.34/user-attachments/assets/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7',
+                             headers={'Host': 'github.com'}, extensions={})
+    pin = Mock(side_effect=ValueError('mixed public/private DNS'))
+    monkeypatch.setattr(logos, 'pin_http_target', pin)
+    location = 'https://github-production-user-asset-6210df.s3.amazonaws.com/123/logo.png'
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(302, headers={'location': location}))) as client:
+        with pytest.raises(ValueError, match='mixed public/private'):
+            logos._download_pinned_logo(target, client)
+    pin.assert_called_once_with(location, reject_mixed=True, allowed_ports={443})
