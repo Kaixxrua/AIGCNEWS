@@ -75,7 +75,8 @@
     background: var(--paper) !important;
     isolation: isolate;
   }
-  #app .app-shell--editorial .comic-masthead-rule { display:block;position:absolute;left:0;bottom:-1px;width:100%;height:25px;overflow:visible;pointer-events:none; }
+  #app .app-shell--editorial .comic-masthead-rule { display:block;position:absolute;left:0;bottom:-1px;width:100%;height:12px;overflow:visible;pointer-events:none; }
+  #app .app-shell--editorial .brand-comic { height:86px; }
   #app .app-shell--editorial .comic-masthead-rule path { fill:none;stroke:var(--rule-strong);stroke-width:3;vector-effect:non-scaling-stroke; }
   #app .app-shell--editorial .comic-speech-outline { display:block;position:absolute;inset:0;width:100%;height:100%;z-index:-1;overflow:visible; }
   #app .app-shell--editorial .comic-speech-outline path { fill:var(--paper-raised);stroke:var(--ink);stroke-width:2.5;vector-effect:non-scaling-stroke;stroke-linejoin:miter; }
@@ -149,10 +150,11 @@
   .comic-creation-mark .comic-creation-mark__spark { fill:var(--ink);stroke:none; }
   .comic-masthead-creation > span { position:relative;font-size:21px;font-style:italic;font-weight:850;white-space:nowrap;transform:rotate(-4deg);padding:0 0 5px; }
   .comic-masthead-creation > span::after { content:'';position:absolute;left:1px;right:0;bottom:0;height:4px;background:var(--acid);clip-path:polygon(0 35%,100% 0,96% 80%,4% 100%); }
-  #app .app-shell--editorial .footer-right { margin-right:114px; }
-  #app .app-shell--editorial .dock-footer--editorial::before { content:'';position:absolute;right:-24px;bottom:-3px;width:112px;height:84px;background:var(--ink);clip-path:polygon(23% 0,100% 0,100% 100%,0 100%); }
-  #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';white-space:pre;position:absolute;right:-24px;bottom:-3px;width:102px;height:84px;padding:12px 5px 0 26px;box-sizing:border-box;background:var(--acid);color:var(--acid-ink);font:italic 950 12px/1.06 'DM Sans',sans-serif;clip-path:polygon(25% 0,100% 0,100% 100%,0 100%); }
-  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::before { background:#41464e; }
+  #app .app-shell--editorial .footer-right { margin-right:112px; }
+  #app .app-shell--editorial .dock-footer--editorial::before { content:'';position:absolute;right:-24px;bottom:-3px;width:118px;height:68px;background:var(--acid);clip-path:polygon(20% 0,100% 0,100% 100%,0 100%);border-left:0; }
+  #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';white-space:pre;position:absolute;right:-18px;bottom:4px;width:88px;box-sizing:border-box;color:var(--acid-ink);font:italic 950 12px/1.05 'DM Sans',sans-serif;transform:rotate(-7deg);transform-origin:center; }
+  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::before { background:var(--acid-soft); }
+  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::after { color:var(--acid); }
   #app .app-shell--editorial .masthead-meta::after { content:'';position:absolute;left:-24px;top:0;width:200px;height:95px;z-index:-1;background:radial-gradient(circle,#07173530 .7px,transparent 1.3px) 0 0 / 5px 5px,linear-gradient(154deg,var(--acid) 0 42%,transparent 43% 47%,var(--acid) 48% 49%,transparent 50%);mask-image:linear-gradient(100deg,#000 0 48%,transparent 100%); }
 }
 
