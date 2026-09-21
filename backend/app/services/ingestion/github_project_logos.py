@@ -22,6 +22,7 @@ from PIL import Image
 
 from backend.app.core.config import settings
 from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
+from backend.app.services.ingestion.github_artwork_transport import ARTWORK_HOSTS, GitHubArtworkTransport
 from backend.app.services.outbound_target_policy import normalize_http_url, pin_http_target
 
 MAX_DOWNLOAD = 1_000_000
@@ -41,10 +42,7 @@ _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "c
 def logo_url(raw: str, base: str) -> str:
     url = normalize_http_url(urljoin(base, raw), allowed_ports={443})
     parts = urlsplit(url)
-    if parts.scheme != "https" or parts.hostname not in {
-        "raw.githubusercontent.com", "github.com", "user-images.githubusercontent.com",
-        "camo.githubusercontent.com", "avatars.githubusercontent.com",
-    }:
+    if parts.scheme != "https" or parts.hostname not in ARTWORK_HOSTS:
         raise ValueError("unsupported artwork host")
     if parts.hostname == "github.com":
         if re.fullmatch(r"/[A-Za-z0-9-]+\.png", parts.path):
@@ -122,15 +120,7 @@ def download_logo(url: str, client: httpx.Client) -> tuple[bytes, str]:
     # DNS pinning uses the existing SSRF policy, including when a proxy is used.
     safe = logo_url(url, url)
     target = pin_http_target(safe, reject_mixed=True, allowed_ports={443})
-    try:
-        return _download_pinned_logo(target, client)
-    except httpx.ConnectError as exc:
-        # HTTP CONNECT in httpcore ignores sni_hostname and verifies the pinned IP.
-        # Retry directly with the SAME pinned target; never disable TLS verification.
-        if "CERTIFICATE_VERIFY_FAILED" not in str(exc) or "IP address mismatch" not in str(exc):
-            raise
-        with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as direct:
-            return _download_pinned_logo(target, direct)
+    return _download_pinned_logo(target, client)
 
 
 def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str]:
@@ -173,6 +163,7 @@ def collect_logo(
     candidates = snapshot.logo_candidates if snapshot and snapshot.status == "succeeded" else ()
     # Cache the owner avatar too: browsers must not depend on GitHub connectivity.
     avatar = f"https://github.com/{full_name.split('/')[0]}.png?size=128"
+    errors = []
     for url in (*candidates, avatar):
         try:
             content, content_type = download_logo(url, image_client)
@@ -180,9 +171,10 @@ def collect_logo(
                     "content_type": content_type, "sha256": hashlib.sha256(content).hexdigest(),
                     "readme_rate_limited": rate_limited}
         except (ValueError, httpx.HTTPError, OSError, ET.ParseError,
-                Image.DecompressionBombError, Image.DecompressionBombWarning):
-            continue
-    return {"status": "failed", "readme_rate_limited": rate_limited}
+                Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+            status = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
+            errors.append({"host": urlsplit(url).hostname, "error": type(exc).__name__, "http_status": status})
+    return {"status": "failed", "readme_rate_limited": rate_limited, "errors": errors}
 
 
 def refresh_project_logos(
@@ -194,8 +186,9 @@ def refresh_project_logos(
     deadline = time.monotonic() + max_seconds
     readme_limited = threading.Event()
     with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as api, httpx.Client(
-        timeout=15, follow_redirects=False, trust_env=False, proxy=settings.outbound_proxy or None,
-    ) as images, ThreadPoolExecutor(max_workers=max(1, min(workers, 8))) as pool:
+        timeout=15, follow_redirects=False, trust_env=False,
+        transport=GitHubArtworkTransport(proxy=settings.outbound_proxy or None),
+    ) as images, ThreadPoolExecutor(max_workers=max(1, min(workers, 16))) as pool:
         def collect(row):
             if time.monotonic() >= deadline:
                 return None

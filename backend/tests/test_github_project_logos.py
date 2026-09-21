@@ -238,35 +238,6 @@ def test_unbounded_daily_collection_drains_multiple_batches(monkeypatch):
 
 
 
-def test_http_connect_sni_failure_retries_same_pin_with_verified_direct_tls(monkeypatch):
-    target = SimpleNamespace(request_url="https://93.184.216.34/acme?s=128",
-        headers={"Host": "avatars.githubusercontent.com"},
-        extensions={"sni_hostname": "avatars.githubusercontent.com"})
-    monkeypatch.setattr(logos, "pin_http_target", lambda *a, **k: target)
-    proxy_client = Mock()
-    direct_client = Mock()
-    factory = Mock()
-    factory.return_value.__enter__ = Mock(return_value=direct_client)
-    factory.return_value.__exit__ = Mock(return_value=False)
-    monkeypatch.setattr(logos.httpx, "Client", factory)
-    calls = []
-    def download(pinned, client):
-        calls.append((pinned, client))
-        if client is proxy_client:
-            raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] IP address mismatch")
-        return b"safe", "image/webp"
-    monkeypatch.setattr(logos, "_download_pinned_logo", download)
-    assert logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", proxy_client) == (b"safe", "image/webp")
-    assert calls == [(target, proxy_client), (target, direct_client)]
-    factory.assert_called_once_with(timeout=15, follow_redirects=False, trust_env=False)
-
-
-def test_other_tls_errors_are_not_retried(monkeypatch):
-    monkeypatch.setattr(logos, "pin_http_target", lambda *a, **k: Mock())
-    monkeypatch.setattr(logos, "_download_pinned_logo", Mock(side_effect=httpx.ConnectError("certificate expired")))
-    with pytest.raises(httpx.ConnectError, match="expired"):
-        logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", Mock())
-
 
 def test_official_avatar_redirect_is_pinned_and_downloaded_without_credentials(monkeypatch):
     from backend.app.services import outbound_target_policy

@@ -57,6 +57,21 @@ class PostgresGitHubLogoRepository:
             """, (repo_id, result["status"], result.get("source_url", ""),
                   result.get("content"), result.get("content_type", ""), result.get("sha256", ""), hours))
 
+    def repair_targets(self) -> list[dict[str, Any]]:
+        """Snapshot every active broken/missing image once, independent of hot rank."""
+        with self.database.transaction() as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT c.repo_id, c.full_name
+                FROM github_repo_candidates c
+                LEFT JOIN github_project_logos l ON l.repo_id = c.repo_id
+                WHERE c.availability_status = 'active'
+                  AND (l.content IS NULL OR l.status <> 'found' OR l.sha256 = %s)
+                  AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
+                      WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
+                ORDER BY c.stars DESC, c.repo_id
+            """, (GITHUB_DEFAULT_AVATAR_SHA256,))
+            return [dict(row) for row in cursor.fetchall()]
+
     def enqueue_missing(self) -> int:
         """Recover historical failures without invalidating successful artwork."""
         with self.database.transaction() as connection, connection.cursor() as cursor:
@@ -72,8 +87,9 @@ class PostgresGitHubLogoRepository:
                 SELECT l.content, l.content_type, l.sha256 FROM github_project_logos l
                 JOIN github_repo_candidates c ON c.repo_id = l.repo_id
                 WHERE l.repo_id = COALESCE(
-                    (SELECT canonical_repo_id FROM github_repo_aliases WHERE alias_repo_id = %s), %s)
+                    (SELECT canonical_repo_id FROM github_repo_aliases WHERE alias_repo_id = %s),
+                    (SELECT repo_id FROM github_repo_candidates WHERE full_name = %s LIMIT 1), %s)
                   AND c.availability_status = 'active' AND l.content IS NOT NULL
-            """, (repo_id, repo_id))
+            """, (repo_id, repo_id, repo_id))
             row = cursor.fetchone()
             return dict(row) if row else None
