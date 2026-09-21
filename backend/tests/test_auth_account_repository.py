@@ -79,8 +79,8 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 409)
-        # 反枚举：409 文案中性化，不透露邮箱是否已注册
-        self.assertEqual(response.json(), {"detail": "注册失败，请检查邮箱验证码或稍后重试"})
+        # 409 保持中性文案，明确引导登录或找回密码
+        self.assertEqual(response.json(), {"detail": "注册未完成，请尝试登录；如忘记密码，请通过“忘记密码”重置后登录"})
         self.repository.create_user_with_email.assert_not_called()
         email_service.consume_otp.assert_not_awaited()
 
