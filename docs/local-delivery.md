@@ -56,6 +56,10 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 
 ## 成功通知
 
+执行归属仍绑定创建 worktree 的 Agent。成功通知接收者沿平台 `threadSource=subagent` 的 `parentThreadId` 逐级解析到主任务；不使用任务标题、普通 fork 或 sessionId 猜测。父关系缺失、循环或接收者拒绝直接输入时不发送，主任务忙时等待空闲。回执保留执行 owner、recipient、完整 owner_chain 与 turn ID。
+
+发送异常记录异常类型和阶段；`unconfirmed` / 遗留 `dispatching` 可通过原接收者持久历史中的精确交付标识和回合 ID 核对为 accepted。没有正面证据绝不自动重发，也不把历史静默 assistant 消息当作 Agent 已被唤醒。旧版发往不可接收输入的子 Agent 的记录应保留审计，再对经核验的主任务单次补发。
+
 ### 启动锁准入重试
 
 尚未获得启动锁的检查在原 `queue_timeout` 总预算内最多尝试三次，
