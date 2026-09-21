@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   authorAvatarUrl,
+  avatarVariantUrl,
   authorDisplayName,
   clampPage,
   countTweets,
@@ -523,6 +524,22 @@ describe('xBoardViewModel', () => {
     expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/q.jpg`)
     expect(items[0]?.width).toBe(800)
     expect(quoteMediaItems(quotedTweet({ media: [] }).quote!)).toEqual([])
+  })
+
+  it('upgrades historical low-resolution avatars consistently for authors and quotes', () => {
+    for (const size of ['normal', 'bigger', 'mini']) {
+      const url = `https://pbs.twimg.com/profile_images/123/name__${size}.jpg?tag=1`
+      const expected = '/api/media/x/img/pbs.twimg.com/profile_images/123/name__400x400.jpg?tag=1'
+      expect(authorAvatarUrl({ author_avatar_url: url })).toBe(expected)
+      expect(quoteAvatarUrl(quotedTweet({ author_avatar_url: url }).quote!)).toBe(expected)
+    }
+    for (const url of [
+      'https://pbs.twimg.com/media/photo_normal.jpg',
+      'https://pbs.twimg.com/profile_images/123/name_400x400.png',
+      'https://pbs.twimg.com/profile_images/123/name.jpg',
+      'https://elsewhere.test/profile_images/123/name_normal.jpg',
+      'invalid',
+    ]) expect(avatarVariantUrl(url)).toBe(url)
   })
 
   it('quoteAvatarUrl proxies the stored twimg avatar and drops unavatar fallback', () => {
