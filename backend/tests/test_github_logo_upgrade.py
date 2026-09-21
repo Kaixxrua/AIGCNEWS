@@ -14,7 +14,7 @@ def test_graphql_readmes_use_canonical_commit_and_preserve_partial_errors(monkey
     def handler(request):
         assert request.url.host == 'api.github.com'
         query = json.loads(request.content)['query']
-        assert 'HEAD:README.md' in query and 'HEAD:.github/README.md' in query
+        assert 'HEAD:README.md' in query and 'HEAD:.github/README.md' not in query
         return httpx.Response(200, json={'data': {
             'r0': {'nameWithOwner': 'new/demo', 'defaultBranchRef': {'target': {'oid': oid}},
                    'b0': {'text': '![logo](./logo.svg)', 'isTruncated': False}},
@@ -53,3 +53,20 @@ def test_upgrade_pass_only_saves_successful_artwork(monkeypatch):
     repository.save.assert_called_once_with('a/logo', {'status': 'found', 'content': b'logo'})
     assert result['found'] == 1 and result['no_logo'] == 1
     assert all('content' not in json.loads(line) for line in report.getvalue().splitlines())
+
+
+def test_alternate_readme_paths_are_only_queried_when_root_readme_is_missing(monkeypatch):
+    monkeypatch.setattr(source_github, '_get_token', lambda: 'test')
+    calls = []
+    def handler(request):
+        query = json.loads(request.content)['query']
+        calls.append(query)
+        row = {'nameWithOwner': 'a/demo', 'defaultBranchRef': {'target': {'oid': 'b' * 40}}}
+        if len(calls) == 2:
+            assert 'HEAD:.github/README.md' in query and 'HEAD:docs/README.md' in query
+            row['b2'] = {'text': '![logo](./logo.svg)', 'isTruncated': False}
+        return httpx.Response(200, json={'data': {'r0': row}})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = upgrade.readme_candidates(['a/demo'], client)
+    assert len(calls) == 2
+    assert result['a/demo']['candidates'] == ['https://raw.githubusercontent.com/a/demo/' + 'b' * 40 + '/.github/logo.svg']

@@ -15,10 +15,10 @@ from backend.app.core.config import settings
 from backend.app.services.ingestion.github_artwork_transport import GitHubArtworkTransport
 from backend.app.services.ingestion.github_project_logos import _REPO, discover_logos, download_logo
 
-README_PATHS = ('README.md', 'readme.md', 'README.MD', '.github/README.md')
+README_PATHS = ('README.md', 'readme.md', 'README.MD', '.github/README.md', 'docs/README.md', 'README.markdown')
 
 
-def readme_candidates(names, client):
+def readme_candidates(names, client, *, fallback=False):
     """Batch immutable README snapshots; failed lookups never mean no logo exists."""
     from backend.app.services.ingestion.source_github import _build_headers, _get_token
 
@@ -26,11 +26,12 @@ def readme_candidates(names, client):
         raise ValueError('GitHub token required for batched README lookup')
     if len(names) > 25 or any(not _REPO.fullmatch(name) for name in names):
         raise ValueError('invalid repository batch')
+    paths = README_PATHS[1:] if fallback else README_PATHS[:1]
     fields = []
     for i, name in enumerate(names):
         owner, repo = name.split('/')
         blobs = ' '.join(f'b{j}: object(expression: {json.dumps("HEAD:" + path)}) '
-                         '{ ... on Blob { text isTruncated } }' for j, path in enumerate(README_PATHS))
+                         '{ ... on Blob { text isTruncated } }' for j, path in enumerate(paths))
         fields.append(f'r{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(repo)}) '
                       '{ nameWithOwner defaultBranchRef { target { oid } } ' + blobs + ' }')
     with client.stream('POST', 'https://api.github.com/graphql', headers=_build_headers(),
@@ -45,6 +46,7 @@ def readme_candidates(names, client):
     data = payload.get('data') or {}
     errors = payload.get('errors') or []
     result = {}
+    missing = []
     for i, name in enumerate(names):
         key = f'r{i}'
         row = data.get(key)
@@ -58,18 +60,27 @@ def readme_candidates(names, client):
             continue
         candidates = []
         truncated = False
-        for j, path in enumerate(README_PATHS):
+        has_readme = False
+        for j, path in enumerate(paths):
             blob = row.get(f'b{j}') or {}
             text = blob.get('text')
             if blob.get('isTruncated'):
                 truncated = True
                 continue
             if isinstance(text, str):
+                has_readme = True
                 base = f'https://raw.githubusercontent.com/{canonical}/{oid}/{quote(path)}'
                 candidates.extend(discover_logos(text, base))
                 break
+        if not fallback and not has_readme and not truncated:
+            missing.append(name)
         result[name] = {'status': 'lookup_failed' if truncated and not candidates else 'checked',
                         'candidates': list(dict.fromkeys(candidates))[:4]}
+    if missing:
+        try:
+            result.update(readme_candidates(missing, client, fallback=True))
+        except (ValueError, httpx.HTTPError) as exc:
+            result.update({name: {'status': 'lookup_failed', 'error': type(exc).__name__} for name in missing})
     return result
 
 
