@@ -80,6 +80,8 @@ try {
     console.log(`Viewport ${width}: ${count} visible videos decoded and advancing.`)
   }
   await first.locator('.ui-library__preview-trigger').click()
+  await page.locator('dialog.ui-detail video').waitFor({ timeout: 30_000 })
+  await page.getByRole('button', { name: '交互预览', exact: true }).click()
   await page.locator('dialog.ui-detail iframe').waitFor({ timeout: 30_000 })
   assert.ok(await attached.evaluateAll(videos => videos.every(video => video.paused)), 'detail pauses the gallery')
   assert.deepEqual(errors, [])
