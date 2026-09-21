@@ -13,7 +13,7 @@ import threading
 import time
 import warnings
 import xml.etree.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -269,14 +269,17 @@ def refresh_project_logos(
             return row, result
 
         while True:
-            remaining = max(0, limit - counts["selected"]) if limit else 100
-            rows = repository.pending(min(remaining, 100))
+            remaining = max(0, limit - counts["selected"]) if limit else 1000
+            rows = repository.pending(min(remaining, 1000))
             if not rows:
                 break
-            owners = [row["full_name"].split("/")[0] for row in rows]
-            avatars.update(resolve_owner_avatars([owner for owner in owners if owner not in avatars], api))
+            owners = list(dict.fromkeys(row["full_name"].split("/")[0] for row in rows))
+            missing = [owner for owner in owners if owner not in avatars]
+            for offset in range(0, len(missing), 100):
+                avatars.update(resolve_owner_avatars(missing[offset:offset + 100], api))
             attempted = 0
-            for item in pool.map(collect, rows):
+            for future in as_completed([pool.submit(collect, row) for row in rows]):
+                item = future.result()
                 if item is None:
                     continue
                 row, result = item

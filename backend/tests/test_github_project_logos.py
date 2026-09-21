@@ -347,3 +347,18 @@ def test_cdn_retry_rejects_dns_rebinding_and_does_not_retry_certificate_errors(m
         with pytest.raises(httpx.ConnectError):
             logos.download_logo('https://avatars.githubusercontent.com/u/123', client)
     assert handler.call_count == 1
+
+
+def test_slow_download_does_not_block_persisting_other_completed_artwork(monkeypatch):
+    import threading
+    release = threading.Event()
+    repository = Mock()
+    repository.pending.return_value = [{'repo_id': 'a/slow', 'full_name': 'a/slow'},
+                                       {'repo_id': 'b/fast', 'full_name': 'b/fast'}]
+    def collect(name, *args):
+        if name == 'a/slow':
+            assert release.wait(2), 'completed fast artwork was blocked behind a slow request'
+        return {'status': 'found'}
+    repository.save.side_effect = lambda repo_id, result: release.set() if repo_id == 'b/fast' else None
+    monkeypatch.setattr(logos, 'collect_logo', collect)
+    assert logos.refresh_project_logos(repository, limit=2, interval=0, workers=2)['found'] == 2
