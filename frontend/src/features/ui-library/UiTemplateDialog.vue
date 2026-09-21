@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Code2, Sparkles, Check, X, ExternalLink, Monitor, Smartphone, Play, Pause, RotateCcw } from 'lucide-vue-next'
+import { Code2, Sparkles, Check, X, ExternalLink, Monitor, Smartphone, Play, Pause, RotateCcw, Film, MousePointer2 } from 'lucide-vue-next'
+import UiCardVideo from './UiCardVideo.vue'
 import UiSourceViewer from './UiSourceViewer.vue'
 import UiMcpRecommendation from './UiMcpRecommendation.vue'
 import UiLikeButton from './UiLikeButton.vue'
@@ -23,6 +24,13 @@ const feedback = ref('')
 const copied = ref('')
 const promptLang = ref<UiLanguage>(props.lang)
 const mobile = ref(false)
+const hasVideo = computed(() => Boolean(props.item.clip_url) && props.item.kind !== 'theme')
+const interactive = ref(false)
+const videoMode = computed(() => hasVideo.value && !interactive.value)
+function setInteractive(value: boolean) {
+  interactive.value = value
+  replay()
+}
 const themeMode = ref('light')
 const previewUrl = computed(() => props.item.preview_url + (props.item.kind === 'theme' ? '?mode=' + themeMode.value : ''))
 const playing = ref(true)
@@ -57,7 +65,7 @@ function replay() {
   playing.value = true
   revision.value++
   clearTimeout(timer)
-  timer = setTimeout(() => { if (previewState.value === 'loading') previewState.value = 'error' }, 15000)
+  if (!videoMode.value) timer = setTimeout(() => { if (previewState.value === 'loading') previewState.value = 'error' }, 15000)
 }
 function receive(event: MessageEvent) {
   if (event.source !== frame.value?.contentWindow || event.data?.type !== 'ui-library-preview' || event.data?.id !== props.item.id) return
@@ -89,11 +97,13 @@ onBeforeUnmount(() => {
         <section class="ui-detail__visual" :aria-label="text.preview">
           <div class="ui-detail__preview-toolbar">
             <select v-if="item.kind === 'theme'" v-model="themeMode" :aria-label="lang === 'zh' ? '主题明暗模式' : 'Theme appearance'" @change="replay"><option value="light">{{ lang === 'zh' ? '浅色' : 'Light' }}</option><option value="dark">{{ lang === 'zh' ? '深色' : 'Dark' }}</option></select>
-            <div><button type="button" :aria-label="text.desktop" :aria-pressed="!mobile" @click="mobile = false"><Monitor :size="17" /></button><button type="button" :aria-label="text.mobile" :aria-pressed="mobile" @click="mobile = true"><Smartphone :size="17" /></button></div>
+            <div v-if="hasVideo"><button type="button" :title="text.videoPreview" :aria-label="text.videoPreview" :aria-pressed="videoMode" @click="setInteractive(false)"><Film :size="17" /></button><button type="button" :title="text.interactivePreview" :aria-label="text.interactivePreview" :aria-pressed="!videoMode" @click="setInteractive(true)"><MousePointer2 :size="17" /></button></div>
+            <div v-if="!videoMode"><button type="button" :aria-label="text.desktop" :aria-pressed="!mobile" @click="mobile = false"><Monitor :size="17" /></button><button type="button" :aria-label="text.mobile" :aria-pressed="mobile" @click="mobile = true"><Smartphone :size="17" /></button></div>
             <div><button type="button" :aria-label="playing ? text.pause : text.play" @click="playing ? (playing = false) : replay()"><Pause v-if="playing" :size="16" /><Play v-else :size="16" /></button><button type="button" :aria-label="text.replay" @click="replay"><RotateCcw :size="16" /></button></div>
           </div>
-          <div class="ui-detail__stage" :class="{ 'is-mobile': mobile }">
-            <iframe v-if="playing" :key="revision" ref="frame" :src="previewUrl" :title="`${text.preview}: ${item.name[lang]}`" sandbox="allow-scripts" referrerpolicy="no-referrer" />
+          <div class="ui-detail__stage" :class="{ 'is-mobile': mobile && !videoMode }">
+            <UiCardVideo v-if="playing && videoMode" :key="revision" :src="item.clip_url" :poster="item.poster_url" :title="`${text.preview}: ${item.name[lang]}`" :playing="playing" @ready="previewState = 'ready'" @error="previewState = 'error'" />
+            <iframe v-else-if="playing" :key="revision" ref="frame" :src="previewUrl" :title="`${text.preview}: ${item.name[lang]}`" sandbox="allow-scripts" referrerpolicy="no-referrer" />
             <button v-else type="button" class="ui-detail__paused" @click="replay"><img :src="item.poster_url" :alt="item.name[lang]" /><span><Play :size="24" />{{ text.play }}</span></button>
             <span v-if="playing && previewState === 'loading'" class="ui-detail__preview-status" role="status">{{ text.loadingPreview }}</span>
             <div v-if="playing && ['error', 'unsupported'].includes(previewState)" class="ui-detail__preview-error" role="alert"><p>{{ previewState === 'unsupported' ? text.unsupported : text.previewError }}</p><button type="button" @click="replay">{{ text.retry }}</button><a :href="item.demo_url" target="_blank" rel="noopener noreferrer">{{ text.original }}</a></div>
