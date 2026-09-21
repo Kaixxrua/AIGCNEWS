@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     # 直连失败时供安全网页抓取器显式使用；不读取环境代理变量。
     outbound_proxy: str = ""
+    # Optional image-only egress; empty inherits the general outbound proxy.
+    github_artwork_proxy: str = ""
 
     # 微信公众号后台网页登录会话。密钥必须是 32 字节随机值的 URL-safe Base64，
     # 只由部署环境提供；缺失或非法时微信功能拒绝处理 secret，不降级为明文。

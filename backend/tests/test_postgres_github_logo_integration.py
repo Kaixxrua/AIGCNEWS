@@ -134,3 +134,39 @@ def test_hot_placeholder_is_repaired_before_cold_missing_artwork():
         repo.save('a/hot', {'status': 'found', 'content': b'placeholder',
                           'sha256': GITHUB_DEFAULT_AVATAR_SHA256, 'content_type': 'image/webp'})
         assert [r['repo_id'] for r in repo.pending()] == ['a/hot', 'a/cold']
+
+
+def test_repair_snapshot_includes_deferred_failures_but_not_good_or_unavailable_artwork():
+    from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
+
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('a/new', 'a/new', 'New', 500), ('a/failed', 'a/failed', 'Failed', 1000),
+                       ('a/default', 'a/default', 'Default', 2000), ('a/good', 'a/good', 'Good', 3000)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('a/failed', {'status': 'failed'})
+        repo.save('a/default', {'status': 'found', 'content': b'default',
+                              'sha256': GITHUB_DEFAULT_AVATAR_SHA256, 'content_type': 'image/webp'})
+        repo.save('a/good', {'status': 'found', 'content': b'good', 'sha256': 'good',
+                           'content_type': 'image/webp'})
+        assert [row['repo_id'] for row in repo.repair_targets()] == ['a/default', 'a/failed', 'a/new']
+
+
+def test_logo_route_name_resolves_artwork_stored_under_github_node_id():
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars)
+                VALUES ('R_kgDOexample', 'acme/demo', 'Demo', 1000)
+            """)
+        repo = PostgresGitHubLogoRepository(db)
+        repo.save('R_kgDOexample', {'status': 'found', 'content': b'artwork',
+                                  'sha256': 'good', 'content_type': 'image/webp'})
+        assert bytes(repo.get('acme/demo')['content']) == b'artwork'
+        assert repo.get('R_kgDOexample')['sha256'] == 'good'
+        assert repo.get('acme/missing') is None

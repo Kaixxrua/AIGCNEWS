@@ -17,6 +17,13 @@ from backend.app.services.ingestion.source_github import fetch_github_readme_sna
 BASE = "https://raw.githubusercontent.com/acme/demo/main/docs/README.md"
 
 
+@pytest.fixture(autouse=True)
+def no_live_avatar_lookup(monkeypatch):
+    monkeypatch.setattr(logos, "resolve_owner_avatars", lambda *args: {})
+    monkeypatch.setattr(logos, "resolve_moved_repository_artwork", lambda *args: {})
+    monkeypatch.setattr(logos, "_preferred_ips", {})
+
+
 def test_candidates_resolve_relative_and_html_without_picking_badges_or_sponsors():
     readme = """
 ![build](https://img.shields.io/badge/logo.svg)
@@ -104,7 +111,7 @@ def test_readme_rate_limit_continues_caching_avatars_without_more_api_calls(monk
     repository = Mock()
     repository.pending.return_value = [{"repo_id": "a/a", "full_name": "a/a"}, {"repo_id": "b/b", "full_name": "b/b"}]
     calls = []
-    def collect(name, api, images, readme_enabled):
+    def collect(name, api, images, readme_enabled, owner_avatar_url):
         calls.append(readme_enabled)
         return {"status": "found", "content": b"avatar", "readme_rate_limited": True}
     monkeypatch.setattr(logos, "collect_logo", collect)
@@ -238,35 +245,6 @@ def test_unbounded_daily_collection_drains_multiple_batches(monkeypatch):
 
 
 
-def test_http_connect_sni_failure_retries_same_pin_with_verified_direct_tls(monkeypatch):
-    target = SimpleNamespace(request_url="https://93.184.216.34/acme?s=128",
-        headers={"Host": "avatars.githubusercontent.com"},
-        extensions={"sni_hostname": "avatars.githubusercontent.com"})
-    monkeypatch.setattr(logos, "pin_http_target", lambda *a, **k: target)
-    proxy_client = Mock()
-    direct_client = Mock()
-    factory = Mock()
-    factory.return_value.__enter__ = Mock(return_value=direct_client)
-    factory.return_value.__exit__ = Mock(return_value=False)
-    monkeypatch.setattr(logos.httpx, "Client", factory)
-    calls = []
-    def download(pinned, client):
-        calls.append((pinned, client))
-        if client is proxy_client:
-            raise httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] IP address mismatch")
-        return b"safe", "image/webp"
-    monkeypatch.setattr(logos, "_download_pinned_logo", download)
-    assert logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", proxy_client) == (b"safe", "image/webp")
-    assert calls == [(target, proxy_client), (target, direct_client)]
-    factory.assert_called_once_with(timeout=15, follow_redirects=False, trust_env=False)
-
-
-def test_other_tls_errors_are_not_retried(monkeypatch):
-    monkeypatch.setattr(logos, "pin_http_target", lambda *a, **k: Mock())
-    monkeypatch.setattr(logos, "_download_pinned_logo", Mock(side_effect=httpx.ConnectError("certificate expired")))
-    with pytest.raises(httpx.ConnectError, match="expired"):
-        logos.download_logo("https://avatars.githubusercontent.com/acme?s=128", Mock())
-
 
 def test_official_avatar_redirect_is_pinned_and_downloaded_without_credentials(monkeypatch):
     from backend.app.services import outbound_target_policy
@@ -335,3 +313,53 @@ def test_default_avatar_is_rejected_even_when_http_succeeds(monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'image'))) as client:
         with pytest.raises(ValueError, match='default avatar'):
             logos.download_logo('https://avatars.githubusercontent.com/u/1?s=128', client)
+
+
+def test_unreachable_cdn_edge_uses_another_validated_ip_and_reuses_success(monkeypatch):
+    from backend.app.services import outbound_target_policy
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver',
+                        lambda host: ['185.199.108.133', '185.199.109.133'])
+    seen = []
+    def handler(request):
+        seen.append(request.url.host)
+        assert request.extensions['sni_hostname'] == 'avatars.githubusercontent.com'
+        if request.url.host == '185.199.108.133':
+            raise httpx.ConnectTimeout('unreachable edge')
+        return httpx.Response(200, content=b'<svg><path d="M0 0h10v10z"/></svg>')
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        logos.download_logo('https://avatars.githubusercontent.com/u/123?s=128', client)
+        logos.download_logo('https://avatars.githubusercontent.com/u/456?s=128', client)
+    assert seen == ['185.199.108.133', '185.199.109.133', '185.199.109.133']
+
+
+def test_cdn_retry_rejects_dns_rebinding_and_does_not_retry_certificate_errors(monkeypatch):
+    from backend.app.services import outbound_target_policy
+    answers = iter([['185.199.108.133'], ['185.199.109.133', '127.0.0.1']])
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver', lambda host: next(answers))
+    handler = Mock(side_effect=httpx.ConnectTimeout('unreachable'))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError):
+            logos.download_logo('https://avatars.githubusercontent.com/u/123', client)
+    assert handler.call_count == 1
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver',
+                        lambda host: ['185.199.108.133', '185.199.109.133'])
+    handler = Mock(side_effect=httpx.ConnectError('CERTIFICATE_VERIFY_FAILED'))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(httpx.ConnectError):
+            logos.download_logo('https://avatars.githubusercontent.com/u/123', client)
+    assert handler.call_count == 1
+
+
+def test_slow_download_does_not_block_persisting_other_completed_artwork(monkeypatch):
+    import threading
+    release = threading.Event()
+    repository = Mock()
+    repository.pending.return_value = [{'repo_id': 'a/slow', 'full_name': 'a/slow'},
+                                       {'repo_id': 'b/fast', 'full_name': 'b/fast'}]
+    def collect(name, *args):
+        if name == 'a/slow':
+            assert release.wait(2), 'completed fast artwork was blocked behind a slow request'
+        return {'status': 'found'}
+    repository.save.side_effect = lambda repo_id, result: release.set() if repo_id == 'b/fast' else None
+    monkeypatch.setattr(logos, 'collect_logo', collect)
+    assert logos.refresh_project_logos(repository, limit=2, interval=0, workers=2)['found'] == 2
