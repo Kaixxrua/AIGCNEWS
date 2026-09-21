@@ -710,10 +710,10 @@ async def register(
             detail="验证码错误或已过期",
         ) from exc
     except account_lifecycle.AccountAlreadyExists as exc:
-        # 中性文案（对齐密码重置的防枚举口径）：不直接确认邮箱已注册
+        # 保持中性文案，引导登录或找回密码，避免误导用户重复获取验证码
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="注册失败，请检查邮箱验证码或稍后重试",
+            detail="注册未完成，请尝试登录；如忘记密码，请通过“忘记密码”重置后登录",
         ) from exc
     return {"detail": "注册成功", "user_id": result.user_id}
 
