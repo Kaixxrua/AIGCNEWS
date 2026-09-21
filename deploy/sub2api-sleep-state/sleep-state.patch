@@ -1,0 +1,90 @@
+From 91bf7cbb621cd00851d7ef845502893d5cde521e Mon Sep 17 00:00:00 2001
+From: Kaixxrua <kaixxrua@gmail.com>
+Date: Mon, 21 Sep 2026 04:52:02 +0000
+Subject: [PATCH] fix(gateway): preserve upstream usage in compact bridge
+
+---
+ internal/gateway/compact.go      | 24 +++++++++++++++++++++++-
+ internal/gateway/compact_test.go | 24 ++++++++++++++++++++++++
+ 2 files changed, 47 insertions(+), 1 deletion(-)
+
+diff --git a/internal/gateway/compact.go b/internal/gateway/compact.go
+index e4de2bc..47b0668 100644
+--- a/internal/gateway/compact.go
++++ b/internal/gateway/compact.go
+@@ -93,7 +93,8 @@ func (e *Engine) bridgeCompactResponse(resp *http.Response, s *session, route in
+ 	body, err := json.Marshal(struct {
+ 		Object string            `json:"object"`
+ 		Output []json.RawMessage `json:"output"`
+-	}{"response.compaction", output})
++		Usage  json.RawMessage   `json:"usage,omitempty"`
++	}{"response.compaction", output, compactResponseUsage(data)})
+ 	if err != nil || len(body) > maxCompactBytes {
+ 		return &compactError{502, "compact_response_too_large", "转换后的远程压缩结果超过大小限制；请求不会重放。"}
+ 	}
+@@ -111,6 +112,27 @@ func (e *Engine) bridgeCompactResponse(resp *http.Response, s *session, route in
+ 	return nil
+ }
+ 
++// Preserve the authoritative usage object for gateways that account for
++// compaction. Missing upstream usage remains missing; never invent token counts.
++func compactResponseUsage(data []byte) json.RawMessage {
++	var usage json.RawMessage
++	walkSSE(data, func(name string, payload []byte) {
++		var event struct {
++			Type     string `json:"type"`
++			Response struct {
++				Usage json.RawMessage `json:"usage"`
++			} `json:"response"`
++		}
++		if json.Unmarshal(payload, &event) != nil {
++			return
++		}
++		if event.Type == "response.completed" || (event.Type == "" && name == "response.completed") {
++			usage = event.Response.Usage
++		}
++	})
++	return usage
++}
++
+ func compactOutput(data []byte) ([]json.RawMessage, error) {
+ 	var emitted, output []json.RawMessage
+ 	invalid := false
+diff --git a/internal/gateway/compact_test.go b/internal/gateway/compact_test.go
+index ad6f48e..0ca4707 100644
+--- a/internal/gateway/compact_test.go
++++ b/internal/gateway/compact_test.go
+@@ -104,6 +104,30 @@ func TestRelayKeepsNativeLegacyCompaction(t *testing.T) {
+ 	}
+ }
+ 
++func TestLegacyBridgePreservesAuthoritativeUsage(t *testing.T) {
++	for _, usage := range []string{"", `{"input_tokens":103,"output_tokens":21,"total_tokens":124,"input_tokens_details":{"cached_tokens":17},"future_counter":9}`} {
++		e, _ := testEngine(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++			w.Header().Set("Content-Type", "text/event-stream")
++			suffix := ""
++			if usage != "" {
++				suffix = `,"usage":` + usage
++			}
++			fmt.Fprintf(w, "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[{\"type\":\"compaction\",\"encrypted_content\":\"opaque\"}]%s}}\n\n", suffix)
++		}))
++		r := request(compactFixtureRequest, "usage-test-token")
++		r.URL.Path = "/backend-api/codex/responses/compact"
++		w := httptest.NewRecorder()
++		e.ServeHTTP(w, r)
++		var result map[string]json.RawMessage
++		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil {
++			t.Fatalf("unexpected response status %d", w.Code)
++		}
++		if string(result["usage"]) != usage {
++			t.Fatalf("usage changed: got %s, want %s", result["usage"], usage)
++		}
++	}
++}
++
+ func TestLegacyBridgeNeverInventsSuccess(t *testing.T) {
+ 	cases := []struct {
+ 		name, stream string
+-- 
+2.43.0
+

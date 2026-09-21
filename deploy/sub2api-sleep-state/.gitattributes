@@ -1,0 +1,2 @@
+# Unified diffs contain mandatory context prefixes and mail signature whitespace.
+*.patch -whitespace
