@@ -40,7 +40,7 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="Schedule all existing logos once, preserving cached images")
     parser.add_argument("--repair", action="store_true", help="Retry missing and default images now, preserving good artwork")
     parser.add_argument("--report", type=Path, help="Write per-project repair outcomes to a new JSONL file")
-    parser.add_argument("--workers", type=int, default=4, choices=range(1, 17))
+    parser.add_argument("--workers", type=int, default=4, choices=range(1, 33))
     args = parser.parse_args()
     if args.limit < 0:
         parser.error("--limit must be nonnegative")
@@ -60,7 +60,7 @@ def main() -> None:
         print(json.dumps({"repair_targets": len(targets)}), flush=True)
     remaining = args.limit
     while True:
-        count = min(remaining, 100) if args.limit else 100
+        count = remaining if args.limit else 0
         result = refresh_project_logos(repository, limit=count, interval=0.1, workers=args.workers)
         print(json.dumps(result), flush=True)
         remaining -= result["selected"]
