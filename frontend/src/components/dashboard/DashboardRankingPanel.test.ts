@@ -42,6 +42,20 @@ const render = async (doc = tweet) => {
 }
 
 describe('mobile ranking reading', () => {
+  it('shows the stored Chinese translation on desktop and restores the original in English', async () => {
+    viewport.mobile = false
+    const panel = await render({ ...tweet, translation_zh: '已采集的中文正文。' })
+    expect(panel.get('.ranking-title').text()).toBe('已采集的中文正文。')
+    expect(panel.find('.ranking-summary').exists()).toBe(false)
+    setAppLocale('en-US')
+    await flushPromises()
+    expect(panel.get('.ranking-title').text()).toBe(tweet.title)
+    expect(panel.get('.ranking-link').attributes('href')).toBe(tweet.url)
+    setAppLocale('zh-CN')
+    await panel.setProps({ tabList: [{ ...tweet, translation_zh: '   ' }] })
+    expect(panel.get('.ranking-title').text()).toBe(tweet.title)
+  })
+
   it.each([true, false])('shows the stored tweet avatar (mobile=%s) and recovers after a row changes', async (mobile) => {
     viewport.mobile = mobile
     const panel = await render({ ...tweet, author_avatar_url: 'https://pbs.twimg.com/profile_images/one.jpg' })

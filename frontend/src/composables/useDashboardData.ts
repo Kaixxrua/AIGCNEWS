@@ -9,6 +9,7 @@ import {
 } from 'vue'
 import { dashboardApi as defaultDashboardApi } from '@/services/dashboard/dashboardApi'
 import { fetchLiveStats } from '@/services/dashboard/dashboardLiveApi'
+import { timelineTweets } from '@/features/xboard/xBoardViewModel'
 import type {
   DashboardApi,
   SourceStatusMap,
@@ -124,7 +125,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     const [summary, top] = await Promise.all([
       staticSummaryRequest.catch(() => null),
       dashboardApi.fetchTop({
-        limit: 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal,
+        limit: tab === 'x' ? 500 : 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal,
         ...(refresh ? { cacheBuster: now() } : {}),
       }),
     ])
@@ -134,7 +135,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       // 实时计数可能先到；旧版 summary 只补齐尚未取得的字段。
       stats.value = mergeLiveStats(legacySummary.stats, stats.value)
     }
-    tabList.value = top.items
+    tabList.value = tab === 'x' ? timelineTweets(top.items).slice(0, 10) : top.items
     isFinalized.value = top.sourceStatus[tab]?.is_finalized ?? top.isFinalized ?? summary?.isFinalized ?? false
     isEmbargoed.value = top.isEmbargoed ?? false
     resolvedDate.value = top.resolvedDate || selectedDate
