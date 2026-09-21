@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import re
 import threading
 import time
@@ -151,8 +152,44 @@ def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str
         return content, content_type
 
 
+def resolve_owner_avatars(owners: list[str], client: httpx.Client) -> dict[str, str]:
+    """Resolve up to 100 official CDN identities in one authenticated API request.
+
+    The token stays on api.github.com; returned URLs are untrusted image input.
+    Partial GraphQL failures preserve other owners and fall back to .png normally.
+    """
+    from backend.app.services.ingestion.source_github import _build_headers, _get_token
+
+    owners = list(dict.fromkeys(owner for owner in owners if re.fullmatch(r"[A-Za-z0-9-]+", owner)))[:100]
+    if not owners or not _get_token():
+        return {}
+    fields = " ".join(f"o{i}: repositoryOwner(login: {json.dumps(owner)}) {{ avatarUrl(size: 128) }}"
+                      for i, owner in enumerate(owners))
+    try:
+        response = client.post("https://api.github.com/graphql", headers=_build_headers(),
+                               json={"query": "query { " + fields + " }"})
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+        result = {}
+        for i, owner in enumerate(owners):
+            raw = (data.get(f"o{i}") or {}).get("avatarUrl", "")
+            if not isinstance(raw, str):
+                continue
+            try:
+                safe = logo_url(raw, raw)
+                parts = urlsplit(safe)
+                if parts.hostname == "avatars.githubusercontent.com" and re.fullmatch(r"/u/[0-9]+", parts.path):
+                    result[owner] = safe
+            except ValueError:
+                continue
+        return result
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError):
+        return {}
+
+
 def collect_logo(
     full_name: str, api_client: httpx.Client, image_client: httpx.Client, readme_enabled: bool = True,
+    owner_avatar_url: str = "",
 ) -> dict[str, Any]:
     from backend.app.services.ingestion.source_github import fetch_github_readme_snapshot
 
@@ -162,7 +199,7 @@ def collect_logo(
     rate_limited = snapshot is not None and snapshot.status == "rate_limited"
     candidates = snapshot.logo_candidates if snapshot and snapshot.status == "succeeded" else ()
     # Cache the owner avatar too: browsers must not depend on GitHub connectivity.
-    avatar = f"https://github.com/{full_name.split('/')[0]}.png?size=128"
+    avatar = owner_avatar_url or f"https://github.com/{full_name.split('/')[0]}.png?size=128"
     errors = []
     for url in (*candidates, avatar):
         try:
@@ -185,6 +222,7 @@ def refresh_project_logos(
     counts = {"selected": 0, "found": 0, "not_found": 0, "failed": 0, "rate_limited": 0}
     deadline = time.monotonic() + max_seconds
     readme_limited = threading.Event()
+    avatars: dict[str, str] = {}
     with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as api, httpx.Client(
         timeout=15, follow_redirects=False, trust_env=False,
         transport=GitHubArtworkTransport(proxy=settings.outbound_proxy or None),
@@ -192,7 +230,8 @@ def refresh_project_logos(
         def collect(row):
             if time.monotonic() >= deadline:
                 return None
-            result = collect_logo(row["full_name"], api, images, not readme_limited.is_set())
+            result = collect_logo(row["full_name"], api, images, not readme_limited.is_set(),
+                                  avatars.get(row["full_name"].split("/")[0], ""))
             if result.get("readme_rate_limited"):
                 readme_limited.set()
             time.sleep(max(0.0, interval))
@@ -203,6 +242,8 @@ def refresh_project_logos(
             rows = repository.pending(min(remaining, 100))
             if not rows:
                 break
+            owners = [row["full_name"].split("/")[0] for row in rows]
+            avatars.update(resolve_owner_avatars([owner for owner in owners if owner not in avatars], api))
             attempted = 0
             for item in pool.map(collect, rows):
                 if item is None:

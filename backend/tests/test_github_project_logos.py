@@ -17,6 +17,11 @@ from backend.app.services.ingestion.source_github import fetch_github_readme_sna
 BASE = "https://raw.githubusercontent.com/acme/demo/main/docs/README.md"
 
 
+@pytest.fixture(autouse=True)
+def no_live_avatar_lookup(monkeypatch):
+    monkeypatch.setattr(logos, "resolve_owner_avatars", lambda *args: {})
+
+
 def test_candidates_resolve_relative_and_html_without_picking_badges_or_sponsors():
     readme = """
 ![build](https://img.shields.io/badge/logo.svg)
@@ -104,7 +109,7 @@ def test_readme_rate_limit_continues_caching_avatars_without_more_api_calls(monk
     repository = Mock()
     repository.pending.return_value = [{"repo_id": "a/a", "full_name": "a/a"}, {"repo_id": "b/b", "full_name": "b/b"}]
     calls = []
-    def collect(name, api, images, readme_enabled):
+    def collect(name, api, images, readme_enabled, owner_avatar_url):
         calls.append(readme_enabled)
         return {"status": "found", "content": b"avatar", "readme_rate_limited": True}
     monkeypatch.setattr(logos, "collect_logo", collect)
