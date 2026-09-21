@@ -280,4 +280,18 @@ onBeforeUnmount(() => uiCatalogController.abort())
  .digest-card p { font-size:10px;line-height:1.3; }.digest-features { margin-top:5px;gap:2px;font-size:11px;line-height:13px; }.digest-features li { height:14px;min-height:14px; }
  .digest-cta { bottom:8px;left:11px;height:27px; }.digest-robot { width:62%;height:104%;right:-14px; }
 }
+@media (min-width:1200px) {
+  .dashboard-page { grid-template-rows:74px minmax(0,1fr); }
+  .dashboard-heading h1 { font-size:35px;line-height:1.1;margin-bottom:4px;letter-spacing:0; }
+  .dashboard-heading p { font-size:16px;line-height:1.25; }
+  .dashboard-heading :deep(.stat-cell) { min-height:74px;padding-block:8px; }
+}
+@media (min-width:1200px) and (max-width:1499px) {
+  .dashboard-heading h1 { font-size:30px; }
+  .dashboard-heading p { font-size:14px; }
+}
+@media (min-width:1200px) and (max-height:820px) {
+  .dashboard-page { grid-template-rows:64px minmax(0,1fr); }
+  .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
+}
 </style>

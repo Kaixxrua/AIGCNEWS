@@ -125,7 +125,9 @@ const boardDateHint = computed(() => {
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
 .ranking-tab[aria-selected='true'] { background:var(--acid); color:var(--acid-ink); border:1.5px solid var(--rule-strong); border-radius:8px; transform:skew(-10deg); margin:-1.5px 5px -1.5px -1.5px; padding-inline:25px; font-size:23px; font-weight:850; }
 .ranking-tab[aria-selected='true'] > * { transform:skew(10deg); }
-.ranking-tab:hover:not([aria-selected='true']) { background:var(--paper-muted); }
+.ranking-tab:hover:not([aria-selected='true']) { background:transparent; }
+.ranking-tab:not([aria-selected='true'])::after { content:'';position:absolute;inset:0;z-index:-1;border-radius:7px;transform:skewX(-10deg);pointer-events:none; }
+.ranking-tab:not([aria-selected='true']):is(:hover,:focus-visible)::after { background:var(--paper-muted); }
 .ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--acid); outline-offset:-3px; }
 .ranking-source-status { padding:0 9px;flex-shrink:0; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
