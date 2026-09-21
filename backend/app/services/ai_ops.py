@@ -192,7 +192,7 @@ def create_ai_ops_service(*, database, repositories, health_checks, scheduler, m
     def model():
         # Structured decisions do not need token streaming. Some compatible relays
         # emit both deltas and a complete message, corrupting aggregated JSON.
-        provider = model_provider.get_chat_model(reasoning_effort="low")
+        provider = model_provider.get_chat_model(reasoning_effort="high")
         copy = provider.model_copy(update={"streaming": False, "disable_streaming": True})
         return copy
 

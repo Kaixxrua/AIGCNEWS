@@ -134,4 +134,4 @@ def test_composition_uses_injected_dependencies_and_limits_evidence():
     assert "message" not in svc.tools["errors"]()[0]
     assert svc.tools["scheduler"]() == {"running": True, "jobs": [], "job_count": 0}
     assert svc.model() is provider.get_chat_model.return_value.model_copy.return_value
-    provider.get_chat_model.assert_called_once_with(reasoning_effort="low")
+    provider.get_chat_model.assert_called_once_with(reasoning_effort="high")
