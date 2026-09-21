@@ -4,6 +4,7 @@ import { projectDescription } from '@/features/projects/projectPresentation'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import DashboardTweetPreview from './DashboardTweetPreview.vue'
+import { displayTweetText } from '@/features/xboard/xBoardViewModel'
 import RankingAvatar from './RankingAvatar.vue'
 import ProjectHeat from '@/components/projects/ProjectHeat.vue'
 import { ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
@@ -29,6 +30,11 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
+const displayDocs = computed(() => props.tabList.map(doc => {
+  if (props.activeTab !== 'x' || !locale.value.toLowerCase().startsWith('zh') || !doc.translation_zh?.trim()) return doc
+  const text = displayTweetText(doc, locale.value)
+  return { ...doc, title: text, summary: text }
+}))
 const summary = (doc: TopDoc) => doc.source === 'github'
   ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
@@ -86,7 +92,7 @@ const boardDateHint = computed(() => {
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
       </div>
       <ol v-else :class="{ 'editorial-list': !(isMobile && activeTab === 'x') }">
-        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
+        <li v-for="(doc, idx) in displayDocs" :key="doc.id ?? doc.url ?? idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
           <svg v-if="idx < 3" class="ranking-ink-frame" viewBox="0 0 400 174" preserveAspectRatio="none" aria-hidden="true">
             <path class="ranking-ink-frame__outline" d="M8 2.5 390 1.5 Q398 1 398 9 L397.5 166 Q398 171.5 391 172 L8 171 Q2 172 2 165 L2.5 10 Q1.5 3 8 2.5Z" />
             <path class="ranking-ink-frame__trace" d="M9 4 186 3.5 M395 10 395.5 161 Q396 169 389 169.5 L246 169" />

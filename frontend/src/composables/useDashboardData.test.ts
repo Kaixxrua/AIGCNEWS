@@ -107,6 +107,26 @@ describe('Dashboard request lifecycle contract', () => {
     mounted.app.unmount()
   })
 
+  it('selects the latest ten X posts before displaying them, regardless of likes', async () => {
+    const mounted = mountDashboard()
+    await flush()
+    const items = Array.from({ length: 12 }, (_, i) => ({
+      id: i, source: 'x', score: 1000 - i, likes: 1000 - i,
+      published_at: `2026-09-20T${String(i).padStart(2, '0')}:00:00Z`,
+      translation_zh: `译文 ${i}`,
+    }))
+    defaultDashboardApi.fetchTop.mockResolvedValue({ items, sourceStatus: {} })
+    mounted.dashboard.activeTab.value = 'x'
+    await flush()
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith({
+      limit: 500, source: 'x', period: 'daily', date: undefined, signal: expect.any(AbortSignal),
+    })
+    expect(mounted.dashboard.tabList.value.map(doc => doc.id)).toEqual([11, 10, 9, 8, 7, 6, 5, 4, 3, 2])
+    expect(mounted.dashboard.tabList.value[0]?.translation_zh).toBe('译文 11')
+    expect(items[0]?.id).toBe(0)
+    mounted.app.unmount()
+  })
+
   it('keeps loading domains independent when switching tabs', async () => {
     const mounted = mountDashboard()
     await flush()
