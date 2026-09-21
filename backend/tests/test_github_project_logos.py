@@ -20,6 +20,7 @@ BASE = "https://raw.githubusercontent.com/acme/demo/main/docs/README.md"
 @pytest.fixture(autouse=True)
 def no_live_avatar_lookup(monkeypatch):
     monkeypatch.setattr(logos, "resolve_owner_avatars", lambda *args: {})
+    monkeypatch.setattr(logos, "resolve_moved_repository_artwork", lambda *args: {})
     monkeypatch.setattr(logos, "_preferred_ips", {})
 
 

@@ -79,3 +79,28 @@ def test_image_proxy_override_does_not_change_general_api_client(monkeypatch):
     repository.pending.return_value = []
     logos.refresh_project_logos(repository)
     factory.assert_called_once_with(proxy='socks5://artwork.example:1080')
+
+
+def test_moved_repository_resolves_canonical_readme_and_avatar(monkeypatch):
+    from unittest.mock import Mock
+    monkeypatch.setattr(source_github, '_get_token', lambda: 'test-token')
+    def handler(request):
+        assert request.url == 'https://api.github.com/graphql'
+        return httpx.Response(200, json={'data': {
+            'r0': {'nameWithOwner': 'new-owner/demo', 'owner': {'avatarUrl': 'https://avatars.githubusercontent.com/u/99?s=128'}},
+            'r1': None,
+            'r2': {'nameWithOwner': 'unsafe/demo', 'owner': {'avatarUrl': 'https://127.0.0.1/private'}},
+        }})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        moved = logos.resolve_moved_repository_artwork(['old-owner/demo', 'missing/demo', 'unsafe/demo'], client)
+    assert moved == {'old-owner/demo': ('new-owner/demo', 'https://avatars.githubusercontent.com/u/99?s=128')}
+    monkeypatch.setattr(logos, 'resolve_owner_avatars', lambda *args: {})
+    monkeypatch.setattr(logos, 'resolve_moved_repository_artwork', lambda *args: moved)
+    collect = Mock(return_value={'status': 'found'})
+    monkeypatch.setattr(logos, 'collect_logo', collect)
+    repository = Mock()
+    repository.pending.return_value = [{'repo_id': 'opaque-id', 'full_name': 'old-owner/demo'}]
+    logos.refresh_project_logos(repository, limit=1, interval=0)
+    assert collect.call_args.args[0] == 'new-owner/demo'
+    assert collect.call_args.args[4] == 'https://avatars.githubusercontent.com/u/99?s=128'
+    assert repository.save.call_args.args[0] == 'opaque-id'

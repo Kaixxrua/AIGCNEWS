@@ -218,6 +218,42 @@ def resolve_owner_avatars(owners: list[str], client: httpx.Client) -> dict[str, 
         return {}
 
 
+def resolve_moved_repository_artwork(names: list[str], client: httpx.Client) -> dict[str, tuple[str, str]]:
+    """GitHub resolves repository moves even after the original owner disappears."""
+    from backend.app.services.ingestion.source_github import _build_headers, _get_token
+
+    names = list(dict.fromkeys(name for name in names if _REPO.fullmatch(name)))[:100]
+    if not names or not _get_token():
+        return {}
+    fields = []
+    for i, name in enumerate(names):
+        owner, repo = name.split("/")
+        fields.append(f"r{i}: repository(owner: {json.dumps(owner)}, name: {json.dumps(repo)}) "
+                      "{ nameWithOwner owner { avatarUrl(size: 128) } }")
+    try:
+        response = client.post("https://api.github.com/graphql", headers=_build_headers(),
+                               json={"query": "query { " + " ".join(fields) + " }"})
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+        result = {}
+        for i, name in enumerate(names):
+            row = data.get(f"r{i}") or {}
+            canonical = row.get("nameWithOwner", "")
+            raw = (row.get("owner") or {}).get("avatarUrl", "")
+            if not isinstance(canonical, str) or not _REPO.fullmatch(canonical) or not isinstance(raw, str):
+                continue
+            try:
+                safe = logo_url(raw, raw)
+                parts = urlsplit(safe)
+                if parts.hostname == "avatars.githubusercontent.com" and re.fullmatch(r"/u/[0-9]+", parts.path):
+                    result[name] = (canonical, safe)
+            except ValueError:
+                continue
+        return result
+    except (httpx.HTTPError, ValueError, AttributeError, TypeError):
+        return {}
+
+
 def collect_logo(
     full_name: str, api_client: httpx.Client, image_client: httpx.Client, readme_enabled: bool = True,
     owner_avatar_url: str = "",
@@ -254,6 +290,7 @@ def refresh_project_logos(
     deadline = time.monotonic() + max_seconds
     readme_limited = threading.Event()
     avatars: dict[str, str] = {}
+    moved: dict[str, tuple[str, str]] = {}
     with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as api, httpx.Client(
         timeout=15, follow_redirects=False, trust_env=False,
         transport=GitHubArtworkTransport(proxy=settings.github_artwork_proxy or settings.outbound_proxy or None),
@@ -261,8 +298,10 @@ def refresh_project_logos(
         def collect(row):
             if time.monotonic() >= deadline:
                 return None
-            result = collect_logo(row["full_name"], api, images, not readme_limited.is_set(),
-                                  avatars.get(row["full_name"].split("/")[0], ""))
+            name, avatar = moved.get(row["full_name"], (
+                row["full_name"], avatars.get(row["full_name"].split("/")[0], ""),
+            ))
+            result = collect_logo(name, api, images, not readme_limited.is_set(), avatar)
             if result.get("readme_rate_limited"):
                 readme_limited.set()
             time.sleep(max(0.0, interval))
@@ -277,6 +316,10 @@ def refresh_project_logos(
             missing = [owner for owner in owners if owner not in avatars]
             for offset in range(0, len(missing), 100):
                 avatars.update(resolve_owner_avatars(missing[offset:offset + 100], api))
+            unresolved = [row["full_name"] for row in rows
+                          if row["full_name"].split("/")[0] not in avatars and row["full_name"] not in moved]
+            for offset in range(0, len(unresolved), 100):
+                moved.update(resolve_moved_repository_artwork(unresolved[offset:offset + 100], api))
             attempted = 0
             for future in as_completed([pool.submit(collect, row) for row in rows]):
                 item = future.result()
