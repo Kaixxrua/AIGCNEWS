@@ -36,7 +36,9 @@ _REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
 _LOGO = re.compile(r"(?:^|[^a-z])(logo|logomark|wordmark|icon)(?:[^a-z]|$)", re.I)
 _EXCLUDE = re.compile(r"badge|shield|sponsor|visitor|star-history|screenshot|open.?graph|thumbnail|processing|(?:^|[/_.-])og(?:[_.-]|$)|desktop.chat|diagram|architecture|workflow", re.I)
 _SVG_TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline",
-             "polygon", "defs", "clipPath", "mask", "use", "text", "tspan", "linearGradient", "radialGradient", "stop", "title", "desc"}
+             "polygon", "defs", "clipPath", "mask", "use", "text", "tspan", "filter",
+             "feGaussianBlur", "feOffset", "feBlend", "feComposite", "feFlood",
+             "feMerge", "feMergeNode", "feColorMatrix", "feDropShadow", "linearGradient", "radialGradient", "stop", "title", "desc"}
 _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "cx",
               "cy", "r", "rx", "ry", "d", "points", "fill", "fill-rule", "fill-opacity",
               "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-opacity",
@@ -45,7 +47,10 @@ _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "c
               "clip-path", "clip-rule", "clipPathUnits", "mask", "maskUnits", "maskContentUnits",
               "font-family", "font-size", "font-weight", "font-style", "text-anchor", "letter-spacing",
               "dominant-baseline", "dx", "dy", "color", "stroke-miterlimit", "stroke-dasharray",
-              "stroke-dashoffset", "vector-effect", "enable-background"}
+              "stroke-dashoffset", "vector-effect", "enable-background", "display", "visibility",
+              "mask-type", "filter", "filterUnits", "primitiveUnits", "in", "in2", "result",
+              "type", "values", "mode", "operator", "stdDeviation", "flood-color", "flood-opacity",
+              "k1", "k2", "k3", "k4", "color-interpolation-filters"}
 
 
 def logo_url(raw: str, base: str) -> str:
@@ -167,7 +172,16 @@ def _flatten_svg_styles(root: ET.Element) -> None:
 def sanitize_image(body: bytes) -> tuple[bytes, str]:
     if not body or len(body) > MAX_DOWNLOAD:
         raise ValueError("invalid image size")
+    if body.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = body.decode("utf-16")
+        text = re.sub(r"encoding=['\"]UTF-16['\"]", 'encoding="UTF-8"', text, flags=re.I)
+        body = text.encode("utf-8")
+    elif body.startswith(b"\xef\xbb\xbf"):
+        body = body[3:]
     if body.lstrip().startswith(b"<"):
+        # Strip only the fixed public SVG DTD; no external resource is fetched.
+        body = re.sub(br'<!DOCTYPE\s+svg\s+PUBLIC\s+[\']-//W3C//DTD SVG 1[.]1//EN[\']\s+[\']https?://www[.]w3[.]org/Graphics/SVG/1[.]1/DTD/svg11[.]dtd[\']\s*>', b'', body)
+        body = re.sub(br'<!DOCTYPE\s+svg\s+PUBLIC\s+"-//W3C//DTD SVG 1[.]1//EN"\s+"https?://www[.]w3[.]org/Graphics/SVG/1[.]1/DTD/svg11[.]dtd"\s*>', b'', body)
         if len(body) > MAX_STORED or re.search(br"<!\s*(DOCTYPE|ENTITY)", body, re.I):
             raise ValueError("unsafe SVG declaration")
         root = ET.fromstring(body)
@@ -175,7 +189,7 @@ def sanitize_image(body: bytes) -> tuple[bytes, str]:
             raise ValueError("not SVG")
         for parent in root.iter():
             for node in list(parent):
-                if node.tag.rsplit("}", 1)[-1] in {"metadata", "namedview"}:
+                if node.tag.rsplit("}", 1)[-1] in {"metadata", "namedview"} or node.tag == "{http://www.inkscape.org/namespaces/inkscape}path-effect":
                     parent.remove(node)
         _flatten_svg_styles(root)
         # Reject active/unknown nodes rather than serving partially altered artwork.
@@ -187,6 +201,13 @@ def sanitize_image(body: bytes) -> tuple[bytes, str]:
                     if not re.fullmatch(r"#[\w-]+", value):
                         raise ValueError("external SVG reference")
                     continue
+                if name == "stdDeviation":
+                    try:
+                        deviations = [float(part) for part in value.replace(",", " ").split()]
+                    except ValueError:
+                        raise ValueError("invalid SVG blur") from None
+                    if not 1 <= len(deviations) <= 2 or any(not 0 <= part <= 32 for part in deviations):
+                        raise ValueError("SVG blur exceeds limit")
                 if name not in _SVG_ATTRS:
                     del node.attrib[name]
                     continue

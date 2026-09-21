@@ -446,3 +446,21 @@ def test_github_attachment_redirect_revalidates_the_cdn_dns(monkeypatch):
         with pytest.raises(ValueError, match='mixed public/private'):
             logos._download_pinned_logo(target, client)
     pin.assert_called_once_with(location, reject_mixed=True, allowed_ports={443})
+
+
+def test_utf16_svg_and_known_public_doctype_are_normalized_without_external_loading():
+    source = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg><path d="M0 0"/></svg>'
+    body, mime = logos.sanitize_image(source.encode('utf-16'))
+    assert mime == 'image/svg+xml' and b'DOCTYPE' not in body and b'<path' in body
+    with pytest.raises(ValueError):
+        logos.sanitize_image('<!DOCTYPE svg [<!ENTITY x "unsafe">]><svg>&x;</svg>'.encode('utf-16'))
+
+
+def test_static_svg_shadow_is_bounded_and_animated_content_stays_rejected():
+    body, _ = logos.sanitize_image(b'<svg><defs><filter id="shadow"><feDropShadow dx="0" dy="1" stdDeviation="2"/></filter></defs><path filter="url(#shadow)"/></svg>')
+    assert b'feDropShadow' in body
+    for value in ['100000', 'NaN', 'inf', '-1', '2 3 4']:
+        with pytest.raises(ValueError):
+            logos.sanitize_image(f'<svg><filter><feGaussianBlur stdDeviation="{value}"/></filter></svg>'.encode())
+    with pytest.raises(ValueError):
+        logos.sanitize_image(b'<svg><animate attributeName="href"/></svg>')
