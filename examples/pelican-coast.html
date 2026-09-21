@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d8eee9">
+<title>海风骑行 · Pelican Coast</title>
+<style>
+  :root { color-scheme: light; font-family: "Trebuchet MS", "Microsoft YaHei", sans-serif; color: #263c3a; background: #d8eee9; }
+  * { box-sizing: border-box; letter-spacing: 0; }
+  body { margin: 0; }
+  main { min-height: 100svh; display: flex; flex-direction: column; overflow: hidden; }
+  header, footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 26px 5%; }
+  header { border-bottom: 1px solid #263c3a24; }
+  .brand { font-size: 17px; font-weight: 700; }
+  .edition { font-size: 11px; }
+  .intro { text-align: center; padding: 38px 20px 0; }
+  .eyebrow { font-size: 11px; margin: 0 0 12px; }
+  h1 { font-size: 42px; font-weight: 500; margin: 0; }
+  .subtitle { margin: 12px 0 0; font-size: 14px; color: #526c66; }
+  .scene { flex: 1; display: grid; align-items: center; min-height: 320px; }
+  svg { width: 100%; display: block; height: auto; max-height: 68svh; }
+  footer { background: #f5f5ed; min-height: 94px; }
+  .caption { font-size: 12px; line-height: 1.8; }
+  .caption strong { display: block; font-size: 14px; }
+  .controls { display: flex; align-items: center; gap: 16px; }
+  button { border: 1px solid #263c3a40; border-radius: 50%; background: transparent; color: inherit; width: 44px; height: 44px; cursor: pointer; display: grid; place-items: center; }
+  button:hover { background: #d8eee9; }
+  button:focus-visible, input:focus-visible { outline: 3px solid #dc725e; outline-offset: 4px; }
+  .pause-icon { height: 14px; width: 12px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+  .paused .pause-icon { width: 0; height: 0; border: 8px solid transparent; border-right: 0; border-left: 12px solid currentColor; margin-left: 3px; }
+  label { font-size: 12px; display: flex; align-items: center; gap: 10px; }
+  input { width: 100px; accent-color: #376e60; }
+  output { width: 32px; font-size: 12px; }
+  .wheel { transform-box: fill-box; transform-origin: center; animation: spin 1.6s linear infinite; }
+  .crank { transform-origin: 574px 457px; animation: spin 1.6s linear infinite; }
+  .foot { transform-box: fill-box; transform-origin: center; animation: counterspin 1.6s linear infinite; }
+  .rider { animation: bob .8s ease-in-out infinite; }
+  .wing { transform-origin: 562px 300px; animation: flap 1.6s ease-in-out infinite; }
+  .scarf { transform-origin: 593px 259px; animation: flutter .8s ease-in-out infinite; }
+  .cloud { animation: drift 16s ease-in-out infinite alternate; }
+  .wave { animation: drift 5s ease-in-out infinite alternate; }
+  .road { animation: travel 1.6s linear infinite; }
+  .paused .animated { animation-play-state: paused !important; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes counterspin { to { transform: rotate(-360deg); } }
+  @keyframes bob { 50% { transform: translateY(-4px) rotate(.4deg); } }
+  @keyframes flap { 50% { transform: rotate(-12deg); } }
+  @keyframes flutter { 50% { transform: skewY(-8deg); } }
+  @keyframes drift { to { transform: translateX(28px); } }
+  @keyframes travel { to { transform: translateX(-160px); } }
+  @media (max-width: 600px) {
+    header { padding: 20px 6%; } .edition { font-size: 9px; }
+    .intro { padding-top: 36px; } h1 { font-size: 32px; }
+    .scene { min-height: 340px; } .scene svg { width: 170%; max-width: none; margin-left: -35%; max-height: none; }
+    footer { padding: 20px 6%; flex-wrap: wrap; } .controls { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header><span class="brand">PELICAN COAST</span><span class="edition">COASTAL JOURNAL / NO. 001</span></header>
+  <div class="intro"><p class="eyebrow">慢一点，海就在旁边</p><h1>今天，顺着海风走。</h1><p class="subtitle">一只鹈鹕，一辆单车，一个不赶时间的下午。</p></div>
+  <div class="scene">
+    <svg viewBox="0 0 1200 580" role="img" aria-labelledby="scene-title scene-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="scene-title">鹈鹕的海边骑行</title>
+      <desc id="scene-desc">戴绿色帽子的白色鹈鹕骑着红色自行车沿海岸前行，翅膀轻轻摆动，车轮和踏板旋转，远处有帆船与灯塔。</desc>
+      <defs>
+        <g id="wheel" fill="none">
+          <circle r="76" stroke="#293e3b" stroke-width="10"/>
+          <circle r="67" stroke="#f9faf1" stroke-width="3"/>
+          <g stroke="#6a8179" stroke-width="2">
+            <path d="M-65 0H65M0-65V65M-46-46L46 46M-46 46L46-46M-60-25L60 25M-25-60L25 60M-60 25L60-25M-25 60L25-60"/>
+          </g>
+          <circle r="8" fill="#e4b764" stroke="#293e3b" stroke-width="3"/>
+          <path d="M48-45L55-36" stroke="#e4b764" stroke-width="5"/>
+        </g>
+      </defs>
+      <circle cx="880" cy="101" r="47" fill="#f6ca75"/>
+      <g class="cloud animated" fill="#f5f9ef"><path d="M156 117c-4-17 14-28 28-18 6-30 51-29 55 1 23-9 42 2 41 17Z"/><path d="M715 65c-3-12 10-22 21-16 9-21 37-18 41 5 15-7 27-2 30 11Z"/></g>
+      <path d="M0 265Q130 231 250 260T491 254T780 263T1040 248T1200 260V428H0Z" fill="#a9d8ca"/>
+      <path d="M0 300Q150 274 300 295T600 291T900 297T1200 279V436H0Z" fill="#78b9ac"/>
+      <g fill="none" stroke="#d7eee0" stroke-width="3" stroke-linecap="round" class="wave animated"><path d="M80 318h99m55 23h58m505-21h89m-167 42h68m189-16h100M-20 374h105m267-52h45m580 61h76"/></g>
+      <g transform="translate(984 199)"><path d="M-15 63L-10 2H10L15 63" fill="#f3f1dc"/><path d="M-12 21H12V34H-12Z" fill="#d57b65"/><path d="M-15 3V-13H15V3Z" fill="#3e6a60"/><path d="M-20-13L0-26 20-13Z" fill="#d57b65"/><path d="M-3-9H3V0H-3Z" fill="#f3d18a"/><path d="M-45 64Q0 42 43 64" fill="#527f70"/></g>
+      <g transform="translate(269 237)"><path d="M0 35V-37" stroke="#577d70" stroke-width="2"/><path d="M-5-34L-45 24H-5Z" fill="#f8f5e4"/><path d="M5-21V24H32Z" fill="#eed090"/><path d="M-48 31H38L27 42H-34Z" fill="#497d6f"/></g>
+      <path d="M0 409Q167 380 334 402T667 398T1000 404T1200 390V580H0Z" fill="#f1e6c6"/>
+      <path d="M0 410Q167 381 334 403T667 399T1000 405T1200 391" fill="none" stroke="#faf7e7" stroke-width="9"/>
+      <path d="M0 510H1200V580H0Z" fill="#e2d7bb"/>
+      <path class="road animated" d="M0 550H1440" stroke="#fbf6e7" stroke-width="4" stroke-dasharray="70 90"/>
+      <ellipse cx="594" cy="520" rx="220" ry="13" fill="#8c9d802b"/>
+      <g transform="translate(458 437)"><g class="wheel animated"><use href="#wheel"/></g></g>
+      <g transform="translate(738 437)"><g class="wheel animated"><use href="#wheel"/></g></g>
+      <g fill="none" stroke="#d96655" stroke-width="9" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M458 437L522 337 574 457H458L679 350 574 457M679 350L738 437M522 337H674"/>
+        <path d="M674 337L661 308" stroke="#334d44" stroke-width="7"/>
+        <path d="M654 307H691Q706 307 702 322" stroke="#334d44" stroke-width="7"/>
+        <path d="M522 337L516 318" stroke="#334d44" stroke-width="7"/>
+      </g>
+      <path d="M492 316Q500 308 522 310L542 314Q546 322 533 323H496Z" fill="#334d44"/>
+      <g class="rider animated">
+        <path d="M510 331L478 315 489 344 471 336Q495 364 529 355" fill="#d1dfd7" stroke="#344c43" stroke-width="3"/>
+        <path d="M548 345L558 390 586 418" fill="none" stroke="#d49748" stroke-width="9" stroke-linecap="round"/>
+        <path d="M489 294Q500 261 552 269L581 278Q600 247 589 223Q569 191 586 163Q601 142 625 158Q644 171 633 196L619 235Q620 276 602 319Q590 355 542 358Q504 356 489 331Q480 311 489 294Z" fill="#faf8e9" stroke="#344c43" stroke-width="3"/>
+        <path d="M620 189L716 208Q695 244 628 226L611 211" fill="#edbf65" stroke="#344c43" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M625 185L722 207 623 207" fill="#e6a750" stroke="#344c43" stroke-width="3" stroke-linejoin="round"/>
+        <circle cx="620" cy="178" r="4" fill="#293e3b"/><circle cx="621" cy="177" r="1" fill="white"/>
+        <path d="M585 163Q577 134 604 130Q628 129 631 153L646 157Q628 170 581 166Z" fill="#3a7966" stroke="#344c43" stroke-width="3"/>
+        <path d="M585 153L630 149" stroke="#e6c884" stroke-width="6"/>
+        <path class="scarf animated" d="M597 250Q568 241 548 248L555 259 530 271Q574 279 603 260" fill="#d96655"/>
+        <path d="M589 247L614 255 610 267 587 259Z" fill="#d96655"/>
+        <g class="wing animated"><path d="M551 284Q509 277 506 305Q505 334 542 340Q569 342 594 313Q569 313 551 284Z" fill="#dce5da" stroke="#344c43" stroke-width="3"/><path d="M524 310Q543 327 573 318M529 298Q548 315 580 314" fill="none" stroke="#9bb8a8" stroke-width="3" stroke-linecap="round"/></g>
+      </g>
+      <circle cx="574" cy="457" r="17" fill="#f0cf86" stroke="#344c43" stroke-width="4"/>
+      <g class="crank animated"><path d="M550 433L598 481" stroke="#344c43" stroke-width="5"/><g transform="translate(550 433)"><g class="foot animated"><path d="M-13 0H13" stroke="#344c43" stroke-width="6" stroke-linecap="round"/></g></g><g transform="translate(598 481)"><g class="foot animated"><path d="M-13-7Q1-13 14-3L18 0H-13Z" fill="#d49748"/><path d="M-14 3H18" stroke="#344c43" stroke-width="5" stroke-linecap="round"/></g></g></g>
+      <g stroke="#69866c" stroke-width="3" fill="none" stroke-linecap="round"><path d="M119 495Q125 471 115 460M119 495Q111 478 99 477M119 495Q130 480 139 481M1056 471Q1051 450 1056 439M1056 471Q1065 451 1074 451"/></g>
+      <g fill="#c2ad87"><ellipse cx="202" cy="488" rx="8" ry="3"/><ellipse cx="943" cy="490" rx="11" ry="4"/><ellipse cx="1005" cy="461" rx="5" ry="2"/></g>
+    </svg>
+  </div>
+  <footer><div class="caption"><strong>海风骑行</strong>沿着海岸，慢慢来。</div><div class="controls"><button id="toggle" type="button" aria-label="暂停动画" title="暂停动画" aria-pressed="false"><span class="pause-icon" aria-hidden="true"></span></button><label for="speed">速度<input id="speed" type="range" min="0.5" max="2" step="0.25" value="1"></label><output for="speed" id="rate">1×</output></div></footer>
+</main>
+<script>
+  const toggle = document.querySelector('#toggle');
+  const speed = document.querySelector('#speed');
+  function pause(value) {
+    document.body.classList.toggle('paused', value);
+    toggle.setAttribute('aria-pressed', String(value));
+    toggle.setAttribute('aria-label', value ? '播放动画' : '暂停动画');
+    toggle.title = value ? '播放动画' : '暂停动画';
+  }
+  toggle.addEventListener('click', () => pause(!document.body.classList.contains('paused')));
+  speed.addEventListener('input', () => {
+    document.getAnimations().forEach(animation => animation.updatePlaybackRate(Number(speed.value)));
+    document.querySelector('#rate').textContent = speed.value + '×';
+  });
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  pause(reducedMotion.matches);
+  reducedMotion.addEventListener('change', event => pause(event.matches));
+</script>
+</body>
+</html>
