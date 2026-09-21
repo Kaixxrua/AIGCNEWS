@@ -5,6 +5,7 @@ credentials to image hosts, or mistake the first screenshot/badge for a logo.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -36,7 +37,7 @@ _REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
 _LOGO = re.compile(r"(?:^|[^a-z])(logo|logomark|wordmark|icon)(?:[^a-z]|$)", re.I)
 _EXCLUDE = re.compile(r"badge|shield|sponsor|visitor|star-history|screenshot|open.?graph|thumbnail|processing|(?:^|[/_.-])og(?:[_.-]|$)|desktop.chat|diagram|architecture|workflow", re.I)
 _SVG_TAGS = {"svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline",
-             "polygon", "defs", "clipPath", "mask", "use", "text", "tspan", "filter",
+             "polygon", "image", "pattern", "defs", "clipPath", "mask", "use", "text", "tspan", "filter",
              "feGaussianBlur", "feOffset", "feBlend", "feComposite", "feFlood",
              "feMerge", "feMergeNode", "feColorMatrix", "feDropShadow", "linearGradient", "radialGradient", "stop", "title", "desc"}
 _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "cx",
@@ -50,7 +51,10 @@ _SVG_ATTRS = {"viewBox", "width", "height", "x", "y", "x1", "x2", "y1", "y2", "c
               "stroke-dashoffset", "vector-effect", "enable-background", "display", "visibility",
               "mask-type", "filter", "filterUnits", "primitiveUnits", "in", "in2", "result",
               "type", "values", "mode", "operator", "stdDeviation", "flood-color", "flood-opacity",
-              "k1", "k2", "k3", "k4", "color-interpolation-filters"}
+              "k1", "k2", "k3", "k4", "color-interpolation-filters", "patternUnits",
+              "patternContentUnits", "patternTransform", "isolation", "white-space", "paint-order",
+              "shape-rendering", "image-rendering", "text-rendering", "font-variant", "font-stretch",
+              "line-height", "text-decoration", "word-spacing"}
 
 
 def logo_url(raw: str, base: str) -> str:
@@ -148,7 +152,7 @@ def _flatten_svg_styles(root: ET.Element) -> None:
                 if text[position:match.start()].strip():
                     raise ValueError("unsupported SVG stylesheet")
                 selectors = [part.strip() for part in match[1].split(",")]
-                if any(not re.fullmatch(r"[.#][a-zA-Z_][\w-]*", part) for part in selectors):
+                if any(not re.fullmatch(r"[.#][a-zA-Z_][\w-]*", part) and part not in _SVG_TAGS for part in selectors):
                     raise ValueError("unsupported SVG selector")
                 rules.append((selectors, _svg_presentation_style(match[2])))
                 position = match.end()
@@ -160,9 +164,10 @@ def _flatten_svg_styles(root: ET.Element) -> None:
         applicable = []
         for order, (selectors, attrs) in enumerate(rules):
             matching = [part for part in selectors if (part[0] == "." and part[1:] in classes)
-                        or (part[0] == "#" and part[1:] == node.get("id"))]
+                        or (part[0] == "#" and part[1:] == node.get("id"))
+                        or part == node.tag.rsplit("}", 1)[-1]]
             if matching:
-                applicable.append((max(100 if part[0] == "#" else 10 for part in matching), order, attrs))
+                applicable.append((max(100 if part[0] == "#" else 10 if part[0] == "." else 1 for part in matching), order, attrs))
         for _, _, attrs in sorted(applicable):
             node.attrib.update(attrs)
         if "style" in node.attrib:
@@ -198,6 +203,16 @@ def sanitize_image(body: bytes) -> tuple[bytes, str]:
                 raise ValueError("unsupported SVG element")
             for name, value in list(node.attrib.items()):
                 if name in {"href", "{http://www.w3.org/1999/xlink}href"}:
+                    if node.tag.rsplit("}", 1)[-1] == "image":
+                        match = re.fullmatch(r"data:image/(?:png|jpeg|webp|gif);base64,([A-Za-z0-9+/=\s]+)", value)
+                        if not match:
+                            raise ValueError("external SVG image")
+                        embedded = base64.b64decode(re.sub(r"\s", "", match[1]), validate=True)
+                        image, mime = sanitize_image(embedded)
+                        if mime != "image/webp":
+                            raise ValueError("SVG images must be raster")
+                        node.set(name, "data:image/webp;base64," + base64.b64encode(image).decode("ascii"))
+                        continue
                     if not re.fullmatch(r"#[\w-]+", value):
                         raise ValueError("external SVG reference")
                     continue

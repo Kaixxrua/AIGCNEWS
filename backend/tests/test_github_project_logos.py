@@ -464,3 +464,21 @@ def test_static_svg_shadow_is_bounded_and_animated_content_stays_rejected():
             logos.sanitize_image(f'<svg><filter><feGaussianBlur stdDeviation="{value}"/></filter></svg>'.encode())
     with pytest.raises(ValueError):
         logos.sanitize_image(b'<svg><animate attributeName="href"/></svg>')
+
+
+def test_embedded_svg_raster_is_reencoded_but_svg_and_remote_images_are_rejected():
+    buf = io.BytesIO()
+    Image.new('RGB', (10, 10), 'red').save(buf, format='PNG')
+    payload = base64.b64encode(buf.getvalue()).decode()
+    body, mime = logos.sanitize_image(f'<svg><image href="data:image/png;base64,{payload}"/></svg>'.encode())
+    assert mime == 'image/svg+xml' and b'data:image/webp;base64,' in body and b'data:image/png' not in body
+    for payload in [base64.b64encode(b'<svg><path/></svg>').decode(), 'not-valid-base64']:
+        with pytest.raises(ValueError):
+            logos.sanitize_image(f'<svg><image href="data:image/png;base64,{payload}"/></svg>'.encode())
+    with pytest.raises(ValueError):
+        logos.sanitize_image(b'<svg><image href="https://127.0.0.1/logo.png"/></svg>')
+
+
+def test_svg_element_styles_preserve_specificity():
+    body, _ = logos.sanitize_image(b'<svg><style>.brand {fill: blue} path {fill: red; isolation: isolate}</style><path class="brand"/></svg>')
+    assert b'fill="blue"' in body and b'isolation="isolate"' in body
