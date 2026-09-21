@@ -20,6 +20,7 @@ BASE = "https://raw.githubusercontent.com/acme/demo/main/docs/README.md"
 @pytest.fixture(autouse=True)
 def no_live_avatar_lookup(monkeypatch):
     monkeypatch.setattr(logos, "resolve_owner_avatars", lambda *args: {})
+    monkeypatch.setattr(logos, "_preferred_ips", {})
 
 
 def test_candidates_resolve_relative_and_html_without_picking_badges_or_sponsors():
@@ -311,3 +312,38 @@ def test_default_avatar_is_rejected_even_when_http_succeeds(monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'image'))) as client:
         with pytest.raises(ValueError, match='default avatar'):
             logos.download_logo('https://avatars.githubusercontent.com/u/1?s=128', client)
+
+
+def test_unreachable_cdn_edge_uses_another_validated_ip_and_reuses_success(monkeypatch):
+    from backend.app.services import outbound_target_policy
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver',
+                        lambda host: ['185.199.108.133', '185.199.109.133'])
+    seen = []
+    def handler(request):
+        seen.append(request.url.host)
+        assert request.extensions['sni_hostname'] == 'avatars.githubusercontent.com'
+        if request.url.host == '185.199.108.133':
+            raise httpx.ConnectTimeout('unreachable edge')
+        return httpx.Response(200, content=b'<svg><path d="M0 0h10v10z"/></svg>')
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        logos.download_logo('https://avatars.githubusercontent.com/u/123?s=128', client)
+        logos.download_logo('https://avatars.githubusercontent.com/u/456?s=128', client)
+    assert seen == ['185.199.108.133', '185.199.109.133', '185.199.109.133']
+
+
+def test_cdn_retry_rejects_dns_rebinding_and_does_not_retry_certificate_errors(monkeypatch):
+    from backend.app.services import outbound_target_policy
+    answers = iter([['185.199.108.133'], ['185.199.109.133', '127.0.0.1']])
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver', lambda host: next(answers))
+    handler = Mock(side_effect=httpx.ConnectTimeout('unreachable'))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(ValueError):
+            logos.download_logo('https://avatars.githubusercontent.com/u/123', client)
+    assert handler.call_count == 1
+    monkeypatch.setattr(outbound_target_policy, '_system_resolver',
+                        lambda host: ['185.199.108.133', '185.199.109.133'])
+    handler = Mock(side_effect=httpx.ConnectError('CERTIFICATE_VERIFY_FAILED'))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(httpx.ConnectError):
+            logos.download_logo('https://avatars.githubusercontent.com/u/123', client)
+    assert handler.call_count == 1

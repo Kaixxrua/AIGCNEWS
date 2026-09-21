@@ -24,10 +24,11 @@ from PIL import Image
 from backend.app.core.config import settings
 from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 from backend.app.services.ingestion.github_artwork_transport import ARTWORK_HOSTS, GitHubArtworkTransport
-from backend.app.services.outbound_target_policy import normalize_http_url, pin_http_target
+from backend.app.services.outbound_target_policy import normalize_http_url, pin_http_target, resolve_public_ips
 
 MAX_DOWNLOAD = 1_000_000
 MAX_STORED = 262144
+_preferred_ips: dict[str, str] = {}
 _REPO = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
 _LOGO = re.compile(r"(?:^|[^a-z])(logo|logomark|wordmark|icon)(?:[^a-z]|$)", re.I)
 _EXCLUDE = re.compile(r"badge|shield|sponsor|visitor|star-history|screenshot|open.?graph", re.I)
@@ -121,7 +122,37 @@ def download_logo(url: str, client: httpx.Client) -> tuple[bytes, str]:
     # DNS pinning uses the existing SSRF policy, including when a proxy is used.
     safe = logo_url(url, url)
     target = pin_http_target(safe, reject_mixed=True, allowed_ports={443})
-    return _download_pinned_logo(target, client)
+    host = urlsplit(safe).hostname
+    preferred = _preferred_ips.get(host)
+    addresses = None
+    if preferred and preferred != target.selected_ip:
+        addresses = resolve_public_ips(host, reject_mixed=True)
+        if preferred in addresses:
+            target = pin_http_target(safe, resolver=lambda _: [preferred], allowed_ports={443})
+    try:
+        result = _download_pinned_logo(target, client)
+        if hasattr(target, "selected_ip"):
+            _preferred_ips[host] = target.selected_ip
+        return result
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+            raise
+        error = exc
+    # Some CDN edges are unreachable from the configured egress. Retry at most
+    # two other IPv4 answers, after validating the ENTIRE DNS answer again.
+    addresses = addresses or resolve_public_ips(host, reject_mixed=True)
+    alternatives = [ip for ip in addresses if ":" not in ip and ip != target.selected_ip][:2]
+    for ip in alternatives:
+        alternate = pin_http_target(safe, resolver=lambda _, address=ip: [address], allowed_ports={443})
+        try:
+            result = _download_pinned_logo(alternate, client)
+            _preferred_ips[host] = ip
+            return result
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+            if "CERTIFICATE_VERIFY_FAILED" in str(exc):
+                raise
+            error = exc
+    raise error
 
 
 def _download_pinned_logo(target: Any, client: httpx.Client) -> tuple[bytes, str]:
