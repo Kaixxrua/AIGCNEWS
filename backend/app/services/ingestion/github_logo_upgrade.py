@@ -104,9 +104,9 @@ def upgrade_one(snapshot, images):
     return {'status': 'download_failed' if errors else 'no_logo', 'errors': errors}
 
 
-def _readme_batches(rows, api):
+def _readme_batches(rows, api, workers=4):
     batches = iter(rows[offset:offset + 25] for offset in range(0, len(rows), 25))
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         pending = {}
 
         def submit():
@@ -114,7 +114,7 @@ def _readme_batches(rows, api):
             if batch:
                 pending[pool.submit(readme_candidates, [r['full_name'] for r in batch], api)] = batch
 
-        for _ in range(4):
+        for _ in range(workers):
             submit()
         while pending:
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
@@ -153,7 +153,7 @@ def upgrade_avatars(repository, rows, report, workers=16):
             if done:
                 print(json.dumps(counts), flush=True)
 
-        for batch, snapshots in _readme_batches(rows, api):
+        for batch, snapshots in _readme_batches(rows, api, max(1, min(workers // 4, 8))):
             for row in batch:
                 futures[pool.submit(upgrade_one, snapshots[row['full_name']], images)] = row
             persist({future for future in futures if future.done()})
