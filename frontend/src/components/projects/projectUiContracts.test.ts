@@ -45,6 +45,27 @@ const githubRepo = (patch: Partial<GitHubProjectItem> = {}): GitHubProjectItem =
   ...patch,
 })
 
+describe('catalog reading and filtering', () => {
+  it('preserves the full long summary and exposes project metadata', () => {
+    const description = 'Long project description with complete details. '.repeat(25)
+    const wrapper = mount(ProjectResultCard, { ...mountOptions, props: cardProps({
+      catalogLayout: true,
+      repo: githubRepo({ description, pushed_at: '2026-09-20T12:00:00Z', hot_score: 90 }),
+    }) })
+    expect(wrapper.get('.project-card__description').text()).toBe(description.trim())
+    expect(wrapper.get('.project-card__details').attributes('open')).toBeDefined()
+    expect(wrapper.get('.project-card__stats').text()).toContain('projects.forks')
+  })
+
+  it('keeps scope and taxonomy filters usable without source tabs', async () => {
+    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: { ...filtersProps(), catalogLayout: true } })
+    expect(wrapper.find('.projects-source-tabs').exists()).toBe(false)
+    await wrapper.get('.projects-category--today').trigger('click')
+    expect(wrapper.emitted('selectScope')?.[0]).toEqual(['today'])
+    expect(wrapper.find('.projects-language-filter').exists()).toBe(false)
+  })
+})
+
 const cardProps = (patch: Record<string, unknown> = {}) => ({
   repo: githubRepo(),
   index: 0,

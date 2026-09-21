@@ -447,7 +447,7 @@ onBeforeUnmount(stopViewReads)
 </script>
 
 <template>
-  <div ref="pageEl" class="projects-page">
+  <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView }">
     <section class="projects-hero glass-card" :class="{ 'projects-hero--website': isWebsiteOnlyView }">
       <div class="projects-hero__text">
         <p class="projects-kicker">{{ projectsHeroKicker }}</p>
@@ -498,6 +498,8 @@ onBeforeUnmount(stopViewReads)
       :selected-subcategory="selectedSubcategory"
       :personal-tags="personalTags"
       :selected-tag="selectedTag"
+      :catalog-layout="!isPersonalView"
+      @select-language="(value) => value ? handleChipClick({ type: 'language', value, label: value }) : clearLanguageFilter()"
       @update:sort="sortIsExplicit = true"
       @change-source="changeSource"
       @clear-language="clearLanguageFilter"
@@ -600,7 +602,7 @@ onBeforeUnmount(stopViewReads)
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">
       <div
-        v-for="(column, columnIndex) in masonryColumns"
+        v-for="(column, columnIndex) in (isPersonalView ? masonryColumns : [projects])"
         :key="columnIndex"
         class="projects-col"
       >
@@ -608,6 +610,7 @@ onBeforeUnmount(stopViewReads)
           v-for="repo in column"
           :key="projectKey(repo)"
           :repo="repo"
+          :catalog-layout="!isPersonalView"
           :index="ordinalOf(repo)"
           :is-personal-view="isPersonalView"
           :can-favorite="canFavorite(repo)"
@@ -1085,3 +1088,5 @@ onBeforeUnmount(stopViewReads)
   .projects-page *, .projects-page *::before, .projects-page *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
 </style>
+
+<style src="@/components/projects/projectCatalog.css"></style>

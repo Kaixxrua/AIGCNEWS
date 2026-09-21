@@ -531,6 +531,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'projects.observedAt': ' · 采集于 {date}',
   'projects.yesterday': '昨天',
   'projects.todayLabel': '今天',
+  'projects.today': '今日热榜',
   'projects.filterTag': '标签：{tag}',
   'projects.filterLanguage': '语言：{language}',
   'projects.noTagFilter': '未筛选标签',

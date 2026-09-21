@@ -282,6 +282,7 @@ describe('GitHubProjectsView controller wiring', () => {
   })
 
   it('does not render empty masonry columns when the desktop capacity exceeds results', async () => {
+    controller().isPersonalView.value = true
     const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1400 })
     class DesktopResizeObserver {
@@ -311,6 +312,7 @@ describe('GitHubProjectsView controller wiring', () => {
   })
 
   it('keeps sparse masonry cards at the dense-row column width instead of stretching', async () => {
+    controller().isPersonalView.value = true
     const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1400 })
     class DesktopResizeObserver {
@@ -637,7 +639,8 @@ describe('GitHubProjectsView collection navigation', () => {
     const wrapper = await mountView()
     const filters = wrapper.findComponent(ProjectFiltersPanel)
     expect(filters.props('sourceOptions').map((option) => option.value)).toEqual(['all', 'website'])
-    await wrapper.findAll('.projects-source-tab')[1]!.trigger('click')
+    filters.vm.$emit('changeSource', 'website')
+    await nextTick()
     expect(filters.props('source')).toBe('website')
     expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
     expect(wrapper.find('.website-tabs a[href="/websites"]').exists()).toBe(true)
@@ -652,8 +655,8 @@ describe('GitHubProjectsView collection navigation', () => {
   it('keeps the GitHub source active without changing its current project scope', async () => {
     const wrapper = await mountView()
     const beforeScope = wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')
-    expect(wrapper.findAll('.projects-source-tab')[0]!.attributes('aria-pressed')).toBe('true')
-    await wrapper.findAll('.projects-source-tab')[0]!.trigger('click')
+    expect(wrapper.findAll('.projects-source-tab')).toHaveLength(0)
+    expect(wrapper.classes()).toContain('projects-page--catalog')
     expect(wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')).toBe(beforeScope)
   })
 })

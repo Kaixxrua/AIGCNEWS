@@ -30,6 +30,7 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
 const route = useRoute()
+const editorialLayout = computed(() => route.path === '/' || (route.path === '/projects' && route.query.source !== 'website'))
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
@@ -71,12 +72,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': route.path === '/' }">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout }">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
     <!-- ═══ 居中悬浮画板（暖白纸质毛玻璃主面板） ═══ -->
-    <div class="main-canvas" :class="{ 'main-canvas--editorial': route.path === '/' }">
+    <div class="main-canvas" :class="{ 'main-canvas--editorial': editorialLayout }">
       <!-- 顶部品牌条：左侧报头信息 + 右侧用户信息，故障特效字标与工具图标居中成组 -->
       <div
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
@@ -150,7 +151,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
     <AccountSettingsDialog v-model="accountSettingsOpen" />
 
-    <LayoutFooter :brand-name="brandName" :editorial="route.path === '/'" />
+    <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" />
 
   </div>
 </template>

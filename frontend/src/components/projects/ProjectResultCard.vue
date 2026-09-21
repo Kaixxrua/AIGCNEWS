@@ -33,6 +33,7 @@ const { locale, t } = useI18n()
 const isMobile = useMediaQuery('(max-width: 767px)')
 
 const props = defineProps<{
+  catalogLayout?: boolean
   repo: GitHubProjectItem
   index: number
   isPersonalView: boolean
@@ -87,7 +88,7 @@ const description = computed(() => projectDescription(
 <template>
   <article
     class="project-card"
-    :class="{ 'project-card--recommended': repo.is_recommended, 'project-card--not-found': !isWebsite(repo) && repo.availability_status === 'not_found' }"
+    :class="{ 'project-card--catalog': catalogLayout, 'project-card--recommended': repo.is_recommended, 'project-card--not-found': !isWebsite(repo) && repo.availability_status === 'not_found' }"
     :style="{ animationDelay: `${Math.min(index, 12) * 36}ms` }"
   >
     <div class="project-card__body">
@@ -133,7 +134,7 @@ const description = computed(() => projectDescription(
         {{ description }}
       </p>
 
-      <details class="project-card__details" :open="!isMobile">
+      <details class="project-card__details" :open="catalogLayout || !isMobile">
         <summary>{{ t('projects.mobileDetails') }}</summary>
         <div class="project-card__metadata">
       <div class="project-card__tags" :aria-label="t('projects.categoryTags')">

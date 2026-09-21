@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
+import { Blocks, Bot, BrainCircuit, ChartNoAxesCombined, Code2, Database, FileText, Flame, FolderKanban, Image, LockKeyhole, Sparkles, TerminalSquare } from 'lucide-vue-next'
 import type { AppLocale } from '@/i18n'
 import { localizedCategoryName, localizedPersonalTagLabel } from '@/features/projects/projectPresentation'
 import type {
@@ -16,7 +17,24 @@ type SourceOption = { value: ProjectViewSource; label: string; hint: string; aut
 const { locale, t } = useI18n()
 const label = (item: GitHubProjectCategory | undefined) => localizedCategoryName(item, locale.value as AppLocale)
 
+const categoryIcons = {
+  productivity_tools: FileText,
+  coding_tools: TerminalSquare,
+  agents_automation: Bot,
+  ai_apps: Blocks,
+  learning_resources: FileText,
+  rag_knowledge: Database,
+  multimodal_tools: Image,
+  models_infra: BrainCircuit,
+  data_eval_training: ChartNoAxesCombined,
+  security_privacy: LockKeyhole,
+  other: FolderKanban,
+} as const
+
+const categoryIcon = (slug: string) => categoryIcons[slug as keyof typeof categoryIcons] || Code2
+
 defineProps<{
+  catalogLayout?: boolean
   sourceOptions: SourceOption[]
   source: ProjectViewSource
   requiresPersonalLogin: boolean
@@ -45,6 +63,7 @@ const emit = defineEmits<{
   'update:sort': [value: GitHubProjectSort]
   changeSource: [source: ProjectViewSource]
   clearLanguage: []
+  selectLanguage: [value: string]
   selectScope: [scope: ProjectScope]
   selectCategory: [slug: string]
   selectSubcategory: [slug: string]
@@ -55,9 +74,9 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 </script>
 
 <template>
-  <section class="projects-toolbar glass-card">
+  <section class="projects-toolbar glass-card" :class="{ 'projects-toolbar--catalog': catalogLayout }">
     <slot name="source-tabs">
-    <div class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
+    <div v-if="!catalogLayout" class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
       <button v-for="item in sourceOptions" :key="item.value" type="button" class="projects-source-tab" :class="source === item.value && (!item.scope || selectedScope === item.scope) ? 'projects-source-tab--active' : ''" :aria-pressed="source === item.value && (!item.scope || selectedScope === item.scope)" :title="item.hint" @click="emit('changeSource', item.value)">
         <strong>{{ item.label }}</strong>
         <small>{{ item.hint }}</small>
@@ -97,17 +116,21 @@ const isMobile = useMediaQuery('(max-width: 767px)')
   </section>
 
   <details v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :open="!isMobile" :aria-label="t('projects.categoryFilter')">
-    <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'today' ? label(todayScope) || t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
+    <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'today' ? t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
     <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
-      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><span>{{ label(todayScope) || t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
-      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
-      <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
+      <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><Flame v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><Blocks v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><Sparkles v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
+      <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><component :is="categoryIcon(category.slug)" v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
     </div>
     <div v-if="visibleSubcategories.length" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
       <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: label(activeCategory) || '' }) }}</span>
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
       <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ label(subcategory) }}</span><small>{{ subcategory.count }}</small></button>
+    </div>
+    <div v-if="catalogLayout && visibleSubcategories.length" class="projects-subcategory-index" aria-label="二级分类">
+      <span class="projects-subcategory-index__title">{{ label(activeCategory) }}</span>
+      <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" :class="selectedSubcategory === subcategory.slug ? 'is-active' : ''" @click="emit('selectSubcategory', subcategory.slug)">{{ label(subcategory) }}</button>
     </div>
   </details>
 
