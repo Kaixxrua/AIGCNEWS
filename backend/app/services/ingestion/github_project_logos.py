@@ -256,7 +256,7 @@ def refresh_project_logos(
     avatars: dict[str, str] = {}
     with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as api, httpx.Client(
         timeout=15, follow_redirects=False, trust_env=False,
-        transport=GitHubArtworkTransport(proxy=settings.outbound_proxy or None),
+        transport=GitHubArtworkTransport(proxy=settings.github_artwork_proxy or settings.outbound_proxy or None),
     ) as images, ThreadPoolExecutor(max_workers=max(1, min(workers, 32))) as pool:
         def collect(row):
             if time.monotonic() >= deadline:

@@ -66,3 +66,16 @@ def test_anonymous_installation_does_not_attempt_authenticated_graphql(monkeypat
     client = Mock()
     assert logos.resolve_owner_avatars(['acme'], client) == {}
     client.post.assert_not_called()
+
+
+def test_image_proxy_override_does_not_change_general_api_client(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    monkeypatch.setattr(logos, 'settings', SimpleNamespace(
+        github_artwork_proxy='socks5://artwork.example:1080', outbound_proxy='http://general.example:3128'))
+    factory = Mock(return_value=httpx.MockTransport(lambda request: httpx.Response(200)))
+    monkeypatch.setattr(logos, 'GitHubArtworkTransport', factory)
+    repository = Mock()
+    repository.pending.return_value = []
+    logos.refresh_project_logos(repository)
+    factory.assert_called_once_with(proxy='socks5://artwork.example:1080')
