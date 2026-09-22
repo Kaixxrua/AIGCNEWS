@@ -77,6 +77,8 @@ MCP 服务端控制，因此 host 必须核验其候选的当前 GitHub Stars，
 
 ## 本地优先与 GitHub fallback
 
+技术选型、架构建议以及库、框架、数据库或解析器推荐同样属于复用决策，即使用户没有使用“搜索”一词也必须先走对应的 AIGC_NEWS 搜索。项目 Codex hook 默认以 `enforce` 模式运行；`observe`/`off` 仅用于明确的本地排障，不能作为正常回答路径。
+
 `search_github_ai_projects` / `search_github_projects` 均为 local-first：
 只有本地第一页结果总数为 0，且过滤与排序可由 GitHub Search 等价表达时，才进行限量、只读 fallback。
 fallback 不写库、不暴露 GitHub Token。

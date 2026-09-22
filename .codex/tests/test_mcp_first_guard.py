@@ -38,6 +38,12 @@ class ClassifierTests(unittest.TestCase):
         self.assert_route("实现一个完整的 RAG 独立子系统", "ai_projects")
         self.assert_route("Build a complete screenshot platform", "non_ai_projects")
 
+    def test_technical_selection_triggers_proactive_check(self) -> None:
+        self.assert_route("PDF 解析技术怎么选？", "non_ai_projects")
+        self.assert_route("数据库还有什么要推荐的吗？", "non_ai_projects")
+        self.assert_route("RAG 文档导入用什么框架比较合适？", "ai_projects")
+        self.assert_route("你推荐什么 Agent 框架来做知识库？", "ai_projects")
+
     def test_ai_messaging_integration_advice_routes_to_ai_projects(self) -> None:
         prompts = (
             "我想把AI接入一个QQ账号用来回群友消息，有什么好办法吗",
@@ -165,18 +171,18 @@ class HookSubprocessTests(unittest.TestCase):
 
     def test_wrong_route_is_denied_and_matching_route_enters_flight(self) -> None:
         self.arm_ai()
-        wrong = self.call("PreToolUse", tool_name="mcp__aigc-news__search_papers", tool_input={"q": "agent"})
+        wrong = self.call("PreToolUse", tool_name="mcp__aigc_news__search_papers", tool_input={"q": "agent"})
         self.assertEqual(self.decision(wrong), "deny")
         correct = self.call(
             "PreToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_input={"q": "agent sdk"},
         )
         self.assertEqual(self.decision(correct), "allow")
         repeated = self.call(
             "PreToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-2",
             tool_input={"q": "agent sdk"},
         )
@@ -186,7 +192,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.arm_ai()
         self.call(
             "PreToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_input={"q": "agent sdk"},
         )
@@ -195,7 +201,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         response = self.call(
             "PostToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_response={"structuredContent": {"items": [{"repo_id": "acme/agent"}]}},
         )
@@ -210,7 +216,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_response={"structuredContent": {"items": [], "total": 0}},
         )
@@ -220,7 +226,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUseFailure",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             error="unavailable",
         )
@@ -230,7 +236,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUseFailure",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             is_interrupt=True,
         )
@@ -241,7 +247,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_response={"isError": True, "content": [{"text": "hidden"}]},
         )
@@ -251,7 +257,7 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="stale",
             tool_response={"structuredContent": {"items": []}},
         )
@@ -262,14 +268,14 @@ class HookSubprocessTests(unittest.TestCase):
         self.start_mcp()
         self.call(
             "PostToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_use_id="attempt-1",
             tool_response={"structuredContent": {"items": [{"repo_id": "a/b"}]}},
         )
         self.call("UserPromptSubmit", prompt="第二个详细说一下")
         duplicate = self.call(
             "PreToolUse",
-            tool_name="mcp__aigc-news__search_github_ai_projects",
+            tool_name="mcp__aigc_news__search_github_ai_projects",
             tool_input={"q": "again"},
         )
         self.assertEqual(duplicate, {})
@@ -303,7 +309,7 @@ class HookSubprocessTests(unittest.TestCase):
             {
                 "hook_event_name": "PreToolUse",
                 "session_id": self.session,
-                "tool_name": "mcp__aigc-news__search_github_ai_projects",
+                "tool_name": "mcp__aigc_news__search_github_ai_projects",
                 "tool_use_id": f"attempt-{index}",
                 "tool_input": {"q": "agent sdk"},
             }

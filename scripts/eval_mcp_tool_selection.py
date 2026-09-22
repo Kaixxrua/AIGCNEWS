@@ -15,68 +15,68 @@ EXACT_PROMPT = "帮我找一下有没有github开源的哪个Windows的截图软
 PROBES = {
     "exact": {
         "prompt": EXACT_PROMPT,
-        "expected": "mcp__aigc-news__search_github_projects",
+        "expected": "mcp__aigc_news__search_github_projects",
         "default_trials": 10,
     },
     "generic": {
         "prompt": "帮我找一个 GitHub 开源的 Windows 剪贴板管理软件，最好支持历史搜索和图片。",
-        "expected": "mcp__aigc-news__search_github_projects",
+        "expected": "mcp__aigc_news__search_github_projects",
         "default_trials": 5,
     },
     "ai": {
         "prompt": "帮我找几个 GitHub 开源的本地 RAG Web UI 项目。",
-        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "expected": "mcp__aigc_news__search_github_ai_projects",
         "default_trials": 5,
     },
     "paper": {
         "prompt": "帮我找几篇关于 RAG 检索增强生成的论文。",
-        "expected": "mcp__aigc-news__search_papers",
+        "expected": "mcp__aigc_news__search_papers",
         "default_trials": 5,
     },
     "indexed_news": {
         "prompt": "从 AIGC_NEWS 已索引内容里搜索最近关于模型推理的新闻和跨来源资料。",
-        "expected": "mcp__aigc-news__search_documents",
+        "expected": "mcp__aigc_news__search_documents",
         "default_trials": 5,
     },
     "agent_learning": {
         "prompt": "我想系统学习 AI Agent 和 MCP，请从已有资源里找一些教程、示例和学习材料。",
-        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "expected": "mcp__aigc_news__search_github_ai_projects",
         "default_trials": 5,
     },
     "agent_learning_exact": {
         "prompt": "我想要学习Agent相关的内容，帮我找一点资料进行学习",
-        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "expected": "mcp__aigc_news__search_github_ai_projects",
         "default_trials": 5,
     },
     "agent_academic": {
         "prompt": "请找几篇关于 AI Agent memory 和 planning 的论文或综述，并给出引用和实验研究方向。",
-        "expected": "mcp__aigc-news__search_papers",
+        "expected": "mcp__aigc_news__search_papers",
         "default_trials": 5,
     },
     "agent_mixed_implementation": {
         "prompt": "以 Agent 示例项目、教程和 SDK 实现为主，也可以附几篇论文。",
-        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "expected": "mcp__aigc_news__search_github_ai_projects",
         "default_trials": 5,
     },
     "agent_mixed_academic": {
         "prompt": "以 Agent 论文、survey、引用和实验结果为主，项目只作为补充。",
-        "expected": "mcp__aigc-news__search_papers",
+        "expected": "mcp__aigc_news__search_papers",
         "default_trials": 5,
     },
     "agent_projects": {
         "prompt": "帮我找几个 GitHub 开源的 Agent/MCP 完整项目，用来学习工具调用和工作流编排。",
-        "expected": "mcp__aigc-news__search_github_ai_projects",
+        "expected": "mcp__aigc_news__search_github_ai_projects",
         "default_trials": 5,
     },
 }
 MCP_TOOLS = [
-    "mcp__aigc-news__search_papers",
-    "mcp__aigc-news__search_documents",
-    "mcp__aigc-news__get_paper_detail",
-    "mcp__aigc-news__get_top_items",
-    "mcp__aigc-news__search_github_projects",
-    "mcp__aigc-news__search_github_ai_projects",
-    "mcp__aigc-news__get_project_categories",
+    "mcp__aigc_news__search_papers",
+    "mcp__aigc_news__search_documents",
+    "mcp__aigc_news__get_paper_detail",
+    "mcp__aigc_news__get_top_items",
+    "mcp__aigc_news__search_github_projects",
+    "mcp__aigc_news__search_github_ai_projects",
+    "mcp__aigc_news__get_project_categories",
 ]
 HOST_TOOLS = ["Agent", "WebSearch", "WebFetch", "Bash", "Skill", "multi_tool_use.parallel"]
 
@@ -246,10 +246,10 @@ def run_trial(
         if name in HOST_TOOLS and expected_index is not None and index > expected_index
     ]
     competing_search = (
-        "mcp__aigc-news__search_papers"
-        if expected == "mcp__aigc-news__search_github_ai_projects"
-        else "mcp__aigc-news__search_github_ai_projects"
-        if expected == "mcp__aigc-news__search_papers"
+        "mcp__aigc_news__search_papers"
+        if expected == "mcp__aigc_news__search_github_ai_projects"
+        else "mcp__aigc_news__search_github_ai_projects"
+        if expected == "mcp__aigc_news__search_papers"
         else ""
     )
     passed = (
