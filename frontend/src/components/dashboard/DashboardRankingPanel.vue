@@ -222,4 +222,19 @@ const boardDateHint = computed(() => {
  .ranking-row:not(.ranking-row--featured) .ranking-meta { grid-template-columns:72px 75px 76px;gap:8px; }
  .ranking-tab[aria-selected='true'] { padding-inline:18px; }
 }
+
+@media (min-width:1024px) and (max-height:900px) {
+  .editorial-list { grid-template-rows:110px repeat(7,minmax(36px,1fr)); }
+  .editorial-list .ranking-row--featured .ranking-link { height:110px; min-height:110px; padding-top:28px; }
+  .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width:46px; height:46px; flex-basis:46px; }
+  .editorial-list > .ranking-row:not(.ranking-row--featured) { height:39px; }
+  .editorial-list .ranking-link { padding-block:3px; }
+}
+
+@media (min-width:1024px) and (max-height:760px) {
+  .editorial-list { grid-template-rows:100px repeat(7,minmax(32px,1fr)); }
+  .editorial-list .ranking-row--featured .ranking-link { height:100px; min-height:100px; padding-top:25px; }
+  .editorial-list .ranking-row--featured :deep(.ranking-avatar) { width:42px; height:42px; flex-basis:42px; }
+  .editorial-list > .ranking-row:not(.ranking-row--featured) { height:35px; }
+}
 </style>
