@@ -162,7 +162,7 @@ def main() -> int:
 
     rows = []
     for pair in PAIRS:
-        mcp_tool = f"mcp__aigc-news__{pair['mcp_tool']}"
+        mcp_tool = f"mcp__aigc_news__{pair['mcp_tool']}"
         mcp_prompt = (
             f"Call the tool {mcp_tool} exactly once with these arguments: "
             f"{json.dumps(pair['mcp_args'], ensure_ascii=False)}. Do not call any other tool. {ANSWER_RULE}"

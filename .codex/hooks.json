@@ -14,7 +14,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^(Agent|WebSearch|WebFetch|web__run|Bash|Skill|multi_tool_use\\..*|Task.*|Batch.*|mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "matcher": "^(Agent|WebSearch|WebFetch|web__run|Bash|Skill|multi_tool_use\\..*|Task.*|Batch.*|mcp__aigc_news__search_papers|mcp__aigc_news__search_documents|mcp__aigc_news__search_github_projects|mcp__aigc_news__search_github_ai_projects|mcp__aigc_news__get_top_items|mcp__aigc_news__get_project_categories|mcp__aigc_news__search_my_project_favorites)$",
         "hooks": [
           {
             "type": "command",
@@ -27,7 +27,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "^(mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "matcher": "^(mcp__aigc_news__search_papers|mcp__aigc_news__search_documents|mcp__aigc_news__search_github_projects|mcp__aigc_news__search_github_ai_projects|mcp__aigc_news__get_top_items|mcp__aigc_news__get_project_categories|mcp__aigc_news__search_my_project_favorites)$",
         "hooks": [
           {
             "type": "command",
@@ -40,7 +40,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "^(mcp__aigc-news__search_papers|mcp__aigc-news__search_documents|mcp__aigc-news__search_github_projects|mcp__aigc-news__search_github_ai_projects|mcp__aigc-news__get_top_items|mcp__aigc-news__get_project_categories|mcp__aigc-news__search_my_project_favorites)$",
+        "matcher": "^(mcp__aigc_news__search_papers|mcp__aigc_news__search_documents|mcp__aigc_news__search_github_projects|mcp__aigc_news__search_github_ai_projects|mcp__aigc_news__get_top_items|mcp__aigc_news__get_project_categories|mcp__aigc_news__search_my_project_favorites)$",
         "hooks": [
           {
             "type": "command",

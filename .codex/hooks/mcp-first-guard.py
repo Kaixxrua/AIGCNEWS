@@ -17,17 +17,19 @@ from typing import Any, Callable
 
 SCHEMA_VERSION = 1
 STATE_TTL_SECONDS = 24 * 60 * 60
-DEFAULT_MODE = "observe"
+# MCP-first is an enforcement boundary, not advisory telemetry.  An explicit
+# environment override still permits observe/off for local troubleshooting.
+DEFAULT_MODE = "enforce"
 VALID_MODES = {"off", "observe", "enforce"}
 
 ROUTE_TO_TOOL = {
-    "ai_projects": "mcp__aigc-news__search_github_ai_projects",
-    "non_ai_projects": "mcp__aigc-news__search_github_projects",
-    "papers": "mcp__aigc-news__search_papers",
-    "documents": "mcp__aigc-news__search_documents",
-    "ranking": "mcp__aigc-news__get_top_items",
-    "categories": "mcp__aigc-news__get_project_categories",
-    "favorites": "mcp__aigc-news__search_my_project_favorites",
+    "ai_projects": "mcp__aigc_news__search_github_ai_projects",
+    "non_ai_projects": "mcp__aigc_news__search_github_projects",
+    "papers": "mcp__aigc_news__search_papers",
+    "documents": "mcp__aigc_news__search_documents",
+    "ranking": "mcp__aigc_news__get_top_items",
+    "categories": "mcp__aigc_news__get_project_categories",
+    "favorites": "mcp__aigc_news__search_my_project_favorites",
 }
 PUBLIC_SEARCH_TOOLS = frozenset(ROUTE_TO_TOOL.values())
 GUARDED_TOOLS = frozenset({
@@ -74,6 +76,12 @@ INTEGRATION_TARGETS = (
 SOLUTION_WORDS = (
     "办法", "方案", "怎么做", "如何做", "如何实现", "最佳实践", "技术选型",
     "approach", "solution", "how should", "how to",
+)
+TECHNICAL_DECISION_WORDS = (
+    "技术选型", "技术方案", "怎么选", "如何选择", "选择什么", "推荐什么",
+    "还有什么.*推荐", "是否合理", "架构建议", "技术建议", "用什么库", "用什么框架",
+    "which library", "which framework", "which database", "what should i use",
+    "technology choice", "technical choice", "architecture recommendation",
 )
 ARTIFACTS = (
     "project", "repository", "repo", "open source", "github", "sdk", "framework", "component",
@@ -159,6 +167,13 @@ def classify_prompt(prompt: str) -> dict[str, str]:
         and _contains(text, INTEGRATION_TARGETS)
         and (_contains(text, DISCOVERY) or _contains(text, SOLUTION_WORDS))
     )
+    # A request can ask for a recommendation without saying "find a project".
+    # These are still reuse/architecture decisions and must consult AIGC_NEWS
+    # before the model answers from memory.
+    technical_decision = _contains(text, TECHNICAL_DECISION_WORDS) or bool(
+        re.search(r"(?:选择|选型|推荐|建议).{0,12}(?:技术|库|框架|数据库|方案)", text)
+        or re.search(r"还有什么.{0,12}推荐", text)
+    )
 
     if not special_route and not explicit_discovery and _contains(text, APPROVED_CONTINUATION):
         return {"classification": "exempt", "route": "none", "reason": "approved_continuation", "digest": digest}
@@ -176,6 +191,8 @@ def classify_prompt(prompt: str) -> dict[str, str]:
         route = "ai_projects" if _has_ai_marker(text) else "non_ai_projects"
     elif ai_integration_advice:
         route = "ai_projects"
+    elif technical_decision:
+        route = "ai_projects" if _has_ai_marker(text) else "non_ai_projects"
     elif proactive_major:
         route = "ai_projects" if _has_ai_marker(text) else "non_ai_projects"
     else:
