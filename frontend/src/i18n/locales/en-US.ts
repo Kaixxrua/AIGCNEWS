@@ -189,6 +189,7 @@ const enUSCatalog = {
   'dashboard.sources.x': 'X Posts',
   'dashboard.sources.xCaption': 'Posts',
   'dashboard.liveDraftShort': 'Preliminary · Collecting',
+  'dashboard.sortedByHeat': 'Sorted by heat',
   'dashboard.editorial.title': 'Today in AI',
   'dashboard.editorial.digestDescription': 'The AI developments worth your attention, delivered daily.',
   'dashboard.editorial.digestTitle': 'Daily AI Brief',

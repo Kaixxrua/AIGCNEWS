@@ -199,6 +199,21 @@ describe('enriched GitHub ranking', () => {
     expect(panel.get('.ranking-summary').text()).toBe('Enriched English')
     expect(panel.text()).not.toContain('Raw README')
   })
+  it('names heat as the GitHub sort key and leads each row with it', async () => {
+    const panel = await render()
+    expect(panel.find('.ranking-sort').exists()).toBe(false)
+    await panel.setProps({ activeTab: 'github', tabList: [] })
+    expect(panel.find('.ranking-sort').exists()).toBe(false)
+    await panel.setProps({ tabList: [{ source: 'github', title: 'owner/repo', hot_score: 87.25,
+      daily_star_growth: 514, daily_growth_available: true, stars: 1200 }] })
+    const sort = panel.get('.ranking-toolbar .ranking-sort')
+    expect(sort.text()).toBe('按热度排序')
+    expect(sort.attributes('title')).toBe(i18n.global.t('projects.hotScoreTitle'))
+    expect(panel.get('.ranking-meta').element.firstElementChild?.classList.contains('ranking-heat')).toBe(true)
+    expect(panel.get('.ranking-heat').text()).toContain('87.3')
+    await panel.setProps({ activeTab: 'arxiv', tabList: [{ source: 'arxiv', title: 'Paper' }] })
+    expect(panel.find('.ranking-sort').exists()).toBe(false)
+  })
   it('does not substitute raw README or invent unavailable growth', async () => {
     const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README' })
     await panel.setProps({ activeTab: 'github' })

@@ -632,6 +632,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'dashboard.sources.x': 'X 推文动态',
   'dashboard.sources.xCaption': '推文动态',
   'dashboard.liveDraftShort': '初榜 · 采集中',
+  'dashboard.sortedByHeat': '按热度排序',
   'dashboard.editorial.title': '今日 AI 动态',
   'dashboard.editorial.digestDescription': '每天精选 AI 动态，让值得关注的进展直达你。',
   'dashboard.editorial.digestTitle': '每日 AI 简报',

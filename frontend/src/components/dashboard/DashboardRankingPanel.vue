@@ -7,7 +7,7 @@ import DashboardTweetPreview from './DashboardTweetPreview.vue'
 import { displayTweetText } from '@/features/xboard/xBoardViewModel'
 import RankingAvatar from './RankingAvatar.vue'
 import ProjectHeat from '@/components/projects/ProjectHeat.vue'
-import { ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
+import { ArrowDownWideNarrow, ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
 import {
   TABS,
   aiScoreDisplay,
@@ -78,6 +78,7 @@ const boardDateHint = computed(() => {
       </div>
       <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
+        <span v-if="activeTab === 'github' && tabList.length" class="ranking-sort" :title="t('projects.hotScoreTitle')"><ArrowDownWideNarrow :size="15" aria-hidden="true" />{{ t('dashboard.sortedByHeat') }}</span>
         <span class="ranking-live-status" role="status" :title="tabStatus?.isEmbargoed ? tabStatusHint || undefined : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft')">
           <CheckCircle2 v-if="tabStatus?.isFinalized ?? isFinalized" :size="12" /><span v-else class="live-dot" />
           {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.tabFinalized' : 'dashboard.liveDraftShort') }}
@@ -105,7 +106,7 @@ const boardDateHint = computed(() => {
             <div class="ranking-body min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="ranking-title min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="ranking-badges flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border ranking-source-badge" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
               <p v-if="hasDistinctSummary(doc)" :title="summary(doc)" class="ranking-summary">{{ summary(doc) }}</p>
-              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span></div>
+              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span></div>
             </div>
             <ArrowUpRight v-if="doc.url" class="ranking-arrow" :size="18" />
           </a>
@@ -128,7 +129,8 @@ const boardDateHint = computed(() => {
 .ranking-tab[aria-selected='true']::after { content:'';position:absolute;inset:0;z-index:-1;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--acid);transform:skewX(-10deg); }
 .ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--ink);outline-offset:-3px; }
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
-.ranking-source-status { padding:0 9px;flex-shrink:0; }
+.ranking-source-status { gap:14px;padding:0 9px;flex-shrink:0; }
+.ranking-sort { display:flex;align-items:center;gap:5px;color:var(--ink-secondary);font-size:13px;font-weight:650;white-space:nowrap;cursor:help; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
 .live-dot { flex-shrink:0;width:8px;height:8px;margin:3px;background:var(--live-dot);border-radius:50%;box-shadow:0 0 0 3px var(--live-dot-halo); }
 .ranking-list { flex:1;min-height:0;overflow:auto; }
@@ -143,20 +145,21 @@ const boardDateHint = computed(() => {
 .ranking-summary { display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin:1px 0 0;color:var(--ink-secondary);font-size:13px;line-height:1.5; }
 .ranking-badges { display:none; }
 .ranking-meta { display:flex;align-items:center;gap:14px;margin:0;flex-wrap:nowrap; }
-.ranking-growth { color:var(--growth-ink);font-size:14px;font-weight:750;white-space:nowrap; }
-.ranking-heat { white-space:nowrap; }
-.ranking-score { display:flex;align-items:center;gap:6px;color:var(--ink);font-size:14px;font-weight:750;white-space:nowrap; }
-.ranking-score svg { width:21px;height:21px; }
+.ranking-growth { color:var(--growth-ink);font-size:13px;font-weight:650;white-space:nowrap; }
+.ranking-row .ranking-heat { gap:4px;font-size:15px;font-weight:800;white-space:nowrap; }
+.ranking-heat :deep(svg) { width:15px;height:15px; }
+.ranking-score { display:flex;align-items:center;gap:6px;color:var(--ink-secondary);font-size:13px;font-weight:650;white-space:nowrap; }
+.ranking-score svg { width:17px;height:17px; }
 .ranking-arrow { flex-shrink:0;width:23px;height:23px;color:var(--ink-muted); }
 
 /* Rows 4–10: copy on the left, one aligned metric grid on the right. */
 .ranking-row:not(.ranking-row--featured) { grid-column:1/-1; }
 .ranking-row:not(.ranking-row--featured) .ranking-body { display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;align-items:center; }
 .ranking-row:not(.ranking-row--featured) .ranking-summary { grid-column:1;grid-row:2; }
-.ranking-row:not(.ranking-row--featured) .ranking-meta { grid-column:2;grid-row:1/3;display:grid;grid-template-columns:86px 82px 90px;gap:12px;align-items:center;font-variant-numeric:tabular-nums; }
-.ranking-row:not(.ranking-row--featured) .ranking-growth { grid-column:1;text-align:right; }
-.ranking-row:not(.ranking-row--featured) .ranking-heat { grid-column:2;justify-self:end; }
-.ranking-row:not(.ranking-row--featured) .ranking-score { grid-column:3;display:grid;grid-template-columns:21px 1fr;gap:6px;text-align:right; }
+.ranking-row:not(.ranking-row--featured) .ranking-meta { grid-column:2;grid-row:1/3;display:grid;grid-template-columns:100px 78px 80px;gap:12px;align-items:center;font-variant-numeric:tabular-nums; }
+.ranking-row:not(.ranking-row--featured) .ranking-heat { grid-column:1;justify-self:start; }
+.ranking-row:not(.ranking-row--featured) .ranking-growth { grid-column:2;text-align:right; }
+.ranking-row:not(.ranking-row--featured) .ranking-score { grid-column:3;display:grid;grid-template-columns:17px 1fr;gap:6px;text-align:right; }
 
 /* Podium cards 1–3: gold, cool silver, copper — hue carries rank, ink stays readable. */
 .ranking-row--featured { position:relative;isolation:isolate;border:2px solid transparent;border-radius:6px;background:linear-gradient(135deg,color-mix(in srgb,var(--podium) 23%,var(--paper-raised)),var(--paper-raised) 60%,color-mix(in srgb,var(--podium) 25%,var(--paper-raised))); }
@@ -177,9 +180,10 @@ const boardDateHint = computed(() => {
 .ranking-row--featured .ranking-title { font-size:16px;letter-spacing:-.035em; }
 .ranking-row--featured .ranking-summary { -webkit-line-clamp:2;margin:6px 0 11px;font-size:13px;line-height:1.55; }
 .ranking-row--featured .ranking-meta { gap:17px; }
-.ranking-row--featured .ranking-growth { font-size:16px; }
-.ranking-row--featured .ranking-heat { position:absolute;top:17px;right:44px; }
-.ranking-row--featured .ranking-score { font-size:20px; }
+.ranking-row--featured .ranking-growth { font-size:15px; }
+.ranking-row--featured .ranking-heat { position:absolute;top:14px;right:44px;font-size:19px; }
+.ranking-row--featured .ranking-heat :deep(svg) { width:18px;height:18px; }
+.ranking-row--featured .ranking-score { font-size:16px; }
 .ranking-row--featured .ranking-arrow { position:absolute;top:16px;right:12px;color:var(--podium-ink); }
 
 :root[data-theme='dark'] .ranking-row--featured { background:linear-gradient(135deg,color-mix(in srgb,var(--podium) 5%,var(--paper-raised)),var(--paper-raised)); }
@@ -195,17 +199,21 @@ const boardDateHint = computed(() => {
   .ranking-tab[aria-selected='true'] { padding-inline:18px;font-size:19px; }
   .ranking-tab-icon { width:21px;height:21px; }
   .ranking-live-status { padding:5px 7px;font-size:11px; }
+  .ranking-source-status { gap:10px; }
+  .ranking-sort { font-size:12px; }
   .ranking-link { gap:9px;padding-inline:9px; }
   .ranking-number { flex-basis:30px; }
   .ranking-summary { font-size:11px; }
   .ranking-meta { gap:9px; }
   .ranking-growth,.ranking-score { font-size:12px; }
-  .ranking-row:not(.ranking-row--featured) .ranking-meta { grid-template-columns:72px 75px 76px;gap:8px; }
+  .ranking-row .ranking-heat { font-size:13px; }
+  .ranking-row:not(.ranking-row--featured) .ranking-meta { grid-template-columns:84px 68px 71px;gap:8px; }
   .ranking-row--featured .ranking-link { gap:9px;padding-inline:10px; }
   .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:58px;height:58px;flex-basis:58px; }
   .ranking-row--featured .ranking-title { font-size:13px; }
   .ranking-row--featured .ranking-summary { font-size:12px; }
-  .ranking-row--featured .ranking-score { font-size:17px; }
+  .ranking-row--featured .ranking-heat { font-size:16px; }
+  .ranking-row--featured .ranking-score { font-size:14px; }
 }
 @media (max-width:1199px) {
   .ranking-toolbar { flex-wrap:wrap;gap:8px;padding-bottom:5px; }
@@ -230,9 +238,9 @@ const boardDateHint = computed(() => {
   .ranking-row--featured .ranking-title { font-size:12px; }
   .ranking-row--featured .ranking-summary { margin:4px 0 6px;font-size:11px;line-height:1.4; }
   .ranking-row--featured .ranking-meta { gap:8px; }
-  .ranking-row--featured .ranking-growth { font-size:13px; }
-  .ranking-row--featured .ranking-heat { top:13px; }
-  .ranking-row--featured .ranking-score { font-size:16px; }
+  .ranking-row--featured .ranking-growth { font-size:12px; }
+  .ranking-row--featured .ranking-heat { top:11px;font-size:15px; }
+  .ranking-row--featured .ranking-score { font-size:13px; }
   .ranking-row--featured .ranking-arrow { top:11px; }
 }
 </style>
