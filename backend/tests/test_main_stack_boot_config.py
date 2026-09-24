@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -90,3 +92,60 @@ def test_main_stack_systemd_unit_is_non_destructive() -> None:
 
 def test_main_stack_orchestrator_shell_syntax() -> None:
     subprocess.run(["bash", "-n", str(SCRIPT_PATH)], check=True)
+
+
+def test_main_stack_provisions_storage_bind_dirs_before_containers() -> None:
+    """storage 绑定源目录须在起容器前由部署用户预建，杜绝 docker 以 root 代建
+    导致容器内 app(uid 1000) 写入 [Errno 13]。清单须与 compose 的 ../storage
+    绑定源一致，且在 up 与 migrate 两条起容器路径上都调用。"""
+    text = SCRIPT_PATH.read_text(encoding="utf-8")
+    compose = COMPOSE_PATH.read_text(encoding="utf-8")
+
+    assert "ensure_storage_dirs()" in text
+    # 每个 compose ../storage 绑定源都必须出现在预建清单里
+    for rel in re.findall(r"\.\./(storage/[\w./-]+):", compose):
+        assert f'"{rel}"' in text, f"预建清单缺少 compose 绑定源 {rel}"
+
+    # up 与 migrate 都在 compose 起容器前调用预建
+    for action in ("up", "migrate"):
+        block = text.split(f"    {action})", 1)[1].split(";;", 1)[0]
+        assert "ensure_storage_dirs" in block, f"{action} 未预建 storage 目录"
+        assert block.index("ensure_storage_dirs") < block.index("compose ")
+
+
+def test_ensure_storage_dirs_creates_dirs_owned_by_deploy_user(tmp_path: Path) -> None:
+    """实际执行 ensure_storage_dirs：目录被创建且属主为当前（部署）用户。
+
+    source 一份临时副本以只加载函数、不触发编排（脚本尾部有 source guard）。
+    ROOT_DIR 由副本位置推导，故落到 tmp_path 下。"""
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    shutil.copy(SCRIPT_PATH, scripts_dir / "manage_main_stack.sh")
+
+    result = subprocess.run(
+        ["bash", "-c", f'source "{scripts_dir / "manage_main_stack.sh"}"; ensure_storage_dirs'],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+    for rel in (
+        "storage/papers",
+        "storage/site",
+        "storage/chat_uploads",
+        "storage/metrics",
+        "storage/x_media",
+        "storage/wechat",
+        "storage/hf_cache/huggingface",
+    ):
+        created = tmp_path / rel
+        assert created.is_dir(), f"{rel} 未创建"
+        assert created.stat().st_uid == os.getuid(), f"{rel} 属主非部署用户"
+
+    # 幂等：再跑一次不报错，也不改变结果
+    again = subprocess.run(
+        ["bash", "-c", f'source "{scripts_dir / "manage_main_stack.sh"}"; ensure_storage_dirs'],
+        capture_output=True,
+        text=True,
+    )
+    assert again.returncode == 0, again.stderr

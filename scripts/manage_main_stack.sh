@@ -89,6 +89,39 @@ ensure_required_profiles() {
   export COMPOSE_PROFILES
 }
 
+# 后端容器以非 root（uid 1000/app）运行并 bind-mount 这些宿主目录。若目录
+# 缺失，docker 会在 up/run 时以 root 代建，导致容器内 app 无法写入
+# （典型：arxiv PDF 落盘 [Errno 13] Permission denied storage/papers）。
+# compose 各挂载注释即要求"首次部署前宿主机预建并属主 1000"；此处把该口径
+# 固化为幂等的自动步骤——由部署用户（uid 与容器 app 一致）预建，docker 便
+# 不会再以 root 代建。清单须与 docker-compose.yml 的 ../storage 绑定源一致。
+readonly STORAGE_BIND_DIRS=(
+  "storage/papers"
+  "storage/site"
+  "storage/chat_uploads"
+  "storage/metrics"
+  "storage/x_media"
+  "storage/wechat"
+  "storage/hf_cache/huggingface"
+)
+
+# 预建 storage 绑定源目录（幂等，由部署用户拥有）。仅创建、不改属主：脚本以
+# 非特权部署用户运行，对既有 root 属主目录 chown 会失败并被 set -e 掀翻部署。
+# 对既有但当前用户不可写的目录只发告警、不阻断——纠正历史 root 属主是一次性
+# 特权操作，交由运维执行（见告警中的 chown 提示）。
+ensure_storage_dirs() {
+  local rel dir
+  for rel in "${STORAGE_BIND_DIRS[@]}"; do
+    dir="${ROOT_DIR}/${rel}"
+    mkdir -p "${dir}"
+    if [[ ! -w "${dir}" ]]; then
+      printf 'warning: storage 目录不可被部署用户(uid %s)写入: %s\n' "$(id -u)" "${dir}" >&2
+      printf '         如为历史 root 属主，需一次性特权纠正: chown -R %s:%s %s\n' \
+        "$(id -u)" "$(id -g)" "${dir}" >&2
+    fi
+  done
+}
+
 main() {
   require_command docker
   [[ -f "${COMPOSE_FILE}" ]] || fail "compose file not found: ${COMPOSE_FILE}"
@@ -104,6 +137,7 @@ main() {
       ;;
     migrate)
       validate_inputs
+      ensure_storage_dirs
       compose config --quiet
       # Never use the running backend (which still belongs to the old release).
       # run publishes no service ports; --no-deps keeps existing services intact.
@@ -126,6 +160,7 @@ finally:
       ;;
     up)
       validate_inputs
+      ensure_storage_dirs
       compose config --quiet
       compose up --detach --remove-orphans --no-build --pull never --wait --wait-timeout 300
       ;;
@@ -147,4 +182,7 @@ finally:
   esac
 }
 
-main "$@"
+# 直接执行时运行 main；被 source（契约测试）时仅加载函数，不触发编排。
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
