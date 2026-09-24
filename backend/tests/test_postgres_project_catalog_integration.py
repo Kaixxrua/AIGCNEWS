@@ -386,3 +386,41 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any, catalog_clock: tup
     dates = catalog.list_github_hot_dates(limit=5)
     assert today in dates
     assert dates == sorted(dates, reverse=True)
+
+
+def _shift_metric_dates(catalog: Any, days: int) -> None:
+    with catalog._database.transaction() as connection:
+        connection.execute(
+            "UPDATE github_repo_daily_metrics"
+            " SET metric_date = (metric_date::date + %s)::text",
+            (days,),
+        )
+
+
+def test_real_today_scope_uses_yesterday_until_first_round(catalog: Any) -> None:
+    # 零点后当天首轮指标落库前，今日榜/今日计数/hot 排序沿用昨天的收盘切片；
+    # 只回退一天：前天的指标不冒充今日。
+    shifted = 0
+    try:
+        _shift_metric_dates(catalog, -1)
+        shifted = -1
+        today = catalog.list_projects(source="github", scope="today", min_stars=500)
+        assert [item["repo_id"] for item in today["items"]] == ["acme/alpha", "acme/beta"]
+        assert catalog.get_project_categories(source="github", min_stars=500)["today_count"] == 2
+        hot = catalog.list_projects(source="github", sort="hot", min_stars=500)
+        assert [item["hot_score"] for item in hot["items"]][:2] == [91.5, 70.0]
+        _shift_metric_dates(catalog, -1)
+        shifted = -2
+        assert catalog.list_projects(source="github", scope="today", min_stars=500)["items"] == []
+        assert catalog.get_project_categories(source="github", min_stars=500)["today_count"] == 0
+    finally:
+        if shifted:
+            _shift_metric_dates(catalog, -shifted)
+
+
+def test_real_popularity_map_sums_window_growth(catalog: Any) -> None:
+    popularity = catalog.get_project_popularity_map(["acme/alpha", "acme/beta", "acme/draft", "missing/repo"])
+    assert popularity["acme/alpha"] == (42, 1200)
+    assert popularity["acme/beta"] == (12, 800)
+    assert popularity["acme/draft"][0] == 0
+    assert "missing/repo" not in popularity

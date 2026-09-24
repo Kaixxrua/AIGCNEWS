@@ -29,7 +29,7 @@ from backend.app.services.ingestion.source_github_mcp import (
 from backend.app.services.project_reranker import get_project_reranker
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
-    order_candidates_by_heat,
+    order_candidates_by_popularity,
     rank_legacy_project_candidate_ids,
     rank_v2_project_candidate_ids,
 )
@@ -352,23 +352,23 @@ async def _lookup_adoption_stars(
         return {}
 
 
-async def _lookup_project_heat(
+async def _lookup_project_popularity(
     repository: Any,
     lanes: ProjectLexicalCandidateLanes,
     semantic_repo_ids: tuple[str, ...],
     *,
     needed: bool,
-) -> dict[str, tuple[float, int, int]]:
-    heat_lookup = _declared_callable(repository, "get_project_heat_map")
-    if not needed or not callable(heat_lookup):
+) -> dict[str, tuple[int, int]]:
+    popularity_lookup = _declared_callable(repository, "get_project_popularity_map")
+    if not needed or not callable(popularity_lookup):
         return {}
     try:
         return await asyncio.to_thread(
-            heat_lookup, _candidate_id_pool(lanes, semantic_repo_ids)
+            popularity_lookup, _candidate_id_pool(lanes, semantic_repo_ids)
         )
     except Exception:
         logger.warning(
-            "project search heat lookup failed; falling back to fit-only ranking",
+            "project search popularity lookup failed; falling back to fit-only ranking",
             exc_info=True,
         )
         return {}
@@ -394,14 +394,14 @@ async def _rank_hybrid_candidates(
     adoption_weight = float(
         getattr(settings, "project_search_adoption_weight", 0.0) or 0.0
     )
-    # 语义 lane 实际产出候选时，展示序默认切换为热度优先（hot_score v5，
-    # 精确命中仍钉榜首）；lane 为空（语义关闭或检索失败）保持 lane 融合
-    # 拟合序，优雅降级。
+    # 语义 lane 实际产出候选时，展示序默认在相关性之上叠加长期热度（近
+    # 7 日星增 + 总星数，相关性占 2/3，精确命中仍钉榜首）；lane 为空（语义
+    # 关闭或检索失败）保持 lane 融合拟合序，优雅降级。
     # 例外一：宿主 agent 传入结构化 intent 的是任务型复用检索，要的是任务
-    # 适配而非当红——此时保持 v2 拟合序，让 fit 冠军不被热度罢黜。
+    # 适配而非人气——此时保持 v2 拟合序。
     # 例外二：strict lane 一页放得下时，这些全部严格词命中就是确定答案，
-    # 钉在热度重排之上（见下方 pinned_strict_ids）；lane 更大说明是宽泛
-    # 探索查询，保持热度序的发现价值。
+    # 钉在热度融合之上（见下方 pinned_strict_ids）；lane 更大说明是宽泛
+    # 探索查询，保留热度融合的发现价值。
     heat_first = (
         bool(candidate_search.semantic_repo_ids)
         and bool(getattr(settings, "project_semantic_heat_first", True))
@@ -413,7 +413,7 @@ async def _rank_hybrid_candidates(
         candidate_search.semantic_repo_ids,
         needed=adoption_weight > 0,
     )
-    heat_map = await _lookup_project_heat(
+    popularity_map = await _lookup_project_popularity(
         repository,
         lanes,
         candidate_search.semantic_repo_ids,
@@ -427,15 +427,15 @@ async def _rank_hybrid_candidates(
         adoption_stars=adoption_stars,
         adoption_weight=adoption_weight,
     )
-    if heat_first and heat_map:
+    if heat_first and popularity_map:
         pinned_strict_ids: tuple[str, ...] = ()
         if strict_pin_max > 0:
             strict_ids = tuple(str(candidate.repo_id) for candidate in lanes.strict)
             if 0 < len(strict_ids) <= strict_pin_max:
                 pinned_strict_ids = strict_ids
-        ranked_repo_ids = order_candidates_by_heat(
+        ranked_repo_ids = order_candidates_by_popularity(
             ranked_repo_ids,
-            heat_map,
+            popularity_map,
             exact_repo_id=exact_repo_id,
             pinned_repo_ids=pinned_strict_ids,
         )

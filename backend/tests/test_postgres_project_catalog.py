@@ -519,6 +519,62 @@ def test_today_branch_inner_top_set_uses_succeeded_canonical_predicate() -> None
     assert 500 not in rows_params
 
 
+_EFFECTIVE_DATE = (
+    "(SELECT COALESCE(MAX(md.metric_date),%s) FROM github_repo_daily_metrics md"
+    " WHERE md.metric_date BETWEEN %s AND %s)"
+)
+
+
+@pytest.fixture
+def frozen_today(monkeypatch: pytest.MonkeyPatch) -> str:
+    monkeypatch.setattr(
+        "backend.app.repositories.postgres_project_catalog._today", lambda: "2026-03-01"
+    )
+    return "2026-03-01"
+
+
+@pytest.mark.parametrize("scope", ["today", "all"])
+def test_today_metrics_fall_back_to_yesterday_until_first_round(frozen_today: str, scope: str) -> None:
+    """零点到当天首轮指标落库之间，今日榜与 hot 排序沿用昨天的收盘切片。
+
+    有效指标日 = [昨天, 今天] 内最新有指标的日期，只回退一天。
+    """
+    database = Database([{"cnt": 0}, []])
+    PostgresProjectCatalogRepository(database).list_projects(source="github", scope=scope, sort="hot")
+    rows_sql, rows_params = database.cursor.calls[2]
+    joins = 2 if scope == "today" else 1
+    assert rows_sql.count(f"metric_date = {_EFFECTIVE_DATE}") + rows_sql.count(f"metric_date={_EFFECTIVE_DATE}") == joins
+    assert list(rows_params[:3]) == ["2026-03-01", "2026-02-28", "2026-03-01"]
+    if scope == "today":
+        assert list(rows_params[3:6]) == ["2026-03-01", "2026-02-28", "2026-03-01"]
+    assert rows_sql.count("%s") == len(rows_params)
+
+
+def test_categories_today_count_uses_effective_metric_date(frozen_today: str) -> None:
+    database = Database([[], {"count": 0}, {"count": 0}])
+    PostgresProjectCatalogRepository(database).get_project_categories(source="github")
+    today_sql, today_params = database.cursor.calls[2]
+    assert f"gm_top.metric_date={_EFFECTIVE_DATE}" in today_sql
+    assert list(today_params[:3]) == ["2026-03-01", "2026-02-28", "2026-03-01"]
+
+
+def test_popularity_map_sums_clean_growth_over_seven_days(frozen_today: str) -> None:
+    database = Database([[
+        {"repo_id": "owner/a", "weekly_star_growth": 830, "stars": 12_000},
+        {"repo_id": "owner/b", "weekly_star_growth": None, "stars": None},
+    ]])
+    result = PostgresProjectCatalogRepository(database).get_project_popularity_map(
+        [" owner/a ", "", "owner/b"]
+    )
+    assert result == {"owner/a": (830, 12_000), "owner/b": (0, 0)}
+    sql, params = database.cursor.calls[1]
+    assert "SUM(CASE WHEN COALESCE(gm.growth_suspicion_score, 0) >= %s THEN 0" in sql
+    assert "ELSE GREATEST(gm.daily_star_growth, 0) END)" in sql
+    assert "gm.daily_growth_available = TRUE" in sql
+    assert params == (0.5, ["owner/a", "owner/b"], "2026-02-23", "2026-03-01", ["owner/a", "owner/b"])
+    assert PostgresProjectCatalogRepository(Database([])).get_project_popularity_map(["", " "]) == {}
+
+
 def test_categories_github_branch_uses_succeeded_canonical_predicate() -> None:
     """分类聚合计数与项目库列表/dashboard 同一口径：succeeded canonical 关系。
 

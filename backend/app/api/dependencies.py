@@ -641,7 +641,7 @@ def get_project_adoption_service() -> ProjectAdoptionService:
 
 
 def get_github_hot_board_reader() -> GitHubHotBoardReader:
-    """看板 github 榜的 v5 热度读取（项目库目录仓储结构式满足该协议）。
+    """看板 github 榜的日度热度读取（项目库目录仓储结构式满足该协议）。
 
     经工厂按次解析，与 get_project_catalog_query_service 同一连接语义；
     协议窄化到看板所需的两个方法，便于路由测试用假实现替换。

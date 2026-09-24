@@ -792,7 +792,7 @@ async def get_snapshot_dates(
 ):
     """返回指定来源有日榜快照记录的日期列表（降序）。
 
-    github 日榜已切换 v5 热度指标口径，可用日期以指标表为准，
+    github 日榜已切换日度热度指标口径，可用日期以指标表为准，
     保证历史日期选择器与榜单实际可读数据一致。
     """
     source_type = None if (not source or source == "all") else source

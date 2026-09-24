@@ -9,6 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.domain.github_heat import SUSPICION_DEMOTION_THRESHOLD
 from backend.app.domain.project_taxonomy import (
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
     PROJECT_TAXONOMY,
@@ -30,6 +31,9 @@ from backend.app.repositories.project_catalog_normalization import (
 )
 
 GITHUB_PROJECT_TODAY_LIMIT = 50
+# 搜索展示序的长期热度窗口（含当天）；刷星嫌疑达热度降权线的日增不计入。
+PROJECT_POPULARITY_WINDOW_DAYS = 7
+PROJECT_POPULARITY_SUSPICION_CUTOFF = SUSPICION_DEMOTION_THRESHOLD
 # 公共 relevance 排序使用强字段匹配；当强命中项目不足该阈值时降级使用弱字段。
 RELEVANCE_STRONG_MATCH_THRESHOLD = 5
 
@@ -230,6 +234,24 @@ def _today() -> str:
     return datetime.now(ZoneInfo(zone)).date().isoformat()
 
 
+def _days_before(day: str, days: int) -> str:
+    return (datetime.fromisoformat(day).date() - timedelta(days=days)).isoformat()
+
+
+# 今日口径（scope=today、hot 排序、今日计数）的有效指标日：当天首轮指标
+# （约 02:15）落库前沿用昨天的收盘切片，避免零点后榜单清空、hot 排序
+# 退化成按星数。只回退一天——采集停摆时宁可空榜，也不把陈旧数据冒充今日。
+_EFFECTIVE_METRIC_DATE_SQL = (
+    "(SELECT COALESCE(MAX(md.metric_date),%s) FROM github_repo_daily_metrics md"
+    " WHERE md.metric_date BETWEEN %s AND %s)"
+)
+
+
+def _effective_metric_date_params() -> list[Any]:
+    today = _today()
+    return [today, _days_before(today, 1), today]
+
+
 def _today_range() -> tuple[str, str]:
     zone = ZoneInfo(getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai")
     start = datetime.combine(datetime.now(zone).date(), datetime.min.time(), tzinfo=zone)
@@ -299,12 +321,12 @@ def _build_gh_branch(
     user_id: int | None,
 ) -> tuple[str, list[Any]]:
     """组装 github 分支 SELECT 与按 %s 占位顺序绑定的参数。"""
-    date = _today()
+    date_params = _effective_metric_date_params()
     hot_join = (
         "LEFT JOIN github_repo_daily_metrics gm"
-        " ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+        f" ON gm.repo_id = c.repo_id AND gm.metric_date = {_EFFECTIVE_METRIC_DATE_SQL}"
     )
-    params: list[Any] = [date]
+    params: list[Any] = [*date_params]
     if scope == "today":
         # 今日暴涨内层 Top-N 驱动表与外层同一可见性口径：enriched-only 时按
         # succeeded canonical 关系过滤（无星数门槛），否则按 intake 星数门槛。
@@ -312,14 +334,15 @@ def _build_gh_branch(
             top_filter = _GH_PUBLIC_SUCCEEDED_FILTER.replace(
                 "c.", "c_top."
             ).replace("ge.", "ge_top.")
-            top_params: list[Any] = [date]
+            top_params: list[Any] = [*date_params]
         else:
             top_filter = "COALESCE(c_top.stars,0)>=%s"
-            top_params = [date, min_stars]
+            top_params = [*date_params, min_stars]
         hot_join += (
             " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
             " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
-            " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
+            f" AND gm_top.metric_date={_EFFECTIVE_METRIC_DATE_SQL}"
+            " AND gm_top.daily_growth_available=TRUE"
             " AND gm_top.daily_star_growth>0"
             " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
             f" WHERE {top_filter}"
@@ -796,39 +819,50 @@ class PostgresProjectCatalogRepository:
             if row.get("repo_id")
         }
 
-    def get_project_heat_map(
-        self, repo_ids: list[str]
-    ) -> dict[str, tuple[float, int, int]]:
-        """语义搜索展示序的热度查询，口径与列表 hot 排序一致。
+    def get_project_popularity_map(self, repo_ids: list[str]) -> dict[str, tuple[int, int]]:
+        """语义搜索展示序的长期热度：{repo_id: (近 7 日星增, 总星数)}。
 
-        返回 {repo_id: (hot_score, daily_star_growth, stars)}；hot_score 取
-        当日 github_repo_daily_metrics 的 v5 算法分，无当日指标的项目三项
-        按 0 兜底，由 stars 在同热度项目间维持量级感。
+        窗口含当天共 PROJECT_POPULARITY_WINDOW_DAYS 天，跨过零点不清零；
+        只计可用日增的正增长，刷星嫌疑达降权线的日增不计入。无指标的
+        项目星增按 0 兜底。
         """
         ids = [str(value).strip() for value in repo_ids if str(value or "").strip()][:400]
         if not ids:
             return {}
+        today = _today()
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(
                     """
                     SELECT c.repo_id,
-                           COALESCE(gm.hot_score, 0) AS hot_score,
-                           COALESCE(gm.daily_star_growth, 0) AS daily_star_growth,
+                           COALESCE(w.weekly_star_growth, 0) AS weekly_star_growth,
                            COALESCE(c.stars, 0) AS stars
                     FROM github_repo_candidates c
-                    LEFT JOIN github_repo_daily_metrics gm
-                      ON gm.repo_id = c.repo_id AND gm.metric_date = %s
+                    LEFT JOIN (
+                        SELECT gm.repo_id,
+                               SUM(CASE WHEN COALESCE(gm.growth_suspicion_score, 0) >= %s THEN 0
+                                        ELSE GREATEST(gm.daily_star_growth, 0) END) AS weekly_star_growth
+                        FROM github_repo_daily_metrics gm
+                        WHERE gm.repo_id = ANY(%s)
+                          AND gm.metric_date BETWEEN %s AND %s
+                          AND gm.daily_growth_available = TRUE
+                        GROUP BY gm.repo_id
+                    ) w ON w.repo_id = c.repo_id
                     WHERE c.repo_id = ANY(%s)
                     """,
-                    (_today(), ids),
+                    (
+                        PROJECT_POPULARITY_SUSPICION_CUTOFF,
+                        ids,
+                        _days_before(today, PROJECT_POPULARITY_WINDOW_DAYS - 1),
+                        today,
+                        ids,
+                    ),
                 )
                 rows = cursor.fetchall()
         return {
             str(row.get("repo_id") or ""): (
-                float(row.get("hot_score") or 0),
-                int(row.get("daily_star_growth") or 0),
+                int(row.get("weekly_star_growth") or 0),
                 int(row.get("stars") or 0),
             )
             for row in rows
@@ -843,14 +877,14 @@ class PostgresProjectCatalogRepository:
         min_stars: int = 500,
         enriched_only: bool = True,
     ) -> list[dict[str, Any]]:
-        """看板 GitHub 今日暴涨榜：指定指标日按 hot_score(v5) 排序的正增长仓库。
+        """看板 GitHub 今日暴涨榜：指定指标日按 hot_score 排序的正增长仓库。
 
         收录口径与 list_projects(scope="today") 一致（enriched-only 时为
         succeeded canonical 关系、无星数门槛；daily_growth_available、正增长），
         但日榜额外排除 availability_status='not_found' 的已下架仓库——榜单没有置灰卡片
         形态，上榜仓库必须可访问；项目库列表则保留下架仓库并置灰展示。
         指标日期由调用方传入——看板默认视图可能回溯到窗口内最近有指标的
-        日期，历史视图则显式指定；scope="today" 内部硬编码当天，无法复用。
+        日期，历史视图则显式指定；scope="today" 内部按有效指标日取数，无法复用。
         """
         limit = max(1, min(int(limit or 1), 500))
         conditions = [
@@ -899,7 +933,7 @@ class PostgresProjectCatalogRepository:
                 return list(cursor.fetchall())
 
     def list_github_hot_dates(self, *, limit: int = 60) -> list[str]:
-        """有日度热度指标（v5）的日期降序列表，供看板 github 分支做日期回溯。"""
+        """有日度热度指标的日期降序列表，供看板 github 分支做日期回溯。"""
         limit = max(1, min(int(limit or 1), 365))
         with self._transaction() as connection:
             with connection.cursor() as cursor:
@@ -1208,7 +1242,7 @@ class PostgresProjectCatalogRepository:
             " FROM category_rows"
             " GROUP BY category_slug,category_name,subcategory_slug,subcategory_name"
         )
-        date = _today()
+        date_params = _effective_metric_date_params()
         start, end = _today_range()
         if source in {"all", "github"}:
             today_sql = (
@@ -1216,7 +1250,8 @@ class PostgresProjectCatalogRepository:
                 " FROM github_repo_candidates c_top"
                 " JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
                 " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
-                " AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE"
+                f" AND gm_top.metric_date={_EFFECTIVE_METRIC_DATE_SQL}"
+                " AND gm_top.daily_growth_available=TRUE"
                 " AND gm_top.daily_star_growth>0"
                 " WHERE "
                 + (_GH_PUBLIC_SUCCEEDED_FILTER.replace("c.", "c_top.").replace("ge.", "ge_top.") if enriched_only else "COALESCE(c_top.stars,0)>=%s")
@@ -1229,7 +1264,7 @@ class PostgresProjectCatalogRepository:
                 " WHERE TRUE"
                 f" {gh_filter}"
             )
-            today_params = [date] + ([] if enriched_only else [min_stars]) + gh_user
+            today_params = date_params + ([] if enriched_only else [min_stars]) + gh_user
         else:
             today_sql = (
                 "SELECT COUNT(*) count FROM tool_websites w"

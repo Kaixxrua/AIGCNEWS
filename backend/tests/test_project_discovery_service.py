@@ -803,12 +803,12 @@ class ProjectDiscoveryTests(unittest.TestCase):
                         "owner/fit": 20_000,
                     }
                 )
-                self.get_project_heat_map = MagicMock(
+                self.get_project_popularity_map = MagicMock(
                     return_value={
-                        # (hot_score v5, daily_star_growth, stars)
-                        "owner/veteran": (85.5, 300, 106_000),
-                        "owner/deep-sem": (12.0, 50, 30_000),
-                        "owner/fit": (0.0, 0, 20_000),
+                        # (近 7 日星增, 总星数)
+                        "owner/veteran": (2_100, 106_000),
+                        "owner/deep-sem": (350, 30_000),
+                        "owner/fit": (0, 20_000),
                     }
                 )
                 self.list_projects = MagicMock(
@@ -826,7 +826,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
         )
 
         # strict lane 仅 1 条（一页放得下）：全词命中的拟合冠军钉在榜首，
-        # 其后才是热度序——85.5 分元老压过 12 分语义独苗
+        # 其后才是相关性+长期热度序——相关且人气高的元老压过语义独苗
         self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
 
     def test_v2_semantic_heat_order_rules_when_strict_lane_exceeds_one_page(self) -> None:
@@ -850,10 +850,10 @@ class ProjectDiscoveryTests(unittest.TestCase):
                     )
                 )
                 self.get_project_stars_map = MagicMock(return_value={})
-                self.get_project_heat_map = MagicMock(
+                self.get_project_popularity_map = MagicMock(
                     return_value={
-                        "owner/veteran": (85.5, 300, 106_000),
-                        "owner/deep-sem": (12.0, 50, 30_000),
+                        "owner/veteran": (2_100, 106_000),
+                        "owner/deep-sem": (350, 30_000),
                     }
                 )
                 self.list_projects = MagicMock(
@@ -865,10 +865,11 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         ranked = self._run_v2_semantic_heat_search(WideStrictRepository(), heat_first=True)
 
-        # 大 strict lane 保持热度序：语义/宽松热项居前，strict 群按融合位次垫后
-        self.assertEqual(ranked[0], "owner/veteran")
-        self.assertEqual(ranked[1], "owner/deep-sem")
-        self.assertEqual(ranked[2], "owner/fit-0")
+        # 大 strict lane 不钉，走相关性为主的热度融合：人气冠军 veteran 本就
+        # 相关性第一；融合第 11 的语义独苗 deep-sem 只前移到第 8，不再像
+        # 今日热度序那样插到整个 strict 群前面
+        self.assertEqual(ranked[:3], ["owner/veteran", "owner/fit-0", "owner/fit-1"])
+        self.assertEqual(ranked.index("owner/deep-sem"), 7)
 
     def test_v2_semantic_heat_order_keeps_exact_match_first(self) -> None:
         ranked = self._run_v2_semantic_heat_search(
@@ -877,7 +878,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
             query="owner/fit",
         )
 
-        # 精确命中力压 85.5 分热度冠军钉在榜首
+        # 精确命中力压人气冠军钉在榜首
         self.assertEqual(ranked[0], "owner/fit")
         self.assertEqual(ranked[1], "owner/veteran")
 
@@ -890,7 +891,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
     def test_v2_semantic_heat_lookup_failure_falls_back_to_fit_order(self) -> None:
         repo = self._build_v2_semantic_repository()
-        repo.get_project_heat_map = MagicMock(side_effect=RuntimeError("pg down"))
+        repo.get_project_popularity_map = MagicMock(side_effect=RuntimeError("pg down"))
 
         ranked = self._run_v2_semantic_heat_search(repo, heat_first=True)
 
@@ -912,8 +913,8 @@ class ProjectDiscoveryTests(unittest.TestCase):
         )
 
         # 宿主 agent 传入结构化 intent 的是任务型复用检索：即使语义 lane 有
-        # 产出且 heat_first 开启，也保持 v2 拟合序——0 热度的拟合冠军 fit
-        # 不被 12 分的语义独苗 deep-sem 罢黜（对照 generic 热度序用例）。
+        # 产出且 heat_first 开启，也保持 v2 拟合序——零人气的拟合冠军 fit
+        # 不被人气更高的语义独苗 deep-sem 罢黜（对照 generic 热度融合用例）。
         self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
 
     def _build_low_relevance_repository(self) -> Any:
@@ -933,8 +934,8 @@ class ProjectDiscoveryTests(unittest.TestCase):
                     )
                 )
                 self.get_project_stars_map = MagicMock(return_value={"owner/noise": 30_000})
-                self.get_project_heat_map = MagicMock(
-                    return_value={"owner/noise": (12.0, 50, 30_000)}
+                self.get_project_popularity_map = MagicMock(
+                    return_value={"owner/noise": (350, 30_000)}
                 )
                 self.list_projects = MagicMock(
                     return_value={

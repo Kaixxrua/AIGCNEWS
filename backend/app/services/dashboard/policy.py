@@ -84,7 +84,7 @@ FINALIZE_HOUR = 15
 # 每个源的自然日界与预计定稿时刻。定稿状态不再控制快照可见性。
 SOURCE_DAY_BOUNDARY: dict[str, str] = {
     "arxiv": "PT",  # HF Daily Papers 页面日期（美国日界）
-    "github": "CST",  # v5 热度指标（自有数据，CST 日界）
+    "github": "CST",  # 日度热度指标（自有数据，CST 日界）
     "news": "CST",  # Techmeme RSS 滚动窗，CST 归属
     "producthunt": "PT",  # featuredAt 的太平洋日期
     "hackernews": "CST",  # 滚动 24h 窗，CST 归属
@@ -121,7 +121,7 @@ class SourceBoardStatus(TypedDict):
     finalize_hour: int
     is_disabled: bool
 
-# 看板 github 榜自 v5 热度指标表读取后，条目的来源渠道标记。
+# 看板 github 榜自日度热度指标表读取后，条目的来源渠道标记。
 # 与 rank_snapshots 的 github_trending_daily/github_hot_daily 区分开，
 # 便于排查口径（response items[].source_channel 可见）。
 GITHUB_METRICS_DAILY_CHANNEL = "github_metrics_daily"

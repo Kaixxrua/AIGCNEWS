@@ -57,7 +57,7 @@ SAME_PERIOD_FALLBACKS: dict[str, dict[str, tuple[str, ...]]] = {
 
 
 class GitHubHotBoardReader(Protocol):
-    """看板 github 榜的 v5 热度指标读取边界（由项目库目录仓储结构式满足）。"""
+    """看板 github 榜的日度热度指标读取边界（由项目库目录仓储结构式满足）。"""
 
     def list_github_hot_for_date(
         self,
@@ -76,7 +76,7 @@ class DashboardQueryService:
         github_hot: GitHubHotBoardReader | None = None,
     ) -> None:
         self._rank_snapshots = rank_snapshots
-        # 看板 REST 路由注入项目库热度读取后，github 日榜改走 v5 指标
+        # 看板 REST 路由注入项目库热度读取后，github 日榜改走日度热度指标
         # （今日暴涨口径）；未注入的调用方（MCP inbound 等）保持
         # rank_snapshots 的 trending 快照口径不变。
         self._github_hot = github_hot
@@ -151,11 +151,11 @@ class DashboardQueryService:
         return all_snapshot_docs
 
     def _use_github_hot(self, period: str) -> bool:
-        """github 日榜是否走 v5 热度指标（周/月榜无指标口径，仍走快照）。"""
+        """github 日榜是否走日度热度指标（周/月榜无指标口径，仍走快照）。"""
         return period == "daily" and self._github_hot is not None
 
     def _github_hot_docs(self, date_str: str, limit: int) -> list[dict[str, Any]]:
-        """项目库今日暴涨：按 hot_score(v5) 排序的正增长仓库，映射为看板 doc。
+        """项目库今日暴涨：按 hot_score 排序的正增长仓库，映射为看板 doc。
 
         指标缺失的日期返回空（诚实空榜），不回退 trending——两套口径
         混排会让名次含义漂移。

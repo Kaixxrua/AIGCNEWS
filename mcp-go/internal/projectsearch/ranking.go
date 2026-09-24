@@ -12,12 +12,19 @@ import (
 // retrieval candidate shape.
 type LexicalCandidate = projectsem.LexicalCandidate
 
-// HeatTriple is (hot_score, daily_star_growth, stars).
-type HeatTriple struct {
-	HotScore    float64
-	DailyGrowth int
-	Stars       int
+// Popularity is the long-term heat of a candidate: star growth over the
+// recent window (see GetProjectPopularityMap) and total stars.
+type Popularity struct {
+	WeeklyGrowth int
+	Stars        int
 }
+
+// Relevance dominates the blended display order; mirrors RELEVANCE_WEIGHT and
+// POPULARITY_WEIGHT in backend/app/services/project_search_ranking.py.
+const (
+	relevanceWeight  = 2.0
+	popularityWeight = 1.0
+)
 
 const rankingK = 60
 
@@ -179,9 +186,17 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 	return ids
 }
 
-// OrderCandidatesByHeat applies exact, strict-pinned and heat tiers while
-// preserving fusion order for ties.
-func OrderCandidatesByHeat(repoIDs []string, heat map[string]HeatTriple, exactRepoID string, pinnedRepoIDs []string) []string {
+// PopularityKey is (1+weekly growth)·(1+stars), the integer equivalent of the
+// sum of their log1p values, so both languages compare it exactly.
+func PopularityKey(p Popularity) int64 {
+	return (1 + int64(max(p.WeeklyGrowth, 0))) * (1 + int64(max(p.Stars, 0)))
+}
+
+// OrderCandidatesByPopularity mirrors order_candidates_by_popularity: exact
+// match first, then strict-pinned ids in fusion order, then the rest by
+// relevanceWeight/(k+fusion rank) + popularityWeight/(k+popularity rank),
+// ties falling back to fusion order.
+func OrderCandidatesByPopularity(repoIDs []string, popularity map[string]Popularity, exactRepoID string, pinnedRepoIDs []string) []string {
 	fusion := make(map[string]int, len(repoIDs))
 	for i, id := range repoIDs {
 		fusion[id] = i
@@ -190,42 +205,41 @@ func OrderCandidatesByHeat(repoIDs []string, heat map[string]HeatTriple, exactRe
 	for _, id := range pinnedRepoIDs {
 		pinned[id] = true
 	}
-	exact := strings.ToLower(strings.TrimSpace(exactRepoID))
-	out := append([]string(nil), repoIDs...)
-	heatOf := func(id string) HeatTriple {
-		if h, ok := heat[id]; ok {
-			return h
+	byPopularity := append([]string(nil), repoIDs...)
+	sort.SliceStable(byPopularity, func(i, j int) bool {
+		a, b := PopularityKey(popularity[byPopularity[i]]), PopularityKey(popularity[byPopularity[j]])
+		if a != b {
+			return a > b
 		}
-		return HeatTriple{}
+		return fusion[byPopularity[i]] < fusion[byPopularity[j]]
+	})
+	popularityRank := make(map[string]int, len(byPopularity))
+	for i, id := range byPopularity {
+		popularityRank[id] = i + 1
 	}
+	exact := strings.ToLower(strings.TrimSpace(exactRepoID))
+	tierOf := func(id string) int {
+		if exact != "" && strings.EqualFold(id, exact) {
+			return 0
+		}
+		if pinned[id] {
+			return 1
+		}
+		return 2
+	}
+	blended := func(id string) float64 {
+		return relevanceWeight/float64(rankingK+fusion[id]+1) + popularityWeight/float64(rankingK+popularityRank[id])
+	}
+	out := append([]string(nil), repoIDs...)
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
-		exactA := exact != "" && strings.EqualFold(a, exact)
-		exactB := exact != "" && strings.EqualFold(b, exact)
-		tierA, tierB := 2, 2
-		if exactA {
-			tierA = 0
-		} else if pinned[a] {
-			tierA = 1
-		}
-		if exactB {
-			tierB = 0
-		} else if pinned[b] {
-			tierB = 1
-		}
+		tierA, tierB := tierOf(a), tierOf(b)
 		if tierA != tierB {
 			return tierA < tierB
 		}
 		if tierA == 2 {
-			ha, hb := heatOf(a), heatOf(b)
-			if ha.HotScore != hb.HotScore {
-				return ha.HotScore > hb.HotScore
-			}
-			if ha.DailyGrowth != hb.DailyGrowth {
-				return ha.DailyGrowth > hb.DailyGrowth
-			}
-			if ha.Stars != hb.Stars {
-				return ha.Stars > hb.Stars
+			if sa, sb := blended(a), blended(b); sa != sb {
+				return sa > sb
 			}
 		}
 		return fusion[a] < fusion[b]

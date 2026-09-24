@@ -1,7 +1,8 @@
 from backend.app.repositories.project_catalog import ProjectLexicalCandidate
 from backend.app.services.project_search_ranking import (
     ProjectCandidateSearchResult,
-    order_candidates_by_heat,
+    order_candidates_by_popularity,
+    popularity_key,
     rank_legacy_project_candidate_ids,
     rank_v2_project_candidate_ids,
 )
@@ -139,62 +140,67 @@ def test_v2_ranker_adoption_bonus_rejects_non_mapping_input() -> None:
     ) == expected
 
 
-def test_heat_ordering_sorts_by_hot_score_then_growth_then_stars() -> None:
-    ordered = order_candidates_by_heat(
-        ["owner/quiet-giant", "owner/viral", "owner/rising", "owner/steady"],
+# 以下展示序用例与 mcp-go/internal/projectsearch/ranking_test.go 逐字镜像，
+# 两侧同一输入必须给出同一顺序。
+
+
+def test_popularity_key_weighs_recent_growth_and_total_stars() -> None:
+    assert popularity_key(99, 9_999) == 100 * 10_000
+    assert popularity_key(-5, -1) == 1
+    # 近一周涨 5000 星的新秀压过一周没动静的 20 万星元老
+    assert popularity_key(5_000, 3_000) > popularity_key(0, 200_000)
+
+
+def test_popularity_ordering_lifts_relevant_popular_candidate() -> None:
+    ordered = order_candidates_by_popularity(
+        ["owner/a", "owner/b", "owner/c"],
         {
-            # hot_score 主导：暴涨新贵压过安静巨头
-            "owner/viral": (99.2, 568, 18_000),
-            "owner/rising": (42.0, 120, 5_000),
-            # hot_score 相同：日增星多者居前
-            "owner/steady": (42.0, 200, 9_000),
-            # 无当日指标：三项归零，靠 stars 也翻不了热度盘
-            "owner/quiet-giant": (0.0, 0, 500_000),
+            "owner/a": (0, 1_000),
+            "owner/b": (0, 1_000),
+            "owner/c": (500, 50_000),
         },
     )
 
-    assert ordered == ["owner/viral", "owner/steady", "owner/rising", "owner/quiet-giant"]
+    # c 相关性第三但人气第一：越过 b，越不过相关性冠军 a
+    assert ordered == ["owner/a", "owner/c", "owner/b"]
 
 
-def test_heat_ordering_pins_exact_match_above_heat() -> None:
-    ordered = order_candidates_by_heat(
-        ["Owner/Exact-Tool", "owner/viral"],
-        {"owner/viral": (99.2, 568, 18_000), "Owner/Exact-Tool": (0.0, 0, 5)},
+def test_popularity_ordering_keeps_weakly_relevant_hit_off_page_one() -> None:
+    repo_ids = [f"owner/c{index:02d}" for index in range(40)]
+    ordered = order_candidates_by_popularity(
+        repo_ids,
+        {"owner/c39": (20_000, 200_000)},
+    )
+
+    # 融合第 40 的当红项目只前移到第 23 位，进不了首页
+    assert ordered.index("owner/c39") == 22
+    assert ordered[:22] == repo_ids[:22]
+
+
+def test_popularity_ordering_pins_exact_match_first() -> None:
+    ordered = order_candidates_by_popularity(
+        ["owner/viral", "Owner/Exact-Tool"],
+        {"owner/viral": (20_000, 200_000), "Owner/Exact-Tool": (0, 5)},
         exact_repo_id="owner/exact-tool",
     )
 
     assert ordered == ["Owner/Exact-Tool", "owner/viral"]
 
 
-def test_heat_ordering_pins_small_strict_lane_above_heat() -> None:
-    # strict lane 全词命中的确定答案不被 99 分热度冠军罢黜
-    ordered = order_candidates_by_heat(
-        ["owner/strict-fit", "owner/viral", "owner/rising"],
+def test_popularity_ordering_pinned_entries_keep_fusion_order_and_exact_stays_first() -> None:
+    ordered = order_candidates_by_popularity(
+        ["owner/viral", "owner/second-fit", "Owner/Exact-Tool", "owner/first-fit"],
         {
-            "owner/viral": (99.2, 568, 18_000),
-            "owner/rising": (42.0, 120, 5_000),
-            "owner/strict-fit": (0.0, 0, 500),
-        },
-        pinned_repo_ids={"owner/strict-fit"},
-    )
-
-    assert ordered == ["owner/strict-fit", "owner/viral", "owner/rising"]
-
-
-def test_heat_ordering_pinned_entries_keep_fusion_order_and_exact_stays_first() -> None:
-    ordered = order_candidates_by_heat(
-        ["owner/second-fit", "Owner/Exact-Tool", "owner/viral", "owner/first-fit"],
-        {
-            "owner/viral": (99.2, 568, 18_000),
-            "owner/first-fit": (0.0, 0, 500),
-            "owner/second-fit": (0.0, 0, 600),
-            "Owner/Exact-Tool": (0.0, 0, 5),
+            "owner/viral": (20_000, 200_000),
+            "owner/first-fit": (0, 500),
+            "owner/second-fit": (0, 600),
+            "Owner/Exact-Tool": (0, 5),
         },
         exact_repo_id="owner/exact-tool",
         pinned_repo_ids={"owner/first-fit", "owner/second-fit"},
     )
 
-    # 精确命中仍居首；pinned 之间不看热度，按融合位次 second-fit → first-fit
+    # 精确命中居首；pinned 之间不看人气，按融合位次 second-fit → first-fit
     assert ordered == [
         "Owner/Exact-Tool",
         "owner/second-fit",
@@ -203,10 +209,11 @@ def test_heat_ordering_pinned_entries_keep_fusion_order_and_exact_stays_first() 
     ]
 
 
-def test_heat_ordering_tolerates_malformed_entries_and_missing_heat() -> None:
-    ordered = order_candidates_by_heat(
+def test_popularity_ordering_tolerates_malformed_entries_and_missing_popularity() -> None:
+    ordered = order_candidates_by_popularity(
         ["owner/a", "owner/b", "owner/c"],
-        {"owner/a": "not-a-tuple", "owner/c": (12.0, 50, 30_000)},
+        {"owner/a": "not-a-tuple", "owner/b": (1, 2, 3), "owner/c": (50, 30_000)},
     )
 
-    assert ordered == ["owner/c", "owner/a", "owner/b"]
+    # 畸形与缺失条目按零人气处理；c 人气第一但相关性垫底，越过 b 而非 a
+    assert ordered == ["owner/a", "owner/c", "owner/b"]

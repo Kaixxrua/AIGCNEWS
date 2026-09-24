@@ -103,51 +103,70 @@ def rank_v2_project_candidate_ids(
     )[:limit]
 
 
-def order_candidates_by_heat(
+RELEVANCE_WEIGHT = 2.0
+POPULARITY_WEIGHT = 1.0
+
+
+def popularity_key(weekly_star_growth: int, stars: int) -> int:
+    """长期热度：(1+近 7 日星增)·(1+总星数)，即 log1p 之和的整数单调等价。
+
+    整数比较在 Python 与 Go 两侧逐位一致，不受 log 实现的末位误差影响。
+    """
+    return (1 + max(int(weekly_star_growth), 0)) * (1 + max(int(stars), 0))
+
+
+def order_candidates_by_popularity(
     repo_ids: Sequence[str],
-    heat: Mapping[str, tuple[float, int, int]],
+    popularity: Mapping[str, tuple[int, int]],
     *,
     exact_repo_id: str = "",
     pinned_repo_ids: Collection[str] = (),
+    rank_constant: int = 60,
 ) -> list[str]:
-    """语义搜索展示序：精确命中钉在榜首，其余按 hot_score(v5) 热度降序。
+    """语义搜索展示序：相关性为主、长期热度为辅的位次融合。
 
-    lane 融合只决定候选名单；展示序默认让位给热度算法分，避免向量噪声
-    把当红项目埋在长尾相似项后面。热度口径与列表 hot 排序一致：
-    hot_score → daily_star_growth → stars 依次兜底；三项全同（含无当日
-    指标的项目）回落到传入的融合位次，保证确定性排序。
+    传入顺序即 lane 融合的相关性序。popularity 为 {repo_id: (近 7 日
+    星增, 总星数)}，按 popularity_key 降序得到热度位次；展示序按
+    RELEVANCE_WEIGHT/(k+相关性位次) + POPULARITY_WEIGHT/(k+热度位次)
+    降序，同分回落相关性位次。相关性占 2/3，当红但只沾边的候选抬不进
+    首页，相关且有人气的项目则前移；7 日窗口跨过零点，不随当天首轮
+    指标的有无而整体翻转。
 
-    例外：pinned_repo_ids（调用方仅在 strict lane 一页放得下时传入）是
-    全部严格查询词都命中的确定答案，钉在精确命中之后、热度重排之上，
-    相互间保持融合拟合序——避免唯一正确答案被当红噪声罢黜（典型如
-    "windows screenshot tool" 的 strict 独苗被无关热项压出首页）。
+    精确命中钉在榜首；pinned_repo_ids（调用方仅在 strict lane 一页放得
+    下时传入）是全部严格查询词都命中的确定答案，钉在精确命中之后、
+    融合序之上，相互间保持相关性序。
     """
     ordered_ids = [str(repo_id) for repo_id in repo_ids]
     fusion_rank = {repo_id: index for index, repo_id in enumerate(ordered_ids)}
     normalized_exact = exact_repo_id.strip().casefold()
     pinned = {str(repo_id) for repo_id in pinned_repo_ids}
 
-    def _heat_of(repo_id: str) -> tuple[float, int, int]:
-        value = heat.get(repo_id)
-        if not isinstance(value, (tuple, list)) or len(value) != 3:
-            return (0.0, 0, 0)
-        hot_score, daily_growth, stars = value
-        return (
-            float(hot_score) if isinstance(hot_score, (int, float)) else 0.0,
-            int(daily_growth) if isinstance(daily_growth, (int, float)) else 0,
+    def _popularity_of(repo_id: str) -> int:
+        value = popularity.get(repo_id)
+        if not isinstance(value, (tuple, list)) or len(value) != 2:
+            return popularity_key(0, 0)
+        weekly_growth, stars = value
+        return popularity_key(
+            int(weekly_growth) if isinstance(weekly_growth, (int, float)) else 0,
             int(stars) if isinstance(stars, (int, float)) else 0,
         )
 
-    def _sort_key(repo_id: str) -> tuple[int, tuple[float, int, int], int]:
-        if normalized_exact and repo_id.casefold() == normalized_exact:
-            return (0, (0.0, 0, 0), fusion_rank[repo_id])
-        if repo_id in pinned:
-            # pinned 之间不看热度，保持融合拟合序
-            return (1, (0.0, 0, 0), fusion_rank[repo_id])
-        return (
-            2,
-            tuple(-component for component in _heat_of(repo_id)),
-            fusion_rank[repo_id],
+    popularity_rank = {
+        repo_id: rank
+        for rank, repo_id in enumerate(
+            sorted(ordered_ids, key=lambda repo_id: (-_popularity_of(repo_id), fusion_rank[repo_id])),
+            start=1,
         )
+    }
+
+    def _sort_key(repo_id: str) -> tuple[int, float, int]:
+        if normalized_exact and repo_id.casefold() == normalized_exact:
+            return (0, 0.0, fusion_rank[repo_id])
+        if repo_id in pinned:
+            return (1, 0.0, fusion_rank[repo_id])
+        blended = RELEVANCE_WEIGHT / (rank_constant + fusion_rank[repo_id] + 1) + POPULARITY_WEIGHT / (
+            rank_constant + popularity_rank[repo_id]
+        )
+        return (2, -blended, fusion_rank[repo_id])
 
     return sorted(ordered_ids, key=_sort_key)

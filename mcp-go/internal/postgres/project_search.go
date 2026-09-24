@@ -460,53 +460,71 @@ func (r *ProjectSearchRepository) GetProjectStarsMap(repoIDs []string) (map[stri
 	return result, nil
 }
 
-func (r *ProjectSearchRepository) GetProjectHeatMap(repoIDs []string) (map[string]projectsearch.HeatTriple, error) {
+// 对齐 PROJECT_POPULARITY_WINDOW_DAYS / PROJECT_POPULARITY_SUSPICION_CUTOFF
+// （后者即 github_heat.SUSPICION_DEMOTION_THRESHOLD）。
+const (
+	projectPopularityWindowDays      = 7
+	projectPopularitySuspicionCutoff = 0.5
+)
+
+// GetProjectPopularityMap 逐字复刻 get_project_popularity_map：
+// {repo_id: (近 7 日星增, 总星数)}，窗口含当天，刷星嫌疑达降权线的日增不计入。
+func (r *ProjectSearchRepository) GetProjectPopularityMap(repoIDs []string) (map[string]projectsearch.Popularity, error) {
 	ids := cleanProjectRepoIDs(repoIDs, 400)
 	if len(ids) == 0 {
-		return map[string]projectsearch.HeatTriple{}, nil
+		return map[string]projectsearch.Popularity{}, nil
 	}
 	zone, err := time.LoadLocation(r.timezone)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: scheduler timezone %q: %w", r.timezone, err)
 	}
-	date := time.Now().In(zone).Format("2006-01-02")
+	now := time.Now().In(zone)
+	today := now.Format("2006-01-02")
+	windowStart := now.AddDate(0, 0, -(projectPopularityWindowDays - 1)).Format("2006-01-02")
 	query := `SELECT c.repo_id,
-                           COALESCE(gm.hot_score, 0) AS hot_score,
-                           COALESCE(gm.daily_star_growth, 0) AS daily_star_growth,
+                           COALESCE(w.weekly_star_growth, 0) AS weekly_star_growth,
                            COALESCE(c.stars, 0) AS stars
                     FROM github_repo_candidates c
-                    LEFT JOIN github_repo_daily_metrics gm
-                      ON gm.repo_id = c.repo_id AND gm.metric_date = %s
+                    LEFT JOIN (
+                        SELECT gm.repo_id,
+                               SUM(CASE WHEN COALESCE(gm.growth_suspicion_score, 0) >= %s THEN 0
+                                        ELSE GREATEST(gm.daily_star_growth, 0) END) AS weekly_star_growth
+                        FROM github_repo_daily_metrics gm
+                        WHERE gm.repo_id = ANY(%s)
+                          AND gm.metric_date BETWEEN %s AND %s
+                          AND gm.daily_growth_available = TRUE
+                        GROUP BY gm.repo_id
+                    ) w ON w.repo_id = c.repo_id
                     WHERE c.repo_id = ANY(%s)`
 	ctx := context.Background()
 	tx, err := r.beginRead(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: project heat transaction: %w", err)
+		return nil, fmt.Errorf("postgres: project popularity transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	rows, err := tx.Query(ctx, dollarPlaceholders(query), date, ids)
+	rows, err := tx.Query(ctx, dollarPlaceholders(query), projectPopularitySuspicionCutoff, ids, windowStart, today, ids)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: project heat query: %w", err)
+		return nil, fmt.Errorf("postgres: project popularity query: %w", err)
 	}
 	defer rows.Close()
-	result := map[string]projectsearch.HeatTriple{}
+	result := map[string]projectsearch.Popularity{}
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
-			return nil, fmt.Errorf("postgres: project heat row: %w", err)
+			return nil, fmt.Errorf("postgres: project popularity row: %w", err)
 		}
-		if len(values) >= 4 {
+		if len(values) >= 3 {
 			id, _ := values[0].(string)
 			if id != "" {
-				result[id] = projectsearch.HeatTriple{HotScore: floatOrZero(values[1]), DailyGrowth: intOrZero(values[2]), Stars: intOrZero(values[3])}
+				result[id] = projectsearch.Popularity{WeeklyGrowth: intOrZero(values[1]), Stars: intOrZero(values[2])}
 			}
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("postgres: project heat rows: %w", err)
+		return nil, fmt.Errorf("postgres: project popularity rows: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("postgres: project heat commit: %w", err)
+		return nil, fmt.Errorf("postgres: project popularity commit: %w", err)
 	}
 	return result, nil
 }
@@ -529,6 +547,45 @@ func (r *ProjectSearchRepository) ListProjects(input projectsearch.ListProjectsI
 		}
 	}
 
+	zone, err := time.LoadLocation(r.timezone)
+	if err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: scheduler timezone %q: %w", r.timezone, err)
+	}
+	query := buildProjectListQuery(input, candidates, minStars, page, pageSize, time.Now().In(zone))
+	ctx := context.Background()
+	tx, err := r.beginRead(ctx)
+	if err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var total int64
+	if err := tx.QueryRow(ctx, dollarPlaceholders(query.countSQL), query.countArgs...).Scan(&total); err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list count: %w", err)
+	}
+	rows, err := tx.Query(ctx, dollarPlaceholders(query.rowsSQL), query.rowArgs...)
+	if err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list query: %w", err)
+	}
+	items, err := projectSearchRows(rows)
+	if err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list rows: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list commit: %w", err)
+	}
+	return projectsearch.CatalogPage{Items: items, Total: int(total)}, nil
+}
+
+type projectListQuery struct {
+	countSQL  string
+	countArgs []any
+	rowsSQL   string
+	rowArgs   []any
+}
+
+// buildProjectListQuery 拼装 ListProjects 的计数/分页 SQL 与参数；%s 占位符
+// 按文本序与参数一一对应，now 为调度时区下的当前时刻。
+func buildProjectListQuery(input projectsearch.ListProjectsInput, candidates []string, minStars, page, pageSize int, now time.Time) projectListQuery {
 	filters := []string{"COALESCE(c.stars, 0) >= %s"}
 	params := []any{minStars}
 	if len(candidates) > 0 {
@@ -599,21 +656,20 @@ func (r *ProjectSearchRepository) ListProjects(input projectsearch.ListProjectsI
 		selectColumns = withMarker
 	}
 	selectSQL := "SELECT " + strings.Join(selectColumns, ",") + ghSelectFrom
-	zone, err := time.LoadLocation(r.timezone)
-	if err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: scheduler timezone %q: %w", r.timezone, err)
-	}
-	date := time.Now().In(zone).Format("2006-01-02")
+	dateParams := effectiveMetricDateParams(now)
 	selectSQL += " " + ghMetricsJoin
-	params = append([]any{date}, params...)
+	// 占位符文本序：指标 JOIN → today_top 驱动表 → WHERE 过滤，参数按同序前置。
+	joinParams := append([]any{}, dateParams...)
 	if input.Scope == "today" {
 		status := ""
 		if input.EnrichedOnly {
 			status = " AND ge_top.status = 'succeeded'"
 		}
-		selectSQL += " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=%s AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id WHERE COALESCE(c_top.stars,0)>=%s" + status + " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT 50) today_top ON today_top.repo_id=c.repo_id"
-		params = append(params, date, minStars)
+		selectSQL += " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=" + effectiveMetricDateSQL + " AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id WHERE COALESCE(c_top.stars,0)>=%s" + status + " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT 50) today_top ON today_top.repo_id=c.repo_id"
+		joinParams = append(joinParams, dateParams...)
+		joinParams = append(joinParams, minStars)
 	}
+	params = append(joinParams, params...)
 	selectSQL += " WHERE " + strings.Join(filters, " AND ")
 
 	order, orderParams := projectSearchOrder(input.Scope, input.Sort, input.Q, candidates)
@@ -636,28 +692,7 @@ func (r *ProjectSearchRepository) ListProjects(input projectsearch.ListProjectsI
 	}
 	rowArgs = append(rowArgs, orderParams...)
 	rowArgs = append(rowArgs, pageSize, (page-1)*pageSize)
-	ctx := context.Background()
-	tx, err := r.beginRead(ctx)
-	if err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	var total int64
-	if err := tx.QueryRow(ctx, dollarPlaceholders(countSQL), countArgs...).Scan(&total); err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list count: %w", err)
-	}
-	rows, err := tx.Query(ctx, dollarPlaceholders(rowsSQL), rowArgs...)
-	if err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list query: %w", err)
-	}
-	items, err := projectSearchRows(rows)
-	if err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list rows: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return projectsearch.CatalogPage{}, fmt.Errorf("postgres: project list commit: %w", err)
-	}
-	return projectsearch.CatalogPage{Items: items, Total: int(total)}, nil
+	return projectListQuery{countSQL: countSQL, countArgs: countArgs, rowsSQL: rowsSQL, rowArgs: rowArgs}
 }
 
 func projectSearchOrder(scope, sortName, query string, candidates []string) (string, []any) {

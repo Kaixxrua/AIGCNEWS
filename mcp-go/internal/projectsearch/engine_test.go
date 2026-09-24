@@ -22,7 +22,7 @@ func (engineCatalogStub) FindRepoIDsByNameSegment(string, int) ([]string, error)
 func (engineCatalogStub) GetProjectStarsMap([]string) (map[string]int, error) {
 	return nil, nil
 }
-func (engineCatalogStub) GetProjectHeatMap([]string) (map[string]HeatTriple, error) {
+func (engineCatalogStub) GetProjectPopularityMap([]string) (map[string]Popularity, error) {
 	return nil, nil
 }
 func (engineCatalogStub) ListProjects(ListProjectsInput) (CatalogPage, error) {

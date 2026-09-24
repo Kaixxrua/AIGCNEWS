@@ -57,7 +57,7 @@ type CatalogReader interface {
 	FindLexicalCandidateLanes(input LexicalLaneSearchInput) (projectsem.LexicalCandidateLanes, error)
 	FindRepoIDsByNameSegment(name string, limit int) ([]string, error)
 	GetProjectStarsMap(repoIDs []string) (map[string]int, error)
-	GetProjectHeatMap(repoIDs []string) (map[string]HeatTriple, error)
+	GetProjectPopularityMap(repoIDs []string) (map[string]Popularity, error)
 	ListProjects(input ListProjectsInput) (CatalogPage, error)
 }
 
@@ -324,14 +324,14 @@ func (e *Engine) rankV2(strictIDs []string, lanes projectsem.LexicalCandidateLan
 	}
 	ranked := RankV2ProjectCandidateIDs(lanes.Strict, lanes.Relaxed, semantic, exact, rankingK, 200, stars, e.cfg.AdoptionWeight)
 	if e.cfg.SemanticHeatFirst && !r.clientIntentUsed && len(semantic) > 0 {
-		if heat, err := e.catalog.GetProjectHeatMap(pool); err == nil && len(heat) > 0 {
+		if popularity, err := e.catalog.GetProjectPopularityMap(pool); err == nil && len(popularity) > 0 {
 			pinned := []string{}
 			if len(lanes.Strict) > 0 && len(lanes.Strict) <= r.limit {
 				for _, c := range lanes.Strict {
 					pinned = append(pinned, c.RepoID)
 				}
 			}
-			ranked = OrderCandidatesByHeat(ranked, heat, exact, pinned)
+			ranked = OrderCandidatesByPopularity(ranked, popularity, exact, pinned)
 		}
 	}
 	return ranked

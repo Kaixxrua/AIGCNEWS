@@ -141,7 +141,19 @@ const ghSelectFrom = " FROM github_repo_candidates c" +
 	" LEFT JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id" +
 	" LEFT JOIN github_repo_recommendations gr ON gr.repo_id=c.repo_id AND gr.active=TRUE"
 const ghMetricsJoin = "LEFT JOIN github_repo_daily_metrics gm" +
-	" ON gm.repo_id = c.repo_id AND gm.metric_date = %s"
+	" ON gm.repo_id = c.repo_id AND gm.metric_date = " + effectiveMetricDateSQL
+
+// effectiveMetricDateSQL 逐字搬运 _EFFECTIVE_METRIC_DATE_SQL：当天首轮指标
+// 落库前沿用昨天的收盘切片，只回退一天。参数见 effectiveMetricDateParams。
+const effectiveMetricDateSQL = "(SELECT COALESCE(MAX(md.metric_date),%s) FROM github_repo_daily_metrics md" +
+	" WHERE md.metric_date BETWEEN %s AND %s)"
+
+// effectiveMetricDateParams 对齐 _effective_metric_date_params：[今天, 昨天, 今天]。
+func effectiveMetricDateParams(now time.Time) []any {
+	today := now.Format("2006-01-02")
+	return []any{today, now.AddDate(0, 0, -1).Format("2006-01-02"), today}
+}
+
 const ghFavoritesJoin = "LEFT JOIN project_favorites pf" +
 	" ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
 
@@ -781,7 +793,7 @@ func NewProjectCollectionsRepository(pool *pgxpool.Pool, timezone string) Projec
 // REPEATABLE READ READ ONLY 事务内先 count 后 rows（对齐 _begin_read +
 // _transaction 的顺序双查询语义）。
 //
-// 参数序与占位符文本序一致：[date, user_id, *filter_params]，rows 查询尾部
+// 参数序与占位符文本序一致：[*有效指标日参数, user_id, *filter_params]，rows 查询尾部
 // 追加 [page_size, offset]。UserID 必须为正（上游 _require_owner /
 // MCP 工具层已校验；<=0 时 pf  JOIN 不命中，结果为空而非报错）。
 func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.ProjectCollectionFilters) (mcpapp.ProjectCollectionPage, error) {
@@ -807,7 +819,7 @@ func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.Project
 	if err != nil {
 		return mcpapp.ProjectCollectionPage{}, fmt.Errorf("postgres: 调度时区 %q 加载失败: %w", r.timezone, err)
 	}
-	date := time.Now().In(zone).Format("2006-01-02")
+	dateParams := effectiveMetricDateParams(time.Now().In(zone))
 
 	// gh_filters 组装段逐字移植（窄口径下 web_filters、candidates、
 	// scope today/recommended、strong match 分支均不触发）。
@@ -852,7 +864,7 @@ func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.Project
 	filters = append(filters, "pf.id IS NOT NULL") // favorites_only=True
 
 	// _build_gh_branch：SELECT 列序 = 58 静态列 + 收藏列 + 推荐尾列；
-	// 参数序 = [date, user_id, *filter_params]。
+	// 参数序 = [*有效指标日参数, user_id, *filter_params]。
 	selectColumns := make([]string, 0, len(ghSelectColumns)+1+len(ghSelectTailColumns))
 	selectColumns = append(selectColumns, ghSelectColumns...)
 	selectColumns = append(selectColumns, ghFavoriteColumns)
@@ -866,8 +878,9 @@ func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.Project
 	rowsSQL := dollarPlaceholders("WITH project_rows AS (" + selectSQL + ") SELECT * FROM project_rows ORDER BY " +
 		collectionOrderBy(f.Sort) + " LIMIT %s OFFSET %s")
 
-	params := make([]any, 0, 2+len(filterParams)+2)
-	params = append(params, date, f.UserID)
+	params := make([]any, 0, len(dateParams)+1+len(filterParams)+2)
+	params = append(params, dateParams...)
+	params = append(params, f.UserID)
 	params = append(params, filterParams...)
 	rowsParams := append(append([]any{}, params...), pageSize, (page-1)*pageSize)
 
