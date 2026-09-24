@@ -131,6 +131,46 @@ def base_exists(root: Path) -> bool:
     return result.returncode == 0
 
 
+def _path_is_git_ignored(root: Path, relative: str) -> bool:
+    """True when ``relative`` is git-ignored inside the worktree at ``root``."""
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", relative],
+        cwd=root, check=False, env=_git_env(),
+    )
+    return result.returncode == 0
+
+
+def link_backend_venv(primary: Path, worktree: Path) -> str | None:
+    """Best-effort: point a new worktree's ``backend/.venv`` at the primary
+    checkout's, so the pre-commit ruff + affected-test gate runs here instead
+    of silently skipping. The hook resolves ``backend/.venv/bin/{ruff,python}``
+    relative to the worktree root and, when that path is absent, only prints a
+    "skipped" warning -- so a fresh linked worktree otherwise has no local
+    lint/test gate until the interpreter is reachable.
+
+    Never fails ``start``: this is a convenience, not a guarantee. A missing
+    source venv, an existing target, an absent ``backend/`` directory, a
+    ``backend/.venv`` that this repo does not git-ignore (linking it would make
+    ``check`` report an untracked entry), or any OS error all leave the gate on
+    its skip-with-warning path. Returns the created link path, else ``None``.
+    """
+    source = (primary / "backend" / ".venv").resolve()
+    target = worktree / "backend" / ".venv"
+    try:
+        if not source.is_dir():
+            return None
+        # Never clobber an existing venv/link and never create ``backend/``
+        # itself (that would be an untracked dir): rely on the tracked checkout.
+        if target.exists() or target.is_symlink() or not target.parent.is_dir():
+            return None
+        if not _path_is_git_ignored(worktree, "backend/.venv"):
+            return None
+        target.symlink_to(source)
+    except OSError:
+        return None
+    return str(target)
+
+
 def status(root: Path) -> dict[str, Any]:
     item = current_worktree(root)
     risks: list[str] = []
@@ -264,11 +304,15 @@ def start(slug: str, root: Path) -> dict[str, Any]:
     # for linked worktrees. Store the tracked relative path in worktree config.
     git("config", "extensions.worktreeConfig", "true", cwd=path)
     git("config", "--worktree", "core.hooksPath", ".githooks", cwd=path)
+    # Point backend/.venv at the primary checkout so the pre-commit ruff +
+    # affected-test gate runs in this worktree instead of silently skipping.
+    venv_link = link_backend_venv(primary, path)
     result = {
         "worktree": str(path),
         "branch": branch,
         "base": "origin/main",
         "primary_worktree": str(primary),
+        "backend_venv_link": venv_link,
     }
     if ao_evidence is not None:
         try:

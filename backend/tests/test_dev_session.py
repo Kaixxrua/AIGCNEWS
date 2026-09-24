@@ -615,3 +615,67 @@ def test_binding_failure_preserves_created_worktree_and_reports_it(tmp_path,monk
     assert str(worktrees[0].path) in str(error.value)
     assert worktrees[0].branch in str(error.value)
     assert _session.git('status','--porcelain',cwd=worktrees[0].path)==''
+
+
+def _publish_backend_scaffold(root: Path) -> None:
+    """Commit a tracked ``backend/`` dir plus a ``.venv``-ignoring
+    ``.gitignore`` to main, so a session worktree cut from ``origin/main``
+    contains ``backend/`` and treats ``backend/.venv`` as ignored -- mirroring
+    the real repository the linker relies on."""
+    (root / ".gitignore").write_text(".venv\n", encoding="utf-8")
+    (root / "backend").mkdir(exist_ok=True)
+    (root / "backend" / ".gitkeep").write_text("", encoding="utf-8")
+    _run_git(root, "add", ".gitignore", "backend/.gitkeep")
+    _run_git(root, "commit", "--no-verify", "-m", "scaffold backend and gitignore")
+    _run_git(root, "push", "origin", "main")
+
+
+def test_start_links_backend_venv_from_primary(tmp_path):
+    root = _temporary_remote(tmp_path)[1]
+    _publish_backend_scaffold(root)
+    # A real (uncommitted) virtualenv living in the primary checkout.
+    primary_bin = root / "backend" / ".venv" / "bin"
+    primary_bin.mkdir(parents=True)
+    (primary_bin / "ruff").write_text("#!/bin/sh\n", encoding="utf-8")
+
+    result = _session.start("venv-link", root)
+    session = Path(result["worktree"])
+    link = session / "backend" / ".venv"
+
+    assert link.is_symlink()
+    assert link.resolve() == (root / "backend" / ".venv").resolve()
+    # The pre-commit hook resolves backend/.venv/bin/ruff relative to the
+    # worktree; it must reach the primary interpreter through the link.
+    assert (link / "bin" / "ruff").is_file()
+    assert result["backend_venv_link"] == str(link)
+    # The link is git-ignored, so it never dirties the session (check stays ok).
+    assert _run_git(session, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_start_without_primary_venv_skips_link(tmp_path):
+    # No primary backend/.venv -> start still succeeds and creates no link,
+    # leaving the pre-commit gate on its documented skip-with-warning path.
+    root = _temporary_remote(tmp_path)[1]
+    result = _session.start("no-venv", root)
+    session = Path(result["worktree"])
+    assert result["backend_venv_link"] is None
+    assert not (session / "backend" / ".venv").exists()
+
+
+def test_start_skips_venv_link_when_not_git_ignored(tmp_path):
+    # backend/ is tracked but nothing git-ignores backend/.venv; linking it
+    # would make `check` report an untracked entry, so the link is skipped.
+    root = _temporary_remote(tmp_path)[1]
+    (root / "backend").mkdir(exist_ok=True)
+    (root / "backend" / ".gitkeep").write_text("", encoding="utf-8")
+    _run_git(root, "add", "backend/.gitkeep")
+    _run_git(root, "commit", "--no-verify", "-m", "backend dir without gitignore")
+    _run_git(root, "push", "origin", "main")
+    (root / "backend" / ".venv" / "bin").mkdir(parents=True)
+
+    result = _session.start("venv-noignore", root)
+    session = Path(result["worktree"])
+    assert result["backend_venv_link"] is None
+    assert not (session / "backend" / ".venv").is_symlink()
+    # The session must stay clean: no untracked backend/.venv entry.
+    assert _run_git(session, "status", "--porcelain").stdout.strip() == ""
