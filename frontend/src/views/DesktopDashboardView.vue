@@ -17,7 +17,7 @@ import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
 
 defineOptions({ name: 'DesktopDashboardView' })
 const { t, locale } = useI18n()
-const digestFeatures = computed(() => locale.value.startsWith('zh') ? ['更快', '更深', '更广', '连接 AI 创新'] : ['Faster', 'Deeper', 'Broader', 'Connect AI innovation'])
+const digestFeatures = ['featureSchedule', 'featureEmailRss', 'featureChat', 'featureWebhook'] as const
 const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
 const uiPreview = ref<UiTemplate | null>(null)
@@ -35,7 +35,6 @@ const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
 const {
   statValues,
-  visitorValues,
   mcpTotalCalls,
   mcpDshCalls,
   updateStatSources,
@@ -95,7 +94,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <p>{{ t('dashboard.editorial.subtitle') }}</p>
       </div>
       <DashboardOverviewPanel v-if="!loading" :loading="loading" :active-tab="activeTab"
-        :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
+        :stat-values="statValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
     <div v-if="errorMsg" class="dashboard-error" role="alert">{{ errorMsg }}</div>
@@ -113,7 +112,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
           <svg class="digest-ink-frame" viewBox="0 0 400 230" preserveAspectRatio="none" aria-hidden="true"><path d="M10 3 Q5 2 4 12 L3 216 Q2 225 13 226 L387 228 Q396 227 396 216 L398 14 Q399 5 388 4 Z" /></svg>
           <div class="digest-heading"><span class="digest-mail"><Mail :size="30" :stroke-width="2.8" /></span><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
           <p>{{ t('dashboard.editorial.digestDescription') }}</p>
-          <ul class="digest-features"><li v-for="feature in digestFeatures" :key="feature"><Check :size="16" aria-hidden="true" />{{ feature }}</li></ul>
+          <ul class="digest-features"><li v-for="feature in digestFeatures" :key="feature"><Check :size="16" aria-hidden="true" />{{ t(`dashboard.digest.${feature}`) }}</li></ul>
           <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
             {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
           </RouterLink>

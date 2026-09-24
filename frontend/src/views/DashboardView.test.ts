@@ -4,10 +4,11 @@ import { describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadCatalog } from '@/features/ui-library/catalog'
 
+const layout = vi.hoisted(() => ({ desktop: false }))
 vi.mock('@vueuse/core', async (original) => {
   const actual = await original<typeof import('@vueuse/core')>()
   const { ref } = await import('vue')
-  return { ...actual, useElementVisibility: () => ref(true) }
+  return { ...actual, useElementVisibility: () => ref(true), useMediaQuery: () => ref(layout.desktop) }
 })
 
 vi.mock('@/features/ui-library/catalog', () => ({
@@ -62,7 +63,8 @@ const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
     editorial: { digestTitle: '每日 AI 简报' },
-    digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报' },
+    digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报',
+      featureSchedule: '每天 08:00 更新', featureEmailRss: '邮件、RSS 订阅', featureChat: 'Telegram、Discord', featureWebhook: 'Webhook 推送' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
   },
 }
@@ -151,5 +153,19 @@ describe('DashboardView', () => {
     expect(wrapper.html()).not.toContain('/api/feeds/member.xml?token=')
     expect(wrapper.find('a[href="/subscriptions"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+  })
+
+  it('states only verifiable delivery facts in the desktop digest card', async () => {
+    layout.desktop = true
+    try {
+      const wrapper = await mountView()
+      // 08:00 生成（daily_briefing）+ 订阅向导里实际可选的投递渠道
+      expect(wrapper.findAll('.digest-features li').map(item => item.text())).toEqual([
+        '每天 08:00 更新', '邮件、RSS 订阅', 'Telegram、Discord', 'Webhook 推送',
+      ])
+      wrapper.unmount()
+    } finally {
+      layout.desktop = false
+    }
   })
 })

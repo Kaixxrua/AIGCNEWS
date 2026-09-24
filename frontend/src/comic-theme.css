@@ -30,6 +30,9 @@
   --live-dot: #31a854;
   --live-dot-halo: #31a85425;
   --dock-account-ink: #15643d;
+  --metric-github: #67ef85;
+  --metric-ui: #ffd591;
+  --metric-ui-ink: #ef531c;
 }
 
 :root[data-theme='dark'] {
