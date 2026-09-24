@@ -27,6 +27,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
     <template v-if="editorial && !embedded">
       <div class="footer-brand">
         <RouterLink to="/" class="footer-wordmark">{{ brandName }}</RouterLink>
+        <span class="footer-brand__tagline">{{ t('footer.createMore') }}</span>
       </div>
       <div class="footer-right">
         <nav class="footer-nav" :aria-label="t('footer.siteInfo')">
@@ -36,6 +37,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
         </nav>
         <div class="footer-copyright">
           <span>© {{ year }} {{ brandName }}</span>
+          <span>{{ t('footer.discoverMore') }}</span>
           <a :href="icpLookupUrl" target="_blank" rel="noopener noreferrer nofollow" class="footer-link footer-icp">{{ icpNumber }}</a>
         </div>
       </div>
@@ -137,7 +139,9 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 }
 .footer-brand, .footer-right { display: flex; align-items: center; gap: 20px; pointer-events: auto; }
 .footer-brand { max-width: calc((100vw - 880px) / 2); }
-.footer-wordmark { color: var(--ink); font-size: 18px; font-weight: 850; letter-spacing: -.04em; }
+.footer-wordmark { position: relative; color: var(--ink); font-size: 18px; font-weight: 850; letter-spacing: -.04em; }
+.footer-wordmark::before { content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 4px; background: var(--acid); transform: skewX(-25deg); z-index: -1; }
+.footer-brand__tagline { border-left: 1px solid var(--rule); padding-left: 20px; }
 .footer-right { gap: 16px; }
 .footer-nav { display: flex; align-items: center; gap: 20px; }
 .footer-nav button { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
@@ -153,17 +157,20 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 @media (min-width: 1024px) and (max-width: 1599px) {
   .dock-footer--editorial { left: 24px; right: 24px; }
   .footer-brand { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .footer-brand__tagline { border: 0; padding: 0; font-size: 11px; }
   .footer-right { flex-direction: column; align-items: flex-end; gap: 7px; }
   .footer-nav { gap: 14px; font-size: 11px; }
   .footer-copyright { border: 0; padding: 0; text-align: right; gap: 3px; }
+  .footer-copyright > span:nth-child(2) { display: none; }
 }
-@media (min-width: 1024px) and (max-width: 1199px) { .footer-wordmark { font-size: 14px; } .footer-nav { gap: 9px; font-size: 10px; } .footer-icp { font-size: 8px; } }
+@media (min-width: 1024px) and (max-width: 1199px) { .footer-brand__tagline { display: none; } .footer-wordmark { font-size: 14px; } .footer-nav { gap: 9px; font-size: 10px; } .footer-icp { font-size: 8px; } }
 @media (max-width: 1023px) { .dock-footer:not(.dock-footer--embedded) { display: none; } }
 
 /* Reserve the same center lane as the dock. Locale text wraps only in its own side. */
 @media (min-width: 1024px) {
  .dock-footer--editorial { left: 16px; right: 16px; display: grid; grid-template-columns: minmax(0, 1fr) var(--home-dock-width, clamp(560px, 58vw, 900px)) minmax(0, 1fr); column-gap: 16px; }
  .dock-footer--editorial .footer-brand { grid-column: 1; max-width: none; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; white-space: normal; }
+ .dock-footer--editorial .footer-brand__tagline { border: 0; padding: 0; font-size: 11px; }
  .dock-footer--editorial .footer-right { grid-column: 3; min-width: 0; flex-direction: column; align-items: flex-end; gap: 6px; white-space: normal; }
  .dock-footer--editorial .footer-nav { justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
  .dock-footer--editorial .footer-link { white-space: nowrap; }

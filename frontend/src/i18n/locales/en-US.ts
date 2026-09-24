@@ -195,6 +195,7 @@ const enUSCatalog = {
   'dashboard.digest.featureChat': 'Telegram · Discord',
   'dashboard.digest.featureWebhook': 'Webhook delivery',
   'dashboard.editorial.title': 'Today in AI',
+  'dashboard.editorial.creationMark': 'Create freely',
   'dashboard.editorial.digestDescription': 'The AI developments worth your attention, delivered daily.',
   'dashboard.editorial.digestTitle': 'Daily AI Brief',
   'dashboard.editorial.subtitle': 'Projects and progress worth your attention',
@@ -234,9 +235,11 @@ const enUSCatalog = {
   'monitor.uiSources.deleteFailed': 'Failed to delete the UI asset source.',
   'monitor.uiSources.deleteConfirm': 'Delete discovery source “{name}”?',
   'projects.heatPending': 'Pending: no usable growth snapshot yet. Heat is not a quality rating.',
+  'footer.createMore': 'Let AI create more possibilities',
   'footer.siteInfo': 'Site information',
   'footer.about': 'About us',
   'footer.contact': 'Contact us',
+  'footer.discoverMore': 'Help great projects get discovered',
   'footer.aboutDescription': 'AIGC NEWS brings together AI open-source projects, papers, news and tools to help you discover worthwhile developments.',
 } as const
 
