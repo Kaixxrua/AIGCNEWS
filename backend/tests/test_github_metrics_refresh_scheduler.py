@@ -107,15 +107,33 @@ class GitHubMetricDateTests(unittest.TestCase):
             result = metrics.refresh_and_compute_github_project_metrics(
                 metric_date="2026-07-14",
                 closing=True,
-                _local_now=local_now,
+                _now=local_now,
                 db=repository,
             )
 
         self.assertEqual(result["metric_date"], "2026-07-14")
         self.assertEqual(refresh.call_args.kwargs["metric_date"], "2026-07-14")
         self.assertTrue(refresh.call_args.kwargs["closing"])
-        self.assertIs(refresh.call_args.kwargs["_local_now"], local_now)
+        self.assertIs(refresh.call_args.kwargs["_now"], local_now)
         self.assertEqual(compute.call_args.kwargs["metric_date"], "2026-07-14")
+
+    def test_closing_refresh_uses_scheduler_clock_when_not_injected(self) -> None:
+        """调度器不注入时钟：必须回落到模块时钟，而不是调用 None。"""
+        repository = MagicMock()
+        repository.list_github_project_metric_targets.return_value = []
+        with patch.object(
+            metrics, "_local_now", return_value=datetime(2026, 7, 15, 0, 33)
+        ):
+            result = metrics.refresh_and_compute_github_project_metrics(
+                metric_date="2026-07-14",
+                closing=True,
+                dry_run=True,
+                db=repository,
+            )
+
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["metric_date"], "2026-07-14")
+        self.assertEqual(result["refresh"]["metric_date"], "2026-07-14")
 
     def test_closing_refresh_still_allows_today(self) -> None:
         local_now = datetime(2026, 7, 15, 0, 33)
@@ -130,7 +148,7 @@ class GitHubMetricDateTests(unittest.TestCase):
                 metrics.refresh_github_project_metric_snapshots(
                     metric_date="2026-07-14",
                     closing=True,
-                    _local_now=datetime(2026, 7, 15, 1, 0),
+                    _now=datetime(2026, 7, 15, 1, 0),
                     db=repository,
                 )
 
@@ -143,7 +161,7 @@ class GitHubMetricDateTests(unittest.TestCase):
                 metrics.refresh_github_project_metric_snapshots(
                     metric_date=bad,
                     closing=True,
-                    _local_now=datetime(2026, 7, 15, 0, 33),
+                    _now=datetime(2026, 7, 15, 0, 33),
                     db=MagicMock(),
                 )
 

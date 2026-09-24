@@ -381,7 +381,7 @@ def refresh_github_project_metric_snapshots(
     dry_run: bool = False,
     closing: bool = False,
     _local_date: date | None = None,
-    _local_now: datetime | None = None,
+    _now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
     """Refresh today's lightweight GitHub metrics and write raw snapshots.
@@ -391,7 +391,7 @@ def refresh_github_project_metric_snapshots(
     """
 
     if closing:
-        local_now = _local_now or _local_now()
+        local_now = _now or _local_now()
         snapshot_date = _closing_metric_date(metric_date, local_now=local_now)
     else:
         snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
@@ -685,11 +685,11 @@ def refresh_and_compute_github_project_metrics(
     dry_run: bool = False,
     closing: bool = False,
     corroborated_repo_ids: set[str] | None = None,
-    _local_now: datetime | None = None,
+    _now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
     if closing:
-        local_now = _local_now or _local_now()
+        local_now = _now or _local_now()
         resolved_date = _closing_metric_date(metric_date, local_now=local_now)
         refresh_result = refresh_github_project_metric_snapshots(
             min_stars=min_stars,
@@ -697,7 +697,7 @@ def refresh_and_compute_github_project_metrics(
             metric_date=resolved_date,
             dry_run=dry_run,
             closing=True,
-            _local_now=local_now,
+            _now=local_now,
             db=db,
         )
     else:
