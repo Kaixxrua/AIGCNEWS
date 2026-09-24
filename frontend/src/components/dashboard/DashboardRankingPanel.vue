@@ -139,7 +139,7 @@ const boardDateHint = computed(() => {
 .ranking-link { position:relative;display:flex;align-items:center;gap:14px;height:100%;min-height:0;padding:3px 12px;color:var(--ink); }
 .ranking-link:hover { background:color-mix(in srgb,var(--acid) 7%,transparent); }
 .ranking-number { display:flex;justify-content:center;flex:0 0 38px;width:38px;height:auto;margin:0;background:none;color:var(--ink-secondary);font-size:23px;line-height:1;font-weight:850;font-style:italic;font-variant-numeric:tabular-nums; }
-.ranking-link :deep(.ranking-avatar) { width:42px;height:42px;flex-basis:42px; }
+.ranking-link :deep(.ranking-avatar) { width:42px;height:42px;flex-basis:42px;font-size:17px; }
 .ranking-body { min-width:0;flex:1; }
 .ranking-title { display:block;overflow:hidden;color:var(--ink);font-size:15px;line-height:1.4;font-weight:750;white-space:nowrap;text-overflow:ellipsis; }
 .ranking-summary { display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin:1px 0 0;color:var(--ink-secondary);font-size:13px;line-height:1.5; }
@@ -176,7 +176,7 @@ const boardDateHint = computed(() => {
 .ranking-row--silver .ranking-ink-frame { transform:scaleX(-1); }
 .ranking-row--featured .ranking-link { gap:13px;padding:48px 13px 11px; }
 .ranking-row--featured .ranking-number { position:absolute;left:16px;top:9px;color:var(--podium-ink);font-size:38px;line-height:1;font-weight:950;text-shadow:1px 2px 0 var(--paper-raised);transform:skewX(-4deg); }
-.ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:78px;height:78px;flex-basis:78px;border:0; }
+.ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:78px;height:78px;flex-basis:78px;border:0;font-size:30px; }
 .ranking-row--featured .ranking-title { font-size:16px;letter-spacing:-.035em; }
 .ranking-row--featured .ranking-summary { -webkit-line-clamp:2;margin:6px 0 11px;font-size:13px;line-height:1.55; }
 .ranking-row--featured .ranking-meta { gap:17px; }
@@ -209,7 +209,7 @@ const boardDateHint = computed(() => {
   .ranking-row .ranking-heat { font-size:13px; }
   .ranking-row:not(.ranking-row--featured) .ranking-meta { grid-template-columns:84px 68px 71px;gap:8px; }
   .ranking-row--featured .ranking-link { gap:9px;padding-inline:10px; }
-  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:58px;height:58px;flex-basis:58px; }
+  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:58px;height:58px;flex-basis:58px;font-size:23px; }
   .ranking-row--featured .ranking-title { font-size:13px; }
   .ranking-row--featured .ranking-summary { font-size:12px; }
   .ranking-row--featured .ranking-heat { font-size:16px; }
@@ -223,18 +223,18 @@ const boardDateHint = computed(() => {
   .editorial-list { height:auto;grid-template-rows:175px repeat(7,minmax(58px,auto)); }
   .ranking-row:not(.ranking-row--featured) .ranking-body { display:block; }
   .ranking-row:not(.ranking-row--featured) .ranking-meta { margin-top:3px; }
-  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:48px;height:48px;flex-basis:48px; }
+  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:48px;height:48px;flex-basis:48px;font-size:19px; }
 }
 @media (min-width:1024px) and (max-height:820px) {
   .editorial-list { grid-template-rows:136px repeat(7,minmax(0,1fr)); }
   .ranking-link { gap:8px;padding-block:1px; }
-  .ranking-link :deep(.ranking-avatar) { width:32px;height:32px;flex-basis:32px; }
+  .ranking-link :deep(.ranking-avatar) { width:32px;height:32px;flex-basis:32px;font-size:14px; }
   .ranking-number { font-size:22px;flex-basis:30px; }
   .ranking-title { font-size:12px;line-height:1.25; }
   .ranking-summary { font-size:11px;line-height:1.3; }
   .ranking-row--featured .ranking-link { padding:39px 10px 7px; }
   .ranking-row--featured .ranking-number { font-size:33px; }
-  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:49px;height:49px;flex-basis:49px; }
+  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:49px;height:49px;flex-basis:49px;font-size:20px; }
   .ranking-row--featured .ranking-title { font-size:12px; }
   .ranking-row--featured .ranking-summary { margin:4px 0 6px;font-size:11px;line-height:1.4; }
   .ranking-row--featured .ranking-meta { gap:8px; }

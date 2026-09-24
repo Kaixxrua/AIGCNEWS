@@ -15,6 +15,9 @@
   --acid-soft: #f4f9d4;
   --acid-strong: #bfd830;
   --acid-ink: #171a09;
+  /* 透明底 logo 的衬底：按 logo 明暗二选一，不随主题切换 */
+  --logo-plate-light: #fffefa;
+  --logo-plate-dark: #151512;
   --module-radius: 10px;
   --surface-shadow: 0 2px 8px var(--shadow-ink-soft);
   --surface-shadow-raised: 0 12px 32px var(--shadow-ink-soft);

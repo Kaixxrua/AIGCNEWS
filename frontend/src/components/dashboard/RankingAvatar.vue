@@ -34,7 +34,7 @@ const name = computed(() => props.doc.source === 'x'
 </template>
 
 <style scoped>
-.ranking-avatar { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%; overflow: visible; background: var(--acid-soft); color: var(--ink); font-size: 14px; font-weight: 750; border: 1px solid var(--rule); }
+.ranking-avatar { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%; overflow: visible; background: var(--paper-muted); color: var(--ink); font-size: 14px; font-weight: 750; border: 1px solid var(--rule); }
 .ranking-avatar__image { width: 100%; height: 100%; border: 0; background: transparent; }
 .ranking-avatar__fallback { position: relative; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; border-radius: inherit; }
 .ranking-avatar__fallback img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
