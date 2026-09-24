@@ -267,3 +267,23 @@ def test_bind_identity_rejects_unknown_provider_and_empty_subject() -> None:
         repository.bind_identity(
             user_id=7, provider="github", provider_subject="   "
         )
+
+
+def test_every_identity_read_in_login_projects_the_user_id() -> None:
+    """回调按 user["id"] 签发 handoff；冲突兜底分支同样必须投影 users.id。"""
+    cursor = MagicMock()
+    winner = {"id": 5, "user_id": 5, "email": None, "role": "user", "disabled": False}
+    cursor.fetchone.side_effect = [None, {"id": 9, "email": None, "role": "user"}, None, winner]
+    repository = PostgresOAuthIdentityRepository(FakeDatabase(cursor))
+
+    with patch(
+        "backend.app.repositories.postgres_oauth_identity_repository.hash_password",
+        return_value="random-unusable-hash",
+    ):
+        result = repository.resolve_first_login(provider="github", provider_subject="subject-1")
+
+    assert result.user["id"] == 5
+    reads = [call.args[0] for call in cursor.execute.call_args_list
+             if "FROM user_oauth_identities i" in call.args[0] and "JOIN users u" in call.args[0]]
+    assert len(reads) == 2
+    assert all("SELECT u.id," in sql for sql in reads)

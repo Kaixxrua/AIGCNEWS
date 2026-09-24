@@ -63,9 +63,10 @@ class PostgresOAuthIdentityRepository:
                         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                         (lock_key,),
                     )
+                # 返回的 user 必须带 users.id：回调据此签发登录 handoff。
                 cursor.execute(
                     """
-                    SELECT i.id AS identity_id, i.user_id, i.provider, i.provider_subject,
+                    SELECT u.id, i.id AS identity_id, i.user_id, i.provider, i.provider_subject,
                            i.display_email, i.email_verified,
                            u.email, u.role, u.disabled, u.pwd_ver,
                            u.membership_tier, u.membership_expires_at
@@ -155,7 +156,7 @@ class PostgresOAuthIdentityRepository:
                     # advisory lock; never return this request's candidate user.
                     cursor.execute(
                         """
-                        SELECT i.user_id, u.email, u.role, u.disabled, u.pwd_ver,
+                        SELECT u.id, i.user_id, u.email, u.role, u.disabled, u.pwd_ver,
                                u.membership_tier, u.membership_expires_at
                         FROM user_oauth_identities i
                         JOIN users u ON u.id = i.user_id
