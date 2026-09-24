@@ -216,8 +216,8 @@ const boardDateHint = computed(() => {
   .ranking-row--featured .ranking-score { font-size:14px; }
 }
 @media (max-width:1199px) {
-  .ranking-toolbar { flex-wrap:wrap;gap:8px;padding-bottom:5px; }
-  .ranking-tabs { flex:1;justify-content:space-between; }
+  .ranking-toolbar { flex:0 0 auto;flex-wrap:wrap;gap:8px;padding-bottom:5px; }
+  .ranking-tabs { flex:1 0 auto;justify-content:space-between; }
   .ranking-source-status { margin-left:auto; }
   .ranking-list { overflow:visible; }
   .editorial-list { height:auto;grid-template-rows:175px repeat(7,minmax(58px,auto)); }

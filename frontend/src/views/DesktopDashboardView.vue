@@ -181,7 +181,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .digest-card p { position:relative;z-index:4;display:table;max-width:96%;margin-top:0;padding:2px 5px 3px 0;background:transparent;color:var(--ink-secondary);font-size:12px;line-height:1.55;white-space:normal; }
 .digest-features { position:relative;z-index:1;display:flex;flex-direction:column;gap:2px;max-width:48%;margin-top:5px;font-size:15px;line-height:18px;font-weight:750; }
 .digest-features li { display:flex;align-items:center;gap:10px;height:19px;min-height:19px;white-space:nowrap; }
-.digest-features svg { background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
+.digest-features svg { flex-shrink:0;background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
 .digest-cta { position:absolute;left:14px;bottom:12px;z-index:4;display:flex;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
 .digest-cta svg { width:23px;height:23px; }
 .digest-robot { position:absolute;z-index:2;right:-17px;bottom:1px;width:64%;height:108%;object-fit:contain;object-position:right bottom;pointer-events:none; }
@@ -229,8 +229,16 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading__copy { flex-basis:100%; }
   .dashboard-heading h1 { font-size:34px;line-height:1.2;margin-bottom:5px;letter-spacing:-.045em; }
   .dashboard-heading p { font-size:16px;line-height:1.4; }
-  .dashboard-heading :deep(.stat-strip) { flex-basis:100%; }
+  .dashboard-heading :deep(.stat-strip) { flex-basis:100%;height:auto; }
+  .dashboard-sidebar { grid-template-rows:214px auto 60px minmax(81px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:28px; }
+  .digest-card { padding-bottom:58px; }
+  .digest-card p { max-width:100%; }
+  .digest-features { max-width:60%;font-size:13px;line-height:16px; }
+  .digest-features li { gap:7px;height:18px;min-height:18px; }
+  .digest-features svg { width:16px;height:16px; }
+  .digest-cta { width:56%; }
+  .digest-robot { right:-12px;width:44%;height:78%; }
   .integration-card > svg { width:28px;height:33px;padding:4px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:19px; }
   .ui-inspiration__body { grid-template-columns:55px minmax(0,1fr); }
