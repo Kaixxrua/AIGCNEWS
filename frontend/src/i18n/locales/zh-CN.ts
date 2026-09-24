@@ -524,7 +524,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'footer.contact': '联系我们',
   'footer.discoverMore': '让好项目被更多人看见',
   'footer.aboutDescription': 'AIGC NEWS 汇集 AI 开源项目、论文、资讯与工具，帮助你发现值得关注的项目与新进展。',
-  'projects.hotScoreTitle': '热度综合考虑规模校正后的增长、增长加速度、绝对增量、维护活跃度和社区参与度。',
+  'projects.hotScoreTitle': '热度由今日增长量级决定（规模校正增长与绝对增量）；增长趋势、维护活跃度和社区参与度只做小幅调节，多项刷星迹象同时出现会被降权。',
   'projects.growthSnapshot': '根据连续快照精确计算：{from} → {to}。',
   'projects.growthTrending': '来自 GitHub Trending 每日“今日新增 stars”报告{observed}。',
   'projects.growthUnavailable': '暂无连续快照或当日 GitHub Trending 报告，因此今日增量按 0 处理。',

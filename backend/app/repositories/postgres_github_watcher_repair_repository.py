@@ -2,7 +2,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.domain.github_heat import DISPLAY_ANCHORS
+from backend.app.domain.github_heat import (
+    MAGNITUDE_WEIGHTS,
+    QUALITY_BASE,
+    QUALITY_SPAN,
+    QUALITY_WEIGHTS,
+    SCORE_VERSION,
+    SUSPICION_DEMOTION_STRENGTH,
+    SUSPICION_DEMOTION_THRESHOLD,
+)
+
+# daily_hot_v6 display stretch, kept only to repair rows still labelled v6.
+_V6_DISPLAY_ANCHORS = (
+    (0, 0), (20, 25), (40, 45), (60, 65), (70, 77),
+    (80, 85), (85, 90), (90, 93), (95, 96), (100, 100),
+)
 
 
 class PostgresGitHubWatcherRepairRepository:
@@ -160,8 +174,20 @@ class PostgresGitHubWatcherRepairRepository:
     ) -> int:
         v6_display = "CASE " + " ".join(
             f"WHEN affected.raw <= {upper} THEN {start}+({end}-{start})*(affected.raw-{lower})/({upper}-{lower})"
-            for (lower, start), (upper, end) in zip(DISPLAY_ANCHORS, DISPLAY_ANCHORS[1:])
+            for (lower, start), (upper, end) in zip(_V6_DISPLAY_ANCHORS, _V6_DISPLAY_ANCHORS[1:])
         ) + " ELSE 100 END"
+        # v7: community becomes unknown and drops out of the quality average.
+        maintenance_known = "(maintenance_activity_score>0)"
+        v7_hot = (
+            f"({MAGNITUDE_WEIGHTS['scale']}*scale_corrected_growth_score+"
+            f"{MAGNITUDE_WEIGHTS['absolute']}*absolute_growth_score)"
+            f"*({QUALITY_BASE}+{QUALITY_SPAN}*("
+            f"{QUALITY_WEIGHTS['trend']}*growth_acceleration_score+"
+            f"CASE WHEN {maintenance_known} THEN {QUALITY_WEIGHTS['maintenance']}*maintenance_activity_score ELSE 0 END)"
+            f"/({QUALITY_WEIGHTS['trend']}+CASE WHEN {maintenance_known} THEN {QUALITY_WEIGHTS['maintenance']} ELSE 0 END)/100)"
+            f"*(CASE WHEN growth_suspicion_score>={SUSPICION_DEMOTION_THRESHOLD} "
+            f"THEN 1-{SUSPICION_DEMOTION_STRENGTH}*LEAST(growth_suspicion_score,1) ELSE 1 END)"
+        )
         with connection.cursor() as cursor:
             cursor.execute(
                 "WITH affected(repo_id,metric_date) AS ("
@@ -173,7 +199,9 @@ class PostgresGitHubWatcherRepairRepository:
                 "UPDATE github_repo_daily_metrics AS metrics SET "
                 "daily_fork_growth=0,daily_watcher_growth=0,"
                 "community_engagement_score=0.0,"
-                "hot_score=ROUND((CASE WHEN score_version='daily_hot_v6' THEN "
+                f"hot_score=ROUND((CASE WHEN score_version='{SCORE_VERSION}' THEN "
+                + v7_hot
+                + " WHEN score_version='daily_hot_v6' THEN "
                 + v6_display + " ELSE "
                 "0.55*scale_corrected_growth_score+"
                 "0.20*growth_acceleration_score+"

@@ -1,5 +1,8 @@
 # GitHub heat v6
 
+> Superseded by `daily_hot_v7` (`docs/github-heat-v7.md`). Kept for rows still
+> labelled v6 and for the watcher-repair legacy branch.
+
 `daily_hot_v6` scores elapsed-time growth velocity instead of treating a partial
 day's observed growth as a full day. The first twelve observation hours blend
 the current velocity with the preceding interval's velocity. There is no EMA

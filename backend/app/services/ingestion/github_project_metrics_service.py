@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
-import math
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
-from backend.app.domain.github_heat import SCORE_VERSION, score_snapshots
+from backend.app.domain.github_heat import (
+    SCORE_VERSION,
+    HeatInputs,
+    days_since,
+    score_heat,
+    snapshot_velocity,
+    suspicion_multiplier,
+)
 from backend.app.repositories.project_write_repository import (
     GitHubProjectIngestionRepository,
 )
@@ -19,30 +26,24 @@ from backend.app.services.ingestion.source_github import fetch_github_repo_metri
 logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_STARS = 500
-DEFAULT_SCORE_VERSION = SCORE_VERSION
-_FULL_ACCELERATION_CONFIDENCE_SAMPLES = 3
-_SCALE_GROWTH_REFERENCE = math.log1p(4.0)
-_ABSOLUTE_GROWTH_REFERENCE = math.log1p(1000.0)
-_COMMUNITY_REFERENCE = 0.6 * math.log1p(100.0) + 0.4 * math.log1p(10.0)
-_ACCELERATION_RATIO_ANCHORS = (
-    (0.25, 0.0),
-    (0.5, 20.0),
-    (1.0, 40.0),
-    (2.0, 75.0),
-    (4.0, 100.0),
-)
+_FULL_BASELINE_SAMPLES = 3
 
-# 反作弊信号阈值（一二层：仅打标不降权）。信号加和封顶 1.0；
-# 跨渠道佐证命中时分数清零、signals 仍留痕。
+# 反作弊信号阈值：加和封顶 1.0，≥0.5 才降权（见 github_heat）——单仓信号需两个
+# 及以上叠加，跨账号的 coordinated_creation 单独即可；跨渠道佐证命中时分数清零、
+# signals 仍留痕。
 _SUSPICION_MIN_GROWTH = 100  # 日增低于此不参与判定（小波动噪声太大）
 _FORK_FOLLOW_RATIO = 0.01  # fork 跟随率阈值：刷量仓只涨星不涨 fork
 _PULSE_BASELINE_EPS = 1.0  # 7 日基线 ≈ 0 → 从零脉冲
 _NEW_REPO_DAYS = 30
 _NEW_REPO_MIN_GROWTH = 200
+_COORDINATED_WINDOW = timedelta(minutes=5)
+_COORDINATED_MIN_OWNERS = 3
 _SIGNAL_WEIGHTS = {
     "low_fork_follow": 0.4,
     "spike_from_zero_baseline": 0.3,
     "new_repo_surge": 0.2,
+    # 跨账号证据本身足够强：单独即达降权阈值。
+    "coordinated_creation": 0.6,
 }
 
 
@@ -155,50 +156,6 @@ def _merge_channels(existing: str, new_channel: str) -> str:
     return ",".join(parts)
 
 
-def _normalize_against_reference(raw: float, reference: float) -> float:
-    """Map a raw signal to 0..100 against a stable business reference.
-
-    Fixed references keep scores comparable across days and avoid assigning a
-    near-100 score merely because a modest value happens to be in today's P95.
-    """
-
-    if raw <= 0 or reference <= 0:
-        return 0.0
-    return round(min(raw / reference, 1.0) * 100.0, 4)
-
-
-def _growth_acceleration_curve(daily_growth: float, baseline_7d: float) -> float:
-    """Map growth momentum to a continuous 0..100 score in log-ratio space."""
-
-    if daily_growth <= 0:
-        return 0.0
-    ratio = (daily_growth + 1.0) / (max(baseline_7d, 0.0) + 1.0)
-    if ratio <= _ACCELERATION_RATIO_ANCHORS[0][0]:
-        return _ACCELERATION_RATIO_ANCHORS[0][1]
-    if ratio >= _ACCELERATION_RATIO_ANCHORS[-1][0]:
-        return _ACCELERATION_RATIO_ANCHORS[-1][1]
-
-    for (lower_ratio, lower_score), (upper_ratio, upper_score) in zip(
-        _ACCELERATION_RATIO_ANCHORS,
-        _ACCELERATION_RATIO_ANCHORS[1:],
-    ):
-        if ratio <= upper_ratio:
-            position = math.log(ratio / lower_ratio) / math.log(
-                upper_ratio / lower_ratio
-            )
-            return lower_score + position * (upper_score - lower_score)
-    return _ACCELERATION_RATIO_ANCHORS[-1][1]
-
-
-def _maintenance_score(metric_date: str, pushed_at: Any) -> float:
-    pushed_date = _parse_date(pushed_at)
-    current_date = _parse_date(metric_date)
-    if not pushed_date or not current_date:
-        return 0.0
-    days_since_push = max((current_date - pushed_date).days, 0)
-    return round(100.0 / (1.0 + days_since_push / 14.0), 4)
-
-
 def _growth_suspicion(
     *,
     metric_date: str,
@@ -206,16 +163,21 @@ def _growth_suspicion(
     daily_fork_growth: float,
     has_complete_community_pair: bool,
     baseline_7d: float,
+    baseline_sample_count: int,
     repo_created_at: Any,
     corroborated: bool,
+    coordinated_creation: bool = False,
 ) -> tuple[float, list[str], bool]:
     """反作弊一二层打标：行为比率信号加和（封顶 1.0），佐证命中清零。
 
     信号语义：
       low_fork_follow         刷量账号只点星，fork 跟随率趋近 0；
                               community pair 不完整时跳过（unknown ≠ 0）。
-      spike_from_zero_baseline 7 日基线 ≈ 0 的单日脉冲（买量典型形态）。
+      spike_from_zero_baseline 7 日基线 ≈ 0 的单日脉冲（买量典型形态）；
+                              基线样本不足 3 天时跳过（无历史 ≠ 零基线）。
       new_repo_surge          新仓单日巨量增长且（通常）无外部出处。
+      coordinated_creation    ≥3 个不同账号同一 5 分钟内建仓且同日暴涨
+                              （批量注册的诱饵仓，见 _coordinated_creation_repo_ids）。
     佐证（corroborated=True）不清除 signals——留痕供误报复核，只清零分数。
     """
 
@@ -226,7 +188,10 @@ def _growth_suspicion(
             and daily_fork_growth / daily_star_growth < _FORK_FOLLOW_RATIO
         ):
             signals.append("low_fork_follow")
-        if baseline_7d < _PULSE_BASELINE_EPS:
+        if (
+            baseline_sample_count >= _FULL_BASELINE_SAMPLES
+            and baseline_7d < _PULSE_BASELINE_EPS
+        ):
             signals.append("spike_from_zero_baseline")
         created_date = _parse_date(repo_created_at)
         current_date = _parse_date(metric_date)
@@ -237,6 +202,8 @@ def _growth_suspicion(
             and daily_star_growth >= _NEW_REPO_MIN_GROWTH
         ):
             signals.append("new_repo_surge")
+        if coordinated_creation:
+            signals.append("coordinated_creation")
     score = min(sum(_SIGNAL_WEIGHTS[name] for name in signals), 1.0)
     if corroborated:
         return 0.0, signals, True
@@ -426,6 +393,107 @@ def refresh_github_project_metric_snapshots(
     return result
 
 
+def _observed_growth(row: Dict[str, Any], *, current_date: date, previous_date: str) -> Dict[str, Any]:
+    """Observed day-over-day deltas; the daily metric contract, independent of heat."""
+
+    # 基线快照由 SQL 在窗口内向前回溯（latest ≤ previous_date 且 ≥ baseline_start）：
+    # 采集断供日没有精确昨日快照时，用最近一次快照兜底，避免整日 zero-growth。
+    previous_snapshot_date = str(row.get("previous_snapshot_date") or "")
+    has_previous = False
+    baseline_gap_days = 1
+    if previous_snapshot_date:
+        try:
+            baseline_gap_days = max(
+                (current_date - date.fromisoformat(previous_snapshot_date)).days,
+                1,
+            )
+            has_previous = True
+        except ValueError:
+            logger.warning(
+                "[GitHubProjectMetrics] 仓库 %s 基线快照日期非法（%r），按无基线处理。",
+                row.get("repo_id"),
+                previous_snapshot_date,
+            )
+    trending_growth_value = row.get("trending_daily_star_growth")
+    stars = int(row.get("stars") or 0)
+    forks = int(row.get("forks") or 0)
+    watchers = int(row.get("watchers") or 0)
+    previous_stars = int(row.get("previous_stars") or 0)
+    has_complete_community_pair = (
+        has_previous
+        and row.get("community_metrics_complete") == 1
+        and row.get("previous_community_metrics_complete") == 1
+    )
+    growth_observed_at = None
+    daily_fork_growth = daily_watcher_growth = 0
+    if has_previous:
+        # 断供跨天的基线按间隔天数归一化为日增速率，防止 2 天增量被读成
+        # 单日暴涨；source 标记 snapshot_delta_gap 以便与精确日增区分
+        # （且不进入 baseline_7d 日均样本）。
+        growth_source = "snapshot_delta" if previous_snapshot_date == previous_date else "snapshot_delta_gap"
+        daily_growth = max(stars - previous_stars, 0) // baseline_gap_days
+        if has_complete_community_pair:
+            daily_fork_growth = max(forks - int(row.get("previous_forks") or 0), 0) // baseline_gap_days
+            daily_watcher_growth = max(watchers - int(row.get("previous_watchers") or 0), 0) // baseline_gap_days
+        base_stars = previous_stars
+    elif trending_growth_value is not None:
+        growth_source = "github_trending_daily"
+        growth_observed_at = row.get("trending_daily_observed_at")
+        daily_growth = max(int(trending_growth_value or 0), 0)
+        base_stars = stars - daily_growth
+    else:
+        growth_source = "unavailable"
+        daily_growth = 0
+        base_stars = stars
+    return {
+        "stars": stars,
+        "forks": forks,
+        "watchers": watchers,
+        "open_issues": int(row.get("open_issues") or 0),
+        "previous_snapshot_date": previous_snapshot_date if has_previous else None,
+        "previous_stars": previous_stars if has_previous else 0,
+        "daily_star_growth": daily_growth,
+        "daily_fork_growth": daily_fork_growth,
+        "daily_watcher_growth": daily_watcher_growth,
+        "daily_growth_available": growth_source != "unavailable",
+        "daily_growth_source": growth_source,
+        "daily_growth_observed_at": growth_observed_at,
+        "_base_stars": base_stars,
+        "_has_complete_community_pair": has_complete_community_pair,
+    }
+
+
+def _coordinated_creation_repo_ids(candidates: List[tuple[str, str, Any]]) -> set[str]:
+    """同日暴涨的仓库里，≥3 个不同账号在同一 5 分钟窗口内建仓 → 批量注册的诱饵仓。
+
+    candidates: (repo_id, full_name, created_at)。只认精确到分钟的建仓时间；
+    跨仓信号只在本次计算的行里成簇，定向重算看不到窗口外的同伙。
+    """
+
+    stamped: List[tuple[datetime, str, str]] = []
+    for repo_id, full_name, created_at in candidates:
+        text = str(created_at or "")
+        if "/" not in full_name or len(text) < 16 or text[10] != "T":
+            continue
+        try:
+            created = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        stamped.append((created, full_name.split("/", 1)[0].lower(), repo_id))
+    stamped.sort()
+    flagged: set[str] = set()
+    start = 0
+    for end in range(len(stamped)):
+        while stamped[end][0] - stamped[start][0] > _COORDINATED_WINDOW:
+            start += 1
+        window = stamped[start : end + 1]
+        if len({owner for _, owner, _ in window}) >= _COORDINATED_MIN_OWNERS:
+            flagged.update(repo_id for _, _, repo_id in window)
+    return flagged
+
+
 def compute_github_daily_metrics(
     *,
     metric_date: str | date | None = None,
@@ -452,226 +520,115 @@ def compute_github_daily_metrics(
         min_stars=min_stars,
         repo_ids=repo_ids,
     )
-
-    staged: List[Dict[str, Any]] = []
-
-    for row in rows:
-        # 基线快照由 SQL 在窗口内向前回溯（latest ≤ previous_date 且 ≥ baseline_start）：
-        # 采集断供日没有精确昨日快照时，用最近一次快照兜底，避免整日 zero-growth。
-        previous_snapshot_date = str(row.get("previous_snapshot_date") or "")
-        has_previous = False
-        baseline_gap_days = 1
-        if previous_snapshot_date:
-            try:
-                baseline_gap_days = max(
-                    (current_date - date.fromisoformat(previous_snapshot_date)).days,
-                    1,
-                )
-                has_previous = True
-            except ValueError:
-                logger.warning(
-                    "[GitHubProjectMetrics] 仓库 %s 基线快照日期非法（%r），按无基线处理。",
-                    row.get("repo_id"),
-                    previous_snapshot_date,
-                )
-        exact_baseline = previous_snapshot_date == previous_date
-        trending_growth_value = row.get("trending_daily_star_growth")
-        has_trending_growth = trending_growth_value is not None
-        stars = int(row.get("stars") or 0)
-        forks = int(row.get("forks") or 0)
-        watchers = int(row.get("watchers") or 0)
-        previous_stars = int(row.get("previous_stars") or 0)
-        has_complete_community_pair = (
-            has_previous
-            and row.get("community_metrics_complete") == 1
-            and row.get("previous_community_metrics_complete") == 1
-        )
-        if has_previous:
-            # 断供跨天的基线按间隔天数归一化为日增速率，防止 2 天增量被读成
-            # 单日暴涨；source 标记 snapshot_delta_gap 以便与精确日增区分
-            # （且不进入 baseline_7d 日均样本）。
-            growth_source = "snapshot_delta" if exact_baseline else "snapshot_delta_gap"
-            growth_observed_at = None
-            daily_growth = max(stars - previous_stars, 0) // baseline_gap_days
-            daily_fork_growth = (
-                max(forks - int(row.get("previous_forks") or 0), 0) // baseline_gap_days
-                if has_complete_community_pair
-                else 0
+    observed = [
+        (row, _observed_growth(row, current_date=current_date, previous_date=previous_date))
+        for row in rows
+    ]
+    coordinated = _coordinated_creation_repo_ids(
+        [
+            (
+                str(row.get("repo_id") or ""),
+                str(row.get("full_name") or ""),
+                # 快照只存建仓日期；候选池保留 API 原始时间戳。
+                row.get("candidate_created_at") or row.get("repo_created_at"),
             )
-            daily_watcher_growth = (
-                max(watchers - int(row.get("previous_watchers") or 0), 0) // baseline_gap_days
-                if has_complete_community_pair
-                else 0
-            )
-            scale_base_stars = max(previous_stars, 100)
-        elif has_trending_growth:
-            growth_source = "github_trending_daily"
-            growth_observed_at = row.get("trending_daily_observed_at")
-            daily_growth = max(int(trending_growth_value or 0), 0)
-            daily_fork_growth = 0
-            daily_watcher_growth = 0
-            scale_base_stars = max(stars - daily_growth, 100)
-        else:
-            growth_source = "unavailable"
-            growth_observed_at = None
-            daily_growth = 0
-            daily_fork_growth = 0
-            daily_watcher_growth = 0
-            scale_base_stars = max(stars, 100)
-        available = growth_source != "unavailable"
+            for row, item in observed
+            if item["daily_star_growth"] >= _SUSPICION_MIN_GROWTH
+        ]
+    )
+
+    metrics: List[Dict[str, Any]] = []
+    snapshot_velocity_count = 0
+    observed_velocity_count = 0
+    for row, item in observed:
+        daily_growth = item["daily_star_growth"]
+        has_complete_community_pair = item.pop("_has_complete_community_pair")
+        base_stars = item.pop("_base_stars")
         baseline_7d = float(row.get("baseline_7d") or 0.0)
         baseline_sample_count = int(row.get("baseline_sample_count") or 0)
-
-        if available:
-            scale_raw = math.log1p(daily_growth / math.sqrt(scale_base_stars))
-            acceleration_curve_score = _growth_acceleration_curve(
-                daily_growth,
-                baseline_7d,
+        suspicion_score, suspicion_signals, corroborated = (
+            _growth_suspicion(
+                metric_date=metric_date_str,
+                daily_star_growth=float(daily_growth),
+                daily_fork_growth=float(item["daily_fork_growth"]),
+                has_complete_community_pair=has_complete_community_pair,
+                baseline_7d=baseline_7d,
+                baseline_sample_count=baseline_sample_count,
+                repo_created_at=row.get("repo_created_at"),
+                # 同一批账号前 7 天已成簇的，后续日增不再凑满 3 个也继续标记。
+                coordinated_creation=(
+                    str(row.get("repo_id") or "") in coordinated
+                    or bool(row.get("prior_coordinated_creation"))
+                ),
+                corroborated=(
+                    corroborated_repo_ids is not None
+                    and str(row.get("repo_id") or "").lower() in corroborated_repo_ids
+                ),
             )
-            absolute_raw = math.log1p(daily_growth)
-            community_raw = (
-                0.6 * math.log1p(daily_fork_growth)
-                + 0.4 * math.log1p(daily_watcher_growth)
-                if has_complete_community_pair
-                else 0.0
-            )
+            if item["daily_growth_available"]
+            else (0.0, [], False)
+        )
+        if item["daily_growth_available"]:
+            # 同一口径打分：快照时间序列可用时按实际间隔小时折算速率，否则用
+            # 观测日增（含 Trending 冷启动）。缺失输入是未知而非 0。
+            inputs = snapshot_velocity(row.get("heat_snapshot_history") or [], metric_date_str)
+            if inputs is None:
+                observed_velocity_count += 1
+                inputs = HeatInputs(
+                    star_velocity=float(daily_growth),
+                    base_stars=float(base_stars),
+                    baseline_velocity=baseline_7d if baseline_sample_count > 0 else None,
+                    baseline_confidence=min(baseline_sample_count / _FULL_BASELINE_SAMPLES, 1.0),
+                    fork_velocity=float(item["daily_fork_growth"]) if has_complete_community_pair else None,
+                    watcher_velocity=float(item["daily_watcher_growth"]) if has_complete_community_pair else None,
+                    days_since_push=days_since(metric_date_str, row.get("repo_pushed_at")),
+                )
+            else:
+                snapshot_velocity_count += 1
+            if daily_growth <= 0:
+                # 观测日增为 0 的仓库不应凭前一区间速率或次要信号获得热度。
+                inputs = replace(inputs, star_velocity=0.0)
+            scores = score_heat(inputs, suspicion=suspicion_score)
         else:
-            scale_raw = absolute_raw = community_raw = 0.0
-            acceleration_curve_score = 0.0
-        staged.append(
+            scores = score_heat(HeatInputs(star_velocity=0.0, base_stars=float(base_stars)))
+            scores.update(maintenance_activity_score=0.0, community_engagement_score=0.0)
+        metrics.append(
             {
                 "repo_id": row.get("repo_id"),
                 "metric_date": metric_date_str,
-                "stars": stars,
-                "forks": forks,
-                "watchers": watchers,
-                "open_issues": int(row.get("open_issues") or 0),
-                "previous_snapshot_date": previous_snapshot_date if has_previous else None,
-                "previous_stars": previous_stars if has_previous else 0,
-                "daily_star_growth": daily_growth,
-                "daily_fork_growth": daily_fork_growth,
-                "daily_watcher_growth": daily_watcher_growth,
-                "daily_growth_available": available,
-                "daily_growth_source": growth_source,
-                "daily_growth_observed_at": growth_observed_at,
-                "maintenance_activity_score": _maintenance_score(metric_date_str, row.get("repo_pushed_at")),
-                "_scale_raw": scale_raw,
-                "_acceleration_curve_score": acceleration_curve_score,
-                "_acceleration_confidence": min(
-                    max(baseline_sample_count, 0)
-                    / _FULL_ACCELERATION_CONFIDENCE_SAMPLES,
-                    1.0,
-                ),
-                "_absolute_raw": absolute_raw,
-                "_community_raw": community_raw,
-                "_has_complete_community_pair": has_complete_community_pair,
-                "_baseline_7d": baseline_7d,
-                "_repo_created_at": row.get("repo_created_at"),
-                "_speed_score": score_snapshots(row.get("heat_snapshot_history") or [], metric_date_str),
-            }
-        )
-
-    metrics: List[Dict[str, Any]] = []
-    available_count = 0
-    exact_count = 0
-    gap_fallback_count = 0
-    trending_fallback_count = 0
-    positive_growth_count = 0
-    for item in staged:
-        available = bool(item["daily_growth_available"])
-        if available:
-            available_count += 1
-        if item.get("daily_growth_source") == "snapshot_delta":
-            exact_count += 1
-        elif item.get("daily_growth_source") == "snapshot_delta_gap":
-            gap_fallback_count += 1
-        elif item.get("daily_growth_source") == "github_trending_daily":
-            trending_fallback_count += 1
-        if int(item["daily_star_growth"] or 0) > 0:
-            positive_growth_count += 1
-        scale_score = _normalize_against_reference(float(item.pop("_scale_raw")), _SCALE_GROWTH_REFERENCE) if available else 0.0
-        acceleration_score = (
-            round(
-                float(item.pop("_acceleration_curve_score"))
-                * float(item.pop("_acceleration_confidence")),
-                4,
-            )
-            if available
-            else 0.0
-        )
-        absolute_score = _normalize_against_reference(float(item.pop("_absolute_raw")), _ABSOLUTE_GROWTH_REFERENCE) if available else 0.0
-        community_score = _normalize_against_reference(float(item.pop("_community_raw")), _COMMUNITY_REFERENCE) if available else 0.0
-        maintenance_score = float(item.get("maintenance_activity_score") or 0.0) if available else 0.0
-        has_complete_community_pair = bool(item.pop("_has_complete_community_pair"))
-        baseline_7d_value = float(item.pop("_baseline_7d") or 0.0)
-        repo_created_at = item.pop("_repo_created_at")
-        suspicion_score, suspicion_signals, corroborated = _growth_suspicion(
-            metric_date=metric_date_str,
-            daily_star_growth=float(item.get("daily_star_growth") or 0),
-            daily_fork_growth=float(item.get("daily_fork_growth") or 0),
-            has_complete_community_pair=has_complete_community_pair,
-            baseline_7d=baseline_7d_value,
-            repo_created_at=repo_created_at,
-            corroborated=(
-                corroborated_repo_ids is not None
-                and str(item.get("repo_id") or "").lower()
-                in corroborated_repo_ids
-            ),
-        ) if available else (0.0, [], False)
-        hot_score = 0.0
-        if available:
-            hot_score = round(
-                0.55 * scale_score
-                + 0.20 * acceleration_score
-                + 0.10 * absolute_score
-                + 0.10 * maintenance_score
-                + 0.05 * community_score,
-                4,
-            )
-        item.update(
-            {
-                "scale_corrected_growth_score": scale_score,
-                "growth_acceleration_score": acceleration_score,
-                "absolute_growth_score": absolute_score,
-                "maintenance_activity_score": maintenance_score,
-                "community_engagement_score": community_score,
-                "hot_score": hot_score,
+                **item,
+                **scores,
                 "growth_suspicion_score": suspicion_score,
-                "growth_suspicion_signals": json.dumps(
-                    suspicion_signals, ensure_ascii=False
-                ),
+                "growth_suspicion_signals": json.dumps(suspicion_signals, ensure_ascii=False),
                 "growth_corroborated": corroborated,
-                "score_version": "daily_hot_v5",
                 "updated_at": _utcnow(),
             }
         )
-        # Preserve observed day deltas and suspicion contracts; only heat changes.
-        speed_score = item.pop("_speed_score")
-        if speed_score is not None:
-            item.update(speed_score)
-        metrics.append(item)
 
     affected = db.upsert_github_daily_metrics(metrics)
-    suspicious_count = sum(
-        1 for item in metrics if float(item.get("growth_suspicion_score") or 0) > 0
-    )
+    sources = [item["daily_growth_source"] for item in metrics]
     result = {
         "status": "success",
         "metric_date": metric_date_str,
         "previous_date": previous_date,
         "rows": len(metrics),
-        "available": available_count,
-        "exact": exact_count,
-        "gap_fallback": gap_fallback_count,
-        "trending_fallback": trending_fallback_count,
-        "positive_growth": positive_growth_count,
-        "suspicious": suspicious_count,
-        "corroborated": sum(1 for item in metrics if item.get("growth_corroborated")),
+        "available": sum(1 for source in sources if source != "unavailable"),
+        "exact": sources.count("snapshot_delta"),
+        "gap_fallback": sources.count("snapshot_delta_gap"),
+        "trending_fallback": sources.count("github_trending_daily"),
+        "positive_growth": sum(1 for item in metrics if item["daily_star_growth"] > 0),
+        "suspicious": sum(1 for item in metrics if item["growth_suspicion_score"] > 0),
+        "demoted": sum(
+            1
+            for item in metrics
+            if item["daily_star_growth"] > 0 and suspicion_multiplier(item["growth_suspicion_score"]) < 1
+        ),
+        "corroborated": sum(1 for item in metrics if item["growth_corroborated"]),
         "targeted": bool(repo_ids),
         "affected": affected,
-        "score_version": DEFAULT_SCORE_VERSION,
-        "speed_scored": sum(item["score_version"] == SCORE_VERSION for item in metrics),
-        "legacy_fallback": sum(item["score_version"] != SCORE_VERSION for item in metrics),
+        "score_version": SCORE_VERSION,
+        "snapshot_velocity": snapshot_velocity_count,
+        "observed_velocity": observed_velocity_count,
     }
     logger.info("[GitHubProjectMetrics] 每日热度指标计算完成：%s", result)
     return result

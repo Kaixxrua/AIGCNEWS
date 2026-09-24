@@ -200,4 +200,11 @@ def test_rebuild_daily_community_metrics_recomputes_hot_score_without_version_ch
     assert "0.10*maintenance_activity_score" in sql
     assert "updated_at=CURRENT_TIMESTAMP::text" in sql
     assert "score_version='daily_hot_v6'" in sql
+    # v7: magnitude × quality modulation × suspicion demotion; community is
+    # unknown after repair and drops out of the quality average.
+    assert "score_version='daily_hot_v7'" in sql
+    assert "(0.625*scale_corrected_growth_score+0.375*absolute_growth_score)" in sql
+    assert "0.5*growth_acceleration_score" in sql
+    assert "community_engagement_score*" not in sql
+    assert "growth_suspicion_score>=0.5 THEN 1-0.6*LEAST(growth_suspicion_score,1)" in sql
     assert params == (["acme/repo"], ["2026-07-28", "2026-07-29"])
