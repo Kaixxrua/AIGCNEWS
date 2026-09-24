@@ -27,7 +27,12 @@ def _clean_git_env(monkeypatch):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key, raising=False)
     monkeypatch.delenv("AO_SESSION_ID", raising=False)
+    # Suites may run inside a Claude Code task; one identity per test.
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.setenv("CODEX_THREAD_ID", "01a0a9b2-7db0-78a2-a960-cfc652157d21")
+
+
+CLAUDE_SESSION = "6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c"
 
 
 def test_start_rejects_unsafe_slug(tmp_path):
@@ -255,13 +260,15 @@ def test_start_creates_real_linked_worktree_with_local_hooks(tmp_path):
 
 
 def test_start_records_owner_without_allowing_rebind(tmp_path, monkeypatch):
-    from scripts.ci.delivery_ownership import record_owner, resolve_owner
+    from scripts.ci.delivery_ownership import receipt_path, record_owner, resolve_owner
 
     root = _temporary_remote(tmp_path)[1]
     owner = "01a0a9b2-7db0-78a2-a960-cfc652157d21"
     monkeypatch.setenv("CODEX_THREAD_ID", owner)
     result = _session.start("owner-test", root)
     assert resolve_owner(result["branch"], root) == owner
+    receipt = json.loads(receipt_path(root, result["branch"]).read_text())
+    assert receipt["schema"] == "aigcnews.delivery-owner.v1" and "provider" not in receipt
     with pytest.raises(FileExistsError):
         record_owner(result["worktree"], result["branch"], owner)
     _run_git(Path(result["worktree"]), "checkout", "--detach")
@@ -271,7 +278,7 @@ def test_start_records_owner_without_allowing_rebind(tmp_path, monkeypatch):
 def test_new_session_without_owner_is_rejected(tmp_path, monkeypatch):
     root = _temporary_remote(tmp_path)[1]
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID is required"):
+    with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID or CLAUDE_CODE_SESSION_ID is required"):
         _session.start("no-owner", root)
     assert not (root / ".claude/worktrees").exists()
 
@@ -280,6 +287,72 @@ def test_bad_owner_rejected_before_worktree_creation(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_THREAD_ID", "not-a-task-id")
     with pytest.raises(_session.SessionError, match="CODEX_THREAD_ID"):
         _session.start("bad-owner", tmp_path)
+
+
+def test_claude_session_records_provider_qualified_owner(tmp_path, monkeypatch):
+    from scripts.ci.delivery_ownership import receipt_path, record_owner, resolve_owner
+
+    root = _temporary_remote(tmp_path)[1]
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", CLAUDE_SESSION)
+    result = _session.start("claude-owner", root)
+    owner = "claude:" + CLAUDE_SESSION
+    assert resolve_owner(result["branch"], root) == owner
+    # thread_id stays populated so controllers predating v2 still enqueue the push.
+    assert json.loads(receipt_path(root, result["branch"]).read_text()) == {
+        "schema": "aigcnews.delivery-owner.v2", "source": "dev_session.start", "branch": result["branch"],
+        "thread_id": owner, "worktree": result["worktree"], "provider": "claude",
+    }
+    with pytest.raises(FileExistsError):
+        record_owner(result["worktree"], result["branch"], owner)
+
+
+def test_resolve_owner_rejects_provider_schema_mismatch(tmp_path, monkeypatch):
+    from scripts.ci.delivery_ownership import receipt_path, resolve_owner
+
+    root = _temporary_remote(tmp_path)[1]
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", CLAUDE_SESSION)
+    result = _session.start("forged-owner", root)
+    path = receipt_path(root, result["branch"])
+    receipt = json.loads(path.read_text())
+    for forged in (
+        {**receipt, "schema": "aigcnews.delivery-owner.v1"},
+        {**receipt, "provider": "codex"},
+        {**receipt, "thread_id": "01a0a9b2-7db0-78a2-a960-cfc652157d21"},
+        {**receipt, "thread_id": "claude:" + CLAUDE_SESSION.upper()},
+    ):
+        path.write_text(json.dumps(forged))
+        assert resolve_owner(result["branch"], root) is None
+
+
+def test_ambiguous_task_identity_rejected_before_worktree_creation(tmp_path, monkeypatch):
+    root = _temporary_remote(tmp_path)[1]
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", CLAUDE_SESSION)
+    with pytest.raises(_session.SessionError, match="ambiguous session ownership"):
+        _session.start("both-owners", root)
+    assert not (root / ".claude/worktrees").exists()
+
+
+@pytest.mark.parametrize("value", ["not-a-session", CLAUDE_SESSION.upper()])
+def test_bad_claude_owner_rejected_before_worktree_creation(tmp_path, monkeypatch, value):
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", value)
+    with pytest.raises(_session.SessionError, match="CLAUDE_CODE_SESSION_ID"):
+        _session.start("bad-claude-owner", tmp_path)
+
+
+def test_claude_session_never_queries_or_binds_ao(tmp_path, monkeypatch):
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", CLAUDE_SESSION)
+    monkeypatch.setenv("AO_SESSION_ID", "standalone-11")
+    def unexpected(*args, **kwargs):
+        pytest.fail("Claude Code task queried or bound AO")
+    monkeypatch.setattr(_session.ao_delivery_adapter, "provider_identity", unexpected)
+    monkeypatch.setattr(_session.ao_delivery_adapter, "auto_bind_new", unexpected)
+    monkeypatch.setattr(_session, "git", lambda *args, **kwargs: pytest.fail("git mutated before identity validation"))
+    with pytest.raises(_session.SessionError, match="no worktree created"):
+        _session.start("claude-ao", tmp_path)
 
 
 def test_start_from_linked_worktree_does_not_nest_sessions(tmp_path):

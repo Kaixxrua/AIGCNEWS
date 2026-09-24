@@ -8,7 +8,19 @@ from delivery_feedback import CodexBridge
 from delivery_ownership import git, receipt_path, resolve_owner
 
 
+def claude_owner(owner):
+    """Claude Code owners (``claude:<uuid>``) have no wakeup transport here.
+
+    Checked locally: the notifier may import an older delivery_ownership from
+    the AO runtime, and a missing helper must not take notifications down.
+    """
+    return isinstance(owner, str) and owner.startswith('claude:')
+
+
 def send(db, task, identity, message, repository, *, current, bridge_factory=CodexBridge):
+    # The Codex bridge is the only desktop transport; a Claude Code owner is
+    # never addressed as a Codex thread.
+    if claude_owner(task['owner']):return {'status':'no_wakeup_route'}
     db.execute('CREATE TABLE IF NOT EXISTS desktop_wakeups (identity TEXT PRIMARY KEY, owner TEXT, status TEXT, turn_id TEXT)')
     db.commit()
     previous=db.execute('SELECT status,turn_id FROM desktop_wakeups WHERE identity=?',(identity,)).fetchone()
@@ -72,6 +84,7 @@ def readiness(task, repository, ao, adb, *, desktop_enabled=False, bridge_factor
             'checked_at':datetime.now(UTC).isoformat()}
     if not task['owner'] or resolve_owner(task['branch'],repository)!=task['owner']:
         return {**result,'reason':'owner_unverified'}
+    if claude_owner(task['owner']):return {**result,'reason':'no_wakeup_route'}
     if (Path.home()/'.config/aigcnews/ci-paused').exists():return {**result,'reason':'paused'}
     row=adb.execute('SELECT session,stage FROM tasks WHERE branch=?',(task['branch'],)).fetchone()
     if row:

@@ -27,7 +27,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.ci import ao_delivery_adapter
-from scripts.ci.delivery_ownership import record_owner
+from scripts.ci.delivery_ownership import CLAUDE_OWNER_PREFIX, owner_provider, record_owner
 from scripts.risk_controls import RiskLevel, ValidationReceipt, classify_paths
 
 SESSION_RE = re.compile(r"^session/(?P<name>[a-z0-9][a-z0-9-]{1,127})$")
@@ -190,19 +190,48 @@ def status(root: Path) -> dict[str, Any]:
     }
 
 
+def task_owner() -> str:
+    """Return the exact identity of the agent task creating the session.
+
+    Codex tasks own sessions by thread ID; Claude Code tasks by session ID,
+    recorded as ``claude:<uuid>``. A process that inherited both identities
+    cannot prove which task is acting, so it is refused rather than guessed.
+    """
+    codex = os.environ.get("CODEX_THREAD_ID")
+    claude = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if codex and claude:
+        raise SessionError(
+            "both CODEX_THREAD_ID and CLAUDE_CODE_SESSION_ID are set; refusing ambiguous session ownership"
+        )
+    if codex:
+        try:
+            uuid.UUID(codex)
+        except ValueError:
+            raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
+        return codex
+    if claude:
+        owner = CLAUDE_OWNER_PREFIX + claude
+        try:
+            owner_provider(owner)
+        except ValueError:
+            raise SessionError("invalid CLAUDE_CODE_SESSION_ID; refusing ambiguous session ownership") from None
+        return owner
+    raise SessionError(
+        "CODEX_THREAD_ID or CLAUDE_CODE_SESSION_ID is required: "
+        "create the session from its owning Codex or Claude Code task"
+    )
+
+
 def start(slug: str, root: Path) -> dict[str, Any]:
     if not SLUG_RE.fullmatch(slug):
         raise SessionError("slug must be lowercase kebab-case (2-40 characters)")
-    owner = os.environ.get("CODEX_THREAD_ID")
-    if not owner:
-        raise SessionError("CODEX_THREAD_ID is required: create the session from its owning Codex task")
-    try:
-        uuid.UUID(owner)
-    except ValueError:
-        raise SessionError("invalid CODEX_THREAD_ID; refusing ambiguous session ownership") from None
+    owner = task_owner()
     ao_session = os.environ.get("AO_SESSION_ID")
     ao_evidence = None
     if ao_session is not None:
+        # AO bindings are verified against a Codex provider thread.
+        if owner_provider(owner) != "codex":
+            raise SessionError("AO_SESSION_ID requires a Codex owner; no worktree created")
         try:
             ao_evidence = ao_delivery_adapter.provider_identity(ao_session, owner)
         except Exception as exc:

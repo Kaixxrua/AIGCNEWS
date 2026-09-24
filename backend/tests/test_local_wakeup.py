@@ -105,3 +105,16 @@ def test_uncertain_send_reconciles_exact_user_marker_without_replay(setup):
     result = send()
     assert result['status'] == 'accepted' and result['turn_id'] == 'recovered-turn'
     bridge.wake.assert_called_once()
+
+
+def test_claude_owner_never_uses_the_codex_bridge(tmp_path,monkeypatch):
+    owner='claude:6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c'
+    monkeypatch.setattr(Path,'home',lambda:tmp_path)
+    monkeypatch.setattr(w,'resolve_owner',lambda *a:owner)
+    factory=Mock(side_effect=AssertionError('Codex bridge opened for a Claude Code owner'))
+    db=sqlite3.connect(':memory:');db.execute('CREATE TABLE tasks(branch,session,stage)')
+    t={'owner':owner,'branch':'session/x','sha':'a'*40}
+    proof=w.readiness(t,tmp_path,None,db,desktop_enabled=True,bridge_factory=factory)
+    assert not proof['ready'] and proof['reason']=='no_wakeup_route'
+    assert w.send(db,t,'event-sha','repair',tmp_path,current=lambda:True,bridge_factory=factory)=={'status':'no_wakeup_route'}
+    factory.assert_not_called()

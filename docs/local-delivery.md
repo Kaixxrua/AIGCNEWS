@@ -34,6 +34,8 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 
 通知服务通过 `notifier_python` 指定包含 `websockets==15.0.1` 的独立 Python 环境。可信配置中的 `handoff_enabled=true` 启用只读通道检查，`desktop_wakeup=true` 允许没有 AO handoff 的任务使用创建时精确 Codex thread ID；存在 AO 绑定时绝不跨通道回退。新 AO 任务在 dev_session.start 时核对 provider thread ID 并自动激活自己的绑定。旧任务不能靠标题猜测绑定。发送超时保存 unconfirmed，不盲目重发；成功等待原任务空闲后通过 turn/start 启动一次确认回合。发布失败只通知精确 release SHA 对应的承接任务。
 
+Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_THREAD_ID` 时使用 `CLAUDE_CODE_SESSION_ID`，归属记为 `claude:<uuid>`，凭据 schema 为 `aigcnews.delivery-owner.v2` 并带 `provider=claude`；Codex 凭据仍是 v1，格式不变。两个变量同时存在（互相从父进程继承）时拒绝创建，不猜测归属；Claude 归属不能绑定 AO。Claude 任务与 Codex 任务同样经 pre-receive、精确 SHA CI、CAS 落地和发布，但目前没有唤醒通道：通道检查记 `no_wakeup_route`，失败与成功都不向任何 Codex thread 发送，只在看板可见，由 Claude 任务自行核对队列状态。v2 凭据保留 `thread_id` 字段，未升级的控制器仍能入队，其只认 v1 的唤醒与成功通知路径按无归属跳过。
+
 ## 下载恢复与预验证复用
 
 执行器对依赖安装、Go tidy/build/vet、前端镜像构建中的明确网络暂态错误（EOF、连接重置、DNS 暂态、502/503/504、网络超时）最多执行三次，总计仍受原 job deadline 限制。断言失败、编译错误、校验和错误、测试、迁移不自动重放。Go 使用 `https://proxy.golang.org|https://goproxy.cn|direct`，竖线允许网络错误切换源，保留校验和验证。

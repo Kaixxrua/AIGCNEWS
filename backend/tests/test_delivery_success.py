@@ -142,3 +142,17 @@ def test_uncertain_send_reconciles_positive_user_message_only(setup, tmp_path, m
             return {'thread': {'id': task['owner'], 'path': str(path)}}
     assert success.send(db, task, '/repo', Evidence) == 'accepted'
     assert json.loads(db.execute('SELECT detail FROM success_notifications').fetchone()[0])['turn_id'] == 'confirmed'
+
+
+def test_claude_owned_delivery_never_starts_a_codex_turn(tmp_path, monkeypatch):
+    owner = 'claude:6f1c2a3b-0d4e-4f5a-8b6c-7d8e9f0a1b2c'
+    task = {'id': 30, 'sha': 'b'*40, 'status': 'delivered', 'owner': owner,
+            'branch': 'session/claude-task', 'updated_at': '2026-09-24T00:00:00+00:00'}
+    receipt = tmp_path/'owner.json'
+    receipt.write_text(json.dumps({'schema': 'aigcnews.delivery-owner.v2', 'source': 'dev_session.start',
+                                   'branch': task['branch'], 'thread_id': owner,
+                                   'worktree': str(tmp_path), 'provider': 'claude'}))
+    monkeypatch.setattr(success, 'receipt_path', lambda *args: receipt)
+    Bridge.calls = []
+    assert success.send(sqlite3.connect(':memory:'), task, '/repo', Bridge) == 'unowned'
+    assert not Bridge.calls
