@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import json
+import re
 import unittest
 from unittest.mock import MagicMock, patch
 
 import httpx
 
-from backend.app.services.ingestion import github_project_metrics_service as metrics
+from backend.app.services.ingestion import github_project_metrics_service as metrics, source_github
 from backend.app.services.ingestion.source_github import (
     GitHubRepoMetricsResult,
     _parse_graphql_repo,
     _parse_metrics_item,
     fetch_github_repo_metrics,
+    fetch_github_repo_metrics_batch,
 )
 
 
@@ -80,6 +83,17 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
         self.assertEqual(result.metrics["stars"], 12)
         self.assertEqual(result.metrics["watchers"], 4)
         self.assertTrue(result.metrics["community_metrics_complete"])
+
+    def test_success_stamps_response_time_and_failures_do_not(self) -> None:
+        with patch.object(source_github, "_observed_now", return_value="2026-07-23T01:40:00+00:00"):
+            with self._client(lambda _request: httpx.Response(200, json={"full_name": "owner/repo"})) as client:
+                succeeded = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+            with self._client(lambda _request: httpx.Response(404)) as client:
+                missing = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+
+        self.assertEqual(succeeded.observed_at, "2026-07-23T01:40:00+00:00")
+        self.assertEqual(missing.observed_at, "")
+
 
     def test_search_shape_does_not_treat_watchers_count_as_subscribers(self) -> None:
         payload = {
@@ -223,6 +237,38 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
 
 
+class GitHubRepoMetricsBatchTests(unittest.TestCase):
+    def test_graphql_chunks_stamp_their_own_response_time(self) -> None:
+        # 一轮日刷要抓一到数小时：每批快照记该批响应到达时刻，而不是开轮时刻
+        def handler(request: httpx.Request) -> httpx.Response:
+            query = json.loads(request.content)["query"]
+            owner, name = re.search(r'owner: "([^"]+)", name: "([^"]+)"', query).groups()
+            node = {"id": f"id-{name}", "name": name, "owner": {"login": owner}, "stargazerCount": 7}
+            return httpx.Response(200, json={"data": {"r0": node}})
+
+        real_client = httpx.Client
+        with (
+            patch.object(source_github, "_get_token", return_value="token"),
+            patch.object(
+                source_github.httpx,
+                "Client",
+                lambda **_kwargs: real_client(transport=httpx.MockTransport(handler)),
+            ),
+            patch.object(
+                source_github,
+                "_observed_now",
+                side_effect=["2026-07-23T00:17:05+00:00", "2026-07-23T01:52:40+00:00"],
+            ),
+        ):
+            results = fetch_github_repo_metrics_batch(["owner/first", "owner/second"], batch_size=1)
+
+        self.assertEqual([result.status for result in results], ["succeeded", "succeeded"])
+        self.assertEqual(
+            [result.observed_at for result in results],
+            ["2026-07-23T00:17:05+00:00", "2026-07-23T01:52:40+00:00"],
+        )
+
+
 class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
     def test_refresh_records_not_found_unknown_and_success(self) -> None:
         repository = MagicMock()
@@ -321,6 +367,45 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
         self.assertEqual(result["snapshots"], 0)
         self.assertEqual(result["skipped"], 2)
         self.assertEqual(result["recovered"], 0)
+
+    def test_refresh_timestamps_follow_observation_with_round_start_fallback(self) -> None:
+        repository = MagicMock()
+        repository.list_github_project_metric_targets.return_value = [
+            {"repo_id": "late", "full_name": "owner/late", "availability_status": "active"},
+            {"repo_id": "legacy", "full_name": "owner/legacy", "availability_status": "active"},
+        ]
+        repository.upsert_github_repo_metric_observations.return_value = 2
+        outcomes = [
+            GitHubRepoMetricsResult(
+                "owner/late",
+                "succeeded",
+                metrics={"repo_id": "late", "full_name": "owner/late", "stars": 10},
+                http_status=200,
+                observed_at="2026-07-23T01:52:40+00:00",
+            ),
+            GitHubRepoMetricsResult(
+                "owner/legacy",
+                "succeeded",
+                metrics={"repo_id": "legacy", "full_name": "owner/legacy", "stars": 20},
+                http_status=200,
+            ),
+        ]
+
+        with (
+            patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=outcomes),
+            patch.object(metrics, "_local_today", return_value=metrics.date(2026, 7, 23)),
+            patch.object(metrics, "_utcnow", return_value="2026-07-23T00:17:00+00:00"),
+        ):
+            metrics.refresh_github_project_metric_snapshots(metric_date="2026-07-23", db=repository)
+
+        call = repository.upsert_github_repo_metric_observations.call_args
+        observations = {item["snapshot"]["full_name"]: item for item in call.args[0]}
+        self.assertEqual(observations["owner/late"]["snapshot"]["captured_at"], "2026-07-23T01:52:40+00:00")
+        self.assertEqual(observations["owner/late"]["candidate"]["last_snapshot_at"], "2026-07-23T01:52:40+00:00")
+        self.assertEqual(observations["owner/legacy"]["snapshot"]["captured_at"], "2026-07-23T00:17:00+00:00")
+        self.assertEqual(observations["owner/legacy"]["candidate"]["last_snapshot_at"], "2026-07-23T00:17:00+00:00")
+        # 可用性检查时刻仍按轮记录
+        self.assertEqual(call.kwargs["checked_at"], "2026-07-23T00:17:00+00:00")
 
 
     def test_refresh_flags_rename_via_renamed_from(self) -> None:

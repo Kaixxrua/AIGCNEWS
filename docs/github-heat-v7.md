@@ -23,6 +23,10 @@ their existing contracts; REST/MCP/SSE shapes do not change.
 Rates: the v6 snapshot velocity is kept (actual elapsed hours, 12-hour blend
 with the preceding interval, no EMA), with intervals of up to seven days
 (`MAX_GAP_DAYS`). A first interval without a predecessor uses its own rate.
+Elapsed hours come from each snapshot's `captured_at`, stamped when its GraphQL
+chunk (or REST call) returned rather than when the round started: a full
+refresh takes one to several hours, so a round-level stamp skewed the intervals
+of repositories fetched late. Availability checks keep the round start.
 Without a usable interval the observed delta is the rate (gap deltas are already
 normalised per day; Trending rows use `stars today`). `S` is the star count
 before the interval, floored at 500.

@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Set
 
 import httpx
@@ -123,6 +123,13 @@ class GitHubRepoMetricsResult:
     # True 表示本次成功响应经过了 GitHub 改名重定向（301/302）；
     # 此时 metrics["full_name"] 是改名后的权威名称，full_name 仍是请求名。
     was_redirected: bool = False
+    # 成功响应到达的 UTC 时刻（ISO 8601）。一轮日刷要抓一到数小时，
+    # 快照时间轴须按实际观测时刻而非开轮时刻；空串由调用方回退开轮时刻。
+    observed_at: str = ""
+
+
+def _observed_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def fetch_github_readme_snapshot(
@@ -421,6 +428,7 @@ def fetch_github_repo_metrics(
                 metrics=metrics,
                 http_status=resp.status_code,
                 was_redirected=was_redirected,
+                observed_at=_observed_now(),
             )
         # 循环必然在两次迭代内返回；此处仅为满足类型检查
         return GitHubRepoMetricsResult(full_name=clean_name, status="unknown", error="unreachable")
@@ -502,6 +510,7 @@ def fetch_github_repo_metrics_batch(
 
     token = _get_token()
     metrics_by_name: Dict[str, dict] = {}
+    observed_by_name: Dict[str, str] = {}
     if token:
         headers = _build_headers(use_token=True)
         headers["Accept"] = "application/vnd.github+json"
@@ -543,6 +552,7 @@ def fetch_github_repo_metrics_batch(
                         break
                     resp.raise_for_status()
                     payload = resp.json()
+                    chunk_observed_at = _observed_now()
                     data = payload.get("data") if isinstance(payload, dict) else {}
                     if not isinstance(data, dict):
                         continue
@@ -550,6 +560,7 @@ def fetch_github_repo_metrics_batch(
                         node = data.get(alias)
                         if isinstance(node, dict):
                             metrics_by_name[full_name.lower()] = _parse_graphql_repo(node)
+                            observed_by_name[full_name.lower()] = chunk_observed_at
                         else:
                             logger.debug("[GitHub] GraphQL 未返回仓库 %s", full_name)
                 except Exception as exc:
@@ -562,6 +573,7 @@ def fetch_github_repo_metrics_batch(
                     status="succeeded",
                     metrics=metrics_by_name[full_name.lower()],
                     http_status=200,
+                    observed_at=observed_by_name[full_name.lower()],
                 )
                 for full_name in names
             ]
@@ -572,6 +584,7 @@ def fetch_github_repo_metrics_batch(
             status="succeeded",
             metrics=metrics_by_name[full_name.lower()],
             http_status=200,
+            observed_at=observed_by_name[full_name.lower()],
         )
         for full_name in names
         if full_name.lower() in metrics_by_name

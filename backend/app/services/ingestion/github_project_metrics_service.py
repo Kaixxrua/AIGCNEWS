@@ -265,6 +265,8 @@ def record_github_metric_outcomes(
     改名识别：跟随 301 后 API 返回的权威 full_name 与请求名不一致（区分
     大小写）时，observation 携带 renamed_from=旧请求名，由仓储层把旧名
     候选行归一/合并到新名。
+    快照与候选的时间戳取各 outcome 的 observed_at（该批响应到达时刻），
+    缺失时回退 captured_at（开轮时刻）；可用性检查时刻仍按轮记 captured_at。
     """
     existing_by_name = {str(item.get("full_name") or "").lower(): item for item in targets}
     updated_candidates = 0
@@ -308,12 +310,13 @@ def record_github_metric_outcomes(
             renamed += 1
         existing = existing_by_name.get(str(outcome.full_name or "").lower())
         pending_recovered += int((existing or {}).get("availability_status") == "not_found")
+        observed_at = str(getattr(outcome, "observed_at", "") or "") or captured_at
         pending.append(
             {
-                "candidate": _candidate_payload(repo, existing=existing, captured_at=captured_at),
+                "candidate": _candidate_payload(repo, existing=existing, captured_at=observed_at),
                 "available_full_name": outcome.full_name,
                 "renamed_from": renamed_from,
-                "snapshot": _snapshot_payload(repo, metric_date=snapshot_date, captured_at=captured_at),
+                "snapshot": _snapshot_payload(repo, metric_date=snapshot_date, captured_at=observed_at),
             }
         )
 
