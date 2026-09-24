@@ -106,8 +106,9 @@ class GitHubProjectAdminService:
     ) -> dict[str, Any]:
         """回放近 N 天反作弊打标：逐日拉跨渠道佐证并重算当日指标。
 
-        指标重算对相同快照输入是确定性的——hot_score 不变，仅 suspicion
-        三字段随新逻辑落库（含历史行的旧默认值被覆盖为真实判定）。
+        指标重算对相同快照输入是确定性的：suspicion 三字段随新逻辑落库（含
+        历史行的旧默认值被覆盖为真实判定），hot_score 按当前算法重写，
+        可疑增长降权也随之生效。
         """
         from backend.app.services.ingestion.github_project_metrics_service import (
             compute_github_daily_metrics,
@@ -142,6 +143,7 @@ class GitHubProjectAdminService:
                     "metric_date": metric_date,
                     "rows": result.get("rows"),
                     "suspicious": result.get("suspicious"),
+                    "demoted": result.get("demoted"),
                     "corroborated": result.get("corroborated"),
                     "corroboration_available": corroborated is not None,
                 }

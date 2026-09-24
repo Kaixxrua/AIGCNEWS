@@ -78,7 +78,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 
 | 域 | 职责要点 |
 |---|---|
-| `ingestion/` | 7 源爬虫编排（`pipeline.py`）；内容富化；**项目库管线**：候选池、每日指标快照与 `daily_hot_v5` 热度、LLM 分类打标（中英）、README 语义索引源；arXiv PDF 异步下载切片；采集后缓存失效 + 首屏预热 |
+| `ingestion/` | 7 源爬虫编排（`pipeline.py`）；内容富化；**项目库管线**：候选池、每日指标快照与 `daily_hot_v7` 热度、LLM 分类打标（中英）、README 语义索引源；arXiv PDF 异步下载切片；采集后缓存失效 + 首屏预热 |
 | `project_catalog/` + `project_discovery.py` / `project_search_runtime.py` / `project_semantic_search.py` / `project_reranker.py` | 项目检索分层：PG 关键词候选 × Milvus 语义候选 → 融合 → 回库水合 → 门槛/分类过滤 → 排序；本地零结果时限量只读 GitHub fallback；legacy/v2 影子对比用于验证切换 |
 | `rag/` | ChatService：混合召回（文档 ID 精确 → 标题 → Milvus → Neo4j → 来源均衡）→ reranker 精排（COSINE>0.6 智能跳过）→ 可选 Kimi 联网 → 两轮 LLM（工具判断 + 流式生成）；直连 OpenAI 兼容 API 保留 reasoning 字段 |
 | `briefing/` | 8 维度 × 3 周期简报生成（快照优先、截断续写 ≤5 轮、按日期持久化）；订阅派发编排 |

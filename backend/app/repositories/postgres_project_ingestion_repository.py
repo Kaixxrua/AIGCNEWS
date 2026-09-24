@@ -9,6 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
+from backend.app.domain.github_heat import SCORE_VERSION as HEAT_SCORE_VERSION
 from backend.app.monitoring import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
@@ -1163,6 +1164,8 @@ class PostgresGitHubProjectIngestionRepository:
             metric_date,
             baseline_start_date,
             metric_date,
+            baseline_start_date,
+            metric_date,
             previous_date,
             baseline_start_date,
             metric_date,
@@ -1185,6 +1188,7 @@ class PostgresGitHubProjectIngestionRepository:
                 COALESCE(s.forks,0) forks,COALESCE(s.watchers,0) watchers,
                 s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,
                 COALESCE(NULLIF(s.repo_created_at,''),NULLIF(c.created_at,''),'') repo_created_at,
+                NULLIF(c.created_at,'') candidate_created_at,
                 COALESCE(NULLIF(s.repo_pushed_at,''),NULLIF(c.pushed_at,'')) repo_pushed_at,
                 prev.snapshot_date previous_snapshot_date,COALESCE(prev.stars,0) previous_stars,
                 COALESCE(prev.forks,0) previous_forks,COALESCE(prev.watchers,0) previous_watchers,
@@ -1196,7 +1200,10 @@ class PostgresGitHubProjectIngestionRepository:
                     AND m.daily_growth_source IN ('snapshot_delta','github_trending_daily')),0.0) baseline_7d,
                 (SELECT COUNT(*) FROM github_repo_daily_metrics m WHERE m.repo_id=s.repo_id
                     AND m.metric_date>=%s AND m.metric_date<%s
-                    AND m.daily_growth_source IN ('snapshot_delta','github_trending_daily')) baseline_sample_count
+                    AND m.daily_growth_source IN ('snapshot_delta','github_trending_daily')) baseline_sample_count,
+                EXISTS(SELECT 1 FROM github_repo_daily_metrics m WHERE m.repo_id=s.repo_id
+                    AND m.metric_date>=%s AND m.metric_date<%s
+                    AND m.growth_suspicion_signals LIKE '%%"coordinated_creation"%%') prior_coordinated_creation
             FROM github_repo_snapshots s
             LEFT JOIN LATERAL (
                 SELECT p.snapshot_date, p.stars, p.forks, p.watchers,
@@ -1247,7 +1254,7 @@ class PostgresGitHubProjectIngestionRepository:
             "growth_suspicion_score": 0.0,
             "growth_suspicion_signals": "[]",
             "growth_corroborated": False,
-            "score_version": "daily_hot_v5",
+            "score_version": HEAT_SCORE_VERSION,
         }
         for metric in metrics:
             payload = dict(metric)

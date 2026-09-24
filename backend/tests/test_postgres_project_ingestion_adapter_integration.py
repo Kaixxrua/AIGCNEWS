@@ -709,8 +709,7 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert stored["daily_growth_available"] is True
 
 
-def test_v6_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
-    from backend.app.domain.github_heat import display_score
+def test_v7_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
     from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
     from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
 
@@ -726,12 +725,12 @@ def test_v6_rate_scoring_and_version_aware_community_repair(postgres_ingestion) 
             forks=100+24*i, watchers=10+i, community_metrics_complete=True,
             repo_pushed_at="2026-07-14T00:00:00+00:00"))
     result = compute_github_daily_metrics(metric_date="2026-07-14", repo_ids=[repo_id], db=repository)
-    assert result["speed_scored"] == 1 and result["legacy_fallback"] == 0
+    assert result["snapshot_velocity"] == 1 and result["observed_velocity"] == 0
     with database.transaction() as connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
             before = cursor.fetchone()
-        assert before["score_version"] == "daily_hot_v6"
+        assert before["score_version"] == "daily_hot_v7"
         assert before["daily_star_growth"] == 20
         assert before["community_engagement_score"] > 0
         assert PostgresGitHubWatcherRepairRepository().rebuild_daily_community_metrics(
@@ -740,13 +739,41 @@ def test_v6_rate_scoring_and_version_aware_community_repair(postgres_ingestion) 
         with connection.cursor() as cursor:
             cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
             after = cursor.fetchone()
-        expected = display_score(0.5*before["scale_corrected_growth_score"]
-            +0.3*before["absolute_growth_score"]+0.1*before["growth_acceleration_score"]
-            +0.05*before["maintenance_activity_score"])
+        magnitude = 0.625*before["scale_corrected_growth_score"] + 0.375*before["absolute_growth_score"]
+        quality = (0.5*before["growth_acceleration_score"] + 0.25*before["maintenance_activity_score"]) / 0.75
+        expected = magnitude * (0.8 + 0.2*quality/100)
         assert after["hot_score"] == pytest.approx(expected, abs=0.0001)
-        assert after["hot_score"] < before["hot_score"]
-        assert after["score_version"] == "daily_hot_v6"
+        assert after["hot_score"] != before["hot_score"]
+        assert after["score_version"] == "daily_hot_v7"
         assert after["community_engagement_score"] == 0
+
+
+def test_metric_inputs_expose_creation_timestamp_and_prior_cluster(postgres_ingestion) -> None:
+    repository, _database = postgres_ingestion
+    repo_id = "lure/cluster"
+    repository.upsert_github_repo_candidate(
+        {"repo_id": repo_id, "full_name": repo_id, "stars": 1600, "created_at": "2026-06-13T12:06:07Z"}
+    )
+    for day, stars in (("2026-08-20", 1000), ("2026-08-21", 1600)):
+        repository.insert_github_repo_snapshot(dict(repo_id=repo_id, snapshot_date=day,
+            captured_at=f"{day}T15:00:00+00:00", stars=stars, forks=100, watchers=0,
+            community_metrics_complete=True, repo_created_at="2026-06-13"))
+    repository.upsert_github_daily_metrics([dict(repo_id=repo_id, metric_date="2026-08-20", stars=1000,
+        daily_star_growth=700, daily_growth_available=True, daily_growth_source="snapshot_delta",
+        growth_suspicion_score=0.6, growth_suspicion_signals='["coordinated_creation"]')])
+
+    def inputs(metric_date: str, previous_date: str) -> dict[str, Any]:
+        rows = repository.get_github_daily_metric_inputs(metric_date=metric_date, previous_date=previous_date,
+            baseline_start_date="2026-08-14", repo_ids=[repo_id])
+        assert len(rows) == 1
+        return rows[0]
+
+    current = inputs("2026-08-21", "2026-08-20")
+    assert current["repo_created_at"] == "2026-06-13"
+    assert current["candidate_created_at"] == "2026-06-13T12:06:07Z"
+    assert current["prior_coordinated_creation"] is True
+    # 只看目标日之前的窗口：当日自身的标记不回灌
+    assert inputs("2026-08-20", "2026-08-19")["prior_coordinated_creation"] is False
 
 
 def test_snapshot_created_at_backfilled_from_candidate(

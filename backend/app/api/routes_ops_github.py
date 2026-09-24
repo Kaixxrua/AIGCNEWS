@@ -424,7 +424,7 @@ async def backfill_github_growth_suspicion(
     _: dict = Depends(RequireAdmin),
     service: GitHubProjectAdminService = Depends(get_github_project_admin_service),
 ) -> GitHubProjectsEnrichResponse:
-    """回放近 N 天反作弊打标（一二层信号 + 跨渠道佐证）；hot_score 不变。"""
+    """回放近 N 天反作弊打标（一二层信号 + 跨渠道佐证），并按当前算法重算 hot_score。"""
     result = await asyncio.to_thread(
         service.backfill_suspicion,
         days=max(1, min(int(days or 30), 90)),
