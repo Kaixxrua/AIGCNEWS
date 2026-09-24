@@ -8,6 +8,7 @@ import { useTrackingUnreadStore } from '@/stores/trackingUnreadStore'
 import BrandWordmark from '@/components/layout/BrandWordmark.vue'
 import MastheadMeta from '@/components/layout/MastheadMeta.vue'
 import MastheadUser from '@/components/layout/MastheadUser.vue'
+import ComicSticker from '@/components/layout/ComicSticker.vue'
 import FavoritesLink from '@/components/FavoritesLink.vue'
 import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
@@ -86,13 +87,8 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <svg class="comic-masthead-rule" viewBox="0 0 1721 25" preserveAspectRatio="none" aria-hidden="true"><path d="M0 7 L420 3 Q449 2 465 13 L480 22 Q483 24 499 24 L1247 24 Q1266 24 1275 21 L1698 21 Q1712 21 1721 25" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
-        <span class="comic-masthead-creation" aria-hidden="true">
-          <svg class="comic-creation-mark" viewBox="0 0 48 56" aria-hidden="true">
-            <path d="m25 5 5 15 13 7-15 5-7 18-4-18L4 25l15-5Z" />
-            <path class="comic-creation-mark__spark" d="m39 4 1.5 5L46 11l-5.5 2-2 5-1-5L32 11l5-2Z" />
-          </svg>
-          <span>{{ $t('dashboard.editorial.creationMark') }}</span>
-        </span>
+        <ComicSticker v-if="!isMobile" variant="burst" class="comic-masthead-burst" />
+        <ComicSticker v-if="!isMobile" variant="shout" class="comic-masthead-creation">{{ $t('dashboard.editorial.creationMark') }}</ComicSticker>
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
           <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>

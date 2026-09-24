@@ -195,7 +195,7 @@ const enUSCatalog = {
   'dashboard.digest.featureChat': 'Telegram · Discord',
   'dashboard.digest.featureWebhook': 'Webhook delivery',
   'dashboard.editorial.title': 'Today in AI',
-  'dashboard.editorial.creationMark': 'Create freely',
+  'dashboard.editorial.creationMark': 'Create freely!',
   'dashboard.editorial.digestDescription': 'The AI developments worth your attention, delivered daily.',
   'dashboard.editorial.digestTitle': 'Daily AI Brief',
   'dashboard.editorial.subtitle': 'Projects and progress worth your attention',

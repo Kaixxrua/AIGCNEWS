@@ -1,4 +1,4 @@
-.comic-masthead-rule,.comic-speech-outline,.comic-masthead-creation { display:none; }
+.comic-masthead-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-burst,.comic-footer-sticker { display:none; }
 @media (min-width: 1024px) {
 /* Shared comic palette; component-specific geometry remains with its owner. */
 :root {
@@ -37,6 +37,12 @@
   --metric-visitors: #b0a0ff;
   --metric-visitors-ink: #693de8;
   --metric-total-visitors-ink: #1677e9;
+  --sticker-line: #071735;
+  --sticker-ink: #071735;
+  --sticker-shadow: #142345;
+  --sticker-peel: #f4f8e8;
+  --sticker-tape: #fffef9c4;
+  --sticker-accent: #071735;
 }
 
 :root[data-theme='dark'] {
@@ -69,11 +75,15 @@
   --dock-account-ink: #94ca8b;
   --card-rgb: 41 42 45;
   --danger: #ef826b;
+  --sticker-line: #0e0f11;
+  --sticker-ink: #17181b;
+  --sticker-shadow: #08090b;
+  --sticker-peel: #d9dfcc;
+  --sticker-tape: #e8e9ec38;
+  --sticker-accent: var(--acid);
 }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic { filter:none; }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic img { content:url('/assets/comic/aigc-news-wordmark-night.webp'); }
-:root[data-theme='dark'] #app .app-shell--editorial .masthead-meta::before { color:var(--acid); }
-:root[data-theme='dark'] #app .app-shell--editorial .masthead-meta::after { display:none; }
 
 :root[data-theme='dark'] #app .app-shell--editorial .app-masthead .masthead-user::before { background:var(--paper-raised); }
 
@@ -126,14 +136,6 @@
   :root[data-theme='dark'] #app .app-shell--editorial .app-masthead::after { display:none;
   }
   #app .app-shell--editorial .masthead-meta { margin-left: 215px; font-size: 14px; line-height: 1.5; overflow: visible !important; }
-  /* Comic stickers are decoration only; the empty alt text keeps them out of the accessibility tree. */
-  #app .app-shell--editorial .masthead-meta::before {
-    content: 'AI\a MAKES A BRIGHTER\a TOMORROW!'; content: 'AI\a MAKES A BRIGHTER\a TOMORROW!' / ''; white-space: pre;
-    position: absolute; left: 0; top: 14px; pointer-events: none;
-    color: var(--ink); font-size: 20px; font-style: italic; font-weight: 950; line-height: .95;
-    transform: rotate(-10deg) skewX(-8deg) scaleX(.88); transform-origin: 24px 50%; padding: 2px 24px 9px;
-    text-shadow: .35px 0 currentColor;
-  }
   #app .app-shell--editorial .masthead-meta__today::after {
     content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--live-dot);
     box-shadow: 0 0 0 3px var(--live-dot-halo); align-self: center; margin-left: 5px;
@@ -164,25 +166,24 @@
   #app .app-shell--editorial .footer-nav { font-size: 12px; }
 }
 
+/* Comic stickers (ComicSticker.vue) only appear where the masthead and footer have spare room. */
+@media (min-width: 1500px) {
+  #app .app-shell--editorial .comic-masthead-burst { display:block;position:absolute;left:14px;top:5px;width:208px;height:89px;z-index:1; }
+}
 @media (min-width: 1600px) {
-  #app .app-shell--editorial .comic-masthead-creation { display:flex;position:absolute;right:206px;top:24px;width:232px;height:62px;align-items:center;gap:9px;color:var(--ink);pointer-events:none; }
-  .comic-creation-mark { width:43px;height:51px;flex-shrink:0;overflow:visible;transform:rotate(-8deg); }
-  .comic-creation-mark path { fill:var(--acid);stroke:var(--ink);stroke-width:1.6;stroke-linejoin:round; }
-  .comic-creation-mark .comic-creation-mark__spark { fill:var(--ink);stroke:none; }
-  .comic-masthead-creation > span { position:relative;font-size:21px;font-style:italic;font-weight:850;white-space:nowrap;transform:rotate(-4deg);padding:0 0 5px; }
-  .comic-masthead-creation > span::after { content:'';position:absolute;left:1px;right:0;bottom:0;height:4px;background:var(--acid);clip-path:polygon(0 35%,100% 0,96% 80%,4% 100%); }
+  #app .app-shell--editorial .comic-masthead-creation { display:block;position:absolute;right:192px;top:17px;width:208px;height:66px; }
   #app .app-shell--editorial .footer-right { margin-right:112px; }
-  #app .app-shell--editorial .dock-footer--editorial::before { content:'';position:absolute;right:-24px;bottom:-3px;width:118px;height:68px;background:var(--acid);clip-path:polygon(20% 0,100% 0,100% 100%,0 100%);pointer-events:none; }
-  #app .app-shell--editorial .dock-footer--editorial::after { content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!';content:'MORE\a CREATORS\a A BRIGHTER\a WORLD!' / '';white-space:pre;position:absolute;right:-18px;bottom:4px;width:88px;box-sizing:border-box;color:var(--acid-ink);font-size:12px;font-style:italic;font-weight:950;line-height:1.05;transform:rotate(-7deg);transform-origin:center;pointer-events:none; }
-  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::before { background:var(--acid-soft); }
-  :root[data-theme='dark'] #app .app-shell--editorial .dock-footer--editorial::after { color:var(--acid); }
-  #app .app-shell--editorial .masthead-meta::after { content:'';position:absolute;left:-24px;top:0;width:200px;height:95px;z-index:-1;pointer-events:none;background:radial-gradient(circle,color-mix(in srgb,var(--comic-shadow) 19%,transparent) .7px,transparent 1.3px) 0 0 / 5px 5px,linear-gradient(154deg,var(--acid) 0 42%,transparent 43% 47%,var(--acid) 48% 49%,transparent 50%);mask-image:linear-gradient(100deg,#000 0 48%,transparent 100%); }
+  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-18px;bottom:7px;width:122px;height:64px;transform:scale(.88);transform-origin:right bottom; }
+}
+@media (min-width: 1800px) {
+  #app .app-shell--editorial .comic-masthead-creation { right:200px;width:236px;height:68px; }
+  #app .app-shell--editorial .footer-right { margin-right:128px; }
+  #app .app-shell--editorial .comic-footer-sticker { transform:none; }
 }
 /* English footer links need ~220px; below 1800px the corner sticker would push them onto two lines. */
 @media (min-width: 1600px) and (max-width: 1799px) {
   :root:lang(en) #app .app-shell--editorial .footer-right { margin-right:0; }
-  :root:lang(en) #app .app-shell--editorial .dock-footer--editorial::before,
-  :root:lang(en) #app .app-shell--editorial .dock-footer--editorial::after { display:none; }
+  :root:lang(en) #app .app-shell--editorial .comic-footer-sticker { display:none; }
 }
 
 @media (min-width: 1024px) and (max-width: 1499px) {
@@ -190,7 +191,6 @@
   #app .app-shell--editorial .app-masthead__tools { grid-template-columns: auto 232px; column-gap: 16px; }
   #app .app-shell--editorial .masthead-tagline { font-size: 17px; }
   #app .app-shell--editorial .masthead-meta { margin-left: 0; font-size: 12px; }
-  #app .app-shell--editorial .masthead-meta::before { display: none; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead { grid-template-columns: minmax(150px,1fr) auto minmax(140px,1fr); }
   #app .app-shell--editorial .app-masthead .masthead-user { width: 140px; }
 }

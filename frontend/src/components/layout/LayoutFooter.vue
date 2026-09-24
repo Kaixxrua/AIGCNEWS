@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { dockSuppressed } from '@/composables/useDockSuppression'
+import ComicSticker from './ComicSticker.vue'
 
 const { t } = useI18n()
 defineProps<{
@@ -25,6 +26,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
   <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商务合作 / 侵权投诉） ═══ -->
   <div v-show="!dockSuppressed" class="dock-footer" :class="{ 'dock-footer--embedded': embedded, 'dock-footer--editorial': editorial && !embedded }">
     <template v-if="editorial && !embedded">
+      <ComicSticker variant="label" class="comic-footer-sticker" />
       <div class="footer-brand">
         <RouterLink to="/" class="footer-wordmark">{{ brandName }}</RouterLink>
         <span class="footer-brand__tagline">{{ t('footer.createMore') }}</span>
