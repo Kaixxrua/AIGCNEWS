@@ -78,7 +78,7 @@ const boardDateHint = computed(() => {
       </div>
       <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
-        <span v-if="activeTab === 'github' && tabList.length" class="ranking-sort" :title="t('projects.hotScoreTitle')"><ArrowDownWideNarrow :size="15" aria-hidden="true" />{{ t('dashboard.sortedByHeat') }}</span>
+        <span v-if="activeTab === 'github' && tabList.length" class="ranking-sort" :title="t('projects.hotScoreTitle')"><ArrowDownWideNarrow :size="15" aria-hidden="true" /><span class="ranking-sort-label">{{ t('dashboard.sortedByHeat') }}</span></span>
         <span class="ranking-live-status" role="status" :title="tabStatus?.isEmbargoed ? tabStatusHint || undefined : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft')">
           <CheckCircle2 v-if="tabStatus?.isFinalized ?? isFinalized" :size="12" /><span v-else class="live-dot" />
           {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.tabFinalized' : 'dashboard.liveDraftShort') }}
@@ -118,7 +118,8 @@ const boardDateHint = computed(() => {
 
 <style scoped>
 .dashboard-ranking-panel { display:flex;flex-direction:column;min-height:0;overflow:visible;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none; }
-.ranking-toolbar { display:flex;align-items:center;justify-content:space-between;flex:0 0 51px;min-width:0;margin-bottom:9px; }
+/* English labels run ~20% wider than Chinese; the toolbar wraps rather than letting tabs slide under the status. */
+.ranking-toolbar { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;column-gap:12px;flex:0 0 auto;min-height:51px;min-width:0;margin-bottom:9px;container:ranking-toolbar / inline-size; }
 .ranking-tabs { display:flex;min-width:0;align-self:stretch; }
 /* One outline per tab; separators belong only between unselected tabs. */
 .ranking-tab { position:relative;isolation:isolate;display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:7px 20px;color:var(--ink);font-size:18px;font-weight:650;white-space:nowrap; }
@@ -129,7 +130,7 @@ const boardDateHint = computed(() => {
 .ranking-tab[aria-selected='true']::after { content:'';position:absolute;inset:0;z-index:-1;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--acid);transform:skewX(-10deg); }
 .ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--ink);outline-offset:-3px; }
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
-.ranking-source-status { gap:14px;padding:0 9px;flex-shrink:0; }
+.ranking-source-status { gap:14px;margin-left:auto;padding:0 9px;flex-shrink:0; }
 .ranking-sort { display:flex;align-items:center;gap:5px;color:var(--ink-secondary);font-size:13px;font-weight:650;white-space:nowrap;cursor:help; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
 .live-dot { flex-shrink:0;width:8px;height:8px;margin:3px;background:var(--live-dot);border-radius:50%;box-shadow:0 0 0 3px var(--live-dot-halo); }
@@ -224,6 +225,21 @@ const boardDateHint = computed(() => {
   .ranking-row:not(.ranking-row--featured) .ranking-body { display:block; }
   .ranking-row:not(.ranking-row--featured) .ranking-meta { margin-top:3px; }
   .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:48px;height:48px;flex-basis:48px;font-size:19px; }
+}
+@container ranking-toolbar (max-width:1259px) {
+  :root:lang(en) .ranking-tab { gap:6px;padding-inline:12px;font-size:15px; }
+  :root:lang(en) .ranking-tab[aria-selected='true'] { padding-inline:18px;font-size:19px; }
+  :root:lang(en) .ranking-tab-icon { width:21px;height:21px; }
+  :root:lang(en) .ranking-source-status { gap:10px; }
+  :root:lang(en) .ranking-live-status { padding:5px 7px;font-size:11px; }
+  :root:lang(en) .ranking-sort { font-size:12px; }
+}
+@container ranking-toolbar (max-width:1009px) {
+  :root:lang(en) .ranking-tab { gap:5px;padding-inline:9px;font-size:14px; }
+  :root:lang(en) .ranking-tab[aria-selected='true'] { padding-inline:14px;font-size:18px; }
+  :root:lang(en) .ranking-tab-icon { width:19px;height:19px; }
+  /* The icon keeps the title tooltip; the label stays for screen readers. */
+  :root:lang(en) .ranking-sort-label { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
 }
 @media (min-width:1024px) and (max-height:820px) {
   .editorial-list { grid-template-rows:136px repeat(7,minmax(0,1fr)); }

@@ -33,6 +33,10 @@
   --metric-github: #67ef85;
   --metric-ui: #ffd591;
   --metric-ui-ink: #ef531c;
+  --metric-new: #6bd4ff;
+  --metric-visitors: #b0a0ff;
+  --metric-visitors-ink: #693de8;
+  --metric-total-visitors-ink: #1677e9;
 }
 
 :root[data-theme='dark'] {

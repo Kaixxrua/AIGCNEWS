@@ -33,6 +33,7 @@ const mountPanel = (loading = false) => mount(DashboardOverviewPanel, {
     loading: false,
     activeTab: 'github',
     statValues: [100, 20, 15, 10, 8, 6, 4],
+    visitorValues: [30, 500, 12],
     uiCount: 157,
     uiLoading: loading,
   },
@@ -40,26 +41,29 @@ const mountPanel = (loading = false) => mount(DashboardOverviewPanel, {
 })
 
 describe('DashboardOverviewPanel', () => {
-  it('keeps three catalog statistics, leaving today\'s count to the masthead and visitors to monitoring', () => {
+  it('shows the six core statistics, including today\'s count and both visitor metrics', () => {
     const wrapper = mountPanel()
     const card = wrapper.get('.stat-cell--ui')
 
     expect(card.text()).toContain('UI 库总量')
     expect(card.text()).toContain('157')
-    expect(wrapper.findAll('.stat-cell').map(cell => cell.find('.stat-cell-label').text())).toEqual(['内容总量', 'GitHub 项目', 'UI 库总量'])
-    expect(wrapper.text()).not.toContain('访客')
+    expect(wrapper.findAll('.stat-cell').map(cell => cell.find('.stat-cell-label').text())).toEqual(['内容总量', 'GitHub 项目', '今日新增', '今日访客', '总访客', 'UI 库总量'])
+    expect(wrapper.get('.stat-cell--new').text()).toContain('12')
+    expect(wrapper.get('.stat-cell--visitors').text()).toContain('30')
+    expect(wrapper.get('.stat-cell--total-visitors').text()).toContain('500')
     expect(card.attributes('data-to')).toContain('ui-library')
     expect(wrapper.find('.daily-ui').exists()).toBe(false)
   })
 
-  it('shows today\'s new documents on mobile, which has no masthead counter, without visitor counts', () => {
+  it('shows the same six statistics on mobile', () => {
     const wrapper = mount(MobileDashboardOverviewPanel, {
       props: { loading: false, activeTab: 'github', statValues: [100, 20], visitorValues: [30, 500, 12], uiCount: 157, uiLoading: false },
       global,
     })
-    expect(wrapper.findAll('.stat-cell').map(cell => cell.find('.stat-cell-label').text())).toEqual(['内容总量', 'GitHub 项目', '今日新增', 'UI 库总量'])
+    expect(wrapper.findAll('.stat-cell').map(cell => cell.find('.stat-cell-label').text())).toEqual(['内容总量', 'GitHub 项目', '今日新增', '今日访客', '总访客', 'UI 库总量'])
     expect(wrapper.get('.stat-cell--new').text()).toContain('12')
-    expect(wrapper.text()).not.toContain('访客')
+    expect(wrapper.get('.stat-cell--visitors').text()).toContain('30')
+    expect(wrapper.get('.stat-cell--total-visitors').text()).toContain('500')
   })
 
   it('uses a compact loading placeholder while the catalog loads', () => {

@@ -35,6 +35,7 @@ const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
 const {
   statValues,
+  visitorValues,
   mcpTotalCalls,
   mcpDshCalls,
   updateStatSources,
@@ -94,7 +95,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <p>{{ t('dashboard.editorial.subtitle') }}</p>
       </div>
       <DashboardOverviewPanel v-if="!loading" :loading="loading" :active-tab="activeTab"
-        :stat-values="statValues" :ui-count="uiCount" :ui-loading="uiLoading"
+        :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
     <div v-if="errorMsg" class="dashboard-error" role="alert">{{ errorMsg }}</div>
@@ -116,7 +117,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
           <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
             {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
           </RouterLink>
-          <img class="digest-robot" src="/assets/comic/digest-robot-cyan-burst.webp" alt="" aria-hidden="true" />
+          <img class="digest-robot" src="/assets/comic/digest-robot-integrated.webp" alt="" aria-hidden="true" />
         </section>
         <div class="integration-grid">
           <RouterLink to="/mcp" class="integration-card integration-card--mcp" :aria-label="t('dashboard.mcpCalls.title')">
@@ -145,13 +146,16 @@ onBeforeUnmount(() => uiCatalogController.abort())
 <style scoped>
 .dashboard-page { --sidebar-width:24%;display:grid;grid-template-columns:minmax(0,1fr) var(--sidebar-width);grid-template-rows:74px minmax(0,1fr);gap:14px 24px;position:relative;isolation:isolate;height:100%;min-height:0;padding:16px 12px 6px;color:var(--ink); }
 .dashboard-heading { grid-column:1;grid-row:1;display:flex;align-items:center;min-width:0;gap:16px; }
-.dashboard-heading__copy { flex:0 0 258px;min-width:0;padding-left:5px; }
-.dashboard-heading h1 { display:inline-block;margin:0 0 4px;font-size:35px;font-style:italic;font-weight:950;line-height:1.1;letter-spacing:0;white-space:nowrap; }
+.dashboard-heading__copy { flex:0 0 auto;min-width:0;padding:0 30px 0 5px; }
+.dashboard-heading h1 { text-shadow:1px 1px 0 var(--paper-raised);position:relative;isolation:isolate;display:inline-block;margin:0 0 4px;font-size:35px;font-style:italic;font-weight:950;line-height:1.1;letter-spacing:0;white-space:nowrap; }
+/* Marker stroke under the lower third of the title and a spark sticker off its corner; the glyphs stay on top. */
+.dashboard-heading h1::before { content:'';position:absolute;z-index:-1;inset:70% -4px 1px;background:var(--acid);transform:rotate(-5deg) skewX(-18deg); }
+.dashboard-heading h1::after { content:'';position:absolute;right:-36px;top:-15px;width:24px;height:28px;background:var(--acid);clip-path:polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%); }
 .dashboard-heading p { font-size:16px;font-weight:700;line-height:1.25;white-space:nowrap; }
 .dashboard-heading :deep(.stat-strip) { flex:1;height:100%; }
 .dashboard-main { display:contents; }
 .dashboard-main > :not(aside) { grid-column:1;grid-row:2;min-width:0; }
-.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px minmax(180px,226px) 60px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0; }
+.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px minmax(180px,226px) 66px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0; }
 .dashboard-sidebar a:focus-visible { outline:2px solid var(--ink);outline-offset:3px; }
 .dashboard-error { position:absolute;top:0;left:12px;right:12px;z-index:3;padding:8px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
 
@@ -170,28 +174,42 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.snapshot-dot) { display:none; }
 
 /* Copy keeps its own rhythm; the illustration sits behind the ink frame, never the text. */
-.digest-card { position:relative;isolation:isolate;overflow:visible;padding:12px 14px;border:solid transparent;border-width:2px 2.5px 3px 2px;border-radius:6px 8px 5px 9px;background:var(--paper);box-shadow:none; }
+.digest-card { position:relative;isolation:isolate;overflow:visible;display:flex;flex-direction:column;container-type:inline-size;padding:12px 14px;border:solid transparent;border-width:2px 2.5px 3px 2px;border-radius:6px 8px 5px 9px;background:var(--paper);box-shadow:none; }
 .digest-card::before { content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background-image:linear-gradient(135deg,transparent 0 67%,var(--comic-cyan-line) 67% 70%,transparent 70% 73%,color-mix(in srgb,var(--comic-cyan-line) 33%,transparent) 73% 74%,transparent 74%),radial-gradient(var(--comic-cyan-dot) .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
 .digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:1; }
 .digest-ink-frame path { vector-effect:non-scaling-stroke; }
-.digest-heading { position:relative;z-index:1;display:flex;align-items:center;gap:11px;margin-bottom:5px; }
+.digest-heading { position:relative;z-index:1;display:flex;flex:none;align-items:center;gap:11px;margin-bottom:4px; }
 .digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--comic-cyan);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--comic-cyan-line) 40%,transparent); }
 .digest-mail svg { width:31px;height:29px;filter:drop-shadow(1px 1px 0 var(--paper)); }
 .digest-heading h2 { font-size:25px;line-height:1.3;font-weight:950;letter-spacing:-.025em; }
-.digest-card p { position:relative;z-index:4;display:table;max-width:96%;margin-top:0;padding:2px 5px 3px 0;background:transparent;color:var(--ink-secondary);font-size:12px;line-height:1.55;white-space:normal; }
-.digest-features { position:relative;z-index:1;display:flex;flex-direction:column;gap:2px;max-width:48%;margin-top:5px;font-size:15px;line-height:18px;font-weight:750; }
-.digest-features li { display:flex;align-items:center;gap:10px;height:19px;min-height:19px;white-space:nowrap; }
+.digest-card p { position:relative;z-index:4;max-width:58%;margin:0 0 6px;color:var(--ink-secondary);font-size:12px;line-height:1.45;text-wrap:pretty; }
+.digest-features { position:relative;z-index:4;display:flex;flex-direction:column;gap:2px;max-width:48%;font-size:15px;line-height:18px;font-weight:750; }
+.digest-features li { display:flex;align-items:center;gap:10px;min-height:19px; }
 .digest-features svg { flex-shrink:0;background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
-.digest-cta { position:absolute;left:14px;bottom:12px;z-index:4;display:flex;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
+.digest-cta { position:relative;z-index:4;display:flex;flex:none;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;margin-top:auto;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
 .digest-cta svg { width:23px;height:23px; }
-.digest-robot { position:absolute;z-index:2;right:-17px;bottom:1px;width:64%;height:108%;object-fit:contain;object-position:right bottom;pointer-events:none; }
+.digest-robot { position:absolute;z-index:2;right:-14px;bottom:0;width:56%;height:106%;object-fit:contain;object-position:right bottom;pointer-events:none; }
+@container (max-width:419px) {
+  .digest-card p { max-width:62%;font-size:11px; }
+  .digest-features { max-width:52%;font-size:13px;line-height:16px; }
+  .digest-features li { gap:7px;min-height:17px; }
+  .digest-features svg { width:16px;height:16px; }
+  .digest-cta { width:52%;height:32px;font-size:15px; }
+  .digest-robot { width:52%; }
+}
+@container (max-width:359px) {
+  .digest-card p { max-width:66%; }
+  .digest-features { max-width:56%;font-size:12px;line-height:15px; }
+  .digest-cta { width:56%; }
+  .digest-robot { width:49%; }
+}
 
-.integration-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
-.integration-card { height:100%;min-height:0;overflow:hidden;display:flex;align-items:center;gap:9px;min-width:0;padding:5px 10px;border:1.5px solid var(--rule-strong);border-radius:8px 5px 7px 6px;background:var(--paper); }
-.integration-card > svg { width:45px;height:45px;padding:8px;flex-shrink:0;border-radius:10px;background:color-mix(in srgb,var(--integration-mcp) 22%,var(--paper-raised));color:var(--ink); }
+.integration-grid { display:grid;container-type:inline-size;grid-template-columns:1fr 1fr;gap:10px; }
+.integration-card { height:100%;min-height:0;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border:1.5px solid var(--rule-strong);border-radius:8px 5px 7px 6px;background:var(--paper); }
+.integration-card > svg { width:40px;height:40px;padding:8px;flex-shrink:0;border-radius:10px;background:color-mix(in srgb,var(--integration-mcp) 22%,var(--paper-raised));color:var(--ink); }
 .integration-card--dsh > svg { background:color-mix(in srgb,var(--integration-dsh) 25%,var(--paper-raised));color:var(--integration-dsh-ink); }
-.integration-card > span { min-width:0;font-size:12px;line-height:1.25;color:var(--ink-secondary); }
-.integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { display:block;color:var(--ink);font-size:25px;line-height:1.2;font-weight:850; }
+.integration-card > span { display:flex;flex-direction:column;gap:3px;min-width:0;font-size:12px;line-height:1.25;color:var(--ink-secondary); }
+.integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { display:block;color:var(--ink);font-size:24px;line-height:1.05;font-weight:850; }
 .ui-inspiration { display:block;container-type:size;min-height:0;padding:8px;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--paper); }
 .ui-inspiration__body { display:grid;height:100%;grid-template-columns:min(45%,133cqh) minmax(0,1fr);grid-template-rows:25px 1fr;column-gap:10px; }
 .ui-inspiration__heading { grid-column:2;display:flex;align-items:center;justify-content:space-between;font-size:20px;font-weight:850; }
@@ -203,6 +221,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .ui-inspiration__caption > span:first-child { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .ui-inspiration__caption > span:last-child { color:var(--ink);font-size:12px; }
 
+:root[data-theme='dark'] .dashboard-heading h1 { color:var(--acid); }
+:root[data-theme='dark'] .dashboard-heading h1::before { opacity:0; }
 :root[data-theme='dark'] .dashboard-sidebar :deep(.dash-calendar) { border-width:1px;background:var(--paper-raised); }
 :root[data-theme='dark'] .digest-card { border-width:1px;background:var(--paper-raised); }
 :root[data-theme='dark'] .digest-card::before { opacity:.12; }
@@ -215,13 +235,12 @@ onBeforeUnmount(() => uiCatalogController.abort())
 @media (max-width:1499px) {
   .dashboard-page { gap:12px 20px; }
   .dashboard-heading { gap:12px; }
-  .dashboard-heading__copy { flex-basis:205px; }
   .dashboard-heading h1 { font-size:30px; }
   .dashboard-heading p { font-size:14px; }
-  .integration-card { gap:6px; }
-  .integration-card > svg { width:35px;height:38px;padding:6px; }
-  .integration-card > span { font-size:10px; }
-  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:22px; }
+  .integration-card { gap:8px;padding-inline:10px; }
+  .integration-card > svg { width:34px;height:34px;padding:6px; }
+  .integration-card > span { font-size:11px; }
+  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:21px; }
 }
 @media (max-width:1199px) {
   /* The stacked layout outgrows the viewport; scroll inside the canvas so nothing slips under the dock. */
@@ -231,16 +250,10 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading h1 { font-size:34px;line-height:1.2;margin-bottom:5px;letter-spacing:-.045em; }
   .dashboard-heading p { font-size:16px;line-height:1.4; }
   .dashboard-heading :deep(.stat-strip) { flex-basis:100%;height:auto; }
-  .dashboard-sidebar { grid-template-rows:214px auto 60px minmax(81px,1fr); }
+  .dashboard-sidebar { grid-template-rows:214px auto 66px minmax(81px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:28px; }
-  .digest-card { padding-bottom:58px; }
-  .digest-card p { max-width:100%; }
-  .digest-features { max-width:60%;font-size:13px;line-height:16px; }
-  .digest-features li { gap:7px;height:18px;min-height:18px; }
-  .digest-features svg { width:16px;height:16px; }
-  .digest-cta { width:56%; }
-  .digest-robot { right:-12px;width:44%;height:78%; }
-  .integration-card > svg { width:28px;height:33px;padding:4px; }
+  .digest-cta { margin-top:10px; }
+  .integration-card > svg { width:30px;height:30px;padding:5px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:19px; }
   .ui-inspiration__body { grid-template-columns:55px minmax(0,1fr); }
   .ui-inspiration__heading { font-size:17px; }
@@ -251,23 +264,30 @@ onBeforeUnmount(() => uiCatalogController.abort())
 @media (min-width:1200px) and (max-height:820px) {
   .dashboard-page { grid-template-rows:64px minmax(0,1fr);padding-top:10px; }
   .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
-  .dashboard-sidebar { gap:9px;grid-template-rows:187px 170px 52px minmax(62px,1fr); }
+  .dashboard-sidebar { gap:9px;grid-template-rows:187px 170px 58px minmax(62px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:19px; }
   .digest-card { min-height:0;padding:9px 11px; }
   .digest-heading { margin-bottom:2px; }
   .digest-mail { width:30px;height:28px; }
   .digest-mail svg { width:27px;height:25px; }
   .digest-heading h2 { font-size:21px; }
-  .digest-card p { font-size:10px;line-height:1.3; }
-  .digest-features { font-size:11px;line-height:13px; }
-  .digest-features li { height:14px;min-height:14px; }
+  .digest-card p { max-width:80%;margin-bottom:4px;font-size:10px;line-height:1.3; }
+  .digest-features { gap:1px;font-size:11px;line-height:13px; }
+  .digest-features li { min-height:14px; }
   .digest-features svg { width:15px;height:15px; }
-  .digest-cta { left:11px;bottom:8px;height:27px;font-size:14px; }
-  .digest-robot { right:-14px;width:62%;height:104%; }
-  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:21px; }
+  .digest-cta { height:27px;font-size:14px; }
+  .integration-card { padding-block:7px; }
+  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:20px; }
   .ui-inspiration__body { grid-template-rows:20px 1fr; }
   .ui-inspiration__heading { font-size:17px; }
   .ui-inspiration__caption { font-size:11px; }
+}
+/* Narrow cards: a small icon leads the label and the count takes its own line, so neither wraps. */
+@container (max-width:319px) {
+  .integration-card { display:grid;grid-template-columns:auto minmax(0,1fr);align-content:center;align-items:center;gap:3px 6px; }
+  .integration-card > svg { width:20px;height:20px;padding:3px;border-radius:6px; }
+  .integration-card > span { display:contents; }
+  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { grid-column:1 / -1; }
 }
 /* Tall card: the preview spans the full width instead of shrinking to a thumbnail. */
 @container (min-height:170px) {
