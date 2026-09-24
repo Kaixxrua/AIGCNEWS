@@ -75,6 +75,17 @@
   /* 科技青 */
   --tech-primary: #06b6d4;
 
+  /* 榜单语义色：热度/增长/领奖台金银铜（*-ink 为文字色，两态对纸面均 ≥4.5:1） */
+  --heat-ink: #a74b12;
+  --growth-ink: #087425;
+  --podium-gold: #f2c230;
+  --podium-gold-ink: #806000;
+  --podium-gold-soft: #fff0b7;
+  --podium-silver: #b4bfcc;
+  --podium-silver-ink: #4b5a6d;
+  --podium-bronze: #d98b4f;
+  --podium-bronze-ink: #8a4417;
+
   /* 来源徽章（ink/bg/border 三元组） */
   --badge-arxiv-ink: #3b82f6;
   --badge-arxiv-bg: rgba(59, 130, 246, 0.08);
@@ -309,6 +320,16 @@
 
   /* 科技青转 modelflare trust #79b9bd */
   --tech-primary: #79b9bd;
+
+  --heat-ink: #ffbb77;
+  --growth-ink: #94ca8b;
+  --podium-gold: #c9a640;
+  --podium-gold-ink: #e2c46a;
+  --podium-gold-soft: #3d3419;
+  --podium-silver: #8894a3;
+  --podium-silver-ink: #c0c9d4;
+  --podium-bronze: #b27347;
+  --podium-bronze-ink: #e3a07a;
 
   /* 来源徽章转 modelflare chart/neutral/reward 低饱和阶 */
   --badge-arxiv-ink: #7895a0;

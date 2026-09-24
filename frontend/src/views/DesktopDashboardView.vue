@@ -157,7 +157,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-main { display:contents; }
 .dashboard-main > :not(aside) { grid-column:1;grid-row:2;min-width:0; }
 .dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:70px 214px minmax(180px,226px) 60px 81px;align-content:start;gap:12px;min-width:0;min-height:0; }
-.dashboard-sidebar a:focus-visible { outline:2px solid var(--acid);outline-offset:3px; }
+.dashboard-sidebar a:focus-visible { outline:2px solid var(--ink);outline-offset:3px; }
 .dashboard-error { position:absolute;top:0;left:12px;right:12px;z-index:3;padding:8px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
 
 .sidebar-motto { display:flex;justify-content:space-between;align-items:center;position:relative;white-space:pre-line;font-size:20px;font-weight:900;letter-spacing:-.035em;line-height:1.3;padding:10px 15px;border:solid var(--rule-strong);border-width:2px 2px 2.5px 4px;border-left-color:var(--acid);border-radius:4px 7px 4px 3px;background:var(--paper);box-shadow:none;transform:rotate(-.45deg); }
@@ -179,7 +179,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 
 /* Copy keeps its own rhythm; the illustration sits behind the ink frame, never the text. */
 .digest-card { position:relative;isolation:isolate;overflow:visible;padding:12px 14px;border:solid transparent;border-width:2px 2.5px 3px 2px;border-radius:6px 8px 5px 9px;background:var(--paper);box-shadow:none; }
-.digest-card::before { content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background-image:linear-gradient(135deg,transparent 0 67%,#34c6e9 67% 70%,transparent 70% 73%,#34c6e955 73% 74%,transparent 74%),radial-gradient(#147d9d .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
+.digest-card::before { content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background-image:linear-gradient(135deg,transparent 0 67%,var(--comic-cyan-line) 67% 70%,transparent 70% 73%,color-mix(in srgb,var(--comic-cyan-line) 33%,transparent) 73% 74%,transparent 74%),radial-gradient(var(--comic-cyan-dot) .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
 .digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:1; }
 .digest-ink-frame path { vector-effect:non-scaling-stroke; }
 .digest-heading { position:relative;z-index:1;display:flex;align-items:center;gap:11px;margin-bottom:5px; }
@@ -196,8 +196,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 
 .integration-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
 .integration-card { height:100%;min-height:0;overflow:hidden;display:flex;align-items:center;gap:9px;min-width:0;padding:5px 10px;border:1.5px solid var(--rule-strong);border-radius:8px 5px 7px 6px;background:var(--paper); }
-.integration-card > svg { width:45px;height:45px;padding:8px;flex-shrink:0;border-radius:10px;background:color-mix(in srgb,#65c9f5 22%,var(--paper-raised));color:var(--ink); }
-.integration-card--dsh > svg { background:color-mix(in srgb,#a190f6 25%,var(--paper-raised));color:#7441d4; }
+.integration-card > svg { width:45px;height:45px;padding:8px;flex-shrink:0;border-radius:10px;background:color-mix(in srgb,var(--integration-mcp) 22%,var(--paper-raised));color:var(--ink); }
+.integration-card--dsh > svg { background:color-mix(in srgb,var(--integration-dsh) 25%,var(--paper-raised));color:var(--integration-dsh-ink); }
 .integration-card > span { min-width:0;font-size:12px;line-height:1.25;color:var(--ink-secondary); }
 .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { display:block;color:var(--ink);font-size:25px;line-height:1.2;font-weight:850; }
 .ui-inspiration { display:grid;grid-template-columns:78px minmax(0,1fr);grid-template-rows:25px 1fr;column-gap:10px;padding:8px;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--paper); }

@@ -61,5 +61,5 @@ onMounted(async () => {
 .tweet-preview__actions button { color: var(--ink); font-weight: 600; }
 .tweet-preview__actions a { gap: 4px; margin-left: auto; }
 .tweet-preview__actions :is(button, a):hover { color: var(--ink); text-decoration: underline; }
-.tweet-preview__actions :is(button, a):focus-visible { outline: 2px solid var(--acid-strong); outline-offset: 2px; }
+.tweet-preview__actions :is(button, a):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 </style>

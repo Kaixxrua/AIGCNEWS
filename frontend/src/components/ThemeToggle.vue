@@ -63,7 +63,7 @@ const targetThemeKey = computed(() => (theme.value === 'dark' ? 'theme.light' : 
 }
 
 .theme-toggle:active { transform: rotate(-3deg) scale(0.92); }
-.theme-toggle:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+.theme-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .theme-icon { width: 23px; height: 23px; overflow: visible; }
 .theme-icon__stroke,

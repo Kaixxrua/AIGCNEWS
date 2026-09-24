@@ -16,6 +16,5 @@ const display = computed(() => valid.value ? Math.max(0, Math.min(100, Number(pr
 </template>
 
 <style scoped>
-.project-heat { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 11px; color: #a74b12; }
-:root[data-theme='dark'] .project-heat { color: #ffbb77; }
+.project-heat { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; font-size: 11px; color: var(--heat-ink); }
 </style>

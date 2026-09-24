@@ -162,7 +162,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
 .dock-icon :deep(svg) { width: 20px; height: 20px; }
 .dock-label { position: absolute; bottom: calc(100% + 16px); left: 50%; transform: translate(-50%, 4px); width: max-content; max-width: 180px; padding: 6px 10px; border: 1px solid var(--dock-edge); border-radius: 6px; color: var(--acid); background: var(--dock-surface); box-shadow: 2px 2px 0 var(--acid); font-size: 12px; line-height: 1.4; font-weight: 650; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
 .dock-item:hover .dock-label, .dock-item:focus-visible .dock-label { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
-.dock-item:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
+.dock-item:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .dock-auth-sep { width: 1px; height: 24px; margin: 0 3px; background: var(--dock-edge); flex-shrink: 0; }
 .dock-item--account { color: var(--acid); }
 .dock-item--logout { color: var(--danger); }

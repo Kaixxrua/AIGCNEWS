@@ -50,7 +50,7 @@ const repoUrl = import.meta.env.VITE_APP_GITHUB_URL || 'https://github.com/Kaixx
 }
 
 .github-link:active { transform: rotate(-3deg) scale(0.92); }
-.github-link:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+.github-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .github-icon { width: 20px; height: 20px; }
 

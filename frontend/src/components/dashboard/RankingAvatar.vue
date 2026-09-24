@@ -39,5 +39,5 @@ const name = computed(() => props.doc.source === 'x'
 .ranking-avatar__fallback { position: relative; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; border-radius: inherit; }
 .ranking-avatar__fallback img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; }
 .ranking-avatar__fallback img.loaded { opacity: 1; }
-.ranking-crown { position: absolute; z-index: 1; bottom: calc(100% - 3px); left: 50%; transform: translateX(-50%) rotate(-8deg); width: 42%; min-width: 15px; height: auto; color: #79520c; fill: #f8d45c; filter: drop-shadow(0 1px 0 #fff0b7); pointer-events: none; }
+.ranking-crown { position: absolute; z-index: 1; bottom: calc(100% - 3px); left: 50%; transform: translateX(-50%) rotate(-8deg); width: 42%; min-width: 15px; height: auto; color: var(--podium-gold-ink); fill: var(--podium-gold); filter: drop-shadow(0 1px 0 var(--podium-gold-soft)); pointer-events: none; }
 </style>

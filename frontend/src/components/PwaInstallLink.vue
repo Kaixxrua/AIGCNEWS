@@ -56,7 +56,7 @@ const { promptInstall } = usePwaInstall()
 }
 
 .pwa-install-link:active { transform: translateY(-1px) scale(0.92); }
-.pwa-install-link:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+.pwa-install-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .pwa-install-link svg {
   width: 18px;

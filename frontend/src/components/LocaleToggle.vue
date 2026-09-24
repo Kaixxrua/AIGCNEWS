@@ -62,7 +62,7 @@ const toggleLocale = () => { void switchLocale(targetLocale.value) }
 
 .locale-toggle:active { transform: rotate(-3deg) scale(0.92); }
 .locale-toggle:disabled { cursor: wait; opacity: 0.72; }
-.locale-toggle:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+.locale-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .locale-icon { width: 23px; height: 23px; overflow: visible; }
 .locale-icon__orbit,

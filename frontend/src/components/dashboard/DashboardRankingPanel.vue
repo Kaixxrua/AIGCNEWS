@@ -126,7 +126,7 @@ const boardDateHint = computed(() => {
 .ranking-tab:not([aria-selected='true']):is(:hover,:focus-visible)::after { background:var(--paper-muted); }
 .ranking-tab[aria-selected='true'] { margin-right:5px;padding-inline:25px;color:var(--acid-ink);font-size:23px;font-weight:850; }
 .ranking-tab[aria-selected='true']::after { content:'';position:absolute;inset:0;z-index:-1;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--acid);transform:skewX(-10deg); }
-.ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--acid);outline-offset:-3px; }
+.ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--ink);outline-offset:-3px; }
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
 .ranking-source-status { padding:0 9px;flex-shrink:0; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
@@ -143,11 +143,11 @@ const boardDateHint = computed(() => {
 .ranking-summary { display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin:1px 0 0;color:var(--ink-secondary);font-size:13px;line-height:1.5; }
 .ranking-badges { display:none; }
 .ranking-meta { display:flex;align-items:center;gap:14px;margin:0;flex-wrap:nowrap; }
-.ranking-growth { color:#087425;font-size:14px;font-weight:750;white-space:nowrap; }
-.ranking-heat { color:#ef4829;white-space:nowrap; }
+.ranking-growth { color:var(--growth-ink);font-size:14px;font-weight:750;white-space:nowrap; }
+.ranking-heat { white-space:nowrap; }
 .ranking-score { display:flex;align-items:center;gap:6px;color:var(--ink);font-size:14px;font-weight:750;white-space:nowrap; }
 .ranking-score svg { width:21px;height:21px; }
-.ranking-arrow { flex-shrink:0;width:23px;height:23px;color:#187839; }
+.ranking-arrow { flex-shrink:0;width:23px;height:23px;color:var(--ink-muted); }
 
 /* Rows 4–10: copy on the left, one aligned metric grid on the right. */
 .ranking-row:not(.ranking-row--featured) { grid-column:1/-1; }
@@ -158,10 +158,11 @@ const boardDateHint = computed(() => {
 .ranking-row:not(.ranking-row--featured) .ranking-heat { grid-column:2;justify-self:end; }
 .ranking-row:not(.ranking-row--featured) .ranking-score { grid-column:3;display:grid;grid-template-columns:21px 1fr;gap:6px;text-align:right; }
 
-/* Podium cards 1–3. */
-.ranking-row--featured { --podium:#ffd65b;--podium-ink:#ef501c;position:relative;isolation:isolate;border:2px solid transparent;border-radius:6px;background:linear-gradient(135deg,color-mix(in srgb,var(--podium) 23%,var(--paper-raised)),var(--paper-raised) 60%,color-mix(in srgb,var(--podium) 25%,var(--paper-raised))); }
-.ranking-row--silver { --podium:#4cbcf4;--podium-ink:#1265a8; }
-.ranking-row--bronze { --podium:#ff944e;--podium-ink:#ec4d22; }
+/* Podium cards 1–3: gold, cool silver, copper — hue carries rank, ink stays readable. */
+.ranking-row--featured { position:relative;isolation:isolate;border:2px solid transparent;border-radius:6px;background:linear-gradient(135deg,color-mix(in srgb,var(--podium) 23%,var(--paper-raised)),var(--paper-raised) 60%,color-mix(in srgb,var(--podium) 25%,var(--paper-raised))); }
+.ranking-row--lead { --podium:var(--podium-gold);--podium-ink:var(--podium-gold-ink); }
+.ranking-row--silver { --podium:var(--podium-silver);--podium-ink:var(--podium-silver-ink); }
+.ranking-row--bronze { --podium:var(--podium-bronze);--podium-ink:var(--podium-bronze-ink); }
 .ranking-row--featured::before { content:'';position:absolute;inset:3px;z-index:-1;pointer-events:none;background-image:radial-gradient(color-mix(in srgb,var(--podium) 78%,var(--podium-ink)) .65px,transparent .85px);background-size:3px 3px;mask-image:linear-gradient(135deg,#000,transparent 26%,transparent 76%,#000);opacity:.8; }
 .ranking-row--featured::after { content:'';position:absolute;inset:3px;z-index:-1;pointer-events:none;background:linear-gradient(138deg,transparent 0 12%,color-mix(in srgb,var(--podium) 45%,transparent) 12% 13%,transparent 13% 16%,color-mix(in srgb,var(--podium) 23%,transparent) 16% 18%,transparent 18% 81%,color-mix(in srgb,var(--podium) 35%,transparent) 81% 82%,transparent 82% 89%,color-mix(in srgb,var(--podium) 48%,transparent) 89% 90%,transparent 90%);clip-path:polygon(0 0,40% 0,0 57%,0 100%,68% 100%,100% 36%,100% 100%,0 100%); }
 .ranking-ink-frame { position:absolute;inset:-2px;z-index:2;width:calc(100% + 4px);height:calc(100% + 4px);pointer-events:none;fill:none;stroke-linecap:round;stroke-linejoin:round; }
@@ -179,24 +180,15 @@ const boardDateHint = computed(() => {
 .ranking-row--featured .ranking-growth { font-size:16px; }
 .ranking-row--featured .ranking-heat { position:absolute;top:17px;right:44px; }
 .ranking-row--featured .ranking-score { font-size:20px; }
-.ranking-row--lead .ranking-score,.ranking-row--bronze .ranking-score { color:#ef481e; }
 .ranking-row--featured .ranking-arrow { position:absolute;top:16px;right:12px;color:var(--podium-ink); }
 
 :root[data-theme='dark'] .ranking-row--featured { background:linear-gradient(135deg,color-mix(in srgb,var(--podium) 5%,var(--paper-raised)),var(--paper-raised)); }
 :root[data-theme='dark'] .ranking-row--featured::before { opacity:.12; }
 :root[data-theme='dark'] .ranking-row--featured::after { opacity:.4; }
-:root[data-theme='dark'] .ranking-row--lead { --podium-ink:#dfd397; }
-:root[data-theme='dark'] .ranking-row--silver { --podium-ink:#6badcf; }
-:root[data-theme='dark'] .ranking-row--bronze { --podium-ink:#ef9679; }
 :root[data-theme='dark'] .ranking-ink-frame__outline { stroke:var(--rule);stroke-width:1; }
 :root[data-theme='dark'] .ranking-ink-frame__trace { opacity:.2; }
 :root[data-theme='dark'] .ranking-ink-frame__strokes { opacity:.3; }
 :root[data-theme='dark'] .ranking-number { text-shadow:none; }
-:root[data-theme='dark'] .ranking-growth { color:#94ca8b; }
-:root[data-theme='dark'] .ranking-score { color:#bab1ed; }
-:root[data-theme='dark'] .ranking-row--featured .ranking-score { color:var(--ink); }
-:root[data-theme='dark'] .ranking-row--lead .ranking-score,:root[data-theme='dark'] .ranking-row--bronze .ranking-score { color:#ee8b6d; }
-:root[data-theme='dark'] .ranking-arrow { color:var(--acid); }
 
 @media (max-width:1499px) {
   .ranking-tab { gap:6px;padding-inline:12px;font-size:15px; }

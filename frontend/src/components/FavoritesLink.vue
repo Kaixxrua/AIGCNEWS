@@ -112,7 +112,7 @@ onBeforeUnmount(() => {
 
 .favorites-link:hover { transform: rotate(-3deg); }
 .favorites-link:active { transform: rotate(-3deg) scale(0.92); }
-.favorites-link:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+.favorites-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* 快捷键引导气泡：安静但可发现 —— 纸面卡片 + 硬边框 + 轻错版阴影 */
 .favorite-guide {
