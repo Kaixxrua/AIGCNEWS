@@ -55,6 +55,9 @@ class OAuthStatePayload(BaseModel):
     operation: OAuthOperation = "login"
     # 绑定目标账户只存在于服务端 state 中，绝不出现在重定向 URL 里
     target_user_id: int | None = Field(default=None, gt=0)
+    # 发起时命中的备用入口 origin；None 即 canonical（存量 state 无此字段同样按 None）。
+    # 回调据此复用同一 redirect_uri，并回跳到同一入口（host-only cookie 只在该入口可见）。
+    entry_base_url: str | None = Field(default=None, min_length=8, max_length=1024)
 
     @model_validator(mode="after")
     def _validate_operation_fields(self) -> "OAuthStatePayload":

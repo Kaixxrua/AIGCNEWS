@@ -51,9 +51,11 @@ from backend.app.services.auth.oauth.providers.google import GoogleOAuthError
 from backend.app.services.auth.oauth.providers.wechat import WeChatOAuthError
 from backend.app.services.auth.oauth.redirect import (
     OAuthRedirectError,
-    canonical_callback_uri,
-    canonical_frontend_action_callback_uri,
-    canonical_frontend_callback_uri,
+    alternate_entry_for_forwarded_host,
+    entry_base_url,
+    frontend_action_callback_uri,
+    frontend_callback_uri,
+    provider_callback_uri,
     safe_internal_redirect,
 )
 from backend.app.services.auth.oauth.registry import configured_oauth_providers
@@ -137,6 +139,11 @@ def _binding_matches(request: Request, expected_hash: str) -> bool:
     return bool(actual) and hmac.compare_digest(digest_secret(actual), expected_hash)
 
 
+def _request_entry(request: Request, config) -> str | None:
+    """本次发起所在的备用入口（边缘 X-Forwarded-Host 命中白名单时）；canonical 记为 None。"""
+    return alternate_entry_for_forwarded_host(request.headers.get("x-forwarded-host"), config)
+
+
 def _current_user_id(current_user: dict) -> int:
     user_id = extract_user_id(current_user)
     if user_id is None or user_id <= 0:
@@ -156,13 +163,15 @@ async def oauth_start(provider: str, request: Request, query: OAuthStartQuery = 
     response = Response()
     binding = _binding(request, response)
     material = create_state_material(use_pkce=adapter.use_pkce, use_nonce=adapter.use_nonce)
-    state_payload = OAuthStatePayload(
-        provider=provider, redirect_to=redirect_to, pkce_verifier=material.code_verifier,
-        nonce=material.nonce, browser_binding_hash=digest_secret(binding),
-    )
     states, _ = _stores(request, config)
     try:
-        callback_uri = canonical_callback_uri(provider, config)
+        entry = _request_entry(request, config)
+        state_payload = OAuthStatePayload(
+            provider=provider, redirect_to=redirect_to, pkce_verifier=material.code_verifier,
+            nonce=material.nonce, browser_binding_hash=digest_secret(binding),
+            entry_base_url=entry,
+        )
+        callback_uri = provider_callback_uri(provider, entry_base_url(entry, config))
         url = adapter.authorization_url(
             state=material.state, redirect_uri=callback_uri,
             code_challenge=pkce_challenge(material.code_verifier) if material.code_verifier else None,
@@ -196,16 +205,17 @@ async def oauth_bind_start(
     response = Response()
     binding = _binding(request, response)
     material = create_state_material(use_pkce=adapter.use_pkce, use_nonce=adapter.use_nonce)
-    state_payload = OAuthStatePayload(
-        provider=provider, redirect_to=redirect_to, pkce_verifier=material.code_verifier,
-        nonce=material.nonce, browser_binding_hash=digest_secret(binding),
-        operation="bind", target_user_id=target_user_id,
-    )
     states, _ = _bind_stores(request, config)
     try:
+        entry = _request_entry(request, config)
+        state_payload = OAuthStatePayload(
+            provider=provider, redirect_to=redirect_to, pkce_verifier=material.code_verifier,
+            nonce=material.nonce, browser_binding_hash=digest_secret(binding),
+            operation="bind", target_user_id=target_user_id, entry_base_url=entry,
+        )
         # 复用与登录相同的 provider 回调地址：provider 控制台无需新增 redirect URI，
         # 回调内按 state.operation 分流
-        callback_uri = canonical_callback_uri(provider, config)
+        callback_uri = provider_callback_uri(provider, entry_base_url(entry, config))
         url = adapter.authorization_url(
             state=material.state, redirect_uri=callback_uri,
             code_challenge=pkce_challenge(material.code_verifier) if material.code_verifier else None,
@@ -232,8 +242,10 @@ async def _oauth_callback_login(
 ) -> RedirectResponse:
     """游客登录分支：解析/创建账户并签发登录 handoff。"""
     try:
+        # exchange 的 redirect_uri 必须与 authorize 时逐字节一致：从 state 还原入口
+        base_url = entry_base_url(state.entry_base_url, config)
         profile = await adapter.exchange_code(
-            code=code, redirect_uri=canonical_callback_uri(provider, config),
+            code=code, redirect_uri=provider_callback_uri(provider, base_url),
             code_verifier=state.pkce_verifier, nonce=state.nonce,
         )
         resolution = await asyncio.to_thread(
@@ -262,7 +274,7 @@ async def _oauth_callback_login(
         raise HTTPException(status_code=502, detail="oauth_callback_failed") from exc
     except (OAuthAdapterUnavailable, OAuthHandoffUnavailableError, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
-    target = canonical_frontend_callback_uri(config)
+    target = frontend_callback_uri(base_url)
     result = RedirectResponse(target, status_code=303)
     result.set_cookie(
         "aigc_oauth_handoff", token, max_age=config.handoff_ttl_seconds,
@@ -292,8 +304,10 @@ async def _oauth_callback_bind(
     if target_user.get("disabled"):
         raise HTTPException(status_code=401, detail="oauth_account_disabled")
     try:
+        # exchange 的 redirect_uri 必须与 authorize 时逐字节一致：从 state 还原入口
+        base_url = entry_base_url(state.entry_base_url, config)
         profile = await adapter.exchange_code(
-            code=code, redirect_uri=canonical_callback_uri(provider, config),
+            code=code, redirect_uri=provider_callback_uri(provider, base_url),
             code_verifier=state.pkce_verifier, nonce=state.nonce,
         )
         bind_result = await asyncio.to_thread(
@@ -319,7 +333,7 @@ async def _oauth_callback_bind(
         raise HTTPException(status_code=502, detail="oauth_callback_failed") from exc
     except (OAuthAdapterUnavailable, OAuthHandoffUnavailableError, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
-    target = canonical_frontend_action_callback_uri(config)
+    target = frontend_action_callback_uri(base_url)
     result = RedirectResponse(target, status_code=303)
     result.set_cookie(
         _BIND_HANDOFF_COOKIE, token, max_age=config.handoff_ttl_seconds,

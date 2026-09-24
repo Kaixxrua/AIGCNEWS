@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -76,6 +77,30 @@ class Settings(BaseSettings):
         if not 30 <= value <= 600:
             raise ValueError("oauth_handoff_ttl_seconds must be within 30..600")
         return value
+
+    @field_validator("oauth_alternate_base_urls")
+    @classmethod
+    def _validate_oauth_alternate_base_urls(cls, value: str) -> str:
+        normalized: list[str] = []
+        for item in (value or "").split(","):
+            raw = item.strip().rstrip("/").lower()
+            if not raw:
+                continue
+            parsed = urlsplit(raw)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or parsed.username
+                or parsed.password
+                or "\\" in raw
+            ):
+                raise ValueError("oauth_alternate_base_urls entries must be bare https origins")
+            if raw not in normalized:
+                normalized.append(raw)
+        return ",".join(normalized)
 
     # ── 支付收费骨架（ADR 0002）────────────────────────────────────────
     # 全局开关：默认 False，用户侧支付路由整组 404（feature gate 先例）；
@@ -478,6 +503,11 @@ class Settings(BaseSettings):
     wechat_oauth_app_secret: str = ""
     oauth_state_ttl_seconds: int = 300
     oauth_handoff_ttl_seconds: int = 120
+    # OAuth 备用登录入口（逗号分隔的 https origin，须同时登记在各 provider 控制台）。
+    # 仅当边缘 X-Forwarded-Host 与名单中某项主机名精确相等时，该次登录改用此入口的
+    # 回调地址；头值本身永不参与 URL 拼接。与前端 FALLBACK_ENTRY_ORIGIN 成对维护，
+    # 自部署留空即只用 PUBLIC_BASE_URL。
+    oauth_alternate_base_urls: str = "https://aigcradar.online"
 
     # CORS 允许的来源（逗号分隔）。浏览器直连 API 的场景只有前端，
     # 不再允许任意来源。
