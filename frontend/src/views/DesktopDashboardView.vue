@@ -11,7 +11,7 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { ArrowRight, Mail, Plug, Terminal, Check, ChevronRight } from 'lucide-vue-next'
+import { ArrowRight, Mail, Plug, Terminal, Check } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
 
@@ -108,7 +108,6 @@ onBeforeUnmount(() => uiCatalogController.abort())
         @select-source="selectSourceTab" />
 
       <aside v-if="!loading" class="dashboard-sidebar min-h-0">
-        <p class="sidebar-motto"><span>{{ t('dashboard.editorial.motto') }}</span><ChevronRight :size="22" aria-hidden="true" /></p>
         <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />
         <section class="digest-card">
           <svg class="digest-ink-frame" viewBox="0 0 400 230" preserveAspectRatio="none" aria-hidden="true"><path d="M10 3 Q5 2 4 12 L3 216 Q2 225 13 226 L387 228 Q396 227 396 216 L398 14 Q399 5 388 4 Z" /></svg>
@@ -118,7 +117,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
           <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
             {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
           </RouterLink>
-          <img class="digest-robot" src="/assets/comic/digest-robot-integrated.webp" alt="" aria-hidden="true" />
+          <img class="digest-robot" src="/assets/comic/digest-robot-cyan-burst.webp" alt="" aria-hidden="true" />
         </section>
         <div class="integration-grid">
           <RouterLink to="/mcp" class="integration-card integration-card--mcp" :aria-label="t('dashboard.mcpCalls.title')">
@@ -129,13 +128,15 @@ onBeforeUnmount(() => uiCatalogController.abort())
           </RouterLink>
         </div>
         <RouterLink :to="uiPreview ? { name: 'ui-library', params: { id: uiPreview.id } } : { name: 'ui-library' }" class="ui-inspiration">
-          <div class="ui-inspiration__heading"><span>{{ t('dashboard.editorial.inspiration') }}</span><ArrowRight :size="16" /></div>
-          <div ref="previewElement" class="ui-inspiration__preview">
-            <video v-if="uiPreview?.clip_url && !clipFailed && active && previewVisible && motion !== 'reduce' && visibility === 'visible'" :src="uiPreview.clip_url" :poster="uiPreview.poster_url" :aria-label="previewName" autoplay muted loop playsinline @error="clipFailed = true" />
-            <img v-else-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
-            <span v-else class="ui-inspiration__fallback">UI / {{ t('dashboard.editorial.explore') }}</span>
+          <div class="ui-inspiration__body">
+            <div class="ui-inspiration__heading"><span>{{ t('dashboard.editorial.inspiration') }}</span><ArrowRight :size="16" /></div>
+            <div ref="previewElement" class="ui-inspiration__preview">
+              <video v-if="uiPreview?.clip_url && !clipFailed && active && previewVisible && motion !== 'reduce' && visibility === 'visible'" :src="uiPreview.clip_url" :poster="uiPreview.poster_url" :aria-label="previewName" autoplay muted loop playsinline @error="clipFailed = true" />
+              <img v-else-if="uiPreview && !previewFailed" :src="uiPreview.poster_url" :alt="previewName" loading="lazy" @error="previewFailed = true" />
+              <span v-else class="ui-inspiration__fallback">UI / {{ t('dashboard.editorial.explore') }}</span>
+            </div>
+            <div class="ui-inspiration__caption"><span>{{ previewName || t('dashboard.editorial.explore') }}</span><span>UI LIBRARY ↗</span></div>
           </div>
-          <div class="ui-inspiration__caption"><span>{{ previewName || t('dashboard.editorial.explore') }}</span><span>UI LIBRARY ↗</span></div>
         </RouterLink>
       </aside>
     </div>
@@ -144,27 +145,19 @@ onBeforeUnmount(() => uiCatalogController.abort())
 
 <style scoped>
 .dashboard-page { --sidebar-width:24%;display:grid;grid-template-columns:minmax(0,1fr) var(--sidebar-width);grid-template-rows:74px minmax(0,1fr);gap:14px 24px;position:relative;isolation:isolate;height:100%;min-height:0;padding:16px 12px 6px;color:var(--ink); }
-.dashboard-page::before,.dashboard-page::after { content:'';position:absolute;z-index:-1;top:0;bottom:0;border:1.5px solid var(--rule-strong);border-radius:14px;background:color-mix(in srgb,var(--paper) 96%,transparent);pointer-events:none; }
-.dashboard-page::before { left:0;right:calc(var(--sidebar-width) + 13px); }
-.dashboard-page::after { right:0;width:calc(var(--sidebar-width) + 12px);border-width:2px 2.5px 2px 2px;border-radius:16px 14px 20px 12px;background:var(--paper); }
 .dashboard-heading { grid-column:1;grid-row:1;display:flex;align-items:center;min-width:0;gap:16px; }
 .dashboard-heading__copy { flex:0 0 258px;min-width:0;padding-left:5px; }
-.dashboard-heading h1 { text-shadow:1px 1px 0 var(--paper-raised);position:relative;isolation:isolate;display:inline-block;margin:0 0 4px;font-size:35px;font-style:italic;font-weight:950;line-height:1.1;letter-spacing:0;white-space:nowrap; }
-.dashboard-heading h1::before { content:'';position:absolute;z-index:-1;inset:70% -4px 1px;background:var(--acid);transform:rotate(-5deg) skewX(-18deg); }
-.dashboard-heading h1::after { content:'';position:absolute;right:-14px;top:-9px;width:24px;height:28px;background:var(--acid);clip-path:polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%); }
-.dashboard-heading p { font-size:16px;font-weight:700;font-style:italic;line-height:1.25;white-space:nowrap; }
+.dashboard-heading h1 { display:inline-block;margin:0 0 4px;font-size:35px;font-style:italic;font-weight:950;line-height:1.1;letter-spacing:0;white-space:nowrap; }
+.dashboard-heading p { font-size:16px;font-weight:700;line-height:1.25;white-space:nowrap; }
 .dashboard-heading :deep(.stat-strip) { flex:1;height:100%; }
 .dashboard-main { display:contents; }
 .dashboard-main > :not(aside) { grid-column:1;grid-row:2;min-width:0; }
-.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:70px 214px minmax(180px,226px) 60px 81px;align-content:start;gap:12px;min-width:0;min-height:0; }
+.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px minmax(180px,226px) 60px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0; }
 .dashboard-sidebar a:focus-visible { outline:2px solid var(--ink);outline-offset:3px; }
 .dashboard-error { position:absolute;top:0;left:12px;right:12px;z-index:3;padding:8px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
 
-.sidebar-motto { display:flex;justify-content:space-between;align-items:center;position:relative;white-space:pre-line;font-size:20px;font-weight:900;letter-spacing:-.035em;line-height:1.3;padding:10px 15px;border:solid var(--rule-strong);border-width:2px 2px 2.5px 4px;border-left-color:var(--acid);border-radius:4px 7px 4px 3px;background:var(--paper);box-shadow:none;transform:rotate(-.45deg); }
-.sidebar-motto svg { flex-shrink:0; }
-
 .dashboard-sidebar :deep(.dash-calendar) { padding:8px 12px;border:solid var(--rule-strong);border-width:2px 2.5px 2px 2px;border-radius:5px 9px 4px 6px;background:var(--paper);box-shadow:inset -2px -2px 0 color-mix(in srgb,var(--rule-strong) 12%,transparent); }
-.dashboard-sidebar :deep(.dash-calendar h3) { color:var(--ink);font-family:inherit;font-size:24px;font-weight:850;font-style:italic; }
+.dashboard-sidebar :deep(.dash-calendar h3) { color:var(--ink);font-family:inherit;font-size:24px;font-weight:850; }
 .dashboard-sidebar :deep(.dash-calendar > div:first-child) { margin-bottom:4px; }
 .dashboard-sidebar :deep(.dash-calendar > .grid:last-child) { flex:1;min-height:0;grid-auto-rows:minmax(0,1fr); }
 .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:20px;font-size:15px;color:var(--ink); }
@@ -183,13 +176,13 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:1; }
 .digest-ink-frame path { vector-effect:non-scaling-stroke; }
 .digest-heading { position:relative;z-index:1;display:flex;align-items:center;gap:11px;margin-bottom:5px; }
-.digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--acid);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--acid) 40%,transparent); }
+.digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--comic-cyan);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--comic-cyan-line) 40%,transparent); }
 .digest-mail svg { width:31px;height:29px;filter:drop-shadow(1px 1px 0 var(--paper)); }
 .digest-heading h2 { font-size:25px;line-height:1.3;font-weight:950;letter-spacing:-.025em; }
 .digest-card p { position:relative;z-index:4;display:table;max-width:96%;margin-top:0;padding:2px 5px 3px 0;background:transparent;color:var(--ink-secondary);font-size:12px;line-height:1.55;white-space:normal; }
 .digest-features { position:relative;z-index:1;display:flex;flex-direction:column;gap:2px;max-width:48%;margin-top:5px;font-size:15px;line-height:18px;font-weight:750; }
 .digest-features li { display:flex;align-items:center;gap:10px;height:19px;min-height:19px;white-space:nowrap; }
-.digest-features svg { background:var(--acid);color:var(--acid-ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
+.digest-features svg { background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
 .digest-cta { position:absolute;left:14px;bottom:12px;z-index:4;display:flex;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
 .digest-cta svg { width:23px;height:23px; }
 .digest-robot { position:absolute;z-index:2;right:-17px;bottom:1px;width:64%;height:108%;object-fit:contain;object-position:right bottom;pointer-events:none; }
@@ -200,26 +193,22 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .integration-card--dsh > svg { background:color-mix(in srgb,var(--integration-dsh) 25%,var(--paper-raised));color:var(--integration-dsh-ink); }
 .integration-card > span { min-width:0;font-size:12px;line-height:1.25;color:var(--ink-secondary); }
 .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { display:block;color:var(--ink);font-size:25px;line-height:1.2;font-weight:850; }
-.ui-inspiration { display:grid;grid-template-columns:78px minmax(0,1fr);grid-template-rows:25px 1fr;column-gap:10px;padding:8px;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--paper); }
+.ui-inspiration { display:block;container-type:size;min-height:0;padding:8px;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--paper); }
+.ui-inspiration__body { display:grid;height:100%;grid-template-columns:min(45%,133cqh) minmax(0,1fr);grid-template-rows:25px 1fr;column-gap:10px; }
 .ui-inspiration__heading { grid-column:2;display:flex;align-items:center;justify-content:space-between;font-size:20px;font-weight:850; }
 .ui-inspiration__heading svg { width:23px;height:23px; }
-.ui-inspiration__preview { grid-column:1;grid-row:1/3;overflow:hidden;border-radius:6px;background:var(--paper-muted); }
+.ui-inspiration__preview { grid-column:1;grid-row:1/3;overflow:hidden;border:1px solid var(--rule);border-radius:6px;background:var(--paper-muted); }
 .ui-inspiration__preview video,.ui-inspiration__preview img { width:100%;height:100%;object-fit:cover; }
 .ui-inspiration__fallback { display:grid;height:100%;place-items:center;font-size:11px;color:var(--muted); }
 .ui-inspiration__caption { display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;color:var(--ink-secondary);font-size:13px;line-height:1.25; }
 .ui-inspiration__caption > span:first-child { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .ui-inspiration__caption > span:last-child { color:var(--ink);font-size:12px; }
 
-:root[data-theme='dark'] .dashboard-page::before { border-color:transparent;background:transparent; }
-:root[data-theme='dark'] .dashboard-page::after { border-color:transparent;background:color-mix(in srgb,var(--paper-raised) 55%,var(--paper)); }
-:root[data-theme='dark'] .dashboard-heading h1 { color:var(--acid); }
-:root[data-theme='dark'] .dashboard-heading h1::before { opacity:0; }
-:root[data-theme='dark'] .sidebar-motto { border-width:1px;border-left-color:color-mix(in srgb,var(--acid) 45%,var(--paper));background:var(--paper-raised);box-shadow:inset 4px 0 0 color-mix(in srgb,var(--acid) 60%,transparent); }
 :root[data-theme='dark'] .dashboard-sidebar :deep(.dash-calendar) { border-width:1px;background:var(--paper-raised); }
 :root[data-theme='dark'] .digest-card { border-width:1px;background:var(--paper-raised); }
 :root[data-theme='dark'] .digest-card::before { opacity:.12; }
 :root[data-theme='dark'] .digest-ink-frame { stroke-width:1; }
-:root[data-theme='dark'] .digest-mail { background:transparent;color:var(--acid);box-shadow:none; }
+:root[data-theme='dark'] .digest-mail { box-shadow:none; }
 :root[data-theme='dark'] .digest-mail svg { filter:none; }
 :root[data-theme='dark'] .digest-robot { filter:saturate(.64) brightness(.77); }
 :root[data-theme='dark'] .integration-card,:root[data-theme='dark'] .ui-inspiration { background:var(--paper-raised); }
@@ -230,7 +219,6 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading__copy { flex-basis:205px; }
   .dashboard-heading h1 { font-size:30px; }
   .dashboard-heading p { font-size:14px; }
-  .sidebar-motto { font-size:18px; }
   .integration-card { gap:6px; }
   .integration-card > svg { width:35px;height:38px;padding:6px; }
   .integration-card > span { font-size:10px; }
@@ -246,7 +234,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:28px; }
   .integration-card > svg { width:28px;height:33px;padding:4px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:19px; }
-  .ui-inspiration { grid-template-columns:55px minmax(0,1fr); }
+  .ui-inspiration__body { grid-template-columns:55px minmax(0,1fr); }
   .ui-inspiration__heading { font-size:17px; }
 }
 @media (min-width:1200px) {
@@ -255,7 +243,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 @media (min-width:1200px) and (max-height:820px) {
   .dashboard-page { grid-template-rows:64px minmax(0,1fr);padding-top:10px; }
   .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
-  .dashboard-sidebar { gap:9px;grid-template-rows:58px 187px 170px 52px 62px; }
+  .dashboard-sidebar { gap:9px;grid-template-rows:187px 170px 52px minmax(62px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:19px; }
   .digest-card { min-height:0;padding:9px 11px; }
   .digest-heading { margin-bottom:2px; }
@@ -269,8 +257,16 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .digest-cta { left:11px;bottom:8px;height:27px;font-size:14px; }
   .digest-robot { right:-14px;width:62%;height:104%; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:21px; }
-  .ui-inspiration { grid-template-columns:60px minmax(0,1fr);grid-template-rows:20px 1fr; }
+  .ui-inspiration__body { grid-template-rows:20px 1fr; }
   .ui-inspiration__heading { font-size:17px; }
   .ui-inspiration__caption { font-size:11px; }
+}
+/* Tall card: the preview spans the full width instead of shrinking to a thumbnail. */
+@container (min-height:170px) {
+  .ui-inspiration__body { grid-template-columns:minmax(0,1fr);grid-template-rows:25px minmax(0,1fr) auto;row-gap:8px; }
+  .ui-inspiration__heading,.ui-inspiration__preview,.ui-inspiration__caption { grid-column:1; }
+  .ui-inspiration__preview { grid-row:2; }
+  .ui-inspiration__caption { flex-direction:row;justify-content:space-between;align-items:baseline;gap:12px; }
+  .ui-inspiration__caption > span:last-child { flex-shrink:0; }
 }
 </style>

@@ -130,7 +130,7 @@ const boardDateHint = computed(() => {
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
 .ranking-source-status { padding:0 9px;flex-shrink:0; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
-.live-dot { width:13px;height:13px;border:3px solid var(--acid);background:var(--ink);border-radius:50%; }
+.live-dot { flex-shrink:0;width:8px;height:8px;margin:3px;background:var(--live-dot);border-radius:50%;box-shadow:0 0 0 3px var(--live-dot-halo); }
 .ranking-list { flex:1;min-height:0;overflow:auto; }
 .editorial-list { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:172px repeat(7,minmax(0,1fr));gap:6px 10px;height:100%; }
 .ranking-row { min-width:0;border:1px solid var(--rule);border-radius:7px;background:var(--paper-raised);overflow:hidden; }

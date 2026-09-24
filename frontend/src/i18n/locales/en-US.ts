@@ -229,11 +229,9 @@ const enUSCatalog = {
   'monitor.uiSources.deleteFailed': 'Failed to delete the UI asset source.',
   'monitor.uiSources.deleteConfirm': 'Delete discovery source “{name}”?',
   'projects.heatPending': 'Pending: no usable growth snapshot yet. Heat is not a quality rating.',
-  'footer.createMore': 'Let AI create more possibilities',
   'footer.siteInfo': 'Site information',
   'footer.about': 'About us',
   'footer.contact': 'Contact us',
-  'footer.discoverMore': 'Help great projects get discovered',
   'footer.aboutDescription': 'AIGC NEWS brings together AI open-source projects, papers, news and tools to help you discover worthwhile developments.',
 } as const
 
