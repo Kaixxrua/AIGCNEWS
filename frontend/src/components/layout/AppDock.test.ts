@@ -6,6 +6,21 @@ import i18n, { setAppLocale } from '@/i18n'
 import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
 let unmount: (() => void) | undefined
+const originalMatchMedia = window.matchMedia
+// jsdom has no matchMedia, so the dock renders its tablet grouping unless a test widens it.
+const useDesktopWidth = () => {
+  window.matchMedia = ((query: string) => ({
+    matches: query === '(min-width: 1024px)',
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+}
+afterEach(() => { window.matchMedia = originalMatchMedia })
 
 const mountDock = (alertItems: string[] = [], currentPath = '/', currentQuery: Record<string, unknown> = {}) => {
   const host = document.createElement('div')
@@ -64,6 +79,7 @@ describe('AppDock enrichment alert dot', () => {
   })
 
   it('exposes the website collection link and keeps its active state query-aware', () => {
+    useDesktopWidth()
     setAppLocale('zh-CN')
     const host = mountDock([], '/projects', { source: 'website' })
 
@@ -112,6 +128,7 @@ describe('AppDock account settings entry', () => {
   })
 
   it('keeps short Chinese dock captions visible in English while preserving full accessible names', () => {
+    useDesktopWidth()
     setAppLocale('en-US')
     const host = mountDock()
     const projects = host.querySelector('a[href="/projects"]')!
@@ -120,7 +137,6 @@ describe('AppDock account settings entry', () => {
     expect(projects.getAttribute('aria-label')).toBe('Projects')
     expect(host.querySelector('a[href="/ui-library"] .dock-label')?.textContent).toBe('UI库')
     expect(host.querySelector('.dock-item--account .dock-label')?.textContent).toBe('账户')
-    expect(host.querySelector('.dock-item--logout .dock-label')?.textContent).toBe('退出')
   })
 
   it('labels the entry in English under the en-US locale', () => {
@@ -128,6 +144,36 @@ describe('AppDock account settings entry', () => {
     const host = mountDock()
 
     expect(host.querySelector('button[aria-label="Account settings"]')).not.toBeNull()
+  })
+})
+
+describe('AppDock desktop grouping', () => {
+  afterEach(() => {
+    unmount?.()
+    unmount = undefined
+  })
+
+  it('keeps content sections in the desktop dock and moves account-level pages and sign-out into More', () => {
+    useDesktopWidth()
+    setAppLocale('zh-CN')
+    const host = mountDock(['/monitor'])
+
+    expect([...host.querySelectorAll('.dock > a')].map(link => link.getAttribute('href'))).toEqual([
+      '/', '/projects', '/ui-library', '/projects?source=website', '/report', '/x', '/mcp', '/subscriptions',
+    ])
+    expect([...host.querySelectorAll('.dock > button')].map(button => button.querySelector('.dock-label')?.textContent)).toEqual(['账户', '更多'])
+    expect([...host.querySelectorAll('.dock-more__links a')].map(link => link.getAttribute('href'))).toEqual([
+      '/chat', '/wechat', '/dsh', '/membership', '/contact', '/monitor',
+    ])
+    expect(host.querySelector('.dock-item--more .dock-alert-dot')).not.toBeNull()
+    expect(host.querySelector('.dock-more__signout')?.textContent).toContain('退出登录')
+  })
+
+  it('keeps the four-destination bar at tablet widths', () => {
+    setAppLocale('zh-CN')
+    const host = mountDock()
+    expect([...host.querySelectorAll('.dock > a')].map(link => link.getAttribute('href'))).toEqual(['/', '/projects', '/report', '/subscriptions'])
+    expect(host.querySelector('.dock-more a[href="/ui-library"]')).not.toBeNull()
   })
 })
 

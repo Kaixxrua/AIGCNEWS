@@ -80,7 +80,7 @@
 #app .app-shell--editorial .brand-wordmark__text { font-size: 94px; }
 
 @media (min-width: 1024px) {
-  #app .app-shell { --home-dock-width: min(920px, 61vw); }
+  #app .app-shell { --home-dock-width: min(720px, 56vw); }
   #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh - 74px); }
   #app .app-shell--editorial .main-canvas--editorial > .app-content { padding: 110px 12px 0; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead {
@@ -145,7 +145,6 @@
   #app .app-shell--editorial .dock-item { height: 52px; border-radius: 7px; }
   #app .app-shell--editorial .dock-label { font-size: 12px; line-height: 16px; }
   #app .app-shell--editorial .dock-auth-sep { display: block; width: 1px; height: 32px; margin: 0 10px; background: var(--dock-edge); }
-  #app .app-shell--editorial .dock-item--account { color: var(--dock-account-ink); }
   #app .app-shell--editorial .dock-footer--editorial { bottom: 3px; height: 68px; left: 24px; right: 24px; }
   #app .app-shell--editorial .footer-wordmark { letter-spacing: 0; }
   #app .app-shell--editorial .footer-nav { font-size: 12px; }

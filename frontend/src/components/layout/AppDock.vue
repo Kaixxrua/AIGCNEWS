@@ -21,11 +21,17 @@ const emit = defineEmits<{ login: []; logout: []; accountSettings: [] }>()
 const { t } = useI18n()
 const alertLabel = (path: string) => t(path === '/subscriptions' ? 'tracking.unread' : 'navigation.monitorAlert')
 const isMobile = useMediaQuery('(max-width: 767px)')
-const primaryPaths = new Set(['/', '/projects', '/report', '/subscriptions'])
+const isDesktop = useMediaQuery('(min-width: 1024px)')
+// Tablets keep four destinations in the bar; desktop adds the other content sections.
+// Account-level, admin and site pages stay one tap away under More at every width.
+const tabletPaths = new Set(['/', '/projects', '/report', '/subscriptions'])
+const desktopPaths = new Set(['/', '/projects', '/ui-library', '/projects?source=website', '/report', '/x', '/mcp', '/subscriptions'])
+const primaryPaths = computed(() => isDesktop.value ? desktopPaths : tabletPaths)
 const visibleItems = computed(() => props.items.filter(item =>
   (!item.requiresAdmin || props.isAdmin) && (!item.requiresAuth || props.isLoggedIn),
 ))
-const moreItems = computed(() => visibleItems.value.filter(item => !primaryPaths.has(item.to)))
+const dockItems = computed(() => visibleItems.value.filter(item => primaryPaths.value.has(item.to)))
+const moreItems = computed(() => visibleItems.value.filter(item => !primaryPaths.value.has(item.to)))
 const moreActive = computed(() => moreItems.value.some(item => isActive(item)))
 const moreAlert = computed(() => moreItems.value.some(item => props.alertItems?.includes(item.to)))
 const moreDialog = ref<HTMLDialogElement | null>(null)
@@ -73,11 +79,11 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
     <template v-else>
   <nav class="dock" :aria-label="t('navigation.primary')">
     <RouterLink
-      v-for="item in visibleItems" :key="item.to" :to="item.to"
+      v-for="item in dockItems" :key="item.to" :to="item.to"
       :aria-label="props.alertItems?.includes(item.to) ? label(item) + '，' + alertLabel(item.to) : label(item)" :title="label(item)"
       :aria-current="isActive(item) ? 'page' : undefined"
       class="dock-item"
-      :class="{ 'dock-item--wide': caption(item).length > 3, 'dock-item--active': isActive(item), 'dock-item--secondary': !primaryPaths.has(item.to) }"
+      :class="{ 'dock-item--wide': caption(item).length > 3, 'dock-item--active': isActive(item) }"
     >
       <span class="dock-icon" aria-hidden="true" v-html="item.icon" />
       <span v-if="props.alertItems?.includes(item.to)" class="dock-alert-dot" :aria-label="alertLabel(item.to)" />
@@ -88,10 +94,6 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
       <UserRound v-if="isLoggedIn" class="dock-icon" aria-hidden="true" />
       <LogIn v-else class="dock-icon" aria-hidden="true" />
       <span class="dock-label">{{ isLoggedIn ? '账户' : '登录' }}</span>
-    </button>
-    <button v-if="isLoggedIn" class="dock-item dock-item--secondary dock-item--logout" :aria-label="t('navigation.logout')" @click="logout">
-      <LogOut class="dock-icon" aria-hidden="true" />
-      <span class="dock-label">退出</span>
     </button>
     <button class="dock-item dock-item--more" :class="{ 'dock-item--active': moreActive }" :aria-label="t('navigation.more')" aria-haspopup="dialog" aria-controls="dock-more-menu" :aria-expanded="moreOpen" @click="openMore">
       <MoreHorizontal class="dock-icon" aria-hidden="true" />
@@ -156,7 +158,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
   cursor: pointer;
   transition: color 160ms ease, background 160ms ease, transform 160ms ease;
 }
-.dock-item:hover { color: var(--acid); background: var(--dock-hover); transform: translateY(-3px); }
+.dock-item:hover { background: var(--dock-hover); transform: translateY(-3px); }
 .dock-item--active, .dock-item--active:hover { color: var(--acid-ink); background: var(--acid); }
 .dock-icon { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; align-items: center; justify-content: center; }
 .dock-icon :deep(svg) { width: 20px; height: 20px; }
@@ -164,9 +166,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
 .dock-item:hover .dock-label, .dock-item:focus-visible .dock-label { opacity: 1; visibility: visible; transform: translate(-50%, 0); }
 .dock-item:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .dock-auth-sep { width: 1px; height: 24px; margin: 0 3px; background: var(--dock-edge); flex-shrink: 0; }
-.dock-item--account { color: var(--acid); }
-.dock-item--logout { color: var(--danger); }
-.dock-item--more { display: none; }
+.dock-item--account { color: var(--dock-account-ink, var(--acid)); }
 .dock-alert-dot { position: absolute; top: 6px; right: 12px; width: 7px; height: 7px; border: 1px solid var(--paper-raised); border-radius: 50%; background: var(--error-accent); }
 .dock-more { position: fixed; inset: auto 12px 12px; width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); margin: 0 auto; padding: 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--paper-raised); color: var(--ink); box-shadow: var(--surface-shadow-raised); overscroll-behavior: contain; }
 .dock-more::backdrop { background: rgb(0 0 0 / .35); }
@@ -183,8 +183,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
   .dock-item { width: 100%; min-width: 0; height: 52px; }
   .dock-label { position: static; width: auto; max-width: 100%; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; box-shadow: none; font-size: 11px; opacity: 1; visibility: visible; transform: none; text-overflow: ellipsis; }
   .dock-item:hover, .dock-item:hover .dock-label, .dock-item:focus-visible .dock-label { transform: none; }
-  .dock-item--secondary, .dock-auth-sep { display: none; }
-  .dock-item--more { display: flex; }
+  .dock-auth-sep { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .dock-item, .dock-label { transition: none; } .dock-item:hover { transform: none; } }
 
