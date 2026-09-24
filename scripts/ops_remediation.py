@@ -185,10 +185,7 @@ def _resolve_owner(owner: str) -> tuple[int | None, int | None, str]:
 def _iter_targets(root: Path, recursive: bool) -> list[Path]:
     if not recursive or root.is_file():
         return [root]
-    targets = [root]
-    for child in root.rglob("*"):
-        targets.append(child)
-    return targets
+    return [root, *root.rglob("*")]
 
 
 def execute_fix_perms(
