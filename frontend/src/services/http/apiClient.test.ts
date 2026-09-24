@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => {
     useAuthStore: vi.fn(),
     getActivePinia: vi.fn(),
     showToast: vi.fn(),
+    recordResponse: vi.fn(),
+    recordFailure: vi.fn(),
   }
 })
 
@@ -34,14 +36,19 @@ vi.mock('../../stores/authStore', () => ({ useAuthStore: mocks.useAuthStore }))
 vi.mock('pinia', () => ({ getActivePinia: mocks.getActivePinia }))
 vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin: mocks.requestLogin }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: mocks.showToast }))
+vi.mock('@/services/http/fallbackEntry', () => ({
+  fallbackEntryState: { recordResponse: mocks.recordResponse, recordFailure: mocks.recordFailure },
+}))
 
 import { api } from './apiClient'
 import { setRuntimeAuthToken } from './authTokenStorage'
 
 type RejectedInterceptor = (error: any) => Promise<never>
+type FulfilledInterceptor = (response: any) => any
 type RequestInterceptor = (config: any) => any
 
 const requestInterceptor = mocks.requestUse.mock.calls[0]![0] as RequestInterceptor
+const responseFulfilledInterceptor = mocks.responseUse.mock.calls[0]![0] as FulfilledInterceptor
 const responseRejectedInterceptor = mocks.responseUse.mock.calls[0]![1] as RejectedInterceptor
 
 describe('frontend API transport contract', () => {
@@ -50,6 +57,8 @@ describe('frontend API transport contract', () => {
     mocks.useAuthStore.mockReset()
     mocks.getActivePinia.mockReset()
     mocks.showToast.mockReset()
+    mocks.recordResponse.mockReset()
+    mocks.recordFailure.mockReset()
     localStorage.clear()
     setRuntimeAuthToken(null)
     vi.restoreAllMocks()
@@ -63,6 +72,17 @@ describe('frontend API transport contract', () => {
       timeout: 60_000,
       headers: { 'Content-Type': 'application/json' },
     })
+  })
+
+  it('reports every response and failure to the fallback entry offer', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const response = { status: 200, data: {} }
+    expect(responseFulfilledInterceptor(response)).toBe(response)
+    expect(mocks.recordResponse).toHaveBeenCalledOnce()
+
+    const error = { code: 'ERR_NETWORK', message: 'Network Error', config: { url: '/dashboard/summary-static', method: 'get' } }
+    await expect(responseRejectedInterceptor(error)).rejects.toBe(error)
+    expect(mocks.recordFailure).toHaveBeenCalledWith(error)
   })
 
   it('adds the current bearer token while preserving unauthenticated requests', () => {

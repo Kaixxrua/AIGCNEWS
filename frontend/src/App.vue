@@ -2,6 +2,7 @@
 import { RouterView } from 'vue-router'
 import AppToast from '@/components/AppToast.vue'
 import AuthPromptHost from '@/components/auth/AuthPromptHost.vue'
+import FallbackEntryNotice from '@/components/FallbackEntryNotice.vue'
 import RouteProgress from '@/components/RouteProgress.vue'
 import { useLocaleTransition } from './composables/useLocaleTransition'
 
@@ -20,6 +21,7 @@ const { isLocaleTransitioning } = useLocaleTransition()
   <AuthPromptHost />
   <RouteProgress />
   <AppToast />
+  <FallbackEntryNotice />
 
   <Transition name="locale-refresh">
     <div

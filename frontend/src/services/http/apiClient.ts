@@ -6,6 +6,7 @@ import {
   removeAuthToken,
 } from '@/services/http/authTokenStorage'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { fallbackEntryState } from '@/services/http/fallbackEntry'
 
 export const api = axios.create({
   baseURL: '/api',
@@ -31,8 +32,12 @@ api.interceptors.request.use(
 let _is401Handling = false
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    fallbackEntryState.recordResponse()
+    return response
+  },
   async (error) => {
+    fallbackEntryState.recordFailure(error)
     const status = error?.response?.status
     const requestUrl: string = error?.config?.url ?? ''
     const data = error?.response?.data
