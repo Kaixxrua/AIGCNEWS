@@ -61,3 +61,27 @@ def test_returning_login_of_disabled_user_still_identifies_the_user(database) ->
 
     assert returning.status == "disabled"
     assert returning.user["id"] == user_id
+
+
+def test_only_the_login_that_inserts_the_account_reports_created(database) -> None:
+    """首登资料导入以 created 为门：只有真正新建账户的那次登录为真。"""
+    repository = PostgresOAuthIdentityRepository(database)
+    email = f"created-{uuid.uuid4().hex}@example.com"
+    with database.transaction() as connection:
+        connection.execute(
+            "INSERT INTO users (email, hashed_password, email_verified) VALUES (%s, 'hash', TRUE)",
+            (email,),
+        )
+
+    new_account = _login(repository, "4004", f"fresh-{uuid.uuid4().hex}@example.com")
+    returning = _login(repository, "4004", "ignored@example.com")
+    linked_to_existing = _login(repository, "5005", email)
+
+    assert new_account.created is True
+    assert returning.created is False
+    assert linked_to_existing.created is False
+    with database.transaction() as connection:
+        username = connection.execute(
+            "SELECT username FROM users WHERE id = %s", (new_account.user["id"],)
+        ).fetchone()["username"]
+    assert username == "octocat"

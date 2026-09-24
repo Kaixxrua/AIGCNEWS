@@ -35,7 +35,10 @@ def test_authorization_url_uses_s256_pkce():
 async def test_exchange_resolves_only_verified_primary_email():
     responses = {
         "/login/oauth/access_token": httpx.Response(200, json={"access_token": "token"}),
-        "/user": httpx.Response(200, json={"id": 12345, "login": "octocat", "name": "Octo"}),
+        "/user": httpx.Response(200, json={
+            "id": 12345, "login": "octocat", "name": "Octo",
+            "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4",
+        }),
         "/user/emails": httpx.Response(
             200,
             json=[
@@ -51,6 +54,8 @@ async def test_exchange_resolves_only_verified_primary_email():
     assert profile.subject == "12345"
     assert profile.email == "primary@example.test"
     assert profile.username == "octocat"
+    assert profile.display_name == "Octo"
+    assert profile.avatar_url == "https://avatars.githubusercontent.com/u/12345?v=4"
 
 
 @pytest.mark.anyio

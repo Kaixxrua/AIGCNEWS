@@ -103,6 +103,27 @@ def test_avatar_round_trip_is_owner_scoped_and_replacement_invalidates_old_url(d
     assert repository.update_user_avatar(user_id=99999, png=png, digest=digest) == 0
 
 
+def test_initial_avatar_never_overwrites_an_existing_avatar(database):
+    """第三方首登导入只填空位：用户已有（自传）头像时写入为 0 行。"""
+    repository = PostgresUserAccountRepository(database)
+    user_id = repository.create_user_with_email("initial-avatar@example.com", "hash")
+    first, second = b"\x89PNG-first", b"\x89PNG-second"
+
+    assert repository.set_initial_user_avatar(user_id=user_id, png=first, digest="a" * 64) == 1
+    assert repository.set_initial_user_avatar(user_id=user_id, png=second, digest="b" * 64) == 0
+    assert repository.get_user_avatar(user_id=user_id, digest="a" * 64) == first
+
+    uploaded = repository.create_user_with_email("uploaded-avatar@example.com", "hash")
+    assert repository.update_user_avatar(user_id=uploaded, png=first, digest="c" * 64) == 1
+    assert repository.set_initial_user_avatar(user_id=uploaded, png=second, digest="d" * 64) == 0
+    assert repository.get_user_avatar(user_id=uploaded, digest="c" * 64) == first
+
+    disabled = repository.create_user_with_email("disabled-avatar@example.com", "hash")
+    with database.transaction() as connection:
+        connection.execute("UPDATE users SET disabled = TRUE WHERE id = %s", (disabled,))
+    assert repository.set_initial_user_avatar(user_id=disabled, png=first, digest="e" * 64) == 0
+
+
 def test_avatar_database_bounds_and_pairing_are_enforced(database):
     from psycopg.errors import CheckViolation
 

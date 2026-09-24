@@ -110,6 +110,7 @@ class PostgresOAuthIdentityRepository:
                 # identity and create a separate OAuth-only account.
                 account_email = canonical_email if user is None and not email_owner_exists else None
                 account_verified = bool(account_email)
+                created = user is None
                 if user is None:
                     cursor.execute(
                         """
@@ -176,6 +177,7 @@ class PostgresOAuthIdentityRepository:
                 return OAuthLoginResolution(
                     status="disabled" if user.get("disabled") else "authenticated",
                     user=user,
+                    created=created,
                 )
 
     def get_by_provider_subject(

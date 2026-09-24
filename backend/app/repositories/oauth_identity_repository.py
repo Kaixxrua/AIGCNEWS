@@ -8,6 +8,8 @@ from typing import Any, Literal, Protocol
 class OAuthLoginResolution:
     status: str
     user: dict[str, Any] | None = None
+    # 本次登录新建了账户（首登资料导入只对新账户生效）
+    created: bool = False
 
 
 # bind_identity 的结构化结果：

@@ -188,6 +188,17 @@ class PostgresUserAccountRepository:
                 )
                 return int(cursor.rowcount)
 
+    def set_initial_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int:
+        """只在账户尚无头像时写入（第三方首登导入用），绝不覆盖用户自传的头像。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE users SET avatar_png = %s, avatar_digest = %s "
+                    "WHERE id = %s AND NOT disabled AND avatar_png IS NULL",
+                    (png, digest, int(user_id)),
+                )
+                return int(cursor.rowcount)
+
     def get_user_avatar(self, *, user_id: int, digest: str) -> bytes | None:
         row = self._fetchone(
             "SELECT avatar_png FROM users WHERE id = %s AND avatar_digest = %s AND NOT disabled",

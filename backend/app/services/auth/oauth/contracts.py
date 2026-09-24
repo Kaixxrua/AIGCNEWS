@@ -28,6 +28,8 @@ class OAuthProfile:
     email: str | None = None
     email_verified: bool = False
     username: str = ""
+    display_name: str = ""
+    avatar_url: str = ""
 
 
 class OAuthProviderAdapter(Protocol):

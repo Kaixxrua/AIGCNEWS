@@ -49,6 +49,14 @@ class GoogleIdentity:
     def username(self) -> str:
         return self.name or ""
 
+    @property
+    def display_name(self) -> str:
+        return self.name or ""
+
+    @property
+    def avatar_url(self) -> str:
+        return (self.picture or "")[:2048]
+
 
 class GoogleOIDCProvider:
     """Small Google OIDC client; callers persist state and bind it to the browser."""

@@ -48,6 +48,7 @@ class OAuthProfile:
         return True
     username: str = ""
     display_name: str = ""
+    avatar_url: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +189,7 @@ class GitHubOAuthProvider:
             email=primary["email"].strip().lower(),
             username=str(user.get("login") or "")[:256],
             display_name=str(user.get("name") or "")[:256],
+            avatar_url=str(user.get("avatar_url") or "")[:2048],
         )
 
 

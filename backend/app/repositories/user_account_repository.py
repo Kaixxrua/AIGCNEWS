@@ -37,6 +37,8 @@ class UserAccountWriter(Protocol):
 
     def update_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int: ...
 
+    def set_initial_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int: ...
+
     def update_user_username(
         self,
         *,

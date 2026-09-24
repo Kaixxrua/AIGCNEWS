@@ -19,6 +19,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from starlette.background import BackgroundTask
 
 from backend.app.api.dependencies import (
     get_oauth_identity_repository,
@@ -36,6 +37,10 @@ from backend.app.models.schema_oauth import (
 )
 from backend.app.repositories.oauth_identity_repository import OAuthIdentityRepository
 from backend.app.repositories.user_account_repository import UserAccountRepository
+from backend.app.services.auth.oauth.avatar_import import (
+    import_provider_avatar,
+    provider_avatar_url_allowed,
+)
 from backend.app.services.auth.oauth.contracts import (
     OAuthAdapterUnavailable,
     OAuthProviderAdapter,
@@ -144,6 +149,11 @@ def _request_entry(request: Request, config) -> str | None:
     return alternate_entry_for_forwarded_host(request.headers.get("x-forwarded-host"), config)
 
 
+def _initial_nickname(profile) -> str:
+    """首建账户的昵称：provider 显示名优先，缺省回落 provider 用户名（如 GitHub login）。"""
+    return str(getattr(profile, "display_name", "") or "").strip() or profile.username
+
+
 def _current_user_id(current_user: dict) -> int:
     user_id = extract_user_id(current_user)
     if user_id is None or user_id <= 0:
@@ -238,6 +248,7 @@ async def _oauth_callback_login(
     adapter: OAuthProviderAdapter,
     config,
     identities: OAuthIdentityRepository,
+    users: UserAccountRepository,
     handoffs: OAuthHandoffStore,
 ) -> RedirectResponse:
     """游客登录分支：解析/创建账户并签发登录 handoff。"""
@@ -251,7 +262,7 @@ async def _oauth_callback_login(
         resolution = await asyncio.to_thread(
             identities.resolve_first_login, provider=provider,
             provider_subject=profile.provider_subject, display_email=profile.email,
-            email_verified=profile.email_verified, username=profile.username,
+            email_verified=profile.email_verified, username=_initial_nickname(profile),
         )
         user = resolution.user
         if not user:
@@ -275,7 +286,14 @@ async def _oauth_callback_login(
     except (OAuthAdapterUnavailable, OAuthHandoffUnavailableError, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
     target = frontend_callback_uri(base_url)
-    result = RedirectResponse(target, status_code=303)
+    avatar_url = str(getattr(profile, "avatar_url", "") or "")
+    # 头像只为本次新建的账户导入，并在响应发出后执行：慢或失败都不拖累登录
+    background = (
+        BackgroundTask(import_provider_avatar, user_id=int(user["id"]), url=avatar_url, users=users)
+        if getattr(resolution, "created", False) and provider_avatar_url_allowed(avatar_url)
+        else None
+    )
+    result = RedirectResponse(target, status_code=303, background=background)
     result.set_cookie(
         "aigc_oauth_handoff", token, max_age=config.handoff_ttl_seconds,
         httponly=True, secure=True, samesite="lax", path="/",
@@ -382,7 +400,7 @@ async def oauth_callback(
         )
     return await _oauth_callback_login(
         provider=provider, state=state, code=query.code, adapter=adapter,
-        config=config, identities=identities, handoffs=login_handoffs,
+        config=config, identities=identities, users=users, handoffs=login_handoffs,
     )
 
 
