@@ -37,13 +37,10 @@
   --metric-visitors: #b0a0ff;
   --metric-visitors-ink: #693de8;
   --metric-total-visitors-ink: #1677e9;
-  --sticker-line: #071735;
   --sticker-ink: #071735;
-  --sticker-shadow: #142345;
   --sticker-peel: #f4f8e8;
   --sticker-tape: #fffef9c4;
   --sticker-accent: #071735;
-  --tear-fiber: #ffffff;
 }
 
 :root[data-theme='dark'] {
@@ -76,13 +73,10 @@
   --dock-account-ink: #94ca8b;
   --card-rgb: 41 42 45;
   --danger: #ef826b;
-  --sticker-line: #0e0f11;
   --sticker-ink: #17181b;
-  --sticker-shadow: #08090b;
   --sticker-peel: #d9dfcc;
   --sticker-tape: #e8e9ec38;
   --sticker-accent: var(--acid);
-  --tear-fiber: #d8dccf;
 }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic { filter:none; }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic img { content:url('/assets/comic/aigc-news-wordmark-night.webp'); }
@@ -168,57 +162,79 @@
   #app .app-shell--editorial .footer-nav { font-size: 12px; }
 }
 
-/* Comic stickers (ComicSticker.vue): painted, transparent layers over the page. The theme decides where
-   each may appear and how big its box is; every box keeps its image's aspect ratio. The rip beside the
-   account menu is a grid item in the masthead's third column, sized to the room left beside the menu. */
+/* Comic stickers (ComicSticker.vue): transparent layers lifted from the concept images, over the page. The
+   theme decides where each may appear and how big its box is; every box keeps its image's aspect ratio.
+   The masthead pieces are scaled so that the concept's masthead rule lands on this page's rule. */
 @media (min-width: 1280px) {
+  /* The shout is a hole torn from the masthead's top edge down to its rule, a grid item in the third column
+     beside the account menu. At full size (367px) it spans the masthead from the top to the rule (108px);
+     a narrower column shrinks it, still standing on the rule. */
   #app .app-shell--editorial .app-masthead .comic-masthead-creation {
-    display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:center;
-    width:min(calc(100% - 152px),362px);aspect-ratio:900/229;margin-right:152px;
+    display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:end;
+    width:min(calc(100% - 144px),367px);aspect-ratio:1101/324;margin:0 144px 2px 0;
   }
 }
 @media (min-width: 1500px) {
-  #app .app-shell--editorial .app-masthead .comic-masthead-creation { width:min(calc(100% - 166px),362px);margin-right:166px; }
-  /* The torn top-left corner lies over the masthead and its rule, left of the date line (x = 239) and
-     clear of the dashboard heading below it. */
-  #app .app-shell--editorial .comic-masthead-corner { display:block;position:absolute;left:0;top:0;width:232px;aspect-ratio:720/406;z-index:6; }
+  #app .app-shell--editorial .app-masthead .comic-masthead-creation { width:min(calc(100% - 158px),367px);margin-right:158px; }
+  /* The torn top-left corner: its lime ends just above the rule and its ribbon crosses it, left of the date
+     line (x = 239) and clear of the dashboard heading below. */
+  #app .app-shell--editorial .comic-masthead-corner { display:block;position:absolute;left:0;top:0;width:284px;aspect-ratio:852/345;z-index:6; }
 }
-/* The torn bottom-right corner: a square on the viewport's corner, over the UI card and the footer. The
-   tear crosses its box diagonally, so near the bottom it spans the whole box. --peel is the largest size
-   that leaves the card's heading row (card top = 668px) and the dock clear, capped at 400px. The footer
-   links move beside the brand to give the tear the footer's right column; the card's caption steps aside
-   by the tear's width at its row (about 74% of the size less the card's inset). */
+/* Below 1866px the shrunken shout no longer reaches the page's top edge, where the painting's rip is cut
+   straight, so a torn edge closes the rip's top: the mask trims the painting (and any live slogan) above
+   the tear, and the seal paints the paper fibre and ink along it. Both are drawn in the image's pixels. */
+@media (min-width: 1280px) and (max-width: 1865px) {
+  #app .app-shell--editorial .comic-masthead-creation > .comic-sticker__art,
+  #app .app-shell--editorial .comic-masthead-creation > .comic-sticker__slogan { mask:url('/assets/comic/tear-shout-seal-mask.svg') center / 100% 100% no-repeat; }
+  #app .app-shell--editorial .comic-masthead-creation::after { content:'';position:absolute;inset:0;background:url('/assets/comic/tear-shout-seal.svg') center / 100% 100% no-repeat; }
+  :root[data-theme='dark'] #app .app-shell--editorial .comic-masthead-creation::after { filter:brightness(.84) saturate(.9); }
+}
+/* The bottom-right peel: the page's corner curling up off lime, on the viewport's corner over the UI card
+   and the footer. --peel is its width: the concept's size (550px), or less where the dock (the curl's tail
+   runs along the bottom and must stay right of it) or the height (its crest must stay under the card's
+   heading row; card top = 668px) runs out. The footer links move beside the brand to give it the footer's
+   right column. */
 @media (min-width: 1600px) and (min-height: 800px) {
   #app .app-shell--editorial {
-    --peel:min(400px,calc(100dvh / var(--shell-zoom, 1) - 680px),calc((100vw / var(--shell-zoom, 1) - var(--home-dock-width)) / 2 - 16px));
+    --peel:min(550px,calc((100vw / var(--shell-zoom, 1) - var(--home-dock-width) - 26px) * .56),calc(100dvh / var(--shell-zoom, 1) * 2 - 1350px));
   }
-  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:var(--peel);aspect-ratio:1; }
+  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:var(--peel);aspect-ratio:1100/713; }
   #app .app-shell--editorial .dock-footer--editorial {
     grid-template-columns:max-content minmax(0,1fr) var(--home-dock-width) calc((100% - var(--home-dock-width)) / 2 - 16px);
   }
   #app .app-shell--editorial .dock-footer--editorial .footer-right { grid-column:2;justify-self:start;align-items:flex-start;margin-left:24px; }
   #app .app-shell--editorial .dock-footer--editorial .footer-nav { justify-content:flex-start; }
   #app .app-shell--editorial .dock-footer--editorial .footer-copyright { text-align:left; }
-  #app .app-shell--editorial .ui-inspiration__caption { padding-right:max(0px,calc(var(--peel) * .74 - 28px)); }
+  /* The caption steps aside by the curl's reach at its title's row (fitted to the art's alpha): beside a
+     thumbnail it sits mid-card, where the curl is still low; under a full-width preview it stacks its title
+     over the link, so the title keeps the row the curl reaches least and the short link runs under it. */
+  #app .app-shell--editorial .ui-inspiration__caption { padding-right:max(0px,calc(var(--peel) * .2 - 40px)); }
+  @container (min-height:170px) {
+    #app .app-shell--editorial .ui-inspiration__caption {
+      flex-direction:column;justify-content:flex-start;align-items:stretch;gap:2px;padding-right:max(0px,calc(var(--peel) * .81 - 226px));
+    }
+  }
 }
 /* At 1600px the brand and the Chinese links (~102 + 171px) have 11px to spare beside each other. */
 @media (min-width: 1600px) and (max-width: 1679px) and (min-height: 800px) {
   #app .app-shell--editorial .dock-footer--editorial .footer-right { margin-left:8px; }
 }
-/* A short card sets its caption beside the preview, higher up, where the tear is ~95px wide at any size. */
-@media (min-width: 1600px) and (min-height: 800px) and (max-height: 917px) {
-  #app .app-shell--editorial .ui-inspiration__caption { padding-right:64px; }
-}
 /* English brand and links (~165 + 220px) only fit beside each other from 1880px; below that the links
-   keep the right column and the tear shrinks to the room right of them. */
+   keep the right column and the peel shrinks to the room right of them (its tail spans its whole width). */
 @media (min-width: 1600px) and (max-width: 1879px) and (min-height: 800px) {
-  :root:lang(en) #app .app-shell--editorial { --peel:min(400px,calc(100dvh - 680px),calc(50vw - 708px)); }
+  :root:lang(en) #app .app-shell--editorial { --peel:min(550px,calc(100dvh * 2 - 1350px),calc(50vw - 708px)); }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial { grid-template-columns:minmax(0,1fr) var(--home-dock-width) minmax(0,1fr); }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial .footer-right {
     grid-column:3;justify-self:end;align-items:flex-end;margin-left:0;margin-right:calc(var(--peel) - 16px);
   }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial .footer-nav { justify-content:flex-end; }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial .footer-copyright { text-align:right; }
+}
+/* Below 1800px that room leaves the English peel under 192px, too small for its lettering: leave it out. */
+@media (min-width: 1600px) and (max-width: 1799px) and (min-height: 800px) {
+  :root:lang(en) #app .app-shell--editorial { --peel:0px; }
+  :root:lang(en) #app .app-shell--editorial .comic-footer-sticker { display:none; }
+  :root:lang(en) #app .app-shell--editorial .dock-footer--editorial .footer-right { margin-right:0; }
 }
 
 @media (min-width: 1024px) and (max-width: 1499px) {
