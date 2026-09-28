@@ -43,6 +43,8 @@
   --sticker-peel: #f4f8e8;
   --sticker-tape: #fffef9c4;
   --sticker-accent: #071735;
+  --tear-fiber: #ffffff;
+  --tear-cyan-deep: #1b93b6;
 }
 
 :root[data-theme='dark'] {
@@ -81,6 +83,8 @@
   --sticker-peel: #d9dfcc;
   --sticker-tape: #e8e9ec38;
   --sticker-accent: var(--acid);
+  --tear-fiber: #d8dccf;
+  --tear-cyan-deep: #1d5f71;
 }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic { filter:none; }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic img { content:url('/assets/comic/aigc-news-wordmark-night.webp'); }
@@ -166,19 +170,26 @@
   #app .app-shell--editorial .footer-nav { font-size: 12px; }
 }
 
-/* Comic stickers (ComicSticker.vue) only appear where the masthead and footer have spare room. */
+/* Comic stickers (ComicSticker.vue). The theme decides where each may appear and how big its box is;
+   the component tears and letters to fit that box. The rip beside the account menu is a grid item in
+   the masthead's third column, so its width is the room actually left there (it hides below 150px). */
+@media (min-width: 1280px) {
+  #app .app-shell--editorial .app-masthead .comic-masthead-creation {
+    display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:center;
+    width:calc(100% - 152px);max-width:440px;height:92px;margin-right:152px;
+  }
+}
 @media (min-width: 1500px) {
-  #app .app-shell--editorial .comic-masthead-burst { display:block;position:absolute;left:14px;top:5px;width:208px;height:89px;z-index:1; }
+  #app .app-shell--editorial .app-masthead .comic-masthead-creation { width:calc(100% - 166px);margin-right:166px; }
+  #app .app-shell--editorial .comic-masthead-burst { display:block;position:absolute;left:14px;top:2px;width:216px;height:106px;z-index:1; }
 }
 @media (min-width: 1600px) {
-  #app .app-shell--editorial .comic-masthead-creation { display:block;position:absolute;right:192px;top:17px;width:208px;height:66px; }
   #app .app-shell--editorial .footer-right { margin-right:112px; }
-  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-18px;bottom:7px;width:122px;height:64px;transform:scale(.88);transform-origin:right bottom; }
+  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:130px;height:63px; }
 }
 @media (min-width: 1800px) {
-  #app .app-shell--editorial .comic-masthead-creation { right:200px;width:236px;height:68px; }
   #app .app-shell--editorial .footer-right { margin-right:128px; }
-  #app .app-shell--editorial .comic-footer-sticker { transform:none; }
+  #app .app-shell--editorial .comic-footer-sticker { width:146px;height:71px; }
 }
 /* English footer links need ~220px; below 1800px the corner sticker would push them onto two lines. */
 @media (min-width: 1600px) and (max-width: 1799px) {

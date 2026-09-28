@@ -1,0 +1,7 @@
+Use case: compositing. Transparent web illustration asset with a real alpha channel.
+
+Draw ONLY a forearm and clenched fist of the robot mascot from the reference image: white armour plates with dark navy thick variable ink outlines, navy joint rings, cyan metal hatching. Match the reference's hand-inked comic rendering very closely: brush-weight ink contours, cross-hatching, small halftone marks, flat cel shading.
+
+Pose: the robot's arm punches up out of a hole from below, rising slightly diagonally from the lower right toward the upper left; the clenched fist is at the top, knuckles facing the viewer, powerful and triumphant. The forearm is cut off by a straight horizontal edge along the very bottom of the canvas (that edge will be hidden behind torn paper in the layout). Three or four short ink motion ticks around the fist are allowed.
+
+Transparent background everywhere else: NO burst, NO explosion shape, NO paper, NO hole, NO torn edges, NO lettering, NO text, NO UI, NO frame, NO drop shadow, NO white sticker outline. Keep all artwork inside the canvas with a small transparent margin at the top, left and right; the forearm cut touches the bottom of the canvas. Avoid cute toy render, plastic 3D, glossy highlights.

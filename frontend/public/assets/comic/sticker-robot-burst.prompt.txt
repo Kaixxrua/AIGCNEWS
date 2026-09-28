@@ -1,0 +1,7 @@
+Use case: compositing. Transparent web illustration asset with a real alpha channel.
+
+Draw ONLY the robot mascot from the reference image: white robot with dark navy thick variable ink outlines, black visor with two lime rectangular eyes, cyan ear discs, cyan metal hatching. Match the reference's hand-inked comic rendering very closely: brush-weight ink contours, cross-hatching, small halftone marks, flat cel shading.
+
+Pose: the robot is bursting upward out of a hole, seen from the chest up. Head tilted slightly toward the right, excited. One arm raised high with a clenched fist punching up and to the right; the other shoulder visible. The body is cut off by a straight horizontal edge across the chest along the very bottom of the canvas (that edge will be hidden behind torn paper in the layout). A few short ink motion ticks around the fist are allowed.
+
+Transparent background everywhere else: NO lime burst, NO explosion shape, NO paper, NO hole, NO torn edges, NO speech balloon, NO lettering, NO text, NO UI, NO frame, NO drop shadow, NO white sticker outline. Keep all artwork inside the canvas with a small transparent margin at the top, left and right; the chest edge touches the bottom of the canvas. Avoid cute toy render, plastic 3D, glossy highlights.

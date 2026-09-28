@@ -75,3 +75,26 @@
   font-display: swap;
   src: url('/fonts/playfair-display-v40-latin_latin-ext-600.woff2') format('woff2');
 }
+
+/* Comic sticker lettering (ComicSticker.vue): Bangers for Latin, ZCOOL QingKe HuangYou for the
+   Chinese slogan, both SIL OFL 1.1 (licences beside the files). Subsets hold only what the stickers
+   print; comicLettering.test.ts fails if a slogan gains an uncovered character. Regenerate with
+     pyftsubset Bangers-Regular.ttf --unicodes=U+0020-007E --flavor=woff2 --layout-features='*' --output-file=bangers-latin-subset.woff2
+     pyftsubset ZCOOLQingKeHuangYou-Regular.ttf --text='让创造更自由！' --flavor=woff2 --layout-features='*' --output-file=zcool-qingke-huangyou-creation-subset.woff2
+   `block` keeps the fallback face from flashing through the torn-paper art while ~18 KB loads. */
+@font-face {
+  font-family: 'AIGC Comic Lettering';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/bangers-latin-subset.woff2') format('woff2');
+  unicode-range: U+0020-007E;
+}
+@font-face {
+  font-family: 'AIGC Comic Lettering';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('/fonts/zcool-qingke-huangyou-creation-subset.woff2') format('woff2');
+  unicode-range: U+521B, U+66F4, U+7531, U+81EA, U+8BA9, U+9020, U+FF01;
+}

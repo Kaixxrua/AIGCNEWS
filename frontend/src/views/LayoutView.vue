@@ -88,7 +88,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
         <ComicSticker v-if="!isMobile" variant="burst" class="comic-masthead-burst" />
-        <ComicSticker v-if="!isMobile" variant="shout" class="comic-masthead-creation">{{ $t('dashboard.editorial.creationMark') }}</ComicSticker>
+        <ComicSticker v-if="!isMobile" variant="shout" class="comic-masthead-creation" :text="$t('dashboard.editorial.creationMark')" />
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
           <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>

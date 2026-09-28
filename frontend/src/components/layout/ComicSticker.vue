@@ -1,82 +1,148 @@
 <script setup lang="ts">
-// Decorative comic stickers for the editorial homepage. Every variant is aria-hidden:
-// the slogans repeat nothing a reader needs, and the slot text is purely ornamental.
-defineProps<{ variant: 'burst' | 'shout' | 'label' }>()
+// Decorative torn-paper comic stickers for the editorial homepage. Every variant is aria-hidden:
+// the slogans repeat nothing a reader needs.
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { BURST, LABEL, buildShout } from './comicTear'
+
+const props = defineProps<{ variant: 'burst' | 'shout' | 'label'; text?: string }>()
+
+const uid = `comic-${useId().replace(/[^\w-]/g, '')}`
+const root = ref<HTMLElement | null>(null)
+const box = ref({ width: 0, height: 0 })
+let observer: ResizeObserver | null = null
+
+// The shout tears to the exact box it gets; burst and label scale a fixed drawing.
+onMounted(() => {
+  if (props.variant !== 'shout' || typeof ResizeObserver === 'undefined' || !root.value) return
+  observer = new ResizeObserver(([entry]) => {
+    if (entry) box.value = { width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) }
+  })
+  observer.observe(root.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+
+const shout = computed(() => props.variant === 'shout' ? buildShout(box.value.width, box.value.height, props.text ?? '') : null)
+const rotate = (angle: number, cx: number, cy: number) => `rotate(${angle.toFixed(2)} ${cx.toFixed(1)} ${cy.toFixed(1)})`
 </script>
 
 <template>
-  <span class="comic-sticker" :class="`comic-sticker--${variant}`" aria-hidden="true">
-    <svg v-if="variant === 'burst'" class="comic-sticker__art" viewBox="0 0 216 92">
+  <span ref="root" class="comic-sticker" :class="[`comic-sticker--${variant}`, shout && `comic-sticker--${shout.tier}`]" aria-hidden="true">
+    <svg v-if="variant === 'burst'" class="comic-sticker__art" :viewBox="`0 0 ${BURST.width} ${BURST.height}`">
       <defs>
-        <pattern id="comic-sticker-dots" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="2.5" cy="2.5" r="1" /></pattern>
+        <clipPath :id="`${uid}-hole`"><path :d="BURST.hole" /></clipPath>
+        <pattern :id="`${uid}-dots`" width="4.5" height="4.5" patternUnits="userSpaceOnUse"><circle cx="2.25" cy="2.25" r=".95" /></pattern>
       </defs>
-      <g class="comic-sticker__impact">
-        <path d="M100 17 L111 9" /><path d="M104 28 L118 24" /><path d="M94 8 L99 1" />
+      <path class="comic-sticker__fiber" :d="BURST.rim" />
+      <g :clip-path="`url(#${uid}-hole)`">
+        <path class="comic-sticker__lime" :d="BURST.hole" />
+        <path class="comic-sticker__focus" :d="BURST.focus" />
+        <path class="comic-sticker__halftone" :fill="`url(#${uid}-dots)`" :d="BURST.hole" />
       </g>
-      <path class="comic-sticker__shadow" transform="translate(4 4)" d="M95 37 L79 47 L90 57 L77 61 L85 78 L65 69 L63 84 L52 75 L43 88 L39 69 L21 82 L26 64 L12 63 L21 51 L3 44 L23 39 L10 24 L29 27 L25 10 L41 20 L47 7 L55 17 L69 4 L67 24 L83 21 L79 33Z" />
-      <path class="comic-sticker__body" d="M95 37 L79 47 L90 57 L77 61 L85 78 L65 69 L63 84 L52 75 L43 88 L39 69 L21 82 L26 64 L12 63 L21 51 L3 44 L23 39 L10 24 L29 27 L25 10 L41 20 L47 7 L55 17 L69 4 L67 24 L83 21 L79 33Z" />
-      <path class="comic-sticker__dots" fill="url(#comic-sticker-dots)" d="M95 37 L79 47 L90 57 L77 61 L85 78 L65 69 L63 84 L52 75 L43 88 L39 69 L21 82 L26 64 L12 63 L21 51 L3 44 L23 39 L10 24 L29 27 L25 10 L41 20 L47 7 L55 17 L69 4 L67 24 L83 21 L79 33Z" />
-      <text class="comic-sticker__shout" x="49" y="58" text-anchor="middle" transform="rotate(-10 49 46)">AI!</text>
-      <g transform="rotate(-6 140 71)">
-        <path class="comic-sticker__shadow" transform="translate(3 3)" d="M72 60 L212 60 L202 71 L212 82 L72 82Z" />
-        <path class="comic-sticker__ribbon" d="M72 60 L212 60 L202 71 L212 82 L72 82Z" />
-        <text class="comic-sticker__ribbon-text" x="136" y="75.5" text-anchor="middle">BRIGHTER TOMORROW!</text>
+      <path class="comic-sticker__seam" :d="BURST.hole" />
+      <image href="/assets/comic/sticker-robot-burst.webp" v-bind="BURST.robot" />
+      <path class="comic-sticker__cover" :d="BURST.cover" />
+      <path class="comic-sticker__fiber comic-sticker__fiber--bare" :d="BURST.lipFiber" />
+      <path class="comic-sticker__seam" :d="BURST.lipSeam" />
+      <path class="comic-sticker__edge" :d="BURST.lip" />
+      <g v-for="(flap, i) in BURST.flaps" :key="i">
+        <path class="comic-sticker__flap" :d="flap.body" />
+        <path class="comic-sticker__seam" :d="flap.crease" />
+      </g>
+      <path v-for="(d, i) in BURST.scraps" :key="`s${i}`" class="comic-sticker__flap" :d="d" />
+      <path class="comic-sticker__shadow" transform="translate(3 3)" :d="BURST.balloon" />
+      <path class="comic-sticker__balloon" :d="BURST.balloon" />
+      <text class="comic-sticker__lettering" :x="BURST.shout.x" :y="BURST.shout.y" :font-size="BURST.shout.size" :textLength="BURST.shout.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle" :transform="rotate(BURST.shout.angle, BURST.shout.cx, BURST.shout.cy)">AI!</text>
+      <g :transform="BURST.ribbon.transform">
+        <path class="comic-sticker__shadow" transform="translate(3 3)" :d="BURST.ribbon.body" />
+        <path class="comic-sticker__ribbon" :d="BURST.ribbon.body" />
+        <text class="comic-sticker__lettering" :x="BURST.ribbon.text.x" :y="BURST.ribbon.text.y" :font-size="BURST.ribbon.text.size" :textLength="BURST.ribbon.text.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">BRIGHTER TOMORROW!</text>
       </g>
     </svg>
 
-    <template v-else-if="variant === 'shout'">
-      <svg class="comic-sticker__art" viewBox="0 0 232 70" preserveAspectRatio="none">
-        <path class="comic-sticker__shadow" transform="translate(3 4)" d="M226 35 L207 39 L223 44 L198 46 L201 51 L181 52 L181 58 L157 55 L149 61 L132 58 L117 62 L104 57 L83 61 L78 54 L59 55 L57 50 L14 66 L44 45 L22 41 L33 37 L18 33 L37 29 L21 24 L46 22 L43 17 L63 16 L63 10 L87 13 L95 7 L112 10 L127 6 L140 11 L161 7 L166 14 L185 13 L187 18 L212 18 L200 25 L222 27 L211 31Z" />
-        <path class="comic-sticker__body" d="M226 35 L207 39 L223 44 L198 46 L201 51 L181 52 L181 58 L157 55 L149 61 L132 58 L117 62 L104 57 L83 61 L78 54 L59 55 L57 50 L14 66 L44 45 L22 41 L33 37 L18 33 L37 29 L21 24 L46 22 L43 17 L63 16 L63 10 L87 13 L95 7 L112 10 L127 6 L140 11 L161 7 L166 14 L185 13 L187 18 L212 18 L200 25 L222 27 L211 31Z" />
-      </svg>
-      <svg class="comic-sticker__star" viewBox="0 0 48 56">
-        <path d="m25 5 5 15 13 7-15 5-7 18-4-18L4 25l15-5Z" />
-        <path class="comic-sticker__spark" d="m39 4 1.5 5L46 11l-5.5 2-2 5-1-5L32 11l5-2Z" />
-      </svg>
-      <span class="comic-sticker__text"><slot /></span>
-    </template>
+    <svg v-else-if="variant === 'shout' && shout" class="comic-sticker__art" :viewBox="`0 0 ${shout.width} ${shout.height}`">
+      <defs>
+        <clipPath :id="`${uid}-rip`"><path :d="shout.hole" /></clipPath>
+        <pattern :id="`${uid}-dots`" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.25" /></pattern>
+      </defs>
+      <path v-for="(d, i) in shout.speed" :key="`v${i}`" class="comic-sticker__line" :d="d" />
+      <path v-for="(d, i) in shout.splats" :key="`p${i}`" class="comic-sticker__splat" :d="d" />
+      <circle v-for="(drop, i) in shout.drops" :key="`d${i}`" class="comic-sticker__splat" v-bind="drop" />
+      <path v-if="shout.crack" class="comic-sticker__line comic-sticker__line--thin" :d="shout.crack" />
+      <path class="comic-sticker__fiber" :d="shout.rim" />
+      <g :clip-path="`url(#${uid}-rip)`">
+        <path class="comic-sticker__cyan-deep" :d="shout.hole" />
+        <path class="comic-sticker__cyan" :d="shout.shade" />
+        <path class="comic-sticker__halftone comic-sticker__halftone--cyan" :fill="`url(#${uid}-dots)`" :d="shout.hole" />
+      </g>
+      <path class="comic-sticker__seam" :d="shout.hole" />
+      <path v-for="(d, i) in shout.scraps" :key="`s${i}`" class="comic-sticker__flap" :d="d" />
+      <g :transform="rotate(-shout.text.angle, shout.text.cx, shout.text.cy)" :font-size="shout.text.size.toFixed(1)">
+        <text class="comic-sticker__lettering comic-sticker__lettering--shadow" :x="shout.text.x + shout.text.size * 0.07" :y="shout.text.y + shout.text.size * 0.08" :textLength="shout.text.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">{{ text }}</text>
+        <text class="comic-sticker__lettering comic-sticker__lettering--outline" :x="shout.text.x" :y="shout.text.y" :textLength="shout.text.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">{{ text }}</text>
+        <text class="comic-sticker__lettering comic-sticker__lettering--heavy" :x="shout.text.x" :y="shout.text.y" :textLength="shout.text.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">{{ text }}</text>
+      </g>
+    </svg>
 
-    <template v-else>
-      <svg class="comic-sticker__art" viewBox="0 0 122 64">
-        <defs>
-          <pattern id="comic-sticker-label-dots" width="5" height="5" patternUnits="userSpaceOnUse"><circle cx="2.5" cy="2.5" r="1" /></pattern>
-        </defs>
-        <path class="comic-sticker__shadow" transform="translate(4 4)" d="M2 2 H118 V46 L102 60 H2Z" />
-        <path class="comic-sticker__body" d="M2 2 H118 V46 L102 60 H2Z" />
-        <path class="comic-sticker__dots" fill="url(#comic-sticker-label-dots)" d="M2 2 H118 V46 L102 60 H2Z" />
-        <path class="comic-sticker__peel" d="M118 46 L102 60 L105 48Z" />
-        <rect class="comic-sticker__tape" x="-8" y="-4" width="30" height="11" transform="rotate(-32 7 1)" />
-      </svg>
-      <span class="comic-sticker__text"><b>MORE</b><b>CREATORS!</b><small>A BRIGHTER WORLD</small></span>
-    </template>
+    <svg v-else-if="variant === 'label'" class="comic-sticker__art" :viewBox="`0 0 ${LABEL.width} ${LABEL.height}`">
+      <defs>
+        <clipPath :id="`${uid}-corner`"><path :d="LABEL.reveal" /></clipPath>
+        <pattern :id="`${uid}-dots`" width="5.5" height="5.5" patternUnits="userSpaceOnUse"><circle cx="2.75" cy="2.75" r="1.2" /></pattern>
+      </defs>
+      <g :clip-path="`url(#${uid}-corner)`">
+        <path class="comic-sticker__lime" :d="LABEL.reveal" />
+        <path class="comic-sticker__focus" :d="LABEL.focus" />
+        <path class="comic-sticker__halftone" :fill="`url(#${uid}-dots)`" :d="LABEL.reveal" />
+      </g>
+      <path class="comic-sticker__fiber comic-sticker__fiber--bare" :d="LABEL.fiber" />
+      <path class="comic-sticker__seam" :d="LABEL.seam" />
+      <path class="comic-sticker__edge" :d="LABEL.edge" />
+      <image href="/assets/comic/sticker-robot-fist.webp" v-bind="LABEL.fist" />
+      <g :transform="LABEL.caption.transform">
+        <rect class="comic-sticker__shadow" v-bind="LABEL.caption.rect" transform="translate(3 3)" />
+        <rect class="comic-sticker__caption" v-bind="LABEL.caption.rect" />
+        <text v-for="line in LABEL.lines" :key="line.text" class="comic-sticker__lettering" x="43" :y="line.y" :font-size="line.size" :textLength="line.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">{{ line.text }}</text>
+        <text class="comic-sticker__lettering comic-sticker__small" x="43" :y="LABEL.small.y" :font-size="LABEL.small.size" :textLength="LABEL.small.length" lengthAdjust="spacingAndGlyphs" text-anchor="middle">{{ LABEL.small.text }}</text>
+      </g>
+    </svg>
   </span>
 </template>
 
 <style scoped>
-/* Placement and visibility (display) belong to the owner; the art only fills the box it is given. */
+/* Placement, size and visibility (display) belong to the owner; the art only fills the box it is given. */
 .comic-sticker { pointer-events:none;user-select:none; }
+.comic-sticker--label { container-type:inline-size; }
 .comic-sticker__art { position:absolute;inset:0;width:100%;height:100%;overflow:visible; }
-.comic-sticker__shadow { fill:var(--sticker-shadow); }
-.comic-sticker__body { fill:var(--acid);stroke:var(--sticker-line);stroke-width:2.5;stroke-linejoin:round;vector-effect:non-scaling-stroke; }
-.comic-sticker__dots { opacity:.16; }
+/* The rip is torn to its box, so nothing it draws may leave the slot beside the account menu. */
+.comic-sticker--shout .comic-sticker__art { overflow:hidden; }
+
+.comic-sticker__fiber { fill:var(--tear-fiber);stroke:var(--sticker-line);stroke-width:2.2;stroke-linejoin:round; }
+.comic-sticker__fiber--bare { stroke:none; }
+.comic-sticker__edge { fill:none;stroke:var(--sticker-line);stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round; }
+.comic-sticker__seam { fill:none;stroke:var(--sticker-line);stroke-width:1;stroke-linejoin:round;stroke-linecap:round;opacity:.72; }
+.comic-sticker__cover { fill:var(--paper); }
+.comic-sticker__flap { fill:var(--tear-fiber);stroke:var(--sticker-line);stroke-width:1.6;stroke-linejoin:round; }
+.comic-sticker__lime { fill:var(--acid); }
+.comic-sticker__cyan { fill:var(--comic-cyan-line); }
+.comic-sticker__cyan-deep { fill:var(--tear-cyan-deep); }
+.comic-sticker__splat { fill:var(--comic-cyan-line); }
+.comic-sticker__focus { fill:none;stroke:var(--sticker-line);stroke-width:.8;opacity:.4; }
 .comic-sticker pattern circle { fill:var(--sticker-line); }
-.comic-sticker__impact path { fill:none;stroke:var(--sticker-accent);stroke-width:3;stroke-linecap:round; }
-.comic-sticker__shout { fill:var(--sticker-ink);font-size:35px;font-style:italic;font-weight:950;letter-spacing:-.02em; }
-.comic-sticker__ribbon { fill:var(--sticker-line); }
-.comic-sticker__ribbon-text { fill:var(--acid);font-size:10.5px;font-style:italic;font-weight:900;letter-spacing:0;white-space:pre;word-spacing:2px; }
+.comic-sticker__halftone { opacity:.2; }
+.comic-sticker__halftone--cyan { opacity:.3; }
+.comic-sticker__line { fill:none;stroke:var(--sticker-line);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round; }
+.comic-sticker__line--thin { stroke-width:1.3; }
+.comic-sticker__shadow { fill:var(--sticker-shadow); }
+.comic-sticker__balloon, .comic-sticker__caption { fill:var(--tear-fiber);stroke:var(--sticker-line);stroke-width:2.4;stroke-linejoin:round; }
+.comic-sticker__caption { stroke-width:2; }
+.comic-sticker__ribbon { fill:var(--acid);stroke:var(--sticker-line);stroke-width:2;stroke-linejoin:round; }
 
-/* Shout bubble: the text sits in HTML so it follows the locale and font metrics. */
-.comic-sticker--shout .comic-sticker__art { transform:rotate(-3deg); }
-.comic-sticker__star { position:absolute;left:-10px;top:-12px;width:42px;height:49px;overflow:visible;transform:rotate(-12deg); }
-.comic-sticker__star path { fill:var(--comic-cyan-line);stroke:var(--sticker-line);stroke-width:2;stroke-linejoin:round; }
-.comic-sticker__star .comic-sticker__spark { fill:var(--sticker-line);stroke:none; }
-.comic-sticker--shout .comic-sticker__text { position:absolute;inset:6px 14px 14px 40px;display:flex;align-items:center;justify-content:center;color:var(--sticker-ink);font-size:20px;font-style:italic;font-weight:900;line-height:1;white-space:nowrap;transform:rotate(-4deg); }
+.comic-sticker__lettering { fill:var(--sticker-ink);font-family:'AIGC Comic Lettering','DM Sans',sans-serif;font-weight:400;font-synthesis:none;letter-spacing:0; }
+.comic-sticker__lettering--shadow { fill:var(--sticker-shadow);stroke:var(--sticker-shadow);stroke-width:.22em;stroke-linejoin:round; }
+.comic-sticker__lettering--outline { stroke:var(--tear-fiber);stroke-width:.2em;stroke-linejoin:round;paint-order:stroke; }
+.comic-sticker__lettering--heavy { stroke:var(--sticker-ink);stroke-width:.035em;stroke-linejoin:round; }
 
-/* Peeled label for the footer corner. */
-.comic-sticker--label .comic-sticker__art { transform:rotate(-6deg); }
-.comic-sticker__peel { fill:var(--sticker-peel);stroke:var(--sticker-line);stroke-width:2;stroke-linejoin:round; }
-.comic-sticker__tape { fill:var(--sticker-tape); }
-.comic-sticker--label .comic-sticker__text { position:absolute;inset:6px 10px 12px 10px;display:flex;flex-direction:column;justify-content:center;gap:1px;color:var(--sticker-ink);font-style:italic;line-height:1;transform:rotate(-6deg); }
-.comic-sticker--label b { font-size:15px;font-weight:950;letter-spacing:-.01em; }
-.comic-sticker--label small { margin-top:3px;padding-right:14px;font-size:8.5px;font-weight:850;letter-spacing:0;white-space:nowrap; }
+/* The 1600–1799px footer box is ~130px wide, where the small line would drop below 7px. */
+@container (max-width: 139px) {
+  .comic-sticker__small { display:none; }
+}
 </style>
