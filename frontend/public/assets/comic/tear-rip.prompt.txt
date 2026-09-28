@@ -1,0 +1,11 @@
+Use case: compositing. Transparent web illustration asset with a real alpha channel: a horizontal rip torn through a web page, in the torn-paper comic style of the reference image.
+
+Composition: one wide gash, about 3 times as wide as it is tall, tilted only about 3 degrees (right end slightly higher), spanning nearly the full canvas width and centred vertically. The lime opening is wide: at least 45% of the rip's height through the middle 70% of its length, narrowing only near the two sharp torn points at the ends.
+
+Inside the rip: acid lime green (#c5ff32) with fine halftone dots, slightly deeper lime (#93cc1c) near the lips. Leave the inside EMPTY — it will get lettering later: no text, no letters, no symbols, no characters inside.
+
+Both lips of the rip: the torn edges of the cream-white page — thick, fibrous, ragged paper edges curled outward with visible paper thickness, pale blue-grey shading inside the curls and soft shadows falling into the rip, the same feeling as the torn edge in the reference. A few small white paper scraps fly off the left end, and 3–4 short navy ink speed lines trail on the far left.
+
+Everything outside the rip and its torn paper lips is fully transparent. No page content, no UI, no frame, no border, no watermark, no text anywhere.
+
+The transparent area must be a real alpha channel (fully transparent pixels): never paint a checkerboard, grey or white background there.

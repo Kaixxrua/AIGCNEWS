@@ -1,0 +1,13 @@
+Use case: compositing. Transparent web illustration asset with a real alpha channel, for the bottom-right corner of a web page.
+
+Style: the torn paper and lime comic layer from the first reference image; the robot mascot from the second reference image (white robot, thick navy ink outlines, black visor with two lime rectangular eyes, cyan ear discs), same hand-inked comic rendering.
+
+Composition: the RIGHT edge and the BOTTOM edge of the canvas are the page's own edges (the artwork is cut straight there and touches them). One dramatic tear sweeps in a curve from the right edge at about 5% of the canvas height down to the bottom edge at about 30% of the canvas width. Everything above/left of the tear is fully transparent (the intact web page shows through there).
+
+Inside the tear (lower-right): the revealed layer — acid lime green (#c5ff32) comic panel with fine halftone dots, light speckle grunge and navy radiating focus lines. The robot bursts up out of the hole from the bottom edge, seen from the chest up, one fist punching up toward the upper-left. Near the top of the hole, a slightly tilted white rectangular label with a thick navy border and a navy drop shadow reading exactly "MORE CREATORS!" in bold condensed comic capitals on two lines ("MORE" / "CREATORS!"), with a tiny line "A BRIGHTER WORLD" under it.
+
+Along the whole tear: the torn edge of the cream-white page — a thick, fibrous, ragged paper edge curled back toward the viewer, with visible paper thickness, pale blue-grey shading inside the curl and a soft shadow cast onto the lime layer, like the reference. The curled paper flap is big and prominent.
+
+No page content, no UI, no background colour outside the tear, no frame, no border, no watermark, no other text.
+
+The transparent area must be a real alpha channel (fully transparent pixels): never paint a checkerboard, grey or white background there.

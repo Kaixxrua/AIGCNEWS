@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { i18n } from '@/i18n'
-import { BANGERS_EM } from './comicTear'
+import { letteringEm } from './comicLettering'
 
 // The lettering faces are subsets: a character outside their unicode-range falls back to a plain
 // system face in the middle of the comic art. Every string a sticker can print must be covered.
@@ -29,7 +29,9 @@ describe('comic lettering subsets', () => {
     expect(uncovered(slogan)).toEqual([])
   })
 
-  it('cover the fixed sticker slogans', () => {
-    expect(uncovered(Object.keys(BANGERS_EM).join(''))).toEqual([])
+  it('estimates lettering advances close to the subset fonts', () => {
+    // Advances measured from the woff2 subsets with fontTools.
+    expect(Math.abs(letteringEm('让创造更自由！') / 5.355 - 1)).toBeLessThan(0.04)
+    expect(Math.abs(letteringEm('Create freely!') / 4.946 - 1)).toBeLessThan(0.04)
   })
 })

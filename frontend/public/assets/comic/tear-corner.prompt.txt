@@ -1,0 +1,11 @@
+Use case: compositing. Transparent web illustration asset with a real alpha channel, for the top-left corner of a web page.
+
+Recreate the torn-open corner from the reference image as a clean, crisp, high-resolution standalone asset in the same hand-painted comic style.
+
+Composition: the TOP edge and the LEFT edge of the canvas are the page's own edges (the artwork is cut straight there and touches them). One dramatic tear runs diagonally from the top edge at about 90% of the canvas width down to the left edge at about 70% of the canvas height. Everything below/right of the tear is fully transparent (the intact web page shows through there).
+
+Inside the tear (upper-left): the revealed layer — acid lime green (#c5ff32) comic panel with fine halftone dots and light speckle grunge, a few thin radiating focus lines. Huge bold italic comic lettering "AI!" (white fill with pale-blue shading, thick navy #0b1735 outline, chunky navy 3D extrusion). A yellow lightning bolt with a navy outline to the right of the lettering, with three short navy action ticks. Under the lettering, a slightly tilted white rectangular label with a thick navy border reading exactly "BRIGHTER TOMORROW!" in bold condensed comic capitals (spelled B-R-I-G-H-T-E-R  T-O-M-O-R-R-O-W).
+
+Along the whole tear: the torn edge of the cream-white page — a thick, fibrous, ragged paper edge curled back toward the viewer, with visible paper thickness, pale blue-grey shading inside the curl and a soft shadow cast onto the lime layer, exactly the feeling of the reference. A second thinner torn white paper strip crosses the lower-left part of the lime area like in the reference.
+
+No page content, no date text, no UI, no background colour outside the tear, no frame, no border, no watermark, no other text than "AI!" and "BRIGHTER TOMORROW!".
