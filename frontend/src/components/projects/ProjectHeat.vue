@@ -2,11 +2,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Flame } from 'lucide-vue-next'
+import { displayHotScore } from '@/features/projects/projectPresentation'
 const props = defineProps<{ score?: number | string | null; available?: boolean | number | string | null }>()
 const { t } = useI18n()
 const valid = computed(() => (props.available === undefined || props.available === true || props.available === 1 || props.available === '1' || props.available === 'true')
   && props.score !== null && props.score !== undefined && props.score !== '' && Number.isFinite(Number(props.score)))
-const display = computed(() => valid.value ? Math.max(0, Math.min(100, Number(props.score))).toFixed(1) : '—')
+const display = computed(() => valid.value ? displayHotScore(Number(props.score)).toFixed(1) : '—')
 </script>
 
 <template>

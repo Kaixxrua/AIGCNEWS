@@ -216,6 +216,15 @@ export const projectHotScore = (project: GitHubProjectItem) => {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
 }
 
+// 热度 v7 以历史日峰值为满分，涨星项目原始分中位约 5、P90 约 14，按百分制读显得偏低。
+// 展示时做单调对数拉伸：不改名次，0 与 100 不动，中位约 27、P90 约 50、P99 约 70。
+const HOT_SCORE_DISPLAY_KNEE = 3
+
+export const displayHotScore = (raw: number) => {
+  const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0
+  return 100 * Math.log1p(clamped / HOT_SCORE_DISPLAY_KNEE) / Math.log1p(100 / HOT_SCORE_DISPLAY_KNEE)
+}
+
 export const projectDailyGrowthSource = (project: GitHubProjectItem) => {
   if (project.daily_growth_source) return String(project.daily_growth_source)
   const available = (
@@ -255,7 +264,7 @@ export const shouldShowProjectHotScore = (
 ) => !isWebsite(project)
 
 export const formattedProjectHotScore = (project: GitHubProjectItem) => (
-  projectHotScore(project).toFixed(1).replace(/\.0$/, '')
+  displayHotScore(projectHotScore(project)).toFixed(1).replace(/\.0$/, '')
 )
 
 /* ─── 瀑布流估高（GitHubProjectsView 分列用） ─────────────────────────

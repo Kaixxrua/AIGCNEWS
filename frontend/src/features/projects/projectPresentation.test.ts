@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  displayHotScore,
   estimateProjectCardHeight,
   favoriteButtonLabelKey,
   formatProjectLastPush,
@@ -184,5 +185,29 @@ describe('estimateProjectCardHeight', () => {
     const plain = estimateProjectCardHeight(repo, 300, 'zh-CN', { sort: 'stars', scope: 'all' })
     const hot = estimateProjectCardHeight(repo, 300, 'zh-CN', { sort: 'hot', scope: 'all' })
     expect(hot).toBeGreaterThanOrEqual(plain)
+  })
+})
+
+describe('displayHotScore', () => {
+  it('keeps the ends fixed and lifts the v7 percentiles', () => {
+    expect(displayHotScore(0)).toBe(0)
+    expect(displayHotScore(100)).toBeCloseTo(100, 10)
+    // 2026-09-24..27 生产涨星项目原始分：P50 4.89、P90 14.40、P99 33.34
+    expect(displayHotScore(4.89)).toBeCloseTo(27.3, 1)
+    expect(displayHotScore(14.4)).toBeCloseTo(49.7, 1)
+    expect(displayHotScore(33.34)).toBeCloseTo(70.5, 1)
+  })
+
+  it('never reorders scores', () => {
+    const raw = [0, 0.05, 1, 4.89, 14.4, 33.34, 56.71, 79.7, 99.99, 100]
+    const shown = raw.map(displayHotScore)
+    expect([...shown].sort((a, b) => a - b)).toEqual(shown)
+    expect(new Set(shown).size).toBe(shown.length)
+  })
+
+  it('clamps out-of-range and non-finite input', () => {
+    expect(displayHotScore(-5)).toBe(0)
+    expect(displayHotScore(Number.NaN)).toBe(0)
+    expect(displayHotScore(250)).toBeCloseTo(100, 10)
   })
 })
