@@ -43,7 +43,7 @@ describe('AI operations console', () => {
     const wrapper = mount(AiOpsPanel)
     await flushPromises()
     expect(wrapper.text()).toContain('有限自愈')
-    expect(wrapper.text()).toContain('补跑提交结果')
+    expect(wrapper.text()).toContain('执行结果')
     await wrapper.findAll('input[type="checkbox"]')[1]!.setValue(false)
     await wrapper.get('[aria-label="保存巡检计划"]').trigger('click')
     await flushPromises()

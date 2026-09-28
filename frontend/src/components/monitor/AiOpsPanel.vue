@@ -22,7 +22,7 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let selectionVersion = 0
 const running = computed(() => runs.value.some(run => run.status === 'running'))
 const labels: Record<string, string> = { running: '调查中', completed: '已完成', failed: '调查失败', cancelled: '已停止', interrupted: '已中断' }
-const tools: Record<string, string> = { health: '依赖健康', tasks: '采集任务', errors: '错误摘要', scheduler: '调度状态', delivery: '自动交付' }
+const tools: Record<string, string> = { health: '依赖健康', tasks: '采集任务', errors: '错误摘要', scheduler: '调度状态', delivery: '自动交付', x_translations: 'X 译文队列' }
 const time = (value: string) => new Date(value).toLocaleString()
 
 async function select(id: string) {
@@ -84,8 +84,8 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
     </header>
     <div class="ai-ops-toolbar monitor-divider">
       <label class="flex items-center gap-2 text-sm"><input v-model="enabled" type="checkbox" :disabled="busy || loading" />自动巡检</label>
-      <label class="flex items-center gap-2 text-sm"><input v-model="recoveryEnabled" type="checkbox" :disabled="busy || loading" />公共资讯失败补跑</label>
-      <span class="text-xs monitor-caption">Techmeme / Hacker News / DailyHot · 每小时最多 1 次 · 每日最多 3 次</span>
+      <label class="flex items-center gap-2 text-sm"><input v-model="recoveryEnabled" type="checkbox" :disabled="busy || loading" />有限自动修复</label>
+      <span class="text-xs monitor-caption">资讯失败补跑 · 缺失简报补生成 · X 译文重试 · 僵死任务收尾 · 均有频次预算，不改代码与配置</span>
       <label class="flex items-center gap-2 text-sm">间隔（分钟）<input v-model.number="interval" class="monitor-input w-20" type="number" min="5" max="120" :disabled="busy || loading" /></label>
       <button class="monitor-pagination-btn" :disabled="busy || loading || !Number.isInteger(interval) || interval < 5 || interval > 120" title="保存巡检计划" aria-label="保存巡检计划" @click="command('save')"><Save :size="16" /></button>
       <span class="text-xs monitor-caption" role="status">{{ saved }}</span>
@@ -108,7 +108,7 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
           </div>
           <ol aria-live="polite" aria-relevant="additions" class="ai-ops-events">
             <li v-for="(event, index) in detail.events" :key="index" class="monitor-divider py-3 border-b">
-              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '使用固定清单', error: '失败', policy: '权限检查', action_start: '已准入', action_result: '补跑提交结果' }[event.kind] || event.kind }}</span></div>
+              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '使用固定清单', error: '失败', policy: '权限检查', action_start: '已准入', action_result: '执行结果' }[event.kind] || event.kind }}</span></div>
               <details v-if="event.data" class="mt-2 text-xs"><summary class="cursor-pointer monitor-caption">查看记录</summary><pre class="monitor-surface-dim p-3 mt-2">{{ JSON.stringify(event.data, null, 2) }}</pre></details>
             </li>
           </ol>

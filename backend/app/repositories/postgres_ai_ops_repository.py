@@ -75,6 +75,59 @@ class PostgresAiOpsRepository:
             cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
                         (Jsonb([event]), run_id))
 
+    def stale_running_tasks(self, older_than, limit):
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            # started_at is ISO text; malformed values are never treated as stale.
+            cur.execute("SELECT id, task_name, started_at FROM ingestion_tasks WHERE status='running' "
+                        "AND CASE WHEN started_at ~ '^\\d{4}-\\d{2}-\\d{2}T' THEN started_at::timestamptz "
+                        "END < now() - %s ORDER BY id LIMIT %s", (older_than, limit))
+            return [dict(row) for row in cur.fetchall()]
+
+    # Action budgets are derived from admitted action_start events in the audit trail.
+    _ACTION_USAGE = ("SELECT e->'data'->>'target' AS target, COUNT(*) AS used, COUNT(*) FILTER "
+                     "(WHERE (e->>'at')::timestamptz > now() - make_interval(secs => %s)) AS recent "
+                     "FROM ai_ops_runs r CROSS JOIN LATERAL jsonb_array_elements(r.events) e "
+                     "WHERE r.started_at > now() - interval '25 hours' AND e->>'kind' = 'action_start' "
+                     "AND e->'data'->>'action' = %s AND (e->>'at')::timestamptz > now() - interval '24 hours' "
+                     "GROUP BY 1")
+
+    def action_usage(self, action, spacing_seconds):
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            cur.execute(self._ACTION_USAGE, (spacing_seconds, action))
+            return {row["target"]: {"used": row["used"], "recent": row["recent"]} for row in cur.fetchall()}
+
+    def reserve_action(self, run_id, action, target, *, per_target, per_action, spacing_seconds, title):
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("SELECT recovery_enabled FROM ai_ops_config WHERE id=1 FOR UPDATE")
+            if not cur.fetchone()["recovery_enabled"]:
+                return None
+            cur.execute("SELECT status FROM ai_ops_runs WHERE id=%s FOR UPDATE", (run_id,))
+            run = cur.fetchone()
+            if not run or run["status"] != "running":
+                return None
+            cur.execute(self._ACTION_USAGE, (spacing_seconds, action))
+            usage = {row["target"]: row for row in cur.fetchall()}
+            mine = usage.get(target, {"used": 0, "recent": 0})
+            if (sum(row["used"] for row in usage.values()) >= per_action
+                    or mine["used"] >= per_target or mine["recent"]):
+                return None
+            reservation = {"id": str(uuid4()), "action": action, "target": target}
+            event = {"at": datetime.now(timezone.utc).isoformat(), "kind": "action_start",
+                     "title": title, "data": reservation}
+            cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
+                        (Jsonb([event]), run_id))
+            return reservation
+
+    def finish_action(self, run_id, reservation, status, title, detail=None):
+        if status not in {"completed", "submitted", "skipped", "uncertain"}:
+            raise ValueError("invalid_action_status")
+        event = {"at": datetime.now(timezone.utc).isoformat(), "kind": "action_result",
+                 "title": title, "data": {**(detail or {}), **reservation, "status": status}}
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            # Preserve an admitted action's outcome even if the investigation was cancelled.
+            cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
+                        (Jsonb([event]), run_id))
+
     def create(self, trigger, *, scheduled=False):
         with self.database.transaction() as conn, conn.cursor() as cur:
             # One admission lock across workers; leases outlive the bounded 5-minute run.

@@ -137,3 +137,70 @@ def test_composition_uses_injected_dependencies_and_limits_evidence():
     assert svc.tools["x_translations"]() == {"pending": 22, "failed": 7}
     assert svc.model() is provider.get_chat_model.return_value.model_copy.return_value
     provider.get_chat_model.assert_called_once_with(reasoning_effort="high")
+
+
+def acting_service(decisions, candidates):
+    from backend.app.services.ai_ops_actions import Candidate
+    svc, repo, model = service(decisions)
+    built = [Candidate(*spec, {"n": 1}) for spec in candidates]
+    svc.actions = MagicMock()
+    svc.actions.candidates.return_value = built
+    svc.actions.execute = AsyncMock(side_effect=lambda run, c: {"id": c.id, "status": "submitted"})
+    order = []
+    svc.recovery = MagicMock()
+    svc.recovery.run.side_effect = lambda *_: order.append("recovery") or {"status": "skipped"}
+    svc.actions.execute.side_effect = lambda run, c: order.append(c.id) or {"id": c.id, "status": "submitted"}
+    svc.tools["delivery"] = MagicMock(return_value={"status": "ok"})
+    return svc, repo, model, order
+
+
+def test_model_selected_actions_run_before_fixed_recovery_and_reach_report():
+    svc, repo, model, order = acting_service([
+        {"tool": "tasks"},
+        {"actions": [{"id": "briefing_regenerate:2026-09-28:github", "reason": "missing"},
+                     {"id": "briefing_regenerate:2026-09-28:news"},
+                     {"id": "deploy:main"}]},
+        "最终结论"], [("briefing_regenerate", "2026-09-28:github"),
+                      ("briefing_regenerate", "2026-09-28:news")])
+    asyncio.run(svc.run("id"))
+    assert order == ["briefing_regenerate:2026-09-28:github", "recovery"]
+    report = json.loads(model.ainvoke.call_args.args[0][-1].content)["actions"]
+    assert [r["status"] for r in report["results"]] == ["submitted", "skipped"]
+    assert len(report["candidates"]) == 2
+    warnings = [c.args[3] for c in repo.event.call_args_list if c.args[1] == "warning"]
+    assert warnings == [{"ids": ["deploy:main"]}]
+    repo.finish.assert_called_once_with("id", "completed", "最终结论")
+
+
+@pytest.mark.parametrize("reply", ['{"tool":"tasks"}', "not json", '{"actions":"all"}'])
+def test_unusable_action_reply_executes_nothing_but_run_completes(reply):
+    svc, repo, _, order = acting_service([{"tool": "tasks"}, reply, "最终结论"],
+                                         [("x_translation_retry", "queue")])
+    asyncio.run(svc.run("id"))
+    assert order == ["recovery"]
+    repo.finish.assert_called_once_with("id", "completed", "最终结论")
+
+
+def test_no_candidates_skips_the_action_model_call():
+    svc, repo, model, order = acting_service([{"tool": "tasks"}, "最终结论"], [])
+    asyncio.run(svc.run("id"))
+    assert model.ainvoke.call_count == 2 and order == ["recovery"]
+
+
+def test_cancel_during_action_phase_never_executes():
+    svc, repo, _, order = acting_service([{"tool": "tasks"}, {"actions": [{"id": "x_translation_retry:queue"}]}],
+                                         [("x_translation_retry", "queue")])
+    repo.event.side_effect = lambda run, kind, title, *args: title != "核对动作前置条件"
+    asyncio.run(svc.run("id"))
+    assert order == []
+    svc.actions.execute.assert_not_called()
+
+
+def test_composition_wires_action_dependencies():
+    database, repositories, health, scheduler, provider, operations = (MagicMock() for _ in range(6))
+    svc = create_ai_ops_service(database=database, repositories=repositories, health_checks=health,
+                                scheduler=scheduler, model_provider=provider,
+                                operations=operations, redis_client="redis")
+    assert svc.actions.repository is svc.repository
+    assert svc.actions.operations is operations and svc.actions.redis_client == "redis"
+    assert svc.actions.repositories is repositories and svc.actions.scheduler is scheduler

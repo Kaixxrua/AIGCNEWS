@@ -418,6 +418,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             health_checks=monitoring_runtime.health_checks,
             scheduler=scheduler_runtime.scheduler,
             model_provider=model_provider_runtime,
+            operations=operations_runtime,
+            redis_client=getattr(app.state, "redis", None),
         )
         ai_ops_task = asyncio.create_task(app.state.ai_ops_service.watch())
 
