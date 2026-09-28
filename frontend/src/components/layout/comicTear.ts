@@ -22,6 +22,19 @@ const fmt = (n: number) => String(Math.round(n * 10) / 10)
 const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 const shift = (points: Pt[], dx: number, dy: number) => points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+/** A quadratic Bézier from `a` to `b` pulled towards `c`. */
+const quad = (a: Pt, c: Pt, b: Pt): Curve => t => ({
+  x: (1 - t) ** 2 * a.x + 2 * t * (1 - t) * c.x + t ** 2 * b.x,
+  y: (1 - t) ** 2 * a.y + 2 * t * (1 - t) * c.y + t ** 2 * b.y,
+})
+/** Moves a curve sideways by `d`: positive is to the left of its direction of travel (y points down). */
+const offset = (curve: Curve, d: number): Curve => t => {
+  const p = curve(t)
+  const a = curve(Math.max(0, t - 0.004))
+  const b = curve(Math.min(1, t + 0.004))
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+  return { x: p.x - ((b.y - a.y) / len) * d, y: p.y + ((b.x - a.x) / len) * d }
+}
 
 export function toPath(points: Pt[], close = true): string {
   return points.map((p, i) => `${i ? 'L' : 'M'}${fmt(p.x)} ${fmt(p.y)}`).join('') + (close ? 'Z' : '')
@@ -261,97 +274,78 @@ export function buildShout(width: number, height: number, text: string): ShoutAr
   }
 }
 
-// ── Burst: the robot breaking out of the masthead's top-left corner ────────────────────────────
+// ── Torn corners ─────────────────────────────────────────────────────────────────────────────
+// A corner of the page is ripped off along `edge`, showing the lime layer underneath. The paper's
+// torn core (white fibres) is drawn *inside* the hole, so frame lines printed on the page run right
+// up to the ink edge instead of being cut by a white band.
 
-export const BURST = (() => {
-  const rand = seeded(0xb0057)
-  const width = 216
-  const height = 106
-  const xa = 1
-  const xb = 128
-  // The front lip of the hole: everything below it is page, which hides the robot's cut-off chest.
-  const lip = (t: number): Pt => ({ x: xa + t * (xb - xa), y: 85 - 3 * t + 4 * Math.sin(Math.PI * t) })
-  const arch = (from: number, to: number, rise: number) => (t: number): Pt => {
-    const p = lip(from + t * (to - from))
-    return { x: p.x, y: p.y - rise * Math.sin(Math.PI * t) ** 0.75 }
+interface Tear { hole: string; fiber: string; edge: string; seam: string }
+
+/** `corner` is a point beyond the box on the hole's side; `inward` is ±1: the side of `edge` the hole lies on. */
+function tornCorner(edge: Curve, corner: Pt[], inward: 1 | -1, rand: Rand): Tear {
+  const outer = tear(edge, rand, 2.4, [4, 8])
+  const inner = tear(offset(edge, 4.5 * inward), rand, 1.5, [4, 8])
+  return {
+    hole: toPath([...outer, ...corner]),
+    fiber: toPath([...outer, ...[...inner].reverse()]),
+    edge: toPath(outer, false),
+    seam: toPath(inner, false),
   }
-  const lipEdge = tear(lip, rand, 2.2, [4, 8])
-  const lipSeam = shift(tear(t => lip(1 - t), rand, 1.6, [4, 8]), 0, 3.4)
-  const rimEdge = tear(arch(0, 1, 40), rand, 2.6, [4, 8])
-  const holeEdge = tear(arch(0.04, 0.96, 35), rand, 1.8, [4, 8])
-  // Rim and hole close along the lip, just under it, so the cover hides their lower edge.
-  const underLip = (points: Pt[]) => [...points, ...shift([...lipEdge].reverse(), 0, 3)]
-  const focusCentre = { x: 62, y: 72 }
+}
+
+/** Straight focus lines from `from`, fanned between two angles (degrees, y down). */
+function rays(from: Pt, count: number, fromDeg: number, toDeg: number, length: number): string {
+  return Array.from({ length: count }, (_, i) => {
+    const a = ((fromDeg + (i / (count - 1)) * (toDeg - fromDeg)) * Math.PI) / 180
+    return toPath([from, { x: from.x + Math.cos(a) * length, y: from.y + Math.sin(a) * length }], false)
+  }).join('')
+}
+
+// ── Corner: the masthead's top-left corner, torn open behind the date line ─────────────────────
+// Everything stays above y = 98: the masthead's ink rule runs at y ≈ 100–104 below it.
+
+export const CORNER = (() => {
+  const rand = seeded(0xc0a1)
+  const width = 244
+  const height = 100
+  const edge = quad({ x: 236, y: -3 }, { x: 214, y: 78 }, { x: -3, y: 92 })
+  const bolt = [[0.62, 0], [0.12, 0.58], [0.46, 0.55], [0.22, 1], [0.94, 0.36], [0.56, 0.4], [0.9, 0]] as const
+  const boltAt = (x: number, y: number, w: number, h: number) => toPath(bolt.map(([u, v]) => ({ x: x + u * w, y: y + v * h })))
   return {
     width,
     height,
-    rim: toPath(underLip(rimEdge)),
-    hole: toPath(underLip(holeEdge)),
-    focus: Array.from({ length: 18 }, (_, i) => {
-      const a = Math.PI + (i / 17) * Math.PI
-      return toPath([focusCentre, { x: focusCentre.x + Math.cos(a) * 90, y: focusCentre.y + Math.sin(a) * 60 }], false)
-    }).join(''),
-    robot: { x: 6, y: 0, width: 104, height: 101 },
-    cover: toPath([...lipEdge, { x: xb, y: height }, { x: xa, y: height }]),
-    lipFiber: toPath([...lipEdge, ...lipSeam]),
-    lip: toPath(lipEdge, false),
-    lipSeam: toPath(lipSeam, false),
-    flaps: ([
-      [0.13, 0.27, -2, 12],
-      [0.5, 0.62, 3, 10],
-    ] as const).map(([from, to, lean, rise]) => {
-      const b1 = lip(from)
-      const b2 = lip(to)
-      const apex = { x: (b1.x + b2.x) / 2 + lean, y: Math.min(b1.y, b2.y) - rise }
-      return { body: toPath([b1, apex, b2]), crease: toPath([lerp(b1, b2, 0.55), apex], false) }
-    }),
-    scraps: [scrap(7, 14, 3.2, 20, rand), scrap(137, 60, 3, -25, rand), scrap(197, 55, 2.6, 40, rand)],
-    balloon: (() => {
-      const cx = 160
-      const cy = 25
-      const rx = 29
-      const ry = 21
-      const at = (deg: number) => ({ x: cx + rx * Math.cos((deg * Math.PI) / 180), y: cy + ry * Math.sin((deg * Math.PI) / 180) })
-      const p1 = at(118)
-      const p2 = at(152)
-      return `M${fmt(p1.x)} ${fmt(p1.y)}A${rx} ${ry} 0 1 0 ${fmt(p2.x)} ${fmt(p2.y)}L126 45Z`
-    })(),
-    shout: { x: 160, y: 35.5, size: 30, length: BANGERS_EM['AI!'] * 30, angle: -8, cx: 160, cy: 25 },
+    ...tornCorner(edge, [{ x: -8, y: -8 }], 1, rand),
+    focus: rays({ x: 62, y: 40 }, 16, -120, 70, 190),
+    bolt: boltAt(116, 5, 42, 62),
+    impact: [toPath([{ x: 164, y: 12 }, { x: 176, y: 6 }], false), toPath([{ x: 166, y: 24 }, { x: 181, y: 23 }], false), toPath([{ x: 163, y: 36 }, { x: 174, y: 41 }], false)],
+    scraps: [scrap(204, 14, 3, 25, rand)],
+    shout: { x: 62, y: 69, size: 76, length: 88, angle: -6, cx: 62, cy: 42 },
     ribbon: {
-      body: toPath([{ x: 89, y: 76 }, { x: 213, y: 76 }, { x: 206, y: 86 }, { x: 213, y: 96 }, { x: 89, y: 96 }, { x: 96, y: 86 }]),
-      transform: 'rotate(-6 151 86)',
-      text: { x: 151, y: 90.9, size: 13.5, length: BANGERS_EM['BRIGHTER TOMORROW!'] * 13.5 },
+      body: toPath([{ x: 29, y: 73.5 }, { x: 157, y: 73.5 }, { x: 151, y: 82 }, { x: 157, y: 90.5 }, { x: 29, y: 90.5 }, { x: 35, y: 82 }]),
+      transform: 'rotate(-4 93 82)',
+      text: { x: 93, y: 86.9, size: 14, length: BANGERS_EM['BRIGHTER TOMORROW!'] * 14 },
     },
   }
 })()
 
-// ── Label: the fist punching through the footer's bottom-right corner ──────────────────────────
+// ── Peel: the page's bottom-right corner torn off over the UI card, a robot climbing out ─────────
+// Drawn for a 300 × 250 box whose bottom-right is the viewport corner; the theme scales the box.
+// The caption stays inside the hole so it never lands on a card frame at any scale.
 
-export const LABEL = (() => {
-  const rand = seeded(0x1abe1)
-  const width = 146
-  const height = 71
-  const corner = { x: width, y: height }
-  const quarter = (rx: number, ry: number) => (t: number): Pt => {
-    const a = Math.PI + (t * Math.PI) / 2
-    return { x: corner.x + rx * Math.cos(a), y: corner.y + ry * Math.sin(a) }
-  }
-  const tearEdge = tear(quarter(116, 62), rand, 2.2, [4, 8])
-  const outerEdge = tear(quarter(121, 67), rand, 2.6, [3.5, 7.5])
+export const PEEL = (() => {
+  const rand = seeded(0x9ee1)
+  const width = 300
+  const height = 250
+  const edge = quad({ x: 303, y: -3 }, { x: 150, y: 10 }, { x: 146, y: 253 })
   return {
     width,
     height,
-    reveal: toPath([...tearEdge, corner]),
-    fiber: toPath([...outerEdge, ...[...tearEdge].reverse()]),
-    edge: toPath(outerEdge, false),
-    seam: toPath(tearEdge, false),
-    focus: Array.from({ length: 12 }, (_, i) => {
-      const a = Math.PI + (i / 11) * (Math.PI / 2)
-      return toPath([corner, { x: corner.x + Math.cos(a) * 140, y: corner.y + Math.sin(a) * 80 }], false)
-    }).join(''),
-    fist: { x: 80, y: 8, width: 64, height: 64.3 },
-    caption: { rect: { x: 4, y: 13, width: 78, height: 48 }, transform: 'rotate(-7 43 37)' },
-    lines: (['MORE', 'CREATORS!'] as const).map((text, i) => ({ text, y: 31 + i * 16.5, size: 17, length: BANGERS_EM[text] * 17 })),
-    small: { text: 'A BRIGHTER WORLD', y: 57.5, size: 7.2, length: BANGERS_EM['A BRIGHTER WORLD'] * 7.2 },
+    ...tornCorner(edge, [{ x: 308, y: 258 }], -1, rand),
+    focus: rays({ x: 300, y: 250 }, 14, 180, 270, 330),
+    robot: { x: 166, y: 120, width: 134, height: 130 },
+    scraps: [scrap(250, 18, 3.2, 20, rand), scrap(172, 138, 2.8, -35, rand)],
+    caption: { rect: { x: 209, y: 44, width: 84, height: 54 }, transform: 'rotate(-7 251 71)' },
+    lines: (['MORE', 'CREATORS!'] as const).map((text, i) => ({ text, y: 64 + i * 17, size: 18, length: BANGERS_EM[text] * 18 })),
+    small: { text: 'A BRIGHTER WORLD', y: 93, size: 7.6, length: BANGERS_EM['A BRIGHTER WORLD'] * 7.6 },
   }
 })()

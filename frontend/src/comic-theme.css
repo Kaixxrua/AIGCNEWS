@@ -1,4 +1,4 @@
-.comic-masthead-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-burst,.comic-footer-sticker { display:none; }
+.comic-masthead-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-corner,.comic-footer-sticker { display:none; }
 @media (min-width: 1024px) {
 /* Shared comic palette; component-specific geometry remains with its owner. */
 :root {
@@ -44,7 +44,9 @@
   --sticker-tape: #fffef9c4;
   --sticker-accent: #071735;
   --tear-fiber: #ffffff;
-  --tear-cyan-deep: #1b93b6;
+  --shout-fill: var(--acid);
+  --shout-deep: #93cc1c;
+  --sticker-bolt: #ffdf3a;
 }
 
 :root[data-theme='dark'] {
@@ -84,7 +86,9 @@
   --sticker-tape: #e8e9ec38;
   --sticker-accent: var(--acid);
   --tear-fiber: #d8dccf;
-  --tear-cyan-deep: #1d5f71;
+  --shout-fill: var(--acid);
+  --shout-deep: #7f9e35;
+  --sticker-bolt: #e6cc45;
 }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic { filter:none; }
 :root[data-theme='dark'] #app .app-shell--editorial .brand-comic img { content:url('/assets/comic/aigc-news-wordmark-night.webp'); }
@@ -101,7 +105,7 @@
 
 @media (min-width: 1024px) {
   #app .app-shell { --home-dock-width: min(920px, 61vw); }
-  #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh - 74px); }
+  #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - 74px); }
   #app .app-shell--editorial .main-canvas--editorial > .app-content { padding: 110px 12px 0; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead {
     height: 110px;
@@ -181,20 +185,32 @@
 }
 @media (min-width: 1500px) {
   #app .app-shell--editorial .app-masthead .comic-masthead-creation { width:calc(100% - 166px);margin-right:166px; }
-  #app .app-shell--editorial .comic-masthead-burst { display:block;position:absolute;left:14px;top:2px;width:216px;height:106px;z-index:1; }
+  /* The torn top-left corner ends above the masthead rule (y ≈ 100) and left of the date line (x = 239). */
+  #app .app-shell--editorial .comic-masthead-corner { display:block;position:absolute;left:0;top:0;width:244px;height:100px;z-index:1; }
 }
+/* The torn bottom-right corner: its box's corner is the viewport's, so it bites into the UI card above
+   the footer. Three sizes follow the card's height (viewport − 748px); the footer links and the card's
+   "UI LIBRARY" link step aside by the tear's width at their height. */
 @media (min-width: 1600px) {
-  #app .app-shell--editorial .footer-right { margin-right:112px; }
-  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:130px;height:63px; }
+  #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:180px;height:150px; }
+  #app .app-shell--editorial .footer-right { margin-right:80px; }
+  #app .app-shell--editorial .ui-inspiration__caption { padding-right:24px; }
 }
-@media (min-width: 1800px) {
-  #app .app-shell--editorial .footer-right { margin-right:128px; }
-  #app .app-shell--editorial .comic-footer-sticker { width:146px;height:71px; }
+@media (min-width: 1600px) and (min-height: 918px) {
+  #app .app-shell--editorial .comic-footer-sticker { width:240px;height:200px; }
+  #app .app-shell--editorial .footer-right { margin-right:110px; }
+  #app .app-shell--editorial .ui-inspiration__caption { padding-right:92px; }
 }
-/* English footer links need ~220px; below 1800px the corner sticker would push them onto two lines. */
-@media (min-width: 1600px) and (max-width: 1799px) {
-  :root:lang(en) #app .app-shell--editorial .footer-right { margin-right:0; }
-  :root:lang(en) #app .app-shell--editorial .comic-footer-sticker { display:none; }
+@media (min-width: 1800px) and (min-height: 1000px) {
+  #app .app-shell--editorial .comic-footer-sticker { width:300px;height:250px; }
+  #app .app-shell--editorial .footer-right { margin-right:150px; }
+  #app .app-shell--editorial .ui-inspiration__caption { padding-right:136px; }
+}
+/* English footer links need ~220px: below 1680px the middle size would wrap them, so keep the small one. */
+@media (min-width: 1600px) and (max-width: 1679px) and (min-height: 918px) {
+  :root:lang(en) #app .app-shell--editorial .comic-footer-sticker { width:180px;height:150px; }
+  :root:lang(en) #app .app-shell--editorial .footer-right { margin-right:80px; }
+  :root:lang(en) #app .app-shell--editorial .ui-inspiration__caption { padding-right:48px; }
 }
 
 @media (min-width: 1024px) and (max-width: 1499px) {

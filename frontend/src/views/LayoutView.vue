@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useWindowSize } from '@vueuse/core'
 import { RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useEnrichmentAlertStore } from '@/stores/enrichmentAlertStore'
@@ -32,6 +32,16 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 const isMobile = useMediaQuery('(max-width: 767px)')
 const route = useRoute()
 const editorialLayout = computed(() => route.path === '/' || (route.path === '/projects' && route.query.source !== 'website'))
+// 首页桌面版按 1920×1080 排版；更大的屏幕（2K/4K）整体等比放大，而不是把同样的内容摊得更稀。
+// 以宽高中较紧的一边为准，保证放大后仍是一屏不滚动。页内的 100dvh 须除以 --shell-zoom。
+const isDesktop = useMediaQuery('(min-width: 1024px)')
+const { width: viewportWidth, height: viewportHeight } = useWindowSize()
+const shellZoom = computed(() => {
+  if (route.path !== '/' || !isDesktop.value) return 1
+  const zoom = Math.min(viewportWidth.value / 1920, viewportHeight.value / 1080)
+  return zoom > 1 ? Math.floor(zoom * 1000) / 1000 : 1
+})
+const shellStyle = computed(() => shellZoom.value > 1 ? { zoom: shellZoom.value, '--shell-zoom': shellZoom.value } : undefined)
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
@@ -73,7 +83,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout }">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout }" :style="shellStyle">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -87,7 +97,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <svg class="comic-masthead-rule" viewBox="0 0 1721 25" preserveAspectRatio="none" aria-hidden="true"><path d="M0 7 L420 3 Q449 2 465 13 L480 22 Q483 24 499 24 L1247 24 Q1266 24 1275 21 L1698 21 Q1712 21 1721 25" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
-        <ComicSticker v-if="!isMobile" variant="burst" class="comic-masthead-burst" />
+        <ComicSticker v-if="!isMobile" variant="corner" class="comic-masthead-corner" />
         <ComicSticker v-if="!isMobile" variant="shout" class="comic-masthead-creation" :text="$t('dashboard.editorial.creationMark')" />
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
@@ -279,8 +289,8 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 /* Desktop home uses the actual available viewport; mobile retains readable flow. */
 @media (min-width: 1024px) {
-  .app-shell--editorial { height: 100dvh; overflow: hidden; }
-  .main-canvas.main-canvas--editorial { height: calc(100dvh - 90px); min-height: 0; }
+  .app-shell--editorial { height: calc(100dvh / var(--shell-zoom, 1)); overflow: hidden; }
+  .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - 90px); min-height: 0; }
   .main-canvas--editorial > .app-content { height: 100%; min-height: 0; padding-bottom: 4px; }
   .main-canvas--editorial :deep(.view-container) { height: 100%; flex: 1 1 0; }
 }

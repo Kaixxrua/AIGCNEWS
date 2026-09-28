@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BANGERS_EM, BURST, LABEL, buildShout, letteringEm, shoutTier, type Lettering } from './comicTear'
+import { BANGERS_EM, CORNER, PEEL, buildShout, letteringEm, shoutTier, type Lettering, type Pt } from './comicTear'
 
 const SLOGANS = ['让创造更自由！', 'Create freely!'] as const
 const [ZH] = SLOGANS
@@ -85,32 +85,71 @@ describe('shout geometry', () => {
   })
 })
 
+// Where `transform="rotate(a cx cy)"` puts a point.
+const rotated = (p: Pt, angle: number, cx: number, cy: number): Pt => {
+  const a = (angle * Math.PI) / 180
+  return { x: cx + (p.x - cx) * Math.cos(a) - (p.y - cy) * Math.sin(a), y: cy + (p.x - cx) * Math.sin(a) + (p.y - cy) * Math.cos(a) }
+}
+
+const rectCorners = ({ x, y, width, height }: { x: number; y: number; width: number; height: number }, dx = 0, dy = 0): Pt[] =>
+  [{ x, y }, { x: x + width, y }, { x: x + width, y: y + height }, { x, y: y + height }].map(p => ({ x: p.x + dx, y: p.y + dy }))
+
+const inPolygon = (p: Pt, polygon: Pt[]) => {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i]!
+    const b = polygon[j]!
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
 describe('fixed stickers', () => {
-  it('keeps the burst inside its viewBox', () => {
-    for (const d of [BURST.rim, BURST.hole, BURST.cover, BURST.lipFiber, BURST.lip, ...BURST.flaps.map(f => f.body), ...BURST.scraps, BURST.ribbon.body]) {
-      expectInside(d, BURST.width, BURST.height)
+  // The masthead's ink rule runs at y ≈ 100–104 under the corner: nothing may reach it.
+  const RULE_CLEARANCE = 98
+
+  it('keeps the masthead corner off the rule and inside its box', () => {
+    const ribbon = points(CORNER.ribbon.body).flatMap(p => [p, { x: p.x + 2.5, y: p.y + 2.5 }]).map(p => rotated(p, -4, 93, 82))
+    const art = [CORNER.fiber, CORNER.edge, CORNER.seam, CORNER.bolt, ...CORNER.impact, ...CORNER.scraps].flatMap(points)
+    for (const p of [...art, ...ribbon, ...points(CORNER.bolt).map(p => ({ x: p.x + 3, y: p.y + 3 }))]) {
+      expect(p.x).toBeLessThanOrEqual(CORNER.width)
+      expect(p.y).toBeLessThanOrEqual(RULE_CLEARANCE)
     }
-    const { robot } = BURST
-    expect(robot.x).toBeGreaterThanOrEqual(0)
-    expect(robot.x + robot.width).toBeLessThanOrEqual(BURST.width)
-    // The robot's flat chest cut must sit under the page cover.
-    expect(robot.y + robot.height).toBeLessThanOrEqual(BURST.height)
-    const lipLowest = Math.max(...points(BURST.lip).map(p => p.y))
-    expect(robot.y + robot.height).toBeGreaterThan(lipLowest)
+    expect(CORNER.ribbon.transform).toBe('rotate(-4 93 82)')
   })
 
-  it('keeps the footer corner inside its viewBox', () => {
-    for (const d of [LABEL.reveal, LABEL.fiber, LABEL.edge, LABEL.seam]) expectInside(d, LABEL.width, LABEL.height)
-    expect(LABEL.fist.x + LABEL.fist.width).toBeLessThanOrEqual(LABEL.width)
-    // The forearm's cut runs past the bottom edge, which is the bottom of the viewport.
-    expect(LABEL.fist.y + LABEL.fist.height).toBeGreaterThanOrEqual(LABEL.height)
+  it('tears the corners from edge to edge, so no frame line is left dangling', () => {
+    // The tear starts and ends past the box, and the hole closes through the box's own corner.
+    const corner = points(CORNER.edge)
+    expect(Math.min(...corner.map(p => p.y))).toBeLessThan(0)
+    expect(Math.min(...corner.map(p => p.x))).toBeLessThan(0)
+    const peel = points(PEEL.edge)
+    expect(Math.max(...peel.map(p => p.x))).toBeGreaterThan(PEEL.width)
+    expect(Math.max(...peel.map(p => p.y))).toBeGreaterThan(PEEL.height)
+    expect(inPolygon({ x: 1, y: 1 }, points(CORNER.hole))).toBe(true)
+    expect(inPolygon({ x: PEEL.width - 1, y: PEEL.height - 1 }, points(PEEL.hole))).toBe(true)
+  })
+
+  it('keeps the footer caption and robot inside the torn hole', () => {
+    const hole = points(PEEL.hole)
+    const { rect } = PEEL.caption
+    expect(PEEL.caption.transform).toBe('rotate(-7 251 71)')
+    for (const p of [...rectCorners(rect), ...rectCorners(rect, 3, 3)].map(p => rotated(p, -7, 251, 71))) {
+      expect(inPolygon(p, hole)).toBe(true)
+      expect(p.x).toBeLessThanOrEqual(PEEL.width)
+    }
+    for (const d of PEEL.scraps) for (const p of points(d)) expect(inPolygon(p, hole)).toBe(true)
+    const { robot } = PEEL
+    expect(robot.x + robot.width).toBeLessThanOrEqual(PEEL.width)
+    expect(robot.y + robot.height).toBeLessThanOrEqual(PEEL.height)
   })
 
   it('fits each fixed slogan inside its frame', () => {
-    const inner = LABEL.caption.rect.width - 8
-    for (const line of LABEL.lines) expect(line.length).toBeLessThanOrEqual(inner)
-    expect(LABEL.small.length).toBeLessThanOrEqual(inner)
-    expect(BURST.ribbon.text.length).toBeLessThanOrEqual(124 - 2 * 7 - 4)
-    expect(Object.keys(BANGERS_EM)).toEqual(expect.arrayContaining(['AI!', 'BRIGHTER TOMORROW!', ...LABEL.lines.map(l => l.text), LABEL.small.text]))
+    const inner = PEEL.caption.rect.width - 8
+    for (const line of PEEL.lines) expect(line.length).toBeLessThanOrEqual(inner)
+    expect(PEEL.small.length).toBeLessThanOrEqual(inner)
+    // The ribbon's notched ends take 6 units each.
+    expect(CORNER.ribbon.text.length).toBeLessThanOrEqual(157 - 29 - 2 * 6 - 4)
+    expect(Object.keys(BANGERS_EM)).toEqual(expect.arrayContaining(['AI!', 'BRIGHTER TOMORROW!', ...PEEL.lines.map(l => l.text), PEEL.small.text]))
   })
 })

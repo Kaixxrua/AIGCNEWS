@@ -176,7 +176,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 /* Copy keeps its own rhythm; the illustration sits behind the ink frame, never the text. */
 .digest-card { position:relative;isolation:isolate;overflow:visible;display:flex;flex-direction:column;container-type:inline-size;padding:12px 14px;border:solid transparent;border-width:2px 2.5px 3px 2px;border-radius:6px 8px 5px 9px;background:var(--paper);box-shadow:none; }
 .digest-card::before { content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background-image:linear-gradient(135deg,transparent 0 67%,var(--comic-cyan-line) 67% 70%,transparent 70% 73%,color-mix(in srgb,var(--comic-cyan-line) 33%,transparent) 73% 74%,transparent 74%),radial-gradient(var(--comic-cyan-dot) .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
-.digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:1; }
+.digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:3; }
 .digest-ink-frame path { vector-effect:non-scaling-stroke; }
 .digest-heading { position:relative;z-index:1;display:flex;flex:none;align-items:center;gap:11px;margin-bottom:4px; }
 .digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--comic-cyan);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--comic-cyan-line) 40%,transparent); }
@@ -188,7 +188,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .digest-features svg { flex-shrink:0;background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
 .digest-cta { position:relative;z-index:4;display:flex;flex:none;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;margin-top:auto;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
 .digest-cta svg { width:23px;height:23px; }
-.digest-robot { position:absolute;z-index:2;right:-14px;bottom:0;width:56%;height:106%;object-fit:contain;object-position:right bottom;pointer-events:none; }
+/* The robot stays inside the card and under its ink frame, so no white art ever breaks the frame line. */
+.digest-robot { position:absolute;z-index:2;right:0;bottom:0;width:56%;height:100%;object-fit:contain;object-position:right bottom;pointer-events:none; }
 @container (max-width:419px) {
   .digest-card p { max-width:62%;font-size:11px; }
   .digest-features { max-width:52%;font-size:13px;line-height:16px; }

@@ -27,22 +27,26 @@ afterEach(() => {
 })
 
 describe('ComicSticker', () => {
-  it.each(['burst', 'shout', 'label'] as const)('keeps the %s sticker out of the accessibility tree', variant => {
+  it.each(['corner', 'shout', 'peel'] as const)('keeps the %s sticker out of the accessibility tree', variant => {
     const wrapper = mount(ComicSticker, { props: { variant, text: 'Create freely!' } })
     expect(wrapper.attributes('aria-hidden')).toBe('true')
     expect(wrapper.classes()).toContain(`comic-sticker--${variant}`)
   })
 
-  it('draws the burst around a fixed-size robot so it cannot shift layout', () => {
-    const image = mount(ComicSticker, { props: { variant: 'burst' } }).get('image')
+  it('shouts from the masthead corner', () => {
+    const wrapper = mount(ComicSticker, { props: { variant: 'corner' } })
+    expect(new Set(wrapper.findAll('text').map(t => t.text()))).toEqual(new Set(['AI!', 'BRIGHTER TOMORROW!']))
+    expect(wrapper.find('image').exists()).toBe(false)
+  })
+
+  it('lets a fixed-size robot out of the footer tear so it cannot shift layout', () => {
+    const wrapper = mount(ComicSticker, { props: { variant: 'peel' } })
+    const image = wrapper.get('image')
     expect(image.attributes('href')).toBe('/assets/comic/sticker-robot-burst.webp')
     expect(image.attributes('width')).toBeTruthy()
     expect(image.attributes('height')).toBeTruthy()
-  })
-
-  it('prints the footer slogan beside the fist', () => {
-    const wrapper = mount(ComicSticker, { props: { variant: 'label' } })
-    expect(wrapper.get('image').attributes('href')).toBe('/assets/comic/sticker-robot-fist.webp')
+    // The robot is clipped to the torn hole, never drawn over the page around it.
+    expect(image.element.parentElement?.getAttribute('clip-path')).toMatch(/^url\(#comic-.+-hole\)$/)
     expect(wrapper.findAll('text').map(t => t.text())).toEqual(['MORE', 'CREATORS!', 'A BRIGHTER WORLD'])
   })
 

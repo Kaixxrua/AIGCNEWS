@@ -107,7 +107,8 @@ const lockCharWidths = async () => {
   const elements = textEl.value?.querySelectorAll<HTMLElement>('.brand-wordmark__char')
   if (!textEl.value?.getBoundingClientRect().width) return
   elements?.forEach(el => { el.style.width = '' })
-  elements?.forEach(el => { el.style.width = `${el.getBoundingClientRect().width}px` })
+  // getBoundingClientRect 含祖先的 CSS zoom（首页 2K/4K 放大），写回 style 前换算回本地 px
+  elements?.forEach(el => { el.style.width = `${el.getBoundingClientRect().width / ((el as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1)}px` })
 }
 
 watch(
