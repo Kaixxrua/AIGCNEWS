@@ -83,6 +83,12 @@ class PostgresAiOpsRepository:
                         "END < now() - %s ORDER BY id LIMIT %s", (older_than, limit))
             return [dict(row) for row in cur.fetchall()]
 
+    def latest_error_at(self, logger_prefix):
+        with self.database.transaction() as conn, conn.cursor() as cur:
+            cur.execute("SELECT max(occurred_at) AS at FROM error_events "
+                        "WHERE left(logger_name, length(%s)) = %s", (logger_prefix, logger_prefix))
+            return cur.fetchone()["at"]
+
     # Action budgets are derived from admitted action_start events in the audit trail.
     _ACTION_USAGE = ("SELECT e->'data'->>'target' AS target, COUNT(*) AS used, COUNT(*) FILTER "
                      "(WHERE (e->>'at')::timestamptz > now() - make_interval(secs => %s)) AS recent "

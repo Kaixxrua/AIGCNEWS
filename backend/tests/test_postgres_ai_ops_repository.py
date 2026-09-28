@@ -156,3 +156,21 @@ def test_stale_running_tasks_threshold_and_malformed_timestamps():
         assert [row["id"] for row in rows] == sorted([old, older])
         assert rows[0]["task_name"] == "single:x"
         assert len(repo.stale_running_tasks(timedelta(hours=6), 1)) == 1
+
+
+def test_latest_error_at_matches_logger_prefix_only():
+    from datetime import datetime, timedelta, timezone
+    with postgres_test_sandbox() as sandbox:
+        repo = PostgresAiOpsRepository(sandbox.database)
+        prefix = "backend.app.services.briefing."
+        assert repo.latest_error_at(prefix) is None
+        now = datetime.now(timezone.utc)
+        def error(logger_name, age):
+            with sandbox.database.transaction() as conn:
+                conn.execute("INSERT INTO error_events (occurred_at,level,logger_name,message) "
+                             "VALUES (%s,'ERROR',%s,'boom')", (now - age, logger_name))
+        error("backend.app.services.briefing.daily_briefing", timedelta(hours=5))
+        error("backend.app.services.briefing.dispatch", timedelta(hours=2))
+        error("backend.app.services.briefing_digest", timedelta(minutes=1))
+        error("backend.app.services.ingestion.arxiv", timedelta(minutes=1))
+        assert repo.latest_error_at(prefix) == now - timedelta(hours=2)

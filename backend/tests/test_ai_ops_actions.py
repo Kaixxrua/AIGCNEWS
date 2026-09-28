@@ -10,6 +10,7 @@ from backend.app.services.ai_ops_actions import (
     ORPHAN_MESSAGE,
     AiOpsActions,
     Candidate,
+    deferred_reasons,
     select_actions,
 )
 
@@ -18,9 +19,10 @@ NOON_CST = datetime(2026, 9, 28, 4, 0, tzinfo=timezone.utc)
 
 def actions(now=NOON_CST, operations=True, stale=(), briefed=("all", "arxiv", "news", "x", "dailyhot",
                                                              "producthunt", "hackernews"),
-            usage=None, summary=None, retry_jobs=()):
+            usage=None, summary=None, retry_jobs=(), briefing_error_at=None):
     repo = MagicMock()
     repo.config.return_value = {"recovery_enabled": True}
+    repo.latest_error_at.return_value = briefing_error_at
     repo.stale_running_tasks.return_value = list(stale)
     repo.action_usage.side_effect = lambda action, spacing: (usage or {}).get(action, {})
     repo.reserve_action.side_effect = lambda run, action, target, **_: {
@@ -57,6 +59,17 @@ def test_only_missing_briefings_after_scheduler_retries_are_offered():
     disabled, _, _ = actions()
     disabled.scheduler.get_job.side_effect = lambda job_id: None
     assert ids(disabled) == []
+
+
+def test_briefing_waits_until_its_errors_have_been_quiet_for_30_minutes():
+    failing, repo, _ = actions(briefing_error_at=NOON_CST - timedelta(minutes=10))
+    assert ids(failing) == []
+    repo.latest_error_at.assert_called_once_with("backend.app.services.briefing.")
+    last = NOON_CST - timedelta(minutes=45)
+    quiet, _, _ = actions(briefing_error_at=last)
+    [candidate] = quiet.candidates()
+    assert candidate.facts["latest_briefing_error_at"] == last
+    assert "不存在" in candidate.facts["fault"] and "Ollama" in candidate.facts["upstream"]
 
 
 def test_briefing_regenerate_submits_the_existing_dispatch_for_one_source():
@@ -147,3 +160,18 @@ def test_model_can_only_pick_code_built_candidates():
     assert len(ignored) == 3
     with pytest.raises(ValueError):
         select_actions({"tool": "tasks"}, built)
+
+
+def test_deferred_reasons_only_name_unpicked_candidates():
+    built = [Candidate("briefing_regenerate", "2026-09-28:github", {}),
+             Candidate("x_translation_retry", "queue", {})]
+    decision = {"actions": [{"id": "x_translation_retry:queue"}], "skipped": [
+        {"id": "briefing_regenerate:2026-09-28:github", "reason": "wait" * 80},
+        {"id": "briefing_regenerate:2026-09-28:github", "reason": "dup"},
+        {"id": "x_translation_retry:queue", "reason": "also picked"},
+        {"id": "shell:rm"}, "briefing_regenerate:2026-09-28:github"]}
+    picked, _ = select_actions(decision, built)
+    assert deferred_reasons(decision, built, picked) == [
+        {"id": "briefing_regenerate:2026-09-28:github", "reason": ("wait" * 80)[:200]}]
+    assert deferred_reasons({"actions": [], "skipped": "all"}, built, []) == []
+    assert deferred_reasons({"actions": []}, built, []) == []

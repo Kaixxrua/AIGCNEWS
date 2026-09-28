@@ -172,6 +172,20 @@ def test_model_selected_actions_run_before_fixed_recovery_and_reach_report():
     repo.finish.assert_called_once_with("id", "completed", "最终结论")
 
 
+def test_deferred_candidates_are_audited_and_reported_but_never_run():
+    github = "briefing_regenerate:2026-09-28:github"
+    svc, repo, model, order = acting_service([
+        {"tool": "tasks"},
+        {"actions": [], "skipped": [{"id": github, "reason": "上游仍在报错"}, {"id": "deploy:main"}]},
+        "最终结论"], [("briefing_regenerate", "2026-09-28:github")])
+    asyncio.run(svc.run("id"))
+    assert order == ["recovery"]
+    audited = [c.args[3] for c in repo.event.call_args_list if c.args[2] == "暂缓候选"]
+    assert audited == [{"skipped": [{"id": github, "reason": "上游仍在报错"}]}]
+    report = json.loads(model.ainvoke.call_args.args[0][-1].content)["actions"]
+    assert report["deferred"] == audited[0]["skipped"] and report["results"] == []
+
+
 @pytest.mark.parametrize("reply", ['{"tool":"tasks"}', "not json", '{"actions":"all"}'])
 def test_unusable_action_reply_executes_nothing_but_run_completes(reply):
     svc, repo, _, order = acting_service([{"tool": "tasks"}, reply, "最终结论"],

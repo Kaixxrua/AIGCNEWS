@@ -26,6 +26,9 @@ X_TRANSLATION_STALL = timedelta(minutes=30)
 X_TRANSLATION_LIMIT = 200
 # Daily briefings start 08:00 CST and the scheduler retries each source 3 times.
 BRIEFING_EARLIEST = time(10, 30)
+# Regenerating while the shared chat model still fails would only fail again.
+BRIEFING_ERROR_QUIET = timedelta(minutes=30)
+BRIEFING_LOGGER = "backend.app.services.briefing."
 
 
 @dataclass(frozen=True)
@@ -118,10 +121,20 @@ class AiOpsActions:
         if (self.operations is None or now.time() < BRIEFING_EARLIEST
                 or self.scheduler.get_job("daily_briefing") is None):
             return []
+        last_error = self.repository.latest_error_at(BRIEFING_LOGGER)
+        quiet = _age_seconds(last_error, self.now())
+        if quiet is not None and quiet < BRIEFING_ERROR_QUIET.total_seconds():
+            return []
         date = now.date().isoformat()
+        # State the verified fault and upstream explicitly; otherwise the model reads
+        # old errors as history, or blames unrelated dependencies such as Ollama.
         return [Candidate("briefing_regenerate", f"{date}:{source}", {
                     "date": date, "source": source,
-                    "effect": "按日常派发链生成该维度今日简报（已存在则跳过）并投递订阅"})
+                    "fault": "今日该维度简报当前不存在（已按缓存键实时核实），属持续中的故障",
+                    "scheduler": "08:00 生成及其自动补跑均已结束，今日不会再自动生成",
+                    "upstream": "与本运维代理使用同一运行时聊天模型配置，不依赖 Ollama",
+                    "latest_briefing_error_at": last_error,
+                    "effect": "按日常派发链生成该维度今日简报并投递订阅；执行前若已生成则跳过"})
                 for source in BRIEFING_SOURCES
                 if self.scheduler.get_job(f"daily_briefing_retry_{source}") is None
                 and self.repositories.briefings.get_briefing_by_date(
@@ -199,3 +212,15 @@ def select_actions(decision, candidates):
         else:
             ignored.append(str(cid)[:80])
     return picked, ignored
+
+
+def deferred_reasons(decision, candidates, picked):
+    """The model's stated reasons for leaving candidates alone; audit only, never acted on."""
+    skipped = decision.get("skipped")
+    known = {c.id for c in candidates} - {c.id for c, _ in picked}
+    deferred = {}
+    for item in skipped if isinstance(skipped, list) else []:
+        cid = item.get("id") if isinstance(item, dict) else None
+        if isinstance(cid, str) and cid in known and cid not in deferred:
+            deferred[cid] = str(item.get("reason", ""))[:200]
+    return [{"id": cid, "reason": reason} for cid, reason in deferred.items()]
