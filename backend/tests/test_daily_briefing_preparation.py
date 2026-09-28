@@ -217,6 +217,18 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 for term in forbidden:
                     self.assertNotIn(term, template)
 
+    def test_every_briefing_prompt_targets_a_three_minute_read(self) -> None:
+        # "At least N sentences per item" produced 10k+ character briefings that
+        # readers skipped and that pushed single streams past the upstream cap.
+        for source, (template, _suffix) in _SOURCE_CONFIG.items():
+            with self.subTest(source=source):
+                prompt = template.format(count=3, articles="ARTICLES", date="2026-09-28")
+                self.assertIn("约 3 分钟读完", prompt)
+                self.assertIn("1000-1500 字", prompt)
+                self.assertIn("不删条目", prompt)
+                self.assertNotIn("内容详尽", prompt)
+                self.assertNotIn("至少", prompt)
+
 
 class BriefingPreparationAdapterTests(unittest.TestCase):
     def test_adapter_uses_snapshot_first_and_preserves_prompt(self) -> None:
