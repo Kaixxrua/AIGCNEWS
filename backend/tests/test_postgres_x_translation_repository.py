@@ -61,6 +61,7 @@ def test_status_summary_includes_counts_and_latest_failure_metadata() -> None:
     repository, _, cursor = repository_with_cursor()
     oldest = datetime(2026, 8, 18, 1, tzinfo=timezone.utc)
     latest = datetime(2026, 8, 18, 2, tzinfo=timezone.utc)
+    succeeded_at = datetime(2026, 8, 18, 3, tzinfo=timezone.utc)
     cursor.fetchone.return_value = {
         "pending": 2,
         "running": 3,
@@ -75,6 +76,7 @@ def test_status_summary_includes_counts_and_latest_failure_metadata() -> None:
         "latest_failure_model_provider": "provider",
         "latest_failure_model_name": "model",
         "latest_failure_prompt_version": "v2",
+        "latest_success_at": succeeded_at,
     }
 
     summary = repository.get_status_summary()
@@ -93,9 +95,11 @@ def test_status_summary_includes_counts_and_latest_failure_metadata() -> None:
         "latest_failure_model_provider": "provider",
         "latest_failure_model_name": "model",
         "latest_failure_prompt_version": "v2",
+        "latest_success_at": succeeded_at,
     }
     query = cursor.execute.call_args.args[0]
     assert "COUNT(*) FILTER" in query
+    assert "MAX(x_translation_tasks.completed_at) FILTER" in query
     assert "LEFT JOIN LATERAL" in query
     assert cursor.execute.call_args.args[1] == (900, 900)
 
@@ -300,6 +304,21 @@ def test_fail_task_truncates_error_to_1000_characters() -> None:
     assert "status = 'failed'" in query
     assert len(params[0]) == 1000
     assert params[1:] == ("provider", "model", 9, "", "")
+
+
+def test_retire_rejected_only_touches_exhausted_output_rejections() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.rowcount = 2
+
+    assert repository.retire_rejected(20, "output_rejected: ") == 2
+
+    query, params = cursor.execute.call_args.args
+    assert "SET status = 'skipped', skip_reason = 'retry_exhausted'" in query
+    # 只退役 failed 且错误是输出被拒的任务；上游故障（超时/HTTP）永不退役
+    assert "WHERE status = 'failed'" in query
+    assert "attempt_count >= %s" in query
+    assert "starts_with(last_error, %s)" in query
+    assert params == (20, "output_rejected: ")
 
 
 def test_reset_claimed_and_batch_running() -> None:

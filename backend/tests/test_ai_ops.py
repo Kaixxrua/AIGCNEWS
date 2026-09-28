@@ -122,6 +122,7 @@ def test_composition_uses_injected_dependencies_and_limits_evidence():
         {"id": 7, "status": "failed", "error_msg": "private task detail"}]}
     repositories.error_events.list_events.return_value = {"items": [
         {"id": 8, "exception_type": "TimeoutError", "message": "private error"}]}
+    repositories.x_translation_tasks.get_status_summary.return_value = {"pending": 22, "failed": 7}
     scheduler.running = True
     scheduler.get_jobs.return_value = []
     svc = create_ai_ops_service(database=database, repositories=repositories,
@@ -133,5 +134,6 @@ def test_composition_uses_injected_dependencies_and_limits_evidence():
     assert svc.tools["errors"]()[0]["exception_type"] == "TimeoutError"
     assert "message" not in svc.tools["errors"]()[0]
     assert svc.tools["scheduler"]() == {"running": True, "jobs": [], "job_count": 0}
+    assert svc.tools["x_translations"]() == {"pending": 22, "failed": 7}
     assert svc.model() is provider.get_chat_model.return_value.model_copy.return_value
     provider.get_chat_model.assert_called_once_with(reasoning_effort="high")

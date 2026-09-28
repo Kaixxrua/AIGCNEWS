@@ -174,3 +174,64 @@ def test_concurrent_claims_do_not_overlap(
     claimed_ids = [task["id"] for batch in results for task in batch]
     assert len(claimed_ids) == 6
     assert len(claimed_ids) == len(set(claimed_ids))  # 无重复领取
+
+
+def test_retire_rejected_only_exhausted_output_rejections_and_summary_tracks_success(
+    x_translation_repository: tuple[Any, PostgresDatabaseLifecycle],
+) -> None:
+    repository, database = x_translation_repository
+    tag = uuid.uuid4().hex[:8]
+    rows = {
+        # name: (status, attempt_count, last_error)
+        "poison": ("failed", 20, "output_rejected: translation omitted protected token"),
+        "young": ("failed", 19, "output_rejected: translation omitted protected token"),
+        "outage": ("failed", 40, "503 upstream unavailable"),
+        "legacy": ("failed", 40, None),
+        "pending": ("pending", 40, "output_rejected: translation omitted protected token"),
+        "done": ("succeeded", 1, None),
+    }
+    document_ids = {
+        name: _insert_pending_task(database, f"r{tag}{name}", f"retire {name}") for name in rows
+    }
+    with database.transaction() as connection:
+        for name, (status, attempts, error) in rows.items():
+            connection.execute(
+                """
+                UPDATE x_translation_tasks
+                SET status = %s, attempt_count = %s, last_error = %s,
+                    completed_at = CASE WHEN %s = 'succeeded'
+                        THEN TIMESTAMPTZ '2099-01-01 00:00:00+00' END
+                WHERE document_id = %s
+                """,
+                (status, attempts, error, status, document_ids[name]),
+            )
+
+    try:
+        assert repository.retire_rejected(20, "output_rejected: ") == 1
+        summary = repository.get_status_summary()
+        with database.transaction() as connection:
+            result = {
+                row["document_id"]: (row["status"], row["skip_reason"])
+                for row in connection.execute(
+                    "SELECT document_id, status, skip_reason FROM x_translation_tasks WHERE document_id = ANY(%s)",
+                    (list(document_ids.values()),),
+                ).fetchall()
+            }
+    finally:
+        # 模块级共享 schema：清理残留，避免影响其他用例的领取计数
+        with database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM x_translation_tasks WHERE document_id = ANY(%s)",
+                (list(document_ids.values()),),
+            )
+            connection.execute(
+                "DELETE FROM documents WHERE id = ANY(%s)", (list(document_ids.values()),)
+            )
+
+    assert result[document_ids["poison"]] == ("skipped", "retry_exhausted")
+    # 未到上限、上游故障、无错误历史行、非 failed 状态都不退役
+    assert result[document_ids["young"]] == ("failed", None)
+    assert result[document_ids["outage"]] == ("failed", None)
+    assert result[document_ids["legacy"]] == ("failed", None)
+    assert result[document_ids["pending"]] == ("pending", None)
+    assert summary["latest_success_at"].isoformat() == "2099-01-01T00:00:00+00:00"

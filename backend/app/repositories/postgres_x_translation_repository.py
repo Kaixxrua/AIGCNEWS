@@ -96,7 +96,10 @@ class PostgresXTranslationTaskRepository:
                         latest.last_error AS latest_failure_error,
                         latest.model_provider AS latest_failure_model_provider,
                         latest.model_name AS latest_failure_model_name,
-                        latest.prompt_version AS latest_failure_prompt_version
+                        latest.prompt_version AS latest_failure_prompt_version,
+                        MAX(x_translation_tasks.completed_at) FILTER (
+                            WHERE status = 'succeeded'
+                        ) AS latest_success_at
                     FROM x_translation_tasks
                     LEFT JOIN LATERAL (
                         SELECT updated_at, last_error, model_provider, model_name,
@@ -131,6 +134,7 @@ class PostgresXTranslationTaskRepository:
             latest_failure_prompt_version=_row_value(
                 row, "latest_failure_prompt_version", 12
             ),
+            latest_success_at=_row_value(row, "latest_success_at", 13),
         )
 
     def recover_stale_running(
@@ -152,6 +156,25 @@ class PostgresXTranslationTaskRepository:
                       )
                     """,
                     (seconds,),
+                )
+                return max(0, cursor.rowcount)
+
+    def retire_rejected(self, max_attempts: int, error_prefix: str) -> int:
+        """把输出反复被拒的失败任务退役为 skipped，不再进入重试批次。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE x_translation_tasks
+                    SET status = 'skipped', skip_reason = 'retry_exhausted',
+                        claim_token = NULL, lease_expires_at = NULL,
+                        completed_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE status = 'failed'
+                      AND attempt_count >= %s
+                      AND starts_with(last_error, %s)
+                    """,
+                    (max(1, int(max_attempts)), error_prefix),
                 )
                 return max(0, cursor.rowcount)
 

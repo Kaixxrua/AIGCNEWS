@@ -23,6 +23,7 @@ class XTranslationStatusSummary(TypedDict):
     latest_failure_model_provider: str | None
     latest_failure_model_name: str | None
     latest_failure_prompt_version: str | None
+    latest_success_at: datetime | None
 
 
 class XTranslationTaskRepository(Protocol):
@@ -35,6 +36,8 @@ class XTranslationTaskRepository(Protocol):
     ) -> XTranslationStatusSummary: ...
 
     def recover_stale_running(self, stale_after_seconds: int = 900) -> int: ...
+
+    def retire_rejected(self, max_attempts: int, error_prefix: str) -> int: ...
 
     def claim_retryable(
         self, limit: int, lease_seconds: int = 900

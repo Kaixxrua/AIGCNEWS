@@ -4,8 +4,16 @@ import threading
 import time
 from typing import Any
 
+import pytest
+
 from backend.app.services.ingestion import x_translation_service
-from backend.app.services.ingestion.x_translation_service import XTranslationProcessor
+from backend.app.services.ingestion.x_translation_service import (
+    OUTPUT_REJECTED_PREFIX,
+    TranslationOutputError,
+    XTranslationProcessor,
+    _protect,
+    _restore,
+)
 
 
 class FakeRepository:
@@ -15,10 +23,15 @@ class FakeRepository:
         self.failed: list[tuple[int, str, str]] = []
         self.attempts: list[int] = []
         self.reset_calls: list[list[int]] = []
+        self.retire_calls: list[tuple[int, str]] = []
         self.recovered = 0
 
     def recover_stale_running(self, stale_after_seconds: int = 900) -> int:
         self.recovered += 1
+        return 0
+
+    def retire_rejected(self, max_attempts: int, error_prefix: str) -> int:
+        self.retire_calls.append((max_attempts, error_prefix))
         return 0
 
     def claim_retryable(self, limit: int, lease_seconds: int = 900) -> list[dict[str, Any]]:
@@ -132,7 +145,8 @@ def test_process_hard_timeout_fails_hung_task_and_does_not_block(monkeypatch) ->
     assert claim_token == "token-1"
 
 
-def test_process_resets_remaining_after_consecutive_failures(monkeypatch) -> None:
+def test_process_resets_not_started_after_consecutive_failures(monkeypatch) -> None:
+    monkeypatch.setattr(x_translation_service.time, "sleep", lambda _: None)
     _patch_translate(
         monkeypatch, lambda task: (_ for _ in ()).throw(RuntimeError("boom"))
     )
@@ -142,12 +156,104 @@ def test_process_resets_remaining_after_consecutive_failures(monkeypatch) -> Non
 
     result = processor.process(10)
 
-    assert result["failed"] == x_translation_service._MAX_CONSECUTIVE_FAILURES
-    assert repository.reset_calls  # 剩余已领取任务被重置回 pending
-    remaining = repository.reset_calls[-1]
-    # 已重置全部其他已领取任务（仓储层 status='running' 条件只影响尚未完成的任务）
-    assert sorted(remaining) == [1, 2, 3, 4, 6, 7]
-    assert 5 not in remaining
+    assert len(repository.reset_calls) == 1  # 熔断只触发一次
+    remaining = repository.reset_calls[0]
+    # 只撤回尚未开始的任务；熔断瞬间可能已在途的 6 号照常收尾
+    assert 7 in remaining
+    assert set(remaining) <= {6, 7}
+    assert result["failed"] + len(remaining) == 7
+
+
+def test_breaker_keeps_in_flight_translation(monkeypatch) -> None:
+    monkeypatch.setattr(x_translation_service.time, "sleep", lambda _: None)
+    in_flight = threading.Event()
+    breaker_tripped = threading.Event()
+
+    def fake_translate(self, task):
+        if task["id"] <= 5:
+            raise RuntimeError("503 upstream")
+        if task["id"] == 6:
+            in_flight.set()
+            breaker_tripped.wait(5)
+        return f"译文-{task['id']}"
+
+    class GatedRepository(FakeRepository):
+        def fail_task(self, task_id, error, model_provider, model_name, claim_token=""):
+            if len(self.failed) == 4:
+                in_flight.wait(5)  # 第 5 次失败落库前，6 号已被唯一 worker 取走在途
+            return super().fail_task(task_id, error, model_provider, model_name, claim_token)
+
+        def reset_claimed_to_pending(self, task_ids, claim_token=""):
+            count = super().reset_claimed_to_pending(task_ids, claim_token)
+            breaker_tripped.set()
+            return count
+
+    monkeypatch.setattr(XTranslationProcessor, "_translate_one", fake_translate)
+    repository = GatedRepository([_task(i) for i in range(1, 10)])
+    processor = XTranslationProcessor(repository, concurrency=1)
+
+    result = processor.process(20)
+
+    # 旧实现在熔断后丢弃在途译文并把它重置回 pending，健康任务永远落不了库
+    assert repository.completed == [(6, "译文-6", "token-6")]
+    assert repository.reset_calls == [[7, 8, 9]]
+    assert result == {"claimed": 9, "completed": 1, "failed": 5}
+
+
+def test_output_rejections_do_not_trip_breaker_or_starve_fresh_tasks(monkeypatch) -> None:
+    monkeypatch.setattr(x_translation_service.time, "sleep", lambda _: None)
+
+    def fake_translate(self, task):
+        if task["id"] < 100:
+            raise TranslationOutputError("translation omitted protected token")
+        return f"译文-{task['id']}"
+
+    monkeypatch.setattr(XTranslationProcessor, "_translate_one", fake_translate)
+    poison = [{**_task(i), "attempt_count": 3000} for i in range(1, 8)]
+    fresh = [{**_task(i), "attempt_count": 0} for i in (101, 102, 103)]
+    repository = FakeRepository(poison + fresh)
+    processor = XTranslationProcessor(repository, concurrency=1)
+
+    result = processor.process(20)
+
+    assert repository.attempts[:3] == [101, 102, 103]  # 新任务先跑
+    assert sorted(item[0] for item in repository.completed) == [101, 102, 103]
+    assert repository.reset_calls == []  # 7 条被拒不触发熔断
+    assert result == {"claimed": 10, "completed": 3, "failed": 7}
+    assert all(error.startswith(OUTPUT_REJECTED_PREFIX) for _, error, _ in repository.failed)
+    assert repository.retire_calls == [
+        (x_translation_service._MAX_REJECTED_ATTEMPTS, OUTPUT_REJECTED_PREFIX)
+    ]
+
+
+def test_restore_appends_omitted_links_in_source_order() -> None:
+    protected, tokens = _protect(
+        "Partnership with @mozilla https://a.example/x and more:\n\nhttps://b.example/y"
+    )
+    assert protected == (
+        "Partnership with XTRTOKEN2X XTRTOKEN0X and more:\n\nXTRTOKEN1X"
+    )
+
+    # 实测 gpt-5.6-sol 对末尾链接卡片稳定省略占位符
+    restored = _restore("与 XTRTOKEN2X 合作。🦊\n", tokens)
+
+    assert restored == "与 @mozilla 合作。🦊\nhttps://a.example/x\nhttps://b.example/y"
+
+
+@pytest.mark.parametrize(
+    ("translation", "reason"),
+    [
+        ("合作 XTRTOKEN0X", "translation omitted protected token"),  # 丢了 @提及
+        ("XTRTOKEN0X XTRTOKEN0X XTRTOKEN1X", "translation duplicated protected token"),
+    ],
+)
+def test_restore_rejects_missing_mention_or_duplicate(translation: str, reason: str) -> None:
+    _, tokens = _protect("thanks https://a.example/x @mozilla")
+
+    with pytest.raises(TranslationOutputError) as caught:
+        _restore(translation, tokens)
+
+    assert str(caught.value) == OUTPUT_REJECTED_PREFIX + reason
 
 
 def test_process_skips_persisting_when_lease_lost(monkeypatch) -> None:
