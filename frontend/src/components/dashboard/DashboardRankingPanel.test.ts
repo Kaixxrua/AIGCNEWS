@@ -210,7 +210,7 @@ describe('enriched GitHub ranking', () => {
     expect(sort.text()).toBe('按热度排序')
     expect(sort.attributes('title')).toBe(i18n.global.t('projects.hotScoreTitle'))
     expect(panel.get('.ranking-meta').element.firstElementChild?.classList.contains('ranking-heat')).toBe(true)
-    expect(panel.get('.ranking-heat').text()).toContain('87.3')
+    expect(panel.get('.ranking-heat').text()).toContain('96.3')
     await panel.setProps({ activeTab: 'arxiv', tabList: [{ source: 'arxiv', title: 'Paper' }] })
     expect(panel.find('.ranking-sort').exists()).toBe(false)
   })

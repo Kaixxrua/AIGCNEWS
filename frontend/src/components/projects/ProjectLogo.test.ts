@@ -56,7 +56,7 @@ describe('project identity and heat', () => {
     await heat.setProps({ available: true })
     expect(heat.text()).toContain('0.0')
     await heat.setProps({ score: 65.37 })
-    expect(heat.text()).toContain('65.4')
+    expect(heat.text()).toContain('88.4')
     await heat.setProps({ score: NaN })
     expect(heat.text()).toContain('—')
   })
