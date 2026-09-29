@@ -7,14 +7,20 @@ frontend/src/features/xboard/xBoardViewModel.test.ts 的 URL 形态断言
 """
 
 from backend.app.services.x_media_urls import (
+    PHOTO_INLINE_TARGET_WIDTH,
     avatar_variant_url,
     collect_doc_warmup_paths,
     collect_poster_backfill_candidates,
     collect_warmup_paths,
     is_twimg_url,
+    photo_box_variant_name,
     photo_variant_url,
     proxied_media_url,
 )
+
+# 前端 lightbox 目标宽（TS PHOTO_LIGHTBOX_TARGET_WIDTH）；后端只预热内联变体，
+# 此处仅为镜像 TS 同表用例、钉住两侧算式一致。
+_LIGHTBOX = 2048
 
 # --- is_twimg_url / proxied_media_url --------------------------------------
 
@@ -80,6 +86,36 @@ def test_photo_variant_url_rewrites_name_only_on_supported_paths() -> None:
     assert photo_variant_url("", "small") == ""
 
 
+# --- photo_box_variant_name（镜像 TS BOX_VARIANT_CASES 同表） ---------------
+
+BOX_VARIANT_CASES = [
+    (PHOTO_INLINE_TARGET_WIDTH, 2048, 1152, "small"),
+    (PHOTO_INLINE_TARGET_WIDTH, 2342, 2064, "small"),
+    (PHOTO_INLINE_TARGET_WIDTH, 1200, 1200, "small"),
+    (PHOTO_INLINE_TARGET_WIDTH, 400, 300, "small"),
+    (PHOTO_INLINE_TARGET_WIDTH, 1080, 1350, "900x900"),
+    (PHOTO_INLINE_TARGET_WIDTH, 600, 900, "900x900"),
+    (PHOTO_INLINE_TARGET_WIDTH, 500, 1300, "large"),
+    (PHOTO_INLINE_TARGET_WIDTH, 1170, 2532, "large"),
+    (PHOTO_INLINE_TARGET_WIDTH, 1316, 4096, "4096x4096"),
+    (PHOTO_INLINE_TARGET_WIDTH, None, None, "small"),
+    (PHOTO_INLINE_TARGET_WIDTH, 0, 4096, "small"),
+    (_LIGHTBOX, 2048, 1152, "large"),
+    (_LIGHTBOX, 3536, 1839, "large"),
+    (_LIGHTBOX, 800, 600, "900x900"),
+    (_LIGHTBOX, 1080, 1350, "large"),
+    (_LIGHTBOX, 1316, 4096, "4096x4096"),
+    (_LIGHTBOX, None, None, "large"),
+]
+
+
+def test_photo_box_variant_name_matches_frontend_table() -> None:
+    for target, width, height, name in BOX_VARIANT_CASES:
+        assert photo_box_variant_name(target, width, height) == name, (target, width, height)
+    # JSON true 不算尺寸（TS typeof 同样排除），按目标宽取框
+    assert photo_box_variant_name(PHOTO_INLINE_TARGET_WIDTH, True, 4096) == "small"
+
+
 # --- collect_doc_warmup_paths ----------------------------------------------
 
 _POSTER = "https://pbs.twimg.com/amplify_video_thumb/1/img/x.jpg"
@@ -93,6 +129,23 @@ def test_collect_photo_thumb_small_variant() -> None:
     }
     assert collect_doc_warmup_paths(doc) == [
         "/api/media/x/img/pbs.twimg.com/media/abc.jpg?name=small"
+    ]
+
+
+def test_collect_long_photo_warms_the_box_variant_the_board_renders() -> None:
+    # 长图内联升框保宽（镜像 TS 长图用例），预热同一缓存 key
+    doc = {
+        "media": [
+            {
+                "type": "photo",
+                "url": "https://pbs.twimg.com/media/long.jpg",
+                "width": 1316,
+                "height": 4096,
+            },
+        ],
+    }
+    assert collect_doc_warmup_paths(doc) == [
+        "/api/media/x/img/pbs.twimg.com/media/long.jpg?name=4096x4096"
     ]
 
 

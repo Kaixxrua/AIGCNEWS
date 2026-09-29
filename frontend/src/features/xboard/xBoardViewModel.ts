@@ -326,9 +326,9 @@ const TWIMG_VARIANT_PATH_RE = /^\/(?:media|ext_tw_video_thumb|amplify_video_thum
 
 /**
  * twimg 图片尺寸变体：pbs.twimg.com 的 /media/ 照片与 *_video_thumb 封面
- * 支持 ?name= 派生尺寸（small = 680px 宽，约原图 1/5 体积）；看板内联缩略图
- * 用 small 降载，lightbox 仍取原图。已有 name 参数时覆盖；主机/路径不支持
- * 或 URL 非法时返回空串（调用方回退原图，不变体即 404 的路径绝不下发）。
+ * 支持 ?name= 派生尺寸（约束框，长边缩到框内，见 TWIMG_BOX_VARIANTS）。
+ * 已有 name 参数时覆盖；主机/路径不支持或 URL 非法时返回空串（调用方回退
+ * 原图，不变体即 404 的路径绝不下发）。
  */
 export const photoVariantUrl = (url: string, name: string): string => {
   try {
@@ -342,6 +342,44 @@ export const photoVariantUrl = (url: string, name: string): string => {
 }
 
 /**
+ * twimg 具名尺寸是「长边约束框」而非宽度：small 把长边缩到 680，1316×4096
+ * 的长图只剩 218px 宽，铺满卡片即糊。按 [框边长, name] 升序排列（实测
+ * 900x900/4096x4096 同为约束框；4096 是 X 照片上限，等同 orig）。
+ */
+const TWIMG_BOX_VARIANTS: ReadonlyArray<readonly [number, string]> = [
+  [680, 'small'],
+  [900, '900x900'],
+  [1200, 'medium'],
+  [2048, 'large'],
+  [4096, '4096x4096'],
+]
+
+/** 看板内联目标宽（small 对横图/方图的既有宽度，横图变体与缓存键保持不变）。 */
+export const PHOTO_INLINE_TARGET_WIDTH = 680
+/** lightbox 目标宽：横图取 large，长图取到原图宽。 */
+export const PHOTO_LIGHTBOX_TARGET_WIDTH = 2048
+
+/**
+ * 选最小的约束框，使缩放后宽度 ≥ min(原宽, 目标宽)；尺寸缺失或非法时
+ * 按目标宽取框（存量无宽高数据退回原口径）。算式与后端
+ * x_media_urls.photo_box_variant_name 逐运算对齐，浮点结果一致。
+ */
+export const photoBoxVariantName = (targetWidth: number, width?: number, height?: number): string => {
+  const valid = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0
+  const needed = valid(width) && valid(height)
+    ? Math.min(width, targetWidth) * Math.max(width, height) / width
+    : targetWidth
+  const hit = TWIMG_BOX_VARIANTS.find(([box]) => box >= needed) ?? TWIMG_BOX_VARIANTS[TWIMG_BOX_VARIANTS.length - 1]!
+  return hit[1]
+}
+
+/** 长图：lightbox 按高度等比缩放会把宽压到不可读，改为限宽纵向滚动。 */
+export const LONG_PHOTO_RATIO = 2.5
+export const isLongPhoto = (item: { width?: number; height?: number }): boolean => (
+  !!item.width && !!item.height && item.height / item.width >= LONG_PHOTO_RATIO
+)
+
+/**
  * 视频/GIF 封面优先级：采集期落库的 X 官方封面（poster_url，经代理同源化）
  * > 服务端抽帧端点（存量数据无 poster_url 时兜底，见 routes_x_media.py）。
  */
@@ -352,9 +390,16 @@ const resolvePosterUrl = (item: { url: string; poster_url?: string }): string =>
 
 const proxyMediaList = (items: NonNullable<TopDoc['media']>): NonNullable<TopDoc['media']> =>
   items.map((item) => {
-    // 看板降载：照片内联渲染用 small 变体（680px，约原图 1/5 体积），
-    // item.url 保持原图供 lightbox 全尺寸预览；变体不可派生时不注入 thumb_url。
-    const thumb = item.type === 'photo' ? photoVariantUrl(item.url, 'small') : ''
+    // 看板降载：照片内联渲染按宽高选约束框（横图 small，长图升框保住 680px
+    // 宽）；item.url 换成 lightbox 变体（横图 large、长图原图宽）——不带 name
+    // 时 twimg 默认给 medium，长图同样糊。变体不可派生时不注入 thumb_url、url 保持原样。
+    const isPhoto = item.type === 'photo'
+    const thumb = isPhoto
+      ? photoVariantUrl(item.url, photoBoxVariantName(PHOTO_INLINE_TARGET_WIDTH, item.width, item.height))
+      : ''
+    const full = isPhoto
+      ? photoVariantUrl(item.url, photoBoxVariantName(PHOTO_LIGHTBOX_TARGET_WIDTH, item.width, item.height))
+      : ''
     // 视频官方封面只在播放前展示，同样降载为 small（原图无消费场景）；
     // 变体不可派生时回退原封面/抽帧端点。
     const posterThumb = item.type !== 'photo' && item.poster_url
@@ -362,7 +407,7 @@ const proxyMediaList = (items: NonNullable<TopDoc['media']>): NonNullable<TopDoc
       : ''
     return {
       ...item,
-      url: proxiedMediaUrl(item.url),
+      url: proxiedMediaUrl(full || item.url),
       ...(item.playback_url ? { playback_url: proxiedMediaUrl(item.playback_url) } : {}),
       ...(thumb ? { thumb_url: proxiedMediaUrl(thumb) } : {}),
       ...(item.type === 'video' || item.type === 'animated_gif'

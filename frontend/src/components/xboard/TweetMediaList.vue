@@ -12,8 +12,8 @@ const props = withDefaults(defineProps<{
 }>(), { context: 'wall' })
 
 const emit = defineEmits<{
-  /** 照片点击放大（lightbox 取 item.url 原图） */
-  preview: [url: string]
+  /** 照片点击放大（lightbox 取 item.url 大图变体，宽高决定长图滚动模式） */
+  preview: [item: TweetMediaItem]
   /** 视频占位点击播放，键与模板 :key 同源 */
   play: [key: string]
 }>()
@@ -42,7 +42,7 @@ const isPlaying = (key: string) => props.playingMedia.has(key)
         class="tweet-photo w-full cursor-zoom-in object-cover"
         :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
         :aria-label="t('xboard.previewImage')"
-        @click="emit('preview', item.url)"
+        @click="emit('preview', item)"
       />
       <!-- 视频：未点击时渲染零流量占位，点击后挂载 <video> 经代理加载播放 -->
       <video

@@ -17,10 +17,14 @@ import {
   hasMedia,
   hasLinkCard,
   hasQuote,
+  isLongPhoto,
   linkCardImageUrl,
   mediaItems,
   pageCount,
   paginateItems,
+  PHOTO_INLINE_TARGET_WIDTH,
+  PHOTO_LIGHTBOX_TARGET_WIDTH,
+  photoBoxVariantName,
   photoVariantUrl,
   posterMediaUrl,
   proxiedMediaUrl,
@@ -222,7 +226,7 @@ describe('xBoardViewModel', () => {
     expect(photoVariantUrl('', 'small')).toBe('')
   })
 
-  it('mediaItems derives small thumbnails for photos while keeping originals for the lightbox', () => {
+  it('mediaItems derives small thumbnails for photos and a large variant for the lightbox', () => {
     const photo = 'https://pbs.twimg.com/media/abc.jpg'
     const doc = tweet('openai', '1', {
       media: [
@@ -232,15 +236,63 @@ describe('xBoardViewModel', () => {
       ],
     })
     const items = mediaItems(doc)
-    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/abc.jpg`)
+    // 不带 name 时 twimg 默认给 medium（1200 框），lightbox 显式取 large
+    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/abc.jpg?name=large`)
     expect(items[0]?.thumb_url).toBe(
       `/api/media/x/img/pbs.twimg.com/media/abc.jpg?name=small`,
     )
     expect(items[0]?.width).toBe(2048)
+    expect(items[1]?.url).toBe(`/api/media/x/img/pbs.twimg.com/a.jpg`)
     expect(items[1]?.thumb_url).toBeUndefined()
     // 视频不出 thumb_url（封面已降载在 poster_url 上）
     const videoDoc = tweet('openai', '2', { media: [{ type: 'video', url: 'https://video.twimg.com/a.mp4' }] })
     expect(mediaItems(videoDoc)[0]?.thumb_url).toBeUndefined()
+  })
+
+  // 与 backend/tests/test_x_media_urls.py 的 BOX_VARIANT_CASES 同表（后端预热口径）
+  const BOX_VARIANT_CASES: Array<[number, number | undefined, number | undefined, string]> = [
+    [PHOTO_INLINE_TARGET_WIDTH, 2048, 1152, 'small'],
+    [PHOTO_INLINE_TARGET_WIDTH, 2342, 2064, 'small'],
+    [PHOTO_INLINE_TARGET_WIDTH, 1200, 1200, 'small'],
+    [PHOTO_INLINE_TARGET_WIDTH, 400, 300, 'small'],
+    [PHOTO_INLINE_TARGET_WIDTH, 1080, 1350, '900x900'],
+    [PHOTO_INLINE_TARGET_WIDTH, 600, 900, '900x900'],
+    [PHOTO_INLINE_TARGET_WIDTH, 500, 1300, 'large'],
+    [PHOTO_INLINE_TARGET_WIDTH, 1170, 2532, 'large'],
+    [PHOTO_INLINE_TARGET_WIDTH, 1316, 4096, '4096x4096'],
+    [PHOTO_INLINE_TARGET_WIDTH, undefined, undefined, 'small'],
+    [PHOTO_INLINE_TARGET_WIDTH, 0, 4096, 'small'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, 2048, 1152, 'large'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, 3536, 1839, 'large'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, 800, 600, '900x900'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, 1080, 1350, 'large'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, 1316, 4096, '4096x4096'],
+    [PHOTO_LIGHTBOX_TARGET_WIDTH, undefined, undefined, 'large'],
+  ]
+
+  it('photoBoxVariantName picks the smallest twimg box that keeps the target width', () => {
+    for (const [target, width, height, name] of BOX_VARIANT_CASES) {
+      expect(photoBoxVariantName(target, width, height), `${target} ${width}x${height}`).toBe(name)
+    }
+  })
+
+  it('mediaItems keeps long photos sharp inline and in the lightbox', () => {
+    // 1316×4096 长图：small 只剩 218px 宽，改取 4096 框（即原图），内联与 lightbox 同一 URL
+    const doc = tweet('ArtificialAnlys', '1', {
+      media: [{ type: 'photo', url: 'https://pbs.twimg.com/media/long.jpg', width: 1316, height: 4096 }],
+    })
+    const item = mediaItems(doc)[0]!
+    expect(item.thumb_url).toBe('/api/media/x/img/pbs.twimg.com/media/long.jpg?name=4096x4096')
+    expect(item.url).toBe('/api/media/x/img/pbs.twimg.com/media/long.jpg?name=4096x4096')
+  })
+
+  it('isLongPhoto flags only photos at least 2.5x taller than wide', () => {
+    expect(isLongPhoto({ width: 1316, height: 4096 })).toBe(true)
+    expect(isLongPhoto({ width: 1000, height: 2500 })).toBe(true)
+    expect(isLongPhoto({ width: 1170, height: 2532 })).toBe(false)
+    expect(isLongPhoto({ width: 2048, height: 1152 })).toBe(false)
+    expect(isLongPhoto({})).toBe(false)
+    expect(isLongPhoto({ width: 0, height: 100 })).toBe(false)
   })
 
   it('flattens grouped sections into a single ordered list', () => {
@@ -521,7 +573,8 @@ describe('xBoardViewModel', () => {
   it('quoteMediaItems rewrites twimg urls through the proxy like outer media', () => {
     const items = quoteMediaItems(quotedTweet().quote!)
     expect(items).toHaveLength(1)
-    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/q.jpg`)
+    // 800×450 的 lightbox 变体：最小的能给满 800px 原宽的框是 900x900
+    expect(items[0]?.url).toBe(`/api/media/x/img/pbs.twimg.com/media/q.jpg?name=900x900`)
     expect(items[0]?.width).toBe(800)
     expect(quoteMediaItems(quotedTweet({ media: [] }).quote!)).toEqual([])
   })
