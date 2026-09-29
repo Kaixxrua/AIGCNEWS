@@ -747,111 +747,143 @@
   #app .app-shell--comic-page .dsh-page .dsh-wizard-nav :is(.btn-primary, .btn-secondary) { min-height: 40px; padding: 5px 22px; font-style: italic; }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .dsh-page .dsh-method { transition: none; } }
 
-  /* ── Legal pages (legal-B): title and three facts from the text, then a sticky numbered contents panel beside the
-     text panel. The text stays an upright 15px/1.75 column; the privacy page's last sections and both pages' contact
-     ride in a sticky aside from 1280px, and below that follow the text. ── */
-  #app .app-shell--comic-page .legal-page { --legal-warn: #f97316; display: block; padding: 18px 28px calc(var(--peel-clear) + 28px); background: transparent; }
+  /* ── Legal pages (legal-B): the calm one. An upright title on a slanted lime bar and three tinted facts, then a
+     contents panel beside the text panel, both on thin slate rules without shadows; section heads carry a small lime
+     bar and a green underline over a faint rule. Text is set as the concept sets it, 13px on 20px. The privacy page's
+     last sections and both pages' contact ride in an aside column from 1280px, and below that follow the text. ── */
+  #app .app-shell--comic-page .legal-page {
+    --legal-warn: #f97316; --legal-line: #6b7896; --legal-line-strong: #3f4f71; --legal-ink: #0b2044; --legal-muted: #7e8aa5;
+    --legal-copy: #4a5568; --legal-underline: #458145;
+    display: block; padding: 1px 55px calc(var(--peel-clear) + 28px) 64px; background: transparent;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .legal-page {
+    --legal-line: color-mix(in srgb, var(--ink) 38%, var(--paper)); --legal-line-strong: color-mix(in srgb, var(--ink) 55%, var(--paper));
+    --legal-ink: var(--ink); --legal-muted: var(--ink-muted); --legal-copy: var(--ink-secondary); --legal-underline: var(--acid);
+  }
   #app .app-shell--comic-page .legal-page--disclaimer { --legal-warn: #ef4444; }
   #app .app-shell--comic-page .legal-card { max-width: 1480px; margin: 0 auto; }
-  #app .app-shell--comic-page .legal-card .back-btn { margin: 0 0 4px; padding: 2px 0; color: var(--ink-muted); font-size: 14px; font-weight: 700; }
-  #app .app-shell--comic-page .legal-card .back-btn:hover { color: var(--ink); }
-  #app .app-shell--comic-page .legal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 44px; margin-bottom: 26px; }
-  #app .app-shell--comic-page .legal-heading { display: block; flex: 0 0 auto; }
-  #app .app-shell--comic-page .legal-title.comic-title { margin: 0 36px 0 0; font-size: 44px; }
-  /* Titles run long (the English agreement title is ~700px), so the brush tilts less to stay off the date line. */
-  #app .app-shell--comic-page .legal-title.comic-title::before { transform: rotate(-1deg) skewX(-18deg); }
-  #app .app-shell--comic-page .legal-meta { margin: 10px 0 0; color: var(--ink-muted); font-size: 14.5px; }
+  /* The concept has no back link on the desktop: the dock and the browser cover it. */
+  @media (min-width: 1024px) { #app .app-shell--comic-page .legal-card .back-btn { display: none; } }
+  #app .app-shell--comic-page .legal-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 13px; }
+  /* The heading is as wide as its title (the disclaimer's is longer than the concept's), and the meta wraps inside that. */
+  #app .app-shell--comic-page .legal-heading { display: block; flex: 0 0 auto; min-width: 295px; padding: 0 0 0 19px; }
+  #app .app-shell--comic-page .legal-title.comic-title {
+    margin: 0; padding-top: 5px; color: var(--legal-ink); font-size: 40px; font-style: normal; font-weight: 900; line-height: 1.2; letter-spacing: -.04em;
+    white-space: nowrap; -webkit-text-stroke: 0; text-shadow: none;
+  }
+  #app .app-shell--comic-page .legal-title.comic-title::before { inset: -6px auto 6px -15px; width: 10px; height: auto; transform: skewX(-13deg); border-radius: 2px 3px 2px 1px; }
+  #app .app-shell--comic-page .legal-title.comic-title::after { display: none; }
+  #app .app-shell--comic-page .legal-meta { width: 0; min-width: 100%; margin: 10px 0 0; color: var(--legal-muted); font-size: 13.5px; line-height: 1.4; }
 
   #app .app-shell--comic-page .legal-facts {
-    display: grid; flex: 1 1 600px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; padding: 0; list-style: none;
+    display: grid; flex: 1 1 auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; margin: 1px 0 0; padding: 0; list-style: none;
   }
   #app .app-shell--comic-page .legal-fact {
-    display: grid; grid-template-columns: 46px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 14px; row-gap: 2px;
-    min-width: 0; min-height: 84px; padding: 12px 18px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
+    --legal-tint: #bfeaf8;
+    display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 26px; row-gap: 4px;
+    min-width: 0; min-height: 80px; padding: 10px 16px 10px 12px; border: 1.5px solid var(--legal-line); border-bottom-color: var(--legal-line-strong); border-radius: 7px;
+    background: color-mix(in srgb, var(--legal-tint) 12%, var(--paper-raised)); box-shadow: none;
   }
+  #app .app-shell--comic-page .legal-fact:nth-child(2) { --legal-tint: #c4e3f3; }
+  #app .app-shell--comic-page .legal-fact:nth-child(3) { --legal-tint: #d9d5fb; }
   #app .app-shell--comic-page .legal-fact svg {
-    grid-row: span 2; align-self: center; width: 46px; height: 46px; padding: 10px; border: 1.5px solid var(--rule-strong); border-radius: 50%;
-    background: color-mix(in srgb, var(--comic-cyan-line) 26%, var(--paper-raised)); color: var(--ink); stroke-width: 2.2;
+    grid-row: span 2; align-self: center; width: 52px; height: 52px; padding: 13px; border: 0; border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--legal-tint) 55%, var(--paper-raised)), var(--legal-tint) 72%);
+    color: var(--legal-ink); stroke-width: 2;
   }
-  #app .app-shell--comic-page .legal-fact:nth-child(3) svg { background: color-mix(in srgb, #a78bfa 30%, var(--paper-raised)); }
-  #app .app-shell--comic-page .legal-fact span { align-self: end; color: var(--ink-secondary); font-size: 14px; font-weight: 800; line-height: 1.35; }
-  #app .app-shell--comic-page .legal-fact strong { color: var(--ink); font-size: 24px; font-weight: 950; line-height: 1.2; }
+  #app .app-shell--comic-page .legal-fact:nth-child(3) svg { background: radial-gradient(circle at 50% 50%, color-mix(in srgb, #c9c5fa 55%, var(--paper-raised)), #c9c5fa 72%); color: #4b3fc4; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .legal-fact { background: color-mix(in srgb, var(--legal-tint) 6%, var(--paper-raised)); }
+  :root[data-theme='dark'] #app .app-shell--comic-page .legal-fact svg { background: color-mix(in srgb, var(--legal-tint) 22%, var(--paper-raised)); color: var(--ink); }
+  #app .app-shell--comic-page .legal-fact span { align-self: end; color: var(--legal-copy); font-size: 12.5px; font-weight: 500; line-height: 1.35; }
+  #app .app-shell--comic-page .legal-fact strong { color: var(--legal-ink); font-size: 20px; font-weight: 800; line-height: 1.25; }
 
-  #app .app-shell--comic-page .legal-layout { display: grid; grid-template-columns: 284px minmax(0, 1fr); align-items: start; gap: 26px; }
+  #app .app-shell--comic-page .legal-layout { display: grid; grid-template-columns: 266px minmax(0, 1fr); align-items: stretch; gap: 13px; }
   #app .app-shell--comic-page .legal-toc {
-    display: block; position: sticky; top: 12px; max-height: calc(100dvh / var(--shell-zoom, 1) - 184px - 48px); overflow-y: auto;
-    padding: 16px 14px 18px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+    display: block; position: static; padding: 12px 17px 18px 17px;
+    border: 1.5px solid var(--legal-line); border-radius: 6px; background: var(--paper-raised); box-shadow: none;
+  }
+  #app .app-shell--comic-page .legal-toc > * { position: relative; }
+  /* The list rides along while the text scrolls past (the panel itself stretches to the text's height). */
+  #app .app-shell--comic-page .legal-toc ol {
+    position: sticky; top: 12px; display: grid; gap: 3.5px; max-height: calc(100dvh / var(--shell-zoom, 1) - 184px); overflow-y: auto; margin: 0; padding: 0; list-style: none;
   }
   #app .app-shell--comic-page .legal-toc__title {
-    position: relative; margin: 0 0 10px 4px; padding-left: 16px; color: var(--ink); font-size: 18px; font-style: italic; font-weight: 950; line-height: 1.4;
+    display: inline-flex; align-items: center; gap: 6px; margin: 0 0 6px -11.5px; padding-left: 14px; color: var(--legal-ink); font-size: 15px; font-style: normal; font-weight: 800; line-height: 1.6;
   }
-  #app .app-shell--comic-page .legal-toc ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  /* A doodled "⁒" beside the contents title. */
+  #app .app-shell--comic-page .legal-toc__title::after {
+    content: ''; width: 13px; height: 13px; background: var(--legal-ink); opacity: .8;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 13 13' fill='none' stroke='%23000' stroke-linecap='round'%3E%3Cpath d='M4.6 5.2 8 1.4' stroke-width='1.5'/%3E%3Cpath d='M2 11.6 11.2 2.8' stroke-width='1.6'/%3E%3Ccircle cx='8.6' cy='7.6' r='.6' stroke-width='1.3'/%3E%3Ccircle cx='6.4' cy='11.4' r='.6' stroke-width='1.3'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
   #app .app-shell--comic-page .legal-toc a {
-    display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px 8px 12px;
-    border: 1.5px solid transparent; border-radius: 3px 6px 4px 5px; color: var(--ink-secondary); font-size: 15px; font-weight: 600; line-height: 1.4; text-decoration: none;
+    display: grid; grid-template-columns: 37px minmax(0, 1fr) auto; align-items: center; gap: 0; min-height: 36px; padding: 6px 14px 6px 5px;
+    border: 1.5px solid transparent; border-radius: 6px; color: var(--legal-ink); font-size: 13px; font-weight: 500; line-height: 1.4; text-decoration: none;
   }
-  #app .app-shell--comic-page .legal-toc__no { color: var(--ink-muted); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  #app .app-shell--comic-page .legal-toc a:hover { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .legal-toc__no { color: var(--legal-muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .legal-toc a:hover { background: var(--acid-soft); }
   #app .app-shell--comic-page .legal-toc a[aria-current] {
-    border-color: var(--rule-strong); background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-weight: 800;
+    border-color: #385332; background: var(--acid); box-shadow: none; color: var(--acid-ink); font-weight: 700;
   }
+  :root[data-theme='dark'] #app .app-shell--comic-page .legal-toc a[aria-current] { border-color: var(--acid-strong); }
   #app .app-shell--comic-page .legal-toc a[aria-current] .legal-toc__no { color: var(--acid-ink); }
-  #app .app-shell--comic-page .legal-toc a svg { width: 16px; height: 16px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .legal-toc a svg { width: 16px; height: 16px; stroke-width: 2.4; }
   #app .app-shell--comic-page .legal-toc a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
   #app .app-shell--comic-page .legal-body {
-    display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; gap: 0 36px; padding: 28px 32px 32px;
-    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+    display: grid; grid-template-columns: minmax(0, 660fr) minmax(0, 398fr); align-items: start; gap: 0 17px; padding: 22px 17px 26px 17px;
+    border: 1.5px solid var(--legal-line); border-radius: 6px; background: var(--paper-raised); box-shadow: none;
   }
-  #app .app-shell--comic-page :is(.legal-main, .legal-aside) { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
-  #app .app-shell--comic-page .legal-aside { position: sticky; top: 12px; padding-left: 32px; border-left: 1.5px solid var(--rule); }
+  #app .app-shell--comic-page :is(.legal-main, .legal-aside) { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  #app .app-shell--comic-page .legal-aside { position: sticky; top: 12px; gap: 30px; padding-left: 17px; border-left: 1px solid color-mix(in srgb, var(--legal-line) 18%, transparent); }
   #app .app-shell--comic-page .legal-body section { border-radius: 4px; }
   #app .app-shell--comic-page .legal-body section.is-flash { animation: legal-flash .9s cubic-bezier(.2,.8,.2,1); }
   @keyframes legal-flash {
     from { background: var(--acid-soft); box-shadow: 0 0 0 10px var(--acid-soft); }
     to { background: transparent; box-shadow: 0 0 0 10px transparent; }
   }
-  /* Section heads and the contents title carry a slanted lime bar. */
-  #app .app-shell--comic-page :is(.legal-body h2, .legal-toc__title) { position: relative; }
+  /* Section heads and the contents title carry a small slanted lime bar. */
   #app .app-shell--comic-page :is(.legal-body h2, .legal-toc__title)::before {
-    content: ''; position: absolute; left: 0; top: .22em; width: 7px; height: 1em; background: var(--acid); transform: skewX(-14deg);
+    content: ''; position: absolute; left: 3.5px; top: calc(50% - 13px); width: 5.5px; height: 19px; border-radius: 1px; background: var(--acid); transform: skewX(-15deg);
   }
+  #app .app-shell--comic-page .legal-toc .legal-toc__title::before { left: 1px; top: calc(50% - 7.5px); width: 5px; height: 15px; }
+  /* The head's green underline runs under its words and sits on the faint rule that crosses the column. */
   #app .app-shell--comic-page .legal-body h2 {
-    margin: 0 0 12px; padding: 0 0 9px 18px; border-bottom: 1.5px solid var(--rule); color: var(--ink); font-size: 19px; font-weight: 900; line-height: 1.4;
+    position: relative; margin: 0 0 10px; padding: 0 0 5px 16px; border-bottom: 0; color: var(--legal-ink); font-size: 16.5px; font-weight: 800; line-height: 1.4;
+    background: linear-gradient(color-mix(in srgb, var(--legal-line) 14%, transparent), color-mix(in srgb, var(--legal-line) 14%, transparent)) 16px 100% / calc(100% - 16px) 1px no-repeat;
+    text-decoration: underline 1.5px var(--legal-underline); text-underline-offset: 6px; text-decoration-skip-ink: none;
   }
-  #app .app-shell--comic-page .legal-body :is(p, li) { color: var(--ink-secondary); font-size: 15px; line-height: 1.75; }
-  #app .app-shell--comic-page .legal-body p { margin: 0 0 10px; }
+  #app .app-shell--comic-page .legal-body :is(p, li) { color: var(--legal-copy); font-size: 13px; line-height: 20px; }
+  #app .app-shell--comic-page .legal-body p { margin: 0 0 6px 16px; }
   #app .app-shell--comic-page .legal-body p:last-child { margin-bottom: 0; }
-  #app .app-shell--comic-page .legal-body ul { margin: 8px 0 0; padding-left: 22px; list-style: disc; }
-  #app .app-shell--comic-page .legal-body li { margin: 6px 0; }
-  #app .app-shell--comic-page .legal-body li::marker { color: var(--acid-strong); }
-  #app .app-shell--comic-page .legal-lead { color: var(--ink); font-weight: 800; }
+  #app .app-shell--comic-page .legal-body ul { margin: 6px 0 0 16px; padding-left: 22px; list-style: disc; }
+  #app .app-shell--comic-page .legal-body li { margin: 0; }
+  #app .app-shell--comic-page .legal-body li::marker { color: var(--acid-strong); font-size: 1.2em; }
+  #app .app-shell--comic-page .legal-lead { color: var(--legal-ink); font-weight: 700; }
   #app .app-shell--comic-page .legal-body .warning-text {
-    position: relative; margin-top: 12px; padding: 12px 16px 12px 44px; border: solid color-mix(in srgb, var(--legal-warn) 60%, var(--rule-strong));
-    border-width: 1.5px 2px 2.5px 1.5px; border-radius: 3px 6px 4px 5px; background: color-mix(in srgb, var(--legal-warn) 13%, var(--paper-raised));
-    color: var(--ink); font-size: 14.5px !important; line-height: 1.7;
+    position: relative; margin: 10px 0 0 16px; padding: 7px 14px 7px 31px; border: 1px solid color-mix(in srgb, var(--legal-warn) 30%, transparent);
+    border-radius: 6px; background: color-mix(in srgb, var(--legal-warn) 7%, var(--paper-raised)); color: var(--legal-copy); font-size: 12.5px !important; line-height: 20px;
   }
   #app .app-shell--comic-page .legal-body .warning-text::before {
-    content: ''; position: absolute; left: 15px; top: 14px; width: 19px; height: 19px; background: var(--legal-warn);
+    content: ''; position: absolute; left: 9px; top: 10px; width: 15px; height: 15px; background: var(--legal-warn);
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   #app .app-shell--comic-page .legal-body .contact-block {
-    display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 12px 16px; border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px;
-    border-radius: 3px 6px 4px 5px; background: var(--paper); box-shadow: 2px 2px 0 var(--comic-shadow);
+    display: flex; align-items: center; gap: 12px; margin: 10px 0 0 16px; padding: 8px 14px; border: 1px solid color-mix(in srgb, var(--legal-line) 22%, transparent);
+    border-radius: 6px; background: color-mix(in srgb, #cfe3ee 22%, var(--paper-raised)); box-shadow: none;
   }
   #app .app-shell--comic-page .legal-body .contact-block::before {
-    content: ''; flex: 0 0 20px; height: 20px; background: var(--ink);
+    content: ''; flex: 0 0 18px; height: 18px; background: var(--legal-ink);
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3Cpath d='m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'/%3E%3C/svg%3E") center / contain no-repeat;
   }
-  #app .app-shell--comic-page .legal-body .contact-block a { color: var(--ink); font-size: 15.5px; font-weight: 800; }
-  #app .app-shell--comic-page .legal-body .effective { margin-top: 14px !important; color: var(--ink-muted) !important; font-size: 13.5px !important; line-height: 1.7; }
+  #app .app-shell--comic-page .legal-body .contact-block a { color: var(--legal-ink); font-size: 13.5px; font-weight: 500; }
+  #app .app-shell--comic-page .legal-body .effective { margin-top: 12px !important; color: var(--legal-muted) !important; font-size: 12.5px !important; line-height: 20px; }
   @media (max-width: 1279px) {
-    #app .app-shell--comic-page .legal-layout { grid-template-columns: 236px minmax(0, 1fr); gap: 20px; }
-    #app .app-shell--comic-page .legal-body { grid-template-columns: minmax(0, 1fr); padding: 24px 26px 28px; }
-    #app .app-shell--comic-page .legal-aside { position: static; margin-top: 30px; padding-left: 0; border-left: 0; }
+    #app .app-shell--comic-page .legal-page { padding-inline: 28px; }
+    #app .app-shell--comic-page .legal-head { flex-wrap: wrap; }
+    #app .app-shell--comic-page .legal-heading { flex-basis: 100%; }
+    #app .app-shell--comic-page .legal-layout { grid-template-columns: 236px minmax(0, 1fr); }
+    #app .app-shell--comic-page .legal-body { grid-template-columns: minmax(0, 1fr); padding: 16px 20px 26px; }
+    #app .app-shell--comic-page .legal-aside { position: static; margin-top: 22px; padding-left: 0; border-left: 0; }
   }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .legal-body section.is-flash { animation: none; } }
 
