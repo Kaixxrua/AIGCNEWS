@@ -28,3 +28,17 @@ The UI library cards are drawn frames rather than CSS borders, rendered procedur
 - `ui-card-button-{source,prompt}.webp` (414×96, ~2 KB each): the two copy buttons, white and brushed navy, with the lower and right strokes pressed harder.
 
 `a` and `b` use different seeds and alternate between neighbouring cards so the drawing does not repeat exactly. The `-night` files are the same drawings in the dark theme's paper, grey ink and dimmer halftone.
+
+The DSH page (`/dsh`, "dsh-C" concept) is drawn the same way, with one generator for all of its pieces: each frame is one 3× 9-slice layer with a transparent middle, laid on `::after` around an element that paints its own fill. So one frame serves any fill (and the dark theme), and hover can change the colour under the ink. Every frame was calibrated to the concept's edge pixels; halftone patches sit in the bottom-right corner slice and the screen is orthogonal throughout, as in the concept.
+
+- `dsh-panel.webp` (intro and abilities panels): a 1.9px wobbling ink line over a slate extrusion (5px right, 6px down) outlined in black and darkened where it meets the panel, with 7.3px dots in the corner.
+- `dsh-stats.webp`, `dsh-stat.webp`: the four facts' outer box (2.2px navy line, solid navy shadow) and each fact's tile (1.4px line, a lighter second line inside its top and left, a pinch of teal dots).
+- `dsh-disc-{cyan,mint}.webp`: the watercolour disc behind each fact's icon, with a brush tick off its lower left.
+- `dsh-tab.webp`, `dsh-tab-active.webp`: the step tabs, with a heavy black block to the lower left and a speech-bubble wedge (filled in the tab's colour) hanging from it; the page skews them.
+- `dsh-quota.webp`: the amber quota bar's thin line and warm dots at its right end.
+- `dsh-method.webp`, `dsh-method-idle.webp`: the picked install method (solid black shadow) and the other one (slate extrusion), both with 6.4px dots dragged into short strokes and a line overshooting the lower-left corner.
+- `dsh-nav.webp`: the step bar.
+- `dsh-button.webp`, `dsh-button-ink.webp`: the white button (solid shadow, black dots) and the black one (white dots).
+- `dsh-tag.webp`, `dsh-bubble.webp`: the lime kicker tag and the "推荐" speech bubble.
+
+Together they are about 300 KB. The `-night` files swap the ink for pale grey, the extrusion for dark slate and the wedge fills for the dark theme's colours, and dim the dots.

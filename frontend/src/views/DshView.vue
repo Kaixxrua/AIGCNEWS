@@ -23,6 +23,7 @@ const dshCalls = useDshPluginCalls(desktop)
   <div class="dsh-page connection-page flex h-full min-h-0 flex-col overflow-hidden">
     <div class="connection-scroll">
       <p class="dsh-page-title comic-title">{{ t('dsh.pageTitle') }}</p>
+      <p class="dsh-page-subtitle" aria-hidden="true">{{ t('dsh.title') }}</p>
       <div class="connection-layout connection-layout--dsh">
         <div class="connection-aside">
           <section class="connection-intro glass-card relative overflow-hidden p-4 md:p-5">
@@ -85,7 +86,7 @@ const dshCalls = useDshPluginCalls(desktop)
   background-size: 100% 32px;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
-.dsh-page-title { display: none; }
+.dsh-page-title, .dsh-page-subtitle { display: none; }
 .dsh-grid-overlay { position: absolute; inset: 0; pointer-events: none; opacity: .32; background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px); background-size: 34px 34px; }
 .dsh-page :deep(.glass-card) { border: 1px solid var(--rule); border-radius: var(--module-radius); background: rgb(var(--projects-paper-light-rgb) / .94); box-shadow: none; }
 .dsh-page :deep(.btn-primary), .dsh-page :deep(.btn-secondary) { border-radius: var(--control-radius); font-weight: 600; box-shadow: none; }
