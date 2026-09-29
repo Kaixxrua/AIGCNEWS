@@ -23,18 +23,18 @@
     }
   }
 
-  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark. */
-  #app .app-shell--comic-page .comic-title {
+  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page). */
+  #app :is(.app-shell--comic-page, .register-page) .comic-title {
     position: relative; isolation: isolate; display: inline-block; overflow: visible; text-overflow: clip;
     margin: 0 36px 0 0; color: var(--ink); font-family: inherit; font-size: 36px; font-style: italic; font-weight: 950;
     line-height: 1.15; letter-spacing: 0; white-space: nowrap;
     -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
   }
-  #app .app-shell--comic-page .comic-title::before {
+  #app :is(.app-shell--comic-page, .register-page) .comic-title::before {
     content: ''; position: absolute; z-index: -1; inset: 68% -4px 2px;
     background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
   }
-  #app .app-shell--comic-page .comic-title::after {
+  #app :is(.app-shell--comic-page, .register-page) .comic-title::after {
     content: ''; position: absolute; right: -30px; top: -12px; width: 20px; height: 24px; background: var(--acid);
     clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
   }
@@ -781,5 +781,89 @@
     #app .app-shell--comic-page .tier-card { padding: 24px 22px 22px; }
     #app .app-shell--comic-page .tier-price-amount { font-size: 50px; }
     #app .app-shell--comic-page .tier-features { font-size: 15px; }
+  }
+
+  /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the
+     masthead wordmark. A wide comic form card: fields labelled with lime tags, inked inputs at 16px, a lime submit
+     bar; the login link sits in a tilted tag. The peel only shows where it clears the card (≥1280px). ── */
+  #app .register-page { position: relative; align-items: safe center; padding: 20px 24px 32px; background: var(--paper); }
+  #app .register-page .register-deco { display: block; }
+  #app .register-page .register-corner { position: absolute; left: 0; top: 0; width: 250px; aspect-ratio: 852 / 345; z-index: 0; }
+  #app .register-page .register-shout { position: absolute; right: 0; top: 0; width: 330px; aspect-ratio: 1101 / 324; z-index: 0; }
+  #app .register-page .register-peel { display: none; position: fixed; right: 0; bottom: 0; width: min(360px, 26vw); aspect-ratio: 1100 / 713; z-index: 0; }
+  @media (min-width: 1280px) { #app .register-page .register-peel { display: block; } }
+  :root:lang(en) #app .register-page .register-peel { display: none; }
+  #app .register-page .register-shell { position: relative; z-index: 1; max-width: 520px; padding: 0; }
+  #app .register-page .register-wordmark { display: block; width: 260px; margin: 0 auto 12px; }
+  #app .register-page .register-wordmark img { display: block; width: 100%; height: auto; }
+  :root[data-theme='dark'] #app .register-page .register-wordmark img { content: url('/assets/comic/aigc-news-wordmark-night.webp'); }
+
+  #app .register-page .auth-page-header {
+    display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: 16px; margin-bottom: 22px;
+  }
+  #app .register-page .auth-page-header__icon {
+    grid-row: 1; margin: 0; width: 52px; height: 52px; border: 2px solid var(--rule-strong); border-radius: 50%;
+    background: color-mix(in srgb, var(--comic-cyan-line) 22%, var(--paper-raised)); box-shadow: 2px 2px 0 var(--comic-shadow);
+  }
+  #app .register-page .auth-page-header__icon svg { color: var(--ink); }
+  #app .register-page .auth-page-header h1.comic-title { grid-row: 1; margin: 0 36px 0 0; font-size: 36px; }
+  #app .register-page .auth-page-header p { grid-column: 1 / -1; margin-top: 8px; color: var(--ink); font-size: 16px; font-weight: 700; }
+  #app .register-page .auth-page-header > .absolute { top: -4px; right: -64px; }
+  #app .register-page .auth-page-header .locale-toggle { color: var(--ink); }
+  #app .register-page .auth-page-header .locale-icon { width: 26px; height: 26px; }
+  #app .register-page .auth-page-header .locale-icon__accent { stroke: currentColor; }
+
+  #app .register-page .register-card {
+    position: relative; isolation: isolate; padding: 24px 30px 28px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px;
+    border-radius: 4px 7px 5px 6px; background: var(--paper-raised); box-shadow: 6px 6px 0 var(--comic-shadow);
+  }
+  #app .register-page .register-card > * + * { margin-top: 14px; }
+  #app .register-page .register-card::after {
+    content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 150px; height: 90px; pointer-events: none;
+    background: radial-gradient(circle, var(--rule-strong) 1.2px, transparent 1.7px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 70%); opacity: .45;
+  }
+  :root[data-theme='dark'] #app .register-page .register-card::after { background-image: radial-gradient(circle, var(--comic-cyan-line) 1.2px, transparent 1.7px); opacity: .16; }
+  #app .register-page .register-card label:not(.register-terms label) {
+    display: inline-block; margin: 0 0 0 2px; padding: 1px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink);
+    font-size: 14px; font-style: italic; font-weight: 900; line-height: 1.5; transform: rotate(-3deg) skewX(-6deg);
+  }
+  #app .register-page .register-card .input {
+    min-height: 46px; padding: 9px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: none; color: var(--ink); font-size: 16px;
+  }
+  #app .register-page .register-card .input::placeholder { color: var(--ink-muted); opacity: .8; }
+  #app .register-page .register-card .input:focus { border-color: var(--rule-strong); box-shadow: 0 0 0 3px var(--acid); outline: none; }
+  #app .register-page .register-card .auth-otp-btn {
+    min-height: 46px; padding: 8px 18px; border: solid var(--rule-strong) !important; border-width: 2px 2.5px 3px 2px !important; border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised) !important; box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink) !important; backdrop-filter: none !important;
+    font-size: 15px; font-style: italic; font-weight: 900; transform: rotate(-2deg);
+  }
+  #app .register-page .register-card .auth-otp-btn:hover:not(:disabled) { background: var(--acid-soft) !important; }
+  #app .register-page .register-card .auth-otp-btn:disabled { box-shadow: none; opacity: .55; }
+  #app .register-page .register-card .text-2xs { font-size: 13px; }
+  #app .register-page .register-card > .rounded-2xl { border-width: 2px; border-radius: 3px 6px 4px 5px; font-size: 14px; }
+  #app .register-page .register-terms { gap: 12px; padding-top: 2px; }
+  #app .register-page .register-terms > button { width: 22px; height: 22px; margin-top: 1px; border: 2px solid var(--rule-strong); border-radius: 4px; }
+  #app .register-page .register-terms > button svg { width: 14px; height: 14px; }
+  #app .register-page .register-terms label { color: var(--ink-secondary); font-size: 14px; line-height: 1.7; }
+  #app .register-page .register-terms a { color: var(--ink); font-weight: 700; }
+  #app .register-page .register-card .btn-primary {
+    min-height: 54px; gap: 10px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 8px 5px 7px;
+    background: var(--acid); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 21px; font-style: italic; font-weight: 950;
+  }
+  #app .register-page .register-card .btn-primary svg { width: 22px; height: 22px; }
+  #app .register-page .register-card .btn-primary:hover:not(:disabled) { background: var(--acid-strong); color: var(--acid-ink); }
+  #app .register-page .register-card .btn-primary:disabled { box-shadow: none; opacity: .5; }
+  #app .register-page .register-login {
+    display: table; margin: 24px auto 0; padding: 7px 22px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 16px; font-weight: 800;
+    transform: rotate(-2deg);
+  }
+  #app .register-page .register-login button { color: var(--ink); font-weight: 900; text-decoration-thickness: 2px; }
+  @media (max-width: 1279px) {
+    #app .register-page .register-corner { width: 200px; }
+    #app .register-page .register-shout { width: 260px; }
   }
 }

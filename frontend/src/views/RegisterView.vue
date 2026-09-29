@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter, useRoute } from 'vue-router'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
+import ComicSticker from '@/components/layout/ComicSticker.vue'
 import OtpEmailField from '@/components/auth/OtpEmailField.vue'
 import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFields.vue'
 import { useRegisterForm } from '@/composables/useRegisterForm'
@@ -44,8 +45,15 @@ const {
 </script>
 
 <template>
-  <div class="flex h-full items-center justify-center overflow-y-auto p-3 sm:p-6">
-    <div class="w-full max-w-sm py-4">
+  <div class="register-page flex h-full items-center justify-center overflow-y-auto p-3 sm:p-6">
+    <!-- 桌面漫画版的角落贴纸与刊头字标（register-C）；窄屏不渲染。 -->
+    <ComicSticker variant="corner" class="register-deco register-corner" />
+    <ComicSticker variant="shout" class="register-deco register-shout" :text="t('dashboard.editorial.creationMark')" />
+    <ComicSticker variant="peel" class="register-deco register-peel" />
+    <div class="register-shell w-full max-w-sm py-4">
+      <RouterLink to="/" class="register-deco register-wordmark" :aria-label="t('auth.backHome')">
+        <img src="/assets/comic/aigc-news-wordmark.webp" alt="" width="546" height="132" decoding="async" />
+      </RouterLink>
 
       <!-- 标题区 -->
       <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')">
@@ -56,7 +64,7 @@ const {
       </AuthPageHeader>
 
       <!-- 表单卡片 -->
-      <div class="glass-card p-4 sm:p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
+      <div class="register-card glass-card p-4 sm:p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
 
         <!-- 邮箱 + 发送验证码 -->
         <OtpEmailField
@@ -114,7 +122,7 @@ const {
         <AuthFeedback :message="successMsg" type="success" />
 
         <!-- 用户协议勾选 -->
-        <div class="flex items-start gap-2.5 pt-1">
+        <div class="register-terms flex items-start gap-2.5 pt-1">
           <button
             type="button"
             class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
@@ -156,7 +164,7 @@ const {
       </div>
 
       <!-- 底部登录链接 -->
-      <p class="mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
+      <p class="register-login mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
         {{ t('auth.hasAccount') }}
         <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="requestLogin(redirect)">
           {{ t('auth.goLogin') }}
@@ -166,3 +174,8 @@ const {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 贴纸与字标只在桌面漫画版展示（comic-pages.css 定位与尺寸）。 */
+.register-deco{display:none}
+</style>

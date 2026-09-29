@@ -31,7 +31,7 @@ const emit = defineEmits<{
         @input="emit('update:email', ($event.target as HTMLInputElement).value)"
       />
       <button
-        class="shrink-0 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium sm:w-auto transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+        class="auth-otp-btn shrink-0 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium sm:w-auto transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
         style="background: rgb(var(--card-rgb) / 0.8); border: 1px solid rgb(var(--stone-400-rgb) / 0.25); color: rgb(var(--stone-600-rgb)); backdrop-filter: blur(10px); white-space: nowrap"
         :disabled="otpBtnDisabled || loading"
         @click="emit('sendOtp')"
