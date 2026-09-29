@@ -6,6 +6,11 @@ next to it complete the four protected sources pinned by
 `aigcnews-private-release.json`. Since 20260929-contact-poster the page shows a
 static screenshot first and only embeds the Godot iframe after the visitor picks
 a quality and presses 开启 (see `scripts/contact-poster/README.md`).
+Since 20260929-contact-comic the view also carries the desktop comic layout
+(title above an ink-framed scene, paper contact card); those rules only apply
+under the public site's `.app-shell--comic-page` shell at ≥64rem. Releases that
+only change these sources are assembled with
+`scripts/contact-release/build_source_release.py`.
 `contact-godot-interaction.css` is the scoped
 production override that keeps the iframe clickable while allowing the contact
 copy and entry card to remain interactive.

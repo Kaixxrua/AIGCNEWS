@@ -1,11 +1,11 @@
 {
-  "manifest_sha256": "0b43ed079afbf1aefd3e10f6a86248a3b76a71f6549212d8da1f5dd5d561f555",
-  "release_id": "20260929-contact-poster",
+  "manifest_sha256": "9204fb75aa8f8dae4b0fd297fb43893e87991b4ed1fc976229d175e392e3d0e8",
+  "release_id": "20260929-contact-comic",
   "schema": "aigcnews.private-frontend-release.v1",
   "source_files": {
     "components/contact/GodotContactScene.test.ts": "04ff92515ee38c08f5386cfd722bda15c82b64b5bd6fb19a8b48d7f6ba81af55",
     "components/contact/GodotContactScene.vue": "67116141f8c26211f0493011d237a0faadaba38fe5c3896348827f8d1a574fa6",
     "views/ContactPageView.test.ts": "55a9bd896512a1742bc0e20060eee514d3af57a1ecca6e46bfc920a7b85d04d4",
-    "views/ContactPageView.vue": "d3df4e9eaa25faebe4fc900d8d2292743cd499c9ff0a9ec4855a969ad9647aa0"
+    "views/ContactPageView.vue": "cf60dcfa3ec07accebf1f4b2461bab2d81b9f01434ac29048df617f4ed5d8a8c"
   }
 }

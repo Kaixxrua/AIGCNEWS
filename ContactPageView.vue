@@ -60,7 +60,7 @@ const sceneOverlay = ref(false)
       <div class="hero-inner">
         <div class="hero-heading">
           <p class="contact-kicker">{{ t('contact.kicker') }}</p>
-          <h1 class="contact-title">{{ config.title }}</h1>
+          <h1 class="contact-title comic-title">{{ config.title }}</h1>
           <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
         </div>
         <div v-if="config.contactEntries.length" class="hero-dock">
@@ -470,11 +470,381 @@ const sceneOverlay = ref(false)
   .entry-body { padding: var(--cs-2) var(--cs-3); }
   .contact-title { font-size: clamp(1.5rem, 1.1rem + 2.4vw, 2.25rem); }
 }
+/* ── 桌面漫画版（contact-C）：站点漫画外壳下，标题与副标题回到纸面，原野收进墨线画框，
+ * 联系方式成为压在画框右下角的纸质漫画卡。阅读优先：正文直立、≥13px；斜体与倾斜只给标题和标签。
+ * 手机与旧布局不受影响（选择器都挂在 .app-shell--comic-page 下，且只在 ≥64rem 生效）。 */
+@media (min-width: 64rem) {
+  #app .app-shell--comic-page .contact-page {
+    padding: 14px 26px 24px 20px;
+    background: transparent;
+  }
+  #app .app-shell--comic-page .contact-hero {
+    position: relative;
+    inset: auto;
+    display: grid;
+    height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    row-gap: 18px;
+    overflow: visible;
+  }
+  /* 标题行与画框共用一个网格：hero-inner 让出盒子，标题、画框、联系卡各占格子 */
+  #app .app-shell--comic-page .hero-inner { display: contents; }
+  #app .app-shell--comic-page .hero-heading {
+    grid-row: 1;
+    grid-column: 1;
+    max-width: none;
+    padding-left: 8px;
+    pointer-events: auto;
+  }
+  #app .app-shell--comic-page .contact-kicker { display: none; }
+  #app .app-shell--comic-page .contact-title.comic-title {
+    max-width: none;
+    margin: 0 36px 0 0;
+    font-size: 44px;
+    letter-spacing: 0;
+    line-height: 1.15;
+  }
+  #app .app-shell--comic-page .contact-subtitle {
+    max-width: none;
+    margin: 8px 0 0;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 15.5px;
+    font-weight: 700;
+    line-height: 1.6;
+    text-shadow: none;
+  }
+
+  /* 画框：不等宽墨线 + 硬偏移投影；场景按钮从画框上缘排起 */
+  #app .app-shell--comic-page .hero-field {
+    --scene-safe-top: 14px;
+    position: relative;
+    inset: auto;
+    grid-row: 2;
+    grid-column: 1;
+    border: solid var(--rule-strong);
+    border-width: 2.5px 3px 3.5px 2.5px;
+    border-radius: 5px 9px 6px 8px;
+    box-shadow: 6px 6px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .hero-overlay { display: none; }
+  /* 静态截图上的网点只压画框角落，实时场景与画质面板时撤掉 */
+  #app .app-shell--comic-page .hero-field:has(.godot-contact-scene--poster)::after {
+    content: '';
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle, rgb(20 35 69 / .78) 1.25px, transparent 1.75px) 0 0 / 7px 7px;
+    -webkit-mask-image: radial-gradient(ellipse 20% 30% at 0 0, #000 8%, transparent 100%), radial-gradient(ellipse 9% 34% at 100% 30%, #000 6%, transparent 100%), radial-gradient(ellipse 14% 24% at 0 100%, #000 6%, transparent 100%);
+    mask-image: radial-gradient(ellipse 20% 30% at 0 0, #000 8%, transparent 100%), radial-gradient(ellipse 9% 34% at 100% 30%, #000 6%, transparent 100%), radial-gradient(ellipse 14% 24% at 0 100%, #000 6%, transparent 100%);
+    opacity: .55;
+  }
+  /* 画框右上角外侧的青色网点，垫在画框后面 */
+  #app .app-shell--comic-page .contact-hero::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    grid-row: 2;
+    grid-column: 1;
+    top: -26px;
+    right: -18px;
+    width: 220px;
+    height: 120px;
+    pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    -webkit-mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 72%);
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 72%);
+  }
+
+  /* 场景自带按钮：纸面墨线按钮，悬停变酸绿 */
+  #app .app-shell--comic-page .hero-field :deep(.scene-actions) { right: 14px; gap: 10px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-actions button) {
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: solid var(--rule-strong);
+    border-width: 2px 2.5px 3px 2px;
+    border-radius: 4px 7px 5px 6px;
+    box-shadow: 3px 3px 0 var(--comic-shadow);
+    backdrop-filter: none;
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-actions button:hover) {
+    color: var(--acid-ink);
+    background: var(--acid);
+    border-color: var(--rule-strong);
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-actions button:focus-visible) { outline: 3px solid var(--rule-strong); outline-offset: 3px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-actions .scene-launch) {
+    height: 42px;
+    padding: 0 16px 0 13px;
+    font-family: inherit;
+    font-size: 14.5px;
+    font-style: italic;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-poster-badge) {
+    padding: 5px 9px;
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: 2px solid var(--rule-strong);
+    border-radius: 3px 5px 4px 5px;
+    box-shadow: 2px 2px 0 var(--comic-shadow);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: .04em;
+    transform: rotate(-2deg);
+  }
+
+  /* 画质面板：与联系卡同一套纸面漫画卡 */
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-panel) {
+    width: min(28rem, 100%);
+    padding: 20px 20px 18px;
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: solid var(--rule-strong);
+    border-width: 2px 2.5px 3px 2px;
+    border-radius: 6px 9px 5px 8px;
+    box-shadow: 6px 6px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-title) { color: var(--ink); font-family: inherit; font-size: 21px; font-style: italic; font-weight: 900; line-height: 1.3; letter-spacing: 0; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-note) { color: var(--ink-secondary); font-size: 14px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-hint) { color: var(--ink-secondary); font-size: 13px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option) {
+    background: var(--paper);
+    border: 2px solid var(--rule);
+    border-radius: 4px 6px 4px 5px;
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option:hover) { border-color: var(--rule-strong); }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option:has(input:checked)) {
+    background: var(--acid-soft);
+    border-color: var(--rule-strong);
+    box-shadow: 2px 2px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option input) { accent-color: var(--rule-strong); }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option-body strong) { color: var(--ink); font-size: 15.5px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option-body em) {
+    color: var(--acid-ink);
+    background: var(--acid);
+    border: 1.5px solid var(--rule-strong);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-style: italic;
+    font-weight: 900;
+    line-height: 1.3;
+    letter-spacing: 0;
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option-body small) { color: var(--ink-secondary); font-size: 13px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-option-size) { color: var(--ink-secondary); font-family: inherit; font-size: 12.5px; font-style: normal; font-weight: 700; line-height: 1.4; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-actions button) { min-height: 42px; border-radius: 4px 7px 5px 6px; }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-cancel) {
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: 2px solid var(--rule-strong);
+    box-shadow: 2px 2px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-cancel:hover) { background: var(--paper); }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-enter) {
+    color: var(--acid-ink);
+    background: var(--acid);
+    border: 2px solid var(--rule-strong);
+    box-shadow: 3px 3px 0 var(--comic-shadow);
+    font-style: italic;
+    font-weight: 900;
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-enter:hover) {
+    color: var(--acid-ink);
+    background: var(--acid);
+    box-shadow: 5px 5px 0 var(--comic-shadow);
+    transform: translate(-1px, -1px);
+  }
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser button:focus-visible) { outline: 3px solid var(--rule-strong); outline-offset: 3px; }
+
+  /* 联系卡：压在画框右下角，右下留出页脚卷角（--peel-clear） */
+  #app .app-shell--comic-page .hero-dock {
+    position: relative;
+    z-index: 1;
+    grid-row: 2;
+    grid-column: 1;
+    width: min(430px, 44%);
+    max-height: none;
+    align-self: end;
+    justify-self: end;
+    gap: 0;
+    margin: 0 24px max(24px, calc(var(--peel-clear, 0px) - 14px)) 0;
+    padding: 0;
+    overflow: visible;
+  }
+  #app .app-shell--comic-page .contact-hero-note {
+    position: relative;
+    z-index: 2;
+    align-self: flex-start;
+    margin: 0 0 -12px 16px;
+    padding: 5px 12px;
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: 2px solid var(--rule-strong);
+    border-radius: 3px 5px 4px 6px;
+    box-shadow: 2px 2px 0 var(--comic-shadow);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.45;
+    text-align: left;
+    text-shadow: none;
+    transform: rotate(-2deg);
+  }
+  #app .app-shell--comic-page .contact-hero-note::before { color: var(--ink); font-weight: 900; }
+  #app .app-shell--comic-page .entry-list { gap: 14px; }
+  #app .app-shell--comic-page .entry-item,
+  #app .app-shell--comic-page .entry-item--primary {
+    overflow: visible;
+    color: var(--ink);
+    background: var(--paper-raised);
+    border: solid var(--rule-strong);
+    border-width: 2px 2.5px 3px 2px;
+    border-radius: 6px 9px 5px 8px;
+    box-shadow: 5px 5px 0 var(--comic-shadow);
+    backdrop-filter: none;
+  }
+  /* 折角换成右上角青色网点 */
+  #app .app-shell--comic-page .entry-item--primary::after {
+    top: 0;
+    right: 0;
+    width: 42%;
+    height: 60%;
+    border: 0;
+    border-radius: 0 7px 0 0;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.2px, transparent 1.7px) 0 0 / 7px 7px;
+    -webkit-mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 6%, transparent 70%);
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 6%, transparent 70%);
+    opacity: .55;
+  }
+  #app .app-shell--comic-page .entry-body {
+    position: relative;
+    z-index: 1;
+    gap: 10px;
+    padding: 22px 20px 18px;
+  }
+  #app .app-shell--comic-page .entry-item--qr .entry-body {
+    grid-template-areas: 'label label' 'badge qr' 'value qr' 'hint qr';
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 18px;
+    row-gap: 10px;
+  }
+  #app .app-shell--comic-page .entry-item--qr .entry-meta { display: contents; }
+  #app .app-shell--comic-page .entry-label {
+    grid-area: label;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 18.5px;
+    font-style: italic;
+    font-weight: 900;
+    letter-spacing: 0;
+    line-height: 1.3;
+  }
+  #app .app-shell--comic-page .entry-badge {
+    grid-area: badge;
+    justify-self: start;
+    padding: 3px 10px;
+    color: var(--acid-ink);
+    background: var(--acid);
+    border: 2px solid var(--rule-strong);
+    border-radius: 2px 4px 3px 4px;
+    box-shadow: 2px 2px 0 var(--comic-shadow);
+    font-family: inherit;
+    font-size: 13px;
+    font-style: italic;
+    font-weight: 900;
+    line-height: 1.35;
+    letter-spacing: .02em;
+    transform: rotate(-2deg);
+  }
+  #app .app-shell--comic-page .entry-value {
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  #app .app-shell--comic-page .entry-value--link {
+    text-decoration-color: var(--acid);
+    text-decoration-thickness: 3px;
+  }
+  #app .app-shell--comic-page .entry-action--primary {
+    justify-self: start;
+    min-height: 48px;
+    gap: 10px;
+    padding: 10px 18px;
+    color: var(--acid-ink);
+    background: var(--acid);
+    border: solid var(--rule-strong);
+    border-width: 2px 2.5px 3px 2px;
+    border-radius: 4px 7px 5px 6px;
+    box-shadow: 4px 4px 0 var(--comic-shadow);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 900;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  #app .app-shell--comic-page .entry-action--primary:hover {
+    color: var(--acid-ink);
+    background: var(--acid);
+    border-color: var(--rule-strong);
+    box-shadow: 6px 6px 0 var(--comic-shadow);
+    transform: translate(-1px, -1px);
+  }
+  #app .app-shell--comic-page .entry-action--primary:active {
+    color: var(--acid-ink);
+    background: var(--acid);
+    box-shadow: 1px 1px 0 var(--comic-shadow);
+    transform: translate(2px, 2px);
+  }
+  #app .app-shell--comic-page .entry-value--link:focus-visible { outline: 3px solid var(--rule-strong); outline-offset: 3px; }
+  #app .app-shell--comic-page .entry-arrow { font-size: 18px; }
+  /* 二维码：白底保扫码对比，墨线框轻微歪斜 */
+  #app .app-shell--comic-page .entry-qr-frame {
+    width: 118px;
+    padding: 6px;
+    background: #fff;
+    border: solid var(--rule-strong);
+    border-width: 2px 2.5px 3px 2px;
+    border-radius: 4px 6px 3px 5px;
+    box-shadow: 3px 3px 0 var(--comic-shadow);
+    transform: rotate(2deg);
+  }
+  #app .app-shell--comic-page .entry-qr-fallback { color: #3f4654; font-family: inherit; font-size: 12.5px; }
+  #app .app-shell--comic-page .entry-qr-hint {
+    color: var(--ink-secondary);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  #app .app-shell--comic-page .entry-qr-hint::before { color: var(--ink); font-weight: 900; }
+}
+/* 画框较矮时（如 1024×768）联系卡收紧，不顶住画框上缘 */
+@media (min-width: 64rem) and (max-height: 50rem) {
+  #app .app-shell--comic-page .contact-title.comic-title { font-size: 38px; }
+  #app .app-shell--comic-page .contact-hero { row-gap: 14px; }
+  #app .app-shell--comic-page .entry-body { gap: 8px; padding: 18px 18px 14px; }
+  #app .app-shell--comic-page .entry-item--qr .entry-body { row-gap: 8px; }
+  #app .app-shell--comic-page .entry-qr-frame { width: 104px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .entry-item,
   .entry-value--link,
   .entry-action--primary {
     transition: none;
   }
+  #app .app-shell--comic-page .entry-action--primary:is(:hover, :active),
+  #app .app-shell--comic-page .hero-field :deep(.scene-chooser-enter:hover) { transform: none; }
 }
 </style>
