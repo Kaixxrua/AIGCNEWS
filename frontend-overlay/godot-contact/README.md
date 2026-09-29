@@ -1,7 +1,12 @@
 # Godot contact integration
 
 `GodotContactScene.vue` at the repository root is the canonical Vue bridge for
-the private Godot contact page. `contact-godot-interaction.css` is the scoped
+the private Godot contact page; `ContactPageView.vue` and both `*.test.ts` files
+next to it complete the four protected sources pinned by
+`aigcnews-private-release.json`. Since 20260929-contact-poster the page shows a
+static screenshot first and only embeds the Godot iframe after the visitor picks
+a quality and presses 开启 (see `scripts/contact-poster/README.md`).
+`contact-godot-interaction.css` is the scoped
 production override that keeps the iframe clickable while allowing the contact
 copy and entry card to remain interactive.
 
