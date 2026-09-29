@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { todayInReportTimeZone } from './reportViewModel'
+import { parseReportDateQuery, todayInReportTimeZone } from './reportViewModel'
+
+describe('parseReportDateQuery', () => {
+  it('accepts a past or current calendar date from the RSS briefing link', () => {
+    expect(parseReportDateQuery('2026-09-27', '2026-09-29')).toBe('2026-09-27')
+    expect(parseReportDateQuery('2026-09-29', '2026-09-29')).toBe('2026-09-29')
+  })
+
+  it('falls back to the default date for missing, repeated, malformed or future values', () => {
+    expect(parseReportDateQuery(undefined, '2026-09-29')).toBeNull()
+    expect(parseReportDateQuery(['2026-09-27', '2026-09-28'], '2026-09-29')).toBeNull()
+    expect(parseReportDateQuery('2026-9-27', '2026-09-29')).toBeNull()
+    expect(parseReportDateQuery('2026-02-30', '2026-09-29')).toBeNull()
+    expect(parseReportDateQuery('2026-09-30', '2026-09-29')).toBeNull()
+  })
+})
 
 describe('todayInReportTimeZone', () => {
   it('returns the CST calendar date even when UTC is still on the previous day', () => {

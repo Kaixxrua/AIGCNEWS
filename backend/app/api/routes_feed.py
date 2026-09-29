@@ -521,6 +521,7 @@ def build_briefing_feed_item(row: dict[str, Any], base_url: str, *, digest: bool
     digest=False 全文（公开，与 /report 同内容）；digest=True 规则压缩速览
     （注册用户）。description 承载渲染后的 HTML 片段，按 RSS 惯例整体 XML 转义。
     guid 以期号（date）为身份：同一期重生成原地更新内容，阅读器不重复推送。
+    link 带期号（/report?date=）：不带时，阅读器里点任何一期都打开当天简报。
     """
     date_str = str(row.get("date") or "").strip()
     content = str(row.get("content_zh") or row.get("content") or "").strip()
@@ -530,12 +531,15 @@ def build_briefing_feed_item(row: dict[str, Any], base_url: str, *, digest: bool
     description = render_briefing_markdown_html(markdown)
     title = f"{date_str} 每日 AIGC 简报{'（速览）' if digest else ''}"
     guid = f"briefing-digest:{date_str}" if digest else f"briefing:{date_str}"
+    link = f"{base_url}/report"
+    if _DATE_ONLY_VALUE.fullmatch(date_str):
+        link = f"{link}?date={date_str}"
     published = _parse_published_at(str(row.get("created_at") or ""))
     pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""
     return (
         "<item>"
         f"<title>{escape(title)}</title>"
-        f"<link>{escape(f'{base_url}/report')}</link>"
+        f"<link>{escape(link)}</link>"
         f'<guid isPermaLink="false">{escape(guid)}</guid>'
         f"{pub_date}"
         f"<description>{escape(description)}</description>"

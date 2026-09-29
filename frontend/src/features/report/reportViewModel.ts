@@ -142,6 +142,18 @@ export const todayInReportTimeZone = (now: Date = new Date()): string => {
   }
 }
 
+// RSS 简报条目按期号回链 /report?date=YYYY-MM-DD。只认合法日历日且不晚于今天
+// （CST）；缺省、重复参数、脏串、未来日期一律返回 null，页面回落默认的今天。
+export const parseReportDateQuery = (
+  value: unknown,
+  today: string = todayInReportTimeZone(),
+): string | null => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const parsed = new Date(`${value}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return null
+  return value <= today ? value : null
+}
+
 export const coerceReportStreamText = (data: unknown): string => {
   if (typeof data === 'string') return data
   if (Array.isArray(data)) {

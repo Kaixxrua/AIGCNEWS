@@ -13,6 +13,7 @@
     /feeds/member.xml 不被 {source} 路径参数捕获（路由顺序锁定）；
   - 简报 feed：规则 Markdown→HTML 片段渲染（转义/行内规则/标题 code 去 #）、
     规则压缩速览（摘要节保留、条目正文丢弃、空章节回扫、标题剥 tag）、
+    条目回链带期号（/report?date=，脏期号回落裸 /report）、
     /feeds/briefing.xml 公开全文（边缘缓存）、/feeds/briefing-digest.xml
     注册用户 token 门禁与 noindex/no-store、字面量路由均不被 {source} 捕获。
 """
@@ -939,7 +940,8 @@ def test_build_briefing_feed_item_full_mode() -> None:
     item = build_briefing_feed_item(_briefing_row(), "https://aigcnews.cn")
     assert item is not None
     assert "<title>2026-08-27 每日 AIGC 简报</title>" in item
-    assert "<link>https://aigcnews.cn/report</link>" in item
+    # 回链带期号：旧一期不再落到当天简报（/report 按 ?date= 选期）
+    assert "<link>https://aigcnews.cn/report?date=2026-08-27</link>" in item
     assert '<guid isPermaLink="false">briefing:2026-08-27</guid>' in item
     assert "<pubDate>Thu, 27 Aug 2026 00:05:00 +0000</pubDate>" in item
     # 全文模式：条目正文保留；description 为整体 XML 转义的 HTML 片段
@@ -952,6 +954,7 @@ def test_build_briefing_feed_item_digest_mode_condenses() -> None:
     item = build_briefing_feed_item(_briefing_row(), "https://aigcnews.cn", digest=True)
     assert item is not None
     assert "<title>2026-08-27 每日 AIGC 简报（速览）</title>" in item
+    assert "<link>https://aigcnews.cn/report?date=2026-08-27</link>" in item
     assert '<guid isPermaLink="false">briefing-digest:2026-08-27</guid>' in item
     assert "本报梳理" in item
     assert "话题概述" not in item
@@ -961,6 +964,13 @@ def test_build_briefing_feed_item_digest_mode_condenses() -> None:
 def test_build_briefing_feed_item_skips_rows_without_date_or_content() -> None:
     assert build_briefing_feed_item(_briefing_row(date=""), "https://aigcnews.cn") is None
     assert build_briefing_feed_item(_briefing_row(content=""), "https://aigcnews.cn") is None
+
+
+def test_build_briefing_feed_item_links_bare_report_for_non_date_key() -> None:
+    # 期号不是 YYYY-MM-DD（脏键）时不拼进查询串，回落简报页默认的当天
+    item = build_briefing_feed_item(_briefing_row(date="2026-08-27_x"), "https://aigcnews.cn")
+    assert item is not None
+    assert "<link>https://aigcnews.cn/report</link>" in item
 
 
 def test_build_briefing_feed_item_falls_back_to_content_column() -> None:

@@ -28,6 +28,8 @@ interface UseReportControllerOptions {
   resetAutoScroll: () => void
   scrollToBottom: () => Promise<void>
   locale: Ref<string>
+  /** 初始选中日期（如 RSS 条目回链的 ?date=）；缺省为 CST 今天。 */
+  initialDate?: string | null
 }
 
 export const useReportController = ({
@@ -35,13 +37,14 @@ export const useReportController = ({
   resetAutoScroll,
   scrollToBottom,
   locale,
+  initialDate,
 }: UseReportControllerOptions) => {
   const reportContent = ref('')
   const isGenerating = ref(false)
   const isCached = ref(false)
   const errorMsg = ref('')
   const selectedSource = ref<ReportKey>('all')
-  const selectedDate = ref(todayInReportTimeZone())
+  const selectedDate = ref(initialDate || todayInReportTimeZone())
 
   // generation + AbortController 竞态守卫（对齐 useXBoardController）：
   // 源/日期/locale 连发切换时只应用最新一次缓存读取，过期请求直接中止

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   getReportTypeInfo,
+  parseReportDateQuery,
   type ReportResponse,
   type SubscriptionListResponse,
   type SubscriptionPlan,
@@ -75,6 +76,14 @@ const {
   resetAutoScroll,
   scrollToBottom,
   locale,
+  initialDate: parseReportDateQuery(route.query.date),
+})
+
+// RSS 简报条目按期号回链（?date=）：页内改选日期后同步地址栏，刷新或分享不回跳旧一期。
+watch(selectedDate, date => {
+  if (typeof route.query.date === 'string' && route.query.date !== date) {
+    void router.replace({ query: { ...route.query, date } })
+  }
 })
 
 const currentTypeInfo = computed(() => getReportTypeInfo(selectedType.value))
