@@ -240,6 +240,26 @@ def _node_text(node: Any) -> str:
     return " ".join(node.get_text().split())
 
 
+def _abstract_section_text(soup: BeautifulSoup) -> str:
+    """HF 详情页「Abstract」标题下的论文摘要原文。
+
+    标题的下一个兄弟容器里，直接子 <p> 才是摘要；AI 生成的一句话总结嵌在
+    容器内的提示块里（非直接子节点），评论区与 Librarian Bot 在页面别处。
+    按结构取段，摘要含 "Code:" / "Project page:" / "thanks to" 也不会像
+    关键词噪声过滤那样被整段丢掉、换成 AI 总结或 Blog 链接段入库。
+    """
+    heading = next(
+        (h for h in soup.find_all(["h2", "h3"]) if _node_text(h).lower() == "abstract"),
+        None,
+    )
+    section = heading.find_next_sibling() if heading else None
+    if section is None:
+        return ""
+    return " ".join(
+        text for p in section.find_all("p", recursive=False) if (text := _node_text(p))
+    )
+
+
 def _parse_paper_detail(html: str, arxiv_id: str) -> Optional[Dict[str, Any]]:
     """从 HF 论文详情页 HTML 解析元数据。"""
     soup = BeautifulSoup(html, "html.parser")
@@ -248,13 +268,15 @@ def _parse_paper_detail(html: str, arxiv_id: str) -> Optional[Dict[str, Any]]:
     h1 = soup.find("h1")
     title = _node_text(h1) if h1 else arxiv_id
 
-    # ── 摘要：取所有 <p> 中最长的（通常是完整 Abstract） ──
-    paragraphs = [
-        text for p in soup.find_all("p") if len(text := _node_text(p)) > 80
-    ]
-    _noise = ("librarian bot", "semantic scholar", "thanks to", "code:", "page:")
-    paragraphs = [p for p in paragraphs if not any(n in p.lower() for n in _noise)]
-    abstract = max(paragraphs, key=len) if paragraphs else ""
+    # ── 摘要：优先取 Abstract 区块；页面结构变化找不到时回退到最长 <p> ──
+    abstract = _abstract_section_text(soup)
+    if not abstract:
+        paragraphs = [
+            text for p in soup.find_all("p") if len(text := _node_text(p)) > 80
+        ]
+        _noise = ("librarian bot", "semantic scholar", "thanks to", "code:", "page:")
+        paragraphs = [p for p in paragraphs if not any(n in p.lower() for n in _noise)]
+        abstract = max(paragraphs, key=len) if paragraphs else ""
 
     # ── 作者：<span class="author ..."> ──
     # 注意：BS4 对多值 class 属性会把谓词函数逐个作用于单个 class 字符串，
