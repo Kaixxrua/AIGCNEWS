@@ -1,8 +1,9 @@
 AIGCNEWS (AIGC Radar MCP)
 Copyright 2026 Kaixxrua
 
-Licensed under the GNU Affero General Public License, Version 3.0
-(see LICENSE).
+Licensed under the Business Source License 1.1 (see LICENSE). Each version
+converts to the Apache License, Version 2.0, four years after its first
+public distribution.
 
 ========================================================================
 Third-party content
@@ -53,4 +54,4 @@ The public X-ingestion transport builds upon twitter-cli, licensed under
 the Apache License, Version 2.0
 (https://github.com/jackwener/twitter-cli). Project-authored integration
 and compatibility code remains licensed under this repository's
-AGPL-3.0 license; twitter-cli retains its own upstream license.
+Business Source License 1.1; twitter-cli retains its own upstream license.
