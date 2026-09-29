@@ -442,30 +442,30 @@ class PostgresDocumentRepository:
                     (authors, arxiv_id, doc_id),
                 )
 
-    def list_arxiv_documents_with_collapsed_summary(
+    def list_arxiv_document_summaries(
         self, *, after_id: str = "", limit: int = 500
     ) -> list[dict[str, Any]]:
-        """按 id keyset 分页列出摘要丢了全部空格的 arXiv 文档（修复脚本专用）。
+        """按 id keyset 分页列出全部 arXiv 文档的摘要（摘要复核脚本专用）。
 
-        arXiv 摘要是英文长段落，超过 80 字符却不含一个空格即为 HF 逐字符
-        水合页被逐节点 strip 的残缺摘要。
+        旧解析的缺陷（链接两侧丢空格、误取评论段）无法用 SQL 条件圈定，
+        只能逐篇对照 arXiv API / HF 详情页的真摘要复核，故不预筛。
         """
         return self._fetch_rows(
             "SELECT id, arxiv_id, summary FROM documents WHERE source = 'arxiv'"
-            " AND length(summary) > 80 AND position(' ' in summary) = 0"
             " AND id > %s ORDER BY id LIMIT %s",
             (after_id, max(1, min(int(limit), 10000))),
         )
 
-    def update_collapsed_document_summary(
-        self, doc_id: str, collapsed: str, summary: str
+    def update_document_summary_if_unchanged(
+        self, doc_id: str, expected: str | None, summary: str
     ) -> bool:
-        """仅当库中摘要仍是读出时的残缺值才覆盖（与并发采集的新写入不相互踩踏）。"""
+        """仅当库中摘要仍是读出时的值才覆盖（与并发采集的新写入不相互踩踏）。"""
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "UPDATE documents SET summary = %s WHERE id = %s AND summary = %s",
-                    (summary, doc_id, collapsed),
+                    "UPDATE documents SET summary = %s"
+                    " WHERE id = %s AND summary IS NOT DISTINCT FROM %s",
+                    (summary, doc_id, expected),
                 )
                 return cursor.rowcount == 1
 

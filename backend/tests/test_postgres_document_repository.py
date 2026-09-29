@@ -507,3 +507,36 @@ def test_clear_quotes_for_docs_dedupes_ids_and_skips_empty() -> None:
     assert repository.clear_quotes_for_docs([]) == []
     cursor.execute.assert_not_called()
     assert database.transaction_count == before
+
+
+def test_list_arxiv_document_summaries_pages_by_id_and_clamps_limit() -> None:
+    repository, _, cursor = repository_with_cursor()
+    cursor.fetchall.return_value = [{"id": "b", "arxiv_id": "2609.00002", "summary": "text"}]
+
+    rows = repository.list_arxiv_document_summaries(after_id="a", limit=99999)
+
+    sql = cursor.execute.call_args.args[0]
+    assert "source = 'arxiv'" in sql
+    assert "id > %s ORDER BY id LIMIT %s" in sql
+    assert cursor.execute.call_args.args[1] == ("a", 10000)
+    assert rows == [{"id": "b", "arxiv_id": "2609.00002", "summary": "text"}]
+
+    repository.list_arxiv_document_summaries(limit=0)
+    assert cursor.execute.call_args.args[1] == ("", 1)
+
+
+@pytest.mark.parametrize(("rowcount", "expected"), [(1, True), (0, False)])
+def test_update_document_summary_if_unchanged_is_conditional_and_null_safe(
+    rowcount: int, expected: bool
+) -> None:
+    repository, database, cursor = repository_with_cursor()
+    cursor.rowcount = rowcount
+
+    assert repository.update_document_summary_if_unchanged("doc-1", None, "fresh") is expected
+
+    assert database.transaction_count == 1
+    sql = cursor.execute.call_args.args[0]
+    assert "UPDATE documents SET summary = %s" in sql
+    # 库中为 NULL 时 "summary = NULL" 永不命中，须用 IS NOT DISTINCT FROM 比对读出值
+    assert "summary IS NOT DISTINCT FROM %s" in sql
+    assert cursor.execute.call_args.args[1] == ("fresh", "doc-1", None)
