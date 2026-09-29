@@ -608,6 +608,34 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
         # 可用性检查时刻仍按轮记录
         self.assertEqual(call.kwargs["checked_at"], "2026-07-23T00:17:00+00:00")
 
+    def test_refresh_prunes_star_observations_without_failing_round(self) -> None:
+        for prune_effect, expected in ((None, 1234), (RuntimeError("db down"), 0)):
+            repository = MagicMock()
+            repository.list_github_project_metric_targets.return_value = [
+                {"repo_id": "live", "full_name": "owner/live", "availability_status": "active"},
+            ]
+            repository.upsert_github_repo_metric_observations.return_value = 1
+            repository.prune_github_star_observations.return_value = 1234
+            repository.prune_github_star_observations.side_effect = prune_effect
+            outcomes = [
+                GitHubRepoMetricsResult(
+                    "owner/live",
+                    "succeeded",
+                    metrics={"repo_id": "live", "full_name": "owner/live", "stars": 10},
+                    http_status=200,
+                )
+            ]
+            with (
+                patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=outcomes),
+                patch.object(metrics, "_local_today", return_value=metrics.date(2026, 7, 23)),
+            ):
+                result = metrics.refresh_github_project_metric_snapshots(metric_date="2026-07-23", db=repository)
+
+            repository.prune_github_star_observations.assert_called_once_with()
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(result["snapshots"], 1)
+            self.assertEqual(result["pruned_observations"], expected)
+
 
     def test_refresh_flags_rename_via_renamed_from(self) -> None:
         # GraphQL 对改名仓库在旧名查询下返回新名数据：API 权威名与请求名不一致

@@ -565,6 +565,117 @@ def test_metric_observations_batch_failure_leaves_no_partial_state(
         _delete_candidates(database, "acme/batch-keep", "acme/batch-bad")
 
 
+def test_snapshot_writes_append_star_observations(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    """快照写入同事务追加星数观测：按实际观测时刻各记一行，同刻合并，
+    残缺 watchers 记 NULL，无效时间/星数只跳过观测、不连累快照。"""
+    repository, database = postgres_ingestion
+    repo_id = "acme/star-observations"
+
+    def observations() -> list[dict[str, Any]]:
+        with database.transaction() as connection:
+            return connection.execute(
+                "SELECT observed_at, stars, forks, watchers FROM github_repo_star_observations "
+                "WHERE repo_id=%s ORDER BY observed_at",
+                (repo_id,),
+            ).fetchall()
+
+    def batch(captured_at: str, stars: int, *, complete: bool) -> None:
+        written = repository.upsert_github_repo_metric_observations(
+            [
+                {
+                    "candidate": {"repo_id": repo_id, "full_name": repo_id, "stars": stars},
+                    "available_full_name": repo_id,
+                    "snapshot": {
+                        "repo_id": repo_id,
+                        "full_name": repo_id,
+                        "snapshot_date": "2026-09-29",
+                        "captured_at": captured_at,
+                        "stars": stars,
+                        "forks": 12,
+                        "watchers": 7,
+                        "community_metrics_complete": complete,
+                    },
+                }
+            ],
+            checked_at=captured_at,
+        )
+        assert written == 1
+
+    try:
+        batch("2026-09-29T01:00:00+00:00", 800, complete=True)
+        batch("2026-09-29T03:00:00+00:00", 840, complete=False)
+        # 同一时刻的另一来源（如 Trending）只抬高星数、不抹掉完整 watchers
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": repo_id,
+                "snapshot_date": "2026-09-29",
+                "captured_at": "2026-09-29T01:00:00+00:00",
+                "stars": 805,
+                "community_metrics_complete": False,
+            }
+        )
+        # 无效时间与零星数：快照照写，观测跳过
+        repository.insert_github_repo_snapshot(
+            {"repo_id": repo_id, "snapshot_date": "2026-09-30", "captured_at": "not-a-time", "stars": 900}
+        )
+        repository.insert_github_repo_snapshot(
+            {
+                "repo_id": repo_id,
+                "snapshot_date": "2026-10-01",
+                "captured_at": "2026-10-01T01:00:00+00:00",
+                "stars": 0,
+            }
+        )
+
+        rows = observations()
+        assert [(row["observed_at"].isoformat(), row["stars"], row["forks"], row["watchers"]) for row in rows] == [
+            ("2026-09-29T01:00:00+00:00", 805, 12, 7),
+            ("2026-09-29T03:00:00+00:00", 840, 12, None),
+        ]
+        with database.transaction() as connection:
+            snapshot_dates = [
+                row["snapshot_date"]
+                for row in connection.execute(
+                    "SELECT snapshot_date FROM github_repo_snapshots WHERE repo_id=%s ORDER BY snapshot_date",
+                    (repo_id,),
+                ).fetchall()
+            ]
+        assert snapshot_dates == ["2026-09-29", "2026-09-30", "2026-10-01"]
+    finally:
+        _delete_candidates(database, repo_id)
+
+
+def test_prune_star_observations_keeps_retention_window(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    repo_id = "acme/star-prune"
+    now = datetime.now(timezone.utc)
+    try:
+        repository.upsert_github_repo_candidate({"repo_id": repo_id, "full_name": repo_id, "stars": 700})
+        with database.transaction() as connection:
+            for hours, stars in ((80, 600), (70, 650), (1, 700)):
+                connection.execute(
+                    "INSERT INTO github_repo_star_observations (repo_id, observed_at, stars) VALUES (%s, %s, %s)",
+                    (repo_id, now - timedelta(hours=hours), stars),
+                )
+        assert repository.prune_github_star_observations(retention_hours=72) >= 1
+        with database.transaction() as connection:
+            remaining = [
+                row["stars"]
+                for row in connection.execute(
+                    "SELECT stars FROM github_repo_star_observations WHERE repo_id=%s ORDER BY observed_at",
+                    (repo_id,),
+                ).fetchall()
+            ]
+        assert remaining == [650, 700]
+    finally:
+        _delete_candidates(database, repo_id)
+
+
+
 def test_trending_metric_inputs_upsert_status_and_hot_reads(
     postgres_ingestion: tuple[Any, Any],
 ) -> None:

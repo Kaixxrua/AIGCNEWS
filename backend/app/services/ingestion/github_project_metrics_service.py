@@ -386,11 +386,17 @@ def refresh_github_project_metric_snapshots(
         db=db,
     )
     counts["skipped"] += max(0, len(full_names) - len(outcomes))
+    try:
+        pruned_observations = db.prune_github_star_observations()
+    except Exception as exc:  # noqa: BLE001 - 观测清理失败不影响日刷结果
+        pruned_observations = 0
+        logger.warning("[GitHubProjectMetrics] 过期星数观测清理失败：%s", exc, exc_info=True)
     result = {
         "status": "success",
         "metric_date": snapshot_date,
         "targets": len(full_names),
         **counts,
+        "pruned_observations": pruned_observations,
     }
     logger.info("[GitHubProjectMetrics] 每日指标快照刷新完成：%s", result)
     return result

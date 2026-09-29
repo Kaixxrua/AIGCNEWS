@@ -288,6 +288,13 @@ def test_duplicate_rows_merged_keeping_new_name(
     )
     _execute(
         database,
+        "INSERT INTO github_repo_star_observations (repo_id, observed_at, stars) VALUES "
+        "('acme/dup-old', '2026-08-13T00:30:00+00:00', 495),"
+        "('acme/dup-old', '2026-08-13T01:30:00+00:00', 494),"
+        "('acme/dup-new', '2026-08-13T01:30:00+00:00', 900)",
+    )
+    _execute(
+        database,
         "INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, "
         "subcategory_slug, description_zh, source_fingerprint, prompt_version, status) "
         "VALUES ('acme/dup-old', 'agent', 'Agent', 'general', '旧行画像', 'fp_old', 'v1', 'succeeded')",
@@ -341,6 +348,23 @@ def test_duplicate_rows_merged_keeping_new_name(
     assert snapshots.get("2026-08-12") == 480
     assert snapshots.get("2026-08-13") == 900
     assert snapshots.get(_SNAPSHOT_DATE) == 950
+    # 星数观测同样随迁：同一时刻保留新行，独有时刻迁入，含本次写入的观测
+    observations = {
+        item["observed_at"].isoformat(): item["stars"]
+        for item in _fetchall(
+            database,
+            "SELECT observed_at, stars FROM github_repo_star_observations WHERE repo_id='acme/dup-new'",
+        )
+    }
+    assert observations == {
+        "2026-08-13T00:30:00+00:00": 495,
+        "2026-08-13T01:30:00+00:00": 900,
+        _CHECKED_AT: 950,
+    }
+    assert not _fetchall(
+        database,
+        "SELECT 1 FROM github_repo_star_observations WHERE repo_id='acme/dup-old'",
+    )
     hit = _fetchone(
         database,
         "SELECT rank FROM github_trending_hits "
