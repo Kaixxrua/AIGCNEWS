@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { McpConnectController } from '@/composables/useMcpConnectController'
-import { mcpClientOptions, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
+import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
 
 const props = defineProps<{
@@ -34,11 +34,7 @@ const {
   transientCommand,
 } = props.controller
 
-const stepTitleKeys = [
-  'mcp.wizard.stepClient',
-  'mcp.wizard.stepCommand',
-  'mcp.wizard.stepVerify',
-] as const
+const stepTitleKeys = mcpWizardStepTitleKeys
 const stepDescriptionKeys = [
   'mcp.wizard.stepClientDescription',
   'mcpAutoCommand.description',
@@ -50,11 +46,7 @@ const rootEl = ref<HTMLElement | null>(null)
 const isFirst = computed(() => currentStep.value === 0)
 const isLast = computed(() => currentStep.value === stepTitleKeys.length - 1)
 
-const shellOptions = [
-  { id: 'powershell' as const, label: 'PowerShell', labelKey: '' },
-  { id: 'cmd' as const, label: '', labelKey: 'mcp.commandPrompt' },
-  { id: 'bash' as const, label: 'Bash / zsh', labelKey: '' },
-]
+const shellOptions = mcpShellOptions
 const clientOptions = mcpClientOptions
 const setupScopeKeys = {
   user: 'user',

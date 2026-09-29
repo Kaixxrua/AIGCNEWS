@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
+import { Blocks, CircleUserRound, Library, Users } from 'lucide-vue-next'
 import '@/components/mcp/connection-layout.css'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { useLiveCallCount } from '@/composables/useLiveCallCount'
+import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys } from '@/features/mcp/mcpClientCatalog'
+import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -27,6 +32,10 @@ const {
 } = controller
 
 const heroPillKeys = ['noAuth', 'publicTools', 'streamableHttp'] as const
+
+// 桌面漫画版的四格统计：总调用数与首页「MCP 总调用次数」同源实时计数，只在桌面上订阅；其余三格按向导数据计数。
+const desktop = useMediaQuery('(min-width: 1024px)')
+const mcpCalls = useLiveCallCount('mcp_total_calls', desktop)
 
 // /mcp 对游客开放为获客入口：页面与客户端选择免登录可见，登录在向导
 // 「下一步」处按需弹窗。Token 属账号数据：仅已认证时加载；认证丢失
@@ -55,7 +64,8 @@ onBeforeUnmount(dispose)
             <div class="mcp-grid-overlay" />
             <div class="connection-intro-content relative z-10">
               <div class="connection-heading">
-              <div class="mb-3 flex flex-wrap gap-2">
+              <p class="mcp-page-title comic-title">{{ t('mcp.pageTitle') }}</p>
+              <div class="mcp-hero-pills mb-3 flex flex-wrap gap-2">
                 <span v-for="pillKey in heroPillKeys" :key="pillKey" class="rounded-full border border-cyan-200/60 bg-cyan-50/75 px-2.5 py-1 text-2xs font-semibold uppercase tracking-[0.12em] text-cyan-700">{{ t(`mcp.${pillKey}`) }}</span>
               </div>
               <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('mcp.serverEyebrow') }}</p>
@@ -71,6 +81,12 @@ onBeforeUnmount(dispose)
                 <RouterLink to="/membership" class="btn-secondary shrink-0 text-xs">{{ t('mcp.quota.vipCta') }}</RouterLink>
               </div>
               </div>
+              <section v-if="desktop" class="mcp-stats" :aria-label="t('mcp.stats.label')">
+                <div class="mcp-stat"><Library aria-hidden="true" /><span>{{ t('mcp.stats.calls') }}</span><strong><RollingNumber v-if="mcpCalls !== null" :value="mcpCalls" grouping /><template v-else>—</template></strong></div>
+                <div class="mcp-stat"><CircleUserRound aria-hidden="true" /><span>{{ t('mcp.stats.clients') }}</span><strong>{{ mcpClientOptions.length }}</strong></div>
+                <div class="mcp-stat"><Users aria-hidden="true" /><span>{{ t('mcp.stats.terminals') }}</span><strong>{{ mcpShellOptions.length }}</strong></div>
+                <div class="mcp-stat"><Blocks aria-hidden="true" /><span>{{ t('mcp.stats.steps') }}</span><strong>{{ mcpWizardStepTitleKeys.length }}</strong></div>
+              </section>
             </div>
           </section>
 
@@ -111,6 +127,8 @@ onBeforeUnmount(dispose)
   background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .035) 1px, transparent 1px);
   background-size: 100% 32px;
 }
+
+.mcp-page-title { display: none; }
 
 .mcp-grid-overlay {
   position: absolute;

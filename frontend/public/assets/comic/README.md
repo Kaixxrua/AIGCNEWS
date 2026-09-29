@@ -151,3 +151,16 @@ The project catalog (`/projects`, "projects-C" concept) uses the same generator.
 - `p-pg.webp`: the pager's buttons, the field's line on a hard 2px ink block.
 
 Only the index carries a fill; the rest take the image as a frame (a pseudo-element on the cards, the element's own `border-image` on the controls and tags) and paint their own face. Together they are about 210 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and keep the dots in dimmer copies of their colours.
+
+The MCP access page (`/mcp`, "mcp-C" concept) uses the same generator. The icons in the four facts sit on watercolour discs; the step numbers, the arrows between the steps and the spark after each section label are CSS.
+
+- `mcp-card.webp`, `mcp-card-on.webp`: a client card, a thin line going from grey down the left to black along the top, the right and the foot, on a black block with navy and teal screen off the lower right; the chosen one in a heavier line on a black and a pale teal-grey block, its screen in dark green on the lime.
+- `mcp-tab.webp`, `mcp-tab-on.webp`: a wizard step, a black line that lifts off the paper halfway down the left, with a band of screen down the right end; the current step on a lime-green block.
+- `mcp-stat.webp`: a fact, a black line going grey down the right and the foot, on a soft grey block, with teal specks in the upper left.
+- `mcp-side.webp`: the settings panel, its top left corner cut off, the pen darkening round to a black right and foot on a black block, with screens in both right corners.
+- `mcp-slip.webp`, `mcp-pill.webp`: the leaning white slips of the section labels and the heading's three tags, the tags with the printer's second pass under their lower left.
+- `mcp-term.webp`, `mcp-term-on.webp`: a terminal choice (and the endpoint field), a thin navy line; the chosen one on the lime with a patch of dark-green screen.
+- `mcp-prev.webp`, `mcp-next.webp`: the back and next tickets, white and navy, pointed at the left, the navy one with a pale ghost of its outline.
+- `mcp-disc-{teal,lavender,sky,peach}.webp`: the watercolour discs under the facts' icons.
+
+The slips, tags and tickets carry their fill; the rest take the image as a frame and paint their own face. Together they are about 230 KB. The `-night` files swap the fills for the dark theme's paper (the navy ticket for pale grey), the ink for pale grey and the blocks for black, and dim the screens and the discs.

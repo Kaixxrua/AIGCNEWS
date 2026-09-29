@@ -33,7 +33,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
-const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'membership', 'monitor', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
+const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 // 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
 const DESKTOP_COMIC_ROUTES = new Set(['contact'])
 // 项目库目录（projects-C）同样按漫画概念图复刻；网页收藏视图（source=website）维持原布局。

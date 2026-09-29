@@ -36,3 +36,16 @@ export const mcpClientOptions: McpClientOption[] = [
   { id: 'vscode', label: 'VS Code', apiType: 'vscode', descriptionKey: 'mcp.clients.vscode.description', configPath: 'VS Code 默认用户 Profile', configPathKey: 'mcp.clients.vscode.target', format: 'vscode-cli', setupScope: 'conditional-user' },
   { id: 'generic-json', label: '其他客户端', labelKey: 'mcp.clients.generic-json.label', apiType: 'other', descriptionKey: 'mcp.clients.generic-json.description', configPath: 'aigc-news.mcp.json', format: 'mcp-servers', setupScope: 'import-file' },
 ]
+
+/* 执行命令的终端与接入向导的三步：向导按它渲染，/mcp 桌面版的统计按它计数。 */
+export const mcpShellOptions: { id: McpShellId; label: string; labelKey: string }[] = [
+  { id: 'powershell', label: 'PowerShell', labelKey: '' },
+  { id: 'cmd', label: '', labelKey: 'mcp.commandPrompt' },
+  { id: 'bash', label: 'Bash / zsh', labelKey: '' },
+]
+
+export const mcpWizardStepTitleKeys = [
+  'mcp.wizard.stepClient',
+  'mcp.wizard.stepCommand',
+  'mcp.wizard.stepVerify',
+] as const
