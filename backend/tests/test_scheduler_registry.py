@@ -94,6 +94,14 @@ class SchedulerDescriptorTests(unittest.TestCase):
                 True,
                 3600,
             ),
+            (
+                "github_fast_lane",
+                "github_fast_lane",
+                "GitHub 新仓快车道（近 7 天新建越线项目每 15 分钟入库）",
+                {"minute": "10,25,40,55", "second": "0"},
+                True,
+                600,
+            ),
             # 关榜采集（PR4a/PR4b）：次日 00:3x 昨日归属，misfire 宽限 30 分钟
             (
                 "github_project_metrics_closing",
@@ -280,6 +288,18 @@ class SchedulerCallbackResolutionTests(unittest.TestCase):
         self.assertIs(
             resolve_source_job_callback("x_deleted_janitor", namespace),
             janitor,
+        )
+
+    def test_resolves_github_fast_lane_callback_from_namespace(self) -> None:
+        """快车道必须命中专用回调，不得落入 _run_single_source_job 误当采集源。"""
+
+        async def fast_lane() -> None:
+            return None
+
+        namespace = {"_run_github_fast_lane_job": fast_lane}
+        self.assertIs(
+            resolve_source_job_callback("github_fast_lane", namespace),
+            fast_lane,
         )
 
     def test_resolves_closing_callbacks_from_namespace(self) -> None:

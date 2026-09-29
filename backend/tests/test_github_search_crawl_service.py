@@ -150,6 +150,55 @@ class GitHubSearchCrawlServiceTests(unittest.TestCase):
         assert by_repo["a/one"]["stars"] == 800
         assert by_repo["a/one"]["topics_json"] == '["llm"]'
 
+    def test_collect_upserted_returns_written_payloads_and_new_ids(self) -> None:
+        client = FakeSearchClient(
+            {ONE_DAY_QUERY: 3},
+            {
+                (ONE_DAY_QUERY, 1): [
+                    _item("a/one", 800),
+                    _item("a/low", 499),
+                    _item("a/two", 900),
+                ],
+            },
+        )
+        ingestion = FakeIngestion(existing={"a/two": "trending_daily"})
+
+        summary = crawl_github_search(
+            min_stars=500,
+            max_stars=0,
+            limit=5000,
+            created_start=date(2026, 1, 1),
+            created_end=date(2026, 1, 1),
+            channel="chan_test",
+            ingestion=ingestion,
+            client=client,
+            collect_upserted=True,
+        )
+
+        collected = {p["repo_id"]: p for p in summary["upserted_candidates"]}
+        assert set(collected) == {"a/one", "a/two"}
+        assert collected["a/two"]["source_channels"] == "trending_daily,chan_test"
+        assert summary["new_repo_ids"] == ["a/one"]
+
+    def test_default_summary_does_not_carry_payloads(self) -> None:
+        client = FakeSearchClient(
+            {ONE_DAY_QUERY: 1}, {(ONE_DAY_QUERY, 1): [_item("a/one", 800)]}
+        )
+
+        summary = crawl_github_search(
+            min_stars=500,
+            max_stars=0,
+            limit=5000,
+            created_start=date(2026, 1, 1),
+            created_end=date(2026, 1, 1),
+            channel="chan_test",
+            ingestion=FakeIngestion(),
+            client=client,
+        )
+
+        assert "upserted_candidates" not in summary
+        assert "new_repo_ids" not in summary
+
     def test_crawl_stops_at_limit(self) -> None:
         client = FakeSearchClient(
             {ONE_DAY_QUERY: 150},

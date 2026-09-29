@@ -252,11 +252,16 @@ def crawl_github_search(
     ingestion: GitHubProjectIngestionRepository | None = None,
     token: str = "",
     client: SearchClient | None = None,
+    collect_upserted: bool = False,
 ) -> dict[str, Any]:
     """按条件分片爬取 GitHub 仓库并写入候选库，返回运行摘要。
 
     dry_run 只做分片计数（不翻页、不写库）；正式运行时 ingestion 必填，
     每批先查既有 source_channels 合并本次 channel 标记后 upsert。
+    collect_upserted=True 时摘要额外带 upserted_candidates（本轮写入的
+    载荷列表，含合并后的 source_channels）与 new_repo_ids（其中首次入库
+    的 repo_id），供快车道对命中项立即建快照；全量爬取上万条，默认不
+    收集，避免摘要膨胀。
     """
     pushed_after = (pushed_after or "").strip()
     channel = (channel or "").strip()
@@ -305,6 +310,8 @@ def crawl_github_search(
             return summary
 
         seen: set[str] = set()
+        collected: list[dict[str, Any]] = []
+        new_repo_ids: list[str] = []
         fetched = upserted = skipped_low_stars = skipped_duplicates = new_candidates = 0
         stop = False
         for start, end, available in shards:
@@ -343,10 +350,14 @@ def crawl_github_search(
                     for payload in batch:
                         if payload["repo_id"] not in channels:
                             new_candidates += 1
+                            if collect_upserted:
+                                new_repo_ids.append(payload["repo_id"])
                         payload["source_channels"] = merge_channels(
                             channels.get(payload["repo_id"], ""), channel
                         )
                         ingestion.upsert_github_repo_candidate(payload)
+                    if collect_upserted:
+                        collected.extend(batch)
                 upserted += len(batch)
                 logger.info(
                     "[GitHubSearchCrawl] %s..%s 第 %d 页：本批 %d，累计写入 %d/%d。",
@@ -369,6 +380,9 @@ def crawl_github_search(
                 "api_requests": search_client.requests,
             }
         )
+        if collect_upserted:
+            summary["upserted_candidates"] = collected
+            summary["new_repo_ids"] = new_repo_ids
     finally:
         if own_client:
             search_client.close()

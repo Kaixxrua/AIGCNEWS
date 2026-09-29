@@ -26,6 +26,7 @@ JobSource = Literal[
     "github_project_daily_pipeline",
     "github_project_metrics_refresh",
     "github_project_metrics_closing",
+    "github_fast_lane",
     "x_closing",
     "hackernews_closing",
     "news_closing",
@@ -205,6 +206,16 @@ SOURCE_JOB_DESCRIPTORS: tuple[CronJobDescriptor, ...] = (
         coalesce=True,
         misfire_grace_time=3600,
     ),
+    # 新仓快车道：补上每日全量爬取之间的发现空窗，锁忙即让路。分钟错开
+    # 整点各源（:01–:08）与两小时刷新（:17）；错过超过 10 分钟宁可等下一轮。
+    CronJobDescriptor(
+        id="github_fast_lane",
+        source="github_fast_lane",
+        name="GitHub 新仓快车道（近 7 天新建越线项目每 15 分钟入库）",
+        schedule=CronSchedule(minute="10,25,40,55"),
+        coalesce=True,
+        misfire_grace_time=600,
+    ),
     # ── CST 源关榜采集（次日 00:3x，昨日归属）─────────────────────────
     # 与分源定稿契约对齐：CST 源 01:00 揭榜前，用一轮昨日归属的采集收齐
     # 源日界尾巴（hourly 末轮 23:0x 之后的内容）。misfire 宽限 30 分钟：
@@ -328,6 +339,7 @@ def resolve_source_job_callback(
         "github_project_daily_pipeline": "_run_github_project_daily_pipeline_job",
         "github_project_metrics_refresh": "_run_github_project_metrics_refresh_job",
         "github_project_metrics_closing": "_run_github_project_metrics_closing_job",
+        "github_fast_lane": "_run_github_fast_lane_job",
         "x_credentials_probe": "_run_x_credentials_probe_job",
         "x_deleted_janitor": "_run_x_deleted_janitor_job",
         "x_closing": "_run_x_closing_job",

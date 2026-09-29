@@ -81,6 +81,9 @@ _GITHUB_METRICS_MAX_AGE = timedelta(hours=2, minutes=15)
 _JOB_LOCK_WAIT_TIMEOUT = 3 * 3600
 _GITHUB_ENRICH_TOP_UP_TIMEOUT = 20 * 60
 _GITHUB_DAILY_PIPELINE_TIMEOUT = 2 * 3600
+# 新仓快车道：锁忙即让路（只等几秒防与刚释放的锁擦肩），发现+快照整体封顶
+_GITHUB_FAST_LANE_LOCK_WAIT = 5
+_GITHUB_FAST_LANE_TIMEOUT = 10 * 60
 
 # 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
 _DEFAULT_ALERT_FAILURE_THRESHOLD = 3
@@ -714,6 +717,115 @@ async def _run_github_project_metrics_refresh_job(
         return False
 
 
+async def _enrich_fast_lane_github_projects(
+    *,
+    enrichment: Any,
+    semantic_sources: Any,
+    hydrate_readmes: bool,
+) -> Dict[str, Any]:
+    from backend.app.services.ingestion.github_fast_lane import hydrate_github_readmes
+
+    readme: Dict[str, Any] | None = None
+    if hydrate_readmes and semantic_sources is not None:
+        readme = await asyncio.to_thread(hydrate_github_readmes, semantic_sources)
+    return {
+        "readme_bootstrap": readme,
+        "enrichment": await _enrich_newly_eligible_github_projects(enrichment),
+    }
+
+
+async def _run_github_fast_lane_job(
+    *,
+    repository: Any,
+    enrichment: Any,
+    semantic_sources: Any = None,
+    documents: Any = None,
+    github_lock: asyncio.Lock | None = None,
+) -> bool:
+    """新仓快车道：发现近几天新建的越线仓库，建快照、算指标、补富化。
+
+    与其他 GitHub 任务共用 github 锁以免并发写同批行和叠加 Search 限速，
+    但绝不排队：锁被每日流水线/两小时刷新/热榜占着时本轮直接让路（这些
+    任务本身就覆盖了发现或快照），15 分钟后下一轮再来。让路不算失败。
+    """
+    from backend.app.services.ingestion.github_project_enricher import (
+        github_enrichment_batch_running,
+    )
+    from backend.app.services.ingestion.github_project_metrics_service import (
+        current_github_metric_date,
+    )
+
+    lock = github_lock or asyncio.Lock()
+    if lock.locked():
+        logger.info("[Scheduler] GitHub 快车道：其他 GitHub 任务持锁中，本轮让路。")
+        return True
+    try:
+        await asyncio.wait_for(lock.acquire(), timeout=_GITHUB_FAST_LANE_LOCK_WAIT)
+    except TimeoutError:
+        logger.info("[Scheduler] GitHub 快车道：锁已被排队任务接手，本轮让路。")
+        return True
+    try:
+        try:
+            from backend.app.services.ingestion.github_fast_lane import run_github_fast_lane
+
+            corroborated = await _fetch_growth_corroboration(
+                current_github_metric_date(), documents
+            )
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        run_github_fast_lane,
+                        ingestion=repository,
+                        corroborated_repo_ids=corroborated,
+                    ),
+                    timeout=_GITHUB_FAST_LANE_TIMEOUT,
+                )
+            except TimeoutError:
+                # 放锁不等线程：写入均为幂等 upsert，悬挂线程自行收尾
+                logger.error(
+                    "[Scheduler] GitHub 快车道超过 %ds 封顶，已释放锁。",
+                    _GITHUB_FAST_LANE_TIMEOUT,
+                )
+                return False
+        except Exception as exc:
+            logger.error("[Scheduler] GitHub 快车道失败: %s", exc, exc_info=True)
+            return False
+
+        top_up: Dict[str, Any] | None = None
+        if github_enrichment_batch_running():
+            # 运维面板手动批次不走调度锁；让它跑完，本轮只建快照
+            logger.info("[Scheduler] GitHub 快车道：已有富化批次在跑，本轮跳过富化。")
+        else:
+            try:
+                top_up = await asyncio.wait_for(
+                    _enrich_fast_lane_github_projects(
+                        enrichment=enrichment,
+                        semantic_sources=semantic_sources,
+                        hydrate_readmes=bool(result.get("readme_candidates")),
+                    ),
+                    timeout=_GITHUB_ENRICH_TOP_UP_TIMEOUT,
+                )
+            except TimeoutError:
+                logger.error(
+                    "[Scheduler] GitHub 快车道富化超过 %ds 封顶，"
+                    "已释放锁并请求批次终止（快照与指标不受影响）。",
+                    _GITHUB_ENRICH_TOP_UP_TIMEOUT,
+                )
+                _cancel_github_enrichment_safely()
+            except Exception as exc:  # noqa: BLE001 - 非致命，记入日志即可
+                logger.error("[Scheduler] GitHub 快车道富化失败（非致命）: %s", exc, exc_info=True)
+    finally:
+        lock.release()
+    logger.info(
+        "[Scheduler] GitHub 快车道完成：命中 %s，新入库 %s %s，富化：%s",
+        result.get("hits"),
+        result.get("new_candidates"),
+        result.get("new_repo_ids"),
+        top_up,
+    )
+    return True
+
+
 async def _run_github_project_metrics_closing_job(
     *,
     repository: Any,
@@ -1281,6 +1393,20 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_github_fast_lane_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "github_fast_lane",
+                lambda: _run_github_fast_lane_job(
+                    repository=self.repositories.github_ingestion,
+                    enrichment=self.repositories.github_enrichment,
+                    semantic_sources=self.repositories.github_semantic_sources,
+                    documents=self.repositories.documents,
+                    github_lock=self._github_job_lock,
+                ),
+            )
+        )
+
     async def _run_github_project_metrics_closing_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -1528,6 +1654,7 @@ class ApplicationSchedulerRuntime:
             "_run_github_project_metrics_closing_job": (
                 self._run_github_project_metrics_closing_job
             ),
+            "_run_github_fast_lane_job": self._run_github_fast_lane_job,
             "_run_x_credentials_probe_job": self._run_x_credentials_probe_job,
             "_run_x_deleted_janitor_job": self._run_x_deleted_janitor_job,
             "_run_x_closing_job": self._run_x_closing_job,
