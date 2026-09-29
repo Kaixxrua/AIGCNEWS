@@ -329,9 +329,11 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         subscription_dispatch = AsyncMock()
         conversation_cleanup = AsyncMock()
         semantic_warmup = AsyncMock()
+        fast_lane = AsyncMock()
 
         with (
             patch.object(scheduler, "_run_single_source_job", new=single_source),
+            patch.object(scheduler, "_run_github_fast_lane_job", new=fast_lane),
             patch.object(
                 scheduler,
                 "_run_github_project_daily_pipeline_job",
@@ -377,6 +379,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             asyncio.run(runtime._run_single_source_job("x"))
             asyncio.run(runtime._run_github_project_daily_pipeline_job())
             asyncio.run(runtime._run_github_project_metrics_refresh_job())
+            asyncio.run(runtime._run_github_fast_lane_job())
             asyncio.run(runtime._run_x_credentials_probe_job())
             asyncio.run(runtime._run_x_deleted_janitor_job())
             asyncio.run(runtime._run_daily_briefing_job())
@@ -414,6 +417,17 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
 
         self.assertIsInstance(metrics_refresh.await_args.kwargs["logo_repository"], PostgresGitHubLogoRepository)
+        # 快车道也带 logo 仓库：刷新常被部署重启打断，新上榜的仓不能只靠它补图
+        fast_lane.assert_awaited_once_with(
+            repository=repositories.github_ingestion,
+            enrichment=repositories.github_enrichment,
+            semantic_sources=repositories.github_semantic_sources,
+            documents=repositories.documents,
+            github_lock=runtime._github_job_lock,
+            fast_lane_share=runtime._github_fast_lane_share,
+            logo_repository=fast_lane.await_args.kwargs["logo_repository"],
+        )
+        self.assertIsInstance(fast_lane.await_args.kwargs["logo_repository"], PostgresGitHubLogoRepository)
         x_credentials_probe.assert_awaited_once_with(
             repositories=repositories,
             x_lock=runtime._x_operation_lock,
