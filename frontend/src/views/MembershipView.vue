@@ -140,7 +140,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   <div class="membership-page">
     <div class="membership-card">
       <header class="stagger-enter membership-hero">
-        <h1 class="membership-title">{{ t('membership.title') }}</h1>
+        <h1 class="membership-title comic-title">{{ t('membership.title') }}</h1>
         <p class="membership-subtitle">{{ t('membership.subtitle') }}</p>
       </header>
 

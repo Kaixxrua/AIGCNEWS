@@ -709,4 +709,77 @@
     #app .app-shell--comic-page .legal-aside { position: static; margin-top: 30px; padding-left: 0; border-left: 0; }
   }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .legal-body section.is-flash { animation: none; } }
+
+  /* ── Membership (membership-C): three comic price cards; tier names are tilted tags, the vip card carries a lime
+     spine and a lime "recommended" tag, the call to action is an ink bar with lime sparks. Features read at 15.5px. ── */
+  #app .app-shell--comic-page .membership-page { display: block; padding: 18px 28px calc(var(--peel-clear) + 28px); background: transparent; }
+  #app .app-shell--comic-page .membership-card { max-width: 1480px; margin: 0 auto; gap: 30px; }
+  #app .app-shell--comic-page .membership-hero { text-align: left; }
+  #app .app-shell--comic-page .membership-title.comic-title { margin: 0 36px 0 0; font-size: 44px; }
+  #app .app-shell--comic-page .membership-subtitle { max-width: none; margin: 10px 0 0; color: var(--ink); font-size: 16px; font-weight: 700; line-height: 1.6; }
+  #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; padding-top: 14px; }
+  #app .app-shell--comic-page .tier-card {
+    isolation: isolate; padding: 28px 30px 26px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 5px 5px 0 var(--comic-shadow); backdrop-filter: none;
+  }
+  /* Halftone in two corners, clear of the text. */
+  #app .app-shell--comic-page .tier-card::before,
+  #app .app-shell--comic-page .tier-card::after {
+    content: ''; position: absolute; z-index: -1; width: 150px; height: 90px; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px; opacity: .5;
+  }
+  #app .app-shell--comic-page .tier-card::before { top: 0; right: 0; mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 70%); }
+  #app .app-shell--comic-page .tier-card::after { bottom: 0; left: 0; mask-image: radial-gradient(ellipse 100% 100% at 0 100%, #000 8%, transparent 70%); }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-card::before, .tier-card::after) { opacity: .16; }
+  #app .app-shell--comic-page .tier-card--member { padding-left: 38px; box-shadow: inset 9px 0 0 var(--acid), 5px 5px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .tier-badge {
+    top: -18px; right: 22px; padding: 3px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    box-shadow: 2px 2px 0 var(--comic-shadow); font-size: 17px; font-style: italic; font-weight: 950; letter-spacing: 0; transform: rotate(-5deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .tier-badge--current { background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page .tier-name {
+    align-self: flex-start; margin: 0 0 22px; padding: 2px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 24px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 1.3; transform: rotate(-4deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .tier-price { row-gap: 10px; }
+  #app .app-shell--comic-page .tier-price-amount { font-size: 60px; font-weight: 600; -webkit-text-stroke: 1.4px currentColor; }
+  #app .app-shell--comic-page .tier-price-period { margin-left: 8px; color: var(--ink); font-size: 20px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-billing-btn {
+    gap: 8px; padding: 7px 14px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    box-shadow: 3px 3px 0 var(--comic-shadow); font-size: 15px; font-style: italic; font-weight: 900; transform: rotate(-2deg);
+  }
+  #app .app-shell--comic-page .tier-billing-btn[aria-pressed='true'] { border-color: var(--rule-strong); background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page .tier-billing-tag,
+  #app .app-shell--comic-page .tier-savings {
+    display: inline-block; padding: 1px 8px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--acid); color: var(--acid-ink); font-size: 13px; font-style: italic; font-weight: 900; line-height: 1.5;
+  }
+  #app .app-shell--comic-page .tier-savings { margin-left: 12px; box-shadow: 2px 2px 0 var(--comic-shadow); font-size: 14px; transform: rotate(-4deg) skewX(-6deg); }
+  #app .app-shell--comic-page .tier-price-yearly { margin-top: 12px; color: var(--ink); font-size: 17px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-divider { margin: 22px 0 20px; border-top: 2px solid var(--rule-strong); }
+  #app .app-shell--comic-page .tier-features { gap: 14px; margin-bottom: 24px; color: var(--ink); font-size: 15.5px; line-height: 1.6; }
+  #app .app-shell--comic-page .tier-features li { gap: 12px; }
+  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 20px; height: 20px; margin-top: 2px; stroke-width: 3; }
+  #app .app-shell--comic-page .tier-feature--excluded { color: var(--ink-muted); }
+  #app .app-shell--comic-page :is(.tier-plan-note, .tier-member-note) { padding-top: 18px; border-top: 1.5px dashed var(--rule-strong); font-size: 14.5px; }
+  #app .app-shell--comic-page .tier-plan-note { color: var(--ink-muted); }
+  #app .app-shell--comic-page .tier-cta {
+    gap: 14px; min-height: 56px; padding: 10px 22px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 8px 5px 7px;
+    background: var(--rule-strong); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--acid); font-size: 22px; font-style: italic; font-weight: 950;
+  }
+  #app .app-shell--comic-page .tier-cta:hover { background: var(--rule-strong); color: #fff; }
+  #app .app-shell--comic-page .tier-cta::before,
+  #app .app-shell--comic-page .tier-cta::after {
+    content: ''; flex: 0 0 16px; height: 20px; background: var(--acid);
+    clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
+  }
+  #app .app-shell--comic-page .tier-cta::before { transform: scaleX(-1); }
+  #app .app-shell--comic-page .tier-cta-hint { margin-top: 12px; color: var(--ink-secondary); font-size: 13.5px; line-height: 1.65; }
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .tier-grid { gap: 22px; }
+    #app .app-shell--comic-page .tier-card { padding: 24px 22px 22px; }
+    #app .app-shell--comic-page .tier-price-amount { font-size: 50px; }
+    #app .app-shell--comic-page .tier-features { font-size: 15px; }
+  }
 }
