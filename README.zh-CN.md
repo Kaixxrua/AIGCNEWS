@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="在线使用" src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E4%BD%BF%E7%94%A8-aigcnews.cn-blue"></a>
   <a href="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml"><img alt="CI: Contract Baseline" src="https://github.com/Kaixxrua/AIGC_NEWS/actions/workflows/contract-baseline.yml/badge.svg?branch=main"></a>
-  <a href="LICENSE"><img alt="License: BSL 1.1" src="https://img.shields.io/badge/License-BSL%201.1-lightgrey"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue"></a>
   <a href="https://cursor.com/en-US/install-mcp?name=aigc-radar&config=eyJ1cmwiOiJodHRwczovL2FpZ2NuZXdzLmNuL2FwaS9tY3AifQ=="><img alt="Install in Cursor" src="https://cursor.com/deeplink/mcp-install-dark.svg"></a>
   <a href="https://aigcnews.cn/mcp?utm_source=github&utm_medium=readme"><img alt="Install in VS Code" src="https://img.shields.io/badge/Install%20in-VS%20Code-007acc"></a>
 </p>
@@ -254,4 +254,4 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 
 ## License
 
-[Business Source License 1.1](LICENSE) © 2026 Kaixxrua —— 非生产使用与内部非商业使用免费；商业使用与公网部署需获得作者事先书面授权；每个版本首次公开发行满四年后自动转为 Apache-2.0。
+[GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua —— 可自由使用、修改与自托管（含商用）；若将修改版以公网服务形式对外提供，须以 AGPL-3.0 公开其源码。商业授权请联系作者。
