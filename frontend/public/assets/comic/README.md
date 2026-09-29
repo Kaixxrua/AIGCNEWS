@@ -29,6 +29,19 @@ The UI library cards are drawn frames rather than CSS borders, rendered procedur
 
 `a` and `b` use different seeds and alternate between neighbouring cards so the drawing does not repeat exactly. The `-night` files are the same drawings in the dark theme's paper, grey ink and dimmer halftone.
 
+The rest of the UI library page comes from the same generator as the pages below (3× 9-slice, each with a `-night` copy):
+
+- `ul-search.webp`: the search, a thin slate line darkening along its foot, the pen pressed hard into the lower left corner with a little dry smudge under it.
+- `ul-fw.webp`: the framework picker, grey along the top and black down the left, the foot and the right, over a teal dry-brush step to the lower right, with a streak of teal inside the corner.
+- `ul-btn.webp`: the plain buttons (pause all, load more, the empty state's), an ink line all round with the teal corner.
+- `ul-kind.webp`: the chosen material, a navy block whose line goes black along the foot and right, with a pale glint round the inside of its top left corner.
+- `ul-side.webp`: the purpose index, a pale line along the top darkening down both sides to a black foot, a faint second stroke off the upper left, teal specks in the lower left and a soft grey step under it.
+- `ul-rank-on.webp`: the chosen ranking, a lime pill in heavy ink with a glint and, beside it, the spark (a black tick, a green stroke, a faint dash).
+- `ul-rank-a.webp`, `ul-rank-b.webp`, `ul-rank-open.webp`: the brackets round the next rankings, no box, only a pale foot with a curl at the top left and a hook down the right (the second inked darker toward the right), and the open brackets with a spark round the likes.
+- `ul-badge.webp`: the framework tag on a card's preview, a white slip whose left side leans, with a black wedge under its lower right.
+
+The controls and the index carry the frame as their own `border-image` (the index scrolls, and the frame stays put); the navy block, the lime pill and the slip bring their fill. Together they are about 130 KB.
+
 The DSH page (`/dsh`, "dsh-C" concept) is drawn the same way, with one generator for all of its pieces: each frame is one 3× 9-slice layer with a transparent middle, laid on `::after` around an element that paints its own fill. So one frame serves any fill (and the dark theme), and hover can change the colour under the ink. Every frame was calibrated to the concept's edge pixels; halftone patches sit in the bottom-right corner slice and the screen is orthogonal throughout, as in the concept.
 
 - `dsh-panel.webp` (intro and abilities panels): a 1.9px wobbling ink line over a slate extrusion (5px right, 6px down) outlined in black and darkened where it meets the panel, with 7.3px dots in the corner.

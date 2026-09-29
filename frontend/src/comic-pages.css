@@ -746,19 +746,28 @@
   #app .app-shell--comic-page .xboard-account-chip input:checked { border-color: var(--x-check); background: var(--x-check) var(--x-tick) center / 12px 12px no-repeat; }
   #app .app-shell--comic-page .xboard-account-chip input:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 2px; }
 
-  /* ── UI library (ui-library-C): measured off the concept at 1536 × 1024. Thin slate rules and soft shadows on the
-     search, the purpose index and the tabs; ink frames with a drawn shadow on the framework picker, the cards and
-     their buttons; a glossy lime chip for the chosen ranking and a navy block for the chosen material. ── */
+  /* ── UI library (ui-library-C): measured off the concept at 1536 × 1024. Every drawn piece is a generated 9-slice
+     image (public/assets/comic/ui-*.webp, -night for the dark theme): the search's slate line, the framework picker
+     and the plain buttons with their teal dry-brush corner, the purpose index, the navy material block, the lime
+     ranking chip and the brackets round the next rankings, the cards and their buttons, and the React slip. ── */
   #app .app-shell--comic-page .ui-library {
     --ul-ink: #0a1226; --ul-black: #05080f; --ul-strong: #05080f; --ul-text: #131f35; --ul-soft: #1d304a; --ul-muted: #4e5e74; --ul-count: #354c63;
     --ul-rule: #5a6777; --ul-side-rule: #3f4652; --ul-paper: #fefdf8; --ul-white: #fff; --ul-lime: #cdfa19; --ul-lime-deep: #bfe80f;
     --ul-navy: #03172f; --ul-on-navy: #fff; --ul-active: #ecf3f2; --ul-dots: #2f8f9c; --ul-drop: rgb(10 18 32 / .24);
+    --ul-f-search: url('/assets/comic/ul-search.webp'); --ul-f-fw: url('/assets/comic/ul-fw.webp'); --ul-f-btn: url('/assets/comic/ul-btn.webp');
+    --ul-f-kind: url('/assets/comic/ul-kind.webp'); --ul-f-side: url('/assets/comic/ul-side.webp'); --ul-f-badge: url('/assets/comic/ul-badge.webp');
+    --ul-f-rank-on: url('/assets/comic/ul-rank-on.webp'); --ul-f-rank-a: url('/assets/comic/ul-rank-a.webp');
+    --ul-f-rank-b: url('/assets/comic/ul-rank-b.webp'); --ul-f-rank-open: url('/assets/comic/ul-rank-open.webp');
     padding: 4px 4px calc(var(--peel-clear) + 28px) 10px;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library {
     --ul-ink: var(--ink); --ul-black: #8d9099; --ul-strong: var(--ink); --ul-text: var(--ink); --ul-soft: var(--ink-secondary); --ul-muted: var(--ink-secondary); --ul-count: var(--ink-secondary);
     --ul-rule: #6b6e76; --ul-side-rule: #6b6e76; --ul-paper: var(--paper-raised); --ul-white: var(--paper-raised); --ul-lime: var(--acid); --ul-lime-deep: var(--acid-strong);
     --ul-navy: var(--ink); --ul-on-navy: var(--paper-raised); --ul-active: var(--acid-soft); --ul-dots: var(--comic-cyan-line); --ul-drop: rgb(0 0 0 / .45);
+    --ul-f-search: url('/assets/comic/ul-search-night.webp'); --ul-f-fw: url('/assets/comic/ul-fw-night.webp'); --ul-f-btn: url('/assets/comic/ul-btn-night.webp');
+    --ul-f-kind: url('/assets/comic/ul-kind-night.webp'); --ul-f-side: url('/assets/comic/ul-side-night.webp'); --ul-f-badge: url('/assets/comic/ul-badge-night.webp');
+    --ul-f-rank-on: url('/assets/comic/ul-rank-on-night.webp'); --ul-f-rank-a: url('/assets/comic/ul-rank-a-night.webp');
+    --ul-f-rank-b: url('/assets/comic/ul-rank-b-night.webp'); --ul-f-rank-open: url('/assets/comic/ul-rank-open-night.webp');
   }
   #app .app-shell--comic-page .ui-library__header { align-items: flex-end; margin-bottom: 9px; padding-left: 18px; }
   /* The title's brush and spark are traced off the concept: a stroke rising under the lower half of the words from
@@ -775,23 +784,27 @@
   #app .app-shell--comic-page .ui-library__header p:not(.ui-library__eyebrow) { color: var(--ul-strong); font-size: 16.5px; font-weight: 700; line-height: 22px; }
   #app .app-shell--comic-page .ui-library__mcp { display: none; }
 
-  /* Search: a thin slate rule, 10px round, a soft drop; the framework picker is ink-framed. */
+  /* Search: a thin slate line, 8.5px round, pressed dark into its lower left; the framework picker inked black down
+     its left, foot and right over a teal dry-brush step. Both frames are the control's own border-image. */
   #app .app-shell--comic-page .ui-library__toolbar { gap: 13px; margin-bottom: 12px; }
   #app .app-shell--comic-page .ui-library__search {
-    min-height: 36px; gap: 11px; padding: 0 14px 0 16px; border: 1.5px solid var(--ul-rule); border-radius: 10px;
-    background: var(--ul-paper); box-shadow: 0 1.5px 2px var(--ul-drop);
+    min-height: 37px; gap: 11px; padding: 0 15px 0 17px; border: 0 solid transparent; border-radius: 8.5px;
+    border-image: var(--ul-f-search) 39 42 48 198 / 13px 14px 16px 66px / 2px 2px 4px 2px stretch;
+    background: var(--ul-paper); box-shadow: none;
   }
   #app .app-shell--comic-page .ui-library__search svg { width: 20px; height: 20px; color: var(--ul-black); stroke-width: 2.7; }
   #app .app-shell--comic-page .ui-library__search input { padding: 6px 0; color: var(--ul-ink); font-size: 15px; }
   #app .app-shell--comic-page .ui-library__search input::placeholder { color: var(--ul-muted); opacity: 1; }
   #app .app-shell--comic-page .ui-library__framework {
-    flex: 0 0 155px; min-height: 37px; gap: 10px; padding: 0 12px 0 14px; border: 2px solid var(--ul-black); border-radius: 10px;
-    background: var(--ul-white); box-shadow: 1px 2px 3px var(--ul-drop), inset -1.5px -1.5px 0 color-mix(in srgb, var(--ul-dots) 35%, transparent); color: var(--ul-strong);
+    flex: 0 0 155px; min-height: 37px; gap: 10px; padding: 0 14px 0 16px; border: 0 solid transparent; border-radius: 9.5px;
+    border-image: var(--ul-f-fw) 45 54 54 45 / 15px 18px 18px 15px / 2px 5px 5px 2px stretch;
+    background: var(--ul-white); box-shadow: none; color: var(--ul-strong);
   }
+  #app .app-shell--comic-page .ui-library__framework:lang(en) { flex-basis: 192px; }
   #app .app-shell--comic-page .ui-library__framework svg { width: 18px; height: 18px; stroke-width: 2.4; }
   #app .app-shell--comic-page .ui-library__framework select { width: 100%; max-width: none; color: var(--ul-strong); font-size: 15px; font-weight: 600; }
 
-  /* Material kinds: plain counted words; the chosen one a navy block. */
+  /* Material kinds: plain counted words; the chosen one a drawn navy block (ul-kind), black along its foot and right. */
   #app .app-shell--comic-page .ui-library__kinds { align-items: center; gap: 2px; margin-bottom: 10px; padding: 0 5px 0 0; border-bottom: 0; }
   #app .app-shell--comic-page .ui-library__kinds button {
     gap: 14px; min-height: 39px; padding: 5px 13px; border: 2px solid transparent; border-radius: 8px;
@@ -800,8 +813,8 @@
   #app .app-shell--comic-page .ui-library__kinds button span { color: var(--ul-count); font-size: 13px; font-weight: 500; opacity: 1; font-variant-numeric: tabular-nums; }
   #app .app-shell--comic-page .ui-library__kinds button:hover { background: var(--ul-active); }
   #app .app-shell--comic-page .ui-library__kinds button[aria-pressed=true] {
-    gap: 8px; border-color: var(--ul-black); background: linear-gradient(180deg, color-mix(in srgb, var(--ul-navy) 88%, #fff), var(--ul-navy) 40%);
-    box-shadow: 1px 3px 3px var(--ul-drop); color: var(--ul-on-navy); font-weight: 500;
+    gap: 8px; border-image: var(--ul-f-kind) 39 42 48 39 fill / 13px 14px 16px 13px / 2px 3px 5px 2px stretch;
+    background: transparent; box-shadow: none; color: var(--ul-on-navy); font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__kinds button[aria-pressed=true] span { color: inherit; font-size: 12px; opacity: .85; }
 
@@ -809,9 +822,13 @@
   #app .app-shell--comic-page .ui-library__body { grid-template-columns: 204px minmax(0, 1fr); gap: 21px; }
   /* The routed view is the shell less its 110px header and 74px footer; the panel starts 182px into the view and
      keeps 12px clear above the footer. */
+  /* The drawn frame (ul-side: a pale top line darkening down both sides to a black foot, teal specks in the lower
+     left, a soft grey step) is the scroller's own border-image, so it stays put while the list scrolls. */
   #app .app-shell--comic-page .ui-library__sidebar {
-    top: 12px; max-height: calc(100dvh / var(--shell-zoom, 1) - 184px - 194px); padding: 12px 10px 12px 0;
-    border: 1.5px solid var(--ul-side-rule); border-radius: 12px; background: var(--ul-paper); box-shadow: 1px 2px 3px var(--ul-drop);
+    top: 12px; max-height: calc(100dvh / var(--shell-zoom, 1) - 184px - 194px); padding: 13.5px 11.5px 21px 1.5px;
+    border: 0 solid transparent; border-radius: 12px;
+    border-image: var(--ul-f-side) 51 54 87 207 / 17px 18px 29px 69px / 2px 3px 7px 3px stretch;
+    background: var(--ul-paper); box-shadow: none;
   }
   #app .app-shell--comic-page .ui-library__sidebar nav { gap: 0; }
   #app .app-shell--comic-page .ui-library__sidebar :is(button, .ui-library__group-title) {
@@ -834,8 +851,9 @@
     background: var(--ul-lime); box-shadow: 1px 2px 2px var(--ul-drop); color: #05080f; font-size: 13px; font-weight: 800;
   }
 
-  /* Rankings, as drawn: a glossy lime chip with its spark for the chosen one; the next two white chips caught in
-     inked corner brackets; the week and month bare words with a tick between; the likes in open brackets. */
+  /* Rankings, as drawn (all generated frames): a glossy lime chip with its spark for the chosen one; the next two
+     no box, only a pale foot and the brackets a pen puts round them; the week and month bare words with a tick
+     between; the likes in open brackets with a spark. The border stays 1px so the labels keep their places. */
   #app .app-shell--comic-page .ui-library__rankbar { gap: 12px; margin: 0; }
   #app .app-shell--comic-page .ui-library__rankbar > span { display: none; }
   #app .app-shell--comic-page .ui-library__rankbar nav { align-items: center; gap: 6px 18px; padding: 0 14px 0 0; }
@@ -844,32 +862,19 @@
     color: var(--ul-ink); font-size: 16px; font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__rankbar button::before,
-  #app .app-shell--comic-page .ui-library__rankbar button::after { content: none; position: absolute; pointer-events: none; }
-  #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(2), :nth-child(3)):not([aria-pressed=true]) {
-    border-color: color-mix(in srgb, var(--ul-rule) 22%, transparent); background: var(--ul-white); box-shadow: 0 2px 2px var(--ul-drop);
-  }
-  #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(2), :nth-child(3), :nth-child(6)):not([aria-pressed=true])::before {
-    content: ''; left: -2px; top: -2px; width: 10px; height: 13px; border: solid var(--ul-black); border-width: 2px 0 0 2px; border-top-left-radius: 9px;
-  }
-  #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(2), :nth-child(3), :nth-child(6)):not([aria-pressed=true])::after {
-    content: ''; right: -2px; bottom: -2px; width: 8px; height: 21px; border: solid var(--ul-black); border-width: 0 2px 2px 0; border-bottom-right-radius: 8px;
-  }
+  #app .app-shell--comic-page .ui-library__rankbar button::after { content: none; }
+  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(2):not([aria-pressed=true]) { border-image: var(--ul-f-rank-a) 42 51 45 45 / 14px 17px 15px 15px / 2px 3px 3px 3px stretch; }
+  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(3):not([aria-pressed=true]) { border-image: var(--ul-f-rank-b) 42 141 45 45 / 14px 47px 15px 15px / 2px 3px 3px 3px stretch; }
+  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(6):not([aria-pressed=true]) { border-image: var(--ul-f-rank-open) 60 93 45 45 / 20px 31px 15px 15px / 8px 15px 3px 3px stretch; }
   #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(4), :nth-child(5)):not([aria-pressed=true])::after {
-    content: ''; right: -12px; top: calc(50% - 3px); width: 1.5px; height: 7px; background: var(--ul-black); transform: rotate(8deg);
+    content: ''; position: absolute; right: -12px; top: calc(50% - 3px); width: 1.5px; height: 7px; background: var(--ul-black); transform: rotate(8deg); pointer-events: none;
   }
   #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(4), :nth-child(5), :nth-child(6)):not([aria-pressed=true]) { padding-inline: 12px; }
-  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(6):not([aria-pressed=true])::after { height: 30px; bottom: 2px; transform: rotate(4deg); }
   #app .app-shell--comic-page .ui-library__rankbar button:not([aria-pressed=true]):hover { background-color: var(--ul-active); }
   #app .app-shell--comic-page .ui-library__rankbar button[aria-pressed=true] {
-    min-height: 35px; padding: 3px 16px; border: 2.5px solid var(--ul-black); border-radius: 9px;
-    background:
-      linear-gradient(152deg, transparent 0 7%, rgb(255 255 255 / .75) 8% 10%, transparent 11%),
-      linear-gradient(180deg, color-mix(in srgb, var(--ul-lime) 82%, #fff), var(--ul-lime) 45%, var(--ul-lime-deep));
-    box-shadow: 1px 2px 2px var(--ul-drop), inset -2px -2px 0 rgb(90 120 0 / .22); color: #05080f; font-weight: 800;
-  }
-  #app .app-shell--comic-page .ui-library__rankbar button[aria-pressed=true]::after {
-    content: ''; right: -16px; top: -9px; width: 14px; height: 18px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 18' fill='none' stroke-linecap='round'%3E%3Cpath d='M1.5 7 4.5 1.2' stroke='%2305080f' stroke-width='2.4'/%3E%3Cpath d='M5.5 10 11.5 5' stroke='%23b4dc1a' stroke-width='2.3'/%3E%3Cpath d='M6.5 16h6' stroke='%23b4dc1a' stroke-width='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+    min-height: 37px; padding: 3px 16px; border-radius: 10px;
+    border-image: var(--ul-f-rank-on) 63 96 51 45 fill / 21px 32px 17px 15px / 8px 19px 4px 2px stretch;
+    background: transparent; box-shadow: none; color: #05080f; font-weight: 800;
   }
   #app .app-shell--comic-page .ui-library__quota { gap: 0; margin: 9px 0 0; color: var(--ul-ink); font-size: 14.5px; font-weight: 500; }
   #app .app-shell--comic-page .ui-library__quota a { color: var(--ul-ink); font-weight: 500; text-decoration: none; }
@@ -881,8 +886,8 @@
   #app .app-shell--comic-page .ui-library__autoplay-hint { margin-right: 18px; color: var(--ul-ink); font-size: 14px; font-weight: 500; }
   #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__load-more button, .ui-library__empty button) {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 5px 16px;
-    border: 2px solid var(--ul-black); border-radius: 10px; background: var(--ul-white);
-    box-shadow: 1px 2px 2px var(--ul-drop), inset -1.5px -2px 0 color-mix(in srgb, var(--ul-black) 38%, transparent);
+    border: 2px solid transparent; border-radius: 9px; background: var(--ul-white);
+    border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch; box-shadow: none;
     color: var(--ul-ink); font-size: 14.5px; font-weight: 500;
   }
   #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__load-more button, .ui-library__empty button):hover { background: var(--ul-active); }
@@ -915,11 +920,14 @@
   }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page :is(.ui-library__card, .ui-library__card::before) { transition: none; } }
   #app .app-shell--comic-page .ui-library__poster { aspect-ratio: 291 / 175; border: 0; border-radius: 6px; }
+  /* The framework tag: a drawn white slip (ul-badge), its left side leaning, a black wedge under its lower right. */
   #app .app-shell--comic-page .ui-library__badge {
-    top: 2px; right: 3px; padding: 0 10px 0 9px; border: 2px solid #05080f; border-radius: 2px;
-    background: #fff; box-shadow: 1.5px 1.5px 0 #05080f; color: #05080f;
-    font-size: 15px; font-style: italic; font-weight: 800; line-height: 22px; transform: rotate(-2deg) skewX(-8deg);
+    top: 2px; right: 3px; padding: 0 10px 0 9px; border: 2px solid transparent; border-radius: 0;
+    border-image: var(--ul-f-badge) 27 30 27 24 fill / 9px 10px 9px 8px / 2px 4px 5px 2px stretch;
+    background: transparent; box-shadow: none; color: #05080f;
+    font-size: 15px; font-style: italic; font-weight: 800; line-height: 21px; transform: none;
   }
+  :root[data-theme='dark'] #app .app-shell--comic-page .ui-library__badge { color: var(--ink); }
   #app .app-shell--comic-page .ui-library__card-title { padding: 11px 1px 1px; color: var(--ul-strong); font-size: 16px; font-weight: 800; line-height: 22px; }
   #app .app-shell--comic-page .ui-library__card-title svg { display: none; }
   #app .app-shell--comic-page .ui-library__card-meta { align-items: center; margin-bottom: 12px; padding: 0 1px; color: var(--ul-muted); font-size: 12.5px; font-weight: 500; line-height: 18px; }
