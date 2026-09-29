@@ -26,6 +26,12 @@ export function formatLocaleCompactNumber(value: number | null | undefined, loca
     : '0'
 }
 
+/** Whole counts with the locale's digit grouping (48,214). */
+export function formatLocaleNumber(value: number | null | undefined, locale?: AppLocale): string {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) ? new Intl.NumberFormat(localeFor(locale)).format(numeric) : '0'
+}
+
 const UTC_DAY_MS = 86_400_000
 
 const utcCalendarDay = (date: Date) =>

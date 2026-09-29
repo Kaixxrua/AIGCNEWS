@@ -1134,7 +1134,7 @@
   }
   #app .register-page .register-card .auth-otp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); }
   /* Drawn ready like the concept while the address is still empty; the pointer shows it is waiting. */
-  #app .register-page .register-card .auth-otp-btn:disabled { opacity: 1; }
+  #app .register-page .register-card .auth-otp-btn:disabled { opacity: .55; cursor: not-allowed; }
   #app .register-page .register-card .text-2xs { font-size: 13px; }
   #app .register-page .register-card > .rounded-2xl { border-width: 2px; border-radius: 6px; font-size: 14px; }
 
@@ -1158,7 +1158,7 @@
   #app .register-page .register-card .btn-primary svg { width: 27px; height: 27px; stroke-width: 2.1; }
   #app .register-page .register-card .btn-primary:hover:not(:disabled) { background: transparent; color: var(--reg-copy); transform: translate(-1px, -1px); }
   /* The concept draws the bar ready while the terms box is still empty; it only stops answering to the pointer. */
-  #app .register-page .register-card .btn-primary:disabled { opacity: 1; cursor: not-allowed; }
+  #app .register-page .register-card .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 
   #app .register-page .register-login {
     display: flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; min-width: 187px; height: 53px; margin: 21px auto 0; padding: 4px 24px 0 18px;
@@ -1418,7 +1418,13 @@
     display: grid; grid-template-columns: minmax(84px, max-content) auto; grid-template-rows: auto auto; align-items: center; column-gap: 43px;
   }
   #app .app-shell--comic-page .tracking-rule-main > div > p:first-child { grid-row: 1 / 3; color: var(--sub-ink); font-size: 14.5px; font-weight: 500; line-height: 1.4; }
-  #app .app-shell--comic-page .tracking-section .tracking-rule-meta { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; }
+  /* The chips wrap on narrow screens. The row starts 24px early and clips that strip, so a dash that lands at the head
+     of a wrapped line hides there and the chip after it lines up under the first one. */
+  #app .app-shell--comic-page .tracking-section .tracking-rule-meta {
+    grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0 0 0 -24px;
+    clip-path: inset(-12px -12px -12px 21px);
+  }
+  #app .app-shell--comic-page .tracking-section .tracking-rule-meta > :first-child { margin-left: 24px; }
   #app .app-shell--comic-page .tracking-rule-meta > span:not(.tracking-rule-sep) {
     position: relative; isolation: isolate; display: inline-flex; align-items: center; height: 18px; padding: 0 8px;
     color: var(--sub-chip-soft); font-size: 12px; font-weight: 700; line-height: 1; white-space: nowrap;

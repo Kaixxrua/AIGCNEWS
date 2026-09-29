@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
+import { formatLocaleNumber } from '@/i18n/formatters'
 const { t } = useI18n()
 import {
   formatDate,
@@ -55,7 +56,7 @@ const emit = defineEmits<{
     <div class="monitor-tasks stagger-enter glass-card overflow-hidden flex flex-col" :class="isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
       <div class="monitor-tasks-header monitor-divider flex items-center justify-between px-5 py-3.5 shrink-0 border-b">
         <h3 class="monitor-section-title text-sm font-semibold">{{ t('monitor.recentTasks') }}</h3>
-        <span class="monitor-badge">{{ t('monitor.totalItems', { count: total }) }}</span>
+        <span class="monitor-badge">{{ t('monitor.totalItems', { count: formatLocaleNumber(total) }) }}</span>
       </div>
 
       <div class="overflow-x-auto flex-1">
@@ -89,7 +90,7 @@ const emit = defineEmits<{
                   {{ getStatusConfig(task.status).labelKey ? t(`monitor.${getStatusConfig(task.status).labelKey}`) : getStatusConfig(task.status).rawLabel }}
                 </span>
               </td>
-              <td class="whitespace-nowrap px-4 py-3 text-xs tabular-nums">{{ task.item_count }}</td>
+              <td class="whitespace-nowrap px-4 py-3 text-xs tabular-nums">{{ formatLocaleNumber(task.item_count) }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-xs monitor-caption">{{ formatDate(task.started_at) }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-xs monitor-caption">
                 <span v-if="task.finished_at">{{ formatTime(task.finished_at) }}</span>
@@ -101,7 +102,7 @@ const emit = defineEmits<{
       </div>
 
       <div class="monitor-tasks-footer monitor-divider flex items-center justify-between px-5 py-3 shrink-0 border-t">
-        <p class="text-xs monitor-caption">{{ t('monitor.pageSummary', { page, totalPages, total }) }}</p>
+        <p class="text-xs monitor-caption">{{ t('monitor.pageSummary', { page, totalPages: formatLocaleNumber(totalPages), total: formatLocaleNumber(total) }) }}</p>
         <div class="flex items-center gap-1">
           <button class="monitor-pagination-btn" :disabled="page <= 1" @click="emit('goPage', 1)">«</button>
           <button class="monitor-pagination-btn" :disabled="page <= 1" @click="emit('goPage', page - 1)">{{ t('monitor.previous') }}</button>
