@@ -200,7 +200,7 @@ Sources (arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X)
   → Dashboard · project search · briefs · MCP
 ```
 
-Vue 3 + TypeScript frontend · FastAPI layered monolith · PostgreSQL 16 as the sole relational runtime · Milvus vectors + Neo4j paper graph · Redis cache — single-node Docker Compose with an in-process scheduler (Asia/Shanghai). Full stack table and module breakdown: [docs/architecture.md](docs/architecture.md) (in Chinese). The backend also ships a hybrid-RAG chat pipeline (recall, rerank, streaming, multi-session, image / PDF attachments); its web entrance is temporarily paused for maintenance.
+Vue 3 + TypeScript frontend · FastAPI layered monolith · PostgreSQL 16 as the sole relational runtime · Milvus vectors + Neo4j paper graph · Redis cache — single-node Docker Compose with an in-process scheduler (Asia/Shanghai). Full stack table and module breakdown: [docs/architecture.md](docs/architecture.md) (in Chinese). The backend also ships a hybrid-RAG chat pipeline (recall, rerank, streaming, multi-session), which powers the AI conversation beside each paper.
 
 ## Quick Start (Linux / WSL2)
 

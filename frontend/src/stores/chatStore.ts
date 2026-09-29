@@ -243,7 +243,7 @@ export const useChatStore = defineStore('chat', {
 
     /**
      * 获取或创建论文专属会话，但**不修改** activeConversationId / activeScope。
-     * 供 PaperReadView 使用，避免污染 ChatView 的全局会话状态。
+     * 供 PaperReadView 使用，避免改动全局会话状态。
      */
     async fetchPaperConversation(paperId: string, title?: string): Promise<ConversationSummary> {
       const summary = normalizeConversation(

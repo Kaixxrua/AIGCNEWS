@@ -1,7 +1,7 @@
 /**
  * useLatexRenderer — 公共 LaTeX / Markdown 渲染 composable
  *
- * 将 ChatView 和 PaperReadView 中完全重复的 KaTeX 渲染管线抽离为统一实现。
+ * 论文阅读页与简报页共用的 KaTeX 渲染管线。
  * 支持的 LaTeX 分隔符：
  *   块级：$$...$$ / \[...\] / 独立 \begin{env}...\end{env}
  *   行内：$...$ / \(...\)

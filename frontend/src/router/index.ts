@@ -11,7 +11,6 @@ const DashboardView = () => import('@/views/DashboardView.vue')
 const GitHubProjectsView = () => import('@/views/GitHubProjectsView.vue')
 const RecommendedWebsitesView = () => import('@/views/RecommendedWebsitesView.vue')
 const UiLibraryView = () => import('@/views/UiLibraryView.vue')
-const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
@@ -76,12 +75,6 @@ const router = createRouter({
           path: 'ui-library/:id?',
           name: 'ui-library',
           component: UiLibraryView,
-        },
-        {
-          path: 'chat',
-          name: 'chat',
-          component: ChatView,
-          meta: { requiresAdmin: true },
         },
         {
           path: 'report',

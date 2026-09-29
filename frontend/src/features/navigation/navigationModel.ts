@@ -63,13 +63,6 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h17v13h-17z"/><path d="M3.5 8.5h17"/><path d="M7 6.5h.01"/><path d="M9.5 6.5h.01"/><path d="M12 6.5h.01"/><path d="M7 12h4"/><path d="M7 15h7"/></svg>`,
   },
   {
-    to: '/chat',
-    labelKey: 'navigation.chat',
-    exact: false,
-    requiresAdmin: true,
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`,
-  },
-  {
     to: '/report',
     labelKey: 'navigation.report',
     exact: false,

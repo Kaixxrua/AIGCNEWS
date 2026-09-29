@@ -198,7 +198,7 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
   → Dashboard · 项目检索 · 简报 · MCP
 ```
 
-Vue 3 + TypeScript 前端 · FastAPI 分层单体 · PostgreSQL 16 唯一关系型运行时 · Milvus 向量 + Neo4j 论文图谱 · Redis 缓存 —— 单机 Docker Compose + 进程内调度器（Asia/Shanghai）。完整技术栈表与模块拆解见 [docs/architecture.md](docs/architecture.md)。后端另内置混合 RAG 对话链路（召回、精排、流式、多会话、图片 / PDF 附件），其 Web 入口目前暂停开放维护中。
+Vue 3 + TypeScript 前端 · FastAPI 分层单体 · PostgreSQL 16 唯一关系型运行时 · Milvus 向量 + Neo4j 论文图谱 · Redis 缓存 —— 单机 Docker Compose + 进程内调度器（Asia/Shanghai）。完整技术栈表与模块拆解见 [docs/architecture.md](docs/architecture.md)。后端另内置混合 RAG 对话链路（召回、精排、流式、多会话），支撑论文页旁的 AI 对话。
 
 ## 快速开始（Linux / WSL2）
 

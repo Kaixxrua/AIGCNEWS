@@ -26,7 +26,7 @@
   → PostgreSQL 主写（幂等 upsert）→ 榜单快照（document_rank_snapshots）
   → 派生索引：Milvus 向量 × 2（文档 / 项目）· Neo4j 论文图谱
   → Redis 缓存失效 + 首屏预热
-  → 消费面：Dashboard · 项目库 · 论文阅读 · 简报/订阅推送 · AIGC Radar MCP · RAG 对话（维护中）
+  → 消费面：Dashboard · 项目库 · 论文阅读 · 简报/订阅推送 · AIGC Radar MCP · 论文 AI 对话
 
 * X 为可插拔源（source_plugins + 特性开关门控）
 ```
@@ -71,7 +71,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_features.py` / `routes_sitemap.py` | 公开 | 特性开关播报；近 90 天论文页 sitemap |
 | `routes_payments.py` | payments_enabled + RequireUser（回调按 provider 验签） | 套餐、创建订单、我的订单、订单状态、微信/支付宝/海外跳转回调；关闭时用户侧 404，渠道未配置时创建返回 503 |
 
-特性开关：`x_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"；`chat` 另有 `CHAT_SERVICE_ENABLED` 总开关。
+特性开关：`x_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"。
 
 ### 3.3 核心服务域（`backend/app/services/`）
 
@@ -188,7 +188,6 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 | `/dsh` | DshView | `requiresAuth`（网站 DSH 配置与账号 Token） |
 | `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
 | `/subscriptions` | SubscriptionsView | requiresAuth |
-| `/chat` | ChatView | requiresAdmin + `CHAT_SERVICE_ENABLED` |
 | `/monitor` | MonitorView（12+ 面板编排，含支付订单详情与回调载荷管理员投影） | requiresAdmin |
 | `/membership/checkout?plan=monthly|yearly` | MembershipCheckoutView（套餐金额来自支付 API，二维码/跳转指令与支付轮询） | requiresAuth + payments_enabled |
 | `/register` · `/forgot-password` | 注册与密码重置页（登录由全局弹窗承载，无独立 `/login`） | guestOnly |

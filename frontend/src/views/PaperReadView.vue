@@ -52,6 +52,11 @@ onUnmounted(() => document.removeEventListener('click', handleFormulaCopy))
 
 const loginRedirect = computed(() => route.fullPath)
 const openLogin = () => requestLogin(loginRedirect.value)
+// 有站内来路时回到上一页；直接打开论文链接（无站内历史）时回首页
+const goBack = () => {
+  if (window.history.state?.back) router.back()
+  else void router.push('/')
+}
 </script>
 
 <template>
@@ -68,7 +73,7 @@ const openLogin = () => requestLogin(loginRedirect.value)
       :render-markdown="renderMarkdown"
       :is-thinking-expanded="isThinkingExpanded"
       :copy-formulas="copyFormulas"
-      @back="router.push('/chat')"
+      @back="goBack"
       @new-conversation="newConversation"
       @switch-conversation="switchConversation"
       @delete-current-conversation="deleteCurrentConversation"
