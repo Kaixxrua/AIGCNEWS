@@ -16,8 +16,10 @@ scheduler(dailyhot_hotlists, 每小时 :07)
 ```
 
 - 端点级失败只跳过该端点；服务整体不可达时本次采集返回 error，
-  不影响其他源；热榜条目的跨站 hot 量级不可比，`score` 归一化为
-  端点内名次分（榜首 100 逐名递减），`raw_score` 保留原始 hot。
+  不影响其他源；热榜条目的跨站 hot 量级不可比（知乎千万级、少数派十几、
+  虎嗅/爱范儿恒为 0），hot 只用于端点内取 Top-N，`score` 与 `raw_score`
+  同为端点内名次分（榜首 100 逐名递减）。入库 Top-N、日榜快照与简报选稿都按
+  `raw_score` 优先排序，存原始 hot 会让知乎与极客公园包揽每轮 Top-10。
 - MCP `SourceChoice` 枚举刻意未扩展（wire-format Red 变更，随 B 路线单独评估）。
 
 ## 部署（一次性）

@@ -19,6 +19,7 @@ from backend.app.services.briefing.dispatch import BRIEFING_SOURCES
 from backend.app.services.briefing.preparation import finalized_board_date
 from backend.app.services.ingestion.content_enricher import _ENRICH_MAP
 from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCrawler
+from backend.app.services.ingestion.document_projection import select_top_for_write
 from backend.app.services.ingestion.source_dailyhot import (
     SOURCE_CHANNEL,
     _normalise_item,
@@ -114,13 +115,13 @@ class NormaliseItemTests(unittest.TestCase):
         )
         assert item is not None
         self.assertEqual(item["published_date"], "2026-08-05")
-        self.assertEqual(item["raw_score"], 123456.0)
-        # 端点内名次归一：rank=2 → 99 分
+        # 端点内名次归一：rank=2 → 99 分；raw_score 同值，不存跨站不可比的 hot
         self.assertEqual(item["score"], 99.0)
+        self.assertEqual(item["raw_score"], 99.0)
         self.assertEqual(item["source"], "dailyhot")
         self.assertEqual(item["source_channel"], SOURCE_CHANNEL)
 
-    def test_invalid_hot_and_timestamp_fall_back_to_zero(self) -> None:
+    def test_invalid_hot_and_timestamp_are_tolerated(self) -> None:
         item = _normalise_item(
             {"title": "t", "url": "https://example.com/2", "hot": "abc",
              "timestamp": "not-a-number"},
@@ -129,7 +130,7 @@ class NormaliseItemTests(unittest.TestCase):
             rank=1,
         )
         assert item is not None
-        self.assertEqual(item["raw_score"], 0.0)
+        self.assertEqual(item["raw_score"], 100.0)
         self.assertEqual(item["published_date"], "")
 
 
@@ -170,6 +171,36 @@ class FetchDailyHotItemsTests(unittest.TestCase):
         )
         # rank_in_period 已按合并结果重排为 1..8
         self.assertEqual([item["rank_in_period"] for item in items], list(range(1, 9)))
+
+    def test_ingestion_top_n_covers_every_endpoint_head(self) -> None:
+        # 线上量级：知乎 hot 千万级、少数派十几、虎嗅恒为 0。入库 Top-N 按
+        # raw_score 优先排序，存原始 hot 时 Top-3 会被知乎包揽。
+        payloads = {
+            "zhihu": _endpoint_payload(
+                [{"title": f"知乎热{i}", "url": f"https://zh/{i}", "hot": 10_000_000 - i} for i in range(5)]
+            ),
+            "sspai": _endpoint_payload(
+                [{"title": f"少数派{i}", "url": f"https://ss/{i}", "hot": 15 - i} for i in range(5)]
+            ),
+            "huxiu": _endpoint_payload(
+                [{"title": f"虎嗅{i}", "url": f"https://hx/{i}", "hot": 0} for i in range(5)]
+            ),
+        }
+        with patch(
+            "backend.app.services.ingestion.source_dailyhot.httpx.AsyncClient",
+            lambda *a, **kw: _FakeAsyncClient(payloads, *a, **kw),
+        ):
+            items = asyncio.run(
+                fetch_dailyhot_items(
+                    base_url="http://dailyhot:6688",
+                    endpoints=["zhihu", "sspai", "huxiu"],
+                    per_endpoint_limit=5,
+                )
+            )
+
+        selected = select_top_for_write(items, 3)
+
+        self.assertEqual(sorted(item["title"] for item in selected), ["少数派0", "知乎热0", "虎嗅0"])
 
     def test_endpoint_failure_and_non_200_are_isolated(self) -> None:
         payloads = {

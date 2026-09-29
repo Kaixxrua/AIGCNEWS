@@ -9,8 +9,9 @@ from __future__ import annotations
 
 采集策略：
   - 逐个端点拉取热榜，每端点按 hot 降序保留 per_endpoint_limit 条；
-  - hot 量级跨端点不可比（微博百万级 vs 小众站点数百），score 归一化为
-    端点内名次分（榜首 100，逐名递减），raw_score 保留原始 hot；
+  - hot 量级跨端点不可比（知乎千万级 vs 少数派十几、虎嗅/爱范儿恒为 0），
+    只用于端点内取 Top-N；score 与 raw_score 同为端点内名次分（榜首 100，
+    逐名递减）——入库 Top-N、日榜快照与简报选稿都按 raw_score 优先排序；
   - 端点级失败只跳过该端点，不影响其他端点（错误聚合进返回值日志字段）。
 """
 
@@ -50,11 +51,6 @@ def _normalise_item(
     if not title or not url:
         return None
 
-    try:
-        hot = float(item.get("hot") or 0.0)
-    except (TypeError, ValueError):
-        hot = 0.0
-
     published_date = ""
     timestamp = item.get("timestamp")
     try:
@@ -68,6 +64,10 @@ def _normalise_item(
     except (TypeError, ValueError, OSError, OverflowError):
         published_date = ""
 
+    # 端点内名次归一（榜首 100，逐名 -1），raw_score 同值：下游入库 Top-N
+    # （select_top_for_write）、日榜快照与简报选稿都按 raw_score 优先排序，
+    # 若存原始 hot，每轮 Top-10 恒被知乎与极客公园包揽，其余端点整体缺席。
+    rank_score = max(0.0, 100.0 - float(rank - 1))
     return {
         "source": SOURCE_NAME,
         "source_channel": SOURCE_CHANNEL,
@@ -77,9 +77,8 @@ def _normalise_item(
         "title": title,
         "url": url,
         "summary": str(item.get("desc") or "").strip(),
-        "raw_score": hot,
-        # 端点内名次归一：让 _select_top 跨端点可比（榜首 100，逐名 -1）。
-        "score": max(0.0, 100.0 - float(rank - 1)),
+        "raw_score": rank_score,
+        "score": rank_score,
         "rank_in_period": rank,
         "published_date": published_date,
         "language": "zh",
