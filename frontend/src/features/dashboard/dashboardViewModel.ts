@@ -99,8 +99,8 @@ export interface TweetMediaItem {
   height?: number
   /** 视频封面（服务端抽帧代理地址，仅 video/animated_gif；由 mediaItems 注入） */
   poster_url?: string
-  /** 看板内联缩略图（twimg small 变体代理地址，仅 photo 且路径支持变体时由
-      mediaItems 注入）；item.url 保持原图供 lightbox 全尺寸预览 */
+  /** 看板内联缩略图（twimg 按宽高选的约束框变体代理地址，仅 photo 且路径支持
+      变体时由 mediaItems 注入）；item.url 同时换成 lightbox 大图变体 */
   thumb_url?: string
 }
 

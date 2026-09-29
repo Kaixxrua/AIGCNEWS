@@ -9,6 +9,7 @@ proxiedMediaUrl / photoVariantUrl / proxyMediaList：预热必须请求与看板
 frontend/src/features/xboard/xBoardViewModel.test.ts 的 URL 形态断言。
 """
 
+import math
 import re
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -25,6 +26,19 @@ TWIMG_VARIANT_PATH_RE = re.compile(
 )
 
 _VIDEO_TYPES = frozenset({"video", "animated_gif"})
+
+# twimg 具名尺寸是「长边约束框」（[框边长, name] 升序），与 TS 侧
+# TWIMG_BOX_VARIANTS 同表；4096 是 X 照片上限，等同 orig。
+TWIMG_BOX_VARIANTS: tuple[tuple[int, str], ...] = (
+    (680, "small"),
+    (900, "900x900"),
+    (1200, "medium"),
+    (2048, "large"),
+    (4096, "4096x4096"),
+)
+
+# 看板内联目标宽（与 TS PHOTO_INLINE_TARGET_WIDTH 对齐）。
+PHOTO_INLINE_TARGET_WIDTH = 680
 
 
 def is_twimg_url(url: str) -> bool:
@@ -65,6 +79,29 @@ def photo_variant_url(url: str, name: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(pairs), ""))
 
 
+def _positive_number(value: Any) -> bool:
+    # bool 是 int 子类，JSON true 不算尺寸（TS 侧 typeof 同样排除）。
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
+
+
+def photo_box_variant_name(target_width: int, width: Any = None, height: Any = None) -> str:
+    """最小的约束框使缩放后宽度 ≥ min(原宽, 目标宽)；与 TS photoBoxVariantName
+    逐运算对齐（同一 IEEE 双精度算式），尺寸缺失/非法时按目标宽取框。"""
+    if _positive_number(width) and _positive_number(height):
+        needed = min(width, target_width) * max(width, height) / width
+    else:
+        needed = target_width
+    for box, name in TWIMG_BOX_VARIANTS:
+        if box >= needed:
+            return name
+    return TWIMG_BOX_VARIANTS[-1][1]
+
+
 def _media_item_warmup_path(item: Mapping[str, Any]) -> str:
     """单个媒体项的首屏内联渲染路径；不在首屏消费的（mp4 本体、无封面视频的
     抽帧端点）返回空串——后者边缘不可缓存，归 x_poster_backfill 负责。"""
@@ -72,11 +109,14 @@ def _media_item_warmup_path(item: Mapping[str, Any]) -> str:
     if not isinstance(url, str) or not url:
         return ""
     if item.get("type") == "photo":
-        # 内联渲染用 small 变体；变体不可派生时前端回退原图，与渲染层同口径。
+        # 内联渲染按宽高选约束框变体；变体不可派生时前端回退原图，与渲染层同口径。
         # 非 twimg 图片浏览器直连外站，不经本站代理，无需预热。
         if not is_twimg_url(url):
             return ""
-        return proxied_media_url(photo_variant_url(url, "small") or url)
+        name = photo_box_variant_name(
+            PHOTO_INLINE_TARGET_WIDTH, item.get("width"), item.get("height")
+        )
+        return proxied_media_url(photo_variant_url(url, name) or url)
     if item.get("type") in _VIDEO_TYPES:
         poster = item.get("poster_url")
         if not isinstance(poster, str) or not poster or not is_twimg_url(poster):
@@ -106,7 +146,7 @@ def _append(paths: list[str], url: Any, *, avatar: bool = False) -> None:
 def collect_doc_warmup_paths(doc: Mapping[str, Any]) -> list[str]:
     """一条推文文档在 X 看板首屏会真实请求的同源代理路径（未去重）。
 
-    覆盖：作者头像、链接卡片图、照片 small 变体、视频/GIF 官方封面 small
+    覆盖：作者头像、链接卡片图、照片内联变体、视频/GIF 官方封面 small
     变体，以及引用卡片内的同规则项。mp4 视频本体不预热（点击才播放且整体
     GET 代价大）；无 poster_url 的存量视频归封面回填通道。
     """

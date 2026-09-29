@@ -9,10 +9,10 @@ import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
-import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
+import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -89,10 +89,15 @@ const onGoPage = (next: number) => {
 const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
 
 // 图片放大预览（lightbox）：仅照片可点开；视频封面点击仍是播放。
-// 内联渲染统一用 small 变体（thumb_url）降载，点开 lightbox 才拉原图（item.url）。
+// 内联渲染用约束框变体（thumb_url）降载，点开 lightbox 才拉大图变体（item.url）。
+// 长图按高度等比缩放会窄到不可读，改为限宽纵向滚动（lightboxLong）。
 // ESC 或点击遮罩关闭；预览不阻断视频点击播放逻辑。
 const lightboxUrl = ref<string | null>(null)
-const openLightbox = (url: string) => { lightboxUrl.value = url }
+const lightboxLong = ref(false)
+const openLightbox = (item: TweetMediaItem) => {
+  lightboxUrl.value = item.url
+  lightboxLong.value = isLongPhoto(item)
+}
 const closeLightbox = () => { lightboxUrl.value = null }
 
 // 推文详情浮层：点击卡片正文/引用区就地放大阅读，不直接跳走（跳转由
@@ -617,6 +622,7 @@ onBeforeUnmount(() => {
       <div
         v-if="lightboxUrl"
         class="lightbox-backdrop"
+        :class="{ 'lightbox-backdrop--long': lightboxLong }"
         role="dialog"
         aria-modal="true"
         :aria-label="t('xboard.previewImage')"
@@ -959,8 +965,20 @@ a.tweet-link:hover {
   cursor: default;
 }
 
+/* 长图：遮罩自身纵向滚动，图按原宽（上限 960px）展示而非压到一屏高 */
+.lightbox-backdrop--long {
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lightbox-backdrop--long .lightbox-image {
+  max-width: min(100%, 960px);
+  max-height: none;
+}
+
 .lightbox-close {
-  position: absolute;
+  position: fixed; /* 长图模式遮罩滚动时仍钉在视口右上角 */
   top: 1.25rem;
   right: 1.25rem;
   display: flex;
