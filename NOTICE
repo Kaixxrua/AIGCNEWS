@@ -5,6 +5,40 @@ Licensed under the GNU Affero General Public License, Version 3.0
 (see LICENSE).
 
 ========================================================================
+Brand assets and trademarks (not open source)
+========================================================================
+
+The AGPL-3.0 license covers this project's source code and
+documentation text. It does not cover the project's brand assets, which
+remain Copyright 2026 Kaixxrua, all rights reserved, and are not
+licensed under AGPL-3.0 or any other open-source license:
+
+  - the names "AIGCNEWS", "AIGC NEWS", "AIGC Radar", and
+    "AIGC Radar MCP", and the aigcnews.cn domain;
+  - logos, wordmarks, favicons, and app icons, including
+    docs/assets/logo-*.png, frontend/public/logo.png,
+    frontend/public/favicon.svg, frontend/public/favicon.ico, and
+    frontend/public/icons/;
+  - the comic illustrations, mascot, and sticker artwork in
+    frontend/public/assets/comic/;
+  - the screenshots, demo recordings, and promotional images in
+    docs/assets/.
+
+These files ship only so the reference deployment builds from this
+repository. Pursuant to section 7(e) of AGPL-3.0, no rights are granted
+under trademark law for these names and marks. If you distribute a fork,
+or offer a modified or unmodified copy to the public as a network
+service, you must replace these assets with your own, use your own
+product name, and not present your service as the official AIGCNEWS /
+AIGC Radar or imply the maintainer's endorsement. Truthful statements of
+origin such as "based on AIGCNEWS" are permitted. Local development and
+private evaluation may keep the assets unchanged. For any other use,
+ask the maintainer for permission.
+
+Bundled third-party assets — web fonts, UI components, and framework
+template files — keep their own licenses (see "Third-party software").
+
+========================================================================
 Third-party content
 ========================================================================
 
@@ -46,6 +80,13 @@ licensed by its respective authors (predominantly MIT/Apache-2.0/BSD).
 The complete dependency lists with exact versions are maintained in
 backend/requirements.txt, backend/requirements.lock, and
 frontend/package.json.
+
+The web fonts in frontend/public/fonts/ (Bangers, DM Sans, Inter,
+Playfair Display, and ZCOOL QingKe HuangYou) are licensed under the SIL
+Open Font License, Version 1.1, by their respective authors.
+frontend/src/components/dashboard/orbitalSphereRenderer.ts is adapted
+from ThreeUI by Meng To under the MIT License (see THREEUI-LICENSE in
+the same directory).
 
 The public X-ingestion transport builds upon twitter-cli, licensed under
 the Apache License, Version 2.0

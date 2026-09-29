@@ -255,3 +255,5 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua —— 可自由使用、修改与自托管（含商用）；若将修改版以公网服务形式对外提供，须以 AGPL-3.0 公开其源码。商业授权请联系作者。
+
+**品牌素材不开源。** AGPL-3.0 仅覆盖代码与文档。AIGCNEWS / AIGC Radar 名称，logo、字标、favicon 与应用图标，`frontend/public/assets/comic/` 下的漫画插画与贴纸，以及 `docs/assets/` 下的截图与宣传素材，版权归 Kaixxrua 所有，保留一切权利。分发 fork 或公开部署时，须换成你自己的素材与名称，且不得以官方服务名义示人。完整清单与条款见 [NOTICE](NOTICE)。

@@ -1,5 +1,7 @@
 # Comic masthead assets
 
+These images are brand assets: © Kaixxrua, all rights reserved, and not covered by the repository's AGPL-3.0 license. Forks and public deployments must replace them — see the root `NOTICE`.
+
 - `aigc-news-wordmark.webp`: transparent lettering prepared from the user's approved AIGC NEWS logo close-up. Displayed at up to 420 CSS pixels; the three glitch slices share one cached resource. The image contains no UI text or controls beyond the brand name.
 - `digest-robot.webp`: independently generated robot illustration, converted from 1024px RGBA PNG to 640px transparent WebP. The robot is a separate decorative layer so it can extend beyond the newsletter frame. Text, subscription control, and card border remain native HTML/CSS.
 

@@ -257,3 +257,5 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua — free to use, modify, and self-host, including commercially; if you run a modified version as a public network service, you must offer its source under AGPL-3.0. Commercial licensing available on request.
+
+**Brand assets are not open source.** The AGPL-3.0 grant covers code and documentation only. The AIGCNEWS / AIGC Radar names, the logos, wordmarks, favicons, and app icons, the comic illustrations and stickers in `frontend/public/assets/comic/`, and the screenshots and promo media in `docs/assets/` are © Kaixxrua, all rights reserved. If you distribute a fork or run a public deployment, replace them with your own assets and name, and do not present it as the official service. See [NOTICE](NOTICE) for the full list and terms.
