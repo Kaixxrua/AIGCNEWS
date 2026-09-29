@@ -137,7 +137,7 @@ onBeforeUnmount(() => controller.abort())
 <template>
   <section class="view-container ui-library">
     <header class="ui-library__header">
-      <div><p class="ui-library__eyebrow">AIGC RADAR / UI</p><h1>{{ text.title }}</h1><p>{{ text.subtitle }}</p></div>
+      <div><p class="ui-library__eyebrow">AIGC RADAR / UI</p><h1 class="comic-title">{{ text.title }}</h1><p>{{ text.subtitle }}</p></div>
       <RouterLink to="/mcp" class="ui-library__mcp">{{ text.mcp }}<ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
     </header>
     <div class="ui-library__toolbar">
