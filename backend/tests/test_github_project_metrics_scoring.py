@@ -116,7 +116,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(payload["daily_growth_source"], "github_trending_daily")
         self.assertEqual(payload["daily_star_growth"], 75)
         self.assertEqual(payload["community_engagement_score"], 0.0)
-        self.assertEqual(payload["score_version"], "daily_hot_v7")
+        self.assertEqual(payload["score_version"], "daily_hot_v8")
 
     def test_trending_fallback_shares_the_snapshot_scale(self) -> None:
         trending = self._compute(
@@ -182,11 +182,11 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertIsNone(payload["previous_snapshot_date"])
         self.assertEqual(computed["result"]["available"], 0)
 
-    def test_missing_rate_history_scores_observed_growth_on_v7_scale(self) -> None:
+    def test_missing_rate_history_scores_observed_growth_on_current_scale(self) -> None:
         computed = self._compute()
         payload = computed["payload"]
-        self.assertEqual(payload["score_version"], "daily_hot_v7")
-        self.assertEqual(computed["result"]["score_version"], "daily_hot_v7")
+        self.assertEqual(payload["score_version"], "daily_hot_v8")
+        self.assertEqual(computed["result"]["score_version"], "daily_hot_v8")
         self.assertEqual(computed["result"]["observed_velocity"], 1)
         self.assertEqual(computed["result"]["snapshot_velocity"], 0)
         self.assertAlmostEqual(
@@ -199,7 +199,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         computed = self._compute(previous_snapshot_date=None, trending_daily_star_growth=None)
         payload = computed["payload"]
         self.assertEqual(payload["daily_growth_source"], "unavailable")
-        self.assertEqual(payload["score_version"], "daily_hot_v7")
+        self.assertEqual(payload["score_version"], "daily_hot_v8")
         for key in (
             "hot_score",
             "scale_corrected_growth_score",

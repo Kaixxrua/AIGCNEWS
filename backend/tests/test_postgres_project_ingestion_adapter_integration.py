@@ -820,7 +820,7 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert stored["daily_growth_available"] is True
 
 
-def test_v7_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
+def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
     from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
     from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
 
@@ -841,7 +841,7 @@ def test_v7_rate_scoring_and_version_aware_community_repair(postgres_ingestion) 
         with connection.cursor() as cursor:
             cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
             before = cursor.fetchone()
-        assert before["score_version"] == "daily_hot_v7"
+        assert before["score_version"] == "daily_hot_v8"
         assert before["daily_star_growth"] == 20
         assert before["community_engagement_score"] > 0
         assert PostgresGitHubWatcherRepairRepository().rebuild_daily_community_metrics(
@@ -855,7 +855,7 @@ def test_v7_rate_scoring_and_version_aware_community_repair(postgres_ingestion) 
         expected = magnitude * (0.8 + 0.2*quality/100)
         assert after["hot_score"] == pytest.approx(expected, abs=0.0001)
         assert after["hot_score"] != before["hot_score"]
-        assert after["score_version"] == "daily_hot_v7"
+        assert after["score_version"] == "daily_hot_v8"
         assert after["community_engagement_score"] == 0
 
 
@@ -1037,5 +1037,128 @@ def test_metric_inputs_prefer_candidate_creation_over_polluted_snapshot(
         )
         assert len(rows) == 1
         assert rows[0]["repo_created_at"] == "2023-01-05"
+    finally:
+        _delete_candidates(database, repo_id)
+
+
+def test_metric_inputs_bracket_rolling_window_with_two_observations(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    """指标输入只带滚动窗口起点两侧各一条盘中观测，窗口终点取当天快照
+    captured_at；热度模块据此插值出 24h 星增，日增口径不受影响。"""
+    from backend.app.domain.github_heat import rolling_growth
+
+    repository, database = postgres_ingestion
+    repo_id = "acme/rolling-window"
+
+    def batch(snapshot_date: str, captured_at: str, stars: int) -> None:
+        written = repository.upsert_github_repo_metric_observations(
+            [
+                {
+                    "candidate": {"repo_id": repo_id, "full_name": repo_id, "stars": stars},
+                    "available_full_name": repo_id,
+                    "snapshot": {
+                        "repo_id": repo_id,
+                        "full_name": repo_id,
+                        "snapshot_date": snapshot_date,
+                        "captured_at": captured_at,
+                        "stars": stars,
+                        "forks": 40,
+                        "watchers": 9,
+                        "community_metrics_complete": True,
+                    },
+                }
+            ],
+            checked_at=captured_at,
+        )
+        assert written == 1
+
+    try:
+        batch("2026-09-28", "2026-09-28T00:00:00+00:00", 680)
+        batch("2026-09-28", "2026-09-28T04:00:00+00:00", 700)
+        batch("2026-09-28", "2026-09-28T08:00:00+00:00", 720)
+        batch("2026-09-28", "2026-09-28T20:00:00+00:00", 780)
+        batch("2026-09-29", "2026-09-29T02:00:00+00:00", 800)
+        batch("2026-09-29", "2026-09-29T06:00:00+00:00", 860)
+
+        rows = repository.get_github_daily_metric_inputs(
+            metric_date="2026-09-29",
+            previous_date="2026-09-28",
+            baseline_start_date="2026-09-22",
+            min_stars=500,
+            repo_ids=[repo_id],
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        points = row["heat_star_observations"]
+        # 起点 09-28 06:00：之前最近一条 04:00，之后最早一条 08:00；其余观测不外带
+        assert [(datetime.fromisoformat(point["observed_at"]), point["stars"]) for point in points] == [
+            (datetime(2026, 9, 28, 4, tzinfo=timezone.utc), 700),
+            (datetime(2026, 9, 28, 8, tzinfo=timezone.utc), 720),
+        ]
+        rolling = rolling_growth(
+            row["heat_snapshot_history"],
+            "2026-09-29",
+            observations=points,
+        )
+        assert rolling.source == "rolling_window"
+        assert rolling.base_stars == 710
+        assert rolling.star_growth == 150
+        assert rolling.fork_growth == 0
+    finally:
+        _delete_candidates(database, repo_id)
+
+
+def test_daily_metrics_upsert_persists_rolling_growth_columns(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_ingestion
+    repo_id = "acme/rolling-columns"
+    try:
+        repository.upsert_github_repo_metric_observations(
+            [
+                {
+                    "candidate": {"repo_id": repo_id, "full_name": repo_id, "stars": 900},
+                    "available_full_name": repo_id,
+                    "snapshot": {
+                        "repo_id": repo_id,
+                        "snapshot_date": "2026-09-29",
+                        "captured_at": "2026-09-29T06:00:00+00:00",
+                        "stars": 900,
+                    },
+                }
+            ],
+            checked_at="2026-09-29T06:00:00+00:00",
+        )
+        base = {"repo_id": repo_id, "metric_date": "2026-09-29", "stars": 900}
+        repository.upsert_github_daily_metrics([
+            {
+                **base,
+                "rolling_24h_star_growth": 240,
+                "rolling_24h_growth_source": "since_creation",
+                "rolling_24h_observed_at": "2026-09-29T06:00:00+00:00",
+            }
+        ])
+        # 窗口起点不可得的重算把三列写回 NULL，不残留旧值
+        with database.transaction() as connection:
+            stored = connection.execute(
+                "SELECT rolling_24h_star_growth, rolling_24h_growth_source, rolling_24h_observed_at "
+                "FROM github_repo_daily_metrics WHERE repo_id=%s",
+                (repo_id,),
+            ).fetchone()
+        assert stored["rolling_24h_star_growth"] == 240
+        assert stored["rolling_24h_growth_source"] == "since_creation"
+        repository.upsert_github_daily_metrics([base])
+        with database.transaction() as connection:
+            cleared = connection.execute(
+                "SELECT rolling_24h_star_growth, rolling_24h_growth_source, rolling_24h_observed_at "
+                "FROM github_repo_daily_metrics WHERE repo_id=%s",
+                (repo_id,),
+            ).fetchone()
+        assert cleared == {
+            "rolling_24h_star_growth": None,
+            "rolling_24h_growth_source": None,
+            "rolling_24h_observed_at": None,
+        }
     finally:
         _delete_candidates(database, repo_id)

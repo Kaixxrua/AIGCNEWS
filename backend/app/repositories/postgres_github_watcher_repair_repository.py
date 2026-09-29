@@ -176,11 +176,13 @@ class PostgresGitHubWatcherRepairRepository:
             f"WHEN affected.raw <= {upper} THEN {start}+({end}-{start})*(affected.raw-{lower})/({upper}-{lower})"
             for (lower, start), (upper, end) in zip(_V6_DISPLAY_ANCHORS, _V6_DISPLAY_ANCHORS[1:])
         ) + " ELSE 100 END"
-        # v7: community becomes unknown and drops out of the quality average.
+        # v7/v8: community becomes unknown and drops out of the quality average.
+        # v8 lets the absolute term run past 100 and caps magnitude instead; v7
+        # magnitude never exceeds 100, so one expression repairs both.
         maintenance_known = "(maintenance_activity_score>0)"
         v7_hot = (
-            f"({MAGNITUDE_WEIGHTS['scale']}*scale_corrected_growth_score+"
-            f"{MAGNITUDE_WEIGHTS['absolute']}*absolute_growth_score)"
+            f"LEAST({MAGNITUDE_WEIGHTS['scale']}*scale_corrected_growth_score+"
+            f"{MAGNITUDE_WEIGHTS['absolute']}*absolute_growth_score,100)"
             f"*({QUALITY_BASE}+{QUALITY_SPAN}*("
             f"{QUALITY_WEIGHTS['trend']}*growth_acceleration_score+"
             f"CASE WHEN {maintenance_known} THEN {QUALITY_WEIGHTS['maintenance']}*maintenance_activity_score ELSE 0 END)"
@@ -199,7 +201,7 @@ class PostgresGitHubWatcherRepairRepository:
                 "UPDATE github_repo_daily_metrics AS metrics SET "
                 "daily_fork_growth=0,daily_watcher_growth=0,"
                 "community_engagement_score=0.0,"
-                f"hot_score=ROUND((CASE WHEN score_version='{SCORE_VERSION}' THEN "
+                f"hot_score=ROUND((CASE WHEN score_version IN ('{SCORE_VERSION}','daily_hot_v7') THEN "
                 + v7_hot
                 + " WHEN score_version='daily_hot_v6' THEN "
                 + v6_display + " ELSE "

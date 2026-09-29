@@ -15,6 +15,8 @@ from backend.app.domain.github_heat import (
     SCORE_VERSION,
     HeatInputs,
     days_since,
+    parse_timestamp,
+    rolling_growth,
     score_heat,
     snapshot_velocity,
     suspicion_multiplier,
@@ -460,6 +462,7 @@ def _observed_growth(row: Dict[str, Any], *, current_date: date, previous_date: 
     )
     growth_observed_at = None
     daily_fork_growth = daily_watcher_growth = 0
+    created_local_date = _created_local_date(_precise_created_at(row))
     if has_previous:
         # 断供跨天的基线按间隔天数归一化为日增速率，防止 2 天增量被读成
         # 单日暴涨；source 标记 snapshot_delta_gap 以便与精确日增区分
@@ -470,6 +473,15 @@ def _observed_growth(row: Dict[str, Any], *, current_date: date, previous_date: 
             daily_fork_growth = max(forks - int(row.get("previous_forks") or 0), 0) // baseline_gap_days
             daily_watcher_growth = max(watchers - int(row.get("previous_watchers") or 0), 0) // baseline_gap_days
         base_stars = previous_stars
+    elif created_local_date == current_date:
+        # 当天建仓：以建仓时 0 星为基线，当天日增即建仓至今的全部增长。
+        growth_source = "creation_baseline"
+        daily_growth = max(stars, 0)
+        if row.get("community_metrics_complete") == 1:
+            has_complete_community_pair = True
+            daily_fork_growth = max(forks, 0)
+            daily_watcher_growth = max(watchers, 0)
+        base_stars = 0
     elif trending_growth_value is not None:
         growth_source = "github_trending_daily"
         growth_observed_at = row.get("trending_daily_observed_at")
@@ -495,6 +507,31 @@ def _observed_growth(row: Dict[str, Any], *, current_date: date, previous_date: 
         "_base_stars": base_stars,
         "_has_complete_community_pair": has_complete_community_pair,
     }
+
+
+def _heat_growth(item: Dict[str, Any], rolling: Any) -> float:
+    """热度与反作弊共用的星增：滚动 24h 可得时用它，否则退回观测日增。"""
+    return float(rolling.star_growth) if rolling is not None else float(item["daily_star_growth"])
+
+
+def _precise_created_at(row: Dict[str, Any]) -> str:
+    """候选池保留 GitHub API 的建仓时间戳；快照只存日期，只作兜底。"""
+    for key in ("candidate_created_at", "repo_created_at"):
+        text = str(row.get(key) or "")
+        if len(text) >= 16 and text[10] == "T":
+            return text
+    return str(row.get("candidate_created_at") or row.get("repo_created_at") or "")
+
+
+def _created_local_date(created_at: str) -> date | None:
+    """精确建仓时间换算到调度时区自然日；只有日期的建仓时间无法判定，返回 None。"""
+    if len(created_at) < 16 or created_at[10] != "T":
+        return None
+    created = parse_timestamp(created_at)
+    if created is None:
+        return None
+    timezone_name = getattr(settings, "scheduler_timezone", "Asia/Shanghai") or "Asia/Shanghai"
+    return created.astimezone(ZoneInfo(timezone_name)).date()
 
 
 def _coordinated_creation_repo_ids(candidates: List[tuple[str, str, Any]]) -> set[str]:
@@ -573,7 +610,16 @@ def _compute_github_daily_metrics(
         repo_ids=repo_ids,
     )
     observed = [
-        (row, _observed_growth(row, current_date=current_date, previous_date=previous_date))
+        (
+            row,
+            _observed_growth(row, current_date=current_date, previous_date=previous_date),
+            rolling_growth(
+                row.get("heat_snapshot_history") or [],
+                metric_date_str,
+                observations=row.get("heat_star_observations") or [],
+                created_at=_precise_created_at(row),
+            ),
+        )
         for row in rows
     ]
     coordinated = _coordinated_creation_repo_ids(
@@ -584,26 +630,37 @@ def _compute_github_daily_metrics(
                 # 快照只存建仓日期；候选池保留 API 原始时间戳。
                 row.get("candidate_created_at") or row.get("repo_created_at"),
             )
-            for row, item in observed
-            if item["daily_star_growth"] >= _SUSPICION_MIN_GROWTH
+            for row, item, rolling in observed
+            if _heat_growth(item, rolling) >= _SUSPICION_MIN_GROWTH
         ]
     )
 
     metrics: List[Dict[str, Any]] = []
     snapshot_velocity_count = 0
     observed_velocity_count = 0
-    for row, item in observed:
+    rolling_sources: Dict[str, int] = {}
+    for row, item, rolling in observed:
         daily_growth = item["daily_star_growth"]
         has_complete_community_pair = item.pop("_has_complete_community_pair")
         base_stars = item.pop("_base_stars")
         baseline_7d = float(row.get("baseline_7d") or 0.0)
         baseline_sample_count = int(row.get("baseline_sample_count") or 0)
+        growth_available = rolling is not None or item["daily_growth_available"]
+        growth = _heat_growth(item, rolling)
+        # 反作弊与热度看同一窗口：滚动 24h 可得时星、fork 都取滚动窗口，
+        # 避免“24h 星增 ÷ 午夜以来 fork 增”这类跨窗口比率误判。
+        if rolling is not None:
+            fork_growth = rolling.fork_growth or 0.0
+            fork_pair_complete = rolling.fork_growth is not None
+        else:
+            fork_growth = float(item["daily_fork_growth"])
+            fork_pair_complete = has_complete_community_pair
         suspicion_score, suspicion_signals, corroborated = (
             _growth_suspicion(
                 metric_date=metric_date_str,
-                daily_star_growth=float(daily_growth),
-                daily_fork_growth=float(item["daily_fork_growth"]),
-                has_complete_community_pair=has_complete_community_pair,
+                daily_star_growth=float(growth),
+                daily_fork_growth=fork_growth,
+                has_complete_community_pair=fork_pair_complete,
                 baseline_7d=baseline_7d,
                 baseline_sample_count=baseline_sample_count,
                 repo_created_at=row.get("repo_created_at"),
@@ -617,12 +674,12 @@ def _compute_github_daily_metrics(
                     and str(row.get("repo_id") or "").lower() in corroborated_repo_ids
                 ),
             )
-            if item["daily_growth_available"]
+            if growth_available
             else (0.0, [], False)
         )
-        if item["daily_growth_available"]:
-            # 同一口径打分：快照时间序列可用时按实际间隔小时折算速率，否则用
-            # 观测日增（含 Trending 冷启动）。缺失输入是未知而非 0。
+        if growth_available:
+            # 同一口径打分：趋势基线与社区速率取快照时间序列，否则取观测日增
+            # （含 Trending 冷启动）；星增优先用滚动 24h。缺失输入是未知而非 0。
             inputs = snapshot_velocity(row.get("heat_snapshot_history") or [], metric_date_str)
             if inputs is None:
                 observed_velocity_count += 1
@@ -637,8 +694,23 @@ def _compute_github_daily_metrics(
                 )
             else:
                 snapshot_velocity_count += 1
-            if daily_growth <= 0:
-                # 观测日增为 0 的仓库不应凭前一区间速率或次要信号获得热度。
+            if rolling is not None:
+                rolling_sources[rolling.source] = rolling_sources.get(rolling.source, 0) + 1
+                inputs = replace(
+                    inputs,
+                    star_velocity=rolling.star_growth,
+                    base_stars=rolling.base_stars,
+                    age_days=rolling.age_days,
+                )
+                if rolling.source == "since_creation" and rolling.fork_growth is not None:
+                    # 新仓的社区信号同样从建仓时的 0 起算。
+                    inputs = replace(
+                        inputs,
+                        fork_velocity=rolling.fork_growth,
+                        watcher_velocity=float(max(int(row.get("watchers") or 0), 0)),
+                    )
+            if growth <= 0:
+                # 窗口内星增为 0 的仓库不应凭前一区间速率或次要信号获得热度。
                 inputs = replace(inputs, star_velocity=0.0)
             scores = score_heat(inputs, suspicion=suspicion_score)
         else:
@@ -649,6 +721,9 @@ def _compute_github_daily_metrics(
                 "repo_id": row.get("repo_id"),
                 "metric_date": metric_date_str,
                 **item,
+                "rolling_24h_star_growth": round(rolling.star_growth) if rolling is not None else None,
+                "rolling_24h_growth_source": rolling.source if rolling is not None else None,
+                "rolling_24h_observed_at": rolling.observed_at.isoformat() if rolling is not None else None,
                 **scores,
                 "growth_suspicion_score": suspicion_score,
                 "growth_suspicion_signals": json.dumps(suspicion_signals, ensure_ascii=False),
@@ -668,12 +743,16 @@ def _compute_github_daily_metrics(
         "exact": sources.count("snapshot_delta"),
         "gap_fallback": sources.count("snapshot_delta_gap"),
         "trending_fallback": sources.count("github_trending_daily"),
+        "creation_baseline": sources.count("creation_baseline"),
         "positive_growth": sum(1 for item in metrics if item["daily_star_growth"] > 0),
+        "rolling": sum(rolling_sources.values()),
+        "rolling_sources": rolling_sources,
+        "positive_rolling_growth": sum(1 for item in metrics if (item["rolling_24h_star_growth"] or 0) > 0),
         "suspicious": sum(1 for item in metrics if item["growth_suspicion_score"] > 0),
         "demoted": sum(
             1
             for item in metrics
-            if item["daily_star_growth"] > 0 and suspicion_multiplier(item["growth_suspicion_score"]) < 1
+            if item["hot_score"] > 0 and suspicion_multiplier(item["growth_suspicion_score"]) < 1
         ),
         "corroborated": sum(1 for item in metrics if item["growth_corroborated"]),
         "targeted": bool(repo_ids),

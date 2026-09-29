@@ -32,6 +32,7 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
     assert migrations[76].filename == "0077_user_avatar.sql"
     assert migrations[77].filename == "0078_ai_ops_recovery.sql"
     assert migrations[78].filename == "0079_github_star_observations.sql"
+    assert migrations[79].filename == "0080_github_rolling_star_growth.sql"
 
 
 def test_github_star_observations_migration_is_keyed_and_prunable() -> None:
@@ -40,6 +41,16 @@ def test_github_star_observations_migration_is_keyed_and_prunable() -> None:
     assert "REFERENCES github_repo_candidates(repo_id) ON DELETE CASCADE" in sql
     assert "PRIMARY KEY (repo_id, observed_at)" in sql
     assert "ON github_repo_star_observations (observed_at)" in sql
+
+
+def test_github_rolling_star_growth_migration_only_adds_nullable_columns() -> None:
+    sql = (MIGRATIONS_DIR / "0080_github_rolling_star_growth.sql").read_text(encoding="utf-8")
+    assert "ALTER TABLE github_repo_daily_metrics" in sql
+    for column in ("rolling_24h_star_growth BIGINT", "rolling_24h_growth_source VARCHAR(32)",
+                   "rolling_24h_observed_at TEXT"):
+        assert f"ADD COLUMN IF NOT EXISTS {column}" in sql
+    # 可空、无默认值：只改目录，不重写表
+    assert "NOT NULL" not in sql and "DEFAULT" not in sql
 
 
 def test_x_ui_auto_publication_migration_is_opt_in_and_idempotent() -> None:

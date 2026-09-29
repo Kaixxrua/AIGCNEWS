@@ -9,7 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
-from backend.app.domain.github_heat import SCORE_VERSION as HEAT_SCORE_VERSION
+from backend.app.domain.github_heat import MAX_GAP_DAYS, ROLLING_WINDOW_HOURS, SCORE_VERSION as HEAT_SCORE_VERSION
 from backend.app.monitoring import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
@@ -1256,6 +1256,7 @@ class PostgresGitHubProjectIngestionRepository:
                  FROM github_repo_snapshots h WHERE h.repo_id=s.repo_id
                    AND h.snapshot_date BETWEEN (s.snapshot_date::date-12)::text AND s.snapshot_date
                 ) AS heat_snapshot_history,
+                obs.points AS heat_star_observations,
                 COALESCE(s.forks,0) forks,COALESCE(s.watchers,0) watchers,
                 s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,
                 COALESCE(NULLIF(c.created_at,''),NULLIF(s.repo_created_at,''),'') repo_created_at,
@@ -1286,6 +1287,38 @@ class PostgresGitHubProjectIngestionRepository:
                 ORDER BY p.snapshot_date DESC
                 LIMIT 1
             ) prev ON TRUE
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN s.captured_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}'
+                    THEN s.captured_at::timestamptz END AS window_end
+            ) win
+            -- 滚动窗口起点两侧各取一条盘中观测（主键索引两次探测）：
+            -- 起点及之前最近一条、起点之后最早一条，由热度模块插值。
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'observed_at', o.observed_at, 'stars', o.stars,
+                    'forks', o.forks, 'watchers', o.watchers) ORDER BY o.observed_at) AS points
+                FROM (
+                    (SELECT b.observed_at, b.stars, b.forks, b.watchers
+                     FROM github_repo_star_observations b
+                     WHERE b.repo_id = s.repo_id
+                       AND b.observed_at <= win.window_end - interval '"""
+            + f"{ROLLING_WINDOW_HOURS} hours"
+            + """'
+                       AND b.observed_at >= win.window_end - interval '"""
+            + f"{MAX_GAP_DAYS + 1} days"
+            + """'
+                     ORDER BY b.observed_at DESC LIMIT 1)
+                    UNION ALL
+                    (SELECT a.observed_at, a.stars, a.forks, a.watchers
+                     FROM github_repo_star_observations a
+                     WHERE a.repo_id = s.repo_id
+                       AND a.observed_at > win.window_end - interval '"""
+            + f"{ROLLING_WINDOW_HOURS} hours"
+            + """'
+                       AND a.observed_at <= win.window_end
+                     ORDER BY a.observed_at ASC LIMIT 1)
+                ) o
+            ) obs ON TRUE
             LEFT JOIN github_repo_candidates c ON c.repo_id=s.repo_id
             LEFT JOIN github_trending_hits daily_hit ON daily_hit.repo_id=s.repo_id
                 AND daily_hit.period='daily' AND daily_hit.observed_date=%s
@@ -1326,6 +1359,9 @@ class PostgresGitHubProjectIngestionRepository:
             "growth_suspicion_signals": "[]",
             "growth_corroborated": False,
             "score_version": HEAT_SCORE_VERSION,
+            "rolling_24h_star_growth": None,
+            "rolling_24h_growth_source": None,
+            "rolling_24h_observed_at": None,
         }
         for metric in metrics:
             payload = dict(metric)
@@ -1345,7 +1381,8 @@ class PostgresGitHubProjectIngestionRepository:
                 scale_corrected_growth_score,growth_acceleration_score,absolute_growth_score,
                 maintenance_activity_score,community_engagement_score,hot_score,
                 growth_suspicion_score,growth_suspicion_signals,growth_corroborated,
-                score_version,updated_at
+                score_version,updated_at,
+                rolling_24h_star_growth,rolling_24h_growth_source,rolling_24h_observed_at
             ) VALUES (
                 %(repo_id)s,%(metric_date)s,%(stars)s,%(forks)s,%(watchers)s,%(open_issues)s,
                 %(previous_snapshot_date)s,%(previous_stars)s,%(daily_star_growth)s,
@@ -1354,7 +1391,8 @@ class PostgresGitHubProjectIngestionRepository:
                 %(growth_acceleration_score)s,%(absolute_growth_score)s,%(maintenance_activity_score)s,
                 %(community_engagement_score)s,%(hot_score)s,
                 %(growth_suspicion_score)s,%(growth_suspicion_signals)s,%(growth_corroborated)s,
-                %(score_version)s,%(updated_at)s
+                %(score_version)s,%(updated_at)s,
+                %(rolling_24h_star_growth)s,%(rolling_24h_growth_source)s,%(rolling_24h_observed_at)s
             ) ON CONFLICT (repo_id,metric_date) DO UPDATE SET
                 stars=EXCLUDED.stars,forks=EXCLUDED.forks,watchers=EXCLUDED.watchers,
                 open_issues=EXCLUDED.open_issues,previous_snapshot_date=EXCLUDED.previous_snapshot_date,
@@ -1371,7 +1409,10 @@ class PostgresGitHubProjectIngestionRepository:
                 growth_suspicion_score=EXCLUDED.growth_suspicion_score,
                 growth_suspicion_signals=EXCLUDED.growth_suspicion_signals,
                 growth_corroborated=EXCLUDED.growth_corroborated,
-                score_version=EXCLUDED.score_version,updated_at=EXCLUDED.updated_at
+                score_version=EXCLUDED.score_version,updated_at=EXCLUDED.updated_at,
+                rolling_24h_star_growth=EXCLUDED.rolling_24h_star_growth,
+                rolling_24h_growth_source=EXCLUDED.rolling_24h_growth_source,
+                rolling_24h_observed_at=EXCLUDED.rolling_24h_observed_at
         """
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
