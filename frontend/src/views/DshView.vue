@@ -1,27 +1,35 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
+import { Box, CalendarDays, Crown, Wrench } from 'lucide-vue-next'
 import '@/components/mcp/connection-layout.css'
 import { RouterLink } from 'vue-router'
 import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
-import { DSH_PLUGIN_REPOSITORY_URL } from '@/features/mcp/dshPlugin'
+import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL, MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
 import { useAuthStore } from '@/stores/authStore'
+import RollingNumber from '@/components/dashboard/RollingNumber.vue'
+import { useDshPluginCalls } from '@/composables/useDshPluginCalls'
 
 // /dsh 对游客开放为获客入口：插件介绍与安装方式选择免登录可见；
 // 登录在向导「下一步」处按需弹窗，Token 签发仍由登录后的服务端完成。
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
+// 桌面漫画版的四格统计：调用数与首页「dsh 插件调用」同源实时计数，只在桌面上订阅。
+const desktop = useMediaQuery('(min-width: 1024px)')
+const dshCalls = useDshPluginCalls(desktop)
 </script>
 
 <template>
   <div class="dsh-page connection-page flex h-full min-h-0 flex-col overflow-hidden">
     <div class="connection-scroll">
+      <p class="dsh-page-title comic-title">{{ t('dsh.pageTitle') }}</p>
       <div class="connection-layout connection-layout--dsh">
         <div class="connection-aside">
           <section class="connection-intro glass-card relative overflow-hidden p-4 md:p-5">
             <div class="dsh-grid-overlay" />
             <div class="connection-intro-content relative z-10">
               <div class="connection-heading">
-              <p class="text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('dsh.eyebrow') }}</p>
+              <p class="dsh-eyebrow text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('dsh.eyebrow') }}</p>
               <h1 class="mt-2 max-w-3xl text-2xl font-extrabold leading-tight md:text-4xl">{{ t('dsh.title') }}</h1>
               </div>
               <div class="connection-summary">
@@ -37,10 +45,16 @@ const auth = useAuthStore()
           <section class="connection-details glass-card grid gap-3 p-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
             <div class="flex h-10 w-10 items-center justify-center border border-ink bg-[var(--acid)] text-lg font-black">✦</div>
             <div>
-              <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('dsh.capabilitiesKicker') }}</p>
+              <p class="dsh-eyebrow text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('dsh.capabilitiesKicker') }}</p>
               <h2 class="mt-1 text-lg font-extrabold">{{ t('dsh.capabilitiesTitle') }}</h2>
               <p class="mt-2 text-sm leading-6 text-stone-500">{{ t('dsh.capabilitiesDescription') }}</p>
             </div>
+          </section>
+          <section v-if="desktop" class="dsh-stats" :aria-label="t('dsh.stats.label')">
+            <div class="dsh-stat"><Box aria-hidden="true" /><span>{{ t('dsh.stats.calls') }}</span><strong><RollingNumber v-if="dshCalls !== null" :value="dshCalls" grouping /><template v-else>—</template></strong></div>
+            <div class="dsh-stat"><Wrench aria-hidden="true" /><span>{{ t('dsh.stats.methods') }}</span><strong>{{ DSH_PLUGIN_INSTALL_METHODS.length }}</strong></div>
+            <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling24h.toLocaleString(locale) }}</strong></div>
+            <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling30d.toLocaleString(locale) }}</strong></div>
           </section>
         </div>
 
@@ -71,6 +85,7 @@ const auth = useAuthStore()
   background-size: 100% 32px;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
+.dsh-page-title { display: none; }
 .dsh-grid-overlay { position: absolute; inset: 0; pointer-events: none; opacity: .32; background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px); background-size: 34px 34px; }
 .dsh-page :deep(.glass-card) { border: 1px solid var(--rule); border-radius: var(--module-radius); background: rgb(var(--projects-paper-light-rgb) / .94); box-shadow: none; }
 .dsh-page :deep(.btn-primary), .dsh-page :deep(.btn-secondary) { border-radius: var(--control-radius); font-weight: 600; box-shadow: none; }

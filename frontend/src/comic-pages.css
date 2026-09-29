@@ -10,6 +10,7 @@
     --comic-paper-raised: var(--paper-raised);
     --comic-ink: var(--ink);
     --comic-ink-muted: var(--ink-muted);
+    --comic-acid: var(--acid);
     /* How far the peel reaches up into the content (its art is 1100×713, standing 3px under the 74px footer). */
     --peel-clear: max(0px, calc(var(--peel, 0px) * .648 - 71px));
   }
@@ -469,4 +470,135 @@
   #app .app-shell--comic-page .ui-library__icon-open:is(:hover, :focus-visible) { border-color: var(--rule-strong); background: var(--acid-soft); box-shadow: 3px 3px 0 var(--comic-shadow); }
   #app .app-shell--comic-page .ui-library__icon-name { font-size: 12px; }
   #app .app-shell--comic-page .ui-library__icon-copy { font-size: 11px; }
+
+  /* ── DSH (dsh-C): intro, abilities and four facts side by side; the wizard's tabs, quota bar, method cards
+     and step bar stand on the page as separate comic pieces. The page flows and scrolls instead of fitting
+     the viewport, so every card keeps its natural height. ── */
+  #app .app-shell--comic-page .dsh-page {
+    --paper: var(--comic-paper); --paper-light: var(--comic-paper-raised); --ink: var(--comic-ink); --acid: var(--comic-acid);
+    --dsh-picked: color-mix(in srgb, var(--acid) 42%, var(--paper-raised));
+    background: transparent; font-family: inherit;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .dsh-page { --dsh-picked: var(--acid-soft); }
+  #app .app-shell--comic-page .dsh-page .connection-scroll { padding: 18px 28px calc(var(--peel-clear) + 28px); }
+  #app .app-shell--comic-page .dsh-page-title { display: inline-block; margin-bottom: 26px; font-size: 44px; }
+  #app .app-shell--comic-page .dsh-page .connection-layout { height: auto; grid-template-rows: auto auto; gap: 26px; }
+  #app .app-shell--comic-page .dsh-page .connection-aside { grid-template-columns: minmax(0, 1.75fr) minmax(0, 1.15fr) minmax(0, 1.4fr); align-items: stretch; gap: 22px; }
+  #app .app-shell--comic-page .dsh-page :is(.connection-intro, .connection-details, .dsh-stat, .dsh-method, .dsh-wizard-nav) {
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .dsh-page :is(.connection-intro, .connection-details) { position: relative; isolation: isolate; overflow: visible; padding: 24px 26px 22px; }
+  #app .app-shell--comic-page .dsh-page :is(.connection-intro, .connection-details)::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 120px; height: 80px; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .5;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .dsh-page :is(.connection-intro, .connection-details)::after { opacity: .16; }
+  #app .app-shell--comic-page .dsh-grid-overlay { display: none; }
+  #app .app-shell--comic-page .dsh-page .connection-intro-content { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; height: auto; }
+  #app .app-shell--comic-page .dsh-page .connection-details { display: block; }
+  /* Kickers are lime tags sitting on the panel's top rule. */
+  #app .app-shell--comic-page .dsh-eyebrow {
+    display: inline-block; margin: -38px 0 0 -6px; padding: 3px 13px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink);
+    font-size: 13.5px; font-style: italic; font-weight: 900; letter-spacing: 0; line-height: 1.5; text-transform: none;
+    transform: rotate(-2deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .connection-details .dsh-eyebrow::before { content: '✦ ' / ''; }
+  #app .app-shell--comic-page .dsh-page .connection-intro h1 {
+    max-width: none; margin: 4px 0 0; color: var(--ink); font-size: 30px; font-style: italic; font-weight: 950; letter-spacing: 0; line-height: 1.2;
+  }
+  #app .app-shell--comic-page .dsh-page .connection-details h2 { margin-top: 8px; color: var(--ink); font-size: 22px; font-style: italic; font-weight: 900; line-height: 1.3; }
+  #app .app-shell--comic-page .dsh-page :is(.connection-summary > p, .connection-details p:not(.dsh-eyebrow)) {
+    max-width: 62ch; margin-top: 0; color: var(--ink-secondary); font-size: 15px; line-height: 1.7;
+  }
+  #app .app-shell--comic-page .dsh-page .connection-details p:not(.dsh-eyebrow) { margin-top: 10px; font-size: 14.5px; }
+  #app .app-shell--comic-page .dsh-page .connection-summary > div { gap: 14px; margin-top: 16px; }
+
+  #app .app-shell--comic-page .dsh-page :is(.btn-primary, .btn-secondary) {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 7px 20px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    box-shadow: 3px 3px 0 var(--comic-shadow); font-size: 15px; font-weight: 900;
+  }
+  #app .app-shell--comic-page .dsh-page .btn-secondary { background: var(--paper-raised); color: var(--ink); }
+  #app .app-shell--comic-page .dsh-page .btn-secondary:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .dsh-page .btn-primary { background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page .dsh-page :is(.btn-primary, .btn-secondary):disabled { box-shadow: none; opacity: .45; }
+
+  /* Four facts: a 2 × 2 of small boxes, icon in a cyan disc, the number big. */
+  #app .app-shell--comic-page .dsh-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  #app .app-shell--comic-page .dsh-stat {
+    display: grid; grid-template-columns: 42px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px;
+    min-width: 0; padding: 12px 14px; box-shadow: 3px 3px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .dsh-stat svg {
+    grid-row: span 2; align-self: center; width: 42px; height: 42px; padding: 9px; border: 1.5px solid var(--rule-strong); border-radius: 50%;
+    background: color-mix(in srgb, var(--comic-cyan-line) 26%, var(--paper-raised)); color: var(--ink); stroke-width: 2.2;
+  }
+  #app .app-shell--comic-page .dsh-stat span { align-self: end; color: var(--ink-secondary); font-size: 13.5px; font-weight: 800; line-height: 1.35; }
+  #app .app-shell--comic-page .dsh-stat strong { color: var(--ink); font-size: 26px; font-weight: 950; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .dsh-page .connection-aside { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+    #app .app-shell--comic-page .dsh-stats { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  /* Wizard: no frame of its own; slanted step tabs, an amber quota bar, the two method cards, the step bar. */
+  #app .app-shell--comic-page .dsh-page .dsh-wizard { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  #app .app-shell--comic-page .dsh-steps { gap: 0; padding-left: 4px; }
+  #app .app-shell--comic-page .dsh-steps button {
+    min-height: 42px; margin-right: -2px; padding: 6px 24px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 15.5px; font-style: italic; font-weight: 900; transform: skewX(-10deg);
+  }
+  #app .app-shell--comic-page .dsh-steps button[aria-current] { position: relative; z-index: 1; background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .dsh-steps button:not([aria-current]):hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page .dsh-step-description { margin-top: 14px; color: var(--ink-secondary); font-size: 15px; line-height: 1.6; }
+  #app .app-shell--comic-page .dsh-quota-hint {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 16px; padding: 12px 18px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: color-mix(in srgb, #ffc94d 34%, var(--paper-raised)); box-shadow: 3px 3px 0 var(--comic-shadow);
+    color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.6;
+  }
+  #app .app-shell--comic-page .dsh-quota-hint--member { background: color-mix(in srgb, #3ecf8e 26%, var(--paper-raised)); }
+  #app .app-shell--comic-page .dsh-quota-hint::before {
+    content: ''; flex: 0 0 24px; height: 24px; background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .dsh-quota-hint a { color: var(--ink); font-weight: 900; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  #app .app-shell--comic-page .dsh-page .dsh-step-panel { margin-top: 22px; }
+  #app .app-shell--comic-page .dsh-methods { gap: 24px; }
+  #app .app-shell--comic-page .dsh-page .dsh-method {
+    position: relative; isolation: isolate; justify-content: space-between; gap: 18px; min-height: 250px; padding: 24px 28px 22px; color: var(--ink);
+    transition: background-color .12s linear, box-shadow .12s cubic-bezier(.2,.8,.2,1);
+  }
+  #app .app-shell--comic-page .dsh-page .dsh-method[aria-pressed='true'] { background: var(--dsh-picked); box-shadow: 6px 6px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .dsh-page .dsh-method[aria-pressed='false']:hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page .dsh-page .dsh-method::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 130px; height: 90px; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .45;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .dsh-page .dsh-method::after { opacity: .14; }
+  #app .app-shell--comic-page .dsh-page .dsh-method-icon { width: 42px; height: 42px; stroke-width: 2.1; }
+  #app .app-shell--comic-page .dsh-recommended {
+    padding: 1px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px; background: var(--paper-raised);
+    box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13px; font-style: italic; font-weight: 900; transform: rotate(-4deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .dsh-page .dsh-method-copy strong { font-size: 28px; font-style: italic; font-weight: 950; line-height: 1.25; }
+  #app .app-shell--comic-page .dsh-page .dsh-method-copy > span { margin-top: 8px; color: var(--ink-secondary); font-size: 15px; line-height: 1.7; }
+  #app .app-shell--comic-page .dsh-page .dsh-method-source {
+    padding-top: 14px; border-top: 1.5px dashed color-mix(in srgb, var(--rule-strong) 40%, transparent); color: var(--ink-secondary); font-size: 14px;
+  }
+  #app .app-shell--comic-page .dsh-command-panel > p:first-child { color: var(--ink); font-size: 14px; font-style: italic; font-weight: 900; letter-spacing: 0; text-transform: none; }
+  /* The command is a terminal line in both themes (the dark theme repaints Tailwind's stone scale). */
+  #app .app-shell--comic-page .dsh-page .dsh-install-command {
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: #10151c; color: #e6edf3; font-size: 14.5px;
+  }
+  #app .app-shell--comic-page .dsh-command-panel :is(p, button.underline) { font-size: 14px; line-height: 1.65; }
+  #app .app-shell--comic-page .dsh-page .dsh-command-notes { border-left: 2px dashed color-mix(in srgb, var(--rule-strong) 40%, transparent); }
+  #app .app-shell--comic-page .dsh-page .dsh-wizard-nav { margin-top: 24px; padding: 12px 16px; border-top: solid var(--rule-strong); border-top-width: 2px; }
+  #app .app-shell--comic-page .dsh-wizard-nav > span { color: var(--ink); font-size: 15px; font-style: italic; font-weight: 900; }
+  @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .dsh-page .dsh-method { transition: none; } }
 }
