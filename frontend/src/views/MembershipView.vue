@@ -247,12 +247,12 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
           </ul>
           <template v-if="!isMember">
             <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
-              {{ t('membership.ctaOnline') }}
+              <span class="tier-cta-label">{{ t('membership.ctaOnline') }}</span>
             </RouterLink>
             <RouterLink v-else-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
-              {{ t('membership.cta') }}
+              <span class="tier-cta-label">{{ t('membership.cta') }}</span>
             </RouterLink>
-            <a v-else :href="contactHref" class="tier-cta">{{ t('membership.cta') }}</a>
+            <a v-else :href="contactHref" class="tier-cta"><span class="tier-cta-label">{{ t('membership.cta') }}</span></a>
             <p class="tier-cta-hint">
               {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
             </p>

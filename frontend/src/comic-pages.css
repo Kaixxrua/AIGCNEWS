@@ -887,77 +887,139 @@
   }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .legal-body section.is-flash { animation: none; } }
 
-  /* ── Membership (membership-C): three comic price cards; tier names are tilted tags, the vip card carries a lime
-     spine and a lime "recommended" tag, the call to action is an ink bar with lime sparks. Features read at 15.5px. ── */
-  #app .app-shell--comic-page .membership-page { display: block; padding: 18px 28px calc(var(--peel-clear) + 28px); background: transparent; }
-  #app .app-shell--comic-page .membership-card { max-width: 1480px; margin: 0 auto; gap: 30px; }
-  #app .app-shell--comic-page .membership-hero { text-align: left; }
-  #app .app-shell--comic-page .membership-title.comic-title { margin: 0 36px 0 0; font-size: 44px; }
-  #app .app-shell--comic-page .membership-subtitle { max-width: none; margin: 10px 0 0; color: var(--ink); font-size: 16px; font-weight: 700; line-height: 1.6; }
-  #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; padding-top: 14px; }
+  /* ── Membership (membership-C): three price cards drawn in ink, their tops climbing to the right, a navy extrusion
+     to the lower right and halftone in two corners; the vip card is taller, with a lime spine and a lime flag. Tier
+     names are tilted white slips, the billing switch and the savings slip are hand-inked too (all generated frames,
+     see assets/comic/README.md). The call to action is a navy block with a tilted lime label between sparks. ── */
+  #app .app-shell--comic-page .membership-page {
+    --mem-card: url('/assets/comic/mem-card.webp'); --mem-card-b: url('/assets/comic/mem-card-b.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip.webp');
+    --mem-tag: url('/assets/comic/mem-tag.webp'); --mem-badge: url('/assets/comic/mem-badge.webp'); --mem-toggle: url('/assets/comic/mem-toggle.webp');
+    --mem-chip: url('/assets/comic/mem-chip.webp'); --mem-savings: url('/assets/comic/mem-savings.webp');
+    --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #838e9d; --mem-off: #8f939b; --mem-check: #168c48; --mem-x: #b2b3b4;
+    --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
+    display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
+    --mem-card: url('/assets/comic/mem-card-night.webp'); --mem-card-b: url('/assets/comic/mem-card-b-night.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip-night.webp');
+    --mem-tag: url('/assets/comic/mem-tag-night.webp'); --mem-badge: url('/assets/comic/mem-badge-night.webp'); --mem-toggle: url('/assets/comic/mem-toggle-night.webp');
+    --mem-chip: url('/assets/comic/mem-chip-night.webp'); --mem-savings: url('/assets/comic/mem-savings-night.webp');
+    --mem-ink: var(--ink); --mem-copy: var(--ink); --mem-muted: var(--ink-muted); --mem-off: var(--ink-muted); --mem-check: #4cc27a; --mem-x: var(--ink-muted);
+    --mem-rule: color-mix(in srgb, var(--ink) 45%, var(--paper)); --mem-dash: color-mix(in srgb, #7997bc 70%, var(--paper)); --mem-hint: #8fb0d6;
+    --mem-cta: color-mix(in srgb, var(--acid) 12%, var(--paper-raised)); --mem-cta-ink: var(--acid); --mem-halo: var(--paper);
+  }
+  #app .app-shell--comic-page .membership-card { max-width: 1480px; margin: 0 auto; gap: 0; }
+  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 87px; padding: 12px 0 0 3px; text-align: left; }
+  #app .app-shell--comic-page .membership-title.comic-title {
+    margin: 0; padding: 0 1px; color: var(--mem-ink); font-size: 48px; font-style: normal; font-weight: 950; line-height: 1.12;
+    -webkit-text-stroke: .4px currentColor; transform: rotate(-4deg); transform-origin: 0 100%;
+    text-shadow: 1.5px 0 var(--mem-halo), -1.5px 0 var(--mem-halo), 0 1.5px var(--mem-halo), 0 -1.5px var(--mem-halo), 1.2px 1.2px var(--mem-halo), -1.2px -1.2px var(--mem-halo), 1.2px -1.2px var(--mem-halo), -1.2px 1.2px var(--mem-halo);
+  }
+  /* The brush is a flat lime block under the lower half; the spark is three wedges fanning up and out. */
+  #app .app-shell--comic-page .membership-title.comic-title::before { inset: 54% -12px -6px -8px; background: #cef92c; transform: skewX(-12deg); }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::before { background: var(--acid); }
+  #app .app-shell--comic-page .membership-title.comic-title::after {
+    right: -46px; top: -17px; width: 31px; height: 42px; background: #cef92c; clip-path: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 31 42'%3E%3Cpath d='M6.5 0 12 1.2 6.2 19 3.8 18.6zM25.5 3.5 31 7.5 16.5 27 13.8 25zM29 23.5 31 29.5 12.5 41 10.5 38.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::after { background: var(--acid); }
+  #app .app-shell--comic-page .membership-subtitle {
+    max-width: none; margin: 5px 0 0 -4px; color: var(--mem-ink); font-size: 17px; font-weight: 400; line-height: 1.5;
+    transform: rotate(-2.6deg); transform-origin: 0 50%;
+  }
+  #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 27px; padding-top: 11px; }
   #app .app-shell--comic-page .tier-card {
-    isolation: isolate; padding: 28px 30px 26px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 5px 5px 0 var(--comic-shadow); backdrop-filter: none;
+    position: relative; isolation: isolate; min-height: 563px; padding: 31px 24px 30px 30px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none;
   }
-  /* Halftone in two corners, clear of the text. */
-  #app .app-shell--comic-page .tier-card::before,
+  #app .app-shell--comic-page .tier-card::before { content: none; }
   #app .app-shell--comic-page .tier-card::after {
-    content: ''; position: absolute; z-index: -1; width: 150px; height: 90px; pointer-events: none;
-    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px; opacity: .5;
+    content: ''; position: absolute; inset: -2px -10px -13px -2px; z-index: -1; pointer-events: none;
+    border: solid transparent; border-width: 112px 140px 95px 112px; border-image: var(--mem-card) 336 420 285 336 fill / 112px 140px 95px 112px stretch;
   }
-  #app .app-shell--comic-page .tier-card::before { top: 0; right: 0; mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 70%); }
-  #app .app-shell--comic-page .tier-card::after { bottom: 0; left: 0; mask-image: radial-gradient(ellipse 100% 100% at 0 100%, #000 8%, transparent 70%); }
-  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-card::before, .tier-card::after) { opacity: .16; }
-  #app .app-shell--comic-page .tier-card--member { padding-left: 38px; box-shadow: inset 9px 0 0 var(--acid), 5px 5px 0 var(--comic-shadow); }
-  #app .app-shell--comic-page .tier-badge {
-    top: -18px; right: 22px; padding: 3px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    box-shadow: 2px 2px 0 var(--comic-shadow); font-size: 17px; font-style: italic; font-weight: 950; letter-spacing: 0; transform: rotate(-5deg) skewX(-6deg);
+  #app .app-shell--comic-page .tier-card:nth-child(2)::after { border-width: 113px 140px 95px 112px; border-image: var(--mem-card-b) 339 420 285 336 fill / 113px 140px 95px 112px stretch; }
+  /* The vip card stands 20px above the others and reaches 11px lower. */
+  #app .app-shell--comic-page .tier-card--member { margin: -20px 0 -11px; padding: 27px 28px 29px 43px; }
+  #app .app-shell--comic-page .tier-card--member::after { border-width: 100px 124px 99px 122px; border-image: var(--mem-card-vip) 300 372 297 366 fill / 100px 124px 99px 122px stretch; }
+
+  /* Hand-inked slips: each paints nothing itself and wears its generated frame. */
+  #app .app-shell--comic-page :is(.tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings) {
+    position: relative; isolation: isolate; border: 0; border-radius: 0; background: transparent; box-shadow: none;
   }
-  #app .app-shell--comic-page .tier-badge--current { background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page :is(.tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings)::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; border: solid transparent;
+  }
   #app .app-shell--comic-page .tier-name {
-    align-self: flex-start; margin: 0 0 22px; padding: 2px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
-    font-size: 24px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 1.3; transform: rotate(-4deg) skewX(-6deg);
+    align-self: flex-start; min-height: 41px; margin: 0 0 23px -6px; padding: 3px 20px 4px 19px; color: var(--mem-ink);
+    font-size: 25px; font-style: italic; font-weight: 950; letter-spacing: .01em; line-height: 34px; text-align: center; -webkit-text-stroke: .7px currentColor; transform: skewY(-9.5deg) skewX(-4deg);
   }
-  #app .app-shell--comic-page .tier-price { row-gap: 10px; }
-  #app .app-shell--comic-page .tier-price-amount { font-size: 60px; font-weight: 600; -webkit-text-stroke: 1.4px currentColor; }
-  #app .app-shell--comic-page .tier-price-period { margin-left: 8px; color: var(--ink); font-size: 20px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-name::after { inset: -2px -2px -3px -2px; border-width: 10px 6px 7px 6px; border-image: var(--mem-tag) 30 18 21 18 fill / 10px 6px 7px 6px stretch; }
+  #app .app-shell--comic-page .tier-card--member .tier-name { margin-left: -12px; }
+  #app .app-shell--comic-page .tier-badge {
+    position: absolute; top: 8px; right: 17px; min-width: 94px; padding: 5px 16px 7px 20px; color: #071633;
+    font-size: 22px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 28px; text-align: center; transform: rotate(-10deg);
+  }
+  #app .app-shell--comic-page .tier-badge::after { inset: -2px -4px -6px -2px; border-width: 11px 14px 15px 12px; border-image: var(--mem-badge) 33 42 45 36 fill / 11px 14px 15px 12px stretch; }
+  #app .app-shell--comic-page .tier-badge--current { color: var(--mem-ink); }
+  #app .app-shell--comic-page .tier-badge--current::after { filter: grayscale(1) brightness(1.15); }
+  #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 10px; }
+  #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 71px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1.2px currentColor; }
+  #app .app-shell--comic-page .tier-price-period { margin-left: 9px; color: var(--mem-ink); font-size: 21px; font-weight: 600; }
   #app .app-shell--comic-page .tier-billing-btn {
-    gap: 8px; padding: 7px 14px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
-    box-shadow: 3px 3px 0 var(--comic-shadow); font-size: 15px; font-style: italic; font-weight: 900; transform: rotate(-2deg);
+    align-self: center; gap: 9px; min-height: 47px; margin: -14px 0 0 auto; padding: 8px 12px 9px 16px; color: var(--mem-ink);
+    font-size: 20px; font-style: italic; font-weight: 900; -webkit-text-stroke: .3px currentColor; transform: rotate(-2.5deg);
   }
-  #app .app-shell--comic-page .tier-billing-btn[aria-pressed='true'] { border-color: var(--rule-strong); background: var(--rule-strong); color: var(--acid); }
-  #app .app-shell--comic-page .tier-billing-tag,
+  #app .app-shell--comic-page .tier-billing-btn::after { inset: -2px -2px -3px -2px; border-width: 10px 7px 8px 7px; border-image: var(--mem-toggle) 30 21 24 21 fill / 10px 7px 8px 7px stretch; }
+  #app .app-shell--comic-page .tier-billing-btn:hover { background: transparent; color: var(--mem-ink); transform: rotate(-2.5deg) translateY(-1px); }
+  #app .app-shell--comic-page .tier-billing-btn[aria-pressed='true'] { border-color: transparent; background: transparent; color: var(--mem-ink); }
+  #app .app-shell--comic-page .tier-billing-btn svg { width: 17px; height: 17px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-billing-tag { margin-left: 4px; padding: 2px 8px 4px; color: #071633; font-size: 15px; font-style: italic; font-weight: 900; line-height: 22px; transform: rotate(-2deg); }
+  #app .app-shell--comic-page .tier-billing-tag::after { inset: -2px -2px -3px -2px; border-width: 9px 6px 7px 6px; border-image: var(--mem-chip) 27 18 21 18 fill / 9px 6px 7px 6px stretch; }
+  #app .app-shell--comic-page .tier-price-yearly { display: flex; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 20px; font-weight: 800; }
   #app .app-shell--comic-page .tier-savings {
-    display: inline-block; padding: 1px 8px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    background: var(--acid); color: var(--acid-ink); font-size: 13px; font-style: italic; font-weight: 900; line-height: 1.5;
+    margin: -6px 0 0 22px; padding: 7px 14px 9px; color: #071633; font-size: 17px; font-style: italic; font-weight: 900; line-height: 26px; transform: rotate(-5deg);
   }
-  #app .app-shell--comic-page .tier-savings { margin-left: 12px; box-shadow: 2px 2px 0 var(--comic-shadow); font-size: 14px; transform: rotate(-4deg) skewX(-6deg); }
-  #app .app-shell--comic-page .tier-price-yearly { margin-top: 12px; color: var(--ink); font-size: 17px; font-weight: 800; }
-  #app .app-shell--comic-page .tier-divider { margin: 22px 0 20px; border-top: 2px solid var(--rule-strong); }
-  #app .app-shell--comic-page .tier-features { gap: 14px; margin-bottom: 24px; color: var(--ink); font-size: 15.5px; line-height: 1.6; }
-  #app .app-shell--comic-page .tier-features li { gap: 12px; }
-  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 20px; height: 20px; margin-top: 2px; stroke-width: 3; }
-  #app .app-shell--comic-page .tier-feature--excluded { color: var(--ink-muted); }
-  #app .app-shell--comic-page :is(.tier-plan-note, .tier-member-note) { padding-top: 18px; border-top: 1.5px dashed var(--rule-strong); font-size: 14.5px; }
-  #app .app-shell--comic-page .tier-plan-note { color: var(--ink-muted); }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-savings, .tier-billing-tag, .tier-badge) { color: var(--ink); }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-billing-tag, .tier-badge) { color: #10140a; }
+  #app .app-shell--comic-page .tier-savings::after { inset: -2px -2px -3px -2px; border-width: 11px 11px 12px 11px; border-image: var(--mem-savings) 33 33 36 33 fill / 11px 11px 12px 11px stretch; }
+  #app .app-shell--comic-page .tier-divider { margin: 22px 0 21px; border-top: 1.5px solid var(--mem-rule); }
+  #app .app-shell--comic-page .tier-card--member .tier-divider { margin-top: 14px; }
+  #app .app-shell--comic-page .tier-features { gap: 12.5px; margin-bottom: 24px; color: var(--mem-copy); font-size: 18.5px; line-height: 29.5px; }
+  #app .app-shell--comic-page .tier-features li { gap: 15px; }
+  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 22px; height: 22px; margin-top: 3.5px; stroke-width: 3.2; }
+  #app .app-shell--comic-page .tier-check { color: var(--mem-check); }
+  #app .app-shell--comic-page .tier-x { width: 18px; margin-inline: 2px; color: var(--mem-x); stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-feature--excluded { color: var(--mem-off); }
+  /* A dashed rule of 8px dashes, as drawn, over the plan's note. */
+  #app .app-shell--comic-page :is(.tier-plan-note, .tier-member-note) {
+    padding-top: 21px; border-top: 0; background: linear-gradient(90deg, var(--mem-dash) 0 8px, transparent 8px 13px) 0 0 / 13px 1.5px repeat-x;
+    font-size: 16.5px; line-height: 1.5;
+  }
+  #app .app-shell--comic-page .tier-plan-note { color: var(--mem-muted); }
   #app .app-shell--comic-page .tier-cta {
-    gap: 14px; min-height: 56px; padding: 10px 22px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 8px 5px 7px;
-    background: var(--rule-strong); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--acid); font-size: 22px; font-style: italic; font-weight: 950;
+    gap: 22px; min-height: 70px; margin-inline: 3px 4px; padding: 8px 22px 12px; border: 0; border-radius: 9px; background: var(--mem-cta); box-shadow: none;
+    color: var(--mem-cta-ink); font-size: 31px; font-style: italic; font-weight: 950; letter-spacing: .02em;
   }
-  #app .app-shell--comic-page .tier-cta:hover { background: var(--rule-strong); color: #fff; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .tier-cta { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--acid) 55%, transparent); }
+  #app .app-shell--comic-page .tier-cta:hover { background: var(--mem-cta); color: var(--mem-cta-ink); filter: brightness(1.18); }
+  /* The label tilts and carries its lime underline; the sparks fan in toward it from both sides. */
+  #app .app-shell--comic-page .tier-cta-label {
+    display: inline-block; transform: rotate(-4deg); text-decoration: underline 3px; text-underline-offset: 10px; text-decoration-skip-ink: none;
+  }
   #app .app-shell--comic-page .tier-cta::before,
   #app .app-shell--comic-page .tier-cta::after {
-    content: ''; flex: 0 0 16px; height: 20px; background: var(--acid);
-    clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
+    content: ''; flex: 0 0 16px; height: 20px; background: var(--mem-cta-ink); clip-path: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath d='M.4 2.6 1.6.6 14.6 7.2 13.8 8.6zM0 9.2 14.2 9.9 14.2 11.5 0 12zM1 18.2 13.8 12.6 14.6 14 2.2 19.8z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
-  #app .app-shell--comic-page .tier-cta::before { transform: scaleX(-1); }
-  #app .app-shell--comic-page .tier-cta-hint { margin-top: 12px; color: var(--ink-secondary); font-size: 13.5px; line-height: 1.65; }
+  #app .app-shell--comic-page .tier-cta::before { transform: translateY(9px); }
+  #app .app-shell--comic-page .tier-cta::after { transform: translateY(-10px) scaleX(-1); }
+  #app .app-shell--comic-page .tier-cta-hint { margin-top: 11px; color: var(--mem-hint); font-size: 16px; line-height: 23px; }
   @media (max-width: 1279px) {
-    #app .app-shell--comic-page .tier-grid { gap: 22px; }
-    #app .app-shell--comic-page .tier-card { padding: 24px 22px 22px; }
-    #app .app-shell--comic-page .tier-price-amount { font-size: 50px; }
-    #app .app-shell--comic-page .tier-features { font-size: 15px; }
+    #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+    #app .app-shell--comic-page .tier-card { padding-inline: 22px 20px; }
+    #app .app-shell--comic-page .tier-card--member { padding-left: 34px; }
+    #app .app-shell--comic-page .tier-price-amount { font-size: 56px; }
+    #app .app-shell--comic-page .tier-features { font-size: 16px; line-height: 26px; }
+    #app .app-shell--comic-page .tier-cta { font-size: 26px; }
   }
 
   /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the

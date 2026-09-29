@@ -42,3 +42,14 @@ The DSH page (`/dsh`, "dsh-C" concept) is drawn the same way, with one generator
 - `dsh-tag.webp`, `dsh-bubble.webp`: the lime kicker tag and the "推荐" speech bubble.
 
 Together they are about 300 KB. The `-night` files swap the ink for pale grey, the extrusion for dark slate and the wedge fills for the dark theme's colours, and dim the dots.
+
+The membership page (`/membership`, "membership-C" concept) uses the same generator. Its frames differ in one way: the cards' tops are not level, so each frame paints its own fill (`border-image … fill`) and the element paints nothing. The middle band of the top slice holds a straight ramp, which stays straight however wide the card is stretched.
+
+- `mem-card.webp`, `mem-card-b.webp` (the guest and free cards): a 2.1px ink line whose top climbs 16–17px to the right, a navy extrusion (7.5px right, 10px down) outlined in black, and 7.2px halftone patches in the top-right and bottom-left corners, the dots shrinking as they leave the corner.
+- `mem-card-vip.webp`: the taller vip card, its top climbing 12px, with a 14px lime spine ruled off down its left side.
+- `mem-tag.webp`: the white tier-name slip, heavier along the bottom and right, its lines running past three corners; the page shears it.
+- `mem-badge.webp`: the lime "推荐" flag with notched ends and a hard navy foot.
+- `mem-toggle.webp`, `mem-chip.webp`: the billing switch (a wavering top, a hard-pressed bottom) and its lime discount chip.
+- `mem-savings.webp`: the pale lime "年付省" slip with ragged ends.
+
+Together they are about 230 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the extrusion for dark slate, and dim the dots.
