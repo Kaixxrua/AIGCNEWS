@@ -49,6 +49,18 @@ describe('groupReportSections', () => {
     expect(root.textContent).toBe(new DOMParser().parseFromString(html, 'text/html').body.textContent)
   })
 
+  it('marks the closing dateline so the comic layout can set it small in the corner', () => {
+    const html = '<h2>今日判断</h2>\n<p>正文</p>\n<p><strong>生成日期：</strong> 2026-09-29</p>\n'
+    const root = document.createElement('div')
+    root.innerHTML = groupReportSections(html)
+
+    const paragraphs = root.querySelectorAll('section.report-section > p')
+    expect(paragraphs[0]!.classList.contains('report-dateline')).toBe(false)
+    expect(paragraphs[1]!.classList.contains('report-dateline')).toBe(true)
+    expect(root.textContent).toBe(new DOMParser().parseFromString(html, 'text/html').body.textContent)
+    expect(groupReportSections('<h2>一</h2>\n<p>生成日期在句中</p>\n<p>结尾</p>')).not.toContain('report-dateline')
+  })
+
   it('leaves nested h2 and h2-free html untouched', () => {
     expect(groupReportSections('<p>无分节</p>')).toBe('<p>无分节</p>')
     const nested = '<ul><li><h2>列表内标题</h2></li></ul>'

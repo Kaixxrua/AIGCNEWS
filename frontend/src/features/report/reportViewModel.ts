@@ -1,13 +1,13 @@
-import { Circle, Code2, FileText, Flame, Globe, Newspaper, Rocket } from 'lucide-vue-next'
+import { Box, ChartColumn, Flame, Globe, GraduationCap, Settings, Users } from 'lucide-vue-next'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 
 export const REPORT_TYPES = [
   { key: 'all',         labelKey: 'allLabel', icon: Globe, descKey: 'allDesc' },
-  { key: 'arxiv',       labelKey: 'arxivLabel', icon: FileText, descKey: 'arxivDesc' },
-  { key: 'github',      labelKey: 'githubLabel', icon: Code2, descKey: 'githubDesc' },
-  { key: 'news',        labelKey: 'newsLabel', icon: Newspaper, descKey: 'newsDesc' },
-  { key: 'producthunt', labelKey: 'producthuntLabel', icon: Rocket, descKey: 'producthuntDesc' },
-  { key: 'hackernews',  labelKey: 'hackernewsLabel', icon: Circle, descKey: 'hackernewsDesc' },
+  { key: 'arxiv',       labelKey: 'arxivLabel', icon: GraduationCap, descKey: 'arxivDesc' },
+  { key: 'github',      labelKey: 'githubLabel', icon: Settings, descKey: 'githubDesc' },
+  { key: 'news',        labelKey: 'newsLabel', icon: ChartColumn, descKey: 'newsDesc' },
+  { key: 'producthunt', labelKey: 'producthuntLabel', icon: Box, descKey: 'producthuntDesc' },
+  { key: 'hackernews',  labelKey: 'hackernewsLabel', icon: Users, descKey: 'hackernewsDesc' },
   { key: 'x',           labelKey: 'xLabel', icon: XLogoIcon, descKey: 'xDesc' },
   { key: 'dailyhot',    labelKey: 'dailyhotLabel', icon: Flame, descKey: 'dailyhotDesc' },
 ] as const
@@ -166,13 +166,16 @@ export const coerceReportStreamText = (data: unknown): string => {
   return data != null ? JSON.stringify(data) : ''
 }
 
-// 桌面漫画版把简报逐节画成面板：按顶层 h2 分节，每节包进 <section class="report-section">。
-// 只在已消毒的渲染结果上重排顶层节点，不增删内容；没有 h2 时原样返回。
+// 桌面漫画版把简报逐节画成面板：按顶层 h2 分节，每节包进 <section class="report-section">；
+// 文末「生成日期」一行标上 report-dateline，排成末节右下角的小字。
+// 只在已消毒的渲染结果上重排顶层节点、加类名，不增删内容；没有 h2 时原样返回。
 export const groupReportSections = (html: string): string => {
   if (!/<h2[\s>]/.test(html)) return html
   const template = document.createElement('template')
   template.innerHTML = html
   const root = template.content
+  const tail = root.lastElementChild
+  if (tail?.tagName === 'P' && tail.textContent?.trim().startsWith('生成日期')) tail.classList.add('report-dateline')
   let section: HTMLElement | null = null
   for (const node of Array.from(root.childNodes)) {
     if (node.nodeName === 'H2') {

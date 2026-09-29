@@ -89,3 +89,15 @@ The monitor page (`/monitor`, "monitor-C" concept) uses the same generator. The 
 - `mon-badge-run.webp`, `mon-badge-ok.webp`, `mon-badge-fail.webp`: the status chips, a slightly tipped cyan, lime or red slip on a 2px ink line, with a nick of a tail at the lower left and a white glint in the lower-right corner.
 
 Together they are about 250 KB. The `-night` files swap the fills for the dark theme's paper (the navy button and the current page for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.
+
+The report page (`/report`, "report-C" concept) uses the same generator. The status pill, the section text and the link marks are plain in the concept and stay CSS; the icons are the app's own.
+
+- `rep-head.webp`: the controls panel, a 2.3px ink line on a flat grey block to the lower right, pale dots round the icon at the top left and teal halftone triangles in both right corners.
+- `rep-sec.webp`: a report section, the same line pressed into a dark block along the right and the foot over the grey block, with faint dots at the top left and the teal triangles on the right.
+- `rep-bar.webp`: the lime rule down a section's left, thick beside the title with a grey pencil flick, then thin. Its top holds still and the thin part stretches.
+- `rep-tag.webp`: a section tag ("news", "LLM"), a white slip leaning right, heavier along its foot, on a dark block just under it.
+- `rep-tab.webp`, `rep-tab-on.webp`: the source tabs, a navy pill on a light grey foot, and the open one lime on a black line and a black foot.
+- `rep-btn.webp`: the subscribe button, white on an ink line with a grey block to the lower right.
+- `rep-bubble.webp`: the AI notice, a speech bubble whose left side leans out with a tail off its lower left, the pen pressed harder along the left and the foot.
+
+Together they are about 100 KB. The `-night` files swap the fills for the dark theme's paper (the open tab for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.
