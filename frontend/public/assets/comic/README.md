@@ -75,3 +75,17 @@ The subscriptions page (`/subscriptions`, "subscriptions-C" concept) uses the sa
 - `sub-unlock.webp`: the unlocked band, lime under a ruled line that falls to the right.
 
 Together they are about 150 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots and the green patches.
+
+The monitor page (`/monitor`, "monitor-C" concept) uses the same generator. The fields in the manual-sync dialog and the table's header band are plain in the concept and stay CSS; the job icons are the app's own icons plus the Hugging Face and GitHub marks in `components/icons`.
+
+- `mon-side.webp`: the section nav, one box on a 2px ink line that thickens along the foot, with no block, a faint scatter of dots in two corners and a dark halftone patch in the bottom-right. The nav paints it as its own border image, so the frame stays put while the list scrolls.
+- `mon-panel-sch.webp`, `mon-panel-tsk.webp`: the scheduler and task panels, a 2px ink line on a solid ink block to the lower right (about 4px across, 6px down), with halftone in the corners.
+- `mon-tag.webp`: the panel tag, a white slip whose top climbs to the right, with a speech tail from its bottom-left corner, pale cyan washing in along the left and the foot, on an ink block.
+- `mon-count.webp`: the count slip ("22 个任务", "共 48214 条"), a white parallelogram leaning right, heavier along its foot, with a grey block just under it.
+- `mon-job.webp`: a scheduled job, a navy line round a pale blue-grey card with specks of halftone in three corners.
+- `mon-row.webp`: a task row, a grey-blue hairline pressed darker along the foot and right side. A table row can't carry one frame, so each cell paints its own slice of the same image: the first cell takes the left edge, the last cell the right edge, the cells between only the top and bottom lines. Together they read as one card per row.
+- `mon-btn.webp`, `mon-btn-navy.webp`, `mon-btn-red.webp`: the header buttons, white, navy (the primary one) and red-lined (the danger one), each heavier along the foot and right with a thin block under it.
+- `mon-pg.webp`, `mon-pg-num.webp`, `mon-pg-on.webp`, `mon-pg-off.webp`: the pager, word buttons on navy, page numbers on a lighter line that darkens toward the foot, the current page on lime, and a spent button pale.
+- `mon-badge-run.webp`, `mon-badge-ok.webp`, `mon-badge-fail.webp`: the status chips, a slightly tipped cyan, lime or red slip on a 2px ink line, with a nick of a tail at the lower left and a white glint in the lower-right corner.
+
+Together they are about 250 KB. The `-night` files swap the fills for the dark theme's paper (the navy button and the current page for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.

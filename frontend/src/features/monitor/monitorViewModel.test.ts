@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { BookOpenText, Box, Clock, FileText, Github, Newspaper, Send } from 'lucide-vue-next'
+import { Box, Clock, FileText, Newspaper, Send } from 'lucide-vue-next'
+import { GithubMarkIcon } from '@/components/icons/GithubMarkIcon'
+import { HuggingFaceIcon } from '@/components/icons/HuggingFaceIcon'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import {
   DEFAULT_MONITOR_SECTION,
@@ -9,6 +11,7 @@ import {
   getMcpAuthPresentation,
   getMcpTransportPresentation,
   getSchedulerJobIcon,
+  getSchedulerJobIconTone,
   getStatusConfig,
   normalizeMonitorSection,
   toMcpToolCallRows,
@@ -114,13 +117,22 @@ describe('monitor presentation localization boundary', () => {
   })
 
   it('picks a source icon for each scheduler job and a clock for unknown ones', () => {
-    expect(getSchedulerJobIcon('github_trending')).toBe(Github)
+    expect(getSchedulerJobIcon('github_trending')).toBe(GithubMarkIcon)
     expect(getSchedulerJobIcon('x_watchlist')).toBe(XLogoIcon)
     expect(getSchedulerJobIcon('ui_library_x_discovery')).toBe(Box)
-    expect(getSchedulerJobIcon('arxiv_papers')).toBe(BookOpenText)
+    expect(getSchedulerJobIcon('arxiv_papers')).toBe(HuggingFaceIcon)
     expect(getSchedulerJobIcon('news_techmeme')).toBe(Newspaper)
     expect(getSchedulerJobIcon('daily_briefing')).toBe(FileText)
     expect(getSchedulerJobIcon('subscription_dispatch')).toBe(Send)
     expect(getSchedulerJobIcon('conversation_cleanup')).toBe(Clock)
+  })
+
+  it('gives each scheduler icon the ground it sits on', () => {
+    expect(getSchedulerJobIconTone('arxiv_papers')).toBe('brand')
+    expect(getSchedulerJobIconTone('github_trending')).toBe('mark')
+    expect(getSchedulerJobIconTone('x_watchlist')).toBe('badge')
+    expect(getSchedulerJobIconTone('subscription_dispatch')).toBe('accent')
+    expect(getSchedulerJobIconTone('daily_briefing')).toBe('tile')
+    expect(getSchedulerJobIconTone('conversation_cleanup')).toBe('tile')
   })
 })

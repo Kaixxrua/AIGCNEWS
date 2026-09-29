@@ -6,6 +6,7 @@ import {
   formatDate,
   formatTime,
   getSchedulerJobIcon,
+  getSchedulerJobIconTone,
   getStatusConfig,
   type SchedulerStatus,
   type Task,
@@ -38,7 +39,7 @@ const emit = defineEmits<{
         </div>
         <div class="monitor-scheduler-jobs space-y-2 overflow-y-auto">
           <div v-for="job in schedulerStatus.jobs" :key="job.id" class="monitor-job monitor-surface-dim p-3">
-            <span class="monitor-job-icon" aria-hidden="true"><component :is="getSchedulerJobIcon(job.id)" /></span>
+            <span class="monitor-job-icon" :data-tone="getSchedulerJobIconTone(job.id)" aria-hidden="true"><component :is="getSchedulerJobIcon(job.id)" /></span>
             <div class="monitor-job-text">
               <p class="text-xs font-medium">{{ job.name }}</p>
               <p class="mt-1 text-2xs monitor-caption">{{ job.next_run_time ? t('monitor.nextRun', { date: formatDate(job.next_run_time) }) : t('monitor.unscheduled') }}</p>
@@ -78,15 +79,15 @@ const emit = defineEmits<{
             </tr>
             <tr v-for="task in tasks" :key="task.id" :class="tasks.indexOf(task) % 2 !== 0 ? 'bg-even' : ''">
               <td class="whitespace-nowrap px-4 py-3 text-xs monitor-caption font-mono">#{{ task.id }}</td>
-              <td class="px-4 py-3 text-xs font-medium max-w-[200px] truncate">{{ task.task_name }}</td>
+              <td class="monitor-task-name px-4 py-3 text-xs font-medium max-w-[200px] truncate">
+                <span class="monitor-task-name-text">{{ task.task_name }}</span>
+                <span v-if="task.error_msg" class="monitor-task-error mt-1 block max-w-[180px] truncate text-2xs monitor-status-error" :title="task.error_msg">{{ task.error_msg }}</span>
+              </td>
               <td class="whitespace-nowrap px-4 py-3">
-                <div class="flex flex-col gap-1">
-                  <span class="badge" :class="[getStatusConfig(task.status).bg]">
-                    <span class="status-dot shrink-0" :class="getStatusConfig(task.status).dot" />
-                    {{ getStatusConfig(task.status).labelKey ? t(`monitor.${getStatusConfig(task.status).labelKey}`) : getStatusConfig(task.status).rawLabel }}
-                  </span>
-                  <span v-if="task.error_msg" class="monitor-task-error max-w-[180px] truncate text-2xs monitor-status-error" :title="task.error_msg">{{ task.error_msg }}</span>
-                </div>
+                <span class="badge" :class="[getStatusConfig(task.status).bg]">
+                  <span class="status-dot shrink-0" :class="getStatusConfig(task.status).dot" />
+                  {{ getStatusConfig(task.status).labelKey ? t(`monitor.${getStatusConfig(task.status).labelKey}`) : getStatusConfig(task.status).rawLabel }}
+                </span>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-xs tabular-nums">{{ task.item_count }}</td>
               <td class="whitespace-nowrap px-4 py-3 text-xs monitor-caption">{{ formatDate(task.started_at) }}</td>

@@ -1,5 +1,7 @@
-import { Activity, BookOpenText, Box, Clock, CloudDownload, CreditCard, FileText, Flame, GitBranch, Github, Globe, Newspaper, Rocket, Send, Settings, Triangle, Users } from 'lucide-vue-next'
+import { Activity, Box, Clock, CloudDownload, CreditCard, FileText, Flame, GitBranch, Globe, Newspaper, Rocket, Send, Settings, Triangle, Users } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
+import { GithubMarkIcon } from '@/components/icons/GithubMarkIcon'
+import { HuggingFaceIcon } from '@/components/icons/HuggingFaceIcon'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
 
@@ -160,23 +162,29 @@ export const getStatusConfig = (status: string) => (
 )
 
 // 调度任务卡片的来源图标：按任务 id 的来源前缀/关键词匹配，先到先得；未知任务用时钟。
-const SCHEDULER_JOB_ICONS: [RegExp, Component][] = [
-  [/^ui_library/, Box],
-  [/^x_/, XLogoIcon],
-  [/^github_/, Github],
-  [/arxiv|paper/, BookOpenText],
-  [/^hackernews/, Triangle],
-  [/^producthunt/, Rocket],
-  [/^dailyhot/, Flame],
-  [/^news_/, Newspaper],
-  [/briefing/, FileText],
-  [/subscription|tracking|digest/, Send],
-  [/payment/, CreditCard],
+// tone 决定图标的底：brand 用标志自己的颜色、mark 是实心墨色标志、badge 是黑底方章、accent 是蓝色实心，
+// 其余放在浅蓝方块上（样式见 comic-pages.css）。
+export type SchedulerJobIconTone = 'brand' | 'mark' | 'badge' | 'accent' | 'tile'
+
+const SCHEDULER_JOB_ICONS: [RegExp, Component, SchedulerJobIconTone][] = [
+  [/^ui_library/, Box, 'tile'],
+  [/^x_/, XLogoIcon, 'badge'],
+  [/^github_/, GithubMarkIcon, 'mark'],
+  [/arxiv|paper/, HuggingFaceIcon, 'brand'],
+  [/^hackernews/, Triangle, 'tile'],
+  [/^producthunt/, Rocket, 'tile'],
+  [/^dailyhot/, Flame, 'tile'],
+  [/^news_/, Newspaper, 'tile'],
+  [/briefing/, FileText, 'tile'],
+  [/subscription|tracking|digest/, Send, 'accent'],
+  [/payment/, CreditCard, 'tile'],
 ]
 
-export const getSchedulerJobIcon = (jobId: string): Component => (
-  SCHEDULER_JOB_ICONS.find(([pattern]) => pattern.test(jobId))?.[1] ?? Clock
-)
+const findSchedulerJobIcon = (jobId: string) => SCHEDULER_JOB_ICONS.find(([pattern]) => pattern.test(jobId))
+
+export const getSchedulerJobIcon = (jobId: string): Component => findSchedulerJobIcon(jobId)?.[1] ?? Clock
+
+export const getSchedulerJobIconTone = (jobId: string): SchedulerJobIconTone => findSchedulerJobIcon(jobId)?.[2] ?? 'tile'
 
 export const getMcpTransportPresentation = (transport: string) => (
   (transport || '').toLowerCase() === 'streamable_http'

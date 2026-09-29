@@ -1603,17 +1603,127 @@
     #app .app-shell--comic-page .tracking-rules > li::before { transition: none; }
   }
 
-  /* ── Monitor (monitor-C): the title with its line beside it and the actions on the right; the section nav in one
-     ruled box with bold group heads and plain leaves (the open one on a lime bar); panels on the comic rule with
-     tilted title tags. The scheduler lists each job as a small card led by its source icon; the task history reads
-     as a table of ruled row cards with status chips and the error in full under a failed one. Tables, forms and
-     buttons across every section read at 13.5–15px. ── */
-  #app .app-shell--comic-page .monitor-page { padding: 14px 28px 0; background: transparent; color: var(--ink); }
+  /* ── Monitor (monitor-C), measured off the concept at 1536 × 1024: the title on its lime brush with the line beside
+     it, the actions to the right; the section nav in one ruled box (bold group heads, plain leaves, the open one on a
+     lime band strongest at its left end); the scheduler and the task history side by side on ink blocks, each named
+     by a speech-slip tag with its count on a white slip. Jobs are pale cards led by their source mark; tasks are
+     ruled row cards under a pale header bar, the status on a tilted chip and a failure's message under its name; the
+     pager sits in a pale strip. The hand-drawn frames are generated (mon-*.webp, 3x 9-slice, -night for the dark
+     theme). The other sections keep the comic rule drawn in CSS and read at 13.5–15px. ── */
+  #app .app-shell--comic-page .monitor-page {
+    --mon-side: url('/assets/comic/mon-side.webp');
+    --mon-sch: url('/assets/comic/mon-panel-sch.webp');
+    --mon-tsk: url('/assets/comic/mon-panel-tsk.webp');
+    --mon-tag: url('/assets/comic/mon-tag.webp');
+    --mon-count: url('/assets/comic/mon-count.webp');
+    --mon-job: url('/assets/comic/mon-job.webp');
+    --mon-row: url('/assets/comic/mon-row.webp');
+    --mon-btn: url('/assets/comic/mon-btn.webp');
+    --mon-btn-navy: url('/assets/comic/mon-btn-navy.webp');
+    --mon-btn-red: url('/assets/comic/mon-btn-red.webp');
+    --mon-pg: url('/assets/comic/mon-pg.webp');
+    --mon-pg-num: url('/assets/comic/mon-pg-num.webp');
+    --mon-pg-on: url('/assets/comic/mon-pg-on.webp');
+    --mon-pg-off: url('/assets/comic/mon-pg-off.webp');
+    --mon-badge-run: url('/assets/comic/mon-badge-run.webp');
+    --mon-badge-ok: url('/assets/comic/mon-badge-ok.webp');
+    --mon-badge-fail: url('/assets/comic/mon-badge-fail.webp');
+    --mon-ink: #141c2b;
+    --mon-copy: #1b2742;
+    --mon-meta: #5a6c86;
+    --mon-sep: #cdd1d6;
+    --mon-band: #c3f51f;
+    --mon-band-soft: #def87e;
+    --mon-live: #13843f;
+    --mon-head: #e3f1fb;
+    --mon-strip: #eef4f8;
+    --mon-strip-rule: #d3e3ee;
+    --mon-tile: #dcedf8;
+    --mon-plane: #2b9cf0;
+    --mon-error: #e53935;
+    --mon-danger: #e5383f;
+    --mon-on-navy: #fff;
+    --mon-on-chip: #0b1016;
+    padding: 0; background: transparent; color: var(--mon-ink);
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-page {
+    --mon-side: url('/assets/comic/mon-side-night.webp');
+    --mon-sch: url('/assets/comic/mon-panel-sch-night.webp');
+    --mon-tsk: url('/assets/comic/mon-panel-tsk-night.webp');
+    --mon-tag: url('/assets/comic/mon-tag-night.webp');
+    --mon-count: url('/assets/comic/mon-count-night.webp');
+    --mon-job: url('/assets/comic/mon-job-night.webp');
+    --mon-row: url('/assets/comic/mon-row-night.webp');
+    --mon-btn: url('/assets/comic/mon-btn-night.webp');
+    --mon-btn-navy: url('/assets/comic/mon-btn-navy-night.webp');
+    --mon-btn-red: url('/assets/comic/mon-btn-red-night.webp');
+    --mon-pg: url('/assets/comic/mon-pg-night.webp');
+    --mon-pg-num: url('/assets/comic/mon-pg-num-night.webp');
+    --mon-pg-on: url('/assets/comic/mon-pg-on-night.webp');
+    --mon-pg-off: url('/assets/comic/mon-pg-off-night.webp');
+    --mon-badge-run: url('/assets/comic/mon-badge-run-night.webp');
+    --mon-badge-ok: url('/assets/comic/mon-badge-ok-night.webp');
+    --mon-badge-fail: url('/assets/comic/mon-badge-fail-night.webp');
+    --mon-ink: var(--ink);
+    --mon-copy: var(--ink-secondary);
+    --mon-meta: var(--ink-muted);
+    --mon-sep: color-mix(in srgb, var(--ink) 18%, transparent);
+    --mon-band: var(--acid);
+    --mon-band-soft: color-mix(in srgb, var(--acid) 55%, var(--paper-raised));
+    --mon-live: #4cc27a;
+    --mon-head: color-mix(in srgb, #4f8795 30%, var(--paper-raised));
+    --mon-strip: color-mix(in srgb, #4f8795 16%, var(--paper-raised));
+    --mon-strip-rule: color-mix(in srgb, #4f8795 38%, transparent);
+    --mon-tile: color-mix(in srgb, #4f8795 34%, var(--paper-raised));
+    --mon-plane: #5bb4f5;
+    --mon-error: #ff6b6b;
+    --mon-danger: #f0666b;
+    --mon-on-navy: #17181b;
+  }
   #app .app-shell--comic-page .monitor-content { gap: 18px; }
+
+  /* Heading: the title and its line on one baseline, the actions to the right. */
   #app .app-shell--comic-page .monitor-header { flex-wrap: nowrap; align-items: center; gap: 16px 24px; }
-  #app .app-shell--comic-page .monitor-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; }
-  #app .app-shell--comic-page .monitor-heading .monitor-title { font-size: 38px; }
-  /* Clear-data confirm: same comic frame as the panels, heading stays at dialog scale. */
+  #app .app-shell--comic-page .monitor-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 40px; min-width: 0; padding-left: 15px; }
+  #app .app-shell--comic-page .monitor-heading .monitor-title.comic-title { margin: 0; color: var(--mon-ink); font-size: 37px; line-height: 1.15; }
+  #app .app-shell--comic-page .monitor-heading .monitor-title.comic-title::before { inset: 31px -2px -7px -8px; transform: rotate(-3.4deg) skewX(-16deg); border-radius: 2px 5px 3px 6px; }
+  #app .app-shell--comic-page .monitor-heading .monitor-title.comic-title::after {
+    right: -25px; top: -10px; width: 22px; height: 24px; clip-path: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 24'%3E%3Cpath d='M1.5 1.8 5.2.6 7 13.4 4.4 14.2zM22.6 2.4 25.4 5 10.6 23.4 8 21.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-heading .monitor-caption { margin-top: 0; color: var(--mon-copy); font-size: 16px; font-weight: 500; }
+  #app .app-shell--comic-page .monitor-actions { flex-wrap: wrap; justify-content: flex-end; gap: 10px 16px; margin: 5px 21px 0 0; }
+
+  /* Buttons: white on a navy rule, the primary a navy block, the destructive one ruled in red. */
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) {
+    position: relative; isolation: isolate; gap: 8px; min-height: 38px; padding: 0 13px; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; color: var(--mon-ink); font-size: 15px; font-weight: 600; line-height: 1.2;
+  }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost)::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -3px -5px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 9px 17px 16px 9px;
+    border-image: var(--mon-btn) 27 51 48 27 fill / 9px 17px 16px 9px stretch;
+  }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn-primary, .monitor-btn-danger)::after {
+    border-width: 9px 10px 12px 9px; border-image: var(--mon-btn-navy) 27 30 36 27 fill / 9px 10px 12px 9px stretch;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger::after { border-image-source: var(--mon-btn-red); }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) svg { width: 16px; height: 16px; stroke-width: 2.2; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):hover:not(:disabled) { background: transparent; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-secondary, .monitor-btn-ghost, .monitor-btn-danger):hover:not(:disabled)::before {
+    content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: 3px; background: var(--acid-soft); pointer-events: none;
+  }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-secondary, .monitor-btn-ghost):hover:not(:disabled) { color: var(--mon-ink); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-primary { color: var(--mon-on-navy); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-primary:hover:not(:disabled) { color: var(--acid); }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-page .monitor-btn-primary:hover:not(:disabled) { color: var(--mon-on-navy); text-decoration: underline 2px; text-underline-offset: 4px; }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger,
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled) { color: var(--mon-danger); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled)::before { background: color-mix(in srgb, var(--mon-danger) 10%, transparent); }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):focus-visible { outline: 2px solid var(--mon-ink); outline-offset: 4px; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):disabled { box-shadow: none; opacity: .5; }
+
+  /* Clear-data confirm: the comic rule drawn in CSS, heading at dialog scale. */
   #app .app-shell--comic-page .monitor-page .monitor-modal {
     border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 8px 12px 7px 11px;
     background: var(--paper-raised); box-shadow: 6px 6px 0 var(--comic-shadow);
@@ -1621,47 +1731,46 @@
   #app .app-shell--comic-page .monitor-modal .monitor-title { color: var(--ink); font-size: 19px; font-weight: 900; line-height: 1.3; }
   #app .app-shell--comic-page .monitor-modal .monitor-caption { color: var(--ink-secondary); font-size: 14.5px; }
   #app .app-shell--comic-page .monitor-modal .monitor-warning-box { font-size: 13.5px; }
-  #app .app-shell--comic-page .monitor-heading .monitor-caption { margin-top: 0; color: var(--ink-secondary); font-size: 15px; font-weight: 600; }
-  #app .app-shell--comic-page .monitor-actions { flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; }
-  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) {
-    min-height: 36px; padding: 7px 15px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 14px; font-weight: 800; line-height: 1.2;
-  }
-  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) svg { width: 16px; height: 16px; }
-  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-secondary, .monitor-btn-ghost):hover:not(:disabled) { background: var(--acid-soft); color: var(--ink); }
-  #app .app-shell--comic-page .monitor-page .monitor-btn-primary { background: var(--ink); color: var(--paper-raised); }
-  #app .app-shell--comic-page .monitor-page .monitor-btn-primary:hover:not(:disabled) { background: var(--ink); color: var(--acid); }
-  #app .app-shell--comic-page .monitor-page .monitor-btn-danger { border-color: var(--error-accent); color: var(--error-accent); }
-  #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled) { background: var(--error-accent); color: #fff; }
-  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):disabled { box-shadow: none; opacity: .5; }
 
-  /* Section nav: one ruled box; group heads bold with their icon, leaves plain text under them, the open leaf on lime. */
-  #app .app-shell--comic-page .monitor-body { gap: 26px; }
+  /* Section nav: the frame is the box's own border image so it holds still while a short window scrolls the list.
+     Group heads are bold with their icon; leaves line up with the heads' labels; a rule splits the groups. */
+  #app .app-shell--comic-page .monitor-body { gap: 11px; }
   #app .app-shell--comic-page .monitor-nav {
-    gap: 0; width: 232px; align-self: flex-start; max-height: calc(100% - var(--peel-clear) * 0 - 28px); padding: 10px 10px 12px;
-    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+    gap: 0; width: 243px; align-self: flex-start; max-height: 100%; margin-left: -1px; padding: 5px 12px 6px 2px;
+    border: solid transparent; border-width: 2px 2px 3px; border-radius: 0; border-image: var(--mon-side) 96 201 189 141 fill / 32px 67px 63px 47px stretch;
+    background: transparent; box-shadow: none; scrollbar-width: none;
   }
-  #app .app-shell--comic-page .monitor-nav-group { gap: 2px; padding: 6px 0 8px; }
-  #app .app-shell--comic-page .monitor-nav-group + .monitor-nav-group { border-top: 1.5px solid var(--rule); }
-  #app .app-shell--comic-page .monitor-nav-group-header { gap: 10px; padding: 6px 6px 6px 4px; color: var(--ink); font-size: 17px; font-weight: 900; letter-spacing: 0; opacity: 1; }
-  #app .app-shell--comic-page .monitor-nav-group-header:hover { color: var(--ink); opacity: 1; }
-  #app .app-shell--comic-page .monitor-nav-icon { width: 21px; height: 21px; stroke-width: 2.2; }
-  #app .app-shell--comic-page .monitor-nav-chevron { width: 16px; height: 16px; }
+  #app .app-shell--comic-page .monitor-nav::-webkit-scrollbar { display: none; }
+  #app .app-shell--comic-page .monitor-nav-group { position: relative; gap: 2px; padding: 0 0 5px; }
+  #app .app-shell--comic-page .monitor-nav-group + .monitor-nav-group { padding-top: 4px; }
+  #app .app-shell--comic-page .monitor-nav-group + .monitor-nav-group::before { content: ''; position: absolute; top: 0; left: 12px; right: -11px; height: 1.5px; background: var(--mon-sep); }
+  #app .app-shell--comic-page .monitor-nav-group-header {
+    gap: 13.5px; min-height: 30px; padding: 0 1px 0 12px; color: var(--mon-ink); font-size: 17px; font-weight: 800; letter-spacing: 0; line-height: 1; opacity: 1;
+  }
+  #app .app-shell--comic-page .monitor-nav-group-header:hover { color: var(--mon-ink); opacity: 1; }
+  #app .app-shell--comic-page .monitor-nav-icon { width: 22px; height: 22px; stroke-width: 2.1; }
+  #app .app-shell--comic-page .monitor-nav-chevron { width: 17px; height: 17px; }
   #app .app-shell--comic-page .monitor-nav-leaves { gap: 1px; }
-  #app .app-shell--comic-page .monitor-nav-leaf { width: calc(100% - 31px); margin-left: 31px; }
+  #app .app-shell--comic-page .monitor-nav-leaf { width: 100%; margin-left: 0; }
   #app .app-shell--comic-page .monitor-nav-item {
-    min-height: 30px; padding: 5px 10px; border: 0; border-radius: 3px 5px 3px 4px; background: transparent; box-shadow: none;
-    color: var(--ink-secondary); font-size: 14.5px; font-weight: 600; line-height: 1.35; text-align: left; transform: none;
+    min-height: 23px; padding: 0 8px 0 47.5px; border: 0; border-radius: 0 4px 4px 0; background: transparent; box-shadow: none;
+    color: var(--mon-ink); font-size: 14px; font-weight: 500; line-height: 1.2; text-align: left; transform: none;
   }
-  #app .app-shell--comic-page .monitor-nav-item:hover { background: var(--acid-soft); color: var(--ink); box-shadow: none; transform: none; }
-  #app .app-shell--comic-page .monitor-nav-item.active { background: var(--acid); color: var(--acid-ink); font-weight: 800; box-shadow: none; }
+  #app .app-shell--comic-page .monitor-nav-item:hover { background: var(--acid-soft); color: var(--mon-ink); box-shadow: none; transform: none; }
+  #app .app-shell--comic-page .monitor-nav-item.active {
+    background: linear-gradient(90deg, var(--mon-band) 0 38px, var(--mon-band-soft) 64px); color: var(--mon-ink); font-weight: 600; box-shadow: none;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-nav-item.active { color: #17181b; }
   #app .app-shell--comic-page .monitor-nav-item:focus-visible,
-  #app .app-shell--comic-page .monitor-nav-group-header:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-  #app .app-shell--comic-page .monitor-nav-alert { position: static; flex-shrink: 0; width: 9px; height: 9px; border: 0; }
+  #app .app-shell--comic-page .monitor-nav-group-header:focus-visible { outline: 2px solid var(--mon-ink); outline-offset: -2px; }
+  /* The alert: a red disc with a white "!" beside the label. */
+  #app .app-shell--comic-page .monitor-nav-alert {
+    position: static; display: grid; flex-shrink: 0; place-items: center; width: 13px; height: 13px; border: 0; background: var(--mon-danger); animation: none;
+  }
+  #app .app-shell--comic-page .monitor-nav-alert::before { content: '!'; color: #fff; font-size: 10px; font-weight: 900; line-height: 1; }
 
-  /* Panels: the comic rule across every section; their titles read heavier. */
-  #app .app-shell--comic-page .monitor-section-panels { gap: 30px; padding: 22px 8px calc(var(--peel-clear) + 28px) 2px; }
+  /* Panels in the other sections: the comic rule drawn in CSS; their titles read heavier. */
+  #app .app-shell--comic-page .monitor-section-panels { gap: 30px; padding: 7px 6px calc(var(--peel-clear) + 28px) 2px; }
   #app .app-shell--comic-page .monitor-page .glass-card {
     border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
     background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--ink);
@@ -1683,133 +1792,219 @@
   #app .app-shell--comic-page .monitor-page .monitor-table td { padding: 12px 14px; color: var(--ink); font-size: 14px; }
   #app .app-shell--comic-page .monitor-page .monitor-table td :is(.text-xs, .text-2xs) { font-size: 14px; }
   #app .app-shell--comic-page .monitor-page .monitor-table .monitor-caption { color: var(--ink-secondary); }
-  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn {
-    min-width: 36px; min-height: 34px; padding: 6px 11px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px;
-    border-radius: 5px 7px 4px 6px; background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px;
-  }
-  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn.active { background: var(--acid); color: var(--acid-ink); }
-  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:disabled { box-shadow: none; opacity: .4; }
 
-  /* Scheduler and task history: title tags ride the top rule; halftone in the foot corner. */
-  #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks) { position: relative; isolation: isolate; overflow: visible; }
+  /* Pager buttons in every section: navy rule, the open page on lime, a spent one pale; in the task history the page
+     numbers sit on a lighter rule than the words around them. */
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn {
+    position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; min-width: 37px; min-height: 36px; padding: 0 12px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--mon-ink); font-size: 14.5px; font-weight: 600; line-height: 1;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -2px -3px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 9px 9px 10px;
+    border-image: var(--mon-pg) 27 27 30 fill / 9px 9px 10px stretch;
+  }
+  #app .app-shell--comic-page .monitor-tasks-footer .monitor-pagination-btn:not(:nth-child(-n+2), :nth-last-child(-n+2))::after { border-image-source: var(--mon-pg-num); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn.active { color: var(--mon-on-chip); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn.active::after { border-image-source: var(--mon-pg-on); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:disabled { box-shadow: none; opacity: 1; color: color-mix(in srgb, var(--mon-ink) 45%, transparent); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:disabled::after { border-image-source: var(--mon-pg-off); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:hover:not(:disabled, .active) { background: transparent; color: var(--mon-ink); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:hover:not(:disabled, .active)::before {
+    content: ''; position: absolute; z-index: -1; inset: 2px; border-radius: 3px; background: var(--acid-soft); pointer-events: none;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:focus-visible { outline: 2px solid var(--mon-ink); outline-offset: 4px; }
+
+  /* Scheduler and task history: generated panels, the tags inside their top-left corners with the counts beside them. */
+  #app .app-shell--comic-page .monitor-task-grid { gap: 30px 15px; }
+  #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) { grid-template-columns: minmax(0, 446fr) minmax(0, 791fr); }
+  #app .app-shell--comic-page .monitor-task-grid > .monitor-tasks { grid-column: auto; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-scheduler, .monitor-tasks) {
+    position: relative; isolation: isolate; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
   #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks)::after {
-    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 130px; height: 84px; border-bottom-right-radius: inherit; pointer-events: none;
-    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
-    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .45;
+    content: ''; position: absolute; z-index: -1; inset: -2px -6px -9px -2px; pointer-events: none; border-style: solid; border-color: transparent;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks)::after { opacity: .14; }
+  #app .app-shell--comic-page .monitor-scheduler::after { border-width: 67px 96px 94px 92px; border-image: var(--mon-sch) 201 288 282 276 fill / 67px 96px 94px 92px stretch; }
+  #app .app-shell--comic-page .monitor-tasks::after { border-width: 74px 103px 106px 74px; border-image: var(--mon-tsk) 222 309 318 222 fill / 74px 103px 106px 74px stretch; }
   #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks-header) > .monitor-section-title {
-    position: relative; width: max-content; margin: -40px 0 0 -16px; padding: 4px 18px; border: 2px solid var(--rule-strong);
-    border-radius: 3px 6px 3px 5px; background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
-    font-size: 20px; font-style: italic; font-weight: 950; line-height: 1.4; transform: rotate(-3deg) skewX(-6deg);
+    position: relative; isolation: isolate; flex: none; width: max-content; min-width: 119px; height: 41px; margin: 0; padding: 0 19px 0 16px;
+    color: var(--mon-ink); font-size: 20px; font-style: italic; font-weight: 950; line-height: 41px; letter-spacing: 0; white-space: nowrap;
+    -webkit-text-stroke: .4px currentColor;
   }
+  #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks-header) > .monitor-section-title::after {
+    content: ''; position: absolute; z-index: -1; inset: -3px -7px -19px -3px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 23px 19px 40px 31px;
+    border-image: var(--mon-tag) 69 57 120 93 fill / 23px 19px 40px 31px stretch;
+  }
+  /* The counts ("22 个任务", "共 48214 条"): a white slip leaning right. */
+  #app .app-shell--comic-page .monitor-page :is(.monitor-scheduler-count, .monitor-tasks-header .monitor-badge) {
+    position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; height: 28px; margin: 0; padding: 0 17px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--mon-ink);
+    font-size: 14px; font-style: normal; font-weight: 800; line-height: 1; white-space: nowrap; transform: none;
+  }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-scheduler-count, .monitor-tasks-header .monitor-badge)::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -2px -5px -3px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 11px 11px 14px 12px;
+    border-image: var(--mon-count) 33 33 42 36 fill / 11px 11px 14px 12px stretch;
+  }
+
   #app .app-shell--comic-page .monitor-scheduler {
-    display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-items: center; gap: 14px 16px;
-    max-height: none !important; padding: 22px 20px 20px; contain: size; contain-intrinsic-block-size: 380px;
+    display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-items: center; gap: 21px 12px;
+    max-height: none !important; padding: 12px 16px 10px; contain: size; contain-intrinsic-block-size: 380px;
   }
-  #app .app-shell--comic-page .monitor-scheduler > .monitor-section-title { margin-right: 4px; margin-bottom: 0; }
+  #app .app-shell--comic-page .monitor-scheduler > .monitor-section-title { margin-left: -2px; }
   #app .app-shell--comic-page .monitor-scheduler-body { display: contents; }
   #app .app-shell--comic-page .monitor-scheduler > :not(.monitor-section-title, .monitor-scheduler-body) { grid-column: 1 / -1; }
-  #app .app-shell--comic-page .monitor-scheduler-status { flex-wrap: wrap; justify-content: flex-end; justify-self: end; gap: 6px 10px; margin: -12px 0 0; }
-  #app .app-shell--comic-page .monitor-scheduler-status > span { white-space: nowrap; }
-  #app .app-shell--comic-page .monitor-scheduler-status > span:nth-child(2) { color: var(--ink); font-size: 14.5px; font-weight: 700; }
-  #app .app-shell--comic-page .monitor-scheduler-count { padding: 1px 11px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px; box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13.5px; font-style: italic; font-weight: 800; transform: rotate(-2deg) skewX(-6deg); }
-  #app .app-shell--comic-page .monitor-scheduler-jobs { grid-column: 1 / -1; align-self: stretch; min-height: 0; margin: 0 -8px 0 -4px; padding: 4px 8px 6px 4px; }
-  #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 12px; }
+  #app .app-shell--comic-page .monitor-scheduler-status { flex-wrap: nowrap; justify-content: flex-end; justify-self: end; gap: 0; margin: 2px 0 0; }
+  #app .app-shell--comic-page .monitor-scheduler-status > .status-dot {
+    width: 9px; height: 9px; margin: 0 5px 0 4px; background: var(--mon-live); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--mon-live) 20%, transparent); animation: none;
+  }
+  #app .app-shell--comic-page .monitor-scheduler-status > .status-dot.monitor-status-dot-error { background: var(--mon-error); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--mon-error) 20%, transparent); }
+  #app .app-shell--comic-page .monitor-scheduler-status > span:nth-child(2) { margin-right: 11px; color: var(--mon-live); font-size: 14px; font-weight: 500; white-space: nowrap; }
+  #app .app-shell--comic-page .monitor-scheduler-status > .monitor-status-dot-error + span { color: var(--mon-error); }
+  #app .app-shell--comic-page .monitor-scheduler-jobs { grid-column: 1 / -1; align-self: stretch; min-height: 0; margin: 0 -11px 0 -4px; padding: 2px 0 8px 4px; scrollbar-gutter: stable; scrollbar-width: thin; }
+  #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 15px; }
   #app .app-shell--comic-page .monitor-job {
-    position: relative; isolation: isolate; display: flex; align-items: center; gap: 14px; padding: 12px 16px 12px 12px;
-    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 5px 7px 4px 8px; background: var(--paper-raised);
-    box-shadow: 3px 3px 0 var(--comic-shadow);
+    position: relative; isolation: isolate; display: flex; align-items: center; gap: 18px; min-height: 72px; padding: 8px 14px 8px 13px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none;
   }
   #app .app-shell--comic-page .monitor-job::after {
-    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 64px; height: 40px; border-bottom-right-radius: inherit; pointer-events: none;
-    background: radial-gradient(circle, var(--comic-cyan-line) 1.1px, transparent 1.6px) 0 0 / 6px 6px;
-    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 72%); opacity: .4;
+    content: ''; position: absolute; z-index: -1; inset: -2px -2px -3px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 23px 29px 35px 23px;
+    border-image: var(--mon-job) 69 87 105 69 fill / 23px 29px 35px 23px stretch;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-job::after { opacity: .14; }
+  /* Source marks: Hugging Face and the plane stand alone, GitHub and the rest sit on a pale blue tile, X on a black one. */
   #app .app-shell--comic-page .monitor-job-icon {
-    display: grid; flex-shrink: 0; place-items: center; width: 40px; height: 40px; border: 1.5px solid var(--rule-strong); border-radius: 50%;
-    background: color-mix(in srgb, var(--comic-cyan-line) 14%, var(--paper-raised)); color: var(--ink);
+    display: grid; flex-shrink: 0; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 6px;
+    background: var(--mon-tile); color: var(--mon-ink);
   }
-  #app .app-shell--comic-page .monitor-job-icon svg { width: 21px; height: 21px; stroke-width: 2; }
+  #app .app-shell--comic-page .monitor-job-icon svg { width: 27px; height: 27px; stroke-width: 1.9; }
+  #app .app-shell--comic-page .monitor-job-icon:is([data-tone='brand'], [data-tone='accent']) { background: none; }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='brand'] svg { width: 34px; height: 34px; }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='mark'] { background: color-mix(in srgb, var(--mon-tile) 60%, transparent); }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='mark'] svg { width: 35px; height: 35px; }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='badge'] { width: 38px; height: 38px; margin: 1px; border-radius: 5px; background: #0b0d10; color: #fff; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-job-icon[data-tone='badge'] { box-shadow: inset 0 0 0 1.5px var(--mon-sep); }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='badge'] svg { width: 25px; height: 25px; }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='accent'] { color: var(--mon-plane); }
+  #app .app-shell--comic-page .monitor-job-icon[data-tone='accent'] svg { width: 34px; height: 34px; fill: currentColor; stroke-width: 1.2; }
   #app .app-shell--comic-page .monitor-job-text { min-width: 0; }
-  #app .app-shell--comic-page .monitor-job-text > p:first-child { color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.4; }
-  #app .app-shell--comic-page .monitor-job-text > p + p { margin-top: 3px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .monitor-job-text > p { margin: 0; line-height: 20px; }
+  #app .app-shell--comic-page .monitor-job-text > p:first-child { color: var(--mon-ink); font-size: 14px; font-weight: 600; }
+  #app .app-shell--comic-page .monitor-job-text > p + p { margin-top: 4px; color: var(--mon-meta); font-size: 13px; font-variant-numeric: tabular-nums; }
 
-  #app .app-shell--comic-page .monitor-tasks-header { justify-content: flex-start; gap: 14px; padding: 22px 22px 10px; border-bottom: 0; }
-  #app .app-shell--comic-page .monitor-tasks-header .monitor-badge { margin-top: -30px; transform: rotate(-2deg) skewX(-6deg); }
-  #app .app-shell--comic-page .monitor-tasks-header + div { padding: 2px 18px 4px; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table { border-collapse: separate; border-spacing: 0 8px; }
+  /* Task history: the header bar and the row cards run 15px in from the panel's sides. Each row card is the generated
+     frame split across its cells (the first takes the left end, the last the right end, the rest the plain middle),
+     so the table stays a table. A failed task's message sits under its name and may run on under the status. */
+  #app .app-shell--comic-page .monitor-tasks-header { justify-content: flex-start; align-items: center; gap: 12.5px; padding: 11px 16px 24px 12.5px; border-bottom: 0; }
+  #app .app-shell--comic-page .monitor-page .monitor-tasks-header .monitor-badge { margin-top: 3px; padding: 0 13px; }
+  #app .app-shell--comic-page .monitor-tasks-header + div { min-height: 0; padding: 0 16px 0 15px; overflow: auto; scrollbar-width: thin; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table { isolation: isolate; margin-top: -9.5px; border-collapse: separate; border-spacing: 0 9.5px; table-layout: fixed; }
   #app .app-shell--comic-page .monitor-tasks .monitor-table thead { background: none; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table th { border: 0; background: color-mix(in srgb, var(--comic-cyan-line) 16%, var(--paper-raised)); }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table th:first-child { border-radius: 6px 0 0 6px; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table th:last-child { border-radius: 0 6px 6px 0; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th {
+    position: sticky; z-index: 1; top: 0; height: 42px; padding: 0 0 0 16px; border: 0; background: var(--mon-head);
+    color: var(--mon-ink); font-size: 14px; font-weight: 600; line-height: 20px; white-space: nowrap;
+  }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:first-child { width: 83px; border-radius: 4px 0 0 4px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:nth-child(3) { width: 108px; padding-left: 37px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:nth-child(4) { width: 95px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:nth-child(5) { width: 197px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:last-child { width: 113px; border-radius: 0 4px 4px 0; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table:lang(en) th:nth-child(3) { width: 124px; padding-left: 24px; }
   #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr,
-  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:nth-child(even) { background: none; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td {
-    border: solid var(--rule-strong); border-width: 1.5px 0 2px; background: var(--paper-raised); transition: background-color .12s linear;
+  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:nth-child(even),
+  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:hover { background: none; }
+  #app .app-shell--comic-page .monitor-page .monitor-tasks .monitor-table td {
+    position: relative; padding: 17px 0 16px 16px; border: 0; background: none; color: var(--mon-ink);
+    font-family: inherit; font-size: 14px; font-weight: 500; line-height: 20px; vertical-align: top;
   }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child { border-left-width: 1.5px; border-radius: 5px 0 0 7px; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td:last-child { border-right-width: 2px; border-radius: 0 7px 5px 0; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td[colspan] { border-width: 1.5px 2px 2px 1.5px; border-radius: 5px 7px 5px 7px; }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:hover td { background: var(--acid-soft); }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child { font-family: inherit; font-weight: 700; }
-  #app .app-shell--comic-page .monitor-tasks .badge {
-    width: max-content; padding: 2px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13.5px; font-style: italic; font-weight: 800; transform: skewX(-6deg);
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px 0 -3px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 10px 0 19px;
+    border-image: var(--mon-row) 30 1662 57 30 fill / 10px 0 19px 0 stretch;
   }
-  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-success { background: var(--acid); color: var(--acid-ink); }
-  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-running { background: color-mix(in srgb, var(--comic-cyan-line) 40%, var(--paper-raised)); }
-  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-error { background: var(--error-accent); color: #fff; }
-  #app .app-shell--comic-page .monitor-tasks .badge .status-dot { background: currentColor; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child::after { left: -2px; border-left-width: 10px; border-image-width: 10px 0 19px 10px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:last-child::after {
+    right: -2px; border-right-width: 23px; border-image: var(--mon-row) 30 69 57 1623 fill / 10px 23px 19px 0 stretch;
+  }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td[colspan]::after {
+    inset: -2px -2px -3px; border-width: 10px 23px 19px 10px; border-image: var(--mon-row) 30 69 57 30 fill / 10px 23px 19px 10px stretch;
+  }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child { color: var(--mon-ink); font-weight: 700; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-task-name { max-width: none; overflow: visible; text-overflow: clip; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-task-name-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #app .app-shell--comic-page .monitor-tasks .monitor-task-error {
-    display: -webkit-box; max-width: 260px; overflow: hidden; background: none; color: var(--error-accent); font-size: 13.5px; font-weight: 600;
-    line-height: 1.45; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    width: max-content; max-width: calc(100% + 92px); margin: 10px 0 -7px; overflow: hidden; background: none; color: var(--mon-error);
+    font-size: 14px; font-weight: 500; line-height: 20px; white-space: nowrap; text-overflow: ellipsis;
   }
-  /* The longer English start time, and any start time below 1200px, may break between date and time when the table
-     runs out of room; wide tables never wrap it. */
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5):lang(en) { white-space: normal; }
-  @media (max-width: 1199px) {
-    #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5) { white-space: normal; }
+  /* Status: a dot and the word on a tilted chip. */
+  #app .app-shell--comic-page .monitor-tasks .badge {
+    position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 3px; width: max-content; min-width: 62px; height: 31px;
+    margin: -5.5px 0; padding: 0 8px 1px 6px; vertical-align: top; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+    color: var(--mon-on-chip); font-size: 13.5px; font-style: normal; font-weight: 800; line-height: 1; transform: none;
   }
-  #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(n+4) { font-variant-numeric: tabular-nums; }
-  #app .app-shell--comic-page .monitor-tasks-footer { flex-wrap: wrap; gap: 10px 16px; padding: 10px 22px 18px; border-top: 0; }
-  #app .app-shell--comic-page .monitor-tasks-footer > p { font-size: 14px; }
-  #app .app-shell--comic-page .monitor-tasks-footer > div { gap: 8px; }
-  #app .app-shell--comic-page .monitor-task-grid { gap: 30px 26px; }
+  #app .app-shell--comic-page .monitor-tasks .badge::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -3px -6px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 11px 12px 15px 13px;
+    border-image: var(--mon-badge-ok) 33 36 45 39 fill / 11px 12px 15px 13px stretch;
+  }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-running::after { border-image-source: var(--mon-badge-run); }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-error { color: #fff; }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-error::after { border-image-source: var(--mon-badge-fail); }
+  #app .app-shell--comic-page .monitor-tasks .badge .status-dot { width: 6px; height: 6px; background: currentColor; animation: none; }
 
-  /* Where a third of the row is too narrow for the scheduler (below 1400px; 1700px for the longer English copy) it
-     sits above the history at full width, its jobs in columns, and the history table gets the whole row. */
+  /* Pager: a pale strip under the table. */
+  #app .app-shell--comic-page .monitor-tasks-footer {
+    flex-wrap: wrap; gap: 10px 16px; min-height: 59px; margin: 15px 15px 12px 17px; padding: 0 9px 0 10px;
+    border: 1px solid var(--mon-strip-rule); border-radius: 5px; background: var(--mon-strip);
+  }
+  #app .app-shell--comic-page .monitor-tasks-footer > p { color: var(--mon-meta); font-size: 14px; }
+  #app .app-shell--comic-page .monitor-tasks-footer > div { gap: 10px; }
+
+  /* Where the two panels sit side by side they fill the window's height, the jobs and the table scrolling inside;
+     where a third of the row is too narrow for the scheduler (below 1400px; 1700px for the longer English copy) it
+     sits above the history at full width, its jobs in columns, and both take their natural height. */
+  @media (min-width: 1400px) {
+    #app .app-shell--comic-page .monitor-section-panels:has(> .monitor-task-grid > .monitor-scheduler) { padding-bottom: max(28px, calc(var(--peel-clear) - 81px)); }
+    #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); min-height: 520px; }
+    #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) > .monitor-scheduler { margin-bottom: 8px; }
+    #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) > .monitor-tasks { min-height: 0; margin-top: 1px; }
+  }
+  @media (min-width: 1400px) and (max-width: 1699px) {
+    #app .app-shell--comic-page .monitor-section-panels:lang(en):has(> .monitor-task-grid > .monitor-scheduler) { padding-bottom: calc(var(--peel-clear) + 28px); }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en):has(> .monitor-scheduler) { flex: none; grid-template-rows: none; min-height: 0; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en):has(> .monitor-scheduler) > * { margin: 0; }
+  }
   @media (max-width: 1399px) {
     #app .app-shell--comic-page .monitor-header { flex-wrap: wrap; }
     #app .app-shell--comic-page .monitor-heading { flex: 1 1 0; min-width: 220px; }
-    #app .app-shell--comic-page .monitor-actions { gap: 10px; }
-    #app .app-shell--comic-page .monitor-actions > :is(.monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger) { padding: 6px 12px; font-size: 13.5px; }
+    #app .app-shell--comic-page .monitor-actions { gap: 10px 12px; margin-right: 8px; }
+    #app .app-shell--comic-page .monitor-actions > :is(.monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger) { padding: 0 11px; font-size: 14px; }
   }
   @media (max-width: 1699px) {
-    #app .app-shell--comic-page .monitor-task-grid:lang(en) { grid-template-columns: minmax(0, 1fr); }
-    #app .app-shell--comic-page .monitor-task-grid:lang(en) > * { grid-column: 1 / -1; }
-    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler { contain-intrinsic-block-size: 318px; }
-    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 12px 14px; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en):has(> .monitor-scheduler) { grid-template-columns: minmax(0, 1fr); }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler { contain-intrinsic-block-size: 300px; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-content: start; gap: 15px; }
     #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler-jobs > * + * { margin-top: 0; }
   }
   @media (max-width: 1399px) {
-    #app .app-shell--comic-page .monitor-task-grid { grid-template-columns: minmax(0, 1fr); }
-    #app .app-shell--comic-page .monitor-task-grid > * { grid-column: 1 / -1; }
-    #app .app-shell--comic-page .monitor-scheduler { contain-intrinsic-block-size: 318px; }
-    #app .app-shell--comic-page .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 12px 14px; }
+    #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) { grid-template-columns: minmax(0, 1fr); }
+    #app .app-shell--comic-page .monitor-scheduler { contain-intrinsic-block-size: 300px; }
+    #app .app-shell--comic-page .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); align-content: start; gap: 15px; }
     #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 0; }
   }
   @media (max-width: 1199px) {
-    #app .app-shell--comic-page .monitor-page { padding-inline: 20px; }
-    #app .app-shell--comic-page .monitor-body { gap: 20px; }
-    #app .app-shell--comic-page .monitor-nav { width: 200px; }
-    #app .app-shell--comic-page .monitor-nav-group-header { font-size: 16px; }
-    #app .app-shell--comic-page .monitor-nav-leaf { width: calc(100% - 22px); margin-left: 22px; }
+    #app .app-shell--comic-page .monitor-header { column-gap: 16px; }
+    #app .app-shell--comic-page .monitor-heading { flex: 0 1 auto; min-width: 0; }
+    #app .app-shell--comic-page .monitor-page .monitor-heading .monitor-caption { font-size: 14px; white-space: nowrap; }
+    #app .app-shell--comic-page .monitor-nav { width: 208px; }
+    #app .app-shell--comic-page .monitor-nav-group-header { gap: 10px; font-size: 16px; }
+    #app .app-shell--comic-page .monitor-nav-item { padding-left: 44px; }
     #app .app-shell--comic-page .monitor-page .monitor-table :is(th, td) { padding-inline: 10px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    #app .app-shell--comic-page .monitor-tasks .monitor-table td { transition: none; }
+    #app .app-shell--comic-page .monitor-tasks .monitor-table :is(th, td) { padding-right: 0; padding-left: 12px; }
+    #app .app-shell--comic-page .monitor-tasks .monitor-table th:nth-child(3) { padding-left: 30px; }
+    #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5) { white-space: normal; }
   }
 
   /* ── Projects (projects-C): the title with its line beside it; the category index in one ruled box; a heavy

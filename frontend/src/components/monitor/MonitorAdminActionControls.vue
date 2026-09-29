@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle, RefreshCcwDot, Repeat } from 'lucide-vue-next'
 
 defineProps<{
   syncing: boolean
@@ -26,13 +26,16 @@ const emit = defineEmits<{
     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
     {{ t(syncing ? 'monitor.syncing' : taskRunning ? 'monitor.taskRunning' : 'monitor.sync') }}
   </button>
-  <button class="monitor-btn-secondary" :disabled="syncing || taskRunning" @click="emit('sync', true)">{{ t('monitor.forceSync') }}</button>
+  <button class="monitor-btn-secondary" :disabled="syncing || taskRunning" @click="emit('sync', true)">
+    <Repeat class="h-3.5 w-3.5" />
+    {{ t('monitor.forceSync') }}
+  </button>
   <button class="monitor-btn-secondary" :disabled="generatingBriefing" @click="emit('generateBriefings', true)">
     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
     {{ t(generatingBriefing ? 'monitor.generating' : 'monitor.generateDaily') }}
   </button>
   <button class="monitor-btn-secondary" :disabled="clearingCache" :title="t('monitor.cacheTitle')" @click="emit('clearDashboardCache')">
-    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+    <RefreshCcwDot class="h-3.5 w-3.5" />
     {{ t(clearingCache ? 'monitor.clearing' : 'monitor.refreshCache') }}
   </button>
   <button class="monitor-btn-danger" :disabled="clearing" @click="emit('update:showClearConfirm', true)">

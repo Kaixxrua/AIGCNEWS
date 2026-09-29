@@ -162,7 +162,7 @@ onUnmounted(dispose)
       </div>
       <div class="monitor-actions flex flex-wrap gap-2">
         <button class="monitor-btn-secondary" :disabled="loading" @click="refreshData">
-          <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
           {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
         </button>
         <!-- Admin 专属：同步 / 强制同步 / 清空数据 -->
