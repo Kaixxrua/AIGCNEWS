@@ -246,6 +246,45 @@ def test_member_feed_item_keeps_original_title_and_full_translation() -> None:
     assert "…" not in item
 
 
+def test_feed_item_description_does_not_repeat_the_title() -> None:
+    # HN 的摘要就是标题：公开条目正文只剩钩子，token 条目正文为空
+    hn = _doc("hn1", source="hackernews", title="Show HN: A tool", summary="Show HN:  A tool")
+    public = build_feed_item(hn, "https://aigcnews.cn")
+    assert public is not None
+    assert _item_section(public, "description").startswith("📮")
+    full = build_feed_item(hn, "https://aigcnews.cn", full=True)
+    assert full is not None and _item_section(full, "description") == ""
+
+    # X 短推文：译文标题与译文摘要截断后同文 → 正文不再重复
+    tweet = _doc("x1", source="x", title="Short tweet", summary="Short tweet", translation_zh="简短推文")
+    public_x = build_feed_item(tweet, "https://aigcnews.cn")
+    assert public_x is not None
+    assert _item_section(public_x, "title") == "简短推文"
+    assert _item_section(public_x, "description").startswith("📮")
+    # token 条目：原文标题不在正文里再出现一遍，只追加完整译文
+    full_x = build_feed_item(tweet, "https://aigcnews.cn", full=True)
+    assert full_x is not None and _item_section(full_x, "description") == "简短推文"
+
+    # 与标题不同的摘要照常输出
+    news = build_feed_item(_doc("n1", source="news", title="Headline", summary="Body"), "https://aigcnews.cn")
+    assert news is not None and _item_section(news, "description").startswith("Body\n\n📮")
+
+
+def test_bare_url_tweet_title_uses_link_card_title() -> None:
+    row = _doc("x1", source="x", title="https://opencode.ai/data", summary="https://opencode.ai/data")
+    row["link_card"] = {"url": "https://opencode.ai/data", "title": "AI Model Usage Rankings | OpenCode Data"}
+    for full in (False, True):
+        item = build_feed_item(row, "https://aigcnews.cn", full=full)
+        assert item is not None
+        assert _item_section(item, "title") == "AI Model Usage Rankings | OpenCode Data"
+
+    # 无卡片标题：保持原 URL 标题（不凭空编标题）
+    no_card = _doc("x2", source="x", title="https://x.com/i/article/2104641136346161153")
+    item = build_feed_item(no_card, "https://aigcnews.cn")
+    assert item is not None
+    assert _item_section(item, "title") == "https://x.com/i/article/2104641136346161153"
+
+
 def test_parse_published_at_tolerates_dirty_and_naive_values() -> None:
     assert _parse_published_at("2026-08-18T08:00:00+00:00") is not None
     assert _parse_published_at("2026-08-18 08:00:00") is not None  # naive 按 UTC
@@ -510,6 +549,44 @@ def test_public_feed_merges_hot_board_items_with_other_sources() -> None:
     # github 不走 documents 池，其余源不受影响
     queried = {call.args[0] for call in documents.list_recent_by_source.call_args_list}
     assert "github" not in queried and "news" in queried
+
+
+def test_public_combined_feed_caps_each_source_so_hot_board_cannot_crowd_out() -> None:
+    # 线上形态：热榜 50 条整榜共用最新快照时间（恒排最前），X 一天几十条，
+    # HN 只有日期（归并时排在当天时间戳条目之后）。不限额时 github+X
+    # 占满 100 条，HN 整源缺席。
+    documents = MagicMock()
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date().isoformat()
+
+    def fake_list(source: str, *, since_iso: str, until_iso=None, limit: int = 500):
+        if source == "x":
+            return [
+                _doc(f"x{i}", source="x", url=f"https://x.com/a/status/{i}", published_at=_iso_hours_ago(0.5 + i * 0.1))
+                for i in range(60)
+            ]
+        if source == "hackernews":
+            hn = _doc("hn-story", source="hackernews", url="https://news.ycombinator.com/item?id=1", published_at="")
+            hn["published_date"] = yesterday
+            return [hn]
+        return []
+
+    documents.list_recent_by_source.side_effect = fake_list
+    latest = _iso_hours_ago(0.1)
+    catalog = _catalog([_hot_item(f"hot/repo{i}", captured_at=latest) for i in range(50)])
+    client = _client(documents=documents, catalog=catalog)
+
+    root = ElementTree.fromstring(client.get("/api/feed.xml").content)
+    guids = [guid.text or "" for guid in root.iter("guid")]
+
+    assert sum(guid.startswith("github:") for guid in guids) == 15
+    assert sum(guid.startswith("x:") for guid in guids) == 15
+    assert "hackernews:hn-story" in guids
+    # 限额在归并序上取每源最新：热榜保留 hot 名次头部
+    assert [guid for guid in guids if guid.startswith("github:")][:2] == ["github:hot/repo0", "github:hot/repo1"]
+
+    # 单源 feed 不受综合限额影响：github 仍是整榜 50 条
+    single = ElementTree.fromstring(client.get("/api/feeds/github.xml").content)
+    assert len(single.findall("./channel/item")) == 50
 
 
 def test_member_feed_uses_hot_board_for_github_source() -> None:

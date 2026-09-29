@@ -1,7 +1,7 @@
 """RSS 2.0 feed API：canonical 简报 feed + legacy compatibility routes。
 
 端点列表：
-  GET  /api/feed.xml                     → 综合 feed（全部源按发布时间归并）
+  GET  /api/feed.xml                     → 综合 feed（全部源按发布时间归并，每源限额）
   GET  /api/feeds/{source}.xml           → 单源 feed（arxiv/github/news/…）
   GET  /api/feeds/member.xml             → 注册用户全文 feed（?token= 用独立 RSS feed
                                            token，?source=a,b 自由组合；任意注册用户
@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any
@@ -71,6 +72,10 @@ FEED_SOURCES: frozenset[str] = frozenset({"arxiv", "github", "news", "producthun
 # 公开 feed 定位「最新」而非归档：近 48 小时、至多 100 条。
 _PUBLIC_FEED_WINDOW = timedelta(hours=48)
 _PUBLIC_FEED_LIMIT = 100
+# 综合 feed 按源限额（100 条 / 7 源 → 每源至多 15 条）：github 热榜整榜共用
+# 最新快照时间、恒排最前，X 一天几十条；不限额时两者占满 100 条，只有日期
+# 的 HN/Product Hunt 永远挤不进来。单源 feed 与全文归档 feed 不限额。
+_PUBLIC_FEED_PER_SOURCE_LIMIT = -(-_PUBLIC_FEED_LIMIT // len(FEED_SOURCES))
 # token feed（注册用户）给更长回溯窗口与更高条数上限。
 _MEMBER_FEED_WINDOW = timedelta(days=7)
 _MEMBER_FEED_LIMIT = 500
@@ -211,6 +216,22 @@ def _item_link(row: dict[str, Any], base_url: str) -> str | None:
 
 _PUBLIC_TITLE_TRANSLATION_LIMIT = 80
 _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT = 200
+_BARE_URL = re.compile(r"https?://\S+")
+
+
+def _same_text(left: str, right: str) -> bool:
+    return " ".join(left.split()) == " ".join(right.split())
+
+
+def _row_title(row: dict[str, Any]) -> str:
+    """条目原标题；X 纯链接推文（正文只有一条 URL）改用链接卡片标题。"""
+    title = str(row.get("title") or "").strip()
+    card = row.get("link_card")
+    if _BARE_URL.fullmatch(title) and isinstance(card, dict):
+        card_title = " ".join(str(card.get("title") or "").split())
+        if card_title:
+            return card_title
+    return title
 
 
 def _public_item_title(row: dict[str, Any]) -> str:
@@ -219,7 +240,7 @@ def _public_item_title(row: dict[str, Any]) -> str:
     库中无 title_zh 字段，X 的「标题」即推文原文（英文为主）；译文截断到
     80 字符当标题。榜单/媒体源本身已有面向中文读者的标题或仓库名，不动。
     """
-    title = str(row.get("title") or "").strip()
+    title = _row_title(row)
     if str(row.get("source") or "").strip() != "x":
         return title
     translation = str(row.get("translation_zh") or "").strip()
@@ -228,21 +249,26 @@ def _public_item_title(row: dict[str, Any]) -> str:
     return _truncate_summary(translation, _PUBLIC_TITLE_TRANSLATION_LIMIT)
 
 
-def _item_description(row: dict[str, Any], *, full: bool) -> str:
+def _item_description(row: dict[str, Any], *, full: bool, title: str = "") -> str:
     """摘要文本：公开 feed 优先中文译文截断（无译文回退原摘要）；token feed
-    为原摘要 + 完整中文译文（不截断）。"""
+    为原摘要 + 完整中文译文（不截断）。
+
+    与展示标题同文的段落不再重复一遍：HN 的摘要就是标题，X 短推文的
+    译文标题与译文摘要截断后同文。
+    """
     summary = str(row.get("summary") or "").strip()
     translation = str(row.get("translation_zh") or "").strip()
     if full:
-        parts = [summary] if summary else []
+        parts = [summary] if summary and not _same_text(summary, title) else []
         if translation and translation != summary:
             parts.append(translation)
         return sanitize_public_text("\n\n".join(parts))
-    if translation:
-        return sanitize_public_text(
-            _truncate_summary(translation, _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT)
-        )
-    return sanitize_public_text(summary)
+    text = (
+        _truncate_summary(translation, _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT)
+        if translation
+        else summary
+    )
+    return "" if _same_text(text, title) else sanitize_public_text(text)
 
 
 def _parse_tags(value: Any) -> list[str]:
@@ -265,14 +291,14 @@ def _parse_tags(value: Any) -> list[str]:
 def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -> str | None:
     """把文档行渲染为 <item> XML；缺 id/title/link 的行返回 None。"""
     doc_id = str(row.get("id") or "").strip()
-    title = str(row.get("title") or "").strip()
+    title = _row_title(row)
     link = _item_link(row, base_url)
     if not doc_id or not title or not link:
         return None
     # 公开条目面向中文读者：X 源有译文时标题换成译文截断；token feed 条目保留原标题
     display_title = title if full else _public_item_title(row)
 
-    description = _item_description(row, full=full)
+    description = _item_description(row, full=full, title=display_title)
     if not full:
         hook = f"{_PUBLIC_HOOK_PREFIX}{base_url}/subscriptions"
         description = f"{description}\n\n{hook}" if description else hook
@@ -350,6 +376,18 @@ def _filter_rows_to_window(
     ]
 
 
+def _cap_rows_per_source(rows: list[dict[str, Any]], per_source: int) -> list[dict[str, Any]]:
+    """保持输入顺序，每个源至多保留 per_source 条。"""
+    kept: dict[str, int] = {}
+    capped: list[dict[str, Any]] = []
+    for row in rows:
+        source = str(row.get("source") or "")
+        if kept.get(source, 0) < per_source:
+            kept[source] = kept.get(source, 0) + 1
+            capped.append(row)
+    return capped
+
+
 async def _collect_rows(
     documents: DocumentRecentReader,
     sources: set[str],
@@ -357,8 +395,12 @@ async def _collect_rows(
     window: timedelta,
     limit: int,
     catalog: ProjectCatalogQueryService | None = None,
+    per_source_limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """并发拉取各源滚动窗口文档（github 改由站内今日热榜供稿），按发布时间归并后截断。"""
+    """并发拉取各源滚动窗口文档（github 改由站内今日热榜供稿），按发布时间归并后截断。
+
+    per_source_limit 给定时，归并序上每个源只取最新的前 N 条再截断。
+    """
     now = datetime.now(timezone.utc)
     since = (now - window).isoformat()
     # 共享 reader 为兼容历史数据可能返回近期入库的旧日期行；多取一批，避免
@@ -383,7 +425,10 @@ async def _collect_rows(
     batches = await asyncio.gather(*tasks)
     merged = [row for batch in batches for row in batch]
     filtered = _filter_rows_to_window(merged, window=window, now=now)
-    return _sort_rows_newest_first(filtered)[:limit]
+    ordered = _sort_rows_newest_first(filtered)
+    if per_source_limit is not None:
+        ordered = _cap_rows_per_source(ordered, per_source_limit)
+    return ordered[:limit]
 
 
 def _xml_response(xml: str, *, cache_control: str) -> Response:
@@ -404,13 +449,14 @@ async def feed_all(
     documents: DocumentRecentReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
-    """综合公开 feed：全部源按发布时间归并，摘要 + 回链。"""
+    """综合公开 feed：全部源按发布时间归并（每源限额），摘要 + 回链。"""
     rows = await _collect_rows(
         documents,
         FEED_SOURCES,
         window=_PUBLIC_FEED_WINDOW,
         limit=_PUBLIC_FEED_LIMIT,
         catalog=catalog,
+        per_source_limit=_PUBLIC_FEED_PER_SOURCE_LIMIT,
     )
     base_url = _resolve_base_url(request)
     items = [item for row in rows if (item := build_feed_item(row, base_url)) is not None]
