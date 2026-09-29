@@ -769,7 +769,8 @@ def test_metric_inputs_expose_creation_timestamp_and_prior_cluster(postgres_inge
         return rows[0]
 
     current = inputs("2026-08-21", "2026-08-20")
-    assert current["repo_created_at"] == "2026-06-13"
+    # 候选池的 API 时间戳优先于快照里的建仓日期
+    assert current["repo_created_at"] == "2026-06-13T12:06:07Z"
     assert current["candidate_created_at"] == "2026-06-13T12:06:07Z"
     assert current["prior_coordinated_creation"] is True
     # 只看目标日之前的窗口：当日自身的标记不回灌
@@ -862,3 +863,68 @@ def test_snapshot_created_at_backfilled_from_candidate(
         assert inputs[0]["repo_created_at"] == "2024-03-11"
     finally:
         _delete_candidates(database, "acme/created-fallback")
+
+
+def test_candidate_created_at_follows_github_api(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    """建仓时间以 GitHub API 为准：日期不同即纠正，同日只接受更精确的时间戳，
+    空值不清除已有值。"""
+    repository, database = postgres_ingestion
+    repo_id = "acme/created-heal"
+
+    def created_at() -> str:
+        with database.transaction() as connection:
+            row = connection.execute(
+                "SELECT created_at FROM github_repo_candidates WHERE repo_id=%s", (repo_id,)
+            ).fetchone()
+        return row["created_at"]
+
+    def upsert(value: str) -> None:
+        repository.upsert_github_repo_candidate(
+            {"repo_id": repo_id, "full_name": repo_id, "stars": 900, "created_at": value}
+        )
+
+    try:
+        upsert("2026-09-28")  # 历史遗留：收录日冒充的建仓日期
+        upsert("2024-03-11")
+        assert created_at() == "2024-03-11"
+        upsert("2024-03-11T08:09:10Z")
+        assert created_at() == "2024-03-11T08:09:10Z"
+        upsert("2024-03-11")
+        assert created_at() == "2024-03-11T08:09:10Z"
+        upsert("")
+        assert created_at() == "2024-03-11T08:09:10Z"
+    finally:
+        _delete_candidates(database, repo_id)
+
+
+def test_metric_inputs_prefer_candidate_creation_over_polluted_snapshot(
+    postgres_ingestion: tuple[Any, Any],
+) -> None:
+    """快照里遗留的错误建仓日期（Trending 抓取日）不得盖过候选池的 API 值。"""
+    repository, database = postgres_ingestion
+    repo_id = "acme/created-polluted"
+    try:
+        repository.upsert_github_repo_candidate(
+            {"repo_id": repo_id, "full_name": repo_id, "stars": 5000, "created_at": "2023-01-05"}
+        )
+        with database.transaction() as connection:
+            connection.execute(
+                "INSERT INTO github_repo_snapshots (repo_id, snapshot_date, "
+                "captured_at, stars, forks, watchers, community_metrics_complete, "
+                "open_issues, repo_created_at, repo_pushed_at) VALUES "
+                "(%s, '2026-09-28', '2026-09-28T01:00:00+00:00', 5000, 40, 40, TRUE, 0, "
+                "'2026-09-28', '')",
+                (repo_id,),
+            )
+        rows = repository.get_github_daily_metric_inputs(
+            metric_date="2026-09-28",
+            previous_date="2026-09-27",
+            baseline_start_date="2026-09-21",
+            repo_ids=[repo_id],
+        )
+        assert len(rows) == 1
+        assert rows[0]["repo_created_at"] == "2023-01-05"
+    finally:
+        _delete_candidates(database, repo_id)

@@ -87,7 +87,9 @@ def record_github_trending_hits(
                     "watchers": int(item.get("watchers") or 0),
                     "community_metrics_complete": 0,
                     "open_issues": int(item.get("open_issues") or 0),
-                    "repo_created_at": item.get("created_at") or "",
+                    # Trending 页面没有建仓时间，item 的 created_at 是抓取当天；
+                    # 留空让快照回落到候选表里 GitHub API 给的建仓时间。
+                    "repo_created_at": "",
                     "repo_pushed_at": item.get("pushed_at") or "",
                 }
             )
