@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Assemble a private release that only changes the four protected contact sources.
+"""Assemble a private release that changes the four protected contact sources.
 
 usage: build_source_release.py <previous release dir> <new release id>
 
 camp-scene is hardlinked file by file from the previous release (nothing is modified
 in place) and must match its manifest exactly; the four sources come from this
-repository's root. The manifest is rewritten with the new release id, the descriptor
+repository's root. Files under SCENE_ADDITIONS (the comic page art) are copied into
+camp-scene and added to the manifest; one the previous release already ships must be
+byte-identical, so a changed asset has to ship under a new name. The manifest is rewritten with the new release id, the descriptor
 is written both into the new release and to the repository root, and the descriptor
 SHA-256 for local-delivery.json is printed. Output format matches the earlier
 releases (json.dumps indent=2, sort_keys, trailing newline).
@@ -14,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -24,6 +27,7 @@ SOURCE_FILES = {
     "views/ContactPageView.vue": "ContactPageView.vue",
     "views/ContactPageView.test.ts": "ContactPageView.test.ts",
 }
+SCENE_ADDITIONS = {"comic": REPO / "frontend-overlay/godot-contact/comic"}
 MANIFEST = "cn-current-godot-release-source-manifest.json"
 DESCRIPTOR = "aigcnews-private-release.json"
 
@@ -74,6 +78,24 @@ for path in sorted(scene.rglob("*")):
 if files != old_files:
     raise SystemExit("hardlinked camp-scene differs from the previous release manifest")
 
+added = []
+for subdir, source in SCENE_ADDITIONS.items():
+    for path in sorted(source.iterdir()):
+        if path.is_symlink() or not path.is_file():
+            raise SystemExit(f"scene addition is not a regular file: {path}")
+        target = scene / subdir / path.name
+        relative = target.relative_to(scene.parent).as_posix()
+        digest = sha256(path)
+        if relative in old_files:
+            if old_files[relative] != digest:
+                raise SystemExit(f"{relative} already ships with different content; give it a new name")
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+        files[relative] = sha256(target)
+        added.append(relative)
+files = dict(sorted(files.items()))
+
 manifest_path = new / MANIFEST
 dump(manifest_path, {"algorithm": "sha256", "files": files, "release_id": release_id})
 
@@ -98,4 +120,4 @@ print("release_dir", new)
 print("release_id", release_id)
 print("descriptor_sha256", sha256(new / DESCRIPTOR))
 print("manifest_sha256", descriptor["manifest_sha256"])
-print("scene_files", len(files), "changed_sources", changed)
+print("scene_files", len(files), "added_scene_files", len(added), "changed_sources", changed)

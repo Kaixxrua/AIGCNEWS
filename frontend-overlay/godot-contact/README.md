@@ -11,6 +11,15 @@ Since 20260929-contact-comic the view also carries the desktop comic layout
 under the public site's `.app-shell--comic-page` shell at ≥64rem. Releases that
 only change these sources are assembled with
 `scripts/contact-release/build_source_release.py`.
+The hand-drawn pieces of that layout (scene frame, halftone dots, title brush,
+contact card, note, badge, buttons, QR frame, quality chooser) are generated
+9-slice images in `comic/`, each with a `-night` twin; the release script copies
+them into `camp-scene/comic/` (served as `/camp-scene/comic/ct-*.webp`) and adds
+them to the manifest. They are rendered by `scripts/contact-comic/ct_specs.py`
+(`python ct_specs.py <out dir> <meta json> [names...]`, next to `inkframe.py`);
+the printed pad/slice numbers are what the view's `border-image` rules use. An
+asset that changes must get a new file name, since releases never rewrite a file
+an earlier release shipped.
 `contact-godot-interaction.css` is the scoped
 production override that keeps the iframe clickable while allowing the contact
 copy and entry card to remain interactive.
