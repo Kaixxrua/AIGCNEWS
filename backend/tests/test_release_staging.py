@@ -57,7 +57,6 @@ def test_staging_defaults_disable_side_effects() -> None:
         "PAYMENTS_ENABLED",
         "TELEGRAM_PUSH_ENABLED",
         "X_SOURCE_ENABLED",
-        "WECHAT_SOURCE_ENABLED",
         "PROJECT_SEMANTIC_SEARCH_ENABLED",
         "PROJECT_SEMANTIC_INDEXING_ENABLED",
         "X_MEDIA_WARMUP_ENABLED",

@@ -315,9 +315,9 @@ watch(() => props.modelValue, async open => {
 .fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
-/* 换绑邮箱展开/收起：grid 行轨 0fr↔1fr 平滑动画高度（同 WechatAccountCard
-   article-expand 方案，长内容无 max-height 封顶跳变）；父容器 space-y-5 的
-   上间距折进裁剪区内部随高度一起动画，shell 自身 margin 归零避免收尾瞬移 */
+/* 换绑邮箱展开/收起：grid 行轨 0fr↔1fr 平滑动画高度（长内容无 max-height
+   封顶跳变）；父容器 space-y-5 的上间距折进裁剪区内部随高度一起动画，
+   shell 自身 margin 归零避免收尾瞬移 */
 .email-change-shell {
   display: grid;
   grid-template-rows: 1fr;

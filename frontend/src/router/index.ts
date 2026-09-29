@@ -14,7 +14,6 @@ const UiLibraryView = () => import('@/views/UiLibraryView.vue')
 const ChatView = () => import('@/views/ChatView.vue')
 const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
-const WechatView = () => import('@/views/WechatView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
@@ -101,12 +100,6 @@ const router = createRouter({
           name: 'x-board',
           component: XBoardView,
           meta: { feature: 'xSource' },
-        },
-        {
-          path: 'wechat',
-          name: 'wechat',
-          component: WechatView,
-          meta: { requiresAdmin: true, feature: 'wechatSource' },
         },
         {
           path: 'mcp',

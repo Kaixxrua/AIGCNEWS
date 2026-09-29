@@ -16,7 +16,7 @@
 
 # AIGCNEWS
 
-面向工程师、研究者与 AI Agent 的 AI 发现与情报平台：持续索引 arXiv / HuggingFace 论文、GitHub AI 项目、科技新闻、Product Hunt、Hacker News、X（Twitter）热点与微信公众号文章，加工为可浏览的榜单、可检索的项目库与可订阅的简报。同一份数据通过两个入口对外提供：
+面向工程师、研究者与 AI Agent 的 AI 发现与情报平台：持续索引 arXiv / HuggingFace 论文、GitHub AI 项目、科技新闻、Product Hunt、Hacker News 与 X（Twitter）热点，加工为可浏览的榜单、可检索的项目库与可订阅的简报。同一份数据通过两个入口对外提供：
 
 - **AIGC Radar MCP** —— 面向 Agent 的 MCP 数据接口（旗舰）
 - **Web 站点** —— 面向人类读者的榜单、项目库与简报界面（[aigcnews.cn](https://aigcnews.cn)）
@@ -95,7 +95,7 @@ python3 scripts/eval_mcp_tool_selection.py       # 需要 claude CLI
 - **多源榜单 Dashboard** —— 论文 / GitHub / 新闻 / Product Hunt / Hacker News / X 六源同板（日 / 周 / 月），快照可按日期回看，GitHub 热度分不只看总 Stars
 - **GitHub AI 项目库** —— 18,000+ 精选项目与工具站，≥500 Stars 准入门槛，中英双语分类与标签，PostgreSQL 关键词 × Milvus 语义混合检索，卡片展示今日 +N Stars，筛选状态同步 URL 可分享
 - **论文发现与阅读** —— arXiv / HuggingFace 每日热门论文，站内摘要与原文链接，后台 PDF 图文提取、全文索引和日报总结
-- **X 动态与微信公众号** —— 精选时间线 + 按日期快照与静默期，推文中文翻译完整补回 @ 提及，统一站内阅读 Feed
+- **X 动态** —— 精选时间线 + 按日期快照与静默期，推文中文翻译完整补回 @ 提及
 - **智能简报与订阅** —— 各方向日 / 周 / 月报（中英双语）SSE 流式生成，按来源与频率邮件订阅、支持立即送达
 - **收藏与私人书架** —— 乐观更新收藏 + 个人标签 + 跨设备同步，提交 URL 自动富化的私人工具书架，公共与私人数据严格隔离
 - **账号与管理后台** —— 邮箱验证码 + JWT（空库首启动种子默认管理员，登录后站内免 SMTP 改密），采集监控、模型 Provider 真实连接测试、数据库化 SMTP 面板、爬取与富化队列（重试 / 熔断）
@@ -191,7 +191,7 @@ Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://rep
 ## 架构
 
 ```text
-数据源（arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X · 微信公众号）
+数据源（arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X）
   → 抓取与标准化 → 富化（README / PDF 补全、AI 评分、打标、中文描述）
   → PostgreSQL 主写 → 排行快照
   → Milvus 向量索引 · Neo4j 论文图谱 → 缓存失效
@@ -239,8 +239,8 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 
 ## 数据归属与合规
 
-- **聚合内容不归本项目所有。** 管线呈现的论文、仓库元数据、新闻、Product Hunt / Hacker News 条目、X 推文与微信公众号文章，其权利归原作者与平台所有。AIGCNEWS 仅为运行阅读界面存储元数据、摘要与缩略图，不主张任何所有权。参考部署的数据库转储、采集快照与媒体缓存不属于本仓库，亦不许可再分发。
-- **X 实现公开，微信仍为私有插件。** X（Twitter）的读取、解析与分页 transport 已随本仓库发布，并由默认关闭的 `x_source_enabled` 特性开关门控（见 `backend/app/services/ingestion/sources/x_transport.py`）。微信公众号采集实现仍经 `wechat_source_enabled` 从私有插件可选加载。真实 X cookie/token、加密凭据行、私有 overlay、代理拓扑、部署运营配置、数据库转储、采集快照与媒体缓存均不包含在仓库中。X 关闭或未配置时采集会安全跳过，其余功能不受影响。
+- **聚合内容不归本项目所有。** 管线呈现的论文、仓库元数据、新闻、Product Hunt / Hacker News 条目与 X 推文，其权利归原作者与平台所有。AIGCNEWS 仅为运行阅读界面存储元数据、摘要与缩略图，不主张任何所有权。参考部署的数据库转储、采集快照与媒体缓存不属于本仓库，亦不许可再分发。
+- **X 实现公开。** X（Twitter）的读取、解析与分页 transport 已随本仓库发布，并由默认关闭的 `x_source_enabled` 特性开关门控（见 `backend/app/services/ingestion/sources/x_transport.py`）。真实 X cookie/token、加密凭据行、私有 overlay、代理拓扑、部署运营配置、数据库转储、采集快照与媒体缓存均不包含在仓库中。X 关闭或未配置时采集会安全跳过，其余功能不受影响。
 - **自建实例的运营者责任**：启用这些信息源须自行遵守源平台服务条款、robots 协议与适用法律，并妥善保管配置的凭据（cookie/token）。
 - **商标。** X、Twitter、WeChat、Product Hunt、Hacker News、arXiv、GitHub、Hugging Face 等名称与标志归各自所有者；本项目仅为指称性使用，不存在隶属或背书关系。
 - **内容移除请求**：请提 issue 或联系维护者。完整归属声明见 [NOTICE](NOTICE)。

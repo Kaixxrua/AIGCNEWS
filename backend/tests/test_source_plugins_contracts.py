@@ -1,7 +1,6 @@
 """源装配契约测试：开关门控、候选解析、缓存与异常路径。
 
-X transport 随公共仓发布；微信公众号实现仍由私有包
-``aigcnews_private`` 提供。本文件验证两种装配路径都保持 fail-closed、
+X transport 随公共仓发布。本文件验证其装配路径保持 fail-closed、
 可缓存且只暴露公共契约。
 """
 
@@ -14,7 +13,6 @@ from unittest import mock
 
 from backend.app.core.config import Settings, settings
 from backend.app.services.source_plugins import loader
-from backend.app.services.source_plugins.wechat_source import WeChatError
 
 _LOADER_LOG = "backend.app.services.source_plugins.loader"
 
@@ -42,7 +40,9 @@ class _SourcePluginTestCase(unittest.TestCase):
 class SourceFlagDefaultsTests(unittest.TestCase):
     def test_source_flags_default_off(self) -> None:
         self.assertIs(Settings.model_fields["x_source_enabled"].default, False)
-        self.assertIs(Settings.model_fields["wechat_source_enabled"].default, False)
+
+    def test_wechat_source_flag_removed(self) -> None:
+        self.assertNotIn("wechat_source_enabled", Settings.model_fields)
 
 
 class XSourceSwitchTests(_SourcePluginTestCase):
@@ -94,48 +94,6 @@ class XSourceSwitchTests(_SourcePluginTestCase):
         self.assertIsNotNone(first)
         self.assertIs(first, second)
         self.assertEqual(spy.call_count, 1)
-
-
-class WeChatSourceSwitchTests(_SourcePluginTestCase):
-    def test_flag_off_returns_none(self) -> None:
-        with mock.patch.object(settings, "wechat_source_enabled", False):
-            self.assertIsNone(loader.load_wechat_bundle())
-
-    def test_flag_on_loads_private_candidate(self) -> None:
-        fake = types.ModuleType("aigcnews_private.sources.wechat_facade")
-        for attr in loader._WECHAT_BUNDLE_ATTRS.values():
-            setattr(fake, attr, type(attr, (), {}))
-        _install_fake_module(self, fake)
-        with mock.patch.object(settings, "wechat_source_enabled", True):
-            bundle = loader.load_wechat_bundle()
-        self.assertIsNotNone(bundle)
-        assert bundle is not None
-        self.assertIs(bundle.mp_transport, getattr(fake, "WeChatMpTransport"))
-        self.assertIs(bundle.error, getattr(fake, "WeChatError"))
-
-    def test_plugin_missing_returns_none_with_warning(self) -> None:
-        with (
-            mock.patch.object(settings, "wechat_source_enabled", True),
-            mock.patch.object(
-                loader,
-                "_WECHAT_FACADE_MODULES",
-                ("nonexistent_source_plugin.wechat_facade",),
-            ),
-            self.assertLogs(_LOADER_LOG, level="WARNING") as captured,
-        ):
-            self.assertIsNone(loader.load_wechat_bundle())
-        self.assertTrue(any("均不可导入" in message for message in captured.output))
-
-    def test_facade_missing_attrs_returns_none_with_warning(self) -> None:
-        fake = types.ModuleType("aigcnews_private.sources.wechat_facade")
-        fake.WeChatError = WeChatError  # type: ignore[attr-defined]
-        _install_fake_module(self, fake)
-        with (
-            mock.patch.object(settings, "wechat_source_enabled", True),
-            self.assertLogs(_LOADER_LOG, level="WARNING") as captured,
-        ):
-            self.assertIsNone(loader.load_wechat_bundle())
-        self.assertTrue(any("缺少属性" in message for message in captured.output))
 
 
 if __name__ == "__main__":

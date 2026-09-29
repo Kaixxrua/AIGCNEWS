@@ -10,20 +10,18 @@ Third-party content
 
 AIGCNEWS is a personal aggregation and ranking tool. Content surfaced by
 its pipelines — arXiv/Hugging Face papers, GitHub repository metadata,
-news articles, Product Hunt and Hacker News items, X (Twitter) posts, and
-WeChat official-account articles — remains the property of its original
-authors, publishers, and platforms. The software stores metadata,
-excerpts, and thumbnails solely to operate the reader interface and
-claims no ownership over aggregated content. No platform content,
-database dump, collected snapshot, or cached media from any deployment
-of this project is licensed for redistribution or included in this
-repository.
+news articles, Product Hunt and Hacker News items, and X (Twitter)
+posts — remains the property of its original authors, publishers, and
+platforms. The software stores metadata, excerpts, and thumbnails solely
+to operate the reader interface and claims no ownership over aggregated
+content. No platform content, database dump, collected snapshot, or
+cached media from any deployment of this project is licensed for
+redistribution or included in this repository.
 
 The X (Twitter) read/parse/pagination implementation is part of this
-repository and is disabled by default behind a feature flag. The WeChat
-scraping implementation remains an optional private plugin. Operators
-who enable either source are responsible for complying with the source
-platforms' Terms of Service, robots policies, and applicable law, and for
+repository and is disabled by default behind a feature flag. Operators
+who enable it are responsible for complying with the source platforms'
+Terms of Service, robots policies, and applicable law, and for
 safeguarding the credentials they configure. Real cookies/tokens,
 credential database rows, private deployment overlays, proxy topology,
 collected snapshots, and media caches are not distributed here.

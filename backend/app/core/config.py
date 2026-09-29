@@ -15,11 +15,11 @@ class Settings(BaseSettings):
     # Optional image-only egress; empty inherits the general outbound proxy.
     github_artwork_proxy: str = ""
 
-    # 微信公众号后台网页登录会话。密钥必须是 32 字节随机值的 URL-safe Base64，
-    # 只由部署环境提供；缺失或非法时微信功能拒绝处理 secret，不降级为明文。
+    # 历史命名（原微信公众号登录会话密钥，该功能已移除）：现作为 OAuth 配置
+    # 封缄的回落主密钥，生产已就位，勿删。密钥必须是 32 字节随机值的 URL-safe
+    # Base64，只由部署环境提供；缺失或非法时拒绝处理 secret，不降级为明文。
     wechat_session_encryption_key: str = ""
     wechat_session_encryption_key_version: str = "v1"
-    wechat_http_timeout_seconds: float = 15.0
 
     # DailyHot 聚合热榜上游（编排内网自托管 DailyHotApi，见 docs/dailyhot-source.md）。
     # base_url 指向 compose 服务名；endpoints 逗号分隔，为 DailyHotApi 路由名。
@@ -27,13 +27,6 @@ class Settings(BaseSettings):
     dailyhot_endpoints: str = "36kr,ithome,sspai,juejin,zhihu,huxiu,geekpark,ifanr"
     dailyhot_per_endpoint_limit: int = 5
     dailyhot_request_timeout_seconds: float = 8.0
-    wechat_login_attempt_ttl_seconds: int = 300
-    # 会话状态惰性上游复核间隔：DB 里的 active 只代表上次验证结果，超过该间隔
-    # 读会话摘要时才重新向上游确认一次；取值对齐微信限流提示的约 30 分钟。
-    wechat_session_revalidate_seconds: int = 1800
-    wechat_sync_max_pages: int = 20
-    wechat_sync_max_articles: int = 500
-    wechat_sync_inter_page_delay_seconds: float = 1.0
 
     @field_validator("wechat_session_encryption_key_version")
     @classmethod
@@ -532,12 +525,10 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_timezone: str = "Asia/Shanghai"
 
-    # 可插拔采集源开关（默认关闭）。X 与微信公众号链路的敏感实现以
-    # 插件形式提供（见 services/source_plugins 契约与加载器）：关闭时
-    # 相关路由与调度任务优雅降级，核心产品面不受影响；开启后优先加载
-    # 仓库外私有包实现，回退仓库内过渡期实现。
+    # 可插拔采集源开关（默认关闭）。X 链路以插件形式装配（见
+    # services/source_plugins 契约与加载器）：关闭时相关路由与调度任务
+    # 优雅降级，核心产品面不受影响。
     x_source_enabled: bool = False
-    wechat_source_enabled: bool = False
 
     # 运行环境：development / production（开发环境热重载时自动清除 Redis 缓存）
     env: str = "production"
@@ -555,10 +546,7 @@ class Settings(BaseSettings):
     # X 视频封面抽帧缓存目录（容器内路径，对应 docker-compose volume 映射）
     x_media_cache_dir: str = "storage/x_media"
 
-    # 微信公众号图片代理缓存目录（容器内路径，对应 docker-compose volume 映射）
-    wechat_media_cache_dir: str = "storage/wechat"
-
-    # 媒体代理磁盘缓存预算（wechat 图片与 X 封面共用）：容量上限 + 留存时长，
+    # 媒体代理磁盘缓存预算（X 封面等）：容量上限 + 留存时长，
     # 超限按最旧优先驱逐，防止无认证代理被远程填盘
     media_cache_max_bytes: int = 536870912  # 512 MiB
     media_cache_max_age_seconds: int = 604800  # 7 天

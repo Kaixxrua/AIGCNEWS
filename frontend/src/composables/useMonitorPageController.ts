@@ -432,7 +432,7 @@ export const useMonitorPageController = ({
   const { enrichmentStatus, enrichmentPolling, beginEnrichmentPolling, stopEnrichmentPolling, disposeEnrichmentPolling } = useEnrichmentPolling({
     api, schedule, setSuccess: setSuccessMessage,
   })
-  // 所有一次性延时回调统一登记句柄，卸载时集中清理（对齐 useWechatController dispose 范式）
+  // 所有一次性延时回调统一登记句柄，卸载时集中清理
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
   const scheduleTracked = (callback: () => void, delay: number) => {
     const timer = schedule(() => {

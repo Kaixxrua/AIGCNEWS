@@ -35,7 +35,7 @@ const label = (item: NavigationItem) => item.labelText || t(item.labelKey)
 // Compact Chinese captions are intentionally visible in either interface locale.
 const captions: Record<string, string> = {
   '/': '首页', '/projects': '项目库', '/ui-library': 'UI库', '/projects?source=website': '网页',
-  '/chat': '对话', '/report': '简报', '/x': 'X动态', '/wechat': '微信', '/mcp': 'MCP', '/dsh': 'DSH',
+  '/chat': '对话', '/report': '简报', '/x': 'X动态', '/mcp': 'MCP', '/dsh': 'DSH',
   '/subscriptions': '情报追踪', '/membership': '会员', '/contact': '联系我们', '/monitor': '监控',
 }
 const caption = (item: NavigationItem) => captions[item.to] || label(item)

@@ -4,7 +4,7 @@ import router from './index'
 import { getRoutePolicyDecision } from '@/features/navigation/routePolicy'
 import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
-// 契约：微信公众号页与对话聊天页仅对管理员开放 —— 导航入口隐藏 + 路由守卫拦截
+// 契约：对话聊天页仅对管理员开放 —— 导航入口隐藏 + 路由守卫拦截
 describe('modal-only login route contract', () => {
   it('/login is unmatched because login is rendered as a modal', () => {
     const resolved = router.resolve('/login')
@@ -14,14 +14,22 @@ describe('modal-only login route contract', () => {
   })
 })
 
+// 契约：微信公众号页已整体移除 —— 路由不再匹配、导航不再出现
+describe('removed pages contract', () => {
+  it.each(['/wechat'])('route %s is gone', (path) => {
+    expect(router.resolve(path).matched).toHaveLength(0)
+    expect(NAV_ITEMS.some((n) => n.to === path)).toBe(false)
+  })
+})
+
 describe('admin-only pages contract', () => {
-  it.each(['/chat', '/wechat'])('route %s requires admin', (path) => {
+  it.each(['/chat'])('route %s requires admin', (path) => {
     const record = router.getRoutes().find((r) => r.path === path)
     expect(record, `missing route ${path}`).toBeDefined()
     expect(record?.meta.requiresAdmin).toBe(true)
   })
 
-  it.each(['/chat', '/wechat'])('nav item %s is admin-only', (to) => {
+  it.each(['/chat'])('nav item %s is admin-only', (to) => {
     const item = NAV_ITEMS.find((n) => n.to === to)
     expect(item, `missing nav item ${to}`).toBeDefined()
     expect(item?.requiresAdmin).toBe(true)

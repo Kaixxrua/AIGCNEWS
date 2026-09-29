@@ -21,7 +21,6 @@ async def get_features(request: Request) -> dict[str, object]:
     config = resolve_oauth_config()
     return {
         "x_source": bool(settings.x_source_enabled),
-        "wechat_source": bool(settings.wechat_source_enabled),
         "oauth_providers": configured_oauth_providers(
             redis_available=getattr(request.app.state, "redis", None) is not None,
             config=config,

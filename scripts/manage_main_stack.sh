@@ -101,7 +101,6 @@ readonly STORAGE_BIND_DIRS=(
   "storage/chat_uploads"
   "storage/metrics"
   "storage/x_media"
-  "storage/wechat"
   "storage/hf_cache/huggingface"
 )
 

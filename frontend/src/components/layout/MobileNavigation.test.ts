@@ -48,7 +48,6 @@ describe('mobile navigation', () => {
     expect(nav.findAll('.mobile-nav > a').map(link => link.attributes('href'))).toEqual(['/', '/projects', '/report', '/mcp', '/subscriptions'])
     expect(nav.get('a[href="/mcp"]').text()).toBe('MCP 接入')
     expect(document.querySelector('dialog a[href="/monitor"]')).toBeNull()
-    expect(document.querySelector('dialog a[href="/wechat"]')).toBeNull()
   })
 
   it('opens additional links and closes the sheet after navigation', async () => {

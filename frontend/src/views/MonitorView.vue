@@ -34,7 +34,6 @@ import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
 import XWatchCard from '@/components/monitor/XWatchCard.vue'
 import XTranslationPanel from '@/components/monitor/XTranslationPanel.vue'
-import WechatAccountPanel from '@/components/wechat/WechatAccountPanel.vue'
 import { useMonitorPageController } from '@/composables/useMonitorPageController'
 import {
   DEFAULT_MONITOR_SECTION,
@@ -321,10 +320,6 @@ onUnmounted(dispose)
         <template v-else-if="currentSection === 'x-credentials'">
           <XCredentialCard v-if="authStore.isAdmin" />
         </template>
-        <template v-else-if="currentSection === 'wechat'">
-          <WechatAccountPanel v-if="authStore.isAdmin" />
-        </template>
-
         <!-- ═══ 配置（Admin 专属） ═══ -->
         <template v-else-if="currentSection === 'provider'">
           <ProviderConfigPanel

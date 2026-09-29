@@ -16,7 +16,7 @@
 
 # AIGCNEWS
 
-An AI discovery & intelligence platform for engineers, researchers, and AI agents: continuously indexes arXiv / HuggingFace papers, GitHub AI projects, tech news, Product Hunt, Hacker News, X (Twitter) hotspots, and WeChat official-account articles — then enriches them into browsable rankings, searchable libraries, and subscribable briefs. The same dataset is served through two interfaces:
+An AI discovery & intelligence platform for engineers, researchers, and AI agents: continuously indexes arXiv / HuggingFace papers, GitHub AI projects, tech news, Product Hunt, Hacker News, and X (Twitter) hotspots — then enriches them into browsable rankings, searchable libraries, and subscribable briefs. The same dataset is served through two interfaces:
 
 - **AIGC Radar MCP** — an MCP data interface for agents (flagship)
 - **Web Site** — rankings, project library, and briefings for human readers ([aigcnews.cn](https://aigcnews.cn))
@@ -95,7 +95,7 @@ python3 scripts/eval_mcp_tool_selection.py       # requires the claude CLI
 - **Multi-source dashboard** — papers / GitHub / news / Product Hunt / Hacker News / X rankings on one board (daily / weekly / monthly), snapshot archives replayable by date, and a GitHub hot score that goes beyond raw stars
 - **GitHub AI project library** — 18,000+ curated projects and tool sites with a ≥ 500-star admission bar, bilingual taxonomy & tags, PostgreSQL keyword × Milvus semantic hybrid search, today +N star growth on every card, and URL-synced shareable filters
 - **Paper discovery & reading** — arXiv / HuggingFace daily hot papers, paper summaries and original links, background PDF text/figure extraction, full-text indexing, and daily reports
-- **X board & WeChat official accounts** — curated timelines with per-date snapshots and embargo windows, Chinese translations with restored @ mentions, unified in-site reading feed
+- **X board** — curated timelines with per-date snapshots and embargo windows, Chinese translations with restored @ mentions
 - **Smart briefs & subscriptions** — SSE-streamed daily / weekly / monthly briefs per direction (zh/en), email subscriptions per source & frequency with send-now delivery
 - **Favorites & private bookshelf** — optimistic favorites with personal tags and cross-device sync, URL-submit tool shelf with AI enrichment, strict public/private data separation
 - **Accounts & admin console** — email OTP + JWT (empty-DB first boot seeds a default admin; in-app password change needs only the current password, no mail), ingestion monitor, model providers with real connection tests, DB-backed SMTP panel, crawl & enrichment queues with retry / circuit breaking
@@ -193,7 +193,7 @@ On the context side, it provides resources (`aigc-news://dashboard/summary`, `ai
 ## Architecture
 
 ```text
-Sources (arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X · WeChat)
+Sources (arXiv/HF · GitHub · Techmeme · Product Hunt · HN · X)
   → fetch & normalize → enrich (README / PDF completion, AI scoring, tagging, zh descriptions)
   → PostgreSQL master write → ranking snapshots
   → Milvus vector index · Neo4j paper graph → cache invalidation
@@ -241,8 +241,8 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 
 ## Data Ownership & Compliance
 
-- **Aggregated content is not ours.** Papers, repository metadata, news, Product Hunt / Hacker News items, X posts, and WeChat articles surfaced by the pipelines remain the property of their original authors and platforms. AIGCNEWS stores metadata, excerpts, and thumbnails solely to operate the reader and claims no ownership. No database dump, collected snapshot, or cached media from the reference deployment is part of this repository or licensed for redistribution.
-- **X implementation is public; WeChat remains private.** The X (Twitter) read/parse/pagination transport ships in this repository behind the default-off `x_source_enabled` feature flag (see `backend/app/services/ingestion/sources/x_transport.py`). The WeChat ingestion implementation still loads optionally from a private plugin behind `wechat_source_enabled`. Real X cookies/tokens, encrypted credential rows, private overlays, proxy topology, deployment configuration, database dumps, collected snapshots, and media caches are not included. When disabled or unconfigured, X ingestion skips safely; other features work unchanged.
+- **Aggregated content is not ours.** Papers, repository metadata, news, Product Hunt / Hacker News items, and X posts surfaced by the pipelines remain the property of their original authors and platforms. AIGCNEWS stores metadata, excerpts, and thumbnails solely to operate the reader and claims no ownership. No database dump, collected snapshot, or cached media from the reference deployment is part of this repository or licensed for redistribution.
+- **X implementation is public.** The X (Twitter) read/parse/pagination transport ships in this repository behind the default-off `x_source_enabled` feature flag (see `backend/app/services/ingestion/sources/x_transport.py`). Real X cookies/tokens, encrypted credential rows, private overlays, proxy topology, deployment configuration, database dumps, collected snapshots, and media caches are not included. When disabled or unconfigured, X ingestion skips safely; other features work unchanged.
 - **Operating your own instance** with these sources is your responsibility: comply with the source platforms' Terms of Service, robots policies, and applicable law, and safeguard any credentials (cookies/tokens) you configure.
 - **Marks.** X, Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging Face are property of their respective owners; references are nominative, with no affiliation or endorsement implied.
 - **Removal requests** for aggregated content: open an issue or contact the maintainer. See [NOTICE](NOTICE) for the full attribution text.
