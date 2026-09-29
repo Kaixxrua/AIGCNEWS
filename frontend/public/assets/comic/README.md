@@ -20,3 +20,11 @@ The torn-paper stickers (`ComicSticker.vue`) are three layers lifted pixel for p
 - `tear-shout-seal.svg`, `tear-shout-seal-mask.svg` (6 KB, 1 KB): a torn paper edge in the shout image's coordinates. Where the masthead is too narrow for the shout at full size, the shrunken hole no longer reaches the page's top edge; the mask trims the painting above the tear and the seal draws its paper fibre and ink. They were generated from a seeded jagged line kept clear of the lettering.
 
 The paper is cream-white, so the dark theme dims the layers with a CSS filter instead of shipping night variants.
+
+The UI library cards are drawn frames rather than CSS borders, rendered procedurally (numpy/SciPy) to match the "ui-library-C" concept measured pixel by pixel, at 3× the concept's 311×291 card so they stay sharp on high-density screens. Each is used as a 9-slice `border-image`, so the corners keep their drawing at any card width:
+
+- `ui-card-frame-{a,b}.webp` (957×900, ~63 KB each): cream paper with a faint grain and whiter rim, a wobbling 1.4–3.2px ink line (heavier along the top, lighter down the left), and a 45° halftone screen along the bottom and right edges that thickens into the corner, with a few stray dots bottom-left. Slices 48/552/450/192 keep the halftone out of the stretched edges.
+- `ui-card-shadow-{a,b}.webp` (~21 KB each): the offset dry-brush shadow, dark navy at both ends of the bottom stroke and pale blue-grey between, pale teal down the right side darkening toward the corner. It is a separate layer so hover can lift the card off it.
+- `ui-card-button-{source,prompt}.webp` (414×96, ~2 KB each): the two copy buttons, white and brushed navy, with the lower and right strokes pressed harder.
+
+`a` and `b` use different seeds and alternate between neighbouring cards so the drawing does not repeat exactly. The `-night` files are the same drawings in the dark theme's paper, grey ink and dimmer halftone.
