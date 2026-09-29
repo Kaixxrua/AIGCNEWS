@@ -30,19 +30,23 @@ import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
+const isDesktop = useMediaQuery('(min-width: 1024px)')
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
 const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'membership', 'monitor', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
+// 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
+const DESKTOP_COMIC_ROUTES = new Set(['contact'])
 // 项目库目录（projects-C）同样按漫画概念图复刻；网页收藏视图（source=website）维持原布局。
 const comicProjects = computed(() => route.path === '/projects' && route.query.source !== 'website')
-const editorialLayout = computed(() => route.path === '/'
-  || comicProjects.value
-  || COMIC_CONTENT_ROUTES.has(String(route.name ?? '')))
+const comicRoute = computed(() => {
+  const name = String(route.name ?? '')
+  return COMIC_CONTENT_ROUTES.has(name) || (isDesktop.value && DESKTOP_COMIC_ROUTES.has(name))
+})
+const editorialLayout = computed(() => route.path === '/' || comicProjects.value || comicRoute.value)
 // 内容页（非首页）另挂一个类，页面级漫画样式与首页的一屏排版互不干扰。
-const comicPage = computed(() => comicProjects.value || COMIC_CONTENT_ROUTES.has(String(route.name ?? '')))
+const comicPage = computed(() => comicProjects.value || comicRoute.value)
 // 首页桌面版按 1920×1080 排版；更大的屏幕（2K/4K）整体等比放大，而不是把同样的内容摊得更稀。
 // 以宽高中较紧的一边为准，保证放大后仍是一屏不滚动。页内的 100dvh 须除以 --shell-zoom。
-const isDesktop = useMediaQuery('(min-width: 1024px)')
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
 const shellZoom = computed(() => {
   if (route.path !== '/' || !isDesktop.value) return 1
