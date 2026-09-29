@@ -57,9 +57,9 @@ describe('authentication architecture behavior', () => {
     const metaOf = (path: string) => router.getRoutes().find((route) => route.path === path)?.meta ?? {}
 
     expect(router.getRoutes().some((route) => route.path === '/login')).toBe(false)
-    expect(router.resolve('/login').matched).toHaveLength(0)
+    expect(router.resolve('/login').name).toBe('not-found')
     expect(router.getRoutes().some((route) => route.path === '/forgot-password')).toBe(false)
-    expect(router.resolve('/forgot-password?redirect=/').matched).toHaveLength(0)
+    expect(router.resolve('/forgot-password?redirect=/').name).toBe('not-found')
     expect(metaOf('/register')).toMatchObject({ guestOnly: true })
   })
 

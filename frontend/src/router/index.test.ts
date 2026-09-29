@@ -1,23 +1,56 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteLocationNormalized } from 'vue-router'
 import router from './index'
 import { getRoutePolicyDecision } from '@/features/navigation/routePolicy'
 import { NAV_ITEMS } from '@/features/navigation/navigationModel'
 
+const { requestPasswordReset } = vi.hoisted(() => ({ requestPasswordReset: vi.fn() }))
+vi.mock('@/composables/useLoginPrompt', () => ({
+  useLoginPrompt: () => ({ requestPasswordReset, requestLogin: vi.fn(), rememberLoginRedirect: vi.fn() }),
+}))
+vi.mock('@/views/DashboardView.vue', () => ({ default: { template: '<div />' } }))
+
 describe('modal-only login route contract', () => {
-  it('/login is unmatched because login is rendered as a modal', () => {
+  it('/login has no page of its own because login is rendered as a modal', () => {
     const resolved = router.resolve('/login')
 
     expect(router.getRoutes().some((route) => route.path === '/login')).toBe(false)
-    expect(resolved.matched).toHaveLength(0)
+    expect(resolved.name).toBe('not-found')
+  })
+})
+
+// 契约：未知路径一律回首页（replace，不留历史）；/forgot-password 仍先由全局守卫
+// 打开重置密码弹框，不被兜底路由吞掉
+describe('unknown path fallback contract', () => {
+  afterEach(async () => {
+    requestPasswordReset.mockClear()
+    await router.replace('/')
+  })
+
+  it.each(['/no-such-page', '/papers', '/a/b/c?x=1'])('navigating to %s lands on home', async (path) => {
+    await router.push(path)
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('keeps known pages reachable', async () => {
+    await router.push('/websites')
+    expect(router.currentRoute.value.name).toBe('recommended-websites')
+  })
+
+  it('still opens the password-reset prompt for /forgot-password', async () => {
+    await router.push('/forgot-password?redirect=/projects')
+    expect(requestPasswordReset).toHaveBeenCalledWith('/projects')
+    expect(router.currentRoute.value.fullPath).toBe('/')
   })
 })
 
 // 契约：微信公众号页与对话聊天页已整体移除 —— 路由不再匹配、导航不再出现
 describe('removed pages contract', () => {
-  it.each(['/wechat', '/chat'])('route %s is gone', (path) => {
-    expect(router.resolve(path).matched).toHaveLength(0)
+  it.each(['/wechat', '/chat'])('route %s is gone and falls back to home', async (path) => {
+    expect(router.resolve(path).name).toBe('not-found')
     expect(NAV_ITEMS.some((n) => n.to === path)).toBe(false)
+    await router.push(path)
+    expect(router.currentRoute.value.fullPath).toBe('/')
   })
 })
 

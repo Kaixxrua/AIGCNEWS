@@ -153,6 +153,16 @@ const router = createRouter({
         },
       ],
     },
+
+    // ── 兜底：未知路径（含已下线的 /wechat、/chat 旧书签）回首页 ──
+    // 用 beforeEnter 而不用 redirect：路由级 redirect 先于全局 beforeEach 生效，
+    // 会吞掉 /forgot-password 这类没有独立页面、由守卫按路径处理的入口
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: LayoutView,
+      beforeEnter: () => ({ path: '/', replace: true }),
+    },
   ],
 })
 
