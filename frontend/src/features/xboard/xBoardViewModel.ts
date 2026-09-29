@@ -1,4 +1,5 @@
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
+import { pageHostname, X_MEDIA_IMG_PATH, xMediaOrigin } from '@/features/xboard/xMediaCdn'
 import { distributeColumns, estimateTextLines } from '@/utils/masonry'
 export { distributeColumns }
 
@@ -284,7 +285,6 @@ export const displayQuoteText = (quote: NonNullable<TopDoc['quote']>, locale: st
 export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>, locale: string): TweetTextSegment[] =>
   splitTextSegments(displayQuoteText(quote, locale))
 
-const X_MEDIA_IMG_PATH = '/api/media/x/img'
 const X_MEDIA_POSTER_PATH = '/api/media/x/poster'
 const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.com'])
 
@@ -306,13 +306,17 @@ const isTwimgUrl = (url: string): boolean => {
  * （$arg_* 不解码、rewrite 不解变量、无 lua/njs），只能绕家里全链路
  * 回源（实测 MISS 6.6s/56KB）；路径段经 nginx 请求解析原生解码，白名单
  * 正则直接匹配主机字面量，边缘节点可直连 twimg（东京→twimg ~47ms），
- * 且路径以 .jpg/.mp4 结尾可被 Cloudflare 默认规则边缘缓存（查询形态
- * 恒 DYNAMIC）。后端 /media/x/img 端点与查询形态同一校验与转发。
+ * 且路径以 .jpg/.mp4 结尾可被 CDN 按路径缓存（查询形态必回源）。
+ * 后端 /media/x/img 端点与查询形态同一校验与转发。
+ *
+ * pbs.twimg.com 图片在主入口改走独立媒体域名（见 X_MEDIA_CDN_ORIGIN），
+ * 路径与同源形态逐字节一致，边缘缓存与后端预热共用同一键。
  */
 export const proxiedMediaUrl = (url: string): string => {
   if (!isTwimgUrl(url)) return url
   const parsed = new URL(url) // isTwimgUrl 已校验可解析
-  return `${X_MEDIA_IMG_PATH}/${parsed.hostname}${parsed.pathname}${parsed.search}`
+  const path = `${X_MEDIA_IMG_PATH}/${parsed.hostname}${parsed.pathname}${parsed.search}`
+  return `${xMediaOrigin(parsed.hostname, pageHostname())}${path}`
 }
 
 /** 视频封面：服务端抽帧端点（仅 twimg 视频 URL 有意义，其余返回空串由模板兜底）。 */

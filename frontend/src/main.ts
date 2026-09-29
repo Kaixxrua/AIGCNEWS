@@ -8,10 +8,13 @@ import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
 import { installAppTheme } from './theme'
+import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
 
 const app = createApp(App)
 installI18n()
 installAppTheme()
+// X 图片 CDN 加载失败退回同源；须在首批图片请求前挂上捕获监听。
+installXMediaCdnFallback()
 const pinia = createPinia()
 
 app.use(pinia)
