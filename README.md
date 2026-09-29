@@ -4,14 +4,15 @@ AIGCNEWS 私有配套仓（不随开源仓库发布）。承载两类内容：
 
 1. **源插件包 `aigcnews_private/`** —— 开源版剥离的敏感采集实现：
    - `sources/x_transport.py`：X/Twitter 传输层（twitter-cli 内部
-     GraphQL、cookie 凭据池、响应解析补丁）；
-   - `sources/wechat/` + `sources/wechat_sogou/`：微信公众号扫码登录、
-     mp.weixin.qq.com 交互、搜狗微信公开索引发现；
-   - `sources/wechat_facade.py`：微信实现门面（loader 的属性面契约）。
+     GraphQL、cookie 凭据池、响应解析补丁）。
 
    公共仓只保留契约（`backend/app/services/source_plugins/`），经
-   `x_source_enabled` / `wechat_source_enabled` 开关门控加载本包；
-   插件缺失时对应路由 404、采集轮自动跳过（fail closed）。
+   `x_source_enabled` 开关门控加载本包；插件缺失时对应路由 404、
+   采集轮自动跳过（fail closed）。
+
+   微信公众号链路已于 2026-09-29 整体下线：公共仓删除页面/接口/契约，
+   本仓同步删除 `sources/wechat/`、`sources/wechat_sogou/`、
+   `wechat_facade.py` 及其测试；数据库 wechat_* 表仅存历史数据。
 
 2. **部署 overlay `deploy/`** —— 宿主机专用编排与 nginx 私有面
    （sub2api 网络、PriceAI 姊妹服务、插件包 bind-mount）。
@@ -56,12 +57,11 @@ twitter-cli 时按上式重装。
 
 ```bash
 X_SOURCE_ENABLED=true
-WECHAT_SOURCE_ENABLED=true
 ```
 
 接线顺序兼容：旧镜像（仓库内含过渡期实现）+ 新 overlay 时 loader
 私有优先候选命中挂载包；新镜像（已删除仓库内实现）+ 旧 overlay 时
-loader 返回 None，X/微信链路优雅降级（路由 404、采集跳过），不炸。
+loader 返回 None，X 链路优雅降级（路由 404、采集跳过），不炸。
 
 ## 测试
 
@@ -71,6 +71,6 @@ loader 返回 None，X/微信链路优雅降级（路由 404、采集跳过）�
 backend/.venv/bin/python -m pytest /home/kaixxrua/aigcnews_private/tests
 ```
 
-覆盖：X 传输层/解析补丁（test_x_source_contracts.py）、微信登录/
-同步/关注/搜狗链路（test_wechat_*.py）、私有实现与公共契约的身份
-同一性与 loader 默认候选加载（test_source_plugin_identity.py）。
+覆盖：X 传输层/解析补丁（test_x_source_contracts.py）、私有实现与
+公共契约的身份同一性与 loader 默认候选加载
+（test_source_plugin_identity.py）。
