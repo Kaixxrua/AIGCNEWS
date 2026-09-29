@@ -64,11 +64,12 @@ const columnCount = computed(() =>
 // 断点变化都会改变它的宽度。
 const MASONRY_GAP_PX = 16
 const masonryWidth = ref(0)
+const masonryGap = ref(MASONRY_GAP_PX)
 const tweetTextMetrics = ref<TweetTextMetrics | undefined>()
 let mainResizeObserver: ResizeObserver | null = null
 const masonryColumnWidth = computed(() => {
   const count = columnCount.value
-  const width = (masonryWidth.value - MASONRY_GAP_PX * (count - 1)) / count
+  const width = (masonryWidth.value - masonryGap.value * (count - 1)) / count
   return width > 0 ? width : 280 // 首帧未测量时的回退列宽
 })
 const masonryColumns = computed(() => distributeColumns(
@@ -84,11 +85,14 @@ const mainEl = ref<HTMLElement | null>(null)
 // 主栏宽度随断点、滚动区边距（移动端 12px、桌面 24px）与侧栏变化，必须实测。
 // 桌面漫画版放大了推文正文，字号与行高经 --tweet-text-size/--tweet-text-line
 // 声明在主栏上，估高按实际排版折行；未声明时回落默认 text-sm leading-5。
+// 列间距同理经 --masonry-gap 声明（瀑布流网格也读它），未声明时 16px。
 const measureMasonry = () => {
   const el = mainEl.value
   if (!el) return
   masonryWidth.value = el.clientWidth
   const style = window.getComputedStyle(el)
+  const gap = parseFloat(style.getPropertyValue('--masonry-gap'))
+  masonryGap.value = gap > 0 ? gap : MASONRY_GAP_PX
   const fontSize = parseFloat(style.getPropertyValue('--tweet-text-size'))
   const lineHeight = parseFloat(style.getPropertyValue('--tweet-text-line'))
   tweetTextMetrics.value = fontSize > 0 && lineHeight > 0 ? { fontSize, lineHeight } : undefined
@@ -239,29 +243,6 @@ onBeforeUnmount(() => {
           <p class="mt-0.5 text-sm text-stone-400">{{ t('xboard.subtitle') }}</p>
         </div>
         <div class="xboard-header-actions flex flex-wrap items-center gap-2">
-          <button
-            class="btn-secondary text-xs"
-            :class="{ 'xboard-mode-active': isToday }"
-            :aria-pressed="isToday"
-            @click="showRecent"
-          >
-            {{ t('xboard.recent24h') }}
-          </button>
-          <label class="flex items-center gap-2 text-xs text-stone-400">
-            {{ t('xboard.dateLabel') }}
-            <input
-              type="date"
-              class="input py-1.5 text-xs"
-              :class="{ 'xboard-mode-active': !isToday }"
-              :value="selectedDate"
-              :max="today"
-              @change="onDateChange(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <button class="btn-secondary xboard-refresh" :disabled="loading" @click="refresh">
-            <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
-          </button>
           <!-- 关注账号侧栏开关：收起时仍显示已关注数，筛选状态一眼可见 -->
           <button
             v-if="availableAccounts.length"
@@ -275,6 +256,30 @@ onBeforeUnmount(() => {
             <Users class="h-3.5 w-3.5" />
             {{ t('xboard.followAccounts') }}
             <span class="xboard-follow-count">{{ followedAccounts.length }}/{{ availableAccounts.length }}</span>
+          </button>
+          <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮 -->
+          <button
+            class="btn-secondary xboard-recent text-xs"
+            :class="{ 'xboard-mode-active': isToday }"
+            :aria-pressed="isToday"
+            @click="showRecent"
+          >
+            {{ t('xboard.recent24h') }}
+          </button>
+          <label class="xboard-date flex items-center gap-2 text-xs text-stone-400">
+            <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
+            <input
+              type="date"
+              class="input py-1.5 text-xs"
+              :class="{ 'xboard-mode-active': !isToday }"
+              :value="selectedDate"
+              :max="today"
+              @change="onDateChange(($event.target as HTMLInputElement).value)"
+            />
+          </label>
+          <button class="btn-secondary xboard-refresh" :disabled="loading" @click="refresh">
+            <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
           </button>
         </div>
       </div>
@@ -290,7 +295,7 @@ onBeforeUnmount(() => {
           :aria-label="t('xboard.followAccounts')"
         >
           <div class="flex items-start justify-between gap-3">
-            <div>
+            <div class="xboard-follow-heading">
               <h2 class="text-sm font-bold text-stone-600">{{ t('xboard.followAccounts') }}</h2>
               <p class="mt-0.5 text-2xs text-stone-400">
                 {{ t('xboard.followSummary', { selected: followedAccounts.length, total: availableAccounts.length }) }}
@@ -464,7 +469,7 @@ onBeforeUnmount(() => {
                 />
 
                 <!-- 文字区：点击/回车放大详情（不跳走）；URL 段仍是真链接可直跳 -->
-                <div class="px-4 py-3">
+                <div class="tweet-body px-4 py-3">
                   <div
                     role="button"
                     tabindex="0"
@@ -691,7 +696,7 @@ onBeforeUnmount(() => {
 .masonry-grid {
   display: grid;
   grid-template-columns: repeat(v-bind(columnCount), minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--masonry-gap, 1rem);
   align-items: start;
 }
 

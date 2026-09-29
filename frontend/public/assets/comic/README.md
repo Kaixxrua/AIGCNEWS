@@ -111,3 +111,18 @@ The recommended websites page (`/websites`, "websites-C" concept) uses the same 
 - `web-search.webp`, `web-select.webp`: the search box and the category select, a 2.4px line on an ink block, with a pale yellow corner at the top left (specked on the search box, pen-hatched on the select), faint specks at the lower left and a grey screen at the lower right. Neither has a fill: form controls can't carry a pseudo-element, so the frame is the control's own `border-image` and its background paints the paper and the icon.
 
 Together they are about 215 KB. The `-night` files swap the fills for the dark theme's paper (the open tab and the slips for dimmer copies of their colours), the ink for pale grey and the blocks for black, and soften the dots.
+
+The X board (`/x`, "x-C" concept) uses the same generator. The tick in the account chips and the pager's chevrons are small inline SVGs.
+
+- `x-card.webp`: a tweet card, a 2px ink line pressed into a solid ink block to the lower right, with a triangle of small mint-teal dots off the lower-right corner and a clump of heavier black dots set into it.
+- `x-panel.webp`: the followed-accounts panel, a lighter line at the top and left and a heavy ink block to the lower right with a streak of deep blue in it; orange halftone rises off the lower right (with a black clump) and runs on along the foot, and a few orange specks sit under the top right.
+- `x-pager.webp`: the pager strip, and the admin bar and the empty state: a pale grey line round paper, rounded 7px.
+- `x-btn.webp`, `x-btn-off.webp`: the plain buttons (refresh, the accounts switch, the panel's two), a 2px ink line on a solid block; the disabled one a grey line on a grey step.
+- `x-seg.webp`: one segment of the window switch, a navy line with a soft grey step; the date segment laps over the end of the first.
+- `x-pg.webp`, `x-pg-off.webp`: the pager's buttons, a navy line heavier along the foot and right end; the disabled one pale grey.
+- `x-ib.webp`: a card's icon buttons, a thin navy line with a grey hairline under it.
+- `x-score.webp`: the score, a lime pill in ink, heavier along its foot, with a flick off its top right corner.
+- `x-chip.webp`: an account chip, a thin line with an ink bracket down its right end that runs on past its top and foot.
+- `x-badge.webp`: the panel title's mark, a yellow ink blot with a pen-stroked check.
+
+Only the card, the panel, the pager strip and the score carry a fill; the buttons, the segments and the chips paint their own face (white, lime when chosen) and take the image as their `border-image`. Together they are about 110 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and soften the dots.
