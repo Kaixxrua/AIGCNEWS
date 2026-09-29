@@ -3,7 +3,8 @@
 覆盖：
   - 纯函数：item 渲染/跳过规则、回链策略（arxiv 站内、其余原文）、
     全文模式追加译文、公开条目优先中文译文截断（X 源标题亦用译文）、
-    脏时间串容错、member source 参数解析、
+    脏时间串容错、北京时间日期条目在 UTC 零点前入库取入库时间、
+    跨形态时间串按时刻排序、member source 参数解析、
     项目库热榜条目 → feed 行的字段映射；
   - 路由：公开综合/单源 feed 的缓存头与归并排序、非法源 404、
     github 源由站内今日热榜供稿（热榜不可用/为空时回退 documents 池）、
@@ -43,6 +44,7 @@ from backend.app.api.routes_feed import (
     _parse_member_sources,
     _parse_published_at,
     _project_to_feed_row,
+    _sort_rows_newest_first,
     build_briefing_feed_item,
     build_feed_item,
     build_rss_xml,
@@ -136,6 +138,29 @@ def test_build_feed_item_falls_back_to_created_at_when_both_dates_missing() -> N
     item = build_feed_item(row, "https://aigcnews.cn")
     assert item is not None
     assert "<pubDate>Tue, 18 Aug 2026 03:00:00 +0000</pubDate>" in item
+
+
+def test_build_feed_item_uses_ingest_time_for_beijing_dated_rows_before_utc_midnight() -> None:
+    # DailyHot 按北京时间定日期：北京 05:07 入库的 09-29 条目，日期零点（UTC，
+    # 即北京 08:00）晚于入库时刻 → pubDate 取入库时间
+    row = _doc("d1", source="dailyhot", published_at="")
+    row["published_date"] = "2026-09-29"
+    row["created_at"] = "2026-09-28T21:07:10.009719+00:00"
+    item = build_feed_item(row, "https://aigcnews.cn")
+    assert item is not None
+    assert "<pubDate>Mon, 28 Sep 2026 21:07:10 +0000</pubDate>" in item
+
+    # 日期零点之后入库：仍按业务日期零点，行为不变
+    row["created_at"] = "2026-09-29T06:00:00+00:00"
+    later = build_feed_item(row, "https://aigcnews.cn")
+    assert later is not None
+    assert "<pubDate>Tue, 29 Sep 2026 00:00:00 +0000</pubDate>" in later
+
+    # 入库远早于业务日期（榜单重上榜仓）：不回退到首次入库时间
+    row["created_at"] = "2026-09-22T19:02:10+00:00"
+    reappeared = build_feed_item(row, "https://aigcnews.cn")
+    assert reappeared is not None
+    assert "<pubDate>Tue, 29 Sep 2026 00:00:00 +0000</pubDate>" in reappeared
 
 
 def test_build_feed_item_escapes_xml_and_renders_categories() -> None:
@@ -416,6 +441,34 @@ def test_rss_window_filters_old_published_date_even_when_recently_ingested() -> 
     )
 
     assert [row["id"] for row in filtered] == ["recent", "fallback"]
+
+
+def test_rss_window_keeps_beijing_dated_rows_ingested_before_utc_midnight() -> None:
+    # 北京时间 06:00：北京日期 09-29 的条目已入库。按日期 UTC 零点（北京 08:00）
+    # 会被当作未来条目过滤掉，要到北京 08:00 才出现在 feed
+    now = datetime(2026, 9, 28, 22, 0, tzinfo=timezone.utc)
+    early = _doc("early", source="dailyhot", published_at="")
+    early["published_date"] = "2026-09-29"
+    early["created_at"] = "2026-09-28T21:07:10+00:00"
+
+    filtered = _filter_rows_to_window([early], window=timedelta(hours=48), now=now)
+
+    assert [row["id"] for row in filtered] == ["early"]
+
+
+def test_sort_rows_orders_mixed_time_formats_by_instant() -> None:
+    # 带 +08:00 偏移的串词法上大于同日 UTC 串，裸日期词法上小于同日任何时间串；
+    # 排序须按解析后的时刻。同一时刻的行保持输入相对序（库内已按分数排好）。
+    east = _doc("east", source="news", published_at="2026-09-29T07:00:00+08:00")
+    utc = _doc("utc", source="x", published_at="2026-09-29T01:00:00+00:00")
+    first_hn = _doc("hn-1", source="hackernews", published_at="")
+    first_hn["published_date"] = "2026-09-29"
+    second_hn = _doc("hn-2", source="hackernews", published_at="")
+    second_hn["published_date"] = "2026-09-29"
+
+    ordered = _sort_rows_newest_first([east, first_hn, second_hn, utc])
+
+    assert [row["id"] for row in ordered] == ["utc", "hn-1", "hn-2", "east"]
 
 
 def test_public_feed_merges_sources_newest_first_with_cache_headers() -> None:

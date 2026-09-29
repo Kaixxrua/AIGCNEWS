@@ -195,13 +195,32 @@ def _parse_published_at(value: Any) -> datetime | None:
     return parsed
 
 
-def _row_published_value(row: dict[str, Any]) -> str:
-    """跨源统一时间口径：X 优先 published_at，其他源回退业务日期/入库时间。"""
+# 只有日期的业务日期按 UTC 零点解析，但各源定日期的时区不一：HN/Techmeme RSS
+# 为 UTC、Product Hunt 为太平洋时间，DailyHot 与 Techmeme 主页补充条目为北京时间。
+# 北京时间 0–8 点入库的条目，其日期零点（UTC）晚于入库时刻，会被窗口当作未来
+# 条目藏到 8 点；这类条目改用入库时间。容差 8 小时即北京时间领先 UTC 的幅度，
+# 入库远早于业务日期的行（如 github 榜单重上榜仓）仍按业务日期零点。
+_DATE_ONLY_VALUE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_BUSINESS_DATE_LEAD_TOLERANCE = timedelta(hours=8)
+
+
+def _row_published(row: dict[str, Any]) -> datetime | None:
+    """跨源统一时间口径：X 优先 published_at，其他源回退业务日期/入库时间。
+
+    只有日期、且入库时间早于该日期 UTC 零点不超过 8 小时时取入库时间（见上）。
+    """
     for field in ("published_at", "published_date", "created_at"):
         value = str(row.get(field) or "").strip()
-        if value and _parse_published_at(value) is not None:
-            return value
-    return ""
+        published = _parse_published_at(value)
+        if published is None:
+            continue
+        if field != "created_at" and _DATE_ONLY_VALUE.fullmatch(value):
+            created_value = str(row.get("created_at") or "").strip()
+            ingested = None if _DATE_ONLY_VALUE.fullmatch(created_value) else _parse_published_at(created_value)
+            if ingested is not None and published - _BUSINESS_DATE_LEAD_TOLERANCE <= ingested < published:
+                return ingested
+        return published
+    return None
 
 
 def _item_link(row: dict[str, Any], base_url: str) -> str | None:
@@ -304,7 +323,7 @@ def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -
         description = f"{description}\n\n{hook}" if description else hook
     categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
-    published = _parse_published_at(_row_published_value(row))
+    published = _row_published(row)
     pub_date = f"<pubDate>{format_datetime(published, usegmt=False)}</pubDate>" if published else ""
     return (
         "<item>"
@@ -343,14 +362,16 @@ def build_rss_xml(
 
 
 def _sort_rows_newest_first(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """按跨源有效时间新到旧排序；脏时间串排尾（保持原相对序）。"""
+    """按跨源有效时间新到旧排序；脏时间串排尾（保持原相对序）。
 
-    def key(row: dict[str, Any]) -> tuple[int, str]:
-        published_value = _row_published_value(row)
-        if not published_value:
-            return (0, "")
-        # 词法可比的 ISO 串可直接倒序比较，无需回传 datetime。
-        return (1, published_value)
+    按解析后的时刻比较：各源时间串形态不一（裸日期、带/不带时区偏移），
+    词法序只在同形态内可比。
+    """
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+
+    def key(row: dict[str, Any]) -> tuple[bool, datetime]:
+        published = _row_published(row)
+        return (published is not None, published or floor)
 
     return sorted(rows, key=key, reverse=True)
 
@@ -371,7 +392,7 @@ def _filter_rows_to_window(
     return [
         row
         for row in rows
-        if (published := _parse_published_at(_row_published_value(row))) is not None
+        if (published := _row_published(row)) is not None
         and cutoff <= published <= now
     ]
 
