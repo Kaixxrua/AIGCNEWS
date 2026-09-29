@@ -320,6 +320,8 @@ const handleChipClick = (chip: ProjectChip) => {
 const { dismissed: mcpPromoDismissed, dismiss: dismissMcpPromo, dismissForWeek: dismissMcpPromoForWeek } = useMcpPromoDismissed()
 const mcpPromoExamples = mcpExamplesByIds(MCP_PROMO_EXAMPLE_IDS)
 const mcpEmptyStateExamples = mcpExamplesByIds(MCP_EMPTY_STATE_EXAMPLE_IDS)
+// 搜索/筛选无结果时空状态已列出同组 MCP 示例，推广卡让位，避免同屏两份相同示例
+const showEmptyStateMcp = computed(() => !requiresPersonalLogin.value && !loading.value && !errorMsg.value && projects.value.length === 0 && (!!searchQuery.value || hasActiveFilter.value))
 // 复刻 handleChipClick 末尾分支：双赋值跳过 280ms 防抖，立即触发站内搜索演示
 const runMcpExampleDemo = (query: string) => {
   if (source.value !== 'all') return
@@ -512,7 +514,7 @@ onBeforeUnmount(stopViewReads)
       <template v-if="isWebsiteOnlyView" #source-tabs><WebsiteCollectionTabs active="personal" /></template>
     </ProjectFiltersPanel>
 
-    <details v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin" class="projects-mcp-promo glass-card">
+    <details v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin && !showEmptyStateMcp" class="projects-mcp-promo glass-card">
       <summary class="projects-mcp-promo__summary">
         <span class="projects-mcp-promo__title">{{ t('projects.mcpPromo.title') }}</span>
         <span class="projects-mcp-promo__expand">{{ t('projects.mcpPromo.expand') }}</span>
@@ -589,7 +591,7 @@ onBeforeUnmount(stopViewReads)
       <p class="projects-kicker">EMPTY COLLECTION</p>
       <h2>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchTitle' : isWebsiteOnlyView ? 'projects.emptyWebsiteTitle' : source === 'favorites' ? 'projects.emptyFavoritesTitle' : 'projects.emptyLibraryTitle') }}</h2>
       <p>{{ t(searchQuery || hasActiveFilter ? 'projects.emptyMatchHint' : isWebsiteOnlyView ? 'projects.emptyWebsiteHint' : source === 'favorites' ? 'projects.emptyFavoritesHint' : 'projects.emptyLibraryHint') }}</p>
-      <div v-if="searchQuery || hasActiveFilter" class="empty-state__mcp">
+      <div v-if="showEmptyStateMcp" class="empty-state__mcp">
         <p class="empty-state__mcp-lead">{{ t('projects.mcpEmpty.lead') }}</p>
         <McpPromptExampleList
           :examples="mcpEmptyStateExamples"

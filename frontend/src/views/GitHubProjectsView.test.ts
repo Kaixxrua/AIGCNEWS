@@ -10,7 +10,7 @@ import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
 import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
-import { MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
+import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
 
 const controllerSpy = vi.hoisted(() => vi.fn())
@@ -528,6 +528,11 @@ describe('GitHubProjectsView dialog orchestration', () => {
 })
 
 describe('GitHubProjectsView MCP guidance', () => {
+  // 推广卡的常态是有结果的列表；无结果搜索由下方专门用例覆盖
+  beforeEach(() => {
+    controller().projects.value = [{ full_name: 'owner/one' }]
+  })
+
   it('shows the MCP promo card with the promo example subset by default', async () => {
     const wrapper = await mountView()
 
@@ -630,6 +635,29 @@ describe('GitHubProjectsView MCP guidance', () => {
     expect(init.routeState.searchQuery.value).toBe('RAG 框架')
     expect(init.routeState.debouncedQuery.value).toBe('RAG 框架')
     expect(controller().loadProjects).toHaveBeenCalled()
+  })
+
+  it('yields the promo card to the empty-state examples when a search finds nothing', async () => {
+    controller().projects.value = []
+    const wrapper = await mountView()
+    controllerSpy.mock.calls[0]![0].routeState.searchQuery.value = 'aihot'
+    await nextTick()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    const lists = wrapper.findAllComponents(McpPromptExampleList)
+    expect(lists).toHaveLength(1)
+    expect(lists[0]!.props('examples').map((example: { id: string }) => example.id)).toEqual([...MCP_EMPTY_STATE_EXAMPLE_IDS])
+  })
+
+  it('keeps the promo card while an empty search is still loading', async () => {
+    controller().projects.value = []
+    controller().loading.value = true
+    const wrapper = await mountView()
+    controllerSpy.mock.calls[0]![0].routeState.searchQuery.value = 'aihot'
+    await nextTick()
+
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(true)
+    expect(wrapper.find('.empty-state').exists()).toBe(false)
   })
 })
 
