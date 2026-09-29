@@ -10,6 +10,7 @@ from backend.app.core import scheduler
 from backend.app.services.ingestion import (
     github_fast_lane as fast_lane,
     github_project_enricher as enricher,
+    github_project_logos as logos,
     github_project_metrics_service as metrics,
 )
 
@@ -147,6 +148,7 @@ class FastLaneSchedulerJobTests(unittest.TestCase):
                 semantic_sources=overrides.get("semantic_sources", MagicMock()),
                 documents=None,
                 github_lock=lock,
+                logo_repository=overrides.get("logo_repository"),
             )
 
         return asyncio.run(go())
@@ -268,17 +270,116 @@ class FastLaneSchedulerJobTests(unittest.TestCase):
             self.assertTrue(self._run(lock))
         self.assertFalse(lock.locked())
 
+    def test_fetches_a_small_logo_batch_after_enrichment_under_the_lock(self) -> None:
+        lock = asyncio.Lock()
+        logo_repository = object()
+        order: list[str] = []
+
+        async def enrich(repository):
+            order.append("enrich")
+            return {}
+
+        def refresh(repository, **kwargs):
+            self.assertTrue(lock.locked())
+            self.assertIs(repository, logo_repository)
+            order.append("logos")
+            return {"selected": 1, "found": 1}
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", return_value={"hits": 1, "readme_candidates": 0}),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects", side_effect=enrich),
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+            patch.object(logos, "refresh_project_logos", side_effect=refresh) as refresh_logos,
+        ):
+            self.assertTrue(self._run(lock, logo_repository=logo_repository))
+
+        self.assertEqual(order, ["enrich", "logos"])
+        kwargs = refresh_logos.call_args.kwargs
+        # 小批量、短预算：绝不能退化成 limit=0 的整队排空
+        self.assertEqual(kwargs["limit"], scheduler._GITHUB_FAST_LANE_LOGO_LIMIT)
+        self.assertGreater(kwargs["limit"], 0)
+        self.assertEqual(kwargs["max_seconds"], scheduler._GITHUB_FAST_LANE_LOGO_SECONDS)
+        self.assertFalse(lock.locked())
+
+    def test_fetches_logos_even_when_an_enrichment_batch_is_running(self) -> None:
+        lock = asyncio.Lock()
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", return_value={"hits": 1, "readme_candidates": 0}),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects") as top_up,
+            patch.object(enricher, "github_enrichment_batch_running", return_value=True),
+            patch.object(logos, "refresh_project_logos", return_value={"selected": 0}) as refresh_logos,
+        ):
+            self.assertTrue(self._run(lock, logo_repository=object()))
+
+        top_up.assert_not_called()
+        refresh_logos.assert_called_once()
+
+    def test_logo_failure_does_not_fail_the_round(self) -> None:
+        lock = asyncio.Lock()
+
+        async def enrich(repository):
+            return {}
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", return_value={"hits": 1, "readme_candidates": 0}),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects", side_effect=enrich),
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+            patch.object(logos, "refresh_project_logos", side_effect=RuntimeError("github down")),
+        ):
+            self.assertTrue(self._run(lock, logo_repository=object()))
+        self.assertFalse(lock.locked())
+
+    def test_logo_timeout_releases_the_lock_without_failing_the_round(self) -> None:
+        lock = asyncio.Lock()
+
+        async def enrich(repository):
+            return {}
+
+        async def hang(*args, **kwargs):
+            await asyncio.sleep(3600)
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", return_value={"hits": 1, "readme_candidates": 0}),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects", side_effect=enrich),
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+            patch.object(logos, "refresh_project_logos"),
+            patch.object(scheduler, "_GITHUB_FAST_LANE_LOGO_TIMEOUT", 0.01),
+        ):
+            real_to_thread = asyncio.to_thread
+
+            def to_thread(func, *args, **kwargs):
+                if func is logos.refresh_project_logos:
+                    return hang()
+                return real_to_thread(func, *args, **kwargs)
+
+            # new= 而非 side_effect：patch 异步函数默认生成 AsyncMock，会把协程再包一层
+            with patch.object(scheduler.asyncio, "to_thread", new=to_thread):
+                self.assertTrue(self._run(lock, logo_repository=object()))
+        self.assertFalse(lock.locked())
+
+    def test_discovery_failure_skips_logos(self) -> None:
+        lock = asyncio.Lock()
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", side_effect=RuntimeError("boom")),
+            patch.object(logos, "refresh_project_logos") as refresh_logos,
+        ):
+            self.assertFalse(self._run(lock, logo_repository=object()))
+        refresh_logos.assert_not_called()
+
 
 class FastLaneShareTests(unittest.IsolatedAsyncioTestCase):
     """两小时指标刷新开窗期间快车道与之并行的契约。"""
 
-    async def _run_shared(self, lock: asyncio.Lock, share: scheduler.GitHubFastLaneShare) -> bool:
+    async def _run_shared(
+        self, lock: asyncio.Lock, share: scheduler.GitHubFastLaneShare, logo_repository=None
+    ) -> bool:
         return await scheduler._run_github_fast_lane_job(
             repository=MagicMock(),
             enrichment=MagicMock(),
             semantic_sources=MagicMock(),
             github_lock=lock,
             fast_lane_share=share,
+            logo_repository=logo_repository,
         )
 
     async def test_runs_alongside_refresh_while_window_is_open_without_enrichment(self) -> None:
@@ -311,6 +412,29 @@ class FastLaneShareTests(unittest.IsolatedAsyncioTestCase):
         top_up.assert_not_called()
         self.assertFalse(share.participant.locked())
         # 绝不释放刷新持有的 github 锁
+        self.assertTrue(lock.locked())
+
+    async def test_shared_run_fetches_logos_before_releasing_participant(self) -> None:
+        """刷新关窗要等 participant，快车道的 logo 必须在它放手之前抓完。"""
+        lock = asyncio.Lock()
+        await lock.acquire()
+        share = scheduler.GitHubFastLaneShare()
+        share.window.set()
+
+        def refresh(repository, **kwargs):
+            self.assertTrue(share.participant.locked())
+            return {"selected": 1}
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", return_value={"hits": 1, "readme_candidates": 0}),
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+            patch.object(fast_lane, "hydrate_github_readmes"),
+            patch.object(logos, "refresh_project_logos", side_effect=refresh) as refresh_logos,
+        ):
+            self.assertTrue(await self._run_shared(lock, share, logo_repository=object()))
+
+        refresh_logos.assert_called_once()
+        self.assertFalse(share.participant.locked())
         self.assertTrue(lock.locked())
 
     async def test_yields_when_refresh_holds_lock_but_window_is_closed(self) -> None:

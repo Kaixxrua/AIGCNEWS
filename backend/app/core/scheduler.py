@@ -85,6 +85,11 @@ _GITHUB_DAILY_PIPELINE_TIMEOUT = 2 * 3600
 # 新仓快车道：锁忙即让路（只等几秒防与刚释放的锁擦肩），发现+快照整体封顶
 _GITHUB_FAST_LANE_LOCK_WAIT = 5
 _GITHUB_FAST_LANE_TIMEOUT = 10 * 60
+# 快车道顺手补 logo：按热度先补榜上缺图的仓；小批量、短预算，
+# 线程超出封顶即放锁（逐仓 upsert 幂等），剩余留给下一轮或两小时刷新
+_GITHUB_FAST_LANE_LOGO_LIMIT = 20
+_GITHUB_FAST_LANE_LOGO_SECONDS = 30
+_GITHUB_FAST_LANE_LOGO_TIMEOUT = 90
 
 
 class GitHubFastLaneShare:
@@ -782,14 +787,16 @@ async def _run_github_fast_lane_job(
     documents: Any = None,
     github_lock: asyncio.Lock | None = None,
     fast_lane_share: GitHubFastLaneShare | None = None,
+    logo_repository: Any = None,
 ) -> bool:
-    """新仓快车道：发现近几天新建的越线仓库，建快照、算指标、补富化。
+    """新仓快车道：发现近几天新建的越线仓库，建快照、算指标、补富化与 logo。
 
     与其他 GitHub 任务共用 github 锁以免并发写同批行和叠加 Search 限速，
     但绝不排队：锁被每日流水线/热榜占着时本轮直接让路（这些任务本身就
     覆盖了发现或快照），15 分钟后下一轮再来。让路不算失败。两小时指标
     刷新抓快照期间例外：经 fast_lane_share 窗口与之并行，只做发现、快照、
-    算分与 README 补齐，富化留给刷新随后的补跑。
+    算分与 README 补齐，富化留给刷新随后的补跑。logo 两种情形都补一小批：
+    刷新常被部署重启打断而跑不到收尾的 logo 步，新上榜的仓不该一直缺图。
     """
     from backend.app.services.ingestion.github_project_enricher import (
         github_enrichment_batch_running,
@@ -871,14 +878,42 @@ async def _run_github_fast_lane_job(
                 _cancel_github_enrichment_safely()
             except Exception as exc:  # noqa: BLE001 - 非致命，记入日志即可
                 logger.error("[Scheduler] GitHub 快车道富化失败（非致命）: %s", exc, exc_info=True)
+
+        # 仍在持锁（或持 participant）期间补 logo：刷新关窗后要等快车道收尾
+        # 才跑自己的 logo 步，两边不会同时抓同一批仓
+        logos: Dict[str, int] | None = None
+        if logo_repository is not None:
+            from backend.app.services.ingestion.github_project_logos import (
+                refresh_project_logos,
+            )
+
+            try:
+                logos = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        refresh_project_logos,
+                        logo_repository,
+                        limit=_GITHUB_FAST_LANE_LOGO_LIMIT,
+                        interval=0.1,
+                        max_seconds=_GITHUB_FAST_LANE_LOGO_SECONDS,
+                    ),
+                    timeout=_GITHUB_FAST_LANE_LOGO_TIMEOUT,
+                )
+            except TimeoutError:
+                logger.error(
+                    "[Scheduler] GitHub 快车道 logo 补抓超过 %ds 封顶，已释放锁。",
+                    _GITHUB_FAST_LANE_LOGO_TIMEOUT,
+                )
+            except Exception:  # noqa: BLE001 - 非致命，快照与指标已落库
+                logger.exception("[Scheduler] GitHub 快车道 logo 补抓失败（非致命）")
     finally:
         held.release()
     logger.info(
-        "[Scheduler] GitHub 快车道完成：命中 %s，新入库 %s %s，富化：%s",
+        "[Scheduler] GitHub 快车道完成：命中 %s，新入库 %s %s，富化：%s，logo：%s",
         result.get("hits"),
         result.get("new_candidates"),
         result.get("new_repo_ids"),
         top_up,
+        logos,
     )
     return True
 
@@ -1455,6 +1490,8 @@ class ApplicationSchedulerRuntime:
         )
 
     async def _run_github_fast_lane_job(self) -> None:
+        from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
+
         await self._run_tracked(
             lambda: self._guarded(
                 "github_fast_lane",
@@ -1465,6 +1502,7 @@ class ApplicationSchedulerRuntime:
                     documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
                     fast_lane_share=self._github_fast_lane_share,
+                    logo_repository=PostgresGitHubLogoRepository(),
                 ),
             )
         )
