@@ -63,3 +63,15 @@ The register page (`/register`, "register-C" concept) follows the membership pag
 - `reg-login.webp`: the white "已有账号？登录" slip, leaning and tipped like the code slip, with a thicker block.
 
 Together they are about 80 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.
+
+The subscriptions page (`/subscriptions`, "subscriptions-C" concept) uses the same generator. Each panel frame is rendered at its size in the concept, so the patches along its band stay where they were drawn instead of stretching. The fields, selects, stats and the digest's result tiles are plain in the concept and stay CSS; the target, crown, bell and chevron icons are small SVGs in the stylesheet.
+
+- `sub-panel-hero.webp`, `sub-panel-watch.webp`, `sub-panel-plan.webp`, `sub-panel-digest.webp`, `sub-panel-auto.webp`: the five panels, a 2px ink line with a 5px band of ink to the lower right that turns green in patches, and sparse halftone in some corners.
+- `sub-tag.webp`: the section tag, a tilted slip washing from white to lime along its left and bottom edges on a hard ink block, with a white flap folded over the panel's corner; the page tilts it.
+- `sub-tag-tab.webp`: the plan tag in the hero, the same slip with a small tab where it wraps the panel's left line.
+- `sub-live.webp`: the "自动追踪中" slip beside it.
+- `sub-act.webp`: the row actions, white with a thin grey line pressed dark along the bottom and right.
+- `sub-chip-kind.webp`, `sub-chip.webp`, `sub-pill.webp`: the rule's kind slip (with a speech tail at the lower left), its source chip and the lime "追踪中" pill.
+- `sub-unlock.webp`: the unlocked band, lime under a ruled line that falls to the right.
+
+Together they are about 150 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots and the green patches.

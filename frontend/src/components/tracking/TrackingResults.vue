@@ -5,7 +5,10 @@ import { BookOpenText, Bot, Flame, Github, MessagesSquare, Newspaper, Radar } fr
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { TrackingItem } from '@/features/tracking/trackingModel'
 
-const props = defineProps<{ items: TrackingItem[]; truncated?: boolean; preview?: boolean }>()
+// collapsed: how many results show before "show all" (the desktop digest shows three, as its panel is drawn).
+const props = withDefaults(defineProps<{ items: TrackingItem[]; truncated?: boolean; preview?: boolean; collapsed?: number }>(), {
+  collapsed: 5,
+})
 const { t } = useI18n()
 const expanded = ref(false)
 watch(
@@ -14,7 +17,7 @@ watch(
     expanded.value = false
   },
 )
-const visible = computed(() => (expanded.value ? props.items : props.items.slice(0, 5)))
+const visible = computed(() => (expanded.value ? props.items : props.items.slice(0, props.collapsed)))
 // 桌面漫画版在每条结果前画来源图标（与首页来源一致）；窄屏不显示。
 const sourceIcons: Record<string, unknown> = {
   github: Github,
@@ -45,7 +48,7 @@ const sourceIcons: Record<string, unknown> = {
     </li>
   </ol>
   <button
-    v-if="items.length > 5"
+    v-if="items.length > collapsed"
     class="tracking-button mt-3"
     type="button"
     :aria-expanded="expanded"

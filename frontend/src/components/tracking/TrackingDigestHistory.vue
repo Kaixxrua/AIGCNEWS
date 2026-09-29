@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
 import type { TrackingDigest } from '@/features/tracking/trackingModel'
 import TrackingResults from './TrackingResults.vue'
 
 const props = defineProps<{ digests: TrackingDigest[] }>()
 const emit = defineEmits<{ viewed: [id: number] }>()
 const { t } = useI18n()
+const desktop = useMediaQuery('(min-width: 1024px)')
 const issueId = ref<number>()
 const digest = computed(() => props.digests.find((item) => item.id === issueId.value) ?? props.digests[0])
 const results = ref<HTMLElement>()
@@ -72,7 +74,7 @@ watch(
         {{ digest.issue_date }} · {{ t('tracking.deliveryStatus.' + digest.delivery_status) }}
       </p>
       <div :key="digest.id" ref="results">
-        <TrackingResults :items="digest.items" :truncated="digest.truncated" />
+        <TrackingResults :items="digest.items" :truncated="digest.truncated" :collapsed="desktop ? 3 : 5" />
       </div>
     </template>
   </div>
