@@ -196,15 +196,53 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     controller().docs.value = tweets
     const wrapper = await mountView()
 
+    // 关注账号侧栏默认收起：开关按钮显示已关注数，推文墙照常展示
+    const toggle = wrapper.get('.xboard-follow-toggle')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.text()).toContain('3/3')
+    expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(3)
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.xboard-follow-panel').attributes('id')).toBe(toggle.attributes('aria-controls'))
     const chips = wrapper.findAll('.xboard-account-chip')
     expect(chips.map((chip) => chip.text())).toEqual(['Alice Zhang', 'Anthropic', 'OpenAI'])
     expect(chips.every((chip) => (chip.find('input').element as HTMLInputElement).checked)).toBe(true)
-    expect(wrapper.findAll('article.tweet-card')).toHaveLength(3)
 
     await chips[0]!.find('input').trigger('change')
     await nextTick()
     expect(controller().toggleFollowAccount).toHaveBeenCalledWith('alice')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
+    expect(toggle.text()).toContain('2/3')
+
+    // 侧栏内收起：筛选结果保留
+    await wrapper.get('.xboard-follow-close').trigger('click')
+    expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
+  })
+
+  it('桌面端展开关注账号侧栏时推文墙少排一列', async () => {
+    setViewportWidth(1280)
+    controller().docs.value = makeTweets(12)
+    const wrapper = await mountView()
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(4)
+
+    await wrapper.get('.xboard-follow-toggle').trigger('click')
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(3)
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(12)
+
+    setViewportWidth(1024)
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(2)
+
+    // 窄屏侧栏叠在推文墙上方，列数不受影响
+    setViewportWidth(800)
+    window.dispatchEvent(new Event('resize'))
+    await nextTick()
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(2)
   })
 
   it('挂载即调用 load，并把当前页推文按估高贪心分进 JS 列', async () => {

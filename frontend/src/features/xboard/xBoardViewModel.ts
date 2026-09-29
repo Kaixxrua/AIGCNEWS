@@ -530,8 +530,14 @@ const estimateMediaHeight = (item: TweetMedia, widthPx: number): number => {
  * 正文折行（按字宽）、媒体真实宽高比、引用卡、链接卡、时间行。
  * 只需列间相对比较准确：媒体项用落库真实宽高比，是估高的主项。
  * 返回值已把列间距（16px）折进每卡，可直接累加比较。
+ * 正文默认按 text-sm leading-5 折行；页面放大正文时（桌面漫画版）传入实际字号与行高。
  */
-export const estimateTweetCardHeight = (doc: TopDoc, columnWidth: number, locale: string): number => {
+export interface TweetTextMetrics { fontSize: number; lineHeight: number }
+const DEFAULT_TWEET_TEXT: TweetTextMetrics = { fontSize: 14, lineHeight: 20 }
+
+export const estimateTweetCardHeight = (
+  doc: TopDoc, columnWidth: number, locale: string, text: TweetTextMetrics = DEFAULT_TWEET_TEXT,
+): number => {
   const cardWidth = Math.max(120, columnWidth)
   const bodyWidth = cardWidth - 34 // 卡边框 1px×2 + 正文块 px-4
   let height = 2 // 卡上下边框
@@ -544,7 +550,7 @@ export const estimateTweetCardHeight = (doc: TopDoc, columnWidth: number, locale
     for (const item of media) height += estimateMediaHeight(item, mediaWidth)
   }
   height += 24 // 正文块 py-3
-  height += estimateTextLines(displayTweetText(doc, locale), bodyWidth, 14) * 20 // text-sm leading-5
+  height += estimateTextLines(displayTweetText(doc, locale), bodyWidth, text.fontSize) * text.lineHeight
   const quote = tweetQuote(doc)
   if (quote) {
     const quoteInnerWidth = bodyWidth - 34 // mx-1 + 引用卡边框 + px-3

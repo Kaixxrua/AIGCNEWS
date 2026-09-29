@@ -253,4 +253,78 @@
   }
   #app .app-shell--comic-page .website-state h2 { font-size: 22px; font-style: italic; font-weight: 900; }
   #app .app-shell--comic-page .website-state p { color: var(--ink); font-size: 15px; line-height: 1.7; }
+  /* ── X board (x-C): masonry of comic cards; the followed-accounts filter is a side panel, closed at first. ── */
+  #app .app-shell--comic-page .xboard-page > div { gap: 18px; padding: 18px 28px calc(var(--peel-clear) + 28px); }
+  #app .app-shell--comic-page .xboard-header { align-items: flex-end; }
+  #app .app-shell--comic-page .xboard-heading { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
+  #app .app-shell--comic-page .xboard-heading h1.comic-title { font-size: 44px; }
+  #app .app-shell--comic-page .xboard-heading p { margin: 0; color: var(--ink); font-size: 15px; font-weight: 700; }
+  #app .app-shell--comic-page .xboard-header-actions { gap: 12px; }
+  #app .app-shell--comic-page .xboard-header-actions label { gap: 8px; color: var(--ink-secondary); font-size: 14px; font-weight: 700; white-space: nowrap; }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-pagination, .xboard-toolbar, .xboard-follow-panel) :is(button:not(.tweet-icon-btn), .input) {
+    min-height: 40px; padding: 6px 16px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 14.5px; font-weight: 800;
+  }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-pagination, .xboard-toolbar, .xboard-follow-panel) button:not(.tweet-icon-btn):hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-pagination, .xboard-toolbar, .xboard-follow-panel) button:disabled { box-shadow: none; opacity: .45; }
+  #app .app-shell--comic-page .xboard-header-actions :is(button:not(.tweet-icon-btn), .input).xboard-mode-active,
+  #app .app-shell--comic-page .xboard-header-actions :is(button:not(.tweet-icon-btn), .input).xboard-mode-active:hover:not(:disabled) { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .xboard-follow-count { padding: 1px 7px; border-radius: 3px; background: var(--rule-strong); color: var(--acid); font-size: 12.5px; font-weight: 900; }
+  #app .app-shell--comic-page .xboard-toolbar .btn-danger { border-color: var(--rule-strong); background: #ff6b6b; color: #fff; }
+  #app .app-shell--comic-page :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card) {
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .xboard-pagination { gap: 18px; padding: 12px 18px; }
+  #app .app-shell--comic-page .xboard-pagination > span { color: var(--ink); font-size: 14.5px; font-weight: 800; }
+  #app .app-shell--comic-page .xboard-main > .glass-card { font-size: 15px; }
+  /* Tweets read at 15px on a 1.7 line; the masonry estimator reads the same two numbers from here. */
+  #app .app-shell--comic-page .xboard-main { --tweet-text-size: 15px; --tweet-text-line: 25.5px; gap: 18px; }
+
+  #app .app-shell--comic-page .tweet-card {
+    position: relative; isolation: isolate;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .tweet-card::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 110px; height: 90px; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .45;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .tweet-card::after { opacity: .14; }
+  #app .app-shell--comic-page .tweet-card:hover { background: var(--paper-raised); }
+  @media (hover: hover) {
+    #app .app-shell--comic-page .tweet-card:is(:hover, :focus-within) { box-shadow: 7px 7px 0 var(--comic-shadow); }
+  }
+  /* One header row even in the narrower columns beside the open panel: long names truncate instead of wrapping. */
+  #app .app-shell--comic-page .tweet-head { flex-wrap: nowrap; border-bottom: 1.5px dashed color-mix(in srgb, var(--rule-strong) 35%, transparent); }
+  #app .app-shell--comic-page .tweet-head :is(.tweet-avatar, .tweet-avatar-fallback) { width: 28px; height: 28px; border: 1.5px solid var(--rule-strong); }
+  #app .app-shell--comic-page .tweet-card .tweet-handle { min-width: 0; font-size: 15px; font-style: italic; font-weight: 900; }
+  #app .app-shell--comic-page .tweet-icon-btn {
+    width: 26px; height: 26px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 1.5px 1.5px 0 var(--comic-shadow); color: var(--ink);
+  }
+  #app .app-shell--comic-page .tweet-icon-btn:hover { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .tweet-score {
+    padding: 2px 8px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 12px; font-weight: 900;
+  }
+  #app .app-shell--comic-page .tweet-card .tweet-text { font-size: var(--tweet-text-size); line-height: var(--tweet-text-line); }
+  #app .app-shell--comic-page .tweet-card .tweet-time { font-size: 13px; }
+
+  #app .app-shell--comic-page .xboard-follow-panel {
+    padding: 16px 14px 14px 16px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .xboard-follow-panel h2 { color: var(--ink); font-size: 18px; font-style: italic; font-weight: 900; }
+  #app .app-shell--comic-page .xboard-follow-panel p { color: var(--ink-secondary); font-size: 13.5px; }
+  #app .app-shell--comic-page .xboard-follow-panel button:not(.tweet-icon-btn) { min-height: 34px; padding: 4px 12px; font-size: 13.5px; }
+  #app .app-shell--comic-page .xboard-account-chip {
+    gap: 7px; padding: 5px 10px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink-muted);
+    font-size: 13.5px; font-style: italic; font-weight: 800;
+  }
+  #app .app-shell--comic-page .xboard-account-chip-active { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .xboard-account-chip:hover { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .xboard-account-chip input { accent-color: var(--rule-strong); }
 }

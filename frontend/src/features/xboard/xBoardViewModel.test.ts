@@ -693,6 +693,9 @@ describe('xBoardViewModel', () => {
     expect(estimateTweetCardHeight(translated, column, 'zh-CN')).toBeGreaterThan(
       estimateTweetCardHeight(translated, column, 'en-US'),
     )
+    // 放大正文（桌面漫画版 15px / 1.7 行高）时按实际排版折行，默认仍是 text-sm leading-5
+    expect(estimateTweetCardHeight(longText, column, 'en-US', { fontSize: 14, lineHeight: 20 })).toBe(hLong)
+    expect(estimateTweetCardHeight(longText, column, 'en-US', { fontSize: 15, lineHeight: 25.5 })).toBeGreaterThan(hLong + 20)
   })
 
   it('pageCount floors at 1 page and handles empty, boundary and large totals', () => {
