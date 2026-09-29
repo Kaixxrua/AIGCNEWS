@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -13,9 +14,103 @@ import tempfile
 from contextlib import closing
 from pathlib import Path
 
+SHA = re.compile(r'[0-9a-f]{40}')
+IMAGE_REPOSITORY = 'ghcr.io/kaixxrua/aigcnews/'
+IMAGE_SERVICES = ('backend', 'mcp', 'frontend')
+DEFAULT_IMAGE_RETENTION = 5
+DEFAULT_BUILD_CACHE_KEEP_BYTES = 20 * 1024 ** 3
+
 
 def run(args, *, cwd=None, env=None):
     subprocess.run(list(map(str,args)),cwd=cwd,env=env,check=True,timeout=3600)
+
+
+def _capture(args, *, timeout):
+    """Single non-raising shell seam for retention; tests monkeypatch this."""
+    return subprocess.run(list(map(str, args)), capture_output=True, text=True,
+                          timeout=timeout, check=False)
+
+
+def retention_keep(config, keep_sha):
+    """Commit SHAs whose per-release images must survive pruning.
+
+    The active release, its rollback target and last failed release come from the
+    authoritative production state; the newest main commits keep in-flight and
+    quick-rollback builds. Returns None when the protected set cannot be
+    established, so a caller never prunes against an unknown keep set.
+    """
+    keep = {keep_sha} if keep_sha and SHA.fullmatch(keep_sha) else set()
+    try:
+        state = json.loads((Path(config['production']) / '.aigcnews-deploy/state.json').read_text())
+    except (OSError, ValueError, KeyError):
+        return None
+    for key in ('active_release', 'previous_release', 'last_failed_release'):
+        value = state.get(key)
+        if value and SHA.fullmatch(value):
+            keep.add(value)
+    recent = config.get('image_retention', DEFAULT_IMAGE_RETENTION)
+    try:
+        recent = max(int(recent), 0)
+    except (TypeError, ValueError):
+        recent = DEFAULT_IMAGE_RETENTION
+    if recent:
+        history = _capture(['git', '--git-dir', config['bare'], 'rev-list', '-n', str(recent),
+                            'refs/heads/main'], timeout=30)
+        if history.returncode != 0:
+            return None
+        keep.update(token for token in history.stdout.split() if SHA.fullmatch(token))
+    return keep
+
+
+def prune_release_images(config, keep_sha):
+    """Remove superseded per-commit image tags and bound the build cache.
+
+    Runs only after a delivered release. Retention housekeeping must never fail
+    an already-published release, so every failure is contained and reported in
+    the returned summary rather than raised.
+    """
+    summary = {'removed': [], 'kept': 0, 'errors': []}
+    try:
+        keep = retention_keep(config, keep_sha)
+        if keep is None:
+            summary['status'] = 'skipped: protected set unavailable'
+            return summary
+        listed = _capture(['docker', 'image', 'ls', '--format', '{{.Repository}}:{{.Tag}}'], timeout=60)
+        if listed.returncode != 0:
+            summary['status'] = 'skipped: image listing unavailable'
+            return summary
+        for line in listed.stdout.splitlines():
+            reference = line.strip()
+            if not reference.startswith(IMAGE_REPOSITORY):
+                continue
+            repository, _, tag = reference.rpartition(':')
+            service = repository[len(IMAGE_REPOSITORY):]
+            # Only ever touch this project's 40-hex commit tags; digests,
+            # rollback pins and unrelated images are never candidates.
+            if service not in IMAGE_SERVICES or not SHA.fullmatch(tag):
+                continue
+            if tag in keep:
+                summary['kept'] += 1
+                continue
+            removed = _capture(['docker', 'rmi', reference], timeout=120)
+            if removed.returncode == 0:
+                summary['removed'].append(reference)
+            else:
+                summary['errors'].append(reference)
+        cache = config.get('build_cache_keep_bytes', DEFAULT_BUILD_CACHE_KEEP_BYTES)
+        try:
+            cache = int(cache)
+        except (TypeError, ValueError):
+            cache = DEFAULT_BUILD_CACHE_KEEP_BYTES
+        if cache > 0:
+            # In-use cache for concurrent builds is protected; only least-recently
+            # used records beyond the reservation are reclaimed.
+            _capture(['docker', 'builder', 'prune', '--force', '--keep-storage', str(cache)], timeout=1800)
+        summary['status'] = 'pruned'
+    except Exception as exc:  # noqa: BLE001 - housekeeping never fails a delivered release
+        summary['status'] = 'error'
+        summary['errors'].append(type(exc).__name__)
+    return summary
 
 
 def normalize_build_permissions(checkout):
