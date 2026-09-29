@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Set
@@ -27,6 +28,17 @@ _TOPICS = [
 ]
 
 _PER_TOPIC_LIMIT = 10
+
+# GraphQL 批量指标：单批遇网络抖动或上游 499/5xx 时退避重试；连续多批
+# 重试后仍失败视为 GitHub 侧故障，停止批量抓取。
+_GRAPHQL_BATCH_MAX_ATTEMPTS = 3
+_GRAPHQL_RETRY_BACKOFF = 5.0
+_GRAPHQL_TRANSIENT_STATUS_CODES = frozenset({499, 500, 502, 503, 504})
+_GRAPHQL_MAX_CONSECUTIVE_FAILED_CHUNKS = 3
+# GraphQL 已应答但节点为空的仓库（下架/改名，日刷约数百个）总是退 REST
+# 判定 404 与改名；整批失败没抓到的仓库只在量小时退 REST 补抓——上万个
+# 仓库逐个 REST 既超 5000 次/小时配额，又要占 GitHub 锁几十分钟。
+_REST_FALLBACK_MAX_UNFETCHED = 200
 
 
 def _get_token() -> str:
@@ -126,6 +138,9 @@ class GitHubRepoMetricsResult:
     # 成功响应到达的 UTC 时刻（ISO 8601）。一轮日刷要抓一到数小时，
     # 快照时间轴须按实际观测时刻而非开轮时刻；空串由调用方回退开轮时刻。
     observed_at: str = ""
+    # True 表示本次 403/429 是配额限流（而非仓库级 403 如访问被封），
+    # 批量补抓据此停止，不再逐个撞限流。
+    rate_limited: bool = False
 
 
 def _observed_now() -> str:
@@ -271,6 +286,12 @@ def _parse_item(item: dict, client: httpx.Client, use_token: bool = True) -> dic
 
 
 def _check_token_valid(client: httpx.Client) -> bool:
+    """仅在 token 缺失或探测请求明确 401 时判定无效。
+
+    探测走 Search API（30 次/分钟），被限流或遇网络抖动说明不了 token 真伪；
+    此前一律判无效，随后整轮 REST 请求改为匿名（60 次/小时）几乎全部 403。
+    各调用方逐请求遇 401 仍会自行降级匿名。
+    """
     token = _get_token()
     if not token:
         return False
@@ -280,14 +301,26 @@ def _check_token_valid(client: httpx.Client) -> bool:
             headers=_build_headers(use_token=True),
             params={"q": "topic:llm", "per_page": 1},
         )
-        if resp.status_code == 401:
-            logger.warning(
-                "[GitHub] Token 对 Search API 无效（401），全程使用匿名访问。"
-            )
-            return False
-        return resp.status_code == 200
-    except Exception:
+    except Exception as exc:
+        logger.warning("[GitHub] Token 探测请求失败，仍按 token 有效访问: %s", exc)
+        return True
+    if resp.status_code == 401:
+        logger.warning(
+            "[GitHub] Token 对 Search API 无效（401），全程使用匿名访问。"
+        )
         return False
+    return True
+
+
+def _is_rate_limited(resp: httpx.Response) -> bool:
+    """区分配额限流与仓库级 403（如 Repository access blocked）。"""
+    if resp.status_code == 429:
+        return True
+    if resp.status_code != 403:
+        return False
+    if resp.headers.get("x-ratelimit-remaining") == "0" or resp.headers.get("retry-after"):
+        return True
+    return "rate limit" in resp.text.lower()
 
 
 def _fetch_trending_page(
@@ -414,6 +447,7 @@ def fetch_github_repo_metrics(
                     full_name=clean_name,
                     status="unknown",
                     http_status=resp.status_code,
+                    rate_limited=_is_rate_limited(resp),
                 )
             resp.raise_for_status()
             metrics = _parse_metrics_item(resp.json())
@@ -489,6 +523,54 @@ def _parse_graphql_repo(node: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _post_graphql_metrics_chunk(
+    client: httpx.Client,
+    headers: dict,
+    query: str,
+) -> tuple[Literal["ok", "failed", "stop"], Dict[str, Any]]:
+    """提交一批 GraphQL 指标查询，网络抖动与上游 499/5xx 退避重试。
+
+    返回 ("ok", data)；("failed", {}) 表示本批放弃、后续批次照常；
+    ("stop", {}) 表示 token 无效或限流，整轮停止批量抓取。
+    """
+    for attempt in range(_GRAPHQL_BATCH_MAX_ATTEMPTS):
+        if attempt:
+            time.sleep(_GRAPHQL_RETRY_BACKOFF * 2 ** (attempt - 1))
+        try:
+            resp = client.post(f"{GITHUB_API_BASE}/graphql", headers=headers, json={"query": query})
+        except httpx.TransportError as exc:
+            logger.warning(
+                "[GitHub] GraphQL 指标批量抓取网络异常（第 %d/%d 次）: %s",
+                attempt + 1, _GRAPHQL_BATCH_MAX_ATTEMPTS, exc,
+            )
+            continue
+        if resp.status_code == 401:
+            logger.warning("[GitHub] GraphQL token 401，停止批量抓取。")
+            return "stop", {}
+        if resp.status_code in (403, 429):
+            logger.warning("[GitHub] GraphQL 指标抓取限流 HTTP %s，停止批量抓取。", resp.status_code)
+            return "stop", {}
+        if resp.status_code in _GRAPHQL_TRANSIENT_STATUS_CODES:
+            logger.warning(
+                "[GitHub] GraphQL 指标批量抓取 HTTP %s（第 %d/%d 次）",
+                resp.status_code, attempt + 1, _GRAPHQL_BATCH_MAX_ATTEMPTS,
+            )
+            continue
+        try:
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as exc:
+            logger.warning("[GitHub] GraphQL 指标批量抓取失败: %s", exc)
+            return "failed", {}
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            errors = payload.get("errors") if isinstance(payload, dict) else payload
+            logger.warning("[GitHub] GraphQL 指标批量抓取无数据: %s", str(errors)[:200])
+            return "failed", {}
+        return "ok", data
+    return "failed", {}
+
+
 def fetch_github_repo_metrics_batch(
     full_names: List[str],
     *,
@@ -511,9 +593,12 @@ def fetch_github_repo_metrics_batch(
     token = _get_token()
     metrics_by_name: Dict[str, dict] = {}
     observed_by_name: Dict[str, str] = {}
+    # GraphQL 已应答（含节点为空）的仓库；其余是整批失败或中止时没抓到的
+    answered: Set[str] = set()
     if token:
         headers = _build_headers(use_token=True)
         headers["Accept"] = "application/vnd.github+json"
+        consecutive_failures = 0
         with httpx.Client(timeout=40, trust_env=True) as client:
             for start in range(0, len(names), max(1, min(batch_size, 50))):
                 chunk = names[start : start + max(1, min(batch_size, 50))]
@@ -542,30 +627,28 @@ def fetch_github_repo_metrics_batch(
                         }}'''
                     )
                 query = "query {\n" + "\n".join(fields) + "\n}"
-                try:
-                    resp = client.post(f"{GITHUB_API_BASE}/graphql", headers=headers, json={"query": query})
-                    if resp.status_code == 401:
-                        logger.warning("[GitHub] GraphQL token 401，降级 REST 指标抓取。")
-                        break
-                    if resp.status_code in (403, 429):
-                        logger.warning("[GitHub] GraphQL 指标抓取限流 HTTP %s，停止批量抓取。", resp.status_code)
-                        break
-                    resp.raise_for_status()
-                    payload = resp.json()
-                    chunk_observed_at = _observed_now()
-                    data = payload.get("data") if isinstance(payload, dict) else {}
-                    if not isinstance(data, dict):
-                        continue
-                    for alias, full_name in alias_to_name.items():
-                        node = data.get(alias)
-                        if isinstance(node, dict):
-                            metrics_by_name[full_name.lower()] = _parse_graphql_repo(node)
-                            observed_by_name[full_name.lower()] = chunk_observed_at
-                        else:
-                            logger.debug("[GitHub] GraphQL 未返回仓库 %s", full_name)
-                except Exception as exc:
-                    logger.warning("[GitHub] GraphQL 指标批量抓取失败: %s", exc)
+                status, data = _post_graphql_metrics_chunk(client, headers, query)
+                if status == "stop":
                     break
+                if status == "failed":
+                    # 单批放弃不连坐整轮；连续多批失败才视为 GitHub 侧故障
+                    consecutive_failures += 1
+                    if consecutive_failures >= _GRAPHQL_MAX_CONSECUTIVE_FAILED_CHUNKS:
+                        logger.warning(
+                            "[GitHub] GraphQL 连续 %d 批失败，停止批量抓取。", consecutive_failures
+                        )
+                        break
+                    continue
+                consecutive_failures = 0
+                chunk_observed_at = _observed_now()
+                for alias, full_name in alias_to_name.items():
+                    answered.add(full_name.lower())
+                    node = data.get(alias)
+                    if isinstance(node, dict):
+                        metrics_by_name[full_name.lower()] = _parse_graphql_repo(node)
+                        observed_by_name[full_name.lower()] = chunk_observed_at
+                    else:
+                        logger.debug("[GitHub] GraphQL 未返回仓库 %s", full_name)
         if len(metrics_by_name) >= len(names):
             return [
                 GitHubRepoMetricsResult(
@@ -590,14 +673,44 @@ def fetch_github_repo_metrics_batch(
         if full_name.lower() in metrics_by_name
     }
     missing_names = [full_name for full_name in names if full_name.lower() not in outcomes]
-    with httpx.Client(timeout=30, trust_env=True) as client:
-        use_token = _check_token_valid(client)
-        for full_name in missing_names:
-            outcomes[full_name.lower()] = fetch_github_repo_metrics(
-                full_name,
-                client=client,
-                use_token=use_token,
+    unfetched = [full_name for full_name in missing_names if full_name.lower() not in answered]
+    if token and len(unfetched) > _REST_FALLBACK_MAX_UNFETCHED:
+        logger.warning(
+            "[GitHub] GraphQL 批量抓取有 %d 个仓库未抓到，超过 REST 补抓上限 %d，本轮记为未知。",
+            len(unfetched),
+            _REST_FALLBACK_MAX_UNFETCHED,
+        )
+        for full_name in unfetched:
+            outcomes[full_name.lower()] = GitHubRepoMetricsResult(
+                full_name=full_name,
+                status="unknown",
+                error="GraphQL batch unavailable",
             )
+        missing_names = [full_name for full_name in missing_names if full_name.lower() in answered]
+    if missing_names:
+        with httpx.Client(timeout=30, trust_env=True) as client:
+            use_token = _check_token_valid(client)
+            limited: GitHubRepoMetricsResult | None = None
+            for index, full_name in enumerate(missing_names):
+                if limited is not None:
+                    outcomes[full_name.lower()] = GitHubRepoMetricsResult(
+                        full_name=full_name,
+                        status="unknown",
+                        http_status=limited.http_status,
+                        error="rate limited",
+                        rate_limited=True,
+                    )
+                    continue
+                result = fetch_github_repo_metrics(full_name, client=client, use_token=use_token)
+                outcomes[full_name.lower()] = result
+                if result.rate_limited:
+                    # 配额耗尽后逐个再撞只会秒回 403/429，还白占 GitHub 锁
+                    limited = result
+                    logger.warning(
+                        "[GitHub] REST 指标补抓遇限流 HTTP %s，剩余 %d 个仓库本轮记为未知。",
+                        result.http_status,
+                        len(missing_names) - index - 1,
+                    )
     return [outcomes[full_name.lower()] for full_name in names]
 
 

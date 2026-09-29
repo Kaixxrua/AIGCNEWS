@@ -130,6 +130,34 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
         self.assertEqual(result.status, "unknown")
 
+    def test_rate_limit_is_told_apart_from_repository_level_403(self) -> None:
+        cases = (
+            ("quota exhausted", httpx.Response(403, headers={"x-ratelimit-remaining": "0"}), True),
+            ("secondary limit", httpx.Response(403, headers={"retry-after": "60"}), True),
+            (
+                "limit message",
+                httpx.Response(403, json={"message": "API rate limit exceeded for 1.2.3.4."}),
+                True,
+            ),
+            ("too many requests", httpx.Response(429), True),
+            (
+                "access blocked",
+                httpx.Response(
+                    403,
+                    headers={"x-ratelimit-remaining": "4999"},
+                    json={"message": "Repository access blocked"},
+                ),
+                False,
+            ),
+        )
+        for label, response, expected in cases:
+            with self.subTest(label):
+                with self._client(lambda _request, resp=response: resp) as client:
+                    result = fetch_github_repo_metrics("owner/repo", client=client, use_token=False)
+                self.assertEqual(result.status, "unknown")
+                self.assertEqual(result.rate_limited, expected)
+
+
     def test_rename_redirect_is_followed_once(self) -> None:
         payload = {
             "node_id": "repo-1",
@@ -237,6 +265,36 @@ class GitHubRepoMetricsFetchTests(unittest.TestCase):
 
 
 
+class TokenProbeTests(unittest.TestCase):
+    def _probe(self, handler) -> bool:
+        with (
+            patch.object(source_github, "_get_token", return_value="token"),
+            httpx.Client(transport=httpx.MockTransport(handler)) as client,
+        ):
+            return source_github._check_token_valid(client)
+
+    def test_only_401_marks_the_token_invalid(self) -> None:
+        # Search API 被限流或抖动说明不了 token 真伪；判无效会让整轮 REST 匿名执行
+        for status_code, expected in ((200, True), (403, True), (429, True), (502, True), (401, False)):
+            with self.subTest(status_code=status_code):
+                self.assertEqual(
+                    self._probe(lambda _request, code=status_code: httpx.Response(code)),
+                    expected,
+                )
+
+    def test_probe_transport_failure_keeps_the_token(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("EOF occurred in violation of protocol", request=request)
+
+        self.assertTrue(self._probe(handler))
+
+    def test_missing_token_is_invalid_without_probing(self) -> None:
+        probe = MagicMock()
+        with patch.object(source_github, "_get_token", return_value=""):
+            self.assertFalse(source_github._check_token_valid(probe))
+        probe.get.assert_not_called()
+
+
 class GitHubRepoMetricsBatchTests(unittest.TestCase):
     def test_graphql_chunks_stamp_their_own_response_time(self) -> None:
         # 一轮日刷要抓一到数小时：每批快照记该批响应到达时刻，而不是开轮时刻
@@ -267,6 +325,149 @@ class GitHubRepoMetricsBatchTests(unittest.TestCase):
             [result.observed_at for result in results],
             ["2026-07-23T00:17:05+00:00", "2026-07-23T01:52:40+00:00"],
         )
+
+
+_GRAPHQL_REPO = re.compile(r'(r\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\)')
+
+
+class GitHubRepoMetricsBatchResilienceTests(unittest.TestCase):
+    """2026-09-29 日刷：一次 GraphQL 499 让整轮退成两万多次 REST，几乎全部 403/429。"""
+
+    def setUp(self) -> None:
+        self.graphql_posts = 0
+        self.rest_gets: list[str] = []
+        # 第 N 次 GraphQL POST（从 1 计）的覆盖响应；其余正常应答
+        self.graphql_overrides: dict[int, httpx.Response | Exception] = {}
+        # 按首个仓库名让某一批始终失败
+        self.failing_chunk_heads: set[str] = set()
+        # GraphQL 应答里节点为空的仓库（下架/改名）
+        self.null_nodes: set[str] = set()
+        self.rest_responses: dict[str, httpx.Response] = {}
+
+    def _handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/graphql":
+            self.graphql_posts += 1
+            repos = _GRAPHQL_REPO.findall(json.loads(request.content)["query"])
+            override = self.graphql_overrides.get(self.graphql_posts)
+            if isinstance(override, Exception):
+                raise override
+            if override is not None:
+                return override
+            if f"{repos[0][1]}/{repos[0][2]}" in self.failing_chunk_heads:
+                return httpx.Response(502)
+            data = {
+                alias: None
+                if f"{owner}/{name}" in self.null_nodes
+                else {"id": f"id-{name}", "name": name, "owner": {"login": owner}, "stargazerCount": 7}
+                for alias, owner, name in repos
+            }
+            return httpx.Response(200, json={"data": data})
+        if request.url.path.startswith("/search/"):
+            return httpx.Response(200, json={"items": []})
+        full_name = request.url.path.removeprefix("/repos/")
+        self.rest_gets.append(full_name)
+        return self.rest_responses.get(full_name) or httpx.Response(
+            200, json={"full_name": full_name, "node_id": f"rest-{full_name}", "stargazers_count": 3}
+        )
+
+    def _fetch(self, names: list[str], **kwargs) -> tuple[list[GitHubRepoMetricsResult], MagicMock]:
+        real_client = httpx.Client
+        with (
+            patch.object(source_github, "_get_token", return_value="token"),
+            patch.object(
+                source_github.httpx,
+                "Client",
+                lambda **_kwargs: real_client(transport=httpx.MockTransport(self._handler)),
+            ),
+            patch.object(source_github.time, "sleep") as sleep,
+        ):
+            results = fetch_github_repo_metrics_batch(names, **kwargs)
+        return results, sleep
+
+    def test_transient_graphql_failure_is_retried_instead_of_abandoning_the_round(self) -> None:
+        request = httpx.Request("POST", "https://api.github.com/graphql")
+        self.graphql_overrides = {
+            1: httpx.Response(499),
+            2: httpx.ReadError("SSL: UNEXPECTED_EOF_WHILE_READING", request=request),
+        }
+
+        results, sleep = self._fetch(["o/a", "o/b", "o/c"], batch_size=1)
+
+        self.assertEqual([result.status for result in results], ["succeeded"] * 3)
+        self.assertEqual(self.graphql_posts, 5)
+        self.assertEqual(self.rest_gets, [])
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [5.0, 10.0])
+
+    def test_one_bad_chunk_does_not_take_down_the_rest(self) -> None:
+        self.failing_chunk_heads = {"o/a"}
+
+        results, _sleep = self._fetch(["o/a", "o/b", "o/c"], batch_size=1)
+
+        # 坏批重试耗尽后放弃，后续批次照常走 GraphQL；坏批仓库量小，退 REST 补抓
+        self.assertEqual(self.graphql_posts, 3 + 2)
+        self.assertEqual(self.rest_gets, ["o/a"])
+        self.assertEqual([result.status for result in results], ["succeeded"] * 3)
+
+    def test_consecutive_chunk_failures_stop_graphql(self) -> None:
+        self.failing_chunk_heads = {"o/a", "o/b", "o/c"}
+
+        self._fetch(["o/a", "o/b", "o/c", "o/d"], batch_size=1)
+
+        # 连续三批重试后仍失败即停，o/d 不再发 GraphQL
+        self.assertEqual(self.graphql_posts, 9)
+
+    def test_large_unfetched_set_is_marked_unknown_instead_of_rest_fallback(self) -> None:
+        self.graphql_overrides = {1: httpx.Response(429)}
+        with patch.object(source_github, "_REST_FALLBACK_MAX_UNFETCHED", 2):
+            results, _sleep = self._fetch(["o/a", "o/b", "o/c"], batch_size=1)
+
+        self.assertEqual(self.rest_gets, [])
+        self.assertEqual([result.status for result in results], ["unknown"] * 3)
+        self.assertEqual(results[0].error, "GraphQL batch unavailable")
+
+    def test_null_nodes_still_go_through_rest_to_detect_404_and_renames(self) -> None:
+        # 首批正常应答但 o/b 节点为空；第二批限流中止，留下 o/c、o/d 未抓到
+        self.null_nodes = {"o/b"}
+        self.graphql_overrides = {2: httpx.Response(429)}
+        self.rest_responses["o/b"] = httpx.Response(404)
+        with patch.object(source_github, "_REST_FALLBACK_MAX_UNFETCHED", 1):
+            results, _sleep = self._fetch(["o/a", "o/b", "o/c", "o/d"], batch_size=2)
+
+        self.assertEqual(self.rest_gets, ["o/b"])
+        self.assertEqual(
+            [result.status for result in results],
+            ["succeeded", "not_found", "unknown", "unknown"],
+        )
+
+    def test_small_unfetched_set_still_falls_back_to_rest(self) -> None:
+        self.graphql_overrides = {1: httpx.Response(429)}
+
+        results, _sleep = self._fetch(["o/a", "o/b"], batch_size=1)
+
+        self.assertEqual(self.rest_gets, ["o/a", "o/b"])
+        self.assertEqual([result.status for result in results], ["succeeded"] * 2)
+
+    def test_rest_fallback_stops_at_the_first_rate_limit(self) -> None:
+        self.null_nodes = {"o/a", "o/b", "o/c"}
+        self.rest_responses["o/a"] = httpx.Response(403, headers={"x-ratelimit-remaining": "0"})
+
+        results, _sleep = self._fetch(["o/a", "o/b", "o/c"], batch_size=3)
+
+        self.assertEqual(self.rest_gets, ["o/a"])
+        self.assertEqual([result.status for result in results], ["unknown"] * 3)
+        self.assertTrue(all(result.rate_limited for result in results))
+        self.assertEqual([result.http_status for result in results], [403, 403, 403])
+
+    def test_repository_level_403_does_not_stop_the_fallback(self) -> None:
+        self.null_nodes = {"o/a", "o/b"}
+        self.rest_responses["o/a"] = httpx.Response(
+            403, headers={"x-ratelimit-remaining": "4000"}, json={"message": "Repository access blocked"}
+        )
+
+        results, _sleep = self._fetch(["o/a", "o/b"], batch_size=2)
+
+        self.assertEqual(self.rest_gets, ["o/a", "o/b"])
+        self.assertEqual([result.status for result in results], ["unknown", "succeeded"])
 
 
 class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
