@@ -214,6 +214,20 @@ describe('enriched GitHub ranking', () => {
     await panel.setProps({ activeTab: 'arxiv', tabList: [{ source: 'arxiv', title: 'Paper' }] })
     expect(panel.find('.ranking-sort').exists()).toBe(false)
   })
+  it.each([true, false])('prefers rolling 24h growth over the daily delta (mobile=%s)', async (mobile) => {
+    viewport.mobile = mobile
+    const panel = await render({ source: 'github', title: 'owner/newborn',
+      daily_star_growth: 0, daily_growth_available: true,
+      rolling_24h_star_growth: 1765, rolling_24h_growth_source: 'since_creation' })
+    await panel.setProps({ activeTab: 'github' })
+    expect(panel.get('.ranking-growth').text()).toBe('24h +1,765')
+    setAppLocale('en-US')
+    await nextTick()
+    expect(panel.get('.ranking-growth').text()).toBe('+1,765 in 24h')
+    await panel.setProps({ tabList: [{ source: 'github', title: 'owner/repo',
+      daily_star_growth: 514, daily_growth_available: true, rolling_24h_star_growth: null }] })
+    expect(panel.get('.ranking-growth').text()).toBe('+514 today')
+  })
   it('does not substitute raw README or invent unavailable growth', async () => {
     const panel = await render({ source: 'github', title: 'owner/repo', summary: 'Raw README' })
     await panel.setProps({ activeTab: 'github' })

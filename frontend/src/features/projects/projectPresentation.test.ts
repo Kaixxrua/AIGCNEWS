@@ -9,9 +9,14 @@ import {
   projectCategoryName,
   projectDescription,
   projectDisplayTags,
+  projectGrowthLabel,
+  projectGrowthTitle,
+  projectHeatAvailable,
   projectLastPushTitle,
+  projectRollingGrowth,
   recommendButtonLabelKey,
 } from './projectPresentation'
+import type { GitHubProjectItem } from '@/services/projects/projectApi'
 
 const project = {
   id: 'website:1', source: 'website' as const, website_id: 1, full_name: 'Example Website',
@@ -209,5 +214,47 @@ describe('displayHotScore', () => {
     expect(displayHotScore(-5)).toBe(0)
     expect(displayHotScore(Number.NaN)).toBe(0)
     expect(displayHotScore(250)).toBeCloseTo(100, 10)
+  })
+})
+
+describe('rolling 24h growth (heat v8)', () => {
+  const t = (key: string, params?: Record<string, unknown>) => `${key}${params ? JSON.stringify(params) : ''}`
+  const repo = (fields: Partial<GitHubProjectItem>): GitHubProjectItem => ({
+    id: 'github:owner/repo', source: 'github', repo_id: 'owner/repo', full_name: 'owner/repo',
+    daily_star_growth: 40, daily_growth_available: true, daily_growth_source: 'snapshot_delta',
+    previous_snapshot_date: '2026-09-28', daily_growth_date: '2026-09-29', ...fields,
+  } as GitHubProjectItem)
+
+  it('keeps a missing window distinct from zero growth and clamps losses', () => {
+    expect(projectRollingGrowth(repo({}))).toBeNull()
+    expect(projectRollingGrowth(repo({ rolling_24h_star_growth: null }))).toBeNull()
+    expect(projectRollingGrowth(repo({ rolling_24h_star_growth: 0 }))).toBe(0)
+    expect(projectRollingGrowth(repo({ rolling_24h_star_growth: '1765' }))).toBe(1765)
+    expect(projectRollingGrowth(repo({ rolling_24h_star_growth: -12 }))).toBe(0)
+  })
+
+  it('labels the card with rolling growth and falls back to the daily delta', () => {
+    expect(projectGrowthLabel(repo({ rolling_24h_star_growth: 1765 }), t, 'en-US'))
+      .toBe('projects.rollingGrowth{"count":"1.8K"}')
+    expect(projectGrowthLabel(repo({}), t, 'en-US')).toBe('projects.todayGrowth{"count":"40"}')
+  })
+
+  it('explains each rolling source and the creation baseline', () => {
+    const observed = { rolling_24h_star_growth: 30, rolling_24h_observed_at: '2026-09-29T07:00:00+00:00' }
+    expect(projectGrowthTitle(repo({ ...observed, rolling_24h_growth_source: 'since_creation' }), t, 'en-US'))
+      .toMatch(/^projects\.growthSinceCreation\{"observed":"projects\.observedAt/)
+    expect(projectGrowthTitle(repo({ ...observed, rolling_24h_growth_source: 'creation_interpolated' }), t, 'en-US'))
+      .toMatch(/^projects\.growthRollingCreation/)
+    expect(projectGrowthTitle(repo({ rolling_24h_star_growth: 30, rolling_24h_growth_source: 'rolling_window' }), t, 'en-US'))
+      .toBe('projects.growthRollingWindow{"observed":""}')
+    expect(projectGrowthTitle(repo({ daily_growth_source: 'creation_baseline' }), t, 'en-US'))
+      .toBe('projects.growthCreationBaseline')
+    expect(projectGrowthTitle(repo({}), t, 'en-US')).toMatch(/^projects\.growthSnapshot/)
+  })
+
+  it('treats heat as computed whenever the rolling window exists', () => {
+    expect(projectHeatAvailable(repo({ daily_growth_available: false, rolling_24h_star_growth: 30 }))).toBe(true)
+    expect(projectHeatAvailable(repo({ daily_growth_available: false }))).toBe(false)
+    expect(projectHeatAvailable(repo({ daily_growth_available: undefined }))).toBeUndefined()
   })
 })

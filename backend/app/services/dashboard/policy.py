@@ -145,6 +145,8 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
             topics = [str(item) for item in parsed if item]
     metric_date = str(row.get("metric_date") or "")
     daily_growth = int(row.get("daily_star_growth") or 0)
+    rolling = row.get("rolling_24h_star_growth")
+    rolling_growth = None if rolling is None else int(rolling)
     hot_score = float(row.get("hot_score") or 0.0)
     return {
         "id": row.get("repo_id"),
@@ -160,8 +162,9 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
         "language": row.get("language") or "",
         "tags": topics,
         # raw_score/score 沿用看板既有语义：github 的展示主字段是 stars，
-        # raw_score 兜底取日增（doc_weight 也读它），score 承载 hot_score。
-        "raw_score": float(daily_growth),
+        # raw_score 兜底取热度所用星增（滚动 24h 优先，doc_weight 也读它），
+        # score 承载 hot_score。
+        "raw_score": float(daily_growth if rolling_growth is None else rolling_growth),
         "score": hot_score,
         "image_url": row.get("image_url"),
         "daily_growth_available": True,
@@ -172,6 +175,9 @@ def github_metric_to_doc(row: dict[str, Any], rank: int) -> dict[str, Any]:
         "published_at": None,
         "daily_star_growth": daily_growth,
         "daily_growth_source": row.get("daily_growth_source"),
+        "rolling_24h_star_growth": rolling_growth,
+        "rolling_24h_growth_source": row.get("rolling_24h_growth_source"),
+        "rolling_24h_observed_at": row.get("rolling_24h_observed_at"),
         "previous_snapshot_date": row.get("previous_snapshot_date"),
         "hot_score": hot_score,
         # 反作弊一二层打标（仅透出，不参与排序）
