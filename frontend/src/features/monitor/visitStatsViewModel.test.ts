@@ -6,6 +6,7 @@ import {
   DONUT_SEGMENT_GAP_PX,
   PLATFORM_COLOR_SLOT,
   VISIT_PLATFORM_ORDER,
+  automatedVisits,
   buildDonutSegments,
   computeShares,
   isEmptyStats,
@@ -21,7 +22,7 @@ describe('orderedPlatformShares', () => {
   it('returns the frozen bucket order and zero-fills missing buckets', () => {
     const ordered = orderedPlatformShares([row('windows', 2), row('ios', 6)])
     expect(ordered.map((entry) => entry.platform)).toEqual([...VISIT_PLATFORM_ORDER])
-    expect(ordered.map((entry) => entry.visits)).toEqual([6, 0, 2, 0, 0])
+    expect(ordered.map((entry) => entry.visits)).toEqual([6, 0, 2, 0, 0, 0])
   })
 
   it('tolerates nullish input and clamps negative visits', () => {
@@ -52,7 +53,7 @@ describe('computeShares', () => {
 
   it('returns all-zero shares for an empty window without dividing by zero', () => {
     const shares = computeShares([])
-    expect(Object.values(shares)).toEqual([0, 0, 0, 0, 0])
+    expect(Object.values(shares)).toEqual([0, 0, 0, 0, 0, 0])
   })
 })
 
@@ -79,7 +80,10 @@ describe('buildDonutSegments', () => {
 
   it('maps every bucket to a fixed color slot (color follows entity, never rank)', () => {
     expect(Object.keys(PLATFORM_COLOR_SLOT)).toEqual([...VISIT_PLATFORM_ORDER])
-    expect(new Set(Object.values(PLATFORM_COLOR_SLOT)).size).toBe(5)
+    expect(new Set(Object.values(PLATFORM_COLOR_SLOT)).size).toBe(6)
+    // linux 后加取空槽位 6，既有桶不改色
+    expect(PLATFORM_COLOR_SLOT.other).toBe(5)
+    expect(PLATFORM_COLOR_SLOT.linux).toBe(6)
   })
 })
 
@@ -89,6 +93,14 @@ describe('isEmptyStats / defaults', () => {
     expect(isEmptyStats(undefined)).toBe(true)
     expect(isEmptyStats({ window: '7d', start_date: '2026-08-16', end_date: '2026-08-22', total_visits: 0, platforms: [] })).toBe(true)
     expect(isEmptyStats({ window: '7d', start_date: '2026-08-16', end_date: '2026-08-22', total_visits: 3, platforms: [] })).toBe(false)
+  })
+
+  it('reads automated visits separately and treats missing or dirty values as zero', () => {
+    const base = { window: '7d' as const, start_date: '2026-08-16', end_date: '2026-08-22', total_visits: 3, platforms: [] }
+    expect(automatedVisits({ ...base, automated_visits: 48 })).toBe(48)
+    expect(automatedVisits(base)).toBe(0)
+    expect(automatedVisits({ ...base, automated_visits: -2 })).toBe(0)
+    expect(automatedVisits(null)).toBe(0)
   })
 
   it('defaults to the 7d window', () => {

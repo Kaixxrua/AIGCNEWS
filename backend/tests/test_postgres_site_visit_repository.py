@@ -40,6 +40,7 @@ def test_adapter_exposes_site_visit_repository_contract() -> None:
     contract: SiteVisitRepository = repository
 
     assert callable(contract.record_visit)
+    assert callable(contract.record_automated_visit)
     assert callable(contract.get_visit_stats)
     assert callable(contract.get_platform_breakdown)
 
@@ -74,6 +75,20 @@ def test_record_visit_writes_platform_bucket_in_same_transaction() -> None:
     platform_sql, platform_params = cursor.execute.call_args_list[1].args
     assert "INSERT INTO site_visit_platform_days" in platform_sql
     assert platform_params == (date(2026, 8, 22), "ios")
+
+
+def test_record_automated_visit_only_touches_platform_table() -> None:
+    repository, database, cursor = _make_repository()
+
+    assert repository.record_automated_visit(date(2026, 9, 29)) is None
+
+    assert database.transaction_count == 1
+    cursor.execute.assert_called_once()
+    sql, params = cursor.execute.call_args.args
+    assert "INSERT INTO site_visit_platform_days" in sql
+    assert "ON CONFLICT (day, platform) DO UPDATE" in sql
+    assert "site_visit_days " not in sql
+    assert params == (date(2026, 9, 29), "bot")
 
 
 def test_record_visit_handles_empty_returning_row() -> None:

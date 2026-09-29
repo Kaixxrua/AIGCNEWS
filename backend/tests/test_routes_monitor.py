@@ -373,8 +373,9 @@ class VisitPlatformBreakdownRouteTests(unittest.TestCase):
         self.assertEqual(body["total_visits"], 8)
         self.assertEqual(
             [entry["platform"] for entry in body["platforms"]],
-            ["ios", "android", "windows", "macos", "other"],
+            ["ios", "android", "windows", "macos", "linux", "other"],
         )
+        self.assertEqual(body["automated_visits"], 0)
         ios = body["platforms"][0]
         self.assertEqual(ios["visits"], 6)
         self.assertEqual(ios["share"], 75.0)

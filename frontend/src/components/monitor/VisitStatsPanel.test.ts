@@ -21,8 +21,10 @@ const stats = (overrides: Partial<VisitPlatformStatsResponse> = {}): VisitPlatfo
     { platform: 'android', visits: 5, share: 12.5 },
     { platform: 'windows', visits: 4, share: 10 },
     { platform: 'macos', visits: 1, share: 2.5 },
+    { platform: 'linux', visits: 0, share: 0 },
     { platform: 'other', visits: 0, share: 0 },
   ],
+  automated_visits: 0,
   ...overrides,
 })
 
@@ -34,7 +36,7 @@ describe('VisitStatsPanel', () => {
     i18n.global.locale.value = 'zh-CN'
   })
 
-  it('loads the default 7d window on mount and renders the five-bucket legend', async () => {
+  it('loads the default 7d window on mount and renders the six-bucket legend', async () => {
     fetchMock.mockResolvedValue(stats())
     const wrapper = mountPanel()
     await flushPromises()
@@ -47,15 +49,17 @@ describe('VisitStatsPanel', () => {
     expect(donut.attributes('aria-label')).toContain('75.0%')
 
     const items = wrapper.findAll('.visit-legend-item')
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(6)
     expect(items[0]!.text()).toContain('iOS')
     expect(items[0]!.text()).toContain('30')
     expect(items[0]!.text()).toContain('75.0%')
-    expect(items[4]!.text()).toContain('其他')
+    expect(items[4]!.text()).toContain('Linux')
+    expect(items[5]!.text()).toContain('其他')
     // 分段用固定槽位色：iOS → slot 1，颜色跟随实体而非排名
     const segments = wrapper.findAll('circle.visit-donut-segment')
-    expect(segments).toHaveLength(5)
+    expect(segments).toHaveLength(6)
     expect(segments[0]!.attributes('style')).toContain('--visit-series-1')
+    expect(segments[4]!.attributes('style')).toContain('--visit-series-6')
     expect(wrapper.text()).toContain('共 40 次访问')
     expect(wrapper.text()).toContain('2026-08-16 至 2026-08-22')
   })
@@ -97,6 +101,41 @@ describe('VisitStatsPanel', () => {
     expect(wrapper.findAll('circle.visit-donut-segment')).toHaveLength(0)
     expect(wrapper.findAll('.visit-legend-item')).toHaveLength(0)
     expect(wrapper.text()).toContain('该时间窗口内暂无访问记录')
+  })
+
+  it('lists automated visits outside the ring without adding them to the total', async () => {
+    fetchMock.mockResolvedValue(stats({ automated_visits: 392 }))
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const row = wrapper.find('.visit-automated-row')
+    expect(row.exists()).toBe(true)
+    expect(row.text()).toContain('爬虫 / 自动化（未计入）')
+    expect(row.text()).toContain('392')
+    expect(row.attributes('title')).toContain('无头浏览器')
+    // 总访问与环图只算六个计数桶
+    expect(wrapper.text()).toContain('共 40 次访问')
+    expect(wrapper.find('.visit-donut-total').text()).toBe('40')
+    expect(wrapper.findAll('.visit-legend-item')).toHaveLength(6)
+  })
+
+  it('still shows the automated count when the window has no counted visits', async () => {
+    fetchMock.mockResolvedValue(stats({ total_visits: 0, platforms: [], automated_visits: 12 }))
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('circle.visit-donut-empty-ring').exists()).toBe(true)
+    expect(wrapper.find('.visit-automated-row').text()).toContain('12')
+  })
+
+  it('treats a response without automated_visits as zero', async () => {
+    const legacy = stats()
+    delete legacy.automated_visits
+    fetchMock.mockResolvedValue(legacy)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('.visit-automated-value').text()).toBe('0')
   })
 
   it('shows the range-all copy when the backend reports a null start date', async () => {

@@ -517,7 +517,7 @@ export const createEmptyMcpToolCallMetrics = (): McpToolCallMetricsSnapshot => (
 /* 访客平台统计：桶集合与后端 visit_platforms.PLATFORM_BUCKETS 双向冻结。
    share 是后端信息性字段（一位小数直接相加可能漂移 ±0.1），
    UI 展示百分比以 visits 经 visitStatsViewModel.computeShares 本地重算为准。 */
-export type VisitPlatformKey = 'ios' | 'android' | 'windows' | 'macos' | 'other'
+export type VisitPlatformKey = 'ios' | 'android' | 'windows' | 'macos' | 'linux' | 'other'
 
 export type VisitStatsWindow = 'today' | '7d' | '30d' | 'all'
 
@@ -534,6 +534,8 @@ export interface VisitPlatformStatsResponse {
   end_date: string
   total_visits: number
   platforms: VisitPlatformShare[]
+  /** 爬虫、无头浏览器等自动化访问：不计入 total_visits；旧后端无此字段时按 0 */
+  automated_visits?: number
 }
 
 /* 用户与会员统计：member_users 是生效 VIP 数（member 档且未到期），

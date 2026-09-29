@@ -8,6 +8,7 @@ import {
   PLATFORM_COLOR_SLOT,
   VISIT_PLATFORM_ORDER,
   VISIT_STATS_WINDOWS,
+  automatedVisits,
   buildDonutSegments,
   computeShares,
   isEmptyStats,
@@ -33,6 +34,7 @@ const platforms = computed(() => orderedPlatformShares(data.value?.platforms))
 const shares = computed(() => computeShares(data.value?.platforms))
 const segments = computed(() => buildDonutSegments(data.value?.platforms))
 const empty = computed(() => isEmptyStats(data.value))
+const automated = computed(() => automatedVisits(data.value))
 
 const platformLabel = (platform: VisitPlatformKey): string =>
   t(`monitor.visitStats.platform.${platform}`)
@@ -147,6 +149,13 @@ onBeforeUnmount(dispose)
               <span class="visit-legend-share tabular-nums">{{ shareText(entry.platform) }}%</span>
             </li>
           </ul>
+          <!-- 自动化访问不计入总访问、不进环图，虚线空心点与灰字区分于计数桶 -->
+          <div class="visit-automated-row" :title="t('monitor.visitStats.automatedHint')">
+            <span class="visit-legend-dot visit-automated-dot" aria-hidden="true" />
+            <span class="visit-automated-name">{{ t('monitor.visitStats.automated') }}</span>
+            <span class="visit-legend-value visit-automated-value tabular-nums">{{ automated }}</span>
+            <span class="visit-legend-share" aria-hidden="true" />
+          </div>
         </div>
       </div>
     </template>
@@ -162,6 +171,7 @@ onBeforeUnmount(dispose)
   --visit-series-3: #1baf7a;
   --visit-series-4: #eda100;
   --visit-series-5: #e87ba4;
+  --visit-series-6: #008300;
 }
 
 :root[data-theme='dark'] .visit-stats-panel {
@@ -170,6 +180,7 @@ onBeforeUnmount(dispose)
   --visit-series-3: #199e70;
   --visit-series-4: #c98500;
   --visit-series-5: #d55181;
+  --visit-series-6: #008300;
 }
 
 .visit-window-tab {
@@ -261,6 +272,27 @@ onBeforeUnmount(dispose)
 .visit-legend-share {
   width: 52px;
   text-align: right;
+  color: var(--ink-muted);
+}
+
+.visit-automated-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--rule);
+  font-size: 12px;
+}
+
+.visit-automated-dot {
+  box-sizing: border-box;
+  border: 1.5px dashed var(--ink-muted);
+  background: transparent;
+}
+
+.visit-automated-name,
+.visit-automated-value {
   color: var(--ink-muted);
 }
 

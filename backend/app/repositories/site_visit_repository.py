@@ -4,12 +4,17 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-#: 平台桶应用层枚举：beacon 按 User-Agent 归类后的唯一合法值域。
+#: 平台桶应用层枚举：beacon 按 User-Agent 归类后计入访问量的合法值域。
 #: 展示顺序即元组顺序；新增桶只改这里与前端映射，不动 schema。
-PLATFORM_BUCKETS: tuple[str, ...] = ("ios", "android", "windows", "macos", "other")
+#: linux 桶自 2026-09-29 起从 other 拆出，此前的 Linux 访问仍留在历史 other 行里。
+PLATFORM_BUCKETS: tuple[str, ...] = ("ios", "android", "windows", "macos", "linux", "other")
 
 #: 未携带/无法识别 User-Agent 时的落桶默认值。
 DEFAULT_PLATFORM = "other"
+
+#: 爬虫、无头浏览器、脚本客户端等自动化访问的落桶值：只写平台维度表，
+#: 不进 site_visit_days，因此不计入任何访问量，仅供监控面板单列展示。
+AUTOMATED_PLATFORM = "bot"
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,8 @@ class PlatformVisits:
 
 class SiteVisitRecorder(Protocol):
     def record_visit(self, day: date, platform: str = DEFAULT_PLATFORM) -> SiteVisitStats: ...
+
+    def record_automated_visit(self, day: date) -> None: ...
 
 
 class SiteVisitStatsReader(Protocol):

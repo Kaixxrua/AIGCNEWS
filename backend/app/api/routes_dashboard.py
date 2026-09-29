@@ -36,6 +36,7 @@ from backend.app.repositories.postgres_site_visit_repository import (
 )
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
 from backend.app.repositories.site_visit_repository import (
+    AUTOMATED_PLATFORM,
     SiteVisitRecorder,
     SiteVisitStats,
     SiteVisitStatsReader,
@@ -854,8 +855,9 @@ async def record_site_visit(
     """站点访问 beacon：同一匿名访客每天（CST）只计一次。
 
     Redis set 负责原子日内去重；只有首次出现的 ID 才会写入 PostgreSQL，
-    并按 User-Agent 归类平台桶。Redis 不可用时 fail closed，避免故障期间
-    把重复请求膨胀成访客数。
+    并按 User-Agent 归类平台桶。爬虫、无头浏览器等自动化访问只记平台维度的
+    bot 桶，不计入访问量，也不触发实时统计推送。Redis 不可用时 fail closed，
+    避免故障期间把重复请求膨胀成访客数。
     """
     try:
         is_new = await mark_new_daily_visitor(
@@ -871,8 +873,12 @@ async def record_site_visit(
 
     if is_new:
         platform = classify_platform(request.headers.get("user-agent"))
-        stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
-        live_stats_broadcaster.notify_live_stats_changed("site-visit")
+        if platform == AUTOMATED_PLATFORM:
+            await asyncio.to_thread(visits.record_automated_visit, cst_today())
+            stats = await _get_site_visit_stats(visits)
+        else:
+            stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
+            live_stats_broadcaster.notify_live_stats_changed("site-visit")
     else:
         stats = await _get_site_visit_stats(visits)
     return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}

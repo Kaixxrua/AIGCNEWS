@@ -4,6 +4,7 @@ from datetime import date
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.site_visit_repository import (
+    AUTOMATED_PLATFORM,
     DEFAULT_PLATFORM,
     PlatformVisits,
     SiteVisitStats,
@@ -47,6 +48,20 @@ class PostgresSiteVisitRepository:
                 total_row = cursor.fetchone()
                 total = int(total_row["total"] if total_row else 0)
         return SiteVisitStats(today_visits=today, total_visits=total)
+
+    def record_automated_visit(self, day: date) -> None:
+        """计数一次自动化访问：只写平台维度表的 bot 桶，访问量总表不动。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO site_visit_platform_days (day, platform, visits)
+                    VALUES (%s, %s, 1)
+                    ON CONFLICT (day, platform) DO UPDATE
+                        SET visits = site_visit_platform_days.visits + 1
+                    """,
+                    (day, AUTOMATED_PLATFORM),
+                )
 
     def get_visit_stats(self, day: date) -> SiteVisitStats:
         with self._database.transaction() as connection:

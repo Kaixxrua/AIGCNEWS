@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import psycopg
 from fastapi import FastAPI
@@ -92,6 +92,64 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         (_, platform_arg), _ = visits.record_visit.call_args
         self.assertEqual(platform_arg, "ios")
+
+    def test_automated_visit_is_recorded_as_bot_without_counting(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        visits.get_visit_stats.return_value = SiteVisitStats(today_visits=8, total_visits=701)
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=1)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
+
+        headless_ua = (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36"
+        )
+        with patch.object(
+            routes_dashboard.live_stats_broadcaster, "notify_live_stats_changed"
+        ) as notify:
+            response = TestClient(app).post(
+                "/api/dashboard/visit",
+                headers={"User-Agent": headless_ua},
+                json={"visitor_id": "visitor-1234567890"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        # 响应仍是未变动的真人计数，访问量总表不写、不推实时统计
+        self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
+        visits.record_visit.assert_not_called()
+        (day_arg,), _ = visits.record_automated_visit.call_args
+        self.assertIsInstance(day_arg, date)
+        notify.assert_not_called()
+
+    def test_linux_desktop_visit_counts_into_linux_bucket(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        visits.record_visit.return_value = SiteVisitStats(today_visits=1, total_visits=1)
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=1)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
+
+        linux_ua = (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+        )
+        response = TestClient(app).post(
+            "/api/dashboard/visit",
+            headers={"User-Agent": linux_ua},
+            json={"visitor_id": "visitor-1234567890"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        (_, platform_arg), _ = visits.record_visit.call_args
+        self.assertEqual(platform_arg, "linux")
+        visits.record_automated_visit.assert_not_called()
 
     def test_visit_stats_failure_falls_back_to_zero_on_read_endpoints(self) -> None:
         """计数不可用（如 0038 迁移滞后）时读端点静默为 0，不拖垮看板轮询。"""

@@ -9,16 +9,20 @@ export type { VisitPlatformKey, VisitPlatformShare, VisitPlatformStatsResponse, 
 
 /* 桶顺序与后端 visit_platforms.PLATFORM_BUCKETS 双向冻结；颜色按 dataviz 规范
    固定实体→槽位映射（不随数据排序变化），浅/深色双 token 经面板 CSS 变量落地。
-   已跑 validate_palette.js：浅色系于 --projects-paper-light(#fffdf5)、深色系于
-   #111410 表面均全项通过；浅色的 3:1 对比 WARN 由图例数值列表（table view）兜底。 */
-export const VISIT_PLATFORM_ORDER: readonly VisitPlatformKey[] = ['ios', 'android', 'windows', 'macos', 'other']
+   linux 后加，取下一个空槽位 6，other 保持槽位 5 不改色。
+   已按环上相邻顺序（含 other→ios 首尾相接）跑 validate_palette.js：浅色系于
+   --projects-paper-light(#fffdf5)、深色系于 #111410 表面硬门禁全过；浅色的 3:1
+   对比 WARN 与深色 macos↔linux 的 CVD ΔE 6.9（6–8 合法区间）由 2px 分段间隙
+   与图例数值列表（table view）兜底。 */
+export const VISIT_PLATFORM_ORDER: readonly VisitPlatformKey[] = ['ios', 'android', 'windows', 'macos', 'linux', 'other']
 
 /** 桶 → dataviz 分类槽位（面板 CSS 变量 --visit-series-N 按此槽位取色） */
-export const PLATFORM_COLOR_SLOT: Record<VisitPlatformKey, 1 | 2 | 3 | 4 | 5> = {
+export const PLATFORM_COLOR_SLOT: Record<VisitPlatformKey, 1 | 2 | 3 | 4 | 5 | 6> = {
   ios: 1,
   android: 2,
   windows: 3,
   macos: 4,
+  linux: 6,
   other: 5,
 }
 
@@ -29,6 +33,10 @@ export const DEFAULT_VISIT_STATS_WINDOW: VisitStatsWindow = '7d'
 export const isEmptyStats = (stats: VisitPlatformStatsResponse | null | undefined): boolean =>
   !stats || stats.total_visits <= 0
 
+/** 自动化访问次数：单列展示、不进环图；缺字段或脏值按 0。 */
+export const automatedVisits = (stats: VisitPlatformStatsResponse | null | undefined): number =>
+  Math.max(0, Math.round(stats?.automated_visits ?? 0))
+
 /** 归一化为固定桶序（缺失桶补零），未知桶名静默丢弃——后端契约已保证集合。 */
 export const orderedPlatformShares = (
   platforms: readonly VisitPlatformShare[] | null | undefined,
@@ -38,7 +46,7 @@ export const orderedPlatformShares = (
     return { platform, visits: Math.max(0, Math.round(hit?.visits ?? 0)), share: hit?.share ?? 0 }
   })
 
-/* 展示百分比：原始 visits 经大余数法取整到 0.1，非零总量时五桶和恒为 100.0。
+/* 展示百分比：原始 visits 经大余数法取整到 0.1，非零总量时各桶和恒为 100.0。
    （后端 share 一位小数直接相加可能漂移 ±0.1，仅作信息性字段。） */
 export const computeShares = (
   platforms: readonly VisitPlatformShare[] | null | undefined,

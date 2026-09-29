@@ -941,6 +941,9 @@ class FakeSiteVisits:
 
         return SiteVisitStats(today_visits=8, total_visits=701)
 
+    def record_automated_visit(self, day) -> None:
+        return None
+
 
 def _summary_client(monkeypatch, catalog_factory, reader=None, github_hot=None) -> TestClient:
     from backend.app.api.dependencies import (

@@ -144,6 +144,7 @@ async def visit_platform_breakdown(
 
     管理员口径与 /monitor/tasks 一致。平台计数自 0054 迁移上线日起算，
     更早的访问没有平台维度，all 窗口合计小于站点总访问量是预期。
+    爬虫、无头浏览器等自动化访问不计入 total_visits，单列为 automated_visits。
     Depends 键复用 routes_dashboard.get_site_visit_repository 同一函数对象，
     契约测试用 dependency_overrides 替换时对两个路由同时生效。
     """
