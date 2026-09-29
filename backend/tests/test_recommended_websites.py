@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -7,7 +9,12 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from backend.app.api.routes_recommended_websites import get_recommended_website_repository, router
+from backend.app.api import routes_recommended_websites
+from backend.app.api.routes_recommended_websites import (
+    get_recommended_website_repository,
+    get_website_icon_fetcher,
+    router,
+)
 from backend.app.core.auth import RequireUser
 from backend.app.repositories.recommended_website_repository import DuplicateRecommendedWebsiteError
 
@@ -25,6 +32,9 @@ def setup_api():
     repository.update_website.return_value = ROW
     repository.delete_website.return_value = True
     app.dependency_overrides[get_recommended_website_repository] = lambda: repository
+    # Saves fetch the website's icon; tests never reach the network.
+    app.state.icons = MagicMock(return_value="")
+    app.dependency_overrides[get_website_icon_fetcher] = lambda: app.state.icons
     return app, repository
 
 
@@ -56,6 +66,7 @@ async def test_writes_require_actual_admin_role(setup_api, method, path, role, e
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.request(method, path, json=PAYLOAD)
     assert response.status_code == expected
+    app.state.icons.assert_not_called()
     repository.create_website.assert_not_called()
     repository.update_website.assert_not_called()
     repository.delete_website.assert_not_called()
@@ -68,13 +79,13 @@ async def test_admin_crud_uses_only_the_dedicated_directory(setup_api):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/ops/recommended-websites", json={**PAYLOAD, "url": "https://EXAMPLE.COM"})
         assert created.status_code == 201
-        repository.create_website.assert_called_once_with(**PAYLOAD)
+        repository.create_website.assert_called_once_with(**PAYLOAD, icon_url="")
         repository.list_websites.return_value = [ROW]
         listed = await client.get("/api/site/recommended-websites")
         assert listed.json()["items"][0]["url"] == PAYLOAD["url"]
         assert "user_id" not in listed.json()["items"][0]
         assert (await client.put("/api/ops/recommended-websites/1", json=PAYLOAD)).status_code == 200
-        repository.update_website.assert_called_once_with(1, **PAYLOAD)
+        repository.update_website.assert_called_once_with(1, **PAYLOAD, icon_url="")
         removed = await client.delete("/api/ops/recommended-websites/1")
         assert removed.status_code == 204 and removed.content == b""
         repository.delete_website.assert_called_once_with(1)
@@ -85,6 +96,7 @@ async def test_admin_crud_uses_only_the_dedicated_directory(setup_api):
     {"title": "  "}, {"url": "javascript:alert(1)"}, {"url": "data:text/html,hello"},
     {"url": "ftp://example.com/"}, {"url": "https://name:secret@example.com/"},
     {"url": "https://exam\nple.com/"}, {"sort_order": 10001}, {"private_collection_id": 42},
+    {"icon_url": "https://tracker.example/pixel.png"},
 ])
 async def test_invalid_or_unsafe_inputs_are_rejected_before_storage(setup_api, overrides):
     app, repository = setup_api
@@ -109,3 +121,33 @@ async def test_duplicates_and_missing_recommendations_have_explicit_statuses(set
         repository.delete_website.return_value = False
         assert (await client.put("/api/ops/recommended-websites/99", json=PAYLOAD)).status_code == 404
         assert (await client.delete("/api/ops/recommended-websites/99")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_saves_store_the_icon_fetched_from_the_website(setup_api):
+    app, repository = setup_api
+    app.dependency_overrides[RequireUser] = lambda: {"id": 7, "role": "admin"}
+    icon = "/api/media/site/" + "a" * 32 + ".webp"
+    app.state.icons.return_value = icon
+    repository.create_website.return_value = {**ROW, "icon_url": icon}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/ops/recommended-websites", json=PAYLOAD)
+        assert created.status_code == 201 and created.json()["icon_url"] == icon
+        repository.create_website.assert_called_once_with(**PAYLOAD, icon_url=icon)
+        assert (await client.put("/api/ops/recommended-websites/1", json=PAYLOAD)).status_code == 200
+        repository.update_website.assert_called_once_with(1, **PAYLOAD, icon_url=icon)
+    assert [call.args for call in app.state.icons.call_args_list] == [(PAYLOAD["url"],), (PAYLOAD["url"],)]
+
+
+@pytest.mark.asyncio
+async def test_a_slow_icon_does_not_hold_up_the_save(setup_api, monkeypatch):
+    app, repository = setup_api
+    app.dependency_overrides[RequireUser] = lambda: {"id": 7, "role": "admin"}
+    monkeypatch.setattr(routes_recommended_websites, "_ICON_TIMEOUT_SECONDS", 0.05)
+    app.state.icons.side_effect = lambda url: time.sleep(0.5) or "/api/media/site/" + "b" * 32 + ".webp"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        started = asyncio.get_running_loop().time()
+        response = await client.post("/api/ops/recommended-websites", json=PAYLOAD)
+        assert asyncio.get_running_loop().time() - started < 0.4
+    assert response.status_code == 201
+    repository.create_website.assert_called_once_with(**PAYLOAD, icon_url="")

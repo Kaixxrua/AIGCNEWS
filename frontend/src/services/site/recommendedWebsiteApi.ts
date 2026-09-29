@@ -10,6 +10,8 @@ export interface RecommendedWebsiteInput {
 
 export interface RecommendedWebsite extends RecommendedWebsiteInput {
   id: number
+  /** 保存时从网站抓取、存为本站素材的图标（/api/media/site/…）；抓不到为空串。 */
+  icon_url?: string
   created_at: string
   updated_at: string
 }

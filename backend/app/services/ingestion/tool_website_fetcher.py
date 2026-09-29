@@ -513,6 +513,15 @@ def _proxy_request_target(logical_url: str) -> tuple[str, dict[str, str], dict[s
     return target.request_url, target.headers, target.extensions
 
 
+def _request_target(current_url: str, proxy_url: str | None) -> tuple[str, dict[str, str], dict[str, Any]]:
+    hostname = urlparse(current_url).hostname or ""
+    if proxy_url and _proxy_uses_remote_dns(proxy_url, hostname):
+        # Some blocked domains receive poisoned local DNS answers. This narrow allowlist
+        # deliberately relies on the trusted SOCKS resolver; redirects are revalidated.
+        return current_url, {}, {}
+    return _proxy_request_target(current_url)
+
+
 def _fetch_tool_website_metadata(
     raw_url: str,
     *,
@@ -534,20 +543,8 @@ def _fetch_tool_website_metadata(
         proxy=proxy_url,
     ) as client:
         for _ in range(_MAX_REDIRECTS + 1):
-            hostname = urlparse(current_url).hostname or ""
-            if proxy_url and _proxy_uses_remote_dns(proxy_url, hostname):
-                # Some blocked domains receive poisoned local DNS answers. This narrow allowlist
-                # deliberately relies on the trusted SOCKS resolver; redirects are revalidated.
-                request_url = current_url
-                request_headers = {}
-                extensions = {}
-                request_context = nullcontext()
-            elif proxy_url:
-                request_url, request_headers, extensions = _proxy_request_target(current_url)
-                request_context = nullcontext()
-            else:
-                request_url, request_headers, extensions = _proxy_request_target(current_url)
-                request_context = nullcontext()
+            request_url, request_headers, extensions = _request_target(current_url, proxy_url)
+            request_context = nullcontext()
 
             with request_context:
                 with client.stream(
@@ -604,3 +601,49 @@ def fetch_tool_website_metadata(raw_url: str) -> ToolWebsiteMetadata:
             return _fetch_tool_website_metadata(raw_url, proxy_url=proxy_url)
         except httpx.RequestError as proxy_exc:
             raise ToolWebsiteFetchError("直接连接和出站代理均无法访问目标网站") from proxy_exc
+
+
+def _download_tool_website_image(raw_url: str, *, proxy_url: str | None = None) -> bytes:
+    """Bounded bytes of one image URL (a site's icon), with every redirect hop revalidated and pinned."""
+    current_url = _validate_url(raw_url)
+    headers = {
+        "User-Agent": _USER_AGENT,
+        "Accept": "image/avif,image/webp,image/png,image/*;q=0.8,*/*;q=0.5",
+    }
+    timeout = httpx.Timeout(timeout=12.0, connect=5.0, read=10.0)
+    with httpx.Client(
+        timeout=timeout,
+        follow_redirects=False,
+        trust_env=False,
+        headers=headers,
+        proxy=proxy_url,
+    ) as client:
+        for _ in range(_MAX_REDIRECTS + 1):
+            request_url, request_headers, extensions = _request_target(current_url, proxy_url)
+            with client.stream("GET", request_url, headers=request_headers, extensions=extensions) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("location")
+                    if not location:
+                        raise ToolWebsiteFetchError("重定向缺少 Location")
+                    current_url = _validate_url(urljoin(current_url, location))
+                    continue
+                if response.status_code != 200:
+                    raise ToolWebsiteFetchError(f"图标地址返回 HTTP {response.status_code}")
+                content_type = response.headers.get("content-type", "").lower()
+                if "html" in content_type:
+                    raise ToolWebsiteFetchError("图标地址返回的是网页")
+                return _read_limited_response(response)
+    raise ToolWebsiteFetchError("重定向次数过多")
+
+
+def download_tool_website_image(raw_url: str) -> bytes:
+    try:
+        return _download_tool_website_image(raw_url)
+    except httpx.RequestError as direct_exc:
+        try:
+            proxy_url = _validated_proxy_url(settings.outbound_proxy)
+            if not proxy_url:
+                raise ToolWebsiteFetchError(f"无法连接图标地址：{direct_exc}") from direct_exc
+            return _download_tool_website_image(raw_url, proxy_url=proxy_url)
+        except httpx.RequestError as proxy_exc:
+            raise ToolWebsiteFetchError("直接连接和出站代理均无法访问图标地址") from proxy_exc

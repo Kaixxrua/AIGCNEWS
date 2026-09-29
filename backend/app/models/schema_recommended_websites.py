@@ -32,6 +32,8 @@ class RecommendedWebsiteRequest(BaseModel):
 
 class RecommendedWebsiteResponse(RecommendedWebsiteRequest):
     id: int
+    # Set by the server from the website itself when an administrator saves it; never accepted from clients.
+    icon_url: str = ""
     created_at: datetime
     updated_at: datetime
 

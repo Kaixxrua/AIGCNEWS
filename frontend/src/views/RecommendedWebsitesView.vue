@@ -24,6 +24,10 @@ const filtered = computed(() => {
     && (!term || [site.title, site.url, site.description, site.category].some(value => value.toLocaleLowerCase().includes(term))))
 })
 const domain = (site: RecommendedWebsite) => new URL(site.url).hostname
+// 图标加载失败（站点素材被清理等）时退回首字母。
+const brokenIcons = ref(new Set<number>())
+const iconOf = (site: RecommendedWebsite) => (site.icon_url && !brokenIcons.value.has(site.id) ? site.icon_url : '')
+const markIconBroken = (site: RecommendedWebsite) => { brokenIcons.value = new Set(brokenIcons.value).add(site.id) }
 const openEditor = (website: RecommendedWebsite | null, event: MouseEvent) => {
   editing.value = website
   editorTrigger = event.currentTarget as HTMLElement
@@ -84,7 +88,7 @@ onBeforeUnmount(dispose)
       <section v-else-if="!filtered.length" class="website-state" role="status"><p>{{ t('recommendedWebsites.noResults') }}</p><button type="button" class="btn-secondary" @click="query = ''; category = ''">{{ t('recommendedWebsites.clearFilters') }}</button></section>
       <ul v-else class="website-directory">
         <li v-for="website in filtered" :key="website.id" class="website-card comic-panel">
-          <div class="website-card__heading"><span class="website-monogram" aria-hidden="true">{{ website.title.slice(0, 1) }}</span><div><h2><a :href="website.url" target="_blank" rel="noopener noreferrer">{{ website.title }} <span aria-hidden="true">↗</span></a></h2><p>{{ domain(website) }}</p></div></div>
+          <div class="website-card__heading"><span class="website-monogram" aria-hidden="true"><img v-if="iconOf(website)" :src="iconOf(website)" alt="" loading="lazy" decoding="async" @error="markIconBroken(website)"><template v-else>{{ website.title.slice(0, 1) }}</template></span><div><h2><a :href="website.url" target="_blank" rel="noopener noreferrer">{{ website.title }} <span aria-hidden="true">↗</span></a></h2><p>{{ domain(website) }}</p></div></div>
           <p v-if="website.description" class="website-card__reason">{{ website.description }}</p>
           <footer><span v-if="website.category" class="website-category">{{ website.category }}</span><div v-if="auth.isAdmin" class="website-card__actions"><button type="button" :disabled="saving || deletingId !== null" @click="openEditor(website, $event)">{{ t('recommendedWebsites.edit') }}</button><button type="button" :disabled="saving || deletingId !== null" @click="removeWebsite(website)">{{ t(deletingId === website.id ? 'recommendedWebsites.removing' : 'recommendedWebsites.remove') }}</button></div></footer>
         </li>
@@ -108,7 +112,8 @@ onBeforeUnmount(dispose)
 .website-card { padding: 20px; min-width: 0; border: 1px solid var(--rule); border-radius: var(--module-radius); background: var(--paper-raised); }
 .website-card__heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .website-card__heading > div { min-width: 0; }
-.website-monogram { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border: 1px solid var(--rule); border-radius: var(--control-radius); background: var(--paper-muted); font-size: 20px; font-weight: 700; }
+.website-monogram { display: grid; place-items: center; flex: 0 0 40px; height: 40px; overflow: hidden; border: 1px solid var(--rule); border-radius: var(--control-radius); background: var(--paper-muted); font-size: 20px; font-weight: 700; }
+.website-monogram img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .website-card h2 { margin: 0; font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
 .website-card h2 a:hover { text-decoration: underline; text-underline-offset: 4px; }
 .website-card h2 span { font-size: 14px; color: var(--ink-muted); }

@@ -57,6 +57,22 @@ describe('standalone website recommendations', () => {
     wrapper.unmount()
   })
 
+  it('shows the stored site logo and falls back to the monogram when it cannot load', async () => {
+    vi.mocked(api.fetchRecommendedWebsites).mockResolvedValue([
+      { ...example, icon_url: '/api/media/site/' + 'a'.repeat(32) + '.webp' },
+      { ...example, id: 2, title: 'Other', url: 'https://other.example/' },
+    ])
+    const wrapper = await mountPage()
+    const [withIcon, withoutIcon] = wrapper.findAll('.website-monogram')
+    expect(withIcon!.find('img').attributes('src')).toBe('/api/media/site/' + 'a'.repeat(32) + '.webp')
+    expect(withoutIcon!.find('img').exists()).toBe(false)
+    expect(withoutIcon!.text()).toBe('O')
+    await withIcon!.find('img').trigger('error')
+    expect(wrapper.findAll('.website-monogram')[0]!.find('img').exists()).toBe(false)
+    expect(wrapper.findAll('.website-monogram')[0]!.text()).toBe('E')
+    wrapper.unmount()
+  })
+
   it('lets admins publish a manually entered website and hides the editor on role loss', async () => {
     authBox.current!.isAdmin = true
     const wrapper = await mountPage()
