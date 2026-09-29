@@ -61,6 +61,11 @@ const goBack = () => {
 
 <template>
   <div class="paper-read-shell w-full flex-1 min-h-0 flex flex-col overflow-hidden" :class="{ 'guest-mode': !conversationEnabled, 'md:flex-row': conversationEnabled }">
+    <!-- 页面标题只在桌面漫画版显示（comic-pages.css），其余宽度沿用原阅读布局。 -->
+    <div class="paper-read-heading">
+      <p class="paper-read-title comic-title">{{ $t('paper.pageTitle') }}</p>
+      <p class="paper-read-subtitle">{{ $t('paper.pageSubtitle') }}</p>
+    </div>
     <PaperConversationPanel
       v-if="conversationEnabled"
       v-model:show-conv-panel="showConvPanel"
@@ -104,6 +109,8 @@ const goBack = () => {
   background: var(--paper);
   color: var(--ink);
 }
+
+.paper-read-heading { display: none; }
 
 .paper-read-shell.guest-mode .guest-cta {
   border-bottom: 1px solid var(--rule);

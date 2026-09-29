@@ -164,3 +164,13 @@ The MCP access page (`/mcp`, "mcp-C" concept) uses the same generator. The icons
 - `mcp-disc-{teal,lavender,sky,peach}.webp`: the watercolour discs under the facts' icons.
 
 The slips, tags and tickets carry their fill; the rest take the image as a frame and paint their own face. Together they are about 230 KB. The `-night` files swap the fills for the dark theme's paper (the navy ticket for pale grey), the ink for pale grey and the blocks for black, and dim the screens and the discs.
+
+The paper reader (`/papers/:id/read`, "paper-read-C" concept) uses the same generator. The lime tab at the summary card's left edge is CSS.
+
+- `pr-head.webp`, `pr-sum.webp`: the paper's heading card and its summary card, a fine navy line (the summary's firmer) pressed into a black block about 8.5px right and down, with a triangle of sky-blue screen off the lower right. The summary card also frames the conversation when the reader is signed in.
+- `pr-cta.webp`: the sign-in strip, a thin line on a black block with a band of fine cyan screen down its right end.
+- `pr-btn.webp`: its button, a 2.3px line, 6px round and heavier along the foot, on a thin black block, round the lime.
+- `pr-slip.webp`: the date and link slips under the heading, cream, the right end leaning in, with the printer's second pass under the lower left.
+- `pr-label.webp`: the summary's label slip, cream with its foot pressed hard; the element is turned in CSS.
+
+The slips carry their fill; the rest take the image as a frame and paint their own face. Together they are about 190 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and dim the screens.

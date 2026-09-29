@@ -1366,6 +1366,103 @@
     #app .app-shell--comic-page .mcp-connect-page :is(.mcp-step-dot, .mcp-choice) { transition: none; }
   }
 
+  /* ── Paper reader (paper-read-C): the page title and its line at the left, the sign-in strip (or, signed in,
+     the conversation) at the right; then the paper's heading card, its title large with the date and the link on
+     slips, and the summary card under a label slip with a lime tab. The summary sets at 19px on generous lines;
+     both cards scroll together below the title and the strip. ── */
+  #app .app-shell--comic-page .paper-read-shell {
+    --paper: var(--comic-paper); --paper-raised: var(--comic-paper-raised); --ink: var(--comic-ink); --rule: var(--comic-ink);
+    --pr-f-head: url('/assets/comic/pr-head.webp'); --pr-f-sum: url('/assets/comic/pr-sum.webp'); --pr-f-cta: url('/assets/comic/pr-cta.webp'); --pr-f-btn: url('/assets/comic/pr-btn.webp'); --pr-f-slip: url('/assets/comic/pr-slip.webp'); --pr-f-label: url('/assets/comic/pr-label.webp');
+    display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 812px); grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: 'heading cta' 'doc doc'; column-gap: 24px; row-gap: 17px; padding: 20px 14px 0 30px; background: transparent;
+  }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) {
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 31%, 470px); grid-template-areas: 'heading heading' 'doc conv';
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .paper-read-shell {
+    --pr-f-head: url('/assets/comic/pr-head-night.webp'); --pr-f-sum: url('/assets/comic/pr-sum-night.webp'); --pr-f-cta: url('/assets/comic/pr-cta-night.webp'); --pr-f-btn: url('/assets/comic/pr-btn-night.webp'); --pr-f-slip: url('/assets/comic/pr-slip-night.webp'); --pr-f-label: url('/assets/comic/pr-label-night.webp');
+  }
+  #app .app-shell--comic-page .paper-read-shell > .paper-read-heading { grid-area: heading; display: block; min-width: 0; background: transparent !important; }
+  #app .app-shell--comic-page .paper-read-title { margin: 4px 36px 0 0; font-size: 50px; line-height: 1.15; }
+  #app .app-shell--comic-page .paper-read-subtitle { margin: 10px 0 0 12px; color: var(--ink); font-size: 21px; font-weight: 800; line-height: 1.35; }
+
+  /* The sign-in strip: the prompt in bold italics, the lime button at its right before the screen. */
+  #app .app-shell--comic-page .paper-read-shell.guest-mode .guest-cta {
+    grid-area: cta; align-self: start; justify-content: space-between; gap: 24px; min-height: 69px; margin: 10px 12px 0 0; padding: 0 81px 0 33px;
+    border: 0 solid transparent; background: var(--paper-raised) !important;
+    border-image: var(--pr-f-cta) 24 312 216 21 / 8px 104px 72px 7px / 2px 10px 11px 2px stretch;
+    color: var(--ink); font-size: 22px; font-style: italic; font-weight: 800;
+  }
+  #app .app-shell--comic-page .paper-read-shell .guest-cta-link {
+    display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: 172px; min-height: 52px; padding: 0 24px;
+    border: 0 solid transparent; border-radius: 6px; background: var(--acid); color: var(--acid-ink);
+    border-image: var(--pr-f-btn) 33 39 45 33 / 11px 13px 15px 11px / 2px 4px 6px 2px stretch;
+    font-size: 24px; font-style: normal; font-weight: 900; text-decoration: none; transition: background-color .12s linear;
+  }
+  #app .app-shell--comic-page .paper-read-shell .guest-cta-link:hover { background: var(--acid-bright, var(--acid)); filter: brightness(1.04); }
+
+  /* The document: one scroll for both cards. */
+  #app .app-shell--comic-page .paper-read-shell .paper-document-panel {
+    grid-area: doc; display: block; overflow-y: auto; padding: 0 14px calc(var(--peel-clear) + 30px) 0; background: transparent;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header {
+    min-height: 180px; padding: 22px 64px 28px 25px; border: 0 solid transparent; background: var(--paper-raised);
+    border-image: var(--pr-f-head) 27 549 522 21 / 9px 183px 174px 7px / 2px 11px 12px 2px stretch;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header h1 {
+    max-width: 1240px; color: var(--ink); font-family: inherit; font-size: 44px; font-style: italic; font-weight: 900; letter-spacing: -.8px; line-height: 56px;
+    text-wrap: balance;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header > div { gap: 28px; margin-top: 20px; color: var(--ink); }
+  #app .app-shell--comic-page .paper-document-panel > header > div > :is(time, a) {
+    display: inline-flex; align-items: center; min-height: 47px; padding: 0 28px 0 29px; border: 0 solid transparent; color: var(--ink);
+    border-image: var(--pr-f-slip) 36 57 51 81 fill / 12px 19px 17px 27px / 2px 3px 5px 5px stretch;
+    font-size: 23px; font-style: italic; font-weight: 800; letter-spacing: 0; text-decoration: none; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header > div > a:hover { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+  #app .app-shell--comic-page .paper-document-panel > header > p[role='alert'] { font-size: 16px; font-weight: 700; }
+  #app .app-shell--comic-page .paper-document-panel > div { overflow: visible; margin-top: 24px; padding: 0; }
+  #app .app-shell--comic-page .paper-document-panel article {
+    position: relative; max-width: none; min-height: 190px; padding: 20px 64px 38px 45px; border: 0 solid transparent; background: var(--paper-raised);
+    border-image: var(--pr-f-sum) 30 543 531 21 / 10px 181px 177px 7px / 2px 11px 13px 2px stretch;
+  }
+  /* The lime tab at the card's left edge, over the label's end. */
+  #app .app-shell--comic-page .paper-document-panel article::before {
+    content: ''; position: absolute; z-index: 1; left: 0; top: 23px; width: 29px; height: 63px;
+    background: linear-gradient(90deg, var(--acid) 0 14px, transparent 14px);
+  }
+  #app .app-shell--comic-page .paper-document-panel article::after {
+    content: ''; position: absolute; z-index: 1; left: 14px; top: 22px; width: 15px; height: 65px;
+    border: 2px solid var(--ink); border-radius: 1.5px; background: var(--acid);
+  }
+  #app .app-shell--comic-page .paper-document-panel article > h2 {
+    display: inline-block; margin: 6px 0 10px -30px; padding: 3px 32px 5px 44px; color: var(--ink);
+    border-image: var(--pr-f-label) 42 66 57 54 fill / 14px 22px 19px 18px / 2px 2px 3px 2px stretch;
+    font-size: 37px; font-style: italic; font-weight: 900; line-height: 54px; transform: rotate(-6.5deg); transform-origin: left bottom;
+  }
+  #app .app-shell--comic-page .paper-document-panel .paper-summary { max-width: 1100px; color: var(--ink); font-size: 19px; line-height: 2.05; }
+  #app .app-shell--comic-page .paper-document-panel article > p { color: var(--ink); font-size: 17px; line-height: 1.9; }
+
+  /* Signed in: the conversation stands at the right on the summary's frame. */
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) > div:not(.paper-read-heading) {
+    grid-area: conv; width: auto; height: auto; min-height: 0; margin: 0 12px calc(var(--peel-clear) + 30px) 0; border: 0 solid transparent;
+    background: var(--paper-raised) !important;
+    border-image: var(--pr-f-sum) 30 543 531 21 / 10px 181px 177px 7px / 2px 11px 13px 2px stretch;
+  }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) > div:not(.paper-read-heading) > :is(header, footer) { background: transparent; }
+  @media (max-width: 1279px) {
+    /* Narrower screens keep the strip beside the title, smaller, so the summary keeps its room. */
+    #app .app-shell--comic-page .paper-read-shell.guest-mode { grid-template-columns: fit-content(400px) minmax(0, 1fr); column-gap: 20px; }
+    #app .app-shell--comic-page .paper-read-title { font-size: 44px; }
+    #app .app-shell--comic-page .paper-read-subtitle { font-size: 18px; }
+    #app .app-shell--comic-page .paper-read-shell.guest-mode .guest-cta { gap: 16px; min-height: 62px; padding: 7px 64px 7px 24px; font-size: 18px; }
+    #app .app-shell--comic-page .paper-read-shell .guest-cta-link { min-width: 128px; min-height: 46px; padding: 0 18px; font-size: 20px; }
+    #app .app-shell--comic-page .paper-document-panel > header h1 { font-size: 36px; line-height: 46px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .paper-read-shell .guest-cta-link { transition: none; }
+  }
+
   /* ── Legal pages (legal-B): the calm one. An upright title on a slanted lime bar and three tinted facts, then a
      contents panel beside the text panel, both on thin slate rules without shadows; section heads carry a small lime
      bar and a green underline over a faint rule. Text is set as the concept sets it, 13px on 20px. The privacy page's
