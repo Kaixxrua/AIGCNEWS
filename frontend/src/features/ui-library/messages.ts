@@ -1,6 +1,6 @@
 export const uiLibraryMessages = {
   zh: {
-    title: 'UI 素材库', subtitle: '发现原版效果，把源码和灵感一起带进项目。', search: '搜索效果、组件或风格 · 中文 / English',
+    title: 'UI 灵感库', subtitle: '发现原版效果，把源码和灵感一起带进项目。', search: '搜索效果、组件或风格 · 中文 / English',
     all: '全部作品', shader: 'Shader 着色器', background: '动态背景', text: '文字动效', component: '交互组件',
     frameworks: '全部框架', categories: '素材分类', sources: '个来源', works: '件作品', result: '个结果', clear: '清除筛选',
     emptyNew: '最近 24 小时暂无匹配的新素材', emptyNewHint: '可以清除筛选查看全部素材，新作品入库后会出现在这里。',
@@ -16,7 +16,7 @@ export const uiLibraryMessages = {
     videoPreview: '视频预览', interactivePreview: '交互预览',
     desktop: '桌面', mobile: '手机', pause: '暂停', play: '播放', replay: '重新播放', loadingPreview: '正在启动预览…',
     previewError: '预览未能启动，可以重试或打开原作。', unsupported: '当前浏览器无法运行 WebGL，仍可查看源码和原作。',
-    promptLanguage: '提示词语言', provenance: '原版效果 · 支持源码与提示词', notFound: '没有找到这个素材', back: '返回素材库',
+    promptLanguage: '提示词语言', provenance: '原版效果 · 支持源码与提示词', notFound: '没有找到这个素材', back: '返回灵感库',
     dependencies: '依赖', mcp: '通过 MCP 使用', mcpHint: '让 AI 先搜索参考，再读取原版源码。',
     mcpRecommended: '用 AI 做前端？推荐使用 MCP', mcpRecommendation: '让 AI 直接搜索效果、读取原版源码与依赖，省去来回复制。', mcpConnect: '配置 MCP',
   },

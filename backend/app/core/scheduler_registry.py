@@ -322,9 +322,9 @@ PAYMENT_ORDER_CLOSING_JOB = IntervalJobDescriptor(
 
 UI_LIBRARY_JOBS: tuple[CronJobDescriptor, ...] = (
     CronJobDescriptor(id="ui_library_discovery", source="ui_library_discovery",
-        name="UI 素材库每日发现（开源组件与 Codrops）", schedule=CronSchedule(hour=9, minute=0), coalesce=True),
+        name="UI 灵感库每日发现（开源组件与 Codrops）", schedule=CronSchedule(hour=9, minute=0), coalesce=True),
     CronJobDescriptor(id="ui_library_x_discovery", source="ui_library_x_discovery",
-        name="UI 素材库设计师 X 新作发现", schedule=CronSchedule(hour=9, minute=10), coalesce=True),
+        name="UI 灵感库设计师 X 新作发现", schedule=CronSchedule(hour=9, minute=10), coalesce=True),
 )
 
 
