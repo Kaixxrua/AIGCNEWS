@@ -5,7 +5,7 @@ import asyncio
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.services.briefing.composition import provide_daily_briefing_service
@@ -101,6 +101,61 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
             repositories=repositories, model=MagicMock(), github_hot_board=github_hot
         )
         self.assertIs(explicit._boards._github_hot, github_hot)
+
+    def test_runtime_max_or_xhigh_model_gets_high_fallback(self) -> None:
+        # max / xhigh 思考可能超过上游约 900 秒单流上限而零输出，缺省配 high 档兜底。
+        repositories = SimpleNamespace(
+            briefings=MagicMock(spec=BriefingContentRepository),
+            documents=MagicMock(),
+            rank_snapshots=MagicMock(),
+        )
+        high_model = MagicMock(name="high")
+        cases = (("max", True), ("xhigh", True), ("high", False), (None, False))
+        for effort, expects_fallback in cases:
+            with self.subTest(effort=effort):
+                primary = SimpleNamespace(reasoning_effort=effort, astream=MagicMock())
+
+                def fake_get_chat_model(temperature=None, reasoning_effort=None):
+                    return high_model if reasoning_effort == "high" else primary
+
+                with patch(
+                    "backend.app.services.briefing.composition.get_chat_model",
+                    side_effect=fake_get_chat_model,
+                ):
+                    service = provide_daily_briefing_service(
+                        repositories=repositories, github_hot_board=MagicMock()
+                    )
+
+                self.assertIs(service._llm, primary)
+                self.assertIs(
+                    service._fallback_llm, high_model if expects_fallback else None
+                )
+
+    def test_explicit_model_only_uses_explicit_fallback(self) -> None:
+        repositories = SimpleNamespace(
+            briefings=MagicMock(spec=BriefingContentRepository),
+            documents=MagicMock(),
+            rank_snapshots=MagicMock(),
+        )
+        model = SimpleNamespace(reasoning_effort="max", astream=MagicMock())
+        fallback = MagicMock()
+
+        with patch(
+            "backend.app.services.briefing.composition.get_chat_model"
+        ) as factory:
+            implicit = provide_daily_briefing_service(
+                repositories=repositories, model=model, github_hot_board=MagicMock()
+            )
+            explicit = provide_daily_briefing_service(
+                repositories=repositories,
+                model=model,
+                fallback_model=fallback,
+                github_hot_board=MagicMock(),
+            )
+
+        factory.assert_not_called()
+        self.assertIsNone(implicit._fallback_llm)
+        self.assertIs(explicit._fallback_llm, fallback)
 
     def test_cached_stream_uses_briefing_repository_and_preserves_events(self) -> None:
         repository = MagicMock(spec=BriefingContentRepository)

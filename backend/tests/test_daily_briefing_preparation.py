@@ -4,7 +4,7 @@ import asyncio
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
@@ -1107,6 +1107,107 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
         self.assertEqual(asyncio.run(collect()), ["visible-1visible-2"])
 
 
+class DailyBriefingModelFallbackTests(unittest.TestCase):
+    """主模型零输出失败（max 思考撞上游约 900 秒单流上限）时用兜底模型重跑本轮。"""
+
+    @staticmethod
+    def _failing_stream(
+        *, emitted: str = "", error: str = "Upstream HTTP/2 stream failed"
+    ):
+        async def stream():
+            if emitted:
+                yield SimpleNamespace(content=emitted)
+            raise RuntimeError(error)
+
+        return stream()
+
+    def _service_with_failing_primary(self, fallback_model=None, **failure):
+        service = _service(fallback_model=fallback_model)
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            _github_doc("project")
+        ]
+        service._llm.astream.side_effect = lambda _prompt: self._failing_stream(
+            **failure
+        )
+        return service
+
+    def test_zero_output_failure_reruns_the_round_with_fallback_model(self) -> None:
+        report = "兜" * 201 + "。"
+        fallback = MagicMock(astream=MagicMock(side_effect=_astream_side_effect([report])))
+        service = self._service_with_failing_primary(fallback)
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
+        self.assertEqual(events[1]["data"], report)
+        self.assertEqual(events[-1], {"type": "done", "data": {"briefing_id": 73}})
+        self.assertEqual(service._briefings.save_briefing.call_args.args[1], report)
+        fallback.astream.assert_called_once_with(service._llm.astream.call_args.args[0])
+
+    def test_failure_after_partial_output_is_not_rerun(self) -> None:
+        fallback = MagicMock(astream=MagicMock())
+        service = self._service_with_failing_primary(fallback, emitted="已写出的半段")
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertIn({"type": "content", "data": "已写出的半段"}, events)
+        self.assertEqual(events[-1]["type"], "error")
+        fallback.astream.assert_not_called()
+        service._briefings.save_briefing.assert_not_called()
+
+    def test_block_response_failure_is_not_rerun(self) -> None:
+        fallback = MagicMock(astream=MagicMock())
+        service = self._service_with_failing_primary(
+            fallback, error="Access Denied: Cloudflare Ray ID"
+        )
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertEqual(events[-1], {"type": "error", "data": _BLOCK_RESPONSE_ERROR})
+        fallback.astream.assert_not_called()
+        service._briefings.save_briefing.assert_not_called()
+
+    def test_without_fallback_model_zero_output_failure_still_errors(self) -> None:
+        service = self._service_with_failing_primary()
+
+        events = _collect(service.stream_generate("2026-07-22", source="github"))
+
+        self.assertEqual([event["type"] for event in events], ["start", "error"])
+        service._briefings.save_briefing.assert_not_called()
+
+    def test_rerun_keeps_the_same_limiter_slot(self) -> None:
+        fallback = MagicMock(
+            astream=MagicMock(side_effect=_astream_side_effect(["兜底正文"]))
+        )
+        service = self._service_with_failing_primary(fallback)
+        limiter = MagicMock(acquire=AsyncMock(), release=MagicMock())
+        service._llm_limiter = limiter
+
+        async def collect():
+            return [token async for token in service._stream_llm_round("prompt")]
+
+        self.assertEqual(asyncio.run(collect()), ["兜底正文"])
+        limiter.acquire.assert_awaited_once()
+        limiter.release.assert_called_once()
+
+    def test_fallback_failure_propagates_and_releases_limiter(self) -> None:
+        fallback = MagicMock(
+            astream=MagicMock(
+                side_effect=lambda _prompt: self._failing_stream(error="fallback down")
+            )
+        )
+        service = self._service_with_failing_primary(fallback)
+        limiter = MagicMock(acquire=AsyncMock(), release=MagicMock())
+        service._llm_limiter = limiter
+
+        async def collect():
+            return [token async for token in service._stream_llm_round("prompt")]
+
+        with self.assertRaisesRegex(RuntimeError, "fallback down"):
+            asyncio.run(collect())
+        limiter.release.assert_called_once()
+
+
 class DailyBriefingSavedNotifierTests(unittest.TestCase):
     """保存后通知契约：只有真实 save_briefing() 成功才触发，且先于 done。"""
 
@@ -1349,7 +1450,9 @@ class BriefingBacktickSanitizeTests(unittest.TestCase):
 
 
 # Helpers live on the preparation contract class so both suites exercise identical wiring.
-def _service(*, top_k: int = 10, github_hot_board=None) -> DailyBriefingService:
+def _service(
+    *, top_k: int = 10, github_hot_board=None, fallback_model=None
+) -> DailyBriefingService:
     # github_hot_board=None：github 按看板未注入口径读 trending 快照，流式契约
     # 用例沿用快照 fixture；热度榜口径由专门用例注入验证。
     briefings = MagicMock()
@@ -1364,6 +1467,7 @@ def _service(*, top_k: int = 10, github_hot_board=None) -> DailyBriefingService:
         rank_snapshot_reader=rank_snapshots,
         github_hot_board=github_hot_board,
         model=MagicMock(astream=MagicMock()),
+        fallback_model=fallback_model,
     )
 
 
