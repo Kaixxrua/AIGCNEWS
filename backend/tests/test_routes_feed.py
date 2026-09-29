@@ -4,7 +4,8 @@
   - 纯函数：item 渲染/跳过规则、回链策略（arxiv 站内、其余原文）、
     全文模式追加译文、公开条目优先中文译文截断（X 源标题亦用译文）、
     脏时间串容错、北京时间日期条目在 UTC 零点前入库取入库时间、
-    跨形态时间串按时刻排序、member source 参数解析、
+    跨形态时间串按时刻排序、入库截断满额的摘要补省略号、
+    arXiv 标题/摘要去 LaTeX 排版、member source 参数解析、
     项目库热榜条目 → feed 行的字段映射；
   - 路由：公开综合/单源 feed 的缓存头与归并排序、非法源 404、
     github 源由站内今日热榜供稿（热榜不可用/为空时回退 documents 池）、
@@ -309,6 +310,94 @@ def test_bare_url_tweet_title_uses_link_card_title() -> None:
     item = build_feed_item(no_card, "https://aigcnews.cn")
     assert item is not None
     assert _item_section(item, "title") == "https://x.com/i/article/2104641136346161153"
+
+
+def _description_body(item: str | None) -> str:
+    assert item is not None
+    return _item_section(item, "description").split("\n\n📮", 1)[0]
+
+
+def test_feed_item_marks_summaries_cut_at_storage_limit() -> None:
+    # 非 X 源摘要入库即硬截断到 500 字符、不补省略号：满额摘要补「…」，
+    # 英文末尾半个单词退回上一个空白，句末标点让位给省略号
+    english = "We study agents. " * 29 + "outperf"
+    assert len(english) == 500
+    row = _doc("2609.00001", title="Paper", summary=english)
+    expected = ("We study agents. " * 29).rstrip(" .") + "…"
+    assert _description_body(build_feed_item(row, "https://aigcnews.cn")) == expected
+    assert _description_body(build_feed_item(row, "https://aigcnews.cn", full=True)) == expected
+
+    chinese = "热点新闻，" * 100
+    hot = _doc("d1", source="dailyhot", title="热榜", summary=chinese)
+    assert _description_body(build_feed_item(hot, "https://aigcnews.cn")) == chinese[:-1] + "…"
+
+    # 末段含中文：不按空白回退，免得吞掉整句
+    mixed = "新 " + "中文" * 247 + "GPT4"
+    assert len(mixed) == 500
+    news = _doc("n1", source="news", title="Headline", summary=mixed)
+    assert _description_body(build_feed_item(news, "https://aigcnews.cn")) == mixed + "…"
+
+    # 截断点恰在空白处：末词完整，不回退
+    boundary = "We study agents. " * 29 + "roles, "
+    assert len(boundary) == 500
+    row = _doc("2609.00004", title="Paper", summary=boundary)
+    assert _description_body(build_feed_item(row, "https://aigcnews.cn")) == "We study agents. " * 29 + "roles…"
+
+    # 末尾半截链接整段去掉，不留给阅读器自动链到错误地址
+    url_tail = "原文：https://mp.weixin.qq.com/s/6avFCSo"
+    linked = "新" * (500 - len(url_tail)) + url_tail
+    hot = _doc("d2", source="dailyhot", title="热榜", summary=linked)
+    assert _description_body(build_feed_item(hot, "https://aigcnews.cn")) == "新" * (500 - len(url_tail)) + "原文…"
+
+    # 已自带省略号：不再叠加
+    ellipsis = "热" * 499 + "…"
+    hot = _doc("d3", source="dailyhot", title="热榜", summary=ellipsis)
+    assert _description_body(build_feed_item(hot, "https://aigcnews.cn")) == ellipsis
+
+
+def test_feed_item_keeps_summaries_below_limit_and_x_summaries_as_is() -> None:
+    short = "We study agents. " * 29 + "outper"
+    assert len(short) == 499
+    item = build_feed_item(_doc("2609.00002", title="Paper", summary=short), "https://aigcnews.cn")
+    assert _description_body(item) == short
+
+    # X 摘要入库不截断，恰好 500 字符也不补省略号
+    tweet = "tweet body " * 45 + "and more."
+    tweet = tweet[:500]
+    assert len(tweet) == 500
+    x_item = build_feed_item(_doc("x1", source="x", title="Tweet", summary=tweet), "https://aigcnews.cn", full=True)
+    assert x_item is not None
+    assert _item_section(x_item, "description") == tweet.strip()
+
+
+def test_arxiv_feed_item_strips_latex_markup_from_title_and_summary() -> None:
+    row = _doc(
+        "2609.00003",
+        title=r"Scaling \textbf{S\textsuperscript{3}Gym} or a \$15 Frontier Run",
+        summary=(
+            r"We propose \emph{COBRA}, with pass@$k$ gains of $4$-$16\times$ for \$1.5M "
+            r"under a tokens-per-parameter ratio (\(\mathrm{TPP}\)) and ``one-size-fits-all'' routing; "
+            r"the $p(y \mid x)$ objective and \method{} stay as written, over ~45.6 million samples."
+        ),
+    )
+    item = build_feed_item(row, "https://aigcnews.cn", full=True)
+    assert item is not None
+    assert _item_section(item, "title") == "Scaling S3Gym or a $15 Frontier Run"
+    assert _item_section(item, "description") == (
+        "We propose COBRA, with pass@k gains of 4-$16\\times$ for $1.5M "
+        "under a tokens-per-parameter ratio (TPP) and “one-size-fits-all” routing; "
+        "the $p(y \\mid x)$ objective and \\method{} stay as written, over ~45.6 million samples."
+    )
+    public = build_feed_item(row, "https://aigcnews.cn")
+    assert public is not None
+    assert _item_section(public, "title") == "Scaling S3Gym or a $15 Frontier Run"
+
+    # 其他源的 $ 多是金额、反斜杠非 LaTeX：原样保留
+    news = _doc("n1", source="news", title=r"Deal at \$5", summary=r"Costs $5 and $10, \emph{not} markup")
+    news_item = build_feed_item(news, "https://aigcnews.cn", full=True)
+    assert news_item is not None
+    assert _item_section(news_item, "title") == r"Deal at \$5"
+    assert _item_section(news_item, "description") == r"Costs $5 and $10, \emph{not} markup"
 
 
 def test_parse_published_at_tolerates_dirty_and_naive_values() -> None:

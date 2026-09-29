@@ -237,14 +237,81 @@ _PUBLIC_TITLE_TRANSLATION_LIMIT = 80
 _PUBLIC_DESCRIPTION_TRANSLATION_LIMIT = 200
 _BARE_URL = re.compile(r"https?://\S+")
 
+# 非 X 源摘要入库即硬截断到 500 字符（persistence_adapter.project_document_write），
+# 不补省略号：恰好满额的摘要在 feed 里补上。末尾是半截链接时整段去掉（半截 URL
+# 会被阅读器自动链到错误地址）；截断点落在英文单词中间时退回上一个空白，末段含
+# 中文或超长时不退，免得吞掉整句。
+_STORED_SUMMARY_LIMIT = 500
+_TRUNCATED_TAIL_URL = re.compile(r"https?://[!-~]*$")
+_TRUNCATED_TAIL_WORD = re.compile(r"\s+[!-~]{0,39}[A-Za-z0-9]$")
+
+# arXiv 标题/摘要沿用 LaTeX 源码写法，阅读器不渲染：排版命令只留内容（嵌套时
+# 由内向外逐层剥），不含命令的短行内公式去掉定界符（$k$、\(TPP\)），转义字符
+# 还原（\$1.5M → $1.5M），``引号'' 换成弯引号。仍含命令的公式与作者自定义宏
+# （\method、\ours{}）原样保留；~ 在摘要里多作「约」用，也不动。
+_LATEX_TEXT_COMMAND = re.compile(
+    r"\\(?:textbf|textit|textsl|textsc|textrm|textsf|texttt|textsuperscript|textsubscript"
+    r"|emph|underline|mbox|text|mathrm|mathbf|mathit|mathsf|mathtt)\{([^{}]*)\}"
+)
+_LATEX_INLINE_MATH = re.compile(r"(?<!\\)\$([^$]*?)(?<!\\)\$|\\\((.*?)\\\)")
+_LATEX_SIMPLE_MATH_LIMIT = 20
+_LATEX_ESCAPED_CHAR = re.compile(r"\\([$%&_#])")
+_LATEX_QUOTED = re.compile(r"``([^`'\"]{1,120}?)(?:''|\")")
+
 
 def _same_text(left: str, right: str) -> bool:
     return " ".join(left.split()) == " ".join(right.split())
 
 
+def _unwrap_simple_math(match: re.Match[str]) -> str:
+    body = match.group(1) if match.group(1) is not None else match.group(2)
+    if body and len(body) <= _LATEX_SIMPLE_MATH_LIMIT and "\\" not in body and body == body.strip():
+        return body
+    return match.group(0)
+
+
+def _plain_latex(text: str) -> str:
+    for _ in range(3):
+        stripped = _LATEX_TEXT_COMMAND.sub(r"\1", text)
+        if stripped == text:
+            break
+        text = stripped
+    text = _LATEX_INLINE_MATH.sub(_unwrap_simple_math, text)
+    text = _LATEX_ESCAPED_CHAR.sub(r"\1", text)
+    return _LATEX_QUOTED.sub(r"“\1”", text)
+
+
+def _mark_truncated(text: str, *, mid_word: bool) -> str:
+    without_url = _TRUNCATED_TAIL_URL.sub("", text)
+    if without_url.strip() and without_url != text:
+        text = without_url
+    elif mid_word:
+        text = _TRUNCATED_TAIL_WORD.sub("", text)
+    return text.rstrip(" ,.;:，。；、：(（") + "…"
+
+
+def _row_summary(row: dict[str, Any]) -> str:
+    """条目原摘要：arXiv 去 LaTeX 排版；非 X 源入库截断满额的补省略号。"""
+    raw = str(row.get("summary") or "")
+    summary = raw.strip()
+    source = str(row.get("source") or "").strip()
+    if source == "arxiv":
+        summary = _plain_latex(summary)
+    if (
+        summary
+        and source != "x"
+        and len(raw) == _STORED_SUMMARY_LIMIT
+        and not summary.endswith(("…", "..."))
+    ):
+        summary = _mark_truncated(summary, mid_word=not raw[-1].isspace())
+    return summary
+
+
 def _row_title(row: dict[str, Any]) -> str:
     """条目原标题；X 纯链接推文（正文只有一条 URL）改用链接卡片标题。"""
     title = str(row.get("title") or "").strip()
+    if str(row.get("source") or "").strip() == "arxiv":
+        return _plain_latex(title)
     card = row.get("link_card")
     if _BARE_URL.fullmatch(title) and isinstance(card, dict):
         card_title = " ".join(str(card.get("title") or "").split())
@@ -275,11 +342,12 @@ def _item_description(row: dict[str, Any], *, full: bool, title: str = "") -> st
     与展示标题同文的段落不再重复一遍：HN 的摘要就是标题，X 短推文的
     译文标题与译文摘要截断后同文。
     """
-    summary = str(row.get("summary") or "").strip()
+    summary = _row_summary(row)
     translation = str(row.get("translation_zh") or "").strip()
     if full:
         parts = [summary] if summary and not _same_text(summary, title) else []
-        if translation and translation != summary:
+        # 未翻译内容回填的「译文」与库中原摘要同文，不重复
+        if translation and translation != str(row.get("summary") or "").strip():
             parts.append(translation)
         return sanitize_public_text("\n\n".join(parts))
     text = (
