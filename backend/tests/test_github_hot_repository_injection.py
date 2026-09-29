@@ -250,3 +250,31 @@ def test_missing_created_at_never_falls_back_to_published_date(monkeypatch) -> N
     assert candidate["created_at"] == ""
     assert snapshots
     assert all(snapshot["repo_created_at"] == "" for snapshot in snapshots)
+
+
+def test_trending_hit_snapshot_never_uses_feed_date_as_creation_date() -> None:
+    """回归：Trending 抓取把 created_at 设成抓取当天，曾被当作建仓日期写进快照，
+    把老仓标成 new_repo_surge。Trending 页面没有建仓时间，快照必须留空交给
+    SQL 层回填 candidates 里的 API 值。"""
+    repository = MagicMock(spec=GitHubProjectIngestionRepository)
+    repository.ensure_github_repo_candidate.return_value = "acme/old-repo"
+    repository.upsert_github_trending_hit.return_value = "acme/old-repo"
+
+    github_hot_service.record_github_trending_hits(
+        [
+            {
+                "full_name": "acme/old-repo",
+                "stars": 12000,
+                "period_star_growth": 800,
+                "published_date": "2026-09-28",
+                "created_at": "2026-09-28",
+            }
+        ],
+        period="daily",
+        observed_date="2026-09-28",
+        db=repository,
+    )
+
+    snapshot = repository.insert_github_repo_snapshot.call_args.args[0]
+    assert snapshot["repo_created_at"] == ""
+    assert "created_at" not in repository.ensure_github_repo_candidate.call_args.args[0]

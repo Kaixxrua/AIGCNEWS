@@ -38,7 +38,15 @@ _CANDIDATE_UPSERT_SQL = """
         language=COALESCE(NULLIF(EXCLUDED.language, ''), github_repo_candidates.language),
         license_spdx_id=COALESCE(NULLIF(EXCLUDED.license_spdx_id, ''), github_repo_candidates.license_spdx_id),
         topics_json=COALESCE(NULLIF(EXCLUDED.topics_json, '[]'), github_repo_candidates.topics_json),
-        created_at=COALESCE(NULLIF(github_repo_candidates.created_at, ''), EXCLUDED.created_at),
+        -- 建仓时间以 GitHub API 为准：日期不同即纠正，同日只接受更精确的时间戳
+        created_at=CASE
+            WHEN NULLIF(EXCLUDED.created_at, '') IS NULL THEN github_repo_candidates.created_at
+            WHEN NULLIF(github_repo_candidates.created_at, '') IS NULL
+                OR LEFT(github_repo_candidates.created_at, 10) <> LEFT(EXCLUDED.created_at, 10)
+                OR LENGTH(EXCLUDED.created_at) > LENGTH(github_repo_candidates.created_at)
+            THEN EXCLUDED.created_at
+            ELSE github_repo_candidates.created_at
+        END,
         pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
         stars=GREATEST(COALESCE(github_repo_candidates.stars, 0), COALESCE(EXCLUDED.stars, 0)),
         forks=GREATEST(COALESCE(github_repo_candidates.forks, 0), COALESCE(EXCLUDED.forks, 0)),
@@ -1187,7 +1195,7 @@ class PostgresGitHubProjectIngestionRepository:
                 ) AS heat_snapshot_history,
                 COALESCE(s.forks,0) forks,COALESCE(s.watchers,0) watchers,
                 s.community_metrics_complete,COALESCE(s.open_issues,0) open_issues,
-                COALESCE(NULLIF(s.repo_created_at,''),NULLIF(c.created_at,''),'') repo_created_at,
+                COALESCE(NULLIF(c.created_at,''),NULLIF(s.repo_created_at,''),'') repo_created_at,
                 NULLIF(c.created_at,'') candidate_created_at,
                 COALESCE(NULLIF(s.repo_pushed_at,''),NULLIF(c.pushed_at,'')) repo_pushed_at,
                 prev.snapshot_date previous_snapshot_date,COALESCE(prev.stars,0) previous_stars,
