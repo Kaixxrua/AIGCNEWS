@@ -1023,87 +1023,154 @@
   }
 
   /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the
-     masthead wordmark. A wide comic form card: fields labelled with lime tags, inked inputs at 16px, a lime submit
-     bar; the login link sits in a tilted tag. The peel only shows where it clears the card (≥1280px). ── */
-  #app .register-page { position: relative; align-items: safe center; padding: 20px 24px 32px; background: var(--paper); }
+     masthead wordmark. Measured off the concept at 1536 × 1024: the title centred with its icon hung to the left,
+     then a 510px form card drawn in ink with a navy block to the lower right and dots down its top-right corner;
+     lime label slips, plain inked inputs, a white "send code" slip, a lime bar, and the login link on a tipped
+     slip below. The hand-drawn frames are generated (reg-*.webp, 3x 9-slice, -night for the dark theme). ── */
+  #app .register-page {
+    --reg-card: url('/assets/comic/reg-card.webp');
+    --reg-label: url('/assets/comic/reg-label.webp');
+    --reg-otp: url('/assets/comic/reg-otp.webp');
+    --reg-submit: url('/assets/comic/reg-submit.webp');
+    --reg-login: url('/assets/comic/reg-login.webp');
+    --reg-ink: #04090e;
+    --reg-copy: #01050f;
+    --reg-rule: #0d141c;
+    --reg-field: #fdfcfb;
+    --reg-hint: #8b929c;
+    --reg-icon: #ebf6f4;
+    --reg-wen: #0f3471;
+    --reg-lime: #cbf946;
+    /* h-full resolves to the content height here (the root has no set height), so the paper fills the viewport itself. */
+    position: relative; align-items: flex-start; min-height: 100dvh; padding: 20px 24px 32px; background: var(--paper);
+  }
+  :root[data-theme='dark'] #app .register-page {
+    --reg-card: url('/assets/comic/reg-card-night.webp');
+    --reg-label: url('/assets/comic/reg-label-night.webp');
+    --reg-otp: url('/assets/comic/reg-otp-night.webp');
+    --reg-submit: url('/assets/comic/reg-submit-night.webp');
+    --reg-login: url('/assets/comic/reg-login-night.webp');
+    --reg-ink: var(--ink); --reg-copy: var(--ink); --reg-rule: #cfd4cb; --reg-field: #1d1f22; --reg-hint: var(--ink-muted);
+    --reg-icon: #22302f; --reg-wen: #8fb4ee; --reg-lime: var(--acid);
+  }
   #app .register-page .register-deco { display: block; }
-  #app .register-page .register-corner { position: absolute; left: 0; top: 0; width: 250px; aspect-ratio: 852 / 345; z-index: 0; }
-  #app .register-page .register-shout { position: absolute; right: 0; top: 0; width: 330px; aspect-ratio: 1101 / 324; z-index: 0; }
-  #app .register-page .register-peel { display: none; position: fixed; right: 0; bottom: 0; width: min(360px, 26vw); aspect-ratio: 1100 / 713; z-index: 0; }
+  #app .register-page .register-corner { position: absolute; left: 0; top: 0; width: 300px; aspect-ratio: 852 / 345; z-index: 0; }
+  #app .register-page .register-shout { position: absolute; right: 0; top: 0; width: 372px; aspect-ratio: 1101 / 324; z-index: 0; }
+  #app .register-page .register-peel { display: none; position: fixed; right: 0; bottom: 0; width: min(430px, 28vw); aspect-ratio: 1100 / 713; z-index: 0; }
   @media (min-width: 1280px) { #app .register-page .register-peel { display: block; } }
   :root:lang(en) #app .register-page .register-peel { display: none; }
-  #app .register-page .register-shell { position: relative; z-index: 1; max-width: 520px; padding: 0; }
-  #app .register-page .register-wordmark { display: block; width: 260px; margin: 0 auto 12px; }
+  #app .register-page .register-shell { position: relative; z-index: 1; max-width: 510px; padding: 0; }
+  #app .register-page .register-wordmark { display: block; width: 288px; margin: 0 auto; }
   #app .register-page .register-wordmark img { display: block; width: 100%; height: auto; }
   :root[data-theme='dark'] #app .register-page .register-wordmark img { content: url('/assets/comic/aigc-news-wordmark-night.webp'); }
 
+  /* The title sits on the page's centre line; its icon hangs to the left of it, the language switch off to the right. */
   #app .register-page .auth-page-header {
-    display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: 16px; margin-bottom: 22px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin: 0 0 26px; padding-top: 38px;
   }
   #app .register-page .auth-page-header__icon {
-    grid-row: 1; margin: 0; width: 52px; height: 52px; border: 2px solid var(--rule-strong); border-radius: 50%;
-    background: color-mix(in srgb, var(--comic-cyan-line) 22%, var(--paper-raised)); box-shadow: 2px 2px 0 var(--comic-shadow);
+    position: relative; top: 3px; grid-row: 1; grid-column: 1; justify-self: end; margin: 0 28px 0 0; width: 50px; height: 50px;
+    border: 2px solid var(--reg-rule); border-radius: 50%; background: var(--reg-icon); box-shadow: none;
   }
-  #app .register-page .auth-page-header__icon svg { color: var(--ink); }
-  #app .register-page .auth-page-header h1.comic-title { grid-row: 1; margin: 0 36px 0 0; font-size: 36px; }
-  #app .register-page .auth-page-header p { grid-column: 1 / -1; margin-top: 8px; color: var(--ink); font-size: 16px; font-weight: 700; }
-  #app .register-page .auth-page-header > .absolute { top: -4px; right: -64px; }
-  #app .register-page .auth-page-header .locale-toggle { color: var(--ink); }
-  #app .register-page .auth-page-header .locale-icon { width: 26px; height: 26px; }
-  #app .register-page .auth-page-header .locale-icon__accent { stroke: currentColor; }
+  #app .register-page .auth-page-header__icon svg { width: 27px; height: 27px; color: var(--reg-ink); stroke-width: 1.9; }
+  #app .register-page .auth-page-header h1.comic-title {
+    top: -4px; grid-row: 1; grid-column: 2; margin: 0; color: var(--reg-copy); font-size: 40px; font-weight: 900; line-height: 50px;
+    -webkit-text-stroke: .35px currentColor; text-shadow: none;
+  }
+  #app .register-page .auth-page-header h1.comic-title::before { display: none; }
+  #app .register-page .auth-page-header h1.comic-title::after { right: -30px; top: -14px; width: 23px; height: 27px; background: var(--reg-lime); }
+  #app .register-page .auth-page-header p {
+    grid-column: 1 / -1; margin: 3px 0 0 -40px; color: var(--reg-copy); font-size: 19px; font-weight: 700; line-height: 24px;
+  }
+  #app .register-page .auth-page-header > .absolute { top: 15px; right: -2px; }
+  /* The English title runs about 100px wider; the switch steps out past it. */
+  :root:lang(en) #app .register-page .auth-page-header > .absolute { right: -84px; }
+  #app .register-page .auth-page-header .locale-toggle { width: 52px; height: 52px; flex-basis: 52px; color: var(--reg-ink); }
+  #app .register-page .auth-page-header .locale-icon { width: 52px; height: 52px; }
+  #app .register-page .auth-page-header .locale-icon__orbit { stroke: var(--reg-wen); stroke-width: 2.4; }
+  #app .register-page .auth-page-header .locale-icon__accent { stroke: currentColor; stroke-width: 2.6; }
+  #app .register-page .auth-page-header .locale-icon__tick { stroke: var(--reg-lime); stroke-width: 2.4; }
 
-  #app .register-page .register-card {
-    position: relative; isolation: isolate; padding: 24px 30px 28px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px;
-    border-radius: 4px 7px 5px 6px; background: var(--paper-raised); box-shadow: 6px 6px 0 var(--comic-shadow);
+  /* The card and every slip paint their frame from ::after, stretched as a 9-slice around the box. */
+  #app .register-page :is(.register-card, .register-card label:not(.register-terms label), .register-card .auth-otp-btn,
+    .register-card .btn-primary, .register-login) {
+    position: relative; isolation: isolate; border: 0 !important; background: transparent !important; box-shadow: none;
   }
-  #app .register-page .register-card > * + * { margin-top: 14px; }
+  #app .register-page :is(.register-card, .register-card label:not(.register-terms label), .register-card .auth-otp-btn,
+    .register-card .btn-primary, .register-login)::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; border-style: solid; border-color: transparent;
+  }
+  #app .register-page .register-card { padding: 21px 29px 31px 28px; border-radius: 0; backdrop-filter: none; }
   #app .register-page .register-card::after {
-    content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 150px; height: 90px; pointer-events: none;
-    background: radial-gradient(circle, var(--rule-strong) 1.2px, transparent 1.7px) 0 0 / 7px 7px;
-    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 70%); opacity: .45;
+    inset: -2px -13px -12px -2px; border-width: 129px 123px 28px 16px; border-image: var(--reg-card) 387 369 84 48 fill / 129px 123px 28px 16px stretch;
   }
-  :root[data-theme='dark'] #app .register-page .register-card::after { background-image: radial-gradient(circle, var(--comic-cyan-line) 1.2px, transparent 1.7px); opacity: .16; }
+  #app .register-page .register-card > * { margin-block: 0; }
+  #app .register-page .register-card > * + * { margin-top: 10px; }
+  #app .register-page .register-card .space-y-1\.5 > * { margin-block: 0; }
+  #app .register-page .register-card .space-y-1\.5 > label + * { margin-top: 5px; }
+  #app .register-page .register-card .space-y-1\.5 > p { margin-top: 5px; }
+
   #app .register-page .register-card label:not(.register-terms label) {
-    display: inline-block; margin: 0 0 0 2px; padding: 1px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink);
-    font-size: 14px; font-style: italic; font-weight: 900; line-height: 1.5; transform: rotate(-3deg) skewX(-6deg);
+    display: block; width: fit-content; height: 28px; margin: 0 0 0 -6px; padding: 0 9px;
+    color: var(--reg-copy); font-size: 19.5px; font-style: italic; font-weight: 900; line-height: 28px; letter-spacing: -.02em;
   }
+  #app .register-page .register-card label:not(.register-terms label)::after {
+    inset: -2px -2px -6px -4px; border-width: 11px 12px 15px 14px; border-image: var(--reg-label) 33 36 45 42 fill / 11px 12px 15px 14px stretch;
+  }
+  :root[data-theme='dark'] #app .register-page .register-card label:not(.register-terms label) { color: var(--acid-ink); }
   #app .register-page .register-card .input {
-    min-height: 46px; padding: 9px 16px; border: 2px solid var(--rule-strong); border-radius: 3px 6px 4px 5px;
-    background: var(--paper-raised); box-shadow: none; color: var(--ink); font-size: 16px;
+    height: 42px; min-height: 42px; padding: 0 16px; border: 2px solid var(--reg-rule); border-radius: 6px;
+    background: var(--reg-field); box-shadow: none; color: var(--reg-copy); font-size: 16px; letter-spacing: 0;
   }
-  #app .register-page .register-card .input::placeholder { color: var(--ink-muted); opacity: .8; }
-  #app .register-page .register-card .input:focus { border-color: var(--rule-strong); box-shadow: 0 0 0 3px var(--acid); outline: none; }
+  #app .register-page .register-card .input::placeholder { color: var(--reg-hint); opacity: 1; }
+  #app .register-page .register-card .input:focus { border-color: var(--reg-rule); box-shadow: 0 0 0 3px var(--acid); outline: none; }
+  #app .register-page .register-card .space-y-1\.5 > .flex { gap: 16px; }
   #app .register-page .register-card .auth-otp-btn {
-    min-height: 46px; padding: 8px 18px; border: solid var(--rule-strong) !important; border-width: 2px 2.5px 3px 2px !important; border-radius: 3px 6px 4px 5px;
-    background: var(--paper-raised) !important; box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink) !important; backdrop-filter: none !important;
-    font-size: 15px; font-style: italic; font-weight: 900; transform: rotate(-2deg);
+    width: auto; min-width: 117px; height: 40px; min-height: 40px; padding: 0 16px 0 6px; border-radius: 0; color: var(--reg-copy) !important;
+    backdrop-filter: none !important; font-size: 17.5px; font-style: italic; font-weight: 900; letter-spacing: -.02em;
   }
-  #app .register-page .register-card .auth-otp-btn:hover:not(:disabled) { background: var(--acid-soft) !important; }
-  #app .register-page .register-card .auth-otp-btn:disabled { box-shadow: none; opacity: .55; }
+  #app .register-page .register-card .auth-otp-btn::after {
+    inset: -2px -5px -6px -2px; border-width: 11px 16px 15px 13px; border-image: var(--reg-otp) 33 48 45 39 fill / 11px 16px 15px 13px stretch;
+  }
+  #app .register-page .register-card .auth-otp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); }
+  /* Drawn ready like the concept while the address is still empty; the pointer shows it is waiting. */
+  #app .register-page .register-card .auth-otp-btn:disabled { opacity: 1; }
   #app .register-page .register-card .text-2xs { font-size: 13px; }
-  #app .register-page .register-card > .rounded-2xl { border-width: 2px; border-radius: 3px 6px 4px 5px; font-size: 14px; }
-  #app .register-page .register-terms { gap: 12px; padding-top: 2px; }
-  #app .register-page .register-terms > button { width: 22px; height: 22px; margin-top: 1px; border: 2px solid var(--rule-strong); border-radius: 4px; }
+  #app .register-page .register-card > .rounded-2xl { border-width: 2px; border-radius: 6px; font-size: 14px; }
+
+  #app .register-page .register-terms { gap: 18px; margin-top: 30px; padding: 0; }
+  #app .register-page .register-terms > button {
+    width: 22px; height: 21px; margin-top: 0; border: 2px solid var(--reg-rule); border-radius: 4px; background: var(--reg-field);
+  }
   #app .register-page .register-terms > button svg { width: 14px; height: 14px; }
-  #app .register-page .register-terms label { color: var(--ink-secondary); font-size: 14px; line-height: 1.7; }
-  #app .register-page .register-terms a { color: var(--ink); font-weight: 700; }
+  #app .register-page .register-terms > button[aria-pressed='true'] { background: var(--acid); }
+  #app .register-page .register-terms label { max-width: 378px; margin-top: -3px; color: var(--reg-copy); font-size: 15px; font-weight: 500; line-height: 25px; }
+  #app .register-page .register-terms a { color: var(--reg-copy); font-weight: 500; text-decoration-thickness: 1px; }
+
   #app .register-page .register-card .btn-primary {
-    min-height: 54px; gap: 10px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 8px 5px 7px;
-    background: var(--acid); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 21px; font-style: italic; font-weight: 950;
+    height: 57px; min-height: 57px; margin-top: 21px; gap: 13px; padding: 0; border-radius: 0;
+    color: var(--reg-copy); font-size: 26px; font-style: normal; font-weight: 900; letter-spacing: .02em;
   }
-  #app .register-page .register-card .btn-primary svg { width: 22px; height: 22px; }
-  #app .register-page .register-card .btn-primary:hover:not(:disabled) { background: var(--acid-strong); color: var(--acid-ink); }
-  #app .register-page .register-card .btn-primary:disabled { box-shadow: none; opacity: .5; }
+  #app .register-page .register-card .btn-primary::after {
+    inset: -2px -8px -9px -2px; border-width: 11px 17px 18px 11px; border-image: var(--reg-submit) 33 51 54 33 fill / 11px 17px 18px 11px stretch;
+  }
+  :root[data-theme='dark'] #app .register-page .register-card .btn-primary { color: var(--acid-ink); }
+  #app .register-page .register-card .btn-primary svg { width: 27px; height: 27px; stroke-width: 2.1; }
+  #app .register-page .register-card .btn-primary:hover:not(:disabled) { background: transparent; color: var(--reg-copy); transform: translate(-1px, -1px); }
+  /* The concept draws the bar ready while the terms box is still empty; it only stops answering to the pointer. */
+  #app .register-page .register-card .btn-primary:disabled { opacity: 1; cursor: not-allowed; }
+
   #app .register-page .register-login {
-    display: table; margin: 24px auto 0; padding: 7px 22px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
-    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 16px; font-weight: 800;
-    transform: rotate(-2deg);
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; min-width: 187px; height: 53px; margin: 21px auto 0; padding: 4px 24px 0 18px;
+    left: -6px; color: var(--reg-copy); font-size: 17px; font-weight: 800; transform: none;
   }
-  #app .register-page .register-login button { color: var(--ink); font-weight: 900; text-decoration-thickness: 2px; }
+  #app .register-page .register-login::after {
+    inset: -2px -8px -8px -2px; border-width: 11px 21px 17px 15px; border-image: var(--reg-login) 33 63 51 45 fill / 11px 21px 17px 15px stretch;
+  }
+  #app .register-page .register-login button { color: var(--reg-copy); font-weight: 800; text-decoration-thickness: 2px; text-underline-offset: 4px; }
   @media (max-width: 1279px) {
-    #app .register-page .register-corner { width: 200px; }
-    #app .register-page .register-shout { width: 260px; }
+    #app .register-page .register-corner { width: 220px; }
+    #app .register-page .register-shout { width: 280px; }
   }
 
   /* ── Subscriptions (subscriptions-C): the page title with its line beside it; a wide hero with its plan tags on the

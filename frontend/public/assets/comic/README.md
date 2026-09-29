@@ -53,3 +53,13 @@ The membership page (`/membership`, "membership-C" concept) uses the same genera
 - `mem-savings.webp`: the pale lime "年付省" slip with ragged ends.
 
 Together they are about 230 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the extrusion for dark slate, and dim the dots.
+
+The register page (`/register`, "register-C" concept) follows the membership page: each frame paints its own fill, so the slips can lean and tip past their boxes. The inputs and the terms box are plain ruled boxes in the concept and stay CSS.
+
+- `reg-card.webp`: the 510px form card, a 2px ink line with a solid navy block (10.5px right, 8.5px down), 7.8px dots in the top-right corner, a dry band of fine dots running down just inside the right line, and a scuff of ink in the bottom-left corner.
+- `reg-label.webp`: the lime field-label slip, leaning right, with a sliver of ink under its lower-left edge.
+- `reg-otp.webp`: the white "获取验证码" slip, leaning right and tipped up, with a block to its lower right.
+- `reg-submit.webp`: the lime submit bar, a heavy 2.8px line and a black block (5.5px right, 6px down).
+- `reg-login.webp`: the white "已有账号？登录" slip, leaning and tipped like the code slip, with a thicker block.
+
+Together they are about 80 KB. The `-night` files swap the fills for the dark theme's paper (the lime pieces for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.
