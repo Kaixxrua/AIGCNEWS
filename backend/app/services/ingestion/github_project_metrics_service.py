@@ -685,3 +685,62 @@ def refresh_and_compute_github_project_metrics(
         "refresh": refresh_result,
         "metrics": metrics_result,
     }
+
+
+def refresh_and_compute_github_target_metrics(
+    *,
+    targets: List[Dict[str, Any]],
+    min_stars: int = DEFAULT_MIN_STARS,
+    corroborated_repo_ids: set[str] | None = None,
+    db: GitHubProjectIngestionRepository,
+) -> Dict[str, Any]:
+    """为显式给定的一批仓库刷新当天快照，并只重算这批仓库的当天指标。
+
+    新仓快车道用：targets 是刚爬到的候选载荷（repo_id/full_name/
+    source_channels 等），与日刷共用 record_github_metric_outcomes 写入
+    路径和 compute_github_daily_metrics 口径，只是范围收窄到子集。
+    targets 为空时直接跳过——compute 的 repo_ids 为空意味着全量重算，
+    绝不能落到那条路径上。
+    """
+    snapshot_date = _live_metric_date(None, local_today=_local_today())
+    full_names: List[str] = []
+    repo_ids: List[str] = []
+    seen: set[str] = set()
+    for item in targets:
+        full_name = str(item.get("full_name") or "").strip()
+        if not full_name or full_name.lower() in seen:
+            continue
+        seen.add(full_name.lower())
+        full_names.append(full_name)
+        repo_ids.append(str(item.get("repo_id") or full_name).strip())
+    if not full_names:
+        return {
+            "status": "skipped",
+            "metric_date": snapshot_date,
+            "refresh": {"targets": 0},
+            "metrics": None,
+        }
+
+    captured_at = _utcnow()
+    outcomes = fetch_github_repo_metrics_batch(full_names)
+    counts = record_github_metric_outcomes(
+        targets=targets,
+        outcomes=outcomes,
+        snapshot_date=snapshot_date,
+        captured_at=captured_at,
+        db=db,
+    )
+    counts["skipped"] += max(0, len(full_names) - len(outcomes))
+    metrics_result = compute_github_daily_metrics(
+        metric_date=snapshot_date,
+        min_stars=min_stars,
+        repo_ids=repo_ids,
+        corroborated_repo_ids=corroborated_repo_ids,
+        db=db,
+    )
+    return {
+        "status": "success",
+        "metric_date": snapshot_date,
+        "refresh": {"targets": len(full_names), **counts},
+        "metrics": metrics_result,
+    }

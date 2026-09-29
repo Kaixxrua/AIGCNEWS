@@ -29,6 +29,12 @@ GITHUB_API_BASE = "https://api.github.com"
 # 单分片结果数安全上限（API 硬上限 1000，留 10% 余量防边界抖动丢数据）
 SHARD_COUNT_CAP = 900
 REQUEST_TIMEOUT = 30
+# 单次 search 调用的总尝试次数（限流、网络抖动、上游 5xx 共用）
+SEARCH_MAX_ATTEMPTS = 5
+# 网络/5xx 退避：5s 起步指数翻倍，封顶 60s
+TRANSIENT_BACKOFF_BASE = 5.0
+TRANSIENT_BACKOFF_CAP = 60.0
+TRANSIENT_STATUS_CODES = frozenset({500, 502, 503, 504})
 DEFAULT_LIMIT = 5000
 # 每日增长观察仓全量爬取会上万条，上限放宽到 10 万仅作防失控保险
 MAX_LIMIT = 100000
@@ -124,7 +130,11 @@ def merge_channels(existing: str, new_channel: str) -> str:
 
 
 class SearchClient:
-    """带限速与限流重试的 GitHub Search 客户端。"""
+    """带限速、限流重试与网络抖动重试的 GitHub Search 客户端。
+
+    上万条的全量爬取要连续发数百个请求，一次 TLS EOF / 连接重置 / 上游 5xx
+    都不应让整条每日管线中断：这类瞬时错误按指数退避重试，耗尽后原样抛出。
+    """
 
     def __init__(self, *, interval: float, token: str = "") -> None:
         self._client = httpx.Client(timeout=REQUEST_TIMEOUT, trust_env=True)
@@ -144,14 +154,29 @@ class SearchClient:
             "per_page": max(1, min(per_page, 100)),
             "page": page,
         }
-        for attempt in range(3):
+        last_error: Exception | None = None
+        for attempt in range(SEARCH_MAX_ATTEMPTS):
             time.sleep(self._interval)
             self.requests += 1
-            response = self._client.get(
-                f"{GITHUB_API_BASE}/search/repositories",
-                headers=_headers(self._use_token, token=self._token),
-                params=params,
-            )
+            try:
+                response = self._client.get(
+                    f"{GITHUB_API_BASE}/search/repositories",
+                    headers=_headers(self._use_token, token=self._token),
+                    params=params,
+                )
+            except httpx.TransportError as exc:
+                last_error = exc
+                self._backoff_transient(attempt, f"{type(exc).__name__}: {exc}")
+                continue
+            if response.status_code in TRANSIENT_STATUS_CODES:
+                last_error = httpx.HTTPStatusError(
+                    f"upstream {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+                self._backoff_transient(attempt, f"HTTP {response.status_code}")
+                continue
+            last_error = None
             if response.status_code == 401 and self._use_token:
                 self._use_token = False
                 continue
@@ -170,7 +195,22 @@ class SearchClient:
                 return {"total_count": 0, "items": []}
             response.raise_for_status()
             return response.json()
+        if last_error is not None:
+            raise last_error
         raise RuntimeError(f"search failed after retries: {query}")
+
+    def _backoff_transient(self, attempt: int, reason: str) -> None:
+        if attempt + 1 >= SEARCH_MAX_ATTEMPTS:
+            return
+        wait = min(TRANSIENT_BACKOFF_CAP, TRANSIENT_BACKOFF_BASE * (2**attempt))
+        logger.warning(
+            "[GitHubSearchCrawl] 瞬时错误（%s），第 %d/%d 次尝试失败，%.0fs 后重试...",
+            reason,
+            attempt + 1,
+            SEARCH_MAX_ATTEMPTS,
+            wait,
+        )
+        time.sleep(wait)
 
     def total_count(self, query: str) -> int:
         payload = self.search(query, per_page=1)
@@ -212,11 +252,16 @@ def crawl_github_search(
     ingestion: GitHubProjectIngestionRepository | None = None,
     token: str = "",
     client: SearchClient | None = None,
+    collect_upserted: bool = False,
 ) -> dict[str, Any]:
     """按条件分片爬取 GitHub 仓库并写入候选库，返回运行摘要。
 
     dry_run 只做分片计数（不翻页、不写库）；正式运行时 ingestion 必填，
     每批先查既有 source_channels 合并本次 channel 标记后 upsert。
+    collect_upserted=True 时摘要额外带 upserted_candidates（本轮写入的
+    载荷列表，含合并后的 source_channels）与 new_repo_ids（其中首次入库
+    的 repo_id），供快车道对命中项立即建快照；全量爬取上万条，默认不
+    收集，避免摘要膨胀。
     """
     pushed_after = (pushed_after or "").strip()
     channel = (channel or "").strip()
@@ -265,6 +310,8 @@ def crawl_github_search(
             return summary
 
         seen: set[str] = set()
+        collected: list[dict[str, Any]] = []
+        new_repo_ids: list[str] = []
         fetched = upserted = skipped_low_stars = skipped_duplicates = new_candidates = 0
         stop = False
         for start, end, available in shards:
@@ -303,10 +350,14 @@ def crawl_github_search(
                     for payload in batch:
                         if payload["repo_id"] not in channels:
                             new_candidates += 1
+                            if collect_upserted:
+                                new_repo_ids.append(payload["repo_id"])
                         payload["source_channels"] = merge_channels(
                             channels.get(payload["repo_id"], ""), channel
                         )
                         ingestion.upsert_github_repo_candidate(payload)
+                    if collect_upserted:
+                        collected.extend(batch)
                 upserted += len(batch)
                 logger.info(
                     "[GitHubSearchCrawl] %s..%s 第 %d 页：本批 %d，累计写入 %d/%d。",
@@ -329,6 +380,9 @@ def crawl_github_search(
                 "api_requests": search_client.requests,
             }
         )
+        if collect_upserted:
+            summary["upserted_candidates"] = collected
+            summary["new_repo_ids"] = new_repo_ids
     finally:
         if own_client:
             search_client.close()

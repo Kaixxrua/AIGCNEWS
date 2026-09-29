@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import patch
 
+import httpx
 import pytest
 
+from backend.app.services.ingestion import github_search_crawl
 from backend.app.services.ingestion.github_search_crawl import (
+    SEARCH_MAX_ATTEMPTS,
+    SearchClient,
     _stars_query,
     crawl_github_search,
 )
@@ -145,6 +150,55 @@ class GitHubSearchCrawlServiceTests(unittest.TestCase):
         assert by_repo["a/one"]["stars"] == 800
         assert by_repo["a/one"]["topics_json"] == '["llm"]'
 
+    def test_collect_upserted_returns_written_payloads_and_new_ids(self) -> None:
+        client = FakeSearchClient(
+            {ONE_DAY_QUERY: 3},
+            {
+                (ONE_DAY_QUERY, 1): [
+                    _item("a/one", 800),
+                    _item("a/low", 499),
+                    _item("a/two", 900),
+                ],
+            },
+        )
+        ingestion = FakeIngestion(existing={"a/two": "trending_daily"})
+
+        summary = crawl_github_search(
+            min_stars=500,
+            max_stars=0,
+            limit=5000,
+            created_start=date(2026, 1, 1),
+            created_end=date(2026, 1, 1),
+            channel="chan_test",
+            ingestion=ingestion,
+            client=client,
+            collect_upserted=True,
+        )
+
+        collected = {p["repo_id"]: p for p in summary["upserted_candidates"]}
+        assert set(collected) == {"a/one", "a/two"}
+        assert collected["a/two"]["source_channels"] == "trending_daily,chan_test"
+        assert summary["new_repo_ids"] == ["a/one"]
+
+    def test_default_summary_does_not_carry_payloads(self) -> None:
+        client = FakeSearchClient(
+            {ONE_DAY_QUERY: 1}, {(ONE_DAY_QUERY, 1): [_item("a/one", 800)]}
+        )
+
+        summary = crawl_github_search(
+            min_stars=500,
+            max_stars=0,
+            limit=5000,
+            created_start=date(2026, 1, 1),
+            created_end=date(2026, 1, 1),
+            channel="chan_test",
+            ingestion=FakeIngestion(),
+            client=client,
+        )
+
+        assert "upserted_candidates" not in summary
+        assert "new_repo_ids" not in summary
+
     def test_crawl_stops_at_limit(self) -> None:
         client = FakeSearchClient(
             {ONE_DAY_QUERY: 150},
@@ -209,6 +263,98 @@ class GitHubSearchCrawlServiceTests(unittest.TestCase):
                 ingestion=None,
                 client=FakeSearchClient({}, {}),
             )
+
+
+def _client_with(handler) -> SearchClient:
+    client = SearchClient(interval=0.01, token="test-token")
+    client._client.close()
+    client._client = httpx.Client(transport=httpx.MockTransport(handler))
+    return client
+
+
+class SearchClientRetryTests(unittest.TestCase):
+    def setUp(self) -> None:
+        sleeper = patch.object(github_search_crawl.time, "sleep")
+        self.sleep = sleeper.start()
+        self.addCleanup(sleeper.stop)
+
+    def test_transport_error_is_retried_with_backoff(self) -> None:
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise httpx.ConnectError("EOF occurred in violation of protocol", request=request)
+            return httpx.Response(200, json={"total_count": 7, "items": []})
+
+        client = _client_with(handler)
+        try:
+            assert client.total_count("stars:>=300") == 7
+        finally:
+            client.close()
+
+        assert calls["n"] == 2
+        assert client.requests == 2
+        # 一次限速间隔 + 一次 5s 退避 + 第二次限速间隔
+        waits = [c.args[0] for c in self.sleep.call_args_list]
+        assert 5.0 in waits
+
+    def test_upstream_5xx_is_retried(self) -> None:
+        statuses = iter([502, 503, 200])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            code = next(statuses)
+            if code != 200:
+                return httpx.Response(code, text="bad gateway")
+            return httpx.Response(200, json={"total_count": 1, "items": [{"full_name": "a/b"}]})
+
+        client = _client_with(handler)
+        try:
+            payload = client.search("stars:>=300")
+        finally:
+            client.close()
+
+        assert payload["items"] == [{"full_name": "a/b"}]
+        assert client.requests == 3
+
+    def test_persistent_transport_error_raises_original_after_max_attempts(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("timed out", request=request)
+
+        client = _client_with(handler)
+        try:
+            with pytest.raises(httpx.ReadTimeout):
+                client.search("stars:>=300")
+        finally:
+            client.close()
+
+        assert client.requests == SEARCH_MAX_ATTEMPTS
+        backoffs = [c.args[0] for c in self.sleep.call_args_list if c.args[0] >= 5.0]
+        # 最后一次失败后不再空等
+        assert backoffs == [5.0, 10.0, 20.0, 40.0][: SEARCH_MAX_ATTEMPTS - 1]
+
+    def test_client_errors_are_not_retried(self) -> None:
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(404, text="not found")
+
+        client = _client_with(handler)
+        try:
+            with pytest.raises(httpx.HTTPStatusError):
+                client.search("stars:>=300")
+        finally:
+            client.close()
+
+        assert calls["n"] == 1
+
+    def test_unprocessable_query_still_means_empty_result(self) -> None:
+        client = _client_with(lambda request: httpx.Response(422, json={"message": "bad"}))
+        try:
+            assert client.search("stars:>=300") == {"total_count": 0, "items": []}
+        finally:
+            client.close()
 
 
 if __name__ == "__main__":

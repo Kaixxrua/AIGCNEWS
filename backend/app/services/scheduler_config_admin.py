@@ -77,6 +77,12 @@ DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
         end_time=time(23, 17),
         interval_minutes=120,
     ),
+    "github_fast_lane": SchedulerJobConfig(
+        job_id="github_fast_lane",
+        start_time=time(0, 10),
+        end_time=time(23, 55),
+        interval_minutes=15,
+    ),
     "daily_briefing": SchedulerJobConfig(
         job_id="daily_briefing",
         start_time=time(8, 0),
@@ -118,6 +124,7 @@ _JOB_NAMES: dict[str, str] = {
     "dailyhot_hotlists": "DailyHot 聚合热榜采集",
     "github_project_daily_pipeline": "GitHub 项目库每日流水线（入库、快照、热度打分、富化新增）",
     "github_project_metrics_refresh": "GitHub 项目库当天指标每两小时刷新（含新越线项目富化补跑）",
+    "github_fast_lane": "GitHub 新仓快车道（近 7 天新建越线项目每 15 分钟入库）",
     "daily_briefing": "每日自动简报生成（全维度）",
     "subscription_dispatch": "订阅简报派发（全频率幂等投递）",
     "project_semantic_warmup": "项目语义搜索链路预热",
