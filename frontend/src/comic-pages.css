@@ -1291,4 +1291,162 @@
   @media (prefers-reduced-motion: reduce) {
     #app .app-shell--comic-page .monitor-tasks .monitor-table td { transition: none; }
   }
+
+  /* ── Projects (projects-C): the title with its line beside it; the category index in one ruled box; a heavy
+     search bar and a lime MCP strip; three columns of comic cards with outlined tags and bold numbers. Only the
+     catalog view (the personal collections keep their layout). Card copy reads at 14px, numbers at 13px. ── */
+  #app .app-shell--comic-page .projects-page--catalog {
+    grid-template-columns: 236px minmax(0, 1fr); column-gap: 26px;
+    padding: 12px 18px calc(var(--peel-clear) + 28px) 6px; border-bottom: 0; background: transparent; color: var(--ink);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero { margin: 0 0 14px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero__text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 22px; max-width: none; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero__text::after { display: none; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero h1 {
+    display: inline-block; color: var(--ink); font-size: 38px; font-style: italic; font-weight: 950; line-height: 1.15; letter-spacing: 0;
+    -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero h1::before {
+    display: block; inset: 68% -4px 2px; height: auto; background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero__lead {
+    display: inline-flex; align-items: baseline; gap: 12px; color: var(--ink-secondary); font-size: 15.5px; font-weight: 700; line-height: 1.4;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero__lead::before {
+    content: ''; align-self: center; width: 3px; height: 18px; border-radius: 2px; background: var(--acid); transform: rotate(24deg);
+    box-shadow: 1px 1px 0 var(--rule-strong);
+  }
+
+  /* Search and sort: heavy ink rules with the hard shadow; the query reads at 15px. */
+  #app .app-shell--comic-page .projects-toolbar--catalog { gap: 18px; margin-bottom: 16px; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input {
+    height: 46px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 15px;
+  }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input::placeholder { color: var(--ink-muted); }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input:focus { box-shadow: 3px 3px 0 var(--comic-shadow), 0 0 0 4px var(--acid-soft); }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search > svg { left: 15px; width: 19px; height: 19px; color: var(--ink); }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort { gap: 10px; color: var(--ink); font-size: 14.5px; font-weight: 800; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select {
+    min-width: 150px; height: 46px; padding: 0 12px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background-color: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 14.5px; font-weight: 700;
+  }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select:disabled { opacity: .85; }
+
+  /* MCP strip: a lime band on the ink rule; its title reads as the call to action. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo {
+    margin-bottom: 20px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: color-mix(in srgb, var(--acid) 42%, var(--paper-raised)); box-shadow: 3px 3px 0 var(--comic-shadow);
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo { background: var(--acid-soft); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__summary { min-height: 48px; padding: 8px 12px 8px 16px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title { color: var(--ink); font-size: 15.5px; font-style: italic; font-weight: 900; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title::before { color: var(--ink); font-style: normal; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__expand { color: var(--ink); font-size: 14px; font-weight: 700; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__chevron {
+    width: 30px; height: 30px; flex-basis: 30px; border: 2px solid var(--rule-strong); border-radius: 5px 7px 5px 6px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__content { border-top: 1.5px solid var(--rule-strong); }
+
+  /* Category index: one ruled box beside the cards; names at 14px, counts in tabular figures, the current one lime. */
+  #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel {
+    position: relative; isolation: isolate; align-self: stretch; margin: 6px 0 0; padding: 10px 10px 18px;
+    border: solid var(--rule-strong) !important; border-width: 2px 2.5px 3px 2px !important; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised) !important; box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-categories { gap: 3px; padding: 0; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category {
+    min-height: 40px; padding: 8px 10px; gap: 10px; border: 1.5px solid transparent; border-radius: 5px 7px 5px 6px;
+    color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.35;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category svg { flex-basis: 18px; width: 18px; height: 18px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category small { color: var(--ink-secondary); font-size: 13px; font-weight: 600; opacity: 1; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category:hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active {
+    border-color: var(--rule-strong); background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-weight: 900;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active small { color: var(--acid-ink); font-weight: 800; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index { margin-top: 14px; padding: 12px 4px 0 10px; border-top: 1.5px solid var(--rule-strong); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index__title { font-size: 14px; font-weight: 900; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button { padding: 5px 0; color: var(--ink-secondary); font-size: 13.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button:is(:hover, .is-active) { color: var(--ink); }
+
+  /* Cards: an uneven ink rule and hard shadow over the tint, cyan halftone in the foot corner, away from the copy. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-grid { gap: 22px 20px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__body {
+    gap: 10px; padding: 15px 52px 14px 16px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px; border-radius: 6px 8px 5px 9px;
+    background: linear-gradient(150deg, var(--paper-raised) 62%, var(--card-tint)); box-shadow: 4px 4px 0 var(--comic-shadow);
+    transition: transform .12s cubic-bezier(.2,.8,.2,1), box-shadow .12s cubic-bezier(.2,.8,.2,1);
+  }
+  #app .app-shell--comic-page .project-card--catalog .project-card__body::after {
+    width: 150px; height: 96px; border-radius: 0 0 5px 0; clip-path: none; opacity: .45;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 10%, transparent 70%);
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .project-card--catalog .project-card__body::after { opacity: .14; }
+  #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__body {
+    border-color: var(--rule-strong); box-shadow: 6px 6px 0 var(--comic-shadow); transform: translate(-1px, -1px);
+  }
+  #app .app-shell--comic-page .project-card--catalog .project-card__identity { gap: 11px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__github-logo { width: 34px; height: 34px; flex-basis: 34px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__identity h2 { color: var(--ink); font-size: 15.5px; font-weight: 800; line-height: 1.35; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__description { color: var(--ink-secondary); font-size: 14px; line-height: 1.65; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__metadata { gap: 10px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__tag-list { gap: 7px; }
+  #app .app-shell--comic-page .project-card--catalog .project-chip {
+    min-height: 24px; padding: 1px 8px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 1.5px 1.5px 0 var(--comic-shadow); color: var(--ink); font-size: 12.5px; font-weight: 700; line-height: 1.5;
+  }
+  #app .app-shell--comic-page .project-card--catalog .project-chip:hover { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats {
+    gap: 6px 8px; padding-top: 9px; border-top: 1.5px dashed var(--rule); color: var(--ink-secondary); font-size: 13px;
+  }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats svg { width: 14px; height: 14px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:first-child { color: var(--ink); font-size: 13.5px; font-weight: 800; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:nth-child(2) { color: var(--tone-mint); font-weight: 700; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats .project-heat { color: var(--heat-ink); font-size: 13px; font-weight: 800; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__rail { top: 12px; right: 12px; width: 32px; gap: 7px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__action {
+    width: 32px; min-width: 32px; min-height: 32px; border: 1.5px solid var(--rule-strong); border-radius: 5px 7px 5px 6px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+  }
+  #app .app-shell--comic-page .project-card--catalog .project-card__action:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__favorite { color: var(--heat-ink); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__favorite--active { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .project-card--catalog.project-card--not-found .project-card__body { background: var(--projects-ghost-surface-card); }
+
+  /* Pagination: comic buttons at the foot of the list. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination {
+    margin-top: 26px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination p { color: var(--ink-secondary); font-size: 14px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button {
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px; font-weight: 800;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump { color: var(--ink-secondary); font-size: 13.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump input { border: 1.5px solid var(--rule-strong); color: var(--ink); font-size: 14px; }
+
+  /* English category names run longer: a wider index keeps most of them on one line. */
+  #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 264px minmax(0, 1fr); }
+  /* Below 1366px three cards would drop under ~340px and break their numbers over two lines; two columns read better. */
+  @media (max-width: 1365px) {
+    #app .app-shell--comic-page .projects-page--catalog .projects-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1199px) {
+    #app .app-shell--comic-page .projects-page--catalog { grid-template-columns: 224px minmax(0, 1fr); column-gap: 18px; padding-right: 12px; }
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 236px minmax(0, 1fr); }
+    #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel { padding-inline: 8px; }
+    #app .app-shell--comic-page .projects-page--catalog .projects-category { gap: 7px; padding-inline: 7px; font-size: 13.5px; }
+    #app .app-shell--comic-page .projects-page--catalog .projects-category small { font-size: 12.5px; }
+    #app .app-shell--comic-page .projects-page--catalog .projects-hero h1 { font-size: 34px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .project-card--catalog .project-card__body { transition: none; }
+    #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__body { transform: none; }
+  }
 }

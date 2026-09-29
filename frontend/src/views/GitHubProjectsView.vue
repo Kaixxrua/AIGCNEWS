@@ -454,6 +454,7 @@ onBeforeUnmount(stopViewReads)
       <div class="projects-hero__text">
         <p class="projects-kicker">{{ projectsHeroKicker }}</p>
         <h1>{{ isWebsiteOnlyView ? t('projects.heroWebsiteKicker') : t('projects.pageTitle') }}</h1>
+        <p v-if="!isPersonalView" class="projects-hero__lead">{{ t('projects.heroLibraryLead') }}</p>
       </div>
 
       <div v-if="isWebsiteOnlyView && !requiresPersonalLogin" class="projects-hero__side">
@@ -702,6 +703,9 @@ onBeforeUnmount(stopViewReads)
 .projects-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }
 
 .projects-hero::after { display: none; }
+
+/* 目录副标题只在桌面漫画版展示（comic-pages.css）。 */
+.projects-hero__lead { display: none; }
 
 .projects-hero__text {
   position: relative;
