@@ -2387,167 +2387,242 @@
     #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5) { white-space: normal; }
   }
 
-  /* ── Projects (projects-C): the title with its line beside it; the category index in one ruled box; a heavy
-     search bar and a lime MCP strip; three columns of comic cards with outlined tags and bold numbers. Only the
-     catalog view (the personal collections keep their layout). Card copy reads at 14px, numbers at 13px. ── */
+  /* ── Projects (projects-C), measured off the concept at 1536 × 1024: the title on its brush; the category index in
+     one square box run out to the page's edge; thin-ruled search and sort over a lime MCP strip; three columns of
+     cards whose halftone corner and wash take the column's tint. Every drawn piece is a generated 9-slice image
+     (public/assets/comic/p-*.webp, -night for the dark theme): the index and the cards hang theirs on ::after, the
+     fields, the strip, the tags and the buttons take theirs as their own border-image and paint their face. Only the
+     catalog view; the personal collections keep their layout. Card copy reads at 13–14.5px, numbers at 13px. ── */
   #app .app-shell--comic-page .projects-page--catalog {
-    grid-template-columns: 232px minmax(0, 1fr); column-gap: 18px;
-    padding: 0 6px calc(var(--peel-clear) + 28px) 0; border-bottom: 0; background: transparent; color: var(--ink);
+    --p-ink: #08162a;
+    --p-copy: #1f2a3c;
+    --p-muted: #3e566b;
+    --p-hint: #5c6d87;
+    --p-paper: #fcfcf3;
+    --p-face: #fdfdf8;
+    --p-lime: #c7f930;
+    --p-lime-hover: #eef9c4;
+    --p-strip: #d3fa6d;
+    --p-key: #bef41a;
+    --p-star: #b87d12;
+    --p-today: #1d7a45;
+    --p-heat: #c2410c;
+    --p-rule: #5d6b78;
+    --p-wash: #e6f0f1;
+    --p-card: url('/assets/comic/p-card-cool.webp');
+    --p-side: url('/assets/comic/p-side.webp');
+    --p-active: url('/assets/comic/p-active.webp');
+    --p-field: url('/assets/comic/p-field.webp');
+    --p-banner: url('/assets/comic/p-banner.webp');
+    --p-chev: url('/assets/comic/p-chev.webp');
+    --p-tag: url('/assets/comic/p-tag.webp');
+    --p-pg: url('/assets/comic/p-pg.webp');
+    /* the page is its own scroller: it reaches out to the viewport's edge so the index box can start there (its top
+       stays below the masthead, 4px under the concept's) */
+    grid-template-columns: 239px minmax(0, 1fr); column-gap: 19px; width: calc(100% + 11px); max-width: none; margin: 0 0 0 -11px;
+    padding: 0 6px calc(var(--peel-clear) + 28px) 0; border-bottom: 0; background: transparent; color: var(--p-ink);
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-hero { margin: 0 0 8px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-hero__text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 22px; max-width: none; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--catalog {
+    --p-ink: var(--ink);
+    --p-copy: var(--ink);
+    --p-muted: var(--ink-secondary);
+    --p-hint: var(--ink-secondary);
+    --p-paper: #292a2d;
+    --p-face: #2c2d30;
+    --p-lime: #a6c64e;
+    --p-lime-hover: #35392b;
+    --p-strip: #3a4224;
+    --p-key: #a6c64e;
+    --p-star: #e0b252;
+    --p-today: var(--tone-mint);
+    --p-heat: var(--heat-ink);
+    --p-rule: #6d737c;
+    --p-wash: #2a3438;
+    --p-card: url('/assets/comic/p-card-cool-night.webp');
+    --p-side: url('/assets/comic/p-side-night.webp');
+    --p-active: url('/assets/comic/p-active-night.webp');
+    --p-field: url('/assets/comic/p-field-night.webp');
+    --p-banner: url('/assets/comic/p-banner-night.webp');
+    --p-chev: url('/assets/comic/p-chev-night.webp');
+    --p-tag: url('/assets/comic/p-tag-night.webp');
+    --p-pg: url('/assets/comic/p-pg-night.webp');
+  }
+  #app .app-shell--comic-page .project-card--catalog:nth-child(3n + 2) { --p-card: url('/assets/comic/p-card-lime.webp'); --p-wash: #ecf5c9; }
+  #app .app-shell--comic-page .project-card--catalog:nth-child(3n) { --p-card: url('/assets/comic/p-card-warm.webp'); --p-wash: #fdf2c9; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .project-card--catalog:nth-child(3n + 2) { --p-card: url('/assets/comic/p-card-lime-night.webp'); --p-wash: #30361f; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .project-card--catalog:nth-child(3n) { --p-card: url('/assets/comic/p-card-warm-night.webp'); --p-wash: #3a3322; }
+
+  /* Title: 36.5px on a brush that climbs from under its first character to past its last; the lead after a thin slash. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero { margin: 0 0 10px; padding-left: 3px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero__text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 20px; max-width: none; }
   #app .app-shell--comic-page .projects-page--catalog .projects-hero__text::after { display: none; }
   #app .app-shell--comic-page .projects-page--catalog .projects-hero h1 {
-    display: inline-block; color: var(--ink); font-size: 40px; font-style: italic; font-weight: 950; line-height: 1.15; letter-spacing: 0;
+    display: inline-block; color: var(--p-ink); font-size: 36.5px; font-style: italic; font-weight: 950; line-height: 1.15; letter-spacing: 0;
     -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
   }
   #app .app-shell--comic-page .projects-page--catalog .projects-hero h1::before {
-    display: block; inset: 68% -4px 2px; height: auto; background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
+    display: block; inset: auto -5px 0 -6px; width: auto; height: 15px; border: 0; border-radius: 0; box-shadow: none;
+    background: var(--acid); transform: none;
+    clip-path: polygon(0 40%, 22% 30%, 55% 18%, 100% 0, 100% 66%, 62% 76%, 30% 88%, 3% 100%, 0 90%);
   }
   #app .app-shell--comic-page .projects-page--catalog .projects-hero__lead {
-    display: inline-flex; align-items: baseline; gap: 12px; color: var(--ink); font-size: 15px; font-weight: 800; line-height: 1.4;
+    display: inline-flex; align-items: baseline; gap: 13px; position: relative; top: -6px; margin-left: 5px;
+    color: var(--p-ink); font-size: 15px; font-weight: 800; line-height: 1.4;
   }
   #app .app-shell--comic-page .projects-page--catalog .projects-hero__lead::before {
-    content: ''; align-self: center; width: 3px; height: 18px; border-radius: 2px; background: var(--acid); transform: rotate(24deg);
-    box-shadow: 1px 1px 0 var(--rule-strong);
+    content: ''; align-self: center; width: 2px; height: 14px; border-radius: 1px; background: #c3e45c;
+    transform: rotate(35deg);
   }
 
-  /* Search and sort: heavy ink rules with the hard shadow; the query reads at 15px. */
-  #app .app-shell--comic-page .projects-toolbar--catalog { gap: 16px; margin-bottom: 10px; }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input {
-    height: 38px; border: solid var(--rule-strong); border-width: 2px 2px 2.5px 2px; border-radius: 5px 7px 5px 6px;
-    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px;
-  }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input::placeholder { color: var(--ink-muted); }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input:focus { box-shadow: 3px 3px 0 var(--comic-shadow), 0 0 0 4px var(--acid-soft); }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search > svg { left: 14px; width: 17px; height: 17px; color: var(--ink); }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort { gap: 12px; color: var(--ink); font-size: 14px; font-weight: 800; }
+  /* Search and sort: a thin navy line round paper; the query reads at 14px. */
+  #app .app-shell--comic-page .projects-toolbar--catalog { gap: 14px; margin-bottom: 8px; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input,
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select {
-    min-width: 148px; height: 38px; padding: 0 10px; border: solid var(--rule-strong); border-width: 2px 2px 2.5px 2px; border-radius: 5px 7px 5px 6px;
-    background-color: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px; font-weight: 700;
+    height: 38px; border: 0 solid transparent; border-radius: 4px; background-color: var(--p-paper); box-shadow: none; color: var(--p-ink);
+    border-image: var(--p-field) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input { padding-left: 42px; font-size: 14px; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input::placeholder { color: var(--p-hint); }
+  #app .app-shell--comic-page .projects-toolbar--catalog :is(.projects-search .input, .projects-sort select):focus-visible {
+    outline: 2px solid var(--p-lime); outline-offset: 3px; box-shadow: none;
+  }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-search > svg { left: 14px; width: 17px; height: 17px; color: var(--p-ink); }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort { gap: 12px; color: var(--p-ink); font-size: 14px; font-weight: 800; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select { min-width: 148px; padding: 0 12px; font-size: 14px; font-weight: 700; }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select:disabled { opacity: .85; }
 
-  /* MCP strip: a lime band on the ink rule; its title reads as the call to action. */
+  /* MCP strip: a lime band in a 2px line; its question upright and heavy, the chevron on a brighter lime key. */
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo {
-    margin-bottom: 10px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 5px 7px 5px 6px;
-    background: color-mix(in srgb, var(--acid) 42%, var(--paper-raised)); box-shadow: 2px 2px 0 var(--comic-shadow);
+    margin-bottom: 11px; border: 0 solid transparent; border-radius: 4px; background: var(--p-strip); box-shadow: none;
+    border-image: var(--p-banner) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo { background: var(--acid-soft); }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__summary { min-height: 37px; padding: 3px 10px 3px 14px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title { color: var(--ink); font-size: 14.5px; font-style: italic; font-weight: 900; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title::before { color: var(--ink); font-style: normal; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__expand { color: var(--ink); font-size: 14px; font-weight: 700; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__summary { min-height: 42px; padding: 4px 11px 4px 16px; gap: 12px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title { gap: 11px; color: var(--p-ink); font-size: 14.5px; font-style: normal; font-weight: 900; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title::before { color: var(--p-ink); font-size: 17px; font-style: normal; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__expand { color: var(--p-ink); font-size: 14px; font-weight: 800; }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__chevron {
-    width: 26px; height: 26px; flex-basis: 26px; border: 2px solid var(--rule-strong); border-radius: 5px 7px 5px 6px;
-    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    width: 26px; height: 25px; flex-basis: 26px; padding: 5px; border: 0 solid transparent; border-radius: 4px;
+    background: var(--p-key); box-shadow: none; color: var(--p-ink);
+    border-image: var(--p-chev) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__content { border-top: 1.5px solid var(--rule-strong); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__content { border-top: 1.5px solid var(--p-ink); }
 
-  /* Category index: one ruled box beside the cards; names at 14px, counts in tabular figures, the current one lime. */
+  /* Category index: one square box from the page's edge, a heavier line down its right and pencil in its corners;
+     names at 14px, counts lighter and right-aligned, the current one on a lime key in a thin line. */
   #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel {
-    position: relative; isolation: isolate; align-self: stretch; margin: 0; padding: 12px 8px 18px;
-    border: solid var(--rule-strong) !important; border-width: 2px 2.5px 3px 2px !important; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised) !important; box-shadow: 4px 4px 0 var(--comic-shadow);
+    position: relative; isolation: isolate; align-self: stretch; margin: 0; padding: 16px 18px 22px 15px;
+    border: 0 !important; border-radius: 0; background: transparent !important; box-shadow: none;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-categories { gap: 2px; padding: 0; }
+  #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -2px -3px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 32px 42px 47px 8px;
+    border-image: var(--p-side) 96 126 141 24 fill / 32px 42px 47px 8px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-categories { gap: 4px; padding: 0; }
   #app .app-shell--comic-page .projects-page--catalog .projects-category {
-    min-height: 38.8px; padding: 6px 8px; gap: 9px; border: 1.5px solid transparent; border-radius: 5px 7px 5px 6px;
-    color: var(--ink); font-size: 13.5px; font-weight: 700; line-height: 1.35;
+    min-height: 37px; padding: 6px 10px 6px 9px; gap: 9px; border: 0 solid transparent; border-radius: 4px;
+    color: var(--p-ink); font-size: 14px; font-weight: 800; line-height: 1.35;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-category svg { flex-basis: 18px; width: 18px; height: 18px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-category small { color: var(--ink-secondary); font-size: 12.5px; font-weight: 600; opacity: 1; font-variant-numeric: tabular-nums; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-category:hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category svg { flex-basis: 16px; width: 16px; height: 16px; stroke-width: 2.2; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category small { color: var(--p-muted); font-size: 13px; font-weight: 500; opacity: 1; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category:hover { background: var(--p-lime-hover); }
   #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active {
-    border-color: var(--rule-strong); background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-weight: 900;
+    background: var(--p-lime); box-shadow: none; color: var(--acid-ink); font-weight: 900;
+    border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active small { color: var(--acid-ink); font-weight: 800; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index { margin-top: 14px; padding: 12px 4px 0 10px; border-top: 1.5px solid var(--rule-strong); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active small { color: var(--acid-ink); font-weight: 700; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index { margin-top: 14px; padding: 12px 4px 0 10px; border-top: 1.5px solid var(--p-rule); }
   #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index__title { font-size: 14px; font-weight: 900; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button { padding: 5px 0; color: var(--ink-secondary); font-size: 13.5px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button:is(:hover, .is-active) { color: var(--ink); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button { padding: 5px 0; color: var(--p-muted); font-size: 13.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button:is(:hover, .is-active) { color: var(--p-ink); }
 
-  /* Cards: an uneven ink rule and hard shadow over the tint, cyan halftone in the foot corner, away from the copy. */
-  #app .app-shell--comic-page .projects-page--catalog .projects-grid { gap: 14px 15px; }
+  /* Cards: the drawn frame (line, block and halftone) over the paper and a soft wash rising from the lower right. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-grid { gap: 14px 14px; }
   #app .app-shell--comic-page .project-card--catalog .project-card__body {
-    min-height: 0; gap: 8px; padding: 12px 14px 11px 16px;
-    border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px; border-radius: 6px 8px 5px 9px;
-    background: linear-gradient(150deg, var(--paper-raised) 62%, var(--card-tint)); box-shadow: 4px 4px 0 var(--comic-shadow);
-    transition: transform .12s cubic-bezier(.2,.8,.2,1), box-shadow .12s cubic-bezier(.2,.8,.2,1);
+    min-height: 0; gap: 8px; padding: 11px 14px 13px 17px; border: 0; border-radius: 2px; box-shadow: none;
+    background: radial-gradient(ellipse 250px 150px at 100% 100%, var(--p-wash), transparent 100%), var(--p-paper);
+    transition: transform .12s cubic-bezier(.2, .8, .2, 1);
   }
   #app .app-shell--comic-page .project-card--catalog .project-card__body::after {
-    width: 150px; height: 96px; border-radius: 0 0 5px 0; clip-path: none; opacity: .45;
-    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
-    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 10%, transparent 70%);
+    content: ''; position: absolute; z-index: -1; inset: -2px -5px -5px -2px; width: auto; height: auto; pointer-events: none;
+    border-radius: 0; clip-path: none; mask: none; opacity: 1; background: none;
+    border-style: solid; border-color: transparent; border-width: 10px 75px 71px 7px;
+    border-image: var(--p-card) 30 225 213 21 / 10px 75px 71px 7px stretch;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .project-card--catalog .project-card__body::after { opacity: .14; }
-  #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__body {
-    border-color: var(--rule-strong); box-shadow: 6px 6px 0 var(--comic-shadow); transform: translate(-1px, -1px);
-  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .project-card--catalog .project-card__body::after { opacity: 1; }
+  #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__body { box-shadow: none; transform: translate(-1px, -2px); }
   #app .app-shell--comic-page .project-card--catalog .project-card__header { padding-right: 58px; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__identity { gap: 10px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__identity { gap: 11px; }
   #app .app-shell--comic-page .project-card--catalog .project-card__github-logo { width: 32px; height: 32px; flex-basis: 32px; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__identity h2 { color: var(--ink); font-size: 14.5px; font-weight: 800; line-height: 1.35; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__identity h2 { color: var(--p-ink); font-size: 14.5px; font-weight: 800; line-height: 1.35; }
   /* The concept's cards all show two lines of description; the rest stays in the repository's own page. */
   #app .app-shell--comic-page .project-card--catalog .project-card__description {
     display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-    color: var(--ink-secondary); font-size: 13px; line-height: 1.6;
+    margin: -4px 0 4px; color: var(--p-copy); font-size: 13px; line-height: 19px;
   }
-  #app .app-shell--comic-page .project-card--catalog .project-card__metadata { gap: 10px; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__tag-list { gap: 7px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__metadata { gap: 15px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__tag-list { gap: 9px; }
   #app .app-shell--comic-page .project-card--catalog .project-chip {
-    min-height: 21px; padding: 0 7px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
-    background: var(--paper-raised); box-shadow: 1.5px 1.5px 0 var(--comic-shadow); color: var(--ink); font-size: 12px; font-weight: 700; line-height: 1.5;
+    min-height: 21px; padding: 0 8px; border: 0 solid transparent; border-radius: 2.5px; background: var(--p-face); box-shadow: none;
+    color: var(--p-ink); font-size: 12px; font-weight: 800; line-height: 21px;
+    border-image: var(--p-tag) 24 24 27 24 / 8px 8px 9px 8px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .project-card--catalog .project-chip:hover { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .project-card--catalog .project-chip:hover { background: var(--p-lime-hover); color: var(--p-ink); }
+  /* Numbers: a short rule fading at both ends, then stars and today's gain over heat, forks and the last push. */
   #app .app-shell--comic-page .project-card--catalog .project-card__stats {
-    grid-template-columns: 36% 32% minmax(0, 1fr); gap: 5px 8px; padding-top: 9px; border-top: 1px solid var(--rule);
-    color: var(--ink-secondary); font-size: 12.5px;
+    grid-template-columns: 36% 27% minmax(0, 1fr); gap: 4.5px 8px; padding-top: 4px; border-top: 0;
+    background: linear-gradient(90deg, transparent, var(--p-rule) 6%, color-mix(in srgb, var(--p-rule) 60%, transparent) 70%, transparent) 0 0 / 92% 1.5px no-repeat;
+    color: var(--p-muted); font-size: 12.5px;
   }
   #app .app-shell--comic-page .projects-page--catalog .project-card--catalog .project-card__stats > * { grid-column: auto; }
   #app .app-shell--comic-page .projects-page--catalog .project-card--catalog .project-card__stats > :nth-child(2) { grid-column: 2 / -1; }
   #app .app-shell--comic-page .project-card--catalog .project-card__stats svg { width: 14px; height: 14px; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:first-child { color: var(--ink); font-size: 13px; font-weight: 800; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:nth-child(2) { color: var(--tone-mint); font-weight: 700; }
-  #app .app-shell--comic-page .project-card--catalog .project-card__stats .project-heat { color: var(--heat-ink); font-size: 13px; font-weight: 800; }
-  /* The actions sit as bare icons in the name row, as drawn. */
-  #app .app-shell--comic-page .project-card--catalog .project-card__rail { top: 13px; right: 10px; width: auto; flex-direction: row; gap: 2px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:first-child { color: var(--p-ink); font-size: 13px; font-weight: 800; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:first-child svg { color: var(--p-star); fill: var(--p-star); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats > span:nth-child(2) { color: var(--p-today); font-weight: 700; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__stats .project-heat { color: var(--p-heat); font-size: 13px; font-weight: 800; }
+  /* The actions sit as bare icons in the name row, as drawn; the star in amber. */
+  #app .app-shell--comic-page .project-card--catalog .project-card__rail { top: 12px; right: 12px; width: auto; flex-direction: row; gap: 1px; }
   #app .app-shell--comic-page .project-card--catalog .project-card__action {
-    width: 28px; min-width: 28px; min-height: 28px; border: 1.5px solid transparent; border-radius: 5px 7px 5px 6px;
-    background: transparent; box-shadow: none; color: var(--ink);
+    width: 28px; min-width: 28px; min-height: 28px; border: 0; border-radius: 4px; background: transparent; box-shadow: none; color: var(--p-ink);
   }
-  #app .app-shell--comic-page .project-card--catalog .project-card__action:hover:not(:disabled) { background: var(--acid-soft); }
-  #app .app-shell--comic-page .project-card--catalog .project-card__favorite { color: var(--ink); }
-  #app .app-shell--comic-page .project-card--catalog .project-card__favorite--active { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__action:hover:not(:disabled) { background: var(--p-lime-hover); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__favorite:not(.project-card__favorite--active) { color: var(--p-star); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__favorite--active { background: var(--p-lime); color: var(--acid-ink); }
   #app .app-shell--comic-page .project-card--catalog.project-card--not-found .project-card__body { background: var(--projects-ghost-surface-card); }
 
-  /* Pagination: comic buttons at the foot of the list. */
+  /* Pagination: a plain row; the buttons on the field's line with a hard block, the page box on the thin one. */
   #app .app-shell--comic-page .projects-page--catalog .projects-pagination {
-    margin-top: 26px; border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
+    margin-top: 24px; padding: 6px 4px; border: 0; border-radius: 0; background: transparent; box-shadow: none;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-pagination p { color: var(--ink-secondary); font-size: 14px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination p { color: var(--p-muted); font-size: 14px; }
   #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button {
-    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
-    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px; font-weight: 800;
+    height: 36px; border: 0 solid transparent; border-radius: 4px; background: var(--p-face); box-shadow: none;
+    color: var(--p-ink); font-size: 14px; font-weight: 800;
+    border-image: var(--p-pg) 27 33 36 27 / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button:hover:not(:disabled) { background: var(--acid-soft); }
-  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump { color: var(--ink-secondary); font-size: 13.5px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump input { border: 1.5px solid var(--rule-strong); color: var(--ink); font-size: 14px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button:hover:not(:disabled) { background: var(--p-lime-hover); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__button:disabled { opacity: .45; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump { color: var(--p-muted); font-size: 13.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump input {
+    height: 36px; border: 0 solid transparent; border-radius: 4px; background: var(--p-paper); color: var(--p-ink); font-size: 14px;
+    border-image: var(--p-field) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+  }
 
   /* English category names run longer: a wider index keeps most of them on one line. */
-  #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 264px minmax(0, 1fr); }
+  #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 271px minmax(0, 1fr); }
   /* Below 1366px three cards would drop under ~340px and break their numbers over two lines; two columns read better. */
   @media (max-width: 1365px) {
     #app .app-shell--comic-page .projects-page--catalog .projects-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 1199px) {
-    #app .app-shell--comic-page .projects-page--catalog { grid-template-columns: 224px minmax(0, 1fr); column-gap: 18px; padding-right: 12px; }
-    #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 236px minmax(0, 1fr); }
-    #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel { padding-inline: 8px; }
+    #app .app-shell--comic-page .projects-page--catalog { grid-template-columns: 231px minmax(0, 1fr); column-gap: 18px; padding-right: 12px; }
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) { grid-template-columns: 247px minmax(0, 1fr); }
+    #app .app-shell--comic-page .projects-page--catalog > .projects-category-panel { padding-inline: 12px 14px; }
     #app .app-shell--comic-page .projects-page--catalog .projects-category { gap: 7px; padding-inline: 7px; font-size: 13.5px; }
     #app .app-shell--comic-page .projects-page--catalog .projects-category small { font-size: 12.5px; }
     #app .app-shell--comic-page .projects-page--catalog .projects-hero h1 { font-size: 34px; }
+    #app .app-shell--comic-page .projects-toolbar--catalog { gap: 24px; }
   }
   @media (prefers-reduced-motion: reduce) {
     #app .app-shell--comic-page .project-card--catalog .project-card__body { transition: none; }

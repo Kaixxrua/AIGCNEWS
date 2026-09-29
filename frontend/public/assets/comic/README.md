@@ -126,3 +126,15 @@ The X board (`/x`, "x-C" concept) uses the same generator. The tick in the accou
 - `x-badge.webp`: the panel title's mark, a yellow ink blot with a pen-stroked check.
 
 Only the card, the panel, the pager strip and the score carry a fill; the buttons, the segments and the chips paint their own face (white, lime when chosen) and take the image as their `border-image`. Together they are about 110 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and soften the dots.
+
+The project catalog (`/projects`, "projects-C" concept) uses the same generator. The brush under the title, the slash before the lead and the corner wash on each card are CSS; the icons are the page's own.
+
+- `p-card-cool.webp`, `p-card-lime.webp`, `p-card-warm.webp`: a project card, a 2.2px ink line pressed into a solid ink block 3px right and 2px down, with a triangle of halftone off the lower-right corner, dense at the corner and thinning to its diagonal. The three columns take steel blue, lime and gold in turn; the card's paper and its tinted corner wash are the element's own background.
+- `p-side.webp`: the category index, a paper box off the page's left edge whose line thickens down its right, with pencil hatching in its top right and, fainter, its lower right.
+- `p-active.webp`: the current category, a 1.6px line, a touch heavier along its foot, round the lime.
+- `p-field.webp`: the search field and the sort select, an even 1.7px navy line, rounded 4px.
+- `p-banner.webp`, `p-chev.webp`: the MCP strip's line round the lime band, and its chevron key.
+- `p-tag.webp`: a card tag, a yellow highlighter outline going olive along its top.
+- `p-pg.webp`: the pager's buttons, the field's line on a hard 2px ink block.
+
+Only the index carries a fill; the rest take the image as a frame (a pseudo-element on the cards, the element's own `border-image` on the controls and tags) and paint their own face. Together they are about 210 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and keep the dots in dimmer copies of their colours.
