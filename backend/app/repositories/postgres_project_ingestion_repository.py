@@ -116,6 +116,45 @@ _SNAPSHOT_UPSERT_SQL = """
 """
 
 
+_STAR_OBSERVATION_UPSERT_SQL = """
+    INSERT INTO github_repo_star_observations (repo_id, observed_at, stars, forks, watchers)
+    VALUES (%(repo_id)s, %(observed_at)s, %(stars)s, %(forks)s, %(watchers)s)
+    ON CONFLICT (repo_id, observed_at) DO UPDATE SET
+        stars=GREATEST(github_repo_star_observations.stars, EXCLUDED.stars),
+        forks=GREATEST(github_repo_star_observations.forks, EXCLUDED.forks),
+        watchers=COALESCE(EXCLUDED.watchers, github_repo_star_observations.watchers)
+"""
+
+# 滚动 24 小时星增只需窗口起点前的一条观测；多留两天给采集中断兜底。
+STAR_OBSERVATION_RETENTION_HOURS = 72
+
+
+def _star_observation_payload(snapshot: dict[str, Any]) -> dict[str, Any] | None:
+    """由已归一的快照载荷派生一条星数观测；时间或星数不可用时跳过。
+
+    观测只是滚动窗口的原料，宁缺毋滥：解析失败绝不能连累同事务的快照写入。
+    """
+    stars = int(snapshot.get("stars") or 0)
+    if stars <= 0:
+        return None
+    try:
+        observed_at = datetime.fromisoformat(
+            str(snapshot.get("captured_at") or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=timezone.utc)
+    complete = snapshot.get("community_metrics_complete") is True
+    return {
+        "repo_id": snapshot["repo_id"],
+        "observed_at": observed_at,
+        "stars": stars,
+        "forks": int(snapshot.get("forks") or 0),
+        "watchers": int(snapshot.get("watchers") or 0) if complete else None,
+    }
+
+
 class PostgresGitHubProjectIngestionRepository:
     """PostgreSQL writes and metric reads used by GitHub project ingestion."""
 
@@ -237,6 +276,7 @@ class PostgresGitHubProjectIngestionRepository:
         ("github_repo_snapshots", ("snapshot_date",), "captured_at"),
         ("github_repo_daily_metrics", ("metric_date",), "updated_at"),
         ("github_trending_hits", ("period", "observed_date"), "captured_at"),
+        ("github_repo_star_observations", ("observed_at",), "observed_at"),
     )
     # 单行子表：canonical 已有行则弃用旧行副本，否则整体迁移
     _SINGLETON_CHILD_TABLES = (
@@ -840,6 +880,9 @@ class PostgresGitHubProjectIngestionRepository:
                     full_name=str(payload.get("full_name") or ""),
                 )
                 cursor.execute(_SNAPSHOT_UPSERT_SQL, payload)
+                observation = _star_observation_payload(payload)
+                if observation is not None:
+                    cursor.execute(_STAR_OBSERVATION_UPSERT_SQL, observation)
 
     def upsert_github_repo_metric_observations(
         self,
@@ -945,7 +988,27 @@ class PostgresGitHubProjectIngestionRepository:
                     )
                     snapshots.append(payload)
                 cursor.executemany(_SNAPSHOT_UPSERT_SQL, snapshots)
+                star_observations = [
+                    observation
+                    for observation in map(_star_observation_payload, snapshots)
+                    if observation is not None
+                ]
+                if star_observations:
+                    cursor.executemany(_STAR_OBSERVATION_UPSERT_SQL, star_observations)
         return len(observations) - len(skipped)
+
+    def prune_github_star_observations(
+        self, *, retention_hours: int = STAR_OBSERVATION_RETENTION_HOURS
+    ) -> int:
+        """删除超出保留期的星数观测，返回删除行数。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM github_repo_star_observations "
+                    "WHERE observed_at < now() - make_interval(hours => %s)",
+                    (int(retention_hours),),
+                )
+                return int(cursor.rowcount or 0)
 
     def upsert_github_trending_hit(self, hit: dict[str, Any]) -> str:
         payload = dict(hit)

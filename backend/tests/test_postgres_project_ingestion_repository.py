@@ -70,7 +70,7 @@ def test_upsert_metric_observations_uses_single_transaction_and_executemany() ->
 
     assert written == 2
     assert database.transaction_count == 1
-    assert cursor.executemany.call_count == 3
+    assert cursor.executemany.call_count == 4
 
     candidate_sql, candidate_params = cursor.executemany.call_args_list[0].args
     assert "INSERT INTO github_repo_candidates" in candidate_sql
@@ -92,6 +92,13 @@ def test_upsert_metric_observations_uses_single_transaction_and_executemany() ->
     assert all(row["open_issues"] == 0 for row in snapshot_params)
     assert all(row["repo_created_at"] == "" for row in snapshot_params)
     assert all(row["repo_pushed_at"] == "" for row in snapshot_params)
+
+    # 同一事务追加星数观测，时间取快照的实际观测时刻
+    observation_sql, observation_params = cursor.executemany.call_args_list[3].args
+    assert "INSERT INTO github_repo_star_observations" in observation_sql
+    assert [row["repo_id"] for row in observation_params] == ["owner/one", "owner/two"]
+    assert all(row["observed_at"].isoformat() == "2026-07-30T01:00:00+00:00" for row in observation_params)
+    assert all(row["stars"] == 100 for row in observation_params)
 
 
 def test_upsert_metric_observations_empty_batch_opens_no_transaction() -> None:

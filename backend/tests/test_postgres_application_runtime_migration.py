@@ -31,6 +31,15 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
     assert migrations[5].filename == "0006_application_runtime.sql"
     assert migrations[76].filename == "0077_user_avatar.sql"
     assert migrations[77].filename == "0078_ai_ops_recovery.sql"
+    assert migrations[78].filename == "0079_github_star_observations.sql"
+
+
+def test_github_star_observations_migration_is_keyed_and_prunable() -> None:
+    sql = (MIGRATIONS_DIR / "0079_github_star_observations.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS github_repo_star_observations" in sql
+    assert "REFERENCES github_repo_candidates(repo_id) ON DELETE CASCADE" in sql
+    assert "PRIMARY KEY (repo_id, observed_at)" in sql
+    assert "ON github_repo_star_observations (observed_at)" in sql
 
 
 def test_x_ui_auto_publication_migration_is_opt_in_and_idempotent() -> None:

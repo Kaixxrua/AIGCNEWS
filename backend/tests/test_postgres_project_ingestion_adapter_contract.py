@@ -25,6 +25,7 @@ def test_postgres_ingestion_adapter_covers_protocol_operations() -> None:
         "ensure_github_repo_candidate",
         "insert_github_repo_snapshot",
         "upsert_github_repo_metric_observations",
+        "prune_github_star_observations",
         "upsert_github_trending_hit",
         "get_github_hot_repos",
         "get_github_snapshot_count",
