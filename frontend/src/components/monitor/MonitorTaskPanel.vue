@@ -5,6 +5,7 @@ const { t } = useI18n()
 import {
   formatDate,
   formatTime,
+  getSchedulerJobIcon,
   getStatusConfig,
   type SchedulerStatus,
   type Task,
@@ -26,19 +27,22 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="grid grid-cols-1 gap-5 shrink-0" :class="isAdmin ? 'lg:grid-cols-3' : ''">
-    <div v-if="isAdmin" class="stagger-enter glass-card flex flex-col p-5" style="animation-delay: 0.2s; max-height: 560px;">
+  <div class="monitor-task-grid grid grid-cols-1 gap-5 shrink-0" :class="isAdmin ? 'lg:grid-cols-3' : ''">
+    <div v-if="isAdmin" class="monitor-scheduler stagger-enter glass-card flex flex-col p-5" style="animation-delay: 0.2s; max-height: 560px;">
       <h3 class="monitor-section-title mb-4 shrink-0 text-sm font-semibold">{{ t('monitor.scheduler') }}</h3>
-      <div v-if="schedulerStatus" class="flex flex-col min-h-0 flex-1">
-        <div class="mb-4 shrink-0 flex items-center gap-2.5">
+      <div v-if="schedulerStatus" class="monitor-scheduler-body flex flex-col min-h-0 flex-1">
+        <div class="monitor-scheduler-status mb-4 shrink-0 flex items-center gap-2.5">
           <span class="status-dot" :class="schedulerStatus.running ? 'monitor-status-dot-running animate-[pulseDot_2s_ease-in-out_infinite]' : 'monitor-status-dot-error'" />
           <span class="text-sm font-medium">{{ t(schedulerStatus.running ? 'monitor.running' : 'monitor.stopped') }}</span>
-          <span class="ml-auto text-xs monitor-caption">{{ t('monitor.jobCount', { count: schedulerStatus.job_count }) }}</span>
+          <span class="monitor-scheduler-count ml-auto text-xs monitor-caption">{{ t('monitor.jobCount', { count: schedulerStatus.job_count }) }}</span>
         </div>
-        <div class="space-y-2 overflow-y-auto">
-          <div v-for="job in schedulerStatus.jobs" :key="job.id" class="monitor-surface-dim p-3">
-            <p class="text-xs font-medium">{{ job.name }}</p>
-            <p class="mt-1 text-2xs monitor-caption">{{ job.next_run_time ? t('monitor.nextRun', { date: formatDate(job.next_run_time) }) : t('monitor.unscheduled') }}</p>
+        <div class="monitor-scheduler-jobs space-y-2 overflow-y-auto">
+          <div v-for="job in schedulerStatus.jobs" :key="job.id" class="monitor-job monitor-surface-dim p-3">
+            <span class="monitor-job-icon" aria-hidden="true"><component :is="getSchedulerJobIcon(job.id)" /></span>
+            <div class="monitor-job-text">
+              <p class="text-xs font-medium">{{ job.name }}</p>
+              <p class="mt-1 text-2xs monitor-caption">{{ job.next_run_time ? t('monitor.nextRun', { date: formatDate(job.next_run_time) }) : t('monitor.unscheduled') }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -47,8 +51,8 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <div class="stagger-enter glass-card overflow-hidden flex flex-col" :class="isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
-      <div class="monitor-divider flex items-center justify-between px-5 py-3.5 shrink-0 border-b">
+    <div class="monitor-tasks stagger-enter glass-card overflow-hidden flex flex-col" :class="isAdmin ? 'lg:col-span-2' : 'lg:col-span-1'" style="animation-delay: 0.3s">
+      <div class="monitor-tasks-header monitor-divider flex items-center justify-between px-5 py-3.5 shrink-0 border-b">
         <h3 class="monitor-section-title text-sm font-semibold">{{ t('monitor.recentTasks') }}</h3>
         <span class="monitor-badge">{{ t('monitor.totalItems', { count: total }) }}</span>
       </div>
@@ -81,7 +85,7 @@ const emit = defineEmits<{
                     <span class="status-dot shrink-0" :class="getStatusConfig(task.status).dot" />
                     {{ getStatusConfig(task.status).labelKey ? t(`monitor.${getStatusConfig(task.status).labelKey}`) : getStatusConfig(task.status).rawLabel }}
                   </span>
-                  <span v-if="task.error_msg" class="max-w-[180px] truncate text-2xs monitor-status-error" :title="task.error_msg">{{ task.error_msg }}</span>
+                  <span v-if="task.error_msg" class="monitor-task-error max-w-[180px] truncate text-2xs monitor-status-error" :title="task.error_msg">{{ task.error_msg }}</span>
                 </div>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-xs tabular-nums">{{ task.item_count }}</td>
@@ -95,7 +99,7 @@ const emit = defineEmits<{
         </table>
       </div>
 
-      <div class="monitor-divider flex items-center justify-between px-5 py-3 shrink-0 border-t">
+      <div class="monitor-tasks-footer monitor-divider flex items-center justify-between px-5 py-3 shrink-0 border-t">
         <p class="text-xs monitor-caption">{{ t('monitor.pageSummary', { page, totalPages, total }) }}</p>
         <div class="flex items-center gap-1">
           <button class="monitor-pagination-btn" :disabled="page <= 1" @click="emit('goPage', 1)">«</button>
@@ -110,3 +114,8 @@ const emit = defineEmits<{
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 任务来源图标只在桌面漫画版展示（comic-pages.css）；其余布局维持原来的纯文字卡片。 */
+.monitor-job-icon{display:none}
+</style>

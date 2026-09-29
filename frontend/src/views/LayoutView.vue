@@ -32,7 +32,7 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 const isMobile = useMediaQuery('(max-width: 767px)')
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
-const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'membership', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
+const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'membership', 'monitor', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 const editorialLayout = computed(() => route.path === '/'
   || (route.path === '/projects' && route.query.source !== 'website')
   || COMIC_CONTENT_ROUTES.has(String(route.name ?? '')))

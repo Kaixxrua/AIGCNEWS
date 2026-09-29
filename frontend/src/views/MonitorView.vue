@@ -155,12 +155,12 @@ onUnmounted(dispose)
     <div class="monitor-content flex min-h-0 flex-1 flex-col gap-5 overflow-hidden">
 
     <!-- 页头 -->
-    <div class="stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
-      <div>
-        <h1 class="monitor-title text-2xl font-bold tracking-tight">{{ t('monitor.title') }}</h1>
+    <div class="monitor-header stagger-enter flex flex-wrap items-center justify-between gap-3 shrink-0">
+      <div class="monitor-heading">
+        <h1 class="monitor-title comic-title text-2xl font-bold tracking-tight">{{ t('monitor.title') }}</h1>
         <p class="monitor-caption mt-0.5 text-sm">{{ t('monitor.subtitle') }}</p>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="monitor-actions flex flex-wrap gap-2">
         <button class="monitor-btn-secondary" :disabled="loading" @click="refreshData">
           <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
           {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
@@ -493,6 +493,11 @@ onUnmounted(dispose)
   color: var(--projects-accent);
   background: var(--projects-paper);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 页头入场动画结束后不保留 transform：否则页头成为 fixed 定位的包含块，“清空数据”确认弹窗会被困在页头里。 */
+.monitor-header {
+  animation-fill-mode: backwards;
 }
 
 @media (max-width: 720px) {

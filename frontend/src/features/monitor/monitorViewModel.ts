@@ -1,4 +1,4 @@
-import { Activity, CloudDownload, FileText, GitBranch, Globe, Newspaper, Rocket, Settings, Triangle, Users } from 'lucide-vue-next'
+import { Activity, BookOpenText, Box, Clock, CloudDownload, CreditCard, FileText, Flame, GitBranch, Github, Globe, Newspaper, Rocket, Send, Settings, Triangle, Users } from 'lucide-vue-next'
 import { formatLocaleDate } from '@/i18n/formatters'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import type { Component } from 'vue'
@@ -157,6 +157,25 @@ const STATUS_CONFIG: Record<string, { labelKey: string; rawLabel: string; dot: s
 export const getStatusConfig = (status: string) => (
   STATUS_CONFIG[(status || 'unknown').toLowerCase()]
   ?? { labelKey: '', rawLabel: status, dot: 'monitor-status-dot-unknown', bg: 'monitor-status-unknown', text: '' }
+)
+
+// 调度任务卡片的来源图标：按任务 id 的来源前缀/关键词匹配，先到先得；未知任务用时钟。
+const SCHEDULER_JOB_ICONS: [RegExp, Component][] = [
+  [/^ui_library/, Box],
+  [/^x_/, XLogoIcon],
+  [/^github_/, Github],
+  [/arxiv|paper/, BookOpenText],
+  [/^hackernews/, Triangle],
+  [/^producthunt/, Rocket],
+  [/^dailyhot/, Flame],
+  [/^news_/, Newspaper],
+  [/briefing/, FileText],
+  [/subscription|tracking|digest/, Send],
+  [/payment/, CreditCard],
+]
+
+export const getSchedulerJobIcon = (jobId: string): Component => (
+  SCHEDULER_JOB_ICONS.find(([pattern]) => pattern.test(jobId))?.[1] ?? Clock
 )
 
 export const getMcpTransportPresentation = (transport: string) => (

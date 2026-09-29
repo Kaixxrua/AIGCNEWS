@@ -1082,4 +1082,213 @@
     #app .app-shell--comic-page .tracking-rules > li,
     #app .app-shell--comic-page .tracking-rules > li::before { transition: none; }
   }
+
+  /* ── Monitor (monitor-C): the title with its line beside it and the actions on the right; the section nav in one
+     ruled box with bold group heads and plain leaves (the open one on a lime bar); panels on the comic rule with
+     tilted title tags. The scheduler lists each job as a small card led by its source icon; the task history reads
+     as a table of ruled row cards with status chips and the error in full under a failed one. Tables, forms and
+     buttons across every section read at 13.5–15px. ── */
+  #app .app-shell--comic-page .monitor-page { padding: 14px 28px 0; background: transparent; color: var(--ink); }
+  #app .app-shell--comic-page .monitor-content { gap: 18px; }
+  #app .app-shell--comic-page .monitor-header { flex-wrap: nowrap; align-items: center; gap: 16px 24px; }
+  #app .app-shell--comic-page .monitor-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; min-width: 0; }
+  #app .app-shell--comic-page .monitor-heading .monitor-title { font-size: 38px; }
+  /* Clear-data confirm: same comic frame as the panels, heading stays at dialog scale. */
+  #app .app-shell--comic-page .monitor-page .monitor-modal {
+    border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 8px 12px 7px 11px;
+    background: var(--paper-raised); box-shadow: 6px 6px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .monitor-modal .monitor-title { color: var(--ink); font-size: 19px; font-weight: 900; line-height: 1.3; }
+  #app .app-shell--comic-page .monitor-modal .monitor-caption { color: var(--ink-secondary); font-size: 14.5px; }
+  #app .app-shell--comic-page .monitor-modal .monitor-warning-box { font-size: 13.5px; }
+  #app .app-shell--comic-page .monitor-heading .monitor-caption { margin-top: 0; color: var(--ink-secondary); font-size: 15px; font-weight: 600; }
+  #app .app-shell--comic-page .monitor-actions { flex-wrap: wrap; justify-content: flex-end; gap: 10px 12px; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) {
+    min-height: 36px; padding: 7px 15px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 14px; font-weight: 800; line-height: 1.2;
+  }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost) svg { width: 16px; height: 16px; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-secondary, .monitor-btn-ghost):hover:not(:disabled) { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-primary { background: var(--ink); color: var(--paper-raised); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-primary:hover:not(:disabled) { background: var(--ink); color: var(--acid); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger { border-color: var(--error-accent); color: var(--error-accent); }
+  #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled) { background: var(--error-accent); color: #fff; }
+  #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):disabled { box-shadow: none; opacity: .5; }
+
+  /* Section nav: one ruled box; group heads bold with their icon, leaves plain text under them, the open leaf on lime. */
+  #app .app-shell--comic-page .monitor-body { gap: 26px; }
+  #app .app-shell--comic-page .monitor-nav {
+    gap: 0; width: 232px; align-self: flex-start; max-height: calc(100% - var(--peel-clear) * 0 - 28px); padding: 10px 10px 12px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .monitor-nav-group { gap: 2px; padding: 6px 0 8px; }
+  #app .app-shell--comic-page .monitor-nav-group + .monitor-nav-group { border-top: 1.5px solid var(--rule); }
+  #app .app-shell--comic-page .monitor-nav-group-header { gap: 10px; padding: 6px 6px 6px 4px; color: var(--ink); font-size: 17px; font-weight: 900; letter-spacing: 0; opacity: 1; }
+  #app .app-shell--comic-page .monitor-nav-group-header:hover { color: var(--ink); opacity: 1; }
+  #app .app-shell--comic-page .monitor-nav-icon { width: 21px; height: 21px; stroke-width: 2.2; }
+  #app .app-shell--comic-page .monitor-nav-chevron { width: 16px; height: 16px; }
+  #app .app-shell--comic-page .monitor-nav-leaves { gap: 1px; }
+  #app .app-shell--comic-page .monitor-nav-leaf { width: calc(100% - 31px); margin-left: 31px; }
+  #app .app-shell--comic-page .monitor-nav-item {
+    min-height: 30px; padding: 5px 10px; border: 0; border-radius: 3px 5px 3px 4px; background: transparent; box-shadow: none;
+    color: var(--ink-secondary); font-size: 14.5px; font-weight: 600; line-height: 1.35; text-align: left; transform: none;
+  }
+  #app .app-shell--comic-page .monitor-nav-item:hover { background: var(--acid-soft); color: var(--ink); box-shadow: none; transform: none; }
+  #app .app-shell--comic-page .monitor-nav-item.active { background: var(--acid); color: var(--acid-ink); font-weight: 800; box-shadow: none; }
+  #app .app-shell--comic-page .monitor-nav-item:focus-visible,
+  #app .app-shell--comic-page .monitor-nav-group-header:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  #app .app-shell--comic-page .monitor-nav-alert { position: static; flex-shrink: 0; width: 9px; height: 9px; border: 0; }
+
+  /* Panels: the comic rule across every section; their titles read heavier. */
+  #app .app-shell--comic-page .monitor-section-panels { gap: 30px; padding: 22px 8px calc(var(--peel-clear) + 28px) 2px; }
+  #app .app-shell--comic-page .monitor-page .glass-card {
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--ink);
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-section-title { color: var(--ink); font-size: 17px; font-weight: 900; }
+  #app .app-shell--comic-page .monitor-page .monitor-caption { color: var(--ink-secondary); }
+  #app .app-shell--comic-page .monitor-page .monitor-badge {
+    padding: 2px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px; background: var(--paper-raised);
+    box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13px; font-style: italic; font-weight: 800;
+  }
+  /* Filter fields (payment orders, AI ops) had no box of their own; they read as the other inputs here. */
+  #app .app-shell--comic-page .monitor-page .monitor-input {
+    min-height: 38px; padding: 7px 12px; border: 1.5px solid var(--rule-strong); border-radius: 4px 6px 4px 5px;
+    background: var(--paper-raised); color: var(--ink); font-size: 14px;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  #app .app-shell--comic-page .monitor-page .monitor-table { font-size: 14px; }
+  #app .app-shell--comic-page .monitor-page .monitor-table th { padding: 11px 14px; color: var(--ink); font-size: 13px; font-weight: 800; letter-spacing: 0; text-transform: none; }
+  #app .app-shell--comic-page .monitor-page .monitor-table td { padding: 12px 14px; color: var(--ink); font-size: 14px; }
+  #app .app-shell--comic-page .monitor-page .monitor-table td :is(.text-xs, .text-2xs) { font-size: 14px; }
+  #app .app-shell--comic-page .monitor-page .monitor-table .monitor-caption { color: var(--ink-secondary); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn {
+    min-width: 36px; min-height: 34px; padding: 6px 11px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px;
+    border-radius: 5px 7px 4px 6px; background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 14px;
+  }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn.active { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .monitor-page .monitor-pagination-btn:disabled { box-shadow: none; opacity: .4; }
+
+  /* Scheduler and task history: title tags ride the top rule; halftone in the foot corner. */
+  #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks) { position: relative; isolation: isolate; overflow: visible; }
+  #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks)::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 130px; height: 84px; border-bottom-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .45;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks)::after { opacity: .14; }
+  #app .app-shell--comic-page :is(.monitor-scheduler, .monitor-tasks-header) > .monitor-section-title {
+    position: relative; width: max-content; margin: -40px 0 0 -16px; padding: 4px 18px; border: 2px solid var(--rule-strong);
+    border-radius: 3px 6px 3px 5px; background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
+    font-size: 20px; font-style: italic; font-weight: 950; line-height: 1.4; transform: rotate(-3deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .monitor-scheduler {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); align-items: center; gap: 14px 16px;
+    max-height: none !important; padding: 22px 20px 20px; contain: size; contain-intrinsic-block-size: 380px;
+  }
+  #app .app-shell--comic-page .monitor-scheduler > .monitor-section-title { margin-right: 4px; margin-bottom: 0; }
+  #app .app-shell--comic-page .monitor-scheduler-body { display: contents; }
+  #app .app-shell--comic-page .monitor-scheduler > :not(.monitor-section-title, .monitor-scheduler-body) { grid-column: 1 / -1; }
+  #app .app-shell--comic-page .monitor-scheduler-status { flex-wrap: wrap; justify-content: flex-end; justify-self: end; gap: 6px 10px; margin: -12px 0 0; }
+  #app .app-shell--comic-page .monitor-scheduler-status > span { white-space: nowrap; }
+  #app .app-shell--comic-page .monitor-scheduler-status > span:nth-child(2) { color: var(--ink); font-size: 14.5px; font-weight: 700; }
+  #app .app-shell--comic-page .monitor-scheduler-count { padding: 1px 11px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px; box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13.5px; font-style: italic; font-weight: 800; transform: rotate(-2deg) skewX(-6deg); }
+  #app .app-shell--comic-page .monitor-scheduler-jobs { grid-column: 1 / -1; align-self: stretch; min-height: 0; margin: 0 -8px 0 -4px; padding: 4px 8px 6px 4px; }
+  #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 12px; }
+  #app .app-shell--comic-page .monitor-job {
+    position: relative; isolation: isolate; display: flex; align-items: center; gap: 14px; padding: 12px 16px 12px 12px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 5px 7px 4px 8px; background: var(--paper-raised);
+    box-shadow: 3px 3px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .monitor-job::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 64px; height: 40px; border-bottom-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.1px, transparent 1.6px) 0 0 / 6px 6px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 72%); opacity: .4;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-job::after { opacity: .14; }
+  #app .app-shell--comic-page .monitor-job-icon {
+    display: grid; flex-shrink: 0; place-items: center; width: 40px; height: 40px; border: 1.5px solid var(--rule-strong); border-radius: 50%;
+    background: color-mix(in srgb, var(--comic-cyan-line) 14%, var(--paper-raised)); color: var(--ink);
+  }
+  #app .app-shell--comic-page .monitor-job-icon svg { width: 21px; height: 21px; stroke-width: 2; }
+  #app .app-shell--comic-page .monitor-job-text { min-width: 0; }
+  #app .app-shell--comic-page .monitor-job-text > p:first-child { color: var(--ink); font-size: 15px; font-weight: 700; line-height: 1.4; }
+  #app .app-shell--comic-page .monitor-job-text > p + p { margin-top: 3px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+
+  #app .app-shell--comic-page .monitor-tasks-header { justify-content: flex-start; gap: 14px; padding: 22px 22px 10px; border-bottom: 0; }
+  #app .app-shell--comic-page .monitor-tasks-header .monitor-badge { margin-top: -30px; transform: rotate(-2deg) skewX(-6deg); }
+  #app .app-shell--comic-page .monitor-tasks-header + div { padding: 2px 18px 4px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table { border-collapse: separate; border-spacing: 0 8px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table thead { background: none; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th { border: 0; background: color-mix(in srgb, var(--comic-cyan-line) 16%, var(--paper-raised)); }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:first-child { border-radius: 6px 0 0 6px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table th:last-child { border-radius: 0 6px 6px 0; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr,
+  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:nth-child(even) { background: none; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td {
+    border: solid var(--rule-strong); border-width: 1.5px 0 2px; background: var(--paper-raised); transition: background-color .12s linear;
+  }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child { border-left-width: 1.5px; border-radius: 5px 0 0 7px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:last-child { border-right-width: 2px; border-radius: 0 7px 5px 0; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td[colspan] { border-width: 1.5px 2px 2px 1.5px; border-radius: 5px 7px 5px 7px; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table tbody tr:hover td { background: var(--acid-soft); }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:first-child { font-family: inherit; font-weight: 700; }
+  #app .app-shell--comic-page .monitor-tasks .badge {
+    width: max-content; padding: 2px 10px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink); font-size: 13.5px; font-style: italic; font-weight: 800; transform: skewX(-6deg);
+  }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-success { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-running { background: color-mix(in srgb, var(--comic-cyan-line) 40%, var(--paper-raised)); }
+  #app .app-shell--comic-page .monitor-tasks .badge.monitor-status-error { background: var(--error-accent); color: #fff; }
+  #app .app-shell--comic-page .monitor-tasks .badge .status-dot { background: currentColor; }
+  #app .app-shell--comic-page .monitor-tasks .monitor-task-error {
+    display: -webkit-box; max-width: 260px; overflow: hidden; background: none; color: var(--error-accent); font-size: 13.5px; font-weight: 600;
+    line-height: 1.45; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  /* The longer English start time, and any start time below 1200px, may break between date and time when the table
+     runs out of room; wide tables never wrap it. */
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5):lang(en) { white-space: normal; }
+  @media (max-width: 1199px) {
+    #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(5) { white-space: normal; }
+  }
+  #app .app-shell--comic-page .monitor-tasks .monitor-table td:nth-child(n+4) { font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .monitor-tasks-footer { flex-wrap: wrap; gap: 10px 16px; padding: 10px 22px 18px; border-top: 0; }
+  #app .app-shell--comic-page .monitor-tasks-footer > p { font-size: 14px; }
+  #app .app-shell--comic-page .monitor-tasks-footer > div { gap: 8px; }
+  #app .app-shell--comic-page .monitor-task-grid { gap: 30px 26px; }
+
+  /* Where a third of the row is too narrow for the scheduler (below 1400px; 1700px for the longer English copy) it
+     sits above the history at full width, its jobs in columns, and the history table gets the whole row. */
+  @media (max-width: 1399px) {
+    #app .app-shell--comic-page .monitor-header { flex-wrap: wrap; }
+    #app .app-shell--comic-page .monitor-heading { flex: 1 1 0; min-width: 220px; }
+    #app .app-shell--comic-page .monitor-actions { gap: 10px; }
+    #app .app-shell--comic-page .monitor-actions > :is(.monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger) { padding: 6px 12px; font-size: 13.5px; }
+  }
+  @media (max-width: 1699px) {
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) { grid-template-columns: minmax(0, 1fr); }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) > * { grid-column: 1 / -1; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler { contain-intrinsic-block-size: 318px; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 12px 14px; }
+    #app .app-shell--comic-page .monitor-task-grid:lang(en) .monitor-scheduler-jobs > * + * { margin-top: 0; }
+  }
+  @media (max-width: 1399px) {
+    #app .app-shell--comic-page .monitor-task-grid { grid-template-columns: minmax(0, 1fr); }
+    #app .app-shell--comic-page .monitor-task-grid > * { grid-column: 1 / -1; }
+    #app .app-shell--comic-page .monitor-scheduler { contain-intrinsic-block-size: 318px; }
+    #app .app-shell--comic-page .monitor-scheduler-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); align-content: start; gap: 12px 14px; }
+    #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 0; }
+  }
+  @media (max-width: 1199px) {
+    #app .app-shell--comic-page .monitor-page { padding-inline: 20px; }
+    #app .app-shell--comic-page .monitor-body { gap: 20px; }
+    #app .app-shell--comic-page .monitor-nav { width: 200px; }
+    #app .app-shell--comic-page .monitor-nav-group-header { font-size: 16px; }
+    #app .app-shell--comic-page .monitor-nav-leaf { width: calc(100% - 22px); margin-left: 22px; }
+    #app .app-shell--comic-page .monitor-page .monitor-table :is(th, td) { padding-inline: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .monitor-tasks .monitor-table td { transition: none; }
+  }
 }

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { BookOpenText, Box, Clock, FileText, Github, Newspaper, Send } from 'lucide-vue-next'
+import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import {
   DEFAULT_MONITOR_SECTION,
   MONITOR_NAV,
@@ -6,6 +8,7 @@ import {
   SOURCE_LIST,
   getMcpAuthPresentation,
   getMcpTransportPresentation,
+  getSchedulerJobIcon,
   getStatusConfig,
   normalizeMonitorSection,
   toMcpToolCallRows,
@@ -108,5 +111,16 @@ describe('monitor presentation localization boundary', () => {
     // vue-router 重复参数（string[]）取第一个
     expect(normalizeMonitorSection(['scheduler'])).toBe('scheduler')
     expect(normalizeMonitorSection(['bogus'])).toBe('tasks')
+  })
+
+  it('picks a source icon for each scheduler job and a clock for unknown ones', () => {
+    expect(getSchedulerJobIcon('github_trending')).toBe(Github)
+    expect(getSchedulerJobIcon('x_watchlist')).toBe(XLogoIcon)
+    expect(getSchedulerJobIcon('ui_library_x_discovery')).toBe(Box)
+    expect(getSchedulerJobIcon('arxiv_papers')).toBe(BookOpenText)
+    expect(getSchedulerJobIcon('news_techmeme')).toBe(Newspaper)
+    expect(getSchedulerJobIcon('daily_briefing')).toBe(FileText)
+    expect(getSchedulerJobIcon('subscription_dispatch')).toBe(Send)
+    expect(getSchedulerJobIcon('conversation_cleanup')).toBe(Clock)
   })
 })
