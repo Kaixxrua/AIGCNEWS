@@ -11,11 +11,12 @@ from backend.app.core.scheduler_registry import (
     SOURCE_JOB_DESCRIPTORS,
 )
 from backend.app.services.briefing.daily_briefing import (
-    _SOURCE_CHANNELS,
+    _BOARD_SOURCES,
+    _SNAPSHOT_ONLY_BOARD_CHANNELS,
     _SOURCE_CONFIG,
-    _filter_docs_by_channel,
 )
 from backend.app.services.briefing.dispatch import BRIEFING_SOURCES
+from backend.app.services.briefing.preparation import finalized_board_date
 from backend.app.services.ingestion.content_enricher import _ENRICH_MAP
 from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCrawler
 from backend.app.services.ingestion.source_dailyhot import (
@@ -268,15 +269,12 @@ class PipelineRegistrationTests(unittest.TestCase):
         prompt, suffix = _SOURCE_CONFIG["dailyhot"]
         self.assertEqual(suffix, "_dailyhot")
         self.assertIn("dailyhot", prompt)  # 标签要求
-        self.assertEqual(_SOURCE_CHANNELS["dailyhot"], "dailyhot_daily")
+        self.assertIn("dailyhot", _BOARD_SOURCES)
+        self.assertEqual(_SNAPSHOT_ONLY_BOARD_CHANNELS["dailyhot"], "dailyhot_daily")
 
-    def test_filter_docs_by_channel_keeps_dailyhot_daily(self) -> None:
-        docs = [
-            {"source": "dailyhot", "source_channel": "dailyhot_daily", "title": "A"},
-            {"source": "dailyhot", "source_channel": "other", "title": "B"},
-        ]
-        filtered = _filter_docs_by_channel(docs, "dailyhot")
-        self.assertEqual([doc["title"] for doc in filtered], ["A"])
+    def test_briefing_reads_dailyhot_previous_cst_day_board(self) -> None:
+        # dailyhot 北京日界、23:07 末次落快照：08:00 发布时前一日榜已定稿。
+        self.assertEqual(finalized_board_date("2026-09-29", "dailyhot"), "2026-09-28")
 
     def test_briefing_sources_include_dailyhot(self) -> None:
         self.assertIn("dailyhot", BRIEFING_SOURCES)

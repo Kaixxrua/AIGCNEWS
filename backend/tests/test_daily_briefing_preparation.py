@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 
 from backend.app.services.briefing.daily_briefing import (
     _BLOCK_RESPONSE_ERROR,
+    _BOARD_SOURCES,
     _CONTINUATION_PROMPT,
     _MAX_CONTINUATION_ROUNDS,
     _PROMPT_GITHUB,
     _PROMPT_X,
-    _SOURCE_CHANNELS,
     _SOURCE_CONFIG,
     DailyBriefingService,
     _count_briefing_items,
@@ -22,6 +22,9 @@ from backend.app.services.briefing.daily_briefing import (
     _unescape_backticks,
 )
 from backend.app.services.briefing.preparation import (
+    BoardSlice,
+    describe_board_dates,
+    finalized_board_date,
     interleave_documents_by_source,
     normalize_briefing_context,
     order_snapshot_documents,
@@ -29,32 +32,33 @@ from backend.app.services.briefing.preparation import (
     remove_blocked_documents,
     render_briefing_prompt,
 )
+from backend.app.services.dashboard.policy import github_metric_to_doc
 
 
 class BriefingPurePreparationTests(unittest.TestCase):
-    def test_context_normalization_preserves_fallback_cache_and_channels(self) -> None:
+    def test_context_normalization_reads_each_board_on_its_finalized_date(self) -> None:
         context = normalize_briefing_context(
             target_date="2026-07-22",
             source="invalid",
             source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
+            board_sources=_BOARD_SOURCES,
         )
 
         self.assertEqual(context.source, "all")
+        # 期号（缓存键）仍是发布日；内容读的是 08:00 前已定稿的榜：北京日界源
+        # 01:00 关榜 → 前一日；太平洋日界源 17:00 才定稿 → 前两日。
         self.assertEqual(context.cache_date, "2026-07-22")
-        self.assertIsNone(context.source_type)
         self.assertEqual(
-            context.expected_channels,
+            context.boards,
             (
-                "huggingface_daily_html",
-                "github_trending_daily",
-                "techmeme_daily_rss",
-                "producthunt_daily_html",
-                "hn_daily_html",
-                "dailyhot_daily",
+                BoardSlice("arxiv", "2026-07-20", "PT"),
+                BoardSlice("github", "2026-07-21", "CST"),
+                BoardSlice("news", "2026-07-21", "CST"),
+                BoardSlice("producthunt", "2026-07-20", "PT"),
+                BoardSlice("hackernews", "2026-07-21", "CST"),
+                BoardSlice("dailyhot", "2026-07-21", "CST"),
             ),
         )
-        self.assertEqual(context.fallback_sources, ("arxiv", "github", "news", "producthunt", "hackernews", "dailyhot"))
         self.assertEqual(context.rolling_sources, ("x",))
 
     def test_context_normalization_for_x_uses_fixed_anchor_cache_key(self) -> None:
@@ -62,15 +66,52 @@ class BriefingPurePreparationTests(unittest.TestCase):
             target_date="2026-07-22",
             source="x",
             source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
+            board_sources=_BOARD_SOURCES,
         )
 
         self.assertEqual(context.source, "x")
         self.assertEqual(context.cache_date, "2026-07-22_0800_x")
-        self.assertEqual(context.source_type, "x")
-        self.assertEqual(context.expected_channels, ())
-        self.assertEqual(context.fallback_sources, ("x",))
+        self.assertEqual(context.boards, ())
         self.assertEqual(context.rolling_sources, ("x",))
+
+    def test_finalized_board_date_depends_only_on_publish_date(self) -> None:
+        cases = {
+            "github": "2026-09-28",
+            "news": "2026-09-28",
+            "hackernews": "2026-09-28",
+            "dailyhot": "2026-09-28",
+            "arxiv": "2026-09-27",
+            "producthunt": "2026-09-27",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(finalized_board_date("2026-09-29", source), expected)
+        # 跨月、非法期号原样透传（读榜为空，走无数据分支）
+        self.assertEqual(finalized_board_date("2026-10-01", "producthunt"), "2026-09-29")
+        self.assertEqual(finalized_board_date("not-a-date", "github"), "not-a-date")
+
+    def test_describe_board_dates_single_source_and_grouped_all(self) -> None:
+        def describe(source: str) -> str:
+            return describe_board_dates(
+                normalize_briefing_context(
+                    target_date="2026-09-29",
+                    source=source,
+                    source_config=_SOURCE_CONFIG,
+                    board_sources=_BOARD_SOURCES,
+                )
+            )
+
+        self.assertEqual(describe("github"), "2026-09-28")
+        self.assertEqual(describe("producthunt"), "2026-09-27（太平洋时间）")
+        self.assertEqual(
+            describe("all"),
+            "2026-09-27（太平洋时间）：论文、Product Hunt；"
+            "2026-09-28：GitHub、新闻、Hacker News、中文站点；"
+            "X：2026-09-28 08:00 至 2026-09-29 08:00（北京时间）",
+        )
+        self.assertEqual(
+            describe("x"), "X：2026-09-28 08:00 至 2026-09-29 08:00（北京时间）"
+        )
 
     def test_snapshot_ordering_and_top_k_are_pure(self) -> None:
         documents = [
@@ -137,7 +178,7 @@ class BriefingPurePreparationTests(unittest.TestCase):
             target_date="2026-07-22",
             source="github",
             source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
+            board_sources=_BOARD_SOURCES,
         )
 
         prompt = render_briefing_prompt(
@@ -153,6 +194,7 @@ class BriefingPurePreparationTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles([_github_doc("usable")], "github"),
                 date="2026-07-22",
+                board_date="2026-07-21",
             ),
         )
 
@@ -193,7 +235,7 @@ class BriefingPurePreparationTests(unittest.TestCase):
             {
                 **metric_fields,
                 "source": source,
-                "source_channel": _SOURCE_CHANNELS[source],
+                "source_channel": f"{source}_daily",
                 "title": f"{source}-entry",
                 "summary": "content summary",
                 "url": f"https://example.test/{source}",
@@ -222,42 +264,72 @@ class BriefingPurePreparationTests(unittest.TestCase):
         # readers skipped and that pushed single streams past the upstream cap.
         for source, (template, _suffix) in _SOURCE_CONFIG.items():
             with self.subTest(source=source):
-                prompt = template.format(count=3, articles="ARTICLES", date="2026-09-28")
+                prompt = template.format(
+                    count=3, articles="ARTICLES", date="2026-09-28", board_date="2026-09-27"
+                )
                 self.assertIn("约 3 分钟读完", prompt)
                 self.assertIn("1000-1500 字", prompt)
                 self.assertIn("不删条目", prompt)
                 self.assertNotIn("内容详尽", prompt)
                 self.assertNotIn("至少", prompt)
 
+    def test_board_prompts_state_board_date_and_avoid_today_wording(self) -> None:
+        # 期号 P 的简报读的是已定稿的前一日（太平洋日界源为前两日）榜单，
+        # 提示词不能再把条目称为"今日"；X 仍是截至 08:00 的 24h 窗口，不改。
+        for source in _BOARD_SOURCES + ("all",):
+            template, _suffix = _SOURCE_CONFIG[source]
+            with self.subTest(source=source):
+                prompt = template.format(
+                    count=3, articles="ARTICLES", date="2026-09-29", board_date="BOARD"
+                )
+                self.assertIn("**榜单日期：** BOARD", prompt)
+                self.assertIn("榜单日期纪律", prompt)
+                self.assertNotIn("今日内容", prompt)
+                self.assertNotIn("今日报", prompt)
+        self.assertNotIn("{board_date}", _PROMPT_X)
+        self.assertNotIn("榜单日期纪律", _PROMPT_X)
+
 
 class BriefingPreparationAdapterTests(unittest.TestCase):
-    def test_adapter_uses_snapshot_first_and_preserves_prompt(self) -> None:
-        snapshot_reader = MagicMock()
-        snapshot_reader.get_snapshot_documents.return_value = [
-            _github_doc("second", rank=2, score=200),
-            _github_doc("first", rank=1, score=100),
-        ]
-        document_feed = MagicMock()
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="github",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
-
-        prepared = prepare_briefing(
+    @staticmethod
+    def _prepare(context, *, top_k, read_board, document_feed=None):
+        return prepare_briefing(
             context=context,
-            top_k=1,
-            snapshot_reader=snapshot_reader,
-            document_feed=document_feed,
+            top_k=top_k,
+            read_board=read_board,
+            document_feed=document_feed or MagicMock(),
             source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: docs,
             format_articles=_format_articles,
             is_blocked=_looks_like_block_response,
         )
 
+    @staticmethod
+    def _context(source: str, target_date: str = "2026-07-22"):
+        return normalize_briefing_context(
+            target_date=target_date,
+            source=source,
+            source_config=_SOURCE_CONFIG,
+            board_sources=_BOARD_SOURCES,
+        )
+
+    def test_adapter_reads_finalized_board_and_preserves_prompt(self) -> None:
+        read_board = MagicMock(
+            return_value=[
+                _github_doc("second", rank=2, score=200),
+                _github_doc("first", rank=1, score=100),
+            ]
+        )
+        document_feed = MagicMock()
+
+        prepared = self._prepare(
+            self._context("github"),
+            top_k=1,
+            read_board=read_board,
+            document_feed=document_feed,
+        )
+
+        read_board.assert_called_once_with("github", "2026-07-21", 1)
         self.assertEqual([document["title"] for document in prepared.documents], ["first"])
-        self.assertFalse(prepared.fallback_used)
         self.assertFalse(prepared.milvus_used)
         self.assertEqual(
             prepared.prompt,
@@ -265,113 +337,62 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles([_github_doc("first", rank=1, score=100)], "github"),
                 date="2026-07-22",
+                board_date="2026-07-21",
             ),
         )
+        document_feed.list_recent_by_source.assert_not_called()
+
+    def test_missing_board_is_not_backfilled_from_document_table(self) -> None:
+        # 旧实现在快照缺失时按入库时间取近 ~32 小时条目兜底，与任何一张榜都
+        # 对不上；定稿榜口径下榜缺失即该源缺席。
+        document_feed = MagicMock()
+
+        prepared = self._prepare(
+            self._context("github"),
+            top_k=2,
+            read_board=MagicMock(return_value=[]),
+            document_feed=document_feed,
+        )
+
+        self.assertEqual(prepared.documents, ())
+        self.assertIsNone(prepared.prompt)
         document_feed.get_recent_top_documents.assert_not_called()
         document_feed.get_latest_documents.assert_not_called()
 
-    def test_adapter_filters_documents_then_uses_latest_fallback(self) -> None:
-        snapshot_reader = MagicMock()
-        snapshot_reader.get_snapshot_documents.return_value = []
-        document_feed = MagicMock()
-        document_feed.get_recent_top_documents.return_value = [
-            _github_doc("weekly", channel="github_trending_weekly")
-        ]
-        document_feed.get_latest_documents.return_value = [
-            _github_doc("blocked", summary="Access Denied"),
-            _github_doc("latest"),
-        ]
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="github",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
+    def test_all_source_reads_every_board_on_its_finalized_date(self) -> None:
+        calls: list[tuple[str, str, int]] = []
+
+        def read_board(source: str, board_date: str, limit: int):
+            calls.append((source, board_date, limit))
+            return [{"source": source, "title": source, "raw_score": 1}]
+
+        prepared = self._prepare(
+            self._context("all"), top_k=3, read_board=read_board
         )
 
-        prepared = prepare_briefing(
-            context=context,
-            top_k=2,
-            snapshot_reader=snapshot_reader,
-            document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: [
-                doc
-                for doc in docs
-                if doc["source_channel"] == "github_trending_daily"
+        self.assertEqual(
+            calls,
+            [
+                ("arxiv", "2026-07-20", 3),
+                ("github", "2026-07-21", 3),
+                ("news", "2026-07-21", 3),
+                ("producthunt", "2026-07-20", 3),
+                ("hackernews", "2026-07-21", 3),
+                ("dailyhot", "2026-07-21", 3),
             ],
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
         )
-
-        document_feed.get_recent_top_documents.assert_called_once_with(
-            source_type="github",
-            since_date="2026-07-21",
-            limit=6,
-        )
-        document_feed.get_latest_documents.assert_called_once_with(limit=2)
-        self.assertTrue(prepared.fallback_used)
-        self.assertEqual([document["title"] for document in prepared.documents], ["latest"])
-        self.assertIsNotNone(prepared.prompt)
-
-    def test_fallback_all_source_queries_recent_window_per_source(self) -> None:
-        # 快照缺失的综合兜底：逐源按日期域取候选再轮询——旧实现全表按
-        # raw_score 截断，低分量纲源（news 1-2 分）在 top_k*3 处整源缺席。
-        snapshot_reader = MagicMock()
-        snapshot_reader.get_snapshot_documents.return_value = []
-        document_feed = MagicMock()
-
-        def by_source(*, source_type, since_date, limit):
-            assert since_date == "2026-07-21"
-            assert limit == 3
-            return {
-                "github": [
-                    {"source": "github", "title": "gh", "rank_in_period": 1, "raw_score": 800}
-                ],
-                "news": [{"source": "news", "title": "news", "raw_score": 1.5}],
-            }.get(source_type, [])
-
-        document_feed.get_recent_top_documents.side_effect = by_source
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="all",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
-
-        prepared = prepare_briefing(
-            context=context,
-            top_k=3,
-            snapshot_reader=snapshot_reader,
-            document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: docs,
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
-        )
-
         self.assertEqual(
             [document["title"] for document in prepared.documents],
-            ["gh", "news"],
+            ["arxiv", "github", "news"],
         )
-        called_sources = {
-            call.kwargs["source_type"]
-            for call in document_feed.get_recent_top_documents.call_args_list
-        }
-        self.assertEqual(
-            called_sources,
-            {"arxiv", "github", "news", "producthunt", "hackernews", "dailyhot"},
-        )
-        document_feed.get_latest_documents.assert_not_called()
 
-    def test_adapter_all_source_interleaves_channels_instead_of_global_score_cut(self) -> None:
-        # 综合简报快照路径：dailyhot 分数量级远高于 news/github，旧实现按全局
-        # raw_score 截断会只留下 dailyhot；轮询保证每个有数据的渠道都入选。
-        snapshot_reader = MagicMock()
-
-        def by_channel(*, snapshot_date, source_channel, source_type, limit):
-            del snapshot_date, source_type, limit
+    def test_adapter_all_source_interleaves_boards_instead_of_global_score_cut(self) -> None:
+        # dailyhot 分数量级远高于 news/github，按全局 raw_score 截断会只留下
+        # dailyhot；轮询保证每个有数据的源都入选。
+        def read_board(source: str, board_date: str, limit: int):
+            del board_date, limit
             return {
-                "github_trending_daily": [
+                "github": [
                     {
                         "source": "github",
                         "title": "gh",
@@ -379,10 +400,8 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
                         "raw_score": 800,
                     }
                 ],
-                "techmeme_daily_rss": [
-                    {"source": "news", "title": "news", "raw_score": 1.5}
-                ],
-                "dailyhot_daily": [
+                "news": [{"source": "news", "title": "news", "raw_score": 1.5}],
+                "dailyhot": [
                     {
                         "source": "dailyhot",
                         "title": f"hot-{index}",
@@ -390,116 +409,68 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
                     }
                     for index in range(5)
                 ],
-            }.get(source_channel, [])
+            }.get(source, [])
 
-        snapshot_reader.get_snapshot_documents.side_effect = by_channel
-        document_feed = MagicMock()
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="all",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
-
-        prepared = prepare_briefing(
-            context=context,
-            top_k=3,
-            snapshot_reader=snapshot_reader,
-            document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: docs,
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
+        prepared = self._prepare(
+            self._context("all"), top_k=3, read_board=read_board
         )
 
         self.assertEqual(
             [document["title"] for document in prepared.documents],
             ["gh", "news", "hot-0"],
         )
-        document_feed.get_top_documents.assert_not_called()
-        document_feed.get_latest_documents.assert_not_called()
 
-    def test_adapter_x_source_uses_rolling_window_not_snapshot(self) -> None:
-        snapshot_reader = MagicMock()
+    def test_adapter_x_source_uses_rolling_window_not_boards(self) -> None:
+        read_board = MagicMock()
         document_feed = MagicMock()
         document_feed.list_recent_by_source.return_value = [
             {"source": "x", "title": "x-1", "raw_score": 100, "published_at": "2026-07-22T07:00:00+08:00"},
             {"source": "x", "title": "x-2", "raw_score": 90, "published_at": "2026-07-22T06:00:00+08:00"},
         ]
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="x",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
 
-        prepared = prepare_briefing(
-            context=context,
+        prepared = self._prepare(
+            self._context("x"),
             top_k=3,
-            snapshot_reader=snapshot_reader,
+            read_board=read_board,
             document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: docs,
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
         )
 
-        snapshot_reader.get_snapshot_documents.assert_not_called()
+        read_board.assert_not_called()
         document_feed.list_recent_by_source.assert_called_once_with(
             source="x",
             since_iso="2026-07-21T08:00:00+08:00",
             until_iso="2026-07-22T08:00:00+08:00",
             limit=9,
         )
-        document_feed.get_recent_top_documents.assert_not_called()
         self.assertEqual(
             [document["title"] for document in prepared.documents],
             ["x-1", "x-2"],
         )
 
-    def test_adapter_all_source_merges_snapshot_and_rolling_x(self) -> None:
-        snapshot_reader = MagicMock()
-
-        def by_channel(*, snapshot_date, source_channel, source_type, limit):
-            del snapshot_date, source_type, limit
+    def test_adapter_all_source_merges_boards_and_rolling_x(self) -> None:
+        def read_board(source: str, board_date: str, limit: int):
+            del board_date, limit
             return {
-                "github_trending_daily": [
+                "github": [
                     {"source": "github", "title": "gh", "rank_in_period": 1, "raw_score": 800}
                 ],
-            }.get(source_channel, [])
+            }.get(source, [])
 
-        snapshot_reader.get_snapshot_documents.side_effect = by_channel
         document_feed = MagicMock()
         document_feed.list_recent_by_source.return_value = [
             {"source": "x", "title": "x-1", "raw_score": 100, "published_at": "2026-07-22T07:00:00+08:00"},
         ]
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="all",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
 
-        prepared = prepare_briefing(
-            context=context,
+        prepared = self._prepare(
+            self._context("all"),
             top_k=2,
-            snapshot_reader=snapshot_reader,
+            read_board=read_board,
             document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda docs, _source: docs,
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
         )
 
         self.assertEqual(
             [document["title"] for document in prepared.documents],
             ["gh", "x-1"],
-        )
-        snapshot_reader.get_snapshot_documents.assert_any_call(
-            snapshot_date="2026-07-22",
-            source_channel="github_trending_daily",
-            source_type=None,
-            limit=2,
         )
         document_feed.list_recent_by_source.assert_called_once_with(
             source="x",
@@ -508,43 +479,25 @@ class BriefingPreparationAdapterTests(unittest.TestCase):
             limit=6,
         )
 
-    def test_adapter_returns_empty_when_every_source_is_empty(self) -> None:
-        snapshot_reader = MagicMock()
-        snapshot_reader.get_snapshot_documents.return_value = []
+    def test_all_source_without_any_board_does_not_publish_x_only(self) -> None:
         document_feed = MagicMock()
-        document_feed.get_recent_top_documents.return_value = []
-        document_feed.get_latest_documents.return_value = []
-        context = normalize_briefing_context(
-            target_date="2026-07-22",
-            source="news",
-            source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
-        )
+        document_feed.list_recent_by_source.return_value = [
+            {"source": "x", "title": "x-1", "raw_score": 100},
+        ]
 
-        prepared = prepare_briefing(
-            context=context,
-            top_k=10,
-            snapshot_reader=snapshot_reader,
+        prepared = self._prepare(
+            self._context("all"),
+            top_k=3,
+            read_board=MagicMock(return_value=[]),
             document_feed=document_feed,
-            source_config=_SOURCE_CONFIG,
-            filter_by_channel=lambda _docs, _source: [],
-            format_articles=_format_articles,
-            is_blocked=_looks_like_block_response,
         )
 
-        snapshot_reader.get_snapshot_documents.assert_called_once_with(
-            snapshot_date="2026-07-22",
-            source_channel="techmeme_daily_rss",
-            source_type="news",
-            limit=10,
-        )
         self.assertEqual(prepared.documents, ())
         self.assertIsNone(prepared.prompt)
-        self.assertTrue(prepared.fallback_used)
 
 
 class DailyBriefingPreparationContractTests(unittest.TestCase):
-    def test_snapshot_is_preferred_sorted_limited_and_blocked_docs_are_removed(self) -> None:
+    def test_board_is_sorted_limited_and_blocked_docs_are_removed(self) -> None:
         service = self._service(top_k=2)
         service._rank_snapshots.get_snapshot_documents.return_value = [
             self._github_doc("third", rank=3, score=300),
@@ -567,7 +520,7 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
             "source": "github",
         })
         service._rank_snapshots.get_snapshot_documents.assert_called_once_with(
-            snapshot_date="2026-07-22",
+            snapshot_date="2026-07-21",
             source_channel="github_trending_daily",
             source_type="github",
             limit=2,
@@ -580,21 +533,26 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
                 count=1,
                 articles=_format_articles(expected_docs, "github"),
                 date="2026-07-22",
+                board_date="2026-07-21",
             )
         )
         service._briefings.save_briefing.assert_called_once_with(
             "2026-07-22_github", "x" * 201 + "。"
         )
 
-    def test_documents_then_latest_fallback_preserves_channel_and_event_contract(self) -> None:
-        service = self._service(top_k=2)
-        service._rank_snapshots.get_snapshot_documents.return_value = []
-        service._document_feed.get_recent_top_documents.return_value = [
-            self._github_doc("weekly", channel="github_trending_weekly"),
+    def test_github_reads_homepage_hot_board_not_trending_snapshot(self) -> None:
+        # 日报 GitHub 与首页 GitHub 榜同一来源：项目库日度热度（hot_score 序）。
+        github_hot = MagicMock()
+        rows = [
+            {"repo_id": "r1", "full_name": "acme/first", "url": "https://github.com/acme/first",
+             "description": "first repo", "stars": 10, "daily_star_growth": 900,
+             "hot_score": 9.0, "metric_date": "2026-07-21"},
+            {"repo_id": "r2", "full_name": "acme/second", "url": "https://github.com/acme/second",
+             "description": "second repo", "stars": 20, "daily_star_growth": 800,
+             "hot_score": 8.0, "metric_date": "2026-07-21"},
         ]
-        service._document_feed.get_latest_documents.return_value = [
-            {"id": "latest", "source": "news", "title": "Latest", "summary": "usable"}
-        ]
+        github_hot.list_github_hot_for_date.return_value = rows
+        service = self._service(top_k=2, github_hot_board=github_hot)
         service._llm.astream.side_effect = self._astream_side_effect(["y" * 201 + "。"])
 
         events = self._collect(
@@ -602,12 +560,75 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         )
 
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
-        self.assertTrue(events[0]["data"]["fallback"])
-        self.assertEqual(events[0]["data"]["doc_count"], 1)
-        service._document_feed.get_recent_top_documents.assert_called_once_with(
-            source_type="github", since_date="2026-07-21", limit=6
+        self.assertFalse(events[0]["data"]["fallback"])
+        github_hot.list_github_hot_for_date.assert_called_once_with(
+            metric_date="2026-07-21", limit=2
         )
-        service._document_feed.get_latest_documents.assert_called_once_with(limit=2)
+        service._rank_snapshots.get_snapshot_documents.assert_not_called()
+        expected_docs = [
+            github_metric_to_doc(row, rank=index + 1) for index, row in enumerate(rows)
+        ]
+        service._llm.astream.assert_called_once_with(
+            _PROMPT_GITHUB.format(
+                count=2,
+                articles=_format_articles(expected_docs, "github"),
+                date="2026-07-22",
+                board_date="2026-07-21",
+            )
+        )
+
+    def test_pacific_source_reads_board_finalized_before_publish_anchor(self) -> None:
+        service = self._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            {"id": "ph", "source": "producthunt", "title": "Launch", "summary": "s",
+             "url": "https://www.producthunt.com/posts/launch", "raw_score": 300},
+        ]
+        service._llm.astream.side_effect = self._astream_side_effect(["z" * 201 + "。"])
+
+        self._collect(service.stream_generate("2026-07-22", source="producthunt"))
+
+        service._rank_snapshots.get_snapshot_documents.assert_called_once_with(
+            snapshot_date="2026-07-20",
+            source_channel="producthunt_daily_html",
+            source_type="producthunt",
+            limit=10,
+        )
+        prompt = service._llm.astream.call_args.args[0]
+        self.assertIn("**榜单日期：** 2026-07-20（太平洋时间）", prompt)
+
+    def test_hackernews_applies_homepage_previous_day_dedup(self) -> None:
+        service = self._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = [
+            {"id": "seen", "source": "hackernews", "title": "Seen", "raw_score": 500},
+            {"id": "fresh", "source": "hackernews", "title": "Fresh", "raw_score": 100},
+        ]
+        service._rank_snapshots.get_snapshot_doc_ids.return_value = {"seen"}
+        service._llm.astream.side_effect = self._astream_side_effect(["h" * 201 + "。"])
+
+        events = self._collect(
+            service.stream_generate("2026-07-22", source="hackernews")
+        )
+
+        self.assertEqual(events[0]["data"]["doc_count"], 1)
+        service._rank_snapshots.get_snapshot_doc_ids.assert_called_once_with(
+            snapshot_date="2026-07-20", source_channel="hn_daily_html"
+        )
+        prompt = service._llm.astream.call_args.args[0]
+        self.assertIn("Fresh", prompt)
+        self.assertNotIn("Seen", prompt)
+
+    def test_dailyhot_reads_its_snapshot_channel_directly(self) -> None:
+        service = self._service()
+        service._rank_snapshots.get_snapshot_documents.return_value = []
+
+        self._collect(service.stream_generate("2026-07-22", source="dailyhot"))
+
+        service._rank_snapshots.get_snapshot_documents.assert_called_once_with(
+            snapshot_date="2026-07-21",
+            source_channel="dailyhot_daily",
+            source_type="dailyhot",
+            limit=10,
+        )
 
     def test_invalid_source_falls_back_before_cache_lookup(self) -> None:
         service = self._service()
@@ -640,8 +661,6 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
     def test_no_documents_streams_start_content_done_without_persistence(self) -> None:
         service = self._service()
         service._rank_snapshots.get_snapshot_documents.return_value = []
-        service._document_feed.get_recent_top_documents.return_value = []
-        service._document_feed.get_latest_documents.return_value = []
 
         events = self._collect(
             service.stream_generate("2026-07-22", source="news")
@@ -650,8 +669,12 @@ class DailyBriefingPreparationContractTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["start", "content", "done"])
         self.assertEqual(events[0]["data"]["source"], "news")
         self.assertEqual(events[0]["data"]["doc_count"], 0)
+        self.assertFalse(events[0]["data"]["fallback"])
         self.assertIn("# 2026-07-22 今日简报", events[1]["data"])
+        self.assertIn("本期数据范围（2026-07-21）", events[1]["data"])
         self.assertEqual(events[2]["data"], {"briefing_id": -1})
+        service._document_feed.get_recent_top_documents.assert_not_called()
+        service._document_feed.get_latest_documents.assert_not_called()
         service._briefings.save_briefing.assert_not_called()
         service._llm.astream.assert_not_called()
 
@@ -956,7 +979,7 @@ class DailyBriefingStreamingContractTests(unittest.TestCase):
             target_date="2026-07-22",
             source="x",
             source_config=_SOURCE_CONFIG,
-            source_channels=_SOURCE_CHANNELS,
+            board_sources=_BOARD_SOURCES,
         )
 
         prompt = render_briefing_prompt(
@@ -1183,8 +1206,6 @@ class DailyBriefingSavedNotifierTests(unittest.TestCase):
         notifier = MagicMock()
         service = self._service_with_notifier(notifier)
         service._rank_snapshots.get_snapshot_documents.return_value = []
-        service._document_feed.get_recent_top_documents.return_value = []
-        service._document_feed.get_latest_documents.return_value = []
 
         events = _collect(service.stream_generate("2026-07-22", source="news"))
 
@@ -1325,16 +1346,20 @@ class BriefingBacktickSanitizeTests(unittest.TestCase):
 
 
 # Helpers live on the preparation contract class so both suites exercise identical wiring.
-def _service(*, top_k: int = 10) -> DailyBriefingService:
+def _service(*, top_k: int = 10, github_hot_board=None) -> DailyBriefingService:
+    # github_hot_board=None：github 按看板未注入口径读 trending 快照，流式契约
+    # 用例沿用快照 fixture；热度榜口径由专门用例注入验证。
     briefings = MagicMock()
     briefings.save_briefing.return_value = 73
     document_feed = MagicMock()
     rank_snapshots = MagicMock()
+    rank_snapshots.get_snapshot_doc_ids.return_value = set()
     return DailyBriefingService(
         top_k=top_k,
         briefing_repository=briefings,
         document_feed=document_feed,
         rank_snapshot_reader=rank_snapshots,
+        github_hot_board=github_hot_board,
         model=MagicMock(astream=MagicMock()),
     )
 

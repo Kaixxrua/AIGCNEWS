@@ -78,6 +78,30 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
         self.assertIs(service._llm, model)
         self.assertEqual(service._top_k, 7)
 
+    def test_provider_reads_github_board_from_project_catalog_by_default(self) -> None:
+        # 日报 GitHub 与首页 GitHub 榜同源：缺省注入项目库目录仓储（热度榜）。
+        from backend.app.repositories.postgres_project_catalog import (
+            PostgresProjectCatalogRepository,
+        )
+
+        repositories = SimpleNamespace(
+            briefings=MagicMock(spec=BriefingContentRepository),
+            documents=MagicMock(),
+            rank_snapshots=MagicMock(),
+        )
+        default = provide_daily_briefing_service(
+            repositories=repositories, model=MagicMock()
+        )
+        self.assertIsInstance(
+            default._boards._github_hot, PostgresProjectCatalogRepository
+        )
+
+        github_hot = MagicMock()
+        explicit = provide_daily_briefing_service(
+            repositories=repositories, model=MagicMock(), github_hot_board=github_hot
+        )
+        self.assertIs(explicit._boards._github_hot, github_hot)
+
     def test_cached_stream_uses_briefing_repository_and_preserves_events(self) -> None:
         repository = MagicMock(spec=BriefingContentRepository)
         repository.get_briefing_by_date.return_value = {
@@ -122,6 +146,7 @@ class DailyBriefingRepositoryTests(unittest.TestCase):
             briefing_repository=repository,
             document_feed=MagicMock(),
             rank_snapshot_reader=MagicMock(),
+            github_hot_board=None,
             model=AsyncMock(),
         )
 
