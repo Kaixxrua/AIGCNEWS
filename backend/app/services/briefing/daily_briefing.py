@@ -576,6 +576,7 @@ class DailyBriefingService:
         top_k: int = 10,
         briefing_saved: BriefingSavedNotifier | None = None,
         llm_limiter: asyncio.Semaphore | None = None,
+        fallback_model: BriefingModel | None = None,
     ) -> None:
         self._briefings = briefing_repository
         self._document_feed = document_feed
@@ -586,6 +587,7 @@ class DailyBriefingService:
         self._boards = DashboardQueryService(rank_snapshot_reader, github_hot_board)
         self._top_k = top_k
         self._llm = model
+        self._fallback_llm = fallback_model
         self._briefing_saved = briefing_saved
         self._llm_limiter = llm_limiter
 
@@ -918,32 +920,57 @@ class DailyBriefingService:
         return accumulated
 
     async def _stream_llm_round(self, prompt: str | list[HumanMessage]) -> AsyncGenerator[str, None]:
-        """执行一轮 LLM 流式生成，逐 token 返回。"""
+        """执行一轮 LLM 流式生成，逐 token 返回。
+
+        主模型一个字都没输出就失败时（典型是 max 推理思考超过上游约 900 秒的
+        单流上限被切断），若注入了兜底模型，就在同一并发名额内用它重跑本轮一次。
+        已输出部分正文后的失败、疑似拦截页的失败照常抛出，避免同一轮拼进两份正文。
+        """
         limiter = self._llm_limiter
         if limiter is not None:
             await limiter.acquire()
         try:
-            async for chunk in self._llm.astream(prompt):
-                raw_content = getattr(chunk, "content", None)
-                # Anthropic Extended Thinking 返回的 content 可能是
-                # list[dict]（含 thinking_block / text_block），需要提取纯文本
-                if isinstance(raw_content, list):
-                    text_parts = []
-                    for block in raw_content:
-                        if isinstance(block, dict):
-                            if block.get("type") == "text":
-                                text_parts.append(block.get("text", ""))
-                            # 跳过 thinking_block 等非文本块
-                        elif isinstance(block, str):
-                            text_parts.append(block)
-                    content = "".join(text_parts)
-                else:
-                    content = raw_content or ""
-                if content:
-                    yield str(content)
+            fallback = self._fallback_llm
+            emitted = False
+            try:
+                async for content in self._stream_model_text(self._llm, prompt):
+                    emitted = True
+                    yield content
+                return
+            except Exception as exc:
+                if emitted or fallback is None or _looks_like_block_response(str(exc)):
+                    raise
+                logger.warning("简报主模型未输出正文即失败，改用兜底模型重跑本轮: %s", exc)
+            async for content in self._stream_model_text(fallback, prompt):
+                yield content
         finally:
             if limiter is not None:
                 limiter.release()
+
+    @staticmethod
+    async def _stream_model_text(
+        model: BriefingModel,
+        prompt: str | list[HumanMessage],
+    ) -> AsyncGenerator[str, None]:
+        """逐 chunk 提取模型流式输出中的正文文本。"""
+        async for chunk in model.astream(prompt):
+            raw_content = getattr(chunk, "content", None)
+            # Anthropic Extended Thinking 返回的 content 可能是
+            # list[dict]（含 thinking_block / text_block），需要提取纯文本
+            if isinstance(raw_content, list):
+                text_parts = []
+                for block in raw_content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        # 跳过 thinking_block 等非文本块
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                content = "".join(text_parts)
+            else:
+                content = raw_content or ""
+            if content:
+                yield str(content)
 
     @staticmethod
     def _is_truncated(text: str) -> bool:
