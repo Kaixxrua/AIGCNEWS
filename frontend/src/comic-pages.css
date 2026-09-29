@@ -866,4 +866,220 @@
     #app .register-page .register-corner { width: 200px; }
     #app .register-page .register-shout { width: 260px; }
   }
+
+  /* ── Subscriptions (subscriptions-C): the page title with its line beside it; a wide hero with its plan tags on the
+     top rule, a cyan radar and three stats; the watchlist beside the plan panel; then the digest and the automation
+     settings. Panel kickers become lime tags on the top rule and each rule's facts become small tags; copy reads at
+     14.5–15.5px. ── */
+  #app .app-shell--comic-page .subs-page { background: transparent; }
+  #app .app-shell--comic-page .subs-scroll { gap: 34px; padding: 18px 28px calc(var(--peel-clear) + 28px); }
+  #app .app-shell--comic-page .subs-heading { align-items: center; padding: 0; }
+  #app .app-shell--comic-page .subs-heading > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+  #app .app-shell--comic-page .subs-eyebrow { display: none; }
+  #app .app-shell--comic-page .subs-title { margin-top: 0; font-size: 40px; }
+  #app .app-shell--comic-page .subs-description { max-width: 60ch; margin-top: 0; color: var(--ink-secondary); font-size: 15px; line-height: 1.6; }
+  #app .app-shell--comic-page :is(.subs-refresh, .tracking-section .tracking-button) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 7px 18px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 14.5px; font-weight: 800; line-height: 1.2;
+  }
+  #app .app-shell--comic-page :is(.subs-refresh, .tracking-section .tracking-button):hover:not(:disabled) { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .tracking-section .tracking-button:disabled { box-shadow: none; opacity: .45; }
+  #app .app-shell--comic-page .tracking-section .tracking-button-primary { background: var(--ink); color: var(--paper-raised); }
+  #app .app-shell--comic-page .tracking-section .tracking-button-primary:hover:not(:disabled) { background: var(--ink); color: var(--acid); }
+  #app .app-shell--comic-page .tracking-section .tracking-upgrade { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .tracking-section .tracking-upgrade:hover:not(:disabled) { background: var(--acid-strong); color: var(--acid-ink); }
+  #app .app-shell--comic-page .tracking-section { gap: 38px; }
+
+  /* Panels share the ink rule, hard shadow and a halftone foot corner; their kicker is a lime tag on the top rule. */
+  #app .app-shell--comic-page :is(.tracking-hero, .tracking-panel) {
+    position: relative; isolation: isolate; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page :is(.tracking-hero, .tracking-panel)::after {
+    content: ''; position: absolute; z-index: -1; right: 0; bottom: 0; width: 130px; height: 84px; border-bottom-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 8%, transparent 70%); opacity: .45;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tracking-hero, .tracking-panel)::after { opacity: .14; }
+  #app .app-shell--comic-page .tracking-panel { padding: 26px 26px 22px; }
+  #app .app-shell--comic-page .tracking-kicker {
+    display: flex; width: max-content; align-items: center; gap: 7px; margin: -38px 0 14px -12px; padding: 3px 14px;
+    border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px; background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow);
+    color: var(--acid-ink); font-size: 16px; font-style: italic; font-weight: 900; letter-spacing: 0; line-height: 1.5; text-transform: none;
+    transform: rotate(-2deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .tracking-kicker svg { width: 18px; height: 18px; stroke-width: 2.4; }
+  #app .app-shell--comic-page .tracking-panel h3 { color: var(--ink); font-size: 23px; font-style: italic; font-weight: 950; letter-spacing: 0; line-height: 1.3; }
+  #app .app-shell--comic-page .tracking-section .tracking-hint { color: var(--ink-secondary); font-size: 14px; line-height: 1.65; }
+  #app .app-shell--comic-page .tracking-section .tracking-input {
+    min-height: 42px; padding: 8px 12px; border: 2px solid var(--rule-strong); border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); color: var(--ink); font-size: 15px;
+  }
+
+  /* Hero: the plan and status tags ride the top rule; the radar sits between the copy and the stats when there is room. */
+  #app .app-shell--comic-page .tracking-hero {
+    grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 28px; min-height: 0; overflow: visible;
+    padding: 34px 34px 30px; box-shadow: 5px 5px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .tracking-hero__content { grid-column: 1; grid-row: 1; }
+  #app .app-shell--comic-page .tracking-hero__content > div:first-child { gap: 14px; margin: -50px 0 0 -14px; }
+  #app .app-shell--comic-page :is(.tracking-plan, .tracking-live) {
+    display: inline-flex; align-items: center; gap: 7px; padding: 3px 14px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 16px; font-style: italic; font-weight: 900; letter-spacing: 0; line-height: 1.5; text-transform: none; transform: rotate(-3deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .tracking-live { font-size: 14px; transform: rotate(-1.5deg) skewX(-6deg); }
+  #app .app-shell--comic-page .tracking-plan svg { width: 20px; height: 20px; fill: #ffc94d; stroke-width: 2.2; }
+  #app .app-shell--comic-page .tracking-live i { width: 10px; height: 10px; border: 1.5px solid var(--rule-strong); background: #3ecf8e; box-shadow: none; }
+  #app .app-shell--comic-page .tracking-hero h2 { margin-top: 20px; color: var(--ink); font-size: 30px; font-style: italic; font-weight: 950; letter-spacing: 0; line-height: 1.25; }
+  #app .app-shell--comic-page .tracking-hero h2 + p { max-width: 46ch; margin-top: 10px; color: var(--ink-secondary); font-size: 15px; line-height: 1.7; }
+  #app .app-shell--comic-page .tracking-hero .tracking-button { min-height: 42px; padding: 8px 22px; font-size: 15.5px; }
+  #app .app-shell--comic-page .tracking-radar { display: none; }
+  #app .app-shell--comic-page .tracking-stats {
+    grid-column: -2 / -1; grid-row: 1; grid-template-columns: repeat(3, minmax(120px, 1fr)); align-self: center;
+    width: auto; margin: 0; overflow: visible; border: 0; border-radius: 0; background: transparent;
+  }
+  #app .app-shell--comic-page .tracking-stats div {
+    flex-direction: column-reverse; align-items: center; gap: 10px; padding: 10px 20px; border: 0;
+    border-left: 2px solid color-mix(in srgb, var(--rule-strong) 22%, transparent);
+  }
+  #app .app-shell--comic-page .tracking-stats span { color: var(--ink); font-size: 34px; font-weight: 950; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .tracking-stats small { color: var(--ink-secondary); font-size: 15px; font-weight: 800; }
+  @media (min-width: 1360px) {
+    /* The radar keeps to the middle, as drawn; the stats never give up their width. */
+    #app .app-shell--comic-page .tracking-hero { grid-template-columns: minmax(0, 1fr) 170px minmax(auto, 1fr); }
+    #app .app-shell--comic-page .tracking-stats { justify-self: end; }
+    #app .app-shell--comic-page .tracking-radar {
+      display: block; position: relative; inset: auto; grid-column: 2; grid-row: 1; width: 170px; height: 170px; opacity: 1;
+      border-color: var(--comic-cyan-line);
+    }
+    #app .app-shell--comic-page .tracking-radar span { border-color: var(--comic-cyan-line); }
+    #app .app-shell--comic-page .tracking-radar span:nth-child(3) { width: 20px; height: 20px; border: 2px solid var(--rule-strong); background: var(--acid); }
+    #app .app-shell--comic-page .tracking-radar::before,
+    #app .app-shell--comic-page .tracking-radar::after { background: color-mix(in srgb, var(--comic-cyan-line) 70%, transparent); }
+    #app .app-shell--comic-page .tracking-radar i { display: none; }
+  }
+
+  /* Watchlist: tag, refresh and the quota bar share the top line; each rule reads name first, then its facts as tags. */
+  #app .app-shell--comic-page .tracking-grid { grid-template-columns: minmax(0, 1fr) 300px; gap: 30px; }
+  @media (min-width: 1280px) { #app .app-shell--comic-page .tracking-grid { grid-template-columns: minmax(0, 1fr) minmax(320px, 30%); } }
+  #app .app-shell--comic-page .tracking-rules-panel { display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start; column-gap: 24px; }
+  #app .app-shell--comic-page .tracking-rules-panel > * { grid-column: 1 / -1; }
+  #app .app-shell--comic-page .tracking-rules-panel > .tracking-panel__header { grid-column: 1; grid-row: 1; justify-content: flex-start; align-items: flex-start; gap: 12px; }
+  #app .app-shell--comic-page .tracking-rules-panel h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #app .app-shell--comic-page .tracking-icon-button {
+    width: 32px; height: 32px; margin-top: -38px; border: 1.5px solid var(--rule-strong); border-radius: 6px 8px 5px 7px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+  }
+  #app .app-shell--comic-page .tracking-icon-button:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .tracking-usage {
+    grid-column: 2; grid-row: 1; display: grid; grid-template-columns: auto minmax(100px, 260px) auto; justify-content: end; align-items: center;
+    column-gap: 14px; margin: -34px 0 0;
+  }
+  #app .app-shell--comic-page .tracking-usage > div:first-child { display: contents; }
+  #app .app-shell--comic-page .tracking-usage span { order: 1; color: var(--ink); font-size: 14px; font-weight: 800; }
+  #app .app-shell--comic-page .tracking-usage__bar { order: 2; height: 10px; margin: 0; background: color-mix(in srgb, var(--rule-strong) 14%, var(--paper-raised)); }
+  #app .app-shell--comic-page .tracking-usage__bar i { background: var(--acid); box-shadow: inset -1.5px 0 0 var(--rule-strong); }
+  #app .app-shell--comic-page .tracking-usage strong { order: 3; color: var(--ink); font-size: 16px; font-style: italic; font-weight: 950; }
+  #app .app-shell--comic-page .tracking-limit { margin-top: 14px; border: 1.5px dashed var(--rule-strong); border-radius: 4px; color: var(--ink-secondary); font-size: 14px; line-height: 1.65; }
+  #app .app-shell--comic-page .tracking-empty {
+    margin-top: 14px; border: 2px dashed color-mix(in srgb, var(--rule-strong) 45%, transparent); border-radius: 6px 8px 5px 9px;
+    background: transparent; color: var(--ink-secondary); font-size: 15px;
+  }
+  #app .app-shell--comic-page .tracking-empty strong { font-size: 17px; font-style: italic; font-weight: 900; }
+  #app .app-shell--comic-page .tracking-rules { margin-top: 12px; }
+  #app .app-shell--comic-page .tracking-rules > li {
+    position: relative; gap: 12px 18px; padding: 14px 6px 14px 16px; border-color: color-mix(in srgb, var(--rule-strong) 20%, transparent);
+    transition: background-color .12s linear;
+  }
+  #app .app-shell--comic-page .tracking-rules > li::before {
+    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 5px; border-radius: 2px; background: var(--acid); opacity: 0;
+    transition: opacity .12s linear;
+  }
+  #app .app-shell--comic-page .tracking-rules > li:is(:hover, :focus-within) { background: color-mix(in srgb, var(--acid) 10%, transparent); }
+  #app .app-shell--comic-page .tracking-rules > li:is(:hover, :focus-within)::before { opacity: 1; }
+  #app .app-shell--comic-page .tracking-rule-main { align-items: center; gap: 14px; }
+  #app .app-shell--comic-page .tracking-rule-icon { width: 38px; height: 38px; margin: 0; border: 1.5px solid var(--rule-strong); border-radius: 50%; background: transparent; color: var(--ink); }
+  #app .app-shell--comic-page .tracking-rule-icon svg { width: 22px; height: 22px; stroke-width: 2; }
+  #app .app-shell--comic-page .tracking-rule-main > div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+  #app .app-shell--comic-page .tracking-rule-main > div > p:first-child { color: var(--ink); font-size: 16px; font-weight: 800; line-height: 1.4; }
+  #app .app-shell--comic-page .tracking-section .tracking-rule-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+  #app .app-shell--comic-page .tracking-rule-meta > span:not(.tracking-rule-sep) {
+    padding: 0 9px; border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.6; transform: skewX(-6deg);
+  }
+  #app .app-shell--comic-page .tracking-rule-meta .tracking-rule-sep { display: none; }
+  #app .app-shell--comic-page .tracking-rule-meta .tracking-rule-status { border-style: dashed; color: var(--ink-secondary); }
+  #app .app-shell--comic-page .tracking-rule-meta .tracking-rule-status.is-active { border-style: solid; background: var(--acid); color: var(--acid-ink); font-weight: 900; }
+  #app .app-shell--comic-page .tracking-section .tracking-rule-excludes { flex-basis: 100%; margin: 0; color: var(--ink-muted); font-size: 13.5px; }
+  #app .app-shell--comic-page .tracking-rule-actions { gap: 10px; }
+  #app .app-shell--comic-page .tracking-rule-actions .tracking-button { min-height: 34px; padding: 5px 14px; font-size: 14px; box-shadow: 2px 2px 0 var(--comic-shadow); }
+  /* Narrower rows give the name and its tags the full line and put the actions under them. */
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .tracking-rule-main { flex-basis: 100%; }
+    #app .app-shell--comic-page .tracking-rule-actions { padding-left: 52px; }
+  }
+
+  /* Plan: crown and heading, green ticks, and the unlocked state as a lime bar. */
+  #app .app-shell--comic-page .tracking-plan-panel h3 { display: flex; align-items: center; gap: 10px; }
+  #app .app-shell--comic-page .tracking-plan-panel--member h3::before {
+    content: ''; flex: 0 0 30px; height: 30px; background: #ffc94d;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M11.56 3.27a.5.5 0 0 1 .88 0l2.95 5.6a1 1 0 0 0 1.52.3l4.27-3.67a.5.5 0 0 1 .8.52l-2.83 10.25a1 1 0 0 1-.96.73H5.81a1 1 0 0 1-.96-.73L2.02 6.02a.5.5 0 0 1 .8-.52l4.27 3.67a1 1 0 0 0 1.52-.3zM5 20h14v2H5z'/%3E%3C/svg%3E") center / contain no-repeat;
+    filter: drop-shadow(1px 1px 0 var(--rule-strong));
+  }
+  #app .app-shell--comic-page .tracking-plan-panel .tracking-hint { font-size: 15px; }
+  #app .app-shell--comic-page .tracking-benefits { gap: 12px; margin: 20px 0 22px; color: var(--ink); font-size: 15.5px; font-weight: 700; line-height: 1.5; }
+  #app .app-shell--comic-page .tracking-benefits svg { width: 20px; height: 20px; margin-top: 1px; padding: 0; border-radius: 0; background: none; color: #1f9d55; stroke-width: 3; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .tracking-benefits svg { color: #4ade80; }
+  #app .app-shell--comic-page .tracking-member-active {
+    justify-content: flex-start; gap: 10px; padding: 9px 18px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: var(--acid); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 18px; font-style: italic; font-weight: 950;
+  }
+  #app .app-shell--comic-page .tracking-member-active svg { width: 20px; height: 20px; stroke-width: 3; }
+
+  /* Digest and automation: results lead with their source icon; the form reads at 15px. */
+  #app .app-shell--comic-page .tracking-bottom { gap: 30px; }
+  #app .app-shell--comic-page .tracking-digest > div:first-child { align-items: flex-start; }
+  #app .app-shell--comic-page .tracking-digest .tracking-input { width: auto; }
+  #app .app-shell--comic-page .tracking-results { margin-top: 10px; }
+  #app .app-shell--comic-page .tracking-results > li {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr); column-gap: 14px; padding: 14px 0;
+    border-color: color-mix(in srgb, var(--rule-strong) 20%, transparent);
+  }
+  #app .app-shell--comic-page .tracking-results > li > :not(.tracking-result-icon) { grid-column: 2; }
+  #app .app-shell--comic-page .tracking-result-icon {
+    --tr-tint: var(--acid); display: grid; grid-row: 1 / span 3; place-items: center; width: 40px; height: 40px;
+    border: 1.5px solid var(--rule-strong); border-radius: 10px 12px 9px 11px;
+    background: color-mix(in srgb, var(--tr-tint) 22%, var(--paper-raised)); color: color-mix(in srgb, var(--tr-tint) 55%, var(--ink));
+  }
+  #app .app-shell--comic-page .tracking-result-icon svg { width: 21px; height: 21px; }
+  #app .app-shell--comic-page .tracking-result-icon:is([data-source='news']) { --tr-tint: #3b82f6; }
+  #app .app-shell--comic-page .tracking-result-icon:is([data-source='arxiv']) { --tr-tint: #8b5cf6; }
+  #app .app-shell--comic-page .tracking-result-icon:is([data-source='producthunt']) { --tr-tint: #f43f5e; }
+  #app .app-shell--comic-page .tracking-result-icon:is([data-source='hackernews'], [data-source='dailyhot']) { --tr-tint: #f97316; }
+  #app .app-shell--comic-page .tracking-result-icon:is([data-source='github'], [data-source='x']) { background: var(--paper-raised); color: var(--ink); }
+  #app .app-shell--comic-page .tracking-results a { color: var(--ink); font-size: 15.5px; font-weight: 800; line-height: 1.45; }
+  #app .app-shell--comic-page .tracking-results a + .tracking-hint { font-size: 13px; }
+  #app .app-shell--comic-page .tracking-result-summary { color: var(--ink-secondary); font-size: 14.5px; line-height: 1.65; }
+  #app .app-shell--comic-page .tracking-section .tracking-result-match { color: var(--ink-muted); font-size: 13px; }
+  #app .app-shell--comic-page .tracking-results + .tracking-button { display: flex; margin: 12px 0 0 auto; }
+  #app .app-shell--comic-page .tracking-delivery { gap: 12px; }
+  #app .app-shell--comic-page .tracking-delivery .tracking-form-grid { gap: 16px 18px; margin-top: 6px; }
+  #app .app-shell--comic-page .tracking-field label { color: var(--ink); font-size: 14px; font-weight: 800; }
+  #app .app-shell--comic-page .tracking-delivery label:has(input[type='checkbox']) { gap: 10px; color: var(--ink); font-size: 15px; font-weight: 700; }
+  #app .app-shell--comic-page .tracking-delivery input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--acid-strong); }
+
+  /* Rule form, preview and delete prompt: flat comic boxes between the panels. */
+  #app .app-shell--comic-page :is(.tracking-rule-form, .tracking-preview) {
+    padding: 20px 24px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    box-shadow: 4px 4px 0 var(--comic-shadow); color: var(--ink); font-size: 15px;
+  }
+  #app .app-shell--comic-page .tracking-rule-form { background: color-mix(in srgb, var(--acid) 12%, var(--paper-raised)); }
+  #app .app-shell--comic-page .tracking-preview { background: var(--paper-raised); }
+  #app .app-shell--comic-page :is(.tracking-rule-form, .tracking-preview) > h3 { font-size: 20px; font-style: italic; font-weight: 950; }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .tracking-rules > li,
+    #app .app-shell--comic-page .tracking-rules > li::before { transition: none; }
+  }
 }

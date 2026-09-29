@@ -143,6 +143,38 @@ describe('personal tracking', () => {
     expect(rows[1]!.findAll('button')[0]!.attributes('disabled')).toBeDefined()
   })
 
+  it('keeps each rule fact in one readable line and marks the running ones', async () => {
+    const wrapper = await render({
+      ...snapshot(),
+      limit: 10,
+      rules: [
+        { ...saved(), kind: 'project', query: 'ollama/ollama', source: 'github', star_threshold: 200 },
+        { ...saved(), id: 2, query: 'agents', active: false },
+      ],
+    })
+    const meta = wrapper.findAll('.tracking-rule-meta')
+    expect(meta[0]!.text().replace(/\s+/g, ' ')).toBe('项目增长 · GitHub · +200 Stars · 追踪中')
+    expect(meta[0]!.find('.tracking-rule-status').classes()).toContain('is-active')
+    expect(meta[1]!.text().replace(/\s+/g, ' ')).toBe('关键词 · 全部 · 超出当前额度，暂停执行')
+    expect(meta[1]!.find('.tracking-rule-status').classes()).not.toContain('is-active')
+  })
+
+  it('leads each digest result with its source icon', async () => {
+    const item = (key: string, source: string) => ({
+      key, title: key, url: 'https://example.com/' + key, summary: '', source, observed_at: '', matched_rules: ['RAG'],
+    })
+    const wrapper = await render({
+      ...snapshot(),
+      digests: [{
+        id: 3, issue_date: '2026-09-29', truncated: false, delivery_status: 'none', created_at: '',
+        items: [item('a', 'github'), item('b', 'unknown')],
+      }],
+    })
+    const icons = wrapper.findAll('.tracking-results .tracking-result-icon')
+    expect(icons.map((icon) => icon.attributes('data-source'))).toEqual(['github', 'unknown'])
+    expect(icons.every((icon) => icon.find('svg').exists())).toBe(true)
+  })
+
   it('shows server errors without discarding the rule form', async () => {
     const wrapper = await render()
     vi.mocked(trackingApi.saveRule).mockRejectedValue({

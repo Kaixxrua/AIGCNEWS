@@ -163,11 +163,14 @@ async function closeDelete() {
                 <span class="tracking-rule-icon"><Radar class="h-4 w-4" /></span>
                 <div class="min-w-0">
                   <p class="font-extrabold break-words">{{ rule.query }}</p>
-                  <p class="tracking-hint mt-1">
-                    {{ t('tracking.' + rule.kind) }} · {{ t('subscriptions.sources.' + rule.source) }}
-                    <span v-if="rule.kind === 'project'"> · +{{ rule.star_threshold }} Stars</span>
-                    ·
-                    {{
+                  <!-- 桌面漫画版把每一项画成小标签、隐藏间隔点；窄屏仍是一行「关键词 · 来源 · 状态」。 -->
+                  <p class="tracking-hint tracking-rule-meta mt-1">
+                    <span>{{ t('tracking.' + rule.kind) }}</span><span class="tracking-rule-sep"> · </span
+                    ><span>{{ t('subscriptions.sources.' + rule.source) }}</span
+                    ><template v-if="rule.kind === 'project'"
+                      ><span class="tracking-rule-sep"> · </span><span>+{{ rule.star_threshold }} Stars</span></template
+                    ><span class="tracking-rule-sep"> · </span
+                    ><span class="tracking-rule-status" :class="{ 'is-active': rule.active }">{{
                       t(
                         rule.active
                           ? 'tracking.active'
@@ -175,14 +178,14 @@ async function closeDelete() {
                             ? 'tracking.overLimit'
                             : 'tracking.paused',
                       )
-                    }}
+                    }}</span>
                   </p>
-                  <p v-if="rule.excludes.length" class="tracking-hint mt-1">
+                  <p v-if="rule.excludes.length" class="tracking-hint tracking-rule-excludes mt-1">
                     {{ t('tracking.excluding', { terms: rule.excludes.join(' / ') }) }}
                   </p>
                 </div>
               </div>
-              <div class="flex flex-wrap gap-2">
+              <div class="tracking-rule-actions flex flex-wrap gap-2">
                 <button
                   class="tracking-button"
                   type="button"

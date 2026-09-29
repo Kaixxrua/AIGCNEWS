@@ -23,12 +23,12 @@ onMounted(() => {
       <div class="subs-heading flex flex-wrap items-end justify-between gap-4 shrink-0">
         <div>
           <p class="subs-eyebrow"><Sparkles class="h-3.5 w-3.5" />{{ t('tracking.eyebrow') }}</p>
-          <h1 class="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">{{ t('subscriptions.title') }}</h1>
-          <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-secondary">{{ t('tracking.pageDescription') }}</p>
+          <h1 class="subs-title comic-title mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">{{ t('subscriptions.title') }}</h1>
+          <p class="subs-description mt-2 max-w-2xl text-sm leading-relaxed text-ink-secondary">{{ t('tracking.pageDescription') }}</p>
         </div>
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-[4px] border border-ink px-2.5 py-1.5 text-xs font-bold transition-colors hover:bg-accent"
+          class="subs-refresh inline-flex items-center gap-1.5 rounded-[4px] border border-ink px-2.5 py-1.5 text-xs font-bold transition-colors hover:bg-accent"
           :disabled="ctl.loading.value"
           @click="ctl.loadAll"
         >

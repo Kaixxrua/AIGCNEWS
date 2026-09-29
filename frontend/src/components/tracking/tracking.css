@@ -219,6 +219,10 @@
   @apply break-words py-3;
   overflow-wrap: anywhere;
 }
+/* The source icon only shows in the desktop comic layout (comic-pages.css). */
+.tracking-result-icon {
+  display: none;
+}
 .tracking-preview {
   @apply rounded-xl border border-rule bg-paper-raised p-5;
 }
