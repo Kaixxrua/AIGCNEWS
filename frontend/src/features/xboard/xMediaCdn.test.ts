@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { proxiedMediaUrl } from './xBoardViewModel'
-import { installXMediaCdnFallback, sameOriginMediaFallback, xMediaOrigin } from './xMediaCdn'
+import { installXMediaCdnFallback, sameOriginMediaFallback, X_MEDIA_CDN_ORIGIN, xMediaOrigin } from './xMediaCdn'
 
 const CDN = 'https://media.aigcnews.cn'
+
+describe('X_MEDIA_CDN_ORIGIN', () => {
+  it('is switched on to the media domain by default', () => {
+    expect(X_MEDIA_CDN_ORIGIN).toBe(CDN)
+    expect(xMediaOrigin('pbs.twimg.com', 'aigcnews.cn')).toBe(CDN)
+    expect(xMediaOrigin('pbs.twimg.com', 'aigcradar.online')).toBe('')
+    expect(sameOriginMediaFallback(`${CDN}/api/media/x/img/pbs.twimg.com/media/a.jpg?name=small`))
+      .toBe('/api/media/x/img/pbs.twimg.com/media/a.jpg?name=small')
+  })
+})
 const PHOTO = 'https://pbs.twimg.com/media/G1a2b3c.jpg?format=jpg&name=4096x4096'
 const PHOTO_PATH = '/api/media/x/img/pbs.twimg.com/media/G1a2b3c.jpg?format=jpg&name=4096x4096'
 

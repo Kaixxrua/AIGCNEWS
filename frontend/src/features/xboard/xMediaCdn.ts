@@ -4,14 +4,15 @@ export const X_MEDIA_IMG_PATH = '/api/media/x/img'
 
 /**
  * X 图片媒体域名（腾讯云 CDN）：GeoDNS 境内 CNAME 到 CDN、境外落日本边缘，
- * 回源两边缘的同一 nginx 媒体缓存。空串表示关闭，全部同源。
+ * 回源两边缘的同一 nginx 媒体缓存（国内 CDN 回源 http://media-origin.aigcnews.cn）。
+ * 空串表示关闭，全部同源。
  * - 只收 pbs.twimg.com（推文照片、视频封面、头像）；video.twimg.com 播放流
  *   体积大且走 Range，留在同源。
  * - 只在主入口启用：备用入口 aigcradar.online 是主域不可达时的逃生口，媒体
  *   跟主域一起挂就失去意义；本地开发与预览同理保持同源。
  * - CDN 加载失败由 installXMediaCdnFallback 退回同源重试一次。
  */
-export const X_MEDIA_CDN_ORIGIN = ''
+export const X_MEDIA_CDN_ORIGIN = 'https://media.aigcnews.cn'
 const X_MEDIA_CDN_HOSTS = new Set(['pbs.twimg.com'])
 
 export const pageHostname = (): string => (typeof window === 'undefined' ? '' : window.location.hostname)
