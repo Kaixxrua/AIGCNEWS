@@ -2,7 +2,7 @@
  * useClipboard — 公共剪贴板 composable
  *
  * 统一剪贴板操作，兼容非 HTTPS 环境（fallback textarea + execCommand）。
- * 消除 ChatView / PaperReadView 中的重复实现。
+ * 各页面共用，避免重复实现。
  */
 
 /** 复制文本到剪贴板（兼容非 HTTPS） */

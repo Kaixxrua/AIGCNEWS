@@ -70,20 +70,17 @@ describe('getRoutePolicyDecision', () => {
 describe('getFeatureGateRedirect', () => {
   const features = (overrides: Partial<FeatureGateState> = {}): FeatureGateState => ({
     xSource: true,
-    wechatSource: true,
     ...overrides,
   })
 
   it('redirects feature-gated routes home when the source is disabled', () => {
     expect(getFeatureGateRedirect(route({ feature: 'xSource' }), features({ xSource: false })))
       .toEqual({ path: '/' })
-    expect(getFeatureGateRedirect(route({ feature: 'wechatSource' }), features({ wechatSource: false })))
-      .toEqual({ path: '/' })
   })
 
   it('permits enabled feature routes and routes without feature meta', () => {
     expect(getFeatureGateRedirect(route({ feature: 'xSource' }), features())).toBeNull()
-    expect(getFeatureGateRedirect(route({}), features({ xSource: false, wechatSource: false })))
+    expect(getFeatureGateRedirect(route({}), features({ xSource: false })))
       .toBeNull()
   })
 })

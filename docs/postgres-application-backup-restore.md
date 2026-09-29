@@ -70,16 +70,15 @@ PG dump 之外，其余有状态数据按"是否可从 PG + 公开来源重建"�
 
 | 数据 | 位置 | 体量 | 处置 |
 | --- | --- | --- | --- |
-| 微信文章快照与公众号缓存 | `storage/wechat` | <1MB | **每周快照**（见下） |
-| MCP 工具调用计数 | `storage/metrics` | <1MB | **每周快照** |
+| MCP 工具调用计数 | `storage/metrics` | <1MB | **每周快照**（见下） |
 | 聊天上传附件（用户 PDF） | `storage/papers/_chat_uploads` | 随用户增长 | **每周快照** |
 | arXiv 论文 PDF | `storage/papers` | ~3.5G | 不快照；按 PG `documents` 表中的 arXiv id 重新下载 |
 | Milvus 向量（项目/论文索引） | `docker/volumes/{milvus,minio,etcd}` | ~3.4G | 不快照；由 PG 文档经 `scripts/backfill_github_project_semantic_index.py` 等回填脚本重建 |
 | Neo4j 论文图谱 | `data/neo4j` | ~0.5G | 不快照；由 PG 文档经 `graph_extractor` 图谱抽取重建 |
 | Redis（限流/缓存/访客统计） | docker volume `redis_data` | 小 | 不快照；缓存性质，丢失影响可忽略 |
-| X/微信媒体磁盘缓存 | `storage/x_media` | 小 | 不快照；本就按 LRU 驱逐的易失设计 |
+| X 媒体磁盘缓存 | `storage/x_media` | 小 | 不快照；本就按 LRU 驱逐的易失设计 |
 
-每周快照由 `scripts/backup_stateful_data_scheduled.sh` 完成：tar.gz + `.sha256` 证据，默认源为 `storage/wechat`、`storage/metrics`、`storage/papers/_chat_uploads`（`AIGCNEWS_STATEFUL_SOURCES` 可调），保留最新 8 份（`AIGCNEWS_STATEFUL_RETENTION`），失败告警与 PG 备份共用 `notify_ops_alert.py`。配套单元 `deploy/systemd/aigcnews-stateful-backup@.{service,timer}`（每周日 04:07，随机延迟 15 分钟，错过补跑）：
+每周快照由 `scripts/backup_stateful_data_scheduled.sh` 完成：tar.gz + `.sha256` 证据，默认源为 `storage/metrics`、`storage/papers/_chat_uploads`（`AIGCNEWS_STATEFUL_SOURCES` 可调），保留最新 8 份（`AIGCNEWS_STATEFUL_RETENTION`），失败告警与 PG 备份共用 `notify_ops_alert.py`。配套单元 `deploy/systemd/aigcnews-stateful-backup@.{service,timer}`（每周日 04:07，随机延迟 15 分钟，错过补跑）：
 
 ```bash
 sudo cp deploy/systemd/aigcnews-stateful-backup@.{service,timer} /etc/systemd/system/

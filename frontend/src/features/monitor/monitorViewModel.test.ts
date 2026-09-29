@@ -73,7 +73,6 @@ describe('monitor presentation localization boundary', () => {
       ['ui-sources', 'monitor.nav.uiSources', true],
       ['x-watch', 'monitor.nav.xWatch', true],
       ['x-credentials', 'monitor.nav.xCredentials', true],
-      ['wechat', 'monitor.nav.wechat', true],
       ['provider', 'monitor.nav.provider', true],
       ['scheduler', 'monitor.nav.scheduler', true],
       ['smtp', 'monitor.nav.smtp', true],

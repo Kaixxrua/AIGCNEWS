@@ -133,7 +133,6 @@ describe('DashboardView', () => {
     expect(wrapper.find('.daily-ui').exists()).toBe(false)
     expect(wrapper.text()).toContain(messages.dashboard.digest.title)
     expect(wrapper.text()).not.toContain('免费订阅全部来源的摘要；vip 解锁中文译文、全文与 7 天完整归档。')
-    expect(wrapper.find('a[href="/wechat"]').exists()).toBe(false)
     expect(wrapper.get('aside').classes()).toContain('min-h-0')
     // MCP/dsh 两张计数卡为紧凑单行卡：自然高度，不再 flex-1 撑满侧栏
     expect(wrapper.get('a[href="/mcp"]').classes()).not.toContain('flex-1')

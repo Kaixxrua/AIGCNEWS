@@ -35,8 +35,6 @@ from backend.app.api import (
     routes_tracking,
     routes_ui_library,
     routes_vision,
-    routes_wechat,
-    routes_wechat_media,
     routes_x_media,
 )
 from backend.app.api.dashboard_cache_warmup import maintain_dashboard_cache
@@ -606,6 +604,4 @@ app.include_router(routes_sitemap.router, prefix="/api", tags=["Sitemap"])
 app.include_router(routes_feed.router, prefix="/api", tags=["Feed"])
 app.include_router(routes_payments.router, prefix="/api", tags=["Payments"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])
-app.include_router(routes_wechat.router, prefix="/api", tags=["WeChat"])
 app.include_router(routes_x_media.router, prefix="/api", tags=["Media"])
-app.include_router(routes_wechat_media.router, prefix="/api", tags=["Media"])

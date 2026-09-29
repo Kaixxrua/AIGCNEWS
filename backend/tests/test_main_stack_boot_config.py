@@ -135,7 +135,6 @@ def test_ensure_storage_dirs_creates_dirs_owned_by_deploy_user(tmp_path: Path) -
         "storage/chat_uploads",
         "storage/metrics",
         "storage/x_media",
-        "storage/wechat",
         "storage/hf_cache/huggingface",
     ):
         created = tmp_path / rel

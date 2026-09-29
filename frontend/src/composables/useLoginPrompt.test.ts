@@ -38,9 +38,9 @@ describe('useLoginPrompt', () => {
 
   it('supports writable v-model state', () => {
     const prompt = useLoginPrompt()
-    prompt.requestLogin('/chat')
+    prompt.requestLogin('/subscriptions')
     prompt.isOpen.value = false
     expect(prompt.isOpen.value).toBe(false)
-    expect(prompt.redirectTarget.value).toBe('/chat')
+    expect(prompt.redirectTarget.value).toBe('/subscriptions')
   })
 })

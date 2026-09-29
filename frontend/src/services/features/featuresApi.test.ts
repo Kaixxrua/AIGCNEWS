@@ -12,9 +12,9 @@ describe('Features API contract', () => {
 
   it('maps wire snake_case flags to camelCase', async () => {
     const signal = new AbortController().signal
-    transport.get.mockResolvedValueOnce({ data: { x_source: false, wechat_source: true } })
+    transport.get.mockResolvedValueOnce({ data: { x_source: false } })
 
-    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, wechatSource: true, oauthProviders: [], telegramPushEnabled: true })
+    await expect(fetchFeatures(signal)).resolves.toEqual({ xSource: false, oauthProviders: [], telegramPushEnabled: true })
     expect(transport.get).toHaveBeenLastCalledWith('/features', { signal })
   })
 

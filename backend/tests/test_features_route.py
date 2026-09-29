@@ -26,7 +26,6 @@ def client() -> TestClient:
 class TestFeaturesRoute:
     def test_flags_off(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "x_source_enabled", False)
-        monkeypatch.setattr(settings, "wechat_source_enabled", False)
         monkeypatch.setattr(settings, "telegram_push_enabled", False)
 
         response = client.get("/api/features")
@@ -34,14 +33,12 @@ class TestFeaturesRoute:
         assert response.status_code == 200
         assert response.json() == {
             "x_source": False,
-            "wechat_source": False,
             "oauth_providers": [],
             "telegram_push_enabled": False,
         }
 
     def test_flags_on(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "x_source_enabled", True)
-        monkeypatch.setattr(settings, "wechat_source_enabled", True)
         monkeypatch.setattr(settings, "telegram_push_enabled", True)
 
         response = client.get("/api/features")
@@ -49,7 +46,6 @@ class TestFeaturesRoute:
         assert response.status_code == 200
         assert response.json() == {
             "x_source": True,
-            "wechat_source": True,
             "oauth_providers": [],
             "telegram_push_enabled": True,
         }
@@ -68,6 +64,10 @@ class TestFeaturesRoute:
 
         client.app.state.redis = object()
         assert client.get("/api/features").json()["oauth_providers"] == ["github"]
+
+    def test_wechat_source_flag_is_gone(self, client: TestClient) -> None:
+        # 微信公众号功能已整体移除：端点不再暴露 wechat_source 键
+        assert "wechat_source" not in client.get("/api/features").json()
 
     def test_requires_no_auth(self, client: TestClient) -> None:
         # 未携带任何凭据即可读取（前端首屏导航依赖该端点）

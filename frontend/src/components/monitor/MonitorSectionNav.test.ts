@@ -27,7 +27,7 @@ describe('MonitorSectionNav', () => {
     expect(leaves.map(leaf => leaf.find('.monitor-nav-label').text())).toEqual([
       '任务历史', 'MCP 调用', '错误日志', 'AI 运维', '访问统计',
       '采集控制', 'GitHub 爬取', 'GitHub 富化', 'UI 素材来源',
-      'X 关注账号', 'X 凭证', '微信公众号',
+      'X 关注账号', 'X 凭证',
       '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务', 'OAuth 登录', 'Telegram 推送',
       '联系合作页', '用户组', '用户统计', '收入统计', '支付配置', '支付订单',
     ])
@@ -55,12 +55,12 @@ describe('MonitorSectionNav', () => {
     const onSelect = vi.fn()
     const wrapper = mountNav({ active: 'tasks', onSelect })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
-    await leaves[15]!.trigger('click')
+    await leaves[14]!.trigger('click')
     // 监听 prop 断言替代 emitted()：本环境 VTU 的 emitted 追踪不记录模板内 emit
     expect(onSelect).toHaveBeenCalledWith('mcp-server')
     // 哑组件契约：激活态由父级持有，点击后不自动迁移
     expect(leaves[0]!.classes()).toContain('active')
-    expect(leaves[15]!.classes()).not.toContain('active')
+    expect(leaves[14]!.classes()).not.toContain('active')
   })
 
   it('collapses a category on header click and hands the alert dot to the header', async () => {

@@ -23,14 +23,13 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 | Hacker News | 日 | 每小时 :05 + 00:35 关榜补采 | Firebase API Top-30 |
 | DailyHot 聚合热榜 | 日 | 每小时 :07 | 自托管 DailyHotApi（profile-gated 容器），见 [dailyhot-source.md](dailyhot-source.md) |
 | X / Twitter Watchlist | 日 | 每 2 小时 :06 + 00:31 关榜补采 | **公共 transport**：实现随仓库发布，默认关闭 `x_source_enabled`；凭据由实例提供 |
-| 微信公众号 | 关注制 | 按账号同步 | **可插拔源**：开关 `wechat_source_enabled`，自有路由不经采集注册表 |
 
 关键机制：
 
 - **榜单快照制**：榜单读 `document_rank_snapshots` 历史快照而非实时重算，任意日期可稳定回看。
 - **关榜（closing）契约**：每日 00:31–00:36 的关榜任务补采"昨日"切片，配合 Dashboard 静默期策略（读侧 embargo），保证定榜前数据完整、定榜后不再抖动。
 - **错误隔离**：单源失败只产生 error 结果，不阻断其他源。
-- **插件边界**：X 与微信的敏感抓取实现不在公共仓；插件缺席时对应路由 404、调度任务不注册，其余功能不受影响（契约见 `backend/app/services/source_plugins/`）。
+- **插件边界**：X 为可插拔源，开关关闭或 transport 不可导入时对应路由 404、调度任务不注册，其余功能不受影响（契约见 `backend/app/services/source_plugins/`）。
 
 ## 三、功能走查
 
@@ -68,7 +67,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 - 发现：全局搜索（300ms 防抖，空查询展示当日热门）、`/papers/top10-today` 冷启动榜单、全文检索
 - 阅读：站内摘要、原文链接和论文对话；PDF 下载与图文提取仅供后台处理
 - 两阶段入库：摘要先行（尽快可搜），后台低频下载 PDF（3–5s 间隔防封）、pdfplumber / pypdf 提取文字、切片写入 Milvus；日报附加文字节选与 PDFium 渲染的图表页
-- 游客可读；论文 AI 对话当前跟随对话链路的开放状态（见 3.8）
+- 游客可读；论文 AI 对话需登录（见 3.7）
 
 ### 3.5 X 动态板（`/x`，插件门控）
 
@@ -77,13 +76,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 - 归属规则：纯转贴按原贴日期归属；每日 00:31 关榜任务补采昨日遗漏
 - 已删推文清理由 `x_deleted_janitor` 每 6 小时执行（失败即中止、零写入的 fail-closed 设计）
 
-### 3.6 微信公众号（`/wechat`，插件门控 + 管理员）
-
-- 管理员扫码登录（QR 会话加密入库）、搜索并添加公众号、触发同步
-- 用户侧：关注目录、按关注生成阅读 Feed；文章全文仅管理员可见
-- mmbiz 图片经 `/api/media/wechat/proxy` 代理（头像落盘缓存、正文流式直转）
-
-### 3.7 简报与订阅推送（`/report`、`/subscriptions`）
+### 3.6 简报与订阅推送（`/report`、`/subscriptions`）
 
 - **8 个维度**（综合 / arxiv / github / news / producthunt / hackernews / x / dailyhot）× **3 种周期**（日 / 周 / 月），中英双语
 - 生成：管理员 SSE 流式生成（截断自动续写最多 5 轮），结果按日期持久化缓存；每天 08:00 全维度自动生成
@@ -91,13 +84,13 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 - **订阅推送**（`/subscriptions`，登录）：用户自建投递渠道 —— 邮箱（OTP 验证）或 webhook（企业微信 / 钉钉 / 飞书 / 自定义，带 SSRF 防护的连通性验证）；按来源 × 频率订阅；调度器每 30 分钟幂等投递（`push_deliveries` 按 issue 去重，只读缓存不触发生成）；支持"立即发送"到邮箱
 - 部分来源只有日度采集，其周报/月报受底层数据周期限制
 
-### 3.8 RAG 对话（能力完整，Web 入口维护中）
+### 3.7 RAG 对话（论文页 AI 对话）
 
 后端具备完整混合检索问答链路（文档 ID 精确召回 → 标题召回 → Milvus 向量 → Neo4j 图谱 → 来源均衡去重 → 硅基流动 bge-reranker 精排 → 可选 Kimi 联网搜索 → 流式生成），多会话、附件（图片零落盘 / PDF 解析）、视觉问答、思维链分阶段展示、每日消息配额均已实现。
 
-**当前状态**：`/chat` 路由为 `requiresAdmin` 且有 `CHAT_SERVICE_ENABLED` 总开关 —— 属于已实现但暂停开放的能力，重开与否是产品决策，不是技术缺口。
+**当前状态**：独立对话页（`/chat`）已移除；Web 端仅论文阅读页旁的 AI 对话调用该链路（登录可用），后端会话与检索 API 保持不变。
 
-### 3.9 AIGC Radar MCP（`/api/mcp`，旗舰）
+### 3.8 AIGC Radar MCP（`/api/mcp`，旗舰）
 
 面向 Claude Code / Cursor / Codex / VS Code 等 9 类 MCP 客户端的 Streamable HTTP 数据接口，公开只读、免鉴权：
 
@@ -117,13 +110,13 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 - 限流：匿名按 IP 60/30 req-min，认证按用户 240/120 req-min；商业额度为匿名每个固定 24 小时窗口 30 次，Free 每 24 小时 60 次 + 滚动 30 天 1,200 次，VIP 每 24 小时 400 次 + 滚动 30 天 8,000 次，MCP 与 `/api/v1` 共池（Redis 固定窗口，故障时放行）
 - 协议参数与策略全文见 [mcp-server.md](mcp-server.md)
 
-### 3.10 账号体系
+### 3.9 账号体系
 
 - 邮箱验证码注册 / 登录 / 忘记密码重置，JWT（HS256，默认 7 天）
 - **空库首启动自动种子默认管理员**（`admin@aigcnews.internal` / `admin123456`，可用 `DEFAULT_ADMIN_*` 覆盖，置空即禁用），站内改密凭账号邮箱验证码（注册 / 重置 / 改密均依赖邮件通道：SMTP 或 dev 模式日志打印验证码），见 [self-hosting.zh-CN.md](self-hosting.zh-CN.md)
 - 防刷：OTP 5 分钟有效 + 60s 发送冷却 + 5 次尝试上限；登录 / 注册按 IP 固定窗口限流
 
-### 3.11 管理后台（`/monitor`，管理员）
+### 3.10 管理后台（`/monitor`，管理员）
 
 单页运维中心，12+ 面板：
 
@@ -141,8 +134,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 | Dashboard / 项目库 / 论文阅读 / 简报阅读 / X 板（若开启） | ✓ | ✓ | ✓ |
 | MCP 公开工具 | ✓（按 IP 限流） | ✓ | ✓ |
 | 收藏 / 私人书架 / 订阅推送 / MCP token 签发 | — | ✓ | ✓ |
-| RAG 对话（当前维护中） | — | — | ✓（开关控制） |
-| 公众号关注 Feed | — | ✓（插件开启时） | ✓ |
+| 论文 AI 对话 | — | ✓ | ✓ |
 | 管理后台 / 采集与调度 / Provider / SMTP / 爬取富化 | — | — | ✓ |
 
 鉴权依赖：`RequireUser` / `RequireAdmin`（JWT Bearer）、`OptionalUser`（登录增强）、`OptionalMcpUser`（MCP token，无效 token 一律 401 而非降级匿名）。
@@ -154,5 +146,4 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 | Dashboard 榜单 / 项目库 / 论文阅读 / 简报 / 订阅推送 | 稳定开放 |
 | AIGC Radar MCP | 稳定开放（旗舰，公开只读） |
 | X 动态板 | 实例自行开启（默认关闭，需合法凭据） |
-| 微信公众号 | 管理员可见（插件门控） |
-| RAG 对话 / 论文 AI 对话 | 实现完整，Web 入口维护中（requiresAdmin + 总开关） |
+| 论文 AI 对话 | 登录可用（独立对话页已移除） |

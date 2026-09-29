@@ -23,8 +23,6 @@ STUB_ALERT = (
 
 
 def _seed_sources(base: Path) -> None:
-    (base / "storage" / "wechat").mkdir(parents=True)
-    (base / "storage" / "wechat" / "article.html").write_text("<html>cached</html>", encoding="utf-8")
     (base / "storage" / "metrics").mkdir(parents=True)
     (base / "storage" / "metrics" / "mcp_tool_calls.json").write_text("{}", encoding="utf-8")
 
@@ -94,7 +92,6 @@ def test_snapshot_archives_existing_sources_and_writes_sha256(tmp_path: Path) ->
     archive = backup_dir / snapshots[0]
     with tarfile.open(archive) as tar:
         names = tar.getnames()
-    assert any(name.endswith("storage/wechat/article.html") for name in names)
     assert any(name.endswith("storage/metrics/mcp_tool_calls.json") for name in names)
     assert (Path(str(archive) + ".sha256")).exists()
     # 缺失的 _chat_uploads 被跳过但快照仍然成功

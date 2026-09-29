@@ -7,7 +7,6 @@ export interface RouteAuthState {
 
 export interface FeatureGateState {
   xSource: boolean
-  wechatSource: boolean
 }
 
 export interface SitePageGateState {
@@ -20,7 +19,7 @@ declare module 'vue-router' {
     requiresAuth?: boolean
     requiresAdmin?: boolean
     /** 可插拔源路由：对应特性开关关闭时重定向回首页 */
-    feature?: 'xSource' | 'wechatSource'
+    feature?: 'xSource'
     /** 站点自定义页面路由：对应页面未启用时重定向回首页 */
     sitePage?: 'contactPage'
   }

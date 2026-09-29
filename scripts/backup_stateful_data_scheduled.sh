@@ -1,8 +1,8 @@
 #!/bin/sh
 # AIGCNEWS 非 PG 小体量有状态数据周期快照：tar.gz + 时间戳命名 + 保留策略 + 失败告警。
 #
-# 只快照"不可重建或重建代价高"的小体量目录（默认 storage/wechat、
-# storage/metrics、storage/papers/_chat_uploads）；可从 PG/公网重建的大体量
+# 只快照"不可重建或重建代价高"的小体量目录（默认 storage/metrics、
+# storage/papers/_chat_uploads）；可从 PG/公网重建的大体量
 # 数据（arXiv PDF、Milvus/Neo4j 索引、媒体缓存）不在本脚本范围，重建矩阵见
 # docs/postgres-application-backup-restore.md。
 set -eu
@@ -12,7 +12,7 @@ REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 BASE_DIR=${AIGCNEWS_STATEFUL_BASE:-$REPO_ROOT}
 BACKUP_DIR=${AIGCNEWS_STATEFUL_BACKUP_DIR:-/var/backups/aigcnews-stateful}
 RETENTION=${AIGCNEWS_STATEFUL_RETENTION:-8}
-SOURCES=${AIGCNEWS_STATEFUL_SOURCES:-"storage/wechat storage/metrics storage/papers/_chat_uploads"}
+SOURCES=${AIGCNEWS_STATEFUL_SOURCES:-"storage/metrics storage/papers/_chat_uploads"}
 ALERT_SCRIPT=${AIGCNEWS_OPS_ALERT_SCRIPT:-"$SCRIPT_DIR/notify_ops_alert.py"}
 ALERT_UNIT=${AIGCNEWS_OPS_ALERT_UNIT:-aigcnews-stateful-backup}
 

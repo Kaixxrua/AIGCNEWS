@@ -25,12 +25,12 @@ describe('useFeatureFlags', () => {
   })
 
   it('fetches once, maps into shared state, and caches the request', async () => {
-    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: false, wechatSource: true }))
+    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: false }))
 
     const first = await ensureFeatureFlags()
     const second = await ensureFeatureFlags()
 
-    expect(first).toEqual(flags({ xSource: false, wechatSource: true }))
+    expect(first).toEqual(flags({ xSource: false }))
     expect(second).toBe(first)
     expect(vi.mocked(fetchFeatures).mock.calls).toHaveLength(1)
     expect(useFeatureFlags().featureFlags.value.xSource).toBe(false)
@@ -44,14 +44,14 @@ describe('useFeatureFlags', () => {
   })
 
   it('reset seam restores defaults and clears the cache', async () => {
-    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: false, wechatSource: false }))
+    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: false }))
     await ensureFeatureFlags()
 
     __resetFeatureFlagsForTest()
     expect(useFeatureFlags().featureFlags.value).toEqual(DEFAULT_FEATURE_FLAGS)
 
-    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: true, wechatSource: true }))
-    await expect(ensureFeatureFlags()).resolves.toEqual(flags({ xSource: true, wechatSource: true }))
+    vi.mocked(fetchFeatures).mockResolvedValue(flags({ xSource: true }))
+    await expect(ensureFeatureFlags()).resolves.toEqual(flags({ xSource: true }))
     expect(vi.mocked(fetchFeatures).mock.calls).toHaveLength(2)
   })
 

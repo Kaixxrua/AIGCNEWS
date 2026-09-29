@@ -8,15 +8,15 @@ describe('navigation feature gating', () => {
 
   it('hides feature-gated items only when explicitly disabled', () => {
     expect(
-      isNavigationItemFeatureEnabled({ featureKey: 'xSource' }, { xSource: false, wechatSource: true }),
+      isNavigationItemFeatureEnabled({ featureKey: 'xSource' }, { xSource: false }),
     ).toBe(false)
     expect(
-      isNavigationItemFeatureEnabled({ featureKey: 'xSource' }, { xSource: true, wechatSource: false }),
+      isNavigationItemFeatureEnabled({ featureKey: 'xSource' }, { xSource: true }),
     ).toBe(true)
   })
 
   it('never hides items without a feature key', () => {
-    expect(isNavigationItemFeatureEnabled({}, { xSource: false, wechatSource: false })).toBe(true)
+    expect(isNavigationItemFeatureEnabled({}, { xSource: false })).toBe(true)
   })
 })
 

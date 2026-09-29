@@ -20,15 +20,15 @@
 ## 二、系统全景
 
 ```text
-数据源（HF/arXiv · GitHub Trending · Techmeme · Product Hunt · HN · DailyHot · X* · 微信*）
+数据源（HF/arXiv · GitHub Trending · Techmeme · Product Hunt · HN · DailyHot · X*）
   → 采集与标准化（crawlers，单源失败隔离）
   → 富化（README / PDF 补全、LLM 分类打标、中英描述、指标快照与热度分）
   → PostgreSQL 主写（幂等 upsert）→ 榜单快照（document_rank_snapshots）
   → 派生索引：Milvus 向量 × 2（文档 / 项目）· Neo4j 论文图谱
   → Redis 缓存失效 + 首屏预热
-  → 消费面：Dashboard · 项目库 · 论文阅读 · 简报/订阅推送 · AIGC Radar MCP · RAG 对话（维护中）
+  → 消费面：Dashboard · 项目库 · 论文阅读 · 简报/订阅推送 · AIGC Radar MCP · 论文 AI 对话
 
-* X / 微信为可插拔私有源（source_plugins + 特性开关门控）
+* X 为可插拔源（source_plugins + 特性开关门控）
 ```
 
 一致性模型：PostgreSQL 是结构化事实主库；Milvus / Neo4j / Redis 是可重建派生能力，跨存储采用最终一致（重试 + backfill + 关榜补采），无分布式事务。
@@ -67,12 +67,11 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
 | `routes_ops.py` + 子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行）、`routes_ops_payments.py`（支付订单列表、详情、补单、关单） |
 | `routes_ops_x.py` | RequireAdmin | X watchlist / 凭据池 CRUD 与测活、日榜快照回填 |
-| `routes_wechat.py` / `routes_wechat_media.py` | 插件门控 + 角色 | 公众号扫码登录、账号与文章同步（管理员）；关注目录与 Feed（用户）；mmbiz 媒体代理（公开但 IP 限流） |
 | `routes_x_media.py` | 插件门控，公开 | twimg 图片代理、mp4 首帧封面（IP 限流；`<img>` 无法带 Authorization 故公开） |
 | `routes_features.py` / `routes_sitemap.py` | 公开 | 特性开关播报；近 90 天论文页 sitemap |
 | `routes_payments.py` | payments_enabled + RequireUser（回调按 provider 验签） | 套餐、创建订单、我的订单、订单状态、微信/支付宝/海外跳转回调；关闭时用户侧 404，渠道未配置时创建返回 503 |
 
-特性开关：`x_source_enabled` / `wechat_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"；`chat` 另有 `CHAT_SERVICE_ENABLED` 总开关。
+特性开关：`x_source_enabled` 以 router 级依赖实现"关闭即 404，等同未部署"。
 
 ### 3.3 核心服务域（`backend/app/services/`）
 
@@ -91,15 +90,15 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | `vision/` | SiliconFlow Kimi-K2.5 视觉问答；截图进程内缓存 TTL 300s，零落盘 |
 | `x_watch/` `x_credentials/` `x_janitor/` | X watchlist 管理；凭据池 CRUD + 测活；已删推文清理（fail-closed） |
 | `payments/` | 会员套餐、订单状态机、provider registry、回调验签结果与恰好一次发权益；provider 当前为凭证未配置桩 |
-| `source_plugins/` | 私有插件加载器：X 传输层与微信门面的公共契约 + fail-closed 加载；开关关或包缺失即 404 / 跳过 |
-| `media_cache.py` | 微信 / X 媒体共享磁盘缓存（LRU + TTL，默认 512MiB / 7 天） |
+| `source_plugins/` | 可插拔源加载器：X 传输层的公共契约 + fail-closed 加载；开关关或模块缺失即 404 / 跳过 |
+| `media_cache.py` | X 媒体磁盘缓存（LRU + TTL，默认 512MiB / 7 天） |
 | `*_admin.py` | 运维面服务（采集、爬取、富化、调度配置、SMTP、快照回填、数据清理…），全部仅管理员 |
 | `evaluation/` | RAG 评估（token 级召回 / 引用覆盖），结果入 `rag_evaluations` |
 
 ### 3.4 关键横切机制
 
 - **出站安全**：`outbound_target_policy.py` 对 webhook / 媒体代理等用户可控 URL 做公网 IP 策略（SSRF 防护）；GitHub fallback 不写库、不暴露 token。
-- **密钥封缄**：微信会话、X 凭据、推送渠道、外部 MCP token 均以 base64-32B 主密钥加密入库（`CHANGEME` 拒启；缺失即拒绝存取，绝不落明文）。
+- **密钥封缄**：X 凭据、推送渠道、外部 MCP token 均以 base64-32B 主密钥加密入库（`CHANGEME` 拒启；缺失即拒绝存取，绝不落明文）。
 - **限流**：Redis 固定窗口 `ratelimit:{action}:{identity}`，覆盖注册/登录/OTP/推送/媒体代理/MCP。
 - **访客统计**：中间件按 CST 日写 `visitor:{date}` SET（48h TTL），`SCARD` 即独立访客数。
 
@@ -123,7 +122,7 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | 支付订单 | `payment_orders`（订单号、用户、套餐、渠道、金额分、状态、幂等键、渠道回调原文、支付与权益时间）；迁移 0051 |
 | 运行配置 | `runtime_provider_settings`（单行）、`smtp_settings`(0036，单行)、`scheduler_job_config`(0016) |
 | X（插件） | `x_watch_accounts`、`x_credentials`、`x_credentials_bootstrap_state` |
-| 微信（插件） | `wechat_official_accounts`、`wechat_articles`、`wechat_sessions`、`wechat_login_attempts`、`wechat_account_follows` |
+| 微信（已下线，仅存历史数据） | `wechat_official_accounts`、`wechat_articles`、`wechat_sessions`、`wechat_login_attempts`、`wechat_account_follows` |
 
 ### 4.2 Milvus（两个 collection）
 
@@ -189,8 +188,6 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 | `/dsh` | DshView | `requiresAuth`（网站 DSH 配置与账号 Token） |
 | `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
 | `/subscriptions` | SubscriptionsView | requiresAuth |
-| `/chat` | ChatView | requiresAdmin + `CHAT_SERVICE_ENABLED` |
-| `/wechat` | WechatView | requiresAdmin + `wechatSource` |
 | `/monitor` | MonitorView（12+ 面板编排，含支付订单详情与回调载荷管理员投影） | requiresAdmin |
 | `/membership/checkout?plan=monthly|yearly` | MembershipCheckoutView（套餐金额来自支付 API，二维码/跳转指令与支付轮询） | requiresAuth + payments_enabled |
 | `/register` · `/forgot-password` | 注册与密码重置页（登录由全局弹窗承载，无独立 `/login`） | guestOnly |

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 
 from backend.app.core.operations import ApplicationOperationsRuntime
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
@@ -72,15 +72,6 @@ from backend.app.repositories.user_account_repository import UserAccountReposito
 from backend.app.repositories.user_subscription_repository import (
     UserSubscriptionRepository,
 )
-from backend.app.repositories.wechat_account_repository import (
-    WeChatOfficialAccountRepository,
-)
-from backend.app.repositories.wechat_article_repository import WeChatArticleRepository
-from backend.app.repositories.wechat_follow_repository import WeChatFollowRepository
-from backend.app.repositories.wechat_session_repository import (
-    WeChatLoginAttemptRepository,
-    WeChatSessionRepository,
-)
 from backend.app.repositories.x_credentials_repository import XCredentialRepository
 from backend.app.repositories.x_translation_repository import XTranslationTaskRepository
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
@@ -130,14 +121,6 @@ from backend.app.services.runtime_provider.runtime import (
 from backend.app.services.scheduler_admin import SchedulerAdminService
 from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService
 from backend.app.services.smtp_config_admin import SmtpConfigAdminService
-from backend.app.services.source_plugins import load_wechat_bundle
-from backend.app.services.source_plugins.wechat_source import (
-    WeChatAccountServiceProtocol,
-    WeChatFollowServiceProtocol,
-    WeChatLoginServiceProtocol,
-    WeChatServiceBundle,
-    WeChatSyncServiceProtocol,
-)
 from backend.app.services.x_credentials.admin_service import XCredentialAdminService
 from backend.app.services.x_snapshot_admin import XSnapshotAdminService
 from backend.app.services.x_watch.admin_service import XWatchAdminService
@@ -686,122 +669,6 @@ def get_x_snapshot_admin_service(
     rank_snapshots: RankSnapshotRepository = Depends(get_rank_snapshot_repository),
 ) -> XSnapshotAdminService:
     return XSnapshotAdminService(documents=documents, rank_snapshots=rank_snapshots)
-
-
-def get_wechat_login_attempt_repository(
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-) -> WeChatLoginAttemptRepository:
-    return repositories.wechat_login_attempts
-
-
-def get_wechat_session_repository(
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-) -> WeChatSessionRepository:
-    return repositories.wechat_sessions
-
-
-def get_wechat_account_repository(
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-) -> WeChatOfficialAccountRepository:
-    return repositories.wechat_accounts
-
-
-def get_wechat_article_repository(
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-) -> WeChatArticleRepository:
-    return repositories.wechat_articles
-
-
-def get_wechat_follow_repository(
-    repositories: ApplicationRepositories = Depends(get_application_repositories),
-) -> WeChatFollowRepository:
-    return repositories.wechat_follows
-
-
-def _require_wechat_bundle() -> WeChatServiceBundle:
-    """开关关闭或私有插件缺失时以 404 快速失败（与路由级门控同语义）。"""
-    bundle = load_wechat_bundle()
-    if bundle is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="wechat_source_disabled",
-        )
-    return bundle
-
-
-def get_wechat_mp_transport() -> Any:
-    from backend.app.core.config import settings
-
-    return _require_wechat_bundle().mp_transport(
-        proxy=settings.outbound_proxy or None
-    )
-
-
-def get_wechat_login_service(
-    attempts: WeChatLoginAttemptRepository = Depends(get_wechat_login_attempt_repository),
-    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: Any = Depends(get_wechat_mp_transport),
-) -> WeChatLoginServiceProtocol:
-    from backend.app.core.config import settings
-
-    return _require_wechat_bundle().login_service(
-        attempts,
-        sessions,
-        transport,
-        login_attempt_ttl_seconds=int(
-            getattr(settings, "wechat_login_attempt_ttl_seconds", 300)
-        ),
-        session_revalidate_seconds=int(
-            getattr(settings, "wechat_session_revalidate_seconds", 1800)
-        ),
-    )
-
-
-def get_wechat_account_service(
-    accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
-    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: Any = Depends(get_wechat_mp_transport),
-) -> WeChatAccountServiceProtocol:
-    return _require_wechat_bundle().account_service(accounts, sessions, transport)
-
-
-def get_wechat_sync_service(
-    accounts: WeChatOfficialAccountRepository = Depends(get_wechat_account_repository),
-    articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
-    sessions: WeChatSessionRepository = Depends(get_wechat_session_repository),
-    transport: Any = Depends(get_wechat_mp_transport),
-    operations_runtime: ApplicationOperationsRuntime = Depends(get_operations_runtime),
-) -> WeChatSyncServiceProtocol:
-    from backend.app.core.config import settings
-
-    bundle = _require_wechat_bundle()
-    return bundle.sync_service(
-        accounts,
-        articles,
-        sessions,
-        transport,
-        operations_runtime,
-        max_pages=int(getattr(settings, "wechat_sync_max_pages", 20)),
-        max_articles=int(getattr(settings, "wechat_sync_max_articles", 500)),
-        inter_page_delay_seconds=float(
-            getattr(settings, "wechat_sync_inter_page_delay_seconds", 1.0)
-        ),
-        # Direct connection: Sogou/mp are domestic targets; routing them
-        # through the overseas outbound proxy worsens anti-bot risk control.
-        sogou_transport=bundle.sogou_transport(),
-        sogou_max_pages=int(getattr(settings, "wechat_sogou_sync_max_pages", 2)),
-        sogou_max_articles=int(getattr(settings, "wechat_sogou_sync_max_articles", 20)),
-        sogou_request_delay_seconds=float(
-            getattr(settings, "wechat_sogou_sync_request_delay_seconds", 1.5)
-        ),
-    )
-
-
-def get_wechat_follow_service(
-    follows: WeChatFollowRepository = Depends(get_wechat_follow_repository),
-    articles: WeChatArticleRepository = Depends(get_wechat_article_repository),
-) -> WeChatFollowServiceProtocol:
-    return _require_wechat_bundle().follow_service(follows, articles)
 
 
 def get_postgres_database(request: Request) -> PostgresDatabaseLifecycle:

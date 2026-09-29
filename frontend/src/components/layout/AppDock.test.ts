@@ -200,7 +200,6 @@ describe('AppDock more menu', () => {
   it('preserves permission gates and the direct login entry for guests', async () => {
     const wrapper = mountMenu()
     expect(wrapper.find('a[href="/monitor"]').exists()).toBe(false)
-    expect(wrapper.find('a[href="/chat"]').exists()).toBe(false)
     await wrapper.get('button.dock-item--account').trigger('click')
     expect(wrapper.emitted('login')).toHaveLength(1)
     await wrapper.setProps({ isAdmin: true, isLoggedIn: true, alertItems: ['/monitor'] })
