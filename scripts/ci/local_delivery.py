@@ -430,6 +430,7 @@ def release_once(config,db):
     meta(db,'release',{'sha':candidate,'status':'deploying','attempt':attempt,
                        'reason':'worktree environment recovered; retry release only' if retry else 'validated main',
                        'started_at':now()});snapshot(config,db)
+    delivered=False
     try:
         trusted_run(config,'local_release.py',['--config',config['config_path'],'--sha',candidate],root/'release.log',7200)
         state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
@@ -443,6 +444,7 @@ def release_once(config,db):
                 or any(edge.get('sites', {}).get(site) != 'published' for site in sites)):
             raise RuntimeError('release command returned without exact edge receipts')
         meta(db,'release',{'sha':candidate,'status':'delivered','finished_at':now()})
+        delivered=True
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
     except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
@@ -450,6 +452,11 @@ def release_once(config,db):
         meta(db,'release',{'sha':candidate,'status':'retrying' if can_retry else 'failed',
                           'attempt':attempt,'error':str(exc),'finished_at':now(),
                           'retry_at':time.time() + min(30 * 2**(attempt-1), 120) if can_retry else None})
+    if delivered:
+        # Post-delivery housekeeping only; it never raises and must not touch the
+        # persisted release status. Reclaims superseded per-commit images and cache.
+        from local_release import prune_release_images
+        meta(db,'image_retention',{'sha':candidate,'at':now(),**prune_release_images(config,candidate)})
     return True
 
 
