@@ -26,6 +26,12 @@ from backend.app.repositories.project_catalog_normalization import (
     normalize_project_row,
 )
 
+# 热度 v8 的增长口径（字面量钉住 SQL 契约）：滚动 24h 优先，缺失时退回可用日增量。
+HEAT_GROWTH = (
+    "COALESCE(gm.rolling_24h_star_growth,"
+    "CASE WHEN gm.daily_growth_available THEN gm.daily_star_growth END)"
+)
+
 
 class Cursor:
     def __init__(self, responses: list[Any]) -> None:
@@ -102,10 +108,10 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     assert database.entered == database.exited == 1
     sql, params = database.cursor.calls[1]
     # 指标日过滤 + 与 list_projects(scope="today") 同一收录口径：
-    # succeeded canonical 关系（无星数门槛，历史成功项目跌破 500 仍上榜）
+    # succeeded canonical 关系（无星数门槛，历史成功项目跌破 500 仍上榜）；
+    # 正增长按热度口径：滚动 24h 优先，缺失时退回可用的日增量
     assert "gm.metric_date = %s" in sql
-    assert "gm.daily_growth_available = TRUE" in sql
-    assert "gm.daily_star_growth > 0" in sql
+    assert f"{HEAT_GROWTH} > 0" in sql
     assert "ge.status = 'succeeded'" in sql
     assert "github_repo_enrichments ge" in sql
     assert "ge.description_zh, ge.description_en" in sql
@@ -114,7 +120,8 @@ def test_list_github_hot_for_date_is_parameterized_ordered_and_bounded() -> None
     assert "c.availability_status = 'active'" in sql
     # hot_score(v5) 排序与 /projects 今日暴涨一致
     assert "ORDER BY gm.hot_score DESC NULLS LAST" in sql
-    assert "gm.daily_star_growth DESC NULLS LAST" in sql
+    assert f"{HEAT_GROWTH} DESC NULLS LAST" in sql
+    assert "gm.rolling_24h_star_growth, gm.rolling_24h_growth_source" in sql
     # 反作弊打标字段随榜透出（不参与排序与过滤）
     assert "gm.growth_suspicion_score" in sql
     assert "gm.growth_suspicion_signals" in sql
@@ -494,7 +501,14 @@ def test_today_branch_forces_hot_order_and_uses_bounded_top_set() -> None:
     PostgresProjectCatalogRepository(database).list_projects(scope="today", sort="name")
     rows_sql = database.cursor.calls[2][0]
     assert "LIMIT 50" in rows_sql
-    assert "ORDER BY hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST" in rows_sql
+    assert (
+        "ORDER BY hot_score DESC NULLS LAST,"
+        "COALESCE(rolling_24h_star_growth,daily_star_growth) DESC NULLS LAST"
+    ) in rows_sql
+    top_growth = HEAT_GROWTH.replace("gm.", "gm_top.")
+    assert f"AND {top_growth}>0" in rows_sql
+    assert f"COALESCE({HEAT_GROWTH}, 0) > 0" in rows_sql
+    assert "gm_top.daily_growth_available=TRUE" not in rows_sql
 
 
 def test_public_succeeded_filter_has_no_star_gate() -> None:
@@ -644,6 +658,22 @@ def test_normalization_matches_mysql_shape_and_json_text_semantics() -> None:
     assert item["category_name_en"] == "Other"
     assert item["subcategory_name"] == "未分类"
     assert item["subcategory_name_en"] == "Uncategorized"
+
+
+def test_normalization_keeps_rolling_growth_null_distinct_from_zero() -> None:
+    rolling = normalize_project_row({
+        "rolling_24h_star_growth": "1765", "rolling_24h_growth_source": "since_creation",
+        "rolling_24h_observed_at": "2026-09-29T07:00:00+00:00",
+    })
+    assert rolling["rolling_24h_star_growth"] == 1765
+    assert rolling["rolling_24h_growth_source"] == "since_creation"
+    assert rolling["rolling_24h_observed_at"] == "2026-09-29T07:00:00+00:00"
+    flat = normalize_project_row({"rolling_24h_star_growth": 0})
+    assert flat["rolling_24h_star_growth"] == 0
+    missing = normalize_project_row({})
+    assert missing["rolling_24h_star_growth"] is None
+    assert missing["rolling_24h_growth_source"] is None
+    assert missing["rolling_24h_observed_at"] is None
 
 
 def test_normalization_exposes_bilingual_system_tags_and_raw_user_tags() -> None:

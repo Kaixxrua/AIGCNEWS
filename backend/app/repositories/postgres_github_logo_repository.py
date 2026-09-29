@@ -4,6 +4,7 @@ from typing import Any
 
 from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 from backend.app.core.postgres_database import postgres_database
+from backend.app.domain.github_heat import heat_growth_sql
 
 
 class PostgresGitHubLogoRepository:
@@ -18,7 +19,7 @@ class PostgresGitHubLogoRepository:
 
     def pending(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.database.transaction() as connection, connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT c.repo_id, c.full_name
                 FROM github_repo_candidates c
                 LEFT JOIN github_project_logos l ON l.repo_id = c.repo_id
@@ -30,7 +31,7 @@ class PostgresGitHubLogoRepository:
                        OR (l.status = 'found' AND l.sha256 = %s))
                   AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
                       WHERE a.alias_repo_id = c.repo_id AND a.canonical_repo_id <> c.repo_id)
-                ORDER BY CASE WHEN m.daily_growth_available AND m.daily_star_growth > 0
+                ORDER BY CASE WHEN {heat_growth_sql('m')} > 0
                               THEN m.hot_score END DESC NULLS LAST,
                          (l.content IS NULL) DESC,
                          (NULLIF(c.first_seen_at, '')::timestamptz >= CURRENT_TIMESTAMP - INTERVAL '1 day') DESC NULLS LAST,

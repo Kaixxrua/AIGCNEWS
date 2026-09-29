@@ -73,8 +73,12 @@ export interface GitHubProjectItem {
   score?: number | string | null
   daily_star_growth?: number | string | null
   daily_growth_available?: boolean | number | string | null
-  daily_growth_source?: 'snapshot_delta' | 'github_trending_daily' | 'unavailable' | string | null
+  daily_growth_source?: 'snapshot_delta' | 'github_trending_daily' | 'creation_baseline' | 'unavailable' | string | null
   daily_growth_observed_at?: string | null
+  /** 热度 v8 的滚动 24h 星增；null 表示取不到窗口起点。 */
+  rolling_24h_star_growth?: number | string | null
+  rolling_24h_growth_source?: 'rolling_window' | 'creation_interpolated' | 'since_creation' | string | null
+  rolling_24h_observed_at?: string | null
   daily_growth_date?: string | null
   previous_snapshot_date?: string | null
   hot_score?: number | string | null

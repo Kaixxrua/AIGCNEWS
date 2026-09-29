@@ -12,6 +12,7 @@ import {
   aiScoreDisplay,
   getSourceConfig,
   getTabBoardStatus,
+  rankingGrowthLabel,
   scoreDisplay,
   tabBoardStatusHint,
   type TabKey,
@@ -94,7 +95,7 @@ const boardDateHint = computed(() => {
             <div class="ranking-body min-w-0 flex-1">
               <div class="flex flex-wrap items-start gap-2"><p class="ranking-title min-w-0 flex-1 text-sm font-medium text-stone-700 leading-tight group-hover:text-stone-900 line-clamp-2 sm:line-clamp-1" :class="doc.url ? 'group-hover:underline underline-offset-2' : ''">{{ doc.title || t('dashboard.untitled') }}</p><div class="ranking-badges flex shrink-0 items-center gap-1.5 ml-2"><span v-if="doc.ai_score !== undefined && doc.ai_score !== null" class="badge bg-card text-stone-600 border border-stone-200" :title="doc.ai_reason || t('dashboard.aiScore')">{{ aiScoreDisplay(doc.ai_score) }}</span><span class="badge border ranking-source-badge" :class="getSourceConfig(doc.source).badge"><span class="status-dot shrink-0" :class="getSourceConfig(doc.source).dot" />{{ getSourceConfig(doc.source).label }}</span></div></div>
               <p v-if="hasDistinctSummary(doc)" :title="summary(doc)" class="ranking-summary">{{ summary(doc) }}</p>
-              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && doc.daily_growth_available && doc.daily_star_growth != null" class="ranking-growth">{{ t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) }) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span></div>
+              <div class="ranking-meta mt-0.5 flex flex-wrap items-center gap-1.5"><span v-if="doc.source === 'github' && rankingGrowthLabel(doc, t, locale)" class="ranking-growth">{{ rankingGrowthLabel(doc, t, locale) }}</span><ProjectHeat v-if="doc.source === 'github'" class="ranking-heat" :score="doc.hot_score" :available="doc.daily_growth_available" /><span class="ranking-score flex items-center gap-0.5 text-2xs text-stone-500 font-medium"><component :is="scoreDisplay(doc).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(doc, value => value.toLocaleString()).text }}</span></div>
             </div>
             <ArrowUpRight v-if="doc.url" class="ranking-arrow" :size="18" />
           </a>

@@ -9,7 +9,7 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
-from backend.app.domain.github_heat import SUSPICION_DEMOTION_THRESHOLD
+from backend.app.domain.github_heat import SUSPICION_DEMOTION_THRESHOLD, heat_growth_sql
 from backend.app.domain.project_taxonomy import (
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
     PROJECT_TAXONOMY,
@@ -150,6 +150,9 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     # "UNION types text and timestamp with time zone cannot be matched"，
     # source=all（公开列表默认）整表 500。
     ("gm.daily_growth_observed_at", "NULL::text daily_growth_observed_at"),
+    ("gm.rolling_24h_star_growth", "NULL::bigint rolling_24h_star_growth"),
+    ("gm.rolling_24h_growth_source", "NULL::text rolling_24h_growth_source"),
+    ("gm.rolling_24h_observed_at", "NULL::text rolling_24h_observed_at"),
     ("COALESCE(gm.hot_score,0) hot_score", "0::double precision hot_score"),
     (
         "COALESCE(gm.scale_corrected_growth_score,0) scale_corrected_growth_score",
@@ -223,6 +226,8 @@ _GH_CANONICAL_ALIAS_FILTER = (
 _GH_PUBLIC_SUCCEEDED_FILTER = (
     "ge.status = 'succeeded' AND " + _GH_CANONICAL_ALIAS_FILTER
 )
+# 今日暴涨 Top-N 驱动表（别名 gm_top）的热度增长口径。
+_TOP_HEAT_GROWTH = heat_growth_sql("gm_top")
 _WEB_SELECT_FROM = (
     " FROM tool_websites w"
     " LEFT JOIN tool_website_enrichments we ON we.website_id=w.id"
@@ -342,12 +347,11 @@ def _build_gh_branch(
             " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top"
             " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
             f" AND gm_top.metric_date={_EFFECTIVE_METRIC_DATE_SQL}"
-            " AND gm_top.daily_growth_available=TRUE"
-            " AND gm_top.daily_star_growth>0"
+            f" AND {_TOP_HEAT_GROWTH}>0"
             " LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
             f" WHERE {top_filter}"
             " ORDER BY gm_top.hot_score DESC NULLS LAST,"
-            " gm_top.daily_star_growth DESC NULLS LAST,"
+            f" {_TOP_HEAT_GROWTH} DESC NULLS LAST,"
             " gm_top.stars DESC NULLS LAST, c_top.full_name ASC"
             f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) today_top"
             " ON today_top.repo_id=c.repo_id"
@@ -450,7 +454,7 @@ def _resolve_order(
     if scope == "today": sort = "hot"
     recent = "COALESCE(recommended_at,collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)" if scope == "recommended" else "COALESCE(collection_at,NULLIF(first_seen_at,'')::timestamptz,NULLIF(last_seen_at,'')::timestamptz)"
     orders = {
-        "hot": "hot_score DESC NULLS LAST,daily_star_growth DESC NULLS LAST,stars DESC,full_name ASC",
+        "hot": "hot_score DESC NULLS LAST,COALESCE(rolling_24h_star_growth,daily_star_growth) DESC NULLS LAST,stars DESC,full_name ASC",
         "stars": "stars DESC,forks DESC,full_name ASC",
         "updated": "COALESCE(NULLIF(pushed_at,''),last_seen_at::text,first_seen_at::text) DESC NULLS LAST,stars DESC,full_name ASC",
         "recent": f"{recent} DESC NULLS LAST,stars DESC,full_name ASC",
@@ -889,8 +893,7 @@ class PostgresProjectCatalogRepository:
         limit = max(1, min(int(limit or 1), 500))
         conditions = [
             "gm.metric_date = %s",
-            "gm.daily_growth_available = TRUE",
-            "gm.daily_star_growth > 0",
+            f"{heat_growth_sql('gm')} > 0",
             _GH_PUBLIC_SUCCEEDED_FILTER if enriched_only else "COALESCE(c.stars, 0) >= %s",
             "c.availability_status = 'active'",
         ]
@@ -914,6 +917,8 @@ class PostgresProjectCatalogRepository:
                    c.language, c.topics_json::text AS topics_json,
                    gm.stars, gm.forks, gm.watchers,
                    gm.daily_star_growth, gm.daily_growth_source,
+                   gm.rolling_24h_star_growth, gm.rolling_24h_growth_source,
+                   gm.rolling_24h_observed_at,
                    gm.previous_snapshot_date, gm.hot_score, gm.metric_date,
                    gm.growth_suspicion_score, gm.growth_suspicion_signals,
                    gm.growth_corroborated
@@ -921,7 +926,7 @@ class PostgresProjectCatalogRepository:
             JOIN github_repo_candidates c ON c.repo_id = gm.repo_id{enrichment_join}
             WHERE {' AND '.join(conditions)}
             ORDER BY gm.hot_score DESC NULLS LAST,
-                     gm.daily_star_growth DESC NULLS LAST,
+                     {heat_growth_sql('gm')} DESC NULLS LAST,
                      gm.stars DESC NULLS LAST,
                      c.full_name ASC
             LIMIT %s
@@ -1026,7 +1031,7 @@ class PostgresProjectCatalogRepository:
             gh_filters.append("ge.status = 'succeeded'")
             web_filters.append("(we.status = 'succeeded' OR uo.id IS NOT NULL OR utw.id IS NOT NULL)" if favorites_only else "we.status = 'succeeded'")
         if scope == "today":
-            gh_filters += ["COALESCE(gm.daily_growth_available, FALSE)", "COALESCE(gm.daily_star_growth, 0) > 0"]
+            gh_filters.append(f"COALESCE({heat_growth_sql('gm')}, 0) > 0")
             web_filters.append("FALSE")
         elif scope == "recommended":
             gh_filters.append("gr.repo_id IS NOT NULL")
@@ -1251,11 +1256,10 @@ class PostgresProjectCatalogRepository:
                 " JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
                 " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
                 f" AND gm_top.metric_date={_EFFECTIVE_METRIC_DATE_SQL}"
-                " AND gm_top.daily_growth_available=TRUE"
-                " AND gm_top.daily_star_growth>0"
+                f" AND {_TOP_HEAT_GROWTH}>0"
                 " WHERE "
                 + (_GH_PUBLIC_SUCCEEDED_FILTER.replace("c.", "c_top.").replace("ge.", "ge_top.") if enriched_only else "COALESCE(c_top.stars,0)>=%s")
-                + " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,"
+                + f" ORDER BY gm_top.hot_score DESC NULLS LAST,{_TOP_HEAT_GROWTH} DESC NULLS LAST,"
                 + "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
                 f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
                 " JOIN github_repo_candidates c ON c.repo_id=top.repo_id"

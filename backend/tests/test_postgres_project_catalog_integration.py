@@ -388,6 +388,55 @@ def test_real_github_hot_board_reads_v5_metrics(catalog: Any, catalog_clock: tup
     assert dates == sorted(dates, reverse=True)
 
 
+def test_real_today_board_prefers_rolling_growth_over_daily(
+    catalog: Any, catalog_clock: tuple[datetime, date],
+) -> None:
+    # 热度 v8：滚动 24h 可得时以它判定正增长并排序，取不到窗口起点才退回日增量；
+    # 看板日榜、项目库今日榜、今日计数三处同一口径。
+    today = catalog_clock[1].isoformat()
+
+    def board() -> tuple[list[str], list[str], int]:
+        return (
+            [row["repo_id"] for row in catalog.list_github_hot_for_date(metric_date=today, limit=10)],
+            [item["repo_id"] for item in catalog.list_projects(
+                source="github", scope="today", min_stars=500)["items"]],
+            catalog.get_project_categories(source="github", min_stars=500)["today_count"],
+        )
+
+    def set_beta(**fields: Any) -> None:
+        assignments = ", ".join(f"{column} = %s" for column in fields)
+        with catalog._database.transaction() as connection:
+            connection.execute(
+                f"UPDATE github_repo_daily_metrics SET {assignments}"
+                " WHERE repo_id = 'acme/beta' AND metric_date = %s",
+                (*fields.values(), today),
+            )
+
+    try:
+        # 日增为正、但滚动窗口明确为 0：热度已归零，下榜
+        set_beta(rolling_24h_star_growth=0, rolling_24h_growth_source="rolling_window")
+        assert board() == (["acme/alpha"], ["acme/alpha"], 1)
+        # 无前日快照（日增不可得）、只有滚动增长的新仓：上榜并透出滚动字段
+        set_beta(daily_growth_available=False, daily_star_growth=0,
+                 rolling_24h_star_growth=30, rolling_24h_growth_source="since_creation",
+                 rolling_24h_observed_at=f"{today}T01:00:00+00:00")
+        assert board() == (["acme/alpha", "acme/beta"], ["acme/alpha", "acme/beta"], 2)
+        beta = next(item for item in catalog.list_projects(
+            source="github", scope="today", min_stars=500)["items"] if item["repo_id"] == "acme/beta")
+        assert beta["rolling_24h_star_growth"] == 30
+        assert beta["rolling_24h_growth_source"] == "since_creation"
+        assert beta["rolling_24h_observed_at"] == f"{today}T01:00:00+00:00"
+        hot_row = catalog.list_github_hot_for_date(metric_date=today, limit=10)[1]
+        assert hot_row["rolling_24h_star_growth"] == 30
+        assert hot_row["rolling_24h_growth_source"] == "since_creation"
+    finally:
+        set_beta(daily_growth_available=True, daily_star_growth=12, rolling_24h_star_growth=None,
+                 rolling_24h_growth_source=None, rolling_24h_observed_at=None)
+    alpha = next(item for item in catalog.list_projects(
+        source="github", scope="today", min_stars=500)["items"] if item["repo_id"] == "acme/alpha")
+    assert alpha["rolling_24h_star_growth"] is None
+
+
 def _shift_metric_dates(catalog: Any, days: int) -> None:
     with catalog._database.transaction() as connection:
         connection.execute(

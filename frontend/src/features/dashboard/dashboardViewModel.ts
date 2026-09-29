@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-vue-next'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
+import { projectRollingGrowth } from '@/features/projects/projectPresentation'
 
 export interface TopDoc {
   id?: number | string
@@ -21,6 +22,9 @@ export interface TopDoc {
   description_zh?: string
   description_en?: string
   daily_star_growth?: number
+  /** 热度 v8 的滚动 24h 星增（看板「+N」优先显示）；null 表示取不到窗口起点。 */
+  rolling_24h_star_growth?: number | null
+  rolling_24h_growth_source?: string | null
   summary?: string
   score?: number
   raw_score?: number
@@ -221,6 +225,19 @@ export const getSourceConfig = (src?: string) =>
 export const aiScoreDisplay = (score?: number) => {
   if (score === undefined || score === null) return null
   return `${score}/10`
+}
+
+/** 看板「+N」：热度 v8 以滚动 24h 为准，缺失时退回日增量；两者都没有时返回空串。 */
+export const rankingGrowthLabel = (
+  doc: TopDoc,
+  t: (key: string, params?: Record<string, unknown>) => string,
+  locale: string,
+) => {
+  const rolling = projectRollingGrowth(doc)
+  if (rolling !== null) return t('projects.rollingGrowth', { count: rolling.toLocaleString(locale) })
+  return doc.daily_growth_available && doc.daily_star_growth != null
+    ? t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) })
+    : ''
 }
 
 export const scoreDisplay = (doc: TopDoc, formatNumber: (value: number) => string = String): { icon: LucideIcon; text: string; unitKey?: 'votes' | 'points' | 'likes' } => {

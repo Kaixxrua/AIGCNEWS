@@ -1545,6 +1545,24 @@ def test_github_metric_to_doc_defaults_and_rank() -> None:
     assert doc["growth_suspicion_score"] == 0.0
     assert doc["growth_suspicion_signals"] == "[]"
     assert doc["growth_corroborated"] is False
+    assert doc["rolling_24h_star_growth"] is None
+    assert doc["rolling_24h_growth_source"] is None
+
+
+def test_github_metric_to_doc_prefers_rolling_growth_for_raw_score() -> None:
+    row = {"repo_id": "a/b", "full_name": "a/b", "metric_date": "2026-09-29",
+           "daily_star_growth": 40, "daily_growth_source": "snapshot_delta"}
+    daily_only = policy.github_metric_to_doc(row, rank=1)
+    assert daily_only["raw_score"] == 40.0
+    rolling = policy.github_metric_to_doc({
+        **row, "rolling_24h_star_growth": 1765, "rolling_24h_growth_source": "since_creation",
+        "rolling_24h_observed_at": "2026-09-29T07:00:00+00:00",
+    }, rank=1)
+    assert rolling["raw_score"] == 1765.0
+    assert rolling["daily_star_growth"] == 40
+    assert rolling["rolling_24h_star_growth"] == 1765
+    assert rolling["rolling_24h_growth_source"] == "since_creation"
+    assert rolling["rolling_24h_observed_at"] == "2026-09-29T07:00:00+00:00"
 
 
 def test_github_service_weekly_keeps_snapshot_channel_even_with_reader() -> None:

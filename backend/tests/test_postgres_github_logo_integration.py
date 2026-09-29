@@ -64,6 +64,32 @@ def test_missing_logos_prioritize_daily_ranking_then_new_projects_and_retry_lega
         assert bytes(repo.get('a/hot')['content']) == b'avatar'
 
 
+def test_missing_logos_prioritize_rolling_only_growth_like_the_ranking():
+    """只有滚动 24h 增长（无前日快照）的新仓同样按热度优先补 logo；
+
+    滚动窗口明确为 0 的仓库即使日增量为正也不再插队，退回按星数排序。
+    """
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, stars, first_seen_at)
+                VALUES ('a/old', 'a/old', 'Old', 100000, '2020-01-01'),
+                       ('a/born', 'a/born', 'Born', 1765, '2020-01-01'),
+                       ('a/flat', 'a/flat', 'Flat', 3000, '2020-01-01');
+                INSERT INTO github_repo_daily_metrics
+                    (repo_id, metric_date, hot_score, daily_growth_available, daily_star_growth,
+                     rolling_24h_star_growth, rolling_24h_growth_source)
+                VALUES ('a/born', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date,
+                        84, FALSE, 0, 1765, 'since_creation'),
+                       ('a/flat', (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Shanghai')::date,
+                        90, TRUE, 30, 0, 'rolling_window');
+            """)
+        assert [r['repo_id'] for r in PostgresGitHubLogoRepository(db).pending()] == [
+            'a/born', 'a/old', 'a/flat',
+        ]
+
+
 def test_cached_default_avatars_retry_before_thirty_days_without_busy_loop():
     from backend.app.core.github_artwork import GITHUB_DEFAULT_AVATAR_SHA256
 

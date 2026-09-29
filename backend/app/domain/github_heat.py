@@ -291,6 +291,18 @@ def launch_stars(age_days: float | None) -> float:
     return LAUNCH_VIRTUAL_STARS * 0.5 ** (max(age_days, 0.0) / LAUNCH_HALF_LIFE_DAYS)
 
 
+def heat_growth_sql(alias: str) -> str:
+    """热度所用星增的 SQL 口径：滚动 24h 优先，缺失时退回可用的日增量。
+
+    与指标计算里的取数一致；榜单的正增长筛选和同分排序都要用它，否则只有
+    滚动增长的仓库算出了热度却进不了榜。取不到任何增长时为 NULL。
+    """
+    return (
+        f"COALESCE({alias}.rolling_24h_star_growth,"
+        f"CASE WHEN {alias}.daily_growth_available THEN {alias}.daily_star_growth END)"
+    )
+
+
 def score_heat(inputs: HeatInputs, *, suspicion: float = 0.0) -> dict[str, Any]:
     growth = max(inputs.star_velocity, 0.0)
     scale = _normalize(

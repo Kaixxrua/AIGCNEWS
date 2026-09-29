@@ -211,6 +211,27 @@ export const projectDailyGrowth = (project: GitHubProjectItem) => {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
 }
 
+/** 热度 v8 的滚动 24h 星增；null 表示取不到窗口起点，与「涨了 0」不同。 */
+export const projectRollingGrowth = (project: Pick<GitHubProjectItem, 'rolling_24h_star_growth'>): number | null => {
+  const value = project.rolling_24h_star_growth
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Math.max(numeric, 0) : null
+}
+
+/** 卡片「+N」：有滚动 24h 时显示它，否则退回日增量（与热度取数一致）。 */
+export const projectGrowthLabel = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
+  const rolling = projectRollingGrowth(project)
+  return rolling === null
+    ? t('projects.todayGrowth', { count: formatProjectCount(projectDailyGrowth(project), locale) })
+    : t('projects.rollingGrowth', { count: formatProjectCount(rolling, locale) })
+}
+
+/** 滚动 24h 可得时热度一定已按它计算，即使日增量不可得也不显示「待计算」。 */
+export const projectHeatAvailable = (project: GitHubProjectItem) => (
+  projectRollingGrowth(project) === null ? project.daily_growth_available : true
+)
+
 export const projectHotScore = (project: GitHubProjectItem) => {
   const numeric = Number(project.hot_score ?? project.score ?? 0)
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
@@ -240,6 +261,12 @@ const formatGrowthObservedAt = (value: string | null | undefined, locale?: AppLo
 
 export type ProjectTranslate = (key: string, params?: Record<string, unknown>) => string
 
+const ROLLING_GROWTH_TITLE_KEYS: Record<string, string> = {
+  rolling_window: 'projects.growthRollingWindow',
+  creation_interpolated: 'projects.growthRollingCreation',
+  since_creation: 'projects.growthSinceCreation',
+}
+
 export const projectDailyGrowthTitle = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
   const source = projectDailyGrowthSource(project)
   if (source === 'snapshot_delta') {
@@ -254,7 +281,15 @@ export const projectDailyGrowthTitle = (project: GitHubProjectItem, t: ProjectTr
       observed: observedAt ? t('projects.observedAt', { date: observedAt }) : '',
     })
   }
+  if (source === 'creation_baseline') return t('projects.growthCreationBaseline')
   return t('projects.growthUnavailable')
+}
+
+export const projectGrowthTitle = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
+  if (projectRollingGrowth(project) === null) return projectDailyGrowthTitle(project, t, locale)
+  const observedAt = formatGrowthObservedAt(project.rolling_24h_observed_at, locale)
+  const key = ROLLING_GROWTH_TITLE_KEYS[String(project.rolling_24h_growth_source)] || 'projects.growthRollingWindow'
+  return t(key, { observed: observedAt ? t('projects.observedAt', { date: observedAt }) : '' })
 }
 
 export const shouldShowProjectHotScore = (

@@ -80,10 +80,17 @@ def normalize_project_row(row: dict[str, Any]) -> dict[str, Any]:
         item[key] = _number(item.get(key))
     item["daily_growth_available"] = bool(_integer(item.get("daily_growth_available")))
     item["daily_growth_source"] = str(item.get("daily_growth_source") or "unavailable")
+    # 滚动 24h 星增保留 NULL：NULL 表示取不到窗口起点，与「涨了 0」不同。
+    rolling = item.get("rolling_24h_star_growth")
+    item["rolling_24h_star_growth"] = None if rolling is None else _integer(rolling)
+    item["rolling_24h_growth_source"] = item.get("rolling_24h_growth_source") or None
     item["availability_status"] = (
         "not_found" if item.get("availability_status") == "not_found" else "active"
     )
-    for key in ("daily_growth_observed_at", "favorited_at", "recommended_at", "user_added_at"):
+    for key in (
+        "daily_growth_observed_at", "rolling_24h_observed_at",
+        "favorited_at", "recommended_at", "user_added_at",
+    ):
         item[key] = _iso(item.get(key))
     for key in ("is_favorited", "is_recommended", "user_added"):
         item[key] = bool(item.get(key))

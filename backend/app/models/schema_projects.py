@@ -56,6 +56,9 @@ class GitHubProjectItem(BaseModel):
     daily_growth_available: bool = False
     daily_growth_source: str = "unavailable"
     daily_growth_observed_at: str | None = None
+    rolling_24h_star_growth: int | None = None
+    rolling_24h_growth_source: str | None = None
+    rolling_24h_observed_at: str | None = None
     daily_growth_date: str | None = None
     previous_snapshot_date: str | None = None
     hot_score: float = 0.0
