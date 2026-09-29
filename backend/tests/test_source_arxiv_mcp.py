@@ -142,6 +142,42 @@ class TestParsePaperDetail:
         assert doc["abstract"] == ""
         assert doc["authors"] == []
 
+    def test_char_hydrated_abstract_keeps_word_spaces(self) -> None:
+        # HF 线上结构：摘要逐字符水合渲染，每个字符（含空格）都是被 Svelte
+        # 注释包裹的独立文本节点；逐节点 strip 会把词间空格吞掉。
+        abstract = (
+            "Long visual token sequences often account for a substantial share "
+            "of the compute in multimodal models."
+        )
+        hydrated = "".join(f"<!--[-1-->{char}<!--]-->" for char in abstract)
+        html = (
+            "<html><body>"
+            "<h1 class='text-2xl'>Just MLPs: Efficient Visual State Reconstruction</h1>"
+            f"<p class='text-gray-600'><!--[-->{hydrated}<!--]--></p>"
+            "<span class='author flex'><span class='contents'><a href='/u'>Jingdi Lei</a>"
+            "<!----></span> <!--[0-->,<!--]--></span>"
+            "</body></html>"
+        )
+        doc = _parse_paper_detail(html, "2609.34972")
+        assert doc is not None
+        assert doc["abstract"] == abstract
+        assert doc["title"] == "Just MLPs: Efficient Visual State Reconstruction"
+        assert doc["authors"] == ["Jingdi Lei"]
+
+    def test_multiline_markup_collapses_to_single_spaces(self) -> None:
+        abstract_html = (
+            "\n      We present <em>a method</em> that\n      spans several source "
+            "lines and still reads as one clean paragraph of text.\n    "
+        )
+        html = f"<html><body><h1>\n  Title\n  Split\n</h1><p>{abstract_html}</p></body></html>"
+        doc = _parse_paper_detail(html, "2403.12346")
+        assert doc is not None
+        assert doc["title"] == "Title Split"
+        assert doc["abstract"] == (
+            "We present a method that spans several source lines and still reads "
+            "as one clean paragraph of text."
+        )
+
 
 class TestFetchLatestPapersAsync(unittest.IsolatedAsyncioTestCase):
     async def test_raises_when_listing_empty(self) -> None:

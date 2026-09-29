@@ -229,19 +229,28 @@ async def _fetch_hf_listing_html(
 # ── Step 2: 并发抓取 HF 论文详情页 ──────────────────────────────────────────
 
 
+def _node_text(node: Any) -> str:
+    """节点可见文本：先原样拼接全部文本节点，再折叠空白。
+
+    HF 详情页摘要是逐字符水合渲染的——每个字符（含空格）都是被 Svelte
+    注释包裹的独立文本节点。get_text(strip=True) 会逐节点 strip，把词间
+    空格整个吞掉（"Longvisualtokensequences…"），arXiv API 未收录的新论文
+    便带着无空格摘要入库。
+    """
+    return " ".join(node.get_text().split())
+
+
 def _parse_paper_detail(html: str, arxiv_id: str) -> Optional[Dict[str, Any]]:
     """从 HF 论文详情页 HTML 解析元数据。"""
     soup = BeautifulSoup(html, "html.parser")
 
     # ── 标题 ──
     h1 = soup.find("h1")
-    title = h1.get_text(strip=True) if h1 else arxiv_id
+    title = _node_text(h1) if h1 else arxiv_id
 
     # ── 摘要：取所有 <p> 中最长的（通常是完整 Abstract） ──
     paragraphs = [
-        p.get_text(strip=True)
-        for p in soup.find_all("p")
-        if len(p.get_text(strip=True)) > 80
+        text for p in soup.find_all("p") if len(text := _node_text(p)) > 80
     ]
     _noise = ("librarian bot", "semantic scholar", "thanks to", "code:", "page:")
     paragraphs = [p for p in paragraphs if not any(n in p.lower() for n in _noise)]
