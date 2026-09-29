@@ -601,4 +601,112 @@
   #app .app-shell--comic-page .dsh-page .dsh-wizard-nav { margin-top: 24px; padding: 12px 16px; border-top: solid var(--rule-strong); border-top-width: 2px; }
   #app .app-shell--comic-page .dsh-wizard-nav > span { color: var(--ink); font-size: 15px; font-style: italic; font-weight: 900; }
   @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .dsh-page .dsh-method { transition: none; } }
+
+  /* ── Legal pages (legal-B): title and three facts from the text, then a sticky numbered contents panel beside the
+     text panel. The text stays an upright 15px/1.75 column; the privacy page's last sections and both pages' contact
+     ride in a sticky aside from 1280px, and below that follow the text. ── */
+  #app .app-shell--comic-page .legal-page { --legal-warn: #f97316; display: block; padding: 18px 28px calc(var(--peel-clear) + 28px); background: transparent; }
+  #app .app-shell--comic-page .legal-page--disclaimer { --legal-warn: #ef4444; }
+  #app .app-shell--comic-page .legal-card { max-width: 1480px; margin: 0 auto; }
+  #app .app-shell--comic-page .legal-card .back-btn { margin: 0 0 4px; padding: 2px 0; color: var(--ink-muted); font-size: 14px; font-weight: 700; }
+  #app .app-shell--comic-page .legal-card .back-btn:hover { color: var(--ink); }
+  #app .app-shell--comic-page .legal-head { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 44px; margin-bottom: 26px; }
+  #app .app-shell--comic-page .legal-heading { display: block; flex: 0 0 auto; }
+  #app .app-shell--comic-page .legal-title.comic-title { margin: 0 36px 0 0; font-size: 44px; }
+  /* Titles run long (the English agreement title is ~700px), so the brush tilts less to stay off the date line. */
+  #app .app-shell--comic-page .legal-title.comic-title::before { transform: rotate(-1deg) skewX(-18deg); }
+  #app .app-shell--comic-page .legal-meta { margin: 10px 0 0; color: var(--ink-muted); font-size: 14.5px; }
+
+  #app .app-shell--comic-page .legal-facts {
+    display: grid; flex: 1 1 600px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; padding: 0; list-style: none;
+  }
+  #app .app-shell--comic-page .legal-fact {
+    display: grid; grid-template-columns: 46px minmax(0, 1fr); grid-template-rows: auto auto; align-content: center; column-gap: 14px; row-gap: 2px;
+    min-width: 0; min-height: 84px; padding: 12px 18px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .legal-fact svg {
+    grid-row: span 2; align-self: center; width: 46px; height: 46px; padding: 10px; border: 1.5px solid var(--rule-strong); border-radius: 50%;
+    background: color-mix(in srgb, var(--comic-cyan-line) 26%, var(--paper-raised)); color: var(--ink); stroke-width: 2.2;
+  }
+  #app .app-shell--comic-page .legal-fact:nth-child(3) svg { background: color-mix(in srgb, #a78bfa 30%, var(--paper-raised)); }
+  #app .app-shell--comic-page .legal-fact span { align-self: end; color: var(--ink-secondary); font-size: 14px; font-weight: 800; line-height: 1.35; }
+  #app .app-shell--comic-page .legal-fact strong { color: var(--ink); font-size: 24px; font-weight: 950; line-height: 1.2; }
+
+  #app .app-shell--comic-page .legal-layout { display: grid; grid-template-columns: 284px minmax(0, 1fr); align-items: start; gap: 26px; }
+  #app .app-shell--comic-page .legal-toc {
+    display: block; position: sticky; top: 12px; max-height: calc(100dvh / var(--shell-zoom, 1) - 184px - 48px); overflow-y: auto;
+    padding: 16px 14px 18px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .legal-toc__title {
+    position: relative; margin: 0 0 10px 4px; padding-left: 16px; color: var(--ink); font-size: 18px; font-style: italic; font-weight: 950; line-height: 1.4;
+  }
+  #app .app-shell--comic-page .legal-toc ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+  #app .app-shell--comic-page .legal-toc a {
+    display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px 8px 12px;
+    border: 1.5px solid transparent; border-radius: 3px 6px 4px 5px; color: var(--ink-secondary); font-size: 15px; font-weight: 600; line-height: 1.4; text-decoration: none;
+  }
+  #app .app-shell--comic-page .legal-toc__no { color: var(--ink-muted); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .legal-toc a:hover { background: var(--acid-soft); color: var(--ink); }
+  #app .app-shell--comic-page .legal-toc a[aria-current] {
+    border-color: var(--rule-strong); background: var(--acid); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-weight: 800;
+  }
+  #app .app-shell--comic-page .legal-toc a[aria-current] .legal-toc__no { color: var(--acid-ink); }
+  #app .app-shell--comic-page .legal-toc a svg { width: 16px; height: 16px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .legal-toc a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  #app .app-shell--comic-page .legal-body {
+    display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); align-items: start; gap: 0 36px; padding: 28px 32px 32px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page :is(.legal-main, .legal-aside) { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
+  #app .app-shell--comic-page .legal-aside { position: sticky; top: 12px; padding-left: 32px; border-left: 1.5px solid var(--rule); }
+  #app .app-shell--comic-page .legal-body section { border-radius: 4px; }
+  #app .app-shell--comic-page .legal-body section.is-flash { animation: legal-flash .9s cubic-bezier(.2,.8,.2,1); }
+  @keyframes legal-flash {
+    from { background: var(--acid-soft); box-shadow: 0 0 0 10px var(--acid-soft); }
+    to { background: transparent; box-shadow: 0 0 0 10px transparent; }
+  }
+  /* Section heads and the contents title carry a slanted lime bar. */
+  #app .app-shell--comic-page :is(.legal-body h2, .legal-toc__title) { position: relative; }
+  #app .app-shell--comic-page :is(.legal-body h2, .legal-toc__title)::before {
+    content: ''; position: absolute; left: 0; top: .22em; width: 7px; height: 1em; background: var(--acid); transform: skewX(-14deg);
+  }
+  #app .app-shell--comic-page .legal-body h2 {
+    margin: 0 0 12px; padding: 0 0 9px 18px; border-bottom: 1.5px solid var(--rule); color: var(--ink); font-size: 19px; font-weight: 900; line-height: 1.4;
+  }
+  #app .app-shell--comic-page .legal-body :is(p, li) { color: var(--ink-secondary); font-size: 15px; line-height: 1.75; }
+  #app .app-shell--comic-page .legal-body p { margin: 0 0 10px; }
+  #app .app-shell--comic-page .legal-body p:last-child { margin-bottom: 0; }
+  #app .app-shell--comic-page .legal-body ul { margin: 8px 0 0; padding-left: 22px; list-style: disc; }
+  #app .app-shell--comic-page .legal-body li { margin: 6px 0; }
+  #app .app-shell--comic-page .legal-body li::marker { color: var(--acid-strong); }
+  #app .app-shell--comic-page .legal-lead { color: var(--ink); font-weight: 800; }
+  #app .app-shell--comic-page .legal-body .warning-text {
+    position: relative; margin-top: 12px; padding: 12px 16px 12px 44px; border: solid color-mix(in srgb, var(--legal-warn) 60%, var(--rule-strong));
+    border-width: 1.5px 2px 2.5px 1.5px; border-radius: 3px 6px 4px 5px; background: color-mix(in srgb, var(--legal-warn) 13%, var(--paper-raised));
+    color: var(--ink); font-size: 14.5px !important; line-height: 1.7;
+  }
+  #app .app-shell--comic-page .legal-body .warning-text::before {
+    content: ''; position: absolute; left: 15px; top: 14px; width: 19px; height: 19px; background: var(--legal-warn);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .legal-body .contact-block {
+    display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 12px 16px; border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px;
+    border-radius: 3px 6px 4px 5px; background: var(--paper); box-shadow: 2px 2px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page .legal-body .contact-block::before {
+    content: ''; flex: 0 0 20px; height: 20px; background: var(--ink);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='2'/%3E%3Cpath d='m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .legal-body .contact-block a { color: var(--ink); font-size: 15.5px; font-weight: 800; }
+  #app .app-shell--comic-page .legal-body .effective { margin-top: 14px !important; color: var(--ink-muted) !important; font-size: 13.5px !important; line-height: 1.7; }
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .legal-layout { grid-template-columns: 236px minmax(0, 1fr); gap: 20px; }
+    #app .app-shell--comic-page .legal-body { grid-template-columns: minmax(0, 1fr); padding: 24px 26px 28px; }
+    #app .app-shell--comic-page .legal-aside { position: static; margin-top: 30px; padding-left: 0; border-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { #app .app-shell--comic-page .legal-body section.is-flash { animation: none; } }
 }
