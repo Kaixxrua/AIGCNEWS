@@ -20,7 +20,8 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
@@ -84,6 +85,38 @@ _GITHUB_DAILY_PIPELINE_TIMEOUT = 2 * 3600
 # 新仓快车道：锁忙即让路（只等几秒防与刚释放的锁擦肩），发现+快照整体封顶
 _GITHUB_FAST_LANE_LOCK_WAIT = 5
 _GITHUB_FAST_LANE_TIMEOUT = 10 * 60
+
+
+class GitHubFastLaneShare:
+    """两小时指标刷新向新仓快车道开放的并行窗口。
+
+    指标刷新持 github 锁抓快照约一小时，快车道原本只能整段让路。窗口
+    打开期间快车道改持 participant 锁与之并行；刷新关窗后先等在途的
+    快车道收尾再做 logo 与富化补跑，保证快车道绝不越出刷新的持锁期，
+    与每日流水线、热榜采集、富化批次仍然互斥。两边的写库与算分由指标
+    服务层的写锁串行。
+    """
+
+    def __init__(self) -> None:
+        self.window = asyncio.Event()
+        self.participant = asyncio.Lock()
+
+
+@asynccontextmanager
+async def _open_fast_lane_window(
+    share: GitHubFastLaneShare | None,
+) -> AsyncIterator[None]:
+    """刷新抓快照期间向快车道开窗；退出时关窗并等在途快车道收尾。"""
+    if share is None:
+        yield
+        return
+    share.window.set()
+    try:
+        yield
+    finally:
+        share.window.clear()
+        async with share.participant:
+            pass
 
 # 调度任务连续失败告警：阈值内只记日志，达到阈值才经 notify_ops_alert.py 发信
 _DEFAULT_ALERT_FAILURE_THRESHOLD = 3
@@ -653,6 +686,7 @@ async def _run_github_project_metrics_refresh_job(
     documents: Any = None,
     github_lock: asyncio.Lock | None = None,
     logo_repository: Any = None,
+    fast_lane_share: GitHubFastLaneShare | None = None,
 ) -> bool:
     from backend.app.services.ingestion.github_project_metrics_service import (
         current_github_metric_date,
@@ -669,11 +703,12 @@ async def _run_github_project_metrics_refresh_job(
         ):
             return False
         try:
-            result = await _refresh_current_github_project_metrics(
-                metric_date,
-                repository,
-                documents,
-            )
+            async with _open_fast_lane_window(fast_lane_share):
+                result = await _refresh_current_github_project_metrics(
+                    metric_date,
+                    repository,
+                    documents,
+                )
             if logo_repository is not None:
                 from backend.app.services.ingestion.github_project_logos import refresh_project_logos
 
@@ -722,6 +757,7 @@ async def _enrich_fast_lane_github_projects(
     enrichment: Any,
     semantic_sources: Any,
     hydrate_readmes: bool,
+    run_enrichment: bool = True,
 ) -> Dict[str, Any]:
     from backend.app.services.ingestion.github_fast_lane import hydrate_github_readmes
 
@@ -730,7 +766,11 @@ async def _enrich_fast_lane_github_projects(
         readme = await asyncio.to_thread(hydrate_github_readmes, semantic_sources)
     return {
         "readme_bootstrap": readme,
-        "enrichment": await _enrich_newly_eligible_github_projects(enrichment),
+        "enrichment": (
+            await _enrich_newly_eligible_github_projects(enrichment)
+            if run_enrichment
+            else "deferred_to_metrics_refresh"
+        ),
     }
 
 
@@ -741,12 +781,15 @@ async def _run_github_fast_lane_job(
     semantic_sources: Any = None,
     documents: Any = None,
     github_lock: asyncio.Lock | None = None,
+    fast_lane_share: GitHubFastLaneShare | None = None,
 ) -> bool:
     """新仓快车道：发现近几天新建的越线仓库，建快照、算指标、补富化。
 
     与其他 GitHub 任务共用 github 锁以免并发写同批行和叠加 Search 限速，
-    但绝不排队：锁被每日流水线/两小时刷新/热榜占着时本轮直接让路（这些
-    任务本身就覆盖了发现或快照），15 分钟后下一轮再来。让路不算失败。
+    但绝不排队：锁被每日流水线/热榜占着时本轮直接让路（这些任务本身就
+    覆盖了发现或快照），15 分钟后下一轮再来。让路不算失败。两小时指标
+    刷新抓快照期间例外：经 fast_lane_share 窗口与之并行，只做发现、快照、
+    算分与 README 补齐，富化留给刷新随后的补跑。
     """
     from backend.app.services.ingestion.github_project_enricher import (
         github_enrichment_batch_running,
@@ -756,14 +799,26 @@ async def _run_github_fast_lane_job(
     )
 
     lock = github_lock or asyncio.Lock()
+    shared = False
     if lock.locked():
-        logger.info("[Scheduler] GitHub 快车道：其他 GitHub 任务持锁中，本轮让路。")
-        return True
-    try:
-        await asyncio.wait_for(lock.acquire(), timeout=_GITHUB_FAST_LANE_LOCK_WAIT)
-    except TimeoutError:
-        logger.info("[Scheduler] GitHub 快车道：锁已被排队任务接手，本轮让路。")
-        return True
+        if (
+            fast_lane_share is None
+            or not fast_lane_share.window.is_set()
+            or fast_lane_share.participant.locked()
+        ):
+            logger.info("[Scheduler] GitHub 快车道：其他 GitHub 任务持锁中，本轮让路。")
+            return True
+        # 未上锁时 acquire 立即返回、不让出事件循环，与上面的窗口检查之间无竞态
+        await fast_lane_share.participant.acquire()
+        shared = True
+        logger.info("[Scheduler] GitHub 快车道：指标刷新正在抓快照，本轮与之并行。")
+    else:
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=_GITHUB_FAST_LANE_LOCK_WAIT)
+        except TimeoutError:
+            logger.info("[Scheduler] GitHub 快车道：锁已被排队任务接手，本轮让路。")
+            return True
+    held = fast_lane_share.participant if shared and fast_lane_share is not None else lock
     try:
         try:
             from backend.app.services.ingestion.github_fast_lane import run_github_fast_lane
@@ -802,6 +857,8 @@ async def _run_github_fast_lane_job(
                         enrichment=enrichment,
                         semantic_sources=semantic_sources,
                         hydrate_readmes=bool(result.get("readme_candidates")),
+                        # 并行时不开富化批次：刷新关窗后的补跑会接手，避免两批并发
+                        run_enrichment=not shared,
                     ),
                     timeout=_GITHUB_ENRICH_TOP_UP_TIMEOUT,
                 )
@@ -815,7 +872,7 @@ async def _run_github_fast_lane_job(
             except Exception as exc:  # noqa: BLE001 - 非致命，记入日志即可
                 logger.error("[Scheduler] GitHub 快车道富化失败（非致命）: %s", exc, exc_info=True)
     finally:
-        lock.release()
+        held.release()
     logger.info(
         "[Scheduler] GitHub 快车道完成：命中 %s，新入库 %s %s，富化：%s",
         result.get("hits"),
@@ -877,6 +934,7 @@ async def _reconcile_current_github_project_metrics(
     repository: Any,
     *,
     github_lock: asyncio.Lock | None = None,
+    fast_lane_share: GitHubFastLaneShare | None = None,
 ) -> None:
     from backend.app.services.ingestion.github_project_metrics_service import (
         current_github_metric_date,
@@ -903,10 +961,11 @@ async def _reconcile_current_github_project_metrics(
                 logger.info("[Scheduler] GitHub 当天指标完整且新鲜，跳过启动补跑：%s", status)
                 return
             logger.info("[Scheduler] GitHub 当天指标缺失或过期，执行启动补跑：%s", status)
-            await _refresh_current_github_project_metrics(
-                metric_date,
-                active_repository,
-            )
+            async with _open_fast_lane_window(fast_lane_share):
+                await _refresh_current_github_project_metrics(
+                    metric_date,
+                    active_repository,
+                )
         finally:
             lock.release()
     except Exception as exc:
@@ -1244,6 +1303,7 @@ class ApplicationSchedulerRuntime:
         self._timezone_name = timezone_name
         self._job_config_overrides: Dict[str, Any] = dict(job_config_overrides or {})
         self._github_job_lock = asyncio.Lock()
+        self._github_fast_lane_share = GitHubFastLaneShare()
         self._x_operation_lock = asyncio.Lock()
         self._failure_alerter = _ConsecutiveFailureAlerter(
             threshold=alert_failure_threshold,
@@ -1389,6 +1449,7 @@ class ApplicationSchedulerRuntime:
                     documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
                     logo_repository=PostgresGitHubLogoRepository(),
+                    fast_lane_share=self._github_fast_lane_share,
                 ),
             )
         )
@@ -1403,6 +1464,7 @@ class ApplicationSchedulerRuntime:
                     semantic_sources=self.repositories.github_semantic_sources,
                     documents=self.repositories.documents,
                     github_lock=self._github_job_lock,
+                    fast_lane_share=self._github_fast_lane_share,
                 ),
             )
         )
@@ -1888,6 +1950,7 @@ class ApplicationSchedulerRuntime:
             _reconcile_current_github_project_metrics(
                 self.repositories.github_ingestion,
                 github_lock=self._github_job_lock,
+                fast_lane_share=self._github_fast_lane_share,
             ),
         ):
             task = loop.create_task(coroutine)

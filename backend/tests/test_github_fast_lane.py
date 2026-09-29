@@ -269,5 +269,244 @@ class FastLaneSchedulerJobTests(unittest.TestCase):
         self.assertFalse(lock.locked())
 
 
+class FastLaneShareTests(unittest.IsolatedAsyncioTestCase):
+    """两小时指标刷新开窗期间快车道与之并行的契约。"""
+
+    async def _run_shared(self, lock: asyncio.Lock, share: scheduler.GitHubFastLaneShare) -> bool:
+        return await scheduler._run_github_fast_lane_job(
+            repository=MagicMock(),
+            enrichment=MagicMock(),
+            semantic_sources=MagicMock(),
+            github_lock=lock,
+            fast_lane_share=share,
+        )
+
+    async def test_runs_alongside_refresh_while_window_is_open_without_enrichment(self) -> None:
+        lock = asyncio.Lock()
+        await lock.acquire()  # 刷新持锁
+        share = scheduler.GitHubFastLaneShare()
+        share.window.set()
+        order: list[str] = []
+
+        def run(**kwargs):
+            self.assertTrue(share.participant.locked())
+            order.append("discover")
+            return {"hits": 1, "new_candidates": 1, "readme_candidates": 1}
+
+        def hydrate(semantic_sources):
+            self.assertTrue(share.participant.locked())
+            order.append("readme")
+            return {"status": "success"}
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", side_effect=run),
+            patch.object(fast_lane, "hydrate_github_readmes", side_effect=hydrate),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects") as top_up,
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+        ):
+            self.assertTrue(await self._run_shared(lock, share))
+
+        self.assertEqual(order, ["discover", "readme"])
+        # 富化批次留给刷新关窗后的补跑，避免两批并发
+        top_up.assert_not_called()
+        self.assertFalse(share.participant.locked())
+        # 绝不释放刷新持有的 github 锁
+        self.assertTrue(lock.locked())
+
+    async def test_yields_when_refresh_holds_lock_but_window_is_closed(self) -> None:
+        lock = asyncio.Lock()
+        await lock.acquire()
+        share = scheduler.GitHubFastLaneShare()
+        with patch.object(fast_lane, "run_github_fast_lane") as run:
+            self.assertTrue(await self._run_shared(lock, share))
+
+        run.assert_not_called()
+        self.assertTrue(lock.locked())
+        self.assertFalse(share.participant.locked())
+
+    async def test_yields_when_another_fast_lane_already_shares_the_window(self) -> None:
+        lock = asyncio.Lock()
+        await lock.acquire()
+        share = scheduler.GitHubFastLaneShare()
+        share.window.set()
+        await share.participant.acquire()
+        with patch.object(fast_lane, "run_github_fast_lane") as run:
+            self.assertTrue(await self._run_shared(lock, share))
+
+        run.assert_not_called()
+        # 让路不得释放在途快车道持有的 participant
+        self.assertTrue(share.participant.locked())
+
+    async def test_shared_discovery_failure_releases_participant_only(self) -> None:
+        lock = asyncio.Lock()
+        await lock.acquire()
+        share = scheduler.GitHubFastLaneShare()
+        share.window.set()
+        with patch.object(fast_lane, "run_github_fast_lane", side_effect=RuntimeError("boom")):
+            self.assertFalse(await self._run_shared(lock, share))
+
+        self.assertFalse(share.participant.locked())
+        self.assertTrue(lock.locked())
+
+    async def test_uncontended_run_keeps_using_the_github_lock(self) -> None:
+        lock = asyncio.Lock()
+        share = scheduler.GitHubFastLaneShare()
+
+        def run(**kwargs):
+            self.assertTrue(lock.locked())
+            self.assertFalse(share.participant.locked())
+            return {"hits": 1, "readme_candidates": 0}
+
+        async def enrich(repository):
+            return {}
+
+        with (
+            patch.object(fast_lane, "run_github_fast_lane", side_effect=run),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects", side_effect=enrich) as top_up,
+            patch.object(enricher, "github_enrichment_batch_running", return_value=False),
+        ):
+            self.assertTrue(await self._run_shared(lock, share))
+
+        top_up.assert_called_once()
+        self.assertFalse(lock.locked())
+
+    async def test_closing_window_waits_for_in_flight_fast_lane(self) -> None:
+        share = scheduler.GitHubFastLaneShare()
+        order: list[str] = []
+        finish = asyncio.Event()
+
+        async def participant() -> None:
+            async with share.participant:
+                order.append("fast_lane_start")
+                await finish.wait()
+                order.append("fast_lane_done")
+
+        async with scheduler._open_fast_lane_window(share):
+            self.assertTrue(share.window.is_set())
+            task = asyncio.create_task(participant())
+            await asyncio.sleep(0)
+            order.append("refresh_done")
+            asyncio.get_running_loop().call_soon(finish.set)
+        order.append("window_closed")
+        await task
+
+        self.assertFalse(share.window.is_set())
+        self.assertEqual(
+            order,
+            ["fast_lane_start", "refresh_done", "fast_lane_done", "window_closed"],
+        )
+
+    async def test_window_closes_even_when_refresh_fails(self) -> None:
+        share = scheduler.GitHubFastLaneShare()
+        with self.assertRaises(RuntimeError):
+            async with scheduler._open_fast_lane_window(share):
+                raise RuntimeError("refresh failed")
+
+        self.assertFalse(share.window.is_set())
+        self.assertFalse(share.participant.locked())
+
+    async def test_refresh_job_opens_window_only_while_fetching_snapshots(self) -> None:
+        share = scheduler.GitHubFastLaneShare()
+        seen: list[tuple[str, bool]] = []
+
+        async def refresh(*args):
+            seen.append(("refresh", share.window.is_set()))
+            return {"refresh": {}}
+
+        async def top_up(enrichment):
+            seen.append(("top_up", share.window.is_set()))
+            return {}
+
+        with (
+            patch.object(metrics, "current_github_metric_date", return_value="2026-09-29"),
+            patch.object(scheduler, "_refresh_current_github_project_metrics", side_effect=refresh),
+            patch.object(scheduler, "_enrich_newly_eligible_github_projects", side_effect=top_up),
+        ):
+            ok = await scheduler._run_github_project_metrics_refresh_job(
+                repository=MagicMock(),
+                enrichment=MagicMock(),
+                fast_lane_share=share,
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(seen, [("refresh", True), ("top_up", False)])
+
+    async def test_startup_reconcile_opens_window_during_catch_up(self) -> None:
+        share = scheduler.GitHubFastLaneShare()
+        repo = MagicMock()
+        repo.get_github_metric_refresh_status.return_value = {
+            "target_count": 2,
+            "snapshot_count": 1,
+            "metric_count": 1,
+        }
+        seen: list[bool] = []
+
+        async def refresh(*args):
+            seen.append(share.window.is_set())
+            return {}
+
+        with (
+            patch.object(metrics, "current_github_metric_date", return_value="2026-09-29"),
+            patch.object(scheduler, "_refresh_current_github_project_metrics", side_effect=refresh),
+        ):
+            await scheduler._reconcile_current_github_project_metrics(
+                repo,
+                fast_lane_share=share,
+            )
+
+        self.assertEqual(seen, [True])
+        self.assertFalse(share.window.is_set())
+
+
+class MetricWriteLockTests(unittest.TestCase):
+    def test_outcome_writes_and_daily_compute_share_one_write_lock(self) -> None:
+        import threading
+
+        entered = threading.Event()
+        release = threading.Event()
+        order: list[str] = []
+
+        def slow_record(*args, **kwargs):
+            order.append("record_start")
+            entered.set()
+            release.wait(timeout=5)
+            order.append("record_done")
+            return {}
+
+        def compute(*args, **kwargs):
+            order.append("compute")
+            return {}
+
+        with (
+            patch.object(metrics, "_record_github_metric_outcomes", side_effect=slow_record),
+            patch.object(metrics, "_compute_github_daily_metrics", side_effect=compute),
+        ):
+            writer = threading.Thread(
+                target=metrics.record_github_metric_outcomes,
+                kwargs={
+                    "targets": [],
+                    "outcomes": [],
+                    "snapshot_date": "2026-09-29",
+                    "captured_at": "2026-09-29T06:55:00+00:00",
+                    "db": MagicMock(),
+                },
+            )
+            writer.start()
+            self.assertTrue(entered.wait(timeout=5))
+            computer = threading.Thread(
+                target=metrics.compute_github_daily_metrics,
+                kwargs={"metric_date": "2026-09-29", "db": MagicMock()},
+            )
+            computer.start()
+            computer.join(timeout=0.2)
+            # 写入未完成前算分被写锁挡住
+            self.assertTrue(computer.is_alive())
+            release.set()
+            writer.join(timeout=5)
+            computer.join(timeout=5)
+
+        self.assertEqual(order, ["record_start", "record_done", "compute"])
+
+
 if __name__ == "__main__":
     unittest.main()

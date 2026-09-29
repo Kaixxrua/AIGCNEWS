@@ -409,6 +409,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             documents=repositories.documents,
             github_lock=runtime._github_job_lock,
             logo_repository=metrics_refresh.await_args.kwargs["logo_repository"],
+            fast_lane_share=runtime._github_fast_lane_share,
         )
         from backend.app.repositories.postgres_github_logo_repository import PostgresGitHubLogoRepository
 

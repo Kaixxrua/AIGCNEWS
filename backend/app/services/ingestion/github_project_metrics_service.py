@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -24,6 +25,12 @@ from backend.app.repositories.project_write_repository import (
 from backend.app.services.ingestion.source_github import fetch_github_repo_metrics_batch
 
 logger = logging.getLogger(__name__)
+
+# 两小时指标刷新与新仓快车道可能并行（见 scheduler.GitHubFastLaneShare）：
+# 抓取各自进行，写库与算分串行。避免两个批量事务互锁回滚整轮写入，也避免
+# 读到旧快照的整轮算分覆盖快车道刚写入的新指标——算分在锁内读输入、写结果，
+# 后跑的一方总能读到双方合并后的快照（快照 upsert 按 GREATEST 合并）。
+_METRIC_WRITE_LOCK = threading.RLock()
 
 DEFAULT_MIN_STARS = 500
 _FULL_BASELINE_SAMPLES = 3
@@ -251,6 +258,24 @@ def _snapshot_payload(repo: Dict[str, Any], *, metric_date: str, captured_at: st
 
 
 def record_github_metric_outcomes(
+    *,
+    targets: List[Dict[str, Any]],
+    outcomes: List[Any],
+    snapshot_date: str,
+    captured_at: str,
+    db: GitHubProjectIngestionRepository,
+) -> Dict[str, Any]:
+    with _METRIC_WRITE_LOCK:
+        return _record_github_metric_outcomes(
+            targets=targets,
+            outcomes=outcomes,
+            snapshot_date=snapshot_date,
+            captured_at=captured_at,
+            db=db,
+        )
+
+
+def _record_github_metric_outcomes(
     *,
     targets: List[Dict[str, Any]],
     outcomes: List[Any],
@@ -516,6 +541,24 @@ def compute_github_daily_metrics(
     corroborated_repo_ids: 当日在其他渠道（HN/news/dailyhot/X）有曝光的
     repo_id 集合，用于反作弊佐证清零；None 表示跳过佐证（向后兼容）。
     """
+    with _METRIC_WRITE_LOCK:
+        return _compute_github_daily_metrics(
+            metric_date=metric_date,
+            min_stars=min_stars,
+            repo_ids=repo_ids,
+            corroborated_repo_ids=corroborated_repo_ids,
+            db=db,
+        )
+
+
+def _compute_github_daily_metrics(
+    *,
+    metric_date: str | date | None,
+    min_stars: int,
+    repo_ids: List[str] | None,
+    corroborated_repo_ids: set[str] | None,
+    db: GitHubProjectIngestionRepository,
+) -> Dict[str, Any]:
 
     metric_date_str = _date_str(metric_date)
     current_date = date.fromisoformat(metric_date_str)
