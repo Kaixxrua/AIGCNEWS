@@ -165,3 +165,22 @@ export const coerceReportStreamText = (data: unknown): string => {
   }
   return data != null ? JSON.stringify(data) : ''
 }
+
+// 桌面漫画版把简报逐节画成面板：按顶层 h2 分节，每节包进 <section class="report-section">。
+// 只在已消毒的渲染结果上重排顶层节点，不增删内容；没有 h2 时原样返回。
+export const groupReportSections = (html: string): string => {
+  if (!/<h2[\s>]/.test(html)) return html
+  const template = document.createElement('template')
+  template.innerHTML = html
+  const root = template.content
+  let section: HTMLElement | null = null
+  for (const node of Array.from(root.childNodes)) {
+    if (node.nodeName === 'H2') {
+      section = document.createElement('section')
+      section.className = 'report-section'
+      root.insertBefore(section, node)
+    }
+    section?.appendChild(node)
+  }
+  return template.innerHTML
+}

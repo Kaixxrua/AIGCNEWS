@@ -31,7 +31,13 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
 const route = useRoute()
-const editorialLayout = computed(() => route.path === '/' || (route.path === '/projects' && route.query.source !== 'website'))
+// 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
+const COMIC_CONTENT_ROUTES = new Set(['recommended-websites', 'report'])
+const editorialLayout = computed(() => route.path === '/'
+  || (route.path === '/projects' && route.query.source !== 'website')
+  || COMIC_CONTENT_ROUTES.has(String(route.name ?? '')))
+// 内容页（非首页）另挂一个类，页面级漫画样式与首页的一屏排版互不干扰。
+const comicPage = computed(() => COMIC_CONTENT_ROUTES.has(String(route.name ?? '')))
 // 首页桌面版按 1920×1080 排版；更大的屏幕（2K/4K）整体等比放大，而不是把同样的内容摊得更稀。
 // 以宽高中较紧的一边为准，保证放大后仍是一屏不滚动。页内的 100dvh 须除以 --shell-zoom。
 const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -83,7 +89,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout }" :style="shellStyle">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage }" :style="shellStyle">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 

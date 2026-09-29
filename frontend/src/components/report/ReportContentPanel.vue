@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
+import { groupReportSections } from '@/features/report/reportViewModel'
 const { t } = useI18n()
 defineProps<{
   reportContent: string
@@ -36,8 +37,8 @@ const emit = defineEmits<{
 
   <!-- 报告正文 -->
   <div v-if="reportContent" class="report-content p-5">
-    <p class="mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
-    <article class="prose-content prose-report max-w-none" v-html="renderMarkdown(reportContent)" />
+    <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
+    <article class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>
 

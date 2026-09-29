@@ -160,7 +160,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
   <div ref="reportPageRef" class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5">
 
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
-    <div class="stagger-enter glass-card shrink-0 px-4 py-3 space-y-2">
+    <div class="stagger-enter glass-card comic-panel shrink-0 px-4 py-3 space-y-2">
       <ReportControlsPanel
         v-model:selected-type="selectedType"
         v-model:selected-date="selectedDate"

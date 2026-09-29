@@ -62,8 +62,8 @@ onBeforeUnmount(dispose)
   <div class="recommended-websites-page">
     <div class="website-content">
       <header class="website-header">
-        <div><h1>{{ t('recommendedWebsites.title') }}</h1><p>{{ t('recommendedWebsites.subtitle') }}</p></div>
-        <button v-if="auth.isAdmin" ref="addButton" type="button" class="btn-primary" :disabled="saving || deletingId !== null" @click="openEditor(null, $event)">＋ {{ t('recommendedWebsites.add') }}</button>
+        <div><h1 class="comic-title">{{ t('recommendedWebsites.title') }}</h1><p>{{ t('recommendedWebsites.subtitle') }}</p></div>
+        <button v-if="auth.isAdmin" ref="addButton" type="button" class="btn-primary comic-btn comic-btn--ink" :disabled="saving || deletingId !== null" @click="openEditor(null, $event)">＋ {{ t('recommendedWebsites.add') }}</button>
       </header>
       <WebsiteCollectionTabs active="recommended" />
       <RecommendedWebsiteEditor v-if="auth.isAdmin && editorOpen" :website="editing" :busy="saving" :error="editError" @save="saveWebsite" @cancel="closeEditor" />
@@ -83,7 +83,7 @@ onBeforeUnmount(dispose)
       </section>
       <section v-else-if="!filtered.length" class="website-state" role="status"><p>{{ t('recommendedWebsites.noResults') }}</p><button type="button" class="btn-secondary" @click="query = ''; category = ''">{{ t('recommendedWebsites.clearFilters') }}</button></section>
       <ul v-else class="website-directory">
-        <li v-for="website in filtered" :key="website.id" class="website-card">
+        <li v-for="website in filtered" :key="website.id" class="website-card comic-panel">
           <div class="website-card__heading"><span class="website-monogram" aria-hidden="true">{{ website.title.slice(0, 1) }}</span><div><h2><a :href="website.url" target="_blank" rel="noopener noreferrer">{{ website.title }} <span aria-hidden="true">↗</span></a></h2><p>{{ domain(website) }}</p></div></div>
           <p v-if="website.description" class="website-card__reason">{{ website.description }}</p>
           <footer><span v-if="website.category" class="website-category">{{ website.category }}</span><div v-if="auth.isAdmin" class="website-card__actions"><button type="button" :disabled="saving || deletingId !== null" @click="openEditor(website, $event)">{{ t('recommendedWebsites.edit') }}</button><button type="button" :disabled="saving || deletingId !== null" @click="removeWebsite(website)">{{ t(deletingId === website.id ? 'recommendedWebsites.removing' : 'recommendedWebsites.remove') }}</button></div></footer>

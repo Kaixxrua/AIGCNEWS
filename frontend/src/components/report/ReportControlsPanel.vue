@@ -41,13 +41,15 @@ const emit = defineEmits<{
 
 <template>
   <!-- 第一行：标题 + 状态 + 操作按钮 -->
-  <div class="flex flex-wrap items-center justify-between gap-3">
+  <div class="report-controls__head flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-2 min-w-0">
       <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
-      <h1 class="text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
-      <span class="text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
+      <h1 class="report-controls__title comic-title text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
+      <span class="report-controls__meta text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
     </div>
-    <div class="flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
+    <!-- 桌面漫画版把 AI 生成声明画成标题行右侧的对白框（正文里那条随之隐藏），其余宽度不显示 -->
+    <p v-if="reportContent" class="report-ai-bubble">{{ t('report.aiGeneratedNotice') }}</p>
+    <div class="report-controls__actions flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
       <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
         <span class="status-dot bg-brand-green" />
         <span class="text-2xs font-medium text-green-700">{{ t('report.cached') }}</span>
@@ -119,14 +121,14 @@ const emit = defineEmits<{
   </div>
 
   <!-- 第二行：源选择 + 日期选择 -->
-  <div class="flex flex-wrap items-center gap-2" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.1); padding-top: 8px">
+  <div class="report-controls__tabs flex flex-wrap items-center gap-2" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.1); padding-top: 8px">
     <div class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
       <button
         v-for="type in REPORT_TYPES"
         :key="type.key"
-        class="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
+        class="comic-chip flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
         :class="selectedType === type.key
-          ? 'tab-active shadow-sm'
+          ? 'tab-active is-active shadow-sm'
           : 'tab-inactive'"
         :style="selectedType !== type.key ? 'background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.2)' : ''"
         :disabled="isGenerating"
@@ -143,3 +145,7 @@ const emit = defineEmits<{
     </div>
   </div>
 </template>
+
+<style scoped>
+.report-ai-bubble { display: none; }
+</style>

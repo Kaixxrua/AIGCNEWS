@@ -1,0 +1,256 @@
+/* Comic content pages (LayoutView .app-shell--comic-page): the homepage's comic vocabulary (uneven ink rules,
+   hard offset shadows, cyan halftone corners, lime brush titles) applied page by page after the concept images.
+   Desktop only; phones keep their reading layout. Reading comes first: body copy stays upright, regular weight
+   and at least 14px on a calm background; italics, weight and tilt are for titles and tags, halftone stays in
+   corners away from text, and every scroll area can scroll its last lines clear of the footer peel. */
+@media (min-width: 1024px) {
+  #app .app-shell--comic-page {
+    /* The comic palette as the shell resolves it, for pages that re-point --paper/--ink at their own tokens. */
+    --comic-paper: var(--paper);
+    --comic-paper-raised: var(--paper-raised);
+    --comic-ink: var(--ink);
+    --comic-ink-muted: var(--ink-muted);
+    /* How far the peel reaches up into the content (its art is 1100×713, standing 3px under the 74px footer). */
+    --peel-clear: max(0px, calc(var(--peel, 0px) * .648 - 71px));
+  }
+
+  /* The concept draws the content pages' peel smaller than the homepage's (about 400px at 1920 wide), so it
+     tucks under the last lines of a page instead of covering them. */
+  @media (min-width: 1600px) and (min-height: 800px) {
+    #app .app-shell--comic-page {
+      --peel: min(400px, calc((100vw - var(--home-dock-width) - 26px) * .56), calc(100dvh * 2 - 1350px));
+    }
+  }
+
+  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark. */
+  #app .app-shell--comic-page .comic-title {
+    position: relative; isolation: isolate; display: inline-block; overflow: visible; text-overflow: clip;
+    margin: 0 36px 0 0; color: var(--ink); font-family: inherit; font-size: 36px; font-style: italic; font-weight: 950;
+    line-height: 1.15; letter-spacing: 0; white-space: nowrap;
+    -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
+  }
+  #app .app-shell--comic-page .comic-title::before {
+    content: ''; position: absolute; z-index: -1; inset: 68% -4px 2px;
+    background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
+  }
+  #app .app-shell--comic-page .comic-title::after {
+    content: ''; position: absolute; right: -30px; top: -12px; width: 20px; height: 24px; background: var(--acid);
+    clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
+  }
+
+  /* Panel: paper on an uneven ink rule with a hard shadow and a halftone top-right corner. */
+  #app .app-shell--comic-page .comic-panel {
+    position: relative; isolation: isolate;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow); backdrop-filter: none;
+  }
+  #app .app-shell--comic-page .comic-panel::after {
+    content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 190px; height: 110px;
+    border-top-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 72%);
+    opacity: .5;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .comic-panel::after { opacity: .16; }
+
+  /* Tag: a small tilted label with its own ink rule, for section kinds and badges. */
+  #app .app-shell--comic-page .comic-tag {
+    display: inline-block; padding: 1px 9px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-family: inherit; font-size: 12px; font-style: italic; font-weight: 800; line-height: 1.5;
+    transform: rotate(-3deg) skewX(-6deg);
+  }
+
+  /* Chip: a tab or filter; the active one is lime. */
+  #app .app-shell--comic-page .comic-chip {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 15px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 14px; font-weight: 700; line-height: 1.3;
+    transition: transform .12s cubic-bezier(.2,.8,.2,1), box-shadow .12s cubic-bezier(.2,.8,.2,1), background-color .12s linear;
+  }
+  #app .app-shell--comic-page .comic-chip:hover:not(:disabled) { background: var(--acid-soft); transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .comic-chip.is-active { background: var(--acid); color: var(--acid-ink); font-weight: 900; }
+  #app .app-shell--comic-page .comic-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .comic-chip { transition: none; }
+    #app .app-shell--comic-page .comic-chip:hover:not(:disabled) { transform: none; }
+  }
+
+  /* Button: ink-outlined on paper; the primary one is ink with lime lettering. */
+  #app .app-shell--comic-page .comic-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 7px 18px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 15px; font-weight: 800; line-height: 1.2;
+  }
+  #app .app-shell--comic-page .comic-btn:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .comic-btn--ink { background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page .comic-btn--ink:hover:not(:disabled) { background: var(--rule-strong); color: #fff; }
+  #app .app-shell--comic-page .comic-btn--acid { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .comic-btn--acid:hover:not(:disabled) { background: var(--acid-strong); }
+
+  /* ── Report (report-C, tuned for reading): a column of section panels under a comic controls panel. ── */
+  #app .app-shell--comic-page .report-shell {
+    --paper: var(--comic-paper); --paper-raised: var(--comic-paper-raised); --ink: var(--comic-ink);
+    align-items: center; gap: 16px; padding: 14px 16px 0; background: transparent;
+  }
+  #app .app-shell--comic-page .report-shell > * { width: 100%; max-width: 1280px; }
+  #app .app-shell--comic-page .report-shell > .report-reading {
+    max-width: none; padding: 2px 8px calc(var(--peel-clear) + 24px) 2px; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page .report-shell > .report-reading > * { max-width: 1280px; margin-inline: auto; }
+  #app .app-shell--comic-page .report-shell > .comic-panel { padding: 16px 22px 14px; }
+  #app .app-shell--comic-page .report-shell > .comic-panel > * + * { margin-top: 12px; }
+
+  #app .app-shell--comic-page .report-controls__head { position: relative; flex-wrap: nowrap; justify-content: flex-start; gap: 18px; }
+  #app .app-shell--comic-page .report-controls__head > :first-child { flex-shrink: 0; gap: 12px; }
+  #app .app-shell--comic-page .report-controls__head > :first-child > svg { width: 30px; height: 30px; color: var(--ink); stroke-width: 2.2; }
+  #app .app-shell--comic-page .report-controls__meta { color: var(--ink-secondary); font-size: 15px; font-weight: 600; }
+  #app .app-shell--comic-page .report-controls__actions { order: 2; gap: 10px; }
+  #app .app-shell--comic-page .report-controls__actions > div,
+  #app .app-shell--comic-page .report-controls__actions > span,
+  #app .app-shell--comic-page .report-controls__actions > div { border-color: color-mix(in srgb, var(--acid-strong) 70%, var(--rule-strong)) !important; background: var(--acid-soft) !important; }
+  #app .app-shell--comic-page .report-controls__actions > div > span:last-child { color: var(--ink) !important; font-size: 13px; font-weight: 700; }
+  #app .app-shell--comic-page .report-controls__actions > button {
+    min-height: 32px; padding: 4px 12px; border-radius: 6px 8px 5px 9px; font-size: 13px;
+  }
+  #app .app-shell--comic-page .report-controls__actions > button {
+    border: solid var(--rule-strong) !important; border-width: 1.5px 2px 2px 1.5px !important;
+    background: var(--paper-raised) !important; color: var(--ink) !important; box-shadow: 2px 2px 0 var(--comic-shadow); font-weight: 700;
+  }
+  #app .app-shell--comic-page .report-controls__actions > button:hover:not(:disabled) { background: var(--acid-soft) !important; }
+  #app .app-shell--comic-page .report-controls__actions > .btn-primary { background: var(--rule-strong) !important; color: var(--acid) !important; }
+  #app .app-shell--comic-page .report-ai-bubble {
+    display: block; order: 3; position: relative; flex: 0 1 auto; max-width: 400px; margin: -4px 4px 0 auto; padding: 7px 14px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink-secondary);
+    font-size: 13px; line-height: 1.55; transform: rotate(-1.5deg);
+  }
+  #app .app-shell--comic-page .report-ai-bubble::after {
+    content: ''; position: absolute; left: 18px; bottom: -9px; width: 14px; height: 9px; background: var(--rule-strong);
+    clip-path: polygon(0 0,100% 0,15% 100%);
+  }
+  #app .app-shell--comic-page .report-controls__tabs { gap: 10px; padding-top: 12px !important; border-top: 1.5px dashed color-mix(in srgb, var(--rule-strong) 30%, transparent) !important; }
+  #app .app-shell--comic-page .report-controls__tabs > div { gap: 10px; padding-bottom: 4px; }
+  /* The tabs carry inline paper and hairline styles for the other layouts. */
+  #app .app-shell--comic-page .report-controls__tabs .comic-chip {
+    border-color: var(--rule-strong) !important; border-style: solid !important; border-width: 1.5px 2px 2px 1.5px !important;
+    background: var(--paper-raised) !important;
+  }
+  #app .app-shell--comic-page .report-controls__tabs .comic-chip:hover:not(:disabled) { background: var(--acid-soft) !important; }
+  #app .app-shell--comic-page .report-controls__tabs .comic-chip.is-active { background: var(--acid) !important; box-shadow: 2px 2px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .report-controls__tabs .comic-chip svg { width: 16px; height: 16px; }
+
+  #app .app-shell--comic-page .report-reading .report-content { padding: 4px 0 0; }
+  #app .app-shell--comic-page .report-reading .report-ai-notice { display: none; }
+  #app .app-shell--comic-page .prose-report { color: var(--ink); font-size: 15.5px; line-height: 1.8; }
+  #app .app-shell--comic-page .prose-report > h1 {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 14px 4px;
+    color: var(--ink-secondary); font-family: inherit; font-size: 15px; font-weight: 800; line-height: 1.5;
+  }
+  #app .app-shell--comic-page .prose-report > h1 code { font-size: 12px; }
+  #app .app-shell--comic-page .prose-report .report-section {
+    position: relative; isolation: isolate; margin: 0 0 18px; padding: 16px 28px 12px 46px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow);
+  }
+  /* The lime rule down the section's left, a brush stroke that starts with a flick at the title. */
+  #app .app-shell--comic-page .prose-report .report-section::before {
+    content: ''; position: absolute; left: 20px; top: 20px; bottom: 16px; width: 6px; border-radius: 1px 3px 2px 1px;
+    background: var(--acid); transform: skewY(-4deg);
+  }
+  #app .app-shell--comic-page .prose-report .report-section::after {
+    content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 200px; height: 96px;
+    border-top-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 6%, transparent 70%);
+    opacity: .45;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .prose-report .report-section::after { opacity: .14; }
+  #app .app-shell--comic-page .prose-report .report-section > h2 {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 8px; padding: 0; border: 0;
+    color: var(--ink); font-family: inherit; font-size: 25px; font-style: italic; font-weight: 950; line-height: 1.3;
+    letter-spacing: 0; -webkit-text-stroke: .35px currentColor;
+  }
+  #app .app-shell--comic-page .prose-report h1 code,
+  #app .app-shell--comic-page .prose-report h2 code {
+    display: inline-block; margin: 0 2px; padding: 1px 9px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-family: inherit; font-size: 12.5px; font-style: italic; font-weight: 800; line-height: 1.5; -webkit-text-stroke: 0;
+    transform: rotate(-3deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .prose-report .report-section > h3 { margin: 12px 0 4px; color: var(--ink); font-size: 17px; font-weight: 800; }
+  #app .app-shell--comic-page .prose-report :is(p, li, ul, ol, blockquote) { color: var(--ink); font-size: 15.5px; line-height: 1.8; }
+  #app .app-shell--comic-page .prose-report :is(p, ul, ol) { margin: 0 0 8px; }
+  #app .app-shell--comic-page .prose-report :is(ul, ol) { padding-left: 1.5em; }
+  #app .app-shell--comic-page .prose-report li + li { margin-top: 6px; }
+  #app .app-shell--comic-page .prose-report li::marker { color: var(--ink); font-weight: 800; }
+  #app .app-shell--comic-page .prose-report strong { color: var(--ink); font-weight: 800; }
+  #app .app-shell--comic-page .prose-report a { text-decoration-color: var(--acid-strong); text-decoration-thickness: 3px; text-underline-offset: 3px; }
+  #app .app-shell--comic-page .prose-report a:hover { background: var(--acid-soft); }
+
+  /* ── Recommended websites (websites-C): logo tiles and tags in four accent colours, halftone at the foot. ── */
+  #app .app-shell--comic-page .recommended-websites-page { padding: 18px 28px calc(var(--peel-clear) + 28px); background: transparent; }
+  #app .app-shell--comic-page .website-content { gap: 18px; }
+  #app .app-shell--comic-page .website-header { align-items: flex-end; }
+  #app .app-shell--comic-page .website-header h1.comic-title { padding-left: 0; border-left: 0; font-size: 44px; }
+  #app .app-shell--comic-page .website-header p { margin-top: 6px; color: var(--ink); font-size: 15px; font-weight: 700; }
+  #app .app-shell--comic-page .website-tabs { gap: 16px; padding: 2px 0 6px; background: transparent; }
+  #app .app-shell--comic-page .website-tabs a {
+    min-height: 42px; padding: 6px 26px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 17px; font-weight: 900;
+    transform: rotate(-1.5deg) skewX(-4deg);
+  }
+  #app .app-shell--comic-page .website-tabs a[aria-current] { border-color: var(--rule-strong); background: var(--acid); color: var(--acid-ink); box-shadow: 3px 3px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .website-tabs a:not([aria-current]):hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page .website-toolbar { gap: 20px; }
+  #app .app-shell--comic-page .website-toolbar .input {
+    min-height: 46px; padding: 8px 16px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
+    background-color: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 16px; font-weight: 600;
+  }
+  #app .app-shell--comic-page .website-toolbar input.input {
+    flex: 2 1 320px; padding-left: 46px;
+    background: var(--paper-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23142345' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E") no-repeat 15px 50% / 20px 20px;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .website-toolbar input.input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d6d9de' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E");
+  }
+  #app .app-shell--comic-page .website-toolbar select.input { flex: 1 1 240px; max-width: 460px; font-weight: 800; }
+  #app .app-shell--comic-page .website-toolbar > span { margin-left: auto; color: var(--ink-secondary); font-size: 15px; font-weight: 700; }
+  #app .app-shell--comic-page .website-directory { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 26px; padding: 4px 6px 0 0; }
+  #app .app-shell--comic-page .website-card { --card-accent: var(--acid); display: flex; flex-direction: column; padding: 18px 20px; }
+  #app .app-shell--comic-page .website-card:nth-child(4n+2) { --card-accent: var(--metric-new); }
+  #app .app-shell--comic-page .website-card:nth-child(4n+3) { --card-accent: var(--metric-visitors); }
+  #app .app-shell--comic-page .website-card:nth-child(4n+4) { --card-accent: #ffb070; }
+  #app .app-shell--comic-page .website-card::after {
+    top: auto; bottom: 0; width: 120px; height: 100px; border-top-right-radius: 0; border-bottom-right-radius: inherit;
+    background: radial-gradient(circle, var(--card-accent) 1.7px, transparent 2.2px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 12%, transparent 70%); opacity: .9;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .website-card::after { opacity: .3; }
+  #app .app-shell--comic-page .website-card__heading { gap: 16px; }
+  #app .app-shell--comic-page .website-monogram {
+    flex: 0 0 64px; height: 64px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 7px 5px 6px;
+    background: var(--card-accent); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 36px; font-weight: 950; line-height: 1;
+  }
+  /* A scraped logo sits on white inside the tile, as its site designed it. */
+  #app .app-shell--comic-page .website-monogram:has(img) { padding: 7px; background: #fff; }
+  #app .app-shell--comic-page .website-monogram img { border-radius: 3px; }
+  #app .app-shell--comic-page .website-card h2 { font-size: 22px; font-style: italic; font-weight: 900; line-height: 1.25; }
+  #app .app-shell--comic-page .website-card h2 span { color: var(--ink); font-size: 17px; font-style: normal; }
+  #app .app-shell--comic-page .website-card__heading p { margin-top: 5px; color: var(--ink-muted); font-size: 14.5px; }
+  #app .app-shell--comic-page .website-card__reason { flex: 1; margin-top: 14px; color: var(--ink); font-size: 15px; line-height: 1.7; }
+  #app .app-shell--comic-page .website-card footer { margin-top: 18px; }
+  #app .app-shell--comic-page .website-category {
+    padding: 3px 14px; border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px; border-radius: 3px 5px 3px 4px;
+    background: var(--card-accent); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 14px; font-weight: 900;
+    transform: rotate(-4deg);
+  }
+  #app .app-shell--comic-page .website-state {
+    padding: 36px 32px; border: 2.5px dashed var(--rule-strong); border-radius: 6px 8px 5px 9px; background: var(--paper-raised);
+  }
+  #app .app-shell--comic-page .website-state h2 { font-size: 22px; font-style: italic; font-weight: 900; }
+  #app .app-shell--comic-page .website-state p { color: var(--ink); font-size: 15px; line-height: 1.7; }
+}
