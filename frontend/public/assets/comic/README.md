@@ -101,3 +101,13 @@ The report page (`/report`, "report-C" concept) uses the same generator. The sta
 - `rep-bubble.webp`: the AI notice, a speech bubble whose left side leans out with a tail off its lower left, the pen pressed harder along the left and the foot.
 
 Together they are about 100 KB. The `-night` files swap the fills for the dark theme's paper (the open tab for its dimmer lime), the ink for pale grey and the blocks for black, and dim the dots.
+
+The recommended websites page (`/websites`, "websites-C" concept) uses the same generator. The site names are set in Kalam Bold (`/fonts/kalam-700-latin-subset.woff2`, SIL OFL 1.1, licence beside it), standing in for the concept's hand lettering; names outside Latin fall back to the page font. The magnifier and the chevron are small inline SVGs.
+
+- `web-card-lime.webp`, `web-card-cyan.webp`, `web-card-purple.webp`, `web-card-orange.webp`: a site card, a 2.3px ink line with a faint grey line just inside the top and left, pressed into a solid ink block to the lower right, and the accent's halftone filling a triangle off the lower-right corner. The cards take the four accents in the concept's order, repeating every eight.
+- `web-tile.webp`: the monogram tile, a 2.2px ink line with a soft grey step to its lower right. It has no fill: the tile's colour is the element's own background, the card's accent, or white behind a site's logo.
+- `web-tag-lime.webp`, `web-tag-cyan.webp`, `web-tag-purple.webp`, `web-tag-orange.webp`: the category slip, drawn level and turned in CSS, its right end standing taller, on a solid ink block.
+- `web-tab.webp`, `web-tab-on.webp`: the collection tabs, parallelograms leaning left on an ink block, white with a few grey specks off the right end, and the open one lime.
+- `web-search.webp`, `web-select.webp`: the search box and the category select, a 2.4px line on an ink block, with a pale yellow corner at the top left (specked on the search box, pen-hatched on the select), faint specks at the lower left and a grey screen at the lower right. Neither has a fill: form controls can't carry a pseudo-element, so the frame is the control's own `border-image` and its background paints the paper and the icon.
+
+Together they are about 215 KB. The `-night` files swap the fills for the dark theme's paper (the open tab and the slips for dimmer copies of their colours), the ink for pale grey and the blocks for black, and soften the dots.

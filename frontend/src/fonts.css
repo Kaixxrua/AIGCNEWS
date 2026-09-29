@@ -98,3 +98,15 @@
   src: url('/fonts/zcool-qingke-huangyou-creation-subset.woff2') format('woff2');
   unicode-range: U+521B, U+66F4, U+7531, U+81EA, U+8BA9, U+9020, U+FF01;
 }
+
+/* Handwritten site names on the recommended-websites cards (websites-C): Kalam Bold, SIL OFL 1.1 (licence beside
+   the file), Latin only; anything else falls through to the page font. Regenerate with
+     pyftsubset kalam-latin-700-normal.woff2 --unicodes=U+0020-007E --flavor=woff2 --layout-features='*' --output-file=kalam-700-latin-subset.woff2 */
+@font-face {
+  font-family: 'AIGC Comic Hand';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/kalam-700-latin-subset.woff2') format('woff2');
+  unicode-range: U+0020-007E;
+}

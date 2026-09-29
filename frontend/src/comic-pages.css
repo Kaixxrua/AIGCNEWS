@@ -93,6 +93,8 @@
     opacity: .5;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .comic-panel::after { opacity: .16; }
+  /* panels drawn from generated frames carry their own night copy: keep those at full strength */
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.report-shell > .comic-panel, .website-card)::after { opacity: 1; }
 
   /* Tag: a small tilted label with its own ink rule, for section kinds and badges. */
   #app .app-shell--comic-page .comic-tag {
@@ -331,12 +333,70 @@
     }
   }
 
-  /* ── Recommended websites (websites-C): logo tiles and tags in four accent colours, halftone at the foot. ── */
-  #app .app-shell--comic-page .recommended-websites-page { padding: 12px 24px calc(var(--peel-clear) + 28px) 30px; background: transparent; }
+  /* ── Recommended websites (websites-C): every drawn piece is a generated 9-slice image (public/assets/comic/web-*.webp).
+     Cards, tabs and tags hang theirs on ::after round an element that paints nothing; the search box, the select and
+     the logo tile can't carry pseudo-elements (or clip them), so they take the image as their own border-image,
+     pushed out over the shadow with border-image-outset, and paint their paper (or the tile's accent) themselves.
+     The cards run through four accents in the concept's order: lime, cyan, purple, orange, purple, orange, lime, cyan. ── */
+  #app .app-shell--comic-page .recommended-websites-page {
+    --web-ink: #040c24;
+    --web-muted: #5c718f;
+    --web-copy: #253c5c;
+    --web-field: #fdfdfa;
+    --web-card-lime: url('/assets/comic/web-card-lime.webp');
+    --web-card-cyan: url('/assets/comic/web-card-cyan.webp');
+    --web-card-purple: url('/assets/comic/web-card-purple.webp');
+    --web-card-orange: url('/assets/comic/web-card-orange.webp');
+    --web-tag-lime: url('/assets/comic/web-tag-lime.webp');
+    --web-tag-cyan: url('/assets/comic/web-tag-cyan.webp');
+    --web-tag-purple: url('/assets/comic/web-tag-purple.webp');
+    --web-tag-orange: url('/assets/comic/web-tag-orange.webp');
+    --web-tile-lime: #cbf91e;
+    --web-tile-cyan: #5ce0f7;
+    --web-tile-purple: #c6a0fd;
+    --web-tile-orange: #fbb070;
+    --web-tile: url('/assets/comic/web-tile.webp');
+    --web-tab: url('/assets/comic/web-tab.webp');
+    --web-tab-on: url('/assets/comic/web-tab-on.webp');
+    --web-search: url('/assets/comic/web-search.webp');
+    --web-select: url('/assets/comic/web-select.webp');
+    --web-magnifier: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23050e28' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10.2' cy='10.2' r='7'/%3E%3Cpath d='m15.5 15.5 5.6 5.6'/%3E%3C/svg%3E");
+    --web-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 10' fill='none' stroke='%2306163c' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 2 6 6 6-6'/%3E%3C/svg%3E");
+    padding: 12px 24px calc(var(--peel-clear) + 28px) 29px; background: transparent;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .recommended-websites-page {
+    --web-ink: var(--ink);
+    --web-muted: var(--ink-secondary);
+    --web-copy: var(--ink);
+    --web-field: #292a2d;
+    --web-card-lime: url('/assets/comic/web-card-lime-night.webp');
+    --web-card-cyan: url('/assets/comic/web-card-cyan-night.webp');
+    --web-card-purple: url('/assets/comic/web-card-purple-night.webp');
+    --web-card-orange: url('/assets/comic/web-card-orange-night.webp');
+    --web-tag-lime: url('/assets/comic/web-tag-lime-night.webp');
+    --web-tag-cyan: url('/assets/comic/web-tag-cyan-night.webp');
+    --web-tag-purple: url('/assets/comic/web-tag-purple-night.webp');
+    --web-tag-orange: url('/assets/comic/web-tag-orange-night.webp');
+    --web-tile-lime: #b4d956;
+    --web-tile-cyan: #4fb7c9;
+    --web-tile-purple: #a58bd6;
+    --web-tile-orange: #d9975e;
+    --web-tile: url('/assets/comic/web-tile-night.webp');
+    --web-tab: url('/assets/comic/web-tab-night.webp');
+    --web-tab-on: url('/assets/comic/web-tab-on-night.webp');
+    --web-search: url('/assets/comic/web-search-night.webp');
+    --web-select: url('/assets/comic/web-select-night.webp');
+    --web-magnifier: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d6d9de' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10.2' cy='10.2' r='7'/%3E%3Cpath d='m15.5 15.5 5.6 5.6'/%3E%3C/svg%3E");
+    --web-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 10' fill='none' stroke='%23d6d9de' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m2 2 6 6 6-6'/%3E%3C/svg%3E");
+  }
   #app .app-shell--comic-page .website-content { gap: 16px; }
-  #app .app-shell--comic-page .website-header { align-items: flex-end; }
+  #app .app-shell--comic-page .recommended-websites-page .website-content { max-width: none; gap: 0; }
+  #app .app-shell--comic-page .website-header { align-items: flex-end; margin: 11px 0 0 5px; }
   #app .app-shell--comic-page .website-header h1.comic-title { padding-left: 0; border-left: 0; font-size: 52px; transform: rotate(-4deg); transform-origin: left bottom; }
-  #app .app-shell--comic-page .website-header p { margin-top: 0; color: var(--ink); font-size: 15.5px; font-weight: 800; transform: rotate(-1.5deg); transform-origin: left; }
+  #app .app-shell--comic-page .website-header p { margin-top: -5px; color: var(--ink); font-size: 16.5px; font-weight: 800; letter-spacing: .4px; transform: rotate(-1.8deg); transform-origin: left; }
+  #app .app-shell--comic-page .website-header h1.comic-title::after { right: -46px; top: -2px; width: 30px; height: 36px; }
+
+  /* The collection tabs are shared with the projects page, which keeps these until its own pass. */
   #app .app-shell--comic-page .website-tabs { gap: 12px; padding: 0 0 4px; background: transparent; }
   #app .app-shell--comic-page .website-tabs a {
     min-height: 44px; padding: 6px 34px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
@@ -345,48 +405,97 @@
   }
   #app .app-shell--comic-page .website-tabs a[aria-current] { border-color: var(--rule-strong); background: var(--acid); color: var(--acid-ink); box-shadow: 3px 3px 0 var(--comic-shadow); }
   #app .app-shell--comic-page .website-tabs a:not([aria-current]):hover { background: var(--acid-soft); }
-  #app .app-shell--comic-page .website-toolbar { gap: 20px; }
+
+  /* Here they are drawn: parallelograms leaning left and turned 1.9deg, lime when open. */
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs { gap: 6.5px; margin: 9px 0 0; padding: 0; }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs a {
+    position: relative; isolation: isolate; height: 40px; min-height: 0; padding: 0 30.5px; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; color: var(--web-ink); font-size: 21px; font-weight: 900; line-height: 1;
+    transform: rotate(-1.9deg); transition: transform .12s cubic-bezier(.2, .8, .2, 1);
+  }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs a::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -7px -7px -2px;
+    border-style: solid; border-color: transparent; border-width: 11px 31px 36px 14px;
+    border-image: var(--web-tab) 33 93 108 42 fill / 11px 31px 36px 14px stretch;
+  }
+  /* the open tab has a little more room round its word, as drawn */
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs a[aria-current] { padding: 0 38px; color: #0a1128; }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs a[aria-current]::after {
+    border-width: 11px 19px 16px 14px;
+    border-image: var(--web-tab-on) 33 57 48 42 fill / 11px 19px 16px 14px stretch;
+  }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs a:not([aria-current]):hover { background: transparent; transform: rotate(-1.9deg) translate(-1px, -1px); }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .recommended-websites-page .website-tabs a { transition: none; }
+    #app .app-shell--comic-page .recommended-websites-page .website-tabs a:not([aria-current]):hover { transform: rotate(-1.9deg); }
+  }
+
+  /* search and category: 48px boxes on a solid ink block, a pale yellow corner top left */
+  #app .app-shell--comic-page .website-toolbar { flex-wrap: nowrap; gap: 21.5px; margin-top: 17.2px; }
   #app .app-shell--comic-page .website-toolbar .input {
-    min-height: 48px; padding: 8px 16px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 3px 6px 4px 5px;
-    background-color: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink); font-size: 16px; font-weight: 600;
+    height: 48px; min-height: 0; border: 0 solid transparent; border-radius: 2px; box-shadow: none;
+    background-color: var(--web-field); color: var(--web-ink);
+    border-image-outset: 2px 8px 8px 2px; border-image-repeat: stretch;
   }
   #app .app-shell--comic-page .website-toolbar input.input {
-    flex: 0 1 870px; padding-left: 50px; font-size: 17px;
-    background: var(--paper-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23142345' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E") no-repeat 15px 50% / 20px 20px;
+    flex: 0 1 868px; min-width: 0; padding: 0 16px 0 53px; font-size: 19.5px; font-weight: 600;
+    background: var(--web-field) var(--web-magnifier) no-repeat 14.8px 50% / 27px 27px;
+    border-image-source: var(--web-search); border-image-slice: 90 168 78 114 fill; border-image-width: 30px 56px 26px 38px;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .website-toolbar input.input {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d6d9de' stroke-width='2.6' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-4-4'/%3E%3C/svg%3E");
+  #app .app-shell--comic-page .website-toolbar input.input::placeholder { color: #1a3357; opacity: 1; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .website-toolbar input.input::placeholder { color: var(--ink-secondary); }
+  #app .app-shell--comic-page .website-toolbar select.input {
+    flex: 0 1 437.5px; min-width: 0; max-width: 437.5px; padding: 0 44px 0 17.5px; appearance: none; font-size: 20.5px; font-weight: 900;
+    background: var(--web-field) var(--web-chevron) no-repeat right 16.5px top 50% / 15px 10px;
+    border-image-source: var(--web-select); border-image-slice: 87 168 78 114 fill; border-image-width: 29px 56px 26px 38px;
   }
-  #app .app-shell--comic-page .website-toolbar select.input { flex: 0 1 438px; max-width: 438px; font-size: 18px; font-weight: 900; }
-  #app .app-shell--comic-page .website-toolbar > span { margin-left: auto; color: var(--ink-secondary); font-size: 16px; font-weight: 600; }
-  #app .app-shell--comic-page .website-directory { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 20px 25px; padding: 10px 4px 0 0; }
-  #app .app-shell--comic-page .website-card { --card-accent: var(--acid); display: flex; flex-direction: column; min-height: 240px; padding: 16px 18px 16px; }
-  #app .app-shell--comic-page .website-card:nth-child(4n+2) { --card-accent: var(--metric-new); }
-  #app .app-shell--comic-page .website-card:nth-child(4n+3) { --card-accent: var(--metric-visitors); }
-  #app .app-shell--comic-page .website-card:nth-child(4n+4) { --card-accent: #ffb070; }
+  #app .app-shell--comic-page .website-toolbar :is(input, select).input:focus-visible { outline: 2px solid var(--web-ink); outline-offset: 3px; }
+  #app .app-shell--comic-page .website-toolbar > span { margin-left: auto; color: #42597c; font-size: 16.5px; font-weight: 500; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .website-toolbar > span { color: var(--ink-secondary); }
+
+  /* the cards: four across, 23px apart; the frame's ink block and halftone are in the image */
+  #app .app-shell--comic-page .website-directory { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 20px 23.3px; margin-top: 28.7px; padding: 0; }
+  #app .app-shell--comic-page .website-card {
+    --web-card: var(--web-card-lime); --web-tag: var(--web-tag-lime); --web-accent: var(--web-tile-lime);
+    display: flex; flex-direction: column; min-height: 238px; padding: 18px 20px 19px 19px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page .website-card:is(:nth-child(8n+2), :nth-child(8n+8)) { --web-card: var(--web-card-cyan); --web-tag: var(--web-tag-cyan); --web-accent: var(--web-tile-cyan); }
+  #app .app-shell--comic-page .website-card:is(:nth-child(8n+3), :nth-child(8n+5)) { --web-card: var(--web-card-purple); --web-tag: var(--web-tag-purple); --web-accent: var(--web-tile-purple); }
+  #app .app-shell--comic-page .website-card:is(:nth-child(8n+4), :nth-child(8n+6)) { --web-card: var(--web-card-orange); --web-tag: var(--web-tag-orange); --web-accent: var(--web-tile-orange); }
   #app .app-shell--comic-page .website-card::after {
-    top: auto; bottom: 0; width: 120px; height: 100px; border-top-right-radius: 0; border-bottom-right-radius: inherit;
-    background: radial-gradient(circle, var(--card-accent) 1.7px, transparent 2.2px) 0 0 / 7px 7px;
-    mask-image: radial-gradient(ellipse 100% 100% at 100% 100%, #000 12%, transparent 70%); opacity: .9;
+    content: ''; position: absolute; z-index: -1; inset: -2px -8px -10px -2px; width: auto; height: auto;
+    border-style: solid; border-color: transparent; border-width: 10px 110px 110px 8px; border-radius: 0;
+    border-image: var(--web-card) 30 330 330 24 fill / 10px 110px 110px 8px stretch;
+    background: none; mask-image: none; opacity: 1;
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .website-card::after { opacity: .3; }
-  #app .app-shell--comic-page .website-card__heading { gap: 18px; }
+  #app .app-shell--comic-page .website-card__heading { gap: 19px; }
+  #app .app-shell--comic-page .website-card__heading > div { position: relative; top: 6px; }
   #app .app-shell--comic-page .website-monogram {
-    flex: 0 0 70px; height: 70px; border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 4px 7px 5px 6px;
-    background: var(--card-accent); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 42px; font-weight: 950; line-height: 1;
+    flex: 0 0 69px; height: 70px; overflow: visible; border: 0 solid transparent; border-radius: 5px;
+    background: var(--web-accent); box-shadow: none; color: #0a1128; font-size: 50px; font-weight: 900; line-height: 1;
+    border-image: var(--web-tile) 30 36 39 30 / 10px 12px 13px 10px / 2px 4px 5px 2px stretch;
   }
   /* A scraped logo sits on white inside the tile, as its site designed it. */
   #app .app-shell--comic-page .website-monogram:has(img) { padding: 7px; background: #fff; }
   #app .app-shell--comic-page .website-monogram img { border-radius: 3px; }
-  #app .app-shell--comic-page .website-card h2 { margin-top: 6px; font-size: 25px; font-style: italic; font-weight: 800; line-height: 1.25; }
-  #app .app-shell--comic-page .website-card h2 span { color: var(--ink); font-size: 18px; font-style: normal; }
-  #app .app-shell--comic-page .website-card__heading p { margin-top: 6px; color: var(--ink-muted); font-size: 16px; }
-  #app .app-shell--comic-page .website-card__reason { flex: 1; margin-top: 18px; color: var(--ink); font-size: 16px; line-height: 1.7; }
+  #app .app-shell--comic-page .website-card h2 {
+    margin-top: 0; color: var(--web-ink); font-family: 'AIGC Comic Hand', Inter, ui-sans-serif, system-ui, sans-serif; font-size: 24px; font-style: normal; font-weight: 700; line-height: 1.25;
+  }
+  #app .app-shell--comic-page .website-card h2 span { color: var(--web-ink); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 22px; font-weight: 400; }
+  #app .app-shell--comic-page .website-card__heading p { margin-top: 2px; color: var(--web-muted); font-size: 16px; }
+  #app .app-shell--comic-page .website-card__reason { flex: 1; margin: 18px 0 0 2px; color: var(--web-copy); font-size: 17px; line-height: 27px; }
   #app .app-shell--comic-page .website-card footer { margin-top: 14px; }
+  /* the category: a slip turned 6.1deg on its own ink block */
   #app .app-shell--comic-page .website-category {
-    padding: 5px 16px; border: solid var(--rule-strong); border-width: 1.5px 2px 2.5px 1.5px; border-radius: 3px 5px 3px 4px;
-    background: var(--card-accent); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--acid-ink); font-size: 16px; font-weight: 900;
-    transform: rotate(-6deg);
+    position: relative; top: 3px; isolation: isolate; display: inline-flex; align-items: center; height: 39px; margin-left: .4px; padding: 0 18px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #0a1128; font-size: 17px; font-weight: 900;
+    transform: rotate(-6.1deg);
+  }
+  #app .app-shell--comic-page .website-category::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -7px -7px -2px;
+    border-style: solid; border-color: transparent; border-width: 11px 17px 16px 12px;
+    border-image: var(--web-tag) 33 51 48 36 fill / 11px 17px 16px 12px stretch;
   }
   #app .app-shell--comic-page .website-state {
     padding: 36px 32px; border: 2.5px dashed var(--rule-strong); border-radius: 6px 8px 5px 9px; background: var(--paper-raised);
