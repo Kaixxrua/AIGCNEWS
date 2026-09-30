@@ -88,7 +88,7 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 
 生产 Go 服务器注册两个匿名可读工具；它们沿用既有 HTTP 鉴权、限流与计数入口。没有新增写操作。普通工程搜索工具定义和调用行为保持原状。
 
-- `search_ui_templates({q, category?, framework?, language?, limit?})`：支持中英文混合关键词和长自然语言需求；精确匹配为空时自动按最强命中词降级，显式提供 `category` 时还可降级到该分类。返回的 `search_mode` 为 `exact`、`relaxed_terms` 或 `category_fallback`。`language` 是返回语言（`zh` / `en`），`framework` 是 React / Vue / Nuxt。返回来源、许可和可打开的预览链接。
+- `search_ui_templates({q, category?, framework?, language?, limit?})`：支持中英文混合关键词和长自然语言需求；精确匹配为空时自动按最强命中词降级，显式提供 `category` 时还可降级到该分类。返回的 `search_mode` 为 `exact`、`relaxed_terms`、`category_fallback` 或 `semantic`（仅在关键词两轮都为空、结果全部来自语义通道时出现）。`language` 是返回语言（`zh` / `en`），`framework` 是 React / Vue / Nuxt。返回来源、许可和可打开的预览链接。
 - `get_ui_template({id, language?, include_source?, file?})`：返回原版源码、依赖、资源、许可全文与接入提示。较大的条目按完整文件拆分，`omitted_files` 指出剩余文件；逐个用 `file` 精确文件名取回。不会给出被全局截断的半段代码。
 
 示例：
@@ -100,7 +100,7 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 
 配置了 UI 工具的应用在 initialize instructions 中增加强制路由指引：只要用户要求新建或大幅重设面向用户的前端，即使没有提到模板、素材库、搜索或 MCP，也要在写实现代码前先调用 `search_ui_templates`，命中后再用 `get_ui_template` 取原源码。局部文案、小幅 CSS 调整和定位明确的 Bug 修复不触发。客户端是否主动调用仍取决于客户端指令与工具可用性，服务端不能强制客户端。
 
-目前检索是共享双语词表、关键词匹配和权重排序，没有调用翻译模型或声称提供向量语义搜索。前端和 Go 使用同一组中英文查询契约测试。
+关键词检索是共享双语词表、关键词匹配和权重排序，前端和 Go 使用同一组中英文查询契约测试。MCP 的 `search_ui_templates` 与 `search_ui_icons` 另有可选语义通道（`UI_SEMANTIC_SEARCH_ENABLED`，默认关闭）：mcp-go 启动后在后台为模板（名称、描述、分类、风格、别名）和图标（可读名、别名、分类）计算 embedding，只补写 Milvus 集合 `aigc_ui_catalog_vectors_v1` 里缺少的（条目, 文本指纹）行；检索时按当前目录复核指纹、套用同样的分类/框架/图标集/风格过滤，再与关键词结果做等权 RRF 融合。中文描述因此能召回只有英文元数据的图标。集合缺失、同步未完成、embedding 或 Milvus 出错时一律只返回关键词结果，响应字段不变。网站前端检索不受影响。
 
 ## 预览与复制
 

@@ -42,6 +42,7 @@ import (
 	"aigcnews/mcp-go/internal/probes"
 	"aigcnews/mcp-go/internal/projectsearch"
 	"aigcnews/mcp-go/internal/ratelimit"
+	"aigcnews/mcp-go/internal/uisemantic"
 	"aigcnews/mcp-go/internal/version"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -50,6 +51,10 @@ import (
 // shutdownGrace 进程退出宽限。Python 侧由 uvicorn 默认值兜底；
 // Go 侧显式给出，覆盖在途请求排水。
 const shutdownGrace = 10 * time.Second
+
+// uiSemanticSyncTimeoutSeconds 是后台批量 embedding 单次请求的 HTTP 超时；
+// 查询路径仍用 UI_SEMANTIC_TIMEOUT_SECONDS 的短预算。
+const uiSemanticSyncTimeoutSeconds = 30.0
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
@@ -92,12 +97,54 @@ func run() int {
 	categories := mcpapp.NewProjectCategoriesService(mcpapp.StaticProjectCategoriesRepository{})
 	registry["get_project_categories"] = categories.Get
 	publicBaseURL := strings.TrimRight(cfg.PublicBaseURL, "/")
-	uiHandlers, err := mcpapp.NewUITemplateHandlers(publicBaseURL)
+	uiCatalog, uiIcons, err := mcpapp.LoadUICatalogs()
 	if err != nil {
 		slog.Error("[Startup] UI catalog validation failed", "err", err)
 		return 1
 	}
-	for name, handler := range uiHandlers {
+	var uiSemantic mcpapp.UISemanticSearcher
+	if cfg.UISemantic.Enabled {
+		// UI 语义通道：mcp-go 是该集合的唯一属主。启动后台只为缺少的
+		// （条目, 文本指纹）行计算向量，同步完成前或任何失败时单次请求回落
+		// 纯关键词，不阻塞启动。
+		uiVectors, uiErr := uisemantic.NewMilvusStore(uisemantic.MilvusConfig{
+			Host:           cfg.ProjectSearch.MilvusHost,
+			Port:           cfg.ProjectSearch.MilvusPort,
+			User:           cfg.ProjectSearch.MilvusUser,
+			Password:       cfg.ProjectSearch.MilvusPassword,
+			DBName:         cfg.ProjectSearch.MilvusDBName,
+			CollectionName: cfg.UISemantic.CollectionName,
+			Dimension:      cfg.ProjectSearch.MilvusDimension,
+			MetricType:     cfg.ProjectSearch.MilvusMetricType,
+		})
+		if uiErr != nil {
+			slog.Error("[Startup] UI 语义通道装配失败", "err", uiErr)
+			return 1
+		}
+		defer func() { _ = uiVectors.Close() }()
+		uiDocuments := append(uisemantic.TemplateDocuments(uiCatalog.Items()), uisemantic.IconDocuments(uiIcons.Icons())...)
+		uiSemantic = uisemantic.NewRetriever(newEmbeddingClient(cfg.ProjectSearch, cfg.UISemantic.TimeoutSeconds), uiVectors, uisemantic.Config{
+			TopK:           cfg.UISemantic.TopK,
+			MinScore:       cfg.UISemantic.MinScore,
+			TimeoutSeconds: cfg.UISemantic.TimeoutSeconds,
+		}, uiDocuments)
+		go func() {
+			started := time.Now()
+			report, syncErr := uisemantic.Sync(ctx, uiDocuments, newEmbeddingClient(cfg.ProjectSearch, uiSemanticSyncTimeoutSeconds), uiVectors, uisemantic.SyncConfig{
+				Dimension: cfg.ProjectSearch.MilvusDimension,
+			})
+			switch {
+			case syncErr == nil:
+				slog.Info("[Startup] UI 语义向量同步完成", "total", report.Total, "existing", report.Existing, "embedded", report.Embedded, "elapsed", time.Since(started).Round(time.Second))
+			case ctx.Err() != nil:
+				slog.Info("[Shutdown] UI 语义向量同步随退出中止", "embedded", report.Embedded)
+			default:
+				slog.Error("[Startup] UI 语义向量同步失败（检索回落关键词，下次启动续传）", "err", syncErr, "embedded", report.Embedded)
+			}
+		}()
+		slog.Info("[Startup] UI 检索已启用关键词 + 语义混合通道", "collection", cfg.UISemantic.CollectionName, "documents", len(uiDocuments))
+	}
+	for name, handler := range mcpapp.NewUICatalogHandlers(uiCatalog, uiIcons, publicBaseURL, uiSemantic) {
 		registry[name] = handler
 	}
 	documents := postgres.NewDocumentRepository(pool, cfg.SchedulerTimezone)
@@ -286,7 +333,7 @@ func run() int {
 	return 0
 }
 
-// newEmbeddingClient 按 EMBEDDING_* 配置构造查询向量客户端；项目与文档两条
+// newEmbeddingClient 按 EMBEDDING_* 配置构造向量客户端；项目、文档与 UI
 // 语义通道共用同一套 provider/模型，仅 HTTP 超时各按自身预算。
 func newEmbeddingClient(search config.ProjectSearch, timeoutSeconds float64) *projectsearch.OpenAIEmbeddingClient {
 	return projectsearch.NewOpenAIEmbeddingClient(projectsearch.EmbeddingConfig{

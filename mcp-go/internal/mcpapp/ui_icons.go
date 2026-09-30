@@ -1,17 +1,53 @@
 package mcpapp
 
 import (
+	"log/slog"
 	"math"
 	"strings"
 
 	"aigcnews/mcp-go/internal/jsonx"
 	"aigcnews/mcp-go/internal/uicatalog"
+	"aigcnews/mcp-go/internal/uisemantic"
 )
 
 // uiIconService serves the reviewed, pinned and license-audited icon sets.
 type uiIconService struct {
-	catalog *uicatalog.IconCatalog
-	baseURL string
+	catalog  *uicatalog.IconCatalog
+	baseURL  string
+	semantic UISemanticSearcher
+}
+
+// withSemantic fuses the lexical icons with the semantic lane (equal-weight
+// RRF), so Chinese or descriptive queries reach English-only icon metadata.
+func (s *uiIconService) withSemantic(q, provider, style, category string, lexical []uicatalog.Icon) []uicatalog.Icon {
+	if s.semantic == nil || strings.TrimSpace(q) == "" {
+		return lexical
+	}
+	ids, err := s.semantic.SearchIDs(q, uisemantic.KindIcon)
+	if err != nil {
+		slog.Warn("search_ui_icons semantic lane failed; lexical only", "err", err)
+		return lexical
+	}
+	semantic := s.catalog.Lookup(ids, provider, style, category)
+	if len(semantic) == 0 {
+		return lexical
+	}
+	byID := map[string]uicatalog.Icon{}
+	lexicalIDs := make([]string, 0, len(lexical))
+	for _, icon := range lexical {
+		byID[icon.ID] = icon
+		lexicalIDs = append(lexicalIDs, icon.ID)
+	}
+	semanticIDs := make([]string, 0, len(semantic))
+	for _, icon := range semantic {
+		byID[icon.ID] = icon
+		semanticIDs = append(semanticIDs, icon.ID)
+	}
+	fused := make([]uicatalog.Icon, 0, len(byID))
+	for _, id := range uisemantic.Fuse(lexicalIDs, semanticIDs) {
+		fused = append(fused, byID[id])
+	}
+	return fused
 }
 
 func uiIconArguments(args map[string]any, allowed ...string) error {
@@ -116,7 +152,7 @@ func (s *uiIconService) search(args map[string]any) (any, error) {
 		}
 		limit = int(value)
 	}
-	matches := s.catalog.SearchIcons(q, setFilter, style, category)
+	matches := s.withSemantic(q, setFilter, style, category, s.catalog.SearchIcons(q, setFilter, style, category))
 	items := []any{}
 	for _, icon := range matches[:min(limit, len(matches))] {
 		items = append(items, s.summary(icon, language))

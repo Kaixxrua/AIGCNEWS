@@ -1,12 +1,14 @@
 package projectsearch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +175,62 @@ func TestOpenAIEmbeddingClientSiliconFlowFallbackKeyAndWire(t *testing.T) {
 	got, err := client.EmbedQuery("query")
 	if err != nil || !called || !reflect.DeepEqual(got, []float64{1}) {
 		t.Fatalf("got %#v called=%v err=%v", got, called, err)
+	}
+}
+
+func TestOpenAIEmbeddingClientEmbedTextsBatchWireAndOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/embeddings" || r.Header.Get("Authorization") != "Bearer embedding-key" {
+			t.Errorf("path %s authorization %q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(body, map[string]any{"model": "embed-model", "input": []any{"first", "second"}}) {
+			t.Errorf("body %#v", body)
+		}
+		// 故意乱序返回，客户端须按 index 还原。
+		_, _ = io.WriteString(w, `{"data":[{"index":1,"embedding":[0.2]},{"index":0,"embedding":[0.1]}]}`)
+	}))
+	defer server.Close()
+	client := NewOpenAIEmbeddingClient(EmbeddingConfig{Provider: "openai", BaseURL: server.URL + "/v1", ModelName: "embed-model", APIKey: "embedding-key", TimeoutSeconds: 1})
+	got, err := client.EmbedTexts(context.Background(), []string{"first", "second"})
+	if err != nil || !reflect.DeepEqual(got, [][]float64{{.1}, {.2}}) {
+		t.Fatalf("got %#v err %v", got, err)
+	}
+	if empty, err := client.EmbedTexts(context.Background(), nil); err != nil || len(empty) != 0 {
+		t.Fatalf("empty input: %#v %v", empty, err)
+	}
+}
+
+func TestOpenAIEmbeddingClientEmbedTextsRejectsMalformedResponses(t *testing.T) {
+	for name, response := range map[string]string{
+		"count":     `{"data":[{"index":0,"embedding":[0.1]}]}`,
+		"duplicate": `{"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.2]}]}`,
+		"range":     `{"data":[{"index":0,"embedding":[0.1]},{"index":2,"embedding":[0.2]}]}`,
+		"empty":     `{"data":[{"index":0,"embedding":[0.1]},{"index":1,"embedding":[]}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := NewOpenAIEmbeddingClient(EmbeddingConfig{Provider: "openai", BaseURL: "https://embed.example/v1", TimeoutSeconds: 1})
+			client.client.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(stringsReader(response)), Header: make(http.Header)}, nil
+			})
+			if got, err := client.EmbedTexts(context.Background(), []string{"a", "b"}); err == nil {
+				t.Fatalf("expected error, got %#v", got)
+			}
+		})
+	}
+	client := NewOpenAIEmbeddingClient(EmbeddingConfig{Provider: "openai", BaseURL: "https://embed.example/v1", TimeoutSeconds: 1})
+	client.client.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 429, Body: io.NopCloser(stringsReader(`rate limited`)), Header: make(http.Header)}, nil
+	})
+	if _, err := client.EmbedTexts(context.Background(), []string{"a"}); err == nil || !strings.Contains(err.Error(), "HTTP 429") {
+		t.Fatalf("expected HTTP 429 error, got %v", err)
+	}
+	unsupported := NewOpenAIEmbeddingClient(EmbeddingConfig{Provider: "ollama", BaseURL: "https://embed.example/v1"})
+	if _, err := unsupported.EmbedTexts(context.Background(), []string{"a"}); err == nil {
+		t.Fatal("expected unsupported provider error")
 	}
 }
 

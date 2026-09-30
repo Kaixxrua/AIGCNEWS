@@ -247,26 +247,9 @@ func (c *OpenAIEmbeddingClient) Close() {
 // EmbedQuery 调用 POST {base}/embeddings，body 为
 // {"model": model, "input": text}，并读取 data[0].embedding。
 func (c *OpenAIEmbeddingClient) EmbedQuery(text string) ([]float64, error) {
-	if strings.ToLower(strings.TrimSpace(c.cfg.Provider)) != "" && strings.ToLower(strings.TrimSpace(c.cfg.Provider)) != "openai" {
-		return nil, fmt.Errorf("unsupported embedding provider %q", c.cfg.Provider)
-	}
-	base := strings.TrimRight(strings.TrimSpace(c.cfg.BaseURL), "/")
-	if base == "" {
-		base = strings.TrimRight(strings.TrimSpace(c.cfg.OpenAIBaseURL), "/")
-	}
-	if base == "" {
-		return nil, errors.New("embedding base URL is empty")
-	}
-	endpoint := base + "/embeddings"
-	if strings.HasSuffix(base, "/embeddings") {
-		endpoint = base
-	}
-	key := strings.TrimSpace(c.cfg.APIKey)
-	if key == "" && isSiliconFlowURL(base) {
-		key = strings.TrimSpace(c.cfg.SiliconFlowAPIKey)
-	}
-	if key == "" {
-		key = strings.TrimSpace(c.cfg.OpenAIAPIKey)
+	endpoint, key, err := c.target()
+	if err != nil {
+		return nil, err
 	}
 	requestBody := struct {
 		Model string `json:"model"`
@@ -310,6 +293,93 @@ func (c *OpenAIEmbeddingClient) EmbedQuery(text string) ([]float64, error) {
 		}
 	}
 	return payload.Data[0].Embedding, nil
+}
+
+// EmbedTexts 批量 embed：body 为 {"model": model, "input": [texts...]}，
+// 按响应 data[].index 还原输入顺序；用于离线补齐向量，不走查询热路径。
+func (c *OpenAIEmbeddingClient) EmbedTexts(ctx context.Context, texts []string) ([][]float64, error) {
+	if len(texts) == 0 {
+		return [][]float64{}, nil
+	}
+	endpoint, key, err := c.target()
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
+	}{Model: c.cfg.ModelName, Input: texts})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("embedding API HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var payload struct {
+		Data []struct {
+			Index     int       `json:"index"`
+			Embedding []float64 `json:"embedding"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if len(payload.Data) != len(texts) {
+		return nil, fmt.Errorf("embedding API returned %d vectors for %d inputs", len(payload.Data), len(texts))
+	}
+	vectors := make([][]float64, len(texts))
+	for _, item := range payload.Data {
+		if item.Index < 0 || item.Index >= len(texts) || vectors[item.Index] != nil || len(item.Embedding) == 0 {
+			return nil, fmt.Errorf("embedding API response has an invalid or duplicate index %d", item.Index)
+		}
+		for _, value := range item.Embedding {
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				return nil, errors.New("embedding API response contains non-finite value")
+			}
+		}
+		vectors[item.Index] = item.Embedding
+	}
+	return vectors, nil
+}
+
+// target 解析 provider、endpoint 与 key，EmbedQuery / EmbedTexts 共用。
+func (c *OpenAIEmbeddingClient) target() (endpoint, key string, err error) {
+	if strings.ToLower(strings.TrimSpace(c.cfg.Provider)) != "" && strings.ToLower(strings.TrimSpace(c.cfg.Provider)) != "openai" {
+		return "", "", fmt.Errorf("unsupported embedding provider %q", c.cfg.Provider)
+	}
+	base := strings.TrimRight(strings.TrimSpace(c.cfg.BaseURL), "/")
+	if base == "" {
+		base = strings.TrimRight(strings.TrimSpace(c.cfg.OpenAIBaseURL), "/")
+	}
+	if base == "" {
+		return "", "", errors.New("embedding base URL is empty")
+	}
+	endpoint = base + "/embeddings"
+	if strings.HasSuffix(base, "/embeddings") {
+		endpoint = base
+	}
+	key = strings.TrimSpace(c.cfg.APIKey)
+	if key == "" && isSiliconFlowURL(base) {
+		key = strings.TrimSpace(c.cfg.SiliconFlowAPIKey)
+	}
+	if key == "" {
+		key = strings.TrimSpace(c.cfg.OpenAIAPIKey)
+	}
+	return endpoint, key, nil
 }
 
 func isSiliconFlowURL(raw string) bool {

@@ -69,6 +69,14 @@ today/last night/latest/past N days 等），转换成调度时区（Asia/Shangh
 按纯关键词结果返回；只有时间、没有实体词的查询不走语义通道。Milvus 连接与 embedding 复用项目语义检索的
 `MILVUS_*` / `EMBEDDING_*` 配置。
 
+开启 `UI_SEMANTIC_SEARCH_ENABLED` 后，`search_ui_templates` / `search_ui_icons` 同样叠加一路语义召回
+（仅 Go MCP 服务）。集合 `UI_SEMANTIC_COLLECTION_NAME` 由 mcp-go 自己维护：启动后在后台为模板（名称、描述、
+分类、风格、别名）和图标（可读名、别名、分类）计算 embedding，只补写缺少的（条目, 文本指纹）行，不删旧行；
+检索时只认当前内嵌目录里指纹一致的条目，套用同样的分类/框架/图标集/风格过滤后，与关键词结果做等权 RRF
+融合。中文描述因此能召回只有英文元数据的图标。`search_mode` 保持关键词档位，仅当关键词两轮都为空、结果全部
+来自语义通道时为 `semantic`。集合尚未建好、同步未完成、超时（`UI_SEMANTIC_TIMEOUT_SECONDS`）或任何失败时，
+本次请求按纯关键词结果返回，响应字段不变。
+
 ## MCP-first 项目发现与复用策略
 
 MCP host 路由遵循明确的 **MCP-first 项目发现与复用策略**：只要用户要求寻找、搜索、推荐、比较或复用
