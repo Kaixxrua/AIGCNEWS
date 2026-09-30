@@ -227,14 +227,14 @@ export const aiScoreDisplay = (score?: number) => {
   return `${score}/10`
 }
 
-/** 看板「+N」：热度 v8 以滚动 24h 为准，缺失时退回日增量；两者都没有时返回空串。 */
+/** 看板「+N」：热度 v8 以滚动 24h 为准（首页不标「24h」），缺失时退回日增量；两者都没有时返回空串。 */
 export const rankingGrowthLabel = (
   doc: TopDoc,
   t: (key: string, params?: Record<string, unknown>) => string,
   locale: string,
 ) => {
   const rolling = projectRollingGrowth(doc)
-  if (rolling !== null) return t('projects.rollingGrowth', { count: rolling.toLocaleString(locale) })
+  if (rolling !== null) return `+${rolling.toLocaleString(locale)}`
   return doc.daily_growth_available && doc.daily_star_growth != null
     ? t('projects.todayGrowth', { count: doc.daily_star_growth.toLocaleString(locale) })
     : ''
