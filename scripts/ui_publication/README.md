@@ -4,7 +4,7 @@
 
 Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Linux 后已停止（最后一次运行 2026-09-11），且它只适配已撤下的 HyperUI 与默认关闭的 X 静态 HTML；2026-09-16 批量导入的来源从未有更新链路。现由用户级 systemd 定时器 `aigcnews-ui-refresh.timer`（北京时间 09:30，错过补跑）运行 `refresh.py`，代码取自当前发布检出 `~/AIGCNEWS-production`。
 
-覆盖范围：`import_batch_registry_sources`、`import_batch_json_registry_sources`、`import_batch_directory_sources`、`import_batch4_demo_sources` 四族登记的全部固定来源（8bitcn、HextaUI、Serenity、Intent UI、Shadcn Space、Eldora UI、Neobrutalism、systaliko、uitripled、Fancy、Jolly、Motion Primitives、Animata、Tailark、ThreeUI、UI Layouts、visx、Base UI）。新增来源只需在对应导入脚本登记固定 commit 与许可证 SHA-256。
+覆盖范围：`import_batch_registry_sources`、`import_batch_json_registry_sources`、`import_batch_directory_sources`、`import_batch4_demo_sources` 四族登记的全部固定来源（8bitcn、HextaUI、Serenity、Intent UI、Shadcn Space、Eldora UI、Neobrutalism、systaliko、uitripled、Fancy、Jolly、Motion Primitives、Animata、Tailark、ThreeUI、UI Layouts、SyntaxUI、Tremor Blocks、Launch UI、visx、Base UI）。新增来源只需在对应导入脚本登记固定 commit 与许可证 SHA-256。
 
 每轮流程：
 
@@ -29,7 +29,7 @@ systemctl --user daemon-reload && systemctl --user enable --now aigcnews-ui-refr
 
 ### 来源法律边界
 
-只接收 OSI 宽松许可（MIT、Apache-2.0、ISC、BSD）且许可证文件按哈希固定的公开仓库；不接收 AGPL/GPL、Commons Clause、`NOASSERTION`/无许可证仓库、Pro/付费内容；不绕过 Cloudflare 等反爬验证，不抓取条款禁止转载的网站。已排除：coss/originui（AGPL-3.0）、react-bits（Commons Clause）、animate-ui、shadcnblocks（许可证不明）、farm-ui（无许可证）、Aceternity/Skiper（源码不公开）。Codrops 演示禁止原样转载且常含第三方图片，只以 GitHub 组织新仓库作为待核查链接，不入库。
+只接收 OSI 宽松许可（MIT、Apache-2.0、ISC、BSD）且许可证文件按哈希固定的公开仓库；不接收 AGPL/GPL、Commons Clause、`NOASSERTION`/无许可证仓库、Pro/付费内容；不绕过 Cloudflare 等反爬验证，不抓取条款禁止转载的网站。已排除：coss/originui（AGPL-3.0）、react-bits（Commons Clause）、animate-ui、shadcnblocks（许可证不明）、farm-ui（无许可证）、Aceternity/Skiper（源码不公开）、inspira-ui（MIT，但大量组件是 Aceternity UI 的 Vue 移植，上游授权不及于再分发）、SyntaxUI 的 Hero Patterns 背景（CC BY 4.0 第三方图样）。`@remixicon/react` 固定 4.8.0：4.9.0 起改为非 OSI 的 Remix Icon License 1.0。Codrops 演示禁止原样转载且常含第三方图片，只以 GitHub 组织新仓库作为待核查链接，不入库。
 
 ## 历史：Windows 发布器（已退役）
 

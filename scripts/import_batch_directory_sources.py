@@ -169,6 +169,60 @@ SOURCES = {
         "slug_base": "src/examples/ui",
         "demo_base": "https://www.neobrutalism.dev/docs/",
     },
+    "syntaxui": {
+        "repository": "SyntaxUI/syntaxui",
+        "revision": "322491934c9e25e3fe3db593197ead09c7544bd3",
+        "license_source": "LICENSE",
+        "license_sha256": "ce899f42fe57d66a394e52c8113c047bc87f651199df6fb44ef3297f2cd02e37",
+        "provider": "SyntaxUI",
+        "alias_root": "src",
+        "css": "src/styles/tailwind.css",
+        "glob": "src/showcase/**/*.tsx",
+        # Background* patterns embed Hero Patterns SVGs (CC BY 4.0, third party),
+        # which the repository's MIT grant does not cover.
+        "exclude": [r"/effects/Background(Bricks|Cross|Dots|Plus|XO)\.tsx$", r"/playground/"],
+        "slug": "filename",
+        "category_from_dir": {
+            "effects": "background", "gradients": "background", "text": "text",
+            "text-drop": "text", "text-ticker": "text", "banner": "block", "features": "block",
+            "footer": "block", "logo-cloud": "block", "pricing": "block", "testimonial": "block",
+        },
+        "demo_base": "https://www.syntaxui.com/",
+    },
+    # Tremor Labs relicensed the former Tremor Blocks catalog as MIT in 2025.
+    # Icons come from @remixicon/react, pinned at 4.8.0 in frontend/package.json:
+    # 4.9.0 moved to the non-OSI "Remix Icon License 1.0".
+    "tremor-blocks": {
+        "repository": "tremorlabs/tremor-blocks",
+        "revision": "b319e8d3d3678a4f60f4802f7e85bc1abc52d598",
+        "license_source": "LICENSE.md",
+        "license_sha256": "3546b8d22c1657e8f6d36ae83e8721f894946337d9966e1d84fbfcdfa1c9ae0b",
+        "provider": "Tremor Blocks",
+        "alias_root": "src",
+        "css": "src/app/global.css",
+        "glob": "src/content/components/*/*.tsx",
+        "slug": "filename",
+        "category": "block",
+        "demo_base": "https://blocks.tremor.so/blocks/",
+    },
+    "launch-ui": {
+        "repository": "launch-ui/launch-ui",
+        "revision": "b0d4d5bce91d13523450416ce1797109076b2787",
+        "license_source": "LICENSE.md",
+        "license_sha256": "dbc6555e70ebd80b5e0e6793ae3e1f03b2b3d3716e27bd10f36525066d649669",
+        "provider": "Launch UI",
+        "alias_root": "",
+        "css": "app/globals.css",
+        "glob": "components/sections/*/*.tsx",
+        "slug": "dir_file",
+        "slug_base": "components/sections",
+        "category": "block",
+        # Human-reviewed: site config holds inert attribution/nav URLs (ogImage is
+        # metadata, never rendered) and the FAQ links the free Figma kit via an
+        # anchor; preview CSP blocks navigation and nothing is fetched.
+        "reviewed_allow_files": {"config/site.ts", "components/sections/faq/default.tsx"},
+        "demo_base": "https://www.launchuicomponents.com/",
+    },
 }
 
 
