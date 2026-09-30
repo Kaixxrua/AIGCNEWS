@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from backend.app.repositories import postgres_document_repository as document_repository_module
 from backend.app.repositories.document_repository import DocumentRepository
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
@@ -113,6 +114,47 @@ def test_document_search_uses_literal_ilike_filters_and_stable_pagination() -> N
     assert rows_call.args[1][-2:] == (100, 0)
     assert rows_call.args[1][0] == "%50=%=_Agent%"
     assert 'id COLLATE "C" ASC' in rows_call.args[0]
+
+
+def test_document_search_question_adds_date_window_and_recency_order() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"cnt": 0}
+    cursor.fetchall.return_value = []
+    repository = PostgresDocumentRepository(FakeDatabase(cursor))
+
+    with patch.object(document_repository_module, "_local_today", return_value="2026-09-30"):
+        repository.search_document_page("简洁总结昨晚openai发布了什么", source="x", page=2, page_size=5)
+
+    count_call, rows_call = cursor.execute.call_args_list
+    assert "published_date >= %s AND published_date < %s" in count_call.args[0]
+    assert count_call.args[1] == (
+        *(["%简洁总结昨晚openai发布了什么%"] * 3),
+        *(["%openai%"] * 3),
+        "2026-09-29",
+        "2026-10-01",
+        "x",
+    )
+    assert ") DESC, LEFT(published_date, 10) DESC, COALESCE(raw_score, score, 0) DESC" in rows_call.args[0]
+    assert rows_call.args[1][: len(count_call.args[1])] == count_call.args[1]
+    assert rows_call.args[1][-2:] == (5, 5)
+    assert rows_call.args[0].count("%s") == len(rows_call.args[1])
+
+
+def test_document_search_time_only_question_skips_keyword_filters() -> None:
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"cnt": 0}
+    cursor.fetchall.return_value = []
+    repository = PostgresDocumentRepository(FakeDatabase(cursor))
+
+    with patch.object(document_repository_module, "_local_today", return_value="2026-09-30"):
+        repository.search_document_page("今天有什么新闻")
+
+    count_call, rows_call = cursor.execute.call_args_list
+    assert "ILIKE" not in count_call.args[0]
+    assert count_call.args[1] == ("2026-09-29", "2026-10-01")
+    assert "ILIKE" not in rows_call.args[0]
+    assert "ORDER BY LEFT(published_date, 10) DESC, COALESCE(raw_score, score, 0) DESC" in rows_call.args[0]
+    assert rows_call.args[1] == ("2026-09-29", "2026-10-01", 20, 0)
 
 
 def test_document_id_batch_uses_ordinality_for_caller_order() -> None:

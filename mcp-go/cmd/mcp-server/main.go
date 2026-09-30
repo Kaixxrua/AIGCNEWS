@@ -99,7 +99,7 @@ func run() int {
 	for name, handler := range uiHandlers {
 		registry[name] = handler
 	}
-	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool), publicBaseURL) {
+	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool, cfg.SchedulerTimezone), publicBaseURL) {
 		registry[name] = handler
 	}
 	papers := mcpapp.NewPaperDetailService(postgres.NewPaperDetailRepository(pool), publicBaseURL)

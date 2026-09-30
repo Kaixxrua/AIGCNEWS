@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -200,11 +201,24 @@ func technicalTokens(s string) []string {
 	return tokens
 }
 
+// documentSearchPlan 是 DocumentSearchPlan 的 Go 对应物：ILIKE 候选词
+// （按优先级）+ 可选 published_date 窗口；candidates 空而 window 非空 =
+// 纯时间查询，只按日期过滤。
+type documentSearchPlan struct {
+	candidates []string
+	window     *dateWindow
+}
+
 // documentSearchCandidates 复刻 _document_search_candidates(query, max_terms=5)。
-func documentSearchCandidates(query string, maxTerms int) []string {
+func documentSearchCandidates(query string, maxTerms int, today time.Time) []string {
+	return buildDocumentSearchPlan(query, maxTerms, today).candidates
+}
+
+// buildDocumentSearchPlan 复刻 _document_search_plan(query, today, max_terms)。
+func buildDocumentSearchPlan(query string, maxTerms int, today time.Time) documentSearchPlan {
 	normalized := normalizeSearchQuery(query)
 	if normalized == "" {
-		return nil
+		return documentSearchPlan{}
 	}
 	lowered := caseFolder.String(normalized)
 	hasIntent := false
@@ -214,15 +228,27 @@ func documentSearchCandidates(query string, maxTerms int) []string {
 			break
 		}
 	}
-	if !hasIntent && utf8.RuneCountInString(normalized) <= 48 {
-		return []string{normalized}
+	intent := parseQueryIntent(normalized, today)
+	// 提问式查询（带时间意图或提问词）：先剥时间短语，后续再剥问句外壳。
+	asks := intent.window != nil || intent.asks
+	if !hasIntent && !asks && utf8.RuneCountInString(normalized) <= 48 {
+		return documentSearchPlan{candidates: []string{normalized}}
 	}
 	cleaned := normalized
+	if asks {
+		cleaned = intent.remainder
+	}
 	for _, phrase := range intentPhrasesByLengthDesc() {
 		cleaned = caseInsensitiveReplaceAll(cleaned, phrase)
 	}
+	if asks {
+		cleaned = stripAskFillers(cleaned)
+	}
 	cleaned = stripLearningHelpPrefixes(cleaned)
 	cleaned = strings.Join(strings.Fields(strings.Trim(cleaned, " ，。！？,.!?;:：；")), " ")
+	if asks && intent.window != nil && !hasSearchKeyword(cleaned) {
+		return documentSearchPlan{window: intent.window}
+	}
 	candidates := []string{normalized}
 	cleanedFolded := caseFolder.String(cleaned)
 	residualIntent := false
@@ -283,7 +309,21 @@ func documentSearchCandidates(query string, maxTerms int) []string {
 			technicalTerms = filtered
 		}
 	}
-	return append(candidates, technicalTerms...)
+	return documentSearchPlan{candidates: append(candidates, technicalTerms...), window: intent.window}
+}
+
+// hasSearchKeyword 复刻 _has_keyword：剥壳后是否还剩可检索的词
+// （停用词、标点残渣与单个非数字字符不算）。
+func hasSearchKeyword(cleaned string) bool {
+	for _, token := range technicalTokens(cleaned) {
+		if documentSearchStopTerms[caseFolder.String(token)] {
+			continue
+		}
+		if utf8.RuneCountInString(token) > 1 || unicode.IsDigit([]rune(token)[0]) {
+			return true
+		}
+	}
+	return false
 }
 
 // intentPhrasesByLengthDesc 对齐 sorted(phrases, key=len, reverse=True)；
@@ -299,23 +339,39 @@ var intentPhrasesByLengthDesc = func() func() []string {
 	return func() []string { return phrases }
 }()
 
-// DocumentRepository 适配 documents 表的 MCP 检索读路径。
+// DocumentRepository 适配 documents 表的 MCP 检索读路径。timezone 对应
+// settings.scheduler_timezone：时间意图（昨晚/今天/最近N天）以该时区自然日为锚。
 type DocumentRepository struct {
-	pool *pgxpool.Pool
+	pool     *pgxpool.Pool
+	timezone string
+	now      func() time.Time
 }
 
-func NewDocumentRepository(pool *pgxpool.Pool) *DocumentRepository {
-	return &DocumentRepository{pool: pool}
+func NewDocumentRepository(pool *pgxpool.Pool, timezone string) *DocumentRepository {
+	if timezone == "" {
+		timezone = "Asia/Shanghai"
+	}
+	return &DocumentRepository{pool: pool, timezone: timezone, now: time.Now}
 }
 
-// SearchDocumentPage 复刻 search_document_page：候选词 → ILIKE 模式 →
-// COUNT 与 SELECT 同一事务（Python 用单个 transaction 块；pgx 侧用
-// 单连接隐式事务等价——两条顺序查询共享同一快照语义由连接内读一致性保证）。
+// localToday 复刻 _local_today()：调度时区当前自然日；时区名非法时回退 UTC+8
+// （Python 侧 ZoneInfo 会直接抛错，这里宁可给出可用锚点也不让检索失败）。
+func (r *DocumentRepository) localToday() time.Time {
+	zone, err := time.LoadLocation(r.timezone)
+	if err != nil {
+		zone = time.FixedZone("CST", 8*3600)
+	}
+	return r.now().In(zone)
+}
+
+// SearchDocumentPage 复刻 search_document_page：检索计划 → ILIKE 模式 +
+// 可选 published_date 窗口 → COUNT 与 SELECT 同一事务（Python 用单个
+// transaction 块；pgx 侧用单连接隐式事务等价）。
 //
-// 参数位次与 Python %s 元组一一对应（where → tier → count → limit/offset），
+// 参数位次与 Python %s 元组一一对应（where → order → limit/offset），
 // 仅占位符从 %s 改写为 $N。
 func (r *DocumentRepository) SearchDocumentPage(query, source string, page, pageSize int) (mcpapp.DocumentPage, error) {
-	candidates := documentSearchCandidates(query, 5)
+	plan := buildDocumentSearchPlan(query, 5, r.localToday())
 	if page < 1 {
 		page = 1
 	}
@@ -324,68 +380,70 @@ func (r *DocumentRepository) SearchDocumentPage(query, source string, page, page
 	} else if pageSize > 100 {
 		pageSize = 100
 	}
-	if len(candidates) == 0 {
+	if len(plan.candidates) == 0 && plan.window == nil {
 		return mcpapp.DocumentPage{Items: []mcpapp.DocumentRow{}, Total: 0}, nil
 	}
-	patterns := make([]string, len(candidates))
-	for i, candidate := range candidates {
+	patterns := make([]string, len(plan.candidates))
+	for i, candidate := range plan.candidates {
 		patterns[i] = "%" + escapeLikeLiteral.Replace(candidate) + "%"
 	}
 	const fieldMatch = "(COALESCE(title, '') ILIKE %s ESCAPE '=' OR COALESCE(summary, '') ILIKE %s ESCAPE '=' OR COALESCE(tags, '') ILIKE %s ESCAPE '=')"
 
-	var whereBuilder strings.Builder
-	var whereParams []any
-	renumber := func(fragment string, params ...any) string {
-		for _, param := range params {
-			whereParams = append(whereParams, param)
-			fragment = strings.Replace(fragment, "%s", fmt.Sprintf("$%d", len(whereParams)), 1)
+	var params []any
+	renumber := func(fragment string, values ...any) string {
+		for _, value := range values {
+			params = append(params, value)
+			fragment = strings.Replace(fragment, "%s", fmt.Sprintf("$%d", len(params)), 1)
 		}
 		return fragment
 	}
 
-	whereBuilder.WriteByte('(')
-	for i, pattern := range patterns {
-		if i > 0 {
-			whereBuilder.WriteString(" OR ")
+	var whereParts []string
+	if len(patterns) > 0 {
+		var match strings.Builder
+		match.WriteByte('(')
+		for i, pattern := range patterns {
+			if i > 0 {
+				match.WriteString(" OR ")
+			}
+			match.WriteString(renumber(fieldMatch, pattern, pattern, pattern))
 		}
-		whereBuilder.WriteString(renumber(fieldMatch, pattern, pattern, pattern))
+		match.WriteByte(')')
+		whereParts = append(whereParts, match.String())
 	}
-	whereBuilder.WriteByte(')')
-
+	if plan.window != nil {
+		// published_date 是 YYYY-MM-DD 前缀的 VARCHAR（arXiv 带 T 时刻），字典序即时间序。
+		whereParts = append(whereParts, renumber("published_date >= %s AND published_date < %s",
+			plan.window.since, plan.window.until))
+	}
 	cleanSource := strings.ToLower(strings.TrimSpace(source))
 	if cleanSource != "" {
-		whereBuilder.WriteString(" AND ")
-		whereBuilder.WriteString(renumber("source = %s", cleanSource))
+		whereParts = append(whereParts, renumber("source = %s", cleanSource))
 	}
-	whereSQL := whereBuilder.String()
+	whereSQL := strings.Join(whereParts, " AND ")
+	whereParams := append([]any(nil), params...)
 
-	var tierBuilder strings.Builder
-	var tierParams []any
-	for index, pattern := range patterns {
-		fmt.Fprintf(&tierBuilder, "WHEN COALESCE(title, '') ILIKE $%d ESCAPE '=' THEN %d ",
-			len(whereParams)+len(tierParams)+1, index*2)
-		tierParams = append(tierParams, pattern)
-		fmt.Fprintf(&tierBuilder, "WHEN (COALESCE(summary, '') ILIKE $%d ESCAPE '=' OR COALESCE(tags, '') ILIKE $%d ESCAPE '=') THEN %d ",
-			len(whereParams)+len(tierParams)+1, len(whereParams)+len(tierParams)+2, index*2+1)
-		tierParams = append(tierParams, pattern, pattern)
-	}
-
-	var countBuilder strings.Builder
-	var countParams []any
-	for i, pattern := range patterns {
-		if i > 0 {
-			countBuilder.WriteString(" + ")
+	var orderParts []string
+	if len(patterns) > 0 {
+		var tier strings.Builder
+		tier.WriteString("CASE ")
+		for index, pattern := range patterns {
+			fmt.Fprintf(&tier, "%s ", renumber(fmt.Sprintf("WHEN COALESCE(title, '') ILIKE %%s ESCAPE '=' THEN %d", index*2), pattern))
+			fmt.Fprintf(&tier, "%s ", renumber(fmt.Sprintf("WHEN (COALESCE(summary, '') ILIKE %%s ESCAPE '=' OR COALESCE(tags, '') ILIKE %%s ESCAPE '=') THEN %d", index*2+1), pattern, pattern))
 		}
-		countBuilder.WriteString("CASE WHEN ")
-		fragment := fieldMatch
-		for range 3 {
-			countParams = append(countParams, pattern)
-			fragment = strings.Replace(fragment, "%s",
-				fmt.Sprintf("$%d", len(whereParams)+len(tierParams)+len(countParams)), 1)
+		fmt.Fprintf(&tier, "ELSE %d END ASC", len(patterns)*2)
+		orderParts = append(orderParts, tier.String())
+		counts := make([]string, len(patterns))
+		for i, pattern := range patterns {
+			counts[i] = "CASE WHEN " + renumber(fieldMatch, pattern, pattern, pattern) + " THEN 1 ELSE 0 END"
 		}
-		countBuilder.WriteString(fragment)
-		countBuilder.WriteString(" THEN 1 ELSE 0 END")
+		orderParts = append(orderParts, "("+strings.Join(counts, " + ")+") DESC")
 	}
+	if plan.window != nil {
+		// 只比日期：arXiv 的 T 时刻后缀不应压过同日其他源，同日内交给热度。
+		orderParts = append(orderParts, "LEFT(published_date, 10) DESC")
+	}
+	orderParts = append(orderParts, "COALESCE(raw_score, score, 0) DESC", `created_at DESC, id COLLATE "C" ASC`)
 
 	ctx := context.Background() // 对齐 asyncio.to_thread 语义：跑完不随客户端断连取消。
 	tx, err := r.pool.Begin(ctx)
@@ -401,18 +459,14 @@ func (r *DocumentRepository) SearchDocumentPage(query, source string, page, page
 		return mcpapp.DocumentPage{}, fmt.Errorf("postgres: 文档搜索计数失败: %w", err)
 	}
 
-	params := append(append(append(append([]any{}, whereParams...), tierParams...), countParams...),
-		pageSize, (page-1)*pageSize)
+	params = append(params, pageSize, (page-1)*pageSize)
 	selectSQL := fmt.Sprintf(`SELECT id, source, source_channel, title, url, summary,
                                published_date, tags, score, raw_score, rank_in_period,
                                local_pdf_path, authors, arxiv_id, created_at
                         FROM documents WHERE %s
-                        ORDER BY CASE %sELSE %d END ASC,
-                                 (%s) DESC,
-                                 COALESCE(raw_score, score, 0) DESC,
-                                 created_at DESC, id COLLATE "C" ASC
+                        ORDER BY %s
                         LIMIT $%d OFFSET $%d`,
-		whereSQL, tierBuilder.String(), len(patterns)*2, countBuilder.String(),
+		whereSQL, strings.Join(orderParts, ",\n                                 "),
 		len(params)-1, len(params))
 	rows, err := tx.Query(ctx, selectSQL, params...)
 	if err != nil {

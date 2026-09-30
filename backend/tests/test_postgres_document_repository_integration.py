@@ -220,3 +220,46 @@ def test_delete_documents_failure_rolls_back_rank_snapshot_deletes(
         with database.transaction() as connection:
             connection.execute("DROP TRIGGER IF EXISTS fail_delete_boom ON documents")
             connection.execute("DROP FUNCTION IF EXISTS abort_delete_boom")
+
+
+def test_question_search_applies_date_window_and_recency_order(
+    postgres_documents: tuple[Any, Any],
+) -> None:
+    from unittest.mock import patch
+
+    from backend.app.repositories import postgres_document_repository as module
+
+    repository, _ = postgres_documents
+    rows = (
+        ("it:intent-devday", "x", "Full recap of the DevDay announcements", "OpenAI launched GPT-6.1", "2026-09-29", 10.0),
+        ("it:intent-codex", "x", "OpenAI Codex release notes", "rust-v0.159.2", "2026-09-30", 1.0),
+        ("it:intent-old", "x", "OpenAI old headline", "old", "2026-08-01", 99.0),
+        ("it:intent-paper", "arxiv", "An unrelated paper", "no match", "2026-09-30T05:49:02", 50.0),
+    )
+    ids = [row[0] for row in rows]
+    try:
+        for doc_id, source, title, summary, published, score in rows:
+            repository.upsert_document(
+                {
+                    "id": doc_id,
+                    "source": source,
+                    "title": title,
+                    "url": f"https://example.test/{doc_id}",
+                    "summary": summary,
+                    "published_date": published,
+                    "tags": [],
+                    "score": score,
+                }
+            )
+        with patch.object(module, "_local_today", return_value="2026-09-30"):
+            question = repository.search_document_page("简洁总结昨晚openai发布了什么", source="x")
+            today = repository.search_document_page("今天有什么新闻")
+
+        # 旧的高分帖被窗口挡掉；窗口内同层级按日期倒序。
+        assert [row["id"] for row in question["items"]] == ["it:intent-codex", "it:intent-devday"]
+        assert question["total"] == 2
+        # 纯时间查询：只按日期过滤；arXiv 的 T 时刻不压过同日其他源，同日按热度。
+        found = [row["id"] for row in today["items"] if row["id"] in ids]
+        assert found == ["it:intent-paper", "it:intent-codex", "it:intent-devday"]
+    finally:
+        repository.delete_documents(ids)

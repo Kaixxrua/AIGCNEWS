@@ -1,0 +1,368 @@
+{
+ "_comment": "由 Python 权威实现 _document_search_plan 生成；Go (mcp-go/internal/postgres/document_intent_test.go) 与 Python 测试共同钉住。改动实现后重生成并逐条审阅差异。",
+ "cases": [
+  {
+   "today": "2026-09-30",
+   "query": "简洁总结昨晚openai发布了什么",
+   "candidates": [
+    "简洁总结昨晚openai发布了什么",
+    "openai"
+   ],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "what did OpenAI release last night",
+   "candidates": [
+    "what did OpenAI release last night",
+    "OpenAI"
+   ],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "今天有什么新闻",
+   "candidates": [],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "今天",
+   "candidates": [],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "最近3天 Anthropic 发布了哪些模型",
+   "candidates": [
+    "最近3天 Anthropic 发布了哪些模型",
+    "Anthropic 模型",
+    "Anthropic",
+    "模型"
+   ],
+   "window": [
+    "2026-09-27",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "近三天 Claude 有什么更新",
+   "candidates": [
+    "近三天 Claude 有什么更新",
+    "Claude"
+   ],
+   "window": [
+    "2026-09-27",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "过去二十天的 RAG 进展",
+   "candidates": [
+    "过去二十天的 RAG 进展",
+    "RAG"
+   ],
+   "window": [
+    "2026-09-10",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "past 2 weeks Gemini news",
+   "candidates": [
+    "past 2 weeks Gemini news",
+    "Gemini"
+   ],
+   "window": [
+    "2026-09-16",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "last 24 hours summary",
+   "candidates": [],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "7天内 agent 框架有哪些",
+   "candidates": [
+    "7天内 agent 框架有哪些",
+    "agent 框架",
+    "agent",
+    "框架"
+   ],
+   "window": [
+    "2026-09-23",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "summarize the latest news about Gemini",
+   "candidates": [
+    "summarize the latest news about Gemini",
+    "Gemini"
+   ],
+   "window": [
+    "2026-09-23",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "OpenAI 最新模型是什么",
+   "candidates": [
+    "OpenAI 最新模型是什么",
+    "OpenAI 模型",
+    "OpenAI",
+    "模型"
+   ],
+   "window": [
+    "2026-09-23",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "上周 谷歌和微软 有什么动态",
+   "candidates": [
+    "上周 谷歌和微软 有什么动态",
+    "谷歌 微软",
+    "谷歌",
+    "微软"
+   ],
+   "window": [
+    "2026-09-20",
+    "2026-09-28"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "本月 github 热门项目有哪些",
+   "candidates": [
+    "本月 github 热门项目有哪些",
+    "github 热门项目",
+    "github",
+    "热门项目"
+   ],
+   "window": [
+    "2026-08-31",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-10-15",
+   "query": "上个月 DeepSeek 发布了什么",
+   "candidates": [
+    "上个月 DeepSeek 发布了什么",
+    "DeepSeek"
+   ],
+   "window": [
+    "2026-08-31",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-01-03",
+   "query": "上个月 DeepSeek 发布了什么",
+   "candidates": [
+    "上个月 DeepSeek 发布了什么",
+    "DeepSeek"
+   ],
+   "window": [
+    "2025-11-30",
+    "2026-01-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "前天 Meta 开源了什么",
+   "candidates": [
+    "前天 Meta 开源了什么",
+    "Meta"
+   ],
+   "window": [
+    "2026-09-28",
+    "2026-09-30"
+   ]
+  },
+  {
+   "today": "2026-09-28",
+   "query": "这周 Claude Code 更新了什么",
+   "candidates": [
+    "这周 Claude Code 更新了什么",
+    "Claude Code",
+    "Claude",
+    "Code"
+   ],
+   "window": [
+    "2026-09-27",
+    "2026-09-29"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "昨天和今天 Qwen 的消息",
+   "candidates": [
+    "昨天和今天 Qwen 的消息",
+    "Qwen"
+   ],
+   "window": [
+    "2026-09-29",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "什么是 MCP 协议？",
+   "candidates": [
+    "什么是 MCP 协议?",
+    "是 MCP 协议",
+    "MCP",
+    "协议"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "DevDay 2026 发布会上 OpenAI 都推出了什么",
+   "candidates": [
+    "DevDay 2026 发布会上 OpenAI 都推出了什么",
+    "DevDay 2026 OpenAI",
+    "DevDay",
+    "2026",
+    "OpenAI"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "llama3个月内",
+   "candidates": [
+    "llama3个月内"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "Todayfeed",
+   "candidates": [
+    "Todayfeed"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "whatsapp",
+   "candidates": [
+    "whatsapp"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "OpenAI",
+   "candidates": [
+    "OpenAI"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "RAG 教程",
+   "candidates": [
+    "RAG 教程"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "帮我找一些 agent 学习资料",
+   "candidates": [
+    "帮我找一些 agent 学习资料",
+    "agent"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "transformer 架构相关内容",
+   "candidates": [
+    "transformer 架构相关内容",
+    "transformer 架构",
+    "transformer",
+    "架构"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "I want to find me some LLM learning resources",
+   "candidates": [
+    "I want to find me some LLM learning resources",
+    "some LLM",
+    "some",
+    "LLM"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "最近 学习资料",
+   "candidates": [],
+   "window": [
+    "2026-09-23",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "总结一下",
+   "candidates": [
+    "总结一下"
+   ],
+   "window": null
+  },
+  {
+   "today": "2026-09-30",
+   "query": "LATEST Sora",
+   "candidates": [
+    "LATEST Sora",
+    "Sora"
+   ],
+   "window": [
+    "2026-09-23",
+    "2026-10-01"
+   ]
+  },
+  {
+   "today": "2026-09-30",
+   "query": "最近99999999999999999999999天",
+   "candidates": [],
+   "window": [
+    "2025-09-30",
+    "2026-10-01"
+   ]
+  }
+ ]
+}
