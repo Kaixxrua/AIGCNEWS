@@ -35,7 +35,12 @@ SOURCES = (
     RepositorySource('magic-portfolio', 'magicuidesign/portfolio', ('src/app/page.tsx',)),
 )
 X_HANDLES = ('ibelick', 'dillionverma', 'akella')
-CODROPS_FEED = 'https://tympanus.net/codrops/feed/'
+# The tympanus.net RSS now answers automated clients with a Cloudflare challenge;
+# challenges are never solved. Codrops publishes each demo as a repository of the
+# codrops GitHub organization, so newly created repositories are link-only
+# candidates (Codrops demos forbid redistribution as-is and may carry
+# third-party images; they are never published into the catalog).
+CODROPS_REPOS = 'https://api.github.com/orgs/codrops/repos?sort=created&direction=desc&per_page=30'
 MAX_BYTES = 12 * 1024 * 1024
 
 
@@ -45,7 +50,7 @@ class DiscoveryError(Exception):
 
 async def read_upstream(client: httpx.AsyncClient, url: str, token: str = '') -> bytes:
     host = urlsplit(url).hostname
-    if urlsplit(url).scheme != 'https' or host not in {'api.github.com', 'tympanus.net'}:
+    if urlsplit(url).scheme != 'https' or host != 'api.github.com':
         raise DiscoveryError('unapproved_upstream')
     headers = {'User-Agent': 'AIGCNEWS-UI-Discovery/1.0'}
     if host == 'api.github.com':
@@ -114,6 +119,10 @@ def tree_candidates(source: RepositorySource, tree: dict[str, Any]) -> list[dict
 
 
 def feed_candidates(raw: bytes, feed_url: str) -> list[dict[str, Any]]:
+    head = raw[:2048].lstrip().lower()
+    if head.startswith(b'<html') or head.startswith(b'<!doctype html'):
+        # Bot challenges and error pages are HTML, not feeds; report, never bypass.
+        raise DiscoveryError('feed_returned_html')
     if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():
         raise DiscoveryError('unsafe_feed_xml')
     root = ElementTree.fromstring(raw)
@@ -146,8 +155,25 @@ def feed_candidates(raw: bytes, feed_url: str) -> list[dict[str, Any]]:
     return result
 
 
-def rss_candidates(raw: bytes) -> list[dict[str, Any]]:
-    return feed_candidates(raw, CODROPS_FEED)
+def codrops_candidates(raw: bytes) -> list[dict[str, Any]]:
+    result = []
+    for repository in json.loads(raw):
+        name = str(repository.get('name', ''))
+        url = str(repository.get('html_url', ''))
+        if repository.get('fork') or repository.get('archived') or url != f'https://github.com/codrops/{name}':
+            continue
+        homepage = str(repository.get('homepage') or '')
+        link = {'id': url, 'title': name, 'source_url': url, 'repo': f'codrops/{name}',
+                'description': str(repository.get('description') or '')[:500],
+                'demo_url': homepage if urlsplit(homepage).scheme == 'https' else '',
+                'published_at': str(repository.get('created_at') or ''),
+                'license_status': 'needs_review', 'kind': 'article_link'}
+        link['revision'] = hashlib.sha256(json.dumps(
+            [link['source_url'], link['description'], link['demo_url']]).encode()).hexdigest()
+        result.append(link)
+    if not result:
+        raise DiscoveryError('source_layout_changed_or_empty')
+    return result
 
 
 async def discover_web(repo: PostgresUiLibraryRepository, *, token: str = '', proxy: str = '',
@@ -183,9 +209,9 @@ async def discover_web(repo: PostgresUiLibraryRepository, *, token: str = '', pr
                     candidates = tree_candidates(repository_source, tree)
                     revision = tree.get('commit_sha', tree['sha'])
                 else:
-                    raw = await read_upstream(client, CODROPS_FEED)
-                    candidates = rss_candidates(raw)
-                    revision = hashlib.sha256(raw).hexdigest()
+                    raw = await read_upstream(client, CODROPS_REPOS, token)
+                    candidates = codrops_candidates(raw)
+                    revision = hashlib.sha256(json.dumps([c['id'] for c in candidates]).encode()).hexdigest()
                 counts = await asyncio.to_thread(repo.record_discovery, source_id, revision, candidates)
                 logger.info('[UI Discovery] %s %s', source_id, counts)
         except Exception as exc:

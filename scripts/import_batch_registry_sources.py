@@ -12,11 +12,20 @@ import json
 from pathlib import Path
 
 from ui_import_common import (
+    Reject,
     append_unique_file,
-    DATA, Reject, apply_additions, checked_checkout, detect_export,
-    external_versions, make_item, node_modules_packages, previous_items,
-    resolve_closure, sha, store, store_license,
+    apply_additions,
+    checked_checkout,
+    detect_export,
+    external_versions,
+    make_item,
+    node_modules_packages,
+    previous_items,
+    resolve_closure,
+    store,
+    store_license,
 )
+
 
 def intentui_remap(relative: str) -> list[str]:
     """Registry paths reference generated files; map them to pre-blocks sources."""
@@ -91,6 +100,24 @@ SOURCES = {
         "extra_closure": ["src/styles/themes/stone.css"],
         "demo_base": "https://intentui.com/docs/components/",
     },
+    # Added 2026-09-30 for the scheduled refresh (scripts/ui_publication/refresh.py).
+    # MIT license at the repository root; no Pro/paid registry is imported.
+    "eldoraui": {
+        "repository": "karthikmudunuri/eldoraui",
+        "revision": "6bb8fd211ecbdfa983f5780bead27d9f3890f20a",
+        # The registry lives in the docs app; its license is the repository root.
+        "license_source": "../../LICENSE.md",
+        "license_sha256": "98a4833a2780f22c9f12d39493bbd19e3eb5ab321d4e44cc79c596b52cba4c29",
+        "provider": "Eldora UI",
+        "checkout": "eldoraui/apps/www",
+        "alias_root": "",
+        "css": "styles/globals.css",
+        "registry": "registry.json",
+        # Examples mount each component with its documented props.
+        "types": {"registry:example"},
+        "demo_base": "https://www.eldoraui.site/docs/components/",
+        "demo_strip_suffix": "-demo",
+    },
     "shadcnspace": {
         "repository": "shadcnspace/shadcnspace",
         "revision": "6cbc9245562238a03d84f1e914e35942c800eb24",
@@ -151,7 +178,6 @@ def import_provider(provider_id: str, upstreams: Path, previous: dict, available
         if only and name not in only:
             continue
         slug = name
-        item_id = f"{provider_id}-{slug}"
         try:
             files_meta = entry.get("files", [])
             if not files_meta:
@@ -192,7 +218,7 @@ def import_provider(provider_id: str, upstreams: Path, previous: dict, available
                 provider_id, source, slug, title_en, zh_title(slug, title_en), entry_path,
                 files, notice, source["css"], declared, previous,
                 category=category,
-                demo_url=source["demo_base"] + slug,
+                demo_url=source["demo_base"] + slug.removesuffix(source.get("demo_strip_suffix", "")),
                 preview_preset=source.get("preview_preset"),
                 export_name=export_name)
             additions.append(item)

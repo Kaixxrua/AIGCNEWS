@@ -1,0 +1,16 @@
+[Unit]
+Description=Import new components from reviewed UI library upstreams
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+TimeoutStartSec=6h
+# GitHub is reached through the local egress proxy; the preview server stays local.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=https_proxy=http://127.0.0.1:17898 HTTPS_PROXY=http://127.0.0.1:17898
+Environment=no_proxy=127.0.0.1,localhost NO_PROXY=127.0.0.1,localhost
+# Runs the code of the active release; new catalog data ships with the next release.
+ExecStart=/usr/bin/python3 %h/AIGCNEWS-production/scripts/ui_publication/refresh.py --production %h/AIGCNEWS-production --ffmpeg %h/.local/bin/ffmpeg

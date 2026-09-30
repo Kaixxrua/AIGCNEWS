@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import re
 import subprocess
 from datetime import datetime, timezone
-import posixpath
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "mcp-go/internal/uicatalog/data"
+# Scheduled refreshes store a newer upstream revision under its own
+# ``sources/<provider>/<scope>`` prefix, so already published items keep their
+# pinned bytes. Manual importers leave it empty (unchanged paths).
+SOURCE_SCOPE = ""
 
 # Reject bundled external URLs, site-root static assets, and embeds that require
 # real media files. Dynamic src={...}/href={...} bindings and inert href="#" anchors
@@ -85,7 +89,7 @@ def store(provider: str, name: str, raw: bytes, *, validate_media: bool = True) 
         validate_source(name, raw)
     elif len(raw) > 256_000:
         raise ValueError(f"source exceeds catalog file budget: {name}")
-    relative = f"sources/{provider}/{name}"
+    relative = f"sources/{provider}/{SOURCE_SCOPE}{name}"
     target = DATA / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(raw)

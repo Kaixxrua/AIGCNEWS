@@ -20,10 +20,10 @@ from backend.app.services.ui_discovery import (
     X_HANDLES,
     DiscoveryError,
     RepositorySource,
+    codrops_candidates,
     discover_web,
     discover_x,
     feed_candidates,
-    rss_candidates,
     tree_candidates,
 )
 from backend.app.services.ui_library import quota_policy
@@ -138,12 +138,34 @@ def test_tree_discovery_is_pinned_and_never_marks_license_approved():
         tree_candidates(source, tree)
 
 
-def test_rss_rejects_entities_and_keeps_only_original_site():
-    with pytest.raises(DiscoveryError):
-        rss_candidates(b'<!DOCTYPE test><rss/>')
-    result = rss_candidates(b'<rss><channel><item><title>Demo</title><link>https://tympanus.net/codrops/demo</link></item><item><link>http://127.0.0.1/</link></item></channel></rss>')
+CODROPS_REPOS_JSON = [
+    {'name': 'NewDemo', 'html_url': 'https://github.com/codrops/NewDemo', 'fork': False, 'archived': False,
+     'description': 'Scroll effect', 'homepage': 'https://tympanus.net/Development/NewDemo/',
+     'created_at': '2026-09-29T00:00:00Z'},
+    {'name': 'Forked', 'html_url': 'https://github.com/codrops/Forked', 'fork': True},
+    {'name': 'Spoofed', 'html_url': 'https://github.com/elsewhere/Spoofed', 'fork': False},
+    {'name': 'Plain', 'html_url': 'https://github.com/codrops/Plain', 'fork': False, 'homepage': 'http://insecure.test'},
+]
+
+
+def test_feed_rejects_entities_and_reports_html_challenges():
+    with pytest.raises(DiscoveryError, match='unsafe_feed_xml'):
+        feed_candidates(b'<!DOCTYPE test><rss/>', 'https://example.test/feed')
+    with pytest.raises(DiscoveryError, match='feed_returned_html'):
+        feed_candidates(b'<!DOCTYPE html><html><title>Just a moment...</title></html>', 'https://example.test/feed')
+    result = feed_candidates(b'<rss><channel><item><title>Demo</title><link>https://example.test/demo</link></item><item><link>http://127.0.0.1/</link></item></channel></rss>', 'https://example.test/feed')
     assert len(result) == 1
     assert result[0]['license_status'] == 'needs_review'
+
+
+def test_codrops_repositories_are_link_only_review_candidates():
+    result = codrops_candidates(json.dumps(CODROPS_REPOS_JSON).encode())
+    assert [item['id'] for item in result] == ['https://github.com/codrops/NewDemo', 'https://github.com/codrops/Plain']
+    assert result[0]['kind'] == 'article_link' and result[0]['license_status'] == 'needs_review'
+    assert result[0]['demo_url'] == 'https://tympanus.net/Development/NewDemo/'
+    assert result[1]['demo_url'] == ''
+    with pytest.raises(DiscoveryError, match='source_layout_changed_or_empty'):
+        codrops_candidates(b'[]')
 
 
 def test_atom_feed_is_supported_for_configured_websites():
@@ -197,10 +219,10 @@ def test_discovery_source_validation_rejects_unsafe_inputs(payload):
 def test_one_source_failure_does_not_erase_or_block_other_sources():
     repo = MagicMock()
     def handler(request):
-        if request.url.host == 'api.github.com':
-            return httpx.Response(403, json={'message': 'limited'})
-        assert 'authorization' not in request.headers
-        return httpx.Response(200, content=b'<rss><channel><item><title>Demo</title><link>https://tympanus.net/codrops/demo</link></item></channel></rss>')
+        assert request.url.host == 'api.github.com'
+        if request.url.path == '/orgs/codrops/repos':
+            return httpx.Response(200, json=CODROPS_REPOS_JSON)
+        return httpx.Response(403, json={'message': 'limited'})
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
             return await discover_web(repo, token='secret-test-token', client=c)
@@ -225,7 +247,7 @@ def test_daily_discovery_includes_enabled_custom_github_sources(monkeypatch):
             return httpx.Response(200, json={'sha': 'tree', 'tree': [
                 {'path': 'components/card.tsx', 'type': 'blob', 'mode': '100644', 'sha': 'blob'},
             ]})
-        return httpx.Response(200, content=b'<rss><channel><item><title>Demo</title><link>https://tympanus.net/codrops/demo</link></item></channel></rss>')
+        return httpx.Response(200, json=CODROPS_REPOS_JSON)
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as custom_client:

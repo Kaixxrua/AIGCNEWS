@@ -1,4 +1,39 @@
-# UI 素材每日发布
+# UI 素材每日更新
+
+## 现行：Linux 上游刷新器（`refresh.py`）
+
+Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Linux 后已停止（最后一次运行 2026-09-11），且它只适配已撤下的 HyperUI 与默认关闭的 X 静态 HTML；2026-09-16 批量导入的来源从未有更新链路。现由用户级 systemd 定时器 `aigcnews-ui-refresh.timer`（北京时间 09:30，错过补跑）运行 `refresh.py`，代码取自当前发布检出 `~/AIGCNEWS-production`。
+
+覆盖范围：`import_batch_registry_sources`、`import_batch_json_registry_sources`、`import_batch_directory_sources`、`import_batch4_demo_sources` 四族登记的全部固定来源（8bitcn、HextaUI、Serenity、Intent UI、Shadcn Space、Eldora UI、Neobrutalism、systaliko、uitripled、Fancy、Jolly、Motion Primitives、Animata、Tailark、ThreeUI、UI Layouts、visx、Base UI）。新增来源只需在对应导入脚本登记固定 commit 与许可证 SHA-256。
+
+每轮流程：
+
+1. `git ls-remote` 取上游 HEAD；与上次检查一致则跳过。浅克隆固定 commit，不执行任何 npm 脚本。
+2. **法律闸门**：许可证文件必须与审核时逐字节一致，否则整个来源停在 `license_changed_requires_review`（文件被删除则为 `license_removed_requires_review`；例：HextaUI 2026-09 起上游已删除 LICENSE，停在审核版本）。
+3. 首次运行时在已审核 revision 上重放导入器：当时能产出却不在目录里的 ID 视为曾被门禁或人工拒绝，永不自动回归；`withdrawn.json`、以及本刷新器发布后又被手动删除的 ID 同样永久屏蔽；HyperUI、Uiverse/Galaxy 整体不再自动入库。
+4. 在新 HEAD 上跑同一导入器（同样的外链/离线依赖/体积门禁），只取新 ID。新文件写入 `sources/<provider>/r<rev12>/`，已发布素材的固定字节不变。每轮最多 48 个（各来源轮转），没处理完的来源下次继续。
+5. 离线构建预览；在禁止联网的无头浏览器中等 `ready`，生成版本化 WebP 封面与 6 秒 H.264 MP4；异常、空白封面（灰度标准差 ≤ 3）记入 `held.json`，源码不变不再重试。
+6. 权利证据取自固定 commit 的 LICENSE 与 README（缺 README 则停下），并截取 GitHub 许可证页面；已有同 revision 证据只追加、不改历史哈希。截图失败只顺延，不拉黑。
+7. 按 `uiLibraryAssets.ts` 同款规则核对新素材，并用 Go 目录加载器（`TestPinnedSourcesAndLocalFileBoundary`）校验整个暂存目录。
+8. 持 `build-release.lock` 写入生产目录：只新增文件、拒绝覆盖不同内容，`catalog.json` 最后原子替换；期间目录被他人改动则放弃本轮。新素材随下一次 main 发布进入网站与 MCP 镜像。
+
+状态目录 `~/.local/state/aigcnews-ui-refresh/`：`latest.json`、`runs/<UTC>/status.json` 与 `commands.log`、`providers.json`（基线/已检查 revision/停因）、`held.json`、`published.json`、`withdrawn.json`（`version: 1`，`ids` 数组；手动撤下的 ID 写这里）。管理员发现接口的 `publication` 行显示最近一轮结果。
+
+```sh
+python3 scripts/ui_publication/refresh.py --dry-run --providers neobrutalism   # 只暂存和校验，不碰生产、不写状态
+cp deploy/systemd/aigcnews-ui-refresh.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now aigcnews-ui-refresh.timer
+```
+
+依赖：Node、FFmpeg（`libx264`/`libwebp`）、Go、Playwright Chromium（无 root 主机用 `--browser-libs` 指向用户态运行库，默认 `~/.cache/ms-playwright/runtime-libs/...`）、本机出站代理访问 GitHub。预览沙箱依赖按前端锁文件安装到状态目录。
+
+### 来源法律边界
+
+只接收 OSI 宽松许可（MIT、Apache-2.0、ISC、BSD）且许可证文件按哈希固定的公开仓库；不接收 AGPL/GPL、Commons Clause、`NOASSERTION`/无许可证仓库、Pro/付费内容；不绕过 Cloudflare 等反爬验证，不抓取条款禁止转载的网站。已排除：coss/originui（AGPL-3.0）、react-bits（Commons Clause）、animate-ui、shadcnblocks（许可证不明）、farm-ui（无许可证）、Aceternity/Skiper（源码不公开）。Codrops 演示禁止原样转载且常含第三方图片，只以 GitHub 组织新仓库作为待核查链接，不入库。
+
+## 历史：Windows 发布器（已退役）
+
+以下为 `runner.py` 时代的说明，保留供审计与恢复参考。
 
 APScheduler 09:00 的 `ui_library_discovery` 保留发现职责。部署机上的 Windows 计划任务 `AIGCNEWS-UI-Publication` 于北京时间 09:20 消费同一张 `ui_discovery_candidates` 表，完成核查、归档、预览和生产发布。无需 Codex 会话在线。
 
