@@ -40,6 +40,8 @@ def test_adapter_structurally_satisfies_semantic_source_contract() -> None:
     assert callable(contract.upsert_github_project_semantic_source)
     assert callable(contract.mark_github_project_semantic_snapshot_current)
     assert callable(contract.get_github_project_semantic_status)
+    assert callable(contract.list_indexed_github_project_ids)
+    assert callable(contract.requeue_github_project_semantic_index)
 
 
 def test_mark_snapshot_current_only_touches_watermark_columns() -> None:
@@ -202,3 +204,43 @@ def test_readme_snapshot_upsert_only_touches_readme_columns() -> None:
     assert params[0] == "owner/canonical"
     assert params[1:4] == ("README body", "hash", "etag")
     assert params[4] == "succeeded"
+
+
+def test_list_indexed_ids_only_returns_rows_with_vectors() -> None:
+    repository, _, cursor = _repository()
+    cursor.fetchall.return_value = [{"repo_id": "a/one"}, {"repo_id": "b/two"}]
+
+    assert repository.list_indexed_github_project_ids() == ["a/one", "b/two"]
+    sql = cursor.execute.call_args.args[0]
+    assert "index_status = 'succeeded'" in sql
+    assert "COALESCE(chunk_count, 0) > 0" in sql
+    assert "COALESCE(indexed_fingerprint, '') <> ''" in sql
+
+
+def test_requeue_only_touches_index_state_of_succeeded_rows() -> None:
+    repository, database, cursor = _repository()
+    cursor.rowcount = 2
+
+    requeued = repository.requeue_github_project_semantic_index(
+        ["b/two", "a/one", "b/two", " "], reason="missing", updated_at="2026-09-30T00:00:00+00:00"
+    )
+
+    assert requeued == 2
+    sql, params = cursor.execute.call_args.args
+    assert sql.lstrip().startswith("UPDATE github_project_semantic_sources")
+    assert "indexed_fingerprint = ''" in sql
+    assert "index_status = 'pending'" in sql
+    assert "AND index_status = 'succeeded'" in sql
+    # README 快照与 source_fingerprint 原样保留，重嵌时复用
+    assert "readme_" not in sql
+    assert "source_fingerprint" not in sql
+    assert params == ("missing", "2026-09-30T00:00:00+00:00", ["a/one", "b/two"])
+    assert database.transaction_count == 1
+
+
+def test_requeue_without_ids_skips_database() -> None:
+    repository, database, cursor = _repository()
+
+    assert repository.requeue_github_project_semantic_index([], reason="x", updated_at="t") == 0
+    cursor.execute.assert_not_called()
+    assert database.transaction_count == 0

@@ -27,23 +27,52 @@ def main() -> int:
     parser.add_argument("--profiles-only", action="store_true")
     parser.add_argument("--concurrency", type=int, default=20)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--max-batches",
+        type=int,
+        default=1,
+        help="沿 repo_id 游标连续跑的批数；0 表示直到没有待索引项目",
+    )
+    parser.add_argument(
+        "--no-reconcile",
+        action="store_true",
+        help="跳过开跑前的台账↔Milvus 对账（默认先把向量已丢失的项目退回待索引）",
+    )
     args = parser.parse_args()
     repositories = create_application_repositories(postgres=postgres_database)
+    results: list[dict] = []
+    cursor = args.after_repo_id
     try:
-        result = sync_github_project_semantic_index(
-            db=repositories.github_semantic_sources,
-            force=True,
-            limit=args.limit,
-            min_stars=args.min_stars,
-            after_repo_id=args.after_repo_id,
-            fetch_readme=not args.profiles_only,
-            concurrency=args.concurrency,
-            dry_run=args.dry_run,
-        )
+        while not args.max_batches or len(results) < args.max_batches:
+            result = sync_github_project_semantic_index(
+                db=repositories.github_semantic_sources,
+                force=True,
+                limit=args.limit,
+                min_stars=args.min_stars,
+                after_repo_id=cursor,
+                fetch_readme=not args.profiles_only,
+                concurrency=args.concurrency,
+                dry_run=args.dry_run,
+                reconcile=not args.no_reconcile and not results,
+            )
+            results.append(result)
+            if args.max_batches != 1:
+                print(json.dumps({"batch": len(results), **result}, ensure_ascii=False), flush=True)
+            if result.get("status") not in {"success", "dry_run"} or int(result.get("selected") or 0) < args.limit:
+                break
+            cursor = str(result.get("last_repo_id") or "")
     finally:
         postgres_database.close()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result.get("status") in {"success", "dry_run"} else 1
+    if args.max_batches == 1:
+        print(json.dumps(results[0], ensure_ascii=False, indent=2))
+    else:
+        counts: dict[str, int] = {}
+        for result in results:
+            for status, count in (result.get("counts") or {}).items():
+                counts[status] = counts.get(status, 0) + int(count)
+        last_repo_id = str(results[-1].get("last_repo_id") or cursor)
+        print(json.dumps({"batches": len(results), "counts": counts, "last_repo_id": last_repo_id}, ensure_ascii=False))
+    return 0 if all(result.get("status") in {"success", "dry_run"} for result in results) else 1
 
 
 if __name__ == "__main__":

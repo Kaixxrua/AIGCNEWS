@@ -116,6 +116,7 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
         projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(12)]
         db = MagicMock()
         db.list_github_projects_for_semantic_sync.return_value = projects
+        db.list_indexed_github_project_ids.return_value = []
         embeddings = MagicMock()
         indexer = GitHubProjectSemanticIndexer(db=db, embeddings=embeddings)
         active = 0
@@ -144,6 +145,7 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
         projects = [{**PROJECT, "repo_id": "owner/ok"}, {**PROJECT, "repo_id": "owner/bad"}]
         db = MagicMock()
         db.list_github_projects_for_semantic_sync.return_value = projects
+        db.list_indexed_github_project_ids.return_value = []
         embeddings = MagicMock()
         indexer = GitHubProjectSemanticIndexer(db=db, embeddings=embeddings)
 
@@ -184,6 +186,7 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
         projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(2)]
         db = MagicMock()
         db.list_github_projects_for_semantic_sync.return_value = projects
+        db.list_indexed_github_project_ids.return_value = []
         vectors = MagicMock()
         vectors.upsert_project_chunks.return_value = 1
         embeddings = MagicMock()
@@ -201,6 +204,7 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
         projects = [{**PROJECT, "repo_id": f"owner/repo-{index}"} for index in range(2)]
         db = MagicMock()
         db.list_github_projects_for_semantic_sync.return_value = projects
+        db.list_indexed_github_project_ids.return_value = []
         indexer = GitHubProjectSemanticIndexer(db=db)
 
         with patch.object(indexer, "_embeddings") as embeddings:
@@ -208,6 +212,89 @@ class GitHubProjectSemanticIndexerTests(unittest.TestCase):
 
         self.assertEqual(result["counts"], {"dry_run": 2})
         embeddings.assert_not_called()
+
+
+class GitHubProjectSemanticLedgerReconcileTests(unittest.TestCase):
+    def test_requeues_projects_missing_from_milvus(self) -> None:
+        db = MagicMock()
+        db.list_indexed_github_project_ids.return_value = ["a/one", "b/two", "c/three"]
+        db.requeue_github_project_semantic_index.return_value = 2
+        vectors = MagicMock()
+        vectors.list_repo_ids.return_value = {"a/one", "z/orphan"}
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors, embeddings=MagicMock())
+
+        result = indexer.reconcile_vector_ledger()
+
+        self.assertEqual(result, {"status": "success", "indexed": 3, "missing": 2, "requeued": 2})
+        args, kwargs = db.requeue_github_project_semantic_index.call_args
+        self.assertEqual(args[0], ["b/two", "c/three"])
+        self.assertIn("missing from Milvus", kwargs["reason"])
+        self.assertTrue(kwargs["updated_at"])
+
+    def test_dry_run_reports_without_requeue(self) -> None:
+        db = MagicMock()
+        db.list_indexed_github_project_ids.return_value = ["a/one", "b/two"]
+        vectors = MagicMock()
+        vectors.list_repo_ids.return_value = {"a/one"}
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors)
+
+        result = indexer.reconcile_vector_ledger(dry_run=True)
+
+        self.assertEqual(result, {"status": "dry_run", "indexed": 2, "missing": 1, "requeued": 0})
+        db.requeue_github_project_semantic_index.assert_not_called()
+
+    def test_unreadable_milvus_leaves_ledger_untouched(self) -> None:
+        db = MagicMock()
+        db.list_indexed_github_project_ids.return_value = ["a/one"]
+        vectors = MagicMock()
+        vectors.list_repo_ids.side_effect = RuntimeError("milvus down")
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors)
+
+        result = indexer.reconcile_vector_ledger()
+
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("milvus down", result["error"])
+        db.requeue_github_project_semantic_index.assert_not_called()
+
+    def test_empty_ledger_skips_milvus(self) -> None:
+        db = MagicMock()
+        db.list_indexed_github_project_ids.return_value = []
+        vectors = MagicMock()
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors)
+
+        result = indexer.reconcile_vector_ledger()
+
+        self.assertEqual(result, {"status": "success", "indexed": 0, "missing": 0, "requeued": 0})
+        vectors.list_repo_ids.assert_not_called()
+
+    def test_sync_batch_reconciles_before_selecting(self) -> None:
+        manager = MagicMock()
+        db = manager.db
+        db.list_indexed_github_project_ids.return_value = ["a/one"]
+        db.requeue_github_project_semantic_index.return_value = 1
+        db.list_github_projects_for_semantic_sync.return_value = []
+        vectors = manager.vectors
+        vectors.list_repo_ids.return_value = set()
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=vectors, embeddings=MagicMock())
+
+        result = indexer.sync_batch(limit=5, fetch_readme=False)
+
+        self.assertEqual(result["reconcile"]["requeued"], 1)
+        names = [name for name, _, _ in manager.mock_calls]
+        self.assertLess(
+            names.index("db.requeue_github_project_semantic_index"),
+            names.index("db.list_github_projects_for_semantic_sync"),
+        )
+
+    def test_sync_batch_can_skip_reconcile(self) -> None:
+        db = MagicMock()
+        db.list_github_projects_for_semantic_sync.return_value = []
+        indexer = GitHubProjectSemanticIndexer(db=db, vectors=MagicMock())
+
+        result = indexer.sync_batch(limit=5, fetch_readme=False, reconcile=False)
+
+        self.assertNotIn("reconcile", result)
+        db.list_indexed_github_project_ids.assert_not_called()
 
 
 class SyncGitHubProjectSemanticIndexTests(unittest.TestCase):

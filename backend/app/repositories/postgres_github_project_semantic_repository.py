@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -258,6 +259,51 @@ class PostgresGitHubProjectSemanticSourceRepository:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(sql, (repo_pushed_at, checked_at, checked_at, repo_id))
+
+    def list_indexed_github_project_ids(self) -> list[str]:
+        """台账里记为已写入向量的项目（与 Milvus 对账用）。"""
+        sql = """
+            SELECT repo_id
+            FROM github_project_semantic_sources
+            WHERE index_status = 'succeeded'
+              AND COALESCE(chunk_count, 0) > 0
+              AND COALESCE(indexed_fingerprint, '') <> ''
+            ORDER BY repo_id COLLATE "C" ASC
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql)
+                rows = cursor.fetchall()
+        return [str(row["repo_id"]) for row in rows]
+
+    def requeue_github_project_semantic_index(
+        self,
+        repo_ids: Sequence[str],
+        *,
+        reason: str,
+        updated_at: str,
+    ) -> int:
+        """把向量已丢失的项目退回 pending 并清空已索引指纹，让增量同步重新嵌入。
+
+        只动索引状态列；README 快照与 source_fingerprint 保持原样，重嵌时直接复用。
+        """
+        ids = sorted({str(repo_id) for repo_id in repo_ids if str(repo_id or "").strip()})
+        if not ids:
+            return 0
+        sql = """
+            UPDATE github_project_semantic_sources
+            SET indexed_fingerprint = '',
+                index_status = 'pending',
+                chunk_count = 0,
+                index_error = %s,
+                updated_at = %s
+            WHERE repo_id = ANY(%s)
+              AND index_status = 'succeeded'
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, (reason[:2000], updated_at, ids))
+                return int(cursor.rowcount or 0)
 
     def get_github_project_semantic_status(
         self, *, min_stars: int = 500
