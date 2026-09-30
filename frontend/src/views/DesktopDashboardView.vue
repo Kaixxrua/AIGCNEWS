@@ -168,7 +168,11 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.dash-calendar .calendar-day--disabled) { opacity:.65; }
 .dashboard-sidebar :deep(.dash-calendar .grid > span) { font-size:14px !important;line-height:25px !important;color:var(--ink-secondary); }
 .dashboard-sidebar :deep(.calendar-day--active) { width:39px;justify-self:center;font-size:20px !important;font-weight:850;border:1.5px solid var(--rule-strong);border-radius:4px;box-shadow:none !important; }
-.dashboard-sidebar :deep(.calendar-day--active)::before { content:'';position:absolute;inset:-13px;z-index:0;pointer-events:none;background:repeating-conic-gradient(from 5deg,var(--acid) 0 3deg,transparent 3deg 32deg);mask:radial-gradient(ellipse,transparent 56%,#000 59%); }
+.dashboard-sidebar :deep(.calendar-day--active)::before { content:'';position:absolute;inset:-13px;z-index:0;pointer-events:none;background:repeating-conic-gradient(from 5deg,var(--acid) 0 3deg,transparent 3deg 32deg);mask:radial-gradient(ellipse,transparent 56%,#000 59%);animation:motion-burst 560ms var(--motion-pop) both; }
+/* 选中日期的底块由 v-indicator 画在日期网格上滑到新日期；墨框随底块走，光芒在新日期上炸开。 */
+.dashboard-sidebar :deep(.calendar-days)::before { border:1.5px solid var(--rule-strong);box-shadow:none; }
+.dashboard-sidebar :deep(.calendar-days[data-indicator] .calendar-day--active) { border-color:transparent; }
+@media (prefers-reduced-motion:reduce) { .dashboard-sidebar :deep(.calendar-day--active)::before { animation:none; } }
 .dashboard-sidebar :deep(.cal-nav) { color:var(--ink);width:35px; }
 .dashboard-sidebar :deep(.cal-nav svg) { width:19px;height:19px; }
 .dashboard-sidebar :deep(.snapshot-dot) { display:none; }

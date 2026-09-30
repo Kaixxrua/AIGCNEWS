@@ -157,6 +157,7 @@
   #app .app-shell--editorial .masthead-user__identity { font-size:11px;letter-spacing:0; }
   #app .app-shell--editorial .dock { bottom: 10px; padding: 4px 12px; border-radius: 14px; box-shadow: none; }
   #app .app-shell--editorial .dock-item { height: 52px; border-radius: 7px; }
+  #app .app-shell--editorial .dock::before { border-radius: 7px; }
   #app .app-shell--editorial .dock-label { font-size: 12px; line-height: 16px; }
   #app .app-shell--editorial .dock-auth-sep { display: block; width: 1px; height: 32px; margin: 0 10px; background: var(--dock-edge); }
   #app .app-shell--editorial .dock-footer--editorial { bottom: 3px; height: 68px; left: 24px; right: 24px; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { projectDescription } from '@/features/projects/projectPresentation'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -19,6 +19,7 @@ import {
   type TopDoc,
 } from '@/features/dashboard/dashboardViewModel'
 import type { SourceStatusMap } from '@/services/dashboard/dashboardContracts'
+import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
   activeTab: TabKey
@@ -34,6 +35,14 @@ const summary = (doc: TopDoc) => doc.source === 'github'
   ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
+// 切换来源时旧榜单变淡留在原处等新数据，到了再整张换上逐行浮入（与桌面榜单一致）。
+const listing = shallowRef<{ tab: TabKey; docs: TopDoc[] }>({ tab: props.activeTab, docs: [] })
+const listKey = ref(0)
+watch([() => props.tabLoading, () => props.activeTab, () => props.tabList], ([loading, tab, docs], previous) => {
+  if (loading) return
+  if (previous?.[0] || tab !== listing.value.tab) listKey.value += 1
+  listing.value = { tab, docs }
+}, { immediate: true })
 
 const hasDistinctSummary = (doc: TopDoc) => Boolean(summary(doc)?.trim())
   && summary(doc)?.replace(/\s+/g, ' ').trim() !== doc.title?.replace(/\s+/g, ' ').trim()
@@ -61,7 +70,7 @@ const boardDateHint = computed(() => {
 <template>
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
     <div class="ranking-toolbar">
-      <div class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
+      <div v-indicator="'[aria-selected=true]'" class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
         <button v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
           type="button" class="ranking-tab" role="tab" aria-controls="ranking-content"
           :aria-selected="activeTab === tab.key" :aria-label="t(`dashboard.sources.${tab.labelKey}`)"
@@ -81,14 +90,14 @@ const boardDateHint = computed(() => {
     </div>
 
     <div id="ranking-content" class="ranking-list flex-1 overflow-y-auto" role="tabpanel" :aria-labelledby="`ranking-tab-${activeTab}`" :aria-busy="tabLoading">
-      <div v-if="tabLoading" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
-      <div v-else-if="!tabList.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
+      <div v-if="tabLoading && !listing.docs.length" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
+      <div v-else-if="!listing.docs.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
         <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center"><svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
       </div>
-      <ol v-else :class="{ 'editorial-list': !(isMobile && activeTab === 'x') }">
-        <li v-for="(doc, idx) in tabList" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
-          <DashboardTweetPreview v-if="isMobile && activeTab === 'x'" :doc="doc" :rank="idx + 1" />
+      <ol v-else :key="listKey" class="motion-stagger" :class="{ 'editorial-list': !(isMobile && listing.tab === 'x'), 'ranking-list--stale': tabLoading }" :inert="tabLoading || undefined">
+        <li v-for="(doc, idx) in listing.docs" :key="idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
+          <DashboardTweetPreview v-if="isMobile && listing.tab === 'x'" :doc="doc" :rank="idx + 1" />
           <a v-else :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="ranking-link flex items-start gap-2.5 px-4 py-1.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
             <span class="ranking-number mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ String(idx + 1).padStart(2, '0') }}</span>
             <RankingAvatar :doc="doc" :crowned="idx === 0" />
@@ -119,6 +128,11 @@ const boardDateHint = computed(() => {
 .ranking-tab:hover { color: var(--ink); background: var(--paper-light); }
 .ranking-tab[aria-selected='true'] { border-color: var(--projects-on-acid); color: var(--projects-on-acid); background: var(--acid); box-shadow: 1px 1px 0 var(--projects-on-acid); }
 .ranking-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* 选中底由 v-indicator 画在 tab 组的 ::before 上，在格子间（含换行）弹簧滑动。 */
+.ranking-tabs { position: relative; isolation: isolate; }
+.ranking-tabs::before { z-index: -1; border: 1px solid var(--projects-on-acid); border-radius: 4px; background: var(--acid); box-shadow: 1px 1px 0 var(--projects-on-acid); }
+.ranking-tabs[data-indicator] .ranking-tab[aria-selected='true'] { border-color: transparent; background: transparent; box-shadow: none; transition-delay: 70ms; }
+.ranking-list--stale { opacity: .42; filter: saturate(.5); transition: opacity 200ms ease 120ms, filter 200ms ease 120ms; }
 .ranking-source-status { min-width: 0; flex-wrap: wrap; }
 .ranking-live-status { display: flex; align-items: center; gap: 7px; color: var(--ink-secondary); font-size: 12px; line-height: 18px; }
 .ranking-live-status > svg, .live-dot { flex-shrink: 0; }

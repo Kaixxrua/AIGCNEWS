@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatLocaleDate } from '@/i18n/formatters'
+import { vIndicator } from '@/motion/indicator'
+import { vSwap } from '@/motion/swap'
 
 const { t } = useI18n()
 
@@ -22,12 +24,18 @@ const viewMonth = ref(Number(todayStr.value.slice(5, 7)) - 1)
 const monthLabel = computed(() => formatLocaleDate(new Date(viewYear.value, viewMonth.value, 1), { year: 'numeric', month: 'long' }))
 const weekdayLabels = computed(() => Array.from({ length: 7 }, (_, day) => formatLocaleDate(new Date(2023, 0, day + 1), { weekday: 'narrow' })))
 
+// 翻月方向：日期网格与月份标题从翻页的方向滑入。
+const monthStep = ref(0)
+const monthKey = computed(() => viewYear.value * 12 + viewMonth.value)
+
 const prevMonth = () => {
+  monthStep.value = -1
   if (viewMonth.value === 0) { viewMonth.value = 11; viewYear.value-- }
   else { viewMonth.value-- }
 }
 
 const nextMonth = () => {
+  monthStep.value = 1
   if (viewMonth.value === 11) { viewMonth.value = 0; viewYear.value++ }
   else { viewMonth.value++ }
 }
@@ -90,7 +98,7 @@ const selectDate = (day: CalendarDay) => {
 <template>
   <div class="dash-calendar stagger-enter flex flex-col px-2 py-1.5" style="animation-delay: 0.2s">
     <div class="flex items-center justify-between mb-1">
-      <h3 class="text-2xs font-semibold text-stone-700 tracking-tight font-serif">{{ monthLabel }}</h3>
+      <h3 v-swap="{ key: monthKey, x: monthStep * 8, y: 0 }" class="text-2xs font-semibold text-stone-700 tracking-tight font-serif">{{ monthLabel }}</h3>
       <div class="flex items-center gap-0.5">
         <button
           class="cal-nav"
@@ -121,7 +129,8 @@ const selectDate = (day: CalendarDay) => {
       </span>
     </div>
 
-    <div class="grid grid-cols-7">
+    <!-- 选中日期的荧光块由 v-indicator 画在网格上，换日期时从旧格子弹到新格子。 -->
+    <div v-indicator="{ active: '.calendar-day--active', flip: true }" v-swap="{ key: monthKey, x: monthStep * 18, y: 0 }" class="calendar-days grid grid-cols-7">
       <button
         v-for="(day, idx) in calendarDays"
         :key="idx"
@@ -217,6 +226,10 @@ const selectDate = (day: CalendarDay) => {
   font-weight: 700;
   box-shadow: inset 0 0 0 1px var(--ink) !important;
 }
+
+.calendar-days { position: relative; isolation: isolate; }
+.calendar-days::before { z-index: -1; border-radius: 4px; background: var(--acid); box-shadow: inset 0 0 0 1px var(--ink); }
+.calendar-days[data-indicator] .calendar-day--active { background: transparent !important; box-shadow: none !important; }
 
 .calendar-day--active:hover {
   color: var(--acid-ink) !important;

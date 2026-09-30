@@ -2,11 +2,19 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppTheme } from '@/theme'
+import { revealTheme } from '@/motion/themeReveal'
 
 const { t } = useI18n()
 const { theme, toggleAppTheme } = useAppTheme()
 
 const targetThemeKey = computed(() => (theme.value === 'dark' ? 'theme.light' : 'theme.dark'))
+
+// 新主题从按钮处炸开一枚漫画爆炸框铺满全屏（键盘触发同样以按钮为圆心）。
+function toggle(event: MouseEvent) {
+  const button = event.currentTarget as HTMLElement | null
+  const rect = button?.getBoundingClientRect()
+  revealTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null, toggleAppTheme)
+}
 </script>
 
 <template>
@@ -15,7 +23,7 @@ const targetThemeKey = computed(() => (theme.value === 'dark' ? 'theme.light' : 
     class="theme-toggle"
     :aria-label="`${t('theme.toggle')}：${t(targetThemeKey)}`"
     :title="t(targetThemeKey)"
-    @click="toggleAppTheme"
+    @click="toggle"
   >
     <svg
       v-if="theme === 'dark'"

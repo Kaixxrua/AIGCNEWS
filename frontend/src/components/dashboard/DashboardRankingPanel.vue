@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { projectDescription } from '@/features/projects/projectPresentation'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -20,6 +20,7 @@ import {
   type TopDoc,
 } from '@/features/dashboard/dashboardViewModel'
 import type { SourceStatusMap } from '@/services/dashboard/dashboardContracts'
+import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
   activeTab: TabKey
@@ -36,6 +37,17 @@ const displayDocs = computed(() => props.tabList.map(doc => {
   const text = displayTweetText(doc, locale.value)
   return { ...doc, title: text, summary: text }
 }))
+// 切换来源时先留着上一份榜单（变淡、不可点）等新数据，到了再整张换上并逐行浮入，
+// 列表区不再先塌成加载圈再撑开。props 在一次父级更新里逐个写入，watch 保持默认的
+// pre 时机，等 tab、列表、加载态都更新完才看一眼，不会把中间态（新 tab + 旧列表）当成结果。
+const listing = shallowRef<{ tab: TabKey; docs: TopDoc[] }>({ tab: props.activeTab, docs: [] })
+const listKey = ref(0)
+watch([() => props.tabLoading, () => props.activeTab, displayDocs], ([loading, tab, docs], previous) => {
+  if (loading) return
+  // 加载完成或换了来源才整张重播入场；后台刷新、切换语言只原地更新。
+  if (previous?.[0] || tab !== listing.value.tab) listKey.value += 1
+  listing.value = { tab, docs }
+}, { immediate: true })
 const summary = (doc: TopDoc) => doc.source === 'github'
   ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
@@ -67,7 +79,7 @@ const boardDateHint = computed(() => {
 <template>
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
     <div class="ranking-toolbar">
-      <div class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
+      <div v-indicator="{ active: '[aria-selected=true]', flip: true }" class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
         <button v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
           type="button" class="ranking-tab" role="tab" aria-controls="ranking-content"
           :aria-selected="activeTab === tab.key" :aria-label="t(`dashboard.sources.${tab.labelKey}`)"
@@ -85,22 +97,23 @@ const boardDateHint = computed(() => {
           {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.tabFinalized' : 'dashboard.liveDraftShort') }}
         </span>
       </div>
+      <div v-else class="ranking-source-status ranking-pending" aria-hidden="true"><span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
     </div>
 
     <div id="ranking-content" class="ranking-list flex-1 overflow-y-auto" role="tabpanel" :aria-labelledby="`ranking-tab-${activeTab}`" :aria-busy="tabLoading">
-      <div v-if="tabLoading" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
-      <div v-else-if="!tabList.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
+      <div v-if="tabLoading && !listing.docs.length" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
+      <div v-else-if="!listing.docs.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
         <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center"><svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
       </div>
-      <ol v-else :class="{ 'editorial-list': !(isMobile && activeTab === 'x') }">
-        <li v-for="(doc, idx) in displayDocs" :key="doc.id ?? doc.url ?? idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
+      <ol v-else :key="listKey" class="motion-stagger" :class="{ 'editorial-list': !(isMobile && listing.tab === 'x'), 'ranking-list--stale': tabLoading }" :inert="tabLoading || undefined">
+        <li v-for="(doc, idx) in listing.docs" :key="doc.id ?? doc.url ?? idx" class="ranking-row group transition-colors duration-150" :class="{ 'ranking-row--featured': idx < 3, 'ranking-row--lead': idx === 0, 'ranking-row--silver': idx === 1, 'ranking-row--bronze': idx === 2 }">
           <svg v-if="idx < 3" class="ranking-ink-frame" viewBox="0 0 400 174" preserveAspectRatio="none" aria-hidden="true">
             <path class="ranking-ink-frame__outline" d="M8 2.5 390 1.5 Q398 1 398 9 L397.5 166 Q398 171.5 391 172 L8 171 Q2 172 2 165 L2.5 10 Q1.5 3 8 2.5Z" />
             <path class="ranking-ink-frame__trace" d="M9 4 186 3.5 M395 10 395.5 161 Q396 169 389 169.5 L246 169" />
             <path class="ranking-ink-frame__strokes" d="m9 163 19-16m-10 17 12-10M369 9l16-5m-9 13 17-10M7 60l10-12" />
           </svg>
-          <DashboardTweetPreview v-if="isMobile && activeTab === 'x'" :doc="doc" :rank="idx + 1" />
+          <DashboardTweetPreview v-if="isMobile && listing.tab === 'x'" :doc="doc" :rank="idx + 1" />
           <a v-else :href="doc.url || undefined" :target="doc.url ? '_blank' : undefined" :rel="doc.url ? 'noopener noreferrer' : undefined" class="ranking-link flex items-start gap-2.5 px-4 py-1.5" :class="doc.url ? 'hover:bg-stone-50 cursor-pointer' : 'pointer-events-none'">
             <span class="ranking-number mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-2xs font-bold" :class="idx < 3 ? 'bg-ink-solid text-ink-on-solid' : 'bg-stone-100 text-stone-400'">{{ String(idx + 1).padStart(2, '0') }}</span>
             <RankingAvatar :doc="doc" :crowned="idx === 0" />
@@ -131,6 +144,17 @@ const boardDateHint = computed(() => {
 .ranking-tab[aria-selected='true']::after { content:'';position:absolute;inset:0;z-index:-1;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--acid);transform:skewX(-10deg); }
 .ranking-tab:focus-visible,.ranking-link:focus-visible { outline:2px solid var(--ink);outline-offset:-3px; }
 .ranking-tab-icon { width:25px;height:25px;flex-shrink:0; }
+/* 选中底由 v-indicator 画在 tab 条的 ::before 上：墨框斜切的荧光块在 tab 间弹簧滑动，选中项字号的变化用 FLIP 补间。 */
+.ranking-tabs { position:relative;isolation:isolate; }
+.ranking-tabs::before { z-index:-1;border:1.5px solid var(--rule-strong);border-radius:7px;background:var(--acid);transform:skewX(-10deg); }
+.ranking-tabs[data-indicator] .ranking-tab[aria-selected='true']::after { content:none; }
+.ranking-tab { transition:color 160ms ease; }
+.ranking-tabs[data-indicator] .ranking-tab[aria-selected='true'] { transition-delay:70ms; }
+/* 状态区随数据换上淡入；加载中的小转圈晚 150ms 才出现，快的切换不闪。 */
+.ranking-source-status { animation:motion-fade 220ms ease both; }
+.ranking-pending { animation-delay:150ms; }
+/* 等新榜单时旧榜单淡下去；加载很快（<120ms）时不闪。 */
+.ranking-list--stale { opacity:.42;filter:saturate(.5);transition:opacity 200ms ease 120ms,filter 200ms ease 120ms; }
 .ranking-source-status { gap:14px;margin-left:auto;padding:0 9px;flex-shrink:0; }
 .ranking-sort { display:flex;align-items:center;gap:5px;color:var(--ink-secondary);font-size:13px;font-weight:650;white-space:nowrap;cursor:help; }
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }

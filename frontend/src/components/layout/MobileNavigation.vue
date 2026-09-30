@@ -6,6 +6,7 @@ import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import { Menu, X, UserRound, LogOut } from 'lucide-vue-next'
 import { isNavigationItemActive, type NavigationItem } from '@/features/navigation/navigationModel'
+import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
   items: readonly NavigationItem[]
@@ -55,7 +56,7 @@ onBeforeUnmount(closeMenu)
 </script>
 
 <template>
-  <nav class="mobile-nav" :aria-label="t('navigation.mainNavigation')">
+  <nav v-indicator="{ active: '.mobile-nav__item.is-active', follow: 'a.mobile-nav__item' }" class="mobile-nav" :aria-label="t('navigation.mainNavigation')">
     <RouterLink
       v-for="item in primaryItems" :key="item.to" :to="item.to"
       class="mobile-nav__item" :class="{ 'is-active': isActive(item) }"
@@ -118,6 +119,12 @@ onBeforeUnmount(closeMenu)
 .mobile-nav { position: fixed; z-index: 100; inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 6px; background: var(--dock-surface); border: 1px solid var(--dock-edge); border-radius: 16px; box-shadow: 0 8px 24px rgb(17 25 10 / .22); }
 .mobile-nav__item { position: relative; display: flex; min-width: 0; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 10px; color: var(--dock-text); font-size: 11px; font-weight: 600; line-height: 1.3; text-decoration: none; }
 .mobile-nav__item.is-active { color: var(--acid-ink); background: var(--acid); }
+/* 选中底色由 v-indicator 画在导航条的 ::before 上滑动；打开「更多」时滑到菜单键，关上再滑回来。 */
+.mobile-nav::before { z-index: -1; border-radius: 10px; background: var(--acid); }
+.mobile-nav__item { transition: color 160ms ease; }
+.mobile-nav[data-indicator] .mobile-nav__item.is-active { background: transparent; transition-delay: 70ms; }
+.mobile-nav[data-indicator-pending] .mobile-nav__item.is-active { color: var(--dock-text); transition-delay: 0ms; }
+.mobile-nav .mobile-nav__item[data-indicator-target] { color: var(--acid-ink); transition-delay: 70ms; }
 .mobile-nav__item:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .mobile-nav__icon { display: inline-flex; flex: 0 0 20px; width: 20px; height: 20px; }
 .mobile-nav__icon :deep(svg) { width: 20px; height: 20px; }

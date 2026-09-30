@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery, useWindowSize } from '@vueuse/core'
 import { RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
@@ -22,12 +22,14 @@ import {
   KEEP_ALIVE_MAX,
   KEEP_ALIVE_VIEW_NAMES,
   NAV_ITEMS,
+  isNavigationItemActive,
   isNavigationItemFeatureEnabled,
   isNavigationItemSitePageEnabled,
 } from '@/features/navigation/navigationModel'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
+import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
 const isDesktop = useMediaQuery('(min-width: 1024px)')
@@ -89,6 +91,24 @@ const visibleNavItems = computed(() =>
   ),
 )
 
+// 页面切换动效：按 dock 顺序决定滑入方向（往右的入口从右边滑进来），dock 之外的页面从下方浮起。
+// 项目库与「我的网页收藏」共用一个页面实例、只换查询参数，没有新旧页面交接，单独补一段进入动画。
+const viewKey = computed(() => (route.name === 'ui-library' ? 'ui-library' : route.path))
+const appContent = ref<HTMLElement | null>(null)
+let pageAxis: RouteAxis = 'rise'
+let dockIndex = -1
+const routeTransition = createRouteTransition(() => pageAxis)
+watch([viewKey, () => route.fullPath], (next, previous) => {
+  const index = visibleNavItems.value.findIndex((item) => isNavigationItemActive(item, route.path, route.query))
+  pageAxis = routeAxis(dockIndex, index)
+  dockIndex = index
+  if (!previous || next[0] !== previous[0] || pageAxis === 'rise') return
+  void nextTick(() => {
+    const view = appContent.value?.querySelector(':scope > .view-container')
+    if (view) playEnter(view, pageAxis)
+  })
+}, { flush: 'pre', immediate: true })
+
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
 const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </script>
@@ -127,11 +147,13 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
       <!-- 内容区（顶栏占位 56px；pb-7 保证末端内容不被悬浮 dock 遮挡，
            部分浏览器不会把滚动容器的 end padding 计入可滚动区域） -->
-      <div class="app-content absolute inset-0 pt-[56px] pb-7 flex flex-col">
+      <div ref="appContent" class="app-content absolute inset-0 pt-[56px] pb-7 flex flex-col">
         <router-view v-slot="{ Component }">
-          <KeepAlive :include="KEEP_ALIVE_VIEW_NAMES" :max="KEEP_ALIVE_MAX">
-            <component :is="Component" :key="route.name === 'ui-library' ? 'ui-library' : route.path" class="view-container" />
-          </KeepAlive>
+          <Transition :css="false" v-bind="routeTransition">
+            <KeepAlive :include="KEEP_ALIVE_VIEW_NAMES" :max="KEEP_ALIVE_MAX">
+              <component :is="Component" :key="viewKey" class="view-container" />
+            </KeepAlive>
+          </Transition>
         </router-view>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { LogIn, LogOut, MoreHorizontal, UserRound, X } from 'lucide-vue-next'
 import { isNavigationItemActive, type NavigationItem } from '@/features/navigation/navigationModel'
 import LayoutFooter from './LayoutFooter.vue'
+import { vIndicator } from '@/motion/indicator'
 
 const props = withDefaults(defineProps<{
   items: readonly NavigationItem[]
@@ -71,7 +72,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
   <div class="app-dock-host">
     <MobileNavigation v-if="isMobile" v-bind="props" @login="emit('login')" @logout="emit('logout')" @account-settings="emit('accountSettings')" />
     <template v-else>
-  <nav class="dock" :aria-label="t('navigation.primary')">
+  <nav v-indicator="{ active: '.dock-item--active', follow: 'a.dock-item' }" class="dock" :aria-label="t('navigation.primary')">
     <RouterLink
       v-for="item in visibleItems" :key="item.to" :to="item.to"
       :aria-label="props.alertItems?.includes(item.to) ? label(item) + '，' + alertLabel(item.to) : label(item)" :title="label(item)"
@@ -158,6 +159,11 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
 }
 .dock-item:hover { background: var(--dock-hover); transform: translateY(-3px); }
 .dock-item--active, .dock-item--active:hover { color: var(--acid-ink); background: var(--acid); }
+/* 选中底色由 v-indicator 画在 dock 的 ::before 上、在各项之间弹簧滑动；新选中项的字色等底色滑到再换。 */
+.dock::before { z-index: -1; border-radius: 11px; background: var(--acid); }
+.dock[data-indicator] .dock-item--active, .dock[data-indicator] .dock-item--active:hover { background: transparent; transform: none; transition-delay: 70ms; }
+.dock[data-indicator-pending] .dock-item--active { color: var(--dock-text); transition-delay: 0ms; }
+.dock .dock-item[data-indicator-target] { color: var(--acid-ink); transform: none; transition-delay: 70ms; }
 .dock-icon { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; align-items: center; justify-content: center; }
 .dock-icon :deep(svg) { width: 20px; height: 20px; }
 .dock-label { position: absolute; bottom: calc(100% + 16px); left: 50%; transform: translate(-50%, 4px); width: max-content; max-width: 180px; padding: 6px 10px; border: 1px solid var(--dock-edge); border-radius: 6px; color: var(--acid); background: var(--dock-surface); box-shadow: 2px 2px 0 var(--acid); font-size: 12px; line-height: 1.4; font-weight: 650; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
