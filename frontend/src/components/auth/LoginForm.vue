@@ -54,7 +54,7 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="glass-card w-full max-w-sm p-6">
+  <div class="auth-card glass-card w-full max-w-sm p-6">
     <AuthPageHeader :title="t('auth.loginTitle')" :description="t('auth.loginDescription')">
       <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 2-2 3-2.5 4"/><circle cx="12" cy="17" r=".5" fill="currentColor"/>
@@ -67,8 +67,8 @@ const handleLogin = async () => {
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.email') }}</label><input v-model="email" type="email" class="input" :placeholder="t('auth.emailPlaceholder')" autocomplete="email" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <div class="space-y-1.5"><label class="text-xs font-medium text-stone-500">{{ t('auth.password') }}</label><input v-model="password" type="password" class="input" :placeholder="t('auth.passwordPlaceholder')" autocomplete="current-password" :disabled="loading" @keydown.enter="handleLogin" /></div>
       <AuthFeedback :message="errorMsg" type="error" />
-      <div class="text-right"><button type="button" class="text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-forgot-password')">{{ t('auth.forgotPassword') }}</button></div>
-      <div v-if="oauthProviders.length" class="space-y-2 border-t border-stone-200 pt-4">
+      <div class="auth-forgot text-right"><button type="button" class="text-xs font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-forgot-password')">{{ t('auth.forgotPassword') }}</button></div>
+      <div v-if="oauthProviders.length" class="auth-oauth space-y-2 border-t border-stone-200 pt-4">
         <p class="text-center text-xs text-stone-400">{{ t('auth.oauthOr') }}</p>
         <button v-for="provider in oauthProviders" :key="provider" type="button" class="btn-secondary w-full justify-center gap-2 py-2.5" :disabled="loading || oauthLoading" @click="handleOAuth(provider)">
           <!-- 品牌图标仅作识别用途，按钮语义由文字标签承载 -->
@@ -84,7 +84,7 @@ const handleLogin = async () => {
         {{ loading ? t('auth.loggingIn') : t('auth.login') }}
       </button>
     </div>
-    <p class="mt-5 text-center text-sm text-stone-400">
+    <p class="auth-switch mt-5 text-center text-sm text-stone-400">
       {{ t('auth.noAccount') }}
       <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-register')">{{ t('auth.registerNow') }}</button>
     </p>

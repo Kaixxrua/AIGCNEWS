@@ -49,9 +49,9 @@ const {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
+      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
         <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
-          <div class="glass-card p-4 sm:p-6">
+          <div class="auth-card glass-card p-4 sm:p-6">
             <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
@@ -90,7 +90,7 @@ const {
               />
               <AuthFeedback :message="errorMsg" type="error" />
               <AuthFeedback :message="successMsg" type="success" />
-              <div class="flex items-start gap-2.5 pt-1">
+              <div class="auth-terms flex items-start gap-2.5 pt-1">
                 <button
                   type="button"
                   class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
@@ -107,8 +107,7 @@ const {
                   {{ t('auth.agreeTerms') }}
                   <RouterLink to="/disclaimer" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('auth.terms') }}</RouterLink>
                   {{ t('auth.and') }}
-                  <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('footer.privacy') }}</RouterLink>
-                  {{ t('auth.termsSuffix') }}
+                  <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('footer.privacy') }}</RouterLink>{{ t('auth.termsSuffix') }}
                 </label>
               </div>
               <button class="btn-primary w-full justify-center py-3" :disabled="loading || !agreedToTerms" @click="handleRegister">
@@ -123,7 +122,7 @@ const {
               </button>
             </div>
 
-            <p class="mt-5 text-center text-sm text-stone-400">
+            <p class="auth-switch mt-5 text-center text-sm text-stone-400">
               {{ t('auth.hasAccount') }}
               <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-login')">{{ t('auth.goLogin') }}</button>
             </p>

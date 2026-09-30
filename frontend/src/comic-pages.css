@@ -49,18 +49,19 @@
     :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-copyright { text-align: right; }
   }
 
-  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page). */
-  #app :is(.app-shell--comic-page, .register-page) .comic-title {
+  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page
+     and the auth dialogs, which are teleported out of #app). */
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title {
     position: relative; isolation: isolate; display: inline-block; overflow: visible; text-overflow: clip;
     margin: 0 36px 0 0; color: var(--ink); font-family: inherit; font-size: 36px; font-style: italic; font-weight: 950;
     line-height: 1.15; letter-spacing: 0; white-space: nowrap;
     -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
   }
-  #app :is(.app-shell--comic-page, .register-page) .comic-title::before {
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::before {
     content: ''; position: absolute; z-index: -1; inset: 68% -4px 2px;
     background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
   }
-  #app :is(.app-shell--comic-page, .register-page) .comic-title::after {
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::after {
     content: ''; position: absolute; right: -30px; top: -12px; width: 20px; height: 24px; background: var(--acid);
     clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
   }
@@ -1730,8 +1731,9 @@
      masthead wordmark. Measured off the concept at 1536 × 1024: the title centred with its icon hung to the left,
      then a 510px form card drawn in ink with a navy block to the lower right and dots down its top-right corner;
      lime label slips, plain inked inputs, a white "send code" slip, a lime bar, and the login link on a tipped
-     slip below. The hand-drawn frames are generated (reg-*.webp, 3x 9-slice, -night for the dark theme). ── */
-  #app .register-page {
+     slip below. The hand-drawn frames are generated (reg-*.webp, 3x 9-slice, -night for the dark theme). The card,
+     its slips and fields are shared with the auth dialogs (.comic-auth, teleported out of #app). ── */
+  :is(#app .register-page, .comic-auth) {
     --reg-card: url('/assets/comic/reg-card.webp');
     --reg-label: url('/assets/comic/reg-label.webp');
     --reg-otp: url('/assets/comic/reg-otp.webp');
@@ -1745,10 +1747,12 @@
     --reg-icon: #ebf6f4;
     --reg-wen: #0f3471;
     --reg-lime: #cbf946;
+  }
+  #app .register-page {
     /* h-full resolves to the content height here (the root has no set height), so the paper fills the viewport itself. */
     position: relative; align-items: flex-start; min-height: 100dvh; padding: 20px 24px 32px; background: var(--paper);
   }
-  :root[data-theme='dark'] #app .register-page {
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) {
     --reg-card: url('/assets/comic/reg-card-night.webp');
     --reg-label: url('/assets/comic/reg-label-night.webp');
     --reg-otp: url('/assets/comic/reg-otp-night.webp');
@@ -1796,86 +1800,194 @@
   #app .register-page .auth-page-header .locale-icon__tick { stroke: var(--reg-lime); stroke-width: 2.4; }
 
   /* The card and every slip paint their frame from ::after, stretched as a 9-slice around the box. */
-  #app .register-page :is(.register-card, .register-card label:not(.register-terms label), .register-card .auth-otp-btn,
-    .register-card .btn-primary, .register-login) {
+  :is(#app .register-page, .comic-auth) :is(.auth-card, .auth-card label:not(.auth-terms label), .auth-card .auth-otp-btn,
+    .auth-card :is(.btn-primary, .btn-secondary), .auth-switch) {
     position: relative; isolation: isolate; border: 0 !important; background: transparent !important; box-shadow: none;
   }
-  #app .register-page :is(.register-card, .register-card label:not(.register-terms label), .register-card .auth-otp-btn,
-    .register-card .btn-primary, .register-login)::after {
+  :is(#app .register-page, .comic-auth) :is(.auth-card, .auth-card label:not(.auth-terms label), .auth-card .auth-otp-btn,
+    .auth-card :is(.btn-primary, .btn-secondary), .auth-switch)::after {
     content: ''; position: absolute; z-index: -1; pointer-events: none; border-style: solid; border-color: transparent;
   }
-  #app .register-page .register-card { padding: 21px 29px 31px 28px; border-radius: 0; backdrop-filter: none; }
-  #app .register-page .register-card::after {
+  :is(#app .register-page, .comic-auth) .auth-card { padding: 21px 29px 31px 28px; border-radius: 0; backdrop-filter: none; }
+  :is(#app .register-page, .comic-auth) .auth-card::after {
     inset: -2px -13px -12px -2px; border-width: 129px 123px 28px 16px; border-image: var(--reg-card) 387 369 84 48 fill / 129px 123px 28px 16px stretch;
   }
-  #app .register-page .register-card > * { margin-block: 0; }
-  #app .register-page .register-card > * + * { margin-top: 10px; }
-  #app .register-page .register-card .space-y-1\.5 > * { margin-block: 0; }
-  #app .register-page .register-card .space-y-1\.5 > label + * { margin-top: 5px; }
-  #app .register-page .register-card .space-y-1\.5 > p { margin-top: 5px; }
+  #app .register-page .auth-card > * { margin-block: 0; }
+  #app .register-page .auth-card > * + * { margin-top: 10px; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > * { margin-block: 0; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > label + * { margin-top: 5px; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > p { margin-top: 5px; }
 
-  #app .register-page .register-card label:not(.register-terms label) {
+  :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label) {
     display: block; width: fit-content; height: 28px; margin: 0 0 0 -6px; padding: 0 9px;
     color: var(--reg-copy); font-size: 19.5px; font-style: italic; font-weight: 900; line-height: 28px; letter-spacing: -.02em;
   }
-  #app .register-page .register-card label:not(.register-terms label)::after {
+  :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label)::after {
     inset: -2px -2px -6px -4px; border-width: 11px 12px 15px 14px; border-image: var(--reg-label) 33 36 45 42 fill / 11px 12px 15px 14px stretch;
   }
-  :root[data-theme='dark'] #app .register-page .register-card label:not(.register-terms label) { color: var(--acid-ink); }
-  #app .register-page .register-card .input {
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label) { color: var(--acid-ink); }
+  :is(#app .register-page, .comic-auth) .auth-card .input {
     height: 42px; min-height: 42px; padding: 0 16px; border: 2px solid var(--reg-rule); border-radius: 6px;
     background: var(--reg-field); box-shadow: none; color: var(--reg-copy); font-size: 16px; letter-spacing: 0;
   }
-  #app .register-page .register-card .input::placeholder { color: var(--reg-hint); opacity: 1; }
-  #app .register-page .register-card .input:focus { border-color: var(--reg-rule); box-shadow: 0 0 0 3px var(--acid); outline: none; }
-  #app .register-page .register-card .space-y-1\.5 > .flex { gap: 16px; }
-  #app .register-page .register-card .auth-otp-btn {
+  :is(#app .register-page, .comic-auth) .auth-card .input::placeholder { color: var(--reg-hint); opacity: 1; }
+  :is(#app .register-page, .comic-auth) .auth-card .input:focus { border-color: var(--reg-rule); box-shadow: 0 0 0 3px var(--acid); outline: none; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > .flex { gap: 16px; }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn {
     width: auto; min-width: 117px; height: 40px; min-height: 40px; padding: 0 16px 0 6px; border-radius: 0; color: var(--reg-copy) !important;
     backdrop-filter: none !important; font-size: 17.5px; font-style: italic; font-weight: 900; letter-spacing: -.02em;
   }
-  #app .register-page .register-card .auth-otp-btn::after {
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn::after {
     inset: -2px -5px -6px -2px; border-width: 11px 16px 15px 13px; border-image: var(--reg-otp) 33 48 45 39 fill / 11px 16px 15px 13px stretch;
   }
-  #app .register-page .register-card .auth-otp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); }
   /* Drawn ready like the concept while the address is still empty; the pointer shows it is waiting. */
-  #app .register-page .register-card .auth-otp-btn:disabled { opacity: .55; cursor: not-allowed; }
-  #app .register-page .register-card .text-2xs { font-size: 13px; }
-  #app .register-page .register-card > .rounded-2xl { border-width: 2px; border-radius: 6px; font-size: 14px; }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn:disabled { opacity: .55; cursor: not-allowed; }
+  :is(#app .register-page, .comic-auth) .auth-card .text-2xs { font-size: 13px; }
+  :is(#app .register-page, .comic-auth) .auth-card .rounded-2xl.border { border-width: 2px; border-radius: 6px; font-size: 14px; }
 
-  #app .register-page .register-terms { gap: 18px; margin-top: 30px; padding: 0; }
-  #app .register-page .register-terms > button {
+  :is(#app .register-page, .comic-auth) .auth-terms { gap: 18px; margin-top: 30px; padding: 0; }
+  :is(#app .register-page, .comic-auth) .auth-terms > button {
     width: 22px; height: 21px; margin-top: 0; border: 2px solid var(--reg-rule); border-radius: 4px; background: var(--reg-field);
   }
-  #app .register-page .register-terms > button svg { width: 14px; height: 14px; }
-  #app .register-page .register-terms > button[aria-pressed='true'] { background: var(--acid); }
-  #app .register-page .register-terms label { max-width: 378px; margin-top: -3px; color: var(--reg-copy); font-size: 15px; font-weight: 500; line-height: 25px; }
-  #app .register-page .register-terms a { color: var(--reg-copy); font-weight: 500; text-decoration-thickness: 1px; }
+  :is(#app .register-page, .comic-auth) .auth-terms > button svg { width: 14px; height: 14px; }
+  :is(#app .register-page, .comic-auth) .auth-terms > button[aria-pressed='true'] { background: var(--acid); }
+  :is(#app .register-page, .comic-auth) .auth-terms label { max-width: 378px; margin-top: -3px; color: var(--reg-copy); font-size: 15px; font-weight: 500; line-height: 25px; }
+  :is(#app .register-page, .comic-auth) .auth-terms a { color: var(--reg-copy); font-weight: 500; text-decoration-thickness: 1px; }
 
-  #app .register-page .register-card .btn-primary {
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary {
     height: 57px; min-height: 57px; margin-top: 21px; gap: 13px; padding: 0; border-radius: 0;
     color: var(--reg-copy); font-size: 26px; font-style: normal; font-weight: 900; letter-spacing: .02em;
   }
-  #app .register-page .register-card .btn-primary::after {
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary::after {
     inset: -2px -8px -9px -2px; border-width: 11px 17px 18px 11px; border-image: var(--reg-submit) 33 51 54 33 fill / 11px 17px 18px 11px stretch;
   }
-  :root[data-theme='dark'] #app .register-page .register-card .btn-primary { color: var(--acid-ink); }
-  #app .register-page .register-card .btn-primary svg { width: 27px; height: 27px; stroke-width: 2.1; }
-  #app .register-page .register-card .btn-primary:hover:not(:disabled) { background: transparent; color: var(--reg-copy); transform: translate(-1px, -1px); }
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) .auth-card .btn-primary { color: var(--acid-ink); }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary svg { width: 27px; height: 27px; stroke-width: 2.1; }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary:hover:not(:disabled) { background: transparent; color: var(--reg-copy); transform: translate(-1px, -1px); }
   /* The concept draws the bar ready while the terms box is still empty; it only stops answering to the pointer. */
-  #app .register-page .register-card .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 
-  #app .register-page .register-login {
+  :is(#app .register-page, .comic-auth) .auth-switch {
     display: flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; min-width: 187px; height: 53px; margin: 21px auto 0; padding: 4px 24px 0 18px;
     left: -6px; color: var(--reg-copy); font-size: 17px; font-weight: 800; transform: none;
   }
-  #app .register-page .register-login::after {
+  :is(#app .register-page, .comic-auth) .auth-switch::after {
     inset: -2px -8px -8px -2px; border-width: 11px 21px 17px 15px; border-image: var(--reg-login) 33 63 51 45 fill / 11px 21px 17px 15px stretch;
   }
-  #app .register-page .register-login button { color: var(--reg-copy); font-weight: 800; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+  :is(#app .register-page, .comic-auth) .auth-switch button { color: var(--reg-copy); font-weight: 800; text-decoration-thickness: 2px; text-underline-offset: 4px; }
   @media (max-width: 1279px) {
     #app .register-page .register-corner { width: 220px; }
     #app .register-page .register-shout { width: 280px; }
   }
+
+  /* ── Auth dialogs (login, register, forgot password, account settings, change password): the register page's card,
+     slips and fields (above) in a scroll box padded so the frame's navy block is not clipped. The page's header is
+     drawn inside the card here; the settings dialogs keep a ruled head and sections, headed by the same lime slips.
+     They sit after #app in <body>; '#app ~' also gives these rules the shared rules' id weight. ── */
+  #app ~ .comic-auth > div { max-width: 477px; padding: 3px 14px 13px 3px; scrollbar-width: thin; }
+  #app ~ .comic-auth--settings > div { max-width: 617px; }
+  #app ~ .comic-auth .auth-card { width: 100%; max-width: none; }
+  #app ~ .comic-auth .auth-card .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 18px; }
+
+  /* The close button (and the language switch beside it) sit on an inked paper tab over the frame's dots. */
+  #app ~ .comic-auth .auth-page-header { margin-bottom: 24px; padding-top: 40px; }
+  #app ~ .comic-auth .auth-page-header > .absolute {
+    top: -12px; right: -14px; gap: 2px; padding: 2px 6px; border: 2px solid var(--reg-rule); border-radius: 999px;
+    background: var(--reg-field); color: var(--reg-ink);
+  }
+  #app ~ .comic-auth .auth-page-header > .absolute > button,
+  #app ~ .comic-auth .auth-dialog-head > button {
+    display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+    color: var(--reg-ink); font-size: 19px; font-weight: 900; line-height: 1; opacity: 1;
+  }
+  #app ~ .comic-auth .auth-page-header .locale-toggle { color: var(--reg-ink); }
+  #app ~ .comic-auth .auth-page-header .locale-icon__accent { stroke: currentColor; }
+  #app ~ .comic-auth .auth-page-header__icon {
+    width: 50px; height: 50px; margin: 0 14px 0 0; border: 2px solid var(--reg-rule); border-radius: 50%;
+    background: var(--reg-icon); box-shadow: none; vertical-align: middle;
+  }
+  #app ~ .comic-auth .auth-page-header__icon svg { width: 27px; height: 27px; color: var(--reg-ink); stroke-width: 1.9; }
+  #app ~ .comic-auth .auth-page-header h1.comic-title {
+    margin: 0; color: var(--reg-copy); font-size: 32px; font-weight: 900; line-height: 40px; vertical-align: middle;
+    -webkit-text-stroke: .3px currentColor; text-shadow: none;
+  }
+  #app ~ .comic-auth .auth-page-header h1.comic-title::before { display: none; }
+  #app ~ .comic-auth .auth-page-header h1.comic-title::after { right: -26px; top: -12px; width: 20px; height: 24px; background: var(--reg-lime); }
+  #app ~ .comic-auth .auth-page-header p { margin-top: 10px; color: var(--reg-copy); font-size: 15px; font-weight: 700; line-height: 22px; }
+
+  /* The Chinese links keep their words whole, so the terms never break inside 隐私政策. */
+  :root:not(:lang(en)) #app ~ .comic-auth .auth-terms a { white-space: nowrap; }
+  #app ~ .comic-auth .auth-card .auth-forgot button { color: var(--reg-copy); font-size: 14px; font-weight: 700; text-decoration-thickness: 1.5px; }
+  #app ~ .comic-auth .auth-card .auth-oauth { border-top: 2px solid color-mix(in srgb, var(--reg-rule) 18%, transparent); padding-top: 18px; }
+  #app ~ .comic-auth .auth-card .auth-oauth > * + * { margin-top: 14px; }
+  #app ~ .comic-auth .auth-card .auth-oauth > p { color: var(--reg-copy); font-size: 14px; font-weight: 700; }
+
+  /* White slips for the quieter buttons (OAuth, cancel, upload), drawn like "send code". */
+  #app ~ .comic-auth .auth-card .btn-secondary {
+    height: 44px; min-height: 44px; padding: 0 18px; border-radius: 0; color: var(--reg-copy);
+    font-size: 16px; font-style: italic; font-weight: 900; letter-spacing: -.01em; transform: none;
+  }
+  #app ~ .comic-auth .auth-card .btn-secondary::after {
+    inset: -2px -5px -6px -2px; border-width: 11px 16px 15px 13px; border-image: var(--reg-otp) 33 48 45 39 fill / 11px 16px 15px 13px stretch;
+  }
+  #app ~ .comic-auth .auth-card .btn-secondary:hover:not(:disabled) { color: var(--reg-copy); transform: translate(-1px, -1px); }
+  #app ~ .comic-auth .auth-card .btn-secondary:disabled { opacity: .55; cursor: not-allowed; }
+
+  /* Settings and change password: a ruled head, then sections split by a light rule and headed by lime slips. */
+  #app ~ .comic-auth .auth-card:has(> .auth-dialog-head) { padding: 18px 26px 28px 24px; }
+  #app ~ .comic-auth .auth-dialog-head { gap: 16px; padding: 4px 0 16px; border-bottom: 2px solid var(--reg-rule); }
+  #app ~ .comic-auth .auth-dialog-head h3.comic-title { margin-right: 36px; color: var(--reg-copy); font-size: 30px; line-height: 38px; }
+  #app ~ .comic-auth .auth-dialog-head > button { flex: none; border: 2px solid var(--reg-rule); border-radius: 50%; background: var(--reg-field); }
+  #app ~ .comic-auth .auth-card :is(.monitor-caption, .auth-dialog-head p) { color: color-mix(in srgb, var(--reg-copy) 72%, transparent); font-size: 14px; line-height: 21px; }
+  #app ~ .comic-auth .auth-dialog-head ~ .p-5 { padding: 20px 0 0; }
+  #app ~ .comic-auth .auth-card section.border-t,
+  #app ~ .comic-auth .auth-card .avatar-upload { border-color: color-mix(in srgb, var(--reg-rule) 18%, transparent); border-width: 2px 0 0; }
+  #app ~ .comic-auth .auth-card .avatar-upload { border-width: 0 0 2px; padding-bottom: 22px; gap: 20px; }
+  #app ~ .comic-auth .auth-card section.border-t { padding-top: 20px; }
+  #app ~ .comic-auth .auth-card .avatar-upload__preview { width: 68px; height: 68px; border: 2px solid var(--reg-rule); }
+  #app ~ .comic-auth .auth-card .avatar-upload__actions { gap: 16px; margin-top: 14px; }
+  #app ~ .comic-auth .auth-card .avatar-upload__actions button { font-size: 15px; }
+  #app ~ .comic-auth .auth-card h4,
+  #app ~ .comic-auth .auth-card:has(> .auth-dialog-head) label:not(.auth-terms label) {
+    position: relative; isolation: isolate; display: block; width: fit-content; height: 26px; margin: 0 0 0 -6px; padding: 0 9px;
+    color: var(--reg-copy); font-size: 16.5px; font-style: italic; font-weight: 900; line-height: 26px; letter-spacing: -.01em; text-transform: none;
+  }
+  #app ~ .comic-auth .auth-card h4::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; inset: -2px -2px -6px -4px;
+    border: solid transparent; border-width: 11px 12px 15px 14px; border-image: var(--reg-label) 33 36 45 42 fill / 11px 12px 15px 14px stretch;
+  }
+  :root[data-theme='dark'] #app ~ .comic-auth .auth-card h4 { color: var(--acid-ink); }
+  #app ~ .comic-auth .auth-card dl { gap: 16px 28px; margin-top: 16px; }
+  #app ~ .comic-auth .auth-card dt { color: color-mix(in srgb, var(--reg-copy) 60%, transparent); font-size: 13px; font-weight: 700; }
+  #app ~ .comic-auth .auth-card dd { margin-top: 3px; color: var(--reg-copy); font-size: 15.5px; font-weight: 800; }
+  #app ~ .comic-auth .auth-card dd button { color: var(--reg-copy); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+  #app ~ .comic-auth .auth-card section > .flex.gap-2 { gap: 18px; align-items: center; }
+  #app ~ .comic-auth .auth-card section .flex.items-center.justify-between > .text-xs { color: var(--reg-copy); font-size: 14px; font-weight: 800; }
+  #app ~ .comic-auth .auth-card .grid.grid-cols-2 { gap: 20px; margin-top: 22px; }
+
+  /* Those dialogs' buttons are smaller than the register bar. */
+  #app ~ .comic-auth .auth-card:has(> .auth-dialog-head) .btn-primary,
+  #app ~ .comic-auth .auth-card .avatar-upload .btn-primary {
+    height: 44px; min-height: 44px; margin-top: 0; gap: 8px; padding: 0 22px; font-size: 17px; font-style: italic; letter-spacing: 0;
+  }
+  #app ~ .comic-auth .auth-card:has(> .auth-dialog-head) .grid.grid-cols-2 > .btn-secondary { height: 44px; }
+
+  /* Connected login methods: white slips, lime once connected. */
+  #app ~ .comic-auth .auth-card .grid.grid-cols-3 { gap: 18px; margin-top: 16px; }
+  #app ~ .comic-auth .auth-card .oauth-provider-btn {
+    position: relative; isolation: isolate; min-height: 52px; padding: 6px 10px 8px; border: 0; border-radius: 0; opacity: 1;
+    background: transparent; box-shadow: none; color: var(--reg-copy); font-size: 14px; font-weight: 800;
+  }
+  #app ~ .comic-auth .auth-card .oauth-provider-btn::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; inset: -2px -5px -6px -2px;
+    border: solid transparent; border-width: 11px 16px 15px 13px; border-image: var(--reg-otp) 33 48 45 39 fill / 11px 16px 15px 13px stretch;
+  }
+  #app ~ .comic-auth .auth-card .oauth-provider-btn.is-connected::after {
+    inset: -2px -2px -6px -4px; border-width: 11px 12px 15px 14px; border-image: var(--reg-label) 33 36 45 42 fill / 11px 12px 15px 14px stretch;
+  }
+  :root[data-theme='dark'] #app ~ .comic-auth .auth-card .oauth-provider-btn.is-connected { color: var(--acid-ink); }
+  #app ~ .comic-auth .auth-card .oauth-provider-btn .oauth-provider-status { border: 1.5px solid currentColor; background: transparent; color: inherit; font-size: 11px; font-weight: 800; }
 
   /* ── Subscriptions (subscriptions-C): measured off the concept at 1536 × 1024. The navy title on a lime brush with
      its line beside it; a wide hero with the plan and status tags on its top rule, a cyan radar and three stats; the

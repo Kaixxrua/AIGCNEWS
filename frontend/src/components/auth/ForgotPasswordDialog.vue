@@ -34,9 +34,9 @@ const close = () => emit('update:modelValue', false)
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
+      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
         <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
-          <div class="glass-card w-full p-4 sm:p-6">
+          <div class="auth-card glass-card w-full p-4 sm:p-6">
             <AuthPageHeader :title="t('auth.forgotTitle')" :description="t('auth.forgotDescription')">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 11V8a5 5 0 0110 0v3"/><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M12 15v2"/></svg>
               <template #actions>
@@ -55,7 +55,7 @@ const close = () => emit('update:modelValue', false)
                 {{ loading ? t('auth.resetting') : t('auth.reset') }}
               </button>
             </div>
-            <p class="mt-5 text-center text-sm text-stone-400">{{ t('auth.rememberPassword') }} <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-login')">{{ t('auth.backToLogin') }}</button></p>
+            <p class="auth-switch mt-5 text-center text-sm text-stone-400">{{ t('auth.rememberPassword') }} <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-login')">{{ t('auth.backToLogin') }}</button></p>
           </div>
         </div>
       </div>

@@ -64,7 +64,7 @@ const {
       </AuthPageHeader>
 
       <!-- 表单卡片 -->
-      <div class="register-card glass-card p-4 sm:p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
+      <div class="auth-card glass-card p-4 sm:p-6 space-y-4 stagger-enter" style="animation-delay: 0.1s">
 
         <!-- 邮箱 + 发送验证码 -->
         <OtpEmailField
@@ -122,7 +122,7 @@ const {
         <AuthFeedback :message="successMsg" type="success" />
 
         <!-- 用户协议勾选 -->
-        <div class="register-terms flex items-start gap-2.5 pt-1">
+        <div class="auth-terms flex items-start gap-2.5 pt-1">
           <button
             type="button"
             class="mt-0.5 shrink-0 w-4 h-4 rounded border transition-all duration-150 flex items-center justify-center"
@@ -141,8 +141,7 @@ const {
             {{ t('auth.agreeTerms') }}
             <RouterLink to="/disclaimer" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('auth.terms') }}</RouterLink>
             {{ t('auth.and') }}
-            <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('footer.privacy') }}</RouterLink>
-            {{ t('auth.termsSuffix') }}
+            <RouterLink to="/privacy" target="_blank" class="text-stone-700 underline underline-offset-2 hover:text-stone-900" @click.stop>{{ t('footer.privacy') }}</RouterLink>{{ t('auth.termsSuffix') }}
           </label>
         </div>
 
@@ -164,7 +163,7 @@ const {
       </div>
 
       <!-- 底部登录链接 -->
-      <p class="register-login mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
+      <p class="auth-switch mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
         {{ t('auth.hasAccount') }}
         <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="requestLogin(redirect)">
           {{ t('auth.goLogin') }}
