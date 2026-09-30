@@ -1,0 +1,103 @@
+/* 动效系统：统一缓动、时长与关键帧。切换类动效（滑动选中标记、页面过渡、主题揭示）由 src/motion 下的脚本驱动，
+   这里只放它们共用的样式契约；prefers-reduced-motion 下一律退化为瞬时切换。 */
+:root {
+  --motion-ease-out: cubic-bezier(.22, 1, .36, 1);
+  --motion-ease-in: cubic-bezier(.55, 0, 1, .45);
+  --motion-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  /* 不支持 linear() 的浏览器退回带回弹的贝塞尔。 */
+  --motion-spring: cubic-bezier(.34, 1.3, .64, 1);
+  --motion-pop: cubic-bezier(.34, 1.56, .64, 1);
+  --motion-fast: 140ms;
+  --motion-base: 240ms;
+  --motion-slow: 420ms;
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    /* 阻尼 0.7 的弹簧：约 6% 回弹，72% 时长处落定。 */
+    --motion-spring: linear(0, .041 .7%, .113 2%, .204 3.5%, .307 5.4%, .419 7.4%, .533 9.7%, .643 12.1%, .744 14.7%, .833 17.4%, .908 20.3%, .967 23.3%, 1.011 26.5%, 1.039 29.7%, 1.056 33.1%, 1.062 36.6%, 1.06 40.2%, 1.054 43.9%, 1.044 47.7%, 1.034 51.6%, 1.024 55.5%, 1.015 59.6%, 1.009 63.8%, 1.004 68%, 1 72.4%, .998 76.8%, .997 81.3%, .997 85.8%, .997 90.5%, .998 95.2%, 1);
+    /* 阻尼 0.6 的弹簧：约 15% 回弹，用于弹出、盖章一类的强调。 */
+    --motion-pop: linear(0, .062 .7%, .169 2%, .301 3.5%, .446 5.4%, .595 7.4%, .738 9.7%, .867 12.1%, .975 14.7%, 1.057 17.4%, 1.113 20.3%, 1.144 23.3%, 1.152 26.5%, 1.143 29.7%, 1.122 33.1%, 1.095 36.6%, 1.066 40.2%, 1.039 43.9%, 1.018 47.7%, 1.002 51.6%, .991 55.5%, .987 59.6%, .986 63.8%, .987 68%, .99 72.4%, .994 76.8%, .997 81.3%, .999 85.8%, 1 90.5%, 1.001 95.2%, 1);
+  }
+}
+
+/* ═══ 滑动选中标记（v-indicator）═══
+   指令把当前项的盒子写进组上的 --indicator-x/y/w/h，用 data-indicator=on|off 标记有无当前项，
+   并用 data-indicator-mark 指明标记画在组的哪个伪元素上；各组只需给这个伪元素上色、描边。 */
+[data-indicator-mark='before']::before,
+[data-indicator-mark='after']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--indicator-w, 0);
+  height: var(--indicator-h, 0);
+  translate: var(--indicator-x, 0) var(--indicator-y, 0);
+  pointer-events: none;
+  transition: opacity 180ms ease, scale 320ms var(--motion-spring);
+}
+[data-indicator='off'][data-indicator-mark='before']::before,
+[data-indicator='off'][data-indicator-mark='after']::after { opacity: 0; scale: .6; }
+/* 初次定位不播放出现过渡。 */
+[data-indicator-still]::before,
+[data-indicator-still]::after { transition: none !important; }
+
+/* ═══ 通用入场关键帧 ═══ */
+@keyframes motion-rise {
+  from { opacity: 0; translate: 0 12px; }
+  to { opacity: 1; translate: none; }
+}
+@keyframes motion-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes motion-pop {
+  from { opacity: 0; scale: .6; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes motion-burst {
+  from { opacity: 0; scale: .4; rotate: -30deg; }
+  to { opacity: 1; scale: 1; rotate: 0deg; }
+}
+@keyframes motion-stamp {
+  0% { opacity: 0; scale: 1.35; }
+  55% { opacity: 1; }
+  100% { opacity: 1; scale: 1; }
+}
+
+/* 子项依次入场：延迟按序号递增，12 项之后不再累加，长列表也在半秒内铺满。 */
+.motion-stagger > * {
+  animation: motion-rise 460ms var(--motion-ease-out) both;
+  animation-delay: calc(min(var(--motion-i, 0), 12) * 30ms);
+}
+.motion-stagger > :nth-child(2) { --motion-i: 1; }
+.motion-stagger > :nth-child(3) { --motion-i: 2; }
+.motion-stagger > :nth-child(4) { --motion-i: 3; }
+.motion-stagger > :nth-child(5) { --motion-i: 4; }
+.motion-stagger > :nth-child(6) { --motion-i: 5; }
+.motion-stagger > :nth-child(7) { --motion-i: 6; }
+.motion-stagger > :nth-child(8) { --motion-i: 7; }
+.motion-stagger > :nth-child(9) { --motion-i: 8; }
+.motion-stagger > :nth-child(10) { --motion-i: 9; }
+.motion-stagger > :nth-child(11) { --motion-i: 10; }
+.motion-stagger > :nth-child(12) { --motion-i: 11; }
+.motion-stagger > :nth-child(n + 13) { --motion-i: 12; }
+
+/* ═══ 主题切换：漫画爆炸框从按钮处扩散（View Transitions）═══
+   揭示期间关掉所有 CSS 过渡，新快照直接是切换后的终态。 */
+html.theme-transitioning::view-transition-old(root),
+html.theme-transitioning::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.theme-transitioning::view-transition-old(root) { z-index: 1; }
+html.theme-transitioning::view-transition-new(root) { z-index: 2; }
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after { transition: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-indicator-mark]::before,
+  [data-indicator-mark]::after { transition: none !important; }
+  .motion-stagger > * { animation: none; }
+}

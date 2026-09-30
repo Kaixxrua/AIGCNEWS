@@ -5,11 +5,13 @@ import './style.css'
 import './mobile-reading.css'
 import './comic-theme.css'
 import './comic-pages.css'
+import './motion.css'
 import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
 import { installAppTheme } from './theme'
 import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
+import { installPressFeedback } from './motion/press'
 
 const app = createApp(App)
 installI18n()
@@ -23,6 +25,7 @@ app.use(i18n)
 app.use(router)
 
 app.mount('#app')
+installPressFeedback()
 
 // 站点访问 beacon：进来一次计一次（sessionStorage 守卫，异步不打断首屏）。
 void import('./services/visit/visitBeacon').then(({ sendVisitBeacon }) => {
