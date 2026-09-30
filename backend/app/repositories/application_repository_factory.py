@@ -43,6 +43,9 @@ from backend.app.repositories.postgres_conversation_repository import (
 from backend.app.repositories.postgres_document_repository import (
     PostgresDocumentRepository,
 )
+from backend.app.repositories.postgres_document_semantic_source_repository import (
+    PostgresDocumentSemanticSourceRepository,
+)
 from backend.app.repositories.postgres_email_pool_settings_repository import (
     PostgresEmailPoolSettingsRepository,
 )
@@ -228,6 +231,7 @@ class ApplicationRepositories:
     telegram_link_attempts: TelegramLinkAttemptRepository
     telegram_settings: TelegramSettingsRepository
     tracking: PostgresTrackingRepository | None = None
+    document_semantic_sources: PostgresDocumentSemanticSourceRepository | None = None
 
 
 def _env_x_watch_handles() -> tuple[str, ...]:
@@ -299,4 +303,5 @@ def create_application_repositories(
         telegram_link_attempts=PostgresTelegramLinkAttemptRepository(postgres),
         telegram_settings=PostgresTelegramSettingsRepository(postgres),
         tracking=PostgresTrackingRepository(postgres),
+        document_semantic_sources=PostgresDocumentSemanticSourceRepository(postgres),
     )

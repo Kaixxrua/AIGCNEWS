@@ -35,6 +35,7 @@ JobSource = Literal[
     "project_semantic_warmup",
     "conversation_cleanup",
     "x_media_warmup",
+    "document_semantic_sync",
     "payment_order_closing",
     "ui_library_discovery",
     "ui_library_x_discovery",
@@ -295,6 +296,18 @@ def x_media_warmup_job_descriptor(*, timezone: str) -> IntervalJobDescriptor:
         id="x_media_warmup",
         source="x_media_warmup",
         name="X 媒体边缘缓存预热与封面回填",
+        schedule=IntervalSchedule(minutes=30),
+        timezone=timezone,
+    )
+
+
+def document_semantic_sync_job_descriptor(*, timezone: str) -> IntervalJobDescriptor:
+    """文档语义索引增量同步：全表指纹核对，只重嵌入新增/变更文档并清理已删文档。
+    与采集解耦，覆盖所有写入路径（含 X 译文回填这类事后更新）。"""
+    return IntervalJobDescriptor(
+        id="document_semantic_sync",
+        source="document_semantic_sync",
+        name="文档语义索引增量同步",
         schedule=IntervalSchedule(minutes=30),
         timezone=timezone,
     )

@@ -362,6 +362,12 @@ class Settings(BaseSettings):
     project_semantic_readme_max_chars: int = 40_000
     project_semantic_sync_batch_size: int = 100
     project_semantic_sync_concurrency: int = 20
+    # 文档（新闻/论文/X 等）一文一向量的去重语义索引，供 MCP search_documents 语义通道读取。
+    document_semantic_indexing_enabled: bool = False
+    document_semantic_collection_name: str = "aigc_document_vectors_v1"
+    document_semantic_index_version: str = "v1"
+    document_semantic_sync_max_embed: int = 3000
+    document_semantic_embed_batch_size: int = 32
     project_reranker_enabled: bool = False
     project_reranker_url: str = "https://api.siliconflow.cn/v1/rerank"
     project_reranker_model_name: str = "Pro/BAAI/bge-reranker-v2-m3"
