@@ -175,6 +175,30 @@ class EvidenceAndCommitTests(unittest.TestCase):
         linked.write_text('changed')
         self.assertEqual(original.read_text(), 'data')
 
+    def test_release_lock_blocks_then_times_out(self):
+        lock = self.root / 'build-release.lock'
+        with refresh.flock(lock, wait=True, timeout=5):
+            holder = subprocess.Popen(['python3', '-c', 'import fcntl,sys,time;f=open(sys.argv[1],"a");'
+                                       'fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB);print("taken",flush=True)', str(lock)],
+                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            self.assertNotEqual(holder.wait(10), 0)
+        holder = subprocess.Popen(['python3', '-c', 'import fcntl,sys,time;f=open(sys.argv[1],"a");'
+                                   'fcntl.flock(f,fcntl.LOCK_EX);print("held",flush=True);time.sleep(30)', str(lock)],
+                                  stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), 'held')
+            with self.assertRaises(TimeoutError):
+                with refresh.flock(lock, wait=True, timeout=1):
+                    pass
+            with self.assertRaises(BlockingIOError):
+                with refresh.flock(lock, wait=False):
+                    pass
+        finally:
+            holder.kill()
+            holder.wait()
+        with refresh.flock(lock, wait=True, timeout=5):
+            pass
+
     def test_withdrawal_policy_fails_closed(self):
         state = self.root / 'state'
         refresh.write_json(state / 'withdrawn.json', {'version': 1, 'ids': ['../catalog']})

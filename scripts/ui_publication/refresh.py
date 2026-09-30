@@ -35,10 +35,10 @@ import os
 import posixpath
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
-import time
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -472,15 +472,20 @@ def verify_web_contract(staging: Path, previews: Path, items: list[dict]) -> Non
 def flock(path: Path, *, wait: bool, timeout: float = 0):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a') as stream:
-        deadline = time.monotonic() + timeout
-        while True:
+        if not wait:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            # Block in the kernel so the lock is taken the moment a release
+            # ends; polling loses the gap between back-to-back releases.
+            def expire(*_):
+                raise TimeoutError('release_lock_timeout')
+            previous = signal.signal(signal.SIGALRM, expire)
+            signal.alarm(max(1, int(timeout)))
             try:
-                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if not wait or time.monotonic() > deadline:
-                    raise
-                time.sleep(15)
+                fcntl.flock(stream, fcntl.LOCK_EX)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous)
         yield
 
 
