@@ -16,6 +16,8 @@ import { provideUiLibraryAccount, type Ranking } from '@/features/ui-library/use
 import { libraryKinds, styleTags, browseMaterials, resolveLibraryKind, type LibraryKind } from '@/features/ui-library/taxonomy'
 
 import { categoryGroups } from '@/features/ui-library/taxonomyData'
+import { vIndicator } from '@/motion/indicator'
+import { vSwap } from '@/motion/swap'
 
 defineOptions({ name: 'UiLibraryView' })
 const route = useRoute()
@@ -67,6 +69,8 @@ const availableCategoryGroups = computed(() => categoryGroups
 const availableStyles = computed(() => styleTags.map(([key, zh, en]) => ({ key, label: lang.value === 'zh' ? zh : en, count: browseMaterials(kindItems.value, 'all', '', key).length })).filter(row => row.count))
 const now = useNow({ interval: 60_000 })
 const ranking = computed<Ranking>(() => ['new', 'daily', 'weekly', 'monthly', 'liked'].includes(readQuery('rank')) ? readQuery('rank') as Ranking : 'all')
+// 换了素材类型、用途、风格、榜单或图标集时，结果网格整批依次浮现；搜索框逐字输入不重播。
+const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value].join('|'))
 const account = provideUiLibraryAccount(lang, ranking, async () => { if (selected.value) await close(); selectedIcon.value = null })
 const rankOptions = computed<[Ranking, string][]>(() => lang.value === 'zh' ? [['all', '全部'], ['new', '今日新增'], ['daily', '今日热榜'], ['weekly', '周榜'], ['monthly', '月榜'], ['liked', '我的喜欢']] : [['all', 'All'], ['new', 'New today'], ['daily', 'Today'], ['weekly', 'Week'], ['monthly', 'Month'], ['liked', 'Liked']])
 const filtered = computed(() => {
@@ -144,15 +148,15 @@ onBeforeUnmount(() => controller.abort())
       <label class="ui-library__search"><Search :size="19" aria-hidden="true" /><input type="search" :value="query" :placeholder="text.search" :aria-label="text.search" @input="setFilter('q', ($event.target as HTMLInputElement).value)" /></label>
       <label v-if="!iconMode" class="ui-library__framework"><SlidersHorizontal :size="16" aria-hidden="true" /><select :value="framework" :aria-label="text.frameworks" @change="setFilter('framework', ($event.target as HTMLSelectElement).value)"><option value="">{{ text.frameworks }}</option><option value="html">HTML / Tailwind</option><option value="react">React</option><option value="vue">Vue / Nuxt</option><option value="css">CSS / Themes</option></select></label>
     </div>
-    <nav class="ui-library__kinds" :aria-label="lang === 'zh' ? '素材类型' : 'Material types'"><button v-for="[key, zh, en] in libraryKinds" :key="key" type="button" :aria-pressed="kind === key" @click="setKind(key)">{{ lang === 'zh' ? zh : en }}<span>{{ kindCount(key) }}</span></button><button type="button" class="ui-library__all-kinds" :aria-pressed="kind === 'all'" @click="setKind('all')">{{ lang === 'zh' ? '全部素材' : 'All materials' }}<span>{{ items.length }}</span></button></nav>
+    <nav v-indicator="{ active: '[aria-pressed=true]', flip: true }" class="ui-library__kinds" :aria-label="lang === 'zh' ? '素材类型' : 'Material types'"><button v-for="[key, zh, en] in libraryKinds" :key="key" type="button" :aria-pressed="kind === key" @click="setKind(key)">{{ lang === 'zh' ? zh : en }}<span>{{ kindCount(key) }}</span></button><button type="button" class="ui-library__all-kinds" :aria-pressed="kind === 'all'" @click="setKind('all')">{{ lang === 'zh' ? '全部素材' : 'All materials' }}<span>{{ items.length }}</span></button></nav>
     <div class="ui-library__body">
       <aside class="ui-library__sidebar">
-        <nav v-if="iconMode" :aria-label="text.iconSets">
+        <nav v-if="iconMode" v-indicator="'.active'" :aria-label="text.iconSets">
           <p class="ui-library__group-title">{{ text.iconSets }}</p>
           <button type="button" :class="{ active: !iconProvider }" :aria-pressed="!iconProvider" @click="setFilter('set', '')">{{ text.all }}<span>{{ iconTotal }}</span></button>
           <button v-for="row in iconSetRows" :key="row.key" type="button" :class="{ active: iconProvider === row.key }" :aria-pressed="iconProvider === row.key" @click="setFilter('set', row.key)">{{ row.label }}<span>{{ row.count }}</span></button>
         </nav>
-        <nav v-else-if="kind !== 'theme'" :aria-label="text.categories">
+        <nav v-else-if="kind !== 'theme'" v-indicator="'.active'" :aria-label="text.categories">
           <p class="ui-library__group-title">{{ lang === 'zh' ? '按用途浏览' : 'Browse by purpose' }}</p>
           <button type="button" :class="{ active: !category }" :aria-pressed="!category" @click="setFilter('category', '')">{{ text.all }}<span>{{ kindItems.length }}</span></button>
           <template v-for="group in availableCategoryGroups" :key="group.key">
@@ -160,13 +164,13 @@ onBeforeUnmount(() => controller.abort())
             <button v-for="row in group.entries" :key="row.key" type="button" :title="row.english" :class="{ active: category === row.key }" :aria-pressed="category === row.key" @click="setFilter('category', row.key)">{{ row.label }}<span>{{ row.count }}</span></button>
           </template>
         </nav>
-        <nav v-if="iconMode && availableIconStyles.length" :aria-label="text.iconStyles"><p class="ui-library__group-title">{{ text.iconStyles }}</p><button v-for="row in availableIconStyles" :key="row.key" type="button" :class="{ active: style === row.key }" :aria-pressed="style === row.key" @click="setFilter('style', style === row.key ? '' : row.key)">{{ row.key }}<span>{{ row.count }}</span></button></nav>
-        <nav v-else-if="!iconMode && availableStyles.length" :aria-label="lang === 'zh' ? '设计风格' : 'Design styles'"><p class="ui-library__group-title">{{ lang === 'zh' ? '设计风格' : 'Design styles' }}</p><button v-for="row in availableStyles" :key="row.key" type="button" :class="{ active: style === row.key }" :aria-pressed="style === row.key" @click="setFilter('style', style === row.key ? '' : row.key)">{{ row.label }}<span>{{ row.count }}</span></button></nav>
+        <nav v-if="iconMode && availableIconStyles.length" v-indicator="'.active'" :aria-label="text.iconStyles"><p class="ui-library__group-title">{{ text.iconStyles }}</p><button v-for="row in availableIconStyles" :key="row.key" type="button" :class="{ active: style === row.key }" :aria-pressed="style === row.key" @click="setFilter('style', style === row.key ? '' : row.key)">{{ row.key }}<span>{{ row.count }}</span></button></nav>
+        <nav v-else-if="!iconMode && availableStyles.length" v-indicator="'.active'" :aria-label="lang === 'zh' ? '设计风格' : 'Design styles'"><p class="ui-library__group-title">{{ lang === 'zh' ? '设计风格' : 'Design styles' }}</p><button v-for="row in availableStyles" :key="row.key" type="button" :class="{ active: style === row.key }" :aria-pressed="style === row.key" @click="setFilter('style', style === row.key ? '' : row.key)">{{ row.label }}<span>{{ row.count }}</span></button></nav>
         <div class="ui-library__aside-note"><p>{{ iconMode ? iconSets.length : sourceCount }} {{ iconMode ? text.iconSets : text.sources }} · {{ iconMode ? iconTotal : items.length }} {{ iconMode ? text.icons : text.works }}</p><p>{{ text.provenance }}</p></div>
         <UiMcpRecommendation :lang="lang" />
       </aside>
       <div class="ui-library__main">
-        <div v-if="!iconMode" class="ui-library__rankbar"><nav :aria-label="lang === 'zh' ? '素材排行榜' : 'Library rankings'"><button v-for="[key, label] in rankOptions" :key="key" type="button" :aria-pressed="ranking === key" @click="setFilter('rank', key === 'all' ? '' : key)">{{ label }}</button></nav><span>{{ ranking === 'new' ? (lang === 'zh' ? '最近 24 小时首次入库 · 按入库时间' : 'First added in the last 24h · Newest first') : (lang === 'zh' ? '滚动 24 小时 / 7 天 / 30 天 · 按爱心' : 'Rolling 24h / 7d / 30d · By likes') }}</span></div>
+        <div v-if="!iconMode" class="ui-library__rankbar"><nav v-indicator="{ active: '[aria-pressed=true]', flip: true, pop: true }" :aria-label="lang === 'zh' ? '素材排行榜' : 'Library rankings'"><button v-for="[key, label] in rankOptions" :key="key" type="button" :aria-pressed="ranking === key" @click="setFilter('rank', key === 'all' ? '' : key)">{{ label }}</button></nav><span>{{ ranking === 'new' ? (lang === 'zh' ? '最近 24 小时首次入库 · 按入库时间' : 'First added in the last 24h · Newest first') : (lang === 'zh' ? '滚动 24 小时 / 7 天 / 30 天 · 按爱心' : 'Rolling 24h / 7d / 30d · By likes') }}</span></div>
         <div class="ui-library__quota"><span>{{ account.quotaText.value }}</span><RouterLink to="/membership">{{ lang === 'zh' ? '了解 VIP' : 'Explore VIP' }}</RouterLink></div>
         <p v-if="account.loadError.value" class="ui-library__account-error" role="status">{{ lang === 'zh' ? '热度暂时无法加载' : 'Popularity is temporarily unavailable' }} <button @click="account.refresh">{{ text.retry }}</button></p>
         <div class="ui-library__results"><span aria-live="polite">{{ iconMode ? filteredIcons.length : filtered.length }} {{ text.result }}</span><span v-if="!iconMode" class="ui-library__autoplay-hint">{{ text.autoplayHint }}</span><button v-if="!iconMode" type="button" class="ui-library__playback" :aria-pressed="autoplay" @click="autoplay = !autoplay"><Pause v-if="autoplay" :size="14" /><Play v-else :size="14" />{{ autoplay ? text.pauseAll : text.playAll }}</button><button v-if="hasFilters" type="button" @click="router.replace({ query: {} })"><X :size="14" aria-hidden="true" />{{ text.clear }}</button></div>
@@ -174,7 +178,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-if="iconsLoading" class="ui-library__grid" :aria-label="text.loading" aria-busy="true"><div v-for="n in 6" :key="n" class="ui-library__skeleton" /></div>
           <div v-else-if="iconsFailed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="loadIcons">{{ text.retry }}</button></div>
           <div v-else-if="!filteredIcons.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ text.emptyIcons }}</h2><p>{{ text.emptyIconsHint }}</p><button type="button" @click="router.replace({ query: { kind: 'icon' } })">{{ text.clear }}</button></div>
-          <div v-else class="ui-library__icon-grid">
+          <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__icon-grid">
             <UiIconCard v-for="icon in filteredIcons.slice(0, visibleLimit)" :key="icon.id" :icon="icon" :set="iconSetOf(icon)" :lang="lang" @open="openIcon(icon, $event)" />
           </div>
           <div v-if="filteredIcons.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ Math.min(visibleLimit, filteredIcons.length) }} / {{ filteredIcons.length }}</button></div>
@@ -183,7 +187,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-if="loading" class="ui-library__grid" :aria-label="text.loading" aria-busy="true"><div v-for="n in 6" :key="n" class="ui-library__skeleton" /></div>
           <div v-else-if="failed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="refresh">{{ text.retry }}</button></div>
           <div v-else-if="!filtered.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ ranking === 'new' ? text.emptyNew : text.empty }}</h2><p>{{ ranking === 'new' ? text.emptyNewHint : text.emptyHint }}</p><button type="button" @click="router.replace({ query: {} })">{{ text.clear }}</button></div>
-          <div v-else class="ui-library__grid">
+          <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid">
             <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" />
           </div>
           <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>

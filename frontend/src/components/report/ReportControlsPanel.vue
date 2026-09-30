@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { BellRing, Mail, Send } from 'lucide-vue-next'
+import { vIndicator } from '@/motion/indicator'
 import {
   REPORT_TYPES,
   type ReportKey,
@@ -122,7 +123,8 @@ const emit = defineEmits<{
 
   <!-- 第二行：源选择 + 日期选择 -->
   <div class="report-controls__tabs flex flex-wrap items-center gap-2" style="border-top: 1px solid rgb(var(--stone-400-rgb) / 0.1); padding-top: 8px">
-    <div class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
+    <!-- 每个类型签都有自己的框，换选中时不滑块，新选中的签盖章式弹入。 -->
+    <div v-indicator="{ active: '.tab-active', mark: false, pop: true }" class="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
       <button
         v-for="type in REPORT_TYPES"
         :key="type.key"

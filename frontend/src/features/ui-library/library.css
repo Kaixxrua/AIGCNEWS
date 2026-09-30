@@ -185,3 +185,12 @@ section.ui-library.view-container { overflow-y:auto; overflow-x:hidden; scrollba
 .ui-library__icon-facts span { padding:2px 8px; border:1px solid var(--line,rgb(0 0 0 / .1)); border-radius:999px; }
 .ui-library__icon-license summary { cursor:pointer; font-size:11px; }
 .ui-library__icon-license pre { max-height:220px; overflow:auto; font-size:10px; white-space:pre-wrap; }
+
+/* 选中标记（v-indicator）：类型、用途与排行的选中底画在各组的 ::before 上，在选项间弹簧滑动；
+   选中项把自己的底让给标记；反白字色晚一拍跟上，标记滑到时才换好，离开的一项则立刻褪回，不在纸面上留白字。 */
+.ui-library__kinds,.ui-library__sidebar nav,.ui-library__rankbar nav { position:relative; isolation:isolate; }
+.ui-library__kinds[data-indicator-mark]::before,.ui-library__rankbar nav[data-indicator-mark]::before { z-index:-1; border-radius:6px; background:var(--ink); }
+.ui-library__sidebar nav[data-indicator-mark]::before { z-index:-1; border-radius:6px; background:var(--paper-muted,#e9ece5); }
+.ui-library__kinds[data-indicator] button[aria-pressed=true],.ui-library__rankbar nav[data-indicator] button[aria-pressed=true],.ui-library__sidebar nav[data-indicator] button.active { background:transparent; }
+.ui-library__kinds button,.ui-library__rankbar button,.ui-library__sidebar button { transition:color 90ms ease; }
+.ui-library__kinds[data-indicator] button[aria-pressed=true],.ui-library__rankbar nav[data-indicator] button[aria-pressed=true] { transition:color 160ms ease 70ms; }

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { McpConnectController } from '@/composables/useMcpConnectController'
 import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
+import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
   controller: McpConnectController
@@ -42,6 +43,8 @@ const stepDescriptionKeys = [
 ] as const
 
 const currentStep = ref(0)
+// 步骤面板沿前进方向滑入：往后退时从左边进来。
+const stepDir = ref(1)
 const rootEl = ref<HTMLElement | null>(null)
 const isFirst = computed(() => currentStep.value === 0)
 const isLast = computed(() => currentStep.value === stepTitleKeys.length - 1)
@@ -97,6 +100,7 @@ const goTo = async (index: number) => {
     await requestLogin()
     return
   }
+  stepDir.value = index > currentStep.value ? 1 : -1
   currentStep.value = index
   await scrollToWizardTop()
   if (index === 1 && !transientCommand.value && !creating.value && !endpointWarningKey.value) {
@@ -108,8 +112,8 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
 </script>
 
 <template>
-  <section ref="rootEl" class="mcp-wizard glass-card scroll-mt-4 p-5 md:p-6" :aria-label="t('mcp.wizard.ariaLabel')">
-    <ol class="mcp-wizard-steps flex list-none flex-wrap items-stretch gap-y-2 p-0">
+  <section ref="rootEl" class="mcp-wizard glass-card scroll-mt-4 p-5 md:p-6" :style="{ '--mcp-step-dir': stepDir }" :aria-label="t('mcp.wizard.ariaLabel')">
+    <ol v-indicator="{ active: '.mcp-step-dot--active', mark: false, pop: true }" class="mcp-wizard-steps flex list-none flex-wrap items-stretch gap-y-2 p-0">
       <template v-for="(titleKey, index) in stepTitleKeys" :key="titleKey">
         <li class="mcp-wizard-step">
           <button
@@ -133,7 +137,7 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
         <div v-if="currentStep === 0" class="mcp-client-layout">
           <div class="mcp-client-list">
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.chooseClient') }}</p>
-          <div class="mcp-client-grid mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div v-indicator="{ active: '.mcp-choice--active', mark: false, pop: true }" class="mcp-client-grid mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             <button v-for="client in clientOptions" :key="client.id" type="button" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" :aria-pressed="selectedClient === client.id" :title="t(client.descriptionKey)" @click="selectedClient = client.id">
               <span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span>
               <span class="mcp-client-caption text-stone-500">{{ t(client.descriptionKey) }}</span>
@@ -147,7 +151,7 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           </div>
           <div class="mcp-terminal">
           <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
-          <div class="mcp-shell-options mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" type="button" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" :aria-pressed="selectedShell === shell.id" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
+          <div v-indicator="{ active: '.mcp-choice--active', mark: false, pop: true }" class="mcp-shell-options mt-2 flex flex-wrap gap-2"><button v-for="shell in shellOptions" :key="shell.id" type="button" class="mcp-choice rounded-full border px-3 py-2 text-xs" :class="selectedShell === shell.id ? 'mcp-choice--active' : 'border-stone-200 bg-card text-stone-600'" :aria-pressed="selectedShell === shell.id" @click="selectedShell = shell.id">{{ shell.labelKey ? t(shell.labelKey) : shell.label }}</button></div>
           </div>
           </div>
         </div>
@@ -315,12 +319,12 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
 
 .mcp-step-enter-from {
   opacity: 0;
-  transform: translateX(12px);
+  transform: translateX(calc(12px * var(--mcp-step-dir, 1)));
 }
 
 .mcp-step-leave-to {
   opacity: 0;
-  transform: translateX(-12px);
+  transform: translateX(calc(-12px * var(--mcp-step-dir, 1)));
 }
 
 .mcp-wizard-nav :deep(.btn-primary:disabled),

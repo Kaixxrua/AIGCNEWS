@@ -301,6 +301,8 @@ const description = computed(() => projectDescription(
 <style scoped>
 .project-card__github-logo { width: 42px; height: 42px; flex-basis: 42px; }
 .project-card { position: relative; display: flex; flex-direction: column; min-width: 0; margin-right: 40px; border-radius: 7px; }
+/* 换分类、翻页或搜索后新的一批卡片依次浮起，先后由模板按名次下发的 animationDelay 决定。 */
+.project-card { animation: motion-rise 360ms var(--motion-ease-out) backwards; }
 .project-card__body { position: relative; display: flex; flex: 1; flex-direction: column; gap: 14px; min-width: 0; min-height: 280px; padding: 18px; border: 1px solid var(--projects-accent); border-radius: 7px; background: var(--projects-paper-light); box-shadow: 3px 3px 0 var(--shadow-hard); transition: box-shadow 160ms ease, transform 160ms ease; }
 .project-card:hover .project-card__body, .project-card:focus-within .project-card__body { box-shadow: 4px 4px 0 var(--shadow-hard); }
 .project-card--recommended .project-card__body { background: var(--projects-acid-soft); }

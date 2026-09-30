@@ -15,6 +15,7 @@ import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { vSwap } from '@/motion/swap'
 import {
   getReportTypeInfo,
   parseReportDateQuery,
@@ -154,6 +155,12 @@ const {
 })
 
 const userEmail = computed(() => authStore.user?.email ?? '')
+
+// 换了简报类型/日期后读到的新内容整块浮现；生成时的流式追加不算换内容。
+const contentKey = ref(0)
+watch(reportContent, () => {
+  if (!isGenerating.value) contentKey.value += 1
+})
 </script>
 
 <template>
@@ -219,7 +226,7 @@ const userEmail = computed(() => authStore.user?.email ?? '')
     </div>
 
     <!-- ═══ 内容阅读区（最大化空间） ═══ -->
-    <div ref="reportRef" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
+    <div ref="reportRef" v-swap="{ key: contentKey, stagger: true }" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
       <ReportContentPanel
         :report-content="reportContent"
         :is-generating="isGenerating"

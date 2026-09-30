@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { Blocks, Bot, BrainCircuit, ChartNoAxesCombined, Code2, Database, FileText, Flame, FolderKanban, Image, LockKeyhole, Sparkles, TerminalSquare } from 'lucide-vue-next'
 import type { AppLocale } from '@/i18n'
 import { localizedCategoryName, localizedPersonalTagLabel } from '@/features/projects/projectPresentation'
+import { vIndicator } from '@/motion/indicator'
 import type {
   GitHubProjectCategory,
   GitHubProjectSort,
@@ -76,7 +77,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 <template>
   <section class="projects-toolbar glass-card" :class="{ 'projects-toolbar--catalog': catalogLayout }">
     <slot name="source-tabs">
-    <div v-if="!catalogLayout" class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
+    <div v-if="!catalogLayout" v-indicator="'.projects-source-tab--active'" class="projects-source-tabs" :aria-label="t('projects.sourceFilter')">
       <button v-for="item in sourceOptions" :key="item.value" type="button" class="projects-source-tab" :class="source === item.value && (!item.scope || selectedScope === item.scope) ? 'projects-source-tab--active' : ''" :aria-pressed="source === item.value && (!item.scope || selectedScope === item.scope)" :title="item.hint" @click="emit('changeSource', item.value)">
         <strong>{{ item.label }}</strong>
         <small>{{ item.hint }}</small>
@@ -117,13 +118,13 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 
   <details v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :open="!isMobile" :aria-label="t('projects.categoryFilter')">
     <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'today' ? t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
-    <div class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
+    <div v-indicator="'.tab-active'" class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
       <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><Flame v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><Blocks v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><Sparkles v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
       <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><component :is="categoryIcon(category.slug)" v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
     </div>
-    <div v-if="visibleSubcategories.length" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
+    <div v-if="visibleSubcategories.length" v-indicator="'.tab-active'" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
       <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: label(activeCategory) || '' }) }}</span>
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
       <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ label(subcategory) }}</span><small>{{ subcategory.count }}</small></button>
@@ -135,7 +136,8 @@ const isMobile = useMediaQuery('(max-width: 767px)')
   </details>
 
   <section v-else-if="!requiresPersonalLogin && (personalTags.length > 1 || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">
-    <div class="projects-categories" :aria-label="t('projects.personalTagFilter')">
+    <!-- 标签各自带框（漫画页是手绘框），选中换框不滑块，新选中的标签盖章式弹入。 -->
+    <div v-indicator="{ active: '.tab-active', mark: false, pop: true }" class="projects-categories" :aria-label="t('projects.personalTagFilter')">
       <button v-for="tag in personalTags" :key="tag.value" type="button" class="projects-category projects-category--tag" :class="selectedTag === tag.value ? 'tab-active' : 'tab-inactive'" :disabled="tagsLoading" @click="emit('selectPersonalTag', tag.value)"><span>{{ localizedPersonalTagLabel(tag, locale as AppLocale) }}</span><small>{{ tag.count }}</small></button>
       <button v-if="selectedTag" type="button" class="projects-category projects-category--sub" :disabled="tagsLoading" @click="emit('clearPersonalTag')">{{ t('projects.clearTag') }}</button>
     </div>
@@ -152,6 +154,10 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 .projects-source-tab small { display: none; }
 .projects-source-tab--active { color: var(--projects-on-acid); border-color: var(--projects-accent); background: var(--projects-acid); box-shadow: 2px 2px 0 var(--shadow-hard); }
 .projects-source-tab:hover { color: var(--ink); }
+/* 选中块由 v-indicator 画在 tab 条的 ::before 上，在来源间弹簧滑动；选中项把底让给它。 */
+.projects-source-tabs { position: relative; isolation: isolate; }
+.projects-source-tabs[data-indicator-mark]::before { z-index: -1; border: 1px solid var(--projects-accent); border-radius: 6px; background: var(--projects-acid); box-shadow: 2px 2px 0 var(--shadow-hard); }
+.projects-source-tabs[data-indicator] .projects-source-tab--active { border-color: transparent; background: transparent; box-shadow: none; }
 .projects-toolbar :is(button, select):focus-visible, .projects-category:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .projects-search { position: relative; min-width: 0; }
 .projects-search > svg { position: absolute; top: 50%; left: 14px; width: 18px; height: 18px; color: var(--ink-muted); transform: translateY(-50%); pointer-events: none; }

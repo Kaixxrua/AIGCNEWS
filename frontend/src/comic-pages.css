@@ -819,6 +819,12 @@
     background: transparent; box-shadow: none; color: var(--ul-on-navy); font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__kinds button[aria-pressed=true] span { color: inherit; font-size: 12px; opacity: .85; }
+  /* The navy block is the group's sliding mark (v-indicator); the chosen word gives up its own. */
+  #app .app-shell--comic-page .ui-library__kinds[data-indicator-mark]::before {
+    border: 2px solid transparent; border-radius: 8px; background: transparent;
+    border-image: var(--ul-f-kind) 39 42 48 39 fill / 13px 14px 16px 13px / 2px 3px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .ui-library__kinds[data-indicator] button[aria-pressed=true] { border-image: none; }
 
   /* Purpose index: a thin slate box, 12px round; the chosen purpose a pale row with the lime bar on the box edge. */
   #app .app-shell--comic-page .ui-library__body { grid-template-columns: 204px minmax(0, 1fr); gap: 21px; }
@@ -842,6 +848,11 @@
   #app .app-shell--comic-page .ui-library__sidebar button:hover { background: var(--ul-active); }
   #app .app-shell--comic-page .ui-library__sidebar button.active { background: var(--ul-active); box-shadow: inset 6px 0 0 var(--ul-lime); color: var(--ul-strong); font-weight: 700; }
   #app .app-shell--comic-page .ui-library__sidebar button.active span { color: var(--ul-strong); }
+  /* The pale row and its lime bar slide down the list as the group's mark. */
+  #app .app-shell--comic-page .ui-library__sidebar nav[data-indicator-mark]::before {
+    border-radius: 0 8px 8px 0; background: var(--ul-active); box-shadow: inset 6px 0 0 var(--ul-lime);
+  }
+  #app .app-shell--comic-page .ui-library__sidebar nav[data-indicator] button.active { background: transparent; box-shadow: none; }
   #app .app-shell--comic-page .ui-library__aside-note { margin: 16px 8px 16px 18px; color: var(--ul-muted); font-size: 12.5px; line-height: 1.7; }
   #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip {
     margin: 16px 2px 2px 10px; padding: 12px; border: 1.5px dashed var(--ul-rule); border-radius: 8px; background: transparent;
@@ -878,6 +889,8 @@
     border-image: var(--ul-f-rank-on) 63 96 51 45 fill / 21px 32px 17px 15px / 8px 19px 4px 2px stretch;
     background: transparent; box-shadow: none; color: #05080f; font-weight: 800;
   }
+  /* Every ranking wears its own drawn frame, so nothing slides here: the new choice is stamped in. */
+  #app .app-shell--comic-page .ui-library__rankbar nav[data-indicator-mark]::before { content: none; }
   #app .app-shell--comic-page .ui-library__quota { gap: 0; margin: 9px 0 0; color: var(--ul-ink); font-size: 14.5px; font-weight: 500; }
   #app .app-shell--comic-page .ui-library__quota a { color: var(--ul-ink); font-weight: 500; text-decoration: none; }
   #app .app-shell--comic-page .ui-library__quota a::before { content: '·'; display: inline-block; margin: 0 6px 0 5px; }
@@ -3008,6 +3021,12 @@
     border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
   #app .app-shell--comic-page .projects-page--catalog .projects-category.tab-active small { color: var(--acid-ink); font-weight: 700; }
+  /* The lime key is the list's sliding mark (v-indicator); the chosen row keeps only its words. */
+  #app .app-shell--comic-page .projects-page--catalog :is(.projects-categories, .projects-subcategories)[data-indicator-mark]::before {
+    border: 0 solid transparent; border-radius: 4px; background: var(--p-lime); box-shadow: none;
+    border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog :is(.projects-categories, .projects-subcategories)[data-indicator] .projects-category.tab-active { border-image: none; }
   #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index { margin-top: 14px; padding: 12px 4px 0 10px; border-top: 1.5px solid var(--p-rule); }
   #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index__title { font-size: 14px; font-weight: 900; }
   #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button { padding: 5px 0; color: var(--p-muted); font-size: 13.5px; }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, proxyRefs, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, proxyRefs, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/authStore'
@@ -10,6 +10,8 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { showToast } from '@/composables/useToast'
 import { useDshInstallController } from '@/composables/useDshInstallController'
 import { Check, Github, Package } from 'lucide-vue-next'
+import { vIndicator } from '@/motion/indicator'
+import { vSwap } from '@/motion/swap'
 
 // 获客入口：游客可浏览第 1 步并选择安装方式；前进到命令步时弹登录。
 // 登录后自动 ensure 当前用户的 DSH 专用 MCP Token（跨刷新复用同一枚，
@@ -43,6 +45,9 @@ const advance = () => {
   controller.next()
   void controller.ensure()
 }
+// 步骤面板沿前进方向滑入：往回退时从左边进来。
+const stepDir = ref(1)
+watch(() => controller.step, (next, previous) => { stepDir.value = next > previous ? 1 : -1 })
 const goToStep = (index: number) => {
   if (index === controller.step) return
   if (index < controller.step) {
@@ -75,12 +80,12 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="dsh-wizard glass-card p-5 md:p-6" :aria-label="t('dsh.wizard.ariaLabel')">
-    <ol class="dsh-steps flex flex-wrap items-center gap-2"><li v-for="(key, index) in stepKeys" :key="key"><button type="button" class="border px-3 py-2 text-xs font-bold" :class="controller.step === index ? 'bg-[var(--acid)]' : 'bg-card'" :aria-current="controller.step === index ? 'step' : undefined" @click="goToStep(index)">{{ index + 1 }}. {{ t(key) }}</button></li></ol>
+    <ol v-indicator="{ active: '[aria-current]', mark: false, pop: true }" class="dsh-steps flex flex-wrap items-center gap-2"><li v-for="(key, index) in stepKeys" :key="key"><button type="button" class="border px-3 py-2 text-xs font-bold" :class="controller.step === index ? 'bg-[var(--acid)]' : 'bg-card'" :aria-current="controller.step === index ? 'step' : undefined" @click="goToStep(index)">{{ index + 1 }}. {{ t(key) }}</button></li></ol>
     <p class="dsh-step-description mt-3 text-xs text-stone-500">{{ t(currentTitle + 'Description') }}</p>
     <div v-if="auth.isMember" class="dsh-quota-hint dsh-quota-hint--member mt-4 rounded border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-800">{{ t('dsh.wizard.memberStatus') }}</div>
     <div v-else class="dsh-quota-hint mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">{{ t('dsh.wizard.vipHint') }} <RouterLink to="/membership" class="font-bold underline">{{ t('dsh.wizard.vipCta') }}</RouterLink></div>
-    <div class="dsh-step-panel mt-4">
-    <div v-if="controller.step === 0" class="dsh-methods grid gap-3 sm:grid-cols-2">
+    <div v-swap="{ key: controller.step, x: stepDir * 16, y: 0 }" class="dsh-step-panel mt-4">
+    <div v-if="controller.step === 0" v-indicator="{ active: '[aria-pressed=true]', mark: false, pop: true }" class="dsh-methods grid gap-3 sm:grid-cols-2">
       <button v-for="method in installMethods" :key="method.id" type="button" class="dsh-method border p-4 text-left" :class="controller.selectedMethod === method.id ? 'border-ink bg-[var(--acid-soft)]' : 'border-stone-200 bg-card'" :aria-pressed="controller.selectedMethod === method.id" @click="controller.selectedMethod = method.id">
         <span class="dsh-method-heading">
           <component :is="method.id === 'npm' ? Package : Github" class="dsh-method-icon" aria-hidden="true" />
