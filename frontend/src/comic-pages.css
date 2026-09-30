@@ -3,7 +3,6 @@
    Desktop only; phones keep their reading layout. Reading comes first: body copy stays upright, regular weight
    and at least 14px on a calm background; italics, weight and tilt are for titles and tags, halftone stays in
    corners away from text, and every scroll area can scroll its last lines clear of the footer peel. */
-.comic-footer-rule { display: none; }
 @media (min-width: 1024px) {
   #app .app-shell--comic-page {
     /* The comic palette as the shell resolves it, for pages that re-point --paper/--ink at their own tokens. */
@@ -49,22 +48,6 @@
     :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-nav { justify-content: flex-end; }
     :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-copyright { text-align: right; }
   }
-
-  /* The pages' frame closes on the footer's top edge in the masthead rule's ink. The scroll areas end on that edge, so
-     a line cut there reads as running on past the panel's border rather than breaking off. Over the dock the rule lifts
-     into a bay of paper that keeps the dock's top clear, as the masthead's steps round its ribbon; on the right it runs
-     on beneath the peel's curl. */
-  #app .app-shell--comic-page .comic-footer-rule {
-    display: flex; position: absolute; left: 0; right: 0; bottom: 0; z-index: 99; height: 13px; pointer-events: none;
-  }
-  #app .app-shell--comic-page .comic-footer-rule svg { display: block; height: 100%; overflow: visible; }
-  #app .app-shell--comic-page .comic-footer-rule__run { flex: 1 1 0; min-width: 0; margin-inline: -1px; }
-  #app .app-shell--comic-page .comic-footer-rule__step { flex: none; width: 26px; }
-  #app .app-shell--comic-page .comic-footer-rule__bay { flex: none; width: calc(var(--home-dock-width) + 8px); margin-inline: -1px; }
-  #app .app-shell--comic-page .comic-footer-rule path {
-    fill: none; stroke: var(--rule-strong); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke;
-  }
-  #app .app-shell--comic-page .comic-footer-rule .comic-footer-rule__paper { fill: var(--paper); stroke: none; }
 
   /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page
      and the auth dialogs, which are teleported out of #app). */

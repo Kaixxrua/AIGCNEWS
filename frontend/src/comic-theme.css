@@ -1,4 +1,4 @@
-.comic-masthead-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-corner,.comic-footer-sticker { display:none; }
+.comic-masthead-rule,.comic-footer-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-corner,.comic-footer-sticker { display:none; }
 @media (min-width: 1024px) {
 /* Shared comic palette; component-specific geometry remains with its owner. */
 :root {
@@ -163,6 +163,21 @@
   #app .app-shell--editorial .dock-footer--editorial { bottom: 3px; height: 68px; left: 24px; right: 24px; }
   #app .app-shell--editorial .footer-wordmark { letter-spacing: 0; }
   #app .app-shell--editorial .footer-nav { font-size: 12px; }
+  /* The page's frame closes on the footer's top edge in the masthead rule's ink. The content ends on that edge, so
+     a line cut there reads as running on past the panel's border rather than breaking off. Over the dock the rule lifts
+     into a bay of paper that keeps the dock's top clear, as the masthead's steps round its ribbon; on the right it runs
+     on beneath the peel's curl. */
+  #app .app-shell--editorial .comic-footer-rule {
+    display: flex; position: absolute; left: 0; right: 0; bottom: 0; z-index: 99; height: 13px; pointer-events: none;
+  }
+  #app .app-shell--editorial .comic-footer-rule svg { display: block; height: 100%; overflow: visible; }
+  #app .app-shell--editorial .comic-footer-rule__run { flex: 1 1 0; min-width: 0; margin-inline: -1px; }
+  #app .app-shell--editorial .comic-footer-rule__step { flex: none; width: 26px; }
+  #app .app-shell--editorial .comic-footer-rule__bay { flex: none; width: calc(var(--home-dock-width) + 8px); margin-inline: -1px; }
+  #app .app-shell--editorial .comic-footer-rule path {
+    fill: none; stroke: var(--rule-strong); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke;
+  }
+  #app .app-shell--editorial .comic-footer-rule .comic-footer-rule__paper { fill: var(--paper); stroke: none; }
 }
 
 /* Comic stickers (ComicSticker.vue): transparent layers lifted from the concept images, over the page. The

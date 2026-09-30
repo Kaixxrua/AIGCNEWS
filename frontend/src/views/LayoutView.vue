@@ -157,8 +157,8 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         </router-view>
       </div>
 
-      <!-- 漫画内容页的画框下沿：与报头墨线同笔，在 dock 处抬起让出一格 -->
-      <div v-if="comicPage" class="comic-footer-rule" aria-hidden="true">
+      <!-- 漫画外壳（首页与内容页）的画框下沿：与报头墨线同笔，在 dock 处抬起让出一格 -->
+      <div v-if="editorialLayout" class="comic-footer-rule" aria-hidden="true">
         <svg class="comic-footer-rule__run" viewBox="0 0 100 13" preserveAspectRatio="none"><path d="M0 12 L100 11.5" /></svg>
         <svg class="comic-footer-rule__step" viewBox="0 0 26 13"><path class="comic-footer-rule__paper" d="M0 11.5 Q9 11.5 13 7 Q17 2.5 26 2.5 L26 13 L0 13 Z" /><path d="M0 11.5 Q9 11.5 13 7 Q17 2.5 26 2.5" /></svg>
         <svg class="comic-footer-rule__bay" viewBox="0 0 100 13" preserveAspectRatio="none"><path class="comic-footer-rule__paper" d="M0 2.5 L100 2.5 L100 13 L0 13 Z" /><path d="M0 2.5 L100 2.5" /></svg>

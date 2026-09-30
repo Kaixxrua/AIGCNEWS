@@ -144,7 +144,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 </template>
 
 <style scoped>
-.dashboard-page { --sidebar-width:24%;display:grid;grid-template-columns:minmax(0,1fr) var(--sidebar-width);grid-template-rows:74px minmax(0,1fr);gap:14px 24px;position:relative;isolation:isolate;height:100%;min-height:0;padding:16px 12px 6px;color:var(--ink); }
+.dashboard-page { --sidebar-width:24%;display:grid;grid-template-columns:minmax(0,1fr) var(--sidebar-width);grid-template-rows:74px minmax(0,1fr);gap:14px 24px;position:relative;isolation:isolate;height:100%;min-height:0;padding:16px 12px 20px;color:var(--ink); }
 .dashboard-heading { grid-column:1;grid-row:1;display:flex;align-items:center;min-width:0;gap:16px; }
 .dashboard-heading__copy { flex:0 0 auto;min-width:0;padding:0 30px 0 5px; }
 .dashboard-heading h1 { text-shadow:1px 1px 0 var(--paper-raised);position:relative;isolation:isolate;display:inline-block;margin:0 0 4px;font-size:35px;font-style:italic;font-weight:950;line-height:1.1;letter-spacing:0;white-space:nowrap; }

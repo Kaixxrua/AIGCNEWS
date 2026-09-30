@@ -246,7 +246,9 @@ const boardDateHint = computed(() => {
   .ranking-tabs { flex:1 0 auto;justify-content:space-between; }
   .ranking-source-status { margin-left:auto; }
   .ranking-list { overflow:visible; }
-  .editorial-list { height:auto;grid-template-rows:175px repeat(7,minmax(58px,auto)); }
+  /* The rows run on past the panel into the page's scroll; the page's end padding doesn't reach past the panel, so
+     the list keeps its own, and its last row scrolls clear of the footer rule. */
+  .editorial-list { height:auto;grid-template-rows:175px repeat(7,minmax(58px,auto));padding-bottom:20px; }
   .ranking-row:not(.ranking-row--featured) .ranking-body { display:block; }
   .ranking-row:not(.ranking-row--featured) .ranking-meta { margin-top:3px; }
   .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:48px;height:48px;flex-basis:48px;font-size:19px; }
