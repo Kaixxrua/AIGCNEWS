@@ -34,7 +34,7 @@ def test_curated_directory_roundtrip_and_private_collection_isolation() -> None:
             connection.execute("INSERT INTO tool_websites VALUES (1, 'private-only')")
             connection.execute("CREATE TABLE user_tool_websites (user_id integer, website_id integer)")
             connection.execute("INSERT INTO user_tool_websites VALUES (7, 1)")
-            for name in ("0066_recommended_websites.sql", "0079_recommended_website_icons.sql"):
+            for name in ("0066_recommended_websites.sql", "0081_recommended_website_icons.sql"):
                 migration = Path(__file__).parents[1] / "migrations/postgres" / name
                 with connection.transaction():
                     connection.execute(migration.read_text(encoding="utf-8"))

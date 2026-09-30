@@ -33,6 +33,7 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
     assert migrations[77].filename == "0078_ai_ops_recovery.sql"
     assert migrations[78].filename == "0079_github_star_observations.sql"
     assert migrations[79].filename == "0080_github_rolling_star_growth.sql"
+    assert migrations[80].filename == "0081_recommended_website_icons.sql"
 
 
 def test_github_star_observations_migration_is_keyed_and_prunable() -> None:
