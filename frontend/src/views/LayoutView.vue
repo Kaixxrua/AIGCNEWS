@@ -36,8 +36,7 @@ const route = useRoute()
 const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 // 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
 const DESKTOP_COMIC_ROUTES = new Set(['contact'])
-// 项目库目录（projects-C）同样按漫画概念图复刻；网页收藏视图（source=website）也套漫画外壳，
-// 否则从 dock 点进「网页」时刊头、dock 与页脚整套换成旧版，dock 尺寸随之跳变。
+// 项目库目录（projects-C）与我的网页收藏（source=website，websites-mine-C）同样按漫画概念图复刻。
 const comicProjects = computed(() => route.path === '/projects')
 const comicRoute = computed(() => {
   const name = String(route.name ?? '')

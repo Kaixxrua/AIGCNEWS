@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -127,6 +127,14 @@ const MASONRY_MIN_CARD_PX = 260
 const MASONRY_GAP_PX = 12
 const pageEl = ref<HTMLElement | null>(null)
 const gridContentWidth = ref(0)
+// 漫画皮肤经页面上的 --projects-masonry-min / --projects-masonry-gap 改写列宽下限与列距；
+// 轨道是显式像素宽，CSS 列距须取同一个变量，否则整行溢出。
+const masonryMinCardPx = ref(MASONRY_MIN_CARD_PX)
+const masonryGapPx = ref(MASONRY_GAP_PX)
+const cssPx = (style: CSSStyleDeclaration, name: string, fallback: number) => {
+  const value = parseFloat(style.getPropertyValue(name))
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
 let pageResizeObserver: ResizeObserver | null = null
 // 实测页面滚动容器的水平 padding 得出内容宽：720/639px 断点会收窄
 // padding，写死常量会让瀑布流分列在窄屏失真。
@@ -135,6 +143,8 @@ const measureGridContentWidth = () => {
   if (!el) return
   const style = window.getComputedStyle(el)
   gridContentWidth.value = el.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+  masonryMinCardPx.value = cssPx(style, '--projects-masonry-min', MASONRY_MIN_CARD_PX)
+  masonryGapPx.value = cssPx(style, '--projects-masonry-gap', MASONRY_GAP_PX)
 }
 const startGridMeasure = () => {
   measureGridContentWidth()
@@ -150,7 +160,7 @@ const stopGridMeasure = () => {
 const masonryColumnCount = computed(() => {
   const width = gridContentWidth.value
   if (width <= 0) return 1
-  return Math.max(1, Math.floor((width + MASONRY_GAP_PX) / (MASONRY_MIN_CARD_PX + MASONRY_GAP_PX)))
+  return Math.max(1, Math.floor((width + masonryGapPx.value) / (masonryMinCardPx.value + masonryGapPx.value)))
 })
 // 结果不足以填满容器容量时不渲染空轨道；空结果仍保留单列作为首帧
 // 与空状态的稳定回退。列宽始终按容器满列容量计算，稀疏行左侧对齐、
@@ -165,7 +175,7 @@ const effectiveMasonryColumnCount = computed(() => (
 // 显式整数轨道 + 整数 gap ⇒ 每列左右边缘都落在物理像素上。
 const masonryColumnWidths = computed(() => {
   const count = masonryColumnCount.value
-  const total = Math.floor(gridContentWidth.value) - MASONRY_GAP_PX * (count - 1)
+  const total = Math.floor(gridContentWidth.value) - masonryGapPx.value * (count - 1)
   const base = Math.floor(total / count)
   let remainder = total - base * count
   return Array.from({ length: count }, () => base + (remainder-- > 0 ? 1 : 0))
@@ -176,7 +186,7 @@ const masonryGridTemplate = computed(() => {
 })
 const masonryColumnWidth = computed(() => {
   const width = Math.min(...masonryColumnWidths.value)
-  return width > 0 ? width : MASONRY_MIN_CARD_PX // 首帧未测量时的回退列宽
+  return width > 0 ? width : masonryMinCardPx.value // 首帧未测量时的回退列宽
 })
 const masonryColumns = computed(() => distributeColumns(
   projects.value,
@@ -193,6 +203,9 @@ const masonryColumns = computed(() => distributeColumns(
 // 同时 index<6 的 logo 走 eager 加载，语义保持全局名次而非列内名次。
 const projectOrdinal = computed(() => new Map(projects.value.map((repo, index) => [projectKey(repo), index])))
 const ordinalOf = (repo: GitHubProjectItem) => projectOrdinal.value.get(projectKey(repo)) ?? 0
+// 网页收藏卡片按全局名次轮换四种强调色（与站长推荐页同序、每 8 张一轮）；分列后 nth-child 只知列内名次，故由此下发。
+const WEBSITE_CARD_TONES = ['lime', 'cyan', 'purple', 'orange', 'purple', 'orange', 'lime', 'cyan'] as const
+const websiteCardToneClass = (repo: GitHubProjectItem) => `project-card--tone-${WEBSITE_CARD_TONES[ordinalOf(repo) % WEBSITE_CARD_TONES.length]}`
 const personalLoginCopy = computed(() => isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
@@ -392,6 +405,8 @@ const submitToolWebsite = async (request: string | ManualToolWebsitePayload) => 
 }
 
 watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, selectedTag, debouncedQuery, sort], resetAndLoad)
+// 网页收藏与其余视图的漫画皮肤列宽不同，而切换来源不改页面宽度、ResizeObserver 不会触发：挂上类名后重量一次。
+watch(isWebsiteOnlyView, () => { void nextTick(measureGridContentWidth) })
 watch(() => route.query, () => {
   if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
   const hadSort = Boolean(String(route.query.sort ?? '').trim())
@@ -449,12 +464,13 @@ onBeforeUnmount(stopViewReads)
 </script>
 
 <template>
-  <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView }">
+  <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView, 'projects-page--websites': isWebsiteOnlyView }">
     <section class="projects-hero glass-card" :class="{ 'projects-hero--website': isWebsiteOnlyView }">
       <div class="projects-hero__text">
         <p class="projects-kicker">{{ projectsHeroKicker }}</p>
-        <h1>{{ isWebsiteOnlyView ? t('projects.heroWebsiteKicker') : t('projects.pageTitle') }}</h1>
+        <h1 :class="{ 'comic-title': isWebsiteOnlyView }">{{ isWebsiteOnlyView ? t('projects.heroWebsiteKicker') : t('projects.pageTitle') }}</h1>
         <p v-if="!isPersonalView" class="projects-hero__lead">{{ t('projects.heroLibraryLead') }}</p>
+        <p v-else-if="isWebsiteOnlyView" class="projects-hero__lead">{{ t('projects.heroWebsiteLead') }}</p>
       </div>
 
       <div v-if="isWebsiteOnlyView && !requiresPersonalLogin" class="projects-hero__side">
@@ -612,6 +628,7 @@ onBeforeUnmount(stopViewReads)
         <ProjectResultCard
           v-for="repo in column"
           :key="projectKey(repo)"
+          :class="isWebsiteOnlyView ? websiteCardToneClass(repo) : undefined"
           :repo="repo"
           :catalog-layout="!isPersonalView"
           :index="ordinalOf(repo)"
@@ -799,6 +816,7 @@ onBeforeUnmount(stopViewReads)
   background: var(--projects-acid);
   font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease, background 160ms ease;
 }

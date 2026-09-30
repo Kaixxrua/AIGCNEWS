@@ -547,6 +547,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'projects.noTagFilter': '未筛选标签',
   'projects.allCategories': '全部分类',
   'projects.loginWebsiteKicker': '你的私人网页书架',
+  'projects.heroWebsiteLead': '你的私人网页书架',
   'projects.loginWebsiteTitle': '登录后继续整理你的网页世界',
   'projects.loginWebsiteDescription': '收藏实用网站、补充备注，把浏览器里零散的发现整理成自己的资料库。',
   'projects.loginFavoritesKicker': '你收藏的项目',
