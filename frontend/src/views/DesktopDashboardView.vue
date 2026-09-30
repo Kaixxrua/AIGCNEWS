@@ -249,7 +249,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 @media (max-width:1199px) {
   /* The stacked layout outgrows the viewport; scroll inside the canvas so nothing slips under the dock. */
-  .dashboard-page { grid-template-columns:minmax(0,1fr) 29%;grid-template-rows:auto auto;align-content:start;overflow:hidden auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) transparent;padding-top:15px;gap:14px; }
+  .dashboard-page { grid-template-columns:minmax(0,1fr) 29%;grid-template-rows:auto auto;align-content:start;overflow:hidden auto;overscroll-behavior:contain;padding-top:15px;gap:14px; }
   .dashboard-heading { flex-wrap:wrap; }
   .dashboard-heading__copy { flex-basis:100%; }
   .dashboard-heading h1 { font-size:34px;line-height:1.2;margin-bottom:5px;letter-spacing:-.045em; }

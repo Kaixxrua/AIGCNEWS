@@ -11,8 +11,10 @@
     --comic-ink: var(--ink);
     --comic-ink-muted: var(--ink-muted);
     --comic-acid: var(--acid);
-    /* How far the peel reaches up into the content (its art is 1100×713, standing 3px under the 74px footer). */
-    --peel-clear: max(0px, calc(var(--peel, 0px) * .648 - 71px));
+    /* How far the peel's curl reaches up into the content where the text column ends, about an eighth of the
+       peel in from the right (its art is 1100×713, standing 3px under the 74px footer). The crest further right
+       rises higher, but only over the page's gutter; corners of cards may tuck under it, the copy doesn't. */
+    --peel-clear: max(0px, calc(var(--peel, 0px) * .327 - 74px));
   }
 
   /* The concept draws the content pages' peel smaller than the homepage's (about 400px at 1920 wide), so it
@@ -142,13 +144,9 @@
     --rep-meta: #6b7280;
     --rep-link-line: #c2ef1a;
     --rep-link-tint: #f5f8b8;
-    /* the panel rides 16px up under the masthead, as in the concept */
-    align-items: stretch; gap: 10px; margin-top: -16px; padding: 0 4px 0 12px; background: transparent;
+    /* the panel starts under the masthead's ink rule, like every other comic page */
+    align-items: stretch; gap: 10px; padding: 8px 4px 0 12px; background: transparent;
   }
-  /* The masthead's paper is the page's own colour; clearing it lets the panel's top rule show beneath the logo. */
-  #app .app-shell--comic-page:has(.report-shell) .main-canvas--editorial .app-masthead { background: transparent !important; }
-  /* That top rule is this page's masthead rule (the corner's ribbon crosses it); a second one would run through the panel. */
-  #app .app-shell--comic-page:has(.report-shell) .comic-masthead-rule { display: none; }
   :root[data-theme='dark'] #app .app-shell--comic-page .report-shell {
     --rep-head: url('/assets/comic/rep-head-night.webp');
     --rep-sec: url('/assets/comic/rep-sec-night.webp');
@@ -632,9 +630,9 @@
   #app .app-shell--comic-page .xboard-main > .glass-card { color: var(--x-muted); font-size: 15px; }
   #app .app-shell--comic-page .xboard-toolbar { padding: 12px 16px; }
   #app .app-shell--comic-page .xboard-toolbar .btn-danger { background: #ff6b6b; color: #fff; }
-  /* the pager sits under the wall's last column, as the concept draws it there */
+  /* the pager sits centred under the wall, the tweet count centred just below it */
   #app .app-shell--comic-page .xboard-pagination {
-    align-self: flex-end; flex-wrap: nowrap; justify-content: space-between; gap: 12px; width: min(100%, 357px); padding: 15px 13px 15px 15px;
+    align-self: center; flex-wrap: nowrap; justify-content: space-between; gap: 12px; width: min(100%, 357px); padding: 15px 13px 15px 15px;
   }
   #app .app-shell--comic-page .xboard-pagination > span { color: var(--x-hint); font-size: 14px; font-weight: 700; white-space: nowrap; }
   #app .app-shell--comic-page .xboard-page .xboard-pagination button {
@@ -657,7 +655,7 @@
   }
   #app .app-shell--comic-page .xboard-pagination button:last-child::before { content: none; }
   #app .app-shell--comic-page .xboard-pagination button:last-child::after { transform: scaleX(-1); }
-  #app .app-shell--comic-page .xboard-main > p:last-child { margin-top: -4px; color: #8a97aa; font-size: 12px; text-align: left; }
+  #app .app-shell--comic-page .xboard-main > p:last-child { margin-top: -6px; color: #8a97aa; font-size: 12px; text-align: center; }
 
   /* Tweets read at 14px on a 21px line (the concept sets 13px; one size up reads easier); the masonry estimator
      reads these and the column gap from here. */
@@ -751,15 +749,14 @@
   /* ── UI library (ui-library-C): measured off the concept at 1536 × 1024. Every drawn piece is a generated 9-slice
      image (public/assets/comic/ui-*.webp, -night for the dark theme): the search's slate line, the framework picker
      and the plain buttons with their teal dry-brush corner, the purpose index, the navy material block, the lime
-     ranking chip and the brackets round the next rankings, the cards and their buttons, and the React slip. ── */
+     ranking chip, the cards and their buttons, and the React slip. ── */
   #app .app-shell--comic-page .ui-library {
     --ul-ink: #0a1226; --ul-black: #05080f; --ul-strong: #05080f; --ul-text: #131f35; --ul-soft: #1d304a; --ul-muted: #4e5e74; --ul-count: #354c63;
     --ul-rule: #5a6777; --ul-side-rule: #3f4652; --ul-paper: #fefdf8; --ul-white: #fff; --ul-lime: #cdfa19; --ul-lime-deep: #bfe80f;
     --ul-navy: #03172f; --ul-on-navy: #fff; --ul-active: #ecf3f2; --ul-dots: #2f8f9c; --ul-drop: rgb(10 18 32 / .24);
     --ul-f-search: url('/assets/comic/ul-search.webp'); --ul-f-fw: url('/assets/comic/ul-fw.webp'); --ul-f-btn: url('/assets/comic/ul-btn.webp');
     --ul-f-kind: url('/assets/comic/ul-kind.webp'); --ul-f-side: url('/assets/comic/ul-side.webp'); --ul-f-badge: url('/assets/comic/ul-badge.webp');
-    --ul-f-rank-on: url('/assets/comic/ul-rank-on.webp'); --ul-f-rank-a: url('/assets/comic/ul-rank-a.webp');
-    --ul-f-rank-b: url('/assets/comic/ul-rank-b.webp'); --ul-f-rank-open: url('/assets/comic/ul-rank-open.webp');
+    --ul-f-rank-on: url('/assets/comic/ul-rank-on.webp');
     padding: 4px 4px calc(var(--peel-clear) + 28px) 10px;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library {
@@ -768,8 +765,7 @@
     --ul-navy: var(--ink); --ul-on-navy: var(--paper-raised); --ul-active: var(--acid-soft); --ul-dots: var(--comic-cyan-line); --ul-drop: rgb(0 0 0 / .45);
     --ul-f-search: url('/assets/comic/ul-search-night.webp'); --ul-f-fw: url('/assets/comic/ul-fw-night.webp'); --ul-f-btn: url('/assets/comic/ul-btn-night.webp');
     --ul-f-kind: url('/assets/comic/ul-kind-night.webp'); --ul-f-side: url('/assets/comic/ul-side-night.webp'); --ul-f-badge: url('/assets/comic/ul-badge-night.webp');
-    --ul-f-rank-on: url('/assets/comic/ul-rank-on-night.webp'); --ul-f-rank-a: url('/assets/comic/ul-rank-a-night.webp');
-    --ul-f-rank-b: url('/assets/comic/ul-rank-b-night.webp'); --ul-f-rank-open: url('/assets/comic/ul-rank-open-night.webp');
+    --ul-f-rank-on: url('/assets/comic/ul-rank-on-night.webp');
   }
   #app .app-shell--comic-page .ui-library__header { align-items: flex-end; margin-bottom: 9px; padding-left: 18px; }
   /* The title's brush and spark are traced off the concept: a stroke rising under the lower half of the words from
@@ -806,10 +802,12 @@
   #app .app-shell--comic-page .ui-library__framework svg { width: 18px; height: 18px; stroke-width: 2.4; }
   #app .app-shell--comic-page .ui-library__framework select { width: 100%; max-width: none; color: var(--ul-strong); font-size: 15px; font-weight: 600; }
 
-  /* Material kinds: plain counted words; the chosen one a drawn navy block (ul-kind), black along its foot and right. */
-  #app .app-shell--comic-page .ui-library__kinds { align-items: center; gap: 2px; margin-bottom: 10px; padding: 0 5px 0 0; border-bottom: 0; }
+  /* Material kinds: counted words in the page's plain inked button (ul-btn, unfilled so the sliding mark shows
+     through); the chosen one a drawn navy block (ul-kind), black along its foot and right. */
+  #app .app-shell--comic-page .ui-library__kinds { align-items: center; gap: 10px; margin-bottom: 12px; padding: 2px 5px 4px 2px; border-bottom: 0; }
   #app .app-shell--comic-page .ui-library__kinds button {
-    gap: 14px; min-height: 39px; padding: 5px 13px; border: 2px solid transparent; border-radius: 8px;
+    gap: 10px; min-height: 39px; padding: 5px 14px; border: 2px solid transparent; border-radius: 8px;
+    border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch;
     color: var(--ul-soft); font-size: 15px; font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__kinds button span { color: var(--ul-count); font-size: 13px; font-weight: 500; opacity: 1; font-variant-numeric: tabular-nums; }
@@ -864,28 +862,20 @@
     background: var(--ul-lime); box-shadow: 1px 2px 2px var(--ul-drop); color: #05080f; font-size: 13px; font-weight: 800;
   }
 
-  /* Rankings, as drawn (all generated frames): a glossy lime chip with its spark for the chosen one; the next two
-     no box, only a pale foot and the brackets a pen puts round them; the week and month bare words with a tick
-     between; the likes in open brackets with a spark. The border stays 1px so the labels keep their places. */
+  /* Rankings: every one the page's plain inked button (ul-btn), the chosen one the lime chip. */
   #app .app-shell--comic-page .ui-library__rankbar { gap: 12px; margin: 0; }
   #app .app-shell--comic-page .ui-library__rankbar > span { display: none; }
-  #app .app-shell--comic-page .ui-library__rankbar nav { align-items: center; gap: 6px 18px; padding: 0 14px 0 0; }
+  #app .app-shell--comic-page .ui-library__rankbar nav { align-items: center; gap: 8px 10px; padding: 2px 14px 4px 2px; }
   #app .app-shell--comic-page .ui-library__rankbar button {
-    position: relative; min-height: 38px; padding: 4px 16px; border: 1px solid transparent; border-radius: 8px; background: transparent;
-    color: var(--ul-ink); font-size: 16px; font-weight: 500;
+    position: relative; min-height: 37px; padding: 3px 16px; border: 2px solid transparent; border-radius: 9px; background: var(--ul-white);
+    border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch;
+    color: var(--ul-ink); font-size: 15px; font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__rankbar button::before,
   #app .app-shell--comic-page .ui-library__rankbar button::after { content: none; }
-  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(2):not([aria-pressed=true]) { border-image: var(--ul-f-rank-a) 42 51 45 45 / 14px 17px 15px 15px / 2px 3px 3px 3px stretch; }
-  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(3):not([aria-pressed=true]) { border-image: var(--ul-f-rank-b) 42 141 45 45 / 14px 47px 15px 15px / 2px 3px 3px 3px stretch; }
-  #app .app-shell--comic-page .ui-library__rankbar button:nth-child(6):not([aria-pressed=true]) { border-image: var(--ul-f-rank-open) 60 93 45 45 / 20px 31px 15px 15px / 8px 15px 3px 3px stretch; }
-  #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(4), :nth-child(5)):not([aria-pressed=true])::after {
-    content: ''; position: absolute; right: -12px; top: calc(50% - 3px); width: 1.5px; height: 7px; background: var(--ul-black); transform: rotate(8deg); pointer-events: none;
-  }
-  #app .app-shell--comic-page .ui-library__rankbar button:is(:nth-child(4), :nth-child(5), :nth-child(6)):not([aria-pressed=true]) { padding-inline: 12px; }
   #app .app-shell--comic-page .ui-library__rankbar button:not([aria-pressed=true]):hover { background-color: var(--ul-active); }
   #app .app-shell--comic-page .ui-library__rankbar button[aria-pressed=true] {
-    min-height: 37px; padding: 3px 16px; border-radius: 10px;
+    border-radius: 10px;
     border-image: var(--ul-f-rank-on) 63 96 51 45 fill / 21px 32px 17px 15px / 8px 19px 4px 2px stretch;
     background: transparent; box-shadow: none; color: #05080f; font-weight: 800;
   }
@@ -1621,7 +1611,9 @@
   /* ── Membership (membership-C): three price cards drawn in ink, their tops climbing to the right, a navy extrusion
      to the lower right and halftone in two corners; the vip card is taller, with a lime spine and a lime flag. Tier
      names are tilted white slips, the billing switch and the savings slip are hand-inked too (all generated frames,
-     see assets/comic/README.md). The call to action is a navy block with a tilted lime label between sparks. ── */
+     see assets/comic/README.md). The call to action is a navy block with a tilted lime label between sparks.
+     Sizes are the concept's (1536 × 1024) at four fifths, frames included, so the cards read at the density of the
+     other pages and fit a laptop's height. ── */
   #app .app-shell--comic-page .membership-page {
     --mem-card: url('/assets/comic/mem-card.webp'); --mem-card-b: url('/assets/comic/mem-card-b.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip.webp');
     --mem-tag: url('/assets/comic/mem-tag.webp'); --mem-badge: url('/assets/comic/mem-badge.webp'); --mem-toggle: url('/assets/comic/mem-toggle.webp');
@@ -1638,10 +1630,10 @@
     --mem-rule: color-mix(in srgb, var(--ink) 45%, var(--paper)); --mem-dash: color-mix(in srgb, #7997bc 70%, var(--paper)); --mem-hint: #8fb0d6;
     --mem-cta: color-mix(in srgb, var(--acid) 12%, var(--paper-raised)); --mem-cta-ink: var(--acid); --mem-halo: var(--paper);
   }
-  #app .app-shell--comic-page .membership-card { max-width: 1480px; margin: 0 auto; gap: 0; }
-  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 87px; padding: 12px 0 0 3px; text-align: left; }
+  #app .app-shell--comic-page .membership-card { max-width: 1280px; margin: 0 auto; gap: 0; }
+  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 80px; padding: 10px 0 0 3px; text-align: left; }
   #app .app-shell--comic-page .membership-title.comic-title {
-    margin: 0; padding: 0 1px; color: var(--mem-ink); font-size: 48px; font-style: normal; font-weight: 950; line-height: 1.12;
+    margin: 0; padding: 0 1px; color: var(--mem-ink); font-size: 42px; font-style: normal; font-weight: 950; line-height: 1.12;
     -webkit-text-stroke: .4px currentColor; transform: rotate(-4deg); transform-origin: 0 100%;
     text-shadow: 1.5px 0 var(--mem-halo), -1.5px 0 var(--mem-halo), 0 1.5px var(--mem-halo), 0 -1.5px var(--mem-halo), 1.2px 1.2px var(--mem-halo), -1.2px -1.2px var(--mem-halo), 1.2px -1.2px var(--mem-halo), -1.2px 1.2px var(--mem-halo);
   }
@@ -1654,23 +1646,23 @@
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::after { background: var(--acid); }
   #app .app-shell--comic-page .membership-subtitle {
-    max-width: none; margin: 5px 0 0 -4px; color: var(--mem-ink); font-size: 17px; font-weight: 400; line-height: 1.5;
+    max-width: none; margin: 5px 0 0 -4px; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5;
     transform: rotate(-2.6deg); transform-origin: 0 50%;
   }
-  #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 27px; padding-top: 11px; }
+  #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 22px; padding-top: 11px; }
   #app .app-shell--comic-page .tier-card {
-    position: relative; isolation: isolate; min-height: 563px; padding: 31px 24px 30px 30px;
+    position: relative; isolation: isolate; min-height: 450px; padding: 25px 19px 24px 24px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none;
   }
   #app .app-shell--comic-page .tier-card::before { content: none; }
   #app .app-shell--comic-page .tier-card::after {
     content: ''; position: absolute; inset: -2px -10px -13px -2px; z-index: -1; pointer-events: none;
-    border: solid transparent; border-width: 112px 140px 95px 112px; border-image: var(--mem-card) 336 420 285 336 fill / 112px 140px 95px 112px stretch;
+    border: solid transparent; border-width: 90px 112px 76px 90px; border-image: var(--mem-card) 336 420 285 336 fill / 90px 112px 76px 90px stretch;
   }
-  #app .app-shell--comic-page .tier-card:nth-child(2)::after { border-width: 113px 140px 95px 112px; border-image: var(--mem-card-b) 339 420 285 336 fill / 113px 140px 95px 112px stretch; }
-  /* The vip card stands 20px above the others and reaches 11px lower. */
-  #app .app-shell--comic-page .tier-card--member { margin: -20px 0 -11px; padding: 27px 28px 29px 43px; }
-  #app .app-shell--comic-page .tier-card--member::after { border-width: 100px 124px 99px 122px; border-image: var(--mem-card-vip) 300 372 297 366 fill / 100px 124px 99px 122px stretch; }
+  #app .app-shell--comic-page .tier-card:nth-child(2)::after { border-width: 90px 112px 76px 90px; border-image: var(--mem-card-b) 339 420 285 336 fill / 90px 112px 76px 90px stretch; }
+  /* The vip card stands 16px above the others and reaches 9px lower. */
+  #app .app-shell--comic-page .tier-card--member { margin: -16px 0 -9px; padding: 22px 22px 23px 34px; }
+  #app .app-shell--comic-page .tier-card--member::after { border-width: 80px 99px 79px 98px; border-image: var(--mem-card-vip) 300 372 297 366 fill / 80px 99px 79px 98px stretch; }
 
   /* Hand-inked slips: each paints nothing itself and wears its generated frame. */
   #app .app-shell--comic-page :is(.tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings) {
@@ -1680,77 +1672,77 @@
     content: ''; position: absolute; z-index: -1; pointer-events: none; border: solid transparent;
   }
   #app .app-shell--comic-page .tier-name {
-    align-self: flex-start; min-height: 41px; margin: 0 0 23px -6px; padding: 3px 20px 4px 19px; color: var(--mem-ink);
-    font-size: 25px; font-style: italic; font-weight: 950; letter-spacing: .01em; line-height: 34px; text-align: center; -webkit-text-stroke: .7px currentColor; transform: skewY(-9.5deg) skewX(-4deg);
+    align-self: flex-start; min-height: 33px; margin: 0 0 18px -5px; padding: 2px 16px 3px 15px; color: var(--mem-ink);
+    font-size: 20px; font-style: italic; font-weight: 950; letter-spacing: .01em; line-height: 28px; text-align: center; -webkit-text-stroke: .7px currentColor; transform: skewY(-9.5deg) skewX(-4deg);
   }
   #app .app-shell--comic-page .tier-name::after { inset: -2px -2px -3px -2px; border-width: 10px 6px 7px 6px; border-image: var(--mem-tag) 30 18 21 18 fill / 10px 6px 7px 6px stretch; }
-  #app .app-shell--comic-page .tier-card--member .tier-name { margin-left: -12px; }
+  #app .app-shell--comic-page .tier-card--member .tier-name { margin-left: -10px; }
   #app .app-shell--comic-page .tier-badge {
-    position: absolute; top: 8px; right: 17px; min-width: 94px; padding: 5px 16px 7px 20px; color: #071633;
-    font-size: 22px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 28px; text-align: center; transform: rotate(-10deg);
+    position: absolute; top: 7px; right: 14px; min-width: 76px; padding: 4px 13px 6px 16px; color: #071633;
+    font-size: 18px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 23px; text-align: center; transform: rotate(-10deg);
   }
-  #app .app-shell--comic-page .tier-badge::after { inset: -2px -4px -6px -2px; border-width: 11px 14px 15px 12px; border-image: var(--mem-badge) 33 42 45 36 fill / 11px 14px 15px 12px stretch; }
+  #app .app-shell--comic-page .tier-badge::after { inset: -2px -3px -5px -2px; border-width: 9px 11px 12px 10px; border-image: var(--mem-badge) 33 42 45 36 fill / 9px 11px 12px 10px stretch; }
   #app .app-shell--comic-page .tier-badge--current { color: var(--mem-ink); }
   #app .app-shell--comic-page .tier-badge--current::after { filter: grayscale(1) brightness(1.15); }
-  #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 10px; }
-  #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 71px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1.2px currentColor; }
-  #app .app-shell--comic-page .tier-price-period { margin-left: 9px; color: var(--mem-ink); font-size: 21px; font-weight: 600; }
+  #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 8px; }
+  #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 56px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1px currentColor; }
+  #app .app-shell--comic-page .tier-price-period { margin-left: 7px; color: var(--mem-ink); font-size: 17px; font-weight: 600; }
   #app .app-shell--comic-page .tier-billing-btn {
-    align-self: center; gap: 9px; min-height: 47px; margin: -14px 0 0 auto; padding: 8px 12px 9px 16px; color: var(--mem-ink);
-    font-size: 20px; font-style: italic; font-weight: 900; -webkit-text-stroke: .3px currentColor; transform: rotate(-2.5deg);
+    align-self: center; gap: 7px; min-height: 38px; margin: -11px 0 0 auto; padding: 6px 10px 7px 13px; color: var(--mem-ink);
+    font-size: 16px; font-style: italic; font-weight: 900; -webkit-text-stroke: .3px currentColor; transform: rotate(-2.5deg);
   }
-  #app .app-shell--comic-page .tier-billing-btn::after { inset: -2px -2px -3px -2px; border-width: 10px 7px 8px 7px; border-image: var(--mem-toggle) 30 21 24 21 fill / 10px 7px 8px 7px stretch; }
+  #app .app-shell--comic-page .tier-billing-btn::after { inset: -2px -2px -3px -2px; border-width: 8px 6px 6px 6px; border-image: var(--mem-toggle) 30 21 24 21 fill / 8px 6px 6px 6px stretch; }
   #app .app-shell--comic-page .tier-billing-btn:hover { background: transparent; color: var(--mem-ink); transform: rotate(-2.5deg) translateY(-1px); }
   #app .app-shell--comic-page .tier-billing-btn[aria-pressed='true'] { border-color: transparent; background: transparent; color: var(--mem-ink); }
-  #app .app-shell--comic-page .tier-billing-btn svg { width: 17px; height: 17px; stroke-width: 2.6; }
-  #app .app-shell--comic-page .tier-billing-tag { margin-left: 4px; padding: 2px 8px 4px; color: #071633; font-size: 15px; font-style: italic; font-weight: 900; line-height: 22px; transform: rotate(-2deg); }
-  #app .app-shell--comic-page .tier-billing-tag::after { inset: -2px -2px -3px -2px; border-width: 9px 6px 7px 6px; border-image: var(--mem-chip) 27 18 21 18 fill / 9px 6px 7px 6px stretch; }
-  #app .app-shell--comic-page .tier-price-yearly { display: flex; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 20px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-billing-btn svg { width: 14px; height: 14px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-billing-tag { margin-left: 3px; padding: 2px 7px 3px; color: #071633; font-size: 13px; font-style: italic; font-weight: 900; line-height: 18px; transform: rotate(-2deg); }
+  #app .app-shell--comic-page .tier-billing-tag::after { inset: -2px -2px -3px -2px; border-width: 7px 5px 6px 5px; border-image: var(--mem-chip) 27 18 21 18 fill / 7px 5px 6px 5px stretch; }
+  #app .app-shell--comic-page .tier-price-yearly { display: flex; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 16px; font-weight: 800; }
   #app .app-shell--comic-page .tier-savings {
-    margin: -6px 0 0 22px; padding: 7px 14px 9px; color: #071633; font-size: 17px; font-style: italic; font-weight: 900; line-height: 26px; transform: rotate(-5deg);
+    margin: -5px 0 0 18px; padding: 5px 11px 7px; color: #071633; font-size: 14px; font-style: italic; font-weight: 900; line-height: 21px; transform: rotate(-5deg);
   }
   :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-savings, .tier-billing-tag, .tier-badge) { color: var(--ink); }
   :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-billing-tag, .tier-badge) { color: #10140a; }
-  #app .app-shell--comic-page .tier-savings::after { inset: -2px -2px -3px -2px; border-width: 11px 11px 12px 11px; border-image: var(--mem-savings) 33 33 36 33 fill / 11px 11px 12px 11px stretch; }
-  #app .app-shell--comic-page .tier-divider { margin: 22px 0 21px; border-top: 1.5px solid var(--mem-rule); }
-  #app .app-shell--comic-page .tier-card--member .tier-divider { margin-top: 14px; }
-  #app .app-shell--comic-page .tier-features { gap: 12.5px; margin-bottom: 24px; color: var(--mem-copy); font-size: 18.5px; line-height: 29.5px; }
-  #app .app-shell--comic-page .tier-features li { gap: 15px; }
-  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 22px; height: 22px; margin-top: 3.5px; stroke-width: 3.2; }
+  #app .app-shell--comic-page .tier-savings::after { inset: -2px -2px -3px -2px; border-width: 9px 9px 10px 9px; border-image: var(--mem-savings) 33 33 36 33 fill / 9px 9px 10px 9px stretch; }
+  #app .app-shell--comic-page .tier-divider { margin: 17px 0 16px; border-top: 1.5px solid var(--mem-rule); }
+  #app .app-shell--comic-page .tier-card--member .tier-divider { margin-top: 11px; }
+  #app .app-shell--comic-page .tier-features { gap: 9px; margin-bottom: 19px; color: var(--mem-copy); font-size: 15px; line-height: 23.5px; }
+  #app .app-shell--comic-page .tier-features li { gap: 12px; }
+  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 18px; height: 18px; margin-top: 2.8px; stroke-width: 3.2; }
   #app .app-shell--comic-page .tier-check { color: var(--mem-check); }
-  #app .app-shell--comic-page .tier-x { width: 18px; margin-inline: 2px; color: var(--mem-x); stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-x { width: 15px; margin-inline: 1.5px; color: var(--mem-x); stroke-width: 2.6; }
   #app .app-shell--comic-page .tier-feature--excluded { color: var(--mem-off); }
   /* A dashed rule of 8px dashes, as drawn, over the plan's note. */
   #app .app-shell--comic-page :is(.tier-plan-note, .tier-member-note) {
-    padding-top: 21px; border-top: 0; background: linear-gradient(90deg, var(--mem-dash) 0 8px, transparent 8px 13px) 0 0 / 13px 1.5px repeat-x;
-    font-size: 16.5px; line-height: 1.5;
+    padding-top: 16px; border-top: 0; background: linear-gradient(90deg, var(--mem-dash) 0 7px, transparent 7px 11px) 0 0 / 11px 1.5px repeat-x;
+    font-size: 14px; line-height: 1.5;
   }
   #app .app-shell--comic-page .tier-plan-note { color: var(--mem-muted); }
   #app .app-shell--comic-page .tier-cta {
-    gap: 22px; min-height: 70px; margin-inline: 3px 4px; padding: 8px 22px 12px; border: 0; border-radius: 9px; background: var(--mem-cta); box-shadow: none;
-    color: var(--mem-cta-ink); font-size: 31px; font-style: italic; font-weight: 950; letter-spacing: .02em;
+    gap: 17px; min-height: 56px; margin-inline: 3px 4px; padding: 6px 18px 10px; border: 0; border-radius: 8px; background: var(--mem-cta); box-shadow: none;
+    color: var(--mem-cta-ink); font-size: 25px; font-style: italic; font-weight: 950; letter-spacing: .02em;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .tier-cta { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--acid) 55%, transparent); }
   #app .app-shell--comic-page .tier-cta:hover { background: var(--mem-cta); color: var(--mem-cta-ink); filter: brightness(1.18); }
   /* The label tilts and carries its lime underline; the sparks fan in toward it from both sides. */
   #app .app-shell--comic-page .tier-cta-label {
-    display: inline-block; transform: rotate(-4deg); text-decoration: underline 3px; text-underline-offset: 10px; text-decoration-skip-ink: none;
+    display: inline-block; transform: rotate(-4deg); text-decoration: underline 2.5px; text-underline-offset: 8px; text-decoration-skip-ink: none;
   }
   #app .app-shell--comic-page .tier-cta::before,
   #app .app-shell--comic-page .tier-cta::after {
-    content: ''; flex: 0 0 16px; height: 20px; background: var(--mem-cta-ink); clip-path: none;
+    content: ''; flex: 0 0 13px; height: 16px; background: var(--mem-cta-ink); clip-path: none;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath d='M.4 2.6 1.6.6 14.6 7.2 13.8 8.6zM0 9.2 14.2 9.9 14.2 11.5 0 12zM1 18.2 13.8 12.6 14.6 14 2.2 19.8z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
-  #app .app-shell--comic-page .tier-cta::before { transform: translateY(9px); }
-  #app .app-shell--comic-page .tier-cta::after { transform: translateY(-10px) scaleX(-1); }
-  #app .app-shell--comic-page .tier-cta-hint { margin-top: 11px; color: var(--mem-hint); font-size: 16px; line-height: 23px; }
+  #app .app-shell--comic-page .tier-cta::before { transform: translateY(7px); }
+  #app .app-shell--comic-page .tier-cta::after { transform: translateY(-8px) scaleX(-1); }
+  #app .app-shell--comic-page .tier-cta-hint { margin-top: 9px; color: var(--mem-hint); font-size: 14px; line-height: 20px; }
   @media (max-width: 1279px) {
-    #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
-    #app .app-shell--comic-page .tier-card { padding-inline: 22px 20px; }
-    #app .app-shell--comic-page .tier-card--member { padding-left: 34px; }
-    #app .app-shell--comic-page .tier-price-amount { font-size: 56px; }
-    #app .app-shell--comic-page .tier-features { font-size: 16px; line-height: 26px; }
-    #app .app-shell--comic-page .tier-cta { font-size: 26px; }
+    #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    #app .app-shell--comic-page .tier-card { padding-inline: 18px 16px; }
+    #app .app-shell--comic-page .tier-card--member { padding-left: 28px; }
+    #app .app-shell--comic-page .tier-price-amount { font-size: 46px; }
+    #app .app-shell--comic-page .tier-features { font-size: 14px; line-height: 22px; }
+    #app .app-shell--comic-page .tier-cta { font-size: 22px; }
   }
 
   /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the
@@ -1911,7 +1903,7 @@
      slips and fields (above) in a scroll box padded so the frame's navy block is not clipped. The page's header is
      drawn inside the card here; the settings dialogs keep a ruled head and sections, headed by the same lime slips.
      They sit after #app in <body>; '#app ~' also gives these rules the shared rules' id weight. ── */
-  #app ~ .comic-auth > div { max-width: 477px; padding: 3px 14px 13px 3px; scrollbar-width: thin; }
+  #app ~ .comic-auth > div { max-width: 477px; padding: 3px 14px 13px 3px; }
   #app ~ .comic-auth--settings > div { max-width: 617px; }
   #app ~ .comic-auth .auth-card { width: 100%; max-width: none; }
   #app ~ .comic-auth .auth-card .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 18px; }
@@ -2733,7 +2725,7 @@
   #app .app-shell--comic-page .monitor-scheduler-status > .status-dot.monitor-status-dot-error { background: var(--mon-error); box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--mon-error) 20%, transparent); }
   #app .app-shell--comic-page .monitor-scheduler-status > span:nth-child(2) { margin-right: 11px; color: var(--mon-live); font-size: 14px; font-weight: 500; white-space: nowrap; }
   #app .app-shell--comic-page .monitor-scheduler-status > .monitor-status-dot-error + span { color: var(--mon-error); }
-  #app .app-shell--comic-page .monitor-scheduler-jobs { grid-column: 1 / -1; align-self: stretch; min-height: 0; margin: 0 -11px 0 -4px; padding: 2px 0 8px 4px; scrollbar-gutter: stable; scrollbar-width: thin; }
+  #app .app-shell--comic-page .monitor-scheduler-jobs { grid-column: 1 / -1; align-self: stretch; min-height: 0; margin: 0 -11px 0 -4px; padding: 2px 0 8px 4px; scrollbar-gutter: stable; }
   #app .app-shell--comic-page .monitor-scheduler-jobs > * + * { margin-top: 15px; }
   #app .app-shell--comic-page .monitor-job {
     position: relative; isolation: isolate; display: flex; align-items: center; gap: 18px; min-height: 72px; padding: 8px 14px 8px 13px;
@@ -2769,7 +2761,7 @@
      so the table stays a table. A failed task's message sits under its name and may run on under the status. */
   #app .app-shell--comic-page .monitor-tasks-header { justify-content: flex-start; align-items: center; gap: 12.5px; padding: 11px 16px 24px 12.5px; border-bottom: 0; }
   #app .app-shell--comic-page .monitor-page .monitor-tasks-header .monitor-badge { margin-top: 3px; padding: 0 13px; }
-  #app .app-shell--comic-page .monitor-tasks-header + div { min-height: 0; padding: 0 16px 0 15px; overflow: auto; scrollbar-width: thin; }
+  #app .app-shell--comic-page .monitor-tasks-header + div { min-height: 0; padding: 0 16px 0 15px; overflow: auto; }
   #app .app-shell--comic-page .monitor-tasks .monitor-table { isolation: isolate; margin-top: -9.5px; border-collapse: separate; border-spacing: 0 9.5px; table-layout: fixed; }
   #app .app-shell--comic-page .monitor-tasks .monitor-table thead { background: none; }
   #app .app-shell--comic-page .monitor-tasks .monitor-table th {
@@ -2981,12 +2973,14 @@
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select { min-width: 148px; padding: 0 12px; font-size: 14px; font-weight: 700; }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select:disabled { opacity: .85; }
 
-  /* MCP strip: a lime band in a 2px line; its question upright and heavy, the chevron on a brighter lime key. */
+  /* MCP strip: a lime band in a 2px line; its question upright and heavy, the chevron on a brighter lime key. Opened,
+     only the band stays lime: the pitch and the examples sit on paper below it, each example a small inked slip. */
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo {
-    margin-bottom: 11px; border: 0 solid transparent; border-radius: 4px; background: var(--p-strip); box-shadow: none;
+    margin-bottom: 11px; border: 0 solid transparent; border-radius: 4px; background: var(--p-face); box-shadow: none;
     border-image: var(--p-banner) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__summary { min-height: 42px; padding: 4px 11px 4px 16px; gap: 12px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__summary { min-height: 42px; padding: 4px 11px 4px 16px; gap: 12px; border-radius: 4px; background: var(--p-strip); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo[open] .projects-mcp-promo__summary { border-radius: 4px 4px 0 0; }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title { gap: 11px; color: var(--p-ink); font-size: 14.5px; font-style: normal; font-weight: 900; }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__title::before { color: var(--p-ink); font-size: 17px; font-style: normal; }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__expand { color: var(--p-ink); font-size: 14px; font-weight: 800; }
@@ -2995,7 +2989,20 @@
     background: var(--p-key); box-shadow: none; color: var(--p-ink);
     border-image: var(--p-chev) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__content { border-top: 1.5px solid var(--p-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__content { padding: 14px 16px 12px 18px; border-top: 1.5px solid var(--p-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__copy > p { margin-bottom: 6px; color: var(--p-copy); font-size: 14px; line-height: 1.6; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__copy > .projects-mcp-promo__try { margin-bottom: 10px; color: var(--p-hint); font-size: 13px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo .mcp-prompt-list { gap: 10px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo .mcp-prompt-item {
+    gap: 4px; padding: 3px 5px 3px 11px; border: 0 solid transparent; border-radius: 3px; background: var(--p-paper); color: var(--p-ink); font-size: 13.5px;
+    border-image: var(--p-tag) 24 24 27 24 / 8px 8px 9px 8px / 2px 2px 3px 2px stretch; transition: background-color 160ms ease;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo .mcp-prompt-item:hover { background: var(--p-lime-hover); }
+  #app .app-shell--comic-page .projects-page--catalog :is(.projects-mcp-promo__dismiss, .projects-mcp-promo__dismiss-week) {
+    min-height: 30px; border: 1.5px solid var(--p-rule); border-radius: 4px; background: var(--p-paper); color: var(--p-muted);
+  }
+  #app .app-shell--comic-page .projects-page--catalog :is(.projects-mcp-promo__dismiss, .projects-mcp-promo__dismiss-week):hover { background: var(--p-lime-hover); color: var(--p-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__action { min-height: 34px; color: var(--p-ink); font-weight: 800; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; }
 
   /* Category index: one square box from the page's edge, a heavier line down its right and pencil in its corners;
      names at 14px, counts lighter and right-aligned, the current one on a lime key in a thin line. */
@@ -3027,10 +3034,6 @@
     border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
   #app .app-shell--comic-page .projects-page--catalog :is(.projects-categories, .projects-subcategories)[data-indicator] .projects-category.tab-active { border-image: none; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index { margin-top: 14px; padding: 12px 4px 0 10px; border-top: 1.5px solid var(--p-rule); }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index__title { font-size: 14px; font-weight: 900; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button { padding: 5px 0; color: var(--p-muted); font-size: 13.5px; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-subcategory-index button:is(:hover, .is-active) { color: var(--p-ink); }
 
   /* Cards: the drawn frame (line, block and halftone) over the paper and a soft wash rising from the lower right. */
   #app .app-shell--comic-page .projects-page--catalog .projects-grid { gap: 14px 14px; }
@@ -3083,6 +3086,13 @@
     width: 28px; min-width: 28px; min-height: 28px; border: 0; border-radius: 4px; background: transparent; box-shadow: none; color: var(--p-ink);
   }
   #app .app-shell--comic-page .project-card--catalog .project-card__action:hover:not(:disabled) { background: var(--p-lime-hover); }
+  /* The actions ride up with their card, and each icon springs up under the pointer: the link leans out, the star turns. */
+  #app .app-shell--comic-page .project-card--catalog .project-card__rail { transition: translate 160ms ease; }
+  #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__rail { translate: -1px -2px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__action-icon { transition: scale 320ms var(--motion-spring), rotate 320ms var(--motion-spring), translate 320ms var(--motion-spring); }
+  #app .app-shell--comic-page .project-card--catalog .project-card__action:hover:not(:disabled) .project-card__action-icon { translate: 0 -1px; scale: 1.18; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__link:hover .project-card__action-icon { translate: 1.5px -1.5px; }
+  #app .app-shell--comic-page .project-card--catalog .project-card__favorite:hover:not(:disabled) .project-card__action-icon { rotate: -15deg; }
   #app .app-shell--comic-page .project-card--catalog .project-card__favorite:not(.project-card__favorite--active) { color: var(--p-star); }
   #app .app-shell--comic-page .project-card--catalog .project-card__favorite--active { background: var(--p-lime); color: var(--acid-ink); }
   #app .app-shell--comic-page .project-card--catalog.project-card--not-found .project-card__body { background: var(--projects-ghost-surface-card); }
@@ -3121,19 +3131,20 @@
     #app .app-shell--comic-page .projects-toolbar--catalog { gap: 24px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    #app .app-shell--comic-page .project-card--catalog .project-card__body { transition: none; }
+    #app .app-shell--comic-page .project-card--catalog :is(.project-card__body, .project-card__rail, .project-card__action-icon) { transition: none; }
     #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) .project-card__body { transform: none; }
+    #app .app-shell--comic-page .project-card--catalog:is(:hover, :focus-within) :is(.project-card__rail, .project-card__action-icon) { translate: none; scale: none; rotate: none; }
   }
 
   /* ── My web collection (/projects?source=website, websites-mine-C), measured off the concept at 1536 × 1024: the
      title on its brush over a one-line lead, the quota and a lime add button across from it; the shared collection
-     tabs, a full-width search and the tag filters on thin-ruled keys; four columns of the recommended page's cards,
-     their actions hung off the right edge as three drawn tabs. Every drawn piece is a generated 9-slice image
+     tabs, a full-width search and the tag filters on thin-ruled keys; the recommended page's cards at four fifths of the concept (so a laptop
+     holds five columns and a long list stays scannable), their actions hung off the right edge as three drawn tabs. Every drawn piece is a generated 9-slice image
      (web-* and p-* shared with the sibling pages, wc-* for this page's own button, tabs and tag slips; -night for
      the dark theme). The masonry reads its column floor and gap from the page, so the columns follow these. ── */
   #app .app-shell--comic-page .projects-page--websites {
-    --projects-masonry-min: 330px;
-    --projects-masonry-gap: 20px;
+    --projects-masonry-min: 262px;
+    --projects-masonry-gap: 18px;
     --wc-quota: #1e3350;
     --wc-vip: #1d7a45;
     --wc-rule: #dde1e6;
@@ -3174,7 +3185,7 @@
   #app .app-shell--comic-page .projects-page--websites .projects-hero { align-items: flex-end; margin: 0 0 13px; }
   #app .app-shell--comic-page .projects-page--websites .projects-hero__text { max-width: none; padding: 8px 0 0 3px; }
   #app .app-shell--comic-page .projects-page--websites .projects-hero h1.comic-title {
-    display: inline-block; margin-right: 36px; color: var(--web-ink); font-size: 44px; letter-spacing: 0;
+    display: inline-block; margin-right: 36px; color: var(--web-ink); font-size: 38px; letter-spacing: 0;
     transform: rotate(-3deg); transform-origin: left bottom;
   }
   #app .app-shell--comic-page .projects-page--websites .projects-hero h1.comic-title::before {
@@ -3182,28 +3193,28 @@
   }
   #app .app-shell--comic-page .projects-page--websites .projects-hero h1.comic-title::after { right: -44px; top: -8px; width: 28px; height: 34px; }
   #app .app-shell--comic-page .projects-page--websites .projects-hero__lead {
-    display: block; margin: 6px 0 0 1px; color: var(--web-ink); font-size: 16px; font-weight: 800; line-height: 1.3; letter-spacing: .3px;
+    display: block; margin: 6px 0 0 1px; color: var(--web-ink); font-size: 15px; font-weight: 800; line-height: 1.3; letter-spacing: .3px;
   }
   #app .app-shell--comic-page .projects-page--websites .projects-website-add { gap: 23px; margin-bottom: 4px; }
   #app .app-shell--comic-page .projects-page--websites .projects-website-add__quota { max-width: none; color: var(--wc-quota); font-size: 13.5px; font-weight: 500; }
   #app .app-shell--comic-page .projects-page--websites .projects-website-add__vip { margin-left: 2px; color: var(--wc-vip); font-weight: 600; }
   #app .app-shell--comic-page .projects-page--websites .projects-website-add__vip:hover { background: transparent; text-decoration-thickness: 2px; }
   #app .app-shell--comic-page .projects-page--websites .projects-add-btn {
-    height: 43px; min-height: 0; gap: 9px; padding: 0 21px 0 17px; border: 0 solid transparent; border-radius: 4px;
-    background: transparent; color: #0a1128; font-size: 17px; font-weight: 900;
+    height: 39px; min-height: 0; gap: 8px; padding: 0 19px 0 15px; border: 0 solid transparent; border-radius: 4px;
+    background: transparent; color: #0a1128; font-size: 16px; font-weight: 900;
     border-image: var(--wc-add) 30 42 42 27 fill / 10px 14px 14px 9px / 2px 7px 7px 2px stretch;
     transition: transform .12s cubic-bezier(.2, .8, .2, 1);
   }
-  #app .app-shell--comic-page .projects-page--websites .projects-add-btn span { font-size: 22px; font-weight: 700; }
+  #app .app-shell--comic-page .projects-page--websites .projects-add-btn span { font-size: 20px; font-weight: 700; }
   #app .app-shell--comic-page .projects-page--websites .projects-add-btn:hover { background: transparent; color: #0a1128; transform: translate(-1px, -1px); }
   #app .app-shell--comic-page .projects-page--websites .projects-add-btn:focus-visible { outline: 2px solid var(--web-ink); outline-offset: 5px; }
 
   /* Tabs on their own line, then the search across the page (the sibling page's drawn box), then the tags. */
-  #app .app-shell--comic-page .projects-page--websites .projects-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 11px; margin: 0 0 20px; }
+  #app .app-shell--comic-page .projects-page--websites .projects-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin: 0 0 16px; }
   #app .app-shell--comic-page .projects-page--websites .projects-toolbar .website-tabs { margin: 2px 0 0; }
   #app .app-shell--comic-page .projects-page--websites .projects-search .input {
-    height: 48px; padding: 0 44px 0 53px; border: 0 solid transparent; border-radius: 2px; box-shadow: none;
-    background: var(--web-field) var(--web-magnifier) no-repeat 14.8px 50% / 25px 25px; color: var(--web-ink); font-size: 18px; font-weight: 500;
+    height: 42px; padding: 0 44px 0 47px; border: 0 solid transparent; border-radius: 2px; box-shadow: none;
+    background: var(--web-field) var(--web-magnifier) no-repeat 13px 50% / 21px 21px; color: var(--web-ink); font-size: 16px; font-weight: 500;
     border-image: var(--web-search) 90 168 78 114 fill / 30px 56px 26px 38px / 2px 8px 8px 2px stretch;
   }
   #app .app-shell--comic-page .projects-page--websites .projects-search > svg { display: none; }
@@ -3212,14 +3223,14 @@
   #app .app-shell--comic-page .projects-page--websites .projects-search .input:focus { box-shadow: none; }
   #app .app-shell--comic-page .projects-page--websites .projects-search .input:focus-visible { outline: 2px solid var(--web-ink); outline-offset: 3px; }
   #app .app-shell--comic-page .projects-page--websites .projects-search__clear { right: 10px; }
-  #app .app-shell--comic-page .projects-page--websites .projects-tag-panel { margin-bottom: 18px; }
-  #app .app-shell--comic-page .projects-page--websites .projects-categories { gap: 12px; padding: 0 0 3px; }
+  #app .app-shell--comic-page .projects-page--websites .projects-tag-panel { margin-bottom: 14px; }
+  #app .app-shell--comic-page .projects-page--websites .projects-categories { gap: 10px; padding: 0 0 3px; }
   #app .app-shell--comic-page .projects-page--websites .projects-category--tag {
-    height: 42px; min-height: 0; gap: 12px; padding: 0 16px; border: 0 solid transparent; border-radius: 4px; box-shadow: none;
-    background: var(--web-field); color: var(--web-ink); font-size: 17px; font-weight: 800;
+    height: 36px; min-height: 0; gap: 10px; padding: 0 14px; border: 0 solid transparent; border-radius: 4px; box-shadow: none;
+    background: var(--web-field); color: var(--web-ink); font-size: 15px; font-weight: 800;
     border-image: var(--p-field) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--websites .projects-category--tag small { color: var(--web-ink); font-size: 16px; font-weight: 700; opacity: 1; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .projects-page--websites .projects-category--tag small { color: var(--web-ink); font-size: 14px; font-weight: 700; opacity: 1; font-variant-numeric: tabular-nums; }
   #app .app-shell--comic-page .projects-page--websites .projects-category--tag:hover:not(:disabled) { background: #eef9c4; }
   :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--websites .projects-category--tag:hover:not(:disabled) { background: #35392b; }
   #app .app-shell--comic-page .projects-page--websites .projects-category--tag.tab-active {
@@ -3231,50 +3242,51 @@
   /* Cards: the recommended page's frame in the card's accent over a flat paper face; the actions tucked under the
      frame's block as three drawn tabs that come forward while in use (so their tooltips clear the card). */
   #app .app-shell--comic-page .projects-page--websites .projects-grid { column-gap: var(--projects-masonry-gap); }
-  #app .app-shell--comic-page .projects-page--websites .projects-col { gap: 16px; }
+  #app .app-shell--comic-page .projects-page--websites .projects-col { gap: 14px; }
   #app .app-shell--comic-page .projects-page--websites .project-card__body {
-    z-index: 1; isolation: isolate; gap: 0; min-height: 232px; padding: 18px 20px 11px 19px;
+    z-index: 1; isolation: isolate; gap: 0; min-height: 184px; padding: 14px 16px 9px 15px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none;
     transition: transform .12s cubic-bezier(.2, .8, .2, 1);
   }
   #app .app-shell--comic-page .projects-page--websites .project-card__body::after {
     content: ''; position: absolute; z-index: -1; inset: -2px -8px -10px -2px; pointer-events: none;
-    border-style: solid; border-color: transparent; border-width: 10px 110px 110px 8px;
-    border-image: var(--web-card) 30 330 330 24 fill / 10px 110px 110px 8px stretch;
+    border-style: solid; border-color: transparent; border-width: 10px 88px 88px 8px;
+    border-image: var(--web-card) 30 330 330 24 fill / 10px 88px 88px 8px stretch;
   }
   #app .app-shell--comic-page .projects-page--websites .project-card:is(:hover, :focus-within) .project-card__body { box-shadow: none; transform: translate(-1px, -2px); }
   /* Tile, badge and name; the domain runs under the tile. */
-  #app .app-shell--comic-page .projects-page--websites .project-card__identity { display: grid; grid-template-columns: 50px minmax(0, 1fr); align-items: start; gap: 0 19px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__identity { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: start; gap: 0 14px; }
   #app .app-shell--comic-page .projects-page--websites .project-card__identity > div:last-child { display: contents; }
   #app .app-shell--comic-page .projects-page--websites .project-card__logo-shell {
-    grid-column: 1; grid-row: 1 / 3; width: 50px; height: 50px; border: 0 solid transparent; border-radius: 5px; background: var(--web-accent);
-    border-image: var(--web-tile) 30 36 39 30 / 10px 12px 13px 10px / 2px 4px 5px 2px stretch;
+    grid-column: 1; grid-row: 1 / 3; width: 40px; height: 40px; border: 0 solid transparent; border-radius: 5px; background: var(--web-accent);
+    border-image: var(--web-tile) 30 36 39 30 / 8px 10px 11px 8px / 2px 3px 4px 2px stretch;
   }
-  #app .app-shell--comic-page .projects-page--websites .project-card__logo-placeholder { color: #0a1128; font-size: 33px; font-weight: 900; line-height: 1; }
-  /* A scraped logo sits on white inside the tile, as its site designed it. */
+  #app .app-shell--comic-page .projects-page--websites .project-card__logo-placeholder { color: #0a1128; font-size: 26px; font-weight: 900; line-height: 1; }
+  /* A scraped logo sits on white inside the tile, as its site designed it, scaled into the tile's middle whatever
+     its own size (an img's auto size ignores its insets, which left small favicons stuck in the corner). */
   #app .app-shell--comic-page .projects-page--websites .project-card__logo-shell:has(.project-card__logo--loaded) { background: #fff; }
   #app .app-shell--comic-page .projects-page--websites .project-card__logo-shell:has(.project-card__logo--loaded) .project-card__logo-placeholder { visibility: hidden; }
-  #app .app-shell--comic-page .projects-page--websites .project-card__logo { inset: 6px; width: auto; height: auto; border-radius: 3px; object-fit: contain; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__logo { inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); border-radius: 3px; object-fit: contain; }
   #app .app-shell--comic-page .projects-page--websites .project-card__source-row { grid-column: 2; grid-row: 1; }
   #app .app-shell--comic-page .projects-page--websites .project-card__source {
-    min-height: 21px; padding: 0 6px; border: 0 solid transparent; border-radius: 3px; background: var(--web-tile-lime); color: #0a1128;
-    font-size: 12px; font-weight: 800; line-height: 21px;
+    min-height: 18px; padding: 0 5px; border: 0 solid transparent; border-radius: 3px; background: var(--web-tile-lime); color: #0a1128;
+    font-size: 11px; font-weight: 800; line-height: 18px;
     border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
   }
   #app .app-shell--comic-page .projects-page--websites .project-card__identity h2 {
-    grid-column: 2; grid-row: 2; margin-top: 9px; color: var(--web-ink); font-size: 20px; font-weight: 800; line-height: 26px; letter-spacing: -.01em;
+    grid-column: 2; grid-row: 2; margin-top: 4px; color: var(--web-ink); font-size: 17px; font-weight: 800; line-height: 22px; letter-spacing: -.01em;
   }
-  #app .app-shell--comic-page .projects-page--websites .project-card__domain { grid-column: 1 / -1; grid-row: 3; margin-top: 4px; color: var(--web-copy); font-size: 14px; line-height: 18px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__domain { grid-column: 1 / -1; grid-row: 3; margin-top: 5px; color: var(--web-copy); font-size: 12.5px; line-height: 16px; }
   /* The copy keeps clear of the halftone, wrapping about where the concept's does. */
-  #app .app-shell--comic-page .projects-page--websites .project-card__description { margin-top: 4px; padding-right: 32px; color: var(--web-copy); font-size: 15px; line-height: 24px; }
-  #app .app-shell--comic-page .projects-page--websites .project-card__details { margin-top: auto; padding-top: 10px; }
-  #app .app-shell--comic-page .projects-page--websites .project-card__metadata { gap: 10px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__description { margin-top: 3px; padding-right: 26px; color: var(--web-copy); font-size: 13.5px; line-height: 20px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__details { margin-top: auto; padding-top: 8px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__metadata { gap: 8px; }
   /* Tags: slips in a pale wash of the card's accent, each on its own drawn block. */
-  #app .app-shell--comic-page .projects-page--websites .project-card__tag-list { gap: 12px; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__tag-list { gap: 9px; }
   #app .app-shell--comic-page .projects-page--websites .project-chip {
-    height: 29px; min-height: 0; padding: 0 20px 0 18px; border: 0 solid transparent; border-radius: 0; background: transparent; box-shadow: none;
-    color: #0a1128; font-size: 14px; font-weight: 900; line-height: 29px; white-space: nowrap;
-    border-image: var(--wc-tag) 33 45 45 33 fill / 11px 15px 15px 11px / 2px 6px 6px 2px stretch;
+    height: 24px; min-height: 0; padding: 0 16px 0 14px; border: 0 solid transparent; border-radius: 0; background: transparent; box-shadow: none;
+    color: #0a1128; font-size: 12.5px; font-weight: 900; line-height: 24px; white-space: nowrap;
+    border-image: var(--wc-tag) 33 45 45 33 fill / 9px 12px 12px 9px / 2px 5px 5px 2px stretch;
     transform: rotate(-3deg); transition: transform .12s cubic-bezier(.2, .8, .2, 1);
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--websites .project-chip { color: var(--ink); }
@@ -3282,22 +3294,24 @@
   #app .app-shell--comic-page .projects-page--websites .project-chip--more { padding: 0 8px; border-image: none; color: var(--web-muted); transform: none; }
   /* Where and when: a hairline, then the domain by an amber globe and the date by a teal calendar. */
   #app .app-shell--comic-page .projects-page--websites .project-card__stats {
-    gap: 6px 12px; padding-top: 8px; border-top: 1px solid var(--wc-rule); color: var(--web-ink); font-size: 13px; line-height: 18px;
+    gap: 4px 10px; padding-top: 6px; border-top: 1px solid var(--wc-rule); color: var(--web-ink); font-size: 12px; line-height: 16px;
   }
   #app .app-shell--comic-page .projects-page--websites .project-card__stats span:first-child { color: var(--web-ink); font-weight: 600; }
   #app .app-shell--comic-page .projects-page--websites .project-card__stats span:nth-child(2) { color: var(--web-ink); }
   #app .app-shell--comic-page .projects-page--websites .project-card__stats span:first-child svg { color: var(--wc-globe); }
   #app .app-shell--comic-page .projects-page--websites .project-card__stats span:nth-child(2) svg { color: var(--wc-date); }
-  /* The action tabs: 40px keys whose drawn line and block come from the image. */
-  #app .app-shell--comic-page .projects-page--websites .project-card__rail { z-index: 0; top: 16px; gap: 8px; }
+  /* The action tabs: 32px keys whose drawn line and block come from the image. */
+  #app .app-shell--comic-page .projects-page--websites .project-card__rail { z-index: 0; top: 13px; gap: 6px; }
   #app .app-shell--comic-page .projects-page--websites .project-card__rail:is(:hover, :focus-within) { z-index: 2; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__rail { transition: translate 160ms ease; }
+  #app .app-shell--comic-page .projects-page--websites .project-card:is(:hover, :focus-within) .project-card__rail { translate: -1px -2px; }
   #app .app-shell--comic-page .projects-page--websites .project-card__action {
-    width: 40px; min-height: 40px; height: 40px; border: 0 solid transparent; border-radius: 0 5px 5px 0; background: transparent; box-shadow: none;
-    border-image: var(--wc-act) 30 42 45 30 fill / 10px 14px 15px 10px / 2px 6px 7px 2px stretch;
+    width: 32px; min-height: 32px; height: 32px; border: 0 solid transparent; border-radius: 0 5px 5px 0; background: transparent; box-shadow: none;
+    border-image: var(--wc-act) 30 42 45 30 fill / 8px 11px 12px 8px / 2px 5px 6px 2px stretch;
     transition: transform .12s cubic-bezier(.2, .8, .2, 1);
   }
   #app .app-shell--comic-page .projects-page--websites .project-card__action:hover:not(:disabled) { box-shadow: none; transform: translateX(3px); }
-  #app .app-shell--comic-page .projects-page--websites .project-card__action-icon { width: 18px; height: 18px; stroke-width: 2.2; }
+  #app .app-shell--comic-page .projects-page--websites .project-card__action-icon { width: 15px; height: 15px; stroke-width: 2.2; }
   #app .app-shell--comic-page .projects-page--websites .project-card__link { --wc-act: var(--wc-act-go); color: #0a1128; }
   #app .app-shell--comic-page .projects-page--websites .project-card__edit { --wc-act: var(--wc-act-edit); color: #2447c9; }
   #app .app-shell--comic-page .projects-page--websites .project-card__delete { --wc-act: var(--wc-act-del); color: #d42a1f; }
@@ -3305,7 +3319,8 @@
   :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--websites .project-card__edit { color: #8fb0ff; }
   :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--websites .project-card__delete { color: #ff8a80; }
   @media (prefers-reduced-motion: reduce) {
-    #app .app-shell--comic-page .projects-page--websites :is(.projects-add-btn, .project-card__body, .project-chip, .project-card__action) { transition: none; }
+    #app .app-shell--comic-page .projects-page--websites :is(.projects-add-btn, .project-card__body, .project-chip, .project-card__action, .project-card__rail) { transition: none; }
+    #app .app-shell--comic-page .projects-page--websites .project-card:is(:hover, :focus-within) .project-card__rail { translate: none; }
     #app .app-shell--comic-page .projects-page--websites :is(.projects-add-btn:hover, .project-card__action:hover:not(:disabled)),
     #app .app-shell--comic-page .projects-page--websites .project-card:is(:hover, :focus-within) .project-card__body { transform: none; }
     #app .app-shell--comic-page .projects-page--websites .project-chip:not(.project-chip--more):hover { transform: rotate(-3deg); }
