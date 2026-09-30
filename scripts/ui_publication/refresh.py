@@ -614,7 +614,10 @@ def refresh(args) -> dict:
                 continue
             checkout = upstreams.checkout(source['repository'], head)
             license_file = license_path(module_name, provider_id, source)
-            if sha((checkout / license_file).read_bytes()) != source['license_sha256']:
+            license_bytes = (checkout / license_file).read_bytes() if (checkout / license_file).is_file() else b''
+            if not license_bytes:
+                raise Hold('license_removed_requires_review')
+            if sha(license_bytes) != source['license_sha256']:
                 raise Hold('license_changed_requires_review')
             if 'known' not in memo:
                 lock = locks.get(provider_id)

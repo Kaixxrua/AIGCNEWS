@@ -9,7 +9,7 @@ Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Li
 每轮流程：
 
 1. `git ls-remote` 取上游 HEAD；与上次检查一致则跳过。浅克隆固定 commit，不执行任何 npm 脚本。
-2. **法律闸门**：许可证文件必须与审核时逐字节一致，否则整个来源停在 `license_changed_requires_review`。
+2. **法律闸门**：许可证文件必须与审核时逐字节一致，否则整个来源停在 `license_changed_requires_review`（文件被删除则为 `license_removed_requires_review`；例：HextaUI 2026-09 起上游已删除 LICENSE，停在审核版本）。
 3. 首次运行时在已审核 revision 上重放导入器：当时能产出却不在目录里的 ID 视为曾被门禁或人工拒绝，永不自动回归；`withdrawn.json`、以及本刷新器发布后又被手动删除的 ID 同样永久屏蔽；HyperUI、Uiverse/Galaxy 整体不再自动入库。
 4. 在新 HEAD 上跑同一导入器（同样的外链/离线依赖/体积门禁），只取新 ID。新文件写入 `sources/<provider>/r<rev12>/`，已发布素材的固定字节不变。每轮最多 48 个（各来源轮转），没处理完的来源下次继续。
 5. 离线构建预览；在禁止联网的无头浏览器中等 `ready`，生成版本化 WebP 封面与 6 秒 H.264 MP4；异常、空白封面（灰度标准差 ≤ 3）记入 `held.json`，源码不变不再重试。
