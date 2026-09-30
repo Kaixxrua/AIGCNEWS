@@ -115,6 +115,10 @@ const navAlertKeys = computed<MonitorSectionKey[]>(() =>
 
 const selectSection = (key: MonitorSectionKey) => { activeSection.value = key }
 
+// 首屏之后的分区切换（点导航、前进后退）不再沿用首屏面板逐张错开的入场延迟，新面板随点击立刻弹入。
+const sectionSwitched = ref(false)
+watch(activeSection, () => { sectionSwitched.value = true }, { once: true })
+
 // 状态 → URL：replace 不刷历史；默认组省略参数保持 URL 干净
 watch(activeSection, (section) => {
   if (route.name !== 'monitor') return
@@ -206,7 +210,7 @@ onUnmounted(dispose)
         @select="selectSection"
       />
 
-      <div class="monitor-section-panels">
+      <div class="monitor-section-panels" :data-switched="sectionSwitched || undefined">
         <!-- ═══ 监控（非 admin 唯一可见大类） ═══ -->
         <template v-if="currentSection === 'tasks'">
           <MonitorTaskPanel

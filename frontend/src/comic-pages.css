@@ -2557,6 +2557,14 @@
   #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled)::before { background: color-mix(in srgb, var(--mon-danger) 10%, transparent); }
   #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):focus-visible { outline: 2px solid var(--mon-ink); outline-offset: 4px; }
   #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):disabled { box-shadow: none; opacity: .5; }
+  /* Visit windows: every one wears its own rule, so nothing slides; the chosen window sits on the pager's lime chip and a
+     new choice is stamped in (v-indicator pop). */
+  #app .app-shell--comic-page .visit-window-tabs[data-indicator-mark]::before { content: none; }
+  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true'],
+  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true']:hover:not(:disabled) { color: var(--mon-on-chip); }
+  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true']::after {
+    inset: -2px -2px -3px; border-width: 9px 9px 10px; border-image: var(--mon-pg-on) 27 27 30 fill / 9px 9px 10px stretch;
+  }
 
   /* Clear-data confirm: the comic rule drawn in CSS, heading at dialog scale. */
   #app .app-shell--comic-page .monitor-page .monitor-modal {
@@ -2596,6 +2604,20 @@
     background: linear-gradient(90deg, var(--mon-band) 0 38px, var(--mon-band-soft) 64px); color: var(--mon-ink); font-weight: 600; box-shadow: none;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .monitor-nav-item.active { color: #17181b; }
+  /* The band is the nav's own sliding mark (v-indicator): it springs from leaf to leaf, across the groups too, and the chosen
+     leaf keeps only its words. In the dark the words follow the band: the leaf it leaves pales at once, the one it reaches
+     darkens a beat later. */
+  #app .app-shell--comic-page .monitor-nav { position: relative; isolation: isolate; }
+  #app .app-shell--comic-page .monitor-nav[data-indicator-mark]::before {
+    content: ''; z-index: -1; border-radius: 0 4px 4px 0; background: linear-gradient(90deg, var(--mon-band) 0 38px, var(--mon-band-soft) 64px);
+  }
+  #app .app-shell--comic-page .monitor-nav[data-indicator] .monitor-nav-item.active { background: transparent; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-nav[data-indicator] .monitor-nav-item { transition: background 150ms ease, color 90ms ease; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .monitor-nav[data-indicator] .monitor-nav-item.active { transition: background 150ms ease, color 160ms ease 70ms; }
+  /* While the chosen leaf's group folds or unfolds, the band steps aside and springs back once the leaves have settled. */
+  #app .app-shell--comic-page .monitor-nav:has(:is(.monitor-nav-fold-enter-active, .monitor-nav-fold-leave-active) .active)[data-indicator-mark]::before {
+    opacity: 0; scale: .6;
+  }
   #app .app-shell--comic-page .monitor-nav-item:focus-visible,
   #app .app-shell--comic-page .monitor-nav-group-header:focus-visible { outline: 2px solid var(--mon-ink); outline-offset: -2px; }
   /* The alert: a red disc with a white "!" beside the label. */

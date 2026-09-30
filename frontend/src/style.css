@@ -1259,6 +1259,11 @@
   overscroll-behavior: contain;
 }
 
+/* 首屏之后再切换分区，新面板随点击立刻弹入，不再等首屏逐张错开的延迟。 */
+.monitor-page .monitor-section-panels[data-switched] .stagger-enter {
+  animation-delay: 0s !important;
+}
+
 .monitor-page .monitor-nav {
   display: flex;
   flex-direction: column;
@@ -1308,7 +1313,7 @@
   width: 12px;
   height: 12px;
   margin-left: auto;
-  transition: transform 150ms ease;
+  transition: transform 320ms var(--motion-spring);
 }
 
 .monitor-page .monitor-nav-chevron.collapsed {
@@ -1355,6 +1360,11 @@
   color: var(--projects-on-acid);
   background: var(--projects-acid);
   box-shadow: 3px 3px 0 var(--shadow-hard);
+}
+
+/* 叶子各是一块实底框，选中底滑过会被挡住：这里不画滑动标记，新选中的叶子盖章式弹入（v-indicator 的 pop）。 */
+.monitor-page .monitor-nav[data-indicator-mark]::before {
+  content: none;
 }
 
 .monitor-page .monitor-nav-alert {

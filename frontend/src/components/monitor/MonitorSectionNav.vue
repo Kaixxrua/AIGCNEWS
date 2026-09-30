@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorNavCategory, MonitorSectionKey } from '@/features/monitor/monitorViewModel'
+import { fold, unfold } from '@/motion/fold'
+import { vIndicator } from '@/motion/indicator'
 
 // 监控页左侧两级导航：大类可折叠（组件自持的纯展示状态），叶子点击即切换面板
 const props = defineProps<{
@@ -30,7 +32,8 @@ const categoryShowsAlert = (category: MonitorNavCategory) =>
 </script>
 
 <template>
-  <nav class="monitor-nav" :aria-label="t('monitor.nav.ariaLabel')">
+  <!-- 选中底是整列导航的滑动标记，跨大类也一路滑过去；叶子各带实底框的样式里改为新选中的叶子盖章弹入（由 CSS 决定）。 -->
+  <nav v-indicator="{ active: '.monitor-nav-leaf.active', pop: true }" class="monitor-nav" :aria-label="t('monitor.nav.ariaLabel')">
     <div v-for="category in sections" :key="category.key" class="monitor-nav-group">
       <button
         type="button"
@@ -47,24 +50,26 @@ const categoryShowsAlert = (category: MonitorNavCategory) =>
         />
         <svg class="monitor-nav-chevron" :class="{ collapsed: isCollapsed(category.key) }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
-      <div v-show="!isCollapsed(category.key)" class="monitor-nav-leaves">
-        <button
-          v-for="leaf in category.children"
-          :key="leaf.key"
-          type="button"
-          class="monitor-nav-item monitor-nav-leaf"
-          :class="{ active: leaf.key === active }"
-          :aria-current="leaf.key === active ? 'true' : undefined"
-          @click="emit('select', leaf.key)"
-        >
-          <span class="monitor-nav-label">{{ t(leaf.labelKey) }}</span>
-          <span
-            v-if="alertKeys.includes(leaf.key)"
-            class="monitor-nav-alert"
-            :title="t('navigation.monitorAlert')"
-          />
-        </button>
-      </div>
+      <Transition name="monitor-nav-fold" @enter="unfold" @leave="fold">
+        <div v-show="!isCollapsed(category.key)" class="monitor-nav-leaves">
+          <button
+            v-for="leaf in category.children"
+            :key="leaf.key"
+            type="button"
+            class="monitor-nav-item monitor-nav-leaf"
+            :class="{ active: leaf.key === active }"
+            :aria-current="leaf.key === active ? 'true' : undefined"
+            @click="emit('select', leaf.key)"
+          >
+            <span class="monitor-nav-label">{{ t(leaf.labelKey) }}</span>
+            <span
+              v-if="alertKeys.includes(leaf.key)"
+              class="monitor-nav-alert"
+              :title="t('navigation.monitorAlert')"
+            />
+          </button>
+        </div>
+      </Transition>
     </div>
   </nav>
 </template>

@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { useVisitStatsController } from '@/composables/useVisitStatsController'
+import { vIndicator } from '@/motion/indicator'
+import { vSwap } from '@/motion/swap'
 import {
   DONUT_RADIUS,
   PLATFORM_COLOR_SLOT,
@@ -72,7 +74,12 @@ onBeforeUnmount(dispose)
       <svg class="h-4 w-4 monitor-caption" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
       <h3 class="monitor-section-title text-sm font-semibold">{{ t('monitor.visitStats.title') }}</h3>
       <span v-if="data" class="monitor-badge tabular-nums">{{ t('monitor.visitStats.total', { count: data.total_visits }) }}</span>
-      <div class="ml-auto flex flex-wrap items-center gap-1" role="group" :aria-label="t('monitor.visitStats.title')">
+      <div
+        v-indicator="{ active: '[aria-pressed=true]', pop: true }"
+        class="visit-window-tabs ml-auto flex flex-wrap items-center gap-1"
+        role="group"
+        :aria-label="t('monitor.visitStats.title')"
+      >
         <button
           v-for="item in VISIT_STATS_WINDOWS"
           :key="item"
@@ -137,7 +144,8 @@ onBeforeUnmount(dispose)
         <div class="visit-legend-wrap">
           <p class="monitor-caption text-2xs tabular-nums">{{ rangeText }}</p>
           <p v-if="empty" class="monitor-caption mt-2 text-xs">{{ t('monitor.visitStats.empty') }}</p>
-          <ul v-else class="visit-legend mt-2">
+          <!-- 换了时间窗、新数据到达时各平台一行行重新浮现，环图分段同时过渡。 -->
+          <ul v-else v-swap="{ key: data.window, stagger: true }" class="visit-legend mt-2">
             <li
               v-for="entry in platforms"
               :key="entry.platform"
@@ -192,6 +200,41 @@ onBeforeUnmount(dispose)
   border-color: var(--projects-accent);
   background: var(--projects-accent);
   color: var(--projects-paper-light);
+}
+
+/* 选中底由 v-indicator 画在按钮组的 ::before 上，在时间窗之间弹簧滑动；选中项把底让给它，也不再响应悬停，
+   免得悬停底把刚滑到的标记盖住。反白字晚一拍换上，标记滑到时才换好；离开的一项立刻褪回。
+   加载中选中项变淡，标记随它一起淡。 */
+.visit-window-tabs {
+  position: relative;
+  isolation: isolate;
+}
+
+.visit-window-tabs[data-indicator-mark]::before {
+  z-index: -1;
+  border-radius: 4px;
+  background: var(--projects-accent);
+}
+
+.visit-window-tabs:has(.visit-window-tab-active:disabled)[data-indicator-mark]::before {
+  opacity: 0.4;
+}
+
+.visit-window-tabs[data-indicator] .visit-window-tab-active,
+.visit-window-tabs[data-indicator] .visit-window-tab-active:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--projects-paper-light);
+  transform: none;
+}
+
+.visit-window-tabs[data-indicator] .visit-window-tab {
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 90ms ease, border-color 150ms ease;
+}
+
+.visit-window-tabs[data-indicator] .visit-window-tab-active {
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, color 160ms ease 70ms, border-color 150ms ease;
 }
 
 .visit-stats-body {
