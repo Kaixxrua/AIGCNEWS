@@ -11,7 +11,7 @@ const props = defineProps<{ variant: 'corner' | 'shout' | 'peel'; text?: string 
 
 // Intrinsic sizes, so the boxes never shift while the images load.
 const ART = {
-  corner: { src: '/assets/comic/tear-corner.webp', width: 852, height: 345 },
+  corner: { src: '/assets/comic/tear-corner-v2.webp', width: 852, height: 345 },
   shout: { src: '/assets/comic/tear-shout.webp', width: 1101, height: 324 },
   peel: { src: '/assets/comic/tear-peel.webp', width: 1100, height: 713 },
 } as const

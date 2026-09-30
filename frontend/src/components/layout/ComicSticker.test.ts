@@ -11,7 +11,7 @@ describe('ComicSticker', () => {
   })
 
   it.each([
-    ['corner', '/assets/comic/tear-corner.webp', '852', '345'],
+    ['corner', '/assets/comic/tear-corner-v2.webp', '852', '345'],
     ['shout', '/assets/comic/tear-shout.webp', '1101', '324'],
     ['peel', '/assets/comic/tear-peel.webp', '1100', '713'],
   ] as const)('paints the %s tear at its intrinsic size so it cannot shift layout', (variant, src, width, height) => {

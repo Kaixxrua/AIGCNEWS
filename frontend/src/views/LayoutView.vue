@@ -36,8 +36,9 @@ const route = useRoute()
 const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 // 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
 const DESKTOP_COMIC_ROUTES = new Set(['contact'])
-// 项目库目录（projects-C）同样按漫画概念图复刻；网页收藏视图（source=website）维持原布局。
-const comicProjects = computed(() => route.path === '/projects' && route.query.source !== 'website')
+// 项目库目录（projects-C）同样按漫画概念图复刻；网页收藏视图（source=website）也套漫画外壳，
+// 否则从 dock 点进「网页」时刊头、dock 与页脚整套换成旧版，dock 尺寸随之跳变。
+const comicProjects = computed(() => route.path === '/projects')
 const comicRoute = computed(() => {
   const name = String(route.name ?? '')
   return COMIC_CONTENT_ROUTES.has(name) || (isDesktop.value && DESKTOP_COMIC_ROUTES.has(name))
@@ -106,7 +107,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <svg class="comic-masthead-rule" viewBox="0 0 1721 25" preserveAspectRatio="none" aria-hidden="true"><path d="M0 7 L420 3 Q449 2 465 13 L480 22 Q483 24 499 24 L1247 24 Q1266 24 1275 21 L1698 21 Q1712 21 1721 25" /></svg>
+        <svg class="comic-masthead-rule" viewBox="0 0 1721 50" preserveAspectRatio="none" aria-hidden="true"><path d="M0 17 L420 13 Q452 12 470 28 L487 45 Q491 49 509 49 L1247 49 Q1266 49 1275 46 L1698 46 Q1712 46 1721 50" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
         <ComicSticker v-if="!isMobile" variant="corner" class="comic-masthead-corner" />

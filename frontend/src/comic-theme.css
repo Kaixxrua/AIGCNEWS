@@ -92,7 +92,8 @@
 #app .app-shell--editorial .brand-wordmark__text { font-size: 94px; }
 
 @media (min-width: 1024px) {
-  #app .app-shell { --home-dock-width: min(920px, 61vw); }
+  /* One dock width on every page (the comic pages' concept), so it holds still as the dock switches pages. */
+  #app .app-shell { --home-dock-width: min(860px, 61vw); }
   #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - 74px); }
   #app .app-shell--editorial .main-canvas--editorial > .app-content { padding: 110px 12px 0; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead {
@@ -104,7 +105,8 @@
     background: var(--paper) !important;
     isolation: isolate;
   }
-  #app .app-shell--editorial .comic-masthead-rule { display:block;position:absolute;left:0;bottom:-1px;width:100%;height:12px;overflow:visible;pointer-events:none; }
+  /* The rule runs high on the left, where the corner's ribbon crosses it, and steps down to the masthead's foot. */
+  #app .app-shell--editorial .comic-masthead-rule { display:block;position:absolute;left:0;bottom:-1px;width:100%;height:24px;overflow:visible;pointer-events:none; }
   #app .app-shell--editorial .brand-comic { height:86px; }
   #app .app-shell--editorial .comic-masthead-rule path { fill:none;stroke:var(--rule-strong);stroke-width:3;vector-effect:non-scaling-stroke; }
   #app .app-shell--editorial .comic-speech-outline { display:block;position:absolute;inset:0;width:100%;height:100%;z-index:-1;overflow:visible; }
@@ -164,39 +166,28 @@
 
 /* Comic stickers (ComicSticker.vue): transparent layers lifted from the concept images, over the page. The
    theme decides where each may appear and how big its box is; every box keeps its image's aspect ratio.
-   The masthead pieces are scaled so that the concept's masthead rule lands on this page's rule. */
+   Every page draws them at the content pages' concept size (corner 250px, shout 330px, peel 400px). */
 @media (min-width: 1280px) {
-  /* The shout is a hole torn from the masthead's top edge down to its rule, a grid item in the third column
-     beside the account menu. At full size (367px) it spans the masthead from the top to the rule (108px);
-     a narrower column shrinks it, still standing on the rule. */
+  /* The shout is a hole torn from the masthead's top edge, a grid item in the third column beside the
+     account menu; a narrower column shrinks it, still hanging from the top edge. */
   #app .app-shell--editorial .app-masthead .comic-masthead-creation {
-    display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:end;
-    width:min(calc(100% - 144px),367px);aspect-ratio:1101/324;margin:0 144px 2px 0;
+    display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:start;
+    width:min(calc(100% - 80px),330px);aspect-ratio:1101/324;margin:0 112px 0 0;
   }
 }
 @media (min-width: 1500px) {
-  #app .app-shell--editorial .app-masthead .comic-masthead-creation { width:min(calc(100% - 158px),367px);margin-right:158px; }
-  /* The torn top-left corner: its lime ends just above the rule and its ribbon crosses it, left of the date
-     line (x = 239) and clear of the dashboard heading below. */
-  #app .app-shell--editorial .comic-masthead-corner { display:block;position:absolute;left:0;top:0;width:284px;aspect-ratio:852/345;z-index:6; }
-}
-/* Below 1866px the shrunken shout no longer reaches the page's top edge, where the painting's rip is cut
-   straight, so a torn edge closes the rip's top: the mask trims the painting (and any live slogan) above
-   the tear, and the seal paints the paper fibre and ink along it. Both are drawn in the image's pixels. */
-@media (min-width: 1280px) and (max-width: 1865px) {
-  #app .app-shell--editorial .comic-masthead-creation > .comic-sticker__art,
-  #app .app-shell--editorial .comic-masthead-creation > .comic-sticker__slogan { mask:url('/assets/comic/tear-shout-seal-mask.svg') center / 100% 100% no-repeat; }
-  #app .app-shell--editorial .comic-masthead-creation::after { content:'';position:absolute;inset:0;background:url('/assets/comic/tear-shout-seal.svg') center / 100% 100% no-repeat; }
-  :root[data-theme='dark'] #app .app-shell--editorial .comic-masthead-creation::after { filter:brightness(.84) saturate(.9); }
+  /* The torn top-left corner: its ribbon crosses the rule, left of the date line and clear of the
+     dashboard heading below. */
+  #app .app-shell--editorial .comic-masthead-corner { display:block;position:absolute;left:0;top:0;width:250px;aspect-ratio:852/345;z-index:6; }
 }
 /* The bottom-right peel: the page's corner curling up off lime, on the viewport's corner over the UI card
-   and the footer. --peel is its width: the concept's size (550px), or less where the dock (the curl's tail
+   and the footer. --peel is its width: the concept's size (400px), or less where the dock (the curl's tail
    runs along the bottom and must stay right of it) or the height (its crest must stay under the card's
    heading row; card top = 668px) runs out. The footer links move beside the brand to give it the footer's
    right column. */
 @media (min-width: 1600px) and (min-height: 800px) {
   #app .app-shell--editorial {
-    --peel:min(550px,calc((100vw / var(--shell-zoom, 1) - var(--home-dock-width) - 26px) * .56),calc(100dvh / var(--shell-zoom, 1) * 2 - 1350px));
+    --peel:min(400px,calc((100vw / var(--shell-zoom, 1) - var(--home-dock-width) - 26px) * .56),calc(100dvh / var(--shell-zoom, 1) * 2 - 1350px));
   }
   #app .app-shell--editorial .comic-footer-sticker { display:block;position:absolute;right:-24px;bottom:-3px;width:var(--peel);aspect-ratio:1100/713; }
   #app .app-shell--editorial .dock-footer--editorial {
@@ -222,7 +213,7 @@
 /* English brand and links (~165 + 220px) only fit beside each other from 1880px; below that the links
    keep the right column and the peel shrinks to the room right of them (its tail spans its whole width). */
 @media (min-width: 1600px) and (max-width: 1879px) and (min-height: 800px) {
-  :root:lang(en) #app .app-shell--editorial { --peel:min(550px,calc(100dvh * 2 - 1350px),calc(50vw - 708px)); }
+  :root:lang(en) #app .app-shell--editorial { --peel:min(400px,calc(100dvh * 2 - 1350px),calc(50vw - 708px)); }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial { grid-template-columns:minmax(0,1fr) var(--home-dock-width) minmax(0,1fr); }
   :root:lang(en) #app .app-shell--editorial .dock-footer--editorial .footer-right {
     grid-column:3;justify-self:end;align-items:flex-end;margin-left:0;margin-right:calc(var(--peel) - 16px);
@@ -244,6 +235,19 @@
   #app .app-shell--editorial .masthead-meta { margin-left: 0; font-size: 12px; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead { grid-template-columns: minmax(150px,1fr) auto minmax(140px,1fr); }
   #app .app-shell--editorial .app-masthead .masthead-user { width: 140px; }
+}
+/* From 1280px every page has the content pages' masthead (their concepts are drawn at 1536×1024): a smaller
+   tagline and a slim account column, leaving the shout its full size, and from 1500px, where the corner
+   appears, the date line clear of it. */
+@media (min-width: 1280px) {
+  #app .app-shell--editorial .main-canvas--editorial .app-masthead { grid-template-columns: minmax(200px,1fr) auto minmax(200px,1.2fr); }
+  #app .app-shell--editorial .app-masthead__tools { grid-template-columns: auto 248px; column-gap: 14px; }
+  #app .app-shell--editorial .masthead-tagline { padding-inline: 12px; font-size: 19px; }
+  #app .app-shell--editorial .app-masthead .masthead-user { width: 112px; max-width: 112px; gap: 9px; padding-left: 12px; }
+  #app .app-shell--editorial .masthead-meta { font-size: 13.5px; }
+}
+@media (min-width: 1500px) {
+  #app .app-shell--editorial .masthead-meta { margin-left: 188px; }
 }
 @media (min-width: 1024px) and (max-width: 1199px) {
   #app .app-shell--editorial .brand-wordmark__text { font-size: 57px; }
