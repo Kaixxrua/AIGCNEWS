@@ -40,6 +40,7 @@ from backend.app.core.scheduler_registry import (
     SchedulerCallback,
     apply_job_config,
     build_trigger,
+    document_semantic_sync_job_descriptor,
     project_scheduler_status,
     project_semantic_warmup_job_descriptor,
     resolve_source_job_callback,
@@ -1148,6 +1149,33 @@ async def _run_x_media_warmup_job(repositories: ApplicationRepositories) -> bool
         return False
 
 
+async def _run_document_semantic_sync_job(repositories: ApplicationRepositories) -> bool:
+    """文档语义索引增量同步：embedding 与 Milvus 调用都是阻塞的，放线程里跑。"""
+    source = getattr(repositories, "document_semantic_sources", None)
+    if source is None:
+        logger.warning("[Scheduler] 文档语义索引缺少来源仓储，跳过本轮")
+        return False
+    try:
+        from backend.app.core.config import settings
+        from backend.app.services.indexing.document_semantic_indexer import (
+            sync_document_semantic_index,
+        )
+
+        result = await asyncio.to_thread(
+            sync_document_semantic_index,
+            db=source,
+            max_embed=int(settings.document_semantic_sync_max_embed),
+        )
+        if result.get("status") == "failed":
+            logger.warning("[Scheduler] 文档语义索引同步失败：%s", result)
+            return False
+        logger.info("[Scheduler] 文档语义索引同步完成：%s", result)
+        return True
+    except Exception as exc:
+        logger.warning("[Scheduler] 文档语义索引同步失败: %s", exc)
+        return False
+
+
 async def _run_conversation_cleanup_job(
     conversation_repository: ConversationCleanupWriter,
 ) -> bool:
@@ -1311,6 +1339,7 @@ class ApplicationSchedulerRuntime:
         semantic_search_enabled: bool = False,
         semantic_search_warmup: Any | None = None,
         x_media_warmup_enabled: bool = False,
+        document_semantic_sync_enabled: bool = False,
         payments_enabled: bool = False,
         # 默认 True：直接构造运行时的既有调用方（多为测试）保持旧行为；
         # 策略收口在 create_scheduler_runtime（读 settings，默认关闭）。
@@ -1332,6 +1361,7 @@ class ApplicationSchedulerRuntime:
         self._semantic_search_enabled = semantic_search_enabled
         self._semantic_search_warmup = semantic_search_warmup
         self._x_media_warmup_enabled = x_media_warmup_enabled
+        self._document_semantic_sync_enabled = document_semantic_sync_enabled
         self._payments_enabled = payments_enabled
         self._x_source_enabled = x_source_enabled
         self._shutdown_grace_seconds = max(0.0, float(shutdown_grace_seconds))
@@ -1694,6 +1724,14 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_document_semantic_sync_job(self) -> None:
+        await self._run_tracked(
+            lambda: self._guarded(
+                "document_semantic_sync",
+                lambda: _run_document_semantic_sync_job(self.repositories),
+            )
+        )
+
     async def _run_payment_order_closing_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -1794,6 +1832,8 @@ class ApplicationSchedulerRuntime:
             )
         if job_id == "x_media_warmup" and self._x_media_warmup_enabled:
             return x_media_warmup_job_descriptor(timezone=self._timezone_name)
+        if job_id == "document_semantic_sync" and self._document_semantic_sync_enabled:
+            return document_semantic_sync_job_descriptor(timezone=self._timezone_name)
         return None
 
     def _resolve_callback(self, descriptor: JobDescriptor) -> SchedulerCallback | None:
@@ -1815,6 +1855,10 @@ class ApplicationSchedulerRuntime:
             if not self._x_media_warmup_enabled:
                 return None
             return self._run_x_media_warmup_job
+        if descriptor.source == "document_semantic_sync":
+            if not self._document_semantic_sync_enabled:
+                return None
+            return self._run_document_semantic_sync_job
         return resolve_source_job_callback(descriptor.source, self._job_callbacks())
 
     def apply_config_update(self, config: Any) -> bool:
@@ -1943,6 +1987,20 @@ class ApplicationSchedulerRuntime:
                     logger.info("[Scheduler] 注册 X 媒体边缘缓存预热任务（每 30 分钟）")
                 else:
                     logger.info("[Scheduler] 跳过已停用的 X 媒体预热任务")
+
+        if self._document_semantic_sync_enabled:
+            document_semantic = self._effective_descriptor(
+                document_semantic_sync_job_descriptor(timezone=self._timezone_name)
+            )
+            if document_semantic is not None:
+                _register_job(
+                    self.scheduler,
+                    document_semantic,
+                    self._run_document_semantic_sync_job,
+                )
+                logger.info("[Scheduler] 注册文档语义索引增量同步任务（每 30 分钟）")
+            else:
+                logger.info("[Scheduler] 跳过已停用的文档语义索引同步任务")
 
         conversation_cleanup = self._effective_descriptor(CONVERSATION_CLEANUP_JOB)
         if conversation_cleanup is not None:
@@ -2098,6 +2156,9 @@ def create_scheduler_runtime(
         semantic_search_warmup=semantic_search_warmup,
         x_media_warmup_enabled=bool(
             getattr(settings, "x_media_warmup_enabled", False)
+        ),
+        document_semantic_sync_enabled=bool(
+            getattr(settings, "document_semantic_indexing_enabled", False)
         ),
         payments_enabled=bool(getattr(settings, "payments_enabled", False)),
         x_source_enabled=_effective_x_source_enabled(),
