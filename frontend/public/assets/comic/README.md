@@ -152,6 +152,14 @@ The project catalog (`/projects`, "projects-C" concept) uses the same generator.
 
 Only the index carries a fill; the rest take the image as a frame (a pseudo-element on the cards, the element's own `border-image` on the controls and tags) and paint their own face. Together they are about 210 KB. The `-night` files swap the fills for the dark theme's paper, the ink for pale grey and the blocks for black, and keep the dots in dimmer copies of their colours.
 
+My web collection (`/projects?source=website`, "websites-mine-C" concept) uses the same generator and borrows the recommended page's cards, tile, tabs and search box (`web-*`) and the catalog's thin line (`p-field` on the tag filters, `p-active` on the open filter and the "网页收藏" badge). The brush under the title and the hairline over each card's footer are CSS; the icons are the page's own.
+
+- `wc-add.webp`: the add button, lime inside a 2px ink line on a solid ink block to the lower right, rounded 4px.
+- `wc-act-go.webp`, `wc-act-edit.webp`, `wc-act-del.webp`: a card's three action tabs (visit, edit, delete), the same line and block round a lime, pale blue and pale red face; they tuck under the card's block.
+- `wc-tag-lime.webp`, `wc-tag-cyan.webp`, `wc-tag-purple.webp`, `wc-tag-orange.webp`: a card tag, a slip already leaning into a parallelogram, in a pale wash of the card's accent on a solid ink block.
+
+All of them carry their face (`fill`) and hang it as the element's own `border-image`, pushed out over the block with `border-image-outset`. Together they are about 30 KB. The `-night` files swap the faces for dimmer or darker copies of their colours, the ink for pale grey and the blocks for black.
+
 The MCP access page (`/mcp`, "mcp-C" concept) uses the same generator. The icons in the four facts sit on watercolour discs; the step numbers, the arrows between the steps and the spark after each section label are CSS.
 
 - `mcp-card.webp`, `mcp-card-on.webp`: a client card, a thin line going from grey down the left to black along the top, the right and the foot, on a black block with navy and teal screen off the lower right; the chosen one in a heavier line on a black and a pale teal-grey block, its screen in dark green on the lime.

@@ -353,6 +353,43 @@ describe('GitHubProjectsView controller wiring', () => {
     }
   })
 
+  it('reads the masonry column floor and gap from the page so a skin can set its own columns', async () => {
+    controller().isPersonalView.value = true
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 1436 })
+    class DesktopResizeObserver {
+      private readonly callback: ResizeObserverCallback
+      constructor(callback: ResizeObserverCallback) { this.callback = callback }
+      observe() { this.callback([], this as unknown as ResizeObserver) }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', DesktopResizeObserver)
+    // 漫画皮肤（comic-pages.css）在页面上声明的两个变量；jsdom 不跑那份样式表，故在此代答。
+    const skinVars: Record<string, string> = { '--projects-masonry-min': ' 330px', '--projects-masonry-gap': ' 20px' }
+    const originalGetComputedStyle = window.getComputedStyle.bind(window)
+    const styleSpy = vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      const style = originalGetComputedStyle(element, pseudo)
+      if (!(element as HTMLElement).classList?.contains('projects-page')) return style
+      return { paddingLeft: '0px', paddingRight: '0px', getPropertyValue: (name: string) => skinVars[name] ?? style.getPropertyValue(name) } as unknown as CSSStyleDeclaration
+    })
+    controller().projects.value = ['one', 'two', 'three', 'four', 'five'].map((name) => ({ full_name: `owner/${name}`, description_zh: name }))
+
+    try {
+      const wrapper = await mountView()
+      const vm = wrapper.vm as unknown as { masonryColumnCount: number; masonryColumnWidths: number[] }
+      // 默认 260/12 下 1436px 排 5 列；皮肤改成 330/20 后排 4 列，(1436 - 3 × 20) / 4 = 344。
+      expect(vm.masonryColumnCount).toBe(4)
+      expect(vm.masonryColumnWidths).toEqual([344, 344, 344, 344])
+      expect(wrapper.findAll('.projects-col')).toHaveLength(4)
+      wrapper.unmount()
+    } finally {
+      styleSpy.mockRestore()
+      vi.unstubAllGlobals()
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
+      else delete (HTMLElement.prototype as unknown as { clientWidth?: number }).clientWidth
+    }
+  })
+
   it('reactivates inside keep-alive and refreshes stale reads without clearing content', async () => {
     const Harness = defineComponent({
       components: { GitHubProjectsView },
@@ -678,6 +715,24 @@ describe('GitHubProjectsView collection navigation', () => {
     await nextTick()
     expect(routerPush).toHaveBeenCalledWith('/websites')
     expect(filters.props('source')).toBe('website')
+  })
+
+  it('marks my web collection for its comic skin and turns the card accents by global rank', async () => {
+    controller().projects.value = Array.from({ length: 9 }, (_, index) => websiteRepo({ full_name: `Site ${index}`, title: `Site ${index}`, website_id: index + 1 }))
+    const wrapper = await mountView()
+    expect(wrapper.classes()).not.toContain('projects-page--websites')
+    expect(wrapper.find('.projects-hero__lead').text()).toBe('projects.heroLibraryLead')
+    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
+    // 测试控制器的个人视图是桩，不随来源切换；真实控制器里网页收藏必是个人视图。
+    controller().isPersonalView.value = true
+    await nextTick()
+
+    expect(wrapper.classes()).toContain('projects-page--websites')
+    expect(wrapper.find('.projects-hero h1').classes()).toContain('comic-title')
+    expect(wrapper.find('.projects-hero__lead').text()).toBe('projects.heroWebsiteLead')
+    // 与站长推荐页同序、每 8 张一轮；jsdom 单列，DOM 顺序即全局名次。
+    const tones = wrapper.findAll('.project-card').map((card) => card.classes().find((name) => name.startsWith('project-card--tone-')))
+    expect(tones).toEqual(['lime', 'cyan', 'purple', 'orange', 'purple', 'orange', 'lime', 'cyan', 'lime'].map((tone) => `project-card--tone-${tone}`))
   })
 
   it('keeps the GitHub source active without changing its current project scope', async () => {
