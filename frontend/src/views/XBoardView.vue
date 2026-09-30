@@ -130,12 +130,12 @@ const wallStale = ref(false)
 watch(loading, (value) => { wallStale.value = value })
 watch(docs, () => { wallStale.value = false })
 
-// 关注侧栏开合：桌面端并排时从右侧滑入滑出，离场时先脱离版面，推文墙随即按新列数重排；
+// 关注侧栏开合：桌面端并排时整块从窗口右缘外滑入、滑回右缘外，离场时先脱离版面，推文墙随即按新列数重排；
 // 窄屏叠在推文墙上方，高度展开收起。
-const PANEL_SLIDE = { x: 36 }
+const panelSlide = (el: Element) => ({ x: Math.max(36, document.documentElement.clientWidth - el.getBoundingClientRect().left) })
 const sideBySide = (el: Element) => el.parentElement !== null && getComputedStyle(el.parentElement).flexDirection === 'row'
-const panelEnter = (el: Element, done: () => void) => (sideBySide(el) ? slideIn(el, done, PANEL_SLIDE) : unfold(el, done))
-const panelLeave = (el: Element, done: () => void) => (sideBySide(el) ? slideOut(el, done, PANEL_SLIDE) : fold(el, done))
+const panelEnter = (el: Element, done: () => void) => (sideBySide(el) ? slideIn(el, done, panelSlide(el)) : unfold(el, done))
+const panelLeave = (el: Element, done: () => void) => (sideBySide(el) ? slideOut(el, done, panelSlide(el)) : fold(el, done))
 
 // 勾选关注勾选框时盖章式弹一下；已关注数随之滚动换值，多了新数字自下而上，少了自上而下。
 const stampCheck = (event: Event) => {

@@ -87,9 +87,7 @@ const emit = defineEmits<{ toggleThinking: [messageId: string] }>()
 .thinking-duration { color: var(--warm-ink-faint); font-weight: 400; }
 .thinking-spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgb(var(--shimmer-rgb) / 0.25); border-top-color: var(--shimmer); animation: thinking-spin 0.8s linear infinite; flex-shrink: 0; }
 .thinking-body { border-top: 1px solid rgb(var(--glow-warm-rgb) / 0.12); }
-.thinking-content-inner { max-height: 260px; overflow-y: auto; padding: 2px 0; scrollbar-width: thin; scrollbar-color: rgb(var(--glow-warm-rgb) / 0.2) transparent; }
-.thinking-content-inner::-webkit-scrollbar { width: 4px; }
-.thinking-content-inner::-webkit-scrollbar-thumb { background: rgb(var(--glow-warm-rgb) / 0.2); border-radius: 2px; }
+.thinking-content-inner { max-height: 260px; overflow-y: auto; padding: 2px 0; }
 .thinking-cursor { display: inline-block; width: 1px; height: 12px; background: var(--shimmer); margin-left: 2px; vertical-align: middle; animation: blink 0.9s step-end infinite; }
 .thinking-expand-enter-active, .thinking-expand-leave-active { transition: max-height 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease; overflow: hidden; max-height: 300px; }
 .thinking-expand-enter-from, .thinking-expand-leave-to { max-height: 0; opacity: 0; }
