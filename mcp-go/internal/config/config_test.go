@@ -363,3 +363,34 @@ func TestUISemanticEnvOverridesAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestFavoritesSemanticDefaultsOverridesAndValidation(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if want := (FavoritesSemantic{Enabled: false, MinScore: 0.55, TimeoutSeconds: 3.0}); c.FavoritesSemantic != want {
+		t.Errorf("FavoritesSemantic defaults = %+v, want %+v", c.FavoritesSemantic, want)
+	}
+	var over Config
+	if err := over.load(envMap(map[string]string{
+		"PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED":  "true",
+		"PROJECT_FAVORITES_SEMANTIC_MIN_SCORE":       "0.6",
+		"PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS": "2",
+	})); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if want := (FavoritesSemantic{Enabled: true, MinScore: 0.6, TimeoutSeconds: 2}); over.FavoritesSemantic != want {
+		t.Errorf("FavoritesSemantic = %+v, want %+v", over.FavoritesSemantic, want)
+	}
+	for _, env := range []map[string]string{
+		{"PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED": "maybe"},
+		{"PROJECT_FAVORITES_SEMANTIC_MIN_SCORE": "high"},
+		{"PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS": "soon"},
+	} {
+		var bad Config
+		if err := bad.load(envMap(env)); err == nil {
+			t.Errorf("load(%v) accepted an invalid value", env)
+		}
+	}
+}

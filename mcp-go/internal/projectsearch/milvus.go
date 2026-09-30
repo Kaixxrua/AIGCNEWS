@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,6 +125,41 @@ func (r *MilvusVectorRepository) Close() error {
 // chunk_limit), limit=chunk_limit, output_fields=[repo_id] → per-repo max score
 // → score threshold → (-score, repo_id) → repo_limit.
 func (r *MilvusVectorRepository) SearchRepoIDs(queryVector []float64, chunkLimit, repoLimit int, minScore float64) ([]SemanticHit, error) {
+	return r.searchRepoIDs(queryVector, "", chunkLimit, repoLimit, minScore)
+}
+
+// SearchRepoIDsWithin 与 SearchRepoIDs 同一聚合口径，但只在 repoIDs 内检索
+// （Milvus 标量过滤 repo_id in [...]）；收藏语义通道用它限定到用户收藏。
+// repo_id 是 owner/name 或 GitHub 节点 id（R_kgDO…）；含字符集外字符的 id
+// 直接略过，不拼进表达式。
+func (r *MilvusVectorRepository) SearchRepoIDsWithin(queryVector []float64, repoIDs []string, chunkLimit, repoLimit int, minScore float64) ([]SemanticHit, error) {
+	expr, ok := repoIDInExpression(repoIDs)
+	if !ok {
+		return []SemanticHit{}, nil
+	}
+	return r.searchRepoIDs(queryVector, expr, chunkLimit, repoLimit, minScore)
+}
+
+// repoIDInExpression 生成 repo_id in ["a/b", ...]；没有合法 id 时 ok=false。
+func repoIDInExpression(repoIDs []string) (string, bool) {
+	quoted := make([]string, 0, len(repoIDs))
+	seen := make(map[string]bool, len(repoIDs))
+	for _, repoID := range repoIDs {
+		if repoID == "" || seen[repoID] || !safeRepoID.MatchString(repoID) {
+			continue
+		}
+		seen[repoID] = true
+		quoted = append(quoted, `"`+repoID+`"`)
+	}
+	if len(quoted) == 0 {
+		return "", false
+	}
+	return "repo_id in [" + strings.Join(quoted, ", ") + "]", true
+}
+
+var safeRepoID = regexp.MustCompile(`^[A-Za-z0-9_./=-]+$`)
+
+func (r *MilvusVectorRepository) searchRepoIDs(queryVector []float64, expr string, chunkLimit, repoLimit int, minScore float64) ([]SemanticHit, error) {
 	if len(queryVector) != r.cfg.Dimension {
 		return nil, errors.New("query embedding dimension mismatch")
 	}
@@ -148,7 +184,7 @@ func (r *MilvusVectorRepository) SearchRepoIDs(queryVector []float64, chunkLimit
 		ctx,
 		r.cfg.CollectionName,
 		nil,
-		"",
+		expr,
 		[]string{"repo_id"},
 		[]entity.Vector{vector},
 		"embedding",

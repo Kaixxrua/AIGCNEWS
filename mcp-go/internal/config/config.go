@@ -99,6 +99,16 @@ type UISemantic struct {
 	TimeoutSeconds float64 // UI_SEMANTIC_TIMEOUT_SECONDS，默认 3.0
 }
 
+// FavoritesSemantic 是 search_my_project_favorites 语义通道配置（Go 独有；
+// 复用项目语义向量集合 PROJECT_SEMANTIC_COLLECTION_NAME，检索限定在调用者
+// 自己的收藏内，Milvus 连接、embedding 与 PROJECT_SEMANTIC_CHUNK_LIMIT 复用
+// ProjectSearch）。
+type FavoritesSemantic struct {
+	Enabled        bool    // PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED，默认 false
+	MinScore       float64 // PROJECT_FAVORITES_SEMANTIC_MIN_SCORE，默认 0.55（按生产收藏校准）
+	TimeoutSeconds float64 // PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS，默认 3.0
+}
+
 // Config 是 mcp-server 的根配置。
 type Config struct {
 	// Port 为 HTTP 监听端口（容器内恒 8000，compose 映射 127.0.0.1:8002:8000）。
@@ -126,6 +136,8 @@ type Config struct {
 	DocumentSemantic DocumentSemantic
 	// UISemantic UI 模板与图标检索的语义通道。
 	UISemantic UISemantic
+	// FavoritesSemantic 我的收藏检索的语义通道。
+	FavoritesSemantic FavoritesSemantic
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -331,6 +343,16 @@ func (c *Config) load(lookup lookupFunc) error {
 	}
 	if c.UISemantic.TopK <= 0 || c.UISemantic.TopK > 1000 {
 		return fmt.Errorf("config: UI_SEMANTIC_TOP_K 必须在 1..1000 之间")
+	}
+	c.FavoritesSemantic = FavoritesSemantic{MinScore: 0.55, TimeoutSeconds: 3.0}
+	if err := loadBool(lookup, "PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED", &c.FavoritesSemantic.Enabled); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "PROJECT_FAVORITES_SEMANTIC_MIN_SCORE", &c.FavoritesSemantic.MinScore); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS", &c.FavoritesSemantic.TimeoutSeconds); err != nil {
+		return err
 	}
 	if c.ProjectSearch.SemanticRepoLimit <= 0 || c.ProjectSearch.SemanticChunkLimit <= 0 || c.ProjectSearch.MilvusDimension <= 0 {
 		return fmt.Errorf("config: semantic and Milvus sizes must be positive")

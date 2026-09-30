@@ -820,69 +820,7 @@ func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.Project
 		return mcpapp.ProjectCollectionPage{}, fmt.Errorf("postgres: 调度时区 %q 加载失败: %w", r.timezone, err)
 	}
 	dateParams := effectiveMetricDateParams(time.Now().In(zone))
-
-	// gh_filters 组装段逐字移植（窄口径下 web_filters、candidates、
-	// scope today/recommended、strong match 分支均不触发）。
-	filters := []string{"COALESCE(c.stars, 0) >= %s"}
-	filterParams := []any{projectCollectionMinStars}
-	filters = append(filters, "ge.status = 'succeeded'") // enriched_only=True
-	if f.Category != "" {
-		filters = append(filters, "ge.category_slug = %s")
-		filterParams = append(filterParams, f.Category)
-	}
-	if f.Subcategory != "" {
-		// `category and subcategory == DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category or "")`
-		if defaultSub, ok := ghDefaultSubcategoryByCategory[f.Category]; f.Category != "" && ok && f.Subcategory == defaultSub {
-			filters = append(filters, "(ge.subcategory_slug = %s OR COALESCE(ge.subcategory_slug, '') = '')")
-		} else {
-			filters = append(filters, "ge.subcategory_slug = %s")
-		}
-		filterParams = append(filterParams, f.Subcategory)
-	}
-	if f.Language != "" {
-		filters = append(filters, "LOWER(COALESCE(c.language, '')) = LOWER(%s)")
-		filterParams = append(filterParams, f.Language)
-	}
-	if f.Q != "" {
-		terms := projectSearchTerms(f.Q)
-		if len(terms) == 0 {
-			filters = append(filters, "FALSE")
-		}
-		for _, term := range terms {
-			like := "%" + escapeLikeLiteral.Replace(term) + "%"
-			filters = append(filters, ghTermMatchFilter)
-			for range len(ghTermMatchFieldsWithI18nTags) {
-				filterParams = append(filterParams, like)
-			}
-		}
-	}
-	// clean_tag = (tag or "").strip()；模式串不做 LIKE 转义（Python 原文如此）。
-	if cleanTag := strings.TrimSpace(f.Tag); cleanTag != "" {
-		filters = append(filters, "COALESCE(ge.tags_json::text, '') ILIKE %s")
-		filterParams = append(filterParams, `%"`+cleanTag+`"%`)
-	}
-	filters = append(filters, "pf.id IS NOT NULL") // favorites_only=True
-
-	// _build_gh_branch：SELECT 列序 = 58 静态列 + 收藏列 + 推荐尾列；
-	// 参数序 = [*有效指标日参数, user_id, *filter_params]。
-	selectColumns := make([]string, 0, len(ghSelectColumns)+1+len(ghSelectTailColumns))
-	selectColumns = append(selectColumns, ghSelectColumns...)
-	selectColumns = append(selectColumns, ghFavoriteColumns)
-	selectColumns = append(selectColumns, ghSelectTailColumns...)
-	selectSQL := "SELECT " + strings.Join(selectColumns, ",") +
-		ghSelectFrom + " " + ghMetricsJoin + " " + ghFavoritesJoin +
-		" WHERE " + strings.Join(filters, " AND ")
-
-	// _build_union_queries（strong_threshold=0 形态）。
-	countSQL := dollarPlaceholders("WITH project_rows AS (" + selectSQL + ") SELECT COUNT(*) AS cnt FROM project_rows")
-	rowsSQL := dollarPlaceholders("WITH project_rows AS (" + selectSQL + ") SELECT * FROM project_rows ORDER BY " +
-		collectionOrderBy(f.Sort) + " LIMIT %s OFFSET %s")
-
-	params := make([]any, 0, len(dateParams)+1+len(filterParams)+2)
-	params = append(params, dateParams...)
-	params = append(params, f.UserID)
-	params = append(params, filterParams...)
-	rowsParams := append(append([]any{}, params...), pageSize, (page-1)*pageSize)
+	countSQL, rowsSQL, params, rowsParams := projectCollectionQueries(f, dateParams, page, pageSize)
 
 	ctx := context.Background() // 对齐 asyncio.to_thread 语义：跑完不随客户端断连取消。
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
@@ -922,4 +860,106 @@ func (r ProjectCollectionsRepository) ListUserProjectCollection(f mcpapp.Project
 		return mcpapp.ProjectCollectionPage{}, fmt.Errorf("postgres: 收藏列表事务提交失败: %w", err)
 	}
 	return mcpapp.ProjectCollectionPage{Items: items, Total: int(total)}, nil
+}
+
+// ListFavoriteRepoIDs 返回用户最近收藏的 GitHub repo_id（收藏语义通道的检索
+// 范围）；只读，limit<=0 时返回空。
+func (r ProjectCollectionsRepository) ListFavoriteRepoIDs(userID, limit int) ([]string, error) {
+	if userID <= 0 || limit <= 0 {
+		return []string{}, nil
+	}
+	ctx := context.Background()
+	rows, err := r.pool.Query(ctx, listFavoriteRepoIDsSQL, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: 收藏 repo_id 查询失败: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("postgres: 收藏 repo_id 读取失败: %w", err)
+	}
+	return ids, nil
+}
+
+const listFavoriteRepoIDsSQL = "SELECT project_id FROM project_favorites" +
+	" WHERE user_id = $1 AND project_source = 'github'" +
+	" ORDER BY created_at DESC, id DESC LIMIT $2"
+
+// projectCollectionQueries 组装收藏列表的 count/rows SQL 与参数（纯函数）。
+// 参数序与占位符文本序一致：[*有效指标日参数, user_id, *filter_params]，rows
+// 查询尾部追加 [page_size, offset]。
+func projectCollectionQueries(f mcpapp.ProjectCollectionFilters, dateParams []any, page, pageSize int) (countSQL, rowsSQL string, params, rowsParams []any) {
+	// gh_filters 组装段逐字移植（窄口径下 web_filters、candidates、
+	// scope today/recommended、strong match 分支均不触发）。
+	filters := []string{"COALESCE(c.stars, 0) >= %s"}
+	filterParams := []any{projectCollectionMinStars}
+	filters = append(filters, "ge.status = 'succeeded'") // enriched_only=True
+	if f.Category != "" {
+		filters = append(filters, "ge.category_slug = %s")
+		filterParams = append(filterParams, f.Category)
+	}
+	if f.Subcategory != "" {
+		// `category and subcategory == DEFAULT_SUBCATEGORY_BY_CATEGORY.get(category or "")`
+		if defaultSub, ok := ghDefaultSubcategoryByCategory[f.Category]; f.Category != "" && ok && f.Subcategory == defaultSub {
+			filters = append(filters, "(ge.subcategory_slug = %s OR COALESCE(ge.subcategory_slug, '') = '')")
+		} else {
+			filters = append(filters, "ge.subcategory_slug = %s")
+		}
+		filterParams = append(filterParams, f.Subcategory)
+	}
+	if f.Language != "" {
+		filters = append(filters, "LOWER(COALESCE(c.language, '')) = LOWER(%s)")
+		filterParams = append(filterParams, f.Language)
+	}
+	if f.Q != "" {
+		terms := projectSearchTerms(f.Q)
+		termFilters := []string{}
+		termParams := []any{}
+		if len(terms) == 0 {
+			termFilters = append(termFilters, "FALSE")
+		}
+		for _, term := range terms {
+			like := "%" + escapeLikeLiteral.Replace(term) + "%"
+			termFilters = append(termFilters, ghTermMatchFilter)
+			for range len(ghTermMatchFieldsWithI18nTags) {
+				termParams = append(termParams, like)
+			}
+		}
+		if len(f.SemanticRepoIDs) > 0 {
+			// 语义通道：关键词全中，或在语义命中清单内；其余过滤照常约束。
+			filters = append(filters, "(("+strings.Join(termFilters, " AND ")+") OR c.repo_id = ANY(%s))")
+			filterParams = append(filterParams, termParams...)
+			filterParams = append(filterParams, f.SemanticRepoIDs)
+		} else {
+			filters = append(filters, termFilters...)
+			filterParams = append(filterParams, termParams...)
+		}
+	}
+	// clean_tag = (tag or "").strip()；模式串不做 LIKE 转义（Python 原文如此）。
+	if cleanTag := strings.TrimSpace(f.Tag); cleanTag != "" {
+		filters = append(filters, "COALESCE(ge.tags_json::text, '') ILIKE %s")
+		filterParams = append(filterParams, `%"`+cleanTag+`"%`)
+	}
+	filters = append(filters, "pf.id IS NOT NULL") // favorites_only=True
+
+	// _build_gh_branch：SELECT 列序 = 58 静态列 + 收藏列 + 推荐尾列；
+	// 参数序 = [*有效指标日参数, user_id, *filter_params]。
+	selectColumns := make([]string, 0, len(ghSelectColumns)+1+len(ghSelectTailColumns))
+	selectColumns = append(selectColumns, ghSelectColumns...)
+	selectColumns = append(selectColumns, ghFavoriteColumns)
+	selectColumns = append(selectColumns, ghSelectTailColumns...)
+	selectSQL := "SELECT " + strings.Join(selectColumns, ",") +
+		ghSelectFrom + " " + ghMetricsJoin + " " + ghFavoritesJoin +
+		" WHERE " + strings.Join(filters, " AND ")
+
+	// _build_union_queries（strong_threshold=0 形态）。
+	countSQL = dollarPlaceholders("WITH project_rows AS (" + selectSQL + ") SELECT COUNT(*) AS cnt FROM project_rows")
+	rowsSQL = dollarPlaceholders("WITH project_rows AS (" + selectSQL + ") SELECT * FROM project_rows ORDER BY " +
+		collectionOrderBy(f.Sort) + " LIMIT %s OFFSET %s")
+
+	params = make([]any, 0, len(dateParams)+1+len(filterParams)+2)
+	params = append(params, dateParams...)
+	params = append(params, f.UserID)
+	params = append(params, filterParams...)
+	rowsParams = append(append([]any{}, params...), pageSize, (page-1)*pageSize)
+	return countSQL, rowsSQL, params, rowsParams
 }

@@ -193,9 +193,9 @@ func run() int {
 		Token:          cfg.ProjectSearch.GitHubToken,
 		TimeoutSeconds: cfg.ProjectSearch.FallbackTimeoutSeconds,
 	})
-	var semanticSearch projectsearch.SemanticSearcher
-	if cfg.ProjectSearch.SemanticEnabled {
-		embedding := newEmbeddingClient(cfg.ProjectSearch, cfg.ProjectSearch.SemanticQueryTimeoutSeconds)
+	// 项目向量集合由项目语义检索与收藏语义通道共用（懒连接、带锁）。
+	var projectVectors *projectsearch.MilvusVectorRepository
+	if cfg.ProjectSearch.SemanticEnabled || cfg.FavoritesSemantic.Enabled {
 		milvusRepo, milvusErr := projectsearch.NewMilvusVectorRepository(projectsearch.MilvusConfig{
 			Host:                cfg.ProjectSearch.MilvusHost,
 			Port:                cfg.ProjectSearch.MilvusPort,
@@ -212,7 +212,13 @@ func run() int {
 			slog.Error("[Startup] Milvus 语义检索装配失败", "err", milvusErr)
 			return 1
 		}
-		semanticSearch = projectsearch.NewProjectSemanticSearch(embedding, milvusRepo, projectsearch.SemanticConfig{
+		projectVectors = milvusRepo
+		defer func() { _ = projectVectors.Close() }()
+	}
+	var semanticSearch projectsearch.SemanticSearcher
+	if cfg.ProjectSearch.SemanticEnabled {
+		embedding := newEmbeddingClient(cfg.ProjectSearch, cfg.ProjectSearch.SemanticQueryTimeoutSeconds)
+		semanticSearch = projectsearch.NewProjectSemanticSearch(embedding, projectVectors, projectsearch.SemanticConfig{
 			Enabled:             true,
 			RepoLimit:           cfg.ProjectSearch.SemanticRepoLimit,
 			ChunkLimit:          cfg.ProjectSearch.SemanticChunkLimit,
@@ -252,11 +258,21 @@ func run() int {
 	// 身份感知工具（PR 2.5）：收藏检索需要 UserID + scope 判定，
 	// 认证/scope 文案在处理器内产生（对齐 Python dispatcher 短路 +
 	// handler 内分支的同文案双检查）。日期锚复用调度时区。
-	app.RegisterIdentityTool("search_my_project_favorites",
-		mcpapp.NewFavoritesService(
-			postgres.NewProjectCollectionsRepository(pool, cfg.SchedulerTimezone),
-			publicBaseURL,
-		).Get)
+	collections := postgres.NewProjectCollectionsRepository(pool, cfg.SchedulerTimezone)
+	favorites := mcpapp.NewFavoritesService(collections, publicBaseURL)
+	if cfg.FavoritesSemantic.Enabled {
+		favorites = favorites.WithSemantic(projectsearch.NewFavoritesSemantic(
+			collections,
+			newEmbeddingClient(cfg.ProjectSearch, cfg.FavoritesSemantic.TimeoutSeconds),
+			projectVectors,
+			projectsearch.FavoritesSemanticConfig{
+				MinScore:       cfg.FavoritesSemantic.MinScore,
+				TimeoutSeconds: cfg.FavoritesSemantic.TimeoutSeconds,
+				ChunkLimit:     cfg.ProjectSearch.SemanticChunkLimit,
+			},
+		))
+	}
+	app.RegisterIdentityTool("search_my_project_favorites", favorites.Get)
 	// resources/read 装配（PR 2.4/2.8）：榜单快照 + 看板统计 + 简报
 	// 复用 Postgres 适配器，projects/library 与 AI 搜索共用同一服务。
 	resources := mcpapp.NewResourceService(

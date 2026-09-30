@@ -34,6 +34,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -55,6 +56,9 @@ type ProjectCollectionFilters struct {
 	Page        int
 	PageSize    int
 	Sort        string
+	// SemanticRepoIDs 是语义通道在该用户收藏内命中的 repo_id；非空时 Q 的
+	// 过滤放宽为「关键词全中 或 在此清单内」，排序与其余过滤不变。
+	SemanticRepoIDs []string
 }
 
 // ProjectCollectionPage 是收藏检索的一页结果。
@@ -69,16 +73,43 @@ type ProjectCollectionReader interface {
 	ListUserProjectCollection(filters ProjectCollectionFilters) (ProjectCollectionPage, error)
 }
 
+// FavoritesSemanticSearcher 是收藏检索的可选语义通道（projectsearch.
+// FavoritesSemantic）：只在该用户的 GitHub 收藏内做向量检索，返回命中的
+// repo_id。任何错误都回落纯关键词过滤。
+type FavoritesSemanticSearcher interface {
+	SearchFavoriteRepoIDs(userID int, query string) ([]string, error)
+}
+
 // FavoritesService 装配 search_my_project_favorites 的校验、查询与投影。
 type FavoritesService struct {
 	reader ProjectCollectionReader
 	// publicBaseURL 仅来自 PUBLIC_BASE_URL 配置（attribution._base_url：
 	// 绝不从请求派生 origin），接线时已 TrimRight("/")。
 	publicBaseURL string
+	semantic      FavoritesSemanticSearcher
 }
 
 func NewFavoritesService(reader ProjectCollectionReader, publicBaseURL string) *FavoritesService {
 	return &FavoritesService{reader: reader, publicBaseURL: publicBaseURL}
+}
+
+// WithSemantic 挂上语义通道；nil 保持纯关键词行为。
+func (s *FavoritesService) WithSemantic(semantic FavoritesSemanticSearcher) *FavoritesService {
+	s.semantic = semantic
+	return s
+}
+
+// semanticRepoIDs 跑语义通道；关闭、空查询或失败时返回 nil（纯关键词）。
+func (s *FavoritesService) semanticRepoIDs(userID int, q string) []string {
+	if s.semantic == nil || strings.TrimSpace(q) == "" {
+		return nil
+	}
+	ids, err := s.semantic.SearchFavoriteRepoIDs(userID, q)
+	if err != nil {
+		slog.Warn("search_my_project_favorites semantic lane failed; lexical only", "err", err)
+		return nil
+	}
+	return ids
 }
 
 // Get 是 search_my_project_favorites 工具处理器（匹配 dispatch.go 的
@@ -118,6 +149,8 @@ func (s *FavoritesService) Get(identity authn.Identity, arguments map[string]any
 		Page:        page,
 		PageSize:    input.limit,
 		Sort:        input.sort,
+
+		SemanticRepoIDs: s.semanticRepoIDs(identity.UserID, input.q),
 	})
 	if err != nil {
 		return nil, err
