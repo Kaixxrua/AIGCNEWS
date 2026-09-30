@@ -35,6 +35,7 @@ import (
 
 	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/config"
+	"aigcnews/mcp-go/internal/docsemantic"
 	"aigcnews/mcp-go/internal/mcpapp"
 	"aigcnews/mcp-go/internal/metrics"
 	"aigcnews/mcp-go/internal/postgres"
@@ -99,7 +100,35 @@ func run() int {
 	for name, handler := range uiHandlers {
 		registry[name] = handler
 	}
-	for name, handler := range mcpapp.NewDocumentsHandlers(postgres.NewDocumentRepository(pool, cfg.SchedulerTimezone), publicBaseURL) {
+	documents := postgres.NewDocumentRepository(pool, cfg.SchedulerTimezone)
+	if cfg.DocumentSemantic.Enabled {
+		// 文档语义通道：复用 ProjectSearch 的 embedding 与 MILVUS_* 连接，只读
+		// backend document_semantic_indexer 写入的一文一向量集合；集合缺失或
+		// 检索失败时单次请求回落纯关键词，不影响启动。
+		docVectors, docErr := docsemantic.NewMilvusDocumentVectors(docsemantic.MilvusConfig{
+			Host:           cfg.ProjectSearch.MilvusHost,
+			Port:           cfg.ProjectSearch.MilvusPort,
+			User:           cfg.ProjectSearch.MilvusUser,
+			Password:       cfg.ProjectSearch.MilvusPassword,
+			DBName:         cfg.ProjectSearch.MilvusDBName,
+			CollectionName: cfg.DocumentSemantic.CollectionName,
+			Dimension:      cfg.ProjectSearch.MilvusDimension,
+			MetricType:     cfg.ProjectSearch.MilvusMetricType,
+		})
+		if docErr != nil {
+			slog.Error("[Startup] 文档语义通道装配失败", "err", docErr)
+			return 1
+		}
+		defer func() { _ = docVectors.Close() }()
+		docEmbedding := newEmbeddingClient(cfg.ProjectSearch, cfg.DocumentSemantic.TimeoutSeconds)
+		documents = documents.WithSemantic(docsemantic.NewRetriever(docEmbedding, docVectors, docsemantic.Config{
+			TopK:           cfg.DocumentSemantic.TopK,
+			MinScore:       cfg.DocumentSemantic.MinScore,
+			TimeoutSeconds: cfg.DocumentSemantic.TimeoutSeconds,
+		}))
+		slog.Info("[Startup] 文档检索已启用关键词 + 语义混合通道", "collection", cfg.DocumentSemantic.CollectionName)
+	}
+	for name, handler := range mcpapp.NewDocumentsHandlers(documents, publicBaseURL) {
 		registry[name] = handler
 	}
 	papers := mcpapp.NewPaperDetailService(postgres.NewPaperDetailRepository(pool), publicBaseURL)
@@ -119,16 +148,7 @@ func run() int {
 	})
 	var semanticSearch projectsearch.SemanticSearcher
 	if cfg.ProjectSearch.SemanticEnabled {
-		embedding := projectsearch.NewOpenAIEmbeddingClient(projectsearch.EmbeddingConfig{
-			Provider:          cfg.ProjectSearch.EmbeddingProvider,
-			APIKey:            cfg.ProjectSearch.EmbeddingAPIKey,
-			BaseURL:           cfg.ProjectSearch.EmbeddingBaseURL,
-			ModelName:         cfg.ProjectSearch.EmbeddingModelName,
-			SiliconFlowAPIKey: cfg.ProjectSearch.SiliconFlowAPIKey,
-			OpenAIAPIKey:      cfg.ProjectSearch.OpenAIAPIKey,
-			OpenAIBaseURL:     cfg.ProjectSearch.OpenAIBaseURL,
-			TimeoutSeconds:    cfg.ProjectSearch.SemanticQueryTimeoutSeconds,
-		})
+		embedding := newEmbeddingClient(cfg.ProjectSearch, cfg.ProjectSearch.SemanticQueryTimeoutSeconds)
 		milvusRepo, milvusErr := projectsearch.NewMilvusVectorRepository(projectsearch.MilvusConfig{
 			Host:                cfg.ProjectSearch.MilvusHost,
 			Port:                cfg.ProjectSearch.MilvusPort,
@@ -264,4 +284,19 @@ func run() int {
 	}
 	slog.Info("[Shutdown] Postgres connection pool closing.")
 	return 0
+}
+
+// newEmbeddingClient 按 EMBEDDING_* 配置构造查询向量客户端；项目与文档两条
+// 语义通道共用同一套 provider/模型，仅 HTTP 超时各按自身预算。
+func newEmbeddingClient(search config.ProjectSearch, timeoutSeconds float64) *projectsearch.OpenAIEmbeddingClient {
+	return projectsearch.NewOpenAIEmbeddingClient(projectsearch.EmbeddingConfig{
+		Provider:          search.EmbeddingProvider,
+		APIKey:            search.EmbeddingAPIKey,
+		BaseURL:           search.EmbeddingBaseURL,
+		ModelName:         search.EmbeddingModelName,
+		SiliconFlowAPIKey: search.SiliconFlowAPIKey,
+		OpenAIAPIKey:      search.OpenAIAPIKey,
+		OpenAIBaseURL:     search.OpenAIBaseURL,
+		TimeoutSeconds:    timeoutSeconds,
+	})
 }

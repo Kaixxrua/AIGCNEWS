@@ -77,6 +77,17 @@ type ProjectSearch struct {
 	FallbackTimeoutSeconds      float64 // MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS，默认 8.0
 }
 
+// DocumentSemantic 是 search_documents / search_papers 语义通道配置（Go 独有；
+// 向量由 backend document_semantic_indexer 写入 DOCUMENT_SEMANTIC_COLLECTION_NAME，
+// Milvus 连接与 embedding 复用 ProjectSearch 的 MILVUS_* / EMBEDDING_*）。
+type DocumentSemantic struct {
+	Enabled        bool    // DOCUMENT_SEMANTIC_SEARCH_ENABLED，默认 false
+	CollectionName string  // DOCUMENT_SEMANTIC_COLLECTION_NAME，默认 aigc_document_vectors_v1
+	TopK           int     // DOCUMENT_SEMANTIC_TOP_K，默认 50
+	MinScore       float64 // DOCUMENT_SEMANTIC_MIN_SCORE，默认 0.5
+	TimeoutSeconds float64 // DOCUMENT_SEMANTIC_TIMEOUT_SECONDS，默认 3.0
+}
+
 // Config 是 mcp-server 的根配置。
 type Config struct {
 	// Port 为 HTTP 监听端口（容器内恒 8000，compose 映射 127.0.0.1:8002:8000）。
@@ -100,6 +111,8 @@ type Config struct {
 	// ProjectSearch 项目库检索（PR 2.7 search_github_projects 引擎与
 	// GitHub fallback）。
 	ProjectSearch ProjectSearch
+	// DocumentSemantic 文档检索的语义通道。
+	DocumentSemantic DocumentSemantic
 }
 
 // lookup 从环境取值；与 os.LookupEnv 同形，便于测试注入。
@@ -261,6 +274,28 @@ func (c *Config) load(lookup lookupFunc) error {
 	}
 	if err := loadFloat(lookup, "MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS", &c.ProjectSearch.FallbackTimeoutSeconds); err != nil {
 		return err
+	}
+	c.DocumentSemantic = DocumentSemantic{
+		CollectionName: "aigc_document_vectors_v1",
+		TopK:           50,
+		MinScore:       0.5,
+		TimeoutSeconds: 3.0,
+	}
+	if err := loadBool(lookup, "DOCUMENT_SEMANTIC_SEARCH_ENABLED", &c.DocumentSemantic.Enabled); err != nil {
+		return err
+	}
+	loadString(lookup, "DOCUMENT_SEMANTIC_COLLECTION_NAME", &c.DocumentSemantic.CollectionName)
+	if err := loadInt(lookup, "DOCUMENT_SEMANTIC_TOP_K", &c.DocumentSemantic.TopK); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "DOCUMENT_SEMANTIC_MIN_SCORE", &c.DocumentSemantic.MinScore); err != nil {
+		return err
+	}
+	if err := loadFloat(lookup, "DOCUMENT_SEMANTIC_TIMEOUT_SECONDS", &c.DocumentSemantic.TimeoutSeconds); err != nil {
+		return err
+	}
+	if c.DocumentSemantic.TopK <= 0 || c.DocumentSemantic.TopK > 1000 {
+		return fmt.Errorf("config: DOCUMENT_SEMANTIC_TOP_K 必须在 1..1000 之间")
 	}
 	if c.ProjectSearch.SemanticRepoLimit <= 0 || c.ProjectSearch.SemanticChunkLimit <= 0 || c.ProjectSearch.MilvusDimension <= 0 {
 		return fmt.Errorf("config: semantic and Milvus sizes must be positive")

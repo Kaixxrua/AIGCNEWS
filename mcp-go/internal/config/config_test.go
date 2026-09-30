@@ -110,6 +110,13 @@ func TestInvalidValuesFailFast(t *testing.T) {
 		"bad fallback bool":    {"MCP_GITHUB_FALLBACK_ENABLED": "maybe"},
 		"bad fallback token":   {"MCP_GITHUB_FALLBACK_USE_TOKEN": "2"},
 		"bad fallback timeout": {"MCP_GITHUB_FALLBACK_TIMEOUT_SECONDS": "slow"},
+		// 文档语义通道
+		"bad doc semantic bool":   {"DOCUMENT_SEMANTIC_SEARCH_ENABLED": "sure"},
+		"bad doc top k":           {"DOCUMENT_SEMANTIC_TOP_K": "fifty"},
+		"zero doc top k":          {"DOCUMENT_SEMANTIC_TOP_K": "0"},
+		"huge doc top k":          {"DOCUMENT_SEMANTIC_TOP_K": "1001"},
+		"bad doc min score":       {"DOCUMENT_SEMANTIC_MIN_SCORE": "half"},
+		"bad doc semantic budget": {"DOCUMENT_SEMANTIC_TIMEOUT_SECONDS": "3s"},
 	} {
 		var c Config
 		if err := c.load(envMap(pairs)); err == nil {
@@ -285,5 +292,34 @@ func TestSchedulerTimezone(t *testing.T) {
 	}
 	if overridden.SchedulerTimezone != "UTC" {
 		t.Errorf("SchedulerTimezone = %q, want %q", overridden.SchedulerTimezone, "UTC")
+	}
+}
+
+func TestDocumentSemanticDefaults(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := DocumentSemantic{Enabled: false, CollectionName: "aigc_document_vectors_v1", TopK: 50, MinScore: 0.5, TimeoutSeconds: 3.0}
+	if c.DocumentSemantic != want {
+		t.Errorf("DocumentSemantic = %+v, want %+v", c.DocumentSemantic, want)
+	}
+}
+
+func TestDocumentSemanticEnvOverrides(t *testing.T) {
+	var c Config
+	err := c.load(envMap(map[string]string{
+		"DOCUMENT_SEMANTIC_SEARCH_ENABLED":  "true",
+		"DOCUMENT_SEMANTIC_COLLECTION_NAME": "docs_v2",
+		"DOCUMENT_SEMANTIC_TOP_K":           "80",
+		"DOCUMENT_SEMANTIC_MIN_SCORE":       "0.42",
+		"DOCUMENT_SEMANTIC_TIMEOUT_SECONDS": "1.5",
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := DocumentSemantic{Enabled: true, CollectionName: "docs_v2", TopK: 80, MinScore: 0.42, TimeoutSeconds: 1.5}
+	if c.DocumentSemantic != want {
+		t.Errorf("DocumentSemantic = %+v, want %+v", c.DocumentSemantic, want)
 	}
 }
