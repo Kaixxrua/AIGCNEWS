@@ -148,6 +148,11 @@ func New() (*Catalog, error) {
 	return &Catalog{items: payload.Items}, nil
 }
 
+// Items returns the validated templates in catalog order (a copy).
+func (c *Catalog) Items() []Template {
+	return slices.Clone(c.items)
+}
+
 func (c *Catalog) Get(id string) (Template, bool) {
 	for _, item := range c.items {
 		if item.ID == id {
@@ -213,6 +218,28 @@ func (c *Catalog) Terms(query string) []string {
 	return terms
 }
 
+// matchesFilters is the category/framework gate shared by every search pass.
+func matchesFilters(item Template, category, framework string) bool {
+	return !(category != "" && item.Category != category && item.Subcategory != category || framework != "" && !slices.Contains(item.Frameworks, framework))
+}
+
+// Lookup returns the templates for ids in the given order, skipping unknown
+// ids and templates outside the category/framework filters.
+func (c *Catalog) Lookup(ids []string, category, framework string) []Template {
+	index := make(map[string]int, len(c.items))
+	for position, item := range c.items {
+		index[item.ID] = position
+	}
+	items := make([]Template, 0, len(ids))
+	for _, id := range ids {
+		position, ok := index[id]
+		if ok && matchesFilters(c.items[position], category, framework) {
+			items = append(items, c.items[position])
+		}
+	}
+	return items
+}
+
 func (c *Catalog) Search(query, category, framework string) []Template {
 	type candidate struct {
 		item  Template
@@ -221,7 +248,7 @@ func (c *Catalog) Search(query, category, framework string) []Template {
 	results := []candidate{}
 	terms := c.Terms(query)
 	for _, item := range c.items {
-		if category != "" && item.Category != category && item.Subcategory != category || framework != "" && !slices.Contains(item.Frameworks, framework) {
+		if !matchesFilters(item, category, framework) {
 			continue
 		}
 		title := normalize(item.Name["zh"] + " " + item.Name["en"] + " " + item.ID)
@@ -279,7 +306,7 @@ func (c *Catalog) SearchAdaptive(query, category, framework string) ([]Template,
 		}
 		results := []candidate{}
 		for _, item := range c.items {
-			if category != "" && item.Category != category && item.Subcategory != category || framework != "" && !slices.Contains(item.Frameworks, framework) {
+			if !matchesFilters(item, category, framework) {
 				continue
 			}
 			title := normalize(item.Name["zh"] + " " + item.Name["en"] + " " + item.ID)

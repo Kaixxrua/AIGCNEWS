@@ -63,11 +63,28 @@ today/last night/latest/past N days 等），转换成调度时区（Asia/Shangh
 查询文本（提问式查询用剥掉时间短语后的原句）经 embedding 在 Milvus 一文一向量集合
 `DOCUMENT_SEMANTIC_COLLECTION_NAME`（由 backend 的 `document_semantic_sync` 任务与
 `scripts/backfill_document_semantic_index.py` 维护）里取前 `DOCUMENT_SEMANTIC_TOP_K` 条、余弦相似度不低于
-`DOCUMENT_SEMANTIC_MIN_SCORE` 的文档，回 PG 复核同样的来源与日期窗口后，与关键词前 200 名做 RRF 融合；
+`DOCUMENT_SEMANTIC_MIN_SCORE`（默认 0.55，按生产文档校准：bge-m3 下相关文档约 0.57–0.70，覆盖差的查询
+噪声约 0.52–0.58）的文档，回 PG 复核同样的来源与日期窗口后，与关键词前 200 名做 RRF 融合；
 融合结果之后按原关键词顺序接其余关键词命中。因此字面上不含查询词、但语义相关的文档也会出现，`total`
 为「关键词命中数 + 仅语义命中数」。语义通道超时（`DOCUMENT_SEMANTIC_TIMEOUT_SECONDS`）或任何失败时，本次请求
 按纯关键词结果返回；只有时间、没有实体词的查询不走语义通道。Milvus 连接与 embedding 复用项目语义检索的
 `MILVUS_*` / `EMBEDDING_*` 配置。
+
+开启 `UI_SEMANTIC_SEARCH_ENABLED` 后，`search_ui_templates` / `search_ui_icons` 同样叠加一路语义召回
+（仅 Go MCP 服务）。集合 `UI_SEMANTIC_COLLECTION_NAME` 由 mcp-go 自己维护：启动后在后台为模板（名称、描述、
+分类、风格、别名）和图标（可读名、别名、分类）计算 embedding，只补写缺少的（条目, 文本指纹）行，不删旧行；
+检索时只认当前内嵌目录里指纹一致的条目，套用同样的分类/框架/图标集/风格过滤后，与关键词结果做等权 RRF
+融合。中文描述因此能召回只有英文元数据的图标。`search_mode` 保持关键词档位，仅当关键词两轮都为空、结果全部
+来自语义通道时为 `semantic`。集合尚未建好、同步未完成、超时（`UI_SEMANTIC_TIMEOUT_SECONDS`）或任何失败时，
+本次请求按纯关键词结果返回，响应字段不变。
+
+开启 `PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED` 后，`search_my_project_favorites` 的 `q` 也叠加一路语义召回
+（仅 Go MCP 服务）：取调用者最近 1000 条 GitHub 收藏，在项目语义集合 `PROJECT_SEMANTIC_COLLECTION_NAME` 里只对这些
+`repo_id` 做向量检索，相似度不低于 `PROJECT_FAVORITES_SEMANTIC_MIN_SCORE`（默认 0.55，按生产收藏校准：bge-m3 下
+相关项约 0.56–0.67、无关项最高约 0.54）的收藏与关键词条件取并集（关键词全中 **或** 语义命中），分类、语言、
+标签等其余过滤、排序与分页不变。语义命中只可能来自调用者自己的收藏。超时
+（`PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS`）或任何失败时按纯关键词过滤返回，响应字段不变；尚未进入项目语义
+集合的收藏只能被关键词命中。
 
 ## MCP-first 项目发现与复用策略
 

@@ -2,6 +2,7 @@ package mcpapp
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"slices"
 	"strings"
@@ -9,35 +10,94 @@ import (
 
 	"aigcnews/mcp-go/internal/jsonx"
 	"aigcnews/mcp-go/internal/uicatalog"
+	"aigcnews/mcp-go/internal/uisemantic"
 )
 
-// NewUITemplateHandlers validates the embedded sources once at startup.
-func NewUITemplateHandlers(publicBaseURL string) (Handlers, error) {
+// UISemanticSearcher is the optional semantic lane for UI templates and icons
+// (uisemantic.Retriever). Any error falls back to the lexical result alone.
+type UISemanticSearcher interface {
+	SearchIDs(query, kind string) ([]string, error)
+}
+
+// LoadUICatalogs validates the embedded sources once at startup.
+func LoadUICatalogs() (*uicatalog.Catalog, *uicatalog.IconCatalog, error) {
 	catalog, err := uicatalog.New()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	icons, err := uicatalog.LoadIcons()
 	if err != nil {
+		return nil, nil, err
+	}
+	return catalog, icons, nil
+}
+
+// NewUITemplateHandlers validates the embedded sources once at startup.
+func NewUITemplateHandlers(publicBaseURL string) (Handlers, error) {
+	catalog, icons, err := LoadUICatalogs()
+	if err != nil {
 		return nil, err
 	}
+	return NewUICatalogHandlers(catalog, icons, publicBaseURL, nil), nil
+}
+
+// NewUICatalogHandlers serves validated catalogs; semantic may be nil.
+func NewUICatalogHandlers(catalog *uicatalog.Catalog, icons *uicatalog.IconCatalog, publicBaseURL string, semantic UISemanticSearcher) Handlers {
 	baseURL := strings.TrimRight(publicBaseURL, "/")
 	if baseURL == "" {
 		baseURL = "https://aigcnews.cn"
 	}
-	service := &uiTemplateService{catalog: catalog, baseURL: baseURL}
-	iconService := &uiIconService{catalog: icons, baseURL: baseURL}
+	service := &uiTemplateService{catalog: catalog, baseURL: baseURL, semantic: semantic}
+	iconService := &uiIconService{catalog: icons, baseURL: baseURL, semantic: semantic}
 	return Handlers{
 		"search_ui_templates": service.search,
 		"get_ui_template":     service.get,
 		"search_ui_icons":     iconService.search,
 		"get_ui_icon":         iconService.get,
-	}, nil
+	}
 }
 
 type uiTemplateService struct {
-	catalog *uicatalog.Catalog
-	baseURL string
+	catalog  *uicatalog.Catalog
+	baseURL  string
+	semantic UISemanticSearcher
+}
+
+// withSemantic fuses the lexical result with the semantic lane (equal-weight
+// RRF). search_mode keeps its lexical value; it becomes "semantic" only when
+// every returned template came from the semantic lane.
+func (s *uiTemplateService) withSemantic(q, category, framework string, lexical []uicatalog.Template, mode string) ([]uicatalog.Template, string) {
+	if s.semantic == nil || strings.TrimSpace(q) == "" {
+		return lexical, mode
+	}
+	ids, err := s.semantic.SearchIDs(q, uisemantic.KindTemplate)
+	if err != nil {
+		slog.Warn("search_ui_templates semantic lane failed; lexical only", "err", err)
+		return lexical, mode
+	}
+	semantic := s.catalog.Lookup(ids, category, framework)
+	if len(semantic) == 0 {
+		return lexical, mode
+	}
+	byID := map[string]uicatalog.Template{}
+	lexicalIDs := make([]string, 0, len(lexical))
+	for _, item := range lexical {
+		byID[item.ID] = item
+		lexicalIDs = append(lexicalIDs, item.ID)
+	}
+	semanticIDs := make([]string, 0, len(semantic))
+	for _, item := range semantic {
+		byID[item.ID] = item
+		semanticIDs = append(semanticIDs, item.ID)
+	}
+	fused := make([]uicatalog.Template, 0, len(byID))
+	for _, id := range uisemantic.Fuse(lexicalIDs, semanticIDs) {
+		fused = append(fused, byID[id])
+	}
+	if len(lexical) == 0 {
+		mode = "semantic"
+	}
+	return fused, mode
 }
 
 func uiString(args map[string]any, key, fallback string, max int, choices ...string) (string, error) {
@@ -122,6 +182,7 @@ func (s *uiTemplateService) search(args map[string]any) (any, error) {
 		limit = int(value)
 	}
 	matches, searchMode := s.catalog.SearchAdaptive(q, category, framework)
+	matches, searchMode = s.withSemantic(q, category, framework, matches, searchMode)
 	if kind != "" {
 		filtered := matches[:0]
 		for _, item := range matches {

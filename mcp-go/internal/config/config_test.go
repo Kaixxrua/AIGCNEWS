@@ -300,7 +300,7 @@ func TestDocumentSemanticDefaults(t *testing.T) {
 	if err := c.load(envMap(nil)); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	want := DocumentSemantic{Enabled: false, CollectionName: "aigc_document_vectors_v1", TopK: 50, MinScore: 0.5, TimeoutSeconds: 3.0}
+	want := DocumentSemantic{Enabled: false, CollectionName: "aigc_document_vectors_v1", TopK: 50, MinScore: 0.55, TimeoutSeconds: 3.0}
 	if c.DocumentSemantic != want {
 		t.Errorf("DocumentSemantic = %+v, want %+v", c.DocumentSemantic, want)
 	}
@@ -321,5 +321,76 @@ func TestDocumentSemanticEnvOverrides(t *testing.T) {
 	want := DocumentSemantic{Enabled: true, CollectionName: "docs_v2", TopK: 80, MinScore: 0.42, TimeoutSeconds: 1.5}
 	if c.DocumentSemantic != want {
 		t.Errorf("DocumentSemantic = %+v, want %+v", c.DocumentSemantic, want)
+	}
+}
+
+func TestUISemanticDefaults(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := UISemantic{Enabled: false, CollectionName: "aigc_ui_catalog_vectors_v1", TopK: 50, MinScore: 0.5, TimeoutSeconds: 3.0}
+	if c.UISemantic != want {
+		t.Errorf("UISemantic = %+v, want %+v", c.UISemantic, want)
+	}
+}
+
+func TestUISemanticEnvOverridesAndValidation(t *testing.T) {
+	var c Config
+	err := c.load(envMap(map[string]string{
+		"UI_SEMANTIC_SEARCH_ENABLED":  "true",
+		"UI_SEMANTIC_COLLECTION_NAME": "ui_v2",
+		"UI_SEMANTIC_TOP_K":           "80",
+		"UI_SEMANTIC_MIN_SCORE":       "0.42",
+		"UI_SEMANTIC_TIMEOUT_SECONDS": "1.5",
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	want := UISemantic{Enabled: true, CollectionName: "ui_v2", TopK: 80, MinScore: 0.42, TimeoutSeconds: 1.5}
+	if c.UISemantic != want {
+		t.Errorf("UISemantic = %+v, want %+v", c.UISemantic, want)
+	}
+	for _, env := range []map[string]string{
+		{"UI_SEMANTIC_TOP_K": "0"},
+		{"UI_SEMANTIC_TOP_K": "1001"},
+		{"UI_SEMANTIC_SEARCH_ENABLED": "maybe"},
+		{"UI_SEMANTIC_MIN_SCORE": "high"},
+	} {
+		var bad Config
+		if err := bad.load(envMap(env)); err == nil {
+			t.Errorf("load(%v) accepted an invalid value", env)
+		}
+	}
+}
+
+func TestFavoritesSemanticDefaultsOverridesAndValidation(t *testing.T) {
+	var c Config
+	if err := c.load(envMap(nil)); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if want := (FavoritesSemantic{Enabled: false, MinScore: 0.55, TimeoutSeconds: 3.0}); c.FavoritesSemantic != want {
+		t.Errorf("FavoritesSemantic defaults = %+v, want %+v", c.FavoritesSemantic, want)
+	}
+	var over Config
+	if err := over.load(envMap(map[string]string{
+		"PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED":  "true",
+		"PROJECT_FAVORITES_SEMANTIC_MIN_SCORE":       "0.6",
+		"PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS": "2",
+	})); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if want := (FavoritesSemantic{Enabled: true, MinScore: 0.6, TimeoutSeconds: 2}); over.FavoritesSemantic != want {
+		t.Errorf("FavoritesSemantic = %+v, want %+v", over.FavoritesSemantic, want)
+	}
+	for _, env := range []map[string]string{
+		{"PROJECT_FAVORITES_SEMANTIC_SEARCH_ENABLED": "maybe"},
+		{"PROJECT_FAVORITES_SEMANTIC_MIN_SCORE": "high"},
+		{"PROJECT_FAVORITES_SEMANTIC_TIMEOUT_SECONDS": "soon"},
+	} {
+		var bad Config
+		if err := bad.load(envMap(env)); err == nil {
+			t.Errorf("load(%v) accepted an invalid value", env)
+		}
 	}
 }

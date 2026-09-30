@@ -143,6 +143,15 @@ func (c *IconCatalog) IconCount() int {
 	return len(c.entries)
 }
 
+// Icons returns every validated icon in catalog order.
+func (c *IconCatalog) Icons() []Icon {
+	icons := make([]Icon, 0, len(c.entries))
+	for _, entry := range c.entries {
+		icons = append(icons, entry.icon)
+	}
+	return icons
+}
+
 // Get returns an icon and its owning set metadata.
 func (c *IconCatalog) Get(id string) (Icon, *IconSet, bool) {
 	position, ok := c.byID[id]
@@ -194,8 +203,7 @@ func (c *IconCatalog) SearchIcons(query, provider, style, category string) []Ico
 		}
 	}
 	for _, entry := range c.entries {
-		set := c.sets[entry.set]
-		if provider != "" && set.ProviderID != provider || style != "" && entry.icon.Style != style || category != "" && entry.icon.Category != category {
+		if !c.matchesFilters(entry, provider, style, category) {
 			continue
 		}
 		score, matches := 0, true
@@ -218,6 +226,25 @@ func (c *IconCatalog) SearchIcons(query, provider, style, category string) []Ico
 	icons := make([]Icon, 0, len(results))
 	for _, result := range results {
 		icons = append(icons, result.entry.icon)
+	}
+	return icons
+}
+
+// matchesFilters is the set/style/category gate shared by every icon search.
+func (c *IconCatalog) matchesFilters(entry iconEntry, provider, style, category string) bool {
+	set := c.sets[entry.set]
+	return !(provider != "" && set.ProviderID != provider || style != "" && entry.icon.Style != style || category != "" && entry.icon.Category != category)
+}
+
+// Lookup returns the icons for ids in the given order, skipping unknown ids
+// and icons outside the set/style/category filters.
+func (c *IconCatalog) Lookup(ids []string, provider, style, category string) []Icon {
+	icons := make([]Icon, 0, len(ids))
+	for _, id := range ids {
+		position, ok := c.byID[id]
+		if ok && c.matchesFilters(c.entries[position], provider, style, category) {
+			icons = append(icons, c.entries[position].icon)
+		}
 	}
 	return icons
 }
