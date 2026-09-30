@@ -5,6 +5,9 @@ import { ArrowLeftRight, Check, X } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { paymentApi } from '@/services/payments/paymentApi'
+import RollText from '@/motion/RollText.vue'
+import { vMorph } from '@/motion/morph'
+import { popIn, popOut } from '@/motion/presence'
 import {
   FALLBACK_MEMBER_MONTHLY_CENTS,
   FALLBACK_MEMBER_MONTHLY_USD_CENTS,
@@ -42,6 +45,16 @@ const isYearly = computed(() => billingPeriod.value === 'yearly')
 const toggleBilling = () => {
   billingPeriod.value = isYearly.value ? 'monthly' : 'yearly'
 }
+/** 切换方向：去年付时价格等内容自下而上滚入，回月付时自上而下。 */
+const billingDirection = computed<1 | -1>(() => (isYearly.value ? 1 : -1))
+const periodText = computed(() =>
+  isYearly.value ? t('membership.member.priceYearlyPeriod') : t('membership.member.priceMonthlyPeriod'),
+)
+const billingLabel = computed(() =>
+  isYearly.value ? t('membership.member.billMonthly') : t('membership.member.billYearly'),
+)
+// 折扣标等按钮撑开一截再盖上去，不从还没展开的按钮边上探出来。
+const popInTag = (el: Element, done: () => void) => popIn(el, done, { delay: 120 })
 
 // 在线收银台可用性 = plans 接口可达（payments_enabled 关闭时整组 404）。
 // 探测失败静默保持 false，CTA 维持联系开通兜底；金额渲染退回兜底常量。
@@ -202,30 +215,33 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             {{ isMember ? t('membership.currentMember') : t('membership.member.badge') }}
           </span>
           <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
-          <p class="tier-price">
-            <span class="tier-price-amount">
-              {{ memberAmountText }}
-            </span>
-            <span class="tier-price-period">
-              {{ isYearly ? t('membership.member.priceYearlyPeriod') : t('membership.member.priceMonthlyPeriod') }}
-            </span>
+          <!-- 切换计费周期：价格整块滚动换值（去年付向上、回月付向下），锚点行稍后跟上；按钮图标翻转、折扣标弹入弹出。
+               价格与按钮的宽度一起过渡（同一行里此消彼长，不会中途把按钮挤到下一行）；较窄时按钮在两行之间滑动，
+               价格行高度随之过渡。 -->
+          <p v-morph="billingPeriod" class="tier-price">
+            <RollText :value="`${memberAmountText} ${periodText}`" :direction="billingDirection">
+              <span class="tier-price-amount">{{ memberAmountText }}</span>
+              <span class="tier-price-period">{{ periodText }}</span>
+            </RollText>
             <button
+              v-morph="billingPeriod"
               type="button"
               class="tier-billing-btn"
               :aria-pressed="isYearly"
               @click="toggleBilling"
             >
               <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
-              {{ isYearly ? t('membership.member.billMonthly') : t('membership.member.billYearly') }}
+              <RollText :value="billingLabel" :direction="billingDirection" :morph="false" />
               <!-- 折扣标只在月付态且真实存在折扣时出现：前端按 plans 价自算
                    1 − yearly/(monthly×12)，向下取整（保守口径），≤0 即隐藏；
                    年付态按钮是降级动作，不带折扣标 -->
-              <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
+              <Transition @enter="popInTag" @leave="popOut">
+                <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
+              </Transition>
             </button>
           </p>
           <p class="tier-price-yearly">
-            {{ anchorText }}
-            <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
+            <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
           </p>
           <hr class="tier-divider" />
           <ul class="tier-features">
@@ -372,8 +388,10 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
 }
 
 /* 计费周期切换：项目库 projects-home-btn 配方（1px 描边、4px 方角、小字重 800），
-   钉在价格行右侧；aria-pressed=年付态反色为 ink 底（btn-primary 同色关系） */
+   钉在价格行右侧；aria-pressed=年付态反色为 ink 底（btn-primary 同色关系）。
+   定位元素：离场的折扣标钉在按钮内原处缩小淡出 */
 .tier-billing-btn {
+  position: relative;
   margin-left: auto;
   align-self: center;
   display: inline-flex;
@@ -408,6 +426,16 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
 .tier-billing-btn[aria-pressed='true']:hover {
   background: var(--acid);
   color: var(--acid-ink);
+}
+
+/* 每次切换双向箭头翻转半圈、带回弹，切回时再转回来；按钮宽度过渡途中内容暂时放不下时图标不被挤扁 */
+.tier-billing-btn svg {
+  flex-shrink: 0;
+  transition: rotate 560ms var(--motion-pop);
+}
+
+.tier-billing-btn[aria-pressed='true'] svg {
+  rotate: 180deg;
 }
 
 /* 折扣百分比标：acid 实色小胶囊（tier-badge 的同族配方），嵌在描边按钮内制造对比 */
