@@ -17,10 +17,18 @@ from pathlib import Path
 
 from import_batch_registry_sources import zh_title
 from ui_import_common import (
+    Reject,
     append_unique_file,
-    DATA, Reject, apply_additions, checked_checkout, detect_export,
-    external_versions, make_item, node_modules_packages, previous_items,
-    resolve_closure, sha, store, store_license,
+    apply_additions,
+    checked_checkout,
+    detect_export,
+    external_versions,
+    make_item,
+    node_modules_packages,
+    previous_items,
+    resolve_closure,
+    store,
+    store_license,
 )
 
 UILAYOUTS_APP = "apps/ui-layout"
@@ -144,6 +152,23 @@ SOURCES = {
         "reviewed_allow_files": {"apps/ui-layout/lib/utils.ts"},
         "demo_base": "https://www.ui-layouts.com/components/",
     },
+    # Added 2026-09-30 for the scheduled refresh (scripts/ui_publication/refresh.py).
+    "neobrutalism": {
+        "repository": "ekmas/neobrutalism-components",
+        "revision": "3306a802724874a85f93079702b2795370a279d4",
+        "license_source": "LICENSE",
+        "license_sha256": "a77140948a68fafb5e0077a287502104203b7ccb11255b311101ec8fe85fa250",
+        "provider": "Neobrutalism components",
+        "checkout": "neobrutalism-components",
+        "alias_root": "src",
+        "css": "src/styling/globals.css",
+        # Official docs examples compose the primitives with real content; bare
+        # registry primitives render empty without children.
+        "glob": "src/examples/ui/**/*.tsx",
+        "slug": "dir_file",
+        "slug_base": "src/examples/ui",
+        "demo_base": "https://www.neobrutalism.dev/docs/",
+    },
 }
 
 
@@ -161,6 +186,12 @@ def candidates(source: dict, root: Path) -> list[tuple[str, str]]:
             slug = path.stem
         elif mode == "parent_dir":
             slug = path.parent.name if path.stem.lower() == "index" else path.stem
+        elif mode == "dir_file":
+            # <base>/<component>/<variant>.tsx -> component-variant; index -> component
+            if path.parent == root / source["slug_base"]:
+                slug = path.stem
+            else:
+                slug = path.parent.name if path.stem.lower() == "index" else f"{path.parent.name}-{path.stem}"
         elif mode == "tailark_block":
             parts = relative.split("/")
             # registry/bases/base/<kit>/blocks/<category>/<variant>[.tsx|/index.tsx]

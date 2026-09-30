@@ -147,9 +147,8 @@ async def discovery_sources(repo: Repo, _: Annotated[dict[str, Any], Depends(Req
              'path_patterns': list(source.paths), 'enabled': True, 'editable': False}
             for source in SOURCES
         ] + [
-            {'id': 'codrops', 'name': 'Codrops', 'kind': 'feed',
-             'feed_url': 'https://tympanus.net/codrops/feed/', 'path_patterns': [],
-             'enabled': True, 'editable': False},
+            {'id': 'codrops', 'name': 'Codrops', 'kind': 'github', 'repository': 'codrops',
+             'path_patterns': [], 'enabled': True, 'editable': False},
         ] + [
             {'id': f'x:{handle}', 'name': f'@{handle}', 'kind': 'x', 'handle': handle,
              'profile_url': f'https://x.com/{handle}', 'path_patterns': [],

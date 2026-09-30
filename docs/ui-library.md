@@ -128,14 +128,16 @@ PLAYWRIGHT_CHANNEL=chrome FFMPEG_PATH=/path/to/ffmpeg node scripts/capture-ui-cl
 
 | 任务 | 默认时间 | 来源 |
 | --- | --- | --- |
-| `ui_library_discovery` | 每日 09:00 | Uiverse Galaxy、Motion Primitives、Magic UI、HyperUI、Magic Portfolio、Codrops RSS |
+| `ui_library_discovery` | 每日 09:00 | Uiverse Galaxy、Motion Primitives、Magic UI、HyperUI、Magic Portfolio、Codrops（GitHub 组织新仓库，仅链接） |
 | `ui_library_x_discovery` | 每日 09:10 | X 的 ibelick、dillionverma、akella，滚动 24 小时完整窗口 |
 
 首次成功抓取记为基线，以后按源码 blob 与许可证文件版本识别新增/更新；GitHub 链接固定到 commit。单一来源失败不清空旧记录，其余网站继续发现。X 必须证明整轮窗口完整，部分结果不入库。任务复用项目 GitHub / X 串行锁、超时和失败监测；仅在 `X_SOURCE_ENABLED` 开启且配置既有 X 凭据后运行 X 任务。GitHub 沿用 `GITHUB_TOKEN`，匿名访问容易耗尽限额。
 
-发现结果保存在候选表，通过管理员 `GET /api/ops/ui-library/discovery?limit=100` 查看。部署机的 `AIGCNEWS-UI-Publication` 计划任务每天北京时间 09:20 承接候选核查、证据归档、预览构建及网站/MCP 发布；失败后重试，发布异常回滚。当前自动发布适配器支持 HyperUI 无外部素材的原版 HTML，完整许可证或配套代码变化则停在待核查。X、Codrops 及尚无适配器的来源仍需人工核查，不自动抓取或执行任意链接。每天最多发布 64 个通过核查的新素材，保留旧素材首次入库时间；每天检查不保证来源每天都有新作品。安装、恢复、审计记录和运行依赖见 [每日发布说明](../scripts/ui_publication/README.md)。
+发现结果保存在候选表，通过管理员 `GET /api/ops/ui-library/discovery?limit=100` 查看。Codrops 的 RSS 现对自动化请求返回 Cloudflare 验证页，不做绕过；改为读取 `codrops` GitHub 组织最近创建的仓库，作为待核查链接（Codrops 演示禁止原样转载，永不入库）。配置的 RSS 返回 HTML 页面时记为 `feed_returned_html`。
 
-管理员可在监控页的“采集 → UI 素材来源”查看全部内置来源，并新增、编辑、停用或删除自定义来源。自定义来源支持 GitHub `owner/repository` 加文件 glob，以及公网 HTTPS RSS/Atom；保存与每次请求均执行出站目标校验，不执行网站脚本。配置通过 `/api/ops/ui-library/discovery-sources` 管理，并由每日 09:00 的 `ui_library_discovery` 任务读取。自定义来源只产生待核查候选，不自动扩大 09:20 发布器的适配范围。
+实际入库由 Linux 用户级定时器 `aigcnews-ui-refresh.timer`（北京时间 09:30）完成：对已固定的 18 个宽松许可上游检查新 commit，许可证逐字节不变才继续，只收新组件，经离线预览、封面/视频、权利证据与 Go 目录校验后写入生产目录，随下一次发布上线；曾被拒绝或撤下的 ID 永不回归。原 Windows 计划任务 `AIGCNEWS-UI-Publication` 已于 2026-09 迁移后退役。流程、状态文件与来源法律边界见 [每日更新说明](../scripts/ui_publication/README.md)。
+
+管理员可在监控页的“采集 → UI 素材来源”查看全部内置来源，并新增、编辑、停用或删除自定义来源。自定义来源支持 GitHub `owner/repository` 加文件 glob，以及公网 HTTPS RSS/Atom；保存与每次请求均执行出站目标校验，不执行网站脚本。配置通过 `/api/ops/ui-library/discovery-sources` 管理，并由每日 09:00 的 `ui_library_discovery` 任务读取。自定义来源只产生待核查候选，不自动扩大刷新器的来源范围。
 
 部署后先按项目流程运行 `python scripts/migrate_postgres.py apply`，再启动后端；确认调度状态中有上述任务及下次执行时间。修改了后端配置、权限和迁移，应在可用的 Docker/PostgreSQL 测试环境中执行下面的真实集成测试。
 
