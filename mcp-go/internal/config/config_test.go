@@ -300,7 +300,7 @@ func TestDocumentSemanticDefaults(t *testing.T) {
 	if err := c.load(envMap(nil)); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	want := DocumentSemantic{Enabled: false, CollectionName: "aigc_document_vectors_v1", TopK: 50, MinScore: 0.5, TimeoutSeconds: 3.0}
+	want := DocumentSemantic{Enabled: false, CollectionName: "aigc_document_vectors_v1", TopK: 50, MinScore: 0.55, TimeoutSeconds: 3.0}
 	if c.DocumentSemantic != want {
 		t.Errorf("DocumentSemantic = %+v, want %+v", c.DocumentSemantic, want)
 	}

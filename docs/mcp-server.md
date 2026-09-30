@@ -63,7 +63,8 @@ today/last night/latest/past N days 等），转换成调度时区（Asia/Shangh
 查询文本（提问式查询用剥掉时间短语后的原句）经 embedding 在 Milvus 一文一向量集合
 `DOCUMENT_SEMANTIC_COLLECTION_NAME`（由 backend 的 `document_semantic_sync` 任务与
 `scripts/backfill_document_semantic_index.py` 维护）里取前 `DOCUMENT_SEMANTIC_TOP_K` 条、余弦相似度不低于
-`DOCUMENT_SEMANTIC_MIN_SCORE` 的文档，回 PG 复核同样的来源与日期窗口后，与关键词前 200 名做 RRF 融合；
+`DOCUMENT_SEMANTIC_MIN_SCORE`（默认 0.55，按生产文档校准：bge-m3 下相关文档约 0.57–0.70，覆盖差的查询
+噪声约 0.52–0.58）的文档，回 PG 复核同样的来源与日期窗口后，与关键词前 200 名做 RRF 融合；
 融合结果之后按原关键词顺序接其余关键词命中。因此字面上不含查询词、但语义相关的文档也会出现，`total`
 为「关键词命中数 + 仅语义命中数」。语义通道超时（`DOCUMENT_SEMANTIC_TIMEOUT_SECONDS`）或任何失败时，本次请求
 按纯关键词结果返回；只有时间、没有实体词的查询不走语义通道。Milvus 连接与 embedding 复用项目语义检索的

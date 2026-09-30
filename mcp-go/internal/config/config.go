@@ -84,7 +84,7 @@ type DocumentSemantic struct {
 	Enabled        bool    // DOCUMENT_SEMANTIC_SEARCH_ENABLED，默认 false
 	CollectionName string  // DOCUMENT_SEMANTIC_COLLECTION_NAME，默认 aigc_document_vectors_v1
 	TopK           int     // DOCUMENT_SEMANTIC_TOP_K，默认 50
-	MinScore       float64 // DOCUMENT_SEMANTIC_MIN_SCORE，默认 0.5
+	MinScore       float64 // DOCUMENT_SEMANTIC_MIN_SCORE，默认 0.55（按生产文档校准）
 	TimeoutSeconds float64 // DOCUMENT_SEMANTIC_TIMEOUT_SECONDS，默认 3.0
 }
 
@@ -303,7 +303,7 @@ func (c *Config) load(lookup lookupFunc) error {
 	c.DocumentSemantic = DocumentSemantic{
 		CollectionName: "aigc_document_vectors_v1",
 		TopK:           50,
-		MinScore:       0.5,
+		MinScore:       0.55,
 		TimeoutSeconds: 3.0,
 	}
 	if err := loadBool(lookup, "DOCUMENT_SEMANTIC_SEARCH_ENABLED", &c.DocumentSemantic.Enabled); err != nil {
