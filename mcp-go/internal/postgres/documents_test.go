@@ -8,6 +8,7 @@ package postgres
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestNormalizeSearchQuery(t *testing.T) {
@@ -80,7 +81,6 @@ func TestDocumentSearchCandidates(t *testing.T) {
 		"gpt-4o mini":            {"gpt-4o mini"},
 		"RAG 教程":                 {"RAG 教程"},
 		"学习 python":              {"学习 python"},
-		"什么是 MCP 协议？":            {"什么是 MCP 协议?"},
 		"   AGENT   Framework  ": {"AGENT Framework"},
 		"v0.1.2":                 {"v0.1.2"},
 		"Qwen3-Next-80B-A3B":     {"Qwen3-Next-80B-A3B"},
@@ -97,8 +97,10 @@ func TestDocumentSearchCandidates(t *testing.T) {
 			"I want to find me some LLM learning resources", "some LLM", "some", "LLM",
 		},
 	}
+	// 提问式查询（含提问词/时间词）的拆句见 document_intent_test.go 共享向量。
+	today := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
 	for in, want := range cases {
-		if got := documentSearchCandidates(in, 5); !reflect.DeepEqual(got, want) {
+		if got := documentSearchCandidates(in, 5, today); !reflect.DeepEqual(got, want) {
 			t.Errorf("documentSearchCandidates(%q) = %q, want %q", in, got, want)
 		}
 	}

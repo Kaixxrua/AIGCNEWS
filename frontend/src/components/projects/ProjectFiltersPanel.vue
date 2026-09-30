@@ -129,10 +129,6 @@ const isMobile = useMediaQuery('(max-width: 767px)')
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
       <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === subcategory.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', subcategory.slug)"><span>{{ label(subcategory) }}</span><small>{{ subcategory.count }}</small></button>
     </div>
-    <div v-if="catalogLayout && visibleSubcategories.length" class="projects-subcategory-index" aria-label="二级分类">
-      <span class="projects-subcategory-index__title">{{ label(activeCategory) }}</span>
-      <button v-for="subcategory in visibleSubcategories" :key="subcategory.slug" type="button" :class="selectedSubcategory === subcategory.slug ? 'is-active' : ''" @click="emit('selectSubcategory', subcategory.slug)">{{ label(subcategory) }}</button>
-    </div>
   </details>
 
   <section v-else-if="!requiresPersonalLogin && (personalTags.length > 1 || selectedTag)" class="projects-category-panel projects-tag-panel glass-card" :aria-label="t('projects.personalTagFilter')">

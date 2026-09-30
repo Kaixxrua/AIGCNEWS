@@ -101,5 +101,35 @@ class ProjectVectorRepositoryTests(unittest.TestCase):
         disconnect.assert_called_once_with("project_semantic")
 
 
+    def test_list_repo_ids_drains_iterator_and_drops_blanks(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        iterator = MagicMock()
+        iterator.next.side_effect = [
+            [{"repo_id": "a/one"}, {"repo_id": "a/one"}, {"repo_id": ""}],
+            [{"repo_id": "b/two"}],
+            [],
+        ]
+        collection.query_iterator.return_value = iterator
+        repository._load_collection = MagicMock(return_value=collection)
+
+        self.assertEqual(repository.list_repo_ids(batch_size=2), {"a/one", "b/two"})
+        collection.query_iterator.assert_called_once_with(
+            batch_size=2, expr='repo_id != ""', output_fields=["repo_id"]
+        )
+        iterator.close.assert_called_once_with()
+
+    def test_list_repo_ids_closes_iterator_on_error(self) -> None:
+        repository = ProjectVectorRepository(collection_name="test", dimension=2)
+        collection = MagicMock()
+        iterator = MagicMock()
+        iterator.next.side_effect = RuntimeError("boom")
+        collection.query_iterator.return_value = iterator
+        repository._load_collection = MagicMock(return_value=collection)
+
+        with self.assertRaises(RuntimeError):
+            repository.list_repo_ids()
+        iterator.close.assert_called_once_with()
+
 if __name__ == "__main__":
     unittest.main()

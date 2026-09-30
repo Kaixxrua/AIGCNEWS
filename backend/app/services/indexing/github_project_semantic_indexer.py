@@ -229,6 +229,41 @@ class GitHubProjectSemanticIndexer:
             logger.warning("GitHub project semantic indexing failed for %s: %s", project.get("repo_id"), exc)
             return {"repo_id": project.get("repo_id"), "status": "failed", "error": str(exc)}
 
+    def reconcile_vector_ledger(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """台账记为已索引、但向量库里没有该项目向量的，退回 pending 重新嵌入。
+
+        向量库被重建/清空后（2026-09-15 实例：18k 项目台账 succeeded、集合里只剩
+        重建后写入的 223 个），指纹比对永远判"未变"，增量同步不会自愈。
+        向量库读不到时不动台账。
+        """
+        indexed = self.db.list_indexed_github_project_ids()
+        if not indexed:
+            return {"status": "success", "indexed": 0, "missing": 0, "requeued": 0}
+        try:
+            present = self._vectors().list_repo_ids()
+        except Exception as exc:
+            logger.warning("GitHub project semantic ledger reconcile skipped: %s", exc)
+            return {"status": "failed", "indexed": len(indexed), "error": str(exc)[:1000]}
+        missing = [repo_id for repo_id in indexed if repo_id not in present]
+        requeued = 0
+        if missing and not dry_run:
+            requeued = self.db.requeue_github_project_semantic_index(
+                missing,
+                reason="vector chunks missing from Milvus; requeued by ledger reconcile",
+                updated_at=_utcnow(),
+            )
+            logger.warning(
+                "GitHub project semantic ledger reconcile requeued %s/%s projects missing from Milvus",
+                requeued,
+                len(indexed),
+            )
+        return {
+            "status": "dry_run" if dry_run else "success",
+            "indexed": len(indexed),
+            "missing": len(missing),
+            "requeued": requeued,
+        }
+
     def sync_batch(
         self,
         *,
@@ -238,7 +273,9 @@ class GitHubProjectSemanticIndexer:
         fetch_readme: bool = True,
         concurrency: int | None = None,
         dry_run: bool = False,
+        reconcile: bool = True,
     ) -> dict[str, Any]:
+        reconcile_result = self.reconcile_vector_ledger(dry_run=dry_run) if reconcile else None
         limit = int(limit or settings.project_semantic_sync_batch_size)
         concurrency = max(
             1,
@@ -285,7 +322,7 @@ class GitHubProjectSemanticIndexer:
             status = str(result.get("status") or "unknown")
             counts[status] = counts.get(status, 0) + 1
         failed = counts.get("failed", 0)
-        return {
+        result = {
             "status": (
                 "dry_run"
                 if dry_run
@@ -295,6 +332,9 @@ class GitHubProjectSemanticIndexer:
             "counts": counts,
             "last_repo_id": projects[-1].get("repo_id") if projects else after_repo_id,
         }
+        if reconcile_result is not None:
+            result["reconcile"] = reconcile_result
+        return result
 
 
 def sync_github_project_semantic_index(

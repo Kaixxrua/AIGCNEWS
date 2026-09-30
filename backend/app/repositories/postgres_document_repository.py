@@ -3,12 +3,18 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, time, timedelta, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.domain.document_search_intent import (
+    DateWindow,
+    parse_query_intent,
+    strip_ask_fillers,
+)
 from backend.app.domain.search_semantics import (
     TECHNICAL_TOKEN_RE,
     escape_like_literal,
@@ -89,19 +95,37 @@ def extract_github_repo_slugs(*texts: str | None) -> set[str]:
     return slugs
 
 
-def _document_search_candidates(query: str, *, max_terms: int = 5) -> list[str]:
+@dataclass(frozen=True)
+class DocumentSearchPlan:
+    """检索计划：ILIKE 候选词（按优先级）+ 可选 published_date 窗口。
+
+    candidates 为空而 window 存在 = 纯时间查询（"今天有什么"），只按日期过滤。
+    """
+
+    candidates: list[str]
+    window: DateWindow | None = None
+
+
+def _document_search_plan(query: str, *, today: date, max_terms: int = 5) -> DocumentSearchPlan:
     normalized = normalize_search_query(query)
     if not normalized:
-        return []
+        return DocumentSearchPlan([])
     lowered = normalized.casefold()
     has_intent = any(phrase in lowered for phrase in _DOCUMENT_SEARCH_INTENT_PHRASES)
-    if not has_intent and len(normalized) <= 48:
-        return [normalized]
-    cleaned = normalized
+    intent = parse_query_intent(normalized, today)
+    # 提问式查询（带时间意图或提问词）：先剥时间短语，后续再剥问句外壳。
+    asks = intent.window is not None or intent.asks
+    if not has_intent and not asks and len(normalized) <= 48:
+        return DocumentSearchPlan([normalized])
+    cleaned = intent.remainder if asks else normalized
     for phrase in sorted(_DOCUMENT_SEARCH_INTENT_PHRASES, key=len, reverse=True):
         cleaned = re.sub(re.escape(phrase), " ", cleaned, flags=re.IGNORECASE)
+    if asks:
+        cleaned = strip_ask_fillers(cleaned)
     cleaned = re.sub(r"(^|[\s,，。！？!?;:：；])(?:学习|帮我)(?=[A-Za-z0-9])", r"\1", cleaned)
     cleaned = " ".join(cleaned.strip(" ，。！？,.!?;:：；").split())
+    if asks and intent.window is not None and not _has_keyword(cleaned):
+        return DocumentSearchPlan([], intent.window)
     candidates = [normalized]
     residual_intent = any(term in cleaned.casefold() for term in _DOCUMENT_SEARCH_STOP_TERMS)
     if cleaned and not residual_intent and cleaned.casefold() != normalized.casefold():
@@ -121,7 +145,21 @@ def _document_search_candidates(query: str, *, max_terms: int = 5) -> list[str]:
     if len(technical_terms) > 1 and any(term.casefold() != "ai" for term in technical_terms):
         technical_terms = [term for term in technical_terms if term.casefold() != "ai"]
     candidates.extend(technical_terms)
-    return candidates
+    return DocumentSearchPlan(candidates, intent.window)
+
+
+def _has_keyword(cleaned: str) -> bool:
+    """剥壳后是否还剩可检索的词（标点残渣与单个非数字字符不算）。"""
+    return any(
+        token.casefold() not in _DOCUMENT_SEARCH_STOP_TERMS and (len(token) > 1 or token.isdigit())
+        for token in TECHNICAL_TOKEN_RE.findall(cleaned)
+    )
+
+
+def _document_search_candidates(query: str, *, max_terms: int = 5, today: date | None = None) -> list[str]:
+    return _document_search_plan(
+        query, today=today or date.fromisoformat(_local_today()), max_terms=max_terms
+    ).candidates
 
 
 def _document_projection(*, github_visible: bool = True) -> str:
@@ -477,30 +515,47 @@ class PostgresDocumentRepository:
         page: int = 1,
         page_size: int = 20,
     ) -> dict[str, Any]:
-        candidates = _document_search_candidates(query)
+        plan = _document_search_plan(query, today=date.fromisoformat(_local_today()))
+        candidates = plan.candidates
         page = max(1, int(page))
         page_size = max(1, min(int(page_size), 100))
-        if not candidates:
+        if not candidates and plan.window is None:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
         patterns = [f"%{escape_like_literal(candidate, escape='=')}%" for candidate in candidates]
         field_match = "(COALESCE(title, '') ILIKE %s ESCAPE '=' OR COALESCE(summary, '') ILIKE %s ESCAPE '=' OR COALESCE(tags, '') ILIKE %s ESCAPE '=')"
-        search_sql = "(" + " OR ".join([field_match] * len(patterns)) + ")"
-        where_parts = [search_sql]
-        where_params: list[Any] = [pattern for pattern in patterns for _ in range(3)]
+        where_parts: list[str] = []
+        where_params: list[Any] = []
+        if patterns:
+            where_parts.append("(" + " OR ".join([field_match] * len(patterns)) + ")")
+            where_params.extend(pattern for pattern in patterns for _ in range(3))
+        if plan.window is not None:
+            # published_date 是 YYYY-MM-DD 前缀的 VARCHAR（arXiv 带 T 时刻），字典序即时间序。
+            where_parts.append("published_date >= %s AND published_date < %s")
+            where_params.extend([plan.window.since, plan.window.until])
         clean_source = str(source or "").strip().lower()
         if clean_source:
             where_parts.append("source = %s")
             where_params.append(clean_source)
         where_sql = " AND ".join(where_parts)
-        tier_clauses: list[str] = []
-        tier_params: list[Any] = []
-        for index, pattern in enumerate(patterns):
-            tier_clauses.append(f"WHEN COALESCE(title, '') ILIKE %s ESCAPE '=' THEN {index * 2}")
-            tier_params.append(pattern)
-            tier_clauses.append(f"WHEN (COALESCE(summary, '') ILIKE %s ESCAPE '=' OR COALESCE(tags, '') ILIKE %s ESCAPE '=') THEN {index * 2 + 1}")
-            tier_params.extend([pattern, pattern])
-        count_clauses = [f"CASE WHEN {field_match} THEN 1 ELSE 0 END" for _ in patterns]
-        count_params = [pattern for pattern in patterns for _ in range(3)]
+        order_parts: list[str] = []
+        order_params: list[Any] = []
+        if patterns:
+            tier_clauses: list[str] = []
+            for index, pattern in enumerate(patterns):
+                tier_clauses.append(f"WHEN COALESCE(title, '') ILIKE %s ESCAPE '=' THEN {index * 2}")
+                order_params.append(pattern)
+                tier_clauses.append(f"WHEN (COALESCE(summary, '') ILIKE %s ESCAPE '=' OR COALESCE(tags, '') ILIKE %s ESCAPE '=') THEN {index * 2 + 1}")
+                order_params.extend([pattern, pattern])
+            order_parts.append(f"CASE {' '.join(tier_clauses)} ELSE {len(patterns) * 2} END ASC")
+            order_parts.append("(" + " + ".join(f"CASE WHEN {field_match} THEN 1 ELSE 0 END" for _ in patterns) + ") DESC")
+            order_params.extend(pattern for pattern in patterns for _ in range(3))
+        if plan.window is not None:
+            # 只比日期：arXiv 的 T 时刻后缀不应压过同日其他源，同日内交给热度。
+            order_parts.append("LEFT(published_date, 10) DESC")
+        order_parts.extend([
+            "COALESCE(raw_score, score, 0) DESC",
+            'created_at DESC, id COLLATE "C" ASC',
+        ])
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(f"SELECT COUNT(*) AS cnt FROM documents WHERE {where_sql}", tuple(where_params))
@@ -511,12 +566,9 @@ class PostgresDocumentRepository:
                                published_date, tags, score, raw_score, rank_in_period,
                                local_pdf_path, authors, arxiv_id, created_at
                         FROM documents WHERE {where_sql}
-                        ORDER BY CASE {' '.join(tier_clauses)} ELSE {len(patterns) * 2} END ASC,
-                                 ({' + '.join(count_clauses)}) DESC,
-                                 COALESCE(raw_score, score, 0) DESC,
-                                 created_at DESC, id COLLATE \"C\" ASC
+                        ORDER BY {', '.join(order_parts)}
                         LIMIT %s OFFSET %s""",
-                    tuple(where_params + tier_params + count_params + [page_size, (page - 1) * page_size]),
+                    tuple(where_params + order_params + [page_size, (page - 1) * page_size]),
                 )
                 items = [dict(row) for row in cursor.fetchall()]
         return {"items": items, "total": total, "page": page, "page_size": page_size}

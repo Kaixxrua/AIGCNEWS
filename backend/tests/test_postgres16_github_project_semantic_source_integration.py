@@ -121,3 +121,52 @@ def test_postgres16_sync_upsert_retry_transitions_and_status(
         "chunk_count": 8,
         "last_indexed_at": "2026-07-28T12:00:00Z",
     }
+
+
+def test_postgres16_ledger_reconcile_requeues_only_succeeded_rows(
+    semantic_repository: tuple[Any, PostgresDatabaseLifecycle],
+) -> None:
+    repository, database = semantic_repository
+    repository.upsert_github_project_semantic_source(
+        {
+            "repo_id": "acme/alpha",
+            "readme_text": "alpha readme",
+            "readme_sha256": "readme-alpha",
+            "readme_status": "succeeded",
+            "source_fingerprint": "source-alpha",
+            "indexed_fingerprint": "source-alpha",
+            "index_version": "v1",
+            "index_status": "succeeded",
+            "chunk_count": 8,
+            "indexed_at": "2026-07-28T12:00:00Z",
+        }
+    )
+    repository.upsert_github_project_semantic_source(
+        {"repo_id": "acme/beta", "index_status": "failed", "index_retry_count": 1}
+    )
+
+    assert repository.list_indexed_github_project_ids() == ["acme/alpha"]
+    requeued = repository.requeue_github_project_semantic_index(
+        ["acme/alpha", "acme/beta", ""], reason="vectors missing", updated_at="2026-09-30T00:00:00Z"
+    )
+    assert requeued == 1
+
+    with database.transaction() as connection:
+        alpha = connection.execute(
+            "SELECT * FROM github_project_semantic_sources WHERE repo_id='acme/alpha'"
+        ).fetchone()
+        beta = connection.execute(
+            "SELECT * FROM github_project_semantic_sources WHERE repo_id='acme/beta'"
+        ).fetchone()
+    # indexed_fingerprint 是 CHAR(64)：空串按 bpchar 补齐为空格，比较语义等同空串。
+    assert (alpha["index_status"], alpha["indexed_fingerprint"].strip(), alpha["chunk_count"]) == ("pending", "", 0)
+    assert alpha["index_error"] == "vectors missing"
+    assert (alpha["readme_text"], alpha["readme_sha256"].strip(), alpha["source_fingerprint"].strip()) == (
+        "alpha readme",
+        "readme-alpha",
+        "source-alpha",
+    )
+    assert beta["index_status"] == "failed"
+    assert repository.list_indexed_github_project_ids() == []
+    selected = repository.list_github_projects_for_semantic_sync(min_stars=500)
+    assert "acme/alpha" in [row["repo_id"] for row in selected]

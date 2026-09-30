@@ -52,6 +52,13 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 项目搜索使用一致的关键词、排序和分页语义；结果通过 `result_origin` 标记来源（本地目录或
 `github_api_fallback`）。
 
+`search_documents` / `search_papers` 的 `q` 可以直接是自然语言提问（如「简洁总结昨晚 OpenAI 发布了什么」）。
+服务端会识别其中的时间表达（今天/昨晚/前天/最近/最近 N 天/过去 N 小时/本周/上周/本月/上个月，以及
+today/last night/latest/past N days 等），转换成调度时区（Asia/Shanghai）自然日的 `published_date` 窗口，
+窗口下沿多放一天，用来吸收各来源的日界时区差；同时剥掉「总结/发布了什么/有哪些/summarize/what」这类
+问句外壳，只用剩下的实体词检索。带时间窗口的结果在相关度层级之内按日期倒序；只有时间、没有实体词的提问
+（「今天有什么新闻」）只按日期过滤。聚焦关键词查询（如 `OpenAI`、`RAG 教程`）的行为不变。
+
 ## MCP-first 项目发现与复用策略
 
 MCP host 路由遵循明确的 **MCP-first 项目发现与复用策略**：只要用户要求寻找、搜索、推荐、比较或复用

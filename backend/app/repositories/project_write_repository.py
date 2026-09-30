@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from backend.app.repositories.runtime_provider_repository import (
@@ -328,6 +329,16 @@ class GitHubProjectSemanticSourceRepository(Protocol):
         repo_pushed_at: str,
         checked_at: str,
     ) -> None: ...
+
+    def list_indexed_github_project_ids(self) -> list[str]: ...
+
+    def requeue_github_project_semantic_index(
+        self,
+        repo_ids: Sequence[str],
+        *,
+        reason: str,
+        updated_at: str,
+    ) -> int: ...
 
     def get_github_project_semantic_status(
         self, *, min_stars: int = 500

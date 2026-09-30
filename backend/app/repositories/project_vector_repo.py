@@ -173,6 +173,26 @@ class ProjectVectorRepository:
         )
         return len(rows)
 
+    def list_repo_ids(self, *, batch_size: int = 5000) -> set[str]:
+        """集合里实际有向量的项目全集，供与 PG 台账对账（主键是 sha256，迭代表达式安全）。"""
+        collection = self._load_collection()
+        iterator = collection.query_iterator(
+            batch_size=batch_size,
+            expr='repo_id != ""',
+            output_fields=["repo_id"],
+        )
+        repo_ids: set[str] = set()
+        try:
+            while True:
+                rows = iterator.next()
+                if not rows:
+                    break
+                repo_ids.update(str(row.get("repo_id") or "") for row in rows)
+        finally:
+            iterator.close()
+        repo_ids.discard("")
+        return repo_ids
+
     def delete_project(self, repo_id: str) -> None:
         self.delete_projects([repo_id])
 

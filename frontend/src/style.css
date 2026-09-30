@@ -63,8 +63,8 @@
   --on-acid: #4b6100;
 
   /* 滚动条 */
-  --scrollbar: rgba(168, 162, 158, 0.25);
-  --scrollbar-hover: rgba(168, 162, 158, 0.40);
+  --scrollbar: rgba(21, 21, 18, 0.26);
+  --scrollbar-hover: rgba(21, 21, 18, 0.46);
 
   /* 危险/错误 */
   --danger: #b91c1c;
@@ -309,8 +309,8 @@
   --acid-bright: #d7ff00;
   --on-acid: #0b0d0b;
 
-  --scrollbar: rgba(153, 161, 151, 0.22);
-  --scrollbar-hover: rgba(153, 161, 151, 0.38);
+  --scrollbar: rgba(243, 245, 239, 0.24);
+  --scrollbar-hover: rgba(243, 245, 239, 0.42);
 
   /* 危险/错误 = modelflare destructive #d36a61 家族 */
   --danger: #d36a61;
@@ -518,20 +518,31 @@
     outline-offset: 2px;
   }
 
-  /* 滚动条美化（暖调） */
+  /* 滚动条：全站只此一套——透明轨道上一根墨色细条，悬停加粗加深。Chromium/Safari 走 ::-webkit-scrollbar，
+     只认标准属性的浏览器（Firefox）走下面的 @supports。元素上不要再写 scrollbar-width: thin / scrollbar-color：
+     Chromium 见到它们就改画系统滚动条，全站又会不一致；要藏滚动条仍用 scrollbar-width: none。 */
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 8px;
+    height: 8px;
   }
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full;
-    background: var(--scrollbar);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--scrollbar) padding-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-hover);
+    border-width: 1px;
+    background-color: var(--scrollbar-hover);
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar) transparent;
+    }
   }
 }
 

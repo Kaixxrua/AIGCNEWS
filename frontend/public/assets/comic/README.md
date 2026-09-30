@@ -36,7 +36,6 @@ The rest of the UI library page comes from the same generator as the pages below
 - `ul-kind.webp`: the chosen material, a navy block whose line goes black along the foot and right, with a pale glint round the inside of its top left corner.
 - `ul-side.webp`: the purpose index, a pale line along the top darkening down both sides to a black foot, a faint second stroke off the upper left, teal specks in the lower left and a soft grey step under it.
 - `ul-rank-on.webp`: the chosen ranking, a lime pill in heavy ink with a glint and, beside it, the spark (a black tick, a green stroke, a faint dash).
-- `ul-rank-a.webp`, `ul-rank-b.webp`, `ul-rank-open.webp`: the brackets round the next rankings, no box, only a pale foot with a curl at the top left and a hook down the right (the second inked darker toward the right), and the open brackets with a spark round the likes.
 - `ul-badge.webp`: the framework tag on a card's preview, a white slip whose left side leans, with a black wedge under its lower right.
 
 The controls and the index carry the frame as their own `border-image` (the index scrolls, and the frame stays put); the navy block, the lime pill and the slip bring their fill. Together they are about 130 KB.
