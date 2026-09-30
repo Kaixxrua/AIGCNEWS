@@ -3,6 +3,7 @@
    Desktop only; phones keep their reading layout. Reading comes first: body copy stays upright, regular weight
    and at least 14px on a calm background; italics, weight and tilt are for titles and tags, halftone stays in
    corners away from text, and every scroll area can scroll its last lines clear of the footer peel. */
+.comic-footer-rule { display: none; }
 @media (min-width: 1024px) {
   #app .app-shell--comic-page {
     /* The comic palette as the shell resolves it, for pages that re-point --paper/--ink at their own tokens. */
@@ -49,21 +50,21 @@
     :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-copyright { text-align: right; }
   }
 
-  /* The scroll areas end on the footer's top edge. Rather than cut a line in half there, their last pixels fade into
-     the paper behind them (the shell's: the areas are transparent), eased so the fade has no edge of its own. It fits
-     inside the bottom margin every area keeps for its last lines (20px or more, clear of the peel where one stands),
-     so the end of a page still reads whole. The 5px scrollbar on the right stays whole, and a page can spare a column
-     on the left that holds a panel standing on its own frame (--scroll-fade-spare). */
-  #app .app-shell--comic-page :where(.report-shell > .report-reading, .recommended-websites-page, .xboard-page > div,
-    .ui-library, .connection-scroll, .paper-document-panel, .legal-page, .membership-page, .subs-scroll,
-    .monitor-section-panels, .projects-page--catalog, .projects-page--websites) {
-    --scroll-fade: min(56px, calc(var(--peel-clear) + 20px));
-    mask:
-      linear-gradient(#000 calc(100% - var(--scroll-fade)), rgb(0 0 0 / .84) calc(100% - var(--scroll-fade) * .75),
-        rgb(0 0 0 / .5) calc(100% - var(--scroll-fade) / 2), rgb(0 0 0 / .16) calc(100% - var(--scroll-fade) / 4), transparent),
-      linear-gradient(#000 0 0) right / 5px 100% no-repeat,
-      linear-gradient(#000 0 0) left / var(--scroll-fade-spare, 0px) 100% no-repeat;
+  /* The pages' frame closes on the footer's top edge in the masthead rule's ink. The scroll areas end on that edge, so
+     a line cut there reads as running on past the panel's border rather than breaking off. Over the dock the rule lifts
+     into a bay of paper that keeps the dock's top clear, as the masthead's steps round its ribbon; on the right it runs
+     on beneath the peel's curl. */
+  #app .app-shell--comic-page .comic-footer-rule {
+    display: flex; position: absolute; left: 0; right: 0; bottom: 0; z-index: 99; height: 13px; pointer-events: none;
   }
+  #app .app-shell--comic-page .comic-footer-rule svg { display: block; height: 100%; overflow: visible; }
+  #app .app-shell--comic-page .comic-footer-rule__run { flex: 1 1 0; min-width: 0; margin-inline: -1px; }
+  #app .app-shell--comic-page .comic-footer-rule__step { flex: none; width: 26px; }
+  #app .app-shell--comic-page .comic-footer-rule__bay { flex: none; width: calc(var(--home-dock-width) + 8px); margin-inline: -1px; }
+  #app .app-shell--comic-page .comic-footer-rule path {
+    fill: none; stroke: var(--rule-strong); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke;
+  }
+  #app .app-shell--comic-page .comic-footer-rule .comic-footer-rule__paper { fill: var(--paper); stroke: none; }
 
   /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page
      and the auth dialogs, which are teleported out of #app). */
@@ -854,10 +855,6 @@
     border-image: var(--ul-f-side) 51 54 87 207 / 17px 18px 29px 69px / 2px 3px 7px 3px stretch;
     background: var(--ul-paper); box-shadow: none;
   }
-  /* The view's foot fade spares the panel's column (the view's 10px, the column, the frame's 3px step and some of the
-     gap) so its black foot stays drawn; a missing work's notice (fixed in the view) stands above the fade. */
-  #app .app-shell--comic-page .ui-library { --scroll-fade-spare: 224px; }
-  #app .app-shell--comic-page .ui-library__not-found { bottom: calc(100px + var(--scroll-fade)); }
   #app .app-shell--comic-page .ui-library__sidebar nav { gap: 0; }
   #app .app-shell--comic-page .ui-library__sidebar :is(button, .ui-library__group-title) {
     gap: 10px; margin: 0; padding: 10px 12px 10px 20px; border-radius: 0 8px 8px 0; color: var(--ul-text); font-size: 14.5px; font-style: normal; font-weight: 500; line-height: 1.35;
@@ -1649,8 +1646,6 @@
     --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #838e9d; --mem-off: #8f939b; --mem-check: #168c48; --mem-x: #b2b3b4;
     --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
     display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent;
-    /* the vip card hangs 11px into that margin, so the view's foot fade keeps below it */
-    --scroll-fade: min(56px, calc(var(--peel-clear) + 17px));
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
     --mem-card: url('/assets/comic/mem-card-night.webp'); --mem-card-b: url('/assets/comic/mem-card-b-night.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip-night.webp');
@@ -2856,12 +2851,9 @@
 
   /* Where the two panels sit side by side they fill the window's height, the jobs and the table scrolling inside;
      where a third of the row is too narrow for the scheduler (below 1400px; 1700px for the longer English copy) it
-     sits above the history at full width, its jobs in columns, and both take their natural height. Side by side the
-     panels keep a shorter margin under them, and the view's foot fade keeps within it. */
+     sits above the history at full width, its jobs in columns, and both take their natural height. */
   @media (min-width: 1400px) {
-    #app .app-shell--comic-page .monitor-section-panels:has(> .monitor-task-grid > .monitor-scheduler) {
-      padding-bottom: max(28px, calc(var(--peel-clear) - 81px)); --scroll-fade: min(56px, max(28px, calc(var(--peel-clear) - 81px)));
-    }
+    #app .app-shell--comic-page .monitor-section-panels:has(> .monitor-task-grid > .monitor-scheduler) { padding-bottom: max(28px, calc(var(--peel-clear) - 81px)); }
     #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) { flex: 1 1 0; grid-template-rows: minmax(0, 1fr); min-height: 520px; }
     #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) > .monitor-scheduler { margin-bottom: 8px; }
     #app .app-shell--comic-page .monitor-task-grid:has(> .monitor-scheduler) > .monitor-tasks { min-height: 0; margin-top: 1px; }
