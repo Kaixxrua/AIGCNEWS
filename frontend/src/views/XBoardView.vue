@@ -12,6 +12,13 @@ import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
+import { fold, unfold } from '@/motion/fold'
+import { vIndicator } from '@/motion/indicator'
+import { vMorph } from '@/motion/morph'
+import { canAnimate, popSpring } from '@/motion/motion'
+import { slideIn, slideOut } from '@/motion/presence'
+import { vReflow } from '@/motion/reflow'
+import RollText from '@/motion/RollText.vue'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 import type { TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
 
@@ -102,6 +109,46 @@ const onGoPage = (next: number) => {
   goPage(next)
   scrollEl.value?.scrollTo({ top: 0 })
 }
+
+// ── 切换动效 ──
+// 推文墙的排布：每列依次是哪几条。换了一批（换窗口、刷新、翻页、改关注）或列数变了（开合侧栏）时随之变化，
+// 推文墙据此逐条过渡：留下的滑到新位置，新来的由左上角起依次浮现，离开的原地淡出。
+const tweetKey = (tweet: TopDoc) => tweet.url || tweet.title
+const wallLayout = computed(() => masonryColumns.value.map((column) => column.map(tweetKey).join(' ')).join('|'))
+// 新推文从哪边浮现：翻页时从翻去的一侧进来，换窗口、刷新、改关注自下而上；分页摘要里的页码随之上下滚动。
+const RISE = { x: 0, y: 14 }
+const wallEnterFrom = ref(RISE)
+const pageDirection = ref<1 | -1>(1)
+watch([docs, unfollowedAccounts], () => { wallEnterFrom.value = RISE }, { flush: 'sync' })
+watch(currentPage, (page, previous) => {
+  const step = Math.sign(page - previous)
+  wallEnterFrom.value = { x: step * 18, y: 0 }
+  pageDirection.value = step < 0 ? -1 : 1
+}, { flush: 'sync' })
+// 换窗口、刷新后到首批推文到达前，墙上还是旧的一批：稍后淡下去示意正在换，首批一到即恢复。
+const wallStale = ref(false)
+watch(loading, (value) => { wallStale.value = value })
+watch(docs, () => { wallStale.value = false })
+
+// 关注侧栏开合：桌面端并排时从右侧滑入滑出，离场时先脱离版面，推文墙随即按新列数重排；
+// 窄屏叠在推文墙上方，高度展开收起。
+const PANEL_SLIDE = { x: 36 }
+const sideBySide = (el: Element) => el.parentElement !== null && getComputedStyle(el.parentElement).flexDirection === 'row'
+const panelEnter = (el: Element, done: () => void) => (sideBySide(el) ? slideIn(el, done, PANEL_SLIDE) : unfold(el, done))
+const panelLeave = (el: Element, done: () => void) => (sideBySide(el) ? slideOut(el, done, PANEL_SLIDE) : fold(el, done))
+
+// 勾选关注勾选框时盖章式弹一下；已关注数随之滚动换值，多了新数字自下而上，少了自上而下。
+const stampCheck = (event: Event) => {
+  const box = event.target as HTMLElement
+  if (canAnimate(box)) box.animate([{ scale: '0.7' }, { scale: '1' }], { duration: 420, easing: popSpring() })
+}
+const followDirection = ref<1 | -1>(1)
+watch(() => followedAccounts.value.length, (count, previous) => { followDirection.value = count < previous ? -1 : 1 }, { flush: 'sync' })
+// 分页摘要里只让页码滚动：按页码位置把译文切成前后两段。
+const pageSummaryParts = computed(() => {
+  const parts = t('xboard.pageSummary', { page: '\u0000', totalPages: totalPages.value, total: timelineDocs.value.length }).split('\u0000')
+  return parts.length === 2 ? parts : null
+})
 
 // 发布时间：落库是 UTC ISO，展示换算成用户系统时区（不传 timeZone → 本地）。
 const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
@@ -255,31 +302,33 @@ onBeforeUnmount(() => {
           >
             <Users class="h-3.5 w-3.5" />
             {{ t('xboard.followAccounts') }}
-            <span class="xboard-follow-count">{{ followedAccounts.length }}/{{ availableAccounts.length }}</span>
+            <span class="xboard-follow-count"><RollText :value="followedAccounts.length" :direction="followDirection" />/{{ availableAccounts.length }}</span>
           </button>
-          <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮 -->
-          <button
-            class="btn-secondary xboard-recent text-xs"
-            :class="{ 'xboard-mode-active': isToday }"
-            :aria-pressed="isToday"
-            @click="showRecent"
-          >
-            {{ t('xboard.recent24h') }}
-          </button>
-          <label class="xboard-date flex items-center gap-2 text-xs text-stone-400">
-            <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
-            <input
-              type="date"
-              class="input py-1.5 text-xs"
-              :class="{ 'xboard-mode-active': !isToday }"
-              :value="selectedDate"
-              :max="today"
-              @change="onDateChange(($event.target as HTMLInputElement).value)"
-            />
-          </label>
+          <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。 -->
+          <div v-indicator="{ active: '.xboard-window-active', pop: true }" class="xboard-window-switch">
+            <button
+              class="btn-secondary xboard-recent text-xs"
+              :class="{ 'xboard-mode-active xboard-window-active': isToday }"
+              :aria-pressed="isToday"
+              @click="showRecent"
+            >
+              {{ t('xboard.recent24h') }}
+            </button>
+            <label v-morph="isToday" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': !isToday }">
+              <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
+              <input
+                type="date"
+                class="input py-1.5 text-xs"
+                :class="{ 'xboard-mode-active': !isToday }"
+                :value="selectedDate"
+                :max="today"
+                @change="onDateChange(($event.target as HTMLInputElement).value)"
+              />
+            </label>
+          </div>
           <button class="btn-secondary xboard-refresh" :disabled="loading" @click="refresh">
             <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            {{ t(loading ? 'common.refreshing' : 'common.refresh') }}
+            <RollText :value="t(loading ? 'common.refreshing' : 'common.refresh')" :direction="loading ? 1 : -1" />
           </button>
         </div>
       </div>
@@ -288,49 +337,51 @@ onBeforeUnmount(() => {
 
         <!-- 账号关注筛选侧栏：默认全部关注；按账号即时过滤当前窗口推文。
              DOM 上紧跟页头开关（键盘可直达），桌面端经 CSS order 排到推文墙右侧。 -->
-        <aside
-          v-if="availableAccounts.length && followPanelOpen"
-          id="xboard-follow-panel"
-          class="xboard-follow-panel px-4 py-3"
-          :aria-label="t('xboard.followAccounts')"
-        >
-          <div class="flex items-start justify-between gap-3">
-            <div class="xboard-follow-heading">
-              <h2 class="text-sm font-bold text-stone-600">{{ t('xboard.followAccounts') }}</h2>
-              <p class="mt-0.5 text-2xs text-stone-400">
-                {{ t('xboard.followSummary', { selected: followedAccounts.length, total: availableAccounts.length }) }}
-              </p>
+        <Transition @enter="panelEnter" @leave="panelLeave">
+          <aside
+            v-if="availableAccounts.length && followPanelOpen"
+            id="xboard-follow-panel"
+            class="xboard-follow-panel px-4 py-3"
+            :aria-label="t('xboard.followAccounts')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="xboard-follow-heading">
+                <h2 class="text-sm font-bold text-stone-600">{{ t('xboard.followAccounts') }}</h2>
+                <p class="mt-0.5 text-2xs text-stone-400">
+                  {{ t('xboard.followSummary', { selected: followedAccounts.length, total: availableAccounts.length }) }}
+                </p>
+              </div>
+              <button type="button" class="tweet-icon-btn xboard-follow-close" :aria-label="t('xboard.hideFollowPanel')" @click="followPanelOpen = false">
+                <PanelRightClose class="h-3.5 w-3.5" />
+              </button>
             </div>
-            <button type="button" class="tweet-icon-btn xboard-follow-close" :aria-label="t('xboard.hideFollowPanel')" @click="followPanelOpen = false">
-              <PanelRightClose class="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div class="mt-3 flex items-center gap-2">
-            <button class="btn-secondary text-xs" :disabled="followedAccounts.length === availableAccounts.length" @click="followAllAccounts">
-              {{ t('xboard.followAll') }}
-            </button>
-            <button class="btn-secondary text-xs" :disabled="followedAccounts.length === 0" @click="unfollowAllAccounts">
-              {{ t('xboard.clearFollowed') }}
-            </button>
-          </div>
-          <div class="xboard-follow-list mt-3 flex flex-wrap gap-2">
-            <label
-              v-for="account in availableAccountOptions"
-              :key="account.handle"
-              class="xboard-account-chip flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs"
-              :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
-              :title="`@${account.handle}`"
-            >
-              <input
-                type="checkbox"
-                class="h-3.5 w-3.5"
-                :checked="!unfollowedAccounts.has(account.handle)"
-                @change="toggleFollowAccount(account.handle)"
-              />
-              <span>{{ account.displayName }}</span>
-            </label>
-          </div>
-        </aside>
+            <div class="mt-3 flex items-center gap-2">
+              <button class="btn-secondary text-xs" :disabled="followedAccounts.length === availableAccounts.length" @click="followAllAccounts">
+                {{ t('xboard.followAll') }}
+              </button>
+              <button class="btn-secondary text-xs" :disabled="followedAccounts.length === 0" @click="unfollowAllAccounts">
+                {{ t('xboard.clearFollowed') }}
+              </button>
+            </div>
+            <div class="xboard-follow-list mt-3 flex flex-wrap gap-2">
+              <label
+                v-for="account in availableAccountOptions"
+                :key="account.handle"
+                class="xboard-account-chip flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs"
+                :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
+                :title="`@${account.handle}`"
+              >
+                <input
+                  type="checkbox"
+                  class="h-3.5 w-3.5"
+                  :checked="!unfollowedAccounts.has(account.handle)"
+                  @change="toggleFollowAccount(account.handle); stampCheck($event)"
+                />
+                <span>{{ account.displayName }}</span>
+              </label>
+            </div>
+          </aside>
+        </Transition>
 
         <div ref="mainEl" class="xboard-main">
           <!-- 管理员多选工具栏 -->
@@ -367,7 +418,7 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 错误提示 -->
-          <div v-if="errorMsg" class="shrink-0 glass-card flex items-center justify-between px-5 py-3 text-sm text-rose-600">
+          <div v-if="errorMsg" class="xboard-notice shrink-0 glass-card flex items-center justify-between px-5 py-3 text-sm text-rose-600">
             <span>{{ errorMsg }}</span>
             <button class="ml-3 text-rose-400 transition hover:text-rose-600" @click="errorMsg = ''">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -376,7 +427,7 @@ onBeforeUnmount(() => {
 
           <!-- 加载 / 空态 -->
           <SpinnerLoader v-if="loading && !docs.length" class="min-h-[240px]" :label="t('xboard.loading')" />
-          <div v-else-if="!timelineDocs.length" class="glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
+          <div v-else-if="!timelineDocs.length" class="xboard-notice glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
             <template v-if="docs.length && followedAccounts.length === 0">
               <p class="font-medium text-stone-500">{{ t('xboard.emptyFollowed') }}</p>
               <p class="mt-1 text-xs">{{ t('xboard.emptyFollowedHint') }}</p>
@@ -388,7 +439,12 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序） -->
-          <div v-else class="masonry-grid">
+          <div
+            v-else
+            v-reflow="{ key: wallLayout, ...wallEnterFrom }"
+            class="masonry-grid"
+            :class="{ 'masonry-grid--stale': wallStale }"
+          >
             <div
               v-for="(column, columnIndex) in masonryColumns"
               :key="columnIndex"
@@ -396,7 +452,8 @@ onBeforeUnmount(() => {
             >
               <article
                 v-for="tweet in column"
-                :key="tweet.url || tweet.title"
+                :key="tweetKey(tweet)"
+                :data-reflow-key="tweetKey(tweet)"
                 class="tweet-card"
               >
                 <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
@@ -532,7 +589,8 @@ onBeforeUnmount(() => {
               {{ t('common.previous') }}
             </button>
             <span class="text-xs text-stone-500">
-              {{ t('xboard.pageSummary', { page: currentPage, totalPages, total: timelineDocs.length }) }}
+              <template v-if="pageSummaryParts">{{ pageSummaryParts[0] }}<RollText :value="currentPage" :direction="pageDirection" />{{ pageSummaryParts[1] }}</template>
+              <template v-else>{{ t('xboard.pageSummary', { page: currentPage, totalPages, total: timelineDocs.length }) }}</template>
             </span>
             <button class="btn-secondary text-xs" :disabled="!hasNext" @click="onGoPage(currentPage + 1)">
               {{ t('common.next') }}
@@ -692,12 +750,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* 估高贪心瀑布流：JS 按卡片估高把每条放进当前最矮列（见 distributeColumns），
-   列高各自独立、卡片按内容高度堆叠；v-bind 列数跟随视口断点（768/1024/1280）。 */
+   列高各自独立、卡片按内容高度堆叠；v-bind 列数跟随视口断点（768/1024/1280）。
+   墙是定位元素、自成层叠上下文：v-reflow 重排时离开的推文垫在底层淡出。 */
 .masonry-grid {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: repeat(v-bind(columnCount), minmax(0, 1fr));
   gap: var(--masonry-gap, 1rem);
   align-items: start;
+  transition: opacity 200ms ease;
+}
+
+/* 换窗口、刷新后首批新推文到达前，旧的一批稍后淡下去示意正在换（请求很快时不闪）；首批一到立即恢复。 */
+.masonry-grid--stale {
+  opacity: 0.45;
+  transition: opacity 240ms ease 150ms;
 }
 
 .masonry-col {
@@ -718,7 +786,26 @@ onBeforeUnmount(() => {
 }
 
 .xboard-body {
+  position: relative; /* 侧栏滑出时钉在原处脱离版面 */
   flex-shrink: 0;
+}
+
+/* 最近 24 小时 / 窗口日期一组：选中标记只在漫画版画出来滑动，这里各项自带选中样式，换选时盖章式落定。 */
+.xboard-window-switch {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.xboard-window-switch::before {
+  content: none;
+}
+
+/* 空态与错误提示出现时浮上来。 */
+.xboard-notice {
+  animation: motion-rise 360ms var(--motion-ease-out) both;
 }
 
 @media (min-width: 1024px) {

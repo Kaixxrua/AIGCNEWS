@@ -416,3 +416,36 @@ describe('XBoardView 浮层期间 dock 抑制', () => {
     expect(dockSuppressed.value).toBe(false)
   })
 })
+
+describe('XBoardView 切换动效接线', () => {
+  it('推文卡按链接带 data-reflow-key；换窗口加载期间墙变淡，首批推文一到即恢复', async () => {
+    controller().docs.value = makeTweets(3)
+    const wrapper = await mountView()
+    expect(wrapper.findAll('article.tweet-card').map((card) => card.attributes('data-reflow-key'))).toEqual([
+      'https://x.com/alice/status/1000', 'https://x.com/alice/status/1001', 'https://x.com/alice/status/1002',
+    ])
+
+    controller().loading.value = true
+    await nextTick()
+    expect(wrapper.get('.masonry-grid').classes()).toContain('masonry-grid--stale')
+    controller().docs.value = makeTweets(2)
+    await nextTick()
+    expect(wrapper.get('.masonry-grid').classes()).not.toContain('masonry-grid--stale')
+  })
+
+  it('窗口开关：选中的一段带 xboard-window-active，切到历史日期时移到日期段', async () => {
+    controller().docs.value = makeTweets(1)
+    const wrapper = await mountView()
+    const recent = wrapper.get('.xboard-window-switch .xboard-recent')
+    const date = wrapper.get('.xboard-window-switch .xboard-date')
+    expect(recent.classes()).toContain('xboard-window-active')
+    expect(recent.attributes('aria-pressed')).toBe('true')
+    expect(date.classes()).not.toContain('xboard-window-active')
+
+    controller().selectedDate.value = '2026-08-01'
+    await nextTick()
+    expect(recent.classes()).not.toContain('xboard-window-active')
+    expect(recent.attributes('aria-pressed')).toBe('false')
+    expect(date.classes()).toContain('xboard-window-active')
+  })
+})

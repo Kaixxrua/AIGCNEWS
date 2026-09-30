@@ -576,17 +576,38 @@
     font-size: 15px; font-weight: 600; line-height: 1; white-space: nowrap;
     border-image: var(--x-seg) 27 27 30 21 / 9px 9px 10px 7px / 2px 4px 5px 2px stretch;
   }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch { gap: 0; }
   #app .app-shell--comic-page .xboard-header-actions button.xboard-recent { min-width: 131px; }
-  #app .app-shell--comic-page .xboard-header-actions .xboard-date { min-width: 134px; margin-left: -22px; cursor: pointer; }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-date { min-width: 134px; margin-left: -2px; cursor: pointer; }
   #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active)),
   #app .app-shell--comic-page .xboard-header-actions button.xboard-recent.xboard-mode-active:hover:not(:disabled) {
     background: var(--x-lime); color: var(--x-ink); font-weight: 800;
+  }
+  /* With the switch's script running, the two segments share the bar's face and the lime is drawn once, on the bar,
+     sliding over to the chosen segment; the idle one still tints on hover. The chosen name darkens as the lime
+     arrives under it, the one it leaves lets go at once; a picked date fades in over the lime, the name back. */
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator] { border-radius: 2px; background: var(--x-face); }
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator-mark]::before { content: ''; z-index: -1; border-radius: 2px; background: var(--x-lime); }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, .xboard-date),
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] button.xboard-recent.xboard-mode-active:hover:not(:disabled) {
+    background: transparent; transition: color 90ms ease, background-color 150ms ease;
+  }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active)) {
+    transition: color 160ms ease 70ms, background-color 150ms ease;
+  }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent:not(.xboard-mode-active), .xboard-date:not(:has(> .xboard-mode-active))):hover {
+    background: var(--x-face-hover);
+  }
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator] :is(.xboard-date input.input.xboard-mode-active, .xboard-date:not(:has(> .xboard-mode-active)) .xboard-date-text) {
+    animation: motion-fade 260ms var(--motion-ease-out) 80ms both;
   }
   #app .app-shell--comic-page .xboard-header-actions button.xboard-recent:not(.xboard-mode-active):hover,
   #app .app-shell--comic-page .xboard-header-actions .xboard-date:not(:has(> .xboard-mode-active)):hover { background: var(--x-face-hover); color: var(--x-ink); }
   #app .app-shell--comic-page .xboard-date input.input {
     position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0;
     background: transparent; box-shadow: none; opacity: 0; cursor: pointer;
+    /* no easing of its font: the field takes its full size at once, so the segment's width glides in one go */
+    transition: none;
   }
   #app .app-shell--comic-page .xboard-date input.input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: auto; height: auto; margin: 0; cursor: pointer; }
   #app .app-shell--comic-page .xboard-date:has(> .xboard-mode-active) .xboard-date-text {
@@ -722,6 +743,7 @@
   #app .app-shell--comic-page .xboard-account-chip:hover { background: var(--x-face-hover); color: var(--x-ink); }
   #app .app-shell--comic-page .xboard-account-chip input {
     flex: 0 0 14px; width: 14px; height: 14px; margin: 0; border: 1.2px solid #9aa3ad; border-radius: 2px; appearance: none; background: var(--x-face); cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
   }
   #app .app-shell--comic-page .xboard-account-chip input:checked { border-color: var(--x-check); background: var(--x-check) var(--x-tick) center / 12px 12px no-repeat; }
   #app .app-shell--comic-page .xboard-account-chip input:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 2px; }
