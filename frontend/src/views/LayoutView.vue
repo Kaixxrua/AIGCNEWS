@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, provide, ref, watch } from 'vue'
 import { useMediaQuery, useWindowSize } from '@vueuse/core'
 import { RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
@@ -27,6 +27,7 @@ import {
   isNavigationItemSitePageEnabled,
 } from '@/features/navigation/navigationModel'
 import { folioSection } from '@/features/navigation/folioSection'
+import { FOLIO_TOOLS_AVAILABLE, FOLIO_TOOLS_TARGET_ID } from '@/features/navigation/folioTools'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
@@ -52,6 +53,8 @@ const comicPage = computed(() => comicProjects.value || comicRoute.value)
 // 联系页是占满一屏的场景页，场景与报头的咬合在私有覆盖层里调好，保持原样。
 const folioPage = computed(() => comicPage.value && route.name !== 'contact')
 const section = computed(() => folioPage.value ? folioSection(route.path, route.query, String(route.name ?? '')) : null)
+// 报眉中间那一栏空着，各页的本版工具（FolioTools）放得下就传送进去；挂载点常驻，只在有报眉时显示。
+provide(FOLIO_TOOLS_AVAILABLE, computed(() => folioPage.value && isDesktop.value))
 // 首页的墨线在左上角贴纸处抬高、绕过飘带再落回报头底；报眉没有贴纸，墨线贴着底边走完。
 const mastheadRule = computed(() => folioPage.value
   ? 'M0 47.5 L700 46.5 L1721 48'
@@ -143,6 +146,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
           <p v-if="section && isDesktop" class="masthead-folio">{{ $t(`masthead.sections.${section.key}`) }}<small v-if="section.edition">{{ $t('masthead.edition', { letter: section.edition }) }}</small></p>
+          <div :id="FOLIO_TOOLS_TARGET_ID" class="masthead-page-tools"></div>
           <span v-if="!isMobile && !folioPage" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
@@ -221,6 +225,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 .main-canvas--editorial :deep(.masthead-meta) { left: 42px; font-size: 13px; line-height: 1.45; }
 .main-canvas--editorial > .app-content { padding-top: 70px; padding-bottom: 0; left: 18px; right: 16px; }
 .masthead-tagline { font-size: 14px; color: var(--ink-muted); border-left: 1px solid var(--rule); padding-left: 24px; margin-left: 12px; }
+.masthead-page-tools { display: none; }
 @media (min-width: 1100px) {
   .app-masthead__actions { flex-shrink: 0; }
   .topbar-divider { display: none; }

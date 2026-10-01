@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, ExternalLink, Maximize2, PanelRightClose, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
+import FolioTools from '@/components/layout/FolioTools.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
@@ -289,48 +290,57 @@ onBeforeUnmount(() => {
           <h1 class="comic-title text-2xl tracking-tight">{{ t('xboard.title') }}</h1>
           <p class="mt-0.5 text-sm text-stone-400">{{ t('xboard.subtitle') }}</p>
         </div>
-        <div class="xboard-header-actions flex flex-wrap items-center gap-2">
-          <!-- 关注账号侧栏开关：收起时仍显示已关注数，筛选状态一眼可见 -->
-          <button
-            v-if="availableAccounts.length"
-            type="button"
-            class="btn-secondary xboard-follow-toggle"
-            :class="{ 'xboard-mode-active': followPanelOpen }"
-            :aria-expanded="followPanelOpen"
-            aria-controls="xboard-follow-panel"
-            @click="followPanelOpen = !followPanelOpen"
-          >
-            <Users class="h-3.5 w-3.5" />
-            {{ t('xboard.followAccounts') }}
-            <span class="xboard-follow-count"><RollText :value="followedAccounts.length" :direction="followDirection" />/{{ availableAccounts.length }}</span>
-          </button>
-          <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。 -->
-          <div v-indicator="{ active: '.xboard-window-active', pop: true }" class="xboard-window-switch">
+        <!-- 本版工具：桌面报眉放得下就搬进报眉（compact 档按钮只留图标），放不下或在手机上留在页头 -->
+        <FolioTools v-slot="{ level }">
+          <div class="xboard-header-actions flex flex-wrap items-center gap-2">
+            <!-- 关注账号侧栏开关：收起时仍显示已关注数，筛选状态一眼可见 -->
             <button
-              class="btn-secondary xboard-recent text-xs"
-              :class="{ 'xboard-mode-active xboard-window-active': isToday }"
-              :aria-pressed="isToday"
-              @click="showRecent"
+              v-if="availableAccounts.length"
+              type="button"
+              class="btn-secondary xboard-follow-toggle"
+              :class="{ 'xboard-mode-active': followPanelOpen }"
+              :title="level === 'compact' ? t('xboard.followAccounts') : undefined"
+              :aria-expanded="followPanelOpen"
+              aria-controls="xboard-follow-panel"
+              @click="followPanelOpen = !followPanelOpen"
             >
-              {{ t('xboard.recent24h') }}
+              <Users class="h-3.5 w-3.5" />
+              <span class="xboard-tool-label">{{ t('xboard.followAccounts') }}</span>
+              <span class="xboard-follow-count"><RollText :value="followedAccounts.length" :direction="followDirection" />/{{ availableAccounts.length }}</span>
             </button>
-            <label v-morph="isToday" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': !isToday }">
-              <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
-              <input
-                type="date"
-                class="input py-1.5 text-xs"
-                :class="{ 'xboard-mode-active': !isToday }"
-                :value="selectedDate"
-                :max="today"
-                @change="onDateChange(($event.target as HTMLInputElement).value)"
-              />
-            </label>
+            <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。 -->
+            <div v-indicator="{ active: '.xboard-window-active', pop: true }" class="xboard-window-switch">
+              <button
+                class="btn-secondary xboard-recent text-xs"
+                :class="{ 'xboard-mode-active xboard-window-active': isToday }"
+                :aria-pressed="isToday"
+                @click="showRecent"
+              >
+                {{ t('xboard.recent24h') }}
+              </button>
+              <label v-morph="isToday" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': !isToday }">
+                <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
+                <input
+                  type="date"
+                  class="input py-1.5 text-xs"
+                  :class="{ 'xboard-mode-active': !isToday }"
+                  :value="selectedDate"
+                  :max="today"
+                  @change="onDateChange(($event.target as HTMLInputElement).value)"
+                />
+              </label>
+            </div>
+            <button
+              class="btn-secondary xboard-refresh"
+              :disabled="loading"
+              :title="level === 'compact' ? t(loading ? 'common.refreshing' : 'common.refresh') : undefined"
+              @click="refresh"
+            >
+              <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              <span class="xboard-tool-label"><RollText :value="t(loading ? 'common.refreshing' : 'common.refresh')" :direction="loading ? 1 : -1" /></span>
+            </button>
           </div>
-          <button class="btn-secondary xboard-refresh" :disabled="loading" @click="refresh">
-            <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-            <RollText :value="t(loading ? 'common.refreshing' : 'common.refresh')" :direction="loading ? 1 : -1" />
-          </button>
-        </div>
+        </FolioTools>
       </div>
 
       <div class="xboard-body">
@@ -841,7 +851,9 @@ onBeforeUnmount(() => {
 }
 
 /* ═══ 页面语言对齐 dashboard/projects：Inter + 墨色描边 + 常驻硬阴影 ═══ */
-.xboard-page {
+/* 页头工具搬进报眉后不在页面里，字体单独带上。 */
+.xboard-page,
+.xboard-header-actions {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 

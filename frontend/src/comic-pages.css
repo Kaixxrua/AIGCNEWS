@@ -587,8 +587,9 @@
      stays a side panel, closed at first, its switch beside the window switch. Every drawn piece is a generated
      9-slice image (public/assets/comic/x-*.webp, -night for the dark theme): the cards and the panels hang theirs on
      ::after round an element that paints nothing, the buttons, the score and the chips take it as their own
-     border-image pushed out over their shadow, and paint their face themselves. ── */
-  #app .app-shell--comic-page .xboard-page {
+     border-image pushed out over their shadow, and paint their face themselves. The header's tools carry the palette
+     with them, as they go up into the folio. ── */
+  #app .app-shell--comic-page :is(.xboard-page, .xboard-header-actions) {
     --x-ink: #070d1c;
     --x-navy: #101c33;
     --x-copy: #18233a;
@@ -614,7 +615,7 @@
     --x-badge: url('/assets/comic/x-badge.webp');
     --x-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23050b16' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.2 7.4 2.6 2.7 5-6.2'/%3E%3C/svg%3E");
   }
-  :root[data-theme='dark'] #app .app-shell--comic-page .xboard-page {
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.xboard-page, .xboard-header-actions) {
     --x-ink: var(--ink);
     --x-navy: var(--ink);
     --x-copy: var(--ink);
@@ -639,13 +640,13 @@
     --x-chip: url('/assets/comic/x-chip-night.webp');
     --x-badge: url('/assets/comic/x-badge-night.webp');
   }
-  #app .app-shell--comic-page .xboard-page > div { gap: 16px; padding: 3px 9px calc(var(--peel-clear) + 28px) 13px; }
-  #app .app-shell--comic-page .xboard-header { align-items: center; }
-  #app .app-shell--comic-page .xboard-heading { position: relative; top: 2px; display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; }
-  /* the X stands upright as its logo does; the rest of the title leans */
-  #app .app-shell--comic-page .xboard-heading h1.comic-title { margin-left: 10px; font-size: 43px; }
-  #app .app-shell--comic-page .xboard-heading h1.comic-title::first-letter { font-style: normal; }
-  #app .app-shell--comic-page .xboard-heading p { position: relative; top: 4px; margin: 0; color: var(--x-ink); font-size: 15px; font-weight: 700; }
+  #app .app-shell--comic-page .xboard-page > div { gap: 16px; padding: 14px 9px calc(var(--peel-clear) + 28px) 13px; }
+  /* The folio prints the section's name, so the page runs no header row of its own: the title stays for screen
+     readers and the tools go up into the folio (FolioTools); where the folio has no room for them they stand on the
+     page as a slim row, right-aligned over the wall. */
+  #app .app-shell--comic-page .xboard-header { display: contents; }
+  #app .app-shell--comic-page .xboard-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #app .app-shell--comic-page .xboard-header > .folio-tools { align-self: flex-end; }
 
   /* the header's buttons: white faces in a 2px ink line on a solid block (the switch and refresh), 40px tall */
   #app .app-shell--comic-page .xboard-header-actions { gap: 20px; }
@@ -662,6 +663,8 @@
   }
   #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 4px; }
   #app .app-shell--comic-page .xboard-header-actions button.xboard-refresh { width: 96px; padding: 0; }
+  /* wide enough for the longer of its two names (Refreshing… in English), so it never jumps while it loads */
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-refresh:lang(en) { width: 132px; }
   #app .app-shell--comic-page .xboard-refresh svg { width: 15px; height: 15px; stroke-width: 2.6; }
   #app .app-shell--comic-page .xboard-header-actions .xboard-follow-toggle.xboard-mode-active,
   #app .app-shell--comic-page .xboard-header-actions .xboard-follow-toggle.xboard-mode-active:hover:not(:disabled) { background: var(--x-lime); color: var(--x-lime-ink); }
@@ -720,6 +723,26 @@
   :root[data-theme='dark'] #app .app-shell--comic-page .xboard-date input.input.xboard-mode-active { color-scheme: light; color: var(--x-lime-ink); }
   #app .app-shell--comic-page .xboard-date input.input.xboard-mode-active::-webkit-calendar-picker-indicator { position: static; width: 14px; height: 14px; margin-left: 6px; }
   #app .app-shell--comic-page .xboard-header-actions .xboard-date:has(input:focus-visible) { outline: 2px solid var(--x-ink); outline-offset: 4px; }
+
+  /* In the folio (FolioTools data-folio) the same tools come a size down to its 50px line: 34px buttons and a 32px
+     switch in 14px type. Compact keeps the switch whole and lets the follow toggle and refresh drop their names
+     (still read out, and shown as a tooltip) down to the icon and the count. */
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions { flex-wrap: nowrap; gap: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button:is(.xboard-follow-toggle, .xboard-refresh) {
+    height: 34px; padding: 0 13px; gap: 6px; font-size: 14px;
+  }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button.xboard-refresh { width: 84px; padding: 0; }
+  #app .app-shell--comic-page .folio-tools[data-folio='full'] .xboard-header-actions button.xboard-refresh:lang(en) { width: 116px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] :is(.xboard-refresh, .xboard-follow-toggle) svg { width: 14px; height: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-follow-count { padding: 2px 5px; font-size: 11.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions :is(button.xboard-recent, .xboard-date) { height: 32px; padding: 0 12px; font-size: 13.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button.xboard-recent { min-width: 112px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions .xboard-date { min-width: 104px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions { gap: 10px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-tool-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions button.xboard-refresh { width: 34px; }
 
   /* the admin bar, the empty state and the pager: a pale grey line round paper, rounded 7px */
   #app .app-shell--comic-page :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card) {
