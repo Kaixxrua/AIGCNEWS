@@ -60,6 +60,20 @@ def test_classify_against_api_without_api_abstract_defers_to_hf() -> None:
     assert classify_against_api(_PARTIALLY_COLLAPSED, "") is None
 
 
+def test_classify_against_api_restores_the_legacy_500_char_cut() -> None:
+    long_abstract = " ".join([_ABSTRACT] * 8)
+
+    assert classify_against_api(long_abstract[:500], long_abstract) == (
+        "api_truncated",
+        long_abstract,
+    )
+    # 截断处的空白也丢了：仍按前缀补全，记作恢复空格
+    assert classify_against_api("".join(long_abstract.split())[:500], long_abstract) == (
+        "api_whitespace",
+        long_abstract,
+    )
+
+
 @pytest.mark.parametrize(
     ("stored", "action"),
     [
@@ -76,14 +90,24 @@ def test_classify_summary_against_hf_abstract(stored: str, action: str) -> None:
     assert classify_summary(stored, _page()) == (action, _ABSTRACT)
 
 
-def test_classify_summary_truncates_like_ingestion() -> None:
+def test_classify_summary_restores_the_full_abstract() -> None:
     long_abstract = " ".join([_ABSTRACT] * 8)
-    stored = "".join(long_abstract.split())[:500]
 
-    assert classify_summary(stored, _page(long_abstract)) == (
-        "abstract_prefix",
-        long_abstract[:500],
+    assert classify_summary(long_abstract[:500], _page(long_abstract)) == (
+        "abstract_truncated",
+        long_abstract,
     )
+    assert classify_summary("".join(long_abstract.split())[:500], _page(long_abstract)) == (
+        "abstract_prefix",
+        long_abstract,
+    )
+
+
+def test_classify_summary_caps_like_ingestion() -> None:
+    # 与入库同口径：只防解析出错把整页正文灌进来
+    huge = " ".join([_ABSTRACT] * 40)
+
+    assert classify_summary("", _page(huge)) == ("fill_empty", huge[:4000])
 
 
 def test_classify_summary_without_abstract_section_is_skipped() -> None:
@@ -123,7 +147,9 @@ def test_dry_run_uses_api_first_and_pages_only_for_the_rest() -> None:
     assert result["scanned"] == 6
     assert result["counts"] == {
         "unchanged": 1,
+        "api_truncated": 0,
         "api_whitespace": 1,
+        "abstract_truncated": 0,
         "abstract_prefix": 0,
         "other_paragraph": 1,
         "fill_empty": 1,

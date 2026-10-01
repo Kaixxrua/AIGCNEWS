@@ -59,6 +59,30 @@ class IngestionPersistenceAdapterTests(unittest.TestCase):
         self.assertEqual(write["in_daily"], 1)
         self.assertEqual(write["in_weekly"], 0)
 
+    def test_document_write_projection_keeps_full_paper_abstracts_and_tweets(self) -> None:
+        document = MagicMock(metadata={"id": "doc-paper"})
+        abstract = "word " * 380  # 1900 字符，接近 arXiv 投稿上限
+
+        paper_write = project_document_write(
+            {"source": "arxiv", "channel": "huggingface_daily_html", "abstract": abstract},
+            document,
+            "arxiv_daily",
+        )
+        tweet_write = project_document_write(
+            {"source": "x", "channel": "x_daily_watchlist", "summary": "t" * 6000},
+            document,
+            "x",
+        )
+        runaway_write = project_document_write(
+            {"source": "arxiv", "channel": "huggingface_daily_html", "abstract": "p" * 9000},
+            document,
+            "arxiv_daily",
+        )
+
+        self.assertEqual(paper_write["summary"], abstract)
+        self.assertEqual(tweet_write["summary"], "t" * 6000)
+        self.assertEqual(runaway_write["summary"], "p" * 4000)
+
     def test_document_write_projection_passes_translation_zh_through(self) -> None:
         document = MagicMock(metadata={"id": "doc-x"})
         paper = {

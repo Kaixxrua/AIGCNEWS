@@ -39,6 +39,18 @@ def _translation_targets_for_x_document(write: dict) -> list[dict]:
         })
     return targets
 
+# documents.summary 的截断口径：列表源只存 500 字的列表摘要；摘要即正文的源放宽——
+# X 存推文全文不截断；arXiv 存论文完整摘要（arXiv 投稿上限 1920 字符，论文页
+# 「摘要」区直接展示，旧口径会停在半个词上），4000 只防解析出错把整页正文灌进来。
+_SUMMARY_LIMIT = 500
+_SUMMARY_LIMIT_BY_SOURCE: dict[str, int | None] = {"x": None, "arxiv": 4000}
+
+
+def summary_limit(source: str) -> int | None:
+    """Return the stored summary length cap for one source (None = untruncated)."""
+    return _SUMMARY_LIMIT_BY_SOURCE.get(source, _SUMMARY_LIMIT)
+
+
 # 全天累积型快照 channel：同一 snapshot_date 内多轮采集取并集（X 看板展示
 # 当天全部推文）。upsert 冲突键 (doc_id, snapshot_date, source_channel) 保留
 # LEAST(rank_in_period)/GREATEST(raw_score, score)，天然幂等；删除推文仍经
@@ -78,8 +90,9 @@ def project_document_write(
     link_card = paper.get("link_card")
     source = paper.get("source", source_label)
     summary = paper.get("abstract") or paper.get("summary") or ""
-    if source != "x":
-        summary = summary[:500]
+    limit = summary_limit(source)
+    if limit is not None:
+        summary = summary[:limit]
     # documents.title 为 VARCHAR(1024)：长文推文等超长标题截断防止写入越界
     title = paper.get("title")
     if isinstance(title, str) and len(title) > 1024:

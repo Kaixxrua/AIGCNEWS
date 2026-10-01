@@ -7,12 +7,15 @@
    （"has garnered growingattention"）；
 2. 关键词噪声过滤把含 "Code:" / "Project page:" / "thanks to" 的真摘要整段
    丢掉，改取 AI 一句话总结、评论区段落，或干脆留空。
-两类缺陷都无法用 SQL 条件圈定，本脚本逐行复核全部 arXiv 文档：
-1. arXiv API 批量取权威摘要（每批 50 篇）：与之逐字一致即 unchanged；去掉
-   空白后一致即 api_whitespace——同一段文字，按 API 原文恢复空格；
+另外旧入库口径把论文摘要一律截到 500 字（停在半个词上），现改存完整摘要。
+这些缺陷都无法用 SQL 条件圈定，本脚本逐行复核全部 arXiv 文档：
+1. arXiv API 批量取权威摘要（每批 50 篇）：与之逐字一致即 unchanged；正是
+   其前 500 字即 api_truncated——补回全文；去掉空白后是其前缀即
+   api_whitespace——同一段文字，按 API 原文恢复空格并补全；
 2. 其余行（误取段落、为空、LaTeX 写法不同、摘要已修订等）再逐篇抓 HF 详情页，
    按修复后的解析取 Abstract 区块判定：
-   - abstract_prefix：库中摘要去空白后是真摘要的前缀——只恢复空格；
+   - abstract_truncated：库中摘要正是真摘要的前 500 字——补回全文；
+   - abstract_prefix：库中摘要去空白后是真摘要的前缀——恢复空格并补全；
    - other_paragraph：库中摘要去空白后是页面上其他段落（AI 总结、评论等）的
      前缀——有出处证明是误取，换成真摘要；
    - fill_empty：库中摘要为空——填入真摘要；
@@ -52,6 +55,9 @@ from backend.app.repositories.application_repository_factory import (  # noqa: E
 from backend.app.services.ingestion.arxiv_pdf_downloader import (  # noqa: E402
     _fetch_arxiv_metadata_by_ids,
 )
+from backend.app.services.ingestion.persistence_adapter import (  # noqa: E402
+    summary_limit,
+)
 from backend.app.services.ingestion.source_arxiv_mcp import (  # noqa: E402
     _abstract_section_text,
     _get_headers,
@@ -59,11 +65,20 @@ from backend.app.services.ingestion.source_arxiv_mcp import (  # noqa: E402
     _node_text,
 )
 
-# 与 persistence_adapter.project_document_write 的非 X 源摘要截断同口径。
-_SUMMARY_LIMIT = 500
+# 与 persistence_adapter.project_document_write 的 arXiv 摘要截断同口径。
+_SUMMARY_LIMIT = summary_limit("arxiv")
+# 旧入库口径：非 X 源摘要一律截到 500 字。
+_LEGACY_SUMMARY_LIMIT = 500
 _WHITESPACE_RE = re.compile(r"\s+")
 _RATELIMIT_RE = re.compile(r"\br=(\d+);t=(\d+)")
-_WRITE_ACTIONS = ("api_whitespace", "abstract_prefix", "other_paragraph", "fill_empty")
+_WRITE_ACTIONS = (
+    "api_truncated",
+    "api_whitespace",
+    "abstract_truncated",
+    "abstract_prefix",
+    "other_paragraph",
+    "fill_empty",
+)
 _SKIP_ACTIONS = (
     "no_match",
     "no_abstract",
@@ -80,6 +95,11 @@ def _squash(text: str) -> str:
     return _WHITESPACE_RE.sub("", text or "")
 
 
+def _legacy_truncated(stored: str, abstract: str) -> bool:
+    """库中摘要正是旧入库口径截下的前 500 字。"""
+    return len(abstract) > _LEGACY_SUMMARY_LIMIT and stored == abstract[:_LEGACY_SUMMARY_LIMIT]
+
+
 def classify_against_api(stored: str, api_abstract: str) -> tuple[str, str] | None:
     """对照 arXiv API 摘要判定；无法仅凭 API 判定（需查 HF 页面）时返回 None。"""
     if not api_abstract:
@@ -87,6 +107,8 @@ def classify_against_api(stored: str, api_abstract: str) -> tuple[str, str] | No
     summary = api_abstract[:_SUMMARY_LIMIT]
     if stored == summary:
         return "unchanged", summary
+    if _legacy_truncated(stored, api_abstract):
+        return "api_truncated", summary
     stored_key = _squash(stored)
     if stored_key and _squash(api_abstract).startswith(stored_key):
         return "api_whitespace", summary
@@ -102,6 +124,8 @@ def classify_summary(stored: str, html: str) -> tuple[str, str]:
     summary = abstract[:_SUMMARY_LIMIT]
     if stored == summary:
         return "unchanged", summary
+    if _legacy_truncated(stored, abstract):
+        return "abstract_truncated", summary
     stored_key = _squash(stored)
     if not stored_key:
         return "fill_empty", summary
