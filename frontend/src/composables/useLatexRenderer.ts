@@ -92,6 +92,20 @@ const stripHeadingTagHashes = (html: string): string =>
     heading.replace(/<code>#([^<]*)<\/code>/g, '<code>$1</code>'),
   )
 
+// ── 行内 $…$ ────────────────────────────────────────────────────────────────
+// 按 Pandoc 的规则认：开头的 $ 后、结尾的 $ 前都不能是空白，结尾的 $ 后不能紧跟数字。
+// 这样「$4/$20」「Pro $20/月，Max $200/月」之类的美元价格不会被当成公式
+// （2026-10-01 X 动态简报的定价段整段被渲染成公式）。
+const _INLINE_DOLLAR_MATH_RE = /(?<!\$)\$(?![\s$])([^\n$]+?)(?<!\s)\$(?![\d$])/g
+
+// 行内代码里写成 `$\alpha$`、`\(\alpha\)` 的公式：去掉这一层定界符再交给 KaTeX。
+const _DELIMITED_MATH_RE = /^(?:\$\$([\s\S]+)\$\$|\$([^$]+)\$|\\\(([\s\S]+)\\\)|\\\[([\s\S]+)\\\])$/
+
+const unwrapMath = (source: string): string => {
+  const match = _DELIMITED_MATH_RE.exec(source)
+  return match ? (match[1] ?? match[2] ?? match[3] ?? match[4] ?? source) : source
+}
+
 /** HTML 属性转义 */
 const escapeAttr = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -121,19 +135,19 @@ const tryKatex = (expr: string, displayMode: boolean): string | null => {
  * renderLatex: 将文本中的 LaTeX 公式替换为 KaTeX HTML。
  *
  * 处理顺序：
- *   1. 保护代码块（```...```）
+ *   1. 保护代码块（```...```）与行内代码（`...`），其中的公式由 renderMarkdown 的后处理认
  *   2. 块级 $$...$$
  *   3. 块级 \[...\]
  *   4. 独立 \begin{env}...\end{env}
  *   5. 行内 \(...\)
- *   6. 行内 $...$（不跨行，排除 $$）
- *   7. 恢复代码块
+ *   6. 行内 $...$（不跨行，排除 $$，美元价格除外）
+ *   7. 恢复代码
  */
 export function renderLatex(text: string): string {
   if (!text) return ''
 
   const codeBlocks: string[] = []
-  let s = text.replace(/```[\s\S]*?```/g, (m) => {
+  let s = text.replace(_CODE_SEGMENT_RE, (m) => {
     codeBlocks.push(m)
     return `%%CODEBLOCK_${codeBlocks.length - 1}%%`
   })
@@ -148,9 +162,9 @@ export function renderLatex(text: string): string {
 
   // 行内
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_m, expr: string) => tryKatex(expr, false) ?? _m)
-  s = s.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_m, expr: string) => tryKatex(expr, false) ?? _m)
+  s = s.replace(_INLINE_DOLLAR_MATH_RE, (_m, expr: string) => tryKatex(expr, false) ?? _m)
 
-  // 恢复代码块
+  // 恢复代码
   s = s.replace(/%%CODEBLOCK_(\d+)%%/g, (_m, idx: string) => codeBlocks[Number(idx)] || _m)
   return s
 }
@@ -175,7 +189,7 @@ export function renderMarkdown(text: string): string {
   html = html.replace(/<code>([\s\S]*?)<\/code>/g, (_m, inner: string) => {
     const decoded = decodeHtml(inner)
     if (/\\[a-zA-Z]/.test(decoded)) {
-      return tryKatex(decoded.trim(), false) ?? _m
+      return tryKatex(unwrapMath(decoded.trim()), false) ?? _m
     }
     return _m
   })
@@ -204,7 +218,7 @@ export function extractLatexSources(content: string): string[] {
     sources.push(`\\begin{${env}}${body}\\end{${env}}`); return ''
   })
   content.replace(/\\\(([\s\S]+?)\\\)/g, (_m, expr: string) => { sources.push(`\\(${expr.trim()}\\)`); return '' })
-  content.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_m, expr: string) => { sources.push(`$${expr.trim()}$`); return '' })
+  content.replace(_INLINE_DOLLAR_MATH_RE, (_m, expr: string) => { sources.push(`$${expr.trim()}$`); return '' })
   content.replace(/`([^`\n]+)`/g, (_m, inner: string) => {
     if (/\\[a-zA-Z]/.test(inner)) sources.push(inner.trim())
     return ''

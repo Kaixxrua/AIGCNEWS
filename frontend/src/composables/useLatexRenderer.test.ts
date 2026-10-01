@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { normalizeEmphasisFlanking, renderMarkdown, renderPlainMarkdown } from './useLatexRenderer'
+import { extractLatexSources, normalizeEmphasisFlanking, renderMarkdown, renderPlainMarkdown } from './useLatexRenderer'
 
 beforeAll(() => {
   document.write('<!doctype html><html><body></body></html>')
@@ -51,6 +51,35 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="formula-wrap"')
     expect(html).toContain('class="formula-copy-btn"')
     expect(html).toContain('data-latex="\\frac{1}{2}"')
+  })
+
+  it.each([
+    '标准价为每 1M token 收费 $4/$20，促销价为 $2/$10。',
+    'Pro 版 $20/月，Max 版 $200/月',
+    '输入 $4/M tokens 与输出 $20/M tokens',
+  ])('keeps dollar prices as text: %s', src => {
+    const html = renderMarkdown(src)
+
+    expect(html).not.toContain('class="katex')
+    expect(html).toContain('$')
+  })
+
+  it('leaves inline code to markdown instead of rendering dollars inside it as math', () => {
+    // 2026-10-01 X 动态简报：`$4/$20` 被当成公式，KaTeX 的 HTML 被转义进代码块，页面上露出一串源码。
+    const html = renderMarkdown('定价为 `$4/$20`；Cost per Task 为 `$1.99`，标准价格下将升至 `$3.98`')
+
+    expect(html).toContain('<code>$4/$20</code>')
+    expect(html).toContain('<code>$1.99</code>')
+    expect(html).toContain('<code>$3.98</code>')
+    expect(html).not.toContain('katex')
+  })
+
+  it('still renders formulas written with dollars, and a delimited formula written as inline code', () => {
+    const html = renderMarkdown('复杂度 $O(n^2)$，共 $10^9$ 次，权重 $\\alpha_i$；代码里写的 `$\\mathcal{O}(n)$`')
+
+    expect(html.match(/class="katex"/g)).toHaveLength(4)
+    expect(html).not.toContain('katex-error')
+    expect(html).not.toContain('<code>')
   })
 
   it('escapes formula source embedded in copy-button attributes', () => {
@@ -138,6 +167,12 @@ describe('renderMarkdown', () => {
 
     expect(html).toContain('<code>#define</code>')
     expect(html).toContain('<code>#include</code>')
+  })
+})
+
+describe('extractLatexSources', () => {
+  it('collects formulas but not dollar prices', () => {
+    expect(extractLatexSources('收费 $4/$20，促销价 $2/$10，复杂度 $O(n^2)$')).toEqual(['$O(n^2)$'])
   })
 })
 
