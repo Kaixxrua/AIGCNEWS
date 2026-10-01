@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, ExternalLink, Maximize2, PanelRightClose, Repeat2, Users } from 'lucide-vue-next'
+import { useMediaQuery } from '@vueuse/core'
+import { ArrowLeft, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import FolioTools from '@/components/layout/FolioTools.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
@@ -10,7 +11,8 @@ import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, formatLocalTime, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { useTextOnly } from '@/features/xboard/useTextOnly'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import { fold, unfold } from '@/motion/fold'
@@ -21,7 +23,7 @@ import { slideIn, slideOut } from '@/motion/presence'
 import { vReflow } from '@/motion/reflow'
 import RollText from '@/motion/RollText.vue'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
-import type { TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
+import type { TweetCardLayout, TweetFold, TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
 
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -29,7 +31,7 @@ const isAdmin = computed(() => authStore.isAdmin)
 
 const {
   docs, visibleDocs, selectedDate, today, loading, deleting, errorMsg,
-  selectedIds, currentPage, totalPages, hasPrev, hasNext, pageSize,
+  selectedIds, currentPage, totalPages, pageSize,
   availableDates, availableAccounts, availableAccountOptions, followedAccounts, unfollowedAccounts,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
   toggleFollowAccount, followAllAccounts, unfollowAllAccounts,
@@ -42,23 +44,78 @@ const isToday = computed(() => selectedDate.value === today)
 // 左上角是最新一条。纯轮询不管卡高（纯文字 ~200px vs 多图 >1000px），
 // 列高失衡会在短列尾部留下大片空白；CSS columns 是列主序，两者都不用。
 const timelineDocs = computed(() => timelineTweets(visibleDocs.value))
-// 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行
-const pagedTimelineDocs = computed(() => paginateItems(timelineDocs.value, currentPage.value, pageSize))
 const totalTweets = computed(() => timelineDocs.value.length)
 const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
 
-// 页级全选（防止一键选中不可见条目误删）：复选框状态按当前页 id 计算
-const pageIds = computed(() => pagedTimelineDocs.value.map((doc) => String(doc.id)).filter(Boolean))
+// 桌面推文墙排得更紧：同账号折叠、多图排成一行胶片、可一键切纯文字；手机与平板照旧。
+const desktop = useMediaQuery('(min-width: 1024px)')
+const { textOnly, toggle: toggleTextOnly } = useTextOnly(desktop)
+// 报眉放不下完整的一组时先把纯文字与刷新收成图标（trim），再放不下才连关注账号也只留图标与人数（compact）
+const FOLIO_LEVELS = ['full', 'trim', 'compact'] as const
+const iconOnly = (level: string | null) => level === 'trim' || level === 'compact'
+
+// 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行。手机与平板每页 20 条；
+// 桌面按卡位分页，每页排满 20 张卡，同账号折叠收起的不占卡位，页数随之变少。
+const wallPages = computed(() => (desktop.value ? paginateFoldedTweets(timelineDocs.value, pageSize) : null))
+const wallPageCount = computed(() => wallPages.value?.length ?? totalPages.value)
+const wallPage = computed(() => Math.min(currentPage.value, wallPageCount.value))
+const wallHasPrev = computed(() => wallPage.value > 1)
+const wallHasNext = computed(() => wallPage.value < wallPageCount.value)
+const pagedTimelineDocs = computed(() => (wallPages.value
+  ? wallPages.value[wallPage.value - 1] ?? []
+  : paginateItems(timelineDocs.value, currentPage.value, pageSize)))
+
+// 同账号折叠：一页里同一账号达到 3 条只留第一条，其余收进它底下的一行，点开就地展开、再点收回；
+// 换一批推文（换窗口、刷新）时全部收回。
+const tweetKey = (tweet: TopDoc) => tweet.url || tweet.title || ''
+const expandedFolds = ref<Set<string>>(new Set())
+const foldedPage = computed(() => (desktop.value
+  ? foldTweetsByAccount(pagedTimelineDocs.value, tweetKey, expandedFolds.value)
+  : { visible: pagedTimelineDocs.value, folds: new Map<string, TweetFold>() }))
+const wallDocs = computed(() => foldedPage.value.visible)
+// 模板里按 v-for 取用：留下的那条有折叠行时给出一项，其余给空表
+const foldsOf = (tweet: TopDoc): TweetFold[] => {
+  const fold = foldedPage.value.folds.get(tweetKey(tweet))
+  return fold ? [fold] : []
+}
+const toggleFold = (tweet: TopDoc) => {
+  const key = tweetKey(tweet)
+  const next = new Set(expandedFolds.value)
+  if (!next.delete(key)) next.add(key)
+  expandedFolds.value = next
+}
+// 纯文字时收起了配图或链接卡的推文，时间行里留一枚提示钮，点开详情看
+const mediaHint = (tweet: TopDoc) => (textOnly.value && hasCollapsedMedia(tweet) ? collapsedMedia(tweet) : null)
+
+// 正文或引用被限行截住的推文，时间行里多一枚「全文」，点开详情看全文。截没截住随列宽、字体与译文而变，排好后实测。
+const wallEl = ref<HTMLElement | null>(null)
+const clampedTweets = ref<ReadonlySet<string>>(new Set())
+const isClamped = (tweet: TopDoc) => clampedTweets.value.has(tweetKey(tweet))
+const measureClamps = () => {
+  const next = new Set<string>()
+  if (desktop.value) {
+    for (const text of wallEl.value?.querySelectorAll<HTMLElement>('.tweet-text, .tweet-quote-text') ?? []) {
+      const key = text.closest<HTMLElement>('[data-reflow-key]')?.dataset.reflowKey
+      if (key && text.scrollHeight > text.clientHeight + 1) next.add(key)
+    }
+  }
+  const current = clampedTweets.value
+  if (next.size !== current.size || [...next].some((key) => !current.has(key))) clampedTweets.value = next
+}
+
+// 页级全选（防止一键选中不可见条目误删）：复选框状态按当前页墙上看得见的 id 计算，折叠收起的不算
+const pageIds = computed(() => wallDocs.value.map((doc) => String(doc.id)).filter(Boolean))
 const allPageSelected = computed(() => pageIds.value.length > 0 && pageIds.value.every((id) => selectedIds.value.has(id)))
 const somePageSelected = computed(() => !allPageSelected.value && pageIds.value.some((id) => selectedIds.value.has(id)))
 
 // 关注账号收在侧栏里，默认收起：页头按钮展开/收起，推文墙优先占满版面。
 const followPanelOpen = ref(false)
 
+// 宽屏多排几列，列宽保持在 340 到 400px 上下：配图限高后列太宽只会把图裁成细长条
 const computeColumnCount = () => {
   const width = window.innerWidth
-  return width >= 1280 ? 4 : width >= 1024 ? 3 : width >= 768 ? 2 : 1
+  return width >= 2200 ? 6 : width >= 1800 ? 5 : width >= 1280 ? 4 : width >= 1024 ? 3 : width >= 768 ? 2 : 1
 }
 const viewportColumnCount = ref(computeColumnCount())
 const updateColumnCount = () => { viewportColumnCount.value = computeColumnCount() }
@@ -74,6 +131,10 @@ const MASONRY_GAP_PX = 16
 const masonryWidth = ref(0)
 const masonryGap = ref(MASONRY_GAP_PX)
 const tweetTextMetrics = ref<TweetTextMetrics | undefined>()
+const compactMetrics = ref<Omit<TweetCardLayout, 'textOnly'> | undefined>()
+const cardLayout = computed<TweetCardLayout | undefined>(() => (
+  compactMetrics.value ? { ...compactMetrics.value, textOnly: textOnly.value } : undefined
+))
 let mainResizeObserver: ResizeObserver | null = null
 const masonryColumnWidth = computed(() => {
   const count = columnCount.value
@@ -81,9 +142,10 @@ const masonryColumnWidth = computed(() => {
   return width > 0 ? width : 280 // 首帧未测量时的回退列宽
 })
 const masonryColumns = computed(() => distributeColumns(
-  pagedTimelineDocs.value,
+  wallDocs.value,
   columnCount.value,
-  (doc) => estimateTweetCardHeight(doc, masonryColumnWidth.value, locale.value, tweetTextMetrics.value),
+  (doc) => estimateTweetCardHeight(doc, masonryColumnWidth.value, locale.value, tweetTextMetrics.value, cardLayout.value)
+    + (foldedPage.value.folds.has(tweetKey(doc)) ? TWEET_FOLD_BAR_PX : 0),
 ))
 
 // 翻页回顶：滚动的是内层 overflow-y-auto 容器而非 window
@@ -94,16 +156,29 @@ const mainEl = ref<HTMLElement | null>(null)
 // 桌面漫画版放大了推文正文，字号与行高经 --tweet-text-size/--tweet-text-line
 // 声明在主栏上，估高按实际排版折行；未声明时回落默认 text-sm leading-5。
 // 列间距同理经 --masonry-gap 声明（瀑布流网格也读它），未声明时 16px。
+// 紧凑排版（正文与引用限行、配图限高）也声明在那里，以 --tweet-media-max 为准：没声明就按完整排版估高。
 const measureMasonry = () => {
   const el = mainEl.value
   if (!el) return
   masonryWidth.value = el.clientWidth
   const style = window.getComputedStyle(el)
-  const gap = parseFloat(style.getPropertyValue('--masonry-gap'))
+  const read = (name: string) => parseFloat(style.getPropertyValue(name))
+  const gap = read('--masonry-gap')
   masonryGap.value = gap > 0 ? gap : MASONRY_GAP_PX
-  const fontSize = parseFloat(style.getPropertyValue('--tweet-text-size'))
-  const lineHeight = parseFloat(style.getPropertyValue('--tweet-text-line'))
+  const fontSize = read('--tweet-text-size')
+  const lineHeight = read('--tweet-text-line')
   tweetTextMetrics.value = fontSize > 0 && lineHeight > 0 ? { fontSize, lineHeight } : undefined
+  const mediaMax = read('--tweet-media-max')
+  compactMetrics.value = mediaMax > 0
+    ? {
+        textClamp: read('--tweet-text-clamp') || Number.POSITIVE_INFINITY,
+        mediaMax,
+        quoteSize: read('--tweet-quote-size') || 11,
+        quoteLine: read('--tweet-quote-line') || 16,
+        quoteClamp: read('--tweet-quote-clamp') || Number.POSITIVE_INFINITY,
+        quoteMediaMax: read('--tweet-quote-media-max') || 220,
+      }
+    : undefined
 }
 
 const onGoPage = (next: number) => {
@@ -112,16 +187,20 @@ const onGoPage = (next: number) => {
 }
 
 // ── 切换动效 ──
-// 推文墙的排布：每列依次是哪几条。换了一批（换窗口、刷新、翻页、改关注）或列数变了（开合侧栏）时随之变化，
-// 推文墙据此逐条过渡：留下的滑到新位置，新来的由左上角起依次浮现，离开的原地淡出。
-const tweetKey = (tweet: TopDoc) => tweet.url || tweet.title
-const wallLayout = computed(() => masonryColumns.value.map((column) => column.map(tweetKey).join(' ')).join('|'))
-// 新推文从哪边浮现：翻页时从翻去的一侧进来，换窗口、刷新、改关注自下而上；分页摘要里的页码随之上下滚动。
+// 推文墙的排布：每列依次是哪几条。换了一批（换窗口、刷新、翻页、改关注）、列数变了（开合侧栏）或折叠展开时随之变化，
+// 推文墙据此逐条过渡：留下的滑到新位置，新来的由左上角起依次浮现，离开的原地淡出。切纯文字时各条一齐变矮变高，
+// 也算换了排布，留下的随之滑到新位置。
+const wallLayout = computed(() => [
+  textOnly.value ? 'text' : 'media',
+  ...masonryColumns.value.map((column) => column.map(tweetKey).join(' ')),
+].join('|'))
+// 新推文从哪边浮现：翻页时从翻去的一侧进来，换窗口、刷新、改关注、折叠展开自下而上；分页摘要里的页码随之上下滚动。
 const RISE = { x: 0, y: 14 }
 const wallEnterFrom = ref(RISE)
 const pageDirection = ref<1 | -1>(1)
-watch([docs, unfollowedAccounts], () => { wallEnterFrom.value = RISE }, { flush: 'sync' })
-watch(currentPage, (page, previous) => {
+watch([docs, unfollowedAccounts, expandedFolds, textOnly], () => { wallEnterFrom.value = RISE }, { flush: 'sync' })
+watch([wallLayout, locale, desktop], measureClamps, { flush: 'post' })
+watch(wallPage, (page, previous) => {
   const step = Math.sign(page - previous)
   wallEnterFrom.value = { x: step * 18, y: 0 }
   pageDirection.value = step < 0 ? -1 : 1
@@ -147,7 +226,7 @@ const followDirection = ref<1 | -1>(1)
 watch(() => followedAccounts.value.length, (count, previous) => { followDirection.value = count < previous ? -1 : 1 }, { flush: 'sync' })
 // 分页摘要里只让页码滚动：按页码位置把译文切成前后两段。
 const pageSummaryParts = computed(() => {
-  const parts = t('xboard.pageSummary', { page: '\u0000', totalPages: totalPages.value, total: timelineDocs.value.length }).split('\u0000')
+  const parts = t('xboard.pageSummary', { page: '\u0000', totalPages: wallPageCount.value, total: timelineDocs.value.length }).split('\u0000')
   return parts.length === 2 ? parts : null
 })
 
@@ -233,7 +312,7 @@ const playVideo = (key: string) => {
   next.add(key)
   playingMedia.value = next
 }
-watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; detailParent.value = null })
+watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; detailParent.value = null; expandedFolds.value = new Set() })
 
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
@@ -267,9 +346,15 @@ onMounted(() => {
   measureMasonry()
   if (mainEl.value && typeof ResizeObserver !== 'undefined') {
     // jsdom 等无 ResizeObserver 环境跳过观测，首帧回退列宽接管
-    mainResizeObserver = new ResizeObserver(measureMasonry)
+    // 列宽变了正文就重新折行：排布没变时推文墙不重渲染，在这里重量一次截没截住
+    mainResizeObserver = new ResizeObserver(() => {
+      measureMasonry()
+      void nextTick(measureClamps)
+    })
     mainResizeObserver.observe(mainEl.value)
   }
+  // 字体晚到会改折行
+  void document.fonts?.ready.then(measureClamps)
   load()
 })
 onBeforeUnmount(() => {
@@ -290,8 +375,8 @@ onBeforeUnmount(() => {
           <h1 class="comic-title text-2xl tracking-tight">{{ t('xboard.title') }}</h1>
           <p class="mt-0.5 text-sm text-stone-400">{{ t('xboard.subtitle') }}</p>
         </div>
-        <!-- 本版工具：桌面报眉放得下就搬进报眉（compact 档按钮只留图标），放不下或在手机上留在页头 -->
-        <FolioTools v-slot="{ level }">
+        <!-- 本版工具：桌面报眉放得下就搬进报眉（trim 档纯文字与刷新只留图标，compact 档按钮都只留图标），放不下或在手机上留在页头 -->
+        <FolioTools v-slot="{ level }" :levels="FOLIO_LEVELS">
           <div class="xboard-header-actions flex flex-wrap items-center gap-2">
             <!-- 关注账号侧栏开关：收起时仍显示已关注数，筛选状态一眼可见 -->
             <button
@@ -307,6 +392,19 @@ onBeforeUnmount(() => {
               <Users class="h-3.5 w-3.5" />
               <span class="xboard-tool-label">{{ t('xboard.followAccounts') }}</span>
               <span class="xboard-follow-count"><RollText :value="followedAccounts.length" :direction="followDirection" />/{{ availableAccounts.length }}</span>
+            </button>
+            <!-- 纯文字：一键收起所有配图与链接卡，只读字（桌面推文墙；选择记在本机） -->
+            <button
+              v-if="desktop"
+              type="button"
+              class="btn-secondary xboard-text-only"
+              :class="{ 'xboard-mode-active': textOnly }"
+              :title="iconOnly(level) ? t('xboard.textOnly') : undefined"
+              :aria-pressed="textOnly"
+              @click="toggleTextOnly"
+            >
+              <ImageOff class="h-3.5 w-3.5" />
+              <span class="xboard-tool-label">{{ t('xboard.textOnly') }}</span>
             </button>
             <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。 -->
             <div v-indicator="{ active: '.xboard-window-active', pop: true }" class="xboard-window-switch">
@@ -333,7 +431,7 @@ onBeforeUnmount(() => {
             <button
               class="btn-secondary xboard-refresh"
               :disabled="loading"
-              :title="level === 'compact' ? t(loading ? 'common.refreshing' : 'common.refresh') : undefined"
+              :title="iconOnly(level) ? t(loading ? 'common.refreshing' : 'common.refresh') : undefined"
               @click="refresh"
             >
               <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -451,6 +549,7 @@ onBeforeUnmount(() => {
           <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序） -->
           <div
             v-else
+            ref="wallEl"
             v-reflow="{ key: wallLayout, ...wallEnterFrom }"
             class="masonry-grid"
             :class="{ 'masonry-grid--stale': wallStale }"
@@ -526,13 +625,16 @@ onBeforeUnmount(() => {
                   </span>
                 </div>
 
-                <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染） -->
+                <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染）；
+                     桌面多图排成一行胶片，纯文字时收起 -->
                 <TweetMediaList
-                  v-if="hasMedia(tweet)"
+                  v-if="hasMedia(tweet) && !textOnly"
                   :tweet="tweet"
                   :playing-media="playingMedia"
+                  :filmstrip="desktop"
                   @preview="openLightbox"
                   @play="playVideo"
+                  @expand="openDetail(tweet)"
                 />
 
                 <!-- 文字区：点击/回车放大详情（不跳走）；URL 段仍是真链接可直跳 -->
@@ -545,7 +647,7 @@ onBeforeUnmount(() => {
                     @click="openDetail(tweet)"
                     @keydown.enter="openDetail(tweet)"
                   >
-                    <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale)" :key="segIndex">
+                    <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale, desktop)" :key="segIndex">
                       <a
                         v-if="seg.isUrl"
                         :href="seg.text"
@@ -575,34 +677,68 @@ onBeforeUnmount(() => {
                     v-if="hasQuote(tweet)"
                     :quote="tweetQuote(tweet)!"
                     context="wall"
+                    :compact="desktop"
+                    :text-only="textOnly"
                     @activate="openDetail(tweet)"
                   />
-                  <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情 -->
+                  <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情；纯文字时收起 -->
                   <TweetLinkCard
-                    v-if="hasLinkCard(tweet)"
+                    v-if="hasLinkCard(tweet) && !textOnly"
                     :card="tweetLinkCard(tweet)!"
                     context="wall"
+                    :compact="desktop"
                   />
-                  <p v-if="formatTime(tweet)" class="tweet-time mt-2 px-1 text-2xs">{{ formatTime(tweet) }}</p>
+                  <p v-if="formatTime(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
+                    {{ formatTime(tweet) }}
+                    <!-- 截住了、收起了什么：「全文」点开看全文；纯文字时收起了几张图、几段视频、有没有链接卡，点开详情看 -->
+                    <span v-if="isClamped(tweet) || mediaHint(tweet)" class="tweet-time-tools">
+                      <button v-if="isClamped(tweet)" type="button" class="tweet-more" @click="openDetail(tweet)">{{ t('xboard.readMore') }}</button>
+                      <button
+                        v-if="mediaHint(tweet)"
+                        type="button"
+                        class="tweet-media-hint"
+                        :aria-label="t('xboard.showMedia')"
+                        :title="t('xboard.showMedia')"
+                        @click="openDetail(tweet)"
+                      >
+                        <span v-if="mediaHint(tweet)?.photos"><ImageIcon />{{ mediaHint(tweet)?.photos }}</span>
+                        <span v-if="mediaHint(tweet)?.videos"><Play />{{ mediaHint(tweet)?.videos }}</span>
+                        <Link2 v-if="mediaHint(tweet)?.link" />
+                      </button>
+                    </span>
+                  </p>
                 </div>
+
+                <!-- 同账号折叠：这一页里该账号其余各条收在这一行，点开就地展开、再点收回 -->
+                <button
+                  v-for="fold in foldsOf(tweet)"
+                  :key="fold.handle"
+                  type="button"
+                  class="tweet-fold"
+                  :aria-expanded="fold.expanded"
+                  @click="toggleFold(tweet)"
+                >
+                  <span class="tweet-fold-label">{{ t('xboard.foldMore', { count: fold.rest.length, name: fold.name }) }}</span>
+                  <span class="tweet-fold-action">{{ t(fold.expanded ? 'xboard.foldHide' : 'xboard.foldShow') }}<ChevronDown class="tweet-fold-chevron" /></span>
+                </button>
               </article>
             </div>
           </div>
 
           <!-- 全天推文分页条：仅超过一页时出现 -->
           <div
-            v-if="totalPages > 1"
+            v-if="wallPageCount > 1"
             class="xboard-pagination stagger-enter flex shrink-0 flex-wrap items-center justify-center gap-3 px-4 py-2"
             :aria-label="t('xboard.pagination')"
           >
-            <button class="btn-secondary text-xs" :disabled="!hasPrev" @click="onGoPage(currentPage - 1)">
+            <button class="btn-secondary text-xs" :disabled="!wallHasPrev" @click="onGoPage(wallPage - 1)">
               {{ t('common.previous') }}
             </button>
             <span class="text-xs text-stone-500">
-              <template v-if="pageSummaryParts">{{ pageSummaryParts[0] }}<RollText :value="currentPage" :direction="pageDirection" />{{ pageSummaryParts[1] }}</template>
-              <template v-else>{{ t('xboard.pageSummary', { page: currentPage, totalPages, total: timelineDocs.length }) }}</template>
+              <template v-if="pageSummaryParts">{{ pageSummaryParts[0] }}<RollText :value="wallPage" :direction="pageDirection" />{{ pageSummaryParts[1] }}</template>
+              <template v-else>{{ t('xboard.pageSummary', { page: wallPage, totalPages: wallPageCount, total: timelineDocs.length }) }}</template>
             </span>
-            <button class="btn-secondary text-xs" :disabled="!hasNext" @click="onGoPage(currentPage + 1)">
+            <button class="btn-secondary text-xs" :disabled="!wallHasNext" @click="onGoPage(wallPage + 1)">
               {{ t('common.next') }}
             </button>
           </div>

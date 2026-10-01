@@ -5,6 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import XBoardView from './XBoardView.vue'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
+// 桌面推文墙（≥1024px）的折叠、胶片、纯文字等按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
+const viewport = vi.hoisted(() => ({ desktop: false }))
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: string) => (query === '(min-width: 1024px)' ? ref(viewport.desktop) : actual.useMediaQuery(query)),
+  }
+})
+
 const controllerSpy = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const authBox = vi.hoisted(() => ({ current: null as null | { isAdmin: boolean } }))
@@ -157,6 +168,8 @@ beforeEach(() => {
   controllerSpy.mockClear()
   scrollToSpy.mockClear()
   setViewportWidth(1024)
+  viewport.desktop = false
+  localStorage.clear()
 })
 
 afterEach(() => {
@@ -447,5 +460,220 @@ describe('XBoardView 切换动效接线', () => {
     expect(recent.classes()).not.toContain('xboard-window-active')
     expect(recent.attributes('aria-pressed')).toBe('false')
     expect(date.classes()).toContain('xboard-window-active')
+  })
+})
+
+describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯文字与胶片', () => {
+  beforeEach(() => {
+    viewport.desktop = true
+    setViewportWidth(1280)
+    i18n.global.setLocaleMessage('zh-CN', {
+      xboard: { foldMore: '＋{count} 条 {name} 的推文', foldShow: '展开', foldHide: '收起', readMore: '全文' },
+    })
+  })
+
+  afterEach(() => {
+    i18n.global.setLocaleMessage('zh-CN', {})
+    vi.restoreAllMocks()
+  })
+
+  // 按给定账号依次生成推文（越靠前越新）
+  const byHandles = (handles: string[]): TopDoc[] => handles.map((handle, i) => ({
+    id: `tw${i}`,
+    title: `Tweet ${i}`,
+    summary: `Tweet ${i} body`,
+    url: `https://x.com/${handle}/status/${1000 + i}`,
+    author_name: handle.charAt(0).toUpperCase() + handle.slice(1),
+    raw_score: 1,
+    published_at: new Date(Date.UTC(2026, 7, 4, 12, 0, 0) - i * 60_000).toISOString(),
+  }))
+  const wallCards = (wrapper: VueWrapper) => wrapper.findAll('.masonry-grid article.tweet-card')
+  const wallBodies = (wrapper: VueWrapper) => wallCards(wrapper).map((card) => card.get('.tweet-text').text()).sort()
+
+  it('同一页里一个账号达到 3 条只留第一条，折叠行点开就地展开、再点收回', async () => {
+    controller().docs.value = byHandles(['alice', 'bob', 'alice', 'carol', 'alice', 'alice'])
+    const wrapper = await mountView()
+
+    expect(wallBodies(wrapper)).toEqual(['Tweet 0 body', 'Tweet 1 body', 'Tweet 3 body'])
+    const folds = wrapper.findAll('.tweet-fold')
+    expect(folds).toHaveLength(1)
+    const fold = folds[0]!
+    // 折叠行挂在留下的第一条底下
+    expect(fold.element.closest('article')?.textContent).toContain('Tweet 0 body')
+    expect(fold.text()).toContain('＋3 条 Alice 的推文')
+    expect(fold.text()).toContain('展开')
+    expect(fold.attributes('aria-expanded')).toBe('false')
+
+    await fold.trigger('click')
+    await nextTick()
+    expect(wallBodies(wrapper)).toEqual(['Tweet 0 body', 'Tweet 1 body', 'Tweet 2 body', 'Tweet 3 body', 'Tweet 4 body', 'Tweet 5 body'])
+    expect(fold.attributes('aria-expanded')).toBe('true')
+    expect(fold.text()).toContain('收起')
+
+    await fold.trigger('click')
+    await nextTick()
+    expect(wallCards(wrapper)).toHaveLength(3)
+
+    // 换一批推文时折叠全部收回
+    await fold.trigger('click')
+    controller().docs.value = byHandles(['alice', 'bob', 'alice', 'alice'])
+    await nextTick()
+    expect(wallCards(wrapper)).toHaveLength(2)
+    expect(wrapper.get('.tweet-fold').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('按卡位分页：折叠收起的不占卡位，一页收进的推文可以多于 20 条', async () => {
+    // alice 10 条在前，其后 20 个账号各 1 条：第一页 alice 一张卡 + 19 张，共 29 条；第二页 1 条
+    const handles = [...Array.from({ length: 10 }, () => 'alice'), ...Array.from({ length: 20 }, (_, i) => `user${i}`)]
+    controller().docs.value = byHandles(handles)
+    const wrapper = await mountView()
+
+    expect(wallCards(wrapper)).toHaveLength(20)
+    expect(wrapper.get('.tweet-fold').text()).toContain('＋9 条 Alice 的推文')
+    expect(wrapper.find('.xboard-pagination').exists()).toBe(true)
+
+    await nextPageButton(wrapper).trigger('click')
+    await nextTick()
+    expect(controller().goPage).toHaveBeenCalledWith(2)
+    expect(wallBodies(wrapper)).toEqual(['Tweet 29 body'])
+  })
+
+  it('折叠后一页装得下就不出分页条', async () => {
+    const handles = [...Array.from({ length: 10 }, () => 'alice'), ...Array.from({ length: 15 }, (_, i) => `user${i}`)]
+    controller().docs.value = byHandles(handles)
+    const wrapper = await mountView()
+
+    expect(wallCards(wrapper)).toHaveLength(16)
+    expect(wrapper.find('.xboard-pagination').exists()).toBe(false)
+  })
+
+  it('页级全选只选墙上看得见的，折叠收起的不算，展开后才算', async () => {
+    controller().docs.value = byHandles(['alice', 'bob', 'alice', 'alice'])
+    const wrapper = await mountView()
+
+    await wrapper.get('.xboard-toolbar input[type="checkbox"]').trigger('change')
+    expect(controller().toggleSelectAll).toHaveBeenLastCalledWith(['tw0', 'tw1'])
+
+    await wrapper.get('.tweet-fold').trigger('click')
+    await nextTick()
+    await wrapper.get('.xboard-toolbar input[type="checkbox"]').trigger('change')
+    expect(controller().toggleSelectAll).toHaveBeenLastCalledWith(['tw0', 'tw2', 'tw3', 'tw1'])
+  })
+
+  it('纯文字一键收起配图与链接卡，时间行留提示钮点开详情；选择记在本机', async () => {
+    const [rich, plain] = byHandles(['alice', 'bob'])
+    rich!.media = [{ type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 }]
+    rich!.link_card = { url: 'https://example.com', title: 'Example' }
+    controller().docs.value = [rich!, plain!]
+    const wrapper = await mountView()
+
+    // 桌面链接卡横排
+    expect(wrapper.findAll('.masonry-grid .tweet-media-list')).toHaveLength(1)
+    expect(wrapper.get('.masonry-grid .tweet-linkcard').classes()).toContain('tweet-linkcard--row')
+    expect(wrapper.find('.tweet-media-hint').exists()).toBe(false)
+
+    const toggle = wrapper.get('.xboard-text-only')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    await toggle.trigger('click')
+    await nextTick()
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(toggle.classes()).toContain('xboard-mode-active')
+    expect(localStorage.getItem('xboard_text_only')).toBe('1')
+    expect(wrapper.find('.masonry-grid .tweet-media-list').exists()).toBe(false)
+    expect(wrapper.find('.masonry-grid .tweet-linkcard').exists()).toBe(false)
+
+    const hints = wrapper.findAll('.tweet-media-hint')
+    expect(hints).toHaveLength(1)
+    expect(hints[0]!.element.closest('article')?.textContent).toContain('Tweet 0 body')
+    await hints[0]!.trigger('click')
+    await flushPromises()
+    // 详情浮层照常带配图与链接卡，链接卡仍是竖排
+    expect(wrapper.find('.detail-backdrop .tweet-media-list').exists()).toBe(true)
+    expect(wrapper.get('.detail-backdrop .tweet-linkcard').classes()).not.toContain('tweet-linkcard--row')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    // 再开一次页面仍是纯文字
+    wrapper.unmount()
+    mounted.splice(mounted.indexOf(wrapper), 1)
+    const again = await mountView()
+    expect(again.get('.xboard-text-only').attributes('aria-pressed')).toBe('true')
+    expect(again.find('.masonry-grid .tweet-media-list').exists()).toBe(false)
+
+    await again.get('.xboard-text-only').trigger('click')
+    await nextTick()
+    expect(localStorage.getItem('xboard_text_only')).toBe('0')
+    expect(again.findAll('.masonry-grid .tweet-media-list')).toHaveLength(1)
+  })
+
+  it('多图排成一行胶片：胶片里的视频帧点开详情，单个视频照常就地播放', async () => {
+    const [strip, single] = byHandles(['alice', 'bob'])
+    strip!.media = [
+      { type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 },
+      { type: 'video', url: 'https://video.twimg.com/strip.mp4' },
+    ]
+    single!.media = [{ type: 'video', url: 'https://video.twimg.com/single.mp4' }]
+    controller().docs.value = [strip!, single!]
+    const wrapper = await mountView()
+
+    const lists = wrapper.findAll('.masonry-grid .tweet-media-list')
+    const stripList = lists.find((list) => list.classes('tweet-media-list--strip'))
+    const singleList = lists.find((list) => !list.classes('tweet-media-list--strip'))
+    expect(stripList?.element.closest('article')?.textContent).toContain('Tweet 0 body')
+    expect(singleList?.element.closest('article')?.textContent).toContain('Tweet 1 body')
+
+    await stripList!.get('.tweet-video-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.detail-backdrop').exists()).toBe(true)
+    expect(wrapper.find('.masonry-grid video').exists()).toBe(false)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
+    await singleList!.get('.tweet-video-btn').trigger('click')
+    expect(wrapper.findAll('.masonry-grid video')).toHaveLength(1)
+    expect(wrapper.find('.detail-backdrop').exists()).toBe(false)
+  })
+
+  it('正文被限行截住的推文，排好后时间行多一枚「全文」，点开看全文', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('tweet-text') && this.textContent?.includes('LONG') ? 300 : 0
+    })
+    const [long, short] = byHandles(['alice', 'bob'])
+    long!.summary = 'LONG body'
+    controller().docs.value = [long!, short!]
+    const wrapper = await mountView()
+
+    // 列数一变就重新排、重新量
+    setViewportWidth(1024)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    const more = wrapper.findAll('.tweet-more')
+    expect(more).toHaveLength(1)
+    expect(more[0]!.text()).toBe('全文')
+    expect(more[0]!.element.closest('article')?.textContent).toContain('LONG body')
+
+    await more[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.detail-backdrop .tweet-text').text()).toContain('LONG body')
+  })
+
+  it('手机与平板照旧：不折叠、不排胶片，也没有纯文字档', async () => {
+    viewport.desktop = false
+    localStorage.setItem('xboard_text_only', '1')
+    const docs = byHandles(['alice', 'alice', 'alice', 'bob'])
+    docs[0]!.media = [
+      { type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 },
+      { type: 'photo', url: 'https://pbs.twimg.com/media/b.jpg', width: 1600, height: 900 },
+    ]
+    docs[1]!.link_card = { url: 'https://example.com', title: 'Example' }
+    controller().docs.value = docs
+    const wrapper = await mountView()
+
+    expect(wallCards(wrapper)).toHaveLength(4)
+    expect(wrapper.find('.tweet-fold').exists()).toBe(false)
+    expect(wrapper.find('.xboard-text-only').exists()).toBe(false)
+    expect(wrapper.find('.tweet-media-list--strip').exists()).toBe(false)
+    expect(wrapper.findAll('.masonry-grid .tweet-media-list')).toHaveLength(1)
+    expect(wrapper.get('.masonry-grid .tweet-linkcard').classes()).not.toContain('tweet-linkcard--row')
   })
 })

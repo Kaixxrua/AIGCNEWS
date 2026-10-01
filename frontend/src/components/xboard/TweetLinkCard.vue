@@ -7,7 +7,9 @@ withDefaults(defineProps<{
   card: NonNullable<TopDoc['link_card']>
   /** wall = 看板卡片；detail = 详情浮层。仅外层留白不同，与 TweetQuoteCard 同一约定。 */
   context?: 'wall' | 'detail'
-}>(), { context: 'wall' })
+  /** 紧凑排版（桌面推文墙）：缩略图按原比例缩在左边，标题、描述、域名排在右边，整卡只有一行图高 */
+  compact?: boolean
+}>(), { context: 'wall', compact: false })
 
 const { t } = useI18n()
 </script>
@@ -17,7 +19,7 @@ const { t } = useI18n()
        非 twimg 镜像时降级为纯文本卡（标题/描述/域名仍完整可点） -->
   <a
     class="tweet-linkcard block"
-    :class="context === 'detail' ? 'mx-4 my-2' : 'mx-1 mt-2'"
+    :class="[context === 'detail' ? 'mx-4 my-2' : 'mx-1 mt-2', { 'tweet-linkcard--row': compact }]"
     :href="card.url"
     target="_blank"
     rel="noopener noreferrer"
@@ -32,7 +34,7 @@ const { t } = useI18n()
       decoding="async"
       referrerpolicy="no-referrer"
       class="tweet-linkcard-image w-full object-cover"
-      :style="card.image_width && card.image_height ? { aspectRatio: `${card.image_width} / ${card.image_height}` } : {}"
+      :style="!compact && card.image_width && card.image_height ? { aspectRatio: `${card.image_width} / ${card.image_height}` } : {}"
       @error="($event.target as HTMLImageElement).style.display = 'none'"
     />
     <span class="tweet-linkcard-body block px-3 py-2">
@@ -84,5 +86,30 @@ const { t } = useI18n()
 
 .tweet-linkcard-domain {
   color: var(--ink-muted);
+}
+
+/* 横排：缩略图按分享图常见的 1.91:1 缩在左边（不裁掉图上的字），文字排在右边；
+   宽度与估高同一口径（xBoardViewModel 的 LINK_ROW_*） */
+.tweet-linkcard--row {
+  display: flex;
+  align-items: center;
+}
+
+.tweet-linkcard--row .tweet-linkcard-image {
+  flex: none;
+  width: 40%;
+  max-width: 144px;
+  height: auto;
+  max-height: none;
+  margin: 8px 0 8px 8px;
+  aspect-ratio: 1.91;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+
+.tweet-linkcard--row .tweet-linkcard-body {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 10px;
 }
 </style>

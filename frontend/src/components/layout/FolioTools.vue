@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 本版工具：桌面内页有报眉时，页面把自己的筛选、切换、刷新交给它，传送进报眉中间那一栏（LayoutView 的
- * #masthead-page-tools），页面里就不必再单占一行。full 放不下就试 compact；两档都放不下（窄桌面、长语言）或根本
- * 没有报眉（手机、首页、联系页）时，工具原样留在页面里。
+ * #masthead-page-tools），页面里就不必再单占一行。full 放不下就试 compact（页面可以经 levels 在中间加 trim）；
+ * 各档都放不下（窄桌面、长语言）或根本没有报眉（手机、首页、联系页）时，工具原样留在页面里。
  *
  * 放不放得下在报眉里量：放一个看不见的替身，逐档挂上 data-folio 读它的自然宽度，与空位比。量法与工具此刻在
  * 哪儿无关，不会放进去又被挤出来、来回跳。进出报眉时滑入滑出；整页离开时留一个替身在原处滑走。
@@ -17,6 +17,11 @@ import {
 import { canAnimate } from '@/motion/motion'
 import { slideIn, slideOut } from '@/motion/presence'
 
+const props = withDefaults(defineProps<{
+  /** 依次试的档位，第一档放得下就用它；要 trim 这类中间档的页面自己传。 */
+  levels?: readonly FolioToolsLevel[]
+}>(), { levels: () => FOLIO_TOOLS_LEVELS })
+
 defineSlots<{ default(props: { level: FolioToolsLevel | null }): unknown }>()
 
 const target = `#${FOLIO_TOOLS_TARGET_ID}`
@@ -25,7 +30,7 @@ const SHIFT = { y: -8 }
 const available = inject(FOLIO_TOOLS_AVAILABLE, ref(false))
 const box = ref<HTMLElement | null>(null)
 // 先当放得下：首屏直接画进报眉，挂载后量过不合适再换档或挪回页面，都在同一帧里，不闪。
-const fit = ref<FolioToolsLevel | null>('full')
+const fit = ref<FolioToolsLevel | null>(props.levels[0] ?? null)
 // KeepAlive 缓存的页面切走后，传送出去的工具不会跟着页面收起，得自己从报眉里撤下。
 const live = ref(true)
 const level = computed(() => (available.value ? fit.value : null))
@@ -52,7 +57,7 @@ function measure() {
   probe.setAttribute('data-folio-probe', '')
   slot.append(probe)
   let next: FolioToolsLevel | null = null
-  for (const candidate of FOLIO_TOOLS_LEVELS) {
+  for (const candidate of props.levels) {
     probe.setAttribute('data-folio', candidate)
     if (probe.offsetWidth <= room) {
       next = candidate

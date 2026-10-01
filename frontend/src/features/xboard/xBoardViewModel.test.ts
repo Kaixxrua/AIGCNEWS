@@ -4,6 +4,8 @@ import {
   avatarVariantUrl,
   authorDisplayName,
   clampPage,
+  collapseBlankLines,
+  collapsedMedia,
   countTweets,
   displayTweetText,
   distributeColumns,
@@ -11,9 +13,11 @@ import {
   estimateTweetCardHeight,
   extractXHandle,
   flattenTweets,
+  foldTweetsByAccount,
   followedAccountDisplayName,
   formatLocalTime,
   groupTweetsByHandle,
+  hasCollapsedMedia,
   hasMedia,
   hasLinkCard,
   hasQuote,
@@ -21,6 +25,7 @@ import {
   linkCardImageUrl,
   mediaItems,
   pageCount,
+  paginateFoldedTweets,
   paginateItems,
   PHOTO_INLINE_TARGET_WIDTH,
   PHOTO_LIGHTBOX_TARGET_WIDTH,
@@ -41,8 +46,10 @@ import {
   tweetText,
   tweetTextSegments,
   tweetTimestamp,
+  TWEET_FOLD_THRESHOLD,
 } from './xBoardViewModel'
-import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
+import type { TweetCardLayout } from './xBoardViewModel'
+import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 
 const tweet = (handle: string, id: string, overrides: Partial<TopDoc> = {}): TopDoc => ({
   title: `tweet ${id}`,
@@ -696,6 +703,213 @@ describe('xBoardViewModel', () => {
     // 放大正文（桌面漫画版 15px / 1.7 行高）时按实际排版折行，默认仍是 text-sm leading-5
     expect(estimateTweetCardHeight(longText, column, 'en-US', { fontSize: 14, lineHeight: 20 })).toBe(hLong)
     expect(estimateTweetCardHeight(longText, column, 'en-US', { fontSize: 15, lineHeight: 25.5 })).toBeGreaterThan(hLong + 20)
+  })
+
+  it('collapseBlankLines keeps line breaks and drops the blank lines between paragraphs', () => {
+    expect(collapseBlankLines('a\n\nb')).toBe('a\nb')
+    expect(collapseBlankLines('a\n \t\n\n  \nb\nc')).toBe('a\nb\nc')
+    expect(collapseBlankLines('a\nb')).toBe('a\nb')
+    expect(collapseBlankLines('a\n\n  indented')).toBe('a\n  indented')
+    expect(collapseBlankLines('')).toBe('')
+  })
+
+  it('tweetTextSegments and quoteTextSegments drop blank lines only in the compact layout', () => {
+    const join = (segments: { text: string }[]) => segments.map((segment) => segment.text).join('')
+    const doc = tweet('openai', '1', { summary: 'first\n\nsecond https://example.com/a\n\n\nthird' })
+    expect(join(tweetTextSegments(doc, 'en-US'))).toBe('first\n\nsecond https://example.com/a\n\n\nthird')
+    expect(join(tweetTextSegments(doc, 'en-US', true))).toBe('first\nsecond https://example.com/a\nthird')
+    expect(tweetTextSegments(doc, 'en-US', true).filter((segment) => segment.isUrl).map((segment) => segment.text))
+      .toEqual(['https://example.com/a'])
+    // 中文界面紧凑排版并的是译文的空行
+    const translated = tweet('openai', '2', { summary: 'en', translation_zh: '第一段\n\n第二段' })
+    expect(join(tweetTextSegments(translated, 'zh-CN', true))).toBe('第一段\n第二段')
+    const quote = { url: 'https://x.com/a/status/9', text: 'q1\n\n\nq2', author: 'a', author_name: 'A' }
+    expect(join(quoteTextSegments(quote, 'en-US'))).toBe('q1\n\n\nq2')
+    expect(join(quoteTextSegments(quote, 'en-US', true))).toBe('q1\nq2')
+  })
+
+  it('collapsedMedia counts what text only hides: photos, videos with GIFs, and a valid link card', () => {
+    const doc = tweet('openai', '1', {
+      media: [
+        { type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg' },
+        { type: 'video', url: 'https://video.twimg.com/v.mp4' },
+        { type: 'animated_gif', url: 'https://video.twimg.com/g.mp4' },
+        { type: 'photo', url: 'https://pbs.twimg.com/media/b.jpg' },
+      ],
+      link_card: { url: 'https://example.com', title: 'Example' },
+    })
+    expect(collapsedMedia(doc)).toEqual({ photos: 2, videos: 2, link: true })
+    expect(hasCollapsedMedia(doc)).toBe(true)
+    const plain = tweet('openai', '2')
+    expect(collapsedMedia(plain)).toEqual({ photos: 0, videos: 0, link: false })
+    expect(hasCollapsedMedia(plain)).toBe(false)
+    // 链接卡与 hasLinkCard 同一口径：缺标题的不算
+    const untitled = tweet('openai', '3', { link_card: { url: 'https://example.com', title: '' } })
+    expect(hasCollapsedMedia(untitled)).toBe(false)
+    expect(hasCollapsedMedia(tweet('openai', '4', { link_card: { url: 'https://example.com', title: 'E' } }))).toBe(true)
+  })
+
+  it('foldTweetsByAccount keeps the first tweet of a busy account and folds the rest under it', () => {
+    const keyOf = (doc: TopDoc) => doc.url ?? ''
+    const [a1, b1, a2, a3, b2, a4] = [
+      tweet('alpha', '1', { author_name: 'Alpha' }), tweet('beta', '2'), tweet('alpha', '3'),
+      tweet('alpha', '4'), tweet('beta', '5'), tweet('alpha', '6'),
+    ] as [TopDoc, TopDoc, TopDoc, TopDoc, TopDoc, TopDoc]
+    const docs = [a1, b1, a2, a3, b2, a4]
+    expect(TWEET_FOLD_THRESHOLD).toBe(3)
+
+    const closed = foldTweetsByAccount(docs, keyOf, new Set())
+    expect(closed.visible).toEqual([a1, b1, b2])
+    expect([...closed.folds.keys()]).toEqual([keyOf(a1)])
+    expect(closed.folds.get(keyOf(a1))).toEqual({ handle: 'alpha', name: 'Alpha', rest: [a2, a3, a4], expanded: false })
+
+    // 展开：其余各条紧跟在留下的那条之后，不散回各自的时间位置
+    const open = foldTweetsByAccount(docs, keyOf, new Set([keyOf(a1)]))
+    expect(open.visible).toEqual([a1, a2, a3, a4, b1, b2])
+    expect(open.folds.get(keyOf(a1))?.expanded).toBe(true)
+
+    // 没到门槛不折叠；门槛可调
+    expect(foldTweetsByAccount([a1, b1, a2], keyOf, new Set()).folds.size).toBe(0)
+    expect(foldTweetsByAccount([b1, a1, b2], keyOf, new Set(), 2).visible).toEqual([b1, a1])
+  })
+
+  it('foldTweetsByAccount counts pure retweets under the retweeter and never folds unknown accounts', () => {
+    const keyOf = (doc: TopDoc) => doc.url ?? ''
+    const own = tweet('alpha', '1')
+    const rt1 = tweet('gamma', '2', { retweeted_by: '@Alpha' })
+    const rt2 = tweet('delta', '3', { retweeted_by: 'alpha' })
+    const { visible, folds } = foldTweetsByAccount([own, rt1, rt2], keyOf, new Set())
+    expect(visible).toEqual([own])
+    expect(folds.get(keyOf(own))).toMatchObject({ handle: 'alpha', rest: [rt1, rt2] })
+
+    const strays = [1, 2, 3].map((n) => ({ title: `post ${n}`, url: `https://example.com/${n}`, raw_score: 0 }))
+    expect(foldTweetsByAccount(strays, keyOf, new Set()).visible).toEqual(strays)
+  })
+
+  it('paginateFoldedTweets fills each page with cards, a folded account taking just one', () => {
+    const at = (handle: string, id: string) => tweet(handle, id)
+    const [a1, b1, a2, a3, c1, a4, d1, e1] = [
+      at('a', '1'), at('b', '2'), at('a', '3'), at('a', '4'), at('c', '5'), at('a', '6'), at('d', '7'), at('e', '8'),
+    ] as TopDoc[]
+    // a 的第 3 条把前两条收成一张卡，第 4 条也收进去：第一页 a、b、c 三张卡装下 6 条
+    expect(paginateFoldedTweets([a1!, b1!, a2!, a3!, c1!, a4!, d1!, e1!], 3)).toEqual([
+      [a1, b1, a2, a3, c1, a4], [d1, e1],
+    ])
+    // 每页按页重新计数：上一页的折叠不带到下一页
+    expect(paginateFoldedTweets([b1!, c1!, a1!, a2!, a3!], 2)).toEqual([[b1, c1], [a1, a2, a3]])
+    // 卡位满了，下一条哪怕会被收起也放到下一页
+    expect(paginateFoldedTweets([a1!, b1!, a2!], 2)).toEqual([[a1, b1], [a2]])
+    expect(paginateFoldedTweets([a1!, a2!, a3!, b1!, c1!], 2)).toEqual([[a1, a2, a3, b1], [c1]])
+  })
+
+  it('paginateFoldedTweets agrees with foldTweetsByAccount on every page', () => {
+    const handles = ['a', 'b', 'a', 'a', 'c', 'a', 'd', 'b', 'b', 'e', 'f', 'a', 'g', 'b', 'h', 'i', 'c', 'c', 'j', 'k']
+    const docs = handles.map((handle, i) => tweet(handle, String(i)))
+    const keyOf = (doc: TopDoc) => doc.url ?? ''
+    for (const size of [1, 2, 3, 5, 8]) {
+      const pages = paginateFoldedTweets(docs, size)
+      expect(pages.flat()).toEqual(docs)
+      pages.forEach((page, index) => {
+        const cards = foldTweetsByAccount(page, keyOf, new Set()).visible.length
+        expect(cards).toBeLessThanOrEqual(size)
+        // 只有最后一页可以不满
+        if (index < pages.length - 1) expect(cards).toBe(size)
+      })
+    }
+  })
+
+  it('paginateFoldedTweets gives one empty page for no tweets and treats odd page sizes as at least one card', () => {
+    expect(paginateFoldedTweets([], 20)).toEqual([[]])
+    const docs = [tweet('a', '1'), tweet('b', '2')]
+    expect(paginateFoldedTweets(docs, 0)).toEqual([[docs[0]], [docs[1]]])
+    expect(paginateFoldedTweets(docs, Number.NaN)).toEqual([[docs[0]], [docs[1]]])
+    expect(paginateFoldedTweets(docs, 2.9)).toEqual([docs])
+    // 认不出账号的推文各占一张卡
+    const strays = [1, 2, 3].map((n) => ({ title: `post ${n}`, url: `https://example.com/${n}`, raw_score: 0 }))
+    expect(paginateFoldedTweets(strays, 2)).toEqual([[strays[0], strays[1]], [strays[2]]])
+  })
+
+  it('estimateTweetCardHeight under the compact layout caps media, lays strips and clamps text', () => {
+    const layout: TweetCardLayout = {
+      textClamp: 7, mediaMax: 150, quoteSize: 13, quoteLine: 19, quoteClamp: 4, quoteMediaMax: 110, textOnly: false,
+    }
+    // 列宽 340：媒体区 314px 宽，正文 306px，引用正文 272px
+    const column = 340
+    const photo = (width: number, height: number): TweetMediaItem => ({ type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width, height })
+    const estimate = (doc: TopDoc, withLayout = true) => estimateTweetCardHeight(doc, column, 'en-US', undefined, withLayout ? layout : undefined)
+    const plain = tweet('openai', '1', { summary: 'x' })
+    const base = estimate(plain)
+    expect(estimate(plain, false)).toBe(base)
+
+    // 单图按真实比例、过高裁到 150；完整排版仍按原比例
+    const tall = tweet('openai', '2', { summary: 'x', media: [photo(900, 1600)] })
+    expect(estimate(tall) - base).toBeCloseTo(12 + 150)
+    expect(estimate(tall, false) - base).toBeCloseTo(12 + (314 * 1600) / 900)
+    const wide = tweet('openai', '3', { summary: 'x', media: [photo(1600, 400)] })
+    expect(estimate(wide) - base).toBeCloseTo(12 + 314 / 4)
+
+    // 多图排成一行等宽方帧：两张时帧宽 153 撑过上限按 150，三张帧宽 99.3
+    const two = tweet('openai', '4', { summary: 'x', media: [photo(1600, 900), photo(1600, 900)] })
+    expect(estimate(two) - base).toBeCloseTo(12 + 150)
+    const three = tweet('openai', '5', { summary: 'x', media: [photo(1600, 900), photo(900, 1600), photo(1000, 1000)] })
+    expect(estimate(three) - base).toBeCloseTo(12 + (314 - 16) / 3)
+
+    // 正文最多 7 行；空行先并掉再折行
+    const lines = (count: number) => Array.from({ length: count }, (_, i) => `line ${i}`).join('\n')
+    expect(estimate(tweet('openai', '6', { summary: lines(12) })) - base).toBe(6 * 20)
+    expect(estimate(tweet('openai', '7', { summary: lines(12) }), false) - base).toBe(11 * 20)
+    expect(estimate(tweet('openai', '8', { summary: 'a\n\n\n\nb' })) - base).toBe(20)
+    expect(estimate(tweet('openai', '9', { summary: 'a\n\n\n\nb' }), false) - base).toBe(4 * 20)
+
+    // 引用：13px/19px 最多 4 行，配图胶片限高 110
+    const quoted = (text: string, media: TweetMediaItem[] = []) => tweet('openai', '10', {
+      summary: 'x', quote: { url: 'https://x.com/a/status/9', text, author: 'a', author_name: 'A', media },
+    })
+    const oneLineQuote = estimate(quoted('q'))
+    expect(estimate(quoted(lines(10))) - oneLineQuote).toBe(3 * 19)
+    expect(estimate(quoted('q', [photo(1600, 900), photo(1600, 900)])) - oneLineQuote).toBeCloseTo(14 + 110)
+  })
+
+  it('estimateTweetCardHeight lays link cards in a row under the compact layout', () => {
+    const layout: TweetCardLayout = {
+      textClamp: 7, mediaMax: 150, quoteSize: 13, quoteLine: 19, quoteClamp: 4, quoteMediaMax: 110, textOnly: false,
+    }
+    const column = 340
+    const estimate = (doc: TopDoc, withLayout = true) => estimateTweetCardHeight(doc, column, 'en-US', undefined, withLayout ? layout : undefined)
+    const base = estimate(tweet('openai', '1', { summary: 'x' }))
+    const card = (extra: Partial<NonNullable<TopDoc['link_card']>> = {}) => tweet('openai', '2', {
+      summary: 'x', link_card: { url: 'https://example.com', title: 'Example', ...extra },
+    })
+    // 卡内 294px：缩略图取四成 117.6px，按 1.91:1 再上下各留 8px；文字一侧标题、描述、域名叠起来更矮
+    const thumbRow = 117.6 / 1.91 + 16
+    expect(estimate(card({ image_url: 'https://example.com/og.png' })) - base).toBeCloseTo(10 + thumbRow)
+    expect(estimate(card({ image_url: 'https://example.com/og.png', description: 'About', domain: 'example.com' })) - base)
+      .toBeCloseTo(10 + thumbRow)
+    // 没有缩略图时按文字一侧：标题 + 一行描述 + 域名
+    expect(estimate(card({ description: 'About', domain: 'example.com' })) - base).toBe(10 + 28 + 18 + 18)
+    // 横排比竖排的大图卡矮
+    expect(estimate(card({ image_url: 'https://example.com/og.png' }))).toBeLessThan(
+      estimate(card({ image_url: 'https://example.com/og.png' }), false),
+    )
+  })
+
+  it('estimateTweetCardHeight under text only drops media, quote media and link cards but keeps the hint row', () => {
+    const layout: TweetCardLayout = {
+      textClamp: 7, mediaMax: 150, quoteSize: 13, quoteLine: 19, quoteClamp: 4, quoteMediaMax: 110, textOnly: true,
+    }
+    const estimate = (doc: TopDoc) => estimateTweetCardHeight(doc, 340, 'en-US', undefined, layout)
+    const photo: TweetMediaItem = { type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 }
+    const plain = tweet('openai', '1', { summary: 'x' })
+    const rich = tweet('openai', '2', {
+      summary: 'x', media: [photo], link_card: { url: 'https://example.com', title: 'Example', image_url: 'https://example.com/og.png' },
+    })
+    // 没有发布时间的推文，时间行因提示钮照样占一行
+    expect(estimate(rich) - estimate(plain)).toBe(23)
+    const stamp = { published_at: '2026-08-04T12:00:00Z' }
+    expect(estimate({ ...rich, ...stamp })).toBe(estimate({ ...plain, ...stamp }))
+    const quote = { url: 'https://x.com/a/status/9', text: 'q', author: 'a', author_name: 'A' }
+    expect(estimate(tweet('openai', '3', { summary: 'x', quote: { ...quote, media: [photo] } })))
+      .toBe(estimate(tweet('openai', '4', { summary: 'x', quote })))
   })
 
   it('pageCount floors at 1 page and handles empty, boundary and large totals', () => {

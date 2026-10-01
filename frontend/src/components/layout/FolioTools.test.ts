@@ -5,7 +5,7 @@ import FolioTools from './FolioTools.vue'
 import { FOLIO_TOOLS_AVAILABLE, FOLIO_TOOLS_TARGET_ID } from '@/features/navigation/folioTools'
 
 /* jsdom 不排版：量宽的替身按所挂的档位报宽度，报眉空位按 room 报宽度。 */
-const WIDTHS: Record<string, number> = { full: 400, compact: 300 }
+const WIDTHS: Record<string, number> = { full: 400, trim: 350, compact: 300 }
 let room = 500
 
 const offsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!
@@ -15,6 +15,15 @@ const Page = defineComponent({
   name: 'ToolsPage',
   setup: () => () => h('div', { class: 'page' }, [
     h(FolioTools, null, {
+      default: ({ level }: { level: string | null }) => h('button', { class: 'tool', 'data-level': level ?? 'none' }, 'tool'),
+    }),
+  ]),
+})
+
+const TrimPage = defineComponent({
+  name: 'TrimToolsPage',
+  setup: () => () => h('div', { class: 'page' }, [
+    h(FolioTools, { levels: ['full', 'trim', 'compact'] }, {
       default: ({ level }: { level: string | null }) => h('button', { class: 'tool', 'data-level': level ?? 'none' }, 'tool'),
     }),
   ]),
@@ -30,8 +39,8 @@ const tools = () => document.querySelector<HTMLElement>('.folio-tools')
 const inFolio = () => target.contains(tools())
 const level = () => document.querySelector('.tool')?.getAttribute('data-level')
 
-function mountPage(available?: Ref<boolean>) {
-  wrapper = mount(Page, {
+function mountPage(available?: Ref<boolean>, page = Page) {
+  wrapper = mount(page, {
     attachTo: host,
     global: available ? { provide: { [FOLIO_TOOLS_AVAILABLE as symbol]: available } } : {},
   })
@@ -95,6 +104,30 @@ describe('FolioTools', () => {
     expect(inFolio()).toBe(true)
     expect(tools()?.dataset.folio).toBe('compact')
     expect(level()).toBe('compact')
+  })
+
+  it('没要中间档的页面不试 trim', async () => {
+    room = 375
+    mountPage(ref(true))
+    await flushPromises()
+
+    expect(tools()?.dataset.folio).toBe('compact')
+  })
+
+  it('要了中间档的页面在 full 和 compact 之间先试 trim', async () => {
+    room = 375
+    mountPage(ref(true), TrimPage)
+    await flushPromises()
+
+    expect(inFolio()).toBe(true)
+    expect(tools()?.dataset.folio).toBe('trim')
+    expect(level()).toBe('trim')
+
+    wrapper?.unmount()
+    room = 320
+    mountPage(ref(true), TrimPage)
+    await flushPromises()
+    expect(tools()?.dataset.folio).toBe('compact')
   })
 
   it('两档都放不下时留在页面里', async () => {

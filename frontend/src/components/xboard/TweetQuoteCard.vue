@@ -10,7 +10,11 @@ const props = withDefaults(defineProps<{
   /** wall = 看板卡片（activate = 放大主推详情）；detail = 详情浮层（activate = 下钻被引推文详情）。
       两上下文的 aria-label 与外层留白不同，由父组件按场景指定。 */
   context?: 'wall' | 'detail'
-}>(), { context: 'wall' })
+  /** 紧凑排版（桌面推文墙）：引用正文并掉空行，多件配图排成一行等宽的方帧（胶片） */
+  compact?: boolean
+  /** 纯文字：不排引用配图 */
+  textOnly?: boolean
+}>(), { context: 'wall', compact: false, textOnly: false })
 
 const emit = defineEmits<{
   /** 整卡激活（点击/回车）：wall 打开主推详情，detail 下钻被引推文 */
@@ -26,6 +30,9 @@ const isVideo = (item: TweetMediaItem) => item.type === 'video' || item.type ===
 // 引用卡片内只渲染缩略图（整卡点击跳被引推文，不内嵌播放）：视频用封面，
 // 照片用 small 变体降载；无封面（非 twimg 直链等）不渲染该媒体位
 const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_url ?? '') : (item.thumb_url || item.url))
+
+const media = computed(() => (props.textOnly ? [] : quoteMediaItems(props.quote)))
+const strip = computed(() => props.compact && media.value.length > 1)
 </script>
 
 <template>
@@ -62,13 +69,13 @@ const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_
       ><ExternalLink class="h-3 w-3" /></a>
     </span>
     <span v-if="displayQuoteText(quote, locale)" class="tweet-quote-text block whitespace-pre-line px-3 pt-1 text-2xs leading-4">
-      <template v-for="(seg, segIndex) in quoteTextSegments(quote, locale)" :key="segIndex">
+      <template v-for="(seg, segIndex) in quoteTextSegments(quote, locale, compact)" :key="segIndex">
         <span v-if="seg.isUrl || seg.isMention" class="tweet-quote-link">{{ seg.text }}</span>
         <span v-else>{{ seg.text }}</span>
       </template>
     </span>
-    <span v-if="quoteMediaItems(quote).length" class="tweet-quote-media block px-3 pb-2 pt-1.5">
-      <template v-for="(item, mediaIndex) in quoteMediaItems(quote)" :key="mediaIndex">
+    <span v-if="media.length" class="tweet-quote-media block px-3 pb-2 pt-1.5" :class="{ 'tweet-quote-media--strip': strip }">
+      <template v-for="(item, mediaIndex) in media" :key="mediaIndex">
         <img
           v-if="quoteMediaThumb(item)"
           :src="quoteMediaThumb(item)"
@@ -77,7 +84,7 @@ const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_
           decoding="async"
           referrerpolicy="no-referrer"
           class="tweet-quote-photo w-full object-cover"
-          :style="item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
+          :style="!strip && item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : {}"
           @error="($event.target as HTMLImageElement).style.display = 'none'"
         />
       </template>
@@ -168,5 +175,19 @@ const quoteMediaThumb = (item: TweetMediaItem) => (isVideo(item) ? (item.poster_
   max-height: 220px;
   border: 1px solid var(--rule);
   border-radius: 5px;
+}
+
+/* 胶片：多件配图排成一行等宽的方帧，帧高不过引用配图限高 */
+.tweet-quote-media--strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.tweet-quote-media--strip > .tweet-quote-photo {
+  flex: 1 1 0;
+  min-width: 0;
+  aspect-ratio: 1;
+  max-height: var(--tweet-quote-media-max, 110px);
 }
 </style>

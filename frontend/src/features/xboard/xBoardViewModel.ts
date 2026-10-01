@@ -159,12 +159,18 @@ const URL_TRAILING_PUNCT_RE = /[.,;:!?，。！？、；：]+$/
 // @提及：handle 为 X 合法字符集；左边界排除字母数字/下划线防误吃邮箱前缀
 const MENTION_IN_TEXT_RE = /(?<![A-Za-z0-9_])@([A-Za-z0-9_]+)/g
 
+/** 紧凑排版（桌面推文墙）把正文里的空行并掉：段与段只换行不空一行，限行的那几行都留给字。 */
+export const collapseBlankLines = (text: string): string => text.replace(/\n(?:[ \t]*\n)+/g, '\n')
+
 /**
  * 正文分段渲染：URL 段独立锚点跳真实地址，文本段保持跳推文。
  * 整个文本块不再是单一锚点（嵌套 a 非法）， sibling 分段各自成链。
+ * compact：紧凑排版，空行并掉（详情浮层照原样）。
  */
-export const tweetTextSegments = (doc: TopDoc, locale: string): TweetTextSegment[] =>
-  splitTextSegments(displayTweetText(doc, locale))
+export const tweetTextSegments = (doc: TopDoc, locale: string, compact = false): TweetTextSegment[] => {
+  const text = displayTweetText(doc, locale)
+  return splitTextSegments(compact ? collapseBlankLines(text) : text)
+}
 
 const splitTextSegments = (text: string): TweetTextSegment[] => {
   const segments: TweetTextSegment[] = []
@@ -282,8 +288,10 @@ export const displayQuoteText = (quote: NonNullable<TopDoc['quote']>, locale: st
  * 锚点（跳被引推文），嵌套锚点非法——故引用正文只做纯文本分段输出，
  * 链接样式由渲染层以 span 呈现，点击仍跳被引推文（与 X 行为一致）。
  */
-export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>, locale: string): TweetTextSegment[] =>
-  splitTextSegments(displayQuoteText(quote, locale))
+export const quoteTextSegments = (quote: NonNullable<TopDoc['quote']>, locale: string, compact = false): TweetTextSegment[] => {
+  const text = displayQuoteText(quote, locale)
+  return splitTextSegments(compact ? collapseBlankLines(text) : text)
+}
 
 const X_MEDIA_POSTER_PATH = '/api/media/x/poster'
 const X_MEDIA_HOSTS = new Set(['pbs.twimg.com', 'video.twimg.com', 'abs.twimg.com'])
@@ -525,6 +533,26 @@ const estimateMediaHeight = (item: TweetMedia, widthPx: number): number => {
   return widthPx * (item.type === 'photo' ? 0.75 : 9 / 16)
 }
 
+/** 紧凑排版的横排链接卡：缩略图占卡宽四成、最宽 144px，按分享图常见的 1.91:1（与 TweetLinkCard 的横排样式一致） */
+const LINK_ROW_THUMB_SHARE = 0.4
+const LINK_ROW_THUMB_MAX_PX = 144
+const LINK_ROW_THUMB_RATIO = 1.91
+
+/** 胶片里相邻两帧的间距：推文配图 8px（与媒体区 gap 一致），引用配图 6px */
+export const TWEET_STRIP_GAP_PX = 8
+export const QUOTE_STRIP_GAP_PX = 6
+
+/**
+ * 限高排版下一组媒体的高：单件按真实宽高比，高过上限就裁掉；多件排成一行等宽的方帧（胶片），
+ * 帧宽撑不满上限时帧高随帧宽。
+ */
+const estimateCappedMediaHeight = (items: TweetMedia[], widthPx: number, maxPx: number, gapPx: number): number => {
+  const [first] = items
+  if (!first) return 0
+  if (items.length === 1) return Math.min(maxPx, estimateMediaHeight(first, widthPx))
+  return Math.min(maxPx, (widthPx - (items.length - 1) * gapPx) / items.length)
+}
+
 /**
  * 推文卡渲染高度估算（瀑布流分列用）：按模板结构逐项累加——头部行、
  * 正文折行（按字宽）、媒体真实宽高比、引用卡、链接卡、时间行。
@@ -535,8 +563,28 @@ const estimateMediaHeight = (item: TweetMedia, widthPx: number): number => {
 export interface TweetTextMetrics { fontSize: number; lineHeight: number }
 const DEFAULT_TWEET_TEXT: TweetTextMetrics = { fontSize: 14, lineHeight: 20 }
 
+/**
+ * 桌面推文墙的紧凑排版（数值由漫画版 CSS 变量声明在主栏上，见 comic-pages.css）：正文与引用限行，
+ * 配图限高、多图排成一行胶片；纯文字时收起配图、链接卡与引用配图。不传时按完整排版估高。
+ */
+export interface TweetCardLayout {
+  /** 正文最多几行，其余点开看全文 */
+  textClamp: number
+  /** 配图限高（px）；链接卡在紧凑排版下横排，缩略图按自身比例缩在左边 */
+  mediaMax: number
+  /** 引用正文字号、行高与最多几行 */
+  quoteSize: number
+  quoteLine: number
+  quoteClamp: number
+  /** 引用配图限高（px） */
+  quoteMediaMax: number
+  /** 纯文字：不排配图、链接卡与引用配图 */
+  textOnly: boolean
+}
+
 export const estimateTweetCardHeight = (
   doc: TopDoc, columnWidth: number, locale: string, text: TweetTextMetrics = DEFAULT_TWEET_TEXT,
+  layout?: TweetCardLayout,
 ): number => {
   const cardWidth = Math.max(120, columnWidth)
   const bodyWidth = cardWidth - 34 // 卡边框 1px×2 + 正文块 px-4
@@ -544,26 +592,46 @@ export const estimateTweetCardHeight = (
   if (retweetedByHandle(doc)) height += 25 // 转贴标注行（pt-2.5 + 文字行）
   height += 48 // 卡头（py-3 + h-6 头像行）
   const media = doc.media ?? []
-  if (media.length > 0) {
+  if (media.length > 0 && !layout?.textOnly) {
     const mediaWidth = cardWidth - 26 // 媒体区 padding 12px×2 + 卡边框
-    height += 12 + (media.length - 1) * 8 // 媒体区顶距 + 件间 gap
-    for (const item of media) height += estimateMediaHeight(item, mediaWidth)
+    if (layout) {
+      height += 12 + estimateCappedMediaHeight(media, mediaWidth, layout.mediaMax, TWEET_STRIP_GAP_PX)
+    } else {
+      height += 12 + (media.length - 1) * 8 // 媒体区顶距 + 件间 gap
+      for (const item of media) height += estimateMediaHeight(item, mediaWidth)
+    }
   }
   height += 24 // 正文块 py-3
-  height += estimateTextLines(displayTweetText(doc, locale), bodyWidth, text.fontSize) * text.lineHeight
+  // 紧凑排版并掉空行再折行（与墙上渲染同一口径）
+  const bodyText = displayTweetText(doc, locale)
+  const textLines = estimateTextLines(layout ? collapseBlankLines(bodyText) : bodyText, bodyWidth, text.fontSize)
+  height += (layout ? Math.min(layout.textClamp, textLines) : textLines) * text.lineHeight
   const quote = tweetQuote(doc)
   if (quote) {
     const quoteInnerWidth = bodyWidth - 34 // mx-1 + 引用卡边框 + px-3
     height += 42 // mt-2 + 引用卡边框 + 引用头（pt-2 + 头像行）+ 卡底余量
-    height += estimateTextLines(displayQuoteText(quote, locale), quoteInnerWidth, 11) * 16 // text-2xs leading-4
+    // 默认 text-2xs leading-4
+    const quoteText = displayQuoteText(quote, locale)
+    const quoteLines = estimateTextLines(layout ? collapseBlankLines(quoteText) : quoteText, quoteInnerWidth, layout?.quoteSize ?? 11)
+    height += (layout ? Math.min(layout.quoteClamp, quoteLines) : quoteLines) * (layout?.quoteLine ?? 16)
     const quoteMedia = quote.media ?? []
-    if (quoteMedia.length > 0) {
+    if (quoteMedia.length > 0 && !layout?.textOnly) {
       height += 14 // 媒体块 pt-1.5 + pb-2
-      for (const item of quoteMedia) height += estimateMediaHeight(item, quoteInnerWidth)
+      if (layout) height += estimateCappedMediaHeight(quoteMedia, quoteInnerWidth, layout.quoteMediaMax, QUOTE_STRIP_GAP_PX)
+      else for (const item of quoteMedia) height += estimateMediaHeight(item, quoteInnerWidth)
     }
   }
-  const card = tweetLinkCard(doc)
-  if (card) {
+  const card = layout?.textOnly ? null : tweetLinkCard(doc)
+  if (card && layout) {
+    // 横排：缩略图与文字并排，卡高取两边较高的一边
+    const cardInnerWidth = bodyWidth - 12 // mx-1 + 卡边框
+    const thumb = card.image_url ? Math.min(LINK_ROW_THUMB_MAX_PX, cardInnerWidth * LINK_ROW_THUMB_SHARE) : 0
+    const textWidth = cardInnerWidth - (thumb ? thumb + 8 : 0) - 20 // 缩略图左边距 + 文字区 px
+    let body = 12 + 16 // 文字区 py + 标题行
+    if (card.description) body += 2 + Math.min(2, estimateTextLines(card.description, textWidth, 11)) * 16
+    if (card.domain) body += 18
+    height += 10 + Math.max(thumb ? thumb / LINK_ROW_THUMB_RATIO + 16 : 0, body) // mt-2 + 卡边框；缩略图上下各留 8px
+  } else if (card) {
     const cardInnerWidth = bodyWidth - 12 // mx-1 + 卡边框
     height += 50 // mt-2 + 卡边框 + body py-2 + 标题行
     if (card.image_url) {
@@ -577,8 +645,112 @@ export const estimateTweetCardHeight = (
     }
     if (card.domain) height += 16
   }
-  if (tweetTimestamp(doc)) height += 23 // mt-2 + 时间行
+  // mt-2 + 时间行；纯文字时收起了配图或链接卡的推文，时间行里多一枚提示钮，没有时间也照样占这一行
+  if (tweetTimestamp(doc) || (layout?.textOnly && hasCollapsedMedia(doc))) height += 23
   return height + 16 // 列间距 gap-4 折进每卡
+}
+
+/** 纯文字模式收起的内容：照片件数、视频（含 GIF）件数、有没有链接卡。时间行的提示钮按它显示。 */
+export interface CollapsedMedia { photos: number; videos: number; link: boolean }
+
+export const collapsedMedia = (doc: TopDoc): CollapsedMedia => {
+  const media = doc.media ?? []
+  const videos = media.filter((item) => item.type === 'video' || item.type === 'animated_gif').length
+  return { photos: media.length - videos, videos, link: hasLinkCard(doc) }
+}
+
+export const hasCollapsedMedia = (doc: TopDoc): boolean => (doc.media?.length ?? 0) > 0 || hasLinkCard(doc)
+
+/** 同一页里一个账号达到这么多条，就只留第一条，其余收进它底下的一行。 */
+export const TWEET_FOLD_THRESHOLD = 3
+/** 折叠行的高（px）：与漫画版 .tweet-fold 的高一致，估高时加在留下的那条上。 */
+export const TWEET_FOLD_BAR_PX = 36
+
+export interface TweetFold {
+  /** 归属账号（与关注筛选同一口径：纯转贴归转贴者） */
+  handle: string
+  /** 账号展示名 */
+  name: string
+  /** 收起的推文（不含留下的第一条），按页内顺序 */
+  rest: TopDoc[]
+  expanded: boolean
+}
+
+export interface FoldedTweets {
+  /** 墙上要排的推文：收起的组只留第一条；展开的组其余各条紧跟在第一条之后 */
+  visible: TopDoc[]
+  /** 留下的第一条的 key → 它底下收着的那组 */
+  folds: Map<string, TweetFold>
+}
+
+/**
+ * 同账号折叠：一页里同一账号达到 threshold 条时只留最新的第一条，其余收进它底下的「＋N 条 某某 的推文」，
+ * 瀑布流按剩下的重新分列。展开的组其余各条紧跟在第一条之后排进瀑布流，挨着第一条出现，不散回各自的时间位置。
+ * 认不出账号的推文不折叠。expanded 里放留下那条的 key。
+ */
+export const foldTweetsByAccount = (
+  tweets: TopDoc[],
+  keyOf: (doc: TopDoc) => string,
+  expanded: ReadonlySet<string>,
+  threshold = TWEET_FOLD_THRESHOLD,
+): FoldedTweets => {
+  const groups = new Map<string, TopDoc[]>()
+  for (const doc of tweets) {
+    const handle = followedAccountHandle(doc)
+    if (!handle) continue
+    const group = groups.get(handle)
+    if (group) group.push(doc)
+    else groups.set(handle, [doc])
+  }
+  const folds = new Map<string, TweetFold>()
+  const folded = new Set<TopDoc>()
+  for (const [handle, [first, ...rest]] of groups) {
+    if (!first || rest.length + 1 < threshold) continue
+    const key = keyOf(first)
+    folds.set(key, { handle, name: followedAccountDisplayName(first), rest, expanded: expanded.has(key) })
+    for (const doc of rest) folded.add(doc)
+  }
+  const visible: TopDoc[] = []
+  for (const doc of tweets) {
+    if (folded.has(doc)) continue
+    visible.push(doc)
+    const fold = folds.get(keyOf(doc))
+    if (fold?.expanded) visible.push(...fold.rest)
+  }
+  return { visible, folds }
+}
+
+/**
+ * 按卡位分页（桌面推文墙）：每页排满 pageSize 张卡。一页里同账号达到 threshold 条就只占一张卡（其余收进折叠行，
+ * 见 foldTweetsByAccount），刷屏的账号不挤掉别人，一页收进的推文因此可以多于 pageSize 条。
+ * 各页按原顺序给出推文；没有推文时给一个空页。
+ */
+export const paginateFoldedTweets = (tweets: TopDoc[], pageSize: number, threshold = TWEET_FOLD_THRESHOLD): TopDoc[][] => {
+  const size = Math.max(1, Math.floor(pageSize) || 1)
+  // 这一条进来本页多占几张卡：没到门槛各占一张；正好到门槛时连同前面除第一条外的一起收起；过了门槛不占
+  const cardsAdded = (handle: string, count: number) => (!handle || count < threshold ? 1 : count === threshold ? 2 - threshold : 0)
+  const pages: TopDoc[][] = []
+  let page: TopDoc[] = []
+  let counts = new Map<string, number>()
+  let cards = 0
+  for (const doc of tweets) {
+    const handle = followedAccountHandle(doc)
+    let count = (counts.get(handle) ?? 0) + 1
+    let added = cardsAdded(handle, count)
+    if (page.length > 0 && cards + added > size) {
+      pages.push(page)
+      page = []
+      counts = new Map()
+      cards = 0
+      count = 1
+      added = 1
+    }
+    if (handle) counts.set(handle, count)
+    page.push(doc)
+    cards += added
+  }
+  if (page.length > 0 || pages.length === 0) pages.push(page)
+  return pages
 }
 
 /** 全天推文客户端分页：页数下限 1（空列表也按 1 页算，避免 0 页状态）。 */
