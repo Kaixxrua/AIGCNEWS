@@ -883,7 +883,9 @@
     --ul-f-search: url('/assets/comic/ul-search.webp'); --ul-f-fw: url('/assets/comic/ul-fw.webp'); --ul-f-btn: url('/assets/comic/ul-btn.webp');
     --ul-f-kind: url('/assets/comic/ul-kind.webp'); --ul-f-side: url('/assets/comic/ul-side.webp'); --ul-f-badge: url('/assets/comic/ul-badge.webp');
     --ul-f-rank-on: url('/assets/comic/ul-rank-on.webp');
-    padding: 4px 4px calc(var(--peel-clear) + 28px) 10px;
+    /* The purpose index runs the full height on the left; the command bar and the works share the right column. */
+    display: grid; grid-template-columns: 204px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 21px;
+    padding: 12px 4px calc(var(--peel-clear) + 28px) 10px;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library {
     --ul-ink: var(--ink); --ul-black: #8d9099; --ul-strong: var(--ink); --ul-text: var(--ink); --ul-soft: var(--ink-secondary); --ul-muted: var(--ink-secondary); --ul-count: var(--ink-secondary);
@@ -893,32 +895,26 @@
     --ul-f-kind: url('/assets/comic/ul-kind-night.webp'); --ul-f-side: url('/assets/comic/ul-side-night.webp'); --ul-f-badge: url('/assets/comic/ul-badge-night.webp');
     --ul-f-rank-on: url('/assets/comic/ul-rank-on-night.webp');
   }
-  #app .app-shell--comic-page .ui-library__header { align-items: flex-end; margin-bottom: 9px; padding-left: 18px; }
-  /* The title's brush and spark are traced off the concept: a stroke rising under the lower half of the words from
-     just left of them, and a tick beside a bent flash off the last character. */
-  #app .app-shell--comic-page .ui-library__header h1.comic-title { margin: 0 0 2px; color: var(--ul-strong); font-size: 40px; -webkit-text-stroke: .3px currentColor; }
-  #app .app-shell--comic-page .ui-library__header h1.comic-title::before {
-    inset: .45em -.025em auto -.4em; height: .675em; background: var(--ul-lime); transform: none;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 193 27' preserveAspectRatio='none'%3E%3Cpath d='M2 14 60 10 120 6 191 1 193 3 190 11 188 11 120 17 60 22 1 26 0 22 3 18 1 16Z'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
-  }
-  #app .app-shell--comic-page .ui-library__header h1.comic-title::after {
-    right: -36px; top: -14px; width: 32px; height: 32px; background: var(--ul-lime); clip-path: none;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M7 5.5 8.5 14' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/%3E%3Cpath d='M21 7 26 10.5 14.5 22 29 22 30 26 12 29.5 10 23 8.5 20.5Z'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
-  }
-  #app .app-shell--comic-page .ui-library__header p:not(.ui-library__eyebrow) { color: var(--ul-strong); font-size: 16.5px; font-weight: 700; line-height: 22px; }
+  /* The masthead already names the page, so the title and its line stay for screen readers only. */
+  #app .app-shell--comic-page .ui-library__header { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #app .app-shell--comic-page .ui-library__mcp { display: none; }
 
+  /* Command bar: search, framework and the material kinds share one line; the kinds take a line of their own once
+     the search would be narrower than 420px. */
+  #app .app-shell--comic-page .ui-library__command { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 10px; }
   /* Search: a thin slate line, 8.5px round, pressed dark into its lower left; the framework picker inked black down
      its left, foot and right over a teal dry-brush step. Both frames are the control's own border-image. */
-  #app .app-shell--comic-page .ui-library__toolbar { gap: 13px; margin-bottom: 12px; }
+  #app .app-shell--comic-page .ui-library__toolbar { flex: 1 1 420px; gap: 10px; margin: 0; }
   #app .app-shell--comic-page .ui-library__search {
     min-height: 37px; gap: 11px; padding: 0 15px 0 17px; border: 0 solid transparent; border-radius: 8.5px;
     border-image: var(--ul-f-search) 39 42 48 198 / 13px 14px 16px 66px / 2px 2px 4px 2px stretch;
     background: var(--ul-paper); box-shadow: none;
   }
   #app .app-shell--comic-page .ui-library__search svg { width: 20px; height: 20px; color: var(--ul-black); stroke-width: 2.7; }
-  #app .app-shell--comic-page .ui-library__search input { padding: 6px 0; color: var(--ul-ink); font-size: 15px; }
+  #app .app-shell--comic-page .ui-library__search input { padding: 6px 0; color: var(--ul-ink); font-size: 15px; text-overflow: ellipsis; }
   #app .app-shell--comic-page .ui-library__search input::placeholder { color: var(--ul-muted); opacity: 1; }
+  /* The result count rides at the search's right end, so it follows the query as it is typed. */
+  #app .app-shell--comic-page .ui-library__search-count { display: block; flex-shrink: 0; color: var(--ul-muted); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
   #app .app-shell--comic-page .ui-library__framework {
     flex: 0 0 155px; min-height: 37px; gap: 10px; padding: 0 14px 0 16px; border: 0 solid transparent; border-radius: 9.5px;
     border-image: var(--ul-f-fw) 45 54 54 45 / 15px 18px 18px 15px / 2px 5px 5px 2px stretch;
@@ -930,9 +926,9 @@
 
   /* Material kinds: counted words in the page's plain inked button (ul-btn, unfilled so the sliding mark shows
      through); the chosen one a drawn navy block (ul-kind), black along its foot and right. */
-  #app .app-shell--comic-page .ui-library__kinds { align-items: center; gap: 10px; margin-bottom: 12px; padding: 2px 5px 4px 2px; border-bottom: 0; }
+  #app .app-shell--comic-page .ui-library__kinds { flex: 0 0 auto; align-items: center; gap: 8px; margin: 0; padding: 2px 5px 4px 2px; border-bottom: 0; }
   #app .app-shell--comic-page .ui-library__kinds button {
-    gap: 10px; min-height: 39px; padding: 5px 14px; border: 2px solid transparent; border-radius: 8px;
+    gap: 9px; min-height: 37px; padding: 3px 13px; border: 2px solid transparent; border-radius: 8px;
     border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch;
     color: var(--ul-soft); font-size: 15px; font-weight: 500;
   }
@@ -951,13 +947,16 @@
   #app .app-shell--comic-page .ui-library__kinds[data-indicator] button[aria-pressed=true] { border-image: none; }
 
   /* Purpose index: a thin slate box, 12px round; the chosen purpose a pale row with the lime bar on the box edge. */
-  #app .app-shell--comic-page .ui-library__body { grid-template-columns: 204px minmax(0, 1fr); gap: 21px; }
-  /* The routed view is the shell less its masthead and 74px footer; the panel starts 182px into the view and
-     keeps 12px clear above the footer. */
+  /* The body dissolves into the page grid: the index spans both rows, the works sit under the command bar. */
+  #app .app-shell--comic-page .ui-library__body { display: contents; }
+  /* The routed view is the shell less its masthead and 74px footer; the panel starts 12px into the view, level with
+     the command bar, and keeps 12px clear above the footer. Sticky insets count from inside the view's 12px padding,
+     so top 0 holds it there while the works scroll. */
   /* The drawn frame (ul-side: a pale top line darkening down both sides to a black foot, teal specks in the lower
      left, a soft grey step) is the scroller's own border-image, so it stays put while the list scrolls. */
   #app .app-shell--comic-page .ui-library__sidebar {
-    top: 12px; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - 74px - 194px); padding: 13.5px 11.5px 21px 1.5px;
+    grid-column: 1; grid-row: 1 / span 2;
+    top: 0; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - 74px - 24px); padding: 13.5px 11.5px 21px 1.5px;
     border: 0 solid transparent; border-radius: 12px;
     border-image: var(--ul-f-side) 51 54 87 207 / 17px 18px 29px 69px / 2px 3px 7px 3px stretch;
     background: var(--ul-paper); box-shadow: none;
@@ -978,24 +977,40 @@
   }
   #app .app-shell--comic-page .ui-library__sidebar nav[data-indicator] button.active { background: transparent; box-shadow: none; }
   #app .app-shell--comic-page .ui-library__aside-note { margin: 16px 8px 16px 18px; color: var(--ul-muted); font-size: 12.5px; line-height: 1.7; }
+  /* The MCP tip folds to one dashed line: the plug, then the link; the pitch above it stays for screen readers, and
+     the whole line takes the click. */
   #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip {
-    margin: 16px 2px 2px 10px; padding: 12px; border: 1.5px dashed var(--ul-rule); border-radius: 8px; background: transparent;
+    position: relative; display: flex; align-items: center; gap: 8px; margin: 14px 2px 2px 10px; padding: 7px 10px 7px 11px;
+    border: 1.5px dashed var(--ul-rule); border-radius: 8px; background: transparent;
   }
-  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip strong { font-size: 13.5px; font-weight: 800; line-height: 1.5; }
-  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip p { color: var(--ul-muted); font-size: 12.5px; line-height: 1.65; }
+  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip:hover { background: var(--ul-active); }
+  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip > svg { display: block; width: 16px; height: 16px; color: var(--ul-strong); }
+  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip > div { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip a {
-    min-height: 34px; margin-top: 10px; border: 2px solid var(--ul-black); border-radius: 8px;
-    background: var(--ul-lime); box-shadow: 1px 2px 2px var(--ul-drop); color: #05080f; font-size: 13px; font-weight: 800;
+    flex: 1; justify-content: space-between; min-height: 20px; margin: 0; padding: 0; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; color: var(--ul-strong); font-size: 13.5px; font-weight: 800;
   }
+  #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip a::after { content: ''; position: absolute; inset: 0; border-radius: 8px; }
 
+  /* The second line: rankings and the clear-filters link on the left; the quota, then the pause and contact-sheet
+     switches, on the right. The results row dissolves into this line (display: contents); its count lives in the
+     search and its autoplay hint in the pause switch's tooltip. Everything else takes a full line below. The left group
+     ends in an auto margin (the clear link's when it shows, else the rankings') and the rest packs to the right, so on a
+     narrow desktop whatever wraps onto a new line stays on the right as well. */
+  #app .app-shell--comic-page .ui-library__main { grid-column: 2; grid-row: 2; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; align-content: flex-start; gap: 8px 12px; min-width: 0; }
+  #app .app-shell--comic-page .ui-library__main > * { flex: 1 0 100%; order: 9; }
+  #app .app-shell--comic-page .ui-library__results { display: contents; }
+  #app .app-shell--comic-page .ui-library__results > span:first-child,
+  #app .app-shell--comic-page .ui-library__autoplay-hint { display: none; }
   /* Rankings: every one the page's plain inked button (ul-btn), the chosen one the lime chip. */
-  #app .app-shell--comic-page .ui-library__rankbar { gap: 12px; margin: 0; }
+  #app .app-shell--comic-page .ui-library__rankbar { flex: 0 1 auto; order: 0; gap: 12px; margin: 0 auto 0 0; }
+  #app .app-shell--comic-page .ui-library__main:has(.ui-library__clear) > .ui-library__rankbar { margin-right: 0; }
   #app .app-shell--comic-page .ui-library__rankbar > span { display: none; }
-  #app .app-shell--comic-page .ui-library__rankbar nav { align-items: center; gap: 8px 10px; padding: 2px 14px 4px 2px; }
+  #app .app-shell--comic-page .ui-library__rankbar nav { align-items: center; gap: 8px 9px; padding: 2px 14px 4px 2px; }
   #app .app-shell--comic-page .ui-library__rankbar button {
-    position: relative; min-height: 37px; padding: 3px 16px; border: 2px solid transparent; border-radius: 9px; background: var(--ul-white);
+    position: relative; min-height: 33px; padding: 2px 14px; border: 2px solid transparent; border-radius: 9px; background: var(--ul-white);
     border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch;
-    color: var(--ul-ink); font-size: 15px; font-weight: 500;
+    color: var(--ul-ink); font-size: 14.5px; font-weight: 500;
   }
   #app .app-shell--comic-page .ui-library__rankbar button::before,
   #app .app-shell--comic-page .ui-library__rankbar button::after { content: none; }
@@ -1007,29 +1022,34 @@
   }
   /* Every ranking wears its own drawn frame, so nothing slides here: the new choice is stamped in. */
   #app .app-shell--comic-page .ui-library__rankbar nav[data-indicator-mark]::before { content: none; }
-  #app .app-shell--comic-page .ui-library__quota { gap: 0; margin: 9px 0 0; color: var(--ul-ink); font-size: 14.5px; font-weight: 500; }
+  #app .app-shell--comic-page .ui-library__quota { flex: 0 1 auto; order: 2; gap: 0; margin: 0; color: var(--ul-ink); font-size: 14px; font-weight: 500; }
   #app .app-shell--comic-page .ui-library__quota a { color: var(--ul-ink); font-weight: 500; text-decoration: none; }
   #app .app-shell--comic-page .ui-library__quota a::before { content: '·'; display: inline-block; margin: 0 6px 0 5px; }
   #app .app-shell--comic-page .ui-library__quota a:hover { text-decoration: underline; text-decoration-color: var(--ul-lime-deep); text-decoration-thickness: 3px; }
-  #app .app-shell--comic-page .ui-library__results { height: auto; min-height: 31px; margin: -3px 0 12px; color: var(--ul-ink); font-size: 14.5px; font-weight: 500; }
-  /* The count sits on the row's baseline, below the centred hint and pause chip. */
-  #app .app-shell--comic-page .ui-library__results > span:first-child { align-self: flex-end; translate: 0 5px; }
-  #app .app-shell--comic-page .ui-library__autoplay-hint { margin-right: 18px; color: var(--ul-ink); font-size: 14px; font-weight: 500; }
-  #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__load-more button, .ui-library__empty button) {
+  #app .app-shell--comic-page .ui-library__results .ui-library__clear { order: 1; gap: 5px; margin-right: auto; padding: 4px 2px; color: var(--ul-ink); font-size: 14px; font-weight: 500; }
+  #app .app-shell--comic-page .ui-library__results .ui-library__clear:hover { text-decoration: underline; text-decoration-color: var(--ul-lime-deep); text-decoration-thickness: 3px; }
+  #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__results .ui-library__density, .ui-library__load-more button, .ui-library__empty button) {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 5px 16px;
     border: 2px solid transparent; border-radius: 9px; background: var(--ul-white);
     border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch; box-shadow: none;
     color: var(--ul-ink); font-size: 14.5px; font-weight: 500;
   }
-  #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__load-more button, .ui-library__empty button):hover { background: var(--ul-active); }
-  #app .app-shell--comic-page .ui-library__results .ui-library__playback { min-height: 31px; padding: 2px 14px; }
+  #app .app-shell--comic-page :is(.ui-library__results .ui-library__playback, .ui-library__results .ui-library__density, .ui-library__load-more button, .ui-library__empty button):hover { background: var(--ul-active); }
+  /* Pause and contact sheet are icon switches; their names stay for screen readers and show as tooltips. */
+  #app .app-shell--comic-page .ui-library__results :is(.ui-library__playback, .ui-library__density) { position: relative; width: 36px; min-height: 33px; padding: 0; }
+  #app .app-shell--comic-page .ui-library__results .ui-library__playback { order: 3; }
+  #app .app-shell--comic-page .ui-library__results .ui-library__density { order: 4; }
+  #app .app-shell--comic-page .ui-library__results .ui-library__density[aria-pressed=true],
+  #app .app-shell--comic-page .ui-library__results .ui-library__density[aria-pressed=true]:hover { background: var(--ul-lime); color: #05080f; }
+  #app .app-shell--comic-page .ui-library__tool-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* Cards: an ink frame with its drawn shadow and a halftone corner; the preview inset and round; the framework
      badge a tilted white tag on the preview's corner; the two copy buttons ink-framed, one white, one navy. */
-  #app .app-shell--comic-page .ui-library__grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 16px 12px; }
+  #app .app-shell--comic-page :is(.ui-library__grid, .ui-library__icon-grid, .ui-library__empty) { margin-top: 4px; }
+  #app .app-shell--comic-page .ui-library__grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 196px), 1fr)); gap: 14px 12px; }
   #app .app-shell--comic-page .ui-library__card {
     --ul-card-frame: url('/assets/comic/ui-card-frame-a.webp'); --ul-card-shadow: url('/assets/comic/ui-card-shadow-a.webp');
-    position: relative; isolation: isolate; display: flex; flex-direction: column; padding: 9px 10px 12px;
+    position: relative; isolation: isolate; display: flex; flex-direction: column; padding: 7px 8px 9px;
     border: 0; border-radius: 8px; background: transparent; box-shadow: none;
     transition: transform .12s cubic-bezier(.2,.8,.2,1);
   }
@@ -1037,12 +1057,14 @@
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library__card { --ul-card-frame: url('/assets/comic/ui-card-frame-a-night.webp'); --ul-card-shadow: url('/assets/comic/ui-card-shadow-a-night.webp'); }
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library__card:nth-child(even) { --ul-card-frame: url('/assets/comic/ui-card-frame-b-night.webp'); --ul-card-shadow: url('/assets/comic/ui-card-shadow-b-night.webp'); }
   /* The drawn frame (paper, halftone corner, ink line) over its dry-brush shadow, both 9-slice so the corners keep
-     their drawing at any card size; the canvas overhangs the card by the shadow's 8px/9px. */
+     their drawing at any card size. Six to a row the card is about 200px wide, narrower than the slices' 248px at
+     1×, so the drawing is laid at .75× (its 3× source at 4×): the slices then need 186px, and the canvas overhangs
+     the card by the shadow's 6px/6.75px. */
   #app .app-shell--comic-page .ui-library__card::before,
   #app .app-shell--comic-page .ui-library__card::after {
-    content: ''; position: absolute; inset: 0 -8px -9px 0; z-index: -1; pointer-events: none;
-    border: solid transparent; border-width: 16px 184px 150px 64px;
-    border-image: var(--ul-card-frame) 48 552 450 192 fill / 16px 184px 150px 64px stretch;
+    content: ''; position: absolute; inset: 0 -6px -6.75px 0; z-index: -1; pointer-events: none;
+    border: solid transparent; border-width: 12px 138px 112.5px 48px;
+    border-image: var(--ul-card-frame) 48 552 450 192 fill / 12px 138px 112.5px 48px stretch;
   }
   #app .app-shell--comic-page .ui-library__card::before { z-index: -2; border-image-source: var(--ul-card-shadow); transition: transform .12s cubic-bezier(.2,.8,.2,1); }
   @media (hover: hover) {
@@ -1053,25 +1075,31 @@
   #app .app-shell--comic-page .ui-library__poster { aspect-ratio: 291 / 175; border: 0; border-radius: 6px; }
   /* The framework tag: a drawn white slip (ul-badge), its left side leaning, a black wedge under its lower right. */
   #app .app-shell--comic-page .ui-library__badge {
-    top: 2px; right: 3px; padding: 0 10px 0 9px; border: 2px solid transparent; border-radius: 0;
+    top: 2px; right: 3px; padding: 0 8px 0 7px; border: 2px solid transparent; border-radius: 0;
     border-image: var(--ul-f-badge) 27 30 27 24 fill / 9px 10px 9px 8px / 2px 4px 5px 2px stretch;
     background: transparent; box-shadow: none; color: #05080f;
-    font-size: 15px; font-style: italic; font-weight: 800; line-height: 21px; transform: none;
+    font-size: 13px; font-style: italic; font-weight: 800; line-height: 18px; transform: none;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .ui-library__badge { color: var(--ink); }
-  #app .app-shell--comic-page .ui-library__card-title { padding: 11px 1px 1px; color: var(--ul-strong); font-size: 16px; font-weight: 800; line-height: 22px; }
+  /* Six to a row: the name on one line (the full name in the tooltip), then source, purpose and likes. */
+  #app .app-shell--comic-page .ui-library__card-title {
+    display: block; overflow: hidden; padding: 7px 1px 0; color: var(--ul-strong);
+    font-size: 13px; font-weight: 800; line-height: 19px; text-overflow: ellipsis; white-space: nowrap;
+  }
   #app .app-shell--comic-page .ui-library__card-title svg { display: none; }
-  #app .app-shell--comic-page .ui-library__card-meta { align-items: center; margin-bottom: 12px; padding: 0 1px; color: var(--ul-muted); font-size: 12.5px; font-weight: 500; line-height: 18px; }
-  #app .app-shell--comic-page .ui-library__like { gap: 6px; min-height: 18px; padding: 0 2px; border: 0; background: transparent; color: var(--ul-count); font-size: 13px; font-weight: 500; }
-  #app .app-shell--comic-page .ui-library__like svg { width: 16px; height: 16px; stroke-width: 2; }
+  #app .app-shell--comic-page .ui-library__card-meta { align-items: center; gap: 6px; margin: 1px 0 0; padding: 0 1px; color: var(--ul-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
+  #app .app-shell--comic-page .ui-library__card-meta > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #app .app-shell--comic-page .ui-library__like-wrap { flex-shrink: 0; }
+  #app .app-shell--comic-page .ui-library__like { gap: 5px; min-height: 18px; padding: 0 2px; border: 0; background: transparent; color: var(--ul-count); font-size: 12.5px; font-weight: 500; }
+  #app .app-shell--comic-page .ui-library__like svg { width: 15px; height: 15px; stroke-width: 2; }
   #app .app-shell--comic-page .ui-library__like:hover:not(:disabled) { background: var(--ul-active); }
   #app .app-shell--comic-page .ui-library__like.is-liked { color: #d34360; }
-  #app .app-shell--comic-page .ui-library__card-actions { gap: 9px; margin-top: auto; }
+  #app .app-shell--comic-page .ui-library__card-actions { grid-template-columns: 1fr; gap: 7px; margin-top: 9px; }
   /* Both buttons are drawn frames too (9-slice, heavier ink on the lower and right strokes); the border stays 2px so
      the label sits where it did, and the drawing reaches 10px into the padding. */
   #app .app-shell--comic-page .ui-library__card-actions button {
-    min-height: 32px; padding: 3px 8px; border: 2px solid transparent; border-radius: 7px;
-    border-image: var(--ul-button) 30 fill / 10px / 0 stretch; background: none; box-shadow: none; font-size: 14px; font-weight: 700;
+    min-height: 30px; padding: 2px 8px; border: 2px solid transparent; border-radius: 7px;
+    border-image: var(--ul-button) 30 fill / 10px / 0 stretch; background: none; box-shadow: none; font-size: 13px; font-weight: 700;
   }
   #app .app-shell--comic-page .ui-library__copy-source { --ul-button: url('/assets/comic/ui-card-button-source.webp'); color: var(--ul-strong); }
   #app .app-shell--comic-page .ui-library__copy-prompt { --ul-button: url('/assets/comic/ui-card-button-prompt.webp'); color: var(--ul-on-navy); }
@@ -1080,6 +1108,37 @@
   #app .app-shell--comic-page .ui-library__copy-source:hover:not(:disabled) { box-shadow: none; filter: brightness(.95); }
   #app .app-shell--comic-page .ui-library__copy-prompt:hover:not(:disabled) { box-shadow: none; filter: brightness(1.3); }
   #app .app-shell--comic-page .ui-library__card-feedback { color: var(--ul-muted); font-size: 13px; }
+  /* With a pointer, the copy buttons wait over the preview and come up on hover or keyboard focus (they stay in the
+     tab order); the scrim around them still opens the preview. Touch screens keep them stacked under the card. The
+     preview is 100cqw wide (the card's content box) at the poster's 291:175. */
+  @media (hover: hover) {
+    #app .app-shell--comic-page .ui-library__card-actions {
+      position: absolute; top: 7px; right: 8px; left: 8px; z-index: 1; display: flex; flex-direction: column; justify-content: center; gap: 7px;
+      height: calc(100cqw * 175 / 291); margin: 0; padding: 0 14%; border-radius: 6px;
+      background: color-mix(in srgb, var(--ul-paper) 74%, transparent); opacity: 0; pointer-events: none;
+      transition: opacity .14s cubic-bezier(.2,.8,.2,1);
+    }
+    #app .app-shell--comic-page .ui-library__card:is(:hover, :has(:focus-visible)) .ui-library__card-actions { opacity: 1; }
+    #app .app-shell--comic-page .ui-library__card:is(:hover, :has(:focus-visible)) .ui-library__card-actions button { pointer-events: auto; }
+    #app .app-shell--comic-page .ui-library__play { display: none; }
+    /* Copy feedback covers the name and meta for its four seconds. */
+    #app .app-shell--comic-page .ui-library__card-feedback {
+      position: absolute; top: calc(7px + 100cqw * 175 / 291 + 4px); right: 8px; left: 8px; z-index: 1; margin: 0; padding: 4px 8px;
+      border-radius: 5px; background: var(--ul-navy); color: var(--ul-on-navy); font-size: 12px; line-height: 17px;
+    }
+  }
+
+  /* Contact sheet: smaller thumbnails, more to a row, for scanning. The name and likes stay; the drawn card, the
+     framework tag, the source line and the copy buttons step aside (the preview dialog still has them). */
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] { grid-template-columns: repeat(auto-fill, minmax(min(100%, 128px), 1fr)); gap: 12px 10px; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 4px; padding: 0; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card::before,
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card::after { content: none; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card-open { display: contents; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__poster { grid-column: 1 / -1; border: 1.5px solid var(--ul-black); border-radius: 5px; box-shadow: 2px 2px 0 var(--ul-drop); }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] :is(.ui-library__badge, .ui-library__card-meta > span:first-child, .ui-library__card-actions, .ui-library__card-feedback) { display: none; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card-title { padding: 5px 1px 0; font-size: 12px; line-height: 17px; }
+  #app .app-shell--comic-page .ui-library__grid[data-density=sheet] .ui-library__card-meta { margin: 5px 0 0; }
   #app .app-shell--comic-page :is(.ui-library__skeleton) { border: 2px dashed color-mix(in srgb, var(--ul-black) 30%, transparent); border-radius: 8px; }
   #app .app-shell--comic-page .ui-library__empty { border: 2px dashed var(--ul-black); border-radius: 10px; background: var(--ul-paper); }
   #app .app-shell--comic-page .ui-library__empty h2 { font-size: 22px; font-style: italic; font-weight: 900; }

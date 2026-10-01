@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useDocumentVisibility, useNow } from '@vueuse/core'
+import { useDocumentVisibility, useMediaQuery, useNow } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowUpRight, Pause, Play, Search, SlidersHorizontal, X } from 'lucide-vue-next'
+import { ArrowUpRight, Grid3x3, Pause, Play, Search, SlidersHorizontal, X } from 'lucide-vue-next'
 import UiTemplateDialog from '@/features/ui-library/UiTemplateDialog.vue'
 import UiTemplateCard from '@/features/ui-library/UiTemplateCard.vue'
 import UiIconCard from '@/features/ui-library/UiIconCard.vue'
 import UiIconDialog from '@/features/ui-library/UiIconDialog.vue'
 import UiMcpRecommendation from '@/features/ui-library/UiMcpRecommendation.vue'
+import { useLibraryDensity } from '@/features/ui-library/useLibraryDensity'
 import { loadCatalogWithMeta, loadIconSets, recentlyAdded, searchIcons, searchTemplates, type UiIcon, type UiIconSet, type UiLanguage, type UiTemplate } from '@/features/ui-library/catalog'
 import { uiLibraryMessages } from '@/features/ui-library/messages'
 import '@/features/ui-library/library.css'
@@ -69,8 +70,11 @@ const availableCategoryGroups = computed(() => categoryGroups
 const availableStyles = computed(() => styleTags.map(([key, zh, en]) => ({ key, label: lang.value === 'zh' ? zh : en, count: browseMaterials(kindItems.value, 'all', '', key).length })).filter(row => row.count))
 const now = useNow({ interval: 60_000 })
 const ranking = computed<Ranking>(() => ['new', 'daily', 'weekly', 'monthly', 'liked'].includes(readQuery('rank')) ? readQuery('rank') as Ranking : 'all')
-// 换了素材类型、用途、风格、榜单或图标集时，结果网格整批依次浮现；搜索框逐字输入不重播。
-const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value].join('|'))
+// 联系表只在桌面生效：一排更多、只看静态缩略图（几十个预览不同时解码，点开详情再播放）。
+const desktop = useMediaQuery('(min-width: 1024px)')
+const { density, contactSheet, toggle: toggleDensity } = useLibraryDensity(desktop)
+// 换了素材类型、用途、风格、榜单、图标集或切换联系表时，结果网格整批依次浮现；搜索框逐字输入不重播。
+const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value, density.value].join('|'))
 const account = provideUiLibraryAccount(lang, ranking, async () => { if (selected.value) await close(); selectedIcon.value = null })
 const rankOptions = computed<[Ranking, string][]>(() => lang.value === 'zh' ? [['all', '全部'], ['new', '今日新增'], ['daily', '今日热榜'], ['weekly', '周榜'], ['monthly', '月榜'], ['liked', '我的喜欢']] : [['all', 'All'], ['new', 'New today'], ['daily', 'Today'], ['weekly', 'Week'], ['monthly', 'Month'], ['liked', 'Liked']])
 const filtered = computed(() => {
@@ -84,12 +88,13 @@ const filtered = computed(() => {
 const selected = computed(() => items.value.find(item => item.id === route.params.id))
 const visibleLimit = ref(96)
 const visibleItems = computed(() => filtered.value.slice(0, visibleLimit.value))
+const resultCount = computed(() => iconMode.value ? filteredIcons.value.length : filtered.value.length)
 watch([query, category, framework, ranking, kind, style, iconProvider], () => { visibleLimit.value = 96 })
 const sourceCount = computed(() => new Set(items.value.map(item => item.provider)).size)
 const hasFilters = computed(() => Boolean(query.value || category.value || framework.value || style.value || iconProvider.value))
 const visibility = useDocumentVisibility()
 const autoplay = ref(true)
-const previewsEnabled = computed(() => autoplay.value && visibility.value === 'visible' && !selected.value)
+const previewsEnabled = computed(() => autoplay.value && !contactSheet.value && visibility.value === 'visible' && !selected.value)
 let trigger: HTMLElement | null = null
 async function refresh() {
   loading.value = true
@@ -144,11 +149,14 @@ onBeforeUnmount(() => controller.abort())
       <div><p class="ui-library__eyebrow">AIGC RADAR / UI</p><h1 class="comic-title">{{ text.title }}</h1><p>{{ text.subtitle }}</p></div>
       <RouterLink to="/mcp" class="ui-library__mcp">{{ text.mcp }}<ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
     </header>
-    <div class="ui-library__toolbar">
-      <label class="ui-library__search"><Search :size="19" aria-hidden="true" /><input type="search" :value="query" :placeholder="text.search" :aria-label="text.search" @input="setFilter('q', ($event.target as HTMLInputElement).value)" /></label>
-      <label v-if="!iconMode" class="ui-library__framework"><SlidersHorizontal :size="16" aria-hidden="true" /><select :value="framework" :aria-label="text.frameworks" @change="setFilter('framework', ($event.target as HTMLSelectElement).value)"><option value="">{{ text.frameworks }}</option><option value="html">HTML / Tailwind</option><option value="react">React</option><option value="vue">Vue / Nuxt</option><option value="css">CSS / Themes</option></select></label>
+    <!-- 指挥栏：桌面上搜索、框架与素材类型并成一行，放不下时类型折到下一行；手机与平板上这一层不存在（display: contents） -->
+    <div class="ui-library__command">
+      <div class="ui-library__toolbar">
+        <label class="ui-library__search"><Search :size="19" aria-hidden="true" /><input type="search" :value="query" :placeholder="text.search" :aria-label="text.search" @input="setFilter('q', ($event.target as HTMLInputElement).value)" /><span class="ui-library__search-count" aria-live="polite">{{ resultCount }} {{ text.result }}</span></label>
+        <label v-if="!iconMode" class="ui-library__framework"><SlidersHorizontal :size="16" aria-hidden="true" /><select :value="framework" :aria-label="text.frameworks" @change="setFilter('framework', ($event.target as HTMLSelectElement).value)"><option value="">{{ text.frameworks }}</option><option value="html">HTML / Tailwind</option><option value="react">React</option><option value="vue">Vue / Nuxt</option><option value="css">CSS / Themes</option></select></label>
+      </div>
+      <nav v-indicator="{ active: '[aria-pressed=true]', flip: true }" class="ui-library__kinds" :aria-label="lang === 'zh' ? '素材类型' : 'Material types'"><button v-for="[key, zh, en] in libraryKinds" :key="key" type="button" :aria-pressed="kind === key" @click="setKind(key)">{{ lang === 'zh' ? zh : en }}<span>{{ kindCount(key) }}</span></button><button type="button" class="ui-library__all-kinds" :aria-pressed="kind === 'all'" @click="setKind('all')">{{ lang === 'zh' ? '全部素材' : 'All materials' }}<span>{{ items.length }}</span></button></nav>
     </div>
-    <nav v-indicator="{ active: '[aria-pressed=true]', flip: true }" class="ui-library__kinds" :aria-label="lang === 'zh' ? '素材类型' : 'Material types'"><button v-for="[key, zh, en] in libraryKinds" :key="key" type="button" :aria-pressed="kind === key" @click="setKind(key)">{{ lang === 'zh' ? zh : en }}<span>{{ kindCount(key) }}</span></button><button type="button" class="ui-library__all-kinds" :aria-pressed="kind === 'all'" @click="setKind('all')">{{ lang === 'zh' ? '全部素材' : 'All materials' }}<span>{{ items.length }}</span></button></nav>
     <div class="ui-library__body">
       <aside class="ui-library__sidebar">
         <nav v-if="iconMode" v-indicator="'.active'" :aria-label="text.iconSets">
@@ -173,7 +181,7 @@ onBeforeUnmount(() => controller.abort())
         <div v-if="!iconMode" class="ui-library__rankbar"><nav v-indicator="{ active: '[aria-pressed=true]', flip: true, pop: true }" :aria-label="lang === 'zh' ? '素材排行榜' : 'Library rankings'"><button v-for="[key, label] in rankOptions" :key="key" type="button" :aria-pressed="ranking === key" @click="setFilter('rank', key === 'all' ? '' : key)">{{ label }}</button></nav><span>{{ ranking === 'new' ? (lang === 'zh' ? '最近 24 小时首次入库 · 按入库时间' : 'First added in the last 24h · Newest first') : (lang === 'zh' ? '滚动 24 小时 / 7 天 / 30 天 · 按爱心' : 'Rolling 24h / 7d / 30d · By likes') }}</span></div>
         <div class="ui-library__quota"><span>{{ account.quotaText.value }}</span><RouterLink to="/membership">{{ lang === 'zh' ? '了解 VIP' : 'Explore VIP' }}</RouterLink></div>
         <p v-if="account.loadError.value" class="ui-library__account-error" role="status">{{ lang === 'zh' ? '热度暂时无法加载' : 'Popularity is temporarily unavailable' }} <button @click="account.refresh">{{ text.retry }}</button></p>
-        <div class="ui-library__results"><span aria-live="polite">{{ iconMode ? filteredIcons.length : filtered.length }} {{ text.result }}</span><span v-if="!iconMode" class="ui-library__autoplay-hint">{{ text.autoplayHint }}</span><button v-if="!iconMode" type="button" class="ui-library__playback" :aria-pressed="autoplay" @click="autoplay = !autoplay"><Pause v-if="autoplay" :size="14" /><Play v-else :size="14" />{{ autoplay ? text.pauseAll : text.playAll }}</button><button v-if="hasFilters" type="button" @click="router.replace({ query: {} })"><X :size="14" aria-hidden="true" />{{ text.clear }}</button></div>
+        <div class="ui-library__results"><span aria-live="polite">{{ resultCount }} {{ text.result }}</span><span v-if="!iconMode" class="ui-library__autoplay-hint">{{ text.autoplayHint }}</span><button v-if="!iconMode && !contactSheet" type="button" class="ui-library__playback" :aria-pressed="autoplay" :title="`${autoplay ? text.pauseAll : text.playAll} · ${text.autoplayHint}`" @click="autoplay = !autoplay"><Pause v-if="autoplay" :size="14" aria-hidden="true" /><Play v-else :size="14" aria-hidden="true" /><span class="ui-library__tool-label">{{ autoplay ? text.pauseAll : text.playAll }}</span></button><button v-if="!iconMode" type="button" class="ui-library__density" :aria-pressed="density === 'sheet'" :title="text.contactSheetHint" @click="toggleDensity"><Grid3x3 :size="15" aria-hidden="true" /><span class="ui-library__tool-label">{{ text.contactSheet }}</span></button><button v-if="hasFilters" type="button" class="ui-library__clear" @click="router.replace({ query: {} })"><X :size="14" aria-hidden="true" />{{ text.clear }}</button></div>
         <template v-if="iconMode">
           <div v-if="iconsLoading" class="ui-library__grid" :aria-label="text.loading" aria-busy="true"><div v-for="n in 6" :key="n" class="ui-library__skeleton" /></div>
           <div v-else-if="iconsFailed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="loadIcons">{{ text.retry }}</button></div>
@@ -187,7 +195,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-if="loading" class="ui-library__grid" :aria-label="text.loading" aria-busy="true"><div v-for="n in 6" :key="n" class="ui-library__skeleton" /></div>
           <div v-else-if="failed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="refresh">{{ text.retry }}</button></div>
           <div v-else-if="!filtered.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ ranking === 'new' ? text.emptyNew : text.empty }}</h2><p>{{ ranking === 'new' ? text.emptyNewHint : text.emptyHint }}</p><button type="button" @click="router.replace({ query: {} })">{{ text.clear }}</button></div>
-          <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid">
+          <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid" :data-density="density">
             <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" />
           </div>
           <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>

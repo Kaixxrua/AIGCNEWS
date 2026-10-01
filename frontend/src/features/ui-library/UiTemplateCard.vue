@@ -61,7 +61,7 @@ onBeforeUnmount(() => {
         <span class="ui-library__badge">{{ item.kind === 'theme' ? 'Theme · CSS' : item.frameworks[0] === 'vue' ? 'Vue' : item.frameworks[0] === 'html' ? 'HTML' : 'React' }}</span>
         <span v-if="previewState === 'error'" class="ui-library__hover-error">{{ text.hoverError }}</span>
       </span>
-      <button type="button" class="ui-library__card-title" @click="emit('open', $event)">{{ item.name[lang] }}<ArrowUpRight :size="15" aria-hidden="true" /></button>
+      <button type="button" class="ui-library__card-title" :title="item.name[lang]" @click="emit('open', $event)">{{ item.name[lang] }}<ArrowUpRight :size="15" aria-hidden="true" /></button>
     </div>
     <div class="ui-library__card-meta"><span>{{ item.provider }} · {{ categoryLabel(item, lang) }}</span><UiLikeButton :id="item.id" :lang="lang" /></div>
     <div class="ui-library__card-actions">

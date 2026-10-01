@@ -191,3 +191,8 @@ section.ui-library.view-container { overflow-y:auto; overflow-x:hidden; scrollba
 .ui-library__kinds[data-indicator] button[aria-pressed=true],.ui-library__rankbar nav[data-indicator] button[aria-pressed=true],.ui-library__sidebar nav[data-indicator] button.active { background:transparent; }
 .ui-library__kinds button,.ui-library__rankbar button,.ui-library__sidebar button { transition:color 90ms ease; }
 .ui-library__kinds[data-indicator] button[aria-pressed=true],.ui-library__rankbar nav[data-indicator] button[aria-pressed=true] { transition:color 160ms ease 70ms; }
+
+/* 指挥栏只是桌面漫画页的排版层：其余宽度它不存在（display: contents）；搜索框里的结果数与联系表开关也只在桌面出现。 */
+.ui-library__command { display:contents; }
+.ui-library__search-count { display:none; }
+.ui-library__results .ui-library__density { display:none; }
