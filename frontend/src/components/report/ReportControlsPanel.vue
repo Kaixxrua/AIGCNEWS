@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { BellRing, Mail, Send } from 'lucide-vue-next'
 import { vIndicator } from '@/motion/indicator'
+import type { ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import {
   REPORT_TYPES,
   type ReportKey,
@@ -27,6 +28,8 @@ defineProps<{
   isRssBusy: boolean
   reportContent: string
   autoScroll: boolean
+  /** 桌面大报版式的阅读方式；不传则不显示切换。 */
+  readingMode?: ReportReadingMode | null
 }>()
 
 const emit = defineEmits<{
@@ -37,6 +40,7 @@ const emit = defineEmits<{
   sendToEmail: []
   copySubscribedRss: []
   generate: []
+  'update:readingMode': [value: ReportReadingMode]
 }>()
 </script>
 
@@ -47,9 +51,28 @@ const emit = defineEmits<{
       <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
       <h1 class="report-controls__title comic-title text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
       <span class="report-controls__meta text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
+      <!-- 桌面版把 AI 生成声明接在日期之后，同一行 -->
+      <p v-if="reportContent" class="report-ai-bubble">{{ t('report.aiGeneratedNotice') }}</p>
+      <!-- 桌面大报版式的阅读方式：全文 / 导读，排在日期行末 -->
+      <div
+        v-if="readingMode && reportContent"
+        v-indicator="{ active: '[aria-pressed=true]' }"
+        class="report-reading-mode"
+        role="group"
+        :aria-label="t('report.readingMode.label')"
+      >
+        <button
+          v-for="mode in (['full', 'lead'] as const)"
+          :key="mode"
+          type="button"
+          :aria-pressed="readingMode === mode"
+          :disabled="isGenerating"
+          @click="emit('update:readingMode', mode)"
+        >
+          {{ t(`report.readingMode.${mode}`) }}
+        </button>
+      </div>
     </div>
-    <!-- 桌面漫画版把 AI 生成声明画成标题行右侧的对白框（正文里那条随之隐藏），其余宽度不显示 -->
-    <p v-if="reportContent" class="report-ai-bubble">{{ t('report.aiGeneratedNotice') }}</p>
     <div class="report-controls__actions flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
       <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
         <span class="status-dot bg-brand-green" />

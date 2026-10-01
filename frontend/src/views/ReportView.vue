@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import type { ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
@@ -10,6 +11,7 @@ import { api } from '@/services/http/apiClient'
 import { getFeedToken, rotateFeedToken } from '@/services/auth/feedTokenApi'
 import { useEventSource } from '@/composables/useEventSource'
 import { useFollowViewport } from '@/composables/useFollowViewport'
+import { useReportBarLayout } from '@/composables/useReportBarLayout'
 import { useReportController } from '@/composables/useReportController'
 import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
@@ -45,7 +47,14 @@ const { renderMarkdown } = useLatexRenderer()
 const reportRef = ref<HTMLElement | null>(null)
 const reportPageRef = ref<HTMLElement | null>(null)
 const isMobile = useMediaQuery('(max-width: 767px)')
-const readingViewport = computed(() => isMobile.value ? reportPageRef.value : reportRef.value)
+// 桌面（≥1024px）按大报版式排，整页只留一条滚动条，跟随生成滚动的也是整页。
+const isDesktop = useMediaQuery('(min-width: 1024px)')
+const readingViewport = computed(() => isMobile.value || isDesktop.value ? reportPageRef.value : reportRef.value)
+// 控制条钉在顶部时有多高：收起长条目后把条目开头滚回控制条下方要让开这段距离。
+const controlsRef = ref<HTMLElement | null>(null)
+const { height: controlsHeight } = useElementSize(controlsRef, undefined, { box: 'border-box' })
+// 桌面控制条三段（分区标签、日期行、操作按钮）放得下就排一行，否则按宽度排成两行。
+const controlsLayout = useReportBarLayout(controlsRef, isDesktop)
 const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(readingViewport)
 
 const { connect } = useEventSource()
@@ -161,13 +170,31 @@ const contentKey = ref(0)
 watch(reportContent, () => {
   if (!isGenerating.value) contentKey.value += 1
 })
+
+// 大报版式的阅读方式（全文 / 导读）记在本机，下次打开沿用；无痕窗口等存不了时只在本次有效。
+const READING_MODE_KEY = 'report_reading_mode'
+const readStoredReadingMode = (): ReportReadingMode => {
+  try {
+    return localStorage.getItem(READING_MODE_KEY) === 'lead' ? 'lead' : 'full'
+  } catch {
+    return 'full'
+  }
+}
+const readingMode = ref<ReportReadingMode>(readStoredReadingMode())
+watch(readingMode, mode => {
+  try {
+    localStorage.setItem(READING_MODE_KEY, mode)
+  } catch {
+    // 存不了就不存
+  }
+})
 </script>
 
 <template>
-  <div ref="reportPageRef" class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5">
+  <div ref="reportPageRef" class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5" :style="{ '--report-bar-h': `${Math.round(controlsHeight)}px` }">
 
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
-    <div class="stagger-enter glass-card comic-panel shrink-0 px-4 py-3 space-y-2">
+    <div ref="controlsRef" class="stagger-enter glass-card comic-panel shrink-0 px-4 py-3 space-y-2" :class="[{ 'is-expanded': showSubscribePanel || showLoginPrompt }, controlsLayout && `is-${controlsLayout}`]">
       <ReportControlsPanel
         v-model:selected-type="selectedType"
         v-model:selected-date="selectedDate"
@@ -185,6 +212,8 @@ watch(reportContent, () => {
         :is-rss-busy="isRssBusy"
         :report-content="reportContent"
         :auto-scroll="autoScroll"
+        :reading-mode="isDesktop ? readingMode : null"
+        @update:reading-mode="readingMode = $event"
         @toggle-subscribe="toggleSubscribe"
         @prompt-login-for-subscribe="promptLoginForSubscribe"
         @send-to-email="sendToEmail"
@@ -217,6 +246,8 @@ watch(reportContent, () => {
         @rotate-rss="rotateRssToken"
         @confirm-plan="confirmSubscriptionPlan"
       />
+      <!-- 桌面版控制条贴在报眉下，正文滚过时由这条墨线隔开 -->
+      <svg v-if="isDesktop" class="report-controls__rule" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden="true"><path d="M0 3.4 L340 2.6 L1000 3.8" /></svg>
     </div>
 
     <!-- 错误 -->
@@ -233,6 +264,8 @@ watch(reportContent, () => {
         :current-type-label="currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : ''"
         :auto-scroll="autoScroll"
         :render-markdown="renderMarkdown"
+        :reading-mode="isDesktop ? readingMode : null"
+        :content-key="contentKey"
         @resume-auto-scroll="resumeAutoScroll"
       />
     </div>
@@ -254,6 +287,9 @@ watch(reportContent, () => {
   .report-shell :deep(button), .report-shell :deep(input) { min-height: 44px; }
   .report-shell :deep(.report-content) { padding: 16px; }
 }
+
+/* 控制条下的墨线只在漫画版桌面布局里画（comic-pages.css） */
+.report-controls__rule { display: none; }
 
 .report-shell :deep(.glass-card) {
   border: 1px solid var(--rule);

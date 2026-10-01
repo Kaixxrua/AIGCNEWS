@@ -1,15 +1,26 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
+import ReportBroadsheet, { type ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
+import { parseBroadsheet } from '@/features/report/reportBroadsheet'
 import { groupReportSections } from '@/features/report/reportViewModel'
 const { t } = useI18n()
-defineProps<{
+const props = defineProps<{
   reportContent: string
   isGenerating: boolean
   currentTypeLabel?: string
   autoScroll: boolean
   renderMarkdown: (content: string) => string
+  /** 桌面（≥1024px）按大报版式排的阅读方式；不传时排成一列。 */
+  readingMode?: ReportReadingMode | null
+  /** 换了一期简报时变化，大报版式据此清掉上一期的展开状态。 */
+  contentKey?: number
 }>()
+
+const broadsheet = computed(() => props.readingMode && props.reportContent
+  ? parseBroadsheet(props.renderMarkdown(props.reportContent))
+  : null)
 
 const emit = defineEmits<{
   resumeAutoScroll: []
@@ -38,7 +49,8 @@ const emit = defineEmits<{
   <!-- 报告正文 -->
   <div v-if="reportContent" class="report-content p-5">
     <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
-    <article class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
+    <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" />
+    <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>
 

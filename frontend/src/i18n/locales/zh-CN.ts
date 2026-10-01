@@ -64,6 +64,9 @@ const overrides = {
   chat: { requestFailed: '请求失败：{detail}', streamFailed: '流式请求失败：{detail}', emptyResponseContent: '本次请求未返回正文内容，请检查后端日志。', paperConversationTitle: '论文对话', defaultConversationTitle: '新对话', analyzeAttachments: '请结合附件内容进行分析。' },
   report: {
     aiGeneratedNotice: '本简报由 AI 生成，内容仅供参考，不构成任何建议。',
+    expand: '展开全文',
+    collapse: '收起',
+    readingMode: { label: '阅读方式', full: '全文', lead: '导读' },
     period: { daily: '日报' },
     titleFallback: '自动化简报',
     cached: '已缓存',
