@@ -14,6 +14,12 @@ export interface PaperReaderPaper {
   url?: string
   summary?: string
   published_date?: string
+  /** 接口给的是 JSON 字符串，旧数据可能是数组；版头用 parsePaperAuthors 读。 */
+  authors?: string[] | string | null
+  arxiv_id?: string | null
+  source_channel?: string
+  rank_in_period?: number
+  raw_score?: number
 }
 
 interface PaperReaderControllerOptions<TPaper extends PaperReaderPaper> {

@@ -12,6 +12,9 @@ export interface PaperItem {
   score?: number
   raw_score?: number
   rank_in_period?: number
+  /** JSON 字符串，如 '["Hao Li", "MeiJia Chen"]'。 */
+  authors?: string[] | string | null
+  arxiv_id?: string | null
   created_at?: string
 }
 

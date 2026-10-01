@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import PaperConversationPanel from '@/components/papers/PaperConversationPanel.vue'
 import PaperDocumentPanel from '@/components/papers/PaperDocumentPanel.vue'
+import PaperSameDayList from '@/components/papers/PaperSameDayList.vue'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { usePaperReaderController } from '@/composables/usePaperReaderController'
+import { useSameDayPapers } from '@/composables/useSameDayPapers'
+import { paperDay } from '@/features/papers/paperHead'
 import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
@@ -44,6 +48,14 @@ const {
   isThinkingExpanded, sendText,
   handleKeydown, setChatListRef,
 } = controller
+
+// 桌面（漫画版）版头多一行作者、arXiv 编号、点赞和名次，旁边列出同一天日榜上的论文；窄屏沿用原来的阅读布局。
+const desktop = useMediaQuery('(min-width: 1024px)')
+const { entries: sameDayPapers } = useSameDayPapers({
+  day: computed(() => paperDay(paper.value?.published_date)),
+  currentId: paperId,
+  enabled: desktop,
+})
 
 onMounted(() => { void initializePaperContext(paperId.value) })
 watch(paperId, handlePaperIdChange)
@@ -96,7 +108,15 @@ const goBack = () => {
       :paper-loading="paperLoading"
       :paper-error="paperError"
       :render-markdown="renderMarkdown"
-    />
+      :detailed="desktop"
+    >
+      <!-- 登录后右栏是对话，同一天的论文跟在摘要后面。 -->
+      <template v-if="desktop && conversationEnabled && sameDayPapers.length" #after>
+        <PaperSameDayList :entries="sameDayPapers" />
+      </template>
+    </PaperDocumentPanel>
+    <!-- 游客的右栏：登录卡下面是同一天的论文。 -->
+    <PaperSameDayList v-if="desktop && !conversationEnabled && sameDayPapers.length" :entries="sameDayPapers" />
   </div>
 </template>
 
