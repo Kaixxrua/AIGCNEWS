@@ -46,7 +46,7 @@ const overrides = {
     },
   },
   footer: { poweredBy: '由 {brandName} 提供支持', disclaimer: '免责声明', privacy: '隐私政策', mcp: 'MCP 接入', ecosystem: '商务合作：', infringement: '侵权投诉' },
-  masthead: { todayNew: '今日更新', userGroup: '用户组：{tier}', memberUntil: '{date}到期', memberLifetime: '长期有效', favoriteSite: '收藏本站', favoriteSiteGuideText: '收藏本站到浏览器书签', favoriteSiteGuideTextTouch: '打开浏览器菜单，选择「书签」或「收藏」即可收藏本站' },
+  masthead: { edition: '{letter} 版', sections: { projects: '项目库', uiLibrary: 'UI 灵感库', websites: '网页收藏', report: '简报', xboard: 'X 动态', mcp: 'MCP 接入', dsh: 'DSH 插件', subscriptions: '情报追踪', membership: '会员', contact: '联系合作', monitor: '监控', paper: '论文', disclaimer: '免责声明', privacy: '隐私政策' }, todayNew: '今日更新', userGroup: '用户组：{tier}', memberUntil: '{date}到期', memberLifetime: '长期有效', favoriteSite: '收藏本站', favoriteSiteGuideText: '收藏本站到浏览器书签', favoriteSiteGuideTextTouch: '打开浏览器菜单，选择「书签」或「收藏」即可收藏本站' },
   auth: {
     login: '登录', logout: '退出登录', username: '用户名', password: '密码', email: '邮箱', otp: '验证码', newPassword: '新密码', confirmPassword: '确认密码',
     loginTitle: 'AIGC 资讯 · 登录', loginDescription: '欢迎回来，请登录您的账号', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',

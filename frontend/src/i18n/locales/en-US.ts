@@ -45,7 +45,7 @@ const enUSCatalog = {
     },
   },
   footer: { poweredBy: 'Powered by {brandName}', disclaimer: 'Disclaimer', privacy: 'Privacy Policy', mcp: 'MCP Access', ecosystem: 'Business & Partnerships: ', infringement: 'Report Infringement' },
-  masthead: { todayNew: 'New today', userGroup: 'Group: {tier}', memberUntil: 'until {date}', memberLifetime: 'lifetime', favoriteSite: 'Bookmark this site', favoriteSiteGuideText: 'to bookmark this site in your browser', favoriteSiteGuideTextTouch: 'Open the browser menu and choose “Bookmark” to save this site.' },
+  masthead: { edition: 'Section {letter}', sections: { projects: 'Projects', uiLibrary: 'UI Library', websites: 'Websites', report: 'Briefing', xboard: 'X Board', mcp: 'MCP', dsh: 'DSH', subscriptions: 'Tracking', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', paper: 'Paper', disclaimer: 'Disclaimer', privacy: 'Privacy' }, todayNew: 'New today', userGroup: 'Group: {tier}', memberUntil: 'until {date}', memberLifetime: 'lifetime', favoriteSite: 'Bookmark this site', favoriteSiteGuideText: 'to bookmark this site in your browser', favoriteSiteGuideTextTouch: 'Open the browser menu and choose “Bookmark” to save this site.' },
   auth: {
     login: 'Log in', logout: 'Log out', username: 'Username', password: 'Password', email: 'Email', otp: 'Verification code', newPassword: 'New password', confirmPassword: 'Confirm password',
     loginTitle: 'AIGC News · Log in', loginDescription: 'Welcome back. Log in to your account.', registerTitle: 'AIGC News · Register', registerDescription: 'Create your account and start exploring AI news.', forgotTitle: 'AIGC News · Reset password', forgotDescription: 'Set a new password using an email verification code.',

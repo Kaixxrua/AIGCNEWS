@@ -282,4 +282,36 @@
   #app .app-shell--editorial .brand-wordmark__text { animation: none; }
 }
 
+/* The masthead's height, for page geometry that measures the view from the viewport (the view is the shell less
+   the masthead and the 74px footer). */
+#app .app-shell--editorial { --masthead-h: 110px; }
+/* Inside pages (LayoutView .app-shell--folio: every comic page but the contact scene) carry a one-line folio, as a
+   paper's inside pages run a slim head under the front page's nameplate: the small wordmark, the page's section,
+   the date line, then (past the free fourth column) the shared tools and the account, 50px tall. The stickers, the
+   tagline and the halftone stay on the homepage; the rule runs straight along the foot. */
+#app .app-shell--folio { --masthead-h: 50px; }
+#app .app-shell--folio .main-canvas--editorial > .app-content { padding-top: var(--masthead-h); }
+#app .app-shell--folio .main-canvas--editorial .app-masthead {
+  height: var(--masthead-h); padding: 0 18px 0 22px; column-gap: 0;
+  grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+}
+#app .app-shell--folio .app-masthead::before,
+#app .app-shell--folio .app-masthead::after,
+#app .app-shell--folio .topbar-divider { display: none; }
+#app .app-shell--folio .app-masthead__tools { display: contents; }
+#app .app-shell--folio .app-masthead .brand-wordmark { grid-column: 1; grid-row: 1; }
+#app .app-shell--folio .brand-comic { width: 141px; height: 34px; }
+#app .app-shell--folio .masthead-folio {
+  grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 0 0 18px; padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--ink); color: var(--ink); font-size: 18px; font-style: italic; font-weight: 900; line-height: 1.2; white-space: nowrap;
+}
+#app .app-shell--folio .masthead-folio small { color: var(--ink-muted); font-size: 12px; font-style: normal; font-weight: 700; letter-spacing: .04em; }
+#app .app-shell--folio .app-masthead .masthead-meta {
+  grid-column: 3; grid-row: 1; flex-direction: row; align-items: baseline; gap: 14px; margin: 0 0 0 22px; font-size: 13px; line-height: 1.2;
+}
+#app .app-shell--folio .app-masthead__actions { grid-column: 5; grid-row: 1; gap: 6px; margin-left: 16px; }
+#app .app-shell--folio .app-masthead .masthead-user { grid-column: 6; grid-row: 1; width: auto; max-width: 180px; gap: 8px; margin-left: 14px; padding: 4px 0 4px 14px; }
+#app .app-shell--folio .masthead-user .user-avatar { width: 30px; height: 30px; }
+#app .app-shell--folio .masthead-user__identity { display: none; }
+
 }

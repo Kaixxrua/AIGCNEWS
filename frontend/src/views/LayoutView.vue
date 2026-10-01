@@ -26,6 +26,7 @@ import {
   isNavigationItemFeatureEnabled,
   isNavigationItemSitePageEnabled,
 } from '@/features/navigation/navigationModel'
+import { folioSection } from '@/features/navigation/folioSection'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
@@ -47,6 +48,14 @@ const comicRoute = computed(() => {
 const editorialLayout = computed(() => route.path === '/' || comicProjects.value || comicRoute.value)
 // 内容页（非首页）另挂一个类，页面级漫画样式与首页的一屏排版互不干扰。
 const comicPage = computed(() => comicProjects.value || comicRoute.value)
+// 内页的报头在桌面压成一行报眉（小号字标、版名、日期与今日更新、工具、头像），漫画贴纸与标语只留在首页。
+// 联系页是占满一屏的场景页，场景与报头的咬合在私有覆盖层里调好，保持原样。
+const folioPage = computed(() => comicPage.value && route.name !== 'contact')
+const section = computed(() => folioPage.value ? folioSection(route.path, route.query, String(route.name ?? '')) : null)
+// 首页的墨线在左上角贴纸处抬高、绕过飘带再落回报头底；报眉没有贴纸，墨线贴着底边走完。
+const mastheadRule = computed(() => folioPage.value
+  ? 'M0 47.5 L700 46.5 L1721 48'
+  : 'M0 17 L420 13 Q452 12 470 28 L487 45 Q491 49 509 49 L1247 49 Q1266 49 1275 46 L1698 46 Q1712 46 1721 50')
 // 首页桌面版按 1920×1080 排版；更大的屏幕（2K/4K）整体等比放大，而不是把同样的内容摊得更稀。
 // 以宽高中较紧的一边为准，保证放大后仍是一屏不滚动。页内的 100dvh 须除以 --shell-zoom。
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
@@ -115,7 +124,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage }" :style="shellStyle">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage }" :style="shellStyle">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -126,14 +135,15 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
         class="app-masthead absolute top-0 left-0 right-0 flex items-center justify-center px-6 py-2.5 shrink-0"
         style="z-index: 100; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised);"
       >
-        <svg class="comic-masthead-rule" viewBox="0 0 1721 50" preserveAspectRatio="none" aria-hidden="true"><path d="M0 17 L420 13 Q452 12 470 28 L487 45 Q491 49 509 49 L1247 49 Q1266 49 1275 46 L1698 46 Q1712 46 1721 50" /></svg>
+        <svg class="comic-masthead-rule" viewBox="0 0 1721 50" preserveAspectRatio="none" aria-hidden="true"><path :d="mastheadRule" /></svg>
         <MastheadMeta v-if="!isMobile" />
         <MastheadUser v-if="!isMobile" />
-        <ComicSticker v-if="!isMobile" variant="corner" class="comic-masthead-corner" />
-        <ComicSticker v-if="!isMobile" variant="shout" class="comic-masthead-creation" :text="$t('dashboard.editorial.creationMark')" />
+        <ComicSticker v-if="!isMobile && !folioPage" variant="corner" class="comic-masthead-corner" />
+        <ComicSticker v-if="!isMobile && !folioPage" variant="shout" class="comic-masthead-creation" :text="$t('dashboard.editorial.creationMark')" />
         <div class="app-masthead__tools flex items-center gap-3">
           <BrandWordmark :key="isMobile ? 'mobile' : 'desktop'" :text="brandName" :compact="isMobile" />
-          <span v-if="!isMobile" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
+          <p v-if="section && isDesktop" class="masthead-folio">{{ $t(`masthead.sections.${section.key}`) }}<small v-if="section.edition">{{ $t('masthead.edition', { letter: section.edition }) }}</small></p>
+          <span v-if="!isMobile && !folioPage" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
             <FavoritesLink v-if="!isMobile" />
