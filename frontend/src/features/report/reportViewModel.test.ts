@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupReportSections, parseReportDateQuery, todayInReportTimeZone } from './reportViewModel'
+import { groupReportSections, parseReportDateQuery, parseReportTypeQuery, todayInReportTimeZone } from './reportViewModel'
 
 describe('parseReportDateQuery', () => {
   it('accepts a past or current calendar date from the RSS briefing link', () => {
@@ -13,6 +13,20 @@ describe('parseReportDateQuery', () => {
     expect(parseReportDateQuery('2026-9-27', '2026-09-29')).toBeNull()
     expect(parseReportDateQuery('2026-02-30', '2026-09-29')).toBeNull()
     expect(parseReportDateQuery('2026-09-30', '2026-09-29')).toBeNull()
+  })
+})
+
+describe('parseReportTypeQuery', () => {
+  it('accepts a known briefing type from the quick search link', () => {
+    expect(parseReportTypeQuery('arxiv')).toBe('arxiv')
+    expect(parseReportTypeQuery('all')).toBe('all')
+  })
+
+  it('falls back to all types for missing, repeated or unknown values', () => {
+    expect(parseReportTypeQuery(undefined)).toBeNull()
+    expect(parseReportTypeQuery(['arxiv', 'news'])).toBeNull()
+    expect(parseReportTypeQuery('ARXIV')).toBeNull()
+    expect(parseReportTypeQuery('saved')).toBeNull()
   })
 })
 

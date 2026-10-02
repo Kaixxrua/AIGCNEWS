@@ -30,6 +30,19 @@ class BriefingReader(Protocol):
     def list_recent_daily_briefings(self, limit: int = 7) -> list[dict[str, Any]]: ...
 
 
+class BriefingSearchReader(Protocol):
+    """Keyword search boundary used by the site-wide quick search."""
+
+    def search_briefings(
+        self,
+        terms: list[str],
+        *,
+        locale: str,
+        limit: int = 5,
+        exclude_suffixes: tuple[str, ...] = (),
+    ) -> dict[str, Any]: ...
+
+
 class BriefingContentRepository(BriefingWriter, BriefingReader, Protocol):
     """Combined content boundary used by briefing generation services."""
 

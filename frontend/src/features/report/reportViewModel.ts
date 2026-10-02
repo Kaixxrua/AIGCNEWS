@@ -154,6 +154,10 @@ export const parseReportDateQuery = (
   return value <= today ? value : null
 }
 
+// 站内速查（⌘K）的简报结果回链 /report?date=…&type=…：只认已知的简报种类，缺省、重复参数、脏串一律返回 null，页面回落「全部」。
+export const parseReportTypeQuery = (value: unknown): ReportKey | null =>
+  typeof value === 'string' && isReportKey(value) ? value : null
+
 export const coerceReportStreamText = (data: unknown): string => {
   if (typeof data === 'string') return data
   if (Array.isArray(data)) {

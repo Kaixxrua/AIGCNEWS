@@ -134,3 +134,39 @@ def test_real_evaluation_round_trip_preserves_json_text_and_aggregates(database)
         "avg_citation": 0.75,
         "avg_subjective": 1.0,
     }
+
+
+def test_real_briefing_search_needs_every_term_in_the_locale_body(database) -> None:
+    repository = PostgresBriefingRepository(database)
+    # 2031 年的期键与独有词 zqx，避开本模块其他用例写入的简报
+    repository.save_briefing("2031-01-01", "Zqx 智能体 50% 折扣", content_en="Zqx agent sale")
+    repository.save_briefing("2031-01-02_github", "Zqx 智能体 a_b", content_en="   ")
+    repository.save_briefing("2031-01-02", "Zqx 智能体", content_en="Zqx agent daily")
+    repository.save_briefing("2031-01-02_0800_x", "Zqx 智能体 推文")
+    repository.save_briefing("2031-01-03_news", "只有 Zqx axb 500")
+
+    found = repository.search_briefings(["zqx", "智能体"], locale="zh-CN", limit=10)
+    # 新的一期在前；同一天综合报在前，模块报后写入的在前
+    assert [item["date"] for item in found["items"]] == [
+        "2031-01-02",
+        "2031-01-02_0800_x",
+        "2031-01-02_github",
+        "2031-01-01",
+    ]
+    assert found["total"] == 4
+    assert found["items"][0]["body"] == "Zqx 智能体"
+
+    first = repository.search_briefings(["zqx", "智能体"], locale="zh-CN", limit=1, exclude_suffixes=("_0800_x",))
+    assert [item["date"] for item in first["items"]] == ["2031-01-02"]
+    assert first["total"] == 3
+
+    # 英文读 content_en；只有空白的英文退回中文正文
+    english = {item["date"]: item["body"] for item in repository.search_briefings(["zqx"], locale="en", limit=10)["items"]}
+    assert english["2031-01-01"] == "Zqx agent sale"
+    assert english["2031-01-02_github"] == "Zqx 智能体 a_b"
+    assert english["2031-01-02_0800_x"] == "Zqx 智能体 推文"
+
+    # LIKE 通配符按字面匹配
+    assert [item["date"] for item in repository.search_briefings(["50%"], locale="zh-CN")["items"]] == ["2031-01-01"]
+    assert [item["date"] for item in repository.search_briefings(["a_b"], locale="zh-CN")["items"]] == ["2031-01-02_github"]
+    assert repository.search_briefings(["zqx", "不存在"], locale="zh-CN") == {"items": [], "total": 0}

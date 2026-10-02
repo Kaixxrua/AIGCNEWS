@@ -24,6 +24,7 @@ import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBrief
 import {
   getReportTypeInfo,
   parseReportDateQuery,
+  parseReportTypeQuery,
   type ReportKey,
   type ReportResponse,
   type SubscriptionListResponse,
@@ -91,12 +92,19 @@ const {
   scrollToBottom,
   locale,
   initialDate: parseReportDateQuery(route.query.date),
+  initialSource: parseReportTypeQuery(route.query.type),
 })
 
 // RSS 简报条目按期号回链（?date=）：页内改选日期后同步地址栏，刷新或分享不回跳旧一期。
 watch(selectedDate, date => {
   if (typeof route.query.date === 'string' && route.query.date !== date) {
     void router.replace({ query: { ...route.query, date } })
+  }
+})
+// 站内速查的简报结果连种类一起回链（?type=）：页内改选种类同样同步地址栏。
+watch(selectedType, type => {
+  if (typeof route.query.type === 'string' && route.query.type !== type) {
+    void router.replace({ query: { ...route.query, type } })
   }
 })
 
@@ -202,6 +210,14 @@ const pickDate = (date: string) => {
   selectedDate.value = date
   savedView.value = false
 }
+// 已经在简报页时，站内速查跳来另一期（同一页只换了 ?date= / ?type=）：跟着换过去。页面被缓存着时不跟别的页的参数走。
+watch(() => [route.name, route.query.date, route.query.type], ([name, date, type]) => {
+  if (name !== 'report') return
+  const nextDate = parseReportDateQuery(date)
+  const nextType = parseReportTypeQuery(type)
+  if (nextDate && nextDate !== selectedDate.value) pickDate(nextDate)
+  if (nextType && nextType !== selectedType.value) pickType(nextType)
+})
 
 // 大报版式的阅读方式（全文 / 导读）记在本机，下次打开沿用；无痕窗口等存不了时只在本次有效。
 const READING_MODE_KEY = 'report_reading_mode'

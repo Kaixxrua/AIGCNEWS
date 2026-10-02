@@ -30,6 +30,7 @@ from backend.app.api import (
     routes_projects_api,
     routes_push,
     routes_report,
+    routes_search,
     routes_site,
     routes_sitemap,
     routes_tracking,
@@ -587,6 +588,7 @@ app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])
 app.include_router(routes_attachments.router, prefix="/api", tags=["Attachments"])
 app.include_router(routes_vision.router, prefix="/api", tags=["Vision"])
 app.include_router(routes_papers.router, prefix="/api", tags=["Papers"])
+app.include_router(routes_search.router, prefix="/api", tags=["Search"])
 app.include_router(routes_push.router, prefix="/api", tags=["Push"])
 app.include_router(routes_tracking.router, prefix="/api")
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])

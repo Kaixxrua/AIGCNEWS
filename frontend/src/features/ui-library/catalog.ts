@@ -39,7 +39,7 @@ export interface UiTemplate {
 export interface UiSourceFile { name: string; content: string }
 const normalize = (text: string) => text.normalize('NFKC').toLowerCase().trim()
 const stopWords = new Set(['a', 'an', 'the', 'for', 'with', 'and', 'in', 'make', 'build', 'please', 'show', 'me'])
-export function queryTerms(query: string, items: UiTemplate[]): string[] {
+export function queryTerms(query: string, items: readonly Pick<UiTemplate, 'aliases'>[]): string[] {
   const vocabulary = [...new Set(items.flatMap(item => item.aliases))]
   return normalize(query).match(/[a-z0-9]+|[\p{Script=Han}]+/gu)?.flatMap(term => {
     if (stopWords.has(term)) return []
@@ -50,7 +50,9 @@ export function queryTerms(query: string, items: UiTemplate[]): string[] {
     return [term]
   }) ?? []
 }
-export function searchTemplates(items: UiTemplate[], query = '', category = '', framework = ''): UiTemplate[] {
+/** 搜索只看名称、简介、出处、别名、框架与分类；站内速查只留这几样字段，不必握着整份目录。 */
+export type SearchableTemplate = Pick<UiTemplate, 'id' | 'name' | 'description' | 'provider' | 'aliases' | 'frameworks' | 'category'>
+export function searchTemplates<T extends SearchableTemplate>(items: readonly T[], query = '', category = '', framework = ''): T[] {
   const terms = queryTerms(query, items)
   return items.map((item, index) => {
     const title = normalize(`${item.name.zh} ${item.name.en} ${item.id}`)

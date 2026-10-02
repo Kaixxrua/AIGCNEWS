@@ -4,6 +4,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.domain.search_semantics import escape_like_literal
+
+# 站内速查读的正文列：与 select_briefing_content 同一回退顺序（缺译读另一语言），只有空白不算有内容。
+_SEARCH_BODY_COLUMNS = {
+    "zh-CN": ("content_zh", "content", "content_en"),
+    "en": ("content_en", "content", "content_zh"),
+}
 
 
 def _utcnow() -> str:
@@ -104,6 +111,48 @@ class PostgresBriefingRepository:
                     (limit,),
                 )
                 return [dict(row) for row in cursor.fetchall()]
+
+    def search_briefings(
+        self,
+        terms: list[str],
+        *,
+        locale: str,
+        limit: int = 5,
+        exclude_suffixes: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
+        """站内速查：正文里每个关键词都出现（不分大小写）的各期简报，新的一期在前。
+
+        按 locale 选正文列；同一天综合报排在模块报前面。exclude_suffixes 是要排除的
+        期键后缀（如 X 源关闭时的 '_0800_x'）。返回本页条目（id、date、body）与命中期数。
+        """
+        clean_terms = [term for term in terms if term]
+        if not clean_terms:
+            return {"items": [], "total": 0}
+        columns = _SEARCH_BODY_COLUMNS["en" if locale == "en" else "zh-CN"]
+        body = "CASE " + " ".join(f"WHEN btrim(COALESCE({column}, '')) <> '' THEN {column}" for column in columns) + " ELSE '' END"
+        where_parts = ["body ILIKE %s ESCAPE '='"] * len(clean_terms)
+        params: list[Any] = [f"%{escape_like_literal(term)}%" for term in clean_terms]
+        for suffix in exclude_suffixes:
+            where_parts.append("date NOT LIKE %s ESCAPE '='")
+            params.append(f"%{escape_like_literal(suffix)}")
+        params.append(max(1, min(int(limit), 20)))
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT id, date, body, COUNT(*) OVER () AS total
+                    FROM (SELECT id, date, {body} AS body FROM briefings) AS picked
+                    WHERE {' AND '.join(where_parts)}
+                    ORDER BY LEFT(date, 10) DESC, position('_' in date) = 0 DESC, id DESC
+                    LIMIT %s
+                    """,
+                    tuple(params),
+                )
+                rows = [dict(row) for row in cursor.fetchall()]
+        return {
+            "items": [{"id": row["id"], "date": row["date"], "body": row["body"]} for row in rows],
+            "total": int(rows[0]["total"]) if rows else 0,
+        }
 
     def _fetchone(
         self,

@@ -17,6 +17,8 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import AccountSettingsDialog from '@/components/auth/AccountSettingsDialog.vue'
+import QuickSearch from '@/components/search/QuickSearch.vue'
+import QuickSearchButton from '@/components/search/QuickSearchButton.vue'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
   KEEP_ALIVE_MAX,
@@ -164,6 +166,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
           <span v-if="!isMobile && !folioPage" class="masthead-tagline"><svg class="comic-speech-outline" viewBox="0 0 300 72" preserveAspectRatio="none" aria-hidden="true"><path d="M12 5 L297 5 L282 57 L34 57 L7 70 L12 57 L3 57 Z" /></svg>{{ $t('dashboard.editorial.tagline') }}</span>
           <span class="topbar-divider" aria-hidden="true"></span>
           <div class="app-masthead__actions flex items-center gap-2">
+            <QuickSearchButton v-if="isDesktop && folioPage" />
             <FavoritesLink v-if="!isMobile" />
             <PwaInstallLink />
             <GitHubLink v-if="!isMobile" />
@@ -227,6 +230,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     </button>
 
     <AccountSettingsDialog v-model="accountSettingsOpen" />
+
+    <!-- 站内速查（⌘K / Ctrl+K）：桌面端任何一页都能叫出来；报眉上的放大镜只在内页出现，首页不动 -->
+    <QuickSearch :enabled="isDesktop" />
 
     <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" />
 

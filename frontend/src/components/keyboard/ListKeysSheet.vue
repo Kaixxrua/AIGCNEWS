@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
+import { isApplePlatform } from '@/features/search/quickSearch'
 import { popIn, popOut } from '@/motion/presence'
 
 /**
@@ -18,6 +19,7 @@ const open = defineModel<boolean>('open', { required: true })
 
 const { t } = useI18n()
 const sheet = ref<HTMLElement | null>(null)
+const searchKeys = isApplePlatform() ? ['⌘', 'K'] : ['Ctrl', 'K']
 
 const rows = computed<KeyRow[]>(() => [
   { keys: ['j', 'k'], label: t('listKeys.move') },
@@ -25,6 +27,7 @@ const rows = computed<KeyRow[]>(() => [
   ...(props.actions.save ? [{ keys: ['s'], label: props.actions.save }] : []),
   ...(props.actions.toggle ? [{ keys: ['x'], label: props.actions.toggle }] : []),
   ...(props.extra ?? []),
+  { keys: searchKeys, label: t('listKeys.search') },
   { keys: ['?'], label: t('listKeys.help') },
   { keys: ['Esc'], label: t('listKeys.escape') },
 ])
