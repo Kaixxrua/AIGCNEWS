@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useIntervalFn, useMediaQuery } from '@vueuse/core'
+import { useIntervalFn, useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { AppLocale } from '@/i18n'
 import type {
@@ -19,6 +19,7 @@ import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ProjectChartRow from '@/components/projects/ProjectChartRow.vue'
 import ProjectPeekCard from '@/components/projects/ProjectPeekCard.vue'
+import ProjectPane from '@/components/projects/ProjectPane.vue'
 import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
@@ -32,8 +33,9 @@ import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
 import { useAppDensity } from '@/composables/useAppDensity'
 import { useProjectTrends } from '@/composables/useProjectTrends'
 import { useListKeys } from '@/composables/useListKeys'
-import { useProjectPeek } from '@/composables/useProjectPeek'
-import { useReadMarks } from '@/composables/useReadMarks'
+import { useProjectPeek, useProjectPeekData } from '@/composables/useProjectPeek'
+import { useProjectPane } from '@/composables/useProjectPane'
+import { READ_MARKS, useReadMarks } from '@/composables/useReadMarks'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
   canEditWebsiteProject,
@@ -427,15 +429,91 @@ watch(chartKeys, (keys) => {
 // 榜单悬停速览：鼠标在一行上停稳半秒，这一行下面（下面放不下就上面）浮出 README 开头几段、最近一次提交和近 30 天的
 // 星标曲线，不用离开列表；卡片开着时这一行留着底色，Esc 先收卡片。网页收藏没有速览。
 const chartEl = ref<HTMLElement | null>(null)
+const chartRepoId = (key: string) => {
+  const repo = chartRepo(key)
+  return repo ? projectTrendKey(repo) : ''
+}
+// README、提交和星标曲线由速览卡片和宽屏详情栏共用一份，在一边看过的换到另一边不再取。
+const peekData = useProjectPeekData({ keys: chartKeys, repoOf: chartRepoId })
+
+// 宽屏（1600px 以上）的详情栏：点项目名或行里空白处不跳页，详情在右侧打开，列表留在左边；j / k（或栏里的上一个、下一个）
+// 接着看，走到一页头尾接着翻页；o 先打开详情，详情已经是这一行时再按才去 GitHub；Esc 收起。详情栏开着时不再浮速览卡片。
+// 在详情栏里停了一秒算扫过（下次进来变淡），去 GitHub 才立刻变淡。
+const isWide = useMediaQuery('(min-width: 1600px)')
+const paneAvailable = computed(() => isWide.value && chartLayout.value)
+const pane = useProjectPane({ available: paneAvailable, keys: chartKeys, pending: loading, repoOf: chartRepoId, data: peekData })
+const { target: paneTarget, content: paneContent, curve: paneCurve, direction: paneDirection } = pane
+const openPane = (repo: GitHubProjectItem) => pane.open(projectKey(repo))
+// 换页时榜单先撤下：详情栏留着正在看的项目，等新的一页取到再换。
+const paneRepo = shallowRef<GitHubProjectItem | null>(null)
+watch([paneTarget, projects], ([target]) => {
+  if (!target) paneRepo.value = null
+  else paneRepo.value = chartRepo(target.key) ?? paneRepo.value
+}, { immediate: true })
+// 在整个结果里排第几：接着上一页往下数
+const panePosition = computed(() => (pane.index.value < 0 ? null : (page.value - 1) * pageSize.value + pane.index.value + 1))
+// 栏里的上一个、下一个：走到这一页头尾时翻页，新的一页取到后接着看它的第一个（往前翻是最后一个）
+const stepPane = (direction: 1 | -1) => {
+  if (pane.step(direction)) return
+  const next = page.value + direction
+  if (next < 1 || next > totalPages.value) return
+  pane.expectFlip(direction)
+  goPage(next)
+}
+// 详情栏开着时榜单让出右边一栏；栏高跟着页面的可视高度。
+const paneShown = ref(false)
+watch(paneTarget, (target) => {
+  if (target) paneShown.value = true
+}, { flush: 'sync' })
+const pageHeight = ref(0)
+useResizeObserver(pageEl, (entries) => {
+  const entry = entries[0]
+  if (entry) pageHeight.value = entry.borderBoxSize?.[0]?.blockSize ?? (entry.target as HTMLElement).offsetHeight
+})
+const paneStyle = computed(() => (pageHeight.value ? { '--projects-view-h': `${Math.round(pageHeight.value)}px` } : undefined))
+// 详情从右边推进来、退回去；窗口窄到放不下时直接收，减少动态时直接出现、消失。
+// 收起时先按此刻的位置和高度钉住（这一栏不按内容撑高，出了网格就没有自己的高），再撤出网格，榜单当即放宽。
+const paneEnter = (el: Element, done: () => void) => slideIn(el, done, { x: 28 })
+const paneLeave = (el: Element, done: () => void) => {
+  if (paneAvailable.value) {
+    const node = el as HTMLElement
+    node.style.height = `${node.offsetHeight}px`
+    slideOut(el, done, { x: 28 })
+    node.style.gridArea = 'auto'
+  } else {
+    done()
+  }
+  paneShown.value = false
+}
+// 榜单让出、收回右边一栏时各行重新折行：正在看（收起时是刚才看）的那一行留在原来的高度，不被挤走。
+// 页面还在顶上时跟浏览器的滚动锚定一样不跟：标题和搜索框留在原处，那一行被挤出视野时由光标滚回来。
+let paneAnchor: string | null = null
+watch(paneShown, () => {
+  const scroller = pageEl.value
+  const key = paneTarget.value?.key ?? paneAnchor
+  const row = key ? chartRowEl(key) : undefined
+  if (!scroller || !row || scroller.scrollTop === 0) return
+  const top = row.getBoundingClientRect().top
+  void nextTick(() => {
+    if (row.isConnected) scroller.scrollTop += row.getBoundingClientRect().top - top
+  })
+})
+// 停在一个项目上一秒算扫过它
+let paneDwell: ReturnType<typeof setTimeout> | undefined
+watch(() => paneTarget.value?.key, (key) => {
+  if (key) paneAnchor = key
+  clearTimeout(paneDwell)
+  paneDwell = key ? setTimeout(() => readMarks.markSeen(key), READ_MARKS.dwellMs) : undefined
+})
+onBeforeUnmount(() => clearTimeout(paneDwell))
+
 const peek = useProjectPeek({
-  enabled: chartLayout,
+  enabled: computed(() => chartLayout.value && !paneTarget.value),
   frame: chartEl,
   rows: chartRowsEl,
   keys: chartKeys,
-  repoOf: (key) => {
-    const repo = chartRepo(key)
-    return repo ? projectTrendKey(repo) : ''
-  },
+  repoOf: chartRepoId,
+  data: peekData,
 })
 const { target: peekTarget, placement: peekPlace, content: peekContent, curve: peekStars } = peek
 const peekRepo = computed(() => (peekTarget.value ? chartRepo(peekTarget.value.key) ?? null : null))
@@ -449,6 +527,7 @@ const listKeys = useListKeys({
   root: chartRowsEl,
   keys: chartKeys,
   open: (key) => {
+    if (paneTarget.value?.key !== key && pane.open(key)) return
     const repo = chartRepo(key)
     const url = repo ? projectUrl(repo) : ''
     if (!repo || !url) return
@@ -463,15 +542,29 @@ const listKeys = useListKeys({
   toggle: (key) => {
     if (chartRowEl(key)?.querySelector('.project-row__chip--more')) setRowTags(key, !openTagRows.value.has(key))
   },
-  escape: () => peek.close(),
+  // 详情栏开着时跟着光标换项目
+  reached: (key) => {
+    if (paneTarget.value && paneTarget.value.key !== key) pane.open(key)
+  },
+  escape: () => pane.close() || peek.close(),
   edge: (direction) => {
     const next = page.value + direction
     if (next < 1 || next > totalPages.value) return false
+    pane.expectFlip(direction)
     goPage(next)
     return true
   },
 })
 const { help: keysHelp, isCursor } = listKeys
+// 光标跟着详情栏换项目（点了别的行、用栏里的按钮换）；在栏里按 Esc 或 × 收起时焦点回到那一行，接着用键盘往下读。
+watch(() => paneTarget.value?.key, (key, previous) => {
+  if (key) {
+    if (listKeys.cursor.value !== key) listKeys.setCursor(key, { reveal: true })
+  } else if (previous && document.activeElement?.closest('[data-project-pane]')) {
+    listKeys.setCursor(previous)
+    listKeys.focusCursor()
+  }
+})
 
 watch(searchQuery, (value) => {
   if (searchTimer) window.clearTimeout(searchTimer)
@@ -577,7 +670,7 @@ onBeforeUnmount(stopViewReads)
 </script>
 
 <template>
-  <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView, 'projects-page--websites': isWebsiteOnlyView }">
+  <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView, 'projects-page--websites': isWebsiteOnlyView, 'has-pane': paneShown }" :style="paneStyle">
     <section class="projects-hero glass-card" :class="{ 'projects-hero--website': isWebsiteOnlyView }">
       <div class="projects-hero__text">
         <p class="projects-kicker">{{ projectsHeroKicker }}</p>
@@ -751,7 +844,8 @@ onBeforeUnmount(stopViewReads)
         <ProjectChartRow
           v-for="(repo, index) in projects"
           :key="projectKey(repo)"
-          :class="{ 'is-cursor': isCursor(projectKey(repo)), 'is-read': readMarks.isRead(projectKey(repo)), 'is-peeked': peekTarget?.key === projectKey(repo) }"
+          :class="{ 'is-cursor': isCursor(projectKey(repo)), 'is-read': readMarks.isRead(projectKey(repo)), 'is-peeked': peekTarget?.key === projectKey(repo), 'is-paned': paneTarget?.key === projectKey(repo) }"
+          :aria-current="paneTarget?.key === projectKey(repo) ? 'true' : undefined"
           :data-reflow-key="projectKey(repo)"
           :data-list-key="projectKey(repo)"
           :repo="repo"
@@ -768,11 +862,13 @@ onBeforeUnmount(stopViewReads)
           :recommend-busy="recommendBusyKey === projectKey(repo)"
           :recommend-actions-busy="Boolean(recommendBusyKey)"
           :tags-open="openTagRows.has(projectKey(repo))"
+          :opens-pane="paneAvailable"
           @update:tags-open="setRowTags(projectKey(repo), $event)"
           @chip-click="handleChipClick"
           @favorite="toggleFavorite"
           @recommend="recommendProject"
           @visit="visitRepo"
+          @open="openPane"
         />
       </ol>
       <Transition :css="false" @enter="peekEnter" @leave="peekLeave">
@@ -831,6 +927,33 @@ onBeforeUnmount(stopViewReads)
       </div>
     </section>
 
+    <Transition :css="false" @enter="paneEnter" @leave="paneLeave">
+      <ProjectPane
+        v-if="paneTarget && paneRepo && paneContent && paneCurve"
+        :repo="paneRepo"
+        :target="paneTarget"
+        :content="paneContent"
+        :curve="paneCurve"
+        :position="panePosition"
+        :total="total"
+        :direction="paneDirection"
+        :can-favorite="canFavorite(paneRepo)"
+        :can-recommend="canRecommendCard(paneRepo)"
+        :is-logged-in="authStore.isLoggedIn"
+        :favorite-busy="favoriteBusyKey === paneTarget.key"
+        :favorite-actions-busy="Boolean(favoriteBusyKey)"
+        :recommend-busy="recommendBusyKey === paneTarget.key"
+        :recommend-actions-busy="Boolean(recommendBusyKey)"
+        @close="pane.close()"
+        @step="stepPane"
+        @retry="pane.retry()"
+        @visit="visitRepo"
+        @favorite="toggleFavorite"
+        @recommend="recommendProject"
+        @chip-click="handleChipClick"
+      />
+    </Transition>
+
     <ProjectPagination
       v-if="total > pageSize && !loading"
       v-model:page-jump="pageJump"
@@ -847,7 +970,7 @@ onBeforeUnmount(stopViewReads)
     <ListKeysSheet
       v-if="chartLayout"
       v-model:open="keysHelp"
-      :actions="{ open: t('listKeys.projectOpen'), save: t('listKeys.projectSave'), toggle: t('listKeys.projectTags') }"
+      :actions="{ open: t(paneAvailable ? 'listKeys.projectPane' : 'listKeys.projectOpen'), save: t('listKeys.projectSave'), toggle: t('listKeys.projectTags') }"
     />
     <ToolWebsiteAddDialog
       :open="addDialogOpen"

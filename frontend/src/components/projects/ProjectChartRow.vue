@@ -32,6 +32,8 @@ import { CHART_ROW_TAGS, formatStarDelta, type ProjectRankMovement } from '@/fea
  * 右边一排对齐的数字（星标、24 小时新增、近两周火花线、热度）和操作。描述不截断，一行写不下就换行；
  * forks 和最近推送跟在描述末尾，不为它们多占一行。
  * 光标（is-cursor）、已读（is-read）和 data-list-key 由列表挂在根上；点项目名或外链图标时发 visit，列表据此记为看过。
+ * 宽屏有详情栏时（opensPane）单击项目名或行里空白处发 open，在右侧看详情不跳页；按着修饰键、中键点项目名照常去 GitHub，
+ * 点标签、按钮、链接或选中了文字时不算。
  */
 const props = defineProps<{
   repo: GitHubProjectItem
@@ -50,6 +52,8 @@ const props = defineProps<{
   favoriteActionsBusy: boolean
   recommendBusy: boolean
   recommendActionsBusy: boolean
+  /** 宽屏有详情栏：单击打开详情（open），不去 GitHub */
+  opensPane?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -57,6 +61,7 @@ const emit = defineEmits<{
   favorite: [repo: GitHubProjectItem]
   recommend: [repo: GitHubProjectItem]
   visit: [repo: GitHubProjectItem]
+  open: [repo: GitHubProjectItem]
 }>()
 
 /** 全部标签是否展开；列表绑上它，键盘的 x 才能替这一行展开或收起。 */
@@ -97,6 +102,26 @@ const heatTitle = computed(() => t(projectHeatAvailable(props.repo) ? 'projects.
 const forksText = computed(() => t('projects.forks', { count: formatProjectCount(props.repo.forks, appLocale.value) }))
 const lastPush = computed(() => (props.repo.pushed_at ? formatProjectLastPush(props.repo.pushed_at, appLocale.value) : ''))
 
+const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+
+// 项目名：有详情栏时单击在右侧打开；按着修饰键（新标签页、新窗口）照常去 GitHub，记为看过
+const onNameClick = (event: MouseEvent) => {
+  if (props.opensPane && plainClick(event)) {
+    event.preventDefault()
+    emit('open', props.repo)
+    return
+  }
+  emit('visit', props.repo)
+}
+
+// 行里空白处（描述、数字、火花线）：有详情栏时单击打开；点到标签、按钮、链接，或是在选文字，都不算
+const onRowClick = (event: MouseEvent) => {
+  if (!props.opensPane || event.defaultPrevented || !plainClick(event)) return
+  if ((event.target as Element | null)?.closest?.('a, button, input, label, summary, [role="button"]')) return
+  if (window.getSelection?.()?.toString()) return
+  emit('open', props.repo)
+}
+
 const movementText = computed(() => {
   const movement = props.movement
   if (!movement) return ''
@@ -120,7 +145,9 @@ const movementLabel = computed(() => {
       'project-row--podium': position !== null && position <= 3,
       'project-row--recommended': repo.is_recommended,
       'project-row--not-found': notFound,
+      'project-row--paneable': opensPane,
     }"
+    @click="onRowClick"
   >
     <div v-if="position !== null" class="project-row__rank">
       <!-- 位数多了字号收小，五位数的名次也放得进名次列 -->
@@ -135,7 +162,7 @@ const movementLabel = computed(() => {
       <div class="project-row__title">
         <ProjectLogo class="project-row__logo" :logo="repo.image_url" :repository-url="url" :name="name" />
         <h2 class="project-row__name">
-          <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="t('projects.openRepository')" @click="emit('visit', repo)" @auxclick.middle="emit('visit', repo)"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
+          <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="opensPane ? undefined : t('projects.openRepository')" @click="onNameClick" @auxclick.middle="emit('visit', repo)"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
           <template v-else><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></template>
         </h2>
         <span v-if="repo.is_recommended" class="project-row__pick" :title="t('projectChart.pick')"><span aria-hidden="true">✦</span><span class="sr-only">{{ t('projectChart.pick') }}</span></span>

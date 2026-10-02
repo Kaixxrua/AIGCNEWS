@@ -113,6 +113,49 @@ describe('ProjectChartRow', () => {
     expect(row.emitted('visit')?.[0]?.[0]).toMatchObject({ full_name: 'acme/rocket' })
   })
 
+  it('opens the detail pane from the name or a blank part of the row on wide screens, and still goes to GitHub with a modifier', async () => {
+    const row = mountRow({ opensPane: true })
+    // jsdom 不跟外链（在行自己的处理之后才拦）
+    row.element.addEventListener('click', (event: Event) => event.preventDefault())
+    expect(row.classes()).toContain('project-row--paneable')
+    const name = row.get('.project-row__name a')
+    expect(name.attributes('title')).toBeUndefined()
+
+    const plain = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+    name.element.dispatchEvent(plain)
+    expect(plain.defaultPrevented).toBe(true)
+    expect(row.emitted('open')).toHaveLength(1)
+    expect(row.emitted('open')?.[0]?.[0]).toMatchObject({ full_name: 'acme/rocket' })
+    expect(row.emitted('visit')).toBeUndefined()
+
+    await name.trigger('click', { ctrlKey: true })
+    await name.trigger('auxclick', { button: 1 })
+    expect(row.emitted('visit')).toHaveLength(2)
+    expect(row.emitted('open')).toHaveLength(1)
+
+    await row.get('.project-row__desc').trigger('click')
+    await row.get('.project-row__gain').trigger('click')
+    expect(row.emitted('open')).toHaveLength(3)
+
+    // 标签、按钮、外链、按着修饰键、选着文字时都不开
+    await row.get('.project-row__chip').trigger('click')
+    await row.get('.project-row__favorite').trigger('click')
+    await row.get('.project-row__link').trigger('click')
+    await row.get('.project-row__desc').trigger('click', { shiftKey: true })
+    const selection = vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => 'rocket' } as Selection)
+    await row.get('.project-row__desc').trigger('click')
+    selection.mockRestore()
+    expect(row.emitted('open')).toHaveLength(3)
+    expect(row.emitted('chipClick')).toHaveLength(1)
+
+    await row.setProps({ opensPane: false })
+    await row.get('.project-row__desc').trigger('click')
+    await name.trigger('click')
+    expect(row.emitted('open')).toHaveLength(3)
+    expect(row.emitted('visit')).toHaveLength(4)
+    expect(row.classes()).not.toContain('project-row--paneable')
+  })
+
   it('mutes rows without growth or heat, and shows a dash while heat is not counted yet', async () => {
     const row = mountRow({ repo: repo({ rolling_24h_star_growth: 0, hot_score: 0 }) })
     expect(row.get('.project-row__gain').classes()).toContain('project-row__gain--flat')

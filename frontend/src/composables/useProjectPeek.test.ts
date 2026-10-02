@@ -8,7 +8,9 @@ import {
   PEEK_SWITCH_DELAY,
   PEEK_WARM_MS,
   useProjectPeek,
+  useProjectPeekData,
   type ProjectPeek,
+  type ProjectPeekData,
 } from './useProjectPeek'
 
 // jsdom 不排版：行按顺序每 100px 一行、高 80px，榜单从视口顶上开始（listTop 可以往下挪）；视口高 768px（jsdom 默认）。
@@ -54,17 +56,21 @@ const trendsOf = (repoIds: string[]): GitHubProjectTrendsResponse => ({
 
 const KEYS = ['a', 'b', 'c', 'site', 'd', 'e', 'f']
 
-const mountPeek = async ({ load = vi.fn(async (repoId: string) => peekOf(repoId)) } = {}) => {
+const mountPeek = async ({ load = vi.fn(async (repoId: string) => peekOf(repoId)), shared = false } = {}) => {
   const keys = ref<string[]>(KEYS)
   const enabled = ref(true)
   const loadTrends = vi.fn(async (repoIds: string[]) => trendsOf(repoIds))
   let peek!: ProjectPeek
+  let data: ProjectPeekData | undefined
   const Host = defineComponent({
     setup() {
       const frame = ref<HTMLElement | null>(null)
       const rows = ref<HTMLElement | null>(null)
       // 网页收藏（site）没有速览
-      peek = useProjectPeek({ enabled, frame, rows, keys, repoOf: (key) => (key === 'site' ? '' : `acme/${key}`), load, loadTrends })
+      const repoOf = (key: string) => (key === 'site' ? '' : `acme/${key}`)
+      // shared：数据由外面（详情栏那边）建好交进来
+      data = shared ? useProjectPeekData({ keys, repoOf, load, loadTrends }) : undefined
+      peek = useProjectPeek({ enabled, frame, rows, keys, repoOf, data, load: shared ? undefined : load, loadTrends: shared ? undefined : loadTrends })
       return () => h('section', { ref: frame }, [
         h('ol', { ref: rows }, keys.value.map((key) => h('li', { key, 'data-list-key': key }, [
           h('span', { class: 'name' }, key),
@@ -83,7 +89,7 @@ const mountPeek = async ({ load = vi.fn(async (repoId: string) => peekOf(repoId)
   const row = (key: string) => document.querySelector<HTMLElement>(`[data-list-key="${key}"]`)!
   const rowsEl = () => document.querySelector<HTMLElement>('ol')!
   const card = () => document.querySelector<HTMLElement>('[data-project-peek]')
-  return { keys, enabled, load, loadTrends, row, rowsEl, card, get peek() { return peek } }
+  return { keys, enabled, load, loadTrends, row, rowsEl, card, data, get peek() { return peek } }
 }
 
 const pointer = (type: string, target: EventTarget, x: number, y: number, { pointerType = 'mouse', buttons = 0 } = {}) => {
@@ -350,5 +356,69 @@ describe('useProjectPeek', () => {
     expect(load).toHaveBeenCalledTimes(5)
     expect(load).toHaveBeenLastCalledWith('acme/a')
     expect(list.loadTrends).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('useProjectPeekData', () => {
+  const setup = (load = vi.fn(async (repoId: string) => peekOf(repoId))) => {
+    const keys = ref<string[]>(['a', 'b', 'c'])
+    const loadTrends = vi.fn(async (repoIds: string[]) => trendsOf(repoIds))
+    const data = useProjectPeekData({ keys, repoOf: (key) => `acme/${key}`, load, loadTrends })
+    return { data, load, loadTrends }
+  }
+  const unreadable = (repoId: string): GitHubProjectPeek => ({ ...peekOf(repoId), status: 'unavailable', has_readme: false, readme: [] })
+
+  it('reads a repository GitHub could not be reached for again after thirty seconds, not ten minutes', async () => {
+    const { data, load } = setup(vi.fn(async (repoId: string) => unreadable(repoId)))
+    data.fetch('acme/a')
+    await wait(0)
+    expect(data.contentOf('acme/a')).toMatchObject({ status: 'ready', peek: { status: 'unavailable' } })
+    await wait(29_999)
+    data.fetch('acme/a')
+    expect(load).toHaveBeenCalledTimes(1)
+    await wait(1)
+    data.fetch('acme/a')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries at once what failed or could not be read, and leaves what it has alone', async () => {
+    let offline = true
+    const { data, load, loadTrends } = setup(vi.fn(async (repoId: string) => {
+      if (offline && repoId === 'acme/a') throw new Error('offline')
+      return offline && repoId === 'acme/b' ? unreadable(repoId) : peekOf(repoId)
+    }))
+    loadTrends.mockRejectedValueOnce(new Error('offline'))
+    data.fetch('acme/a')
+    data.fetch('acme/b')
+    data.fetchPeek('acme/c')
+    await wait(0)
+    expect(data.contentOf('acme/a')).toEqual({ status: 'error' })
+    expect(data.curveOf('acme/c')).toEqual({ status: 'error' })
+
+    offline = false
+    data.retry('acme/a')
+    data.retry('acme/b')
+    data.retry('acme/c')
+    await wait(0)
+    expect(load.mock.calls.map(([repoId]) => repoId)).toEqual(['acme/a', 'acme/b', 'acme/c', 'acme/a', 'acme/b'])
+    expect(loadTrends.mock.calls).toEqual([[['acme/a', 'acme/b', 'acme/c']], [['acme/a']], [['acme/b']], [['acme/c']]])
+    expect(data.contentOf('acme/a')).toMatchObject({ status: 'ready', peek: { status: 'ok' } })
+    expect(data.contentOf('acme/b')).toMatchObject({ status: 'ready', peek: { status: 'ok' } })
+    expect(data.curveOf('acme/c')).toMatchObject({ status: 'ready', days: 30 })
+    // 什么都没出错时重试不再取
+    data.retry('acme/a')
+    expect(load).toHaveBeenCalledTimes(5)
+    expect(loadTrends).toHaveBeenCalledTimes(4)
+  })
+
+  it('lets the hover card show what the detail pane already fetched, without fetching it again', async () => {
+    const list = await mountPeek({ shared: true })
+    list.data!.fetch('acme/b')
+    await wait(0)
+    await openOn(list, 'b', 40, 120)
+    expect(list.peek.content.value).toMatchObject({ status: 'ready', peek: { readme: ['About acme/b'] } })
+    expect(list.peek.curve.value).toMatchObject({ status: 'ready' })
+    expect(list.load).toHaveBeenCalledTimes(1)
+    expect(list.loadTrends).toHaveBeenCalledTimes(1)
   })
 })

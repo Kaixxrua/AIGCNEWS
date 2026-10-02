@@ -14,15 +14,22 @@ import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
 import { setAppDensity } from '@/composables/useAppDensity'
 import { PEEK_OPEN_DELAY } from '@/composables/useProjectPeek'
+import { READ_MARKS } from '@/composables/useReadMarks'
 
-// 桌面榜单（≥1024px）按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
-const viewport = vi.hoisted(() => ({ desktop: false }))
+// 桌面榜单（≥1024px）按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板。
+// 宽屏（≥1600px）的详情栏用一个共用的 ref，测试里可以中途把窗口改窄。
+const viewport = vi.hoisted(() => ({ desktop: false, wide: { value: false } as { value: boolean } }))
 vi.mock('@vueuse/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@vueuse/core')>()
   const { ref } = await import('vue')
+  viewport.wide = ref(false)
   return {
     ...actual,
-    useMediaQuery: (query: string) => (query === '(min-width: 1024px)' ? ref(viewport.desktop) : actual.useMediaQuery(query)),
+    useMediaQuery: (query: string) => (
+      query === '(min-width: 1024px)' ? ref(viewport.desktop)
+        : query === '(min-width: 1600px)' ? viewport.wide
+          : actual.useMediaQuery(query)
+    ),
   }
 })
 // 榜单的行情（火花线、名次升降）另有测试，这里不取
@@ -802,18 +809,20 @@ describe('GitHubProjectsView chart keyboard flow', () => {
     view = null
     spies.splice(0).forEach((spy) => spy.mockRestore())
     viewport.desktop = false
+    viewport.wide.value = false
     setAppDensity('compact')
     localStorage.removeItem('list_keys_hint')
     localStorage.removeItem('read_marks_projects')
     document.body.innerHTML = ''
   })
 
-  const mountChart = async () => {
+  // transition: false 换回真的过渡：这一页的过渡都由脚本播，jsdom 里没有 animate，当场播完（收起后的钩子也跑）
+  const mountChart = async (stubs: Record<string, boolean> = {}) => {
     await testRouter.push('/projects')
     await testRouter.isReady()
     view = mount(GitHubProjectsView, {
       attachTo: document.body,
-      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true, ...stubs } },
     })
     await flushPromises()
     return view
@@ -977,5 +986,201 @@ describe('GitHubProjectsView chart keyboard flow', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // 宽屏详情栏：README 开头一段、没有提交、曲线空着
+  const fakeGitHub = () => {
+    peekApi.fetchProjectPeek.mockReset().mockImplementation(async (repoId: string) => ({
+      repo_id: repoId, status: 'ok', has_readme: true, readme: [`${repoId} in one paragraph.`], readme_more: false, commit: null,
+    }))
+    peekApi.fetchProjectTrends.mockReset().mockResolvedValue({ metric_date: '2026-10-02', previous_date: null, days: 30, items: {} })
+  }
+  const pane = () => view!.find('.project-pane')
+  const paneName = () => pane().get('.project-pane__name').text()
+  const paneCount = () => pane().get('.project-pane__count').text()
+
+  it('opens a clicked row beside the list on a wide screen, follows j / k there and sends the second o to GitHub', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      fakeGitHub()
+      viewport.wide.value = true
+      controller().projects.value = [chartRepo('alpha'), chartRepo('beta'), chartRepo('gamma')]
+      controller().total.value = 3
+      const wrapper = await mountChart({ transition: false })
+
+      // 点行里空白处：详情在右边打开，不去 GitHub，也不算看过
+      await row('beta').trigger('click')
+      await flushPromises()
+      expect(window.open).not.toHaveBeenCalled()
+      expect(paneName()).toBe('acme/beta')
+      expect(paneCount()).toBe('2/3')
+      expect(pane().text()).toContain('acme/beta in one paragraph.')
+      expect(wrapper.classes()).toContain('has-pane')
+      expect(row('beta').classes()).toEqual(expect.arrayContaining(['is-paned', 'project-row--paneable']))
+      expect(row('beta').attributes('aria-current')).toBe('true')
+      expect(row('beta').classes()).not.toContain('is-read')
+      // 前后两行的 README 也先取来
+      expect(peekApi.fetchProjectPeek.mock.calls.map(([repoId]) => repoId)).toEqual(['acme/beta', 'acme/gamma', 'acme/alpha'])
+
+      // 点项目名也一样
+      await row('alpha').get('.project-row__name a').trigger('click')
+      await flushPromises()
+      expect(paneName()).toBe('acme/alpha')
+      expect(row('alpha').classes()).not.toContain('is-read')
+      expect(row('beta').attributes('aria-current')).toBeUndefined()
+      expect(window.open).not.toHaveBeenCalled()
+
+      // 光标跟着详情走：j / k 换项目，s 收藏的是正在看的
+      await press('j')
+      expect(cursorKey()).toBe('github:acme/beta')
+      expect(paneName()).toBe('acme/beta')
+      await press('j')
+      expect(paneName()).toBe('acme/gamma')
+      await press('k')
+      expect(paneName()).toBe('acme/beta')
+      expect(row('gamma').classes()).not.toContain('is-paned')
+      await press('s')
+      expect(controller().toggleFavorite).toHaveBeenCalledWith(expect.objectContaining({ full_name: 'acme/beta' }))
+
+      // 停够一秒算扫过（下次进来变淡），眼下不变淡
+      await vi.advanceTimersByTimeAsync(READ_MARKS.dwellMs + READ_MARKS.flushMs)
+      expect(Object.keys(JSON.parse(localStorage.getItem('read_marks_projects') ?? '{}'))).toEqual(['github:acme/beta'])
+      expect(row('beta').classes()).not.toContain('is-read')
+
+      // 详情栏开着时不浮速览卡片
+      const rest = new MouseEvent('pointermove', { clientX: 40, clientY: 50, bubbles: true })
+      Object.defineProperty(rest, 'pointerType', { value: 'mouse' })
+      row('gamma').get('.project-row__desc').element.dispatchEvent(rest)
+      await vi.advanceTimersByTimeAsync(PEEK_OPEN_DELAY)
+      await flushPromises()
+      expect(wrapper.find('.project-peek').exists()).toBe(false)
+
+      // 详情已经是这一行时 o 才去 GitHub
+      await press('o')
+      expect(window.open).toHaveBeenCalledWith('https://github.com/acme/beta', '_blank', 'noopener')
+      expect(row('beta').classes()).toContain('is-read')
+
+      await press('?')
+      expect(wrapper.get('.list-keys-sheet').text()).toContain('listKeys.projectPane')
+      await press('Escape')
+      expect(wrapper.find('.list-keys-sheet').exists()).toBe(false)
+      expect(pane().exists()).toBe(true)
+
+      // Esc 先收详情栏，光标留在那一行；再按一次才收光标
+      await press('Escape')
+      expect(pane().exists()).toBe(false)
+      expect(wrapper.classes()).not.toContain('has-pane')
+      expect(cursorKey()).toBe('github:acme/beta')
+      await press('Escape')
+      expect(cursorKey()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('carries the pane on to the next or the previous page from either end, keeping the project in view while it loads', async () => {
+    fakeGitHub()
+    viewport.wide.value = true
+    controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+    controller().total.value = 60
+    await mountChart({ transition: false })
+    await row('beta').trigger('click')
+    await flushPromises()
+    expect(paneCount()).toBe('2/60')
+    controller().loadProjects.mockClear()
+
+    await press('j')
+    expect(controller().loadProjects).toHaveBeenCalledOnce()
+    controller().loading.value = true
+    await flushPromises()
+    expect(paneName()).toBe('acme/beta')
+    expect(pane().find('.project-pane__count').exists()).toBe(false)
+    controller().projects.value = [chartRepo('gamma'), chartRepo('delta')]
+    controller().loading.value = false
+    await flushPromises()
+    expect(paneName()).toBe('acme/gamma')
+    expect(paneCount()).toBe('21/60')
+    expect(cursorKey()).toBe('github:acme/gamma')
+
+    // 栏里的「上一个」也一样，往前翻落在上一页的最后一个
+    await pane().findAll('.project-pane__btn')[0]!.trigger('click')
+    expect(controller().loadProjects).toHaveBeenCalledTimes(2)
+    await arrive([chartRepo('alpha'), chartRepo('beta')])
+    expect(paneName()).toBe('acme/beta')
+    expect(paneCount()).toBe('2/60')
+    expect(row('beta').attributes('aria-current')).toBe('true')
+    // 光标悄悄跟到了这一行：键盘从这里接着走
+    await press('k')
+    expect(cursorKey()).toBe('github:acme/alpha')
+    expect(paneName()).toBe('acme/alpha')
+  })
+
+  it('hands focus back to the row when the pane closes from inside, closes when the window narrows and leaves narrower desktops on GitHub', async () => {
+    fakeGitHub()
+    viewport.wide.value = true
+    controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+    controller().total.value = 2
+    const wrapper = await mountChart({ transition: false })
+    // jsdom 不跟外链
+    wrapper.element.addEventListener('click', (event: Event) => event.preventDefault())
+
+    await row('alpha').trigger('click')
+    await flushPromises()
+    const close = pane().get('.project-pane__close')
+    ;(close.element as HTMLElement).focus()
+    await close.trigger('click')
+    await flushPromises()
+    expect(pane().exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('has-pane')
+    expect(document.activeElement).toBe(row('alpha').element)
+    expect(cursorKey()).toBe('github:acme/alpha')
+
+    await row('beta').trigger('click')
+    await flushPromises()
+    expect(paneName()).toBe('acme/beta')
+    viewport.wide.value = false
+    await flushPromises()
+    expect(pane().exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('has-pane')
+    expect(row('beta').classes()).not.toContain('project-row--paneable')
+
+    // 窄一些的桌面：点行里空白处不动，点项目名去 GitHub
+    await row('alpha').trigger('click')
+    await flushPromises()
+    expect(pane().exists()).toBe(false)
+    await row('alpha').get('.project-row__name a').trigger('click')
+    expect(row('alpha').classes()).toContain('is-read')
+    await press('?')
+    expect(wrapper.get('.list-keys-sheet').text()).toContain('listKeys.projectOpen')
+  })
+
+  it('keeps the row it opens where it stood while the list narrows and widens, and leaves the top of the page alone', async () => {
+    fakeGitHub()
+    viewport.wide.value = true
+    controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+    controller().total.value = 2
+    const wrapper = await mountChart({ transition: false })
+    const page = wrapper.element as HTMLElement
+    // 让出右边一栏时榜单变窄、各行折得更高：beta 在页里往下挪 60px
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+      const top = this.dataset.listKey === 'github:acme/beta' ? (page.classList.contains('has-pane') ? 460 : 400) - page.scrollTop : 10
+      return { top, bottom: top + 80, left: 0, right: 300, width: 300, height: 80, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
+
+    page.scrollTop = 300
+    await row('beta').trigger('click')
+    await flushPromises()
+    expect(page.scrollTop).toBe(360)
+    await press('Escape')
+    await flushPromises()
+    expect(wrapper.classes()).not.toContain('has-pane')
+    expect(page.scrollTop).toBe(300)
+
+    // 页面还在顶上：标题和搜索框不动，那一行往下挪
+    page.scrollTop = 0
+    await row('beta').trigger('click')
+    await flushPromises()
+    expect(wrapper.classes()).toContain('has-pane')
+    expect(page.scrollTop).toBe(0)
   })
 })
