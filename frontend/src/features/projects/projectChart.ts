@@ -23,6 +23,9 @@ export const projectTrendKey = (project: GitHubProjectItem): string => {
   return ''
 }
 
+/** 榜单一行先摆出的标签数；多的收在「+n」后面，点它或按 x 展开。 */
+export const CHART_ROW_TAGS = 3
+
 /** 名次只在按热度或星标排的时候有意义；按更新、收录时间或名称排时不编号。 */
 export const projectChartRanked = (sort: GitHubProjectSort) => sort === 'hot' || sort === 'stars'
 

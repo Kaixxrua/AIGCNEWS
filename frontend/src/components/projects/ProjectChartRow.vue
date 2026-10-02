@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Clock, ExternalLink, GitFork, Sparkles, Star } from 'lucide-vue-next'
 import ProjectLogo from './ProjectLogo.vue'
@@ -25,12 +25,13 @@ import {
   recommendButtonLabelKey,
   type ProjectChip,
 } from '@/features/projects/projectPresentation'
-import { formatStarDelta, type ProjectRankMovement } from '@/features/projects/projectChart'
+import { CHART_ROW_TAGS, formatStarDelta, type ProjectRankMovement } from '@/features/projects/projectChart'
 
 /**
  * 项目库紧凑版面（榜单）的一行：左边名次（今日热门再标比昨天升降），中间项目名、标签和完整的描述，
  * 右边一排对齐的数字（星标、24 小时新增、近两周火花线、热度）和操作。描述不截断，一行写不下就换行；
  * forks 和最近推送跟在描述末尾，不为它们多占一行。
+ * 光标（is-cursor）、已读（is-read）和 data-list-key 由列表挂在根上；点项目名或外链图标时发 visit，列表据此记为看过。
  */
 const props = defineProps<{
   repo: GitHubProjectItem
@@ -55,11 +56,14 @@ const emit = defineEmits<{
   chipClick: [chip: ProjectChip]
   favorite: [repo: GitHubProjectItem]
   recommend: [repo: GitHubProjectItem]
+  visit: [repo: GitHubProjectItem]
 }>()
+
+/** 全部标签是否展开；列表绑上它，键盘的 x 才能替这一行展开或收起。 */
+const tagsOpen = defineModel<boolean>('tagsOpen', { default: false })
 
 const { locale, t } = useI18n()
 const appLocale = computed(() => locale.value as AppLocale)
-const allTagsVisible = ref(false)
 
 const name = computed(() => projectName(props.repo))
 // owner/repo：仓库名加粗，所有者淡一档，扫一眼先看到是什么项目。
@@ -74,7 +78,7 @@ const chips = computed(() => projectDisplayTags(props.repo, false, appLocale.val
   project: t('projects.genericProjectTag'),
   website: t('projects.genericWebsiteTag'),
 }))
-const visibleChips = computed(() => (allTagsVisible.value ? chips.value : chips.value.slice(0, 3)))
+const visibleChips = computed(() => (tagsOpen.value ? chips.value : chips.value.slice(0, CHART_ROW_TAGS)))
 // 最后一个标签和「+n」包在一起换行，「+n」不会单独掉到下一行。
 const leadChips = computed(() => visibleChips.value.slice(0, -1))
 const tailChip = computed(() => visibleChips.value[visibleChips.value.length - 1])
@@ -131,7 +135,7 @@ const movementLabel = computed(() => {
       <div class="project-row__title">
         <ProjectLogo class="project-row__logo" :logo="repo.image_url" :repository-url="url" :name="name" />
         <h2 class="project-row__name">
-          <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="t('projects.openRepository')"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
+          <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="t('projects.openRepository')" @click="emit('visit', repo)" @auxclick.middle="emit('visit', repo)"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
           <template v-else><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></template>
         </h2>
         <span v-if="repo.is_recommended" class="project-row__pick" :title="t('projectChart.pick')"><span aria-hidden="true">✦</span><span class="sr-only">{{ t('projectChart.pick') }}</span></span>
@@ -148,13 +152,13 @@ const movementLabel = computed(() => {
         <span class="project-row__chip-tail">
           <button type="button" class="project-row__chip" @click="emit('chipClick', tailChip)">{{ tailChip.label }}</button>
           <button
-            v-if="chips.length > 3"
+            v-if="chips.length > CHART_ROW_TAGS"
             type="button"
             class="project-row__chip project-row__chip--more"
-            :aria-expanded="allTagsVisible"
-            :aria-label="t(allTagsVisible ? 'projects.fewerTags' : 'projects.moreTags')"
-            @click="allTagsVisible = !allTagsVisible"
-          >{{ allTagsVisible ? '−' : `+${chips.length - 3}` }}</button>
+            :aria-expanded="tagsOpen"
+            :aria-label="t(tagsOpen ? 'projects.fewerTags' : 'projects.moreTags')"
+            @click="tagsOpen = !tagsOpen"
+          >{{ tagsOpen ? '−' : `+${chips.length - CHART_ROW_TAGS}` }}</button>
         </span>
       </div>
     </div>
@@ -184,6 +188,8 @@ const movementLabel = computed(() => {
         rel="noopener noreferrer"
         :aria-label="t('projects.openRepository')"
         :title="t('projects.openRepository')"
+        @click="emit('visit', repo)"
+        @auxclick.middle="emit('visit', repo)"
       ><ExternalLink :size="15" :stroke-width="1.8" aria-hidden="true" /></a>
       <button
         v-if="canRecommend"

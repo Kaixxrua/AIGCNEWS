@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectChartRow from './ProjectChartRow.vue'
 import i18n, { DEFAULT_LOCALE } from '@/i18n'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
@@ -84,6 +84,33 @@ describe('ProjectChartRow', () => {
 
     await row.setProps({ repo: repo({ tags: ['agents', 'cli'] }) })
     expect(row.find('.project-row__chip--more').exists()).toBe(false)
+  })
+
+  it('lets the list hold the tag toggle, so the keyboard can open and close a row\'s tags', async () => {
+    const onUpdate = vi.fn()
+    const row = mountRow({ tagsOpen: true, 'onUpdate:tagsOpen': onUpdate })
+    const labels = () => row.findAll('.project-row__chip:not(.project-row__chip--more)').map((chip) => chip.text())
+    expect(labels()).toEqual(['agents', 'cli', 'rust', 'mcp'])
+
+    await row.get('.project-row__chip--more').trigger('click')
+    expect(onUpdate).toHaveBeenCalledWith(false)
+    // 列表说了算：它收起之前还是全部标签
+    expect(labels()).toEqual(['agents', 'cli', 'rust', 'mcp'])
+    await row.setProps({ tagsOpen: false })
+    expect(labels()).toEqual(['agents', 'cli', 'rust'])
+  })
+
+  it('reports opening the repository from the name or the link icon, middle click included', async () => {
+    const row = mountRow()
+    // jsdom 不跟外链
+    row.element.addEventListener('click', (event: Event) => event.preventDefault())
+    await row.get('.project-row__name a').trigger('click')
+    await row.get('.project-row__link').trigger('click')
+    await row.get('.project-row__link').trigger('auxclick', { button: 1 })
+    await row.get('.project-row__link').trigger('auxclick', { button: 2 })
+    await row.get('.project-row__favorite').trigger('click')
+    expect(row.emitted('visit')).toHaveLength(3)
+    expect(row.emitted('visit')?.[0]?.[0]).toMatchObject({ full_name: 'acme/rocket' })
   })
 
   it('mutes rows without growth or heat, and shows a dash while heat is not counted yet', async () => {

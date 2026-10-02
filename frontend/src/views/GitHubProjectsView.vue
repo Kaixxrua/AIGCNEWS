@@ -18,6 +18,7 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ProjectChartRow from '@/components/projects/ProjectChartRow.vue'
+import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
 import WebsiteCollectionTabs from '@/components/websites/WebsiteCollectionTabs.vue'
@@ -29,6 +30,8 @@ import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRout
 import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
 import { useAppDensity } from '@/composables/useAppDensity'
 import { useProjectTrends } from '@/composables/useProjectTrends'
+import { useListKeys } from '@/composables/useListKeys'
+import { useReadMarks } from '@/composables/useReadMarks'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
   canEditWebsiteProject,
@@ -38,6 +41,7 @@ import {
   isWebsite,
   projectKey,
   projectLogoKey,
+  projectUrl,
   type ProjectChip,
 } from '@/features/projects/projectPresentation'
 import {
@@ -49,6 +53,7 @@ import {
 } from '@/features/projects/projectChart'
 import { distributeColumns } from '@/utils/masonry'
 import { vReflow } from '@/motion/reflow'
+import { vIndicator } from '@/motion/indicator'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
@@ -392,6 +397,58 @@ const jumpToPage = () => {
   if (!Number.isFinite(parsed) || parsed < 1) { pageJump.value = ''; return }
   goPage(Math.floor(parsed))
 }
+
+// 榜单的键盘流与已读淡化，和简报条目、推文墙同一套键位：j / k 在各行之间走，到一页头尾接着翻页；o 在新标签页打开仓库，
+// s 收藏（没登录先请登录），x 展开或收起这一行的全部标签。打开过的项目（点项目名、外链图标或按 o）像访问过的链接一样
+// 立刻变淡，记在本机，下次进来还是淡的；光是扫过不算，名次天天在变，看过一眼的行不该都淡下去。
+const chartRowsEl = ref<HTMLElement | null>(null)
+const readMarks = useReadMarks({ list: 'projects', enabled: chartLayout })
+// 加载新的一页时榜单先撤下，这时不接键，翻页落下的光标等新的一页画出来再落。
+const chartKeys = computed(() => (chartLayout.value && !loading.value ? projects.value.map(projectKey) : []))
+const chartRepo = (key: string) => projects.value.find((repo) => projectKey(repo) === key)
+const chartRowEl = (key: string) => Array.from(chartRowsEl.value?.querySelectorAll<HTMLElement>('[data-list-key]') ?? []).find((el) => el.dataset.listKey === key)
+const visitRepo = (repo: GitHubProjectItem) => readMarks.markOpened(projectKey(repo))
+// 哪几行展开了全部标签记在列表上，x 才能替光标那一行开合；换了一批项目时丢掉不在这一批里的。
+const openTagRows = ref<ReadonlySet<string>>(new Set())
+const setRowTags = (key: string, open: boolean) => {
+  const next = new Set(openTagRows.value)
+  if (open) next.add(key)
+  else next.delete(key)
+  openTagRows.value = next
+}
+watch(chartKeys, (keys) => {
+  if (!openTagRows.value.size) return
+  const kept = keys.filter((key) => openTagRows.value.has(key))
+  if (kept.length !== openTagRows.value.size) openTagRows.value = new Set(kept)
+})
+const listKeys = useListKeys({
+  enabled: chartLayout,
+  root: chartRowsEl,
+  keys: chartKeys,
+  open: (key) => {
+    const repo = chartRepo(key)
+    const url = repo ? projectUrl(repo) : ''
+    if (!repo || !url) return
+    window.open(url, '_blank', 'noopener')
+    visitRepo(repo)
+  },
+  save: (key) => {
+    const repo = chartRepo(key)
+    if (repo) void toggleFavorite(repo)
+  },
+  // 标签不多于榜单先摆出的几个时没有可开合的，不动。
+  toggle: (key) => {
+    if (chartRowEl(key)?.querySelector('.project-row__chip--more')) setRowTags(key, !openTagRows.value.has(key))
+  },
+  edge: (direction) => {
+    const next = page.value + direction
+    if (next < 1 || next > totalPages.value) return false
+    goPage(next)
+    return true
+  },
+})
+const { help: keysHelp, isCursor } = listKeys
+
 watch(searchQuery, (value) => {
   if (searchTimer) window.clearTimeout(searchTimer)
   searchTimer = window.setTimeout(() => {
@@ -660,11 +717,19 @@ onBeforeUnmount(stopViewReads)
         <span class="project-chart__col project-chart__col--spark">{{ t('projectChart.trend', { days: projectTrends?.days ?? CHART_DAYS }) }}</span>
         <span class="project-chart__col project-chart__col--heat">{{ t('projectChart.heat') }}</span>
       </div>
-      <ol v-reflow="{ key: chartReflowKey }" class="project-chart__rows" role="list">
+      <ol
+        ref="chartRowsEl"
+        v-reflow="{ key: chartReflowKey }"
+        v-indicator="{ active: '.is-cursor', mark: 'after' }"
+        class="project-chart__rows"
+        role="list"
+      >
         <ProjectChartRow
           v-for="(repo, index) in projects"
           :key="projectKey(repo)"
+          :class="{ 'is-cursor': isCursor(projectKey(repo)), 'is-read': readMarks.isRead(projectKey(repo)) }"
           :data-reflow-key="projectKey(repo)"
+          :data-list-key="projectKey(repo)"
           :repo="repo"
           :position="chartPosition(index)"
           :movement="chartMovementFor(repo, chartPosition(index))"
@@ -678,9 +743,12 @@ onBeforeUnmount(stopViewReads)
           :favorite-actions-busy="Boolean(favoriteBusyKey)"
           :recommend-busy="recommendBusyKey === projectKey(repo)"
           :recommend-actions-busy="Boolean(recommendBusyKey)"
+          :tags-open="openTagRows.has(projectKey(repo))"
+          @update:tags-open="setRowTags(projectKey(repo), $event)"
           @chip-click="handleChipClick"
           @favorite="toggleFavorite"
           @recommend="recommendProject"
+          @visit="visitRepo"
         />
       </ol>
     </section>
@@ -738,6 +806,11 @@ onBeforeUnmount(stopViewReads)
     />
     </template>
 
+    <ListKeysSheet
+      v-if="chartLayout"
+      v-model:open="keysHelp"
+      :actions="{ open: t('listKeys.projectOpen'), save: t('listKeys.projectSave'), toggle: t('listKeys.projectTags') }"
+    />
     <ToolWebsiteAddDialog
       :open="addDialogOpen"
       :active="isViewActive"

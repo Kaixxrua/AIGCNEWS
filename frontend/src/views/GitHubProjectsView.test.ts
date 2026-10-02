@@ -1,8 +1,8 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent, nextTick, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GitHubProjectsView from './GitHubProjectsView.vue'
 import projectsViewSource from './GitHubProjectsView.vue?raw'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
@@ -12,6 +12,23 @@ import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.v
 import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
+import { setAppDensity } from '@/composables/useAppDensity'
+
+// 桌面榜单（≥1024px）按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
+const viewport = vi.hoisted(() => ({ desktop: false }))
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: string) => (query === '(min-width: 1024px)' ? ref(viewport.desktop) : actual.useMediaQuery(query)),
+  }
+})
+// 榜单的行情（火花线、名次升降）另有测试，这里不取
+vi.mock('@/composables/useProjectTrends', async () => {
+  const { ref } = await import('vue')
+  return { useProjectTrends: () => ({ trends: ref(null), trendFor: () => undefined }) }
+})
 
 const controllerSpy = vi.hoisted(() => vi.fn())
 const routerPush = vi.hoisted(() => vi.fn())
@@ -741,5 +758,169 @@ describe('GitHubProjectsView collection navigation', () => {
     expect(wrapper.findAll('.projects-source-tab')).toHaveLength(0)
     expect(wrapper.classes()).toContain('projects-page--catalog')
     expect(wrapper.findComponent(ProjectFiltersPanel).props('selectedScope')).toBe(beforeScope)
+  })
+})
+
+describe('GitHubProjectsView chart keyboard flow', () => {
+  const chartRepo = (name: string, tags: string[] = []): GitHubProjectItem => ({
+    full_name: `acme/${name}`,
+    repo_id: `acme/${name}`,
+    description_en: `${name} does one thing well.`,
+    stars: 100,
+    tags,
+  })
+  const spies: { mockRestore: () => void }[] = []
+  let view: VueWrapper | null = null
+
+  beforeEach(() => {
+    viewport.desktop = true
+    setAppDensity('compact')
+    localStorage.setItem('list_keys_hint', '1')
+    localStorage.removeItem('read_marks_projects')
+    // jsdom 不排版：每一行都算整行在视野里；弹窗（aria-modal）画出来了才算开着
+    spies.push(
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+        { top: 10, bottom: 90, left: 0, right: 300, width: 300, height: 80, x: 0, y: 10, toJSON: () => ({}) } as DOMRect,
+      ),
+      vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+        return (this.getAttribute('aria-modal') === 'true' ? [{}] : []) as unknown as DOMRectList
+      }),
+      vi.spyOn(window, 'open').mockReturnValue(null),
+    )
+  })
+
+  afterEach(() => {
+    view?.unmount()
+    view = null
+    spies.splice(0).forEach((spy) => spy.mockRestore())
+    viewport.desktop = false
+    setAppDensity('compact')
+    localStorage.removeItem('list_keys_hint')
+    localStorage.removeItem('read_marks_projects')
+    document.body.innerHTML = ''
+  })
+
+  const mountChart = async () => {
+    await testRouter.push('/projects')
+    await testRouter.isReady()
+    view = mount(GitHubProjectsView, {
+      attachTo: document.body,
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
+    })
+    await flushPromises()
+    return view
+  }
+  const press = async (key: string) => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await flushPromises()
+  }
+  const cursorKey = () => {
+    const row = view!.find('.project-row.is-cursor')
+    return row.exists() ? row.attributes('data-list-key') : null
+  }
+  const row = (name: string) => view!.get(`[data-list-key="github:acme/${name}"]`)
+  // 换页：榜单先撤下等加载，新的一页到了再画
+  const arrive = async (items: GitHubProjectItem[]) => {
+    controller().loading.value = true
+    await flushPromises()
+    controller().projects.value = items
+    controller().loading.value = false
+    await flushPromises()
+  }
+
+  it('walks the rows with j / k, favourites with s, opens the tags with x and dims what o opened', async () => {
+    controller().projects.value = [chartRepo('alpha', ['agents', 'cli', 'rust', 'mcp']), chartRepo('beta', ['cli']), chartRepo('gamma')]
+    controller().total.value = 3
+    const wrapper = await mountChart()
+    expect(wrapper.findAll('.project-row').map((item) => item.attributes('data-list-key')))
+      .toEqual(['github:acme/alpha', 'github:acme/beta', 'github:acme/gamma'])
+
+    await press('j')
+    expect(cursorKey()).toBe('github:acme/alpha')
+    expect(document.activeElement).toBe(row('alpha').element)
+    await press('j')
+    await press('k')
+    expect(cursorKey()).toBe('github:acme/alpha')
+
+    await press('s')
+    expect(controller().toggleFavorite).toHaveBeenCalledWith(expect.objectContaining({ full_name: 'acme/alpha' }))
+
+    await press('x')
+    expect(row('alpha').get('.project-row__chip--more').attributes('aria-expanded')).toBe('true')
+    expect(row('alpha').findAll('.project-row__chip:not(.project-row__chip--more)')).toHaveLength(4)
+    await press('x')
+    expect(row('alpha').get('.project-row__chip--more').attributes('aria-expanded')).toBe('false')
+
+    // 只有一个标签的行没有可开合的
+    await press('j')
+    await press('x')
+    expect(row('beta').find('.project-row__chip--more').exists()).toBe(false)
+
+    await press('o')
+    expect(window.open).toHaveBeenCalledWith('https://github.com/acme/beta', '_blank', 'noopener')
+    expect(row('beta').classes()).toContain('is-read')
+    expect(row('alpha').classes()).not.toContain('is-read')
+
+    await press('?')
+    expect(wrapper.find('.list-keys-sheet').exists()).toBe(true)
+    await press('Escape')
+    expect(wrapper.find('.list-keys-sheet').exists()).toBe(false)
+    await press('Escape')
+    expect(cursorKey()).toBeNull()
+  })
+
+  it('pages on past either end and lands the cursor on the first or last row of the new page', async () => {
+    controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+    controller().total.value = 60
+    await mountChart()
+    await press('j')
+    await press('j')
+    expect(cursorKey()).toBe('github:acme/beta')
+    controller().loadProjects.mockClear()
+    routeState().replaceRouteFromState.mockClear()
+
+    await press('j')
+    expect(routeState().replaceRouteFromState).toHaveBeenCalledOnce()
+    expect(controller().loadProjects).toHaveBeenCalledOnce()
+    await arrive([chartRepo('gamma'), chartRepo('delta')])
+    expect(cursorKey()).toBe('github:acme/gamma')
+    expect(document.activeElement).toBe(row('gamma').element)
+
+    await press('k')
+    expect(controller().loadProjects).toHaveBeenCalledTimes(2)
+    await arrive([chartRepo('alpha'), chartRepo('beta')])
+    expect(cursorKey()).toBe('github:acme/beta')
+
+    // 第一页的第一行再往上没有页可翻，光标不动
+    await press('k')
+    await press('k')
+    expect(cursorKey()).toBe('github:acme/alpha')
+    expect(controller().loadProjects).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps repositories opened on an earlier visit dimmed, and leaves the comfortable cards without keys', async () => {
+    localStorage.setItem('read_marks_projects', JSON.stringify({ 'github:acme/beta': Math.floor(Date.now() / 60_000) }))
+    controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+    controller().total.value = 2
+    const wrapper = await mountChart()
+    expect(row('beta').classes()).toContain('is-read')
+    expect(row('alpha').classes()).not.toContain('is-read')
+
+    // 点项目名打开的也立刻变淡（jsdom 不跟外链）
+    wrapper.element.addEventListener('click', (event: Event) => event.preventDefault())
+    await row('alpha').get('.project-row__name a').trigger('click')
+    expect(row('alpha').classes()).toContain('is-read')
+    wrapper.unmount()
+    view = null
+
+    setAppDensity('comfortable')
+    const cards = await mountChart()
+    expect(cards.find('.project-chart').exists()).toBe(false)
+    expect(cards.findAll('.project-card')).toHaveLength(2)
+    expect(cards.find('.is-read').exists()).toBe(false)
+    await press('j')
+    await press('?')
+    expect(cards.find('.is-cursor').exists()).toBe(false)
+    expect(cards.find('.list-keys-sheet').exists()).toBe(false)
   })
 })

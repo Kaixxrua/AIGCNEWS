@@ -3530,6 +3530,7 @@
     --p-heat: #c2410c;
     --p-rule: #5d6b78;
     --p-wash: #e6f0f1;
+    --p-read: #646b78;
     --p-card: url('/assets/comic/p-card-cool.webp');
     --p-side: url('/assets/comic/p-side.webp');
     --p-active: url('/assets/comic/p-active.webp');
@@ -3558,6 +3559,7 @@
     --p-today: var(--tone-mint);
     --p-heat: var(--heat-ink);
     --p-rule: #6d737c;
+    --p-read: #9aa1ad;
     --p-wash: #2a3438;
     --p-card: url('/assets/comic/p-card-cool-night.webp');
     --p-side: url('/assets/comic/p-side-night.webp');
@@ -3825,7 +3827,22 @@
     transition: background-color 140ms ease;
   }
   #app .app-shell--comic-page .projects-page--catalog .project-row:last-child { background-image: none; }
-  #app .app-shell--comic-page .projects-page--catalog .project-row:is(:hover, :focus-within) { background-color: color-mix(in srgb, var(--p-lime-hover) 72%, transparent); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row:is(:hover, :focus-within, .is-cursor) { background-color: color-mix(in srgb, var(--p-lime-hover) 72%, transparent); }
+  /* Keyboard flow (j / k): the cursor row takes the hover wash and a lime bar in its left gutter that slides from row to
+     row (v-indicator); rows scroll clear of the sticky header and the dock. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row[data-list-key] { scroll-margin: 48px 0 calc(var(--peel-clear) + 20px); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-cursor:focus { outline: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__rows[data-indicator-mark]::after {
+    z-index: 2; width: 5px; height: max(0px, calc(var(--indicator-h, 0px) - 16px));
+    translate: calc(var(--indicator-x, 0px) + 1.5px) calc(var(--indicator-y, 0px) + 8px);
+    border: 1.5px solid var(--p-ink); border-radius: 3px; background: var(--p-lime);
+  }
+  /* A repository opened before (useReadMarks), as on the briefing and the tweet wall: its name, tags, description and
+     figures drop to one slate ink, the logo washes out and the coloured figures, the move and the spark line lose their
+     colour; the tags keep their frames and the numbers stay in their columns, so the row still reads, only quieter. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read { --p-ink: var(--p-read); --p-copy: var(--p-read); --p-muted: var(--p-read); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read :is(.project-row__rank, .project-row__gain, .project-row__heat, .project-row__meta-heat, .project-row__spark) { filter: saturate(.3); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read .project-row__logo { filter: saturate(.3) opacity(.72); }
   /* Rank: an italic numeral that steps down a size per extra digit; the podium sits on the index's lime key. */
   #app .app-shell--comic-page .projects-page--catalog .project-row__rank { grid-area: rank; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__position {
@@ -3906,7 +3923,7 @@
   #app .app-shell--comic-page .projects-page--catalog .project-row__action.project-row__link:hover svg { translate: 1.5px -1.5px; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__favorite:hover:not(:disabled) svg { rotate: -15deg; }
   #app .app-shell--comic-page .projects-page--catalog .project-row--not-found > :not(.project-row__actions) { opacity: .55; }
-  /* Where the name column is too narrow for its tags (a list under 1000px, English under 1150px) the tags take a line
+  /* Where the name column is too narrow for its tags (a list under 1000px, English under 1050px) the tags take a line
      of their own across the row instead of folding twice beside the name. Under 900px (1024–1199px windows) stars and
      heat also leave their columns for the line trailing the description. */
   @container project-chart (max-width: 999.98px) {
