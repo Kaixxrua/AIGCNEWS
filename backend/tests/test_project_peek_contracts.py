@@ -184,6 +184,16 @@ class ProjectPeekServiceTests(unittest.IsolatedAsyncioTestCase):
         entry = {"fetched_at": self.now - age, "peek": peek}
         self.redis.values[f"projects:peek:v1:cache:{repo_id}"] = json.dumps(entry).encode()
 
+    async def _until_cached(self, repo_id: str, *, timeout: float = 5.0) -> None:
+        """等这个仓库的速览写进缓存；超时算没写进去（失败而不是一直等）。"""
+        key = f"projects:peek:v1:cache:{repo_id}"
+
+        async def poll() -> None:
+            while key not in self.redis.values:
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(poll(), timeout)
+
     async def test_repos_outside_the_catalog_are_never_read(self) -> None:
         self.assertIsNone(await self._peek("acme/nobody"))
         self.fetch.assert_not_awaited()
@@ -309,22 +319,23 @@ class ProjectPeekServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(result == results[0] and result["status"] == "ok" for result in results))
 
     async def test_a_cancelled_lookup_still_fills_the_cache(self) -> None:
+        started = asyncio.Event()
         release = asyncio.Event()
 
         async def slow_fetch(full_name: str) -> GitHubPeekFetch:
+            started.set()
             await release.wait()
             return GitHubPeekFetch("ok", readme=README, commit=COMMIT)
 
         self.fetch.side_effect = slow_fetch
         lookup = asyncio.ensure_future(self._peek())
-        for _ in range(5):
-            await asyncio.sleep(0)
+        # 查库和拼速览都在线程里，转几圈事件循环不一定够：等 GitHub 那一读真开始了再取消，等缓存真写进去了再看
+        await asyncio.wait_for(started.wait(), timeout=5)
         lookup.cancel()
         release.set()
-        for _ in range(5):
-            await asyncio.sleep(0)
+        await self._until_cached("acme/alpha")
 
-        self.assertIn("projects:peek:v1:cache:acme/alpha", self.redis.values)
+        self.assertTrue(lookup.cancelled())
         self.assertEqual((await self._peek())["status"], "ok")
         self.fetch.assert_awaited_once()
 
