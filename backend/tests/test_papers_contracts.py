@@ -33,6 +33,7 @@ class PapersRepository:
     def __init__(self) -> None:
         self.today: list[dict[str, object]] = []
         self.details: dict[str, dict[str, object]] = {}
+        self.by_arxiv: dict[str, dict[str, object]] = {}
         self.pdf_sources: dict[str, dict[str, object]] = {}
         self.calls: list[tuple[str, str | None]] = []
 
@@ -43,6 +44,10 @@ class PapersRepository:
     def get_paper_detail(self, paper_id: str):
         self.calls.append(("detail", paper_id))
         return self.details.get(paper_id)
+
+    def get_paper_by_arxiv_id(self, arxiv_id: str):
+        self.calls.append(("arxiv", arxiv_id))
+        return self.by_arxiv.get(arxiv_id)
 
     def get_paper_pdf_source(self, paper_id: str):
         self.calls.append(("pdf", paper_id))
@@ -126,6 +131,30 @@ class PapersContractsTests(unittest.TestCase):
         self.assertIsNone(detail.json()["pdf_media_url"])
         self.assertEqual((missing.status_code, missing.json()["detail"]), (404, "Paper 'missing' not found"))
         self.assertEqual(self.papers.calls, [("today", None), ("detail", "paper-1"), ("detail", "missing")])
+
+    def test_arxiv_lookup_drops_the_version_and_answers_like_the_detail(self) -> None:
+        self.papers.by_arxiv["2609.35347"] = {
+            "id": "doc-1", "source": "arxiv", "arxiv_id": "2609.35347", "published_date": date(2026, 9, 29),
+        }
+        client = TestClient(self.app)
+        found = client.get("/api/papers/arxiv/2609.35347v2")
+        missing = client.get("/api/papers/arxiv/2609.00001")
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(
+            found.json(),
+            {"id": "doc-1", "source": "arxiv", "arxiv_id": "2609.35347", "published_date": "2026-09-29", "pdf_media_url": None},
+        )
+        self.assertEqual((missing.status_code, missing.json()["detail"]), (404, "Paper 'arXiv:2609.00001' not found"))
+        self.assertEqual(self.papers.calls, [("arxiv", "2609.35347"), ("arxiv", "2609.00001")])
+
+    def test_arxiv_lookup_rejects_malformed_ids_and_leaves_the_detail_route_alone(self) -> None:
+        client = TestClient(self.app)
+        for bad in ("cs.AI", "2609.123", "2609.353470", "2609.35347v", "x2609.35347"):
+            self.assertEqual(client.get(f"/api/papers/arxiv/{bad}").status_code, 422, bad)
+        self.assertEqual(self.papers.calls, [])
+        # 只有一段的 /papers/arxiv 还是按站内 id 取详情，老行为不变
+        self.assertEqual(client.get("/api/papers/arxiv").status_code, 404)
+        self.assertEqual(self.papers.calls, [("detail", "arxiv")])
 
 
 

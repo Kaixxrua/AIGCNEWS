@@ -207,6 +207,47 @@ describe('useListKeys', () => {
     expect(document.activeElement).not.toBe(item('a'))
   })
 
+  it('tells the list where the keys took the cursor, but not where a click or the list itself put it', () => {
+    const reached: string[] = []
+    const { keys, item } = mountList(['a', 'b', 'c'], { reached: (key) => reached.push(key) })
+    press('j')
+    press('j')
+    press('k')
+    expect(reached).toEqual(['a', 'b', 'a'])
+    item('c').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    keys.setCursor('b', { reveal: true })
+    expect(reached).toEqual(['a', 'b', 'a'])
+  })
+
+  it('lets the list close what it has open on Esc before the cursor goes', () => {
+    let open = true
+    const escape = vi.fn(() => {
+      if (!open) return false
+      open = false
+      return true
+    })
+    const { keys } = mountList(['a', 'b'], { escape })
+    press('j')
+    press('?')
+    press('Escape')
+    expect(escape).not.toHaveBeenCalled()
+    press('Escape')
+    expect(escape).toHaveBeenCalledTimes(1)
+    expect(keys.shown.value).toBe(true)
+    press('Escape')
+    expect(keys.shown.value).toBe(false)
+
+    // 开着弹窗时 Esc 归弹窗
+    open = true
+    const modal = document.createElement('div')
+    modal.setAttribute('aria-modal', 'true')
+    modal.getClientRects = () => [{}] as unknown as DOMRectList
+    document.body.append(modal)
+    press('Escape')
+    expect(escape).toHaveBeenCalledTimes(2)
+    expect(open).toBe(true)
+  })
+
   it('lets the list move the cursor itself and puts the focus back on it', async () => {
     const { keys, item } = mountList(Array.from({ length: 12 }, (_, index) => `t${index}`))
     keys.setCursor('t10', { reveal: true, focus: true })

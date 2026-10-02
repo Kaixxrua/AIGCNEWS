@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
+import ReportPaperPeek from '@/components/report/ReportPaperPeek.vue'
 import ReportSavedPanel from '@/components/report/ReportSavedPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
 import { api } from '@/services/http/apiClient'
@@ -14,11 +15,13 @@ import { useEventSource } from '@/composables/useEventSource'
 import { useFollowViewport } from '@/composables/useFollowViewport'
 import { useReportBarLayout } from '@/composables/useReportBarLayout'
 import { useReportController } from '@/composables/useReportController'
+import { useReportPeek } from '@/composables/useReportPeek'
 import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { useSavedItems } from '@/composables/useSavedItems'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { slideIn, slideOut } from '@/motion/presence'
 import { vSwap } from '@/motion/swap'
 import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBriefing'
 import {
@@ -60,6 +63,9 @@ const controlsRef = ref<HTMLElement | null>(null)
 const { height: controlsHeight } = useElementSize(controlsRef, undefined, { box: 'border-box' })
 // 桌面控制条三段（分区标签、日期行、操作按钮）放得下就排一行，否则按宽度排成两行。
 const controlsLayout = useReportBarLayout(controlsRef, isDesktop)
+// 宽屏的论文详情栏钉在控制条下、页脚卷角之上，栏高按整页可视高度算。
+const isWide = useMediaQuery('(min-width: 1600px)')
+const { height: pageHeight } = useElementSize(reportPageRef, undefined, { box: 'border-box' })
 const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFollowViewport(readingViewport)
 
 const { connect } = useEventSource()
@@ -186,6 +192,46 @@ watch(reportContent, () => {
   shownIssue.value = { type: selectedType.value, date: selectedDate.value }
 })
 
+// 宽屏（≥1600px）点简报条目里的论文（讲到论文的条目的标题、论文链接）不离开简报：详情在右侧打开，列表留在左边，
+// j / k 或栏里的上一条、下一条接着看。生成中不开；换一期、换分区、进出收藏时收起。
+const peek = useReportPeek({ available: computed(() => isWide.value && !isGenerating.value) })
+const {
+  target: peekTarget,
+  current: peekPaper,
+  entry: peekEntry,
+  entries: peekEntries,
+  index: peekIndex,
+  direction: peekDirection,
+  withinItem: peekWithinItem,
+} = peek
+const broadsheetPeek = computed(() => (isWide.value ? peek.broadsheet : null))
+// 开合时版面变窄或变宽、条目跟着重排：把打开（收起）的那一条留在原来的高度，不让它跑出视野。换了内容时版面整个换掉，不留。
+let keepPlace = true
+watch(contentKey, () => {
+  if (!peekTarget.value) return
+  keepPlace = false
+  peek.close()
+})
+watch(peekTarget, (next, previous) => {
+  const keep = keepPlace
+  keepPlace = true
+  if (!keep || !next === !previous) return
+  const shell = reportPageRef.value
+  const key = (next ?? previous)?.key
+  const item = Array.from(shell?.querySelectorAll<HTMLElement>('[data-list-key]') ?? []).find(el => el.dataset.listKey === key)
+  if (!shell || !item) return
+  const top = item.getBoundingClientRect().top
+  void nextTick(() => {
+    if (item.isConnected) shell.scrollTop += item.getBoundingClientRect().top - top
+  })
+}, { flush: 'pre' })
+// 同一条讲到几篇时，在栏里换看另一篇
+const pickPaper = (arxivId: string) => {
+  if (peekTarget.value) peek.open({ key: peekTarget.value.key, arxivId })
+}
+const peekEnter = (el: Element, done: () => void) => slideIn(el, done, { x: 28 })
+const peekLeave = (el: Element, done: () => void) => slideOut(el, done, { x: 28 })
+
 // 本机收藏（只在桌面大报版）：条目底行的书签或按 s 收下，连同哪一期一起存在本机；分区标签最后多一枚「收藏」，
 // 切过去把收下的条目按期排成一份大报。换分区、改日期就回到简报。
 const savedBriefing = useSavedItems({ list: 'briefing', accept: isSavedBriefingItem })
@@ -239,7 +285,12 @@ watch(readingMode, mode => {
 </script>
 
 <template>
-  <div ref="reportPageRef" class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5" :style="{ '--report-bar-h': `${Math.round(controlsHeight)}px` }">
+  <div
+    ref="reportPageRef"
+    class="report-shell flex h-full flex-col overflow-hidden p-4 gap-2.5"
+    :class="{ 'has-peek': peekTarget }"
+    :style="{ '--report-bar-h': `${Math.round(controlsHeight)}px`, '--report-view-h': `${Math.round(pageHeight)}px` }"
+  >
 
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
     <div ref="controlsRef" class="stagger-enter glass-card comic-panel shrink-0 px-4 py-3 space-y-2" :class="[{ 'is-expanded': showSubscribePanel || showLoginPrompt }, controlsLayout && `is-${controlsLayout}`]">
@@ -311,7 +362,7 @@ watch(readingMode, mode => {
 
     <!-- ═══ 内容阅读区（最大化空间） ═══ -->
     <div ref="reportRef" v-swap="{ key: contentKey, stagger: true }" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
-      <ReportSavedPanel v-if="savedView" :mode="readingMode" />
+      <ReportSavedPanel v-if="savedView" :mode="readingMode" :peek="broadsheetPeek" />
       <ReportContentPanel
         v-else
         :report-content="reportContent"
@@ -322,9 +373,29 @@ watch(readingMode, mode => {
         :reading-mode="isDesktop ? readingMode : null"
         :content-key="contentKey"
         :saves="isDesktop ? briefingSaves : null"
+        :peek="broadsheetPeek"
         @resume-auto-scroll="resumeAutoScroll"
       />
     </div>
+
+    <!-- 宽屏：简报讲到的论文在右侧看详情 -->
+    <Transition :css="false" @enter="peekEnter" @leave="peekLeave">
+      <ReportPaperPeek
+        v-if="peekTarget && peekPaper"
+        :target="peekTarget"
+        :state="peekPaper"
+        :papers="peekEntry?.papers ?? []"
+        :index="peekIndex"
+        :total="peekEntries.length"
+        :direction="peekDirection"
+        :within-item="peekWithinItem"
+        :render-markdown="renderMarkdown"
+        @close="peek.close()"
+        @step="peek.step($event)"
+        @pick="pickPaper"
+        @retry="peek.retry()"
+      />
+    </Transition>
   </div>
 </template>
 

@@ -728,6 +728,14 @@ class PostgresDocumentRepository:
         fields = "id, source, source_channel, title, url, summary, published_date, tags, score, raw_score, rank_in_period, local_pdf_path, authors, arxiv_id, created_at"
         return self._fetch_one(f"SELECT {fields} FROM documents WHERE id = %s LIMIT 1", (paper_id,))
 
+    def get_paper_by_arxiv_id(self, arxiv_id: str) -> dict[str, Any] | None:
+        """按 arXiv 编号（不带版本号）找论文；同一篇入库过几行时取最近入库的那行，与详情同一组字段。"""
+        fields = "id, source, source_channel, title, url, summary, published_date, tags, score, raw_score, rank_in_period, local_pdf_path, authors, arxiv_id, created_at"
+        return self._fetch_one(
+            f"SELECT {fields} FROM documents WHERE source = 'arxiv' AND arxiv_id = %s ORDER BY created_at DESC, id LIMIT 1",
+            (arxiv_id,),
+        )
+
     def get_paper_pdf_source(self, paper_id: str) -> dict[str, Any] | None:
         return self._fetch_one("SELECT local_pdf_path, url, source FROM documents WHERE id = %s LIMIT 1", (paper_id,))
 

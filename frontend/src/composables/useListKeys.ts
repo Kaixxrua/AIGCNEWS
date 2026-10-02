@@ -25,6 +25,10 @@ export interface ListKeysOptions {
   toggle?: (key: string) => void
   /** 光标从这条往下走了：读过了。 */
   passed?: (key: string) => void
+  /** 光标被键盘挪到了这条（j / k，或 o、s、x 先点亮的那条）；鼠标点到、列表自己挪的不算。 */
+  reached?: (key: string) => void
+  /** Esc 先交给列表收起它自己开着的东西（如宽屏的详情栏）：收了返回 true，这一下不再收光标。 */
+  escape?: () => boolean
   /** 在头尾再往外走（翻页）：接手了返回 true，列表换成新一页后光标落到它的头或尾。 */
   edge?: (direction: 1 | -1) => boolean
 }
@@ -84,6 +88,7 @@ export function useListKeys(options: ListKeysOptions) {
     shown.value = true
     const el = element(key)
     if (el) reveal(el, focus)
+    options.reached?.(key)
   }
 
   /** 收起光标；焦点还停在光标那条上时一并移走，不留一圈看不出来由的焦点框。 */
@@ -173,9 +178,9 @@ export function useListKeys(options: ListKeysOptions) {
       return
     }
     if (action === 'escape') {
-      // 先关快捷键表，再收光标；都不拦 Esc，读报态照样把 dock 叫回来。
+      // 先关快捷键表，再收列表自己开着的东西，最后收光标；都不拦 Esc，读报态照样把 dock 叫回来。
       if (help.value) help.value = false
-      else if (shown.value && !isModalOpen()) hide()
+      else if (!isModalOpen() && !options.escape?.() && shown.value) hide()
       return
     }
     if (isModalOpen() || !options.keys.value.length) return

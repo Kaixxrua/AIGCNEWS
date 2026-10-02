@@ -127,6 +127,32 @@ def test_upsert_round_trips_authors_and_arxiv_id_with_conflict_merge(
     assert detail["authors"] == '["Carol Wang"]'
 
 
+def test_paper_by_arxiv_id_takes_the_latest_arxiv_row(
+    postgres_documents: tuple[Any, Any],
+) -> None:
+    repository, database = postgres_documents
+    rows = (
+        ("it:arxiv-old", "arxiv", "https://huggingface.co/papers/2609.35347", "2026-09-28T07:00:00+00:00"),
+        ("it:arxiv-new", "arxiv", "https://hf-mirror.com/papers/2609.35347", "2026-09-29T07:00:00+00:00"),
+        ("it:arxiv-news", "news", "https://example.com/2609.35347", "2026-09-30T07:00:00+00:00"),
+    )
+    try:
+        for doc_id, source, url, created_at in rows:
+            repository.upsert_document({
+                "id": doc_id, "source": source, "title": doc_id, "url": url, "summary": "summary",
+                "published_date": "2026-09-29", "tags": [], "arxiv_id": "2609.35347", "created_at": created_at,
+            })
+        found = repository.get_paper_by_arxiv_id("2609.35347")
+        assert found is not None
+        # 同一篇入库过两行：取最近入库的；别的来源碰巧记了同一个编号也不算
+        assert (found["id"], found["arxiv_id"]) == ("it:arxiv-new", "2609.35347")
+        assert set(found) == set(repository.get_paper_detail("it:arxiv-new"))
+        assert repository.get_paper_by_arxiv_id("2609.00001") is None
+    finally:
+        with database.transaction() as connection:
+            connection.execute("DELETE FROM documents WHERE id IN ('it:arxiv-old', 'it:arxiv-new', 'it:arxiv-news')")
+
+
 def test_upsert_x_document_returning_distinguishes_insert_from_conflict_update(
     postgres_documents: tuple[Any, Any],
 ) -> None:

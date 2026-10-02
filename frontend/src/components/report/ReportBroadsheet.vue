@@ -8,7 +8,9 @@ import { vMorph } from '@/motion/morph'
 import { prefersReducedMotion } from '@/motion/motion'
 import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
+import type { BroadsheetPeek, PeekEntry } from '@/composables/useReportPeek'
 import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock, type BroadsheetItem } from '@/features/report/reportBroadsheet'
+import { itemPaperLinks, paperArxivId } from '@/features/report/reportPaperLinks'
 
 /**
  * 桌面版简报的大报排法：每节的正文段落分三栏，条目排成两到三栏的网格，条目的标题句加粗打头。
@@ -16,6 +18,8 @@ import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock, type Broad
  * 同排在底行，正文收着也能直接点。生成中全部展开，跟着流式文字长。收起与展开、两种模式之间切换时正文高度平滑过渡。
  * 看过的条目下次再打开这一期时变淡，点过其中链接的立刻变淡（记录只存在本机浏览器）。
  * 给了 saves 时条目底行多一枚书签，按 s 也能收下光标停着的那条（生成中没有）。
+ * 给了 peek（宽屏）时，点条目里的论文链接、讲到论文的条目的标题，在右侧看这篇的详情，不离开简报；详情开着时
+ * j / k 只走讲到论文的条目，右侧跟着换，Esc 收起。
  */
 export type ReportReadingMode = 'full' | 'lead'
 
@@ -32,7 +36,9 @@ const props = withDefaults(defineProps<{
   saves?: BroadsheetSaves | null
   /** 看过的条目变淡；看收藏时不淡，也不记。 */
   dimRead?: boolean
-}>(), { saves: null, dimRead: true })
+  /** 宽屏右侧的论文详情栏；不给就照旧点链接离开、o 在新标签页打开。 */
+  peek?: BroadsheetPeek | null
+}>(), { saves: null, dimRead: true, peek: null })
 
 const { t } = useI18n()
 const uid = useId()
@@ -72,6 +78,40 @@ const isSaved = (id: string) => {
 const toggleSave = (id: string) => {
   const piece = pieces.value.get(id)
   if (piece && canSave.value) props.saves?.toggle(piece.item, { section: piece.section, order: piece.order })
+}
+
+// 讲到论文的条目（按版面顺序）登记给详情栏；生成中文字还在变，不登记。
+const peekEntries = computed<PeekEntry[]>(() => {
+  if (!props.peek || props.generating) return []
+  return [...pieces.value].flatMap(([key, piece]) => {
+    const papers = itemPaperLinks(piece.item)
+    return papers.length ? [{ key, papers }] : []
+  })
+})
+const peekLinks = computed(() => new Map(peekEntries.value.map((entry) => [entry.key, entry.papers])))
+const paperLinksOf = (id: string) => peekLinks.value.get(id) ?? []
+watch(peekEntries, (entries) => props.peek?.setEntries(entries), { immediate: true })
+onBeforeUnmount(() => props.peek?.releaseEntries(peekEntries.value))
+const peekKey = computed(() => props.peek?.target?.key ?? null)
+const isPeeked = (id: string) => peekKey.value === id
+
+/** 在右侧打开这条讲的论文（默认第一篇）；看过详情的条目记为看过。 */
+const peekAt = (id: string, arxivId = paperLinksOf(id)[0]?.arxivId): boolean => {
+  if (!props.peek || !arxivId || !props.peek.open({ key: id, arxivId })) return false
+  readMarks.markSeen(readId(id))
+  return true
+}
+
+/** 宽屏：点条目里的论文链接、讲到论文的条目的标题，在右侧看详情；带修饰键的点击照常在新标签页打开链接。 */
+const peekFromClick = (event: MouseEvent, target: Element): boolean => {
+  if (!props.peek || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false
+  const id = target.closest<HTMLElement>('[data-list-key]')?.dataset.listKey
+  if (!id || !paperLinksOf(id).length) return false
+  const link = target.closest('a[href]')
+  const arxivId = link ? paperArxivId(link.getAttribute('href')) : target.closest('.report-broadsheet__lead') ? undefined : null
+  if (arxivId === null || !peekAt(id, arxivId)) return false
+  event.preventDefault()
+  return true
 }
 
 const ITEM_LINES = { full: 5, lead: 2 } as const
@@ -156,6 +196,7 @@ const toggle = (id: string) => {
 // 点被截断的条目任意处（链接、按钮、正在选中文字除外）也能展开。点了条目里的链接，这条立刻变淡，像访问过的链接。
 const expandFromClick = (event: MouseEvent) => {
   const target = event.target as Element | null
+  if (target && peekFromClick(event, target)) return
   const link = target?.closest('a[href]')
   const linked = link?.closest<HTMLElement>('[data-piece]')?.dataset.piece
   if (linked) readMarks.markOpened(readId(linked))
@@ -170,19 +211,25 @@ const expandFromClick = (event: MouseEvent) => {
 }
 
 // 键盘流：j / k 按版面顺序在条目之间走，走过的记为看过；o 在新标签页打开条目的出处（简报留在这里接着往下读，
-// 没有链接时展开全文），s 收藏，x 展开或收起全文。生成中文字还在长，不接键。
+// 没有链接时展开全文；宽屏上讲到论文的条目先在右侧看详情，再按一次才打开），s 收藏，x 展开或收起全文。
+// 详情开着时 j / k 只走讲到论文的条目，右侧跟着换。生成中文字还在长，不接键。
 const pieceEl = (id: string) => root.value?.querySelector<HTMLElement>(`[data-piece="${id}"]`) ?? null
 const canToggle = (id: string) => opened.has(id) || overflows(id, Number(pieceEl(id)?.dataset.lines))
 const itemOrder = computed(() => [...pieces.value.keys()])
+const peekOrder = computed(() => peekEntries.value.map((entry) => entry.key))
 const listKeys = useListKeys({
   enabled: computed(() => !props.generating),
   root,
-  keys: itemOrder,
+  keys: computed(() => (peekKey.value ? peekOrder.value : itemOrder.value)),
   open: (id) => {
+    const shown = props.peek?.target
+    if (shown?.key !== id && peekAt(id)) return
+    // 右侧已经在看这条：打开正看的那篇
     const piece = pieceEl(id)
-    const link = piece?.querySelector<HTMLAnchorElement>('.report-broadsheet__source a[href]') ?? piece?.querySelector<HTMLAnchorElement>('a[href]')
-    if (link) {
-      window.open(link.href, '_blank', 'noopener')
+    const href = (shown?.key === id ? paperLinksOf(id).find((paper) => paper.arxivId === shown.arxivId)?.href : undefined)
+      ?? (piece?.querySelector<HTMLAnchorElement>('.report-broadsheet__source a[href]') ?? piece?.querySelector<HTMLAnchorElement>('a[href]'))?.href
+    if (href) {
+      window.open(href, '_blank', 'noopener')
       readMarks.markOpened(readId(id))
     } else if (canToggle(id)) toggle(id)
   },
@@ -194,8 +241,26 @@ const listKeys = useListKeys({
     if (canToggle(id)) toggle(id)
   },
   passed: (id) => readMarks.markSeen(readId(id)),
+  // 详情开着时，右侧跟着光标换到这条
+  reached: (id) => {
+    if (peekKey.value && peekKey.value !== id) peekAt(id)
+  },
+  escape: () => {
+    if (!peekKey.value) return false
+    props.peek?.close()
+    return true
+  },
 })
 const { help: keysHelp, isCursor } = listKeys
+
+// 在详情栏里换了一条：列表的光标跟过去、把那条滚进视野。收起时焦点若还在栏里（点了 ×），放回那一条，接着用键盘往下走。
+watch(peekKey, (key, previous) => {
+  if (key) {
+    if (listKeys.cursor.value !== key) listKeys.setCursor(key, { reveal: true })
+  } else if (previous && document.activeElement?.closest('.report-peek')) {
+    listKeys.setCursor(previous, { focus: true })
+  }
+})
 
 const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: boolean) => {
   if (intro) return 'is-standfirst'
@@ -267,6 +332,8 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
             class="report-broadsheet__piece report-broadsheet__item"
             :class="{
               'is-numbered': item.number != null,
+              'is-peekable': peekLinks.has(pieceId(g, b, i)),
+              'is-peeked': isPeeked(pieceId(g, b, i)),
               'is-read': isRead(pieceId(g, b, i)),
               'is-cursor': isCursor(pieceId(g, b, i)),
               'is-clamped': isClamped(pieceId(g, b, i), linesOf('item', group.heading == null)),
@@ -323,7 +390,7 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
     <p v-if="sheet.dateline" class="report-dateline" v-html="sheet.dateline" />
     <ListKeysSheet
       v-model:open="keysHelp"
-      :actions="{ open: t('listKeys.briefingOpen'), save: saves ? t('listKeys.save') : undefined, toggle: t('listKeys.briefingToggle') }"
+      :actions="{ open: peek ? t('listKeys.briefingPeek') : t('listKeys.briefingOpen'), save: saves ? t('listKeys.save') : undefined, toggle: t('listKeys.briefingToggle') }"
     />
   </div>
 </template>

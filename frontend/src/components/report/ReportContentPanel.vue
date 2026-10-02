@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ReportBroadsheet, { type BroadsheetSaves, type ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
+import type { BroadsheetPeek } from '@/composables/useReportPeek'
 import { parseBroadsheet } from '@/features/report/reportBroadsheet'
 import { groupReportSections } from '@/features/report/reportViewModel'
 const { t } = useI18n()
@@ -18,6 +19,8 @@ const props = defineProps<{
   contentKey?: number
   /** 条目收藏（桌面大报版）；不给就没有书签。 */
   saves?: BroadsheetSaves | null
+  /** 宽屏右侧的论文详情栏（≥1600px）；不给就没有。 */
+  peek?: BroadsheetPeek | null
 }>()
 
 const broadsheet = computed(() => props.readingMode && props.reportContent
@@ -51,7 +54,7 @@ const emit = defineEmits<{
   <!-- 报告正文 -->
   <div v-if="reportContent" class="report-content p-5">
     <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
-    <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" :saves="saves" />
+    <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" :saves="saves" :peek="peek" />
     <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
   </div>

@@ -430,6 +430,8 @@
   #app .app-shell--comic-page .report-broadsheet__foot > .report-broadsheet__toggle { margin: 0; }
   #app .app-shell--comic-page .report-broadsheet__source {
     min-width: 0; margin-left: auto; color: var(--rep-meta); font-size: 12.5px; font-weight: 600; line-height: 18px; text-align: right;
+    /* a credit such as "WAM来源" wraps whole, never between its name and 来源 */
+    word-break: keep-all;
   }
   /* the bookmark (saved in this browser) leads the foot: a bare glyph in the meta ink, filled lime once saved; its box
      overhangs the column edge so the glyph lines up with the copy */
@@ -459,6 +461,164 @@
   }
   #app .app-shell--comic-page .report-broadsheet__item[data-list-key] { scroll-margin-bottom: calc(var(--peel-clear) + 20px); }
   #app .app-shell--comic-page .report-broadsheet__item.is-cursor:focus { outline: none; }
+
+  /* ── the paper pane (≥1600px, ReportPaperPeek): a paper an item cites opens beside the report instead of taking the
+     reader away. While it is open the page sets the report and the pane side by side under the bar, as a wrapping flex
+     row so the bar still pins over the whole page (a grid area would hold it to its own row); the pane pins under the
+     bar down to the peel in a section's drawn frame: a slip tag, the count and the arrows at its head, the papers of
+     an item that cites several, then the paper itself scrolling on its own. The item it shows takes a pale lime wash;
+     an item that cites a paper opens it from its headline as well. ── */
+  @media (min-width: 1600px) {
+    /* the pane is pinned in place here while it slides out */
+    #app .app-shell--comic-page .report-shell { position: relative; }
+    /* none of these transition anything, but the reduced-motion rule hands every property a 0.01ms transition: opening the
+       pane would lay the report out for a frame with the old flex, gap and columns, and the page would be anchored on it */
+    #app .app-shell--comic-page :is(.report-shell, .report-shell > *, .report-broadsheet__items) { transition-property: none; }
+    /* no gap: the shell's own gap would only start to count here and push the report down as the pane opens */
+    #app .app-shell--comic-page .report-shell.has-peek { display: flex; flex-flow: row wrap; align-items: flex-start; gap: 0; }
+    #app .app-shell--comic-page .report-shell.has-peek > * { flex: 0 0 100%; }
+    #app .app-shell--comic-page .report-shell.has-peek > .comic-panel { flex-basis: calc(100% + 12px); }
+    #app .app-shell--comic-page .report-shell.has-peek > .report-reading { flex: 1 1 0; min-width: 0; }
+    /* items keep three narrower columns where each still holds a source line (about 1760 wide and up), else two */
+    #app .app-shell--comic-page .report-shell.has-peek .report-broadsheet .report-broadsheet__items {
+      grid-template-columns: repeat(auto-fill, minmax(max(320px, calc((100% - 64px) / 3)), 1fr));
+    }
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peekable .report-broadsheet__lead { cursor: pointer; }
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peekable .report-broadsheet__lead:hover {
+      text-decoration: underline; text-decoration-color: var(--rep-link-line); text-decoration-thickness: 3px; text-underline-offset: 4px;
+    }
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peeked { isolation: isolate; }
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peeked::before {
+      content: ''; position: absolute; z-index: -1; inset: -2px -10px -8px -10px; border-radius: 2px 4px 3px 5px; background: var(--acid-mist);
+    }
+
+    #app .app-shell--comic-page .report-shell > .report-peek {
+      --peek-w: clamp(440px, 30vw, 600px);
+      position: sticky; top: calc(var(--report-bar-h, 80px) + 12px); isolation: isolate;
+      display: flex; flex: 0 0 var(--peek-w); flex-direction: column; width: var(--peek-w); min-width: 0;
+      height: max(320px, calc(var(--report-view-h, 100dvh) - var(--report-bar-h, 80px) - var(--peel-clear) - 36px));
+      margin: 12px 11px 0 32px; padding: 14px 22px 12px 24px; color: var(--rep-ink);
+    }
+    /* the bar stops pinning while the subscription wizard is open under it */
+    #app .app-shell--comic-page .report-shell:has(> .comic-panel.is-expanded) > .report-peek { top: 12px; }
+    #app .app-shell--comic-page .report-peek::after {
+      content: ''; position: absolute; z-index: -1; inset: -2px -10px -9px -2px; pointer-events: none;
+      border-style: solid; border-color: transparent; border-width: 62px 86px 68px 62px;
+      border-image: var(--rep-sec) 186 258 204 186 fill / 62px 86px 68px 62px stretch;
+    }
+    #app .app-shell--comic-page .report-peek__head { display: flex; flex: none; align-items: center; gap: 12px; margin: 0 0 12px; }
+    #app .app-shell--comic-page .report-peek__kicker {
+      position: relative; isolation: isolate; padding: 0 10px 0 12px;
+      color: var(--rep-ink); font-size: 13px; font-style: italic; font-weight: 700; line-height: 22px; white-space: nowrap;
+    }
+    #app .app-shell--comic-page .report-peek__kicker::after {
+      content: ''; position: absolute; z-index: -1; inset: -2px -4px -6px -2px;
+      border-style: solid; border-color: transparent; border-width: 11px 13px 15px 11px;
+      border-image: var(--rep-tag) 33 39 45 33 fill / 11px 13px 15px 11px stretch;
+    }
+    #app .app-shell--comic-page .report-peek__count { color: var(--rep-meta); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    #app .app-shell--comic-page .report-peek__count i { margin: 0 2px; font-style: normal; font-weight: 600; }
+    #app .app-shell--comic-page .report-peek__nav { display: flex; gap: 2px; margin: -4px -8px -4px auto; }
+    #app .app-shell--comic-page .report-peek__btn {
+      display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+      border: 0; border-radius: 4px; background: none; box-shadow: none; color: var(--rep-ink); cursor: pointer;
+    }
+    #app .app-shell--comic-page .report-peek__btn svg { width: 19px; height: 19px; stroke-width: 2.4; }
+    #app .app-shell--comic-page .report-peek__btn:hover:not(:disabled) { background: var(--acid-mist); }
+    #app .app-shell--comic-page .report-peek__btn:disabled { cursor: default; opacity: .3; }
+    /* an item citing several papers lists them on one ink-ruled face, the lime sliding to the one shown */
+    #app .app-shell--comic-page .report-peek__papers {
+      position: relative; isolation: isolate; display: flex; flex: none; flex-wrap: wrap; align-self: flex-start; gap: 2px;
+      max-width: 100%; margin: 0 0 14px; padding: 2px;
+      border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 4px 6px 4px 5px;
+      background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow);
+    }
+    #app .app-shell--comic-page .report-peek__papers[data-indicator-mark]::before { content: ''; z-index: -1; border-radius: 3px; background: var(--acid); }
+    #app .app-shell--comic-page .report-peek__paper {
+      min-height: 24px; max-width: 100%; padding: 0 10px; overflow: hidden; border: 0; border-radius: 3px; background: transparent; box-shadow: none;
+      color: var(--rep-meta); font-size: 13px; font-weight: 700; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap;
+      transition: color 150ms ease;
+    }
+    #app .app-shell--comic-page .report-peek__paper[aria-pressed='true'] { color: var(--acid-ink); font-weight: 800; transition-delay: 70ms; }
+    #app .app-shell--comic-page .report-peek__papers:not([data-indicator]) .report-peek__paper[aria-pressed='true'] { background: var(--acid); }
+    #app .app-shell--comic-page .report-peek__paper:hover:not([aria-pressed='true']) { color: var(--rep-ink); }
+    /* the paper scrolls on its own and doesn't hand the wheel on to the report at its ends */
+    #app .app-shell--comic-page .report-peek__scroll {
+      flex: 1 1 auto; min-height: 0; margin: 0 -14px 0 0; padding: 0 14px 16px 0; overflow-y: auto; overscroll-behavior: contain;
+    }
+    #app .app-shell--comic-page .report-peek__title {
+      margin: 0 0 8px; color: var(--rep-ink); font-size: 20px; font-style: italic; font-weight: 950; line-height: 27px;
+      letter-spacing: 0; overflow-wrap: anywhere; -webkit-text-stroke: .3px currentColor;
+    }
+    #app .app-shell--comic-page .report-peek__authors { margin: 0 0 6px; color: var(--rep-ink); font-size: 13.5px; font-weight: 600; line-height: 21px; }
+    #app .app-shell--comic-page .report-peek__more {
+      margin-left: 6px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--rep-meta); cursor: pointer;
+      font-size: 12.5px; font-weight: 800; text-decoration: underline; text-decoration-color: var(--rep-link-line);
+      text-decoration-thickness: 2px; text-underline-offset: 3px;
+    }
+    #app .app-shell--comic-page .report-peek__more:hover { color: var(--rep-ink); }
+    #app .app-shell--comic-page .report-peek__facts {
+      display: flex; flex-wrap: wrap; margin: 0 0 14px; color: var(--rep-meta);
+      font-size: 12.5px; font-weight: 700; line-height: 19px; font-variant-numeric: tabular-nums;
+    }
+    #app .app-shell--comic-page .report-peek__facts > * + *::before { content: '·'; margin: 0 7px; }
+    #app .app-shell--comic-page .report-peek__note { margin: 0 0 14px; color: var(--rep-meta); font-size: 14px; font-weight: 500; line-height: 23px; }
+    #app .app-shell--comic-page .report-peek__note .report-peek__more { color: var(--rep-ink); }
+    /* read here (the lime one), or leave for the paper page or arXiv */
+    #app .app-shell--comic-page .report-peek__actions { display: flex; flex-wrap: wrap; gap: 12px 18px; margin: 0 0 20px; padding-left: 2px; }
+    #app .app-shell--comic-page .report-peek__action {
+      position: relative; isolation: isolate; display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 12px 0 11px;
+      color: var(--rep-ink); font-size: 13.5px; font-weight: 800; line-height: 1; text-decoration: none; white-space: nowrap;
+    }
+    #app .app-shell--comic-page .report-peek__action::after {
+      content: ''; position: absolute; z-index: -1; inset: -2px -6px -7px -2px;
+      border-style: solid; border-color: transparent; border-width: 11px 15px 16px 11px;
+      border-image: var(--rep-btn) 33 45 48 33 fill / 11px 15px 16px 11px stretch;
+    }
+    #app .app-shell--comic-page .report-peek__action.is-primary { color: #0b1422; }
+    #app .app-shell--comic-page .report-peek__action.is-primary::after {
+      inset: -2px -4px -6px -2px; border-width: 14px 16px 18px 14px;
+      border-image: var(--rep-tab-on) 42 48 54 42 fill / 14px 16px 18px 14px stretch;
+    }
+    #app .app-shell--comic-page .report-peek__action svg { width: 14px; height: 14px; stroke-width: 2.4; }
+    #app .app-shell--comic-page .report-peek__action:hover { transform: translate(-1px, -1px); }
+    #app .app-shell--comic-page .report-peek__action:active { transform: translate(1px, 1px); }
+    #app .app-shell--comic-page .report-peek__action:focus-visible { outline: 2px solid var(--rep-ink); outline-offset: 4px; }
+    #app .app-shell--comic-page .report-peek__label {
+      display: inline-block; margin: 0 0 6px; color: var(--rep-ink); font-size: 14px; font-weight: 900; line-height: 22px;
+      background: linear-gradient(var(--rep-mark), var(--rep-mark)) 0 88% / 100% 3px no-repeat;
+    }
+    #app .app-shell--comic-page .report-peek__abstract { color: var(--rep-ink); font-size: 14.5px; font-weight: 500; line-height: 25px; overflow-wrap: break-word; }
+    #app .app-shell--comic-page .report-peek__abstract :is(p, ul, ol) { margin: 0 0 8px; }
+    #app .app-shell--comic-page .report-peek__abstract a {
+      color: inherit; font-weight: 700; text-decoration: underline; text-decoration-color: var(--rep-link-line);
+      text-decoration-thickness: 2px; text-underline-offset: 3px;
+    }
+    /* while the paper loads: its title, a short line for the authors, then the abstract's lines */
+    #app .app-shell--comic-page .report-peek__skeleton {
+      height: 13px; margin: 0 0 12px; border-radius: 3px; background: rgb(var(--chat-ink-rgb) / .08);
+      animation: report-peek-loading 1.4s ease-in-out infinite;
+    }
+    #app .app-shell--comic-page .report-peek__skeleton.is-title { width: 86%; height: 24px; margin-bottom: 12px; }
+    #app .app-shell--comic-page .report-peek__skeleton.is-short { width: 48%; margin-bottom: 26px; }
+    #app .app-shell--comic-page .report-peek__skeleton:nth-child(3n + 1):not(.is-title) { width: 94%; }
+    #app .app-shell--comic-page .report-peek__skeleton:last-child { width: 62%; }
+    @keyframes report-peek-loading { 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) {
+      #app .app-shell--comic-page .report-peek__skeleton { animation: none; }
+    }
+    #app .app-shell--comic-page .report-peek__keys {
+      display: flex; flex: none; flex-wrap: wrap; gap: 4px 16px; margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--rule);
+      color: var(--rep-meta); font-size: 12px; font-weight: 600; line-height: 20px;
+    }
+    #app .app-shell--comic-page .report-peek__keys span { display: inline-flex; align-items: center; gap: 4px; }
+    #app .app-shell--comic-page .report-peek__keys kbd + kbd { margin-left: -1px; }
+    #app .app-shell--comic-page .report-peek__keys kbd {
+      display: inline-grid; min-width: 20px; height: 19px; place-items: center; padding: 0 5px;
+      border: 1px solid var(--rule-strong); border-radius: 5px; background: var(--paper); box-shadow: 0 1.5px 0 var(--rule-strong);
+      color: var(--rep-ink); font-family: inherit; font-size: 11px; font-weight: 800; line-height: 1;
+    }
+  }
 
   /* ── Recommended websites (websites-C): every drawn piece is a generated 9-slice image (public/assets/comic/web-*.webp).
      Cards, tabs and tags hang theirs on ::after round an element that paints nothing; the search box, the select and
