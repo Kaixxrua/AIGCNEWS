@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { renderMarkdown } from '@/composables/useLatexRenderer'
-import { parseBroadsheet, type BroadsheetBlock, type BroadsheetItem } from './reportBroadsheet'
+import { broadsheetItemReadId, parseBroadsheet, type BroadsheetBlock, type BroadsheetItem } from './reportBroadsheet'
 
 const sheetOf = (markdown: string) => parseBroadsheet(renderMarkdown(markdown))
 
@@ -213,5 +213,32 @@ describe('parseBroadsheet', () => {
     const sheet = sheetOf('# Overview\n\n## Takeaways\n\nOur judgment.\n\n# Appendix\n\nGenerated: 2026-10-01')
     expect(sheet.dateline).toBe('Generated: 2026-10-01')
     expect(sheet.sections[0]!.blocks.map(block => block.kind)).toEqual(['prose', 'raw'])
+  })
+})
+
+describe('broadsheetItemReadId', () => {
+  it('fingerprints what an item says, not how it is marked up', () => {
+    const dots = { lead: 'dots', note: '（feder-cr/dots）', body: '这是一个面向网页的开源 <a href="https://a.example">AI Agent</a>。' }
+    const id = broadsheetItemReadId(dots)
+    expect(id).toMatch(/^[0-9a-z]{6,11}$/)
+    expect(broadsheetItemReadId({ ...dots, body: '这是一个面向网页的开源 <a href="https://b.example" target="_blank" rel="noopener">AI Agent</a>。' })).toBe(id)
+    expect(broadsheetItemReadId({ ...dots, body: `\n${dots.body}  ` })).toBe(id)
+
+    expect(broadsheetItemReadId({ ...dots, body: '这是一个面向桌面的开源 AI Agent。' })).not.toBe(id)
+    expect(broadsheetItemReadId({ ...dots, lead: 'dots2' })).not.toBe(id)
+    expect(broadsheetItemReadId({ lead: '', note: '', body: '<br>' })).toBe('')
+  })
+
+  it('tells the items of a real issue apart', () => {
+    const sheet = sheetOf([
+      '## 技术亮点',
+      '',
+      '1. **DN-MOPD**：论文指出，多教师在线策略蒸馏的路由只决定哪位专家教学。[论文原文](https://hf-mirror.com/papers/2609.35347)',
+      '2. **YuE2**：YuE2用单个AR–NAR Mixture-of-Transformers先生成可读乐谱。',
+      '3. **YuE2**：YuE2用单个AR–NAR Mixture-of-Transformers先生成可读乐谱',
+    ].join('\n'))
+    const ids = itemsOf(sheet.sections[0]!.blocks[0]).map(broadsheetItemReadId)
+    expect(new Set(ids).size).toBe(3)
+    expect(ids.every(Boolean)).toBe(true)
   })
 })

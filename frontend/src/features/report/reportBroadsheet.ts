@@ -202,6 +202,25 @@ const pushParagraph = (blocks: BroadsheetBlock[], el: Element) => {
   }
 }
 
+/**
+ * 已读记录里的条目标识：标题句、括注与正文去掉标签、并拢空白后的指纹（cyrb53，53 位，写成 base36）。
+ * 条目怎么拆、链接带什么属性都不影响；内容改了算新的一条。没有文字的条目给空串（不记）。
+ */
+export const broadsheetItemReadId = (item: Pick<BroadsheetItem, 'lead' | 'note' | 'body'>): string => {
+  const text = [item.lead, item.note, item.body].join(' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    h1 = Math.imul(h1 ^ code, 2654435761)
+    h2 = Math.imul(h2 ^ code, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36)
+}
+
 export const parseBroadsheet = (html: string): Broadsheet => {
   const template = document.createElement('template')
   template.innerHTML = html

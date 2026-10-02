@@ -10,8 +10,9 @@ import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
+import { useReadMarks } from '@/composables/useReadMarks'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
@@ -85,6 +86,18 @@ const toggleFold = (tweet: TopDoc) => {
   if (!next.delete(key)) next.add(key)
   expandedFolds.value = next
 }
+// 已读淡化（只在桌面）：看过的推文变淡；再来时，在新来的和上回看过的之间画「上次看到这里」，线上面全是新的。
+// 记录只存在本机浏览器。每次重新拉取（进来、刷新、换窗口）算新的一次，这之前看过的都算上回看过的。
+const readMarks = useReadMarks({ list: 'x', enabled: desktop })
+const vReadMark = readMarks.directive
+const isRead = (tweet: TopDoc) => readMarks.isRead(tweetReadId(tweet))
+watch(loading, (value) => { if (value) readMarks.snapshot() })
+const timelineIndex = computed(() => new Map(timelineDocs.value.map((doc, index) => [doc, index])))
+// 时间线上第一条上回就看过的推文；它前面的都是这之后新来的，也就是线上面的条数。
+const seenBoundary = computed(() => timelineDocs.value.findIndex((doc) => readMarks.seenBefore(tweetReadId(doc))))
+const wallSplit = computed(() => splitAtSeen(
+  pagedTimelineDocs.value, foldedPage.value, seenBoundary.value, (doc) => timelineIndex.value.get(doc) ?? -1, tweetKey,
+))
 // 纯文字时收起了配图或链接卡的推文，时间行里留一枚提示钮，点开详情看
 const mediaHint = (tweet: TopDoc) => (textOnly.value && hasCollapsedMedia(tweet) ? collapsedMedia(tweet) : null)
 
@@ -141,12 +154,15 @@ const masonryColumnWidth = computed(() => {
   const width = (masonryWidth.value - masonryGap.value * (count - 1)) / count
   return width > 0 ? width : 280 // 首帧未测量时的回退列宽
 })
-const masonryColumns = computed(() => distributeColumns(
-  wallDocs.value,
-  columnCount.value,
-  (doc) => estimateTweetCardHeight(doc, masonryColumnWidth.value, locale.value, tweetTextMetrics.value, cardLayout.value)
-    + (foldedPage.value.folds.has(tweetKey(doc)) ? TWEET_FOLD_BAR_PX : 0),
-))
+const estimateCardHeight = (doc: TopDoc) => estimateTweetCardHeight(doc, masonryColumnWidth.value, locale.value, tweetTextMetrics.value, cardLayout.value)
+  + (foldedPage.value.folds.has(tweetKey(doc)) ? TWEET_FOLD_BAR_PX : 0)
+// 这一页画「上次看到这里」时，线上、线下各自分列，线横跨整面墙；没有线时整页一块。
+const masonryBlocks = computed(() => {
+  const { fresh, earlier, rule } = wallSplit.value
+  const block = (key: string, docs: TopDoc[]) => ({ key, columns: distributeColumns(docs, columnCount.value, estimateCardHeight) })
+  if (!rule) return [block('all', fresh)]
+  return fresh.length ? [block('fresh', fresh), block('earlier', earlier)] : [block('earlier', earlier)]
+})
 
 // 翻页回顶：滚动的是内层 overflow-y-auto 容器而非 window
 const scrollEl = ref<HTMLElement | null>(null)
@@ -192,7 +208,7 @@ const onGoPage = (next: number) => {
 // 也算换了排布，留下的随之滑到新位置。
 const wallLayout = computed(() => [
   textOnly.value ? 'text' : 'media',
-  ...masonryColumns.value.map((column) => column.map(tweetKey).join(' ')),
+  ...masonryBlocks.value.flatMap((block) => [block.key, ...block.columns.map((column) => column.map(tweetKey).join(' '))]),
 ].join('|'))
 // 新推文从哪边浮现：翻页时从翻去的一侧进来，换窗口、刷新、改关注、折叠展开自下而上；分页摘要里的页码随之上下滚动。
 const RISE = { x: 0, y: 14 }
@@ -259,6 +275,7 @@ const focusDetailClose = () => { void nextTick(() => detailCloseEl.value?.focus(
 // 下钻/返回时清空播放态：媒体块随内容切换整体卸载，不残留他条播放键。
 const detailParent = ref<TopDoc | null>(null)
 const openDetail = (tweet: TopDoc) => {
+  readMarks.markOpened(tweetReadId(tweet))
   detailReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   detailTweet.value = tweet
   detailParent.value = null
@@ -554,175 +571,192 @@ onBeforeUnmount(() => {
             class="masonry-grid"
             :class="{ 'masonry-grid--stale': wallStale }"
           >
-            <div
-              v-for="(column, columnIndex) in masonryColumns"
-              :key="columnIndex"
-              class="masonry-col"
-            >
-              <article
-                v-for="tweet in column"
-                :key="tweetKey(tweet)"
-                :data-reflow-key="tweetKey(tweet)"
-                class="tweet-card"
+            <template v-for="block in masonryBlocks" :key="block.key">
+              <!-- 上次看到这里：线上面是上回之后新来的，线横跨整面墙 -->
+              <div
+                v-if="block.key === 'earlier'"
+                class="xboard-seen-rule"
+                data-reflow-key="xboard-seen-rule"
+                role="separator"
+                :aria-label="`${t('xboard.seenRule')} · ${t('xboard.seenRuleCount', { count: seenBoundary })}`"
               >
-                <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
-                <div v-if="retweetedByHandle(tweet)" class="tweet-retweet-line flex items-center gap-1.5 px-4 pt-2.5 text-2xs">
-                  <Repeat2 class="h-3 w-3 shrink-0" />
-                  <a
-                    :href="`https://x.com/${retweetedByHandle(tweet)}`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="tweet-retweet-link truncate font-semibold"
-                  >@{{ retweetedByHandle(tweet) }}</a>
-                  <span class="shrink-0">{{ t('xboard.repostedSuffix') }}</span>
-                </div>
-                <div class="tweet-head flex flex-wrap items-center gap-2 px-4 py-3">
-                  <input
-                    v-if="isAdmin && tweet.id"
-                    type="checkbox"
-                    class="h-4 w-4 shrink-0"
-                    :checked="isSelected(tweet)"
-                    @change="toggleSelection(String(tweet.id))"
-                  />
-                  <img
-                    v-if="authorAvatarUrl(tweet)"
-                    :src="authorAvatarUrl(tweet)"
-                    :alt="authorDisplayName(tweet)"
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                    class="tweet-avatar h-6 w-6 shrink-0 object-cover"
-                  />
-                  <span v-else class="tweet-avatar-fallback flex h-6 w-6 shrink-0 items-center justify-center font-mono text-[10px] font-bold">𝕏</span>
-                  <a
-                    v-if="extractXHandle(tweet.url)"
-                    class="tweet-handle truncate px-1 text-xs"
-                    :href="`https://x.com/${extractXHandle(tweet.url)}`"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >{{ authorDisplayName(tweet) }}</a>
-                  <span v-else class="tweet-handle truncate px-1 text-xs">{{ authorDisplayName(tweet) || t('xboard.unknownHandle') }}</span>
-                  <span class="tweet-actions ml-auto flex shrink-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      class="tweet-icon-btn"
-                      :aria-label="t('xboard.openDetail')"
-                      @click="openDetail(tweet)"
-                    >
-                      <Maximize2 class="h-3.5 w-3.5" />
-                    </button>
+                <span class="xboard-seen-rule__tag">{{ t('xboard.seenRule') }}</span>
+                <span class="xboard-seen-rule__count">{{ t('xboard.seenRuleCount', { count: seenBoundary }) }}</span>
+                <svg class="xboard-seen-rule__line" viewBox="0 0 1000 6" preserveAspectRatio="none" aria-hidden="true"><path d="M0 3.3 L380 2.6 L1000 3.7" /></svg>
+              </div>
+              <div
+                v-for="(column, columnIndex) in block.columns"
+                :key="`${block.key}-${columnIndex}`"
+                class="masonry-col"
+              >
+                <article
+                  v-for="tweet in column"
+                  :key="tweetKey(tweet)"
+                  v-read-mark="tweetReadId(tweet)"
+                  :data-reflow-key="tweetKey(tweet)"
+                  class="tweet-card"
+                  :class="{ 'is-read': isRead(tweet) }"
+                >
+                  <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
+                  <div v-if="retweetedByHandle(tweet)" class="tweet-retweet-line flex items-center gap-1.5 px-4 pt-2.5 text-2xs">
+                    <Repeat2 class="h-3 w-3 shrink-0" />
                     <a
-                      class="tweet-icon-btn"
-                      :href="tweet.url"
+                      :href="`https://x.com/${retweetedByHandle(tweet)}`"
                       target="_blank"
                       rel="noopener noreferrer"
-                      :aria-label="t('xboard.viewOnX')"
-                    >
-                      <ExternalLink class="h-3.5 w-3.5" />
-                    </a>
-                    <span class="tweet-score shrink-0">
-                      <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
-                    </span>
-                  </span>
-                </div>
-
-                <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染）；
-                     桌面多图排成一行胶片，纯文字时收起 -->
-                <TweetMediaList
-                  v-if="hasMedia(tweet) && !textOnly"
-                  :tweet="tweet"
-                  :playing-media="playingMedia"
-                  :filmstrip="desktop"
-                  @preview="openLightbox"
-                  @play="playVideo"
-                  @expand="openDetail(tweet)"
-                />
-
-                <!-- 文字区：点击/回车放大详情（不跳走）；URL 段仍是真链接可直跳 -->
-                <div class="tweet-body px-4 py-3">
-                  <div
-                    role="button"
-                    tabindex="0"
-                    class="tweet-text block cursor-pointer whitespace-pre-line px-1 text-sm leading-5"
-                    :aria-label="t('xboard.openDetail')"
-                    @click="openDetail(tweet)"
-                    @keydown.enter="openDetail(tweet)"
-                  >
-                    <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale, desktop)" :key="segIndex">
-                      <a
-                        v-if="seg.isUrl"
-                        :href="seg.text"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="tweet-link"
-                        @click.stop
-                      >{{ seg.text }}</a>
-                      <a
-                        v-else-if="seg.isMention"
-                        :href="`https://x.com/${seg.mentionHandle}`"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="tweet-link"
-                        @click.stop
-                      >{{ seg.text }}</a>
-                      <span
-                        v-else
-                        class="tweet-text-seg"
-                      >{{ seg.text }}</span>
-                    </template>
+                      class="tweet-retweet-link truncate font-semibold"
+                    >@{{ retweetedByHandle(tweet) }}</a>
+                    <span class="shrink-0">{{ t('xboard.repostedSuffix') }}</span>
                   </div>
-
-                  <!-- 引用推文卡片：看板上点击放大主推详情（不跳走）；
-                       ↗ 钮显式直跳被引推文，详情浮层内点击则下钻看被引详情 -->
-                  <TweetQuoteCard
-                    v-if="hasQuote(tweet)"
-                    :quote="tweetQuote(tweet)!"
-                    context="wall"
-                    :compact="desktop"
-                    :text-only="textOnly"
-                    @activate="openDetail(tweet)"
-                  />
-                  <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情；纯文字时收起 -->
-                  <TweetLinkCard
-                    v-if="hasLinkCard(tweet) && !textOnly"
-                    :card="tweetLinkCard(tweet)!"
-                    context="wall"
-                    :compact="desktop"
-                  />
-                  <p v-if="formatTime(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
-                    {{ formatTime(tweet) }}
-                    <!-- 截住了、收起了什么：「全文」点开看全文；纯文字时收起了几张图、几段视频、有没有链接卡，点开详情看 -->
-                    <span v-if="isClamped(tweet) || mediaHint(tweet)" class="tweet-time-tools">
-                      <button v-if="isClamped(tweet)" type="button" class="tweet-more" @click="openDetail(tweet)">{{ t('xboard.readMore') }}</button>
+                  <div class="tweet-head flex flex-wrap items-center gap-2 px-4 py-3">
+                    <input
+                      v-if="isAdmin && tweet.id"
+                      type="checkbox"
+                      class="h-4 w-4 shrink-0"
+                      :checked="isSelected(tweet)"
+                      @change="toggleSelection(String(tweet.id))"
+                    />
+                    <img
+                      v-if="authorAvatarUrl(tweet)"
+                      :src="authorAvatarUrl(tweet)"
+                      :alt="authorDisplayName(tweet)"
+                      loading="lazy"
+                      referrerpolicy="no-referrer"
+                      class="tweet-avatar h-6 w-6 shrink-0 object-cover"
+                    />
+                    <span v-else class="tweet-avatar-fallback flex h-6 w-6 shrink-0 items-center justify-center font-mono text-[10px] font-bold">𝕏</span>
+                    <a
+                      v-if="extractXHandle(tweet.url)"
+                      class="tweet-handle truncate px-1 text-xs"
+                      :href="`https://x.com/${extractXHandle(tweet.url)}`"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >{{ authorDisplayName(tweet) }}</a>
+                    <span v-else class="tweet-handle truncate px-1 text-xs">{{ authorDisplayName(tweet) || t('xboard.unknownHandle') }}</span>
+                    <span class="tweet-actions ml-auto flex shrink-0 items-center gap-1.5">
                       <button
-                        v-if="mediaHint(tweet)"
                         type="button"
-                        class="tweet-media-hint"
-                        :aria-label="t('xboard.showMedia')"
-                        :title="t('xboard.showMedia')"
+                        class="tweet-icon-btn"
+                        :aria-label="t('xboard.openDetail')"
                         @click="openDetail(tweet)"
                       >
-                        <span v-if="mediaHint(tweet)?.photos"><ImageIcon />{{ mediaHint(tweet)?.photos }}</span>
-                        <span v-if="mediaHint(tweet)?.videos"><Play />{{ mediaHint(tweet)?.videos }}</span>
-                        <Link2 v-if="mediaHint(tweet)?.link" />
+                        <Maximize2 class="h-3.5 w-3.5" />
                       </button>
+                      <a
+                        class="tweet-icon-btn"
+                        :href="tweet.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        :aria-label="t('xboard.viewOnX')"
+                        @click="readMarks.markOpened(tweetReadId(tweet))"
+                      >
+                        <ExternalLink class="h-3.5 w-3.5" />
+                      </a>
+                      <span class="tweet-score shrink-0">
+                        <component :is="scoreDisplay(tweet).icon" class="h-3 w-3 shrink-0" />{{ scoreDisplay(tweet).text }}
+                      </span>
                     </span>
-                  </p>
-                </div>
+                  </div>
 
-                <!-- 同账号折叠：这一页里该账号其余各条收在这一行，点开就地展开、再点收回 -->
-                <button
-                  v-for="fold in foldsOf(tweet)"
-                  :key="fold.handle"
-                  type="button"
-                  class="tweet-fold"
-                  :aria-expanded="fold.expanded"
-                  @click="toggleFold(tweet)"
-                >
-                  <span class="tweet-fold-label">{{ t('xboard.foldMore', { count: fold.rest.length, name: fold.name }) }}</span>
-                  <span class="tweet-fold-action">{{ t(fold.expanded ? 'xboard.foldHide' : 'xboard.foldShow') }}<ChevronDown class="tweet-fold-chevron" /></span>
-                </button>
-              </article>
-            </div>
+                  <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染）；
+                       桌面多图排成一行胶片，纯文字时收起 -->
+                  <TweetMediaList
+                    v-if="hasMedia(tweet) && !textOnly"
+                    :tweet="tweet"
+                    :playing-media="playingMedia"
+                    :filmstrip="desktop"
+                    @preview="openLightbox"
+                    @play="playVideo"
+                    @expand="openDetail(tweet)"
+                  />
+
+                  <!-- 文字区：点击/回车放大详情（不跳走）；URL 段仍是真链接可直跳 -->
+                  <div class="tweet-body px-4 py-3">
+                    <div
+                      role="button"
+                      tabindex="0"
+                      class="tweet-text block cursor-pointer whitespace-pre-line px-1 text-sm leading-5"
+                      :aria-label="t('xboard.openDetail')"
+                      @click="openDetail(tweet)"
+                      @keydown.enter="openDetail(tweet)"
+                    >
+                      <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale, desktop)" :key="segIndex">
+                        <a
+                          v-if="seg.isUrl"
+                          :href="seg.text"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="tweet-link"
+                          @click.stop
+                        >{{ seg.text }}</a>
+                        <a
+                          v-else-if="seg.isMention"
+                          :href="`https://x.com/${seg.mentionHandle}`"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="tweet-link"
+                          @click.stop
+                        >{{ seg.text }}</a>
+                        <span
+                          v-else
+                          class="tweet-text-seg"
+                        >{{ seg.text }}</span>
+                      </template>
+                    </div>
+
+                    <!-- 引用推文卡片：看板上点击放大主推详情（不跳走）；
+                         ↗ 钮显式直跳被引推文，详情浮层内点击则下钻看被引详情 -->
+                    <TweetQuoteCard
+                      v-if="hasQuote(tweet)"
+                      :quote="tweetQuote(tweet)!"
+                      context="wall"
+                      :compact="desktop"
+                      :text-only="textOnly"
+                      @activate="openDetail(tweet)"
+                    />
+                    <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情；纯文字时收起 -->
+                    <TweetLinkCard
+                      v-if="hasLinkCard(tweet) && !textOnly"
+                      :card="tweetLinkCard(tweet)!"
+                      context="wall"
+                      :compact="desktop"
+                    />
+                    <p v-if="formatTime(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
+                      {{ formatTime(tweet) }}
+                      <!-- 截住了、收起了什么：「全文」点开看全文；纯文字时收起了几张图、几段视频、有没有链接卡，点开详情看 -->
+                      <span v-if="isClamped(tweet) || mediaHint(tweet)" class="tweet-time-tools">
+                        <button v-if="isClamped(tweet)" type="button" class="tweet-more" @click="openDetail(tweet)">{{ t('xboard.readMore') }}</button>
+                        <button
+                          v-if="mediaHint(tweet)"
+                          type="button"
+                          class="tweet-media-hint"
+                          :aria-label="t('xboard.showMedia')"
+                          :title="t('xboard.showMedia')"
+                          @click="openDetail(tweet)"
+                        >
+                          <span v-if="mediaHint(tweet)?.photos"><ImageIcon />{{ mediaHint(tweet)?.photos }}</span>
+                          <span v-if="mediaHint(tweet)?.videos"><Play />{{ mediaHint(tweet)?.videos }}</span>
+                          <Link2 v-if="mediaHint(tweet)?.link" />
+                        </button>
+                      </span>
+                    </p>
+                  </div>
+
+                  <!-- 同账号折叠：这一页里该账号其余各条收在这一行，点开就地展开、再点收回 -->
+                  <button
+                    v-for="fold in foldsOf(tweet)"
+                    :key="fold.handle"
+                    type="button"
+                    class="tweet-fold"
+                    :aria-expanded="fold.expanded"
+                    @click="toggleFold(tweet)"
+                  >
+                    <span class="tweet-fold-label">{{ t('xboard.foldMore', { count: fold.rest.length, name: fold.name }) }}</span>
+                    <span class="tweet-fold-action">{{ t(fold.expanded ? 'xboard.foldHide' : 'xboard.foldShow') }}<ChevronDown class="tweet-fold-chevron" /></span>
+                  </button>
+                </article>
+              </div>
+            </template>
           </div>
 
           <!-- 全天推文分页条：仅超过一页时出现 -->
@@ -919,6 +953,43 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+}
+
+/* 上次看到这里：横跨整面墙的一行，线上、线下的推文各自分列。 */
+.xboard-seen-rule {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.xboard-seen-rule__tag {
+  flex: none;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.xboard-seen-rule__count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.xboard-seen-rule__line {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 6px;
+  overflow: visible;
+}
+
+.xboard-seen-rule__line path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 /* 推文墙主栏 + 关注账号侧栏：窄屏侧栏叠在推文墙上方；桌面端并排，侧栏居右、

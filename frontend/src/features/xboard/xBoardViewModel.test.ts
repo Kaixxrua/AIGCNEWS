@@ -39,9 +39,11 @@ import {
   quoteTextSegments,
   retweetedByHandle,
   mergePagedTweets,
+  splitAtSeen,
   timelineTweets,
   tweetLinkCard,
   tweetQuote,
+  tweetReadId,
   tweetScore,
   tweetText,
   tweetTextSegments,
@@ -827,6 +829,45 @@ describe('xBoardViewModel', () => {
     // 认不出账号的推文各占一张卡
     const strays = [1, 2, 3].map((n) => ({ title: `post ${n}`, url: `https://example.com/${n}`, raw_score: 0 }))
     expect(paginateFoldedTweets(strays, 2)).toEqual([[strays[0], strays[1]], [strays[2]]])
+  })
+
+  it('tweetReadId keys a tweet by its status number, falling back to the link or the text', () => {
+    expect(tweetReadId(tweet('openai', '1876543210987654321'))).toBe('1876543210987654321')
+    expect(tweetReadId(tweet('openai', '42', { url: 'https://twitter.com/openai/status/42?s=20' }))).toBe('42')
+    expect(tweetReadId({ title: 'post', url: 'https://example.com/a', raw_score: 0 })).toBe('https://example.com/a')
+    expect(tweetReadId({ title: 'just text', raw_score: 0 })).toBe('just text')
+  })
+
+  it('splitAtSeen draws the line between new tweets and those seen last time on the page where they meet', () => {
+    const keyOf = (doc: TopDoc) => doc.url ?? ''
+    const docs = ['a', 'b', 'c', 'd', 'e', 'f'].map((handle, i) => tweet(handle, String(i)))
+    const indexOf = (doc: TopDoc) => docs.indexOf(doc)
+    const split = (page: TopDoc[], boundary: number, expanded = new Set<string>()) =>
+      splitAtSeen(page, foldTweetsByAccount(page, keyOf, expanded), boundary, indexOf, keyOf)
+    const [d0, d1, d2, d3, d4, d5] = docs as [TopDoc, TopDoc, TopDoc, TopDoc, TopDoc, TopDoc]
+
+    expect(split(docs, 2)).toEqual({ fresh: [d0, d1], earlier: [d2, d3, d4, d5], rule: true })
+    // 没有新来的、一条都没看过时不画线
+    expect(split(docs, 0).rule).toBe(false)
+    expect(split(docs, -1)).toEqual({ fresh: docs, earlier: [], rule: false })
+    // 分界在后面的页：这一页整页照旧；正好落在这一页开头：线画在页首；已经过去了：不再画
+    expect(split([d0, d1, d2], 4)).toEqual({ fresh: [d0, d1, d2], earlier: [], rule: false })
+    expect(split([d3, d4, d5], 3)).toEqual({ fresh: [], earlier: [d3, d4, d5], rule: true })
+    expect(split([d4, d5], 3).rule).toBe(false)
+  })
+
+  it('splitAtSeen keeps an opened fold with the tweet it hangs under', () => {
+    const keyOf = (doc: TopDoc) => doc.url ?? ''
+    const [a1, b1, a2, c1, a3] = [tweet('alpha', '1'), tweet('beta', '2'), tweet('alpha', '3'), tweet('gamma', '4'), tweet('alpha', '5')] as [TopDoc, TopDoc, TopDoc, TopDoc, TopDoc]
+    const docs = [a1, b1, a2, c1, a3]
+    const indexOf = (doc: TopDoc) => docs.indexOf(doc)
+
+    // 收着：折叠组只占留下的那一张卡，线照样画在 b1 和 c1 之间
+    const closed = splitAtSeen(docs, foldTweetsByAccount(docs, keyOf, new Set()), 2, indexOf, keyOf)
+    expect(closed).toEqual({ fresh: [a1, b1], earlier: [c1], rule: true })
+    // 展开：其余各条跟着 a1 留在线上面
+    const open = splitAtSeen(docs, foldTweetsByAccount(docs, keyOf, new Set([keyOf(a1)])), 2, indexOf, keyOf)
+    expect(open).toEqual({ fresh: [a1, a2, a3, b1], earlier: [c1], rule: true })
   })
 
   it('estimateTweetCardHeight under the compact layout caps media, lays strips and clamps text', () => {

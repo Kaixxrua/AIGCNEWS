@@ -145,6 +145,8 @@
     --rep-dot: #208d35;
     --rep-mark: #cdf27c;
     --rep-meta: #6b7280;
+    --rep-read: #6b7280;
+    --rep-read-rule: #6b7280;
     --rep-link-line: #c2ef1a;
     --rep-link-tint: #f5f8b8;
     /* one scroll for the whole page; the bar sits flush under the masthead's ink rule */
@@ -165,6 +167,8 @@
     --rep-dot: #6fcf7f;
     --rep-mark: #5b6d2c;
     --rep-meta: var(--ink-secondary);
+    --rep-read: #8f96a3;
+    --rep-read-rule: var(--rule-strong);
     --rep-link-line: #93b83a;
     --rep-link-tint: #3a4222;
   }
@@ -422,6 +426,14 @@
   #app .app-shell--comic-page .report-broadsheet__source {
     min-width: 0; margin-left: auto; color: var(--rep-meta); font-size: 12.5px; font-weight: 600; line-height: 18px; text-align: right;
   }
+  /* an item read on an earlier visit (useReadMarks): its number, headline, copy and links all in one softer ink, the
+     links without their lime, under a softer rule (at night the rule is already soft and stays), so what is left to
+     read stands out */
+  #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-read {
+    --rep-ink: var(--rep-read); --rep-meta: var(--rep-read); --rep-link-line: var(--rule); --rep-link-tint: transparent;
+    border-top-color: var(--rep-read-rule);
+  }
+  #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-read a { color: var(--rep-read); }
 
   /* ── Recommended websites (websites-C): every drawn piece is a generated 9-slice image (public/assets/comic/web-*.webp).
      Cards, tabs and tags hang theirs on ::after round an element that paints nothing; the search box, the select and
@@ -600,6 +612,7 @@
     --x-copy: #18233a;
     --x-muted: #5e7190;
     --x-hint: #5c6f8c;
+    --x-read: #5e7190;
     --x-face: #fefefb;
     --x-face-hover: #f3f9d6;
     --x-lime: #c1f41e;
@@ -626,6 +639,7 @@
     --x-copy: var(--ink);
     --x-muted: var(--ink-secondary);
     --x-hint: var(--ink-secondary);
+    --x-read: #8f96a3;
     --x-face: #2c2d30;
     --x-face-hover: #35392b;
     --x-lime: #a6c64e;
@@ -904,6 +918,30 @@
     #app .app-shell--comic-page .tweet-card :is(.tweet-fold, .tweet-fold-chevron) { transition: none; }
     #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint) { animation: none; }
   }
+  /* a tweet read before (useReadMarks): all its text, the repost line, time, quoted tweet and link card with it, drops
+     to one slate ink, the avatars and pictures wash out and the score loses its lime; the card's frame stays as drawn.
+     A video started in it plays in full. */
+  #app .app-shell--comic-page .tweet-card.is-read {
+    --x-copy: var(--x-read); --x-ink: var(--x-read); --x-navy: var(--x-read); --x-muted: var(--x-read);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read :is(.tweet-retweet-line, .tweet-quote, .tweet-linkcard) {
+    --ink: var(--x-read); --ink-secondary: var(--x-read); --ink-muted: var(--x-read);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read :is(
+    .tweet-avatar, .tweet-avatar-fallback, .tweet-media-list:not(:has(video)), .tweet-quote-avatar, .tweet-quote-media, .tweet-linkcard-image
+  ) {
+    filter: saturate(.3) opacity(.72);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read .tweet-score { filter: saturate(.3); }
+  /* where you left off: across the wall between the tweets that came in since and those read last time, a tag in the
+     score's lime pill, the count of new ones in the muted ink, then an ink rule run out to the wall's right edge */
+  #app .app-shell--comic-page .xboard-seen-rule { gap: 12px; height: 28px; color: var(--x-muted); font-size: 13px; font-weight: 700; }
+  #app .app-shell--comic-page .xboard-seen-rule__tag {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 11px 1px 10px; border: 0 solid transparent; border-radius: 4px;
+    color: var(--x-lime-ink); font-size: 13px; font-weight: 900; line-height: 1;
+    border-image: var(--x-score) 27 33 36 27 fill / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-seen-rule__line path { stroke: var(--x-ink); stroke-width: 2.5; }
 
   /* the followed-accounts panel: a light line top and left, a heavy ink block right and down; orange dots off its
      lower right with a black clump in them, a few under its top right; the title marked with a yellow blot */

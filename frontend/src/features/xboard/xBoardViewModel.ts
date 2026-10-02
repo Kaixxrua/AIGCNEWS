@@ -36,6 +36,9 @@ const tweetId = (doc: TopDoc): string => (
   doc.url?.match(/\/status\/(\d+)(?:[/?#]|$)/)?.[1] ?? ''
 )
 
+/** 已读记录里的推文标识：推文编号；链接里没有编号的旧数据退回整条链接，再没有就用正文。 */
+export const tweetReadId = (doc: TopDoc): string => tweetId(doc) || doc.url || doc.title || ''
+
 /** 时间线比较器：新时间优先；非法时间沉底；同刻按 tweet ID 稳定降序。 */
 export const compareTweetTimeDescending = (a: TopDoc, b: TopDoc): number => {
   const ta = tweetTimeMs(a)
@@ -751,6 +754,47 @@ export const paginateFoldedTweets = (tweets: TopDoc[], pageSize: number, thresho
   }
   if (page.length > 0 || pages.length === 0) pages.push(page)
   return pages
+}
+
+export interface SeenSplit {
+  /** 墙上排在线上面的：上回之后新来的 */
+  fresh: TopDoc[]
+  /** 排在线下面的：从上回看过的第一条起 */
+  earlier: TopDoc[]
+  /** 这一页画不画「上次看到这里」 */
+  rule: boolean
+}
+
+/**
+ * 「上次看到这里」：boundary 是时间线上第一条上回就看过的推文的位置，它前面的都是这之后新来的（至少有一条才画线）。
+ * 这一页墙上的推文按它分成线上、线下两块，分界落在这一页里、或者正好落在这一页开头时画线；不在这一页就整页照旧排。
+ * page 是这一页收进的全部推文（含折叠收起的），folded 是它折叠后的结果，indexOf 给时间线位置。
+ * 展开的折叠组跟着留下的第一条走，不拆到线的两边。
+ */
+export const splitAtSeen = (
+  page: TopDoc[],
+  folded: FoldedTweets,
+  boundary: number,
+  indexOf: (doc: TopDoc) => number,
+  keyOf: (doc: TopDoc) => string,
+): SeenSplit => {
+  const whole: SeenSplit = { fresh: folded.visible, earlier: [], rule: false }
+  const first = page[0]
+  if (boundary <= 0 || !first) return whole
+  const above = new Set<TopDoc>()
+  const placed = new Set<TopDoc>()
+  for (const doc of folded.visible) {
+    if (placed.has(doc)) continue
+    const isFresh = indexOf(doc) < boundary
+    const fold = folded.folds.get(keyOf(doc))
+    for (const member of [doc, ...(fold?.expanded ? fold.rest : [])]) {
+      placed.add(member)
+      if (isFresh) above.add(member)
+    }
+  }
+  const fresh = folded.visible.filter((doc) => above.has(doc))
+  const earlier = folded.visible.filter((doc) => !above.has(doc))
+  return earlier.length && (fresh.length || indexOf(first) === boundary) ? { fresh, earlier, rule: true } : whole
 }
 
 /** 全天推文客户端分页：页数下限 1（空列表也按 1 页算，避免 0 页状态）。 */

@@ -3,12 +3,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, w
 import { useI18n } from 'vue-i18n'
 import { vMorph } from '@/motion/morph'
 import { prefersReducedMotion } from '@/motion/motion'
-import type { Broadsheet, BroadsheetBlock } from '@/features/report/reportBroadsheet'
+import { useReadMarks } from '@/composables/useReadMarks'
+import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock } from '@/features/report/reportBroadsheet'
 
 /**
  * 桌面版简报的大报排法：每节的正文段落分三栏，条目排成两到三栏的网格，条目的标题句加粗打头。
  * 全文模式下条目正文最多 5 行、导读模式下 2 行（节内段落收成 2 行的一栏），点开看全文；条目的出处链接与「展开全文」
  * 同排在底行，正文收着也能直接点。生成中全部展开，跟着流式文字长。收起与展开、两种模式之间切换时正文高度平滑过渡。
+ * 看过的条目下次再打开这一期时变淡，点过其中链接的立刻变淡（记录只存在本机浏览器）。
  */
 export type ReportReadingMode = 'full' | 'lead'
 
@@ -29,6 +31,20 @@ const groups = computed<Group[]>(() => [
 
 const pieceId = (group: number, block: number, item?: number) => item == null ? `${group}-${block}` : `${group}-${block}-${item}`
 const bodyId = (id: string) => `${uid}-rb-${id}`
+
+// 已读淡化：条目露出一半停够一秒记为看过，下次打开这一期时变淡；生成中文字还在变，不记也不淡。
+// 一期简报是写定的一份，后来不会再添条目，所以不画「上次看到这里」。
+const readMarks = useReadMarks({ list: 'briefing', enabled: computed(() => !props.generating) })
+const vReadMark = readMarks.directive
+const readIds = computed(() => {
+  const ids = new Map<string, string>()
+  groups.value.forEach((group, g) => group.blocks.forEach((block, b) => {
+    if (block.kind === 'items') block.items.forEach((item, i) => ids.set(pieceId(g, b, i), broadsheetItemReadId(item)))
+  }))
+  return ids
+})
+const readId = (id: string) => readIds.value.get(id) ?? ''
+const isRead = (id: string) => readMarks.isRead(readId(id))
 
 const ITEM_LINES = { full: 5, lead: 2 } as const
 const linesOf = (kind: 'prose' | 'item', intro: boolean) => {
@@ -98,18 +114,23 @@ const revealStart = (id: string) => {
   })
 }
 
+// 展开读全文的条目记为看过（读着的时候不变淡）。
 const toggle = (id: string) => {
   if (opened.has(id)) {
     opened.delete(id)
     revealStart(id)
   } else {
     opened.add(id)
+    readMarks.markSeen(readId(id))
   }
 }
 
-// 点被截断的条目任意处（链接、按钮、正在选中文字除外）也能展开。
+// 点被截断的条目任意处（链接、按钮、正在选中文字除外）也能展开。点了条目里的链接，这条立刻变淡，像访问过的链接。
 const expandFromClick = (event: MouseEvent) => {
   const target = event.target as Element | null
+  const link = target?.closest('a[href]')
+  const linked = link?.closest<HTMLElement>('[data-piece]')?.dataset.piece
+  if (linked) readMarks.markOpened(readId(linked))
   if (!target || target.closest('a, button, input, label, summary')) return
   const piece = target.closest<HTMLElement>('[data-piece]')
   const id = piece?.dataset.piece
@@ -117,6 +138,7 @@ const expandFromClick = (event: MouseEvent) => {
   const selection = window.getSelection()
   if (selection && !selection.isCollapsed && piece.contains(selection.anchorNode)) return
   opened.add(id)
+  readMarks.markSeen(readId(id))
 }
 
 const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: boolean) => {
@@ -179,9 +201,11 @@ const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: 
           <li
             v-for="(item, i) in block.items"
             :key="i"
+            v-read-mark="readId(pieceId(g, b, i))"
             class="report-broadsheet__piece report-broadsheet__item"
             :class="{
               'is-numbered': item.number != null,
+              'is-read': isRead(pieceId(g, b, i)),
               'is-clamped': isClamped(pieceId(g, b, i), linesOf('item', group.heading == null)),
               'is-open': isOpen(pieceId(g, b, i)),
               'is-overflowing': overflows(pieceId(g, b, i), linesOf('item', group.heading == null)),
