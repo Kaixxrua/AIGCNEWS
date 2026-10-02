@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import DshView from './DshView.vue'
 import { useAuthStore } from '@/stores/authStore'
 import type { AuthUser } from '@/stores/authStore'
@@ -20,6 +20,20 @@ vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
 vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
+// 桌面（≥1024px）打开就是接入命令台，手机与平板仍是两步向导；jsdom 没有 matchMedia，按标志切换。
+const viewport = vi.hoisted(() => ({ desktop: false }))
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: string) => (query === '(min-width: 1024px)' ? ref(viewport.desktop) : actual.useMediaQuery(query)),
+  }
+})
+vi.mock('@/composables/useLiveCallCount', async () => {
+  const { ref } = await import('vue')
+  return { useLiveCallCount: () => ref(682) }
+})
 
 const messages = {
   mcp: { copied: '已复制', copyFailed: '复制失败', tokenCreateFailed: 'Token 创建失败。', wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' }, dshPlugin: { methods: {
@@ -167,5 +181,37 @@ describe('DshView', () => {
     const repository = wrapper.get('a[href="https://github.com/Kaixxrua/dsh-aigc-radar"]')
     expect(repository.attributes('target')).toBe('_blank')
     expect(repository.attributes('rel')).toBe('noopener')
+  })
+})
+
+describe('DshView on desktop', () => {
+  beforeEach(() => { viewport.desktop = true })
+  afterEach(() => { viewport.desktop = false })
+
+  it('opens on the command desk with the stats strip instead of the wizard', async () => {
+    const auth = useAuthStore()
+    auth.status = 'anonymous'
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.dsh-desk').exists()).toBe(true)
+    expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
+    expect(wrapper.findAll('.dsh-stats .dsh-stat')).toHaveLength(4)
+    expect(wrapper.get('.command-preview-term').text()).toContain('dsh plugin --profile web add dsh-aigc-radar && printf')
+    expect(ensureDshMcpToken).not.toHaveBeenCalled()
+  })
+
+  it('fetches the token for signed-in readers and keeps it off the page', async () => {
+    ensureDshMcpToken.mockResolvedValue({
+      token: 'aigc_mcp_view', reused: false,
+      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
+    })
+    const auth = useAuthStore()
+    auth.status = 'authenticated'
+    auth.user = freeUser
+    const wrapper = await mountView()
+
+    expect(ensureDshMcpToken).toHaveBeenCalledOnce()
+    expect(wrapper.get('.dsh-desk-side').classes()).toContain('dsh-desk-side--ready')
+    expect(wrapper.html()).not.toContain('aigc_mcp_view')
   })
 })

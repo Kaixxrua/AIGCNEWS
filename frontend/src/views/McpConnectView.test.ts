@@ -9,6 +9,20 @@ const clipboardCopy = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 const ctlBox = vi.hoisted(() => ({ current: null as null | Record<string, any> }))
 const authBox = vi.hoisted(() => ({ current: null as null | { status: 'initializing' | 'authenticated' | 'anonymous' | 'degraded'; isLoggedIn: boolean; isAdmin: boolean; isMember: boolean; initFromStorage: ReturnType<typeof vi.fn> } }))
+// 桌面（≥1024px）打开就是接入命令台，手机与平板仍是三步向导；jsdom 没有 matchMedia，按标志切换。
+const viewport = vi.hoisted(() => ({ desktop: false }))
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: string) => (query === '(min-width: 1024px)' ? ref(viewport.desktop) : actual.useMediaQuery(query)),
+  }
+})
+vi.mock('@/composables/useLiveCallCount', async () => {
+  const { ref } = await import('vue')
+  return { useLiveCallCount: () => ref(4668) }
+})
 
 vi.mock('@/stores/authStore', async () => {
   const { reactive } = await import('vue')
@@ -35,7 +49,7 @@ vi.mock('@/composables/useMcpConnectController', async () => {
   ctlBox.current = {
     clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
     clientLabel: ref(''),
-    clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
+    clientOption: ref({ id: 'claude-code', label: 'Claude Code', format: 'claude-cli', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
     copiedKey: ref(''),
     copyAgentSetupPrompt: vi.fn(),
     copyGeneratedCommand: vi.fn(),
@@ -461,5 +475,28 @@ describe('McpConnectView quota upsell notice', () => {
 
     expect(wrapper.text()).not.toContain('开通 vip')
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+  })
+})
+
+describe('McpConnectView on desktop', () => {
+  beforeEach(() => { viewport.desktop = true })
+  afterEach(() => { viewport.desktop = false })
+
+  it('opens on the command desk with the stats strip instead of the step wizard', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.mcp-desk').exists()).toBe(true)
+    expect(wrapper.find('.mcp-wizard').exists()).toBe(false)
+    expect(wrapper.findAll('.mcp-stats .mcp-stat')).toHaveLength(4)
+    expect(wrapper.get('.command-preview-term').text()).toContain('mcp add --scope user --transport http aigc-news')
+    expect(controller().startSetup).not.toHaveBeenCalled()
+  })
+
+  it('keeps the one-time command off the page on the desk too', async () => {
+    controller().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.command-slot--filled').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
   })
 })

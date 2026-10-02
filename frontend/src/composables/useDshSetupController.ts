@@ -42,6 +42,14 @@ const patchLines = (token: string) => [
   `        mcpToken: ${yamlQuote(token)}`,
 ]
 
+// 一条命令完成安装与 Token 落盘：安装插件后把 mcpToken 补丁写进 profile 补丁层。
+// cordis.patch.yml 默认只有注释与空数组，追加会破坏 YAML 结构，因此整文件覆盖。
+// /dsh 桌面版用占位串代替 Token 调它，拼出命令预览。
+export const buildDshInstallLine = (command: string, token: string) => {
+  const args = patchLines(token).map(shellDoubleQuote).join(' ')
+  return `${command} && printf '%s\\n' ${args} > ${DSH_PATCH_PATH}`
+}
+
 const toErrorKey = (cause: unknown) =>
   axios.isAxiosError(cause) && cause.response?.status === 503
     ? 'dsh.wizard.tokenUnavailable'
@@ -62,14 +70,8 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
   let disposed = false
 
   const command = computed(() => DSH_PLUGIN_INSTALL_METHODS.find((m) => m.id === selectedMethod.value)?.command ?? DSH_PLUGIN_INSTALL_METHODS[0]!.command)
-  // 一条命令完成安装与 Token 落盘：安装插件后把 mcpToken 补丁写进 profile 补丁层。
-  // cordis.patch.yml 默认只有注释与空数组，追加会破坏 YAML 结构，因此整文件覆盖。
   // 没有 ready token 时绝不渲染命令（凭证不得出现在半成品 UI/复制板里）。
-  const installLine = computed(() => {
-    if (!token.value) return ''
-    const args = patchLines(token.value).map(shellDoubleQuote).join(' ')
-    return `${command.value} && printf '%s\\n' ${args} > ${DSH_PATCH_PATH}`
-  })
+  const installLine = computed(() => (token.value ? buildDshInstallLine(command.value, token.value) : ''))
 
   const applyToken = (result: DshMcpTokenResponse) => {
     token.value = result.token

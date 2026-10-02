@@ -4,17 +4,18 @@ import { useMediaQuery } from '@vueuse/core'
 import { Box, CalendarDays, Crown, Wrench } from 'lucide-vue-next'
 import '@/components/mcp/connection-layout.css'
 import { RouterLink } from 'vue-router'
+import DshCommandDesk from '@/components/dsh/DshCommandDesk.vue'
 import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
 import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL, MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
 import { useAuthStore } from '@/stores/authStore'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import { useDshPluginCalls } from '@/composables/useDshPluginCalls'
 
-// /dsh 对游客开放为获客入口：插件介绍与安装方式选择免登录可见；
-// 登录在向导「下一步」处按需弹窗，Token 签发仍由登录后的服务端完成。
+// /dsh 对游客开放为获客入口：插件介绍、安装方式选择与命令模板免登录可见；
+// 登录在向导「下一步」或桌面命令台的「登录后复制命令」处按需弹窗，Token 签发仍由登录后的服务端完成。
 const { t, locale } = useI18n()
 const auth = useAuthStore()
-// 桌面漫画版的四格统计：调用数与首页「dsh 插件调用」同源实时计数，只在桌面上订阅。
+// 桌面漫画版标题旁的一行统计：调用数与首页「dsh 插件调用」同源实时计数，只在桌面上订阅。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const dshCalls = useDshPluginCalls(desktop)
 </script>
@@ -22,8 +23,18 @@ const dshCalls = useDshPluginCalls(desktop)
 <template>
   <div class="dsh-page connection-page flex h-full min-h-0 flex-col overflow-hidden">
     <div class="connection-scroll">
-      <p class="dsh-page-title comic-title">{{ t('dsh.pageTitle') }}</p>
-      <p class="dsh-page-subtitle" aria-hidden="true">{{ t('dsh.title') }}</p>
+      <div class="dsh-page-head">
+        <div class="dsh-page-heading">
+          <p class="dsh-page-title comic-title">{{ t('dsh.pageTitle') }}</p>
+          <p class="dsh-page-subtitle" aria-hidden="true">{{ t('dsh.title') }}</p>
+        </div>
+        <section v-if="desktop" class="dsh-stats" :aria-label="t('dsh.stats.label')">
+          <div class="dsh-stat"><Box aria-hidden="true" /><span>{{ t('dsh.stats.calls') }}</span><strong><RollingNumber v-if="dshCalls !== null" :value="dshCalls" grouping /><template v-else>—</template></strong></div>
+          <div class="dsh-stat"><Wrench aria-hidden="true" /><span>{{ t('dsh.stats.methods') }}</span><strong>{{ DSH_PLUGIN_INSTALL_METHODS.length }}</strong></div>
+          <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling24h.toLocaleString(locale) }}</strong></div>
+          <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling30d.toLocaleString(locale) }}</strong></div>
+        </section>
+      </div>
       <div class="connection-layout connection-layout--dsh">
         <div class="connection-aside">
           <section class="connection-intro glass-card relative overflow-hidden p-4 md:p-5">
@@ -51,12 +62,6 @@ const dshCalls = useDshPluginCalls(desktop)
               <p class="mt-2 text-sm leading-6 text-stone-500">{{ t('dsh.capabilitiesDescription') }}</p>
             </div>
           </section>
-          <section v-if="desktop" class="dsh-stats" :aria-label="t('dsh.stats.label')">
-            <div class="dsh-stat"><Box aria-hidden="true" /><span>{{ t('dsh.stats.calls') }}</span><strong><RollingNumber v-if="dshCalls !== null" :value="dshCalls" grouping /><template v-else>—</template></strong></div>
-            <div class="dsh-stat"><Wrench aria-hidden="true" /><span>{{ t('dsh.stats.methods') }}</span><strong>{{ DSH_PLUGIN_INSTALL_METHODS.length }}</strong></div>
-            <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling24h.toLocaleString(locale) }}</strong></div>
-            <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling30d.toLocaleString(locale) }}</strong></div>
-          </section>
         </div>
 
         <section v-if="auth.status === 'initializing'" class="glass-card p-5 md:p-6">
@@ -65,6 +70,7 @@ const dshCalls = useDshPluginCalls(desktop)
         <section v-else-if="auth.status === 'degraded'" class="glass-card p-5 md:p-6">
           <p class="rounded bg-rose-50 p-3 text-xs text-rose-700">{{ t('dsh.authDegraded') }} <button type="button" class="underline" @click="auth.initFromStorage()">{{ t('dsh.authRetry') }}</button></p>
         </section>
+        <DshCommandDesk v-else-if="desktop" />
         <DshSetupWizard v-else />
 
 

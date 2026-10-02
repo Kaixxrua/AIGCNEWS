@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { useDshSetupController } from './useDshSetupController'
+import { buildDshInstallLine, useDshSetupController } from './useDshSetupController'
+import { COMMAND_TOKEN_SLOT, splitCommandPreview } from '@/features/mcp/commandPreview'
 import type { DshMcpTokenResponse } from '@/services/mcp/mcpTokenApi'
 
 const readyResult = (token: string, reused = false): DshMcpTokenResponse => ({
@@ -179,5 +180,22 @@ describe('useDshSetupController', () => {
     await controller.ensure()
     expect(controller.installLine.value.startsWith('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar && printf ')).toBe(true)
     expect(controller.installLine.value).toContain("mcpToken: 'aigc_mcp_gh'")
+  })
+})
+
+describe('buildDshInstallLine', () => {
+  it('folds the token patch into the install command with safe quoting', () => {
+    const line = buildDshInstallLine('dsh plugin --profile web add dsh-aigc-radar', "aigc_mcp_ab'cd")
+
+    expect(line.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
+    expect(line).toContain('"        mcpToken: \'aigc_mcp_ab\'\'cd\'"')
+    expect(line.endsWith('> ~/.dsh/profiles/web/cordis.patch.yml')).toBe(true)
+  })
+
+  it('keeps the preview slot whole so the desktop desk can draw it as one placeholder', () => {
+    const segments = splitCommandPreview(buildDshInstallLine('dsh plugin --profile web add dsh-aigc-radar', COMMAND_TOKEN_SLOT))
+
+    expect(segments.filter((segment) => segment.kind === 'token')).toHaveLength(1)
+    expect(segments.map((segment) => (segment.kind === 'text' ? segment.text : '')).join('')).not.toContain(COMMAND_TOKEN_SLOT)
   })
 })

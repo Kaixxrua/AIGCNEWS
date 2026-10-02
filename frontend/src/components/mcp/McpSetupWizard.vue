@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { McpConnectController } from '@/composables/useMcpConnectController'
 import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
+import { clientConfigTarget as configTargetOf, setupResultDescription as resultDescriptionOf, setupScopeLabel as scopeLabelOf, setupTargetDescription as targetDescriptionOf } from '@/features/mcp/mcpSetupTarget'
 import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
@@ -51,30 +52,10 @@ const isLast = computed(() => currentStep.value === stepTitleKeys.length - 1)
 
 const shellOptions = mcpShellOptions
 const clientOptions = mcpClientOptions
-const setupScopeKeys = {
-  user: 'user',
-  'conditional-user': 'conditionalUser',
-  'user-with-session-secret': 'sessionSecret',
-  'import-file': 'importFile',
-} as const
-const setupScopeLabel = computed(() => t(`mcp.scope.${setupScopeKeys[clientOption.value.setupScope]}`))
-const clientConfigTarget = (option: McpClientOption) => (option.configPathKey ? t(option.configPathKey) : option.configPath)
-const setupTargetDescription = computed(() => {
-  if (clientOption.value.id === 'claude-code') return t('mcp.resultClaudeCode')
-  if (clientOption.value.id === 'continue') return t('mcp.resultContinue', { path: clientConfigTarget(clientOption.value) })
-  if (clientOption.value.id === 'vscode') return t('mcp.resultVsCode')
-  if (clientOption.value.id === 'codex') return selectedShell.value === 'bash'
-    ? t('mcp.codexResult')
-    : t('mcp.resultCodexWindows')
-  return t('mcp.resultImport', { path: clientConfigTarget(clientOption.value) })
-})
-const setupResultDescription = computed(() => {
-  if (clientOption.value.id === 'claude-code') return t('mcp.hintClaudeCode')
-  if (clientOption.value.id === 'continue') return t('mcp.hintContinue')
-  if (clientOption.value.id === 'vscode') return t('mcp.hintVsCode')
-  if (clientOption.value.id === 'codex') return t('mcp.hintCodex')
-  return t('mcp.hintImport', { path: clientConfigTarget(clientOption.value) })
-})
+const setupScopeLabel = computed(() => scopeLabelOf(clientOption.value, t))
+const clientConfigTarget = (option: McpClientOption) => configTargetOf(option, t)
+const setupTargetDescription = computed(() => targetDescriptionOf(clientOption.value, selectedShell.value, t))
+const setupResultDescription = computed(() => resultDescriptionOf(clientOption.value, t))
 const setupErrorDisplay = computed(() => resolveMcpFeedback(setupError.value, t))
 const testMessageDisplay = computed(() => resolveMcpFeedback(testMessage.value, t))
 const endpointWarning = computed(() => endpointWarningKey.value ? t(endpointWarningKey.value) : '')

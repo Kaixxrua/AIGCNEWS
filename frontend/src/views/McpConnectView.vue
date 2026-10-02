@@ -6,6 +6,7 @@ import { Blocks, CircleUserRound, Library, Users } from 'lucide-vue-next'
 import '@/components/mcp/connection-layout.css'
 import { useClipboard } from '@/composables/useClipboard'
 import { useMcpConnectController } from '@/composables/useMcpConnectController'
+import McpCommandDesk from '@/components/mcp/McpCommandDesk.vue'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
@@ -37,8 +38,8 @@ const heroPillKeys = ['noAuth', 'publicTools', 'streamableHttp'] as const
 const desktop = useMediaQuery('(min-width: 1024px)')
 const mcpCalls = useLiveCallCount('mcp_total_calls', desktop)
 
-// /mcp 对游客开放为获客入口：页面与客户端选择免登录可见，登录在向导
-// 「下一步」处按需弹窗。Token 属账号数据：仅已认证时加载；认证丢失
+// /mcp 对游客开放为获客入口：页面、客户端选择与命令模板免登录可见，登录在向导
+// 「下一步」或桌面命令台的「登录后复制命令」处按需弹窗。Token 属账号数据：仅已认证时加载；认证丢失
 // （含登出、异步恢复为 anonymous）立即清空内存中的 Token 元数据与一次性命令。
 watch(
   () => authStore.status,
@@ -75,7 +76,7 @@ onBeforeUnmount(dispose)
               <p class="mt-2 text-sm leading-6 text-stone-500">{{ t('mcp.description') }}</p>
               <!-- 额度卡仅对已登录非会员展示。网站不向游客推介匿名额度：
                    按 IP 匿名桶只作为 GitHub/NPM 发布渠道（插件开箱即用）的默认体验，
-                   游客在接入向导前进到下一步时按需登录。 -->
+                   游客在接入向导前进到下一步、或在命令台点复制时按需登录。 -->
               <div v-if="authStore.status === 'authenticated' && !authStore.isMember" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[20px] border border-amber-200 bg-amber-50/70 px-3 py-2">
                 <p class="min-w-0 flex-1 basis-64 text-xs leading-5 text-amber-900">{{ t('mcp.quota.free') }}</p>
                 <RouterLink to="/membership" class="btn-secondary shrink-0 text-xs">{{ t('mcp.quota.vipCta') }}</RouterLink>
@@ -90,7 +91,8 @@ onBeforeUnmount(dispose)
             </div>
           </section>
 
-          <McpSetupWizard :controller="controller" />
+          <McpCommandDesk v-if="desktop" :controller="controller" />
+          <McpSetupWizard v-else :controller="controller" />
 
         </template>
 

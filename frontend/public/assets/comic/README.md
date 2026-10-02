@@ -43,16 +43,14 @@ The controls and the index carry the frame as their own `border-image` (the inde
 The DSH page (`/dsh`, "dsh-C" concept) is drawn the same way, with one generator for all of its pieces: each frame is one 3× 9-slice layer with a transparent middle, laid on `::after` around an element that paints its own fill. So one frame serves any fill (and the dark theme), and hover can change the colour under the ink. Every frame was calibrated to the concept's edge pixels; halftone patches sit in the bottom-right corner slice and the screen is orthogonal throughout, as in the concept.
 
 - `dsh-panel.webp` (intro and abilities panels): a 1.9px wobbling ink line over a slate extrusion (5px right, 6px down) outlined in black and darkened where it meets the panel, with 7.3px dots in the corner.
-- `dsh-stats.webp`, `dsh-stat.webp`: the four facts' outer box (2.2px navy line, solid navy shadow) and each fact's tile (1.4px line, a lighter second line inside its top and left, a pinch of teal dots).
+- `dsh-stats.webp`: the strip that holds the four facts in one row (2.2px navy line, solid navy shadow); dashed CSS rules split the facts.
 - `dsh-disc-{cyan,mint}.webp`: the watercolour disc behind each fact's icon, with a brush tick off its lower left.
-- `dsh-tab.webp`, `dsh-tab-active.webp`: the step tabs, with a heavy black block to the lower left and a speech-bubble wedge (filled in the tab's colour) hanging from it; the page skews them.
 - `dsh-quota.webp`: the amber quota bar's thin line and warm dots at its right end.
-- `dsh-method.webp`, `dsh-method-idle.webp`: the picked install method (solid black shadow) and the other one (slate extrusion), both with 6.4px dots dragged into short strokes and a line overshooting the lower-left corner.
-- `dsh-nav.webp`: the step bar.
+- `dsh-method.webp`, `dsh-method-idle.webp`: the command desk's side card, on the slate extrusion while the reader signs in or the token is fetched and on the solid black shadow once the command is ready to copy; both with 6.4px dots dragged into short strokes and a line overshooting the lower-left corner.
 - `dsh-button.webp`, `dsh-button-ink.webp`: the white button (solid shadow, black dots) and the black one (white dots).
-- `dsh-tag.webp`, `dsh-bubble.webp`: the lime kicker tag and the "推荐" speech bubble.
+- `dsh-tag.webp`: the lime kicker tag.
 
-Together they are about 300 KB. The `-night` files swap the ink for pale grey, the extrusion for dark slate and the wedge fills for the dark theme's colours, and dim the dots.
+The install methods' switch and the "推荐" tag are CSS, and the command terminal borrows the MCP page's `mcp-term.webp`. Together they are about 235 KB. The `-night` files swap the ink for pale grey, the extrusion for dark slate and the wedge fills for the dark theme's colours, and dim the dots.
 
 The membership page (`/membership`, "membership-C" concept) uses the same generator. Its frames differ in one way: the cards' tops are not level, so each frame paints its own fill (`border-image … fill`) and the element paints nothing. The middle band of the top slice holds a straight ramp, which stays straight however wide the card is stretched.
 
@@ -158,18 +156,15 @@ My web collection (`/projects?source=website`, "websites-mine-C" concept) uses t
 
 All of them carry their face (`fill`) and hang it as the element's own `border-image`, pushed out over the block with `border-image-outset`. Together they are about 30 KB. The `-night` files swap the faces for dimmer or darker copies of their colours, the ink for pale grey and the blocks for black.
 
-The MCP access page (`/mcp`, "mcp-C" concept) uses the same generator. The icons in the four facts sit on watercolour discs; the step numbers, the arrows between the steps and the spark after each section label are CSS.
+The MCP access page (`/mcp`, "mcp-C" concept) uses the same generator. The icons in the four facts sit on watercolour discs; the step numbers on their lime discs and the segmented switches for the client and the terminal are CSS.
 
-- `mcp-card.webp`, `mcp-card-on.webp`: a client card, a thin line going from grey down the left to black along the top, the right and the foot, on a black block with navy and teal screen off the lower right; the chosen one in a heavier line on a black and a pale teal-grey block, its screen in dark green on the lime.
-- `mcp-tab.webp`, `mcp-tab-on.webp`: a wizard step, a black line that lifts off the paper halfway down the left, with a band of screen down the right end; the current step on a lime-green block.
-- `mcp-stat.webp`: a fact, a black line going grey down the right and the foot, on a soft grey block, with teal specks in the upper left.
-- `mcp-side.webp`: the settings panel, its top left corner cut off, the pen darkening round to a black right and foot on a black block, with screens in both right corners.
-- `mcp-slip.webp`, `mcp-pill.webp`: the leaning white slips of the section labels and the heading's three tags, the tags with the printer's second pass under their lower left.
-- `mcp-term.webp`, `mcp-term-on.webp`: a terminal choice (and the endpoint field), a thin navy line; the chosen one on the lime with a patch of dark-green screen.
-- `mcp-prev.webp`, `mcp-next.webp`: the back and next tickets, white and navy, pointed at the left, the navy one with a pale ghost of its outline.
+- `mcp-card.webp`: the command desk's side card with the copy buttons, a thin line going from grey down the left to black along the top, the right and the foot, on a black block with navy and teal screen off the lower right.
+- `mcp-slip.webp`, `mcp-pill.webp`: the leaning white slips (the config scope beside the command, the upgrade link) and the heading's three tags, the tags with the printer's second pass under their lower left.
+- `mcp-term.webp`: a thin navy line round the command terminal (on both desks), the facts strip, the endpoint field and the quota note.
+- `mcp-prev.webp`, `mcp-next.webp`: the white and navy tickets, pointed at the left, the navy one with a pale ghost of its outline: the side card's buttons (navy for the main action) and the handshake.
 - `mcp-disc-{teal,lavender,sky,peach}.webp`: the watercolour discs under the facts' icons.
 
-The slips, tags and tickets carry their fill; the rest take the image as a frame and paint their own face. Together they are about 230 KB. The `-night` files swap the fills for the dark theme's paper (the navy ticket for pale grey), the ink for pale grey and the blocks for black, and dim the screens and the discs.
+The slips, tags and tickets carry their fill; the rest take the image as a frame and paint their own face. Together they are about 60 KB. The `-night` files swap the fills for the dark theme's paper (the navy ticket for pale grey), the ink for pale grey and the blocks for black, and dim the screens and the discs.
 
 The paper reader (`/papers/:id/read`, "paper-read-C" concept) uses the same generator. The lime tab at the summary card's left edge is CSS.
 
