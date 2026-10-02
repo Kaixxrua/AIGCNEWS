@@ -2,26 +2,37 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
+import SaveButton from '@/components/saved/SaveButton.vue'
 import { vIndicator } from '@/motion/indicator'
 import { vMorph } from '@/motion/morph'
 import { prefersReducedMotion } from '@/motion/motion'
 import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
-import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock } from '@/features/report/reportBroadsheet'
+import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock, type BroadsheetItem } from '@/features/report/reportBroadsheet'
 
 /**
  * 桌面版简报的大报排法：每节的正文段落分三栏，条目排成两到三栏的网格，条目的标题句加粗打头。
  * 全文模式下条目正文最多 5 行、导读模式下 2 行（节内段落收成 2 行的一栏），点开看全文；条目的出处链接与「展开全文」
  * 同排在底行，正文收着也能直接点。生成中全部展开，跟着流式文字长。收起与展开、两种模式之间切换时正文高度平滑过渡。
  * 看过的条目下次再打开这一期时变淡，点过其中链接的立刻变淡（记录只存在本机浏览器）。
+ * 给了 saves 时条目底行多一枚书签，按 s 也能收下光标停着的那条（生成中没有）。
  */
 export type ReportReadingMode = 'full' | 'lead'
 
-const props = defineProps<{
+/** 条目收藏：收没收下，收下或取消；收下时告诉它这条原在哪一节（刊头导语为空串）、在这一期里排第几。 */
+export interface BroadsheetSaves {
+  has(item: BroadsheetItem): boolean
+  toggle(item: BroadsheetItem, place: { section: string; order: number }): void
+}
+
+const props = withDefaults(defineProps<{
   sheet: Broadsheet
   mode: ReportReadingMode
   generating: boolean
-}>()
+  saves?: BroadsheetSaves | null
+  /** 看过的条目变淡；看收藏时不淡，也不记。 */
+  dimRead?: boolean
+}>(), { saves: null, dimRead: true })
 
 const { t } = useI18n()
 const uid = useId()
@@ -35,19 +46,33 @@ const groups = computed<Group[]>(() => [
 const pieceId = (group: number, block: number, item?: number) => item == null ? `${group}-${block}` : `${group}-${block}-${item}`
 const bodyId = (id: string) => `${uid}-rb-${id}`
 
+// 版面上的每一条：条目本身、原在哪一节、按版面顺序排第几、已读记录用的标识。
+interface Piece { item: BroadsheetItem; section: string; order: number; readId: string }
+const pieces = computed(() => {
+  const map = new Map<string, Piece>()
+  groups.value.forEach((group, g) => group.blocks.forEach((block, b) => {
+    if (block.kind !== 'items') return
+    block.items.forEach((item, i) => map.set(pieceId(g, b, i), { item, section: group.heading ?? '', order: map.size, readId: broadsheetItemReadId(item) }))
+  }))
+  return map
+})
+
 // 已读淡化：条目露出一半停够一秒记为看过，下次打开这一期时变淡；生成中文字还在变，不记也不淡。
 // 一期简报是写定的一份，后来不会再添条目，所以不画「上次看到这里」。
-const readMarks = useReadMarks({ list: 'briefing', enabled: computed(() => !props.generating) })
+const readMarks = useReadMarks({ list: 'briefing', enabled: computed(() => !props.generating && props.dimRead) })
 const vReadMark = readMarks.directive
-const readIds = computed(() => {
-  const ids = new Map<string, string>()
-  groups.value.forEach((group, g) => group.blocks.forEach((block, b) => {
-    if (block.kind === 'items') block.items.forEach((item, i) => ids.set(pieceId(g, b, i), broadsheetItemReadId(item)))
-  }))
-  return ids
-})
-const readId = (id: string) => readIds.value.get(id) ?? ''
+const readId = (id: string) => pieces.value.get(id)?.readId ?? ''
 const isRead = (id: string) => readMarks.isRead(readId(id))
+
+const canSave = computed(() => !!props.saves && !props.generating)
+const isSaved = (id: string) => {
+  const piece = pieces.value.get(id)
+  return !!piece && !!props.saves?.has(piece.item)
+}
+const toggleSave = (id: string) => {
+  const piece = pieces.value.get(id)
+  if (piece && canSave.value) props.saves?.toggle(piece.item, { section: piece.section, order: piece.order })
+}
 
 const ITEM_LINES = { full: 5, lead: 2 } as const
 const linesOf = (kind: 'prose' | 'item', intro: boolean) => {
@@ -145,10 +170,10 @@ const expandFromClick = (event: MouseEvent) => {
 }
 
 // 键盘流：j / k 按版面顺序在条目之间走，走过的记为看过；o 在新标签页打开条目的出处（简报留在这里接着往下读，
-// 没有链接时展开全文），x 展开或收起全文。生成中文字还在长，不接键。
+// 没有链接时展开全文），s 收藏，x 展开或收起全文。生成中文字还在长，不接键。
 const pieceEl = (id: string) => root.value?.querySelector<HTMLElement>(`[data-piece="${id}"]`) ?? null
 const canToggle = (id: string) => opened.has(id) || overflows(id, Number(pieceEl(id)?.dataset.lines))
-const itemOrder = computed(() => [...readIds.value.keys()])
+const itemOrder = computed(() => [...pieces.value.keys()])
 const listKeys = useListKeys({
   enabled: computed(() => !props.generating),
   root,
@@ -160,6 +185,10 @@ const listKeys = useListKeys({
       window.open(link.href, '_blank', 'noopener')
       readMarks.markOpened(readId(id))
     } else if (canToggle(id)) toggle(id)
+  },
+  // 没给收藏时不接 s
+  get save() {
+    return props.saves ? toggleSave : undefined
   },
   toggle: (id) => {
     if (canToggle(id)) toggle(id)
@@ -263,9 +292,16 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
               v-html="item.body"
             />
             <div
-              v-if="item.source || overflows(pieceId(g, b, i), linesOf('item', group.heading == null))"
+              v-if="item.source || overflows(pieceId(g, b, i), linesOf('item', group.heading == null)) || canSave"
               class="report-broadsheet__foot"
             >
+              <!-- 书签打头：收下这条（只存在本机） -->
+              <SaveButton
+                v-if="canSave"
+                class="report-broadsheet__save"
+                :saved="isSaved(pieceId(g, b, i))"
+                @toggle="toggleSave(pieceId(g, b, i))"
+              />
               <button
                 v-if="overflows(pieceId(g, b, i), linesOf('item', group.heading == null))"
                 type="button"
@@ -285,6 +321,9 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
       </template>
     </component>
     <p v-if="sheet.dateline" class="report-dateline" v-html="sheet.dateline" />
-    <ListKeysSheet v-model:open="keysHelp" :actions="{ open: t('listKeys.briefingOpen'), toggle: t('listKeys.briefingToggle') }" />
+    <ListKeysSheet
+      v-model:open="keysHelp"
+      :actions="{ open: t('listKeys.briefingOpen'), save: saves ? t('listKeys.save') : undefined, toggle: t('listKeys.briefingToggle') }"
+    />
   </div>
 </template>

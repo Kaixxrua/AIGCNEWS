@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
-import { BellRing, Mail, Send } from 'lucide-vue-next'
+import { BellRing, Bookmark, Mail, Send } from 'lucide-vue-next'
 import { vIndicator } from '@/motion/indicator'
+import RollText from '@/motion/RollText.vue'
 import type { ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import {
   REPORT_TYPES,
@@ -11,7 +13,7 @@ import {
 
 type ReportTypeInfo = (typeof REPORT_TYPES)[number]
 
-defineProps<{
+const props = defineProps<{
   currentTypeInfo?: ReportTypeInfo
   selectedType: ReportKey
   selectedDate: string
@@ -30,6 +32,10 @@ defineProps<{
   autoScroll: boolean
   /** 桌面大报版式的阅读方式；不传则不显示切换。 */
   readingMode?: ReportReadingMode | null
+  /** 本机收了几条简报条目（桌面大报版）；不给就没有「收藏」标签。 */
+  savedCount?: number | null
+  /** 正在看收藏：分区标签里亮「收藏」，这一期的操作（缓存状态、发送到邮箱、生成）收起。 */
+  savedView?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -41,21 +47,33 @@ const emit = defineEmits<{
   copySubscribedRss: []
   generate: []
   'update:readingMode': [value: ReportReadingMode]
+  'update:savedView': [value: boolean]
 }>()
+
+// 收藏条数换值时滚动，多了新数字自下而上，少了自上而下
+const savedDirection = ref<1 | -1>(1)
+watch(() => props.savedCount ?? 0, (count, previous) => { savedDirection.value = count < previous ? -1 : 1 }, { flush: 'sync' })
 </script>
 
 <template>
   <!-- 第一行：标题 + 状态 + 操作按钮 -->
   <div class="report-controls__head flex flex-wrap items-center justify-between gap-3">
     <div class="flex items-center gap-2 min-w-0">
-      <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
-      <h1 class="report-controls__title comic-title text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
-      <span class="report-controls__meta text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
+      <template v-if="savedView">
+        <Bookmark class="h-5 w-5 text-stone-500 shrink-0" />
+        <h1 class="report-controls__title comic-title text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ t('saved.title') }}</h1>
+        <span class="report-controls__meta text-xs text-stone-400 hidden sm:inline">{{ t('saved.count', { count: savedCount ?? 0 }) }} · {{ t('saved.localNote') }}</span>
+      </template>
+      <template v-else>
+        <component v-if="currentTypeInfo?.icon" :is="currentTypeInfo.icon" class="h-5 w-5 text-stone-500 shrink-0" />
+        <h1 class="report-controls__title comic-title text-lg font-bold text-stone-800 tracking-tight font-serif truncate">{{ currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : t('report.titleFallback') }}</h1>
+        <span class="report-controls__meta text-xs text-stone-400 hidden sm:inline">{{ selectedDate }} · {{ t('report.period.daily') }} · {{ currentTypeInfo ? t(`report.type.${currentTypeInfo.descKey}`) : '' }}</span>
+      </template>
       <!-- 桌面版把 AI 生成声明接在日期之后，同一行 -->
-      <p v-if="reportContent" class="report-ai-bubble">{{ t('report.aiGeneratedNotice') }}</p>
+      <p v-if="reportContent || savedView" class="report-ai-bubble">{{ t('report.aiGeneratedNotice') }}</p>
       <!-- 桌面大报版式的阅读方式：全文 / 导读，排在日期行末 -->
       <div
-        v-if="readingMode && reportContent"
+        v-if="readingMode && (reportContent || savedView)"
         v-indicator="{ active: '[aria-pressed=true]' }"
         class="report-reading-mode"
         role="group"
@@ -74,7 +92,7 @@ const emit = defineEmits<{
       </div>
     </div>
     <div class="report-controls__actions flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
-      <div v-if="isCached && !isGenerating" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
+      <div v-if="isCached && !isGenerating && !savedView" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
         <span class="status-dot bg-brand-green" />
         <span class="text-2xs font-medium text-green-700">{{ t('report.cached') }}</span>
       </div>
@@ -113,7 +131,7 @@ const emit = defineEmits<{
 
       <!-- 发送到邮箱 -->
       <button
-        v-if="isLoggedIn && isCached && reportContent"
+        v-if="isLoggedIn && isCached && reportContent && !savedView"
         class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium bg-stone-50 text-stone-600 border border-stone-200 hover:bg-stone-100 transition-all duration-200"
         :disabled="isSendingEmail"
         @click="emit('sendToEmail')"
@@ -130,7 +148,7 @@ const emit = defineEmits<{
       </span>
 
       <!-- Admin: 生成相关控件 -->
-      <template v-if="isAdmin">
+      <template v-if="isAdmin && !savedView">
         <span v-if="isGenerating" class="flex items-center gap-1 text-2xs" :class="autoScroll ? 'text-cyan-600' : 'text-stone-400'">
           <span class="status-dot" :class="autoScroll ? 'bg-cyan-500 animate-[pulseDot_2s_ease-in-out_infinite]' : 'bg-stone-400'" />
           {{ t(autoScroll ? 'report.following' : 'report.unlocked') }}
@@ -152,15 +170,30 @@ const emit = defineEmits<{
         v-for="type in REPORT_TYPES"
         :key="type.key"
         class="comic-chip flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
-        :class="selectedType === type.key
+        :class="!savedView && selectedType === type.key
           ? 'tab-active is-active shadow-sm'
           : 'tab-inactive'"
-        :style="selectedType !== type.key ? 'background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.2)' : ''"
+        :style="savedView || selectedType !== type.key ? 'background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.2)' : ''"
         :disabled="isGenerating"
         @click="emit('update:selectedType', type.key)"
       >
         <component :is="type.icon" class="h-3 w-3 shrink-0" />
         <span>{{ t(`report.type.${type.labelKey}`) }}</span>
+      </button>
+      <!-- 收藏：排在分区标签最后，桌面才有、一直在（没收过时点进去说怎么收），带着收了几条；点它看收下的条目 -->
+      <button
+        v-if="savedCount != null"
+        type="button"
+        class="comic-chip report-saved-tab flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all duration-200"
+        :class="savedView ? 'tab-active is-active shadow-sm' : 'tab-inactive'"
+        :style="!savedView ? 'background: rgb(var(--card-rgb) / 0.6); border: 1px solid rgb(var(--stone-400-rgb) / 0.2)' : ''"
+        :aria-pressed="savedView"
+        :disabled="isGenerating"
+        @click="emit('update:savedView', true)"
+      >
+        <Bookmark class="h-3 w-3 shrink-0" />
+        <span>{{ t('saved.title') }}</span>
+        <span class="report-saved-tab__count"><RollText :value="savedCount" :direction="savedDirection" /></span>
       </button>
     </div>
 

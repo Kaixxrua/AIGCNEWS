@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import XBoardView from './XBoardView.vue'
+import { forgetSavedItems } from '@/composables/useSavedItems'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
 // 桌面推文墙（≥1024px）的折叠、胶片、纯文字等按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
@@ -170,6 +171,7 @@ beforeEach(() => {
   setViewportWidth(1024)
   viewport.desktop = false
   localStorage.clear()
+  forgetSavedItems()
 })
 
 afterEach(() => {
@@ -706,6 +708,97 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     expect(wrapper.find('.masonry-grid article.is-cursor').exists()).toBe(false)
   })
 
+  it('收藏：书签或按 s 收下，「收藏」一段照收下的先后排、不折叠不变淡，在里面取消的留到离开再撤', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      { top: 10, bottom: 90, left: 0, right: 300, width: 300, height: 80, x: 0, y: 10, toJSON: () => ({}) } as DOMRect,
+    )
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return (this.getAttribute('aria-modal') === 'true' ? [{}] : []) as unknown as DOMRectList
+    })
+    controller().docs.value = byHandles(['alice', 'alice', 'alice', 'bob'])
+    const wrapper = await mountView()
+    const press = async (key: string) => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+      await flushPromises()
+    }
+    const card = (body: string) => wallCards(wrapper).find((item) => item.get('.tweet-text').text() === body)!
+    const bodiesInOrder = () => wallCards(wrapper).map((item) => item.get('.tweet-text').text())
+    // 窗口开关里一直有「收藏」一段，没收过时是 0
+    expect(wrapper.get('.xboard-saved .xboard-saved-count').text()).toBe('0')
+
+    // 卡片上的书签收下 bob 那条
+    await card('Tweet 3 body').get('.save-toggle').trigger('click')
+    expect(card('Tweet 3 body').get('.save-toggle').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.xboard-saved .xboard-saved-count').text()).toBe('1')
+
+    // s 收下光标停着的那条；折叠组展开后组里的也能收
+    await press('j')
+    await press('s')
+    await press('x')
+    await press('j')
+    await press('s')
+    // 详情里按 s 收下、取消正在看的这条，底栏的收藏钮跟着换
+    await press('j')
+    await press('o')
+    const detailSave = () => wrapper.get('.detail-backdrop .detail-save')
+    expect(detailSave().attributes('aria-pressed')).toBe('false')
+    await press('s')
+    expect(detailSave().attributes('aria-pressed')).toBe('true')
+    await press('Escape')
+    expect(wrapper.get('.xboard-saved .xboard-saved-count').text()).toBe('4')
+
+    // 「收藏」一段：最近收的在前，不折叠；开过详情的那条在窗口里变淡，在这里不淡
+    expect(card('Tweet 2 body').classes()).toContain('is-read')
+    await wrapper.get('.xboard-saved').trigger('click')
+    expect(wrapper.get('.xboard-saved').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.xboard-saved').classes()).toContain('xboard-window-active')
+    expect(wrapper.get('.xboard-recent').classes()).not.toContain('xboard-window-active')
+    expect(wrapper.find('.xboard-follow-toggle').exists()).toBe(false)
+    expect(bodiesInOrder()).toEqual(['Tweet 2 body', 'Tweet 1 body', 'Tweet 0 body', 'Tweet 3 body'])
+    expect(wrapper.find('.tweet-fold').exists()).toBe(false)
+    expect(wrapper.find('.masonry-grid .is-read').exists()).toBe(false)
+    expect(wrapper.find('.tweet-head input[type="checkbox"]').exists()).toBe(false)
+
+    // 在收藏里取消的那条留在墙上，书签变空，计数先减；刷新按此刻重拍才撤下，不去重拉窗口
+    await card('Tweet 1 body').get('.save-toggle').trigger('click')
+    expect(card('Tweet 1 body').get('.save-toggle').attributes('aria-pressed')).toBe('false')
+    expect(wallCards(wrapper)).toHaveLength(4)
+    expect(wrapper.get('.xboard-saved .xboard-saved-count').text()).toBe('3')
+    await wrapper.get('.xboard-refresh').trigger('click')
+    expect(controller().refresh).not.toHaveBeenCalled()
+    expect(bodiesInOrder()).toEqual(['Tweet 2 body', 'Tweet 0 body', 'Tweet 3 body'])
+
+    // 点「最近 24 小时」回到窗口：窗口本来就是今天的，不重拉，折叠照旧
+    await wrapper.get('.xboard-recent').trigger('click')
+    expect(controller().showRecent).not.toHaveBeenCalled()
+    expect(wrapper.get('.xboard-recent').classes()).toContain('xboard-window-active')
+    expect(wrapper.get('.xboard-saved').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('.tweet-fold').exists()).toBe(true)
+
+    // 收藏里改日期：回到窗口并换到那一天
+    await wrapper.get('.xboard-saved').trigger('click')
+    const date = wrapper.get('.xboard-date input')
+    ;(date.element as HTMLInputElement).value = '2026-08-01'
+    await date.trigger('change')
+    expect(controller().onDateChange).toHaveBeenCalledWith('2026-08-01')
+    expect(wrapper.get('.xboard-saved').attributes('aria-pressed')).toBe('false')
+  })
+
+  it('还没收过时「收藏」一段点进去说怎么收，点「最近 24 小时」回来', async () => {
+    controller().docs.value = byHandles(['alice', 'bob'])
+    const wrapper = await mountView()
+
+    await wrapper.get('.xboard-saved').trigger('click')
+    expect(wrapper.get('.xboard-saved').attributes('aria-pressed')).toBe('true')
+    expect(wallCards(wrapper)).toHaveLength(0)
+    expect(wrapper.text()).toContain('saved.emptyTitle')
+    expect(wrapper.text()).toContain('saved.emptyXHint')
+
+    await wrapper.get('.xboard-recent').trigger('click')
+    expect(controller().showRecent).not.toHaveBeenCalled()
+    expect(wallCards(wrapper)).toHaveLength(2)
+  })
+
   it('手机与平板照旧：不折叠、不排胶片，也没有纯文字档', async () => {
     viewport.desktop = false
     localStorage.setItem('xboard_text_only', '1')
@@ -730,5 +823,8 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     await nextTick()
     expect(wrapper.find('.is-cursor').exists()).toBe(false)
     expect(wrapper.find('.list-keys-sheet').exists()).toBe(false)
+    // 也没有收藏
+    expect(wrapper.find('.save-toggle').exists()).toBe(false)
+    expect(wrapper.find('.xboard-saved').exists()).toBe(false)
   })
 })

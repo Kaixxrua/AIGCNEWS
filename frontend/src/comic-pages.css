@@ -220,6 +220,11 @@
   }
   #app .app-shell--comic-page .report-controls__tabs .comic-chip:hover:not(:disabled, .is-active) { transform: translate(-1px, -1px); }
   #app .app-shell--comic-page .report-controls__tabs .comic-chip svg { width: 15px; height: 15px; stroke-width: 2.1; }
+  /* the saved tab closes the row, its count in an ink pill with two digits' room */
+  #app .app-shell--comic-page .report-saved-tab__count {
+    min-width: calc(2ch + 10px); padding: 1px 5px; border-radius: 3px; background: var(--rep-ink); color: var(--rep-pill-edge);
+    font-size: 11.5px; font-weight: 900; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums;
+  }
   #app .app-shell--comic-page .report-controls__tabs input[type='date'] { min-height: 28px; font-size: 13px; }
 
   /* status, subscribe and send, at the right of the tabs */
@@ -426,6 +431,17 @@
   #app .app-shell--comic-page .report-broadsheet__source {
     min-width: 0; margin-left: auto; color: var(--rep-meta); font-size: 12.5px; font-weight: 600; line-height: 18px; text-align: right;
   }
+  /* the bookmark (saved in this browser) leads the foot: a bare glyph in the meta ink, filled lime once saved; its box
+     overhangs the column edge so the glyph lines up with the copy */
+  #app .app-shell--comic-page .report-broadsheet__save {
+    display: inline-flex; align-items: center; justify-content: center; align-self: center; width: 24px; height: 22px;
+    margin: -2px -4px -2px -5px; padding: 0; border: 0; border-radius: 3px; background: none; box-shadow: none;
+    color: var(--rep-meta); cursor: pointer;
+  }
+  #app .app-shell--comic-page .report-broadsheet__save:hover,
+  #app .app-shell--comic-page .report-broadsheet__save.is-saved { color: var(--rep-ink); }
+  #app .app-shell--comic-page .report-broadsheet__save.is-saved svg { fill: var(--acid); }
+  #app .app-shell--comic-page .report-broadsheet__save:focus-visible { outline: 2px solid var(--rep-ink); outline-offset: 1px; }
   /* an item read on an earlier visit (useReadMarks): its number, headline, copy and links all in one softer ink, the
      links without their lime, under a softer rule (at night the rule is already soft and stays), so what is left to
      read stands out */
@@ -701,8 +717,9 @@
 
   /* the window switch: 最近 24 小时 and the window date as two segments of one navy-lined bar, the chosen one lime.
      While the rolling window is on, the date segment shows its name and the date field lies over it unseen (its
-     picker stretched across, so a click anywhere opens it); once a date is picked the field itself shows. */
-  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, .xboard-date) {
+     picker stretched across, so a click anywhere opens it); once a date is picked the field itself shows. Saved
+     tweets join as a third segment, a bookmark and the count in the follow toggle's navy pill. */
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, .xboard-date, button.xboard-saved) {
     position: relative; display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 14px;
     border: 0 solid transparent; border-radius: 2px; background: var(--x-face); box-shadow: none; color: var(--x-hint);
     font-size: 15px; font-weight: 600; line-height: 1; white-space: nowrap;
@@ -711,8 +728,15 @@
   #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch { gap: 0; }
   #app .app-shell--comic-page .xboard-header-actions button.xboard-recent { min-width: 131px; }
   #app .app-shell--comic-page .xboard-header-actions .xboard-date { min-width: 134px; margin-left: -2px; cursor: pointer; }
-  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active)),
-  #app .app-shell--comic-page .xboard-header-actions button.xboard-recent.xboard-mode-active:hover:not(:disabled) {
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-saved { gap: 6px; margin-left: -2px; }
+  #app .app-shell--comic-page .xboard-saved svg { width: 15px; height: 15px; stroke-width: 2.4; }
+  /* the count holds two digits' room, so the switch keeps its width while saves come and go */
+  #app .app-shell--comic-page .xboard-saved-count {
+    min-width: calc(2ch + 12px); padding: 2px 6px; border-radius: 3px; background: #0e1a31; color: #c6f51f;
+    font-size: 12.5px; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active), button.xboard-saved.xboard-mode-active),
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, button.xboard-saved).xboard-mode-active:hover:not(:disabled) {
     background: var(--x-lime); color: var(--x-ink); font-weight: 800;
   }
   /* With the switch's script running, the two segments share the bar's face and the lime is drawn once, on the bar,
@@ -720,20 +744,20 @@
      arrives under it, the one it leaves lets go at once; a picked date fades in over the lime, the name back. */
   #app .app-shell--comic-page .xboard-window-switch[data-indicator] { border-radius: 2px; background: var(--x-face); }
   #app .app-shell--comic-page .xboard-window-switch[data-indicator-mark]::before { content: ''; z-index: -1; border-radius: 2px; background: var(--x-lime); }
-  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, .xboard-date),
-  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] button.xboard-recent.xboard-mode-active:hover:not(:disabled) {
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, .xboard-date, button.xboard-saved),
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, button.xboard-saved).xboard-mode-active:hover:not(:disabled) {
     background: transparent; transition: color 90ms ease, background-color 150ms ease;
   }
-  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active)) {
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active), button.xboard-saved.xboard-mode-active) {
     transition: color 160ms ease 70ms, background-color 150ms ease;
   }
-  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent:not(.xboard-mode-active), .xboard-date:not(:has(> .xboard-mode-active))):hover {
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent:not(.xboard-mode-active), .xboard-date:not(:has(> .xboard-mode-active)), button.xboard-saved:not(.xboard-mode-active)):hover {
     background: var(--x-face-hover);
   }
   #app .app-shell--comic-page .xboard-window-switch[data-indicator] :is(.xboard-date input.input.xboard-mode-active, .xboard-date:not(:has(> .xboard-mode-active)) .xboard-date-text) {
     animation: motion-fade 260ms var(--motion-ease-out) 80ms both;
   }
-  #app .app-shell--comic-page .xboard-header-actions button.xboard-recent:not(.xboard-mode-active):hover,
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, button.xboard-saved):not(.xboard-mode-active):hover,
   #app .app-shell--comic-page .xboard-header-actions .xboard-date:not(:has(> .xboard-mode-active)):hover { background: var(--x-face-hover); color: var(--x-ink); }
   #app .app-shell--comic-page .xboard-date input.input {
     position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0;
@@ -755,7 +779,8 @@
   /* In the folio (FolioTools data-folio) the same tools come a size down to its 50px line: 34px buttons and a 32px
      switch in 14px type. Trim brings text only and refresh down to their icons; compact keeps the switch whole and
      lets the follow toggle drop its name too, down to the icon and the count (names still read out, and shown as a
-     tooltip). */
+     tooltip). Tight, the last try before the tools go back to the page, writes the switch short, 24 小时 and 日期 (the
+     full names still read out), and lets its segments shrink to their words. */
   #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions { flex-wrap: nowrap; gap: 14px; }
   #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button:is(.xboard-follow-toggle, .xboard-text-only, .xboard-refresh) {
     height: 34px; padding: 0 13px; gap: 6px; font-size: 14px;
@@ -764,18 +789,27 @@
   #app .app-shell--comic-page .folio-tools[data-folio='full'] .xboard-header-actions button.xboard-refresh:lang(en) { width: 116px; }
   #app .app-shell--comic-page .folio-tools[data-folio] :is(.xboard-refresh, .xboard-follow-toggle, .xboard-text-only) svg { width: 14px; height: 14px; }
   #app .app-shell--comic-page .folio-tools[data-folio] .xboard-follow-count { padding: 2px 5px; font-size: 11.5px; }
-  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions :is(button.xboard-recent, .xboard-date) { height: 32px; padding: 0 12px; font-size: 13.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions :is(button.xboard-recent, .xboard-date, button.xboard-saved) { height: 32px; padding: 0 12px; font-size: 13.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-saved svg { width: 14px; height: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-saved-count { min-width: calc(2ch + 10px); padding: 2px 5px; font-size: 11.5px; }
   #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button.xboard-recent { min-width: 112px; }
   #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions .xboard-date { min-width: 104px; }
   #app .app-shell--comic-page .folio-tools[data-folio='trim'] .xboard-header-actions { gap: 12px; }
-  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions { gap: 8px; }
-  #app .app-shell--comic-page .folio-tools[data-folio='trim'] :is(.xboard-text-only, .xboard-refresh) .xboard-tool-label,
-  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-tool-label {
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-header-actions { gap: 8px; }
+  /* the saved segment keeps to its bookmark and count everywhere but the folio's full level: under the masthead too,
+     where narrow desktops would otherwise wrap the tools to a second row */
+  #app .app-shell--comic-page .folio-tools:not([data-folio]) .xboard-saved .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools[data-folio='trim'] :is(.xboard-text-only, .xboard-refresh, .xboard-saved) .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] :is(.xboard-recent-long, .xboard-date-long) {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
   }
-  #app .app-shell--comic-page .folio-tools:is([data-folio='trim'], [data-folio='compact']) .xboard-header-actions button:is(.xboard-text-only, .xboard-refresh) { width: 34px; padding: 0; }
-  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions button.xboard-follow-toggle { padding: 0 10px; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='trim'], [data-folio='compact'], [data-folio='tight']) .xboard-header-actions button:is(.xboard-text-only, .xboard-refresh) { width: 34px; padding: 0; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-header-actions button.xboard-follow-toggle { padding: 0 10px; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='trim'], [data-folio='compact'], [data-folio='tight']) .xboard-header-actions button.xboard-saved { padding: 0 10px; }
   #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions .xboard-date { min-width: 96px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] .xboard-header-actions :is(button.xboard-recent, .xboard-date) { min-width: 0; }
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] :is(.xboard-recent-short, .xboard-date-short) { display: inline; }
 
   /* the admin bar, the empty state and the pager: a pale grey line round paper, rounded 7px */
   #app .app-shell--comic-page :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card) {
@@ -859,6 +893,10 @@
   #app .app-shell--comic-page .xboard-page .tweet-icon-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
   #app .app-shell--comic-page .xboard-page .tweet-icon-btn:hover { background: var(--x-lime); color: var(--x-lime-ink); }
   #app .app-shell--comic-page .xboard-page .tweet-icon-btn:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 3px; }
+  /* a saved tweet's bookmark: filled lime in an ink line, ink-filled once the hover turns the face lime */
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved { color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved svg { fill: var(--x-lime); }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved:hover svg { fill: currentColor; }
   /* the score: a lime pill in ink, its fill in the image */
   #app .app-shell--comic-page .xboard-page .tweet-score {
     gap: 4px; height: 24px; margin-left: 0; padding: 0 9px 0 8px; border: 0 solid transparent; border-radius: 4px;

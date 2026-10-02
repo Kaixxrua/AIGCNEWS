@@ -18,7 +18,8 @@ import { i18n } from '@/i18n'
 
 const markdown = new MarkdownIt({ html: true, linkify: true, breaks: true })
 
-const sanitizeRenderedMarkdown = (html: string): string =>
+/** 渲染出的 HTML 上版前过一遍消毒；存在本机又拿出来上版的（简报收藏）也走这一道。 */
+export const sanitizeRenderedMarkdown = (html: string): string =>
   DOMPurify.sanitize(html, {
     ADD_ATTR: ['data-latex'],
     FORBID_TAGS: ['form', 'iframe', 'object', 'embed', 'svg'],

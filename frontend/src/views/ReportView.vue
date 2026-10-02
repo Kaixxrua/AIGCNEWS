@@ -3,9 +3,10 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import type { ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
+import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
+import ReportSavedPanel from '@/components/report/ReportSavedPanel.vue'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
 import { api } from '@/services/http/apiClient'
 import { getFeedToken, rotateFeedToken } from '@/services/auth/feedTokenApi'
@@ -15,12 +16,15 @@ import { useReportBarLayout } from '@/composables/useReportBarLayout'
 import { useReportController } from '@/composables/useReportController'
 import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
+import { useSavedItems } from '@/composables/useSavedItems'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { vSwap } from '@/motion/swap'
+import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBriefing'
 import {
   getReportTypeInfo,
   parseReportDateQuery,
+  type ReportKey,
   type ReportResponse,
   type SubscriptionListResponse,
   type SubscriptionPlan,
@@ -166,10 +170,38 @@ const {
 const userEmail = computed(() => authStore.user?.email ?? '')
 
 // 换了简报类型/日期后读到的新内容整块浮现；生成时的流式追加不算换内容。
+// 版面上是哪一期跟着内容换：改选之后、新一期读到之前，版面上还是上一期。
 const contentKey = ref(0)
+const shownIssue = ref({ type: selectedType.value, date: selectedDate.value })
 watch(reportContent, () => {
   if (!isGenerating.value) contentKey.value += 1
+  shownIssue.value = { type: selectedType.value, date: selectedDate.value }
 })
+
+// 本机收藏（只在桌面大报版）：条目底行的书签或按 s 收下，连同哪一期一起存在本机；分区标签最后多一枚「收藏」，
+// 切过去把收下的条目按期排成一份大报。换分区、改日期就回到简报。
+const savedBriefing = useSavedItems({ list: 'briefing', accept: isSavedBriefingItem })
+const briefingSaves: BroadsheetSaves = {
+  has: item => savedBriefing.has(briefingSaveId(shownIssue.value.type, shownIssue.value.date, item)),
+  toggle: (item, place) => {
+    const { type, date } = shownIssue.value
+    savedBriefing.toggle(briefingSaveId(type, date, item), { type, date, ...place, item })
+  },
+}
+const savedView = ref(false)
+watch(savedView, () => {
+  contentKey.value += 1
+  readingViewport.value?.scrollTo({ top: 0 })
+})
+watch(isDesktop, desktop => { if (!desktop) savedView.value = false })
+const pickType = (type: ReportKey) => {
+  selectedType.value = type
+  savedView.value = false
+}
+const pickDate = (date: string) => {
+  selectedDate.value = date
+  savedView.value = false
+}
 
 // 大报版式的阅读方式（全文 / 导读）记在本机，下次打开沿用；无痕窗口等存不了时只在本次有效。
 const READING_MODE_KEY = 'report_reading_mode'
@@ -196,8 +228,8 @@ watch(readingMode, mode => {
     <!-- ═══ 紧凑型操作面板：标题 + 源选择 + 周期 + 操作按钮 ═══ -->
     <div ref="controlsRef" class="stagger-enter glass-card comic-panel shrink-0 px-4 py-3 space-y-2" :class="[{ 'is-expanded': showSubscribePanel || showLoginPrompt }, controlsLayout && `is-${controlsLayout}`]">
       <ReportControlsPanel
-        v-model:selected-type="selectedType"
-        v-model:selected-date="selectedDate"
+        :selected-type="selectedType"
+        :selected-date="selectedDate"
         :current-type-info="currentTypeInfo"
         :is-cached="isCached"
         :is-generating="isGenerating"
@@ -213,7 +245,12 @@ watch(readingMode, mode => {
         :report-content="reportContent"
         :auto-scroll="autoScroll"
         :reading-mode="isDesktop ? readingMode : null"
+        :saved-count="isDesktop ? savedBriefing.count.value : null"
+        :saved-view="savedView"
+        @update:selected-type="pickType"
+        @update:selected-date="pickDate"
         @update:reading-mode="readingMode = $event"
+        @update:saved-view="savedView = $event"
         @toggle-subscribe="toggleSubscribe"
         @prompt-login-for-subscribe="promptLoginForSubscribe"
         @send-to-email="sendToEmail"
@@ -258,7 +295,9 @@ watch(readingMode, mode => {
 
     <!-- ═══ 内容阅读区（最大化空间） ═══ -->
     <div ref="reportRef" v-swap="{ key: contentKey, stagger: true }" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
+      <ReportSavedPanel v-if="savedView" :mode="readingMode" />
       <ReportContentPanel
+        v-else
         :report-content="reportContent"
         :is-generating="isGenerating"
         :current-type-label="currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : ''"
@@ -266,6 +305,7 @@ watch(readingMode, mode => {
         :render-markdown="renderMarkdown"
         :reading-mode="isDesktop ? readingMode : null"
         :content-key="contentKey"
+        :saves="isDesktop ? briefingSaves : null"
         @resume-auto-scroll="resumeAutoScroll"
       />
     </div>

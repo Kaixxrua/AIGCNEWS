@@ -60,3 +60,42 @@ describe('ReportControlsPanel subscription status', () => {
     expect(wrapper.text()).toContain('已缓存')
   })
 })
+
+describe('ReportControlsPanel saved tab', () => {
+  it('桌面给了收藏数就有「收藏」签，没收过也在（是 0），带着条数，点了要进收藏', async () => {
+    const wrapper = mount(ReportControlsPanel, {
+      props: props(),
+      global: { plugins: [i18n] },
+    })
+    expect(wrapper.find('.report-saved-tab').exists()).toBe(false)
+    await wrapper.setProps({ savedCount: 0 })
+    expect(wrapper.get('.report-saved-tab .report-saved-tab__count').text()).toBe('0')
+
+    await wrapper.setProps({ savedCount: 3 })
+    const tab = wrapper.get('.report-saved-tab')
+    expect(tab.text()).toContain('收藏')
+    expect(tab.get('.report-saved-tab__count').text()).toBe('3')
+    expect(tab.attributes('aria-pressed')).toBe('false')
+    expect(tab.classes()).not.toContain('tab-active')
+    await tab.trigger('click')
+    expect(wrapper.emitted('update:savedView')).toEqual([[true]])
+  })
+
+  it('在收藏里：标题换成收藏、只有收藏签亮着，缓存、发送与生成都收起；收空了是 0', async () => {
+    const wrapper = mount(ReportControlsPanel, {
+      props: props({ isAdmin: true, savedCount: 2, savedView: true }),
+      global: { plugins: [i18n] },
+    })
+    expect(wrapper.get('.report-controls__title').text()).toBe('收藏')
+    expect(wrapper.text()).toContain('2 条 · 只存在这个浏览器里')
+    expect(wrapper.findAll('.report-controls__tabs .tab-active')).toHaveLength(1)
+    expect(wrapper.get('.report-saved-tab').classes()).toContain('tab-active')
+    expect(wrapper.get('.report-saved-tab').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.text()).not.toContain('已缓存')
+    expect(wrapper.text()).not.toContain('发送简报')
+    expect(wrapper.text()).not.toContain('重新生成')
+
+    await wrapper.setProps({ savedCount: 0 })
+    expect(wrapper.get('.report-saved-tab__count').text()).toBe('0')
+  })
+})

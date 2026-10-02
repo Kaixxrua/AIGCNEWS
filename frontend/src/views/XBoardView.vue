@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeft, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
+import { ArrowLeft, Bookmark, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
 import FolioTools from '@/components/layout/FolioTools.vue'
+import SaveButton from '@/components/saved/SaveButton.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
@@ -13,10 +14,12 @@ import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
+import { useSavedItems } from '@/composables/useSavedItems'
 import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
 import { isTypingTarget, listKeyAction } from '@/features/keyboard/listKeys'
+import { isSavedTweet } from '@/features/saved/savedTweet'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import { fold, unfold } from '@/motion/fold'
@@ -49,22 +52,39 @@ const isToday = computed(() => selectedDate.value === today)
 // 左上角是最新一条。纯轮询不管卡高（纯文字 ~200px vs 多图 >1000px），
 // 列高失衡会在短列尾部留下大片空白；CSS columns 是列主序，两者都不用。
 const timelineDocs = computed(() => timelineTweets(visibleDocs.value))
-const totalTweets = computed(() => timelineDocs.value.length)
 const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
 
 // 桌面推文墙排得更紧：同账号折叠、多图排成一行胶片、可一键切纯文字；手机与平板照旧。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { textOnly, toggle: toggleTextOnly } = useTextOnly(desktop)
-// 报眉放不下完整的一组时先把纯文字与刷新收成图标（trim），再放不下才连关注账号也只留图标与人数（compact）
-const FOLIO_LEVELS = ['full', 'trim', 'compact'] as const
-const iconOnly = (level: string | null) => level === 'trim' || level === 'compact'
+// 报眉放不下完整的一组时先把纯文字与刷新收成图标（trim），再放不下才连关注账号也只留图标与人数（compact），
+// 还放不下（比如选了历史日期）就把窗口开关写短成「24 小时 / 日期」（tight），最后才回到页头
+const FOLIO_LEVELS = ['full', 'trim', 'compact', 'tight'] as const
+const iconOnly = (level: string | null) => level === 'trim' || level === 'compact' || level === 'tight'
+
+// 本机收藏（只在桌面）：点书签或按 s 收下推文，连内容一起存在本机。页头的窗口开关里多一段「收藏」，切过去看收下的推文：
+// 最近收的在前，不折叠、不变淡、不画「上次看到这里」。在收藏里取消的那条留到离开收藏再撤，点错了还能再收回来。
+const saved = useSavedItems({ list: 'x', accept: isSavedTweet })
+const savedCount = saved.count
+const savedView = ref(false)
+const savedDocs = shallowRef<TopDoc[]>([])
+const savedPage = ref(1)
+const isSaved = (tweet: TopDoc) => saved.has(tweetReadId(tweet))
+const toggleSave = (tweet: TopDoc) => { saved.toggle(tweetReadId(tweet), tweet) }
+// 推文墙上排的：平时是这个窗口的时间线，看收藏时是收下的推文
+const wallSource = computed(() => (savedView.value ? savedDocs.value : timelineDocs.value))
+const totalTweets = computed(() => wallSource.value.length)
+// 收藏里不折叠：门槛设成永远到不了
+const foldThreshold = computed(() => (savedView.value ? Number.POSITIVE_INFINITY : undefined))
+// 看收藏时不转圈、不淡下去：收藏就在本机，窗口那边在不在拉都不相干
+const wallLoading = computed(() => loading.value && !savedView.value)
 
 // 全天推文客户端分页：时间线排序与瀑布流分列仅在当前页内进行。手机与平板每页 20 条；
 // 桌面按卡位分页，每页排满 20 张卡，同账号折叠收起的不占卡位，页数随之变少。
-const wallPages = computed(() => (desktop.value ? paginateFoldedTweets(timelineDocs.value, pageSize) : null))
+const wallPages = computed(() => (desktop.value ? paginateFoldedTweets(wallSource.value, pageSize, foldThreshold.value) : null))
 const wallPageCount = computed(() => wallPages.value?.length ?? totalPages.value)
-const wallPage = computed(() => Math.min(currentPage.value, wallPageCount.value))
+const wallPage = computed(() => Math.min(savedView.value ? savedPage.value : currentPage.value, wallPageCount.value))
 const wallHasPrev = computed(() => wallPage.value > 1)
 const wallHasNext = computed(() => wallPage.value < wallPageCount.value)
 const pagedTimelineDocs = computed(() => (wallPages.value
@@ -76,7 +96,7 @@ const pagedTimelineDocs = computed(() => (wallPages.value
 const tweetKey = (tweet: TopDoc) => tweet.url || tweet.title || ''
 const expandedFolds = ref<Set<string>>(new Set())
 const foldedPage = computed(() => (desktop.value
-  ? foldTweetsByAccount(pagedTimelineDocs.value, tweetKey, expandedFolds.value)
+  ? foldTweetsByAccount(pagedTimelineDocs.value, tweetKey, expandedFolds.value, foldThreshold.value)
   : { visible: pagedTimelineDocs.value, folds: new Map<string, TweetFold>() }))
 const wallDocs = computed(() => foldedPage.value.visible)
 // 模板里按 v-for 取用：留下的那条有折叠行时给出一项，其余给空表
@@ -94,11 +114,11 @@ const toggleFold = (tweet: TopDoc) => toggleFoldOf(tweetKey(tweet))
 // 记录只存在本机浏览器。每次重新拉取（进来、刷新、换窗口）算新的一次，这之前看过的都算上回看过的。
 const readMarks = useReadMarks({ list: 'x', enabled: desktop })
 const vReadMark = readMarks.directive
-const isRead = (tweet: TopDoc) => readMarks.isRead(tweetReadId(tweet))
+const isRead = (tweet: TopDoc) => !savedView.value && readMarks.isRead(tweetReadId(tweet))
 watch(loading, (value) => { if (value) readMarks.snapshot() })
 const timelineIndex = computed(() => new Map(timelineDocs.value.map((doc, index) => [doc, index])))
 // 时间线上第一条上回就看过的推文；它前面的都是这之后新来的，也就是线上面的条数。
-const seenBoundary = computed(() => timelineDocs.value.findIndex((doc) => readMarks.seenBefore(tweetReadId(doc))))
+const seenBoundary = computed(() => (savedView.value ? -1 : timelineDocs.value.findIndex((doc) => readMarks.seenBefore(tweetReadId(doc)))))
 const wallSplit = computed(() => splitAtSeen(
   pagedTimelineDocs.value, foldedPage.value, seenBoundary.value, (doc) => timelineIndex.value.get(doc) ?? -1, tweetKey,
 ))
@@ -202,7 +222,8 @@ const measureMasonry = () => {
 }
 
 const onGoPage = (next: number) => {
-  goPage(next)
+  if (savedView.value) savedPage.value = Math.min(Math.max(next, 1), wallPageCount.value)
+  else goPage(next)
   scrollEl.value?.scrollTo({ top: 0 })
 }
 
@@ -244,11 +265,48 @@ const stampCheck = (event: Event) => {
 }
 const followDirection = ref<1 | -1>(1)
 watch(() => followedAccounts.value.length, (count, previous) => { followDirection.value = count < previous ? -1 : 1 }, { flush: 'sync' })
+const savedDirection = ref<1 | -1>(1)
+watch(savedCount, (count, previous) => { savedDirection.value = count < previous ? -1 : 1 }, { flush: 'sync' })
 // 分页摘要里只让页码滚动：按页码位置把译文切成前后两段。
 const pageSummaryParts = computed(() => {
-  const parts = t('xboard.pageSummary', { page: '\u0000', totalPages: wallPageCount.value, total: timelineDocs.value.length }).split('\u0000')
+  const parts = t('xboard.pageSummary', { page: '\u0000', totalPages: wallPageCount.value, total: wallSource.value.length }).split('\u0000')
   return parts.length === 2 ? parts : null
 })
+
+// 进出收藏：进来时把收下的推文照此刻拍一份上墙，从第一页看起，关注侧栏收起（收藏不按关注筛）；
+// 再点「收藏」或刷新按此刻重拍，刚取消的这才撤下。回到窗口时那边原样还在，窗口本来就是最近 24 小时的，点「最近」只是回来、不重拉。
+const enterSaved = () => {
+  savedDocs.value = saved.entries.value.map((entry) => entry.data)
+  if (!savedView.value) {
+    savedPage.value = 1
+    followPanelOpen.value = false
+    savedView.value = true
+    scrollEl.value?.scrollTo({ top: 0 })
+  }
+  wallEnterFrom.value = RISE
+}
+const leaveSaved = () => {
+  if (!savedView.value) return false
+  savedView.value = false
+  wallEnterFrom.value = RISE
+  scrollEl.value?.scrollTo({ top: 0 })
+  return true
+}
+const pickRecent = () => {
+  if (leaveSaved() && isToday.value) return
+  void showRecent()
+}
+const pickDate = (date: string) => {
+  leaveSaved()
+  onDateChange(date)
+}
+const refreshWall = () => {
+  if (savedView.value) enterSaved()
+  else void refresh()
+}
+// 窗口日期这一段亮不亮：看收藏时两段窗口都不亮
+const dateShown = computed(() => !isToday.value && !savedView.value)
+watch(desktop, (value) => { if (!value) leaveSaved() })
 
 // 发布时间：落库是 UTC ISO，展示换算成用户系统时区（不传 timeZone → 本地）。
 const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
@@ -329,6 +387,10 @@ const listKeys = useListKeys({
     const tweet = tweetOf(key)
     if (tweet) openDetail(tweet)
   },
+  save: (key) => {
+    const tweet = tweetOf(key)
+    if (tweet) toggleSave(tweet)
+  },
   toggle: (key) => {
     const head = foldHeadOf(key)
     if (head == null) return
@@ -376,7 +438,14 @@ const stepDetail = (direction: 1 | -1) => {
 const onDetailKeydown = (event: KeyboardEvent) => {
   if (!detailTweet.value || detailParent.value || lightboxUrl.value || !desktop.value) return
   const action = listKeyAction(event)
-  if ((action !== 'next' && action !== 'prev') || isTypingTarget(event.target)) return
+  if (isTypingTarget(event.target)) return
+  if (action === 'save') {
+    // 详情里按 s 收下正在看的这条
+    event.preventDefault()
+    toggleSave(detailTweet.value)
+    return
+  }
+  if (action !== 'next' && action !== 'prev') return
   event.preventDefault()
   stepDetail(action === 'next' ? 1 : -1)
 }
@@ -476,11 +545,11 @@ onBeforeUnmount(() => {
           <div class="xboard-header-actions flex flex-wrap items-center gap-2">
             <!-- 关注账号侧栏开关：收起时仍显示已关注数，筛选状态一眼可见 -->
             <button
-              v-if="availableAccounts.length"
+              v-if="availableAccounts.length && !savedView"
               type="button"
               class="btn-secondary xboard-follow-toggle"
               :class="{ 'xboard-mode-active': followPanelOpen }"
-              :title="level === 'compact' ? t('xboard.followAccounts') : undefined"
+              :title="level === 'compact' || level === 'tight' ? t('xboard.followAccounts') : undefined"
               :aria-expanded="followPanelOpen"
               aria-controls="xboard-follow-panel"
               @click="followPanelOpen = !followPanelOpen"
@@ -502,36 +571,52 @@ onBeforeUnmount(() => {
               <ImageOff class="h-3.5 w-3.5" />
               <span class="xboard-tool-label">{{ t('xboard.textOnly') }}</span>
             </button>
-            <!-- 最近 24 小时 / 窗口日期：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。 -->
+            <!-- 最近 24 小时 / 窗口日期 / 收藏：并排成一组开关，选中的一段高亮；换选时高亮滑过去（漫画版）或盖章式落定。
+                 收藏一段只在桌面有，一直在（收下第一条时报眉不用换档；没收过时点进去说怎么收），带着收了几条；
+                 除了报眉最宽的一档，都只留书签与条数，名字放在提示里。 -->
             <div v-indicator="{ active: '.xboard-window-active', pop: true }" class="xboard-window-switch">
               <button
                 class="btn-secondary xboard-recent text-xs"
-                :class="{ 'xboard-mode-active xboard-window-active': isToday }"
-                :aria-pressed="isToday"
-                @click="showRecent"
+                :class="{ 'xboard-mode-active xboard-window-active': isToday && !savedView }"
+                :aria-pressed="isToday && !savedView"
+                @click="pickRecent"
               >
-                {{ t('xboard.recent24h') }}
+                <span class="xboard-recent-long">{{ t('xboard.recent24h') }}</span>
+                <span class="xboard-recent-short" aria-hidden="true">{{ t('xboard.recent24hShort') }}</span>
               </button>
-              <label v-morph="isToday" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': !isToday }">
-                <span class="xboard-date-text">{{ t('xboard.dateLabel') }}</span>
+              <label v-morph="dateShown" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': dateShown }">
+                <span class="xboard-date-text"><span class="xboard-date-long">{{ t('xboard.dateLabel') }}</span><span class="xboard-date-short" aria-hidden="true">{{ t('xboard.dateLabelShort') }}</span></span>
                 <input
                   type="date"
                   class="input py-1.5 text-xs"
-                  :class="{ 'xboard-mode-active': !isToday }"
+                  :class="{ 'xboard-mode-active': dateShown }"
                   :value="selectedDate"
                   :max="today"
-                  @change="onDateChange(($event.target as HTMLInputElement).value)"
+                  @change="pickDate(($event.target as HTMLInputElement).value)"
                 />
               </label>
+              <button
+                v-if="desktop"
+                type="button"
+                class="btn-secondary xboard-saved text-xs"
+                :class="{ 'xboard-mode-active xboard-window-active': savedView }"
+                :aria-pressed="savedView"
+                :title="level === 'full' ? undefined : t('saved.title')"
+                @click="enterSaved"
+              >
+                <Bookmark class="h-3.5 w-3.5" />
+                <span class="xboard-tool-label">{{ t('saved.title') }}</span>
+                <span class="xboard-saved-count"><RollText :value="savedCount" :direction="savedDirection" /></span>
+              </button>
             </div>
             <button
               class="btn-secondary xboard-refresh"
-              :disabled="loading"
-              :title="iconOnly(level) ? t(loading ? 'common.refreshing' : 'common.refresh') : undefined"
-              @click="refresh"
+              :disabled="wallLoading"
+              :title="iconOnly(level) ? t(wallLoading ? 'common.refreshing' : 'common.refresh') : undefined"
+              @click="refreshWall"
             >
-              <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-              <span class="xboard-tool-label"><RollText :value="t(loading ? 'common.refreshing' : 'common.refresh')" :direction="loading ? 1 : -1" /></span>
+              <svg class="h-3.5 w-3.5" :class="wallLoading ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              <span class="xboard-tool-label"><RollText :value="t(wallLoading ? 'common.refreshing' : 'common.refresh')" :direction="wallLoading ? 1 : -1" /></span>
             </button>
           </div>
         </FolioTools>
@@ -589,7 +674,7 @@ onBeforeUnmount(() => {
 
         <div ref="mainEl" class="xboard-main">
           <!-- 管理员多选工具栏 -->
-          <div v-if="isAdmin" class="xboard-toolbar stagger-enter flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-2">
+          <div v-if="isAdmin && !savedView" class="xboard-toolbar stagger-enter flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-2">
             <div class="flex items-center gap-3 text-sm text-stone-600">
               <label class="flex cursor-pointer items-center gap-2">
                 <input
@@ -630,9 +715,13 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- 加载 / 空态 -->
-          <SpinnerLoader v-if="loading && !docs.length" class="min-h-[240px]" :label="t('xboard.loading')" />
-          <div v-else-if="!timelineDocs.length" class="xboard-notice glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
-            <template v-if="docs.length && followedAccounts.length === 0">
+          <SpinnerLoader v-if="wallLoading && !docs.length" class="min-h-[240px]" :label="t('xboard.loading')" />
+          <div v-else-if="!wallSource.length" class="xboard-notice glass-card flex min-h-[240px] flex-col items-center justify-center text-center text-sm text-stone-400">
+            <template v-if="savedView">
+              <p class="font-medium text-stone-500">{{ t('saved.emptyTitle') }}</p>
+              <p class="mt-1 text-xs">{{ t('saved.emptyXHint') }}</p>
+            </template>
+            <template v-else-if="docs.length && followedAccounts.length === 0">
               <p class="font-medium text-stone-500">{{ t('xboard.emptyFollowed') }}</p>
               <p class="mt-1 text-xs">{{ t('xboard.emptyFollowedHint') }}</p>
             </template>
@@ -649,7 +738,7 @@ onBeforeUnmount(() => {
             v-reflow="{ key: wallLayout, ...wallEnterFrom }"
             v-indicator="{ active: '.is-cursor', mark: 'after' }"
             class="masonry-grid"
-            :class="{ 'masonry-grid--stale': wallStale }"
+            :class="{ 'masonry-grid--stale': wallStale && !savedView }"
           >
             <template v-for="block in masonryBlocks" :key="block.key">
               <!-- 上次看到这里：线上面是上回之后新来的，线横跨整面墙 -->
@@ -691,7 +780,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="tweet-head flex flex-wrap items-center gap-2 px-4 py-3">
                     <input
-                      v-if="isAdmin && tweet.id"
+                      v-if="isAdmin && !savedView && tweet.id"
                       type="checkbox"
                       class="h-4 w-4 shrink-0"
                       :checked="isSelected(tweet)"
@@ -715,6 +804,7 @@ onBeforeUnmount(() => {
                     >{{ authorDisplayName(tweet) }}</a>
                     <span v-else class="tweet-handle truncate px-1 text-xs">{{ authorDisplayName(tweet) || t('xboard.unknownHandle') }}</span>
                     <span class="tweet-actions ml-auto flex shrink-0 items-center gap-1.5">
+                      <SaveButton v-if="desktop" class="tweet-icon-btn" :saved="isSaved(tweet)" @toggle="toggleSave(tweet)" />
                       <button
                         type="button"
                         class="tweet-icon-btn"
@@ -851,14 +941,14 @@ onBeforeUnmount(() => {
             </button>
             <span class="text-xs text-stone-500">
               <template v-if="pageSummaryParts">{{ pageSummaryParts[0] }}<RollText :value="wallPage" :direction="pageDirection" />{{ pageSummaryParts[1] }}</template>
-              <template v-else>{{ t('xboard.pageSummary', { page: wallPage, totalPages: wallPageCount, total: timelineDocs.length }) }}</template>
+              <template v-else>{{ t('xboard.pageSummary', { page: wallPage, totalPages: wallPageCount, total: wallSource.length }) }}</template>
             </span>
             <button class="btn-secondary text-xs" :disabled="!wallHasNext" @click="onGoPage(wallPage + 1)">
               {{ t('common.next') }}
             </button>
           </div>
 
-          <p v-if="timelineDocs.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t('xboard.tweets', { count: totalTweets }) }}</p>
+          <p v-if="wallSource.length" class="shrink-0 text-center text-2xs text-stone-300">{{ t(savedView ? 'saved.xFooter' : 'xboard.tweets', { count: totalTweets }) }}</p>
         </div>
       </div>
     </div>
@@ -967,6 +1057,14 @@ onBeforeUnmount(() => {
 
           <div class="detail-foot flex flex-wrap items-center gap-3 px-5 py-3">
             <span v-if="formatTime(detailTweet)" class="tweet-time text-2xs">{{ formatTime(detailTweet) }}</span>
+            <!-- 收藏正在看的这条（下钻看被引推文时不收：那是引用里的一截，不是整条推文） -->
+            <SaveButton
+              v-if="desktop && !detailParent"
+              class="btn-secondary detail-save ml-auto inline-flex items-center gap-1.5 text-xs"
+              label
+              :saved="isSaved(detailTweet)"
+              @toggle="toggleSave(detailTweet)"
+            />
             <a
               class="btn-primary detail-jump ml-auto inline-flex items-center gap-1.5 text-xs"
               :href="detailTweet.url"
@@ -1011,7 +1109,7 @@ onBeforeUnmount(() => {
     <ListKeysSheet
       v-if="desktop"
       v-model:open="keysHelp"
-      :actions="{ open: t('listKeys.tweetOpen'), toggle: t('listKeys.tweetToggle') }"
+      :actions="{ open: t('listKeys.tweetOpen'), save: t('listKeys.save'), toggle: savedView ? undefined : t('listKeys.tweetToggle') }"
       :extra="[{ keys: ['j', 'k'], label: t('listKeys.tweetDetail') }]"
     />
   </div>
@@ -1107,6 +1205,12 @@ onBeforeUnmount(() => {
 
 .xboard-window-switch::before {
   content: none;
+}
+
+/* 「24 小时」「日期」只在报眉最紧的一档（tight）替「最近 24 小时」「窗口日期」露面，其余时候不画；读屏始终读全名。 */
+.xboard-recent-short,
+.xboard-date-short {
+  display: none;
 }
 
 /* 空态与错误提示出现时浮上来。 */
@@ -1422,6 +1526,18 @@ a.tweet-link:hover {
 
 .detail-jump {
   text-decoration: none;
+}
+
+/* 收藏钮在前时由它推到右边，查看原帖紧挨着它 */
+.detail-save + .detail-jump {
+  margin-left: 0;
+}
+
+/* 收下了：酸绿底，与主按钮悬停同一配色 */
+.detail-save.is-saved,
+.detail-save.is-saved:hover:not(:disabled) {
+  background: var(--acid);
+  color: var(--acid-ink);
 }
 
 /* ═══ 图片放大预览：墨色遮罩 + 硬边图框，对齐卡片配方 ═══ */
