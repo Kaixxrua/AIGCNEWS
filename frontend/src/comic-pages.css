@@ -1015,14 +1015,14 @@
   /* Purpose index: a thin slate box, 12px round; the chosen purpose a pale row with the lime bar on the box edge. */
   /* The body dissolves into the page grid: the index spans both rows, the works sit under the command bar. */
   #app .app-shell--comic-page .ui-library__body { display: contents; }
-  /* The routed view is the shell less its masthead and 74px footer; the panel starts 12px into the view, level with
-     the command bar, and keeps 12px clear above the footer. Sticky insets count from inside the view's 12px padding,
-     so top 0 holds it there while the works scroll. */
+  /* The routed view is the shell less its masthead and footer (--shell-foot); the panel starts 12px into the view,
+     level with the command bar, and keeps 12px clear above the footer. Sticky insets count from inside the view's
+     12px padding, so top 0 holds it there while the works scroll. */
   /* The drawn frame (ul-side: a pale top line darkening down both sides to a black foot, teal specks in the lower
      left, a soft grey step) is the scroller's own border-image, so it stays put while the list scrolls. */
   #app .app-shell--comic-page .ui-library__sidebar {
     grid-column: 1; grid-row: 1 / span 2;
-    top: 0; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - 74px - 24px); padding: 13.5px 11.5px 21px 1.5px;
+    top: 0; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - var(--shell-foot, 74px) - 24px); padding: 13.5px 11.5px 21px 1.5px;
     border: 0 solid transparent; border-radius: 12px;
     border-image: var(--ul-f-side) 51 54 87 207 / 17px 18px 29px 69px / 2px 3px 7px 3px stretch;
     background: var(--ul-paper); box-shadow: none;
@@ -1805,7 +1805,7 @@
   #app .app-shell--comic-page .legal-toc > * { position: relative; }
   /* The list rides along while the text scrolls past (the panel itself stretches to the text's height). */
   #app .app-shell--comic-page .legal-toc ol {
-    position: sticky; top: 12px; display: grid; gap: 3.5px; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - 74px); overflow-y: auto; margin: 0; padding: 0; list-style: none;
+    position: sticky; top: 12px; display: grid; gap: 3.5px; max-height: calc(100dvh / var(--shell-zoom, 1) - var(--masthead-h) - var(--shell-foot, 74px)); overflow-y: auto; margin: 0; padding: 0; list-style: none;
   }
   #app .app-shell--comic-page .legal-toc__title {
     display: inline-flex; align-items: center; gap: 6px; margin: 0 0 6px -11.5px; padding-left: 14px; color: var(--legal-ink); font-size: 15px; font-style: normal; font-weight: 800; line-height: 1.6;

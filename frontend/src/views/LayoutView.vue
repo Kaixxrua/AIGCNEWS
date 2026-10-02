@@ -31,6 +31,7 @@ import { FOLIO_TOOLS_AVAILABLE, FOLIO_TOOLS_TARGET_ID } from '@/features/navigat
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
+import { useReadingMode } from '@/composables/useReadingMode'
 import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -121,13 +122,26 @@ watch([viewKey, () => route.fullPath], (next, previous) => {
   })
 }, { flush: 'pre', immediate: true })
 
+// 读报态：桌面内页往下读时 dock 和页脚滑出屏幕，画板一直伸到底边，只留一条荧光拉手；换页时先回来。
+const readingEnabled = computed(() => folioPage.value && isDesktop.value && !dockSuppressed.value)
+const { hidden: readingHidden, reveal: revealChrome } = useReadingMode({ enabled: readingEnabled, scope: appContent })
+watch(viewKey, revealChrome)
+const pullChromeBack = (event: MouseEvent) => {
+  revealChrome()
+  // 用键盘按的拉手：焦点交给 dock 上的当前栏目，接着按 Tab 就在导航里走。
+  if (event.detail === 0) {
+    const dock = document.querySelector<HTMLElement>('.dock [aria-current="page"]') ?? document.querySelector<HTMLElement>('.dock a')
+    dock?.focus({ preventScroll: true })
+  }
+}
+
 /** 品牌名称 — 从 Vite 环境变量读取，回退默认值 */
 const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 </script>
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage }" :style="shellStyle">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage, 'app-shell--reading': readingHidden }" :style="shellStyle">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -215,6 +229,9 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <AccountSettingsDialog v-model="accountSettingsOpen" />
 
     <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" />
+
+    <!-- 读报态的拉手：dock 收起后才露出来，点它（或往上滚、鼠标碰底边、按 Esc）dock 就回来 -->
+    <button v-if="readingEnabled" type="button" class="reading-handle" :aria-label="$t('navigation.showDock')" :title="$t('navigation.showDock')" @click="pullChromeBack"></button>
 
   </div>
 </template>

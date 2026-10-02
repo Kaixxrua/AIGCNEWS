@@ -94,7 +94,7 @@
 @media (min-width: 1024px) {
   /* One dock width on every page (the comic pages' concept), so it holds still as the dock switches pages. */
   #app .app-shell { --home-dock-width: min(860px, 61vw); }
-  #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - 74px); }
+  #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - var(--shell-foot, 74px)); }
   #app .app-shell--editorial .main-canvas--editorial > .app-content { padding: 110px 12px 0; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead {
     height: 110px;
@@ -283,7 +283,7 @@
 }
 
 /* The masthead's height, for page geometry that measures the view from the viewport (the view is the shell less
-   the masthead and the 74px footer). */
+   the masthead and the footer's --shell-foot: 74px, 6px in reading mode). */
 #app .app-shell--editorial { --masthead-h: 110px; }
 /* Inside pages (LayoutView .app-shell--folio: every comic page but the contact scene) carry a one-line folio, as a
    paper's inside pages run a slim head under the front page's nameplate: the small wordmark, the page's section,
@@ -319,5 +319,44 @@
 #app .app-shell--folio .app-masthead .masthead-user { grid-column: 6; grid-row: 1; width: auto; max-width: 180px; gap: 8px; margin-left: 14px; padding: 4px 0 4px 14px; }
 #app .app-shell--folio .masthead-user .user-avatar { width: 30px; height: 30px; }
 #app .app-shell--folio .masthead-user__identity { display: none; }
+
+/* Reading mode (LayoutView .app-shell--reading, useReadingMode): reading down an inside page, the dock and the footer
+   slide off the screen and the frame runs on to the screen's foot but for a 6px lime pull in the middle; scrolling
+   back up, touching the bottom edge, Escape or the pull bring them back. The frame's height is layout, so it changes
+   at once; the dock and the footer slide over it on the compositor, out on ease-in and back on the spring, the footer
+   far enough to take the peel's crest along. With no dock under it the rule runs straight, and the pull hangs from
+   it in the rule's ink. */
+#app .app-shell--folio { --shell-foot: 74px; }
+#app .app-shell--folio.app-shell--reading { --shell-foot: 6px; }
+#app .app-shell--folio .dock,
+#app .app-shell--folio .dock-footer--editorial { transition: translate var(--motion-base) var(--motion-spring); }
+#app .app-shell--folio.app-shell--reading .dock { translate: 0 calc(100% + 16px); }
+#app .app-shell--folio.app-shell--reading .dock-footer--editorial { translate: 0 calc(max(100%, var(--peel, 0px) * .65) + 8px); }
+#app .app-shell--folio.app-shell--reading :is(.dock, .dock-footer--editorial) { transition: translate 200ms var(--motion-ease-in); }
+#app .app-shell--folio.app-shell--reading .comic-footer-rule :is(.comic-footer-rule__step, .comic-footer-rule__bay) { display: none; }
+#app .app-shell--folio .reading-handle {
+  position: fixed; left: 50%; bottom: 0; z-index: 100; width: 160px; height: 16px; margin: 0 0 0 -80px; padding: 0;
+  border: 0; background: transparent; cursor: pointer; visibility: hidden; opacity: 0; translate: 0 6px;
+  transition: opacity var(--motion-fast) linear, translate var(--motion-fast) var(--motion-ease-in), visibility 0s linear var(--motion-fast);
+}
+#app .app-shell--folio .reading-handle::before {
+  content: ''; position: absolute; left: 20px; right: 20px; bottom: 0; height: 6px; border-radius: 4px 4px 0 0;
+  background: var(--acid); box-shadow: inset 0 0 0 1.5px var(--rule-strong); transform-origin: 50% 100%;
+  transition: scale var(--motion-fast) var(--motion-ease-out);
+}
+#app .app-shell--folio.app-shell--reading .reading-handle {
+  visibility: visible; opacity: 1; translate: none;
+  transition: opacity var(--motion-fast) linear 120ms, translate var(--motion-base) var(--motion-spring) 120ms, visibility 0s;
+}
+#app .app-shell--folio .reading-handle:hover::before,
+#app .app-shell--folio .reading-handle:focus-visible::before { scale: 1.06 1.67; }
+#app .app-shell--folio .reading-handle:focus-visible { outline: none; }
+#app .app-shell--folio .reading-handle:focus-visible::before {
+  box-shadow: inset 0 0 0 1.5px var(--rule-strong), 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  #app .app-shell--folio :is(.dock, .dock-footer--editorial, .reading-handle),
+  #app .app-shell--folio .reading-handle::before { transition: none; }
+}
 
 }
