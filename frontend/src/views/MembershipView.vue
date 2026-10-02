@@ -9,6 +9,7 @@ import { paymentApi } from '@/services/payments/paymentApi'
 import RollText from '@/motion/RollText.vue'
 import { vMorph } from '@/motion/morph'
 import { popIn, popOut } from '@/motion/presence'
+import { vSwap } from '@/motion/swap'
 import {
   FALLBACK_MEMBER_MONTHLY_CENTS,
   FALLBACK_MEMBER_MONTHLY_USD_CENTS,
@@ -23,6 +24,7 @@ import {
 import type { PaymentPlan } from '@/features/payments/paymentModel'
 import { COMPARE_ROWS } from '@/features/membership/membershipCompare'
 import TierCompareList from '@/components/membership/TierCompareList.vue'
+import { useAppDensity } from '@/composables/useAppDensity'
 
 defineOptions({ name: 'MembershipView' })
 
@@ -36,7 +38,7 @@ defineOptions({ name: 'MembershipView' })
  * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因）；
  * 公共简报与 RSS 免费；个人追踪为 free 1 条、vip 10 条规则。
  * 桌面（≥1024px）三张卡排成一张对比表：左列是行名，三档的权益逐行对齐（行与格见 features/membership/membershipCompare），
- * 开通按钮挪到价格下面；手机与平板仍是三张卡、各列各的权益。
+ * 开通按钮挪到价格下面；手机与平板仍是三张卡、各列各的权益，报眉的版面密度选了舒适时桌面也是三张卡。
  */
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -45,8 +47,10 @@ const { contactPageConfig } = useContactPageConfig()
 const isMember = computed(() => authStore.isMember)
 
 const desktop = useMediaQuery('(min-width: 1024px)')
+const { comfortable } = useAppDensity()
+const compare = computed(() => desktop.value && !comfortable.value)
 // 对比表的行数交给样式排网格：行名列和三档的格子都按这个数分行。
-const compareStyle = computed(() => (desktop.value ? { '--compare-rows': String(COMPARE_ROWS.length) } : undefined))
+const compareStyle = computed(() => (compare.value ? { '--compare-rows': String(COMPARE_ROWS.length) } : undefined))
 
 /** 计费周期切换：默认月付，按钮在项目库配方（右侧、描边小按钮）里切到年付 */
 const billingPeriod = ref<'monthly' | 'yearly'>('monthly')
@@ -160,15 +164,16 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
 
 <template>
   <div class="membership-page">
-    <div class="membership-card" :class="{ 'membership-card--compare': desktop }" :style="compareStyle">
+    <div class="membership-card" :class="{ 'membership-card--compare': compare }" :style="compareStyle">
       <header class="stagger-enter membership-hero">
         <h1 class="membership-title comic-title">{{ t('membership.title') }}</h1>
         <p class="membership-subtitle">{{ t('membership.subtitle') }}</p>
       </header>
 
-      <section class="stagger-enter tier-grid" style="animation-delay: 0.05s">
+      <!-- 报眉换成舒适、对比表散回三张卡时三档依次浮现；换成对比表时各列自带弹入（cardPopIn），这里不再叠一层 -->
+      <section v-swap="{ key: compare ? null : 'cards', stagger: true }" class="stagger-enter tier-grid" style="animation-delay: 0.05s">
         <!-- 桌面对比表左侧的行名：读屏从每格开头的隐藏行名读，这一列只给眼睛看。 -->
-        <div v-if="desktop" class="tier-rows" aria-hidden="true">
+        <div v-if="compare" class="tier-rows" aria-hidden="true">
           <span v-for="row in COMPARE_ROWS" :key="row.key" class="tier-row-label">{{ t(`membership.compare.rows.${row.key}`) }}</span>
         </div>
         <article class="glass-card tier-card">
@@ -177,7 +182,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             <span class="tier-price-amount">{{ t('membership.guest.price') }}</span>
           </p>
           <hr class="tier-divider" />
-          <TierCompareList v-if="desktop" tier="guest" />
+          <TierCompareList v-if="compare" tier="guest" />
           <ul v-else class="tier-features">
             <li
               v-for="feature in GUEST_FEATURES"
@@ -204,7 +209,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             <span class="tier-price-amount">{{ t('membership.free.price') }}</span>
           </p>
           <hr class="tier-divider" />
-          <TierCompareList v-if="desktop" tier="free" />
+          <TierCompareList v-if="compare" tier="free" />
           <ul v-else class="tier-features">
             <li
               v-for="feature in FREE_FEATURES"
@@ -259,7 +264,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
           </p>
           <hr class="tier-divider" />
-          <TierCompareList v-if="desktop" tier="member" />
+          <TierCompareList v-if="compare" tier="member" />
           <ul v-else class="tier-features">
             <li
               v-for="feature in MEMBER_FEATURES"

@@ -1,7 +1,9 @@
 import { mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { messages } from '@/i18n'
+import { setAppDensity } from '@/composables/useAppDensity'
 import MembershipView from './MembershipView.vue'
 
 // 桌面（≥1024px）三张卡排成一张对比表，手机与平板仍是三张卡；jsdom 没有 matchMedia，按标志切换。
@@ -50,6 +52,8 @@ beforeEach(() => {
 
 afterEach(() => {
   while (mounted.length) mounted.pop()?.unmount()
+  setAppDensity('compact')
+  localStorage.clear()
 })
 
 describe('MembershipView desktop comparison', () => {
@@ -97,6 +101,22 @@ describe('MembershipView desktop comparison', () => {
     const memberView = mountView()
     expect(memberView.find('.tier-cta').exists()).toBe(false)
     expect(memberView.get('.tier-member-note').text()).toBe('感谢支持！vip 权益已生效。')
+  })
+
+  it('goes back to the three plan cards on the desktop when the masthead asks for the comfortable layout', async () => {
+    setAppDensity('comfortable')
+    const wrapper = mountView()
+    expect(wrapper.get('.membership-card').classes()).not.toContain('membership-card--compare')
+    expect(wrapper.get('.membership-card').attributes('style')).toBeUndefined()
+    expect(wrapper.find('.tier-rows').exists()).toBe(false)
+    expect(wrapper.find('.tier-features--compare').exists()).toBe(false)
+    expect(wrapper.findAll('.tier-card')[0]?.findAll('.tier-features li')).toHaveLength(5)
+
+    setAppDensity('compact')
+    await nextTick()
+    expect(wrapper.get('.membership-card').classes()).toContain('membership-card--compare')
+    expect(wrapper.find('.tier-rows').exists()).toBe(true)
+    for (const tier of [0, 1, 2]) expect(column(wrapper, tier)).toHaveLength(ROW_NAMES.length)
   })
 
   it('keeps phones and tablets on the three plan cards', () => {

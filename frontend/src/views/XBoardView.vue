@@ -15,6 +15,7 @@ import { useDockSuppression } from '@/composables/useDockSuppression'
 import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
 import { useSavedItems } from '@/composables/useSavedItems'
+import { useAppDensity } from '@/composables/useAppDensity'
 import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
@@ -55,9 +56,12 @@ const timelineDocs = computed(() => timelineTweets(visibleDocs.value))
 const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
 
-// 桌面推文墙排得更紧：同账号折叠、多图排成一行胶片、可一键切纯文字；手机与平板照旧。
+// 桌面推文墙排得更紧：同账号折叠、多图排成一行胶片、正文与配图限高、可一键切纯文字；手机与平板照旧，
+// 报眉的版面密度选了舒适时桌面也照旧（已读淡化、收藏与键盘流不分版面）。
 const desktop = useMediaQuery('(min-width: 1024px)')
-const { textOnly, toggle: toggleTextOnly } = useTextOnly(desktop)
+const { comfortable } = useAppDensity()
+const dense = computed(() => desktop.value && !comfortable.value)
+const { textOnly, toggle: toggleTextOnly } = useTextOnly(dense)
 // 报眉放不下完整的一组时先把纯文字与刷新收成图标（trim），再放不下才连关注账号也只留图标与人数（compact），
 // 还放不下（比如选了历史日期）就把窗口开关写短成「24 小时 / 日期」（tight），最后才回到页头
 const FOLIO_LEVELS = ['full', 'trim', 'compact', 'tight'] as const
@@ -75,8 +79,8 @@ const toggleSave = (tweet: TopDoc) => { saved.toggle(tweetReadId(tweet), tweet) 
 // 推文墙上排的：平时是这个窗口的时间线，看收藏时是收下的推文
 const wallSource = computed(() => (savedView.value ? savedDocs.value : timelineDocs.value))
 const totalTweets = computed(() => wallSource.value.length)
-// 收藏里不折叠：门槛设成永远到不了
-const foldThreshold = computed(() => (savedView.value ? Number.POSITIVE_INFINITY : undefined))
+// 收藏里和舒适版面不折叠：门槛设成永远到不了（分页也就回到每页 20 条）
+const foldThreshold = computed(() => (savedView.value || !dense.value ? Number.POSITIVE_INFINITY : undefined))
 // 看收藏时不转圈、不淡下去：收藏就在本机，窗口那边在不在拉都不相干
 const wallLoading = computed(() => loading.value && !savedView.value)
 
@@ -131,7 +135,7 @@ const clampedTweets = ref<ReadonlySet<string>>(new Set())
 const isClamped = (tweet: TopDoc) => clampedTweets.value.has(tweetKey(tweet))
 const measureClamps = () => {
   const next = new Set<string>()
-  if (desktop.value) {
+  if (dense.value) {
     for (const text of wallEl.value?.querySelectorAll<HTMLElement>('.tweet-text, .tweet-quote-text') ?? []) {
       const key = text.closest<HTMLElement>('[data-reflow-key]')?.dataset.reflowKey
       if (key && text.scrollHeight > text.clientHeight + 1) next.add(key)
@@ -149,13 +153,14 @@ const somePageSelected = computed(() => !allPageSelected.value && pageIds.value.
 // 关注账号收在侧栏里，默认收起：页头按钮展开/收起，推文墙优先占满版面。
 const followPanelOpen = ref(false)
 
-// 宽屏多排几列，列宽保持在 340 到 400px 上下：配图限高后列太宽只会把图裁成细长条
-const computeColumnCount = () => {
-  const width = window.innerWidth
-  return width >= 2200 ? 6 : width >= 1800 ? 5 : width >= 1280 ? 4 : width >= 1024 ? 3 : width >= 768 ? 2 : 1
+// 宽屏多排几列，列宽保持在 340 到 400px 上下：配图限高后列太宽只会把图裁成细长条。舒适版面配图不限高，最多 4 列。
+const computeColumnCount = (width: number, packed: boolean) => {
+  const count = width >= 2200 ? 6 : width >= 1800 ? 5 : width >= 1280 ? 4 : width >= 1024 ? 3 : width >= 768 ? 2 : 1
+  return packed ? count : Math.min(count, 4)
 }
-const viewportColumnCount = ref(computeColumnCount())
-const updateColumnCount = () => { viewportColumnCount.value = computeColumnCount() }
+const viewportWidth = ref(window.innerWidth)
+const viewportColumnCount = computed(() => computeColumnCount(viewportWidth.value, dense.value))
+const updateColumnCount = () => { viewportWidth.value = window.innerWidth }
 // 桌面端侧栏展开会占去一列的宽度：三列及以上时少排一列，列宽保持可读。
 // 窄屏侧栏叠在推文墙上方，不影响列数。
 const columnCount = computed(() =>
@@ -170,7 +175,7 @@ const masonryGap = ref(MASONRY_GAP_PX)
 const tweetTextMetrics = ref<TweetTextMetrics | undefined>()
 const compactMetrics = ref<Omit<TweetCardLayout, 'textOnly'> | undefined>()
 const cardLayout = computed<TweetCardLayout | undefined>(() => (
-  compactMetrics.value ? { ...compactMetrics.value, textOnly: textOnly.value } : undefined
+  dense.value && compactMetrics.value ? { ...compactMetrics.value, textOnly: textOnly.value } : undefined
 ))
 let mainResizeObserver: ResizeObserver | null = null
 const masonryColumnWidth = computed(() => {
@@ -197,6 +202,7 @@ const mainEl = ref<HTMLElement | null>(null)
 // 声明在主栏上，估高按实际排版折行；未声明时回落默认 text-sm leading-5。
 // 列间距同理经 --masonry-gap 声明（瀑布流网格也读它），未声明时 16px。
 // 紧凑排版（正文与引用限行、配图限高）也声明在那里，以 --tweet-media-max 为准：没声明就按完整排版估高。
+// 舒适版面照样声明（样式在外壳的 app-shell--comfortable 下解除限行限高），估高按 dense 选用，换档不用重量。
 const measureMasonry = () => {
   const el = mainEl.value
   if (!el) return
@@ -229,18 +235,19 @@ const onGoPage = (next: number) => {
 
 // ── 切换动效 ──
 // 推文墙的排布：每列依次是哪几条。换了一批（换窗口、刷新、翻页、改关注）、列数变了（开合侧栏）或折叠展开时随之变化，
-// 推文墙据此逐条过渡：留下的滑到新位置，新来的由左上角起依次浮现，离开的原地淡出。切纯文字时各条一齐变矮变高，
-// 也算换了排布，留下的随之滑到新位置。
+// 推文墙据此逐条过渡：留下的滑到新位置，新来的由左上角起依次浮现，离开的原地淡出。切纯文字或换版面密度时各条一齐
+// 变矮变高，也算换了排布，留下的随之滑到新位置。
 const wallLayout = computed(() => [
   textOnly.value ? 'text' : 'media',
+  dense.value ? 'dense' : 'roomy',
   ...masonryBlocks.value.flatMap((block) => [block.key, ...block.columns.map((column) => column.map(tweetKey).join(' '))]),
 ].join('|'))
 // 新推文从哪边浮现：翻页时从翻去的一侧进来，换窗口、刷新、改关注、折叠展开自下而上；分页摘要里的页码随之上下滚动。
 const RISE = { x: 0, y: 14 }
 const wallEnterFrom = ref(RISE)
 const pageDirection = ref<1 | -1>(1)
-watch([docs, unfollowedAccounts, expandedFolds, textOnly], () => { wallEnterFrom.value = RISE }, { flush: 'sync' })
-watch([wallLayout, locale, desktop], measureClamps, { flush: 'post' })
+watch([docs, unfollowedAccounts, expandedFolds, textOnly, dense], () => { wallEnterFrom.value = RISE }, { flush: 'sync' })
+watch([wallLayout, locale, dense], measureClamps, { flush: 'post' })
 watch(wallPage, (page, previous) => {
   const step = Math.sign(page - previous)
   wallEnterFrom.value = { x: step * 18, y: 0 }
@@ -558,9 +565,9 @@ onBeforeUnmount(() => {
               <span class="xboard-tool-label">{{ t('xboard.followAccounts') }}</span>
               <span class="xboard-follow-count"><RollText :value="followedAccounts.length" :direction="followDirection" />/{{ availableAccounts.length }}</span>
             </button>
-            <!-- 纯文字：一键收起所有配图与链接卡，只读字（桌面推文墙；选择记在本机） -->
+            <!-- 纯文字：一键收起所有配图与链接卡，只读字（桌面紧凑版面；选择记在本机） -->
             <button
-              v-if="desktop"
+              v-if="dense"
               type="button"
               class="btn-secondary xboard-text-only"
               :class="{ 'xboard-mode-active': textOnly }"
@@ -830,12 +837,12 @@ onBeforeUnmount(() => {
                   </div>
 
                   <!-- 媒体区：照片点开 lightbox、视频点击播放（与详情浮层同一子组件渲染）；
-                       桌面多图排成一行胶片，纯文字时收起 -->
+                       桌面紧凑版面多图排成一行胶片，纯文字时收起 -->
                   <TweetMediaList
                     v-if="hasMedia(tweet) && !textOnly"
                     :tweet="tweet"
                     :playing-media="playingMedia"
-                    :filmstrip="desktop"
+                    :filmstrip="dense"
                     @preview="openLightbox"
                     @play="playVideo"
                     @expand="openDetail(tweet)"
@@ -851,7 +858,7 @@ onBeforeUnmount(() => {
                       @click="openDetail(tweet)"
                       @keydown.enter="openDetail(tweet)"
                     >
-                      <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale, desktop)" :key="segIndex">
+                      <template v-for="(seg, segIndex) in tweetTextSegments(tweet, locale, dense)" :key="segIndex">
                         <a
                           v-if="seg.isUrl"
                           :href="seg.text"
@@ -881,7 +888,7 @@ onBeforeUnmount(() => {
                       v-if="hasQuote(tweet)"
                       :quote="tweetQuote(tweet)!"
                       context="wall"
-                      :compact="desktop"
+                      :compact="dense"
                       :text-only="textOnly"
                       @activate="openDetail(tweet)"
                     />
@@ -890,7 +897,7 @@ onBeforeUnmount(() => {
                       v-if="hasLinkCard(tweet) && !textOnly"
                       :card="tweetLinkCard(tweet)!"
                       context="wall"
-                      :compact="desktop"
+                      :compact="dense"
                     />
                     <p v-if="formatTime(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
                       {{ formatTime(tweet) }}

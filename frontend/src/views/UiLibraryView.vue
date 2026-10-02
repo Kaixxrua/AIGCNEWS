@@ -10,6 +10,7 @@ import UiIconCard from '@/features/ui-library/UiIconCard.vue'
 import UiIconDialog from '@/features/ui-library/UiIconDialog.vue'
 import UiMcpRecommendation from '@/features/ui-library/UiMcpRecommendation.vue'
 import { useLibraryDensity } from '@/features/ui-library/useLibraryDensity'
+import { useAppDensity } from '@/composables/useAppDensity'
 import { loadCatalogWithMeta, loadIconSets, recentlyAdded, searchIcons, searchTemplates, type UiIcon, type UiIconSet, type UiLanguage, type UiTemplate } from '@/features/ui-library/catalog'
 import { uiLibraryMessages } from '@/features/ui-library/messages'
 import '@/features/ui-library/library.css'
@@ -73,8 +74,10 @@ const ranking = computed<Ranking>(() => ['new', 'daily', 'weekly', 'monthly', 'l
 // 联系表只在桌面生效：一排更多、只看静态缩略图（几十个预览不同时解码，点开详情再播放）。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { density, contactSheet, toggle: toggleDensity } = useLibraryDensity(desktop)
-// 换了素材类型、用途、风格、榜单、图标集或切换联系表时，结果网格整批依次浮现；搜索框逐字输入不重播。
-const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value, density.value].join('|'))
+// 报眉的版面密度选了舒适时，桌面卡片墙回到改版前的大卡片（标题换行、复制按钮常显）；联系表不受影响。
+const { comfortable: roomyCards } = useAppDensity()
+// 换了素材类型、用途、风格、榜单、图标集、切换联系表或版面密度时，结果网格整批依次浮现；搜索框逐字输入不重播。
+const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value, density.value, density.value === 'cards' && roomyCards.value ? 'roomy' : ''].join('|'))
 const account = provideUiLibraryAccount(lang, ranking, async () => { if (selected.value) await close(); selectedIcon.value = null })
 const rankOptions = computed<[Ranking, string][]>(() => lang.value === 'zh' ? [['all', '全部'], ['new', '今日新增'], ['daily', '今日热榜'], ['weekly', '周榜'], ['monthly', '月榜'], ['liked', '我的喜欢']] : [['all', 'All'], ['new', 'New today'], ['daily', 'Today'], ['weekly', 'Week'], ['monthly', 'Month'], ['liked', 'Liked']])
 const filtered = computed(() => {

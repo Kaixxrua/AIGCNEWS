@@ -19,6 +19,7 @@ import { useReportPeek } from '@/composables/useReportPeek'
 import { useReportSubscriptions } from '@/composables/useReportSubscriptions'
 import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { useSavedItems } from '@/composables/useSavedItems'
+import { useAppDensity } from '@/composables/useAppDensity'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { slideIn, slideOut } from '@/motion/presence'
@@ -58,6 +59,9 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 // 桌面（≥1024px）按大报版式排，整页只留一条滚动条，跟随生成滚动的也是整页。
 const isDesktop = useMediaQuery('(min-width: 1024px)')
 const readingViewport = computed(() => isMobile.value || isDesktop.value ? reportPageRef.value : reportRef.value)
+// 报眉的版面密度选了舒适时，桌面也回到一节一张卡的长文；导读、条目收藏与宽屏论文栏都跟着大报版式走。
+const { comfortable } = useAppDensity()
+const broadsheetOn = computed(() => isDesktop.value && !comfortable.value)
 // 控制条钉在顶部时有多高：收起长条目后把条目开头滚回控制条下方要让开这段距离。
 const controlsRef = ref<HTMLElement | null>(null)
 const { height: controlsHeight } = useElementSize(controlsRef, undefined, { box: 'border-box' })
@@ -186,6 +190,8 @@ const userEmail = computed(() => authStore.user?.email ?? '')
 // 换了简报类型/日期后读到的新内容整块浮现；生成时的流式追加不算换内容。
 // 版面上是哪一期跟着内容换：改选之后、新一期读到之前，版面上还是上一期。
 const contentKey = ref(0)
+// 换内容或换版面（报眉的版面密度）时正文整块浮现
+const readingKey = computed(() => `${contentKey.value}:${broadsheetOn.value ? 'sheet' : 'cards'}`)
 const shownIssue = ref({ type: selectedType.value, date: selectedDate.value })
 watch(reportContent, () => {
   if (!isGenerating.value) contentKey.value += 1
@@ -194,7 +200,7 @@ watch(reportContent, () => {
 
 // 宽屏（≥1600px）点简报条目里的论文（讲到论文的条目的标题、论文链接）不离开简报：详情在右侧打开，列表留在左边，
 // j / k 或栏里的上一条、下一条接着看。生成中不开；换一期、换分区、进出收藏时收起。
-const peek = useReportPeek({ available: computed(() => isWide.value && !isGenerating.value) })
+const peek = useReportPeek({ available: computed(() => isWide.value && broadsheetOn.value && !isGenerating.value) })
 const {
   target: peekTarget,
   current: peekPaper,
@@ -204,7 +210,7 @@ const {
   direction: peekDirection,
   withinItem: peekWithinItem,
 } = peek
-const broadsheetPeek = computed(() => (isWide.value ? peek.broadsheet : null))
+const broadsheetPeek = computed(() => (isWide.value && broadsheetOn.value ? peek.broadsheet : null))
 // 开合时版面变窄或变宽、条目跟着重排：把打开（收起）的那一条留在原来的高度，不让它跑出视野。换了内容时版面整个换掉，不留。
 let keepPlace = true
 watch(contentKey, () => {
@@ -247,7 +253,37 @@ watch(savedView, () => {
   contentKey.value += 1
   readingViewport.value?.scrollTo({ top: 0 })
 })
-watch(isDesktop, desktop => { if (!desktop) savedView.value = false })
+// 换版面（紧凑的大报 ↔ 舒适的长文）时，把正在读的那一节留在控制条下原来的距离：两种版面都是一节一块（.report-section），
+// 按第几节对上；控制条在两种版面里高矮不一，按它的底边量。位置按 offsetTop 量，不受换版面时内容淡入的位移影响。
+// 收藏不是简报正文，离开大报版就回到简报开头。
+const sectionBoxes = () => {
+  const reading = reportRef.value
+  if (!reading) return []
+  const base = reading.getBoundingClientRect().top + reading.clientTop - reading.scrollTop
+  return Array.from(reading.querySelectorAll<HTMLElement>('.report-section'), section => {
+    let top = 0
+    for (let node: HTMLElement | null = section; node && node !== reading; node = node.offsetParent as HTMLElement | null) top += node.offsetTop
+    return { top: base + top, bottom: base + top + section.offsetHeight }
+  })
+}
+watch(broadsheetOn, on => {
+  if (savedView.value) {
+    if (!on) savedView.value = false
+    return
+  }
+  const viewport = readingViewport.value
+  if (!isDesktop.value || !viewport || viewport.scrollTop < 1) return
+  const readFrom = () => controlsRef.value?.getBoundingClientRect().bottom ?? viewport.getBoundingClientRect().top
+  const from = readFrom()
+  const boxes = sectionBoxes()
+  const index = boxes.findIndex(box => box.bottom > from + 1)
+  const before = boxes[index]?.top
+  if (before == null) return
+  void nextTick(() => {
+    const after = sectionBoxes()[index]?.top
+    if (after != null) viewport.scrollTop += after - readFrom() - (before - from)
+  })
+}, { flush: 'pre' })
 const pickType = (type: ReportKey) => {
   selectedType.value = type
   savedView.value = false
@@ -311,8 +347,8 @@ watch(readingMode, mode => {
         :is-rss-busy="isRssBusy"
         :report-content="reportContent"
         :auto-scroll="autoScroll"
-        :reading-mode="isDesktop ? readingMode : null"
-        :saved-count="isDesktop ? savedBriefing.count.value : null"
+        :reading-mode="broadsheetOn ? readingMode : null"
+        :saved-count="broadsheetOn ? savedBriefing.count.value : null"
         :saved-view="savedView"
         @update:selected-type="pickType"
         @update:selected-date="pickDate"
@@ -361,7 +397,7 @@ watch(readingMode, mode => {
     </div>
 
     <!-- ═══ 内容阅读区（最大化空间） ═══ -->
-    <div ref="reportRef" v-swap="{ key: contentKey, stagger: true }" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
+    <div ref="reportRef" v-swap="{ key: readingKey, stagger: true }" class="report-reading stagger-enter glass-card relative flex-1 min-h-0 overflow-y-auto scroll-smooth" style="animation-delay: 0.1s">
       <ReportSavedPanel v-if="savedView" :mode="readingMode" :peek="broadsheetPeek" />
       <ReportContentPanel
         v-else
@@ -370,9 +406,9 @@ watch(readingMode, mode => {
         :current-type-label="currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : ''"
         :auto-scroll="autoScroll"
         :render-markdown="renderMarkdown"
-        :reading-mode="isDesktop ? readingMode : null"
+        :reading-mode="broadsheetOn ? readingMode : null"
         :content-key="contentKey"
-        :saves="isDesktop ? briefingSaves : null"
+        :saves="broadsheetOn ? briefingSaves : null"
         :peek="broadsheetPeek"
         @resume-auto-scroll="resumeAutoScroll"
       />

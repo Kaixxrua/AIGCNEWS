@@ -13,6 +13,7 @@ import FavoritesLink from '@/components/FavoritesLink.vue'
 import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import DensityToggle from '@/components/DensityToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
@@ -34,6 +35,7 @@ import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
 import { useReadingMode } from '@/composables/useReadingMode'
+import { DENSITY_ROUTES, useAppDensity } from '@/composables/useAppDensity'
 import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -58,6 +60,11 @@ const folioPage = computed(() => comicPage.value && route.name !== 'contact')
 const section = computed(() => folioPage.value ? folioSection(route.path, route.query, String(route.name ?? '')) : null)
 // 报眉中间那一栏空着，各页的本版工具（FolioTools）放得下就传送进去；挂载点常驻，只在有报眉时显示。
 provide(FOLIO_TOOLS_AVAILABLE, computed(() => folioPage.value && isDesktop.value))
+// 版面密度：有舒适版面的内页在报眉右侧放开关；选了舒适时这几页的外壳挂一个类，舒适版面的样式据此生效（只在桌面，
+// 首页和别的页不挂）。
+const { comfortable } = useAppDensity()
+const densityToggleShown = computed(() => folioPage.value && isDesktop.value && DENSITY_ROUTES.has(String(route.name ?? '')))
+const comfortableShell = computed(() => comfortable.value && densityToggleShown.value)
 // 首页的墨线在左上角贴纸处抬高、绕过飘带再落回报头底；报眉没有贴纸，墨线贴着底边走完。
 const mastheadRule = computed(() => folioPage.value
   ? 'M0 47.5 L700 46.5 L1721 48'
@@ -143,7 +150,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage, 'app-shell--reading': readingHidden }" :style="shellStyle">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage, 'app-shell--reading': readingHidden, 'app-shell--comfortable': comfortableShell }" :style="shellStyle">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -170,6 +177,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
             <FavoritesLink v-if="!isMobile" />
             <PwaInstallLink />
             <GitHubLink v-if="!isMobile" />
+            <DensityToggle v-if="densityToggleShown" />
             <ThemeToggle />
             <LocaleToggle />
           </div>

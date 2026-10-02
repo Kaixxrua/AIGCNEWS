@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import XBoardView from './XBoardView.vue'
 import { forgetSavedItems } from '@/composables/useSavedItems'
+import { setAppDensity } from '@/composables/useAppDensity'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
 // 桌面推文墙（≥1024px）的折叠、胶片、纯文字等按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
@@ -477,6 +478,7 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
   afterEach(() => {
     i18n.global.setLocaleMessage('zh-CN', {})
     vi.restoreAllMocks()
+    setAppDensity('compact')
   })
 
   // 按给定账号依次生成推文（越靠前越新）
@@ -797,6 +799,47 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     await wrapper.get('.xboard-recent').trigger('click')
     expect(controller().showRecent).not.toHaveBeenCalled()
     expect(wallCards(wrapper)).toHaveLength(2)
+  })
+
+  it('报眉选了舒适：桌面照旧排墙（不折叠、不排胶片、不限行、最多 4 列、没有纯文字档），收藏照常；换回紧凑都回来', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('tweet-text') && this.textContent?.includes('LONG') ? 300 : 0
+    })
+    setAppDensity('comfortable')
+    localStorage.setItem('xboard_text_only', '1')
+    setViewportWidth(1920)
+    const docs = byHandles(['alice', 'alice', 'alice', 'bob', ...Array.from({ length: 20 }, (_, i) => `user${i}`)])
+    docs[0]!.media = [
+      { type: 'photo', url: 'https://pbs.twimg.com/media/a.jpg', width: 1600, height: 900 },
+      { type: 'photo', url: 'https://pbs.twimg.com/media/b.jpg', width: 1600, height: 900 },
+    ]
+    docs[1]!.link_card = { url: 'https://example.com', title: 'Example' }
+    docs[2]!.summary = 'LONG body'
+    controller().docs.value = docs
+    const wrapper = await mountView()
+
+    // 1920 宽紧凑版排 5 列，舒适版最多 4 列；同账号不折叠，按条分页一页 20 条
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(4)
+    expect(wrapper.find('.tweet-fold').exists()).toBe(false)
+    expect(wallCards(wrapper)).toHaveLength(20)
+    expect(wrapper.find('.xboard-pagination').exists()).toBe(true)
+    // 记着的纯文字在舒适版不生效，开关也不出；多图照常竖排、链接卡竖排、长正文不截
+    expect(wrapper.find('.xboard-text-only').exists()).toBe(false)
+    expect(wrapper.find('.tweet-media-list--strip').exists()).toBe(false)
+    expect(wrapper.findAll('.masonry-grid .tweet-media-list')).toHaveLength(1)
+    expect(wrapper.get('.masonry-grid .tweet-linkcard').classes()).not.toContain('tweet-linkcard--row')
+    expect(wrapper.find('.tweet-more').exists()).toBe(false)
+    // 收藏不分版面
+    expect(wrapper.find('.xboard-saved').exists()).toBe(true)
+    expect(wrapper.findAll('.masonry-grid .save-toggle')).toHaveLength(20)
+
+    setAppDensity('compact')
+    await flushPromises()
+    expect(wrapper.findAll('.masonry-col')).toHaveLength(5)
+    expect(wrapper.get('.tweet-fold').text()).toContain('＋2 条 Alice 的推文')
+    expect(wrapper.get('.xboard-text-only').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.masonry-grid .tweet-media-list').exists()).toBe(false)
+    expect(localStorage.getItem('xboard_text_only')).toBe('1')
   })
 
   it('手机与平板照旧：不折叠、不排胶片，也没有纯文字档', async () => {
