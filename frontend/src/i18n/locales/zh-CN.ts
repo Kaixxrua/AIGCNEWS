@@ -31,6 +31,14 @@ const overrides = {
     trendEmpty: '近 {days} 天还没有每日星标数据',
     trendDay: '{date}：{gain}', trendDayMissing: '{date}：没有统计',
   },
+  projectPeek: {
+    label: '{name} 速览', readme: 'README 开头', readOn: '去 GitHub 看 README', readMore: '去 GitHub 读完',
+    noReadme: '这个仓库没有 README。', noProse: 'README 开头没有成段的介绍。',
+    unavailable: '暂时读不到 GitHub，稍后再看。', failed: '速览没取到，稍后再试。',
+    lastCommit: '最近一次提交', noCommit: '默认分支上还没有提交。', lastPush: '最近推送：{time}',
+    stars: '近 {days} 天星标', starsPending: '近 {days} 天的每日星标还没攒够。', starsFailed: '星标走势没取到。',
+    curveLabel: '近 {days} 天星标：{start} {from}，{end} {to}（{delta}）',
+  },
   navigation: { uiLibrary: 'UI 灵感库', mainNavigation: '主导航', primary: '主导航', more: '更多', accountShort: '我的', home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', websiteCollection: '我的网页', report: '报告', xboard: 'X 动态', subscriptions: '情报追踪', tracking: '情报追踪', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: '会员', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', accountSettings: '账户设置', showDock: '显示导航', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   contact: { kicker: '联系合作', heroNote: '按你的需求，选择合适的联系入口。', servicesKicker: '合作方向', servicesTitle: '我们可以一起做什么', entryKicker: '从这里开始', entryTitle: '选择联系入口', primaryBadge: '优先入口', qrHint: '扫码继续', qrUnavailable: '二维码暂时无法显示', notesKicker: '补充说明', notesTitle: '更多信息' },
   membership: {

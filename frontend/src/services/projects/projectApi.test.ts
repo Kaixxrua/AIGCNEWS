@@ -8,6 +8,7 @@ import {
   favoriteProject,
   fetchMyProjectTags,
   fetchProjectCategories,
+  fetchProjectPeek,
   fetchProjectTrends,
   fetchProjects,
   recommendGitHubProject,
@@ -136,6 +137,45 @@ describe('Project API transport contract', () => {
     expect(transport.get).toHaveBeenLastCalledWith('/projects/github/trends', {
       params: { repos: 'acme/alpha', days: 30 },
       signal: undefined,
+    })
+  })
+
+  it('asks for one repository at a time for the quick look and keeps only what the card can show', async () => {
+    const signal = new AbortController().signal
+    const commit = {
+      sha: 'abcdef1234567890',
+      message: 'Fix the parser',
+      author: 'octo',
+      committed_at: '2026-10-01T08:00:00Z',
+      url: 'https://github.com/acme/alpha/commit/abcdef1234567890',
+    }
+    transport.get.mockResolvedValueOnce({
+      data: { repo_id: 'acme/alpha', status: 'ok', has_readme: 1, readme: ['First.', '  ', 42, null, 'Second.'], readme_more: true, commit },
+    })
+    await expect(fetchProjectPeek('acme/alpha', { signal })).resolves.toEqual({
+      repo_id: 'acme/alpha', status: 'ok', has_readme: true, readme: ['First.', 'Second.'], readme_more: true, commit,
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/projects/github/peek', { params: { repo: 'acme/alpha' }, signal })
+
+    // 不认识的状态当成读不到；提交链接不是 GitHub 上的页面、或者没有 sha，都不摆
+    transport.get.mockResolvedValueOnce({ data: { status: 'stale', commit: { ...commit, url: 'https://github.com.example.test/acme/beta' } } })
+    await expect(fetchProjectPeek('acme/beta')).resolves.toEqual({
+      repo_id: 'acme/beta', status: 'unavailable', has_readme: false, readme: [], readme_more: false, commit: null,
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/projects/github/peek', { params: { repo: 'acme/beta' }, signal: undefined })
+    transport.get.mockResolvedValueOnce({ data: { status: 'ok', commit: { ...commit, sha: '' } } })
+    await expect(fetchProjectPeek('acme/gamma')).resolves.toMatchObject({ status: 'ok', commit: null })
+    transport.get.mockResolvedValueOnce({ data: { status: 'ok', commit: { ...commit, url: 'http://github.com/acme/delta/commit/1' } } })
+    await expect(fetchProjectPeek('acme/delta')).resolves.toMatchObject({ commit: null })
+
+    // 提交的其余字段缺了留空，sha 和链接在就摆
+    transport.get.mockResolvedValueOnce({ data: { status: 'ok', commit: { sha: 'f00', url: 'https://github.com/a/b/commit/f00', message: 7 } } })
+    await expect(fetchProjectPeek('a/b')).resolves.toMatchObject({
+      commit: { sha: 'f00', message: '', author: '', committed_at: '', url: 'https://github.com/a/b/commit/f00' },
+    })
+    transport.get.mockResolvedValueOnce({ data: null })
+    await expect(fetchProjectPeek('acme/epsilon')).resolves.toEqual({
+      repo_id: 'acme/epsilon', status: 'unavailable', has_readme: false, readme: [], readme_more: false, commit: null,
     })
   })
 })

@@ -166,6 +166,30 @@ export interface ProjectTrendsOptions {
   signal?: AbortSignal
 }
 
+export interface GitHubProjectPeekCommit {
+  sha: string
+  /** 提交信息的第一行；可能为空 */
+  message: string
+  /** GitHub 账号；提交没关联账号时是 git 作者名，也可能为空 */
+  author: string
+  committed_at: string
+  /** 这次提交在 GitHub 上的页面 */
+  url: string
+}
+
+export interface GitHubProjectPeek {
+  repo_id: string
+  /** ok：读到了 GitHub（可能是早些时候存下的一份）；unavailable：读不到 GitHub，也没有存着的 */
+  status: 'ok' | 'unavailable'
+  has_readme: boolean
+  /** README 开头几段的纯文本；README 开头没有成段的文字时为空 */
+  readme: string[]
+  /** README 在这几段之后还有 */
+  readme_more: boolean
+  /** 默认分支最近一次提交；空仓库或读不到时为 null */
+  commit: GitHubProjectPeekCommit | null
+}
+
 export interface ToolWebsiteAddResponse {
   status: string
   message: string
@@ -358,6 +382,42 @@ export async function fetchProjectTrends(
   if (ranks) params.ranks = true
   const res = await api.get('/projects/github/trends', { params, signal })
   return normalizeProjectTrendsResponse(res.data, days)
+}
+
+// 提交链接只认 GitHub 上的页面，别的一律不摆成链接。
+const GITHUB_PAGE = 'https://github.com/'
+
+function normalizeProjectPeekCommit(data: any): GitHubProjectPeekCommit | null {
+  const sha = typeof data?.sha === 'string' ? data.sha : ''
+  const url = typeof data?.url === 'string' ? data.url : ''
+  if (!sha || !url.startsWith(GITHUB_PAGE)) return null
+  return {
+    sha,
+    message: typeof data?.message === 'string' ? data.message : '',
+    author: typeof data?.author === 'string' ? data.author : '',
+    committed_at: typeof data?.committed_at === 'string' ? data.committed_at : '',
+    url,
+  }
+}
+
+function normalizeProjectPeekResponse(data: any, repoId: string): GitHubProjectPeek {
+  const readme: string[] = Array.isArray(data?.readme)
+    ? data.readme.filter((paragraph: any) => typeof paragraph === 'string' && paragraph.trim())
+    : []
+  return {
+    repo_id: typeof data?.repo_id === 'string' && data.repo_id ? data.repo_id : repoId,
+    status: data?.status === 'ok' ? 'ok' : 'unavailable',
+    has_readme: Boolean(data?.has_readme),
+    readme,
+    readme_more: Boolean(data?.readme_more),
+    commit: normalizeProjectPeekCommit(data?.commit),
+  }
+}
+
+/** 榜单悬停速览：README 开头几段与默认分支最近一次提交（服务端现读 GitHub 存半天）；不在公开项目库里的仓库 404。 */
+export async function fetchProjectPeek(repoId: string, { signal }: { signal?: AbortSignal } = {}): Promise<GitHubProjectPeek> {
+  const res = await api.get('/projects/github/peek', { params: { repo: repoId }, signal })
+  return normalizeProjectPeekResponse(res.data, repoId)
 }
 
 export async function fetchMyProjectTags(

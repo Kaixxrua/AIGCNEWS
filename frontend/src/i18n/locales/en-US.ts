@@ -30,6 +30,14 @@ const enUSCatalog = {
     trendEmpty: 'No daily star counts for the last {days} days yet',
     trendDay: '{date}: {gain}', trendDayMissing: '{date}: not counted',
   },
+  projectPeek: {
+    label: 'Quick look: {name}', readme: 'README', readOn: 'Open on GitHub', readMore: 'Read the rest on GitHub',
+    noReadme: 'This repository has no README.', noProse: 'The README opens without a written introduction.',
+    unavailable: "GitHub can't be reached right now. Try again in a moment.", failed: "The quick look didn't load. Try again in a moment.",
+    lastCommit: 'Latest commit', noCommit: 'No commits on the default branch yet.', lastPush: 'Last push {time}',
+    stars: 'Stars, last {days} days', starsPending: 'Not enough daily star counts for the last {days} days yet.', starsFailed: "The star history didn't load.",
+    curveLabel: 'Stars over the last {days} days: {from} on {start}, {to} on {end} ({delta})',
+  },
   navigation: { uiLibrary: 'UI Library', mainNavigation: 'Main navigation', primary: 'Main navigation', more: 'More', accountShort: 'Account', home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', websiteCollection: 'My Websites', report: 'Report', xboard: 'X Board', subscriptions: 'My Subscriptions', tracking: 'Tracking', mcp: 'MCP', dsh: 'dsh', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out', accountSettings: 'Account settings', showDock: 'Show navigation', monitorAlert: 'GitHub project enrichment failures need attention on the Monitor page' },
   contact: { kicker: 'CONTACT & PARTNERSHIPS', heroNote: 'Choose the route that fits your request.', servicesKicker: 'WHAT WE WORK ON', servicesTitle: 'Ways to work together', entryKicker: 'START HERE', entryTitle: 'Choose a contact route', primaryBadge: 'Recommended', qrHint: 'Scan to continue', qrUnavailable: 'QR image unavailable', notesKicker: 'DETAILS', notesTitle: 'A few more details' },
   membership: {

@@ -102,6 +102,7 @@ from backend.app.services.payments.providers.registry import build_payment_provi
 from backend.app.services.payments.runtime_config import resolve_payment_config
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.project_adoptions import ProjectAdoptionService
+from backend.app.services.project_catalog.peek_service import ProjectPeekService
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 from backend.app.services.project_catalog.trends_service import ProjectTrendsService
 from backend.app.services.push.channel_service import PushChannelService
@@ -626,6 +627,15 @@ _project_trends_service = ProjectTrendsService()
 def get_project_trends_service() -> ProjectTrendsService:
     """项目库榜单行情：近 N 天星标与日增、今日热榜的昨日名次。"""
     return _project_trends_service
+
+
+# 全进程一份：同一个仓库同时有几个人在看时只现读一次 GitHub。
+_project_peek_service = ProjectPeekService()
+
+
+def get_project_peek_service() -> ProjectPeekService:
+    """项目库悬停速览：README 开头几段与默认分支最近一次提交。"""
+    return _project_peek_service
 
 
 def get_project_adoption_service() -> ProjectAdoptionService:

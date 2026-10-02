@@ -13,6 +13,7 @@ import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_DISMISSED_STORAGE_KEY, MCP_PROMO_EXAMPLE_IDS } from '@/features/mcp/mcpExamplePrompts'
 import type { GitHubProjectItem } from '@/services/projects/projectApi'
 import { setAppDensity } from '@/composables/useAppDensity'
+import { PEEK_OPEN_DELAY } from '@/composables/useProjectPeek'
 
 // 桌面榜单（≥1024px）按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
 const viewport = vi.hoisted(() => ({ desktop: false }))
@@ -29,6 +30,13 @@ vi.mock('@/composables/useProjectTrends', async () => {
   const { ref } = await import('vue')
   return { useProjectTrends: () => ({ trends: ref(null), trendFor: () => undefined }) }
 })
+// 榜单悬停速览读 GitHub 的那两样换成假的，其余照常
+const peekApi = vi.hoisted(() => ({ fetchProjectPeek: vi.fn(), fetchProjectTrends: vi.fn() }))
+vi.mock('@/services/projects/projectApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/projects/projectApi')>()),
+  fetchProjectPeek: peekApi.fetchProjectPeek,
+  fetchProjectTrends: peekApi.fetchProjectTrends,
+}))
 
 const controllerSpy = vi.hoisted(() => vi.fn())
 const routerPush = vi.hoisted(() => vi.fn())
@@ -922,5 +930,52 @@ describe('GitHubProjectsView chart keyboard flow', () => {
     await press('?')
     expect(cards.find('.is-cursor').exists()).toBe(false)
     expect(cards.find('.list-keys-sheet').exists()).toBe(false)
+  })
+
+  it('peeks at a row the pointer rests on, keeps it lit, gives Esc to the card before the cursor and dims what the card opened', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      peekApi.fetchProjectPeek.mockImplementation(async (repoId: string) => ({
+        repo_id: repoId, status: 'ok', has_readme: true, readme: [`${repoId} in one paragraph.`], readme_more: false, commit: null,
+      }))
+      peekApi.fetchProjectTrends.mockResolvedValue({ metric_date: '2026-10-02', previous_date: null, days: 30, items: {} })
+      controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
+      controller().total.value = 2
+      const wrapper = await mountChart()
+      wrapper.element.addEventListener('click', (event: Event) => event.preventDefault())
+      let x = 40
+      const rest = async (name: string) => {
+        const event = new MouseEvent('pointermove', { clientX: x++, clientY: 50, bubbles: true })
+        Object.defineProperty(event, 'pointerType', { value: 'mouse' })
+        row(name).get('.project-row__desc').element.dispatchEvent(event)
+        await vi.advanceTimersByTimeAsync(PEEK_OPEN_DELAY)
+        await flushPromises()
+      }
+
+      await press('j')
+      expect(cursorKey()).toBe('github:acme/alpha')
+      await rest('beta')
+      expect(wrapper.get('.project-peek').text()).toContain('acme/beta in one paragraph.')
+      expect(row('beta').classes()).toContain('is-peeked')
+      expect(row('alpha').classes()).not.toContain('is-peeked')
+      expect(peekApi.fetchProjectPeek).toHaveBeenCalledWith('acme/beta')
+      expect(peekApi.fetchProjectTrends).toHaveBeenCalledWith(['acme/beta', 'acme/alpha'], { days: 30 })
+
+      await press('Escape')
+      expect(wrapper.find('.project-peek').exists()).toBe(false)
+      expect(row('beta').classes()).not.toContain('is-peeked')
+      expect(cursorKey()).toBe('github:acme/alpha')
+      await press('Escape')
+      expect(cursorKey()).toBeNull()
+
+      // 卡片里去 GitHub 的链接和行上的一样，点过的项目变淡
+      await rest('beta')
+      expect(row('beta').classes()).not.toContain('is-read')
+      await wrapper.get('.project-peek .project-peek__link').trigger('click')
+      expect(row('beta').classes()).toContain('is-read')
+      expect(peekApi.fetchProjectPeek).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -142,6 +142,29 @@ class GitHubProjectTrendsResponse(BaseModel):
     items: dict[str, GitHubProjectTrend]
 
 
+class GitHubProjectPeekCommit(BaseModel):
+    sha: str
+    # First line of the commit message.
+    message: str
+    # GitHub login, or the git author name when the commit is not linked to an account.
+    author: str = ""
+    committed_at: str
+    url: str
+
+
+class GitHubProjectPeekResponse(BaseModel):
+    repo_id: str
+    # ok: read from GitHub (possibly an earlier copy); unavailable: GitHub could not be read and there is no copy.
+    status: Literal["ok", "unavailable"]
+    has_readme: bool = False
+    # The README's opening paragraphs as plain text; empty when it opens with no prose.
+    readme: list[str] = Field(default_factory=list)
+    # The README goes on past these paragraphs.
+    readme_more: bool = False
+    # Latest commit on the default branch; None for an empty repository or when unavailable.
+    commit: GitHubProjectPeekCommit | None = None
+
+
 class ToolWebsiteAddRequest(BaseModel):
     url: str = Field(default="", max_length=1024)
 

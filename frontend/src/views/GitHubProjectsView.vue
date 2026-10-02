@@ -18,6 +18,7 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ProjectChartRow from '@/components/projects/ProjectChartRow.vue'
+import ProjectPeekCard from '@/components/projects/ProjectPeekCard.vue'
 import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
@@ -31,6 +32,7 @@ import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
 import { useAppDensity } from '@/composables/useAppDensity'
 import { useProjectTrends } from '@/composables/useProjectTrends'
 import { useListKeys } from '@/composables/useListKeys'
+import { useProjectPeek } from '@/composables/useProjectPeek'
 import { useReadMarks } from '@/composables/useReadMarks'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
@@ -54,6 +56,7 @@ import {
 import { distributeColumns } from '@/utils/masonry'
 import { vReflow } from '@/motion/reflow'
 import { vIndicator } from '@/motion/indicator'
+import { slideIn, slideOut } from '@/motion/presence'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
@@ -421,6 +424,26 @@ watch(chartKeys, (keys) => {
   const kept = keys.filter((key) => openTagRows.value.has(key))
   if (kept.length !== openTagRows.value.size) openTagRows.value = new Set(kept)
 })
+// 榜单悬停速览：鼠标在一行上停稳半秒，这一行下面（下面放不下就上面）浮出 README 开头几段、最近一次提交和近 30 天的
+// 星标曲线，不用离开列表；卡片开着时这一行留着底色，Esc 先收卡片。网页收藏没有速览。
+const chartEl = ref<HTMLElement | null>(null)
+const peek = useProjectPeek({
+  enabled: chartLayout,
+  frame: chartEl,
+  rows: chartRowsEl,
+  keys: chartKeys,
+  repoOf: (key) => {
+    const repo = chartRepo(key)
+    return repo ? projectTrendKey(repo) : ''
+  },
+})
+const { target: peekTarget, placement: peekPlace, content: peekContent, curve: peekStars } = peek
+const peekRepo = computed(() => (peekTarget.value ? chartRepo(peekTarget.value.key) ?? null : null))
+// 卡片从行那边探出来：摆在行下面的往下落，摆在行上面的往上升，收起时原路退回；减少动态时直接出现、消失。
+const peekSlide = (el: Element) => ({ y: el.classList.contains('project-peek--above') ? 8 : -8 })
+const peekEnter = (el: Element, done: () => void) => slideIn(el, done, peekSlide(el))
+const peekLeave = (el: Element, done: () => void) => slideOut(el, done, peekSlide(el))
+
 const listKeys = useListKeys({
   enabled: chartLayout,
   root: chartRowsEl,
@@ -440,6 +463,7 @@ const listKeys = useListKeys({
   toggle: (key) => {
     if (chartRowEl(key)?.querySelector('.project-row__chip--more')) setRowTags(key, !openTagRows.value.has(key))
   },
+  escape: () => peek.close(),
   edge: (direction) => {
     const next = page.value + direction
     if (next < 1 || next > totalPages.value) return false
@@ -708,7 +732,7 @@ onBeforeUnmount(stopViewReads)
       </div>
     </section>
 
-    <section v-else-if="chartLayout" class="project-chart" :class="{ 'project-chart--ranked': chartRanked, 'project-chart--curator': authStore.isAdmin }" :aria-label="t('projectChart.label')">
+    <section v-else-if="chartLayout" ref="chartEl" class="project-chart" :class="{ 'project-chart--ranked': chartRanked, 'project-chart--curator': authStore.isAdmin }" :aria-label="t('projectChart.label')">
       <div class="project-chart__head" aria-hidden="true">
         <span v-if="chartRanked" class="project-chart__col project-chart__col--rank">{{ t('projectChart.rank') }}</span>
         <span class="project-chart__col project-chart__col--project">{{ t('projectChart.project') }}</span>
@@ -727,7 +751,7 @@ onBeforeUnmount(stopViewReads)
         <ProjectChartRow
           v-for="(repo, index) in projects"
           :key="projectKey(repo)"
-          :class="{ 'is-cursor': isCursor(projectKey(repo)), 'is-read': readMarks.isRead(projectKey(repo)) }"
+          :class="{ 'is-cursor': isCursor(projectKey(repo)), 'is-read': readMarks.isRead(projectKey(repo)), 'is-peeked': peekTarget?.key === projectKey(repo) }"
           :data-reflow-key="projectKey(repo)"
           :data-list-key="projectKey(repo)"
           :repo="repo"
@@ -751,6 +775,20 @@ onBeforeUnmount(stopViewReads)
           @visit="visitRepo"
         />
       </ol>
+      <Transition :css="false" @enter="peekEnter" @leave="peekLeave">
+        <ProjectPeekCard
+          v-if="peekTarget && peekRepo && peekPlace && peekContent && peekStars"
+          :key="peekTarget.key"
+          :repo="peekRepo"
+          :repo-id="peekTarget.repoId"
+          :content="peekContent"
+          :curve="peekStars"
+          :placement="peekPlace"
+          @visit="visitRepo"
+          @pointerenter="peek.hold()"
+          @pointerleave="peek.release()"
+        />
+      </Transition>
     </section>
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">

@@ -9,11 +9,14 @@ from backend.app.api.dependencies import (
     get_personal_projects_service,
     get_project_adoption_service,
     get_project_catalog_query_service,
+    get_project_peek_service,
     get_project_trends_service,
 )
 from backend.app.core.auth import OptionalUser, RequireUser, extract_user_id
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.models.schema_projects import (
     GitHubProjectCategoriesResponse,
+    GitHubProjectPeekResponse,
     GitHubProjectSort,
     GitHubProjectsResponse,
     GitHubProjectTagsResponse,
@@ -45,6 +48,7 @@ from backend.app.services.personal_projects import (
     WebsiteContentBlockedError,
 )
 from backend.app.services.project_adoptions import ProjectAdoptionService
+from backend.app.services.project_catalog.peek_service import ProjectPeekService
 from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
@@ -113,6 +117,36 @@ async def github_project_trends(
     result = await trends.trends(repo_ids, days=days, with_ranks=ranks)
     response.headers["Cache-Control"] = "public, max-age=120"
     return GitHubProjectTrendsResponse(**result)
+
+
+@router.get(
+    "/projects/github/peek",
+    response_model=GitHubProjectPeekResponse,
+    tags=["Projects"],
+)
+async def github_project_peek(
+    request: Request,
+    response: Response,
+    repo: str = Query(..., min_length=3, max_length=200),
+    peeks: ProjectPeekService = Depends(get_project_peek_service),
+) -> GitHubProjectPeekResponse:
+    """项目库悬停速览：README 开头几段正文与默认分支最近一次提交。
+
+    只认公开项目库里的仓库（不在库里 404）。现读 GitHub，结果缓存半天；读不到时退回上一份，
+    连上一份也没有时 status=unavailable 且不让浏览器缓存。
+    """
+    repo_id = repo.strip()
+    if not _REPO_ID_PATTERN.fullmatch(repo_id):
+        raise HTTPException(status_code=422, detail="repo 须为 owner/repo")
+    result = await peeks.peek(
+        repo_id,
+        redis=getattr(request.app.state, "redis", None),
+        client_ip=client_ip_from_request(request),
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="项目库里没有这个仓库")
+    response.headers["Cache-Control"] = "public, max-age=600" if result["status"] == "ok" else "no-store"
+    return GitHubProjectPeekResponse(**result)
 
 
 def _membership_inputs(user: dict[str, Any]) -> dict[str, str]:

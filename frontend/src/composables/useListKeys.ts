@@ -43,7 +43,7 @@ const scrollParent = (el: HTMLElement): HTMLElement | null => {
 }
 
 /** 条目看得见的那段视野：最近的滚动容器，扣掉条目 scroll-margin 让出的上下遮挡（报头、页脚）。 */
-const viewOf = (el: HTMLElement): Span => {
+export const viewOf = (el: HTMLElement): Span => {
   const scroller = scrollParent(el)
   const frame = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }
   const style = getComputedStyle(el)
