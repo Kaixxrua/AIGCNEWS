@@ -3,6 +3,7 @@ import {
   getFeatureGateRedirect,
   getRoutePolicyDecision,
   getSitePageGateRedirect,
+  resolveWebsiteCollectionRedirect,
 } from '@/features/navigation/routePolicy'
 import LayoutView from '@/views/LayoutView.vue'
 import { startRouteProgress, stopRouteProgress } from '@/composables/useRouteProgress'
@@ -198,6 +199,11 @@ router.beforeEach(async (to, from) => {
     }
     return from === START_LOCATION ? { path: '/', replace: true } : false
   }
+
+  // 网页栏目：游客点「网页」时，站长推荐有内容就先看站长推荐（个人收藏登录后才有）。
+  const websiteRedirect = await resolveWebsiteCollectionRedirect(to, authStore,
+    async () => (await import('@/composables/recommendedWebsitesSnapshot')).ensureRecommendedWebsites())
+  if (websiteRedirect) return websiteRedirect
 
   // 可插拔源特性门控：开关关闭时源路由回首页（开关进程内缓存，仅首次拉取）
   const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')

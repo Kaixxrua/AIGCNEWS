@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRecommendedWebsites } from './useRecommendedWebsites'
+import { __resetRecommendedWebsitesSnapshotForTest, rememberRecommendedWebsites, useRecommendedWebsitesSnapshot } from './recommendedWebsitesSnapshot'
 import type { RecommendedWebsite, RecommendedWebsiteInput } from '@/services/site/recommendedWebsiteApi'
 
 const input: RecommendedWebsiteInput = { title: 'Example', url: 'https://example.com/', description: 'A useful site', category: 'Tools', sort_order: 0 }
@@ -13,6 +14,8 @@ const setup = (isAdmin = () => true) => {
   }
   return { api, controller: useRecommendedWebsites({ api, isAdmin, t: key => key }) }
 }
+
+beforeEach(() => __resetRecommendedWebsitesSnapshotForTest())
 
 describe('independent recommended website collection', () => {
   it('loads an empty public list without inventing entries', async () => {
@@ -81,5 +84,29 @@ describe('independent recommended website collection', () => {
     api.fetchRecommendedWebsites.mockResolvedValue([])
     await controller.load()
     expect(controller.websites.value).toEqual([site])
+  })
+
+  it('shares what it loads and saves with the website tabs and the route guard', async () => {
+    const { api, controller } = setup()
+    const snapshot = useRecommendedWebsitesSnapshot()
+    await controller.load()
+    expect(snapshot.value).toEqual([])
+    await controller.save(null, input)
+    expect(snapshot.value).toEqual([site])
+    await controller.remove(1)
+    expect(snapshot.value).toEqual([])
+    api.fetchRecommendedWebsites.mockRejectedValueOnce(new Error('Unavailable'))
+    await controller.load()
+    expect(snapshot.value).toEqual([])
+  })
+
+  it('starts from the list fetched earlier and then refreshes it', async () => {
+    rememberRecommendedWebsites([site])
+    const { api, controller } = setup(() => false)
+    expect(controller.websites.value).toEqual([site])
+    api.fetchRecommendedWebsites.mockResolvedValue([{ ...site, title: 'Fresh' }])
+    await controller.load()
+    expect(controller.websites.value.map(item => item.title)).toEqual(['Fresh'])
+    expect(useRecommendedWebsitesSnapshot().value?.map(item => item.title)).toEqual(['Fresh'])
   })
 })

@@ -1,8 +1,9 @@
-import { ref } from 'vue'
+import { ref, toRaw } from 'vue'
 import {
   createRecommendedWebsite, deleteRecommendedWebsite, fetchRecommendedWebsites, updateRecommendedWebsite,
   type RecommendedWebsite, type RecommendedWebsiteInput,
 } from '@/services/site/recommendedWebsiteApi'
+import { rememberRecommendedWebsites, useRecommendedWebsitesSnapshot } from './recommendedWebsitesSnapshot'
 
 const defaultApi = { createRecommendedWebsite, deleteRecommendedWebsite, fetchRecommendedWebsites, updateRecommendedWebsite }
 type Options = {
@@ -12,7 +13,9 @@ type Options = {
 }
 
 export function useRecommendedWebsites({ api = defaultApi, isAdmin, t }: Options) {
-  const websites = ref<RecommendedWebsite[]>([])
+  // 先摆出上次拿到的列表（比如路由守卫刚拉过），load 再静默换成最新的。
+  const snapshot = useRecommendedWebsitesSnapshot()
+  const websites = ref<RecommendedWebsite[]>(snapshot.value ? [...toRaw(snapshot.value)] : [])
   const loading = ref(false)
   const saving = ref(false)
   const deletingId = ref<number | null>(null)
@@ -28,7 +31,10 @@ export function useRecommendedWebsites({ api = defaultApi, isAdmin, t }: Options
     error.value = ''
     try {
       const items = await api.fetchRecommendedWebsites()
-      if (!disposed && request === generation) websites.value = items
+      if (!disposed && request === generation) {
+        websites.value = items
+        rememberRecommendedWebsites(items)
+      }
     } catch {
       if (!disposed && request === generation) error.value = t('recommendedWebsites.loadError')
     } finally {
@@ -49,6 +55,7 @@ export function useRecommendedWebsites({ api = defaultApi, isAdmin, t }: Options
       if (disposed) return false
       const rest = websites.value.filter(item => item.id !== saved.id)
       websites.value = [...rest, saved].sort((a, b) => a.sort_order - b.sort_order || b.id - a.id)
+      rememberRecommendedWebsites(websites.value)
       return true
     } catch (cause) {
       if (!disposed) {
@@ -71,6 +78,7 @@ export function useRecommendedWebsites({ api = defaultApi, isAdmin, t }: Options
       await api.deleteRecommendedWebsite(id)
       if (disposed) return false
       websites.value = websites.value.filter(item => item.id !== id)
+      rememberRecommendedWebsites(websites.value)
       return true
     } catch {
       if (!disposed) error.value = t('recommendedWebsites.deleteError')

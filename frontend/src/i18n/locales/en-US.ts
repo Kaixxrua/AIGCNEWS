@@ -13,6 +13,7 @@ const enUSCatalog = {
     noResults: 'No websites match your filters.', clearFilters: 'Clear filters',
     duplicate: 'This URL is already recommended.', saveError: 'Could not save. Check the fields and try again.', deleteError: 'Could not remove this recommendation. Please retry.',
     confirmDelete: 'Remove “{name}” from the public recommendations? Personal bookmarks will remain unchanged.',
+    guestLine: 'Keep your own collection on any device.',
   },
   tracking: trackingEn,
   infrastructure: { appName: 'AIGC News', loading: 'Loading…', unavailable: 'Unavailable' },

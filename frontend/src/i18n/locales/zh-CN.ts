@@ -14,6 +14,7 @@ const overrides = {
     noResults: '没有找到符合条件的网站。', clearFilters: '清除筛选',
     duplicate: '这个网址已经在推荐列表中。', saveError: '保存失败，请检查输入并重试。', deleteError: '移出推荐失败，请重试。',
     confirmDelete: '确定将“{name}”移出站长推荐？个人收藏不会受影响。',
+    guestLine: '「我的网页收藏」跟着账号走，换设备也在。',
   },
   tracking: trackingZh,
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },

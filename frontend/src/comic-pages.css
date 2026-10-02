@@ -510,6 +510,11 @@
     #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a { transition: none; }
     #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a:not([aria-current]):hover { transform: rotate(-1.9deg); }
   }
+  /* Visitors read in one line beside the tabs why their own collection needs a sign-in, the sign-in an underlined word. */
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs-row--with-login { gap: 8px 28px; margin: 9px 0 0; }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs-row--with-login .website-tabs { margin: 0; }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs-login { color: var(--web-muted); font-size: 16px; font-weight: 600; }
+  #app .app-shell--comic-page .recommended-websites-page .website-tabs-login button { margin-inline-start: 12px; color: var(--web-ink); font-weight: 900; text-decoration-thickness: 2px; }
 
   /* search and category: 48px boxes on a solid ink block, a pale yellow corner top left */
   #app .app-shell--comic-page .website-toolbar { flex-wrap: nowrap; gap: 21.5px; margin-top: 17.2px; }

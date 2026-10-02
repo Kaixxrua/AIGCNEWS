@@ -6,8 +6,9 @@ import { i18n } from '@/i18n'
 import RecommendedWebsitesView from './RecommendedWebsitesView.vue'
 import RecommendedWebsiteEditor from '@/components/websites/RecommendedWebsiteEditor.vue'
 import * as api from '@/services/site/recommendedWebsiteApi'
+import { __resetRecommendedWebsitesSnapshotForTest } from '@/composables/recommendedWebsitesSnapshot'
 
-const authBox = vi.hoisted(() => ({ current: null as null | { isAdmin: boolean } }))
+const authBox = vi.hoisted(() => ({ current: null as null | { isAdmin: boolean; status?: string } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox.current }))
 vi.mock('@/services/site/recommendedWebsiteApi', () => ({
   fetchRecommendedWebsites: vi.fn(), createRecommendedWebsite: vi.fn(),
@@ -27,6 +28,7 @@ const mountPage = async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  __resetRecommendedWebsitesSnapshotForTest()
   authBox.current = reactive({ isAdmin: false })
   i18n.global.locale.value = 'zh-CN'
   vi.mocked(api.fetchRecommendedWebsites).mockResolvedValue([])
@@ -42,6 +44,15 @@ describe('standalone website recommendations', () => {
     expect(wrapper.find('.website-tabs a[href="/projects?source=website"]').exists()).toBe(true)
     expect(wrapper.find('.website-header button').exists()).toBe(false)
     expect(wrapper.findComponent(RecommendedWebsiteEditor).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('tells visitors beside the tabs, in one line, that their own collection needs a login', async () => {
+    authBox.current = reactive({ isAdmin: false, status: 'anonymous' })
+    vi.mocked(api.fetchRecommendedWebsites).mockResolvedValue([example])
+    const wrapper = await mountPage()
+    expect(wrapper.find('.website-tabs-row--with-login .website-tabs-login').text()).toContain('跟着账号走')
+    expect(wrapper.findAll('.website-card')).toHaveLength(1)
     wrapper.unmount()
   })
 
