@@ -318,7 +318,8 @@ function sync(group: HTMLElement, state: IndicatorState, animate: boolean) {
     state.active = null
     clearPending(group, state)
     stop(state)
-    if (state.shown) show(group, state, false)
+    // 一开始就没有当前项（列表光标还没亮）也标成 off，免得标记停在组的左上角露出一截。
+    if (state.shown || !group.hasAttribute('data-indicator')) show(group, state, false)
     return
   }
   const previous = state.active

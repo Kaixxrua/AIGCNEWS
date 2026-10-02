@@ -76,6 +76,15 @@ describe('v-indicator', () => {
     expect(group.dataset.indicatorMark).toBe('before')
   })
 
+  it('挂载时没有当前项就标 off，标记不在组的左上角露出来；有了当前项再亮', async () => {
+    const { wrapper, group } = mountTabs({ active: -1 })
+    expect(group.dataset.indicator).toBe('off')
+    await wrapper.setProps({ active: 1 })
+    await flushPromises()
+    expect(group.dataset.indicator).toBe('on')
+    expect(markOf(group)).toEqual({ x: 100, y: 0, w: 100, h: 40 })
+  })
+
   it('换当前项时弹簧滑过去，最后精确落在新项上', async () => {
     const { wrapper, group } = mountTabs({ active: 0 })
     await wrapper.setProps({ active: 1 })

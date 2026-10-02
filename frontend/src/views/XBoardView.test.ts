@@ -657,6 +657,55 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     expect(wrapper.get('.detail-backdrop .tweet-text').text()).toContain('LONG body')
   })
 
+  it('键盘流：j 按时间线走、x 开合折叠，o 开详情后 j 换下一条，关掉详情光标落在最后看的那条', async () => {
+    // jsdom 不排版：每张卡都算整张在视野里；详情浮层（aria-modal）算画出来了，列表键位让给它
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      { top: 10, bottom: 90, left: 0, right: 300, width: 300, height: 80, x: 0, y: 10, toJSON: () => ({}) } as DOMRect,
+    )
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return (this.getAttribute('aria-modal') === 'true' ? [{}] : []) as unknown as DOMRectList
+    })
+    controller().docs.value = byHandles(['alice', 'bob', 'alice', 'alice', 'carol'])
+    const wrapper = await mountView()
+    const press = async (key: string) => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+      await flushPromises()
+    }
+    const cursorCard = () => wrapper.get('.masonry-grid article.is-cursor')
+
+    await press('j')
+    expect(cursorCard().get('.tweet-text').text()).toBe('Tweet 0 body')
+    expect(document.activeElement).toBe(cursorCard().element)
+
+    // 在领头那条上按 x 展开，j 走进展开的组；组里按 x 收回，光标落回领头那条
+    await press('x')
+    expect(wrapper.get('.tweet-fold').attributes('aria-expanded')).toBe('true')
+    await press('j')
+    expect(cursorCard().get('.tweet-text').text()).toBe('Tweet 2 body')
+    await press('x')
+    expect(wrapper.get('.tweet-fold').attributes('aria-expanded')).toBe('false')
+    expect(cursorCard().get('.tweet-text').text()).toBe('Tweet 0 body')
+
+    await press('j')
+    expect(cursorCard().get('.tweet-text').text()).toBe('Tweet 1 body')
+    await press('o')
+    expect(wrapper.get('.detail-backdrop .tweet-text').text()).toContain('Tweet 1 body')
+    await press('j')
+    expect(wrapper.get('.detail-backdrop .tweet-text').text()).toContain('Tweet 4 body')
+
+    await press('Escape')
+    expect(wrapper.find('.detail-backdrop').exists()).toBe(false)
+    expect(cursorCard().get('.tweet-text').text()).toBe('Tweet 4 body')
+    expect(document.activeElement).toBe(cursorCard().element)
+
+    await press('?')
+    expect(wrapper.find('.list-keys-sheet').exists()).toBe(true)
+    await press('Escape')
+    expect(wrapper.find('.list-keys-sheet').exists()).toBe(false)
+    await press('Escape')
+    expect(wrapper.find('.masonry-grid article.is-cursor').exists()).toBe(false)
+  })
+
   it('手机与平板照旧：不折叠、不排胶片，也没有纯文字档', async () => {
     viewport.desktop = false
     localStorage.setItem('xboard_text_only', '1')
@@ -675,5 +724,11 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     expect(wrapper.find('.tweet-media-list--strip').exists()).toBe(false)
     expect(wrapper.findAll('.masonry-grid .tweet-media-list')).toHaveLength(1)
     expect(wrapper.get('.masonry-grid .tweet-linkcard').classes()).not.toContain('tweet-linkcard--row')
+
+    // 也没有键盘流
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(wrapper.find('.is-cursor').exists()).toBe(false)
+    expect(wrapper.find('.list-keys-sheet').exists()).toBe(false)
   })
 })

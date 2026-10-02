@@ -434,6 +434,15 @@
     border-top-color: var(--rep-read-rule);
   }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-read a { color: var(--rep-read); }
+  /* the keyboard cursor (useListKeys): the item's top rule lit as a lime band with an ink edge, sprung from item to
+     item as the report's own mark (v-indicator) */
+  #app .app-shell--comic-page .report-broadsheet[data-indicator-mark] { position: relative; }
+  #app .app-shell--comic-page .report-broadsheet[data-indicator-mark]::after {
+    z-index: 2; height: 7px; translate: var(--indicator-x, 0px) calc(var(--indicator-y, 0px) - 2.5px);
+    border: 1.5px solid var(--rule-strong); border-radius: 3px; background: var(--acid);
+  }
+  #app .app-shell--comic-page .report-broadsheet__item[data-list-key] { scroll-margin-bottom: calc(var(--peel-clear) + 20px); }
+  #app .app-shell--comic-page .report-broadsheet__item.is-cursor:focus { outline: none; }
 
   /* ── Recommended websites (websites-C): every drawn piece is a generated 9-slice image (public/assets/comic/web-*.webp).
      Cards, tabs and tags hang theirs on ::after round an element that paints nothing; the search box, the select and
@@ -942,6 +951,14 @@
     border-image: var(--x-score) 27 33 36 27 fill / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
   }
   #app .app-shell--comic-page .xboard-seen-rule__line path { stroke: var(--x-ink); stroke-width: 2.5; }
+  /* the keyboard cursor (useListKeys): a lime key with an ink edge in the gap left of the card, sprung from card to
+     card as the wall's own mark (v-indicator); the card under it needs no focus ring of its own */
+  #app .app-shell--comic-page .masonry-grid[data-indicator-mark]::after {
+    z-index: 2; width: 6px; translate: calc(var(--indicator-x, 0px) - 9.5px) var(--indicator-y, 0px);
+    border: 1.5px solid var(--x-ink); border-radius: 3px; background: var(--x-lime);
+  }
+  #app .app-shell--comic-page .tweet-card[data-list-key] { scroll-margin: 14px 0 calc(var(--peel-clear) + 20px); }
+  #app .app-shell--comic-page .tweet-card.is-cursor:focus { outline: none; }
 
   /* the followed-accounts panel: a light line top and left, a heavy ink block right and down; orange dots off its
      lower right with a black clump in them, a few under its top right; the title marked with a yellow blot */

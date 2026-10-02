@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, useId, watch, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
+import { vIndicator } from '@/motion/indicator'
 import { vMorph } from '@/motion/morph'
 import { prefersReducedMotion } from '@/motion/motion'
+import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
 import { broadsheetItemReadId, type Broadsheet, type BroadsheetBlock } from '@/features/report/reportBroadsheet'
 
@@ -141,7 +144,31 @@ const expandFromClick = (event: MouseEvent) => {
   readMarks.markSeen(readId(id))
 }
 
-const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: boolean) => {
+// 键盘流：j / k 按版面顺序在条目之间走，走过的记为看过；o 在新标签页打开条目的出处（简报留在这里接着往下读，
+// 没有链接时展开全文），x 展开或收起全文。生成中文字还在长，不接键。
+const pieceEl = (id: string) => root.value?.querySelector<HTMLElement>(`[data-piece="${id}"]`) ?? null
+const canToggle = (id: string) => opened.has(id) || overflows(id, Number(pieceEl(id)?.dataset.lines))
+const itemOrder = computed(() => [...readIds.value.keys()])
+const listKeys = useListKeys({
+  enabled: computed(() => !props.generating),
+  root,
+  keys: itemOrder,
+  open: (id) => {
+    const piece = pieceEl(id)
+    const link = piece?.querySelector<HTMLAnchorElement>('.report-broadsheet__source a[href]') ?? piece?.querySelector<HTMLAnchorElement>('a[href]')
+    if (link) {
+      window.open(link.href, '_blank', 'noopener')
+      readMarks.markOpened(readId(id))
+    } else if (canToggle(id)) toggle(id)
+  },
+  toggle: (id) => {
+    if (canToggle(id)) toggle(id)
+  },
+  passed: (id) => readMarks.markSeen(readId(id)),
+})
+const { help: keysHelp, isCursor } = listKeys
+
+const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: boolean) => {
   if (intro) return 'is-standfirst'
   if (block.ems <= 180) return 'is-short'
   return block.ems > 1100 ? 'is-long' : 'is-columns'
@@ -149,7 +176,13 @@ const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: 
 </script>
 
 <template>
-  <div ref="root" class="report-broadsheet prose-content prose-report" :data-mode="mode" @click="expandFromClick">
+  <div
+    ref="root"
+    v-indicator="{ active: '.is-cursor', mark: 'after' }"
+    class="report-broadsheet prose-content prose-report"
+    :data-mode="mode"
+    @click="expandFromClick"
+  >
     <component
       :is="group.heading == null ? 'div' : 'section'"
       v-for="(group, g) in groups"
@@ -206,11 +239,13 @@ const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: 
             :class="{
               'is-numbered': item.number != null,
               'is-read': isRead(pieceId(g, b, i)),
+              'is-cursor': isCursor(pieceId(g, b, i)),
               'is-clamped': isClamped(pieceId(g, b, i), linesOf('item', group.heading == null)),
               'is-open': isOpen(pieceId(g, b, i)),
               'is-overflowing': overflows(pieceId(g, b, i), linesOf('item', group.heading == null)),
             }"
             :data-piece="pieceId(g, b, i)"
+            :data-list-key="pieceId(g, b, i)"
             :data-lines="linesOf('item', group.heading == null)"
           >
             <span v-if="item.number != null" class="report-broadsheet__num" aria-hidden="true">{{ item.number }}</span>
@@ -250,5 +285,6 @@ const proseLayout = (block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: 
       </template>
     </component>
     <p v-if="sheet.dateline" class="report-dateline" v-html="sheet.dateline" />
+    <ListKeysSheet v-model:open="keysHelp" :actions="{ open: t('listKeys.briefingOpen'), toggle: t('listKeys.briefingToggle') }" />
   </div>
 </template>

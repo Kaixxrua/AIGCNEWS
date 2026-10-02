@@ -4,16 +4,19 @@ import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
+import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
 import FolioTools from '@/components/layout/FolioTools.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
 import { useDockSuppression } from '@/composables/useDockSuppression'
+import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
 import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
+import { isTypingTarget, listKeyAction } from '@/features/keyboard/listKeys'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import { fold, unfold } from '@/motion/fold'
@@ -22,6 +25,7 @@ import { vMorph } from '@/motion/morph'
 import { canAnimate, popSpring } from '@/motion/motion'
 import { slideIn, slideOut } from '@/motion/presence'
 import { vReflow } from '@/motion/reflow'
+import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 import type { TweetCardLayout, TweetFold, TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
@@ -80,12 +84,12 @@ const foldsOf = (tweet: TopDoc): TweetFold[] => {
   const fold = foldedPage.value.folds.get(tweetKey(tweet))
   return fold ? [fold] : []
 }
-const toggleFold = (tweet: TopDoc) => {
-  const key = tweetKey(tweet)
+const toggleFoldOf = (key: string) => {
   const next = new Set(expandedFolds.value)
   if (!next.delete(key)) next.add(key)
   expandedFolds.value = next
 }
+const toggleFold = (tweet: TopDoc) => toggleFoldOf(tweetKey(tweet))
 // 已读淡化（只在桌面）：看过的推文变淡；再来时，在新来的和上回看过的之间画「上次看到这里」，线上面全是新的。
 // 记录只存在本机浏览器。每次重新拉取（进来、刷新、换窗口）算新的一次，这之前看过的都算上回看过的。
 const readMarks = useReadMarks({ list: 'x', enabled: desktop })
@@ -284,8 +288,9 @@ const openDetail = (tweet: TopDoc) => {
 const closeDetail = () => {
   detailTweet.value = null
   detailParent.value = null
-  // 焦点还原到打开浮层的触发元素；元素已随数据重载卸载时跳过
+  // 焦点还原到打开浮层的触发元素；元素已随数据重载卸载时跳过。在详情里用 j / k 换过条目的，落到最后看的那条上
   if (detailReturnFocus?.isConnected) detailReturnFocus.focus()
+  else if (desktop.value) listKeys.focusCursor()
   detailReturnFocus = null
 }
 const drillIntoQuote = () => {
@@ -302,6 +307,78 @@ const backToParent = () => {
   detailParent.value = null
   playingMedia.value = new Set()
   focusDetailClose()
+}
+
+// 键盘流（只在桌面）：j / k 按时间线顺序在这一页的推文之间走（线上面新来的在前），走过的记为看过，走到一页头尾再按就翻页；
+// o 打开详情，x 开合同账号折叠（在展开的组里按也行，收回后光标落回领头那条）。
+const listOrder = computed(() => [...wallSplit.value.fresh, ...wallSplit.value.earlier])
+const listKeyOrder = computed(() => listOrder.value.map(tweetKey))
+const tweetOf = (key: string) => listOrder.value.find((doc) => tweetKey(doc) === key)
+// 这条所在折叠组领头那条的 key：它自己领头，或在展开的组里；不在折叠组里为 null
+const foldHeadOf = (key: string) => {
+  const { folds } = foldedPage.value
+  if (folds.has(key)) return key
+  for (const [head, fold] of folds) if (fold.expanded && fold.rest.some((doc) => tweetKey(doc) === key)) return head
+  return null
+}
+const listKeys = useListKeys({
+  enabled: desktop,
+  root: wallEl,
+  keys: listKeyOrder,
+  open: (key) => {
+    const tweet = tweetOf(key)
+    if (tweet) openDetail(tweet)
+  },
+  toggle: (key) => {
+    const head = foldHeadOf(key)
+    if (head == null) return
+    toggleFoldOf(head)
+    if (head !== key) listKeys.setCursor(head, { reveal: true, focus: true })
+  },
+  passed: (key) => {
+    const tweet = tweetOf(key)
+    if (tweet) readMarks.markSeen(tweetReadId(tweet))
+  },
+  edge: (direction) => {
+    const page = wallPage.value + direction
+    if (page < 1 || page > wallPageCount.value) return false
+    onGoPage(page)
+    return true
+  },
+})
+const { help: keysHelp, isCursor } = listKeys
+
+// 详情开着时 j / k 换下一条、上一条（下钻看被引推文时不换），新的一条从按的方向滑进来，墙上的光标跟着走，到一页头尾接着翻页。
+const detailPanelEl = ref<HTMLElement | null>(null)
+const detailSwap = ref(0)
+const detailStep = ref<1 | -1>(1)
+const stepDetail = (direction: 1 | -1) => {
+  const tweet = detailTweet.value
+  const index = tweet ? listKeyOrder.value.indexOf(tweetKey(tweet)) : -1
+  if (index < 0) return
+  let next = listOrder.value[index + direction]
+  if (!next) {
+    const page = wallPage.value + direction
+    if (page < 1 || page > wallPageCount.value) return
+    onGoPage(page)
+    next = direction > 0 ? listOrder.value[0] : listOrder.value[listOrder.value.length - 1]
+    if (!next) return
+  }
+  readMarks.markOpened(tweetReadId(next))
+  detailReturnFocus = null
+  detailStep.value = direction
+  detailSwap.value += 1
+  detailTweet.value = next
+  playingMedia.value = new Set()
+  detailPanelEl.value?.scrollTo({ top: 0 })
+  listKeys.setCursor(tweetKey(next), { reveal: true })
+}
+const onDetailKeydown = (event: KeyboardEvent) => {
+  if (!detailTweet.value || detailParent.value || lightboxUrl.value || !desktop.value) return
+  const action = listKeyAction(event)
+  if ((action !== 'next' && action !== 'prev') || isTypingTarget(event.target)) return
+  event.preventDefault()
+  stepDetail(action === 'next' ? 1 : -1)
 }
 
 const onLightboxKeydown = (event: KeyboardEvent) => {
@@ -359,6 +436,7 @@ const handleDeleteSelected = async () => {
 onMounted(() => {
   window.addEventListener('resize', updateColumnCount)
   window.addEventListener('keydown', onLightboxKeydown)
+  window.addEventListener('keydown', onDetailKeydown)
   // 量主栏宽度与正文排版供瀑布流估高；clientWidth 不含滚动条。
   measureMasonry()
   if (mainEl.value && typeof ResizeObserver !== 'undefined') {
@@ -377,6 +455,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateColumnCount)
   window.removeEventListener('keydown', onLightboxKeydown)
+  window.removeEventListener('keydown', onDetailKeydown)
   mainResizeObserver?.disconnect()
   dispose()
 })
@@ -563,11 +642,12 @@ onBeforeUnmount(() => {
             </template>
           </div>
 
-          <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序） -->
+          <!-- 瀑布流推文墙（估高贪心分列：每条进当前最矮列，列内时间降序）；键盘光标是墙上一枚会滑动的标记 -->
           <div
             v-else
             ref="wallEl"
             v-reflow="{ key: wallLayout, ...wallEnterFrom }"
+            v-indicator="{ active: '.is-cursor', mark: 'after' }"
             class="masonry-grid"
             :class="{ 'masonry-grid--stale': wallStale }"
           >
@@ -594,8 +674,9 @@ onBeforeUnmount(() => {
                   :key="tweetKey(tweet)"
                   v-read-mark="tweetReadId(tweet)"
                   :data-reflow-key="tweetKey(tweet)"
+                  :data-list-key="tweetKey(tweet)"
                   class="tweet-card"
-                  :class="{ 'is-read': isRead(tweet) }"
+                  :class="{ 'is-read': isRead(tweet), 'is-cursor': isCursor(tweetKey(tweet)) }"
                 >
                   <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
                   <div v-if="retweetedByHandle(tweet)" class="tweet-retweet-line flex items-center gap-1.5 px-4 pt-2.5 text-2xs">
@@ -793,7 +874,7 @@ onBeforeUnmount(() => {
         :aria-label="t(detailParent ? 'xboard.quoteDetailTitle' : 'xboard.detailTitle')"
         @click="closeDetail"
       >
-        <article class="detail-panel" @click.stop>
+        <article ref="detailPanelEl" v-swap="{ key: detailSwap, x: detailStep * 24, y: 0 }" class="detail-panel" @click.stop>
           <button
             v-if="detailParent"
             type="button"
@@ -925,6 +1006,14 @@ onBeforeUnmount(() => {
         />
       </div>
     </Teleport>
+
+    <!-- 键盘快捷键表：按 ? 开合（桌面） -->
+    <ListKeysSheet
+      v-if="desktop"
+      v-model:open="keysHelp"
+      :actions="{ open: t('listKeys.tweetOpen'), toggle: t('listKeys.tweetToggle') }"
+      :extra="[{ keys: ['j', 'k'], label: t('listKeys.tweetDetail') }]"
+    />
   </div>
 </template>
 
