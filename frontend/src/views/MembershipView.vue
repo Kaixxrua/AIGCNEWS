@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeftRight, Check, X } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
@@ -20,6 +21,8 @@ import {
   resolvePlan,
 } from '@/features/payments/paymentModel'
 import type { PaymentPlan } from '@/features/payments/paymentModel'
+import { COMPARE_ROWS } from '@/features/membership/membershipCompare'
+import TierCompareList from '@/components/membership/TierCompareList.vue'
 
 defineOptions({ name: 'MembershipView' })
 
@@ -32,12 +35,18 @@ defineOptions({ name: 'MembershipView' })
  * 探测失败按 paymentModel 兜底常量渲染（与 plans.py 默认价钉住）。
  * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因）；
  * 公共简报与 RSS 免费；个人追踪为 free 1 条、vip 10 条规则。
+ * 桌面（≥1024px）三张卡排成一张对比表：左列是行名，三档的权益逐行对齐（行与格见 features/membership/membershipCompare），
+ * 开通按钮挪到价格下面；手机与平板仍是三张卡、各列各的权益。
  */
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const { contactPageConfig } = useContactPageConfig()
 
 const isMember = computed(() => authStore.isMember)
+
+const desktop = useMediaQuery('(min-width: 1024px)')
+// 对比表的行数交给样式排网格：行名列和三档的格子都按这个数分行。
+const compareStyle = computed(() => (desktop.value ? { '--compare-rows': String(COMPARE_ROWS.length) } : undefined))
 
 /** 计费周期切换：默认月付，按钮在项目库配方（右侧、描边小按钮）里切到年付 */
 const billingPeriod = ref<'monthly' | 'yearly'>('monthly')
@@ -151,20 +160,25 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
 
 <template>
   <div class="membership-page">
-    <div class="membership-card">
+    <div class="membership-card" :class="{ 'membership-card--compare': desktop }" :style="compareStyle">
       <header class="stagger-enter membership-hero">
         <h1 class="membership-title comic-title">{{ t('membership.title') }}</h1>
         <p class="membership-subtitle">{{ t('membership.subtitle') }}</p>
       </header>
 
       <section class="stagger-enter tier-grid" style="animation-delay: 0.05s">
+        <!-- 桌面对比表左侧的行名：读屏从每格开头的隐藏行名读，这一列只给眼睛看。 -->
+        <div v-if="desktop" class="tier-rows" aria-hidden="true">
+          <span v-for="row in COMPARE_ROWS" :key="row.key" class="tier-row-label">{{ t(`membership.compare.rows.${row.key}`) }}</span>
+        </div>
         <article class="glass-card tier-card">
           <h2 class="tier-name">{{ t('membership.guest.name') }}</h2>
           <p class="tier-price">
             <span class="tier-price-amount">{{ t('membership.guest.price') }}</span>
           </p>
           <hr class="tier-divider" />
-          <ul class="tier-features">
+          <TierCompareList v-if="desktop" tier="guest" />
+          <ul v-else class="tier-features">
             <li
               v-for="feature in GUEST_FEATURES"
               :key="feature.key"
@@ -190,7 +204,8 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             <span class="tier-price-amount">{{ t('membership.free.price') }}</span>
           </p>
           <hr class="tier-divider" />
-          <ul class="tier-features">
+          <TierCompareList v-if="desktop" tier="free" />
+          <ul v-else class="tier-features">
             <li
               v-for="feature in FREE_FEATURES"
               :key="feature.key"
@@ -244,7 +259,8 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
             <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
           </p>
           <hr class="tier-divider" />
-          <ul class="tier-features">
+          <TierCompareList v-if="desktop" tier="member" />
+          <ul v-else class="tier-features">
             <li
               v-for="feature in MEMBER_FEATURES"
               :key="feature.key"

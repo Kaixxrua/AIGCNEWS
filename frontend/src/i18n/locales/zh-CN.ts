@@ -29,6 +29,17 @@ const overrides = {
     member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', features: { tracking: '10 条关键词或项目追踪，支持排除词', personalDigest: '每日个人简报，自选时间与已验证投递渠道', mcpMember: 'MCP/API 共用：每 24 小时最多 400 次，滚动 30 天最多 8,000 次', websiteMember: '个人网页收藏添加不限量', support: 'MCP 接入问题支持' } },
     currentMember: '当前已是 vip', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News vip 开通咨询', memberNote: '感谢支持！vip 权益已生效。',
     ctaOnline: '立即开通', ctaOnlineHint: '在线支付：支付成功后权益立即生效；会员为在线交付的虚拟商品，一经开通不支持退款。',
+    compare: {
+      rowLabel: '{label}：', included: '包含', excluded: '不包含',
+      rows: { browse: '浏览榜单、论文与项目库', tracking: '关键词或项目追踪', digest: '每日个人简报', quota: 'MCP/API 额度（共用）', website: '个人网页收藏', briefing: '简报邮件订阅', rss: '简报 RSS 订阅' },
+      cells: {
+        trackingFree: '1 条', trackingMember: '10 条，支持排除词', digestMember: '自选时间与已验证投递渠道',
+        quotaGuestDay: '每 24 小时 30 次', quotaGuestScope: '仅 MCP，匿名使用',
+        quotaFreeDay: '每 24 小时最多 60 次', quotaFreeMonth: '滚动 30 天最多 1,200 次',
+        quotaMemberDay: '每 24 小时最多 400 次', quotaMemberMonth: '滚动 30 天最多 8,000 次',
+        websiteFree: '滚动 24 小时最多添加 3 个', websiteMember: '添加不限量', briefingAll: '全部 8 个日报模块', rssAll: '每日综合简报与简报速览',
+      },
+    },
     checkout: {
       title: '开通 vip', subtitle: '选择支付方式完成开通，支付成功后权益立即生效。',
       planMonthly: 'vip · 按月付', planYearly: 'vip · 按年付', perMonth: '/ 月', perYear: '/ 年',

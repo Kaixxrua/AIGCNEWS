@@ -28,6 +28,17 @@ const enUSCatalog = {
     member: { name: 'vip', badge: 'Recommended', priceMonthlyPeriod: '/ month', priceYearlyPeriod: '/ year', yearlySavings: 'Save {amount} with annual billing', yearlyDiscount: '-{percent}%', billMonthly: 'Monthly billing', billYearly: 'Annual billing', features: { tracking: '10 keyword or project rules with exclude filters', personalDigest: 'Daily personal digest with your time and verified delivery channel', mcpMember: 'Shared MCP/API quota: up to 400 per 24 hours and 8,000 per rolling 30 days', websiteMember: 'Unlimited personal website additions', support: 'MCP setup support' } },
     currentMember: 'Active vip', cta: 'Contact us to subscribe', ctaHint: 'Online payment is on the way — contact us first and your vip plan is activated right after confirmation.', ctaMailSubject: 'AIGC News vip inquiry', memberNote: 'Thank you! Your vip plan is active.',
     ctaOnline: 'Subscribe now', ctaOnlineHint: 'Online payment: your plan activates right after payment; as a virtual good delivered online, it is non-refundable once activated.',
+    compare: {
+      rowLabel: '{label}: ', included: 'Included', excluded: 'Not included',
+      rows: { browse: 'Rankings, papers, projects', tracking: 'Keyword or project tracking', digest: 'Daily personal digest', quota: 'MCP/API quota (shared)', website: 'Personal websites', briefing: 'Briefing emails', rss: 'Briefing RSS' },
+      cells: {
+        trackingFree: '1 rule', trackingMember: '10 rules with exclude filters', digestMember: 'Your time and verified channel',
+        quotaGuestDay: '30 per 24 hours', quotaGuestScope: 'MCP only, anonymous',
+        quotaFreeDay: 'Up to 60 per 24 hours', quotaFreeMonth: 'Up to 1,200 per rolling 30 days',
+        quotaMemberDay: 'Up to 400 per 24 hours', quotaMemberMonth: 'Up to 8,000 per rolling 30 days',
+        websiteFree: 'Up to 3 per rolling 24 hours', websiteMember: 'Unlimited additions', briefingAll: 'All 8 daily modules', rssAll: 'Daily briefing and digest',
+      },
+    },
     checkout: {
       title: 'Subscribe to vip', subtitle: 'Pick a payment method to finish — your plan activates right after payment.',
       planMonthly: 'vip · Monthly', planYearly: 'vip · Annual', perMonth: '/ month', perYear: '/ year',

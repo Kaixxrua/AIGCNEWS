@@ -1951,7 +1951,7 @@
     content: ''; position: absolute; inset: -2px -10px -13px -2px; z-index: -1; pointer-events: none;
     border: solid transparent; border-width: 90px 112px 76px 90px; border-image: var(--mem-card) 336 420 285 336 fill / 90px 112px 76px 90px stretch;
   }
-  #app .app-shell--comic-page .tier-card:nth-child(2)::after { border-width: 90px 112px 76px 90px; border-image: var(--mem-card-b) 339 420 285 336 fill / 90px 112px 76px 90px stretch; }
+  #app .app-shell--comic-page .tier-card:nth-of-type(2)::after { border-width: 90px 112px 76px 90px; border-image: var(--mem-card-b) 339 420 285 336 fill / 90px 112px 76px 90px stretch; }
   /* The vip card stands 16px above the others and reaches 9px lower. */
   #app .app-shell--comic-page .tier-card--member { margin: -16px 0 -9px; padding: 22px 22px 23px 34px; }
   #app .app-shell--comic-page .tier-card--member::after { border-width: 80px 99px 79px 98px; border-image: var(--mem-card-vip) 300 372 297 366 fill / 80px 99px 79px 98px stretch; }
@@ -2035,6 +2035,65 @@
     #app .app-shell--comic-page .tier-price-amount { font-size: 46px; }
     #app .app-shell--comic-page .tier-features { font-size: 14px; line-height: 22px; }
     #app .app-shell--comic-page .tier-cta { font-size: 22px; }
+  }
+  /* Desktop comparison (membership-compare): the three cards stand as the columns of one table. The title takes the
+     corner, the left column names the rows, and the cards share the page's rows through subgrid, so each plan's name,
+     price, action and every benefit sit level with the others'; the rows are split by the drawn dashes. The buy button
+     sits under the price in the action row and stays in view when a short window scrolls. The last row keeps the
+     benefits clear of the halftone in the frames' lower corners even when a member's card has no hint to put there. ── */
+  #app .app-shell--comic-page .membership-card--compare {
+    display: grid; grid-template-columns: clamp(164px, 15%, 228px) 420fr 460fr 560fr; column-gap: 22px; max-width: 1320px; padding-top: 6px;
+    grid-template-rows: auto auto auto minmax(58px, auto) repeat(var(--compare-rows), auto) minmax(54px, auto);
+  }
+  #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { padding-bottom: calc(var(--peel-clear) + 14px); }
+  #app .app-shell--comic-page .membership-card--compare .tier-grid { display: contents; }
+  #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 1; grid-row: 1 / 5; height: auto; padding: 16px 0 0 3px; }
+  #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin-top: 14px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-rows {
+    display: grid; grid-column: 1; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; animation: cardPopIn .7s cubic-bezier(.34, 1.56, .64, 1) .05s both;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-card {
+    display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-height: 0; padding-top: 12px; animation: cardPopIn .7s cubic-bezier(.34, 1.56, .64, 1) both;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(1) { grid-column: 2; animation-delay: .05s; }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(2) { grid-column: 3; animation-delay: .1s; }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(3) { grid-column: 4; animation-delay: .15s; }
+  /* Everything in a card keeps to the card's one column; the button and the rows overlap on purpose. */
+  #app .app-shell--comic-page .membership-card--compare .tier-card > :not(.tier-badge) { grid-column: 1; }
+  #app .app-shell--comic-page .membership-card--compare .tier-name { grid-row: 1; align-self: end; justify-self: start; margin-bottom: 6px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-price { grid-row: 2; }
+  /* A slip that no longer fits beside the yearly price drops under it whole rather than breaking across two lines. */
+  #app .app-shell--comic-page .membership-card--compare .tier-price-yearly { grid-row: 3; flex-wrap: wrap; row-gap: 6px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-savings { white-space: nowrap; }
+  #app .app-shell--comic-page .membership-card--compare .tier-divider { display: none; }
+  #app .app-shell--comic-page .membership-card--compare :is(.tier-plan-note, .tier-member-note) { grid-row: 4; align-self: center; margin: 0; padding: 0; background: none; }
+  /* The button spans down to the last row so that, when the window is too short for the table, it can ride along at the top. */
+  #app .app-shell--comic-page .membership-card--compare .tier-cta {
+    position: sticky; top: 8px; z-index: 2; grid-row: 4 / -1; align-self: start; min-height: 46px; margin-top: 6px;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-cta-label { white-space: nowrap; }
+  #app .app-shell--comic-page .membership-card--compare .tier-cta-hint { grid-row: -2 / -1; margin: 6px 0 0; font-size: 12px; line-height: 17px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare {
+    display: grid; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; gap: 0; margin: 0; font-size: 15px; line-height: 22px;
+  }
+  #app .app-shell--comic-page .membership-card--compare :is(.tier-row-label, .tier-features--compare li) {
+    padding: 5px 0 4px; background: linear-gradient(90deg, var(--mem-dash) 0 7px, transparent 7px 11px) 0 0 / 11px 1.5px repeat-x;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-row-label { color: var(--mem-ink); font-size: 15px; font-weight: 800; line-height: 22px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare :is(.tier-check, .tier-x) { flex-shrink: 0; margin-top: 2px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-cell { display: flex; flex-direction: column; min-width: 0; }
+  /* English row names run longer: the name column widens so none of them breaks, and the title steps down to fit it. */
+  :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: clamp(214px, 17%, 240px) 420fr 460fr 560fr; }
+  :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 30px; }
+  /* Below 1280 the table tightens: a narrower name column, 14px rows, and the room the guest column does not need goes
+     to the vip column, so the hint keeps to two lines and the whole table still fits a 1024 × 700 window. */
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 160px 400fr 460fr 560fr; column-gap: 18px; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 186px 400fr 460fr 560fr; }
+    #app .app-shell--comic-page .membership-card--compare :is(.tier-row-label, .tier-features--compare) { font-size: 14px; line-height: 21px; }
+    #app .app-shell--comic-page .membership-card--compare .tier-cta { gap: 10px; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 25px; }
   }
 
   /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the
