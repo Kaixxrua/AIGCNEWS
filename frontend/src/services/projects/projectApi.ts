@@ -138,6 +138,34 @@ export interface GitHubProjectTagsResponse {
   source?: ProjectSource | string
 }
 
+export interface GitHubProjectTrendPoint {
+  date: string
+  stars: number
+  /** 那天的可信日增；null 表示缺前一天快照、算不出来，不是 0。 */
+  gain: number | null
+}
+
+export interface GitHubProjectTrend {
+  points: GitHubProjectTrendPoint[]
+  /** 昨日热榜名次（前 200），不在榜上为 null；只有带 ranks 请求时才可信。 */
+  previous_rank?: number | null
+}
+
+export interface GitHubProjectTrendsResponse {
+  /** 窗口最后一天：今天的指标还没落库时是昨天。 */
+  metric_date: string
+  /** 名次对照的那一天；没带 ranks 请求时为 null。 */
+  previous_date: string | null
+  days: number
+  items: Record<string, GitHubProjectTrend>
+}
+
+export interface ProjectTrendsOptions {
+  days?: number
+  ranks?: boolean
+  signal?: AbortSignal
+}
+
 export interface ToolWebsiteAddResponse {
   status: string
   message: string
@@ -290,6 +318,46 @@ export async function fetchProjectCategories(
 ): Promise<GitHubProjectCategoriesResponse> {
   const res = await api.get('/projects/categories', { params: { source } })
   return normalizeProjectCategoriesResponse(res.data, source)
+}
+
+const finiteOrNull = (value: any): number | null => {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function normalizeProjectTrendsResponse(data: any, days: number): GitHubProjectTrendsResponse {
+  const items: Record<string, GitHubProjectTrend> = {}
+  const raw = data?.items && typeof data.items === 'object' ? data.items : {}
+  for (const [repoId, value] of Object.entries<any>(raw)) {
+    const points: GitHubProjectTrendPoint[] = Array.isArray(value?.points)
+      ? value.points
+          .map((point: any) => ({
+            date: String(point?.date ?? ''),
+            stars: Number(point?.stars ?? 0) || 0,
+            gain: finiteOrNull(point?.gain),
+          }))
+          .filter((point: GitHubProjectTrendPoint) => point.date)
+      : []
+    items[repoId] = { points, previous_rank: finiteOrNull(value?.previous_rank) }
+  }
+  return {
+    metric_date: String(data?.metric_date ?? ''),
+    previous_date: data?.previous_date ? String(data.previous_date) : null,
+    days: Number(data?.days ?? days) || days,
+    items,
+  }
+}
+
+/** 一页榜单的近 N 天星标与日增；ranks 时附昨日热榜名次（今日热门用来标升降）。 */
+export async function fetchProjectTrends(
+  repoIds: readonly string[],
+  { days = 14, ranks = false, signal }: ProjectTrendsOptions = {},
+): Promise<GitHubProjectTrendsResponse> {
+  const params: Record<string, string | number | boolean> = { repos: repoIds.join(','), days }
+  if (ranks) params.ranks = true
+  const res = await api.get('/projects/github/trends', { params, signal })
+  return normalizeProjectTrendsResponse(res.data, days)
 }
 
 export async function fetchMyProjectTags(

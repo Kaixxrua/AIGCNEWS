@@ -21,6 +21,15 @@ const enUSCatalog = {
   mcpAutoCommand: { label: 'Account setup command · Token included automatically', description: 'Step 2: create your token automatically, then copy the command or a natural-language prompt for your Agent.', creating: 'Creating your MCP Token and setup command…', ready: 'Your MCP Token is already included in the setup command', copy: 'Copy setup command', copyAgentPrompt: 'Copy Agent setup prompt', agentPromptHint: 'Paste the prompt into your coding Agent so it can configure and verify the connection. The prompt also contains your Token; treat it like a password.' },
   theme: { toggle: 'Theme', light: 'Light mode', dark: 'Dark mode' },
   density: { toCompact: 'Switch to the compact layout (more on screen)', toComfortable: 'Switch to the comfortable layout (roomier cards)' },
+  projectChart: {
+    label: 'Project chart', rank: 'Rank', project: 'Project', stars: 'Stars', gain: '24h', trend: '{days} days', heat: 'Heat', actions: 'Actions',
+    starsTitle: '{count} GitHub stars', heatTitle: 'Heat {score}',
+    movedUp: 'Up {count} since yesterday', movedDown: 'Down {count} since yesterday', unmoved: 'Same place as yesterday',
+    newEntry: 'NEW', newEntryTitle: "Not in yesterday's top 200", pick: "Editor's pick",
+    trendSummary: 'New stars per day over the last {days} days: {total} in all, most on {date} ({peak})',
+    trendEmpty: 'No daily star counts for the last {days} days yet',
+    trendDay: '{date}: {gain}', trendDayMissing: '{date}: not counted',
+  },
   navigation: { uiLibrary: 'UI Library', mainNavigation: 'Main navigation', primary: 'Main navigation', more: 'More', accountShort: 'Account', home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', websiteCollection: 'My Websites', report: 'Report', xboard: 'X Board', subscriptions: 'My Subscriptions', tracking: 'Tracking', mcp: 'MCP', dsh: 'dsh', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out', accountSettings: 'Account settings', showDock: 'Show navigation', monitorAlert: 'GitHub project enrichment failures need attention on the Monitor page' },
   contact: { kicker: 'CONTACT & PARTNERSHIPS', heroNote: 'Choose the route that fits your request.', servicesKicker: 'WHAT WE WORK ON', servicesTitle: 'Ways to work together', entryKicker: 'START HERE', entryTitle: 'Choose a contact route', primaryBadge: 'Recommended', qrHint: 'Scan to continue', qrUnavailable: 'QR image unavailable', notesKicker: 'DETAILS', notesTitle: 'A few more details' },
   membership: {

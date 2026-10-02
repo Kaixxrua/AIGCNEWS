@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useIntervalFn } from '@vueuse/core'
+import { useIntervalFn, useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { AppLocale } from '@/i18n'
 import type {
@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
+import ProjectChartRow from '@/components/projects/ProjectChartRow.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
 import WebsiteCollectionTabs from '@/components/websites/WebsiteCollectionTabs.vue'
@@ -26,6 +27,8 @@ import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
 import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
 import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
+import { useAppDensity } from '@/composables/useAppDensity'
+import { useProjectTrends } from '@/composables/useProjectTrends'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
   canEditWebsiteProject,
@@ -37,7 +40,15 @@ import {
   projectLogoKey,
   type ProjectChip,
 } from '@/features/projects/projectPresentation'
+import {
+  projectChartRanked,
+  projectChartShowsMovement,
+  projectRankMovement,
+  projectTrendKey,
+  type ProjectRankMovement,
+} from '@/features/projects/projectChart'
 import { distributeColumns } from '@/utils/masonry'
+import { vReflow } from '@/motion/reflow'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
@@ -250,6 +261,27 @@ const hideBrokenLogo = (repo: GitHubProjectItem) => {
 const canFavorite = canFavoriteProject
 const canRecommendCard = (repo: GitHubProjectItem) => canRecommendProject(repo, authStore.isAdmin)
 const canEditCard = (repo: GitHubProjectItem) => canEditWebsiteProject(repo, isWebsiteOnlyView.value)
+
+// 桌面紧凑版面把公共目录排成一张榜单：一行一个项目，描述写全，右边一排对齐的数字和近两周火花线。
+// 舒适版面、手机平板和个人收藏仍是原来的卡片。
+const isDesktop = useMediaQuery('(min-width: 1024px)')
+const { comfortable } = useAppDensity()
+const chartLayout = computed(() => isDesktop.value && !comfortable.value && !isPersonalView.value)
+const CHART_DAYS = 14
+const chartRanked = computed(() => projectChartRanked(sort.value))
+const chartMovement = computed(() => projectChartShowsMovement(selectedScope.value))
+const { trends: projectTrends, trendFor } = useProjectTrends(() => (chartLayout.value && projects.value.length
+  ? { repoIds: projects.value.map(projectTrendKey).filter(Boolean), ranks: chartMovement.value }
+  : null))
+// 按热度或星标排时编名次（接着上一页往下数）；按更新、收录时间或名称排时名次没有意义，不编。
+const chartPosition = (index: number) => (chartRanked.value ? (page.value - 1) * pageSize.value + index + 1 : null)
+// 今日热门对照昨天热榜标升降；行情还没到（或取不到）就先不标，不把每一行都当成新上榜。
+const chartMovementFor = (repo: GitHubProjectItem, position: number | null): ProjectRankMovement | null => {
+  if (!chartMovement.value || position === null || !projectTrends.value?.previous_date) return null
+  const trend = trendFor(projectTrendKey(repo))
+  return trend ? projectRankMovement(position, trend.previous_rank ?? null) : null
+}
+const chartReflowKey = computed(() => projects.value.map(projectKey).join('|'))
 
 const resetAndLoad = () => {
   if (isApplyingRouteState.value) return
@@ -617,6 +649,40 @@ onBeforeUnmount(stopViewReads)
           @demo="runMcpExampleDemo"
         />
       </div>
+    </section>
+
+    <section v-else-if="chartLayout" class="project-chart" :class="{ 'project-chart--ranked': chartRanked, 'project-chart--curator': authStore.isAdmin }" :aria-label="t('projectChart.label')">
+      <div class="project-chart__head" aria-hidden="true">
+        <span v-if="chartRanked" class="project-chart__col project-chart__col--rank">{{ t('projectChart.rank') }}</span>
+        <span class="project-chart__col project-chart__col--project">{{ t('projectChart.project') }}</span>
+        <span class="project-chart__col project-chart__col--stars">{{ t('projectChart.stars') }}</span>
+        <span class="project-chart__col project-chart__col--gain">{{ t('projectChart.gain') }}</span>
+        <span class="project-chart__col project-chart__col--spark">{{ t('projectChart.trend', { days: projectTrends?.days ?? CHART_DAYS }) }}</span>
+        <span class="project-chart__col project-chart__col--heat">{{ t('projectChart.heat') }}</span>
+      </div>
+      <ol v-reflow="{ key: chartReflowKey }" class="project-chart__rows" role="list">
+        <ProjectChartRow
+          v-for="(repo, index) in projects"
+          :key="projectKey(repo)"
+          :data-reflow-key="projectKey(repo)"
+          :repo="repo"
+          :position="chartPosition(index)"
+          :movement="chartMovementFor(repo, chartPosition(index))"
+          :trend="trendFor(projectTrendKey(repo))"
+          :metric-date="projectTrends?.metric_date ?? ''"
+          :days="projectTrends?.days ?? CHART_DAYS"
+          :can-favorite="canFavorite(repo)"
+          :can-recommend="canRecommendCard(repo)"
+          :is-logged-in="authStore.isLoggedIn"
+          :favorite-busy="favoriteBusyKey === projectKey(repo)"
+          :favorite-actions-busy="Boolean(favoriteBusyKey)"
+          :recommend-busy="recommendBusyKey === projectKey(repo)"
+          :recommend-actions-busy="Boolean(recommendBusyKey)"
+          @chip-click="handleChipClick"
+          @favorite="toggleFavorite"
+          @recommend="recommendProject"
+        />
+      </ol>
     </section>
 
     <section v-else class="projects-grid" :aria-label="t('navigation.projects')">

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
@@ -8,6 +9,7 @@ from backend.app.api.dependencies import (
     get_personal_projects_service,
     get_project_adoption_service,
     get_project_catalog_query_service,
+    get_project_trends_service,
 )
 from backend.app.core.auth import OptionalUser, RequireUser, extract_user_id
 from backend.app.models.schema_projects import (
@@ -15,6 +17,7 @@ from backend.app.models.schema_projects import (
     GitHubProjectSort,
     GitHubProjectsResponse,
     GitHubProjectTagsResponse,
+    GitHubProjectTrendsResponse,
     PersonalWebsiteQuotaResponse,
     ProjectAdoptionReceipt,
     ProjectAdoptionRequest,
@@ -46,8 +49,14 @@ from backend.app.services.project_catalog.query_service import (
     PUBLIC_PROJECT_MIN_STARS,
     ProjectCatalogQueryService,
 )
+from backend.app.services.project_catalog.trends_service import (
+    TRENDS_MAX_REPOS,
+    ProjectTrendsService,
+)
 
 router = APIRouter()
+
+_REPO_ID_PATTERN = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+")
 
 
 def get_github_logo_repository():
@@ -61,9 +70,7 @@ def github_project_logo(
     owner: str, repo: str, request: Request,
     repository: Any = Depends(get_github_logo_repository),
 ) -> Response:
-    import re
-
-    if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", f"{owner}/{repo}"):
+    if not _REPO_ID_PATTERN.fullmatch(f"{owner}/{repo}"):
         raise HTTPException(404, "Logo not found")
     row = repository.get(f"{owner}/{repo}")
     if not row:
@@ -77,6 +84,35 @@ def github_project_logo(
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
     return Response(content=bytes(row["content"]), media_type=row["content_type"], headers=headers)
+
+
+@router.get(
+    "/projects/github/trends",
+    response_model=GitHubProjectTrendsResponse,
+    tags=["Projects"],
+)
+async def github_project_trends(
+    response: Response,
+    repos: str = Query(..., min_length=3, max_length=4000),
+    days: int = Query(default=14, ge=7, le=30),
+    ranks: bool = Query(default=False),
+    trends: ProjectTrendsService = Depends(get_project_trends_service),
+) -> GitHubProjectTrendsResponse:
+    """项目库榜单行情：每个仓库近 days 天的星标与日增；ranks=true 时附今日热榜的昨日名次。
+
+    repos 是逗号分隔的 owner/repo，一次最多一页榜单（TRENDS_MAX_REPOS）。只读公开指标，可缓存两分钟。
+    """
+    repo_ids = list(dict.fromkeys(part.strip() for part in repos.split(",") if part.strip()))
+    if not repo_ids or len(repo_ids) > TRENDS_MAX_REPOS or not all(
+        _REPO_ID_PATTERN.fullmatch(repo_id) for repo_id in repo_ids
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"repos 须为 1–{TRENDS_MAX_REPOS} 个逗号分隔的 owner/repo",
+        )
+    result = await trends.trends(repo_ids, days=days, with_ranks=ranks)
+    response.headers["Cache-Control"] = "public, max-age=120"
+    return GitHubProjectTrendsResponse(**result)
 
 
 def _membership_inputs(user: dict[str, Any]) -> dict[str, str]:

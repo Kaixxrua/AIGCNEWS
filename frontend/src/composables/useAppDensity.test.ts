@@ -52,9 +52,19 @@ describe('useAppDensity', () => {
   })
 
   it('offers the toggle only on pages with a comfortable layout', async () => {
-    const { DENSITY_ROUTES } = await load()
-    expect([...DENSITY_ROUTES].sort()).toEqual(['membership', 'report', 'ui-library', 'x-board'])
-    expect(DENSITY_ROUTES.has('dashboard')).toBe(false)
-    expect(DENSITY_ROUTES.has('paper-read')).toBe(false)
+    const { DENSITY_ROUTES, routeHasDensityChoice } = await load()
+    expect([...DENSITY_ROUTES].sort()).toEqual(['github-projects', 'membership', 'report', 'ui-library', 'x-board'])
+    expect(routeHasDensityChoice({ name: 'dashboard' })).toBe(false)
+    expect(routeHasDensityChoice({ name: 'paper-read' })).toBe(false)
+    expect(routeHasDensityChoice({ name: 'report', query: { source: 'website' } })).toBe(true)
+  })
+
+  it('offers the toggle on the public project catalog but not on the personal collections', async () => {
+    const { routeHasDensityChoice } = await load()
+    expect(routeHasDensityChoice({ name: 'github-projects', query: {} })).toBe(true)
+    expect(routeHasDensityChoice({ name: 'github-projects', query: { scope: 'today', category: 'rag' } })).toBe(true)
+    expect(routeHasDensityChoice({ name: 'github-projects', query: { source: 'favorites' } })).toBe(false)
+    expect(routeHasDensityChoice({ name: 'github-projects', query: { source: ['website'] } })).toBe(false)
+    expect(routeHasDensityChoice({ name: 'recommended-websites', query: {} })).toBe(false)
   })
 })

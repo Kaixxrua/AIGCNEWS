@@ -22,6 +22,15 @@ const overrides = {
   mcpAutoCommand: { label: '账号配置命令 · 自动包含 Token', description: '第 2 步：自动创建专属 Token，可复制命令，或复制自然语言提示词交给 Agent 配置。', creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令', copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '将提示词粘贴给你的编码 Agent，它会自行完成配置并验证连接。提示词同样包含 Token，请按密码妥善保管。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   density: { toCompact: '换成紧凑版面（一屏看更多）', toComfortable: '换成舒适版面（宽松的卡片）' },
+  projectChart: {
+    label: '项目榜单', rank: '名次', project: '项目', stars: '星标', gain: '24 小时', trend: '近 {days} 天', heat: '热度', actions: '操作',
+    starsTitle: 'GitHub 星标 {count}', heatTitle: '热度 {score}',
+    movedUp: '比昨天上升 {count} 名', movedDown: '比昨天下降 {count} 名', unmoved: '名次和昨天一样',
+    newEntry: '新', newEntryTitle: '昨天不在热榜前 200 名', pick: '站长推荐',
+    trendSummary: '近 {days} 天每天新增星标：合计 {total}，{date} 最多（{peak}）',
+    trendEmpty: '近 {days} 天还没有每日星标数据',
+    trendDay: '{date}：{gain}', trendDayMissing: '{date}：没有统计',
+  },
   navigation: { uiLibrary: 'UI 灵感库', mainNavigation: '主导航', primary: '主导航', more: '更多', accountShort: '我的', home: '首页', dashboard: '仪表盘', papers: '论文', projects: '项目', websiteCollection: '我的网页', report: '报告', xboard: 'X 动态', subscriptions: '情报追踪', tracking: '情报追踪', mcp: 'MCP 接入', dsh: 'dsh 插件', membership: '会员', contact: '联系合作', monitor: '监控', loginAccount: '登录账号', logout: '退出登录', accountSettings: '账户设置', showDock: '显示导航', monitorAlert: 'GitHub 项目库存在富化失败，请到监控页处理' },
   contact: { kicker: '联系合作', heroNote: '按你的需求，选择合适的联系入口。', servicesKicker: '合作方向', servicesTitle: '我们可以一起做什么', entryKicker: '从这里开始', entryTitle: '选择联系入口', primaryBadge: '优先入口', qrHint: '扫码继续', qrUnavailable: '二维码暂时无法显示', notesKicker: '补充说明', notesTitle: '更多信息' },
   membership: {

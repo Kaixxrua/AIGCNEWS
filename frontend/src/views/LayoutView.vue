@@ -35,7 +35,7 @@ import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
 import { useReadingMode } from '@/composables/useReadingMode'
-import { DENSITY_ROUTES, useAppDensity } from '@/composables/useAppDensity'
+import { routeHasDensityChoice, useAppDensity } from '@/composables/useAppDensity'
 import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
@@ -63,7 +63,7 @@ provide(FOLIO_TOOLS_AVAILABLE, computed(() => folioPage.value && isDesktop.value
 // 版面密度：有舒适版面的内页在报眉右侧放开关；选了舒适时这几页的外壳挂一个类，舒适版面的样式据此生效（只在桌面，
 // 首页和别的页不挂）。
 const { comfortable } = useAppDensity()
-const densityToggleShown = computed(() => folioPage.value && isDesktop.value && DENSITY_ROUTES.has(String(route.name ?? '')))
+const densityToggleShown = computed(() => folioPage.value && isDesktop.value && routeHasDensityChoice(route))
 const comfortableShell = computed(() => comfortable.value && densityToggleShown.value)
 // 首页的墨线在左上角贴纸处抬高、绕过飘带再落回报头底；报眉没有贴纸，墨线贴着底边走完。
 const mastheadRule = computed(() => folioPage.value

@@ -103,6 +103,7 @@ from backend.app.services.payments.runtime_config import resolve_payment_config
 from backend.app.services.personal_projects import PersonalProjectsService
 from backend.app.services.project_adoptions import ProjectAdoptionService
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
+from backend.app.services.project_catalog.trends_service import ProjectTrendsService
 from backend.app.services.push.channel_service import PushChannelService
 from backend.app.services.push.subscription_service import UserSubscriptionService
 from backend.app.services.push.telegram_config_admin import TelegramConfigAdminService
@@ -616,6 +617,15 @@ def get_personal_projects_service(
 def get_project_catalog_query_service() -> ProjectCatalogQueryService:
     """公共项目目录查询编排服务；仓储仍经工厂按次解析，保持既有连接语义。"""
     return ProjectCatalogQueryService(repository_factory=get_project_catalog_repository)
+
+
+# 全进程一份：昨日名次在服务里缓存十分钟，按请求新建就留不住。
+_project_trends_service = ProjectTrendsService()
+
+
+def get_project_trends_service() -> ProjectTrendsService:
+    """项目库榜单行情：近 N 天星标与日增、今日热榜的昨日名次。"""
+    return _project_trends_service
 
 
 def get_project_adoption_service() -> ProjectAdoptionService:

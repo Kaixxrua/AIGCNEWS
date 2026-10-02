@@ -8,6 +8,7 @@ import {
   favoriteProject,
   fetchMyProjectTags,
   fetchProjectCategories,
+  fetchProjectTrends,
   fetchProjects,
   recommendGitHubProject,
   unfavoriteProject,
@@ -89,6 +90,52 @@ describe('Project API transport contract', () => {
     transport.post.mockResolvedValueOnce({ data: { repo_id: 123, is_recommended: 1 } })
     await expect(recommendGitHubProject({ full_name: 'owner/repo' })).resolves.toMatchObject({
       status: 'succeeded', repo_id: '123', full_name: 'owner/repo', is_recommended: true, removed: false,
+    })
+  })
+
+  it('asks for one page of trends at once and keeps missing gains and ranks empty', async () => {
+    const signal = new AbortController().signal
+    transport.get.mockResolvedValueOnce({
+      data: {
+        metric_date: '2026-10-02',
+        previous_date: '2026-10-01',
+        days: '14',
+        items: {
+          'acme/alpha': {
+            points: [{ date: '2026-10-01', stars: '1158', gain: null }, { date: '2026-10-02', stars: 1200, gain: '42' }, { stars: 3 }],
+            previous_rank: 3,
+          },
+          'acme/beta': { points: 'nope', previous_rank: null },
+          'acme/gamma': {},
+        },
+      },
+    })
+
+    await expect(fetchProjectTrends(['acme/alpha', 'acme/beta', 'acme/gamma'], { ranks: true, signal })).resolves.toEqual({
+      metric_date: '2026-10-02',
+      previous_date: '2026-10-01',
+      days: 14,
+      items: {
+        'acme/alpha': {
+          points: [{ date: '2026-10-01', stars: 1158, gain: null }, { date: '2026-10-02', stars: 1200, gain: 42 }],
+          previous_rank: 3,
+        },
+        'acme/beta': { points: [], previous_rank: null },
+        'acme/gamma': { points: [], previous_rank: null },
+      },
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/projects/github/trends', {
+      params: { repos: 'acme/alpha,acme/beta,acme/gamma', days: 14, ranks: true },
+      signal,
+    })
+
+    transport.get.mockResolvedValueOnce({ data: null })
+    await expect(fetchProjectTrends(['acme/alpha'], { days: 30 })).resolves.toEqual({
+      metric_date: '', previous_date: null, days: 30, items: {},
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/projects/github/trends', {
+      params: { repos: 'acme/alpha', days: 30 },
+      signal: undefined,
     })
   })
 })

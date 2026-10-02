@@ -122,6 +122,26 @@ class GitHubProjectCategoriesResponse(BaseModel):
     source: str = "github"
 
 
+class GitHubProjectTrendPoint(BaseModel):
+    date: str
+    stars: int
+    # None: that day has no trustworthy daily gain (no earlier snapshot), not zero.
+    gain: int | None = None
+
+
+class GitHubProjectTrend(BaseModel):
+    points: list[GitHubProjectTrendPoint] = Field(default_factory=list)
+    # Rank on the previous day's hot list (top 200); None when not on it. Only sent with ranks=true.
+    previous_rank: int | None = None
+
+
+class GitHubProjectTrendsResponse(BaseModel):
+    metric_date: str
+    previous_date: str | None = None
+    days: int
+    items: dict[str, GitHubProjectTrend]
+
+
 class ToolWebsiteAddRequest(BaseModel):
     url: str = Field(default="", max_length=1024)
 
