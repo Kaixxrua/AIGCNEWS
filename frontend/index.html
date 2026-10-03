@@ -8,6 +8,13 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#f7f5ee" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 桌面每页都用的 DM Sans 400/700/800 随 HTML 一起请求。等应用首帧渲染时才发现它们就晚了：字体换上后，
+         简报控制条、MCP 页头会重新折行，造成布局偏移（见 docs/layout-budget.md）。手机版正文用 Inter（mobile-reading.css），
+         所以只在 768px 以上预加载。媒体条件按当时的视口算，这几行要排在 viewport 声明之后，否则手机按默认的 980px 宽也会命中。
+         字体同源，但仍须带 crossorigin，否则预加载用不上。 -->
+    <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-regular.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
+    <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-700.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
+    <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-800.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
     <meta name="description" content="AIGCNEWS（AIGC Radar）：AI 垂直资讯索引——arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="AIGCNEWS · AIGC Radar" />
