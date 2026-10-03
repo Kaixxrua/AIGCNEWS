@@ -27,6 +27,7 @@
 |---|---|
 | [git-workflow.md](git-workflow.md) | 提交信息格式、PR-sized 工作单元、自动推送约束 |
 | [mcp-vs-websearch-agent-project-discovery.md](mcp-vs-websearch-agent-project-discovery.md) | MCP 与 WebSearch 项目搜索对比实测（MCP-first 策略依据） |
+| [layout-budget.md](layout-budget.md) | 桌面版面预算检查：四档宽度 × 中英文的布局偏移、横向溢出、首屏条目与列表键盘流 |
 
 ## 运维
 

@@ -13,6 +13,7 @@
     "lint": "eslint src --no-warn-ignored",
     "format": "prettier --write src",
     "test:unit": "vitest run",
+    "check:layout": "node scripts/layout-budget.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
