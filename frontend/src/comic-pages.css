@@ -2200,6 +2200,7 @@
     --mem-chip: url('/assets/comic/mem-chip.webp'); --mem-savings: url('/assets/comic/mem-savings.webp');
     --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #838e9d; --mem-off: #8f939b; --mem-check: #168c48; --mem-x: #b2b3b4;
     --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
+    --mem-mark: #d9fb52; --mem-same: #5c6a7e; --mem-check-same: #4f9a6c;
     display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
@@ -2209,6 +2210,8 @@
     --mem-ink: var(--ink); --mem-copy: var(--ink); --mem-muted: var(--ink-muted); --mem-off: var(--ink-muted); --mem-check: #4cc27a; --mem-x: var(--ink-muted);
     --mem-rule: color-mix(in srgb, var(--ink) 45%, var(--paper)); --mem-dash: color-mix(in srgb, #7997bc 70%, var(--paper)); --mem-hint: #8fb0d6;
     --mem-cta: color-mix(in srgb, var(--acid) 12%, var(--paper-raised)); --mem-cta-ink: var(--acid); --mem-halo: var(--paper);
+    --mem-mark: color-mix(in srgb, var(--acid) 30%, transparent); --mem-same: color-mix(in srgb, var(--ink) 62%, var(--paper));
+    --mem-check-same: color-mix(in srgb, #4cc27a 62%, var(--paper));
   }
   #app .app-shell--comic-page .membership-card { max-width: 1280px; margin: 0 auto; gap: 0; }
   #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 80px; padding: 10px 0 0 3px; text-align: left; }
@@ -2371,6 +2374,16 @@
   #app .app-shell--comic-page .membership-card--compare .tier-features--compare li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
   #app .app-shell--comic-page .membership-card--compare .tier-features--compare :is(.tier-check, .tier-x) { flex-shrink: 0; margin-top: 2px; }
   #app .app-shell--comic-page .membership-card--compare .tier-cell { display: flex; flex-direction: column; min-width: 0; }
+  /* A plan that gives more of a benefit than the plan to its left has the words run under a lime highlighter, the
+     title's stroke; a ✗ to ✓ step stays plain, the ✗ already shows it. The row every plan has alike steps back a
+     shade, so the eye lands on the rows that set the plans apart. The stroke's padding is paid back in margin, so no
+     line breaks anywhere it did not before. */
+  #app .app-shell--comic-page .membership-card--compare .tier-feature--upgrade .tier-cell-text {
+    margin-inline: -3px; padding-inline: 3px; background: linear-gradient(transparent 52%, var(--mem-mark) 52% 94%, transparent 94%);
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-row-label--same { color: var(--mem-same); font-weight: 700; }
+  #app .app-shell--comic-page .membership-card--compare .tier-feature--same .tier-check { color: var(--mem-check-same); }
   /* English row names run longer: the name column widens so none of them breaks, and the title steps down to fit it. */
   :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: clamp(214px, 17%, 240px) 420fr 460fr 560fr; }
   :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 30px; }

@@ -2,6 +2,9 @@
 
 export type CompareTier = 'guest' | 'free' | 'member'
 
+/** 对比表从左到右的档位顺序，越往右给得越多。 */
+export const COMPARE_TIERS: readonly CompareTier[] = ['guest', 'free', 'member']
+
 export type CompareRowKey = 'browse' | 'tracking' | 'digest' | 'quota' | 'website' | 'briefing' | 'rss'
 
 /**
@@ -38,13 +41,39 @@ export interface CompareEntry {
   included: boolean
   /** 说明文案的 i18n 键，一个键一行；只画 ✓ 或 ✗ 的格子为空。 */
   lines: readonly string[]
+  /**
+   * 左边一档也有这项，这一档给得更多（条数、次数更多，或多了说明里的功能）：说明文字划上荧光笔。
+   * 左边一档没有的（✗ 到 ✓）不划，左边那格的 ✗ 已经把差别摆出来了。
+   */
+  upgrade: boolean
+  /** 三档这一行完全一样：整行淡一点，让眼睛落在有差别的行上。 */
+  same: boolean
 }
 
-/** 一档在对比表里的那一列：按行序给出含不含、写什么。 */
+const includes = (cell: CompareCell) => cell !== false
+const linesOf = (cell: CompareCell): readonly string[] => (typeof cell === 'boolean' ? [] : typeof cell === 'string' ? [cell] : cell)
+const sameCell = (a: CompareCell, b: CompareCell) => {
+  const [left, right] = [linesOf(a), linesOf(b)]
+  return includes(a) === includes(b) && left.length === right.length && left.every((line, index) => line === right[index])
+}
+
+/** 三档在这一行写的完全一样（目前只有「浏览」）。 */
+export function sameAcrossTiers({ cells }: CompareRow): boolean {
+  return COMPARE_TIERS.every((tier) => sameCell(cells[tier], cells.guest))
+}
+
+/** 一档在对比表里的那一列：按行序给出含不含、写什么，和左边一档比是不是给得更多。 */
 export function compareColumn(tier: CompareTier, rows: readonly CompareRow[] = COMPARE_ROWS): CompareEntry[] {
-  return rows.map(({ key, cells }) => {
-    const cell = cells[tier]
-    if (typeof cell === 'boolean') return { row: key, included: cell, lines: [] }
-    return { row: key, included: true, lines: typeof cell === 'string' ? [cell] : [...cell] }
+  const left = COMPARE_TIERS[COMPARE_TIERS.indexOf(tier) - 1]
+  return rows.map((row) => {
+    const cell = row.cells[tier]
+    const before = left ? row.cells[left] : false
+    return {
+      row: row.key,
+      included: includes(cell),
+      lines: [...linesOf(cell)],
+      upgrade: includes(cell) && includes(before) && !sameCell(cell, before),
+      same: sameAcrossTiers(row),
+    }
   })
 }

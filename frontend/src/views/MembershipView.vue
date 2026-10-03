@@ -22,7 +22,7 @@ import {
   resolvePlan,
 } from '@/features/payments/paymentModel'
 import type { PaymentPlan } from '@/features/payments/paymentModel'
-import { COMPARE_ROWS } from '@/features/membership/membershipCompare'
+import { COMPARE_ROWS, sameAcrossTiers } from '@/features/membership/membershipCompare'
 import TierCompareList from '@/components/membership/TierCompareList.vue'
 import { useAppDensity } from '@/composables/useAppDensity'
 
@@ -174,7 +174,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
       <section v-swap="{ key: compare ? null : 'cards', stagger: true }" class="stagger-enter tier-grid" style="animation-delay: 0.05s">
         <!-- 桌面对比表左侧的行名：读屏从每格开头的隐藏行名读，这一列只给眼睛看。 -->
         <div v-if="compare" class="tier-rows" aria-hidden="true">
-          <span v-for="row in COMPARE_ROWS" :key="row.key" class="tier-row-label">{{ t(`membership.compare.rows.${row.key}`) }}</span>
+          <span v-for="row in COMPARE_ROWS" :key="row.key" class="tier-row-label" :class="{ 'tier-row-label--same': sameAcrossTiers(row) }">{{ t(`membership.compare.rows.${row.key}`) }}</span>
         </div>
         <article class="glass-card tier-card">
           <h2 class="tier-name">{{ t('membership.guest.name') }}</h2>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { messages } from '@/i18n'
-import { COMPARE_ROWS, compareColumn, type CompareTier } from './membershipCompare'
+import { COMPARE_ROWS, COMPARE_TIERS, compareColumn, sameAcrossTiers, type CompareRow, type CompareTier } from './membershipCompare'
 
 const TIERS: readonly CompareTier[] = ['guest', 'free', 'member']
 const LOCALES = ['zh-CN', 'en-US'] as const
@@ -21,13 +21,13 @@ const keysAt = (copy: Copy, path: string): string[] => {
 describe('compareColumn', () => {
   it('gives each plan one cell per row, in the table order', () => {
     expect(compareColumn('guest')).toEqual([
-      { row: 'browse', included: true, lines: [] },
-      { row: 'tracking', included: false, lines: [] },
-      { row: 'digest', included: false, lines: [] },
-      { row: 'quota', included: true, lines: ['quotaGuestDay', 'quotaGuestScope'] },
-      { row: 'website', included: false, lines: [] },
-      { row: 'briefing', included: false, lines: [] },
-      { row: 'rss', included: false, lines: [] },
+      { row: 'browse', included: true, lines: [], upgrade: false, same: true },
+      { row: 'tracking', included: false, lines: [], upgrade: false, same: false },
+      { row: 'digest', included: false, lines: [], upgrade: false, same: false },
+      { row: 'quota', included: true, lines: ['quotaGuestDay', 'quotaGuestScope'], upgrade: false, same: false },
+      { row: 'website', included: false, lines: [], upgrade: false, same: false },
+      { row: 'briefing', included: false, lines: [], upgrade: false, same: false },
+      { row: 'rss', included: false, lines: [], upgrade: false, same: false },
     ])
     expect(compareColumn('member').map(({ included, lines }) => [included, lines])).toEqual([
       [true, []],
@@ -47,6 +47,35 @@ describe('compareColumn', () => {
       if (guest?.[index]?.included) expect(free?.[index]?.included, key).toBe(true)
       if (free?.[index]?.included) expect(member?.[index]?.included, key).toBe(true)
     })
+  })
+
+  it('marks what each plan gives more of than the plan to its left, and the one row all three have alike', () => {
+    const upgraded = (tier: CompareTier) => compareColumn(tier).filter((entry) => entry.upgrade).map((entry) => entry.row)
+    expect(TIERS).toEqual(COMPARE_TIERS)
+    expect(upgraded('guest')).toEqual([])
+    expect(upgraded('free')).toEqual(['quota'])
+    expect(upgraded('member')).toEqual(['tracking', 'digest', 'quota', 'website'])
+    expect(COMPARE_ROWS.filter(sameAcrossTiers).map((row) => row.key)).toEqual(['browse'])
+    for (const tier of TIERS) {
+      expect(compareColumn(tier).filter((entry) => entry.same).map((entry) => entry.row)).toEqual(['browse'])
+      // 划荧光笔的格子都有说明文字可划
+      for (const entry of compareColumn(tier)) if (entry.upgrade) expect(entry.lines.length, `${tier}.${entry.row}`).toBeGreaterThan(0)
+    }
+  })
+
+  it('leaves a ✗ to ✓ step unmarked and compares what the cells say, line by line', () => {
+    const rows: CompareRow[] = [
+      { key: 'browse', cells: { guest: false, free: 'a', member: 'a' } },
+      { key: 'tracking', cells: { guest: true, free: true, member: 'b' } },
+      { key: 'quota', cells: { guest: ['x', 'y'], free: ['x', 'y'], member: ['x', 'z'] } },
+      { key: 'website', cells: { guest: ['x'], free: ['x', 'y'], member: ['x', 'y'] } },
+      { key: 'rss', cells: { guest: false, free: false, member: false } },
+    ]
+    const marks = (tier: CompareTier) => compareColumn(tier, rows).map((entry) => entry.upgrade)
+    expect(marks('guest')).toEqual([false, false, false, false, false])
+    expect(marks('free')).toEqual([false, false, false, true, false])
+    expect(marks('member')).toEqual([false, true, true, false, false])
+    expect(rows.map(sameAcrossTiers)).toEqual([false, false, false, false, true])
   })
 })
 

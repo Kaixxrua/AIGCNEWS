@@ -91,6 +91,23 @@ describe('MembershipView desktop comparison', () => {
     expect(freeTracking?.text()).toBe('关键词或项目追踪：1 条')
   })
 
+  it('runs a highlighter under what a plan gives more of than the plan to its left, and mutes the row all three share', () => {
+    const wrapper = mountView()
+    const marked = (tier: number) => column(wrapper, tier)
+      .filter((cell) => cell.classes('tier-feature--upgrade'))
+      .map((cell) => cell.findAll('.tier-cell-text').map((text) => text.text()))
+    expect(marked(0)).toEqual([])
+    expect(marked(1)).toEqual([['每 24 小时最多 60 次', '滚动 30 天最多 1,200 次']])
+    expect(marked(2)).toEqual([['10 条，支持排除词'], ['自选时间与已验证投递渠道'], ['每 24 小时最多 400 次', '滚动 30 天最多 8,000 次'], ['添加不限量']])
+    // ✗ 到 ✓ 不划：免费档的追踪比游客多，但游客那格的 ✗ 已经说明了
+    expect(column(wrapper, 1)[1]?.classes()).not.toContain('tier-feature--upgrade')
+
+    expect(wrapper.findAll('.tier-row-label--same').map((label) => label.text())).toEqual([ROW_NAMES[0]])
+    for (const tier of [0, 1, 2]) {
+      expect(column(wrapper, tier).map((cell) => cell.classes('tier-feature--same'))).toEqual([true, false, false, false, false, false, false])
+    }
+  })
+
   it('keeps the buy button and its hint in the vip column', () => {
     const wrapper = mountView()
     const member = wrapper.get('.tier-card--member')
