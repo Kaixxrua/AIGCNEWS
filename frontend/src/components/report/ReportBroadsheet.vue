@@ -14,10 +14,11 @@ import { itemPaperLinks, paperArxivId } from '@/features/report/reportPaperLinks
 
 /**
  * 桌面版简报的大报排法：每节的正文段落分三栏，条目排成两到三栏的网格，条目的标题句加粗打头。
- * 全文模式下条目正文最多 5 行、导读模式下 2 行（节内段落收成 2 行的一栏），点开看全文；条目的出处链接与「展开全文」
- * 同排在底行，正文收着也能直接点。生成中全部展开，跟着流式文字长。收起与展开、两种模式之间切换时正文高度平滑过渡。
+ * 全文模式下条目正文最多 5 行、导读模式下 2 行（节内段落收成 2 行的一栏），点开看全文；条目的出处链接排在标题句
+ * 右侧（没有标题句的排在底行），正文收着也能直接点，「展开全文」在正文下方的底行。生成中全部展开，跟着流式文字长。
+ * 收起与展开、两种模式之间切换时正文高度平滑过渡。
  * 看过的条目下次再打开这一期时变淡，点过其中链接的立刻变淡（记录只存在本机浏览器）。
- * 给了 saves 时条目底行多一枚书签，按 s 也能收下光标停着的那条（生成中没有）。
+ * 给了 saves 时每条多一枚书签（标题句一排的最右，没有标题句的在底行打头），按 s 也能收下光标停着的那条（生成中没有）。
  * 给了 peek（宽屏）时，点条目里的论文链接、讲到论文的条目的标题，在右侧看这篇的详情，不离开简报；详情开着时
  * j / k 只走讲到论文的条目，右侧跟着换，Esc 收起。
  */
@@ -345,10 +346,22 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
             :data-lines="linesOf('item', group.heading == null)"
           >
             <span v-if="item.number != null" class="report-broadsheet__num" aria-hidden="true">{{ item.number }}</span>
-            <h3 v-if="item.lead" class="report-broadsheet__lead">
-              <span v-html="item.lead" />
-              <small v-if="item.note" class="report-broadsheet__note" v-html="item.note" />
-            </h3>
+            <div v-if="item.lead" class="report-broadsheet__head">
+              <h3 class="report-broadsheet__lead">
+                <span v-html="item.lead" />
+                <small v-if="item.note" class="report-broadsheet__note" v-html="item.note" />
+              </h3>
+              <!-- 出处和书签排在标题句右侧，书签在最右：正文不长的条目就不用再占一行底栏 -->
+              <span v-if="canSave || item.source" class="report-broadsheet__credit">
+                <span v-if="item.source" class="report-broadsheet__source" v-html="item.source" />
+                <SaveButton
+                  v-if="canSave"
+                  class="report-broadsheet__save"
+                  :saved="isSaved(pieceId(g, b, i))"
+                  @toggle="toggleSave(pieceId(g, b, i))"
+                />
+              </span>
+            </div>
             <div
               v-if="item.body"
               :id="bodyId(pieceId(g, b, i))"
@@ -358,13 +371,13 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
               :style="{ '--lines': linesOf('item', group.heading == null) }"
               v-html="item.body"
             />
+            <!-- 底行：「展开全文」落在正文断开的地方；没有标题句的条目，书签打头、出处在右，也排在这里 -->
             <div
-              v-if="item.source || overflows(pieceId(g, b, i), linesOf('item', group.heading == null)) || canSave"
+              v-if="overflows(pieceId(g, b, i), linesOf('item', group.heading == null)) || (!item.lead && (item.source || canSave))"
               class="report-broadsheet__foot"
             >
-              <!-- 书签打头：收下这条（只存在本机） -->
               <SaveButton
-                v-if="canSave"
+                v-if="!item.lead && canSave"
                 class="report-broadsheet__save"
                 :saved="isSaved(pieceId(g, b, i))"
                 @toggle="toggleSave(pieceId(g, b, i))"
@@ -379,7 +392,7 @@ const proseLayout =(block: Extract<BroadsheetBlock, { kind: 'prose' }>, intro: b
               >
                 {{ isOpen(pieceId(g, b, i)) ? t('report.collapse') : t('report.expand') }}
               </button>
-              <span v-if="item.source" class="report-broadsheet__source" v-html="item.source" />
+              <span v-if="!item.lead && item.source" class="report-broadsheet__source" v-html="item.source" />
             </div>
           </li>
         </component>

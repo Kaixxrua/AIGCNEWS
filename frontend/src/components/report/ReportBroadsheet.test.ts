@@ -54,17 +54,38 @@ afterEach(() => {
 })
 
 describe('ReportBroadsheet', () => {
-  it('sets an item source in its foot, beside where the toggle goes, and gives an item without one no foot', () => {
+  it('sets an item source beside its headline, so an item whose copy is not cut short has no foot', () => {
     const wrapper = mountSheet()
 
     const [dots, guide] = wrapper.findAll('.report-broadsheet__item')
     expect(dots!.find('.report-broadsheet__body').text()).toBe('这是一个面向网页的开源 AI Agent。')
-    const source = dots!.find('.report-broadsheet__foot .report-broadsheet__source a')
+    const source = dots!.find('.report-broadsheet__head .report-broadsheet__credit .report-broadsheet__source a')
     expect(source.attributes('href')).toBe('https://github.com/feder-cr/dots')
     expect(source.text()).toBe('来源')
-    // jsdom 不排版，量不出溢出：没有「展开全文」，只有出处。
+    // jsdom 不排版，量不出溢出：没有「展开全文」，出处又在标题句一排，就没有底行。
     expect(dots!.find('.report-broadsheet__toggle').exists()).toBe(false)
+    expect(dots!.find('.report-broadsheet__foot').exists()).toBe(false)
+    expect(guide!.find('.report-broadsheet__credit').exists()).toBe(false)
     expect(guide!.find('.report-broadsheet__foot').exists()).toBe(false)
+  })
+
+  it('sets the bookmark and source of an item without a headline in its foot, the bookmark first', () => {
+    const plain = parseBroadsheet(renderMarkdown([
+      '## 行业动态 `#news`',
+      '',
+      '1. 特朗普提出任命 AI 主管并组建 AI Force。[来源](https://www.techmeme.com/260919/p11)',
+    ].join('\n')))
+    const wrapper = mount(ReportBroadsheet, {
+      props: { sheet: plain, mode: 'lead', generating: false, saves: fakeSaves().saves },
+      global: { plugins: [i18n] },
+    })
+    mounted.push(wrapper)
+
+    const item = wrapper.get('.report-broadsheet__item')
+    expect(item.find('.report-broadsheet__head').exists()).toBe(false)
+    const foot = [...item.get('.report-broadsheet__foot').element.children]
+    expect(foot.map((el) => el.classList.contains('report-broadsheet__save'))).toEqual([true, false])
+    expect(foot[1]!.querySelector('a')?.getAttribute('href')).toBe('https://www.techmeme.com/260919/p11')
   })
 
   it('dims the items read on an earlier visit, but not while the issue is still being written', () => {
@@ -120,14 +141,16 @@ describe('ReportBroadsheet', () => {
     expect(document.body.querySelector('.list-keys-sheet')?.textContent).toContain('在新标签页打开出处')
   })
 
-  it('leads every item foot with a bookmark when it can save, and saves with the item place on a click or on s', async () => {
+  it('ends every headline with a bookmark when it can save, and saves with the item place on a click or on s', async () => {
     everyItemInView()
     const { items, saves } = fakeSaves()
     const wrapper = mountSheet(false, { saves })
     const [dots, guide] = wrapper.findAll('.report-broadsheet__item')
-    // 没有出处的那条也有底行，只放书签
-    expect(dots!.get('.report-broadsheet__foot > :first-child').classes()).toContain('report-broadsheet__save')
-    expect(guide!.get('.report-broadsheet__foot').element.children).toHaveLength(1)
+    // 书签在标题句一排的最右、出处之后；没有出处的那条只有书签，都不用另起底行
+    expect(dots!.get('.report-broadsheet__credit > :first-child').classes()).toContain('report-broadsheet__source')
+    expect(dots!.get('.report-broadsheet__credit > :last-child').classes()).toContain('report-broadsheet__save')
+    expect(guide!.get('.report-broadsheet__credit').element.children).toHaveLength(1)
+    expect(wrapper.find('.report-broadsheet__foot').exists()).toBe(false)
 
     await dots!.get('.report-broadsheet__save').trigger('click')
     expect(saves.toggle).toHaveBeenLastCalledWith(itemsBlock.items[0], { section: sheet.sections[0]!.heading, order: 0 })

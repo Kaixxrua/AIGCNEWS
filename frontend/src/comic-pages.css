@@ -385,25 +385,46 @@
   #app .app-shell--comic-page .report-broadsheet__prose:is(.is-short, .is-long) .report-broadsheet__body { max-width: 48em; }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__prose p { margin: 0 0 6px; }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__prose p:last-child { margin-bottom: 0; }
-  /* the items: a grid of two or three columns (never more), each under a short ink rule with its number hung
-     in the margin, the bold name as its headline, then the copy at 14px */
+  /* the items: rows of three (never more), each under a short ink rule with its number hung in the margin, the bold
+     name as its headline, then the copy at 14px. The columns follow the count, so no row ends on an empty cell: on six
+     tracks an item takes two, two left over share the last row in halves, one left over turns the last four into two
+     pairs, and a lone item keeps a reading measure. Under three columns of 330px (with the paper pane open, under about
+     1790px wide) they go two to a row, an odd last one across the whole. */
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__items {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(max(330px, calc((100% - 64px) / 3)), 1fr)); gap: 16px 32px;
+    container: report-items / inline-size;
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px 32px;
     margin: 6px 0 10px; padding: 0; list-style: none;
   }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item {
-    min-width: 0; margin: 0; padding: 9px 0 0; border-top: 2px solid var(--rule-strong);
+    grid-column: span 2; min-width: 0; margin: 0; padding: 9px 0 0; border-top: 2px solid var(--rule-strong);
     color: var(--rep-ink); font-size: 14px; font-weight: 500; line-height: 23px;
+  }
+  #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item:is(
+    :nth-child(3n+1):nth-last-child(2), :nth-child(3n+2):last-child,
+    :nth-child(3n+1):nth-last-child(4), :nth-child(3n+2):nth-last-child(3), :nth-child(3n+3):nth-last-child(2), :nth-child(3n+4):last-child
+  ) { grid-column: span 3; }
+  #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item:only-child { grid-column: 1 / -1; max-width: 48em; }
+  @container report-items (width < 1054px) {
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item { grid-column: span 3; }
+    #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item:nth-child(odd):last-child { grid-column: 1 / -1; }
   }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-numbered { padding-left: 30px; }
   #app .app-shell--comic-page .report-broadsheet__num {
     position: absolute; left: 0; top: 9px; width: 24px; color: var(--rep-meta);
     font-size: 18px; font-style: italic; font-weight: 900; line-height: 24px; font-variant-numeric: tabular-nums;
   }
+  /* the head: the headline, with the source and the bookmark floated to the right of its last line, so an item whose
+     copy is short needs no foot under it; where that line has no room they drop under it whole rather than squeeze
+     the headline, and a source of several links breaks between them only past a column's width */
+  #app .app-shell--comic-page .report-broadsheet__head { display: flow-root; margin: 0 0 3px; font-size: 16.5px; line-height: 24px; overflow-wrap: anywhere; }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__lead {
-    margin: 0 0 3px; padding: 0; color: var(--rep-ink); font-family: inherit; font-size: 16.5px; font-weight: 900; line-height: 24px;
-    overflow-wrap: anywhere;
+    display: inline; margin: 0; padding: 0; color: var(--rep-ink); font-family: inherit; font-size: 16.5px; font-weight: 900; line-height: 24px;
   }
+  #app .app-shell--comic-page .report-broadsheet__credit {
+    float: right; display: flex; align-items: baseline; gap: 0 8px; margin: 4px 0 0 12px; overflow-wrap: normal;
+  }
+  #app .app-shell--comic-page .report-broadsheet__credit > .report-broadsheet__save { flex: none; align-self: flex-start; }
+  #app .app-shell--comic-page .report-broadsheet__credit .report-broadsheet__source a { white-space: nowrap; }
   #app .app-shell--comic-page .report-broadsheet__note { margin-left: 6px; color: var(--rep-meta); font-size: 13px; font-weight: 600; }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item :is(p, li, ul, ol, blockquote) { font-size: 14px; line-height: 23px; }
   #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item p { margin: 0 0 4px; }
@@ -433,8 +454,8 @@
     color: var(--rep-meta); font-size: 12.5px; font-weight: 700; line-height: 18px; cursor: pointer;
   }
   #app .app-shell--comic-page .report-broadsheet__toggle:hover { color: var(--rep-ink); text-decoration: underline; text-underline-offset: 3px; }
-  /* an item's foot: the toggle, and the source the copy closes on, set at the right like a credit line so it stays
-     one click away while the copy is held back */
+  /* an item's foot, under the copy where it breaks off: the toggle; an item without a headline sets its bookmark and
+     source here, the source at the right like a credit line, so it stays one click away while the copy is held back */
   #app .app-shell--comic-page .report-broadsheet__foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; margin: 3px 0 0; }
   #app .app-shell--comic-page .report-broadsheet__foot > .report-broadsheet__toggle { margin: 0; }
   #app .app-shell--comic-page .report-broadsheet__source {
@@ -442,8 +463,8 @@
     /* a credit such as "WAM来源" wraps whole, never between its name and 来源 */
     word-break: keep-all;
   }
-  /* the bookmark (saved in this browser) leads the foot: a bare glyph in the meta ink, filled lime once saved; its box
-     overhangs the column edge so the glyph lines up with the copy */
+  /* the bookmark (saved in this browser): a bare glyph in the meta ink, filled lime once saved; last in the head, first
+     in a foot, its box overhangs the column edge so the glyph lines up with the copy */
   #app .app-shell--comic-page .report-broadsheet__save {
     display: inline-flex; align-items: center; justify-content: center; align-self: center; width: 24px; height: 22px;
     margin: -2px -4px -2px -5px; padding: 0; border: 0; border-radius: 3px; background: none; box-shadow: none;
@@ -488,10 +509,6 @@
     #app .app-shell--comic-page .report-shell.has-peek > * { flex: 0 0 100%; }
     #app .app-shell--comic-page .report-shell.has-peek > .comic-panel { flex-basis: calc(100% + 12px); }
     #app .app-shell--comic-page .report-shell.has-peek > .report-reading { flex: 1 1 0; min-width: 0; }
-    /* items keep three narrower columns where each still holds a source line (about 1760 wide and up), else two */
-    #app .app-shell--comic-page .report-shell.has-peek .report-broadsheet .report-broadsheet__items {
-      grid-template-columns: repeat(auto-fill, minmax(max(320px, calc((100% - 64px) / 3)), 1fr));
-    }
     #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peekable .report-broadsheet__lead { cursor: pointer; }
     #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-peekable .report-broadsheet__lead:hover {
       text-decoration: underline; text-decoration-color: var(--rep-link-line); text-decoration-thickness: 3px; text-underline-offset: 4px;
