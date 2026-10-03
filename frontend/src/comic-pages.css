@@ -3563,6 +3563,7 @@
     --p-face: #fdfdf8;
     --p-lime: #c7f930;
     --p-lime-hover: #eef9c4;
+    --p-focus: var(--p-ink);
     --p-strip: #d3fa6d;
     --p-key: #bef41a;
     --p-star: #b87d12;
@@ -3593,6 +3594,7 @@
     --p-face: #2c2d30;
     --p-lime: #a6c64e;
     --p-lime-hover: #35392b;
+    --p-focus: var(--p-lime);
     --p-strip: #3a4224;
     --p-key: #a6c64e;
     --p-star: #e0b252;
@@ -3648,8 +3650,10 @@
   }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input { padding-left: 42px; font-size: 14px; }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input::placeholder { color: var(--p-hint); }
+  /* Focus rings take --p-focus: the page's ink on the light paper, where the lime would read at about 1.2:1, and the
+     lime on the dark one. */
   #app .app-shell--comic-page .projects-toolbar--catalog :is(.projects-search .input, .projects-sort select):focus-visible {
-    outline: 2px solid var(--p-lime); outline-offset: 3px; box-shadow: none;
+    outline: 2px solid var(--p-focus); outline-offset: 3px; box-shadow: none;
   }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-search > svg { left: 14px; width: 17px; height: 17px; color: var(--p-ink); }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort { gap: 12px; color: var(--p-ink); font-size: 14px; font-weight: 800; }
@@ -3694,9 +3698,12 @@
     font-size: 13.5px; font-weight: 900; border-image: var(--p-chev) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
   }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask:is(:hover, [aria-expanded='true']) { background: var(--p-key); color: var(--acid-ink); }
-  #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask:focus-visible { outline: 2px solid var(--p-lime); outline-offset: 3px; }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask:focus-visible { outline: 2px solid var(--p-focus); outline-offset: 3px; }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo--panel .projects-mcp-promo__content { padding-top: 12px; border-top: 0; }
-  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo--panel:focus-visible { outline: 2px solid var(--p-lime); outline-offset: 3px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo--panel:focus-visible { outline: 2px solid var(--p-focus); outline-offset: 3px; }
+  /* The rest of the page (the rows' links, chips and buttons, the pager) wears the shell's acid ring, about 1.1:1 on a
+     lit row of the light paper: there it takes the page's ink as well. The dark theme keeps the acid. */
+  :root:not([data-theme='dark']) #app .app-shell--comic-page .projects-page--catalog :focus-visible { outline-color: var(--p-focus); }
 
   /* Category index: one square box from the page's edge, a heavier line down its right and pencil in its corners;
      names at 14px, counts lighter and right-aligned, the current one on a lime key in a thin line. */
@@ -3807,6 +3814,10 @@
   #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump input {
     height: 36px; border: 0 solid transparent; border-radius: 4px; background: var(--p-paper); color: var(--p-ink); font-size: 14px;
     border-image: var(--p-field) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+  }
+  /* The page field's own focus only recolours a border its frame covers: it rings like the search field. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-pagination__jump input:focus-visible {
+    outline: 2px solid var(--p-focus); outline-offset: 3px; box-shadow: none;
   }
 
   /* English category names run longer: a wider index keeps most of them on one line. */
