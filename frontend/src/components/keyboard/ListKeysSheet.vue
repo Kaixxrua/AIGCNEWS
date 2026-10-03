@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { X } from 'lucide-vue-next'
-import { isApplePlatform } from '@/features/search/quickSearch'
+import { isApplePlatform } from '@/features/search/quickSearchHotkey'
 import { popIn, popOut } from '@/motion/presence'
 
 /**
@@ -44,12 +44,13 @@ const clearPeel = () => {
 const onPointerdown = (event: PointerEvent) => {
   if (!sheet.value?.contains(event.target as Node)) open.value = false
 }
+// 按需加载：包到之前就按了 ?，挂上时已经开着，同样让开卷角、听外面的点击。
 watch(open, (on) => {
   if (on) {
     clearPeel()
     document.addEventListener('pointerdown', onPointerdown, true)
   } else document.removeEventListener('pointerdown', onPointerdown, true)
-})
+}, { immediate: true })
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerdown, true))
 </script>
 

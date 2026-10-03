@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { uiLibraryAssets } from './build/uiLibraryAssets'
+import { desktopStylesPreload } from './build/desktopStylesPreload'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
@@ -11,6 +12,8 @@ export default defineConfig({
   plugins: [
     vue(),
     uiLibraryAssets(),
+    // 漫画版内页样式只在桌面宽度下载：index.html 里加一条带媒体条件的预加载，见 build/desktopStylesPreload.ts。
+    desktopStylesPreload(),
     // PWA 应用外壳：generateSW 全量预缓存静态资源，离线可打开 shell。
     // - injectRegister: false：注册由 src/pwa/registerPwa.ts 手动完成，不向
     //   index.html 注入任何脚本（CSP 对内联脚本有 sha256 白名单契约）。

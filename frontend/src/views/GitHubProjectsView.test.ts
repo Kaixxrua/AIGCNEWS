@@ -943,6 +943,8 @@ describe('GitHubProjectsView chart keyboard flow', () => {
       attachTo: document.body,
       global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true, ...stubs } },
     })
+    // 速览卡片、详情栏和快捷键表按需加载（components/*/desktopParts.ts），挂上时就开始取；等包到了再开始操作。
+    await vi.dynamicImportSettled()
     await flushPromises()
     return view
   }

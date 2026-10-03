@@ -31,6 +31,8 @@ vi.mock('@/services/visit/visitBeacon', () => ({ sendVisitBeacon: vi.fn() }))
 vi.mock('@/pwa/registerPwa', () => ({ registerPwa: vi.fn() }))
 vi.mock('@/pwa/installPrompt', () => ({ initializeInstallPrompt: vi.fn() }))
 vi.mock('@/components/pwa/PwaInstallGuide.vue', () => ({ default: { template: '<div />' } }))
+// 桌面宽度要等漫画版样式表到了才挂载（theme/desktopStyles.ts），与登录状态无关；这里按手机宽度，立即放行。
+vi.mock('@/theme/desktopStyles', () => ({ installDesktopStyles: () => Promise.resolve() }))
 
 vi.mock('@/views/LayoutView.vue', () => ({
   default: { name: 'LayoutView', template: '<div><router-view /></div>' },

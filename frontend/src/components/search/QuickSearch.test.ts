@@ -136,6 +136,15 @@ describe('QuickSearch', () => {
     opener.remove()
   })
 
+  it('focuses the box when the magnifier was clicked before the panel finished loading', async () => {
+    useQuickSearch().show()
+    await mountSearch()
+    await flushPromises()
+
+    expect(dialog().attributes('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(wrapper!.find('input').element)
+  })
+
   it('does not stack on top of another dialog', async () => {
     await mountSearch()
     const other = document.createElement('div')

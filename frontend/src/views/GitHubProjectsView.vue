@@ -18,9 +18,8 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import ProjectResultCard from '@/components/projects/ProjectResultCard.vue'
 import ProjectChartRow from '@/components/projects/ProjectChartRow.vue'
-import ProjectPeekCard from '@/components/projects/ProjectPeekCard.vue'
-import ProjectPane from '@/components/projects/ProjectPane.vue'
-import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
+import { projectPane, projectPeekCard } from '@/components/projects/desktopParts'
+import { listKeysSheet } from '@/components/keyboard/desktopParts'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
 import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.vue'
 import WebsiteCollectionTabs from '@/components/websites/WebsiteCollectionTabs.vue'
@@ -55,6 +54,7 @@ import {
   projectTrendKey,
   type ProjectRankMovement,
 } from '@/features/projects/projectChart'
+import { preloadWhen } from '@/utils/lazyComponent'
 import { distributeColumns } from '@/utils/masonry'
 import { vReflow } from '@/motion/reflow'
 import { vIndicator } from '@/motion/indicator'
@@ -474,6 +474,13 @@ const paneAvailable = computed(() => isWide.value && chartLayout.value)
 const pane = useProjectPane({ available: paneAvailable, keys: chartKeys, pending: loading, repoOf: chartRepoId, data: peekData })
 const { target: paneTarget, content: paneContent, curve: paneCurve, direction: paneDirection } = pane
 const openPane = (repo: GitHubProjectItem) => pane.open(projectKey(repo))
+// 速览卡片与快捷键表只在桌面榜单上出现，详情栏只在宽屏，都单独成包（见各自的 desktopParts.ts），手机不下载；
+// 到了用得上的宽度先取回来，要出现时不用等。
+const ProjectPeekCard = projectPeekCard.component
+const ProjectPane = projectPane.component
+const ListKeysSheet = listKeysSheet.component
+preloadWhen(chartLayout, projectPeekCard.preload, listKeysSheet.preload)
+preloadWhen(paneAvailable, projectPane.preload)
 // 换页时榜单先撤下：详情栏留着正在看的项目，等新的一页取到再换。
 const paneRepo = shallowRef<GitHubProjectItem | null>(null)
 watch([paneTarget, projects], ([target]) => {

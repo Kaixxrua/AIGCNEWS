@@ -2,10 +2,12 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
-import ReportBroadsheet, { type BroadsheetSaves, type ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
+import { reportBroadsheet } from '@/components/report/desktopParts'
+import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import type { BroadsheetPeek } from '@/composables/useReportPeek'
 import { parseBroadsheet } from '@/features/report/reportBroadsheet'
 import { groupReportSections } from '@/features/report/reportViewModel'
+import { preloadWhen } from '@/utils/lazyComponent'
 const { t } = useI18n()
 const props = defineProps<{
   reportContent: string
@@ -26,6 +28,10 @@ const props = defineProps<{
 const broadsheet = computed(() => props.readingMode && props.reportContent
   ? parseBroadsheet(props.renderMarkdown(props.reportContent))
   : null)
+
+// 大报版式只在桌面出现，单独成包（components/report/desktopParts.ts），手机不下载；排成大报时先取回来，正文到了不用再等。
+const ReportBroadsheet = reportBroadsheet.component
+preloadWhen(() => Boolean(props.readingMode), reportBroadsheet.preload)
 
 const emit = defineEmits<{
   resumeAutoScroll: []

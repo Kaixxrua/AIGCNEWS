@@ -6,8 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
-import ReportPaperPeek from '@/components/report/ReportPaperPeek.vue'
-import ReportSavedPanel from '@/components/report/ReportSavedPanel.vue'
+import { reportPaperPeek, reportSavedPanel } from '@/components/report/desktopParts'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
 import { api } from '@/services/http/apiClient'
 import { getFeedToken, rotateFeedToken } from '@/services/auth/feedTokenApi'
@@ -24,6 +23,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { slideIn, slideOut } from '@/motion/presence'
 import { vSwap } from '@/motion/swap'
+import { preloadWhen } from '@/utils/lazyComponent'
 import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBriefing'
 import {
   getReportTypeInfo,
@@ -211,6 +211,9 @@ const {
   withinItem: peekWithinItem,
 } = peek
 const broadsheetPeek = computed(() => (isWide.value && broadsheetOn.value ? peek.broadsheet : null))
+// 详情栏单独成包（components/report/desktopParts.ts），手机不下载；到了宽屏大报版先取回来。
+const ReportPaperPeek = reportPaperPeek.component
+preloadWhen(() => isWide.value && broadsheetOn.value, reportPaperPeek.preload)
 // 开合时版面变窄或变宽、条目跟着重排：把打开（收起）的那一条留在原来的高度，不让它跑出视野。换了内容时版面整个换掉，不留。
 let keepPlace = true
 watch(contentKey, () => {
@@ -248,6 +251,9 @@ const briefingSaves: BroadsheetSaves = {
     savedBriefing.toggle(briefingSaveId(type, date, item), { type, date, ...place, item })
   },
 }
+// 收藏单独成包（components/report/desktopParts.ts），手机不下载；到了桌面大报版先取回来。
+const ReportSavedPanel = reportSavedPanel.component
+preloadWhen(broadsheetOn, reportSavedPanel.preload)
 const savedView = ref(false)
 watch(savedView, () => {
   contentKey.value += 1

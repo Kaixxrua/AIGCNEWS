@@ -4,15 +4,18 @@ import './fonts.css'
 import './style.css'
 import './mobile-reading.css'
 import './comic-theme.css'
-import './comic-pages.css'
 import './motion.css'
 import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
 import { installAppTheme } from './theme'
+import { installDesktopStyles } from './theme/desktopStyles'
 import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
 import { installPressFeedback } from './motion/press'
 
+// 漫画版内页样式只在桌面宽度下载（comic-pages.css，见 theme/desktopStyles.ts）。要赶在路由加载各页样式表之前挂上，
+// 层叠先后才不变；桌面上等它到位再挂载应用。
+const desktopStylesReady = installDesktopStyles()
 const app = createApp(App)
 installI18n()
 installAppTheme()
@@ -24,8 +27,10 @@ app.use(pinia)
 app.use(i18n)
 app.use(router)
 
-app.mount('#app')
-installPressFeedback()
+void desktopStylesReady.then(() => {
+  app.mount('#app')
+  installPressFeedback()
+})
 
 // 站点访问 beacon：进来一次计一次（sessionStorage 守卫，异步不打断首屏）。
 void import('./services/visit/visitBeacon').then(({ sendVisitBeacon }) => {

@@ -143,6 +143,8 @@ const mountView = async () => {
     },
   })
   mounted.push(wrapper)
+  // 桌面的快捷键表按需加载（components/keyboard/desktopParts.ts），挂上时就开始取；等包到了再开始操作。
+  await vi.dynamicImportSettled()
   await flushPromises()
   return wrapper
 }

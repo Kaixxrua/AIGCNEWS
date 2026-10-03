@@ -6,8 +6,8 @@ import { queryTerms, searchTemplates, type SearchableTemplate, type UiTemplate }
 import type { QuickSearchGroup, QuickSearchResult } from '@/services/search/searchApi'
 
 /**
- * 站内速查（⌘K）的纯逻辑：查什么、结果怎么分组排成行、每行跳到哪、关键词怎么标出来、哪个键打开面板。
- * 请求、焦点与动效在 QuickSearch.vue 里。
+ * 站内速查（⌘K）的纯逻辑：查什么、结果怎么分组排成行、每行跳到哪、关键词怎么标出来。
+ * 请求、焦点与动效在 QuickSearch.vue 里；哪个键打开面板在 quickSearchHotkey.ts。
  */
 export type QuickSearchKind = 'recent' | 'projects' | 'papers' | 'briefings' | 'tweets' | 'templates'
 
@@ -226,17 +226,4 @@ export function highlight(text: string, terms: readonly string[]): TextPart[] {
   }
   if (last < text.length) parts.push({ text: text.slice(last), hit: false })
   return parts
-}
-
-/** 苹果设备用 ⌘，其余用 Ctrl（Mac 上 Ctrl+K 是删到行尾，不抢）。iPadOS 自报 MacIntel，同样用 ⌘。 */
-export function isApplePlatform(nav: Pick<Navigator, 'platform' | 'userAgent'> | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean {
-  return Boolean(nav) && /Mac|iPhone|iPad|iPod/i.test(nav?.platform || nav?.userAgent || '')
-}
-
-/** ⌘K / Ctrl+K：只认这一个修饰键加 K；非拉丁键盘布局看物理键位；输入法组字中、别处已经接手的不接。 */
-export function isQuickSearchHotkey(event: KeyboardEvent, apple: boolean): boolean {
-  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return false
-  if (event.altKey || event.shiftKey) return false
-  if (apple ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return false
-  return event.key.toLowerCase() === 'k' || (event.code === 'KeyK' && !/^[\x20-\x7e]$/.test(event.key))
 }

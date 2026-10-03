@@ -11,8 +11,6 @@ import {
   buildSections,
   highlight,
   highlightTerms,
-  isApplePlatform,
-  isQuickSearchHotkey,
   matchTemplates,
   parseRecentQueries,
   pushRecentQuery,
@@ -29,6 +27,7 @@ import {
   type QuickSearchTemplate,
   type Translate,
 } from '@/features/search/quickSearch'
+import { isApplePlatform, isQuickSearchHotkey } from '@/features/search/quickSearchHotkey'
 import { loadCatalog } from '@/features/ui-library/catalog'
 import type { AppLocale } from '@/i18n'
 import { formatLocaleNumber } from '@/i18n/formatters'
@@ -313,6 +312,7 @@ function onRowClick(event: MouseEvent, row: QuickSearchRow) {
   void router.push(target.to)
 }
 
+// 面板按需加载，点放大镜时可能还没加载完：挂上时已经开着的，同样记下打开前的焦点、聚焦搜索框。
 watch(open, (isOpen) => {
   if (isOpen) {
     const focused = document.activeElement
@@ -333,7 +333,7 @@ watch(open, (isOpen) => {
   loading.value = false
   if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true })
   opener = null
-})
+}, { immediate: true })
 
 watch(() => route.fullPath, () => { if (open.value) close(false) })
 watch(() => props.enabled, (on) => { if (!on && open.value) close(false) })

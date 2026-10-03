@@ -161,6 +161,28 @@ describe('v-indicator', () => {
     expect(target.hasAttribute('data-indicator-target')).toBe(false)
     expect(last(play(group, 800))?.x).toBe(0)
   })
+
+  it('只改了内边距或边框、内容尺寸不变时也重新对齐：尺寸按边框盒观察', () => {
+    // jsdom 没有 ResizeObserver：换成一个记下观察方式、可以手动通知的替身。
+    const boxes: (string | undefined)[] = []
+    let notify = () => {}
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        notify = () => callback([], this as unknown as ResizeObserver)
+      }
+      observe(_target: Element, options?: ResizeObserverOptions) { boxes.push(options?.box) }
+      unobserve() {}
+      disconnect() {}
+    })
+    const { group } = mountTabs({ active: 1 })
+    expect(boxes.length).toBeGreaterThan(0)
+    expect(boxes.every((box) => box === 'border-box')).toBe(true)
+
+    // 从窄屏拉宽时漫画版样式表晚到：组多出 3px 内边距，各项整体挪位，组与各项的内容尺寸都没变。
+    group.querySelectorAll('button').forEach((button, index) => button.setAttribute('data-box', `${index * 100 + 3} 3 100 40`))
+    notify()
+    expect(markOf(group)).toEqual({ x: 103, y: 3, w: 100, h: 40 })
+  })
 })
 
 describe('boxWithin', () => {

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Search } from 'lucide-vue-next'
 import { useQuickSearch } from '@/composables/useQuickSearch'
-import { isApplePlatform } from '@/features/search/quickSearch'
+import { isApplePlatform } from '@/features/search/quickSearchHotkey'
 
 /** 报眉上的放大镜：打开站内速查，提示里写着快捷键。外观与旁边的 GitHub 图标同一配方。 */
 const { t } = useI18n()

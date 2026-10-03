@@ -18,7 +18,6 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import AccountSettingsDialog from '@/components/auth/AccountSettingsDialog.vue'
-import QuickSearch from '@/components/search/QuickSearch.vue'
 import QuickSearchButton from '@/components/search/QuickSearchButton.vue'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import {
@@ -37,9 +36,15 @@ import { dockSuppressed } from '@/composables/useDockSuppression'
 import { useReadingMode } from '@/composables/useReadingMode'
 import { routeHasDensityChoice, useAppDensity } from '@/composables/useAppDensity'
 import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
+import { lazyComponent } from '@/utils/lazyComponent'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
 const isDesktop = useMediaQuery('(min-width: 1024px)')
+// 站内速查只在桌面宽度可用：面板连同查询、分组逻辑单独成包，宽度头一回到桌面才加载，之后一直挂着（变窄时由 enabled 关掉），
+// 手机不下载。
+const { component: QuickSearch } = lazyComponent(() => import('@/components/search/QuickSearch.vue'))
+const quickSearchMounted = ref(false)
+watch(isDesktop, (desktop) => { if (desktop) quickSearchMounted.value = true }, { immediate: true })
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
 const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
@@ -240,7 +245,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <AccountSettingsDialog v-model="accountSettingsOpen" />
 
     <!-- 站内速查（⌘K / Ctrl+K）：桌面端任何一页都能叫出来；报眉上的放大镜只在内页出现，首页不动 -->
-    <QuickSearch :enabled="isDesktop" />
+    <QuickSearch v-if="quickSearchMounted" :enabled="isDesktop" />
 
     <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" />
 

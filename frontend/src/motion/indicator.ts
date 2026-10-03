@@ -300,13 +300,15 @@ function markDrawn(group: HTMLElement, state: IndicatorState): boolean {
   return mark !== false && getComputedStyle(group, `::${mark ?? 'before'}`).content !== 'none'
 }
 
+// 看边框盒：标记量的是各项的边框盒、坐标从组的内边距起算，只改内边距或边框时内容盒不变，按默认的内容盒看会漏报。
+// 比如从窄屏拉宽到桌面时漫画版样式表晚到几帧，组多出内边距和边框、各项整体挪位，组与各项的内容尺寸都没变。
 function watchSizes(group: HTMLElement, state: IndicatorState, active: HTMLElement) {
   const observer = state.resizes
   if (!observer) return
   for (const target of [group, active, ...Array.from(group.children)]) {
     if (state.observed.has(target)) continue
     state.observed.add(target)
-    observer.observe(target)
+    observer.observe(target, { box: 'border-box' })
   }
 }
 

@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, Bookmark, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
-import ListKeysSheet from '@/components/keyboard/ListKeysSheet.vue'
+import { listKeysSheet } from '@/components/keyboard/desktopParts'
 import FolioTools from '@/components/layout/FolioTools.vue'
 import SaveButton from '@/components/saved/SaveButton.vue'
 import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
@@ -31,6 +31,7 @@ import { slideIn, slideOut } from '@/motion/presence'
 import { vReflow } from '@/motion/reflow'
 import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
+import { preloadWhen } from '@/utils/lazyComponent'
 import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
 import type { TweetCardLayout, TweetFold, TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
 
@@ -416,6 +417,9 @@ const listKeys = useListKeys({
   },
 })
 const { help: keysHelp, isCursor } = listKeys
+// 快捷键表只在桌面出现，单独成包（components/keyboard/desktopParts.ts），手机不下载。
+const ListKeysSheet = listKeysSheet.component
+preloadWhen(desktop, listKeysSheet.preload)
 
 // 详情开着时 j / k 换下一条、上一条（下钻看被引推文时不换），新的一条从按的方向滑进来，墙上的光标跟着走，到一页头尾接着翻页。
 const detailPanelEl = ref<HTMLElement | null>(null)
