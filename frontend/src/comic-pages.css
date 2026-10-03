@@ -1237,11 +1237,13 @@
   #app .app-shell--comic-page .ui-library__mcp { display: none; }
 
   /* Command bar: search, framework and the material kinds share one line; the kinds take a line of their own once
-     the search would be narrower than 420px. */
-  #app .app-shell--comic-page .ui-library__command { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 10px; }
+     the bar cannot keep 420px for the search and framework beside them. The bar's own width decides (the container
+     queries under the kinds), never what the kinds hold: their counts come with the works, and a bar that broke on
+     its contents dropped the kinds to a second line as they arrived, pushing every card 47px down. */
+  #app .app-shell--comic-page .ui-library__command { container: ui-command / inline-size; grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: 10px; }
   /* Search: a thin slate line, 8.5px round, pressed dark into its lower left; the framework picker inked black down
      its left, foot and right over a teal dry-brush step. Both frames are the control's own border-image. */
-  #app .app-shell--comic-page .ui-library__toolbar { flex: 1 1 420px; gap: 10px; margin: 0; }
+  #app .app-shell--comic-page .ui-library__toolbar { flex: 1 1 0; min-width: 0; gap: 10px; margin: 0; }
   #app .app-shell--comic-page .ui-library__search {
     min-height: 37px; gap: 11px; padding: 0 15px 0 17px; border: 0 solid transparent; border-radius: 8.5px;
     border-image: var(--ul-f-search) 39 42 48 198 / 13px 14px 16px 66px / 2px 2px 4px 2px stretch;
@@ -1264,6 +1266,11 @@
   /* Material kinds: counted words in the page's plain inked button (ul-btn, unfilled so the sliding mark shows
      through); the chosen one a drawn navy block (ul-kind), black along its foot and right. */
   #app .app-shell--comic-page .ui-library__kinds { flex: 0 0 auto; align-items: center; gap: 8px; margin: 0; padding: 2px 5px 4px 2px; border-bottom: 0; }
+  /* With the counts in, the kinds run 533px in Chinese and 698px in English; each breakpoint is that, the 420px and
+     the gap, with room for a few more digits. Below it the search and framework take the whole first line and the
+     kinds, at their own width, the second; above it the search gives way as counts grow, and the line holds. */
+  @container ui-command (width < 990px) { #app .app-shell--comic-page .ui-library__toolbar { flex-basis: 100%; } }
+  @container ui-command (width < 1150px) { #app .app-shell--comic-page .ui-library__toolbar:lang(en) { flex-basis: 100%; } }
   #app .app-shell--comic-page .ui-library__kinds button {
     gap: 9px; min-height: 37px; padding: 3px 13px; border: 2px solid transparent; border-radius: 8px;
     border-image: var(--ul-f-btn) 42 45 51 42 / 14px 15px 17px 14px / 2px 3px 5px 2px stretch;
@@ -1314,6 +1321,9 @@
   }
   #app .app-shell--comic-page .ui-library__sidebar nav[data-indicator] button.active { background: transparent; box-shadow: none; }
   #app .app-shell--comic-page .ui-library__aside-note { margin: 16px 8px 16px 18px; color: var(--ul-muted); font-size: 12.5px; line-height: 1.7; }
+  /* Until the works arrive the index is a lone "All" row, so the note and the MCP tip would sit just under it and then
+     drop out of sight as the purposes fill in; they wait, hidden, for the list. */
+  #app .app-shell--comic-page .ui-library:has(.ui-library__grid[aria-busy=true]) :is(.ui-library__aside-note, .ui-mcp-tip) { visibility: hidden; }
   /* The MCP tip folds to one dashed line: the plug, then the link; the pitch above it stays for screen readers, and
      the whole line takes the click. */
   #app .app-shell--comic-page .ui-library__sidebar .ui-mcp-tip {
