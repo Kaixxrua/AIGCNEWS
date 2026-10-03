@@ -59,6 +59,7 @@ import { distributeColumns } from '@/utils/masonry'
 import { vReflow } from '@/motion/reflow'
 import { vIndicator } from '@/motion/indicator'
 import { slideIn, slideOut } from '@/motion/presence'
+import { fold, unfold } from '@/motion/fold'
 
 defineOptions({ name: 'GitHubProjectsView' })
 const { locale, t } = useI18n()
@@ -377,6 +378,35 @@ const mcpPromoExamples = mcpExamplesByIds(MCP_PROMO_EXAMPLE_IDS)
 const mcpEmptyStateExamples = mcpExamplesByIds(MCP_EMPTY_STATE_EXAMPLE_IDS)
 // 搜索/筛选无结果时空状态已列出同组 MCP 示例，推广卡让位，避免同屏两份相同示例
 const showEmptyStateMcp = computed(() => !requiresPersonalLogin.value && !loading.value && !errorMsg.value && projects.value.length === 0 && (!!searchQuery.value || hasActiveFilter.value))
+const showMcpPromo = computed(() => source.value === 'all' && !mcpPromoDismissed.value && !requiresPersonalLogin.value && !showEmptyStateMcp.value)
+// 榜单版面的页头只留搜索这一行：大标题收起（报眉已经写着「项目库」，读屏照样念得到），「想用自然语言找项目？」这条
+// 横幅收成搜索框右端的一个按钮，点开才在搜索框下面展开示例与接入方式；× 只收起这一块，「本周不再显示」连按钮一起收走。
+// 舒适版面、手机平板仍是原来的标题和可展开的横幅。
+const askOpen = ref(false)
+const askButton = ref<HTMLButtonElement | null>(null)
+const askPanel = ref<HTMLElement | null>(null)
+// 展开后焦点移进这一块（读屏念出它的名字，Tab 接着走示例）；Esc 或 × 收起时焦点回到按钮。
+const toggleAsk = () => {
+  askOpen.value = !askOpen.value
+  if (askOpen.value) void nextTick(() => askPanel.value?.focus({ preventScroll: true }))
+}
+const closeAsk = () => {
+  askOpen.value = false
+  askButton.value?.focus()
+}
+// 焦点在这一块里时 Esc 先收它；排进榜单的 Esc 链里，一按不会连详情栏一起收掉。
+const closeAskFromInside = () => {
+  if (!askOpen.value || !askPanel.value?.contains(document.activeElement)) return false
+  closeAsk()
+  return true
+}
+watch([chartLayout, showMcpPromo], ([chart, shown]) => {
+  if (!chart || !shown) askOpen.value = false
+})
+// 只有按钮展开的这一块折叠着出入；原来的横幅照旧直接出现、消失。
+const isAskPanel = (el: Element) => el.classList.contains('projects-mcp-promo--panel')
+const promoEnter = (el: Element, done: () => void) => (isAskPanel(el) ? unfold(el, done) : done())
+const promoLeave = (el: Element, done: () => void) => (isAskPanel(el) ? fold(el, done) : done())
 // 复刻 handleChipClick 末尾分支：双赋值跳过 280ms 防抖，立即触发站内搜索演示
 const runMcpExampleDemo = (query: string) => {
   if (source.value !== 'all') return
@@ -546,7 +576,7 @@ const listKeys = useListKeys({
   reached: (key) => {
     if (paneTarget.value && paneTarget.value.key !== key) pane.open(key)
   },
-  escape: () => pane.close() || peek.close(),
+  escape: () => closeAskFromInside() || pane.close() || peek.close(),
   edge: (direction) => {
     const next = page.value + direction
     if (next < 1 || next > totalPages.value) return false
@@ -671,7 +701,7 @@ onBeforeUnmount(stopViewReads)
 
 <template>
   <div ref="pageEl" class="projects-page" :class="{ 'projects-page--catalog': !isPersonalView, 'projects-page--websites': isWebsiteOnlyView, 'has-pane': paneShown }" :style="paneStyle">
-    <section class="projects-hero glass-card" :class="{ 'projects-hero--website': isWebsiteOnlyView }">
+    <section class="projects-hero glass-card" :class="{ 'projects-hero--website': isWebsiteOnlyView, 'projects-hero--quiet': chartLayout }">
       <div class="projects-hero__text">
         <p class="projects-kicker">{{ projectsHeroKicker }}</p>
         <h1 :class="{ 'comic-title': isWebsiteOnlyView }">{{ isWebsiteOnlyView ? t('projects.heroWebsiteKicker') : t('projects.pageTitle') }}</h1>
@@ -735,42 +765,68 @@ onBeforeUnmount(stopViewReads)
       @clear-personal-tag="clearPersonalTag"
     >
       <template v-if="isWebsiteOnlyView" #source-tabs><WebsiteCollectionTabs active="personal" /></template>
+      <template v-if="chartLayout && showMcpPromo" #search-end>
+        <button
+          ref="askButton"
+          type="button"
+          class="projects-ask"
+          :aria-expanded="askOpen"
+          :aria-controls="askOpen ? 'projects-ask-panel' : undefined"
+          :title="t('projects.mcpPromo.title')"
+          @click="toggleAsk"
+        >
+          <span class="projects-ask__mark" aria-hidden="true">✦</span>
+          <span class="projects-ask__label">{{ t('projects.mcpPromo.ask') }}</span>
+          <svg class="projects-ask__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+      </template>
     </ProjectFiltersPanel>
 
-    <details v-if="source === 'all' && !mcpPromoDismissed && !requiresPersonalLogin && !showEmptyStateMcp" class="projects-mcp-promo glass-card">
-      <summary class="projects-mcp-promo__summary">
-        <span class="projects-mcp-promo__title">{{ t('projects.mcpPromo.title') }}</span>
-        <span class="projects-mcp-promo__expand">{{ t('projects.mcpPromo.expand') }}</span>
-        <svg class="projects-mcp-promo__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-      </summary>
-      <div class="projects-mcp-promo__content">
-      <div class="projects-mcp-promo__controls">
-        <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
-          {{ t('projects.mcpPromo.dismissWeek') }}
-        </button>
-        <button type="button" class="projects-mcp-promo__dismiss" :aria-label="t('common.close')" @click="dismissMcpPromo">×</button>
-      </div>
-      <div class="projects-mcp-promo__copy">
-        <p class="projects-kicker">{{ t('projects.mcpPromo.kicker') }}</p>
-        <h2 id="mcp-promo-title">{{ t('projects.mcpPromo.title') }}</h2>
-        <p>{{ t('projects.mcpPromo.pitch') }}</p>
-        <p class="projects-mcp-promo__try">{{ t('projects.mcpPromo.tryLabel') }}</p>
-        <McpPromptExampleList
-          :examples="mcpPromoExamples"
-          :mode="source === 'all' ? 'demo-copy' : 'copy-only'"
-          layout="chips"
-          @demo="runMcpExampleDemo"
-        />
-      </div>
-      <RouterLink to="/mcp" class="projects-mcp-promo__action">
-        {{ t('projects.mcpPromo.cta') }}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M5 12h14" />
-          <path d="m14 7 5 5-5 5" />
-        </svg>
-      </RouterLink>
-      </div>
-    </details>
+    <Transition :css="false" @enter="promoEnter" @leave="promoLeave">
+      <component
+        :is="chartLayout ? 'section' : 'details'"
+        v-if="showMcpPromo && (!chartLayout || askOpen)"
+        :id="chartLayout ? 'projects-ask-panel' : undefined"
+        ref="askPanel"
+        class="projects-mcp-promo glass-card"
+        :class="{ 'projects-mcp-promo--panel': chartLayout }"
+        :tabindex="chartLayout ? -1 : undefined"
+        :aria-label="chartLayout ? t('projects.mcpPromo.title') : undefined"
+      >
+        <summary v-if="!chartLayout" class="projects-mcp-promo__summary">
+          <span class="projects-mcp-promo__title">{{ t('projects.mcpPromo.title') }}</span>
+          <span class="projects-mcp-promo__expand">{{ t('projects.mcpPromo.expand') }}</span>
+          <svg class="projects-mcp-promo__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </summary>
+        <div class="projects-mcp-promo__content">
+          <div class="projects-mcp-promo__controls">
+            <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
+              {{ t('projects.mcpPromo.dismissWeek') }}
+            </button>
+            <button type="button" class="projects-mcp-promo__dismiss" :aria-label="t('common.close')" @click="chartLayout ? closeAsk() : dismissMcpPromo()">×</button>
+          </div>
+          <div class="projects-mcp-promo__copy">
+            <p class="projects-kicker">{{ t('projects.mcpPromo.kicker') }}</p>
+            <h2 id="mcp-promo-title">{{ t('projects.mcpPromo.title') }}</h2>
+            <p>{{ t('projects.mcpPromo.pitch') }}</p>
+            <p class="projects-mcp-promo__try">{{ t('projects.mcpPromo.tryLabel') }}</p>
+            <McpPromptExampleList
+              :examples="mcpPromoExamples"
+              :mode="source === 'all' ? 'demo-copy' : 'copy-only'"
+              layout="chips"
+              @demo="runMcpExampleDemo"
+            />
+          </div>
+          <RouterLink to="/mcp" class="projects-mcp-promo__action">
+            {{ t('projects.mcpPromo.cta') }}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 12h14" />
+              <path d="m14 7 5 5-5 5" />
+            </svg>
+          </RouterLink>
+        </div>
+      </component>
+    </Transition>
 
     <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
       {{ successMsg }}
@@ -1265,6 +1321,22 @@ onBeforeUnmount(stopViewReads)
 .projects-mcp-promo__action { display: inline-flex; grid-column: 1 / -1; align-items: center; justify-self: start; gap: 8px; min-height: 40px; color: var(--ink); font-size: 13px; font-weight: 650; text-decoration: underline; text-underline-offset: 4px; }
 .projects-mcp-promo__action svg { width: 16px; height: 16px; }
 .projects-mcp-promo__action:hover { color: var(--ink-secondary); }
+/* 榜单版面：横幅收成搜索框右端的按钮，点开的那一块没有标题条，焦点进来时不画框（键盘进来才画）。 */
+.projects-ask { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px 0 9px; border: 1px solid var(--projects-accent); border-radius: 4px; background: var(--projects-acid-soft); color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; cursor: pointer; }
+.projects-ask:is(:hover, [aria-expanded='true']) { background: var(--projects-acid); color: var(--projects-on-acid); }
+.projects-ask__mark { font-size: 15px; }
+.projects-ask__chevron { width: 14px; height: 14px; flex: 0 0 14px; transition: transform 200ms ease; }
+.projects-ask[aria-expanded='true'] .projects-ask__chevron { transform: rotate(180deg); }
+/* 搜索框窄到放不下占位文字和整个按钮时（英文 1200px 上下），按钮只留星号和箭头，文字留给读屏，悬停看全称。 */
+@container projects-search (max-width: 440px) {
+  .projects-ask__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+@container projects-search (max-width: 640px) {
+  .projects-ask__label:lang(en) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.projects-mcp-promo--panel .projects-mcp-promo__content { border-top: 0; }
+.projects-mcp-promo--panel:focus { outline: none; }
+.projects-mcp-promo--panel:focus-visible { outline: 2px solid var(--projects-accent); outline-offset: 2px; }
 
 .projects-grid {
   position: relative;

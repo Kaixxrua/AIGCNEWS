@@ -67,6 +67,10 @@
   box-shadow: none;
 }
 #app .projects-page--catalog .projects-hero { margin: 0 0 16px; }
+/* The chart density keeps the page title for screen readers only: the masthead already names the page. */
+#app .projects-page--catalog .projects-hero.projects-hero--quiet {
+  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
 #app .projects-page--catalog .projects-hero__text { display: flex; align-items: center; gap: 22px; }
 #app .projects-page--catalog .projects-hero h1 { position: relative; isolation: isolate; font-size: 30px; font-weight: 900; font-style: italic; letter-spacing: 0; }
 #app .projects-page--catalog .projects-hero h1::before {

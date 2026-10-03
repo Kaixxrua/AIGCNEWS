@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { Blocks, Bot, BrainCircuit, ChartNoAxesCombined, Code2, Database, FileText, Flame, FolderKanban, Image, LockKeyhole, Sparkles, TerminalSquare } from 'lucide-vue-next'
 import type { AppLocale } from '@/i18n'
 import { localizedCategoryName, localizedPersonalTagLabel } from '@/features/projects/projectPresentation'
@@ -72,6 +73,10 @@ const emit = defineEmits<{
   clearPersonalTag: []
 }>()
 const isMobile = useMediaQuery('(max-width: 767px)')
+// 搜索框右端可以挂一个按钮（#search-end）：量出它有多宽，输入框的留白和清空、语言筛选按钮都往左让出这么多。
+const searchEnd = ref<HTMLElement | null>(null)
+const searchEndWidth = ref(0)
+useResizeObserver(searchEnd, ([entry]) => { searchEndWidth.value = Math.ceil(entry?.borderBoxSize?.[0]?.inlineSize ?? entry?.contentRect.width ?? 0) })
 </script>
 
 <template>
@@ -85,7 +90,12 @@ const isMobile = useMediaQuery('(max-width: 767px)')
     </div>
     </slot>
 
-    <div v-if="!requiresPersonalLogin" class="projects-search" :class="{ 'projects-search--filtered': selectedLanguage }">
+    <div
+      v-if="!requiresPersonalLogin"
+      class="projects-search"
+      :class="{ 'projects-search--filtered': selectedLanguage, 'projects-search--with-end': $slots['search-end'] }"
+      :style="searchEndWidth ? { '--search-end': `${searchEndWidth}px` } : undefined"
+    >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="11" cy="11" r="7" />
         <path d="m20 20-3.5-3.5" />
@@ -101,6 +111,7 @@ const isMobile = useMediaQuery('(max-width: 767px)')
         @click="emit('update:searchQuery', '')"
       >×</button>
       <button v-if="selectedLanguage" type="button" class="projects-search__filter" @click="emit('clearLanguage')">{{ selectedLanguage }} ×</button>
+      <div v-if="$slots['search-end']" ref="searchEnd" class="projects-search__end"><slot name="search-end" /></div>
     </div>
 
     <label v-if="!requiresPersonalLogin && !isPersonalView && (!isMobile || selectedScope !== 'today')" class="projects-sort">
@@ -165,6 +176,17 @@ const isMobile = useMediaQuery('(max-width: 767px)')
 .projects-search__clear:hover, .projects-search__filter:hover { background: var(--paper-muted); }
 .projects-search__filter { right: 8px; max-width: 96px; padding: 0 8px; overflow: hidden; background: var(--paper-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
 .projects-search__clear--with-filter { right: 106px; }
+/* 搜索框右端的附加按钮：输入框留白、清空与语言筛选按钮都让出它的宽度（--search-end 由脚本量出）。 */
+.projects-search__end { position: absolute; top: 50%; right: 5px; display: flex; align-items: center; transform: translateY(-50%); }
+/* 按钮按搜索框的宽度收放（@container projects-search），框里没有别的会弹出来的东西，包含不碍事。 */
+.projects-search--with-end { container: projects-search / inline-size; }
+.projects-search--with-end .input { padding-right: calc(var(--search-end, 0px) + 44px); }
+/* 还没输入时没有清空键，占位文字一直排到按钮跟前。 */
+.projects-search--with-end .input:not(.projects-search__input--with-filter):placeholder-shown { padding-right: calc(var(--search-end, 0px) + 12px); }
+.projects-search--with-end .input.projects-search__input--with-filter { padding-right: calc(var(--search-end, 0px) + 142px); }
+.projects-search--with-end .projects-search__clear { right: calc(var(--search-end, 0px) + 9px); }
+.projects-search--with-end .projects-search__filter { right: calc(var(--search-end, 0px) + 13px); }
+.projects-search--with-end .projects-search__clear--with-filter { right: calc(var(--search-end, 0px) + 111px); }
 .projects-sort { display: flex; align-items: center; gap: 8px; color: var(--ink-secondary); font-size: 12px; }
 .projects-sort select { min-width: 124px; max-width: 100%; height: 44px; padding: 0 8px; color: var(--ink-secondary); background: var(--paper-raised); border: 1px solid var(--rule); border-radius: var(--control-radius); font-size: 13px; }
 .projects-category-panel { display: grid; gap: 8px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }

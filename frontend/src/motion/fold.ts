@@ -3,7 +3,8 @@ import { EASE_OUT, canAnimate } from './motion'
 /**
  * 折叠区的展开与收起：高度在 0 与内容实际高度之间过渡，内容同时淡入淡出，
  * 给 <Transition @enter="unfold" @leave="fold"> 用（v-show、v-if 都行）。
- * 中途反向点击时从此刻的高度接着走；父级是纵向 flex/grid 时连同它与相邻项之间的 gap 一起收掉，收到底不跳。
+ * 中途反向点击时从此刻的高度接着走；元素自己的上下外边距一并收到 0，父级是纵向 flex/grid 时
+ * 连同它与相邻项之间的 gap 一起收掉，收到底不跳。
  * 动画期间用 clip-path 裁掉溢出，结束即撤，不改元素自己的样式。
  */
 const UNFOLD_MS = 300
@@ -47,8 +48,8 @@ function animateFold(el: Element, open: boolean, done: () => void) {
     height: '0px',
     paddingTop: '0px',
     paddingBottom: '0px',
-    marginTop: `${(parseFloat(natural.marginTop) || 0) - gap.before}px`,
-    marginBottom: `${(parseFloat(natural.marginBottom) || 0) - gap.after}px`,
+    marginTop: `${-gap.before}px`,
+    marginBottom: `${-gap.after}px`,
     opacity: '0',
   }
   const from = current ?? (open ? closed : natural)

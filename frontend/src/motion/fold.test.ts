@@ -23,12 +23,12 @@ describe('fold / unfold', () => {
     document.body.innerHTML = ''
   })
 
-  it('展开：高度、内边距从 0 过渡到内容实际尺寸，连同它上方的行距一起让出来', () => {
+  it('展开：高度、内外边距从 0 过渡到内容实际尺寸，连同它上方的行距一起让出来', () => {
     const { panel } = mountList()
     const done = vi.fn()
     unfold(panel, done)
     const [animation] = fakes.on(panel, 'fold')
-    expect(animation?.frame(0)).toMatchObject({ height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '-8px', opacity: '0', clipPath: 'inset(0)' })
+    expect(animation?.frame(0)).toMatchObject({ height: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '-12px', opacity: '0', clipPath: 'inset(0)' })
     expect(animation?.frame(1)).toMatchObject({ height: '80px', paddingTop: '6px', paddingBottom: '6px', marginTop: '4px', clipPath: 'inset(0)' })
     expect(animation?.options).toMatchObject({ duration: 300, fill: 'none' })
     animation!.finish()
@@ -40,21 +40,21 @@ describe('fold / unfold', () => {
     const done = vi.fn()
     fold(panel, done)
     const [animation] = fakes.on(panel, 'fold')
-    expect(animation?.frame(1)).toMatchObject({ height: '0px', marginTop: '-8px', opacity: '0' })
+    expect(animation?.frame(1)).toMatchObject({ height: '0px', marginTop: '-12px', opacity: '0' })
     expect(animation?.options).toMatchObject({ duration: 240, fill: 'forwards' })
     animation!.finish()
     expect(done).toHaveBeenCalledOnce()
     expect(animation?.playState).toBe('idle')
   })
 
-  it('排在最前时吃掉后面的行距；横向排布时不吃行距', () => {
+  it('排在最前时吃掉后面的行距；横向排布时不吃行距，只收自己的外边距', () => {
     const { title } = mountList()
     fold(title, vi.fn())
     expect(fakes.on(title, 'fold')[0]?.frame(1)).toMatchObject({ marginTop: '0px', marginBottom: '-12px' })
 
     const { panel } = mountList('row')
     fold(panel, vi.fn())
-    expect(fakes.on(panel, 'fold')[0]?.frame(1)).toMatchObject({ marginTop: '4px' })
+    expect(fakes.on(panel, 'fold')[0]?.frame(1)).toMatchObject({ marginTop: '0px' })
   })
 
   it('中途反向时停掉进行中的那段，从此刻的尺寸接着走', () => {

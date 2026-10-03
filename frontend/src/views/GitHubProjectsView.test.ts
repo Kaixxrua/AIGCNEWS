@@ -730,6 +730,125 @@ describe('GitHubProjectsView MCP guidance', () => {
   })
 })
 
+// 桌面榜单的页头只留搜索一行：大标题只给读屏，MCP 横幅收成搜索框右端的按钮，点开才在搜索框下面展开示例。
+describe('GitHubProjectsView chart header', () => {
+  let view: VueWrapper | null = null
+
+  beforeEach(() => {
+    viewport.desktop = true
+    setAppDensity('compact')
+    controller().projects.value = [{ full_name: 'acme/one', repo_id: 'acme/one' }]
+  })
+
+  afterEach(() => {
+    view?.unmount()
+    view = null
+    viewport.desktop = false
+    setAppDensity('compact')
+    document.body.innerHTML = ''
+  })
+
+  const mountChart = async () => {
+    await testRouter.push('/projects')
+    await testRouter.isReady()
+    view = mount(GitHubProjectsView, {
+      attachTo: document.body,
+      global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
+    })
+    await flushPromises()
+    return view
+  }
+  const press = async (key: string) => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await flushPromises()
+  }
+
+  it('keeps the page title for screen readers and folds the MCP strip into a button at the search field end', async () => {
+    const wrapper = await mountChart()
+
+    expect(wrapper.get('.projects-hero').classes()).toContain('projects-hero--quiet')
+    expect(wrapper.get('.projects-hero h1').text()).toBe('projects.pageTitle')
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    expect(wrapper.get('.projects-search').classes()).toContain('projects-search--with-end')
+    const ask = wrapper.get('.projects-search__end .projects-ask')
+    expect(ask.text()).toContain('projects.mcpPromo.ask')
+    expect(ask.attributes('title')).toBe('projects.mcpPromo.title')
+    expect(ask.attributes('aria-expanded')).toBe('false')
+    expect(ask.attributes('aria-controls')).toBeUndefined()
+  })
+
+  it('opens the examples under the search row with focus in them, and Esc folds them back onto the button', async () => {
+    const wrapper = await mountChart()
+    const ask = wrapper.get('.projects-ask')
+
+    await ask.trigger('click')
+    await flushPromises()
+    expect(ask.attributes('aria-expanded')).toBe('true')
+    expect(ask.attributes('aria-controls')).toBe('projects-ask-panel')
+    const panel = wrapper.get('section#projects-ask-panel')
+    expect(panel.classes()).toEqual(expect.arrayContaining(['projects-mcp-promo', 'projects-mcp-promo--panel']))
+    expect(panel.attributes('aria-label')).toBe('projects.mcpPromo.title')
+    expect(panel.attributes('tabindex')).toBe('-1')
+    expect(panel.find('summary').exists()).toBe(false)
+    const content = panel.get('.projects-mcp-promo__content').element
+    expect([...content.children].map((child) => child.classList[0])).toEqual(['projects-mcp-promo__controls', 'projects-mcp-promo__copy', 'projects-mcp-promo__action'])
+    expect(wrapper.findComponent(McpPromptExampleList).props('examples').map((example: { id: string }) => example.id)).toEqual([...MCP_PROMO_EXAMPLE_IDS])
+    expect(document.activeElement).toBe(panel.element)
+
+    await press('Escape')
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(false)
+    expect(ask.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(ask.element)
+
+    // 焦点不在这一块里时 Esc 不收它
+    await ask.trigger('click')
+    await flushPromises()
+    ;(wrapper.get('.projects-search .input').element as HTMLInputElement).focus()
+    await press('Escape')
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(true)
+  })
+
+  it('folds the examples away with ×, and dismissing for the week takes the button too', async () => {
+    const wrapper = await mountChart()
+
+    await wrapper.get('.projects-ask').trigger('click')
+    await flushPromises()
+    await wrapper.get('.projects-mcp-promo__dismiss').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get('.projects-ask').element)
+    expect(window.localStorage.getItem(MCP_PROMO_DISMISSED_STORAGE_KEY)).toBeNull()
+
+    await wrapper.get('.projects-ask').trigger('click')
+    await flushPromises()
+    await wrapper.get('.projects-mcp-promo__dismiss-week').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    expect(wrapper.find('.projects-ask').exists()).toBe(false)
+    expect(wrapper.get('.projects-search').classes()).not.toContain('projects-search--with-end')
+    expect(Number(window.localStorage.getItem(MCP_PROMO_DISMISSED_STORAGE_KEY))).toBeGreaterThan(Date.now())
+  })
+
+  it('keeps the title and the expandable strip in the comfortable density, closed again on the way back', async () => {
+    const wrapper = await mountChart()
+    await wrapper.get('.projects-ask').trigger('click')
+    await flushPromises()
+
+    setAppDensity('comfortable')
+    await flushPromises()
+    expect(wrapper.get('.projects-hero').classes()).not.toContain('projects-hero--quiet')
+    expect(wrapper.find('.projects-ask').exists()).toBe(false)
+    const strip = wrapper.get('details.projects-mcp-promo')
+    expect(strip.classes()).not.toContain('projects-mcp-promo--panel')
+    expect(strip.find('summary.projects-mcp-promo__summary').exists()).toBe(true)
+    expect(strip.attributes('open')).toBeUndefined()
+
+    setAppDensity('compact')
+    await flushPromises()
+    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    expect(wrapper.get('.projects-ask').attributes('aria-expanded')).toBe('false')
+  })
+})
 
 describe('GitHubProjectsView collection navigation', () => {
   it('links personal websites to the standalone website recommendations', async () => {

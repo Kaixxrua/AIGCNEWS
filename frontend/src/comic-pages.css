@@ -3612,6 +3612,8 @@
 
   /* Search and sort: a thin navy line round paper; the query reads at 14px. */
   #app .app-shell--comic-page .projects-toolbar--catalog { gap: 14px; margin-bottom: 8px; }
+  /* With the title kept for screen readers only, the search row opens the column a little under the masthead's line. */
+  #app .app-shell--comic-page .projects-page--catalog .projects-hero--quiet + .projects-toolbar--catalog { margin-top: 12px; }
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-search .input,
   #app .app-shell--comic-page .projects-toolbar--catalog .projects-sort select {
     height: 38px; border: 0 solid transparent; border-radius: 4px; background-color: var(--p-paper); box-shadow: none; color: var(--p-ink);
@@ -3657,6 +3659,17 @@
   }
   #app .app-shell--comic-page .projects-page--catalog :is(.projects-mcp-promo__dismiss, .projects-mcp-promo__dismiss-week):hover { background: var(--p-lime-hover); color: var(--p-ink); }
   #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo__action { min-height: 34px; color: var(--p-ink); font-weight: 800; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; }
+  /* Chart density: the strip folds into a key at the search field's end, the band's lime in the chevron's line; it
+     lights to the brighter key under the pointer and while open. Opened, the pitch and the examples drop under the
+     search row in the strip's frame, with no band over them. */
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask {
+    height: 28px; gap: 7px; padding: 0 8px 0 10px; border: 0 solid transparent; border-radius: 4px; background: var(--p-strip); color: var(--p-ink);
+    font-size: 13.5px; font-weight: 900; border-image: var(--p-chev) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask:is(:hover, [aria-expanded='true']) { background: var(--p-key); color: var(--acid-ink); }
+  #app .app-shell--comic-page .projects-toolbar--catalog .projects-ask:focus-visible { outline: 2px solid var(--p-lime); outline-offset: 3px; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo--panel .projects-mcp-promo__content { padding-top: 12px; border-top: 0; }
+  #app .app-shell--comic-page .projects-page--catalog .projects-mcp-promo--panel:focus-visible { outline: 2px solid var(--p-lime); outline-offset: 3px; }
 
   /* Category index: one square box from the page's edge, a heavier line down its right and pencil in its corners;
      names at 14px, counts lighter and right-aligned, the current one on a lime key in a thin line. */
