@@ -1,0 +1,193 @@
+@media (min-width: 1024px) {
+  /* ── Projects, compact density (the chart): the catalog as one ruled list in the cards' drawn frame. The header row
+     stays at the top of the page while the list scrolls; each row carries its rank (on today's chart also the move
+     against yesterday), the name with its tags, the whole description with forks and the last push trailing it, then
+     stars, the 24-hour gain, a 14-day spark line and heat in aligned columns, and the actions. Rows rule off with the
+     cards' fading line and take a lime wash under the pointer. Below ~900px of list (1024–1199px windows) stars and
+     heat leave their columns for the trailing line. The comfortable density keeps the cards above. ── */
+  #app .app-shell--comic-page .projects-page--catalog .project-chart {
+    --chart-gap: 14px;
+    --chart-rank: 52px;
+    --chart-act: 60px;
+    position: relative; isolation: isolate; container: project-chart / inline-size;
+    margin: 0; padding: 6px 20px 12px 16px;
+    background: radial-gradient(ellipse 420px 240px at 100% 100%, var(--p-wash), transparent 100%), var(--p-paper);
+    color: var(--p-ink);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart--curator { --chart-act: 90px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -5px -5px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 10px 75px 71px 7px;
+    border-image: var(--p-card) 30 225 213 21 / 10px 75px 71px 7px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart :is(.project-chart__head, .project-row) {
+    display: grid; column-gap: var(--chart-gap);
+    grid-template-columns: minmax(0, 1fr) 62px 74px 96px 50px var(--chart-act);
+    grid-template-areas: 'head stars gain spark heat act' 'desc desc desc desc desc act';
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart--ranked :is(.project-chart__head, .project-row) {
+    grid-template-columns: var(--chart-rank) minmax(0, 1fr) 62px 74px 96px 50px var(--chart-act);
+    grid-template-areas: 'rank head stars gain spark heat act' 'rank desc desc desc desc desc act';
+  }
+  /* The header shares the rows' box (8px out on both sides) so its labels sit over their columns. */
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__head {
+    position: sticky; top: 0; z-index: 3; row-gap: 0; align-items: end; margin: 0 -8px; padding: 10px 8px 7px;
+    background: linear-gradient(var(--p-ink), var(--p-ink)) 0 100% / 100% 1.5px no-repeat, var(--p-paper);
+    color: var(--p-muted); font-size: 12px; font-weight: 800; line-height: 16px; white-space: nowrap;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--rank { grid-area: rank; justify-self: center; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--project { grid-area: head; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--stars { grid-area: stars; justify-self: end; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--gain { grid-area: gain; justify-self: end; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--spark { grid-area: spark; justify-self: center; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__col--heat { grid-area: heat; justify-self: end; }
+  /* The list is the v-reflow wall: positioned and its own stacking context, so leaving rows fade under the others. */
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__rows { position: relative; isolation: isolate; margin: 0; padding: 0; list-style: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row {
+    position: relative; row-gap: 3px; align-items: start; margin: 0 -8px; padding: 10px 8px 11px; border-radius: 3px;
+    background: linear-gradient(90deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent) 0 100% / 100% 1px no-repeat;
+    transition: background-color 140ms ease;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row:last-child { background-image: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row:is(:hover, :focus-within, .is-cursor, .is-peeked) { background-color: color-mix(in srgb, var(--p-lime-hover) 72%, transparent); }
+  /* Keyboard flow (j / k): the cursor row takes the hover wash and a lime bar in its left gutter that slides from row to
+     row (v-indicator); rows scroll clear of the sticky header and the dock. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row[data-list-key] { scroll-margin: 48px 0 calc(var(--peel-clear) + 20px); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-cursor:focus { outline: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-chart__rows[data-indicator-mark]::after {
+    z-index: 2; width: 5px; height: max(0px, calc(var(--indicator-h, 0px) - 16px));
+    translate: calc(var(--indicator-x, 0px) + 1.5px) calc(var(--indicator-y, 0px) + 8px);
+    border: 1.5px solid var(--p-ink); border-radius: 3px; background: var(--p-lime);
+  }
+  /* A repository opened before (useReadMarks), as on the briefing and the tweet wall: its name, tags, description and
+     figures drop to one slate ink, the logo washes out and the coloured figures, the move and the spark line lose their
+     colour; the tags keep their frames and the numbers stay in their columns, so the row still reads, only quieter. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read { --p-ink: var(--p-read); --p-copy: var(--p-read); --p-muted: var(--p-read); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read :is(.project-row__rank, .project-row__gain, .project-row__heat, .project-row__meta-heat, .project-row__spark) { filter: saturate(.3); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read .project-row__logo { filter: saturate(.3) opacity(.72); }
+  /* Rank: an italic numeral that steps down a size per extra digit; the podium sits on the index's lime key. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__rank { grid-area: rank; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__position {
+    min-width: 28px; padding: 0 4px; color: var(--p-ink); font-size: 19px; font-style: italic; font-weight: 900; line-height: 24px;
+    text-align: center; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__position[data-digits='3'] { font-size: 16px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__position:is([data-digits='4'], [data-digits='5'], [data-digits='6']) { font-size: 13px; letter-spacing: -.03em; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row--podium .project-row__position {
+    border: 0 solid transparent; border-radius: 4px; background: var(--p-lime); color: var(--acid-ink);
+    border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__move { font-size: 11px; font-weight: 900; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__move--up { color: var(--p-today); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__move--down { color: var(--tone-coral); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__move--same { color: var(--p-hint); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__move--new {
+    margin-top: 1px; padding: 0 4px; border: 0 solid transparent; border-radius: 2px; background: var(--p-lime); color: var(--acid-ink);
+    font-size: 10px; letter-spacing: .04em; line-height: 15px;
+    border-image: var(--p-tag) 24 24 27 24 / 8px 8px 9px 8px / 2px 2px 3px 2px stretch;
+  }
+  /* Name line: the logo, owner/ a shade lighter than the repository, the pick's star, then the tags as on the cards
+     (under the name when they don't fit beside it; the last tag and the count wrap together). */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__head { grid-area: head; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; min-height: 24px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__title { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 24px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__logo { width: 22px; height: 22px; flex-basis: 22px; font-size: 11px; font-weight: 800; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__name { min-width: 0; margin: 0; font-size: 14.5px; font-weight: 800; line-height: 20px; letter-spacing: 0; overflow-wrap: anywhere; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__name a { color: inherit; text-decoration: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__name a:hover .project-row__repo { text-decoration: underline; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; text-underline-offset: 3px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__owner { color: var(--p-muted); font-weight: 600; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__repo { color: var(--p-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__pick { color: var(--p-star); font-size: 13px; line-height: 20px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__gone {
+    padding: 0 6px; border: 1px dashed var(--p-rule); border-radius: 3px; color: var(--p-hint);
+    font-size: 11.5px; font-weight: 700; line-height: 18px; white-space: nowrap;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; min-width: 0; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chip-tail { display: inline-flex; align-items: center; gap: 7px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chip {
+    min-height: 21px; padding: 0 8px; border: 0 solid transparent; border-radius: 2.5px; background: var(--p-face); box-shadow: none;
+    color: var(--p-ink); font-size: 12px; font-weight: 800; line-height: 21px; white-space: nowrap; cursor: pointer;
+    border-image: var(--p-tag) 24 24 27 24 / 8px 8px 9px 8px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chip:hover { background: var(--p-lime-hover); }
+  /* The rest of the tags hide behind a quiet count rather than another framed key on every row. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chip--more { min-width: 0; padding: 0 3px; border-image: none; background: transparent; color: var(--p-hint); font-weight: 700; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__chip--more:hover { background: transparent; color: var(--p-ink); text-decoration: underline; text-underline-offset: 3px; }
+  /* The description in full under the name and the numbers; forks and the last push trail it as one unbroken unit. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__desc { grid-area: desc; min-width: 0; margin: 0; color: var(--p-copy); font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta { display: inline-flex; flex-wrap: wrap; gap: 0 12px; margin-left: 10px; color: var(--p-hint); font-size: 12px; font-weight: 600; line-height: 21px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta > .project-row__meta-narrow { display: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta svg { flex: 0 0 12px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta-stars { color: var(--p-ink); font-weight: 800; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta-stars svg { color: var(--p-star); fill: var(--p-star); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta-heat { color: var(--p-heat); font-weight: 800; }
+  /* Numbers on the name line, right-aligned in tabular figures; the spark line centred in its column. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__num { min-width: 0; justify-self: end; font-size: 13px; font-weight: 700; line-height: 24px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__stars { grid-area: stars; color: var(--p-ink); font-weight: 800; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__gain { grid-area: gain; color: var(--p-today); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__gain--flat { color: var(--p-hint); font-weight: 600; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__heat { grid-area: heat; color: var(--p-heat); font-weight: 800; }
+  #app .app-shell--comic-page .projects-page--catalog :is(.project-row__heat, .project-row__meta-heat).project-row__heat--flat { color: var(--p-hint); font-weight: 600; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__spark { grid-area: spark; justify-self: center; color: var(--p-ink); }
+  /* Actions: bare icons as on the cards (the star in amber, lime once kept), springing up under the pointer. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__actions { grid-area: act; display: flex; justify-content: flex-end; gap: 2px; margin-top: -2px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action {
+    display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+    border: 0; border-radius: 4px; background: transparent; color: var(--p-ink); cursor: pointer;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action:hover:not(:disabled) { background: color-mix(in srgb, var(--p-lime) 50%, transparent); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action:disabled { cursor: not-allowed; opacity: .45; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__favorite:not(.project-row__favorite--active) { color: var(--p-star); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__favorite--active, #app .app-shell--comic-page .projects-page--catalog .project-row__favorite--active:hover:not(:disabled) { background: var(--p-lime); color: var(--acid-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__recommend--active, #app .app-shell--comic-page .projects-page--catalog .project-row__recommend--active:hover:not(:disabled) { background: var(--p-today); color: var(--p-paper); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action svg { transition: scale 320ms var(--motion-spring), rotate 320ms var(--motion-spring), translate 320ms var(--motion-spring); }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action:hover:not(:disabled) svg { translate: 0 -1px; scale: 1.18; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__action.project-row__link:hover svg { translate: 1.5px -1.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__favorite:hover:not(:disabled) svg { rotate: -15deg; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row--not-found > :not(.project-row__actions) { opacity: .55; }
+  /* Where the name column is too narrow for its tags (a list under 1000px, English under 1050px) the tags take a line
+     of their own across the row instead of folding twice beside the name. Under 900px (1024–1199px windows) stars and
+     heat also leave their columns for the line trailing the description. */
+  @container project-chart (max-width: 999.98px) {
+    #app .app-shell--comic-page .projects-page--catalog .project-chart .project-row__head { display: contents; }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart .project-row__title { grid-area: head; }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart .project-row__chips { grid-area: tags; margin-bottom: 1px; }
+  }
+  @container project-chart (max-width: 1049.98px) {
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) .project-chart .project-row__head { display: contents; }
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) .project-chart .project-row__title { grid-area: head; }
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) .project-chart .project-row__chips { grid-area: tags; margin-bottom: 1px; }
+  }
+  @container project-chart (min-width: 900px) and (max-width: 999.98px) {
+    #app .app-shell--comic-page .projects-page--catalog .project-chart :is(.project-chart__head, .project-row) {
+      grid-template-areas: 'head stars gain spark heat act' 'tags tags tags tags tags act' 'desc desc desc desc desc act';
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart--ranked :is(.project-chart__head, .project-row) {
+      grid-template-areas: 'rank head stars gain spark heat act' 'rank tags tags tags tags tags act' 'rank desc desc desc desc desc act';
+    }
+  }
+  @container project-chart (min-width: 1000px) and (max-width: 1049.98px) {
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) .project-chart :is(.project-chart__head, .project-row) {
+      grid-template-areas: 'head stars gain spark heat act' 'tags tags tags tags tags act' 'desc desc desc desc desc act';
+    }
+    #app .app-shell--comic-page .projects-page--catalog:lang(en) .project-chart--ranked :is(.project-chart__head, .project-row) {
+      grid-template-areas: 'rank head stars gain spark heat act' 'rank tags tags tags tags tags act' 'rank desc desc desc desc desc act';
+    }
+  }
+  @container project-chart (max-width: 899.98px) {
+    #app .app-shell--comic-page .projects-page--catalog .project-chart :is(.project-chart__head, .project-row) {
+      column-gap: 12px; grid-template-columns: minmax(0, 1fr) 70px 96px var(--chart-act);
+      grid-template-areas: 'head gain spark act' 'tags tags tags act' 'desc desc desc act';
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart--ranked :is(.project-chart__head, .project-row) {
+      grid-template-columns: var(--chart-rank) minmax(0, 1fr) 70px 96px var(--chart-act);
+      grid-template-areas: 'rank head gain spark act' 'rank tags tags tags act' 'rank desc desc desc act';
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart :is(.project-row__stars, .project-row__heat, .project-chart__col--stars, .project-chart__col--heat) { display: none; }
+    #app .app-shell--comic-page .projects-page--catalog .project-chart .project-row__meta > .project-row__meta-narrow { display: inline-flex; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .projects-page--catalog :is(.project-row, .project-row__action svg) { transition: none; }
+    #app .app-shell--comic-page .projects-page--catalog .project-row__action:hover svg { translate: none; scale: none; rotate: none; }
+  }
+}

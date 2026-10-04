@@ -1,0 +1,119 @@
+@media (min-width: 1024px) {
+  #app .app-shell--comic-page {
+    /* The comic palette as the shell resolves it, for pages that re-point --paper/--ink at their own tokens. */
+    --comic-paper: var(--paper);
+    --comic-paper-raised: var(--paper-raised);
+    --comic-ink: var(--ink);
+    --comic-ink-muted: var(--ink-muted);
+    --comic-acid: var(--acid);
+    /* How far the peel's curl reaches up into the content where the text column ends, about an eighth of the
+       peel in from the right (its art is 1100×713, standing 3px under the 74px footer). The crest further right
+       rises higher, but only over the page's gutter; corners of cards may tuck under it, the copy doesn't. */
+    --peel-clear: max(0px, calc(var(--peel, 0px) * .327 - 74px));
+  }
+
+  /* The concept draws the content pages' peel smaller than the homepage's (about 400px at 1920 wide), so it
+     tucks under the last lines of a page instead of covering them. */
+  @media (min-width: 1600px) and (min-height: 800px) {
+    #app .app-shell--comic-page {
+      --peel: min(400px, calc((100vw - var(--home-dock-width) - 26px) * .56), calc(100dvh * 2 - 1350px));
+    }
+  }
+
+  /* Footer after the concepts (drawn at 1536×1024): the links beside the brand and the peel on the right from
+     1500px wide. The masthead, its rule and stickers and the dock are the homepage's (comic-theme.css). */
+  @media (min-width: 1500px) and (min-height: 800px) {
+    #app .app-shell--comic-page {
+      --peel: min(400px, calc((100vw - var(--home-dock-width) - 26px) * .56), calc(100dvh * 2 - 1350px));
+    }
+    #app .app-shell--comic-page .comic-footer-sticker { display: block; position: absolute; right: -24px; bottom: -3px; width: var(--peel); aspect-ratio: 1100 / 713; }
+    #app .app-shell--comic-page .dock-footer--editorial {
+      left: 12px; align-items: start; padding-top: 6px;
+      grid-template-columns: max-content max-content minmax(0, 1fr);
+    }
+    #app .app-shell--comic-page .dock-footer--editorial .footer-brand { gap: 7px; }
+    #app .app-shell--comic-page .dock-footer--editorial .footer-right { grid-column: 2; justify-self: start; align-items: flex-start; gap: 5px; margin-left: 10px; }
+    #app .app-shell--comic-page .dock-footer--editorial .footer-nav { justify-content: flex-start; gap: 4px 14px; }
+    #app .app-shell--comic-page .dock-footer--editorial .footer-copyright { text-align: left; }
+  }
+  /* English links (~190px) don't fit beside the brand under 1600px: they keep the right column, no peel. */
+  @media (min-width: 1500px) and (max-width: 1599px) and (min-height: 800px) {
+    :root:lang(en) #app .app-shell--comic-page { --peel: 0px; }
+    :root:lang(en) #app .app-shell--comic-page .comic-footer-sticker { display: none; }
+    :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial { grid-template-columns: minmax(0, 1fr) var(--home-dock-width) minmax(0, 1fr); }
+    :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-right { grid-column: 3; justify-self: end; align-items: flex-end; margin-left: 0; }
+    :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-nav { justify-content: flex-end; }
+    :root:lang(en) #app .app-shell--comic-page .dock-footer--editorial .footer-copyright { text-align: right; }
+  }
+
+  /* Page title: the dashboard heading's heavy italic over a lime brush, with its spark (also on the standalone register page
+     and the auth dialogs, which are teleported out of #app). */
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title {
+    position: relative; isolation: isolate; display: inline-block; overflow: visible; text-overflow: clip;
+    margin: 0 36px 0 0; color: var(--ink); font-family: inherit; font-size: 36px; font-style: italic; font-weight: 950;
+    line-height: 1.15; letter-spacing: 0; white-space: nowrap;
+    -webkit-text-stroke: .6px currentColor; text-shadow: 1px 1px 0 var(--paper-raised);
+  }
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::before {
+    content: ''; position: absolute; z-index: -1; inset: 68% -4px 2px;
+    background: var(--acid); transform: rotate(-3deg) skewX(-18deg);
+  }
+  :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::after {
+    content: ''; position: absolute; right: -30px; top: -12px; width: 20px; height: 24px; background: var(--acid);
+    clip-path: polygon(0 0,15% 0,12% 65%,0 65%,60% 10%,80% 20%,22% 85%,15% 78%,95% 66%,100% 82%,25% 100%,23% 88%);
+  }
+
+  /* Panel: paper on an uneven ink rule with a hard shadow and a halftone top-right corner. */
+  #app .app-shell--comic-page .comic-panel {
+    position: relative; isolation: isolate;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 3px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 4px 4px 0 var(--comic-shadow); backdrop-filter: none;
+  }
+  #app .app-shell--comic-page .comic-panel::after {
+    content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 190px; height: 110px;
+    border-top-right-radius: inherit; pointer-events: none;
+    background: radial-gradient(circle, var(--comic-cyan-line) 1.3px, transparent 1.8px) 0 0 / 7px 7px;
+    mask-image: radial-gradient(ellipse 100% 100% at 100% 0, #000 8%, transparent 72%);
+    opacity: .5;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .comic-panel::after { opacity: .16; }
+  /* panels drawn from generated frames carry their own night copy: keep those at full strength */
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.report-shell > .comic-panel, .website-card)::after { opacity: 1; }
+
+  /* Tag: a small tilted label with its own ink rule, for section kinds and badges. */
+  #app .app-shell--comic-page .comic-tag {
+    display: inline-block; padding: 1px 9px; border: 1.5px solid var(--rule-strong); border-radius: 3px 5px 3px 4px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-family: inherit; font-size: 12px; font-style: italic; font-weight: 800; line-height: 1.5;
+    transform: rotate(-3deg) skewX(-6deg);
+  }
+
+  /* Chip: a tab or filter; the active one is lime. */
+  #app .app-shell--comic-page .comic-chip {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 15px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 14px; font-weight: 700; line-height: 1.3;
+    transition: transform .12s cubic-bezier(.2,.8,.2,1), box-shadow .12s cubic-bezier(.2,.8,.2,1), background-color .12s linear;
+  }
+  #app .app-shell--comic-page .comic-chip:hover:not(:disabled) { background: var(--acid-soft); transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--comic-shadow); }
+  #app .app-shell--comic-page .comic-chip.is-active { background: var(--acid); color: var(--acid-ink); font-weight: 900; }
+  #app .app-shell--comic-page .comic-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .comic-chip { transition: none; }
+    #app .app-shell--comic-page .comic-chip:hover:not(:disabled) { transform: none; }
+  }
+
+  /* Button: ink-outlined on paper; the primary one is ink with lime lettering. */
+  #app .app-shell--comic-page .comic-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 7px 18px;
+    border: solid var(--rule-strong); border-width: 2px 2.5px 2.5px 2px; border-radius: 6px 8px 5px 9px;
+    background: var(--paper-raised); box-shadow: 3px 3px 0 var(--comic-shadow); color: var(--ink);
+    font-size: 15px; font-weight: 800; line-height: 1.2;
+  }
+  #app .app-shell--comic-page .comic-btn:hover:not(:disabled) { background: var(--acid-soft); }
+  #app .app-shell--comic-page .comic-btn--ink { background: var(--rule-strong); color: var(--acid); }
+  #app .app-shell--comic-page .comic-btn--ink:hover:not(:disabled) { background: var(--rule-strong); color: #fff; }
+  #app .app-shell--comic-page .comic-btn--acid { background: var(--acid); color: var(--acid-ink); }
+  #app .app-shell--comic-page .comic-btn--acid:hover:not(:disabled) { background: var(--acid-strong); }
+}

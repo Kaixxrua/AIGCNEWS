@@ -1,0 +1,416 @@
+@media (min-width: 1024px) {
+  /* ── X board (x-C), measured off the concept at 1536 × 1024: masonry of comic cards; the followed-accounts filter
+     stays a side panel, closed at first, its switch beside the window switch. Every drawn piece is a generated
+     9-slice image (public/assets/comic/x-*.webp, -night for the dark theme): the cards and the panels hang theirs on
+     ::after round an element that paints nothing, the buttons, the score and the chips take it as their own
+     border-image pushed out over their shadow, and paint their face themselves. The header's tools carry the palette
+     with them, as they go up into the folio. ── */
+  #app .app-shell--comic-page :is(.xboard-page, .xboard-header-actions) {
+    --x-ink: #070d1c;
+    --x-navy: #101c33;
+    --x-copy: #18233a;
+    --x-muted: #5e7190;
+    --x-hint: #5c6f8c;
+    --x-read: #5e7190;
+    --x-face: #fefefb;
+    --x-face-hover: #f3f9d6;
+    --x-lime: #c1f41e;
+    --x-lime-ink: #0a1128;
+    --x-chip-on: #f3f9d4;
+    --x-check: #b9e81c;
+    --x-card: url('/assets/comic/x-card.webp');
+    --x-panel: url('/assets/comic/x-panel.webp');
+    --x-pager: url('/assets/comic/x-pager.webp');
+    --x-ib: url('/assets/comic/x-ib.webp');
+    --x-score: url('/assets/comic/x-score.webp');
+    --x-seg: url('/assets/comic/x-seg.webp');
+    --x-btn: url('/assets/comic/x-btn.webp');
+    --x-btn-off: url('/assets/comic/x-btn-off.webp');
+    --x-pg: url('/assets/comic/x-pg.webp');
+    --x-pg-off: url('/assets/comic/x-pg-off.webp');
+    --x-chip: url('/assets/comic/x-chip.webp');
+    --x-badge: url('/assets/comic/x-badge.webp');
+    --x-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23050b16' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3.2 7.4 2.6 2.7 5-6.2'/%3E%3C/svg%3E");
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.xboard-page, .xboard-header-actions) {
+    --x-ink: var(--ink);
+    --x-navy: var(--ink);
+    --x-copy: var(--ink);
+    --x-muted: var(--ink-secondary);
+    --x-hint: var(--ink-secondary);
+    --x-read: #8f96a3;
+    --x-face: #2c2d30;
+    --x-face-hover: #35392b;
+    --x-lime: #a6c64e;
+    --x-lime-ink: #10140a;
+    --x-chip-on: #33372a;
+    --x-check: #a6c64e;
+    --x-card: url('/assets/comic/x-card-night.webp');
+    --x-panel: url('/assets/comic/x-panel-night.webp');
+    --x-pager: url('/assets/comic/x-pager-night.webp');
+    --x-ib: url('/assets/comic/x-ib-night.webp');
+    --x-score: url('/assets/comic/x-score-night.webp');
+    --x-seg: url('/assets/comic/x-seg-night.webp');
+    --x-btn: url('/assets/comic/x-btn-night.webp');
+    --x-btn-off: url('/assets/comic/x-btn-off-night.webp');
+    --x-pg: url('/assets/comic/x-pg-night.webp');
+    --x-pg-off: url('/assets/comic/x-pg-off-night.webp');
+    --x-chip: url('/assets/comic/x-chip-night.webp');
+    --x-badge: url('/assets/comic/x-badge-night.webp');
+  }
+  #app .app-shell--comic-page .xboard-page > div { gap: 16px; padding: 14px 9px calc(var(--peel-clear) + 28px) 13px; }
+  /* The folio prints the section's name, so the page runs no header row of its own: the title stays for screen
+     readers and the tools go up into the folio (FolioTools); where the folio has no room for them they stand on the
+     page as a slim row, right-aligned over the wall. */
+  #app .app-shell--comic-page .xboard-header { display: contents; }
+  #app .app-shell--comic-page .xboard-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #app .app-shell--comic-page .xboard-header > .folio-tools { align-self: flex-end; }
+
+  /* the header's buttons: white faces in a 2px ink line on a solid block (the switch and refresh), 40px tall */
+  #app .app-shell--comic-page .xboard-header-actions { gap: 20px; }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)) {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; min-height: 0; padding: 0 18px;
+    border: 0 solid transparent; border-radius: 3px; background: var(--x-face); box-shadow: none; color: var(--x-ink);
+    font-size: 16px; font-weight: 800; line-height: 1; white-space: nowrap;
+    border-image: var(--x-btn) 27 36 36 24 / 9px 12px 12px 8px / 2px 6px 6px 2px stretch;
+  }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)):hover:not(:disabled) { background: var(--x-face-hover); }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)):disabled {
+    opacity: 1; color: #9aa0a6; cursor: default;
+    border-image: var(--x-btn-off) 24 30 33 24 / 8px 10px 11px 8px / 2px 4px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 4px; }
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-refresh { width: 96px; padding: 0; }
+  /* wide enough for the longer of its two names (Refreshing… in English), so it never jumps while it loads */
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-refresh:lang(en) { width: 132px; }
+  #app .app-shell--comic-page .xboard-refresh svg { width: 15px; height: 15px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .xboard-header-actions :is(.xboard-follow-toggle, .xboard-text-only).xboard-mode-active,
+  #app .app-shell--comic-page .xboard-header-actions :is(.xboard-follow-toggle, .xboard-text-only).xboard-mode-active:hover:not(:disabled) { background: var(--x-lime); color: var(--x-lime-ink); }
+  #app .app-shell--comic-page :is(.xboard-follow-toggle, .xboard-text-only) svg { width: 16px; height: 16px; stroke-width: 2.4; }
+  #app .app-shell--comic-page .xboard-follow-count { padding: 2px 6px; border-radius: 3px; background: #0e1a31; color: #c6f51f; font-size: 12.5px; font-weight: 900; }
+
+  /* the window switch: 最近 24 小时 and the window date as two segments of one navy-lined bar, the chosen one lime.
+     While the rolling window is on, the date segment shows its name and the date field lies over it unseen (its
+     picker stretched across, so a click anywhere opens it); once a date is picked the field itself shows. Saved
+     tweets join as a third segment, a bookmark and the count in the follow toggle's navy pill. */
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, .xboard-date, button.xboard-saved) {
+    position: relative; display: inline-flex; align-items: center; justify-content: center; height: 38px; padding: 0 14px;
+    border: 0 solid transparent; border-radius: 2px; background: var(--x-face); box-shadow: none; color: var(--x-hint);
+    font-size: 15px; font-weight: 600; line-height: 1; white-space: nowrap;
+    border-image: var(--x-seg) 27 27 30 21 / 9px 9px 10px 7px / 2px 4px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch { gap: 0; }
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-recent { min-width: 131px; }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-date { min-width: 134px; margin-left: -2px; cursor: pointer; }
+  #app .app-shell--comic-page .xboard-header-actions button.xboard-saved { gap: 6px; margin-left: -2px; }
+  #app .app-shell--comic-page .xboard-saved svg { width: 15px; height: 15px; stroke-width: 2.4; }
+  /* the count holds two digits' room, so the switch keeps its width while saves come and go */
+  #app .app-shell--comic-page .xboard-saved-count {
+    min-width: calc(2ch + 12px); padding: 2px 6px; border-radius: 3px; background: #0e1a31; color: #c6f51f;
+    font-size: 12.5px; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active), button.xboard-saved.xboard-mode-active),
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, button.xboard-saved).xboard-mode-active:hover:not(:disabled) {
+    background: var(--x-lime); color: var(--x-ink); font-weight: 800;
+  }
+  /* With the switch's script running, the two segments share the bar's face and the lime is drawn once, on the bar,
+     sliding over to the chosen segment; the idle one still tints on hover. The chosen name darkens as the lime
+     arrives under it, the one it leaves lets go at once; a picked date fades in over the lime, the name back. */
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator] { border-radius: 2px; background: var(--x-face); }
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator-mark]::before { content: ''; z-index: -1; border-radius: 2px; background: var(--x-lime); }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, .xboard-date, button.xboard-saved),
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent, button.xboard-saved).xboard-mode-active:hover:not(:disabled) {
+    background: transparent; transition: color 90ms ease, background-color 150ms ease;
+  }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent.xboard-mode-active, .xboard-date:has(> .xboard-mode-active), button.xboard-saved.xboard-mode-active) {
+    transition: color 160ms ease 70ms, background-color 150ms ease;
+  }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-window-switch[data-indicator] :is(button.xboard-recent:not(.xboard-mode-active), .xboard-date:not(:has(> .xboard-mode-active)), button.xboard-saved:not(.xboard-mode-active)):hover {
+    background: var(--x-face-hover);
+  }
+  #app .app-shell--comic-page .xboard-window-switch[data-indicator] :is(.xboard-date input.input.xboard-mode-active, .xboard-date:not(:has(> .xboard-mode-active)) .xboard-date-text) {
+    animation: motion-fade 260ms var(--motion-ease-out) 80ms both;
+  }
+  #app .app-shell--comic-page .xboard-header-actions :is(button.xboard-recent, button.xboard-saved):not(.xboard-mode-active):hover,
+  #app .app-shell--comic-page .xboard-header-actions .xboard-date:not(:has(> .xboard-mode-active)):hover { background: var(--x-face-hover); color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-date input.input {
+    position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0;
+    background: transparent; box-shadow: none; opacity: 0; cursor: pointer;
+    /* no easing of its font: the field takes its full size at once, so the segment's width glides in one go */
+    transition: none;
+  }
+  #app .app-shell--comic-page .xboard-date input.input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: auto; height: auto; margin: 0; cursor: pointer; }
+  #app .app-shell--comic-page .xboard-date:has(> .xboard-mode-active) .xboard-date-text {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  #app .app-shell--comic-page .xboard-date input.input.xboard-mode-active {
+    position: static; width: auto; height: auto; opacity: 1; color: var(--x-ink); font: inherit; color-scheme: light;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .xboard-date input.input.xboard-mode-active { color-scheme: light; color: var(--x-lime-ink); }
+  #app .app-shell--comic-page .xboard-date input.input.xboard-mode-active::-webkit-calendar-picker-indicator { position: static; width: 14px; height: 14px; margin-left: 6px; }
+  #app .app-shell--comic-page .xboard-header-actions .xboard-date:has(input:focus-visible) { outline: 2px solid var(--x-ink); outline-offset: 4px; }
+
+  /* In the folio (FolioTools data-folio) the same tools come a size down to its 50px line: 34px buttons and a 32px
+     switch in 14px type. Trim brings text only and refresh down to their icons; compact keeps the switch whole and
+     lets the follow toggle drop its name too, down to the icon and the count (names still read out, and shown as a
+     tooltip). Tight, the last try before the tools go back to the page, writes the switch short, 24 小时 and 日期 (the
+     full names still read out), and lets its segments shrink to their words. */
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions { flex-wrap: nowrap; gap: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button:is(.xboard-follow-toggle, .xboard-text-only, .xboard-refresh) {
+    height: 34px; padding: 0 13px; gap: 6px; font-size: 14px;
+  }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button.xboard-refresh { width: 84px; padding: 0; }
+  #app .app-shell--comic-page .folio-tools[data-folio='full'] .xboard-header-actions button.xboard-refresh:lang(en) { width: 116px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] :is(.xboard-refresh, .xboard-follow-toggle, .xboard-text-only) svg { width: 14px; height: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-follow-count { padding: 2px 5px; font-size: 11.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions :is(button.xboard-recent, .xboard-date, button.xboard-saved) { height: 32px; padding: 0 12px; font-size: 13.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-saved svg { width: 14px; height: 14px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-saved-count { min-width: calc(2ch + 10px); padding: 2px 5px; font-size: 11.5px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions button.xboard-recent { min-width: 112px; }
+  #app .app-shell--comic-page .folio-tools[data-folio] .xboard-header-actions .xboard-date { min-width: 104px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='trim'] .xboard-header-actions { gap: 12px; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-header-actions { gap: 8px; }
+  /* the saved segment keeps to its bookmark and count everywhere but the folio's full level: under the masthead too,
+     where narrow desktops would otherwise wrap the tools to a second row */
+  #app .app-shell--comic-page .folio-tools:not([data-folio]) .xboard-saved .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools[data-folio='trim'] :is(.xboard-text-only, .xboard-refresh, .xboard-saved) .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-tool-label,
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] :is(.xboard-recent-long, .xboard-date-long) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='trim'], [data-folio='compact'], [data-folio='tight']) .xboard-header-actions button:is(.xboard-text-only, .xboard-refresh) { width: 34px; padding: 0; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='compact'], [data-folio='tight']) .xboard-header-actions button.xboard-follow-toggle { padding: 0 10px; }
+  #app .app-shell--comic-page .folio-tools:is([data-folio='trim'], [data-folio='compact'], [data-folio='tight']) .xboard-header-actions button.xboard-saved { padding: 0 10px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='compact'] .xboard-header-actions .xboard-date { min-width: 96px; }
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] .xboard-header-actions :is(button.xboard-recent, .xboard-date) { min-width: 0; }
+  #app .app-shell--comic-page .folio-tools[data-folio='tight'] :is(.xboard-recent-short, .xboard-date-short) { display: inline; }
+
+  /* the admin bar, the empty state and the pager: a pale grey line round paper, rounded 7px */
+  #app .app-shell--comic-page :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card) {
+    position: relative; isolation: isolate; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card)::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -3px -5px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 12px 13px 15px 12px;
+    border-image: var(--x-pager) 36 39 45 36 fill / 12px 13px 15px 12px stretch;
+  }
+  #app .app-shell--comic-page .xboard-main > .glass-card { color: var(--x-muted); font-size: 15px; }
+  #app .app-shell--comic-page .xboard-toolbar { padding: 12px 16px; }
+  #app .app-shell--comic-page .xboard-toolbar .btn-danger { background: #ff6b6b; color: #fff; }
+  /* the pager sits centred under the wall, the tweet count centred just below it */
+  #app .app-shell--comic-page .xboard-pagination {
+    align-self: center; flex-wrap: nowrap; justify-content: space-between; gap: 12px; width: min(100%, 357px); padding: 15px 13px 15px 15px;
+  }
+  #app .app-shell--comic-page .xboard-pagination > span { color: var(--x-hint); font-size: 14px; font-weight: 700; white-space: nowrap; }
+  #app .app-shell--comic-page .xboard-page .xboard-pagination button {
+    display: inline-flex; align-items: center; gap: 6px; height: 32px; min-height: 0; padding: 0 12px 0 10px;
+    border: 0 solid transparent; border-radius: 3px; background: var(--x-face); box-shadow: none; color: var(--x-ink);
+    font-size: 15px; font-weight: 800; line-height: 1;
+    border-image: var(--x-pg) 27 30 36 27 / 9px 10px 12px 9px / 2px 3px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-page .xboard-pagination button:last-child { padding: 0 10px 0 14px; }
+  #app .app-shell--comic-page .xboard-page .xboard-pagination button:hover:not(:disabled) { background: var(--x-face-hover); }
+  #app .app-shell--comic-page .xboard-page .xboard-pagination button:disabled {
+    opacity: 1; color: #97a4ae; font-weight: 600; cursor: default;
+    border-image: var(--x-pg-off) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-page .xboard-pagination button:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 3px; }
+  #app .app-shell--comic-page .xboard-pagination button::before,
+  #app .app-shell--comic-page .xboard-pagination button:last-child::after {
+    content: ''; width: 8px; height: 13px; background: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 1.5 1.8 6.5l4.7 5'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .xboard-pagination button:last-child::before { content: none; }
+  #app .app-shell--comic-page .xboard-pagination button:last-child::after { transform: scaleX(-1); }
+  #app .app-shell--comic-page .xboard-main > p:last-child { margin-top: -6px; color: #8a97aa; font-size: 12px; text-align: center; }
+
+  /* Tweets read at 14px on a 21px line (the concept sets 13px; one size up reads easier); the masonry estimator
+     reads these and the column gap from here. The wall packs its cards tight, and the estimator reads that from here
+     too: a tweet shows seven lines at most and a quote four at 13px (the rest a click away, in the detail), a picture
+     stands at most 150px tall, several pictures run as one strip of square frames, and a quote's pictures stand at
+     most 110px. */
+  #app .app-shell--comic-page .xboard-main {
+    --tweet-text-size: 14px; --tweet-text-line: 21px; --masonry-gap: 20px; gap: 16px;
+    --tweet-text-clamp: 7; --tweet-media-max: 150px;
+    --tweet-quote-size: 13px; --tweet-quote-line: 19px; --tweet-quote-clamp: 4; --tweet-quote-media-max: 110px;
+  }
+
+  /* the card: a 2px line on a solid ink block 6.5px right and 6px down, mint-teal dots and a black clump off the
+     lower right, all in the image */
+  #app .app-shell--comic-page .tweet-card {
+    position: relative; isolation: isolate; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page .tweet-card::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -9px -9px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 10px 65px 57px 8px;
+    border-image: var(--x-card) 30 195 171 24 fill / 10px 65px 57px 8px stretch;
+  }
+  #app .app-shell--comic-page .tweet-card:hover { background: transparent; }
+  @media (hover: hover) {
+    #app .app-shell--comic-page .tweet-card:is(:hover, :focus-within) { box-shadow: none; transform: translate(-1px, -2px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .tweet-card:is(:hover, :focus-within) { transform: none; }
+  }
+  /* One header row even in the narrower columns beside the open panel: long names truncate instead of wrapping. */
+  #app .app-shell--comic-page .tweet-head { flex-wrap: nowrap; gap: 0; padding: 11px 14px 0 16px; border-bottom: 0; }
+  #app .app-shell--comic-page .tweet-card .tweet-retweet-line { padding: 10px 14px 0 17px; color: var(--x-muted); font-size: 12.5px; }
+  #app .app-shell--comic-page .tweet-card .tweet-retweet-line + .tweet-head { padding-top: 7px; }
+  #app .app-shell--comic-page .tweet-head > input { margin-right: 8px; }
+  #app .app-shell--comic-page .tweet-head :is(.tweet-avatar, .tweet-avatar-fallback) { width: 27px; height: 27px; margin-right: 10px; border: 0; border-radius: 4px; }
+  #app .app-shell--comic-page .tweet-card .tweet-handle { min-width: 0; padding: 0 1px; color: var(--x-ink); font-size: 14.5px; font-style: italic; font-weight: 900; letter-spacing: -.1px; }
+  #app .app-shell--comic-page .tweet-head .tweet-actions { gap: 6px; margin-left: auto; padding-left: 8px; }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn {
+    width: 22px; height: 22px; border: 0 solid transparent; border-radius: 3.5px; background: var(--x-face); box-shadow: none; color: var(--x-navy);
+    border-image: var(--x-ib) 27 30 33 27 / 9px 10px 11px 9px / 2px 3px 4px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn:hover { background: var(--x-lime); color: var(--x-lime-ink); }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 3px; }
+  /* a saved tweet's bookmark: filled lime in an ink line, ink-filled once the hover turns the face lime */
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved { color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved svg { fill: var(--x-lime); }
+  #app .app-shell--comic-page .xboard-page .tweet-icon-btn.is-saved:hover svg { fill: currentColor; }
+  /* the score: a lime pill in ink, its fill in the image */
+  #app .app-shell--comic-page .xboard-page .tweet-score {
+    gap: 4px; height: 24px; margin-left: 0; padding: 0 9px 0 8px; border: 0 solid transparent; border-radius: 4px;
+    background: transparent; box-shadow: none; color: var(--x-lime-ink); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums;
+    border-image: var(--x-score) 27 33 36 27 fill / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-page .tweet-score svg { width: 13px; height: 13px; stroke-width: 2.4; }
+  /* media inset 15px, 12px under the head, in a thin dark line; the play key a navy square at its left */
+  #app .app-shell--comic-page .tweet-card .tweet-media-list { gap: 8px; padding: 12px 13px 0 15px; }
+  #app .app-shell--comic-page .tweet-card .tweet-media-list > * { border: 1px solid #1b2436; border-radius: 5px; }
+  #app .app-shell--comic-page .xboard-page .tweet-video-btn { justify-content: flex-start; padding-left: 4px; }
+  #app .app-shell--comic-page .xboard-page .tweet-play { width: 44px; height: 44px; border: 0; border-radius: 5px; background: #0e1a31; color: #c6f51f; }
+  #app .app-shell--comic-page .xboard-page .tweet-play svg { width: 20px; height: 20px; margin-left: 2px; }
+  #app .app-shell--comic-page .xboard-page .tweet-video-btn:hover .tweet-play { background: #c6f51f; color: #0e1a31; box-shadow: none; }
+  /* a picture is cut a little above its middle, where a screenshot's heading sits; a video, once playing, keeps its
+     full height */
+  #app .app-shell--comic-page .tweet-card .tweet-media-list > :is(img, button) { max-height: var(--tweet-media-max); }
+  #app .app-shell--comic-page .tweet-card .tweet-media-list > img { object-position: 50% 30%; }
+  /* in the strip a video's frame opens the detail, its key a 28px square in the middle */
+  #app .app-shell--comic-page .xboard-page .tweet-media-list--strip .tweet-video-btn { justify-content: center; padding-left: 0; }
+  #app .app-shell--comic-page .xboard-page .tweet-media-list--strip .tweet-play { width: 28px; height: 28px; border-radius: 4px; }
+  #app .app-shell--comic-page .xboard-page .tweet-media-list--strip .tweet-play svg { width: 14px; height: 14px; margin-left: 1px; }
+  #app .app-shell--comic-page .tweet-card .tweet-body { padding: 9px 14px 10px 15px; }
+  #app .app-shell--comic-page .tweet-card .tweet-head + .tweet-body { padding-top: 12px; }
+  #app .app-shell--comic-page .tweet-card .tweet-text {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tweet-text-clamp); overflow: hidden;
+    color: var(--x-copy); font-size: var(--tweet-text-size); font-weight: 500; line-height: var(--tweet-text-line);
+  }
+  #app .app-shell--comic-page .tweet-card :is(.tweet-text-seg, .tweet-link) { color: var(--x-copy); }
+  #app .app-shell--comic-page .tweet-card .tweet-quote-text {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--tweet-quote-clamp); overflow: hidden;
+    font-size: var(--tweet-quote-size); line-height: var(--tweet-quote-line);
+  }
+  #app .app-shell--comic-page .tweet-card .tweet-quote-photo { max-height: var(--tweet-quote-media-max); }
+  /* Comfortable (the masthead's density switch): the wall as it stood before it was packed. Tweets and quotes run
+     to their full length (a quote at the card's own 12px on 16px), a picture keeps its own height and is cut at its
+     middle, and a quote's pictures stop at the card's own 220px. The variables above stay declared; the estimator
+     only reads the packed measures on the compact wall. */
+  #app .app-shell--comfortable .tweet-card .tweet-text { display: block; -webkit-line-clamp: none; overflow: visible; }
+  #app .app-shell--comfortable .tweet-card .tweet-quote-text { display: block; -webkit-line-clamp: none; overflow: visible; font-size: .75rem; line-height: 1rem; }
+  #app .app-shell--comfortable .tweet-card .tweet-media-list > :is(img, button) { max-height: none; }
+  #app .app-shell--comfortable .tweet-card .tweet-media-list > img { object-position: 50% 50%; }
+  #app .app-shell--comfortable .tweet-card .tweet-quote-photo { max-height: 220px; }
+  /* the time row ends in small keys in the head's icon-key line: 全文 where the text was cut, and in text only what
+     was put away (pictures, videos, a link card); either opens the detail */
+  #app .app-shell--comic-page .tweet-card .tweet-time { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--x-muted); font-size: 13px; line-height: 19px; }
+  #app .app-shell--comic-page .tweet-card .tweet-time-tools { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+  #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint) {
+    display: inline-flex; align-items: center; gap: 6px; height: 19px; padding: 0 7px; border: 0 solid transparent; border-radius: 3px;
+    background: var(--x-face); color: var(--x-navy); font-size: 12px; font-weight: 800; line-height: 1; white-space: nowrap;
+    border-image: var(--x-ib) 27 30 33 27 / 9px 10px 11px 9px / 2px 3px 4px 2px stretch;
+    animation: motion-fade 220ms var(--motion-ease-out) both;
+  }
+  #app .app-shell--comic-page .tweet-card .tweet-media-hint > span { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .tweet-card .tweet-media-hint svg { width: 12px; height: 12px; stroke-width: 2.4; }
+  #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint):hover { background: var(--x-lime); color: var(--x-lime-ink); }
+  #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint):focus-visible { outline: 2px solid var(--x-ink); outline-offset: 3px; }
+  /* the fold under the first of an account's tweets on the page: one 28px line in a chip's edge with the count on its
+     left and 展开 or 收起 on its right; lime under the pointer, its chevron turning over as it opens */
+  #app .app-shell--comic-page .tweet-card .tweet-fold {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; width: calc(100% - 28px); height: 28px;
+    margin: 0 13px 8px 15px; padding: 0 9px 0 10px; border: 0 solid transparent; border-radius: 3px;
+    background: var(--x-chip-on); color: var(--x-ink); font-size: 12.5px; font-weight: 800; line-height: 1; text-align: left;
+    border-image: var(--x-chip) 24 36 30 24 / 8px 12px 10px 8px / 2px 6px 4px 2px stretch;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  #app .app-shell--comic-page .tweet-card .tweet-fold:hover { background: var(--x-lime); color: var(--x-lime-ink); }
+  #app .app-shell--comic-page .tweet-card .tweet-fold:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 3px; }
+  #app .app-shell--comic-page .tweet-card .tweet-fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #app .app-shell--comic-page .tweet-card .tweet-fold-action { display: inline-flex; flex: none; align-items: center; gap: 3px; color: var(--x-muted); font-weight: 700; }
+  #app .app-shell--comic-page .tweet-card .tweet-fold:hover .tweet-fold-action { color: inherit; }
+  #app .app-shell--comic-page .tweet-card .tweet-fold-chevron { width: 14px; height: 14px; stroke-width: 2.4; transition: transform 240ms var(--motion-ease-out); }
+  #app .app-shell--comic-page .tweet-card .tweet-fold[aria-expanded='true'] .tweet-fold-chevron { transform: rotate(180deg); }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .tweet-card :is(.tweet-fold, .tweet-fold-chevron) { transition: none; }
+    #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint) { animation: none; }
+  }
+  /* a tweet read before (useReadMarks): all its text, the repost line, time, quoted tweet and link card with it, drops
+     to one slate ink, the avatars and pictures wash out and the score loses its lime; the card's frame stays as drawn.
+     A video started in it plays in full. */
+  #app .app-shell--comic-page .tweet-card.is-read {
+    --x-copy: var(--x-read); --x-ink: var(--x-read); --x-navy: var(--x-read); --x-muted: var(--x-read);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read :is(.tweet-retweet-line, .tweet-quote, .tweet-linkcard) {
+    --ink: var(--x-read); --ink-secondary: var(--x-read); --ink-muted: var(--x-read);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read :is(
+    .tweet-avatar, .tweet-avatar-fallback, .tweet-media-list:not(:has(video)), .tweet-quote-avatar, .tweet-quote-media, .tweet-linkcard-image
+  ) {
+    filter: saturate(.3) opacity(.72);
+  }
+  #app .app-shell--comic-page .tweet-card.is-read .tweet-score { filter: saturate(.3); }
+  /* where you left off: across the wall between the tweets that came in since and those read last time, a tag in the
+     score's lime pill, the count of new ones in the muted ink, then an ink rule run out to the wall's right edge */
+  #app .app-shell--comic-page .xboard-seen-rule { gap: 12px; height: 28px; color: var(--x-muted); font-size: 13px; font-weight: 700; }
+  #app .app-shell--comic-page .xboard-seen-rule__tag {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 11px 1px 10px; border: 0 solid transparent; border-radius: 4px;
+    color: var(--x-lime-ink); font-size: 13px; font-weight: 900; line-height: 1;
+    border-image: var(--x-score) 27 33 36 27 fill / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-seen-rule__line path { stroke: var(--x-ink); stroke-width: 2.5; }
+  /* the keyboard cursor (useListKeys): a lime key with an ink edge in the gap left of the card, sprung from card to
+     card as the wall's own mark (v-indicator); the card under it needs no focus ring of its own */
+  #app .app-shell--comic-page .masonry-grid[data-indicator-mark]::after {
+    z-index: 2; width: 6px; translate: calc(var(--indicator-x, 0px) - 9.5px) var(--indicator-y, 0px);
+    border: 1.5px solid var(--x-ink); border-radius: 3px; background: var(--x-lime);
+  }
+  #app .app-shell--comic-page .tweet-card[data-list-key] { scroll-margin: 14px 0 calc(var(--peel-clear) + 20px); }
+  #app .app-shell--comic-page .tweet-card.is-cursor:focus { outline: none; }
+
+  /* the followed-accounts panel: a light line top and left, a heavy ink block right and down; orange dots off its
+     lower right with a black clump in them, a few under its top right; the title marked with a yellow blot */
+  #app .app-shell--comic-page .xboard-follow-panel {
+    position: relative; isolation: isolate; padding: 14px 16px 18px 15px; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page .xboard-follow-panel::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -8px -10px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 16px 110px 105px 8px;
+    border-image: var(--x-panel) 48 330 315 24 fill / 16px 110px 105px 8px stretch;
+  }
+  #app .app-shell--comic-page .xboard-follow-heading { position: relative; padding-left: 33px; }
+  #app .app-shell--comic-page .xboard-follow-heading::before {
+    content: ''; position: absolute; left: 0; top: 1px; width: 26px; height: 24px; background: var(--x-badge) center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .xboard-follow-panel h2 { color: var(--x-ink); font-size: 15px; font-weight: 800; }
+  #app .app-shell--comic-page .xboard-follow-panel p { color: var(--x-copy); font-size: 12.5px; }
+  #app .app-shell--comic-page .xboard-follow-panel .mt-3.flex > button { height: 35px; padding: 0 14px; font-size: 15px; }
+  #app .app-shell--comic-page .xboard-follow-list { gap: 13px 8px; }
+  /* a chip: a thin line round a lime-cream face with an ink bracket down its right end; a lime tick box */
+  #app .app-shell--comic-page .xboard-account-chip {
+    gap: 6px; height: 27px; padding: 0 10px 0 5px; border: 0 solid transparent; border-radius: 3px; box-shadow: none;
+    background: var(--x-face); color: var(--x-muted); font-size: 15px; font-style: italic; font-weight: 800; line-height: 1;
+    border-image: var(--x-chip) 24 36 30 24 / 8px 12px 10px 8px / 2px 6px 4px 2px stretch;
+  }
+  #app .app-shell--comic-page .xboard-account-chip-active { background: var(--x-chip-on); color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-account-chip:hover { background: var(--x-face-hover); color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-account-chip input {
+    flex: 0 0 14px; width: 14px; height: 14px; margin: 0; border: 1.2px solid #9aa3ad; border-radius: 2px; appearance: none; background: var(--x-face); cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  #app .app-shell--comic-page .xboard-account-chip input:checked { border-color: var(--x-check); background: var(--x-check) var(--x-tick) center / 12px 12px no-repeat; }
+  #app .app-shell--comic-page .xboard-account-chip input:focus-visible { outline: 2px solid var(--x-ink); outline-offset: 2px; }
+}
