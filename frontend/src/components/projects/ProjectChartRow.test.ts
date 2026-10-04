@@ -185,8 +185,11 @@ describe('ProjectChartRow', () => {
   })
 
   it('keeps a repository that went missing in place, dimmed and labelled', () => {
+    expect(mountRow().find('.project-row__logo img').exists()).toBe(true)
     const row = mountRow({ repo: repo({ availability_status: 'not_found' }) })
     expect(row.classes()).toContain('project-row--not-found')
     expect(row.find('.project-row__gone').exists()).toBe(true)
+    // The logo endpoint 404s for removed repositories, so the row keeps the initial instead.
+    expect(row.find('.project-row__logo img').exists()).toBe(false)
   })
 })

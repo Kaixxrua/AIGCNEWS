@@ -46,6 +46,11 @@ describe('project identity and heat', () => {
     expect(logo.classes()).toContain('project-logo--light')
     getContext.mockRestore()
   })
+  it('shows the initial without requesting a logo for a repository that is gone', () => {
+    const logo = mount(ProjectLogo, { props: { logo: '/api/projects/github/logo/acme/demo', repositoryUrl: 'https://github.com/acme/demo', name: 'Demo', unavailable: true } })
+    expect(logo.find('img').exists()).toBe(false)
+    expect(logo.text()).toBe('D')
+  })
   it('does not trust arbitrary logo hosts', () => {
     const logo = mount(ProjectLogo, { props: { logo: 'https://evil.example/logo', name: 'Demo' } })
     expect(logo.find('img').exists()).toBe(false)

@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.repositories.postgres_project_catalog import (
     _GH_PUBLIC_SUCCEEDED_FILTER,
+    _LIST_PROJECT_COLUMN_PAIRS,
     RELEVANCE_STRONG_MATCH_THRESHOLD,
     PostgresProjectCatalogRepository,
     _strong_match_clause,
@@ -726,9 +727,15 @@ def test_public_github_list_projects_retains_not_found_repos() -> None:
     """
     database = Database([{"cnt": 0}, []])
     PostgresProjectCatalogRepository(database).list_projects(source="github")
+    # logo 地址只给 active 仓库（与 logo 接口同口径）：那是列表达式，不是行过滤。
+    image_column = next(
+        github for github, _website in _LIST_PROJECT_COLUMN_PAIRS if github.endswith(" image_url")
+    )
+    assert "c.availability_status = 'active'" in image_column
     for sql, _params in database.cursor.calls[1:]:
-        assert "c.availability_status = 'active'" not in sql
-        assert "c.availability_status" in sql
+        rows_sql = sql.replace(image_column, "")
+        assert "c.availability_status = 'active'" not in rows_sql
+        assert "c.availability_status" in rows_sql
 
 
 def test_lexical_candidate_repo_ids_retain_not_found_repos() -> None:

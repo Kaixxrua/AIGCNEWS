@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-const props = defineProps<{ logo?: string | null; repositoryUrl?: string; name?: string }>()
+const props = defineProps<{ logo?: string | null; repositoryUrl?: string; name?: string; unavailable?: boolean }>()
 const failed = ref<string[]>([])
 const loaded = ref(false)
 const plate = ref<'light' | 'dark'>()
@@ -12,7 +12,8 @@ const cachedLogo = computed(() => {
       ? `/api/projects/github/logo/${repository}` : ''
   } catch { return '' }
 })
-const candidates = computed(() => [
+// The logo endpoint only serves repositories that still exist; a removed one keeps its initial.
+const candidates = computed(() => props.unavailable ? [] : [
   /^\/api\/projects\/github\/logo\/[a-z\d-]+\/[a-z\d_.-]+$/i.test(props.logo || '') ? props.logo! : '',
   cachedLogo.value,
 ].filter(Boolean))

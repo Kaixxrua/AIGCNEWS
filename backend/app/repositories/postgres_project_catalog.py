@@ -83,7 +83,8 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     ("c.title", "{title} title"),
     ("c.url", "w.canonical_url url"),
     ("NULL::text domain", "w.domain"),
-    ("(SELECT '/api/projects/github/logo/' || c.repo_id FROM github_project_logos gl WHERE gl.repo_id = c.repo_id AND gl.content IS NOT NULL) image_url", "{image} image_url"),
+    # logo 接口只发 active 仓库的图：已下架仓库不给地址，置灰卡片不必白请求一次 404。
+    ("(SELECT '/api/projects/github/logo/' || c.repo_id FROM github_project_logos gl WHERE gl.repo_id = c.repo_id AND gl.content IS NOT NULL AND c.availability_status = 'active') image_url", "{image} image_url"),
     ("c.description", "{description} description"),
     ("ge.description_zh", "{description_zh} description_zh"),
     ("ge.description_en", "{description_en} description_en"),

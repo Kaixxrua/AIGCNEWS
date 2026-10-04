@@ -140,7 +140,7 @@ watch(() => props.target.key, () => {
       <div ref="scroller" class="project-pane__scroll">
         <article v-swap="swap" class="project-pane__body">
           <div class="project-pane__title">
-            <ProjectLogo class="project-pane__logo" :logo="repo.image_url" :repository-url="url" :name="name" />
+            <ProjectLogo class="project-pane__logo" :logo="repo.image_url" :repository-url="url" :name="name" :unavailable="notFound" />
             <h2 class="project-pane__name" aria-live="polite">
               <a :href="url" target="_blank" rel="noopener noreferrer" :title="t('projects.openRepository')" @click="emit('visit', repo)" @auxclick.middle="emit('visit', repo)"><span class="project-pane__owner">{{ nameParts.owner }}</span><wbr />{{ nameParts.repo }}</a>
             </h2>

@@ -160,7 +160,7 @@ const movementLabel = computed(() => {
     <!-- 宽榜单里标签跟在项目名后面，放不下再折到名字下面；窄榜单里标签单独占一行，铺满数字列下方 -->
     <div class="project-row__head">
       <div class="project-row__title">
-        <ProjectLogo class="project-row__logo" :logo="repo.image_url" :repository-url="url" :name="name" />
+        <ProjectLogo class="project-row__logo" :logo="repo.image_url" :repository-url="url" :name="name" :unavailable="notFound" />
         <h2 class="project-row__name">
           <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="opensPane ? undefined : t('projects.openRepository')" @click="onNameClick" @auxclick.middle="emit('visit', repo)"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
           <template v-else><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></template>

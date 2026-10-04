@@ -95,7 +95,7 @@ const description = computed(() => projectDescription(
     <div class="project-card__body">
       <header class="project-card__header">
         <div class="project-card__identity">
-          <ProjectLogo v-if="!isWebsite(repo)" class="project-card__github-logo" :logo="repo.image_url" :repository-url="projectUrl(repo)" :name="projectName(repo)" />
+          <ProjectLogo v-if="!isWebsite(repo)" class="project-card__github-logo" :logo="repo.image_url" :repository-url="projectUrl(repo)" :name="projectName(repo)" :unavailable="repo.availability_status === 'not_found'" />
           <div v-if="isWebsite(repo)" class="project-card__logo-shell">
             <span class="project-card__logo-placeholder" aria-hidden="true">
               {{ websiteLogoInitial(repo) }}
