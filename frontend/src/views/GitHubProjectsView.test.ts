@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GitHubProjectsView from './GitHubProjectsView.vue'
 import projectsViewSource from './GitHubProjectsView.vue?raw'
+import projectMcpPromoSource from '@/components/projects/ProjectMcpPromo.vue?raw'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
 import ToolWebsiteAddDialog from '@/components/projects/ToolWebsiteAddDialog.vue'
@@ -627,8 +628,8 @@ describe('GitHubProjectsView MCP guidance', () => {
     expect(content.element.children[1]?.classList).toContain('projects-mcp-promo__copy')
     expect(content.element.children[2]?.classList).toContain('projects-mcp-promo__action')
     expect(projectsViewSource).toMatch(/\.projects-page \.projects-mcp-promo\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;/)
-    expect(projectsViewSource).toMatch(/\.projects-mcp-promo__content\s*\{[^}]*display:\s*grid;/)
-    expect(projectsViewSource).toMatch(/\.projects-mcp-promo__controls\s*\{[^}]*grid-column:\s*2;/)
+    expect(projectMcpPromoSource).toMatch(/\.projects-mcp-promo__content\s*\{[^}]*display:\s*grid;/)
+    expect(projectMcpPromoSource).toMatch(/\.projects-mcp-promo__controls\s*\{[^}]*grid-column:\s*2;/)
   })
 
   it('hides the promo card when a weekly dismissal is still active', async () => {

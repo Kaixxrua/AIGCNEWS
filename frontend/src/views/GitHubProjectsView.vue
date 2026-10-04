@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch, type ComponentPublicInstance } from 'vue'
 import { useRoute } from 'vue-router'
 import { useIntervalFn, useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -25,6 +25,7 @@ import ToolWebsiteEditDialog from '@/components/projects/ToolWebsiteEditDialog.v
 import WebsiteCollectionTabs from '@/components/websites/WebsiteCollectionTabs.vue'
 import ProjectFiltersPanel from '@/components/projects/ProjectFiltersPanel.vue'
 import ProjectPagination from '@/components/projects/ProjectPagination.vue'
+import ProjectMcpPromo from '@/components/projects/ProjectMcpPromo.vue'
 import McpPromptExampleList from '@/components/mcp/McpPromptExampleList.vue'
 import { useProjectCatalogController } from '@/composables/useProjectCatalogController'
 import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
@@ -35,7 +36,7 @@ import { useListKeys } from '@/composables/useListKeys'
 import { useProjectPeek, useProjectPeekData } from '@/composables/useProjectPeek'
 import { useProjectPane } from '@/composables/useProjectPane'
 import { READ_MARKS, useReadMarks } from '@/composables/useReadMarks'
-import { MCP_EMPTY_STATE_EXAMPLE_IDS, MCP_PROMO_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
+import { MCP_EMPTY_STATE_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
   canEditWebsiteProject,
   canFavoriteProject,
@@ -374,7 +375,6 @@ const handleChipClick = (chip: ProjectChip) => {
   resetScopeToAll(); selectedCategory.value = 'all'; selectedSubcategory.value = 'all'; selectedLanguage.value = ''; selectedTag.value = ''; searchQuery.value = chip.value; debouncedQuery.value = chip.value
 }
 const { dismissed: mcpPromoDismissed, dismiss: dismissMcpPromo, dismissForWeek: dismissMcpPromoForWeek } = useMcpPromoDismissed()
-const mcpPromoExamples = mcpExamplesByIds(MCP_PROMO_EXAMPLE_IDS)
 const mcpEmptyStateExamples = mcpExamplesByIds(MCP_EMPTY_STATE_EXAMPLE_IDS)
 // 搜索/筛选无结果时空状态已列出同组 MCP 示例，推广卡让位，避免同屏两份相同示例
 const showEmptyStateMcp = computed(() => !requiresPersonalLogin.value && !loading.value && !errorMsg.value && projects.value.length === 0 && (!!searchQuery.value || hasActiveFilter.value))
@@ -384,11 +384,13 @@ const showMcpPromo = computed(() => source.value === 'all' && !mcpPromoDismissed
 // 舒适版面、手机平板仍是原来的标题和可展开的横幅。
 const askOpen = ref(false)
 const askButton = ref<HTMLButtonElement | null>(null)
-const askPanel = ref<HTMLElement | null>(null)
+// 点开的那一块（ProjectMcpPromo）：放焦点、看焦点在不在里面，都对着它的根元素。
+const askPanel = ref<ComponentPublicInstance | null>(null)
+const askPanelEl = (): HTMLElement | undefined => askPanel.value?.$el
 // 展开后焦点移进这一块（读屏念出它的名字，Tab 接着走示例）；Esc 或 × 收起时焦点回到按钮。
 const toggleAsk = () => {
   askOpen.value = !askOpen.value
-  if (askOpen.value) void nextTick(() => askPanel.value?.focus({ preventScroll: true }))
+  if (askOpen.value) void nextTick(() => askPanelEl()?.focus({ preventScroll: true }))
 }
 const closeAsk = () => {
   askOpen.value = false
@@ -396,7 +398,7 @@ const closeAsk = () => {
 }
 // 焦点在这一块里时 Esc 先收它；排进榜单的 Esc 链里，一按不会连详情栏一起收掉。
 const closeAskFromInside = () => {
-  if (!askOpen.value || !askPanel.value?.contains(document.activeElement)) return false
+  if (!askOpen.value || !askPanelEl()?.contains(document.activeElement)) return false
   closeAsk()
   return true
 }
@@ -790,49 +792,15 @@ onBeforeUnmount(stopViewReads)
     </ProjectFiltersPanel>
 
     <Transition :css="false" @enter="promoEnter" @leave="promoLeave">
-      <component
-        :is="chartLayout ? 'section' : 'details'"
+      <ProjectMcpPromo
         v-if="showMcpPromo && (!chartLayout || askOpen)"
-        :id="chartLayout ? 'projects-ask-panel' : undefined"
         ref="askPanel"
-        class="projects-mcp-promo glass-card"
-        :class="{ 'projects-mcp-promo--panel': chartLayout }"
-        :tabindex="chartLayout ? -1 : undefined"
-        :aria-label="chartLayout ? t('projects.mcpPromo.title') : undefined"
-      >
-        <summary v-if="!chartLayout" class="projects-mcp-promo__summary">
-          <span class="projects-mcp-promo__title">{{ t('projects.mcpPromo.title') }}</span>
-          <span class="projects-mcp-promo__expand">{{ t('projects.mcpPromo.expand') }}</span>
-          <svg class="projects-mcp-promo__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
-        </summary>
-        <div class="projects-mcp-promo__content">
-          <div class="projects-mcp-promo__controls">
-            <button type="button" class="projects-mcp-promo__dismiss-week" @click="dismissMcpPromoForWeek">
-              {{ t('projects.mcpPromo.dismissWeek') }}
-            </button>
-            <button type="button" class="projects-mcp-promo__dismiss" :aria-label="t('common.close')" @click="chartLayout ? closeAsk() : dismissMcpPromo()">×</button>
-          </div>
-          <div class="projects-mcp-promo__copy">
-            <p class="projects-kicker">{{ t('projects.mcpPromo.kicker') }}</p>
-            <h2 id="mcp-promo-title">{{ t('projects.mcpPromo.title') }}</h2>
-            <p>{{ t('projects.mcpPromo.pitch') }}</p>
-            <p class="projects-mcp-promo__try">{{ t('projects.mcpPromo.tryLabel') }}</p>
-            <McpPromptExampleList
-              :examples="mcpPromoExamples"
-              :mode="source === 'all' ? 'demo-copy' : 'copy-only'"
-              layout="chips"
-              @demo="runMcpExampleDemo"
-            />
-          </div>
-          <RouterLink to="/mcp" class="projects-mcp-promo__action">
-            {{ t('projects.mcpPromo.cta') }}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M5 12h14" />
-              <path d="m14 7 5 5-5 5" />
-            </svg>
-          </RouterLink>
-        </div>
-      </component>
+        :panel="chartLayout"
+        :can-demo="source === 'all'"
+        @demo="runMcpExampleDemo"
+        @close="chartLayout ? closeAsk() : dismissMcpPromo()"
+        @dismiss-week="dismissMcpPromoForWeek"
+      />
     </Transition>
 
     <section v-if="successMsg && !requiresPersonalLogin" class="projects-toast projects-toast--success glass-card">
@@ -1309,26 +1277,9 @@ onBeforeUnmount(stopViewReads)
 }
 
 
+/* MCP 推广块（ProjectMcpPromo）的宽度与配色留在页面上：特异度和上面 .glass-card 那条相同，要在同一份样式表里排在它后面才压得过。 */
 .projects-page .projects-mcp-promo { width: 100%; min-width: 0; margin-bottom: 18px; border-color: var(--projects-accent); border-radius: 6px; background: var(--projects-acid-soft); }
-.projects-mcp-promo__summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; cursor: pointer; list-style: none; }
-.projects-mcp-promo__summary::-webkit-details-marker { display: none; }
-.projects-mcp-promo__title { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; }
-.projects-mcp-promo__title::before { content: '✦'; color: var(--tone-lime); font-size: 18px; }
-.projects-mcp-promo__expand { margin-left: auto; color: var(--ink-secondary); font-size: 12px; }
-.projects-mcp-promo__chevron { width: 26px; height: 26px; flex: 0 0 26px; padding: 5px; border: 1px solid var(--projects-accent); border-radius: 4px; color: var(--projects-on-acid); background: var(--projects-acid); }
-.projects-mcp-promo[open] .projects-mcp-promo__chevron { transform: rotate(180deg); }
-.projects-mcp-promo__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 16px; padding: 12px 16px 16px; border-top: 1px solid var(--rule); }
-.projects-mcp-promo__controls { display: flex; grid-column: 2; grid-row: 1; justify-content: flex-end; gap: 8px; }
-.projects-mcp-promo__dismiss, .projects-mcp-promo__dismiss-week { min-height: 36px; padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--control-radius); font-size: 12px; }
-.projects-mcp-promo__dismiss { min-width: 36px; }
-.projects-mcp-promo__copy { min-width: 0; grid-column: 1; grid-row: 1; }
-.projects-mcp-promo__copy h2 { display: none; }
-.projects-mcp-promo__copy > p { color: var(--ink-secondary); font-size: 14px; line-height: 1.7; margin: 0 0 8px; }
-.projects-mcp-promo__copy .projects-kicker { display: none; }
-.projects-mcp-promo__action { display: inline-flex; grid-column: 1 / -1; align-items: center; justify-self: start; gap: 8px; min-height: 40px; color: var(--ink); font-size: 13px; font-weight: 650; text-decoration: underline; text-underline-offset: 4px; }
-.projects-mcp-promo__action svg { width: 16px; height: 16px; }
-.projects-mcp-promo__action:hover { color: var(--ink-secondary); }
-/* 榜单版面：横幅收成搜索框右端的按钮，点开的那一块没有标题条，焦点进来时不画框（键盘进来才画）。 */
+/* 榜单版面：横幅收成搜索框右端的按钮，点开的那一块在 ProjectMcpPromo 里。 */
 .projects-ask { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px 0 9px; border: 1px solid var(--projects-accent); border-radius: 4px; background: var(--projects-acid-soft); color: var(--ink); font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; cursor: pointer; }
 .projects-ask:is(:hover, [aria-expanded='true']) { background: var(--projects-acid); color: var(--projects-on-acid); }
 .projects-ask__mark { font-size: 15px; }
@@ -1341,9 +1292,6 @@ onBeforeUnmount(stopViewReads)
 @container projects-search (max-width: 640px) {
   .projects-ask__label:lang(en) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
-.projects-mcp-promo--panel .projects-mcp-promo__content { border-top: 0; }
-.projects-mcp-promo--panel:focus { outline: none; }
-.projects-mcp-promo--panel:focus-visible { outline: 2px solid var(--projects-accent); outline-offset: 2px; }
 
 .projects-grid {
   position: relative;
@@ -1405,24 +1353,6 @@ onBeforeUnmount(stopViewReads)
   .projects-login-prompt {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .projects-mcp-promo__expand { display: none; }
-  .projects-mcp-promo__chevron { margin-left: auto; }
-
-  .projects-mcp-promo__action {
-    width: 100%;
-  }
-
-  .projects-mcp-promo__content {
-    grid-template-columns: 1fr;
-  }
-
-  .projects-mcp-promo__controls,
-  .projects-mcp-promo__copy,
-  .projects-mcp-promo__action {
-    grid-column: 1;
-    grid-row: auto;
   }
 
   .projects-hero {
