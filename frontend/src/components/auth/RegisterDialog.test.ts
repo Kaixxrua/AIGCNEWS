@@ -44,6 +44,17 @@ beforeEach(() => {
 })
 
 describe('RegisterDialog', () => {
+  it('is named by its title, takes focus and closes on Escape', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement
+    expect(document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('注册')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    wrapper.unmount()
+  })
+
   it('renders as a modal card containing the whole register form and closes from ✕', async () => {
     const wrapper = mountDialog()
     const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement

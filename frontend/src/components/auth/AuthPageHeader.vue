@@ -3,6 +3,8 @@ import LocaleToggle from '@/components/LocaleToggle.vue'
 defineProps<{
   title: string
   description: string
+  /** 弹窗用 aria-labelledby 指向标题时传入。 */
+  titleId?: string
 }>()
 </script>
 
@@ -15,7 +17,7 @@ defineProps<{
     <div class="auth-page-header__icon mb-4 inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-stone-100">
       <slot />
     </div>
-    <h1 class="comic-title text-2xl font-bold text-stone-800 tracking-tight font-serif">{{ title }}</h1>
+    <h1 :id="titleId" class="comic-title text-2xl font-bold text-stone-800 tracking-tight font-serif">{{ title }}</h1>
     <p class="mt-1 text-sm text-stone-400">{{ description }}</p>
   </div>
 </template>

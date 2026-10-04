@@ -14,7 +14,7 @@ const mountDialog = () => mount(LoginDialog, {
   props: { modelValue: true, redirect: '/dsh' },
   global: {
     plugins: [i18n],
-    stubs: { LoginForm: { props: ['redirect'], emits: ['success', 'close', 'switch-to-register'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
+    stubs: { LoginForm: { props: ['redirect', 'titleId'], emits: ['success', 'close', 'switch-to-register'], template: '<button class="login-form" @click="$emit(\'success\')">登录</button>' } },
   },
 })
 const mountSettled = async () => {
@@ -46,6 +46,24 @@ describe('LoginDialog', () => {
     await nextTick()
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
     wrapper.unmount()
+  })
+
+  it('is named by the form title, closes on Escape and gives focus back to the opener', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = await mountSettled()
+    const titleId = wrapper.findComponent(LoginForm).props('titleId')
+    expect(titleId).toMatch(/^login-dialog-title-/)
+    expect(dialog()?.getAttribute('aria-labelledby')).toBe(titleId)
+    expect(dialog()?.contains(document.activeElement)).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
+    await wrapper.setProps({ modelValue: false })
+    await flushPromises()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+    opener.remove()
   })
 
   it('closes from a backdrop click outside the card', async () => {

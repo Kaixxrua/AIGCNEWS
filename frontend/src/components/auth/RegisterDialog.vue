@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useDialogFocus } from '@/composables/useDialogFocus'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
@@ -22,6 +24,9 @@ const authStore = useAuthStore()
 const close = () => emit('update:modelValue', false)
 // 注册成功即已登录：关弹窗并把 redirect 目标交给根级 AuthPromptHost 处理。
 const success = () => { emit('success'); close() }
+const titleId = `register-dialog-title-${useId()}`
+const dialogRef = ref<HTMLElement | null>(null)
+useDialogFocus(() => props.modelValue, dialogRef, close)
 
 const {
   email,
@@ -49,10 +54,10 @@ const {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
-        <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
+      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" :aria-labelledby="titleId" @click.self="close">
+        <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
           <div class="auth-card glass-card p-4 sm:p-6">
-            <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')">
+            <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')" :title-id="titleId">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                 <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
                 <circle cx="12" cy="7" r="4"/>

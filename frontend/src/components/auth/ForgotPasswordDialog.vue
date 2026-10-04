@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import AuthPageHeader from '@/components/auth/AuthPageHeader.vue'
@@ -8,6 +8,7 @@ import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFi
 import { usePasswordResetForm } from '@/composables/usePasswordResetForm'
 import { getSafeInternalRedirect } from '@/features/auth/authViewModel'
 import { api } from '@/services/http/apiClient'
+import { useDialogFocus } from '@/composables/useDialogFocus'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 
 const props = defineProps<{ modelValue: boolean; redirect?: unknown }>()
@@ -29,15 +30,18 @@ const {
 })
 
 const close = () => emit('update:modelValue', false)
+const titleId = `forgot-password-dialog-title-${useId()}`
+const dialogRef = ref<HTMLElement | null>(null)
+useDialogFocus(() => props.modelValue, dialogRef, close)
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" @click.self="close">
-        <div class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto">
+      <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" :aria-labelledby="titleId" @click.self="close">
+        <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
           <div class="auth-card glass-card w-full p-4 sm:p-6">
-            <AuthPageHeader :title="t('auth.forgotTitle')" :description="t('auth.forgotDescription')">
+            <AuthPageHeader :title="t('auth.forgotTitle')" :description="t('auth.forgotDescription')" :title-id="titleId">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 11V8a5 5 0 0110 0v3"/><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M12 15v2"/></svg>
               <template #actions>
                 <button type="button" class="rounded p-1 text-lg leading-none text-stone-400 transition-colors hover:text-stone-800" :aria-label="t('common.close')" @click="close">✕</button>

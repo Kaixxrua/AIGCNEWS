@@ -8,7 +8,7 @@ import { ensureFeatureFlags } from '@/composables/useFeatureFlags'
 import { startOAuth } from '@/services/auth/authApi'
 import { getErrorDetail, getSafeInternalRedirect, hasTrimmedValue } from '@/features/auth/authViewModel'
 
-const props = defineProps<{ redirect?: unknown }>()
+const props = defineProps<{ redirect?: unknown; titleId?: string }>()
 const emit = defineEmits<{ (event: 'success'): void; (event: 'close'): void; (event: 'switch-to-register'): void; (event: 'switch-to-forgot-password'): void }>()
 const authStore = useAuthStore()
 const { t } = useI18n()
@@ -55,7 +55,7 @@ const handleLogin = async () => {
 
 <template>
   <div class="auth-card glass-card w-full max-w-sm p-6">
-    <AuthPageHeader :title="t('auth.loginTitle')" :description="t('auth.loginDescription')">
+    <AuthPageHeader :title="t('auth.loginTitle')" :description="t('auth.loginDescription')" :title-id="titleId">
       <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
         <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 2-2 3-2.5 4"/><circle cx="12" cy="17" r=".5" fill="currentColor"/>
       </svg>
