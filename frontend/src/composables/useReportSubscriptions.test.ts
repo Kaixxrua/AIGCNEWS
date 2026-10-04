@@ -52,7 +52,7 @@ const makeOperations = () => ({
   sendToEmail: vi.fn().mockResolvedValue(undefined),
 })
 
-const withSetup = ({ isLoggedIn = true }: { isLoggedIn?: boolean } = {}) => {
+const withSetup = ({ isLoggedIn = true, locale = 'zh-CN' }: { isLoggedIn?: boolean; locale?: string } = {}) => {
   const operations = makeOperations()
   const setError = vi.fn()
   const redirectToLogin = vi.fn()
@@ -67,7 +67,7 @@ const withSetup = ({ isLoggedIn = true }: { isLoggedIn?: boolean } = {}) => {
           userId,
           selectedSource: ref<ReportKey>('all'),
           selectedDate: ref('2026-08-17'),
-          locale: ref('zh-CN'),
+          locale: ref(locale),
           operations,
           redirectToLogin,
           setError,
@@ -303,6 +303,17 @@ describe('useReportSubscriptions wizard flow', () => {
     expect(operations.getFeedToken).toHaveBeenCalledOnce()
     expect(copySensitiveToClipboard).toHaveBeenLastCalledWith(
       `${window.location.origin}/api/feeds/briefing-digest.xml?token=${encodeURIComponent('aigc_feed_test token')}`,
+    )
+  })
+
+  it('copies the English digest link from the English interface', async () => {
+    const { controller } = withSetup({ locale: 'en-US' })
+    controller.plan.value = makePlan()
+
+    await controller.copyRssLink()
+
+    expect(copySensitiveToClipboard).toHaveBeenLastCalledWith(
+      `${window.location.origin}/api/feeds/briefing-digest.xml?token=${encodeURIComponent('aigc_feed_test token')}&locale=en`,
     )
   })
 
