@@ -1,11 +1,11 @@
 // 版面预算：桌面四档、手机三档视口 × 中英文，逐页查落地页、布局偏移（CLS）、横向溢出、首屏条目数。桌面列表页
-// 再按一遍 j / k / ? / Esc；弹窗要整个落在屏内，里面的控件都点得到。超预算的组合逐条列出，非零退出。
+// 再按一遍 j / k / ? / Esc；弹窗要整个落在屏内、出现后不自己挪位置，里面的控件都点得到。超预算的组合逐条列出，非零退出。
 // 说明见 docs/layout-budget.md。
 //
 //   VITE_API_PROXY_TARGET=https://aigcnews.cn npx vite preview --port 4173   # 先 vite build，另开终端
 //   npm run check:layout                                                       # 默认测 http://127.0.0.1:4173
 //
-// 只读：/api 下除 GET 以外的请求一律拦掉，实时事件流也不连，所以可以直接对着生产跑。
+// 只读：/api 下除 GET 以外的请求一律在浏览器里拦下、回一个空的成功响应，实时事件流也不连，所以可以直接对着生产跑。
 // LAYOUT_BASE_URL     被测站点，默认 http://127.0.0.1:4173
 // LAYOUT_RESOLVE      把域名钉到一个边缘，如 aigcnews.cn=<边缘 IP>；钉了就不走代理
 // LAYOUT_PROFILE      只测一套：desktop 或 mobile，缺省两套都测
@@ -24,6 +24,11 @@ const DIALOG_SETTLE_MS = 1000
 // dialog：[打开的标志, 要整个落在屏内的那层]，只写一个就是同一个元素。登录弹窗的卡片出现算打开，外面那层负责滚动。
 const LOGIN_DIALOG = ['.comic-auth .auth-card', '.comic-auth > div']
 const MORE_BUTTON = '.mobile-nav button[aria-haspopup="dialog"]'
+// lands：就绪后地址该在的路径，缺省取 path 的；可以给几个。站长推荐有内容时，游客打开网页收藏会被转到站长推荐
+// （守卫最多等 2.5 秒），两处都算落对。
+const WEBSITES = { name: 'websites', path: '/projects?source=website', lands: ['/projects', '/websites'], ready: 'h1' }
+// 游客打开要登录的页面（订阅、会员结账），会被送回首页并弹出登录框。
+const GATE = { name: 'gate', path: '/subscriptions', lands: '/', ready: LOGIN_DIALOG[0], dialog: LOGIN_DIALOG }
 
 const PROFILES = [
   {
@@ -32,7 +37,8 @@ const PROFILES = [
     sizes: [[1024, 640], [1350, 657], [1536, 730], [1920, 960]],
     // whole：首屏里上下沿都露出来、没被报头页脚盖住的条目，按宽度给 [中文, 英文] 两个下限。数据天天变的页
     // 留了余量，简报钉在一期上。fits：这块要整个落在首屏里（会员对比表、MCP 的接入命令）。keys：走一遍列表键盘流。
-    // 订阅页要登录，游客会被送回首页，量不到；登录弹窗点 dock 上的账号按钮打开来测。
+    // 订阅页要登录，游客会被送回首页，量不到页面本身，量的是游客看到的首页加登录框（gate）；
+    // 自己点开的登录弹窗从 dock 上的账号按钮打开来测（login）。
     pages: [
       { name: 'report', path: '/report?date=2026-10-03', ready: '.report-broadsheet__item', whole: ['.report-broadsheet__item', { 1024: [0, 0], 1350: [2, 0], 1536: [2, 2], 1920: [7, 5] }], keys: true },
       { name: 'projects', path: '/projects', ready: '.project-row', whole: ['.project-row', { 1024: [2, 2], 1350: [4, 2], 1536: [5, 4], 1920: [8, 8] }], keys: true },
@@ -40,9 +46,10 @@ const PROFILES = [
       { name: 'ui-library', path: '/ui-library', ready: '.ui-library__card', whole: ['.ui-library__card', { 1024: [3, 3], 1350: [10, 10], 1536: [12, 12], 1920: [21, 21] }] },
       { name: 'membership', path: '/membership', ready: '.membership-card--compare', fits: ['.membership-card--compare', 1350] },
       { name: 'mcp', path: '/mcp', ready: '.command-preview', fits: ['.command-preview', 1024] },
-      { name: 'websites', path: '/projects?source=website', ready: 'h1' },
+      WEBSITES,
       { name: 'dsh', path: '/dsh', ready: 'h1' },
       { name: 'login', path: '/privacy', ready: 'h1', taps: ['.dock-item--account'], dialog: LOGIN_DIALOG },
+      GATE,
     ],
   },
   {
@@ -52,11 +59,13 @@ const PROFILES = [
     device: { isMobile: true, hasTouch: true, deviceScaleFactor: 3 },
     // 手机一屏装不下几张整卡，seen 数的是首屏里露出头的条目：顶边往下 24px 都在屏内，也没被报头、底栏挡住。
     // 下限同样分 [中文, 英文]；390×664 偏矮，首页和 UI 灵感库露不出头，记 0。
-    // 订阅、会员结账要登录，监控只对管理员开放，这里不测；/login 不是路由，登录弹窗从「更多」菜单打开来测。
+    // 订阅、会员结账要登录，游客看到的是首页加登录框（gate）；监控只对管理员开放，不测。
+    // /login 不是路由，自己点开的登录弹窗从「更多」菜单打开来测（login）。
+    // 第三方登录的两个回调页一打开就要兑换一次性凭据（POST），脚本只读，也不测。
     pages: [
       { name: 'home', path: '/', ready: '.ranking-row', seen: ['.ranking-row', { 360: [1, 1], 390: [0, 0], 430: [1, 1] }] },
       { name: 'projects', path: '/projects', ready: '.project-card', seen: ['.project-card', { 360: [1, 1], 390: [1, 1], 430: [1, 1] }] },
-      { name: 'websites', path: '/projects?source=website', ready: 'h1' },
+      WEBSITES,
       { name: 'ui-library', path: '/ui-library', ready: '.ui-library__card', seen: ['.ui-library__card', { 360: [1, 1], 390: [0, 0], 430: [1, 1] }] },
       { name: 'ui-item', path: '/ui-library/ruixen-claude-chat-input', ready: 'dialog.ui-detail[open]', dialog: ['dialog.ui-detail[open]'] },
       { name: 'report', path: '/report?date=2026-10-03', ready: '.report-section', seen: ['.report-section', { 360: [1, 1], 390: [1, 1], 430: [1, 1] }] },
@@ -73,6 +82,7 @@ const PROFILES = [
       { name: 'forgot', path: '/forgot-password', lands: '/', ready: LOGIN_DIALOG[0], dialog: LOGIN_DIALOG },
       { name: 'more', path: '/privacy', ready: 'h1', taps: [MORE_BUTTON], dialog: ['dialog.mobile-menu[open]'] },
       { name: 'login', path: '/privacy', ready: 'h1', taps: [MORE_BUTTON, '.mobile-menu__account button'], dialog: LOGIN_DIALOG },
+      GATE,
     ],
   },
 ]
@@ -195,6 +205,16 @@ function cutOff(width) {
   return cut
 }
 
+// 弹窗出现后又挪了位置：逐帧记下的挪动，上沿或下沿累计超过 4px 就算。内容晚到把居中的卡片撑高时，卡片会整张
+// 跳位，layout-shift 不一定记得到（实测登录框跳 56px，有的轮次一条都没报）。
+function panelMoved() {
+  const moves = window.__panelMoves ?? []
+  const total = (edge) => moves.reduce((sum, [from, to]) => sum + Math.abs(to[edge] - from[edge]), 0)
+  if (Math.max(total(0), total(1)) <= 4) return null
+  const shown = moves.slice(0, 3).map(([from, to]) => `上沿 ${from[0]}→${to[0]}，下沿 ${from[1]}→${to[1]}`).join('；')
+  return moves.length > 3 ? `${shown} 等 ${moves.length} 次` : shown
+}
+
 // 弹窗：外层整个落在屏内；里面每个看得见的控件滚到中间后，可见部分的正中命中的是它自己或它的 label。
 function checkDialog([open, panelSelector = open]) {
   const describe = (el) => {
@@ -269,7 +289,7 @@ async function measure(profile, spec, [width, height], locale) {
     ...profile.device,
     ...(profile.device ? { userAgent: MOBILE_UA } : {}),
   })
-  await context.addInitScript(([locale]) => {
+  await context.addInitScript(([locale, panel]) => {
     try {
       localStorage.setItem('app_theme', 'light')
       localStorage.setItem('app_locale', locale)
@@ -282,10 +302,37 @@ async function measure(profile, spec, [width, height], locale) {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) if (!entry.hadRecentInput) window.__layoutShift += entry.value
     }).observe({ type: 'layout-shift', buffered: true })
-  }, [locale])
+    // 弹窗外层出现后逐帧看上下沿，挪了就记一笔给 panelMoved。只有网页字体刚加载完、弹窗里又没增删内容的那一帧不记：
+    // 换上字体后文字重排，卡片跟着挪几像素是字体闪动，算在 CLS 里。
+    if (!panel) return
+    window.__panelMoves = []
+    const loadedFonts = () => [...document.fonts].filter((face) => face.status === 'loaded').length
+    let edited = false
+    new MutationObserver((records) => {
+      const box = document.querySelector(panel)
+      if (box && records.some((record) => box.contains(record.target))) edited = true
+    }).observe(document, { childList: true, characterData: true, subtree: true })
+    let last = null
+    let fonts = 0
+    const watch = () => {
+      const box = document.querySelector(panel)?.getBoundingClientRect()
+      const edges = box?.height ? [box.top, box.bottom].map(Math.round) : null
+      const loaded = loadedFonts()
+      const fontSwap = loaded !== fonts && !edited
+      if (edges && last && !fontSwap && (edges[0] !== last[0] || edges[1] !== last[1])) window.__panelMoves.push([last, edges])
+      last = edges
+      fonts = loaded
+      edited = false
+      requestAnimationFrame(watch)
+    }
+    requestAnimationFrame(watch)
+  }, [locale, spec.dialog ? spec.dialog[1] ?? spec.dialog[0] : null])
+  // 写请求（游客只有访问计数这一个）就地回空的成功响应：直接掐断，站点会当成连不上主站，再碰上一次网络抖动
+  // 就弹出「换备用入口」的提示，压在弹窗上。
   await context.route('**/api/**', (route) => {
     const request = route.request()
-    if (request.method() !== 'GET' || new URL(request.url()).pathname.endsWith('/live-events')) return route.abort()
+    if (request.method() !== 'GET') return route.fulfill({ status: 204 })
+    if (new URL(request.url()).pathname.endsWith('/live-events')) return route.abort()
     return route.fallback()
   })
   const page = await context.newPage()
@@ -295,11 +342,12 @@ async function measure(profile, spec, [width, height], locale) {
   try {
     await page.goto(base + spec.path, { waitUntil: 'domcontentloaded', timeout: 60_000 })
     await page.waitForSelector(spec.ready, { timeout: 45_000 })
+    // 要登录的页面会把游客送回首页，首页的代码没下完时地址还停在原处；等它换过去再量，一直没换过去就算落错。
+    const expected = [spec.lands ?? new URL(spec.path, base).pathname].flat()
+    await page.waitForFunction((paths) => paths.includes(location.pathname), expected, { timeout: 15_000 }).catch(() => {})
     await page.waitForTimeout(SETTLE_MS)
-    // 要登录的页面会把游客送回首页，量的就不是这一页了。
     const landed = await page.evaluate(() => location.pathname)
-    const expected = spec.lands ?? new URL(spec.path, base).pathname
-    if (landed !== expected) result.failures.push(`落在 ${landed}，不在 ${expected}`)
+    if (!expected.includes(landed)) result.failures.push(`落在 ${landed}，不在 ${expected.join(' 或 ')}`)
     for (const selector of spec.taps ?? []) {
       const target = page.locator(selector).first()
       await (profile.device ? target.tap({ timeout: 10_000 }) : target.click({ timeout: 10_000 }))
@@ -342,6 +390,8 @@ async function measure(profile, spec, [width, height], locale) {
       result.failures.push(...problems)
     }
     if (spec.dialog) {
+      const moved = await page.evaluate(panelMoved)
+      if (moved) result.failures.push(`弹窗出现后又挪了位置：${moved}`)
       // 最后查：要把控件逐个滚到中间，会改动滚动位置。
       const dialog = await page.evaluate(checkDialog, spec.dialog)
       if (!dialog) result.failures.push(`找不到 ${spec.dialog[1] ?? spec.dialog[0]}`)
