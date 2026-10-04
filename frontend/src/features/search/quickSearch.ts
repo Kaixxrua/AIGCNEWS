@@ -1,5 +1,6 @@
 import type { RouteLocationRaw } from 'vue-router'
 import type { AppLocale } from '@/i18n'
+import { paperPlainText } from '@/features/papers/paperLatex'
 import { formatProjectCount, projectDescription } from '@/features/projects/projectPresentation'
 import { getReportTypeInfo, isReportKey } from '@/features/report/reportViewModel'
 import { queryTerms, searchTemplates, type SearchableTemplate, type UiTemplate } from '@/features/ui-library/catalog'
@@ -122,8 +123,9 @@ export function buildSections({ q, result, templates, failed }: SectionInput, lo
   const papers = result?.papers
   if (papers || failed.includes('papers')) {
     const rows = (papers?.items ?? []).map(paper => row('papers', paper.id, {
-      title: paper.title || paper.id,
-      detail: paper.summary,
+      // 标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）只留文字。
+      title: paperPlainText(paper.title) || paper.id,
+      detail: paperPlainText(paper.summary),
       meta: [paperAuthors(paper.authors, paper.authorCount, t), paper.date].filter(Boolean),
       target: route({ name: 'paper-read', params: { id: paper.id } }),
     }))

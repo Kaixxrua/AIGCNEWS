@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import { paperPlainText } from '@/features/papers/paperLatex'
 import { projectDescription } from '@/features/projects/projectPresentation'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -35,10 +36,14 @@ const summary = (doc: TopDoc) => doc.source === 'github'
   ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
+// 论文标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）只留文字（与桌面榜单一致）。
+const displayDocs = computed(() => props.tabList.map(doc => doc.source === 'arxiv'
+  ? { ...doc, title: paperPlainText(doc.title), summary: paperPlainText(doc.summary) }
+  : doc))
 // 切换来源时旧榜单变淡留在原处等新数据，到了再整张换上逐行浮入（与桌面榜单一致）。
 const listing = shallowRef<{ tab: TabKey; docs: TopDoc[] }>({ tab: props.activeTab, docs: [] })
 const listKey = ref(0)
-watch([() => props.tabLoading, () => props.activeTab, () => props.tabList], ([loading, tab, docs], previous) => {
+watch([() => props.tabLoading, () => props.activeTab, displayDocs], ([loading, tab, docs], previous) => {
   if (loading) return
   if (previous?.[0] || tab !== listing.value.tab) listKey.value += 1
   listing.value = { tab, docs }

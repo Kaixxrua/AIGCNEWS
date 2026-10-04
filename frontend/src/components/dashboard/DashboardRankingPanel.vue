@@ -5,6 +5,7 @@ import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import DashboardTweetPreview from './DashboardTweetPreview.vue'
 import { displayTweetText } from '@/features/xboard/xBoardViewModel'
+import { paperPlainText } from '@/features/papers/paperLatex'
 import RankingAvatar from './RankingAvatar.vue'
 import ProjectHeat from '@/components/projects/ProjectHeat.vue'
 import { ArrowDownWideNarrow, ArrowUpRight, CheckCircle2 } from 'lucide-vue-next'
@@ -33,6 +34,8 @@ const props = defineProps<{
 
 const { t, locale } = useI18n()
 const displayDocs = computed(() => props.tabList.map(doc => {
+  // 论文标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）只留文字。
+  if (doc.source === 'arxiv') return { ...doc, title: paperPlainText(doc.title), summary: paperPlainText(doc.summary) }
   if (props.activeTab !== 'x' || !locale.value.toLowerCase().startsWith('zh') || !doc.translation_zh?.trim()) return doc
   const text = displayTweetText(doc, locale.value)
   return { ...doc, title: text, summary: text }

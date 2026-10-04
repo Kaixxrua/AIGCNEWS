@@ -1,5 +1,7 @@
 // 论文阅读页版头与「同一天的论文」的纯数据整理：接口原样给什么，这里就只整理成页面要显示的样子。
 
+import { paperPlainText } from './paperLatex'
+
 export type PaperBoard = 'daily' | 'weekly' | 'monthly'
 
 export interface PaperBoardRank {
@@ -81,7 +83,7 @@ export function paperDay(publishedDate: string | null | undefined): string | nul
 export function sameDayEntries(items: SameDaySource[], currentId: string): SameDayPaper[] {
   return items.flatMap((item, index) => {
     const id = item.id == null ? '' : String(item.id)
-    const title = (item.title ?? '').trim()
+    const title = paperPlainText(item.title)
     if (!id || !title) return []
     return [{ id, title, upvotes: paperUpvotes(item), rank: index + 1, current: id === currentId }]
   })

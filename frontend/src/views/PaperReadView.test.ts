@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { messages } from '@/i18n'
 import PaperSameDayList from '@/components/papers/PaperSameDayList.vue'
+import { fetchPaperDetail } from '@/services/papers/paperApi'
 import PaperReadView from './PaperReadView.vue'
 
 // 紧凑版头的细节行和「同一天的论文」只在桌面（≥1024px）出现；jsdom 没有 matchMedia，按标志切换。
@@ -141,5 +142,13 @@ describe('PaperReadView desktop density', () => {
     expect(wrapper.find('.paper-authors').exists()).toBe(false)
     expect(wrapper.find('nav.paper-same-day').exists()).toBe(false)
     expect(wrapper.get('.guest-cta').text()).toContain('登录后即可与 AI 讨论本论文')
+  })
+
+  it.each([true, false])('only says a missing paper is not found, without the sign-in prompt (desktop: %s)', async (desktop) => {
+    viewport.desktop = desktop
+    vi.mocked(fetchPaperDetail).mockResolvedValueOnce(null)
+    const wrapper = await mountView()
+    expect(wrapper.get('[role="alert"]').text()).toBe('未找到论文')
+    expect(wrapper.find('.guest-cta').exists()).toBe(false)
   })
 })

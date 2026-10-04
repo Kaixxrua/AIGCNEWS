@@ -17,6 +17,17 @@ describe('Paper summary after PDF reader retirement', () => {
     expect(wrapper.find('button').exists()).toBe(false)
   })
 
+  it('typesets LaTeX written into the title and summary before rendering them', () => {
+    const renderMarkdown = vi.fn((text: string) => text)
+    const wrapper = mount(PaperDocumentPanel, { props: {
+      paper: { id: 'paper', title: String.raw`\textbf{Aphanta}: Talking~Heads`, summary: String.raw`We present \emph{The Harness of Harnesses} at 2\% cost.` },
+      paperLoading: false, paperError: '', renderMarkdown,
+    } })
+    expect(wrapper.get('h1').text()).toBe('Aphanta: Talking\u00a0Heads')
+    expect(renderMarkdown).toHaveBeenCalledWith('We present <em>The Harness of Harnesses</em> at 2% cost.')
+    expect(wrapper.get('.paper-summary em').text()).toBe('The Harness of Harnesses')
+  })
+
   it('keeps loading, empty summary and error states readable', async () => {
     const wrapper = mount(PaperDocumentPanel, { props: {
       paper: null, paperLoading: true, paperError: '', renderMarkdown: (text) => text,

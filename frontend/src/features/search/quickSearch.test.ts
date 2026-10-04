@@ -145,6 +145,19 @@ describe('buildSections', () => {
     expect(papers?.rows[3]?.meta).toEqual(['2026-09-30'])
   })
 
+  it('shows paper titles and summaries without LaTeX', () => {
+    const [papers] = buildSections({
+      q: 'harness',
+      result: result({ papers: { total: 1, items: [
+        { id: 'p1', title: String.raw`\textbf{Aphanta}: Steering--Free`, summary: String.raw`The \emph{Harness of Harnesses} at 2\%.`, date: '', authors: [], authorCount: 0 },
+      ] } }),
+      templates: null,
+      failed: [],
+    }, 'zh-CN', t)
+
+    expect(papers?.rows[0]).toMatchObject({ title: 'Aphanta: Steering–Free', detail: 'The Harness of Harnesses at 2%.' })
+  })
+
   it('keeps a header for a group that failed and drops rows that cannot be opened', () => {
     const sections = buildSections({
       q: 'agent',

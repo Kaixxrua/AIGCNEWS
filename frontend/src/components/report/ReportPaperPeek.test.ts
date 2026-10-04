@@ -63,6 +63,15 @@ describe('ReportPaperPeek', () => {
     ])
   })
 
+  it('typesets LaTeX written into the title and abstract', () => {
+    const wrapper = mountPeek({ status: 'ready', paper: { ...RAVEN, title: String.raw`\textbf{Raven}: Agents--Split`, summary: String.raw`We split \emph{tasks} at 2\% cost~\cite{x}.` } })
+
+    expect(wrapper.get('.report-peek__title').text()).toBe('Raven: Agents–Split')
+    const abstract = wrapper.get('.report-peek__abstract')
+    expect(abstract.html()).toContain('<em>tasks</em>')
+    expect(abstract.text()).toContain('at 2% cost.')
+  })
+
   it('lists the papers of an item that cites several, counts its place among the items, and steps or closes', async () => {
     const wrapper = mountPeek({ status: 'ready', paper: RAVEN })
 

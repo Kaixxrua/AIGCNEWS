@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronDown, ChevronUp, X } from 'lucide-vue-next'
 import type { PeekPaper, PeekTarget } from '@/composables/useReportPeek'
 import { paperBoardRank, paperDay, paperUpvotes, parsePaperAuthors, splitAuthors } from '@/features/papers/paperHead'
+import { paperAbstractMarkup, paperPlainText } from '@/features/papers/paperLatex'
 import type { PaperLink } from '@/features/report/reportPaperLinks'
 import { vIndicator } from '@/motion/indicator'
 import { vSwap } from '@/motion/swap'
@@ -37,7 +38,8 @@ const { t } = useI18n()
 
 const link = computed(() => props.papers.find((paper) => paper.arxivId === props.target.arxivId) ?? null)
 const paper = computed(() => (props.state.status === 'ready' ? props.state.paper : null))
-const heading = computed(() => paper.value?.title || link.value?.label || `arXiv:${props.target.arxivId}`)
+// 标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）与论文页一样换掉。
+const heading = computed(() => paperPlainText(paper.value?.title) || link.value?.label || `arXiv:${props.target.arxivId}`)
 const paperPage = computed(() => paper.value?.url || link.value?.href || `https://hf-mirror.com/papers/${props.target.arxivId}`)
 const arxivPage = computed(() => `https://arxiv.org/abs/${props.target.arxivId}`)
 
@@ -47,7 +49,7 @@ const authorsOpen = ref(false)
 const day = computed(() => paperDay(paper.value?.published_date))
 const upvotes = computed(() => (paper.value ? paperUpvotes(paper.value) : null))
 const boardRank = computed(() => (paper.value ? paperBoardRank(paper.value) : null))
-const abstract = computed(() => (paper.value?.summary ? props.renderMarkdown(paper.value.summary) : ''))
+const abstract = computed(() => (paper.value?.summary ? props.renderMarkdown(paperAbstractMarkup(paper.value.summary)) : ''))
 
 // 取到之前不播，取到了从换去的方向浮进来：往后的条目从下方、往前的从上方，同一条里换篇从左右。
 const swap = computed(() => ({

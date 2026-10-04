@@ -43,10 +43,12 @@ describe('paper head model', () => {
       { id: 'a', title: ' First ', raw_score: 161, source_channel: 'huggingface_daily_html' },
       { id: null, title: 'No id' },
       { id: 42, title: 'Third', raw_score: 3, source_channel: 'huggingface_daily_html' },
+      { id: 'tex', title: String.raw`\textbf{Aphanta}: Steering--Free` },
     ], '42')
     expect(entries).toEqual([
       { id: 'a', title: 'First', upvotes: 161, rank: 1, current: false },
       { id: '42', title: 'Third', upvotes: 3, rank: 3, current: true },
+      { id: 'tex', title: 'Aphanta: Steering–Free', upvotes: null, rank: 4, current: false },
     ])
   })
 })

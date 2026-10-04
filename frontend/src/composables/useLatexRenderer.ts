@@ -15,6 +15,7 @@ import 'katex/dist/katex.min.css'
 import { copyToClipboard } from './useClipboard'
 import { showToast } from './useToast'
 import { i18n } from '@/i18n'
+import { INLINE_DOLLAR_MATH } from '@/utils/latexDelimiters'
 
 const markdown = new MarkdownIt({ html: true, linkify: true, breaks: true })
 
@@ -94,10 +95,8 @@ const stripHeadingTagHashes = (html: string): string =>
   )
 
 // ── 行内 $…$ ────────────────────────────────────────────────────────────────
-// 按 Pandoc 的规则认：开头的 $ 后、结尾的 $ 前都不能是空白，结尾的 $ 后不能紧跟数字。
-// 这样「$4/$20」「Pro $20/月，Max $200/月」之类的美元价格不会被当成公式
-// （2026-10-01 X 动态简报的定价段整段被渲染成公式）。
-const _INLINE_DOLLAR_MATH_RE = /(?<!\$)\$(?![\s$])([^\n$]+?)(?<!\s)\$(?![\d$])/g
+// 按 Pandoc 的规则认，美元价格不当公式；规则见 latexDelimiters，论文摘要排版也用这一份。
+const _INLINE_DOLLAR_MATH_RE = new RegExp(INLINE_DOLLAR_MATH, 'g')
 
 // 行内代码里写成 `$\alpha$`、`\(\alpha\)` 的公式：去掉这一层定界符再交给 KaTeX。
 const _DELIMITED_MATH_RE = /^(?:\$\$([\s\S]+)\$\$|\$([^$]+)\$|\\\(([\s\S]+)\\\)|\\\[([\s\S]+)\\\])$/

@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardRankingPanel from './DashboardRankingPanel.vue'
+import MobileDashboardRankingPanel from './MobileDashboardRankingPanel.vue'
 import i18n, { setAppLocale } from '@/i18n'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
@@ -158,6 +159,30 @@ describe('mobile ranking reading', () => {
     expect(panel.get('.ranking-link').attributes('href')).toBe(tweet.url)
     expect(panel.get('.ranking-title').text()).toBe(tweet.title)
     expect(panel.find('.ranking-summary').exists()).toBe(false)
+  })
+})
+
+describe('paper ranking', () => {
+  const paper: TopDoc = {
+    id: 'paper-1', source: 'arxiv', url: 'https://hf-mirror.com/papers/2610.00001',
+    title: String.raw`\textbf{Aphanta}: Steering--Free Agents`,
+    summary: String.raw`We present \emph{The Harness of Harnesses}, cutting cost by 2\%~\cite{x}.`,
+  }
+  const props = { activeTab: 'arxiv' as const, tabList: [paper], tabLoading: false, isViewingHistory: false, isFinalized: false, sourceStatus: {} }
+
+  it('shows paper titles and summaries without LaTeX on desktop', async () => {
+    viewport.mobile = false
+    wrapper = mount(DashboardRankingPanel, { props, global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.get('.ranking-title').text()).toBe('Aphanta: Steering–Free Agents')
+    expect(wrapper.get('.ranking-summary').text()).toBe('We present The Harness of Harnesses, cutting cost by 2%.')
+  })
+
+  it('shows paper titles and summaries without LaTeX on phones', async () => {
+    wrapper = mount(MobileDashboardRankingPanel, { props, global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.get('.ranking-title').text()).toBe('Aphanta: Steering–Free Agents')
+    expect(wrapper.get('.ranking-summary').text()).toBe('We present The Harness of Harnesses, cutting cost by 2%.')
   })
 })
 

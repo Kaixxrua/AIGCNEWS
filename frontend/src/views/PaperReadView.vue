@@ -99,7 +99,8 @@ const goBack = () => {
       @send-text="sendText"
       @chat-list-ref="setChatListRef"
     />
-    <div v-if="!conversationEnabled" class="guest-cta flex items-center justify-center gap-3 px-4 py-2 text-sm">
+    <!-- 打开的论文不存在时只说「未找到论文」，不再请游客登录讨论它。 -->
+    <div v-if="!conversationEnabled && (paperLoading || paper)" class="guest-cta flex items-center justify-center gap-3 px-4 py-2 text-sm">
       <span>{{ $t('paper.guestCta') }}</span>
       <button type="button" class="guest-cta-link" @click="openLogin">{{ $t('paper.guestLogin') }}</button>
     </div>

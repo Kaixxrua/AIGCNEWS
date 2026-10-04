@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BookOpenText, Bot, Flame, Github, MessagesSquare, Newspaper, Radar } from 'lucide-vue-next'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
+import { paperPlainText } from '@/features/papers/paperLatex'
 import type { TrackingItem } from '@/features/tracking/trackingModel'
 
 // collapsed: how many results show before "show all" (the desktop digest shows three, as its panel is drawn).
@@ -17,7 +18,10 @@ watch(
     expanded.value = false
   },
 )
-const visible = computed(() => (expanded.value ? props.items : props.items.slice(0, props.collapsed)))
+// 论文标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）只留文字。
+const visible = computed(() => (expanded.value ? props.items : props.items.slice(0, props.collapsed)).map(item =>
+  item.source === 'arxiv' ? { ...item, title: paperPlainText(item.title), summary: paperPlainText(item.summary) } : item,
+))
 // 桌面漫画版在每条结果前画来源图标（与首页来源一致）；窄屏不显示。
 const sourceIcons: Record<string, unknown> = {
   github: Github,

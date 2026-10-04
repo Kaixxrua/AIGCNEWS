@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PaperReaderPaper } from '@/composables/usePaperReaderController'
 import { paperBoardRank, paperUpvotes, parsePaperAuthors, splitAuthors } from '@/features/papers/paperHead'
+import { paperAbstractMarkup, paperPlainText } from '@/features/papers/paperLatex'
 
 const { t } = useI18n()
 const props = defineProps<{
@@ -19,6 +20,9 @@ const authorCount = computed(() => authors.value.visible.length + authors.value.
 const authorsOpen = ref(false)
 const upvotes = computed(() => (props.paper ? paperUpvotes(props.paper) : null))
 const boardRank = computed(() => (props.paper ? paperBoardRank(props.paper) : null))
+// 作者照 LaTeX 写的标题、摘要（\emph{…}、2\%、---）：标题只留文字，摘要换成粗体、斜体这些排版再渲染。
+const title = computed(() => paperPlainText(props.paper?.title))
+const summaryHtml = computed(() => (props.paper?.summary ? props.renderMarkdown(paperAbstractMarkup(props.paper.summary)) : ''))
 
 const panel = ref<HTMLElement | null>(null)
 const body = ref<HTMLElement | null>(null)
@@ -36,7 +40,7 @@ watch(() => props.paper?.id, () => {
     <header class="shrink-0 border-b border-stone-200 px-5 py-3">
       <div v-if="paperLoading" class="h-4 w-48 max-w-full animate-pulse rounded bg-stone-200" />
       <template v-else-if="paper">
-        <h1 class="text-sm font-semibold leading-snug font-serif">{{ paper.title }}</h1>
+        <h1 class="text-sm font-semibold leading-snug font-serif">{{ title }}</h1>
         <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-stone-500">
           <template v-if="detailed">
             <p v-if="authorCount" class="paper-authors">
@@ -72,7 +76,7 @@ watch(() => props.paper?.id, () => {
       </div>
       <article v-else-if="paper" class="mx-auto max-w-3xl">
         <h2 class="mb-4 text-sm font-semibold">{{ t('paper.summary') }}</h2>
-        <div v-if="paper.summary" class="paper-summary prose prose-sm max-w-none break-words" v-html="renderMarkdown(paper.summary)" />
+        <div v-if="paper.summary" class="paper-summary prose prose-sm max-w-none break-words" v-html="summaryHtml" />
         <p v-else class="text-sm leading-7 text-stone-500">{{ t('paper.summaryUnavailable') }}</p>
       </article>
       <slot name="after" />
