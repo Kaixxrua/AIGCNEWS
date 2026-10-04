@@ -453,6 +453,22 @@ describe('Monitor API contract', () => {
     })
   })
 
+  it('omits empty payment order filters so “all” does not send status=', async () => {
+    transport.get.mockResolvedValueOnce({ data: {} })
+    await expect(monitorApi.fetchPaymentOrders({ status: '', channel: '', planCode: '', email: '', page: 1, pageSize: 20 })).resolves.toEqual({
+      items: [], total: 0, page: 1, page_size: 20,
+    })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/payments/orders', {
+      params: { status: undefined, channel: undefined, plan_code: undefined, email: undefined, page: 1, page_size: 20 },
+    })
+
+    transport.get.mockResolvedValueOnce({ data: { items: [], total: 0, page: 2, page_size: 20 } })
+    await monitorApi.fetchPaymentOrders({ status: 'paid', channel: 'alipay', planCode: 'member_monthly', email: 'buyer@', page: 2, pageSize: 20 })
+    expect(transport.get).toHaveBeenLastCalledWith('/ops/payments/orders', {
+      params: { status: 'paid', channel: 'alipay', plan_code: 'member_monthly', email: 'buyer@', page: 2, page_size: 20 },
+    })
+  })
+
   it('round-trips enrichment reasoning effort config with normalization', async () => {
     transport.get.mockResolvedValue({
       data: { reasoning_effort: ' High ', effective_reasoning_effort: 'high' },

@@ -146,7 +146,8 @@ async def list_payment_orders_admin(
     _: dict = Depends(RequireAdmin),
     orders: PaymentOrderRepository = Depends(get_payment_order_repository),
 ) -> dict[str, Any]:
-    """台账筛选 + 分页；status 过滤值 fail-closed（未知值 400）。"""
+    """台账筛选 + 分页；status 过滤值 fail-closed（未知值 400），空串与不传同义（不过滤）。"""
+    status_filter = status_filter or None
     if status_filter is not None and status_filter not in ORDER_STATUSES:
         raise HTTPException(status_code=400, detail="unknown_status")
     rows, total = await asyncio.to_thread(

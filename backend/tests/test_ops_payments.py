@@ -161,6 +161,18 @@ def test_list_orders_admin_filters_and_includes_email(harness: Any) -> None:
     )
 
 
+def test_list_orders_admin_treats_empty_filters_as_unset(harness: Any) -> None:
+    # 台账筛选选「全部」时旧前端会带空串：与不传同义，不能按未知状态回 400
+    _create_order(harness, plan="member_monthly", channel="wechat_native")
+    _create_order(harness, plan="member_monthly", channel="stripe", status="paid")
+
+    response = harness.client.get(
+        "/api/ops/payments/orders?status=&channel=&plan_code=&email="
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
+
 def test_get_order_admin_detail_includes_audit_columns(harness: Any) -> None:
     row = _create_order(harness)
     harness.orders.rows[row["order_no"]]["callback_payload"] = '{"raw":1}'
