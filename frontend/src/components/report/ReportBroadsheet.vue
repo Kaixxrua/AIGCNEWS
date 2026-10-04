@@ -140,12 +140,15 @@ const setBody = (id: string) => (el: Element | ComponentPublicInstance | null) =
   else bodies.delete(id)
 }
 
-/** 一次量完：全部先放开截断量自然高度，再一起恢复，只触发一次排版。 */
+/**
+ * 一次量完：全部先放开截断量自然高度，再一起恢复，只触发一次排版。
+ * 量排版高度（offsetHeight），不量屏幕矩形：入场动画把整版从 0.9 放大，那时量出的矩形偏矮一截，会漏掉「展开全文」。
+ */
 const measure = () => {
   if (props.generating) return
   const entries = [...bodies.entries()].filter(([, el]) => el.isConnected)
   entries.forEach(([, el]) => el.classList.add('is-measuring'))
-  const results = entries.map(([id, el]) => ({ id, full: el.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) || 0 }))
+  const results = entries.map(([id, el]) => ({ id, full: el.offsetHeight, line: parseFloat(getComputedStyle(el).lineHeight) || 0 }))
   entries.forEach(([, el]) => el.classList.remove('is-measuring'))
   for (const { id, full, line } of results) {
     const previous = heights.get(id)

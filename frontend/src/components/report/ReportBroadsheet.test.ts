@@ -69,6 +69,32 @@ describe('ReportBroadsheet', () => {
     expect(guide!.find('.report-broadsheet__foot').exists()).toBe(false)
   })
 
+  it('measures the copy by its layout height, so the entrance scale-in does not lose the toggle of an item that runs long', async () => {
+    // 入场动画（stagger-enter）把整版从 0.9 放大：这时屏幕矩形量出来偏矮一截，排版高度不受影响。
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      { top: 10, bottom: 58.6, left: 0, right: 270, width: 270, height: 48.6, x: 0, y: 10, toJSON: () => ({}) } as DOMRect,
+    )
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(54)
+    const real = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) => {
+      const style = real(el, pseudo)
+      if (el.classList.contains('report-broadsheet__body')) Object.defineProperty(style, 'lineHeight', { value: '20px' })
+      return style
+    })
+    const wrapper = mount(ReportBroadsheet, {
+      props: { sheet, mode: 'lead', generating: false },
+      global: { plugins: [i18n] },
+      attachTo: document.body,
+    })
+    mounted.push(wrapper)
+    await nextTick()
+
+    // 导读每条两行：一行 20px，高过 50px 就放不下，54px 的正文要给「展开全文」。
+    const [dots] = wrapper.findAll('.report-broadsheet__item')
+    expect(dots!.classes()).toContain('is-overflowing')
+    expect(dots!.find('.report-broadsheet__toggle').exists()).toBe(true)
+  })
+
   it('sets the bookmark and source of an item without a headline in its foot, the bookmark first', () => {
     const plain = parseBroadsheet(renderMarkdown([
       '## 行业动态 `#news`',
