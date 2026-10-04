@@ -10,6 +10,7 @@ import pytest
 
 from backend.app.repositories.postgres_project_catalog import (
     _GH_PUBLIC_SUCCEEDED_FILTER,
+    _GH_QUARANTINE_FILTER,
     _LIST_PROJECT_COLUMN_PAIRS,
     RELEVANCE_STRONG_MATCH_THRESHOLD,
     PostgresProjectCatalogRepository,
@@ -402,6 +403,8 @@ def test_find_repo_ids_by_name_segment_is_active_canonical_and_bounded() -> None
     # 非规范别名不参与唯一性判定，避免同一项目被双计
     assert "NOT EXISTS" in sql
     assert "github_repo_aliases ga" in sql
+    # 疑似诱饵隔离名单里的同名仓库不能被按名精确召回
+    assert "NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = c.repo_id)" in " ".join(sql.split())
     assert "LIMIT %s" in sql
     # 注入串只进参数不进 SQL；首尾空白归一；limit 收敛到 10 上限
     assert "OR TRUE" not in sql
@@ -525,6 +528,20 @@ def test_public_succeeded_filter_has_no_star_gate() -> None:
     assert "github_repo_aliases" in _GH_PUBLIC_SUCCEEDED_FILTER
 
 
+def test_public_filter_hides_quarantined_repositories() -> None:
+    """疑似诱饵隔离名单（迁移 0082）里的仓库不进任何公开口径。
+
+    字面量与 Go ghQuarantineFilter 双向钉住；今日暴涨驱动表把 "c."/"ge." 整体
+    改写成 "c_top."/"ge_top."，别名 gq 不能被改写波及。
+    """
+    assert _GH_QUARANTINE_FILTER == (
+        "NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = c.repo_id)"
+    )
+    assert _GH_PUBLIC_SUCCEEDED_FILTER.endswith(" AND " + _GH_QUARANTINE_FILTER)
+    top = _GH_PUBLIC_SUCCEEDED_FILTER.replace("c.", "c_top.").replace("ge.", "ge_top.")
+    assert "FROM github_repo_quarantine gq WHERE gq.repo_id = c_top.repo_id)" in top
+
+
 def test_today_branch_inner_top_set_uses_succeeded_canonical_predicate() -> None:
     """今日暴涨内层 Top-N 驱动表与外层同一可见性口径（无星数门槛）。"""
     database = Database([{"cnt": 0}, []])
@@ -532,6 +549,9 @@ def test_today_branch_inner_top_set_uses_succeeded_canonical_predicate() -> None
     rows_sql, rows_params = database.cursor.calls[2]
     assert "ge_top.status = 'succeeded'" in rows_sql
     assert "github_repo_aliases" in rows_sql
+    # 隔离名单里的仓库既不占内层 Top-N 名额，也不在外层列表出现
+    assert "WHERE gq.repo_id = c_top.repo_id" in rows_sql
+    assert "WHERE gq.repo_id = c.repo_id" in rows_sql
     assert "COALESCE(c_top.stars,0)>=%s" not in rows_sql
     # 内层驱动表不再绑定 min_stars：仅剩两个 metric_date + 分页参数
     assert 500 not in rows_params
@@ -608,6 +628,7 @@ def test_categories_github_branch_uses_succeeded_canonical_predicate() -> None:
         assert "COALESCE(c.stars,0)>=%s" not in sql
         assert "COALESCE(c_top.stars,0)>=%s" not in sql
         assert "github_repo_aliases" in sql
+        assert "github_repo_quarantine gq" in sql
     aggregate_sql = database.cursor.calls[1][0]
     today_sql = database.cursor.calls[2][0]
     recommended_sql = database.cursor.calls[3][0]

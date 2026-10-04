@@ -71,6 +71,27 @@ In 30 days of production data every 3-owner cluster was a batch of malware-lure
 repositories (e.g. `Microsoft-365-setup`, `Discord-Server-Raider`, `AutoCad`),
 while a 2-owner threshold also caught three unrelated legitimate pairs.
 
+## Quarantine (bait repositories)
+
+Demotion only lowers heat; repositories in `github_repo_quarantine`
+(migration 0082) are removed from every public surface instead: hot board,
+catalog list/search/counts/categories, name lookup, hover peek, keyword
+tracking and the MCP project tools. The list is derived state, recomputed as a
+whole after each metrics write (a failure logs a warning and keeps the previous
+list), so a repository that stops matching is released automatically.
+
+| Reason | Rule |
+| --- | --- |
+| `coordinated_surge` | any metrics row with suspicion ≥ 0.8 that carries `coordinated_creation` |
+| `name_reuse` | same repository name (case-insensitive, canonical rows only): the copies created on or after the day of the earliest copy GitHub has removed span ≥ 3 owners, with ≥ 2 removed and removed ≥ half of them; the whole wave is quarantined |
+
+Copies created before the first removed one are kept as presumed originals:
+quarantining every name shared by ≥ 3 owners with one removed copy would have
+hidden `anthropic/skills`, `awesome-mcp-servers` and `claude-code` in a
+read-only production replay (2026-10-04), while the wave rule caught 68 lure
+repositories (24 surge, 44 name reuse across about 15 names) and no legitimate
+group.
+
 ## Replay (read-only, production snapshots)
 
 | Day | Growth #1 rank v6 → v7 | Top-10 overlap with growth top-10, v6 → v7 | Demoted |

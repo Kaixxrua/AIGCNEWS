@@ -467,6 +467,40 @@ class GitHubGrowthSuspicionTests(unittest.TestCase):
         self.assertEqual((since, until), ("2026-08-13", "2026-08-15"))
 
 
+class GitHubQuarantineRefreshTests(unittest.TestCase):
+    """疑似诱饵隔离名单挂在每轮热度指标落库之后重算。"""
+
+    def _repository(self) -> MagicMock:
+        repository = MagicMock()
+        repository.get_github_daily_metric_inputs.return_value = [{
+            "repo_id": "repo-1", "metric_date": "2026-07-14", "stars": 1200, "forks": 120,
+            "watchers": 20, "previous_snapshot_date": "2026-07-13", "previous_stars": 1000,
+            "previous_forks": 100, "previous_watchers": 10, "community_metrics_complete": 1,
+            "previous_community_metrics_complete": 1, "baseline_7d": 10.0, "baseline_sample_count": 3,
+        }]
+        repository.upsert_github_daily_metrics.return_value = 1
+        return repository
+
+    def test_refresh_runs_after_metrics_are_stored(self) -> None:
+        repository = self._repository()
+        repository.refresh_github_quarantine.return_value = {"quarantined": 3, "added": 1, "released": 0}
+        result = metrics.compute_github_daily_metrics(metric_date="2026-07-14", db=repository)
+        calls = [name for name, _args, _kwargs in repository.mock_calls]
+        # 嫌疑分与信号先落库，名单才按新指标重算
+        self.assertLess(calls.index("upsert_github_daily_metrics"), calls.index("refresh_github_quarantine"))
+        self.assertEqual(result["quarantine"], {"quarantined": 3, "added": 1, "released": 0})
+
+    def test_refresh_failure_keeps_the_metrics_run_successful(self) -> None:
+        repository = self._repository()
+        repository.refresh_github_quarantine.side_effect = RuntimeError("lock timeout")
+        with self.assertLogs(metrics.logger, level="WARNING") as logs:
+            result = metrics.compute_github_daily_metrics(metric_date="2026-07-14", db=repository)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["affected"], 1)
+        self.assertIsNone(result["quarantine"])
+        self.assertIn("沿用上一轮名单", logs.output[0])
+
+
 class GitHubTrendingSnapshotTests(unittest.TestCase):
     def test_daily_trending_snapshot_is_explicitly_incomplete(self) -> None:
         repository = MagicMock()

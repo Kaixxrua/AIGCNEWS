@@ -34,6 +34,7 @@ def test_postgres_ingestion_adapter_covers_protocol_operations() -> None:
         "get_github_metric_refresh_status",
         "get_github_daily_metric_inputs",
         "upsert_github_daily_metrics",
+        "refresh_github_quarantine",
     }
     assert expected.issubset(PostgresGitHubProjectIngestionRepository.__dict__)
 

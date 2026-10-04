@@ -146,7 +146,7 @@ func (r *ProjectSearchRepository) FindLexicalCandidateRepoIDs(input projectsearc
 	filters := []string{"COALESCE(c.stars, 0) >= %s", "ga.alias_repo_id IS NULL"}
 	params := []any{minStars}
 	if input.EnrichedOnly {
-		filters = append(filters, "ge.status = 'succeeded'")
+		filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter)
 	}
 	if input.Category != "" {
 		filters = append(filters, "ge.category_slug = %s")
@@ -254,7 +254,7 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 	filters := []string{"COALESCE(c.stars, 0) >= %s"}
 	filterParams := []any{minStars}
 	if input.EnrichedOnly {
-		filters = append(filters, "ge.status = 'succeeded'")
+		filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter)
 	}
 	if input.Category != "" {
 		filters = append(filters, "ge.category_slug = %s")
@@ -384,6 +384,8 @@ func (r *ProjectSearchRepository) FindRepoIDsByNameSegment(name string, limit in
               AND NOT EXISTS (SELECT 1 FROM github_repo_aliases ga
                               WHERE ga.alias_repo_id = c.repo_id
                               AND ga.canonical_repo_id <> c.repo_id)
+              AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq
+                              WHERE gq.repo_id = c.repo_id)
             ORDER BY COALESCE(c.stars, 0) DESC, c.repo_id COLLATE "C" ASC
             LIMIT %s`
 	ctx := context.Background()
@@ -593,7 +595,7 @@ func buildProjectListQuery(input projectsearch.ListProjectsInput, candidates []s
 		params = append(params, candidates)
 	}
 	if input.EnrichedOnly {
-		filters = append(filters, "ge.status = 'succeeded'")
+		filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter)
 	}
 	if input.Scope == "today" {
 		filters = append(filters, "COALESCE(gm.daily_growth_available, FALSE)", "COALESCE(gm.daily_star_growth, 0) > 0")
@@ -663,7 +665,7 @@ func buildProjectListQuery(input projectsearch.ListProjectsInput, candidates []s
 	if input.Scope == "today" {
 		status := ""
 		if input.EnrichedOnly {
-			status = " AND ge_top.status = 'succeeded'"
+			status = " AND ge_top.status = 'succeeded' AND " + strings.ReplaceAll(ghQuarantineFilter, "c.", "c_top.")
 		}
 		selectSQL += " JOIN (SELECT c_top.repo_id FROM github_repo_candidates c_top JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id AND gm_top.metric_date=" + effectiveMetricDateSQL + " AND gm_top.daily_growth_available=TRUE AND gm_top.daily_star_growth>0 LEFT JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id WHERE COALESCE(c_top.stars,0)>=%s" + status + " ORDER BY gm_top.hot_score DESC NULLS LAST,gm_top.daily_star_growth DESC NULLS LAST,gm_top.stars DESC NULLS LAST,c_top.full_name ASC LIMIT 50) today_top ON today_top.repo_id=c.repo_id"
 		joinParams = append(joinParams, dateParams...)

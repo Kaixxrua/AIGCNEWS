@@ -34,6 +34,7 @@ def test_postgres_migrations_are_contiguous_and_include_application_runtime() ->
     assert migrations[78].filename == "0079_github_star_observations.sql"
     assert migrations[79].filename == "0080_github_rolling_star_growth.sql"
     assert migrations[80].filename == "0081_recommended_website_icons.sql"
+    assert migrations[81].filename == "0082_github_repo_quarantine.sql"
 
 
 def test_github_star_observations_migration_is_keyed_and_prunable() -> None:
@@ -52,6 +53,15 @@ def test_github_rolling_star_growth_migration_only_adds_nullable_columns() -> No
         assert f"ADD COLUMN IF NOT EXISTS {column}" in sql
     # 可空、无默认值：只改目录，不重写表
     assert "NOT NULL" not in sql and "DEFAULT" not in sql
+
+
+def test_github_repo_quarantine_migration_is_additive_derived_list() -> None:
+    sql = (MIGRATIONS_DIR / "0082_github_repo_quarantine.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS github_repo_quarantine" in sql
+    # 候选行删除时随之删除；只存主键与命中规则，不改动已有表
+    assert "repo_id VARCHAR(255) PRIMARY KEY REFERENCES github_repo_candidates(repo_id) ON DELETE CASCADE" in sql
+    assert "CHECK (reason IN ('coordinated_surge', 'name_reuse'))" in sql
+    assert "ALTER TABLE" not in sql and "INSERT" not in sql and "DROP" not in sql
 
 
 def test_x_ui_auto_publication_migration_is_opt_in_and_idempotent() -> None:

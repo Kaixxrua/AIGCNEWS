@@ -68,6 +68,8 @@ class GitHubProjectIngestionRepository(Protocol):
 
     def upsert_github_daily_metrics(self, metrics: list[dict[str, Any]]) -> int: ...
 
+    def refresh_github_quarantine(self) -> dict[str, int]: ...
+
 
 class GitHubProjectEnrichmentRepository(Protocol):
     @property

@@ -421,6 +421,33 @@ def test_cst_schedule_and_pausing_keep_the_digest_quiet(setup):
     assert user_id not in repository.due_users(due + timedelta(days=1))
 
 
+def test_quarantined_projects_never_reach_a_keyword_digest(setup):
+    # 疑似诱饵隔离名单里的仓库不进公开项目库，关键词追踪也不推送
+    database, repository, user_id = setup
+    term = uuid.uuid4().hex
+    repository.save_rule(user_id, rule(term))
+    moment = now()
+    with database.transaction() as connection:
+        for repo_id in (term, term + "-lure"):
+            connection.execute(
+                "INSERT INTO github_repo_candidates (repo_id, full_name, url, stars, first_seen_at) VALUES (%s, %s, %s, 900, %s)",
+                (repo_id, "example/" + repo_id, "https://github.com/example/" + repo_id,
+                 (moment - timedelta(days=10)).isoformat()),
+            )
+            connection.execute(
+                "INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, description_zh, source_fingerprint, "
+                "prompt_version, enriched_at) VALUES (%s, 'tools', 'Tools', %s, %s, 'test', %s)",
+                (repo_id, term, "0" * 64, moment.isoformat()),
+            )
+        connection.execute(
+            "INSERT INTO github_repo_quarantine (repo_id, reason) VALUES (%s, 'coordinated_surge')", (term + "-lure",)
+        )
+    saved = repository.overview(user_id)["rules"][0]
+    keys = {item["key"] for item in repository.preview(user_id, saved["id"])["items"]}
+    assert "project:" + term in keys
+    assert "project:" + term + "-lure" not in keys
+
+
 def test_newly_enriched_projects_are_not_lost_and_results_are_bounded(setup):
     database, repository, user_id = setup
     term = uuid.uuid4().hex

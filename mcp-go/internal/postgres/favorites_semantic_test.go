@@ -82,6 +82,16 @@ func TestProjectCollectionQueriesSemanticLaneWidensKeywordFilter(t *testing.T) {
 	}
 }
 
+func TestProjectCollectionQueriesHideQuarantinedRepos(t *testing.T) {
+	// 收藏列表与 Python enriched_only 公开口径一致：疑似诱饵隔离名单里的仓库不列出。
+	dates := []any{"2026-09-30", "2026-09-29", "2026-09-30"}
+	count, rows, _, _ := projectCollectionQueries(mcpapp.ProjectCollectionFilters{UserID: 7}, dates, 1, 10)
+	want := "ge.status = 'succeeded' AND " + ghQuarantineFilter
+	if !strings.Contains(count, want) || !strings.Contains(rows, want) {
+		t.Fatalf("collection SQL missing %q:\n%s", want, count)
+	}
+}
+
 func TestProjectCollectionQueriesSemanticLaneEdgeCases(t *testing.T) {
 	dates := []any{"2026-09-30", "2026-09-29", "2026-09-30"}
 	ids := []string{"acme/x"}

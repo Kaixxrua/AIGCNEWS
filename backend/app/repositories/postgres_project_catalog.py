@@ -221,11 +221,19 @@ _GH_CANONICAL_ALIAS_FILTER = (
     "WHERE ga.alias_repo_id = c.repo_id "
     "AND ga.canonical_repo_id <> c.repo_id)"
 )
-# Public GitHub rows are the succeeded canonical relation.  Intake threshold is
-# intentionally not part of this predicate: a project that was enriched and
-# later falls below 500 stars remains searchable and countable.
+# 疑似诱饵仓库隔离名单（迁移 0082，每轮热度指标后重算）：不上热榜、不进公开项目库。
+# 别名取 gq：今日暴涨驱动表把公开口径里的 "c."/"ge." 整体换成 "c_top."/"ge_top."，
+# 别名不能以 c/ge 结尾。
+_GH_QUARANTINE_FILTER = (
+    "NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq "
+    "WHERE gq.repo_id = c.repo_id)"
+)
+# Public GitHub rows are the succeeded canonical relation minus the quarantine
+# list.  Intake threshold is intentionally not part of this predicate: a project
+# that was enriched and later falls below 500 stars remains searchable and countable.
 _GH_PUBLIC_SUCCEEDED_FILTER = (
     "ge.status = 'succeeded' AND " + _GH_CANONICAL_ALIAS_FILTER
+    + " AND " + _GH_QUARANTINE_FILTER
 )
 # 今日暴涨 Top-N 驱动表（别名 gm_top）的热度增长口径。
 _TOP_HEAT_GROWTH = heat_growth_sql("gm_top")
@@ -592,8 +600,9 @@ class PostgresProjectCatalogRepository:
     ) -> list[str]:
         """按仓库名段（full_name 的 '/' 后部分）等值匹配，供裸名查询钉顶判唯一。
 
-        只看 active 且未被别名归并的仓库；调用方以 limit=2 取回后按
-        len==1 判定唯一命中。不设 min_stars——这是身份定位而非发现召回。
+        只看 active、未被别名归并、不在疑似诱饵隔离名单里的仓库；调用方以
+        limit=2 取回后按 len==1 判定唯一命中。不设 min_stars——这是身份定位
+        而非发现召回。
         """
         normalized = " ".join(str(name or "").split()).strip()
         if not normalized:
@@ -605,6 +614,8 @@ class PostgresProjectCatalogRepository:
               AND NOT EXISTS (SELECT 1 FROM github_repo_aliases ga
                               WHERE ga.alias_repo_id = c.repo_id
                               AND ga.canonical_repo_id <> c.repo_id)
+              AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq
+                              WHERE gq.repo_id = c.repo_id)
             ORDER BY COALESCE(c.stars, 0) DESC, c.repo_id COLLATE "C" ASC
             LIMIT %s"""
         with self._transaction() as connection:

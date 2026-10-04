@@ -35,7 +35,7 @@ def database() -> Iterator[Any]:
     with postgres_test_sandbox() as sandbox:
         database = sandbox.database
         with database.transaction() as connection:
-            for repo_id in ("acme/alpha", "acme/draft", "acme/gone", "acme/new-name", "acme/old-name"):
+            for repo_id in ("acme/alpha", "acme/draft", "acme/gone", "acme/new-name", "acme/old-name", "acme/lure"):
                 connection.execute(
                     """
                     INSERT INTO github_repo_candidates (
@@ -49,7 +49,7 @@ def database() -> Iterator[Any]:
                     (repo_id, repo_id.title(), repo_id.split("/")[1], f"https://github.com/{repo_id}"),
                 )
             # acme/draft 没富化：不在公开项目库里
-            for repo_id in ("acme/alpha", "acme/gone", "acme/new-name", "acme/old-name"):
+            for repo_id in ("acme/alpha", "acme/gone", "acme/new-name", "acme/old-name", "acme/lure"):
                 connection.execute(
                     """
                     INSERT INTO github_repo_enrichments (
@@ -70,6 +70,10 @@ def database() -> Iterator[Any]:
                 "INSERT INTO github_repo_aliases (alias_repo_id, canonical_repo_id, full_name)"
                 " VALUES ('acme/old-name', 'acme/new-name', 'acme/old-name')"
             )
+            # 疑似诱饵隔离名单里的仓库：列表不展示，速览也不认
+            connection.execute(
+                "INSERT INTO github_repo_quarantine (repo_id, reason) VALUES ('acme/lure', 'name_reuse')"
+            )
         yield database
 
 
@@ -87,6 +91,7 @@ def test_peek_source_follows_the_public_catalog(database: Any) -> None:
     }
     assert repository.peek_source("acme/draft") is None
     assert repository.peek_source("acme/old-name") is None
+    assert repository.peek_source("acme/lure") is None
     assert repository.peek_source("acme/nobody") is None
     # 主键按原样比，大小写不同就不是同一个仓库（与榜单行情同一口径）
     assert repository.peek_source("ACME/ALPHA") is None

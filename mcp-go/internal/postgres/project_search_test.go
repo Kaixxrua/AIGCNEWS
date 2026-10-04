@@ -37,6 +37,18 @@ func TestNewProjectSearchRepositoryStatementTimeoutCompatibility(t *testing.T) {
 	}
 }
 
+func TestQuarantineFilterMirrorsPythonCatalog(t *testing.T) {
+	// 与 postgres_project_catalog._GH_QUARANTINE_FILTER 逐字一致；今日暴涨驱动表
+	// 按 c. → c_top. 改写，别名 gq 不能被改写波及。
+	const python = "NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = c.repo_id)"
+	if ghQuarantineFilter != python {
+		t.Fatalf("ghQuarantineFilter = %q", ghQuarantineFilter)
+	}
+	if got := strings.ReplaceAll(ghQuarantineFilter, "c.", "c_top."); got != strings.Replace(python, "= c.", "= c_top.", 1) {
+		t.Fatalf("today_top rewrite = %q", got)
+	}
+}
+
 func TestEffectiveMetricDateMirrorsPythonCatalog(t *testing.T) {
 	// 与 postgres_project_catalog._EFFECTIVE_METRIC_DATE_SQL 逐字一致
 	const python = "(SELECT COALESCE(MAX(md.metric_date),%s) FROM github_repo_daily_metrics md" +
@@ -107,8 +119,10 @@ func TestProjectListTodayScopeBindsParamsInTextOrder(t *testing.T) {
 				for _, want := range []string{
 					"gm.metric_date = " + effective,
 					"gm_top.metric_date=" + effective,
-					"WHERE COALESCE(c_top.stars,0)>=500 AND ge_top.status = 'succeeded'",
+					"WHERE COALESCE(c_top.stars,0)>=500 AND ge_top.status = 'succeeded'" +
+						" AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = c_top.repo_id) ORDER BY",
 					"WHERE COALESCE(c.stars, 0) >= 500",
+					"ge.status = 'succeeded' AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = c.repo_id)",
 					"ge.category_slug = 'agents'",
 					"LOWER(COALESCE(c.language, '')) = LOWER('Python')",
 				} {

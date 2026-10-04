@@ -128,6 +128,68 @@ _STAR_OBSERVATION_UPSERT_SQL = """
 # 滚动 24 小时星增只需窗口起点前的一条观测；多留两天给采集中断兜底。
 STAR_OBSERVATION_RETENTION_HOURS = 72
 
+# 疑似诱饵仓库隔离名单（迁移 0082）的阈值，规则见 _GITHUB_QUARANTINE_SQL。
+GITHUB_QUARANTINE_SURGE_SCORE = 0.8
+GITHUB_QUARANTINE_NAME_MIN_OWNERS = 3
+GITHUB_QUARANTINE_NAME_MIN_REMOVED = 2
+
+# 整体重算隔离名单，一条语句内算出新名单、放出不再命中的、补进新命中的：
+#   coordinated_surge  任一天刷星嫌疑分达阈值且带 coordinated_creation 信号；
+#   name_reuse         同一仓库名（忽略大小写）从第一个被 GitHub 删掉的副本建仓当天起
+#                      建的那一批，跨足够多账号、已删足够多且占一半以上，整批隔离；
+#                      更早建的同名仓库视为原作保留。
+# 只看 canonical 行（改名留下的别名行本就不公开）；一个仓库只记一条理由，刷星优先。
+# added 拿语句开始时的旧名单比对（同一语句里的查询看不到本语句的写入）。
+_GITHUB_QUARANTINE_SQL = """
+    WITH coordinated AS (
+        SELECT DISTINCT m.repo_id
+        FROM github_repo_daily_metrics m
+        WHERE m.growth_suspicion_score >= %(surge_score)s
+          AND m.growth_suspicion_signals LIKE %(surge_signal)s
+    ), named AS (
+        SELECT c.repo_id,
+               LOWER(split_part(c.full_name, '/', 2)) AS name,
+               LOWER(split_part(c.full_name, '/', 1)) AS owner,
+               c.availability_status,
+               CASE WHEN c.created_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                    THEN LEFT(c.created_at, 10) END AS created_day
+        FROM github_repo_candidates c
+        WHERE NOT EXISTS (SELECT 1 FROM github_repo_aliases ga
+                          WHERE ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id)
+    ), wave AS (
+        SELECT n.repo_id, n.name, n.owner, n.availability_status
+        FROM named n
+        JOIN (SELECT name, MIN(created_day) AS since FROM named
+              WHERE availability_status = 'not_found' AND created_day IS NOT NULL
+              GROUP BY name) first_removed USING (name)
+        WHERE n.created_day >= first_removed.since
+    ), bait_names AS (
+        SELECT name FROM wave GROUP BY name
+        HAVING COUNT(DISTINCT owner) >= %(name_min_owners)s
+           AND COUNT(*) FILTER (WHERE availability_status = 'not_found') >= %(name_min_removed)s
+           AND 2 * COUNT(*) FILTER (WHERE availability_status = 'not_found') >= COUNT(*)
+    ), next_quarantine AS (
+        SELECT repo_id, 'coordinated_surge' AS reason FROM coordinated
+        UNION ALL
+        SELECT w.repo_id, 'name_reuse' FROM wave w JOIN bait_names USING (name)
+        WHERE NOT EXISTS (SELECT 1 FROM coordinated co WHERE co.repo_id = w.repo_id)
+    ), released AS (
+        DELETE FROM github_repo_quarantine q
+        WHERE NOT EXISTS (SELECT 1 FROM next_quarantine nq WHERE nq.repo_id = q.repo_id)
+        RETURNING q.repo_id
+    ), upserted AS (
+        INSERT INTO github_repo_quarantine (repo_id, reason)
+        SELECT repo_id, reason FROM next_quarantine
+        ON CONFLICT (repo_id) DO UPDATE SET reason = EXCLUDED.reason
+        WHERE github_repo_quarantine.reason <> EXCLUDED.reason
+    )
+    SELECT (SELECT COUNT(*) FROM next_quarantine) AS quarantined,
+           (SELECT COUNT(*) FROM next_quarantine nq
+            WHERE NOT EXISTS (SELECT 1 FROM github_repo_quarantine q
+                              WHERE q.repo_id = nq.repo_id)) AS added,
+           (SELECT COUNT(*) FROM released) AS released
+"""
+
 
 def _star_observation_payload(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     """由已归一的快照载荷派生一条星数观测；时间或星数不可用时跳过。
@@ -1418,3 +1480,27 @@ class PostgresGitHubProjectIngestionRepository:
             with connection.cursor() as cursor:
                 cursor.executemany(sql, normalized)
         return len(normalized)
+
+    def refresh_github_quarantine(self) -> dict[str, int]:
+        """整体重算疑似诱饵隔离名单，返回名单规模与本轮新增、放出的仓库数。
+
+        名单是派生数据：每轮热度指标落库后重算，不再命中规则的仓库自动放出。
+        表锁只挡并发的另一轮重算，不挡公开查询的读。
+        """
+        params = {
+            "surge_score": GITHUB_QUARANTINE_SURGE_SCORE,
+            "surge_signal": '%"coordinated_creation"%',
+            "name_min_owners": GITHUB_QUARANTINE_NAME_MIN_OWNERS,
+            "name_min_removed": GITHUB_QUARANTINE_NAME_MIN_REMOVED,
+        }
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "LOCK TABLE github_repo_quarantine IN SHARE ROW EXCLUSIVE MODE"
+                )
+                cursor.execute(_GITHUB_QUARANTINE_SQL, params)
+                row = cursor.fetchone() or {}
+        return {
+            key: int(row.get(key) or 0)
+            for key in ("quarantined", "added", "released")
+        }

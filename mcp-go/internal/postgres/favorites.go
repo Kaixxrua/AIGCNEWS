@@ -154,6 +154,11 @@ func effectiveMetricDateParams(now time.Time) []any {
 	return []any{today, now.AddDate(0, 0, -1).Format("2006-01-02"), today}
 }
 
+// ghQuarantineFilter 逐字搬运 _GH_QUARANTINE_FILTER：疑似诱饵隔离名单（迁移 0082）
+// 里的仓库不上热榜、不进公开项目库，与 enriched_only 的 succeeded 过滤成对出现。
+const ghQuarantineFilter = "NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq " +
+	"WHERE gq.repo_id = c.repo_id)"
+
 const ghFavoritesJoin = "LEFT JOIN project_favorites pf" +
 	" ON pf.user_id=%s AND pf.project_source='github' AND pf.project_id=c.repo_id"
 
@@ -892,7 +897,7 @@ func projectCollectionQueries(f mcpapp.ProjectCollectionFilters, dateParams []an
 	// scope today/recommended、strong match 分支均不触发）。
 	filters := []string{"COALESCE(c.stars, 0) >= %s"}
 	filterParams := []any{projectCollectionMinStars}
-	filters = append(filters, "ge.status = 'succeeded'") // enriched_only=True
+	filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter) // enriched_only=True
 	if f.Category != "" {
 		filters = append(filters, "ge.category_slug = %s")
 		filterParams = append(filterParams, f.Category)

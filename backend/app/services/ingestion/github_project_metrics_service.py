@@ -565,6 +565,21 @@ def _coordinated_creation_repo_ids(candidates: List[tuple[str, str, Any]]) -> se
     return flagged
 
 
+def _refresh_github_quarantine(
+    db: GitHubProjectIngestionRepository,
+) -> dict[str, int] | None:
+    """指标落库后重算疑似诱饵隔离名单：嫌疑分与信号刚更新，正是重算的时候。
+
+    重算失败只告警、返回 None：名单沿用上一轮，下一轮指标计算再重算，
+    不能让整轮热度指标跟着失败。
+    """
+    try:
+        return db.refresh_github_quarantine()
+    except Exception as exc:  # noqa: BLE001 - 隔离名单失败不阻塞指标计算
+        logger.warning("[GitHubProjectMetrics] 疑似诱饵隔离名单重算失败，沿用上一轮名单: %s", exc)
+        return None
+
+
 def compute_github_daily_metrics(
     *,
     metric_date: str | date | None = None,
@@ -733,6 +748,7 @@ def _compute_github_daily_metrics(
         )
 
     affected = db.upsert_github_daily_metrics(metrics)
+    quarantine = _refresh_github_quarantine(db)
     sources = [item["daily_growth_source"] for item in metrics]
     result = {
         "status": "success",
@@ -757,6 +773,7 @@ def _compute_github_daily_metrics(
         "corroborated": sum(1 for item in metrics if item["growth_corroborated"]),
         "targeted": bool(repo_ids),
         "affected": affected,
+        "quarantine": quarantine,
         "score_version": SCORE_VERSION,
         "snapshot_velocity": snapshot_velocity_count,
         "observed_velocity": observed_velocity_count,

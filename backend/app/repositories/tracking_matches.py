@@ -63,6 +63,7 @@ def find_matches(
             FROM github_repo_candidates g
             JOIN github_repo_enrichments e ON e.repo_id = g.repo_id
             WHERE g.stars >= {PUBLIC_PROJECT_MIN_STARS} AND e.status = 'succeeded'
+              AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq WHERE gq.repo_id = g.repo_id)
         """
     filters = ["observed_at > %s", "observed_at <= %s"]
     params.extend([since, until])

@@ -1,6 +1,7 @@
 """项目库悬停速览的取数（只读）：仓库在不在公开项目库里、在 GitHub 上叫什么、还在不在。
 
-公开口径与项目库列表一致：富化成功、不是改名留下的旧名（github_repo_aliases 里的别名行）。
+公开口径与项目库列表一致：富化成功、不是改名留下的旧名（github_repo_aliases 里的别名行）、
+不在疑似诱饵隔离名单（github_repo_quarantine）里。
 """
 
 from __future__ import annotations
@@ -34,7 +35,9 @@ class PostgresGitHubProjectPeekRepository:
                 " JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id AND ge.status = 'succeeded'"
                 " WHERE c.repo_id = %s"
                 " AND NOT EXISTS (SELECT 1 FROM github_repo_aliases ga"
-                " WHERE ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id)",
+                " WHERE ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id)"
+                " AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine gq"
+                " WHERE gq.repo_id = c.repo_id)",
                 (repo_id,),
             )
             row = cursor.fetchone()
