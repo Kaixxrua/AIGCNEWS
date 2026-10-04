@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { groupReportSections, parseReportDateQuery, parseReportTypeQuery, todayInReportTimeZone } from './reportViewModel'
+import {
+  formatReportIssueDate,
+  groupReportSections,
+  parseReportDateQuery,
+  parseReportTypeQuery,
+  shiftReportDate,
+  todayInReportTimeZone,
+} from './reportViewModel'
 
 describe('parseReportDateQuery', () => {
   it('accepts a past or current calendar date from the RSS briefing link', () => {
@@ -47,6 +54,32 @@ describe('todayInReportTimeZone', () => {
   })
 })
 
+describe('shiftReportDate', () => {
+  it('steps across month and year boundaries on the calendar', () => {
+    expect(shiftReportDate('2026-10-01', -1)).toBe('2026-09-30')
+    expect(shiftReportDate('2026-01-01', -1)).toBe('2025-12-31')
+    expect(shiftReportDate('2028-02-28', 1)).toBe('2028-02-29')
+    expect(shiftReportDate('2026-10-04', -7)).toBe('2026-09-27')
+  })
+})
+
+describe('formatReportIssueDate', () => {
+  it('writes the day in the interface language', () => {
+    expect(formatReportIssueDate('2026-10-03', 'zh-CN', '2026-10-04')).toBe('10月3日')
+    expect(formatReportIssueDate('2026-10-03', 'en-US', '2026-10-04')).toBe('October 3')
+  })
+
+  it('adds the year for a day outside the current year', () => {
+    expect(formatReportIssueDate('2025-12-30', 'zh-CN', '2026-01-02')).toBe('2025年12月30日')
+    expect(formatReportIssueDate('2025-12-30', 'en-US', '2026-01-02')).toBe('December 30, 2025')
+  })
+
+  it('returns anything unreadable as it is', () => {
+    expect(formatReportIssueDate('', 'zh-CN', '2026-10-04')).toBe('')
+    expect(formatReportIssueDate('not-a-date', 'en-US', '2026-10-04')).toBe('not-a-date')
+  })
+})
+
 describe('groupReportSections', () => {
   it('wraps each top-level h2 with the blocks that follow it', () => {
     const html = '<h1>简报</h1>\n<p>导语</p>\n<h2>技术亮点 <code>LLM</code></h2>\n<ol><li>一</li></ol>\n<h2>行业资讯</h2>\n<p>二</p>\n'
@@ -54,7 +87,9 @@ describe('groupReportSections', () => {
     const root = document.createElement('div')
     root.innerHTML = grouped
 
-    expect(root.querySelector('h1')?.parentElement).toBe(root)
+    const masthead = root.querySelector('.report-masthead')
+    expect(masthead?.parentElement).toBe(root)
+    expect(masthead?.textContent).toBe('简报')
     const sections = root.querySelectorAll(':scope > section.report-section')
     expect(sections).toHaveLength(2)
     expect(sections[0]!.querySelector('h2')?.textContent).toBe('技术亮点 LLM')
@@ -73,6 +108,23 @@ describe('groupReportSections', () => {
     expect(paragraphs[1]!.classList.contains('report-dateline')).toBe(true)
     expect(root.textContent).toBe(new DOMParser().parseFromString(html, 'text/html').body.textContent)
     expect(groupReportSections('<h2>一</h2>\n<p>生成日期在句中</p>\n<p>结尾</p>')).not.toContain('report-dateline')
+  })
+
+  it('sets the opening h1 as a second-level masthead so the page keeps a single h1', () => {
+    const html = '<h1 id="top">AIGC 日报 <code>#news</code></h1>\n<p>导语</p>\n<blockquote><h1>引文标题</h1></blockquote>'
+    const root = document.createElement('div')
+    root.innerHTML = groupReportSections(html)
+
+    expect(root.querySelectorAll(':scope > h1')).toHaveLength(0)
+    const masthead = root.querySelector(':scope > .report-masthead')!
+    expect(masthead.tagName).toBe('DIV')
+    expect(masthead.getAttribute('role')).toBe('heading')
+    expect(masthead.getAttribute('aria-level')).toBe('2')
+    expect(masthead.id).toBe('top')
+    expect(masthead.innerHTML).toBe('AIGC 日报 <code>#news</code>')
+    // 只换顶层报名；嵌在别的块里的标题原样保留
+    expect(root.querySelector('blockquote > h1')?.textContent).toBe('引文标题')
+    expect(root.textContent).toBe(new DOMParser().parseFromString(html, 'text/html').body.textContent)
   })
 
   it('leaves nested h2 and h2-free html untouched', () => {

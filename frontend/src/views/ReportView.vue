@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useElementSize, useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { isAxiosError } from 'axios'
 import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
@@ -80,12 +81,23 @@ const {
   errorMsg,
   selectedSource: selectedType,
   selectedDate,
+  loadState,
+  issueDate,
+  fallbackFrom,
+  selectDate,
+  retry: retryLoad,
   generate,
 } = useReportController({
   operations: {
+    // 那天没有这一期时接口回 404：交给控制器往前找或提示，不算读取失败
     loadCachedReport: async (params, signal) => {
-      const res = await api.get<ReportResponse>('/report/latest', { params, signal })
-      return res.data
+      try {
+        const res = await api.get<ReportResponse>('/report/latest', { params, signal })
+        return res.data
+      } catch (error) {
+        if (isAxiosError(error) && error.response?.status === 404) return undefined
+        throw error
+      }
     },
     connectReportStream: ({ source, date, locale: reportLocale, onMessage, onDone, onError }) => {
       const baseURL = (api.defaults.baseURL ?? '').replace(/\/+$/, '')
@@ -295,7 +307,8 @@ const pickType = (type: ReportKey) => {
   savedView.value = false
 }
 const pickDate = (date: string) => {
-  selectedDate.value = date
+  if (!date) return
+  selectDate(date)
   savedView.value = false
 }
 // 已经在简报页时，站内速查跳来另一期（同一页只换了 ?date= / ?type=）：跟着换过去。页面被缓存着时不跟别的页的参数走。
@@ -416,7 +429,11 @@ watch(readingMode, mode => {
         :content-key="contentKey"
         :saves="broadsheetOn ? briefingSaves : null"
         :peek="broadsheetPeek"
+        :load-state="loadState"
+        :issue-date="issueDate"
+        :fallback-from="fallbackFrom"
         @resume-auto-scroll="resumeAutoScroll"
+        @retry="retryLoad"
       />
     </div>
 

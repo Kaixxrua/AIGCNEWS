@@ -142,6 +142,31 @@ export const todayInReportTimeZone = (now: Date = new Date()): string => {
   }
 }
 
+// 简报日期（YYYY-MM-DD）前后挪 days 天；按 UTC 日历算，与时区无关。
+export const shiftReportDate = (date: string, days: number): string => {
+  const shifted = new Date(`${date}T00:00:00Z`)
+  shifted.setUTCDate(shifted.getUTCDate() + days)
+  return shifted.toISOString().slice(0, 10)
+}
+
+// 阅读区提示里的日期按界面语言写（「10月3日」「October 3」），不是今年的带上年份；认不出的原样返回。
+export const formatReportIssueDate = (
+  date: string,
+  locale: string,
+  today: string = todayInReportTimeZone(),
+): string => {
+  const parsed = new Date(`${date}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return date
+  const sameYear = date.slice(0, 4) === today.slice(0, 4)
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: 'UTC', month: 'long', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }),
+    }).format(parsed)
+  } catch {
+    return date
+  }
+}
+
 // RSS 简报条目按期号回链 /report?date=YYYY-MM-DD。只认合法日历日且不晚于今天
 // （CST）；缺省、重复参数、脏串、未来日期一律返回 null，页面回落默认的今天。
 export const parseReportDateQuery = (
@@ -172,12 +197,23 @@ export const coerceReportStreamText = (data: unknown): string => {
 
 // 桌面漫画版把简报逐节画成面板：按顶层 h2 分节，每节包进 <section class="report-section">；
 // 文末「生成日期」一行标上 report-dateline，排成末节右下角的小字。
-// 只在已消毒的渲染结果上重排顶层节点、加类名，不增删内容；没有 h2 时原样返回。
+// 正文开头的报名（顶层 h1）改排成二级标题 report-masthead：整页的 h1 是控制条上的分区名，正文不再带第二个 h1。
+// 只在已消毒的渲染结果上重排顶层节点、换报名的外层标签、加类名，不增删内容；没有 h1、h2 时原样返回。
 export const groupReportSections = (html: string): string => {
-  if (!/<h2[\s>]/.test(html)) return html
+  if (!/<h[12][\s>]/.test(html)) return html
   const template = document.createElement('template')
   template.innerHTML = html
   const root = template.content
+  for (const heading of Array.from(root.children)) {
+    if (heading.tagName !== 'H1') continue
+    const masthead = document.createElement('div')
+    for (const { name, value } of Array.from(heading.attributes)) masthead.setAttribute(name, value)
+    masthead.classList.add('report-masthead')
+    masthead.setAttribute('role', 'heading')
+    masthead.setAttribute('aria-level', '2')
+    masthead.append(...Array.from(heading.childNodes))
+    heading.replaceWith(masthead)
+  }
   const tail = root.lastElementChild
   if (tail?.tagName === 'P' && tail.textContent?.trim().startsWith('生成日期')) tail.classList.add('report-dateline')
   let section: HTMLElement | null = null

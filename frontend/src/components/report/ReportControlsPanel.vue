@@ -8,6 +8,7 @@ import RollText from '@/motion/RollText.vue'
 import type { ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import {
   REPORT_TYPES,
+  todayInReportTimeZone,
   type ReportKey,
 } from '@/features/report/reportViewModel'
 
@@ -49,6 +50,9 @@ const emit = defineEmits<{
   'update:readingMode': [value: ReportReadingMode]
   'update:savedView': [value: boolean]
 }>()
+
+// 日期框只能选到今天（CST）：简报按天生成，之后的日子还没有
+const today = todayInReportTimeZone()
 
 // 收藏条数换值时滚动，多了新数字自下而上，少了自上而下
 const savedDirection = ref<1 | -1>(1)
@@ -199,7 +203,7 @@ watch(() => props.savedCount ?? 0, (count, previous) => { savedDirection.value =
 
     <!-- Admin: 日期选择 -->
     <div v-if="isAdmin" class="flex items-center gap-1 ml-2">
-      <input :value="selectedDate" type="date" class="input w-auto py-1 text-xs" :disabled="isGenerating" @input="emit('update:selectedDate', ($event.target as HTMLInputElement).value)" />
+      <input :value="selectedDate" type="date" :max="today" class="input w-auto py-1 text-xs" :disabled="isGenerating" @input="emit('update:selectedDate', ($event.target as HTMLInputElement).value)" />
     </div>
   </div>
 </template>

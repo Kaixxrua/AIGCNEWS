@@ -182,7 +182,7 @@
   #app .app-shell--comic-page .report-reading .report-ai-notice { display: none; }
   #app .app-shell--comic-page .prose-report { color: var(--rep-ink); font-size: 15px; font-weight: 500; line-height: 26px; }
   /* The report's own heading line repeats the lit tab; the concept leaves it out. */
-  #app .app-shell--comic-page .prose-report > h1 { display: none; }
+  #app .app-shell--comic-page .prose-report > :is(h1, .report-masthead) { display: none; }
   #app .app-shell--comic-page .prose-report .report-section {
     position: relative; isolation: isolate; min-height: 0; margin: 0 0 10px; padding: 11px 38px 15px 57px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none;

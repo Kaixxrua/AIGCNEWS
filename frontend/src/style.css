@@ -781,7 +781,7 @@
 }
 
 /* ═══ prose markdown 基础样式（暖调书卷气） ═══ */
-.prose-content h1 { @apply text-xl font-bold mb-3 mt-5; color: rgb(var(--stone-900-rgb)); font-family: 'Playfair Display', Georgia, serif; }
+.prose-content h1, .prose-content .report-masthead { @apply text-xl font-bold mb-3 mt-5; color: rgb(var(--stone-900-rgb)); font-family: 'Playfair Display', Georgia, serif; }
 .prose-content h2 { @apply text-lg font-semibold mb-2 mt-4; color: rgb(var(--stone-800-rgb)); font-family: 'Playfair Display', Georgia, serif; }
 .prose-content h3 { @apply text-base font-semibold mb-2 mt-3; color: rgb(var(--stone-600-rgb)); }
 .prose-content p  { @apply text-sm leading-7 mb-3; color: rgb(var(--stone-500-rgb)); }
