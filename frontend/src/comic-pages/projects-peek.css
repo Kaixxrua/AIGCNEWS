@@ -1,0 +1,111 @@
+@media (min-width: 1024px) {
+  /* ── Quick look (useProjectPeek): a pointer resting half a second on a row draws the chart's card out of it at the
+     figures' end, below the row or, where the room is above, over it: the README's opening paragraphs, the default
+     branch's latest commit and the last 30 days of stars, so a repository can be sized up without leaving the list.
+     The card stops short of the rank column, so the pointer can run down the ranks from one look to the next; it
+     rises over the search and the column titles only where neither the rows above nor the room below can take it.
+     The row keeps its wash while its card is out, and the chart lifts over the pagination below it meanwhile. ── */
+  #app .app-shell--comic-page .projects-page--catalog .project-chart:has(> .project-peek) { z-index: 1; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek {
+    position: absolute; z-index: 4; right: 12px; display: flex; flex-direction: column;
+    width: min(760px, calc(100% - 112px)); max-height: var(--peek-max, 420px); isolation: isolate;
+    background: radial-gradient(ellipse 320px 200px at 100% 100%, var(--p-wash), transparent 100%), var(--p-paper);
+    color: var(--p-ink);
+  }
+  /* Over the row the card's bottom edge holds to the row and it grows upward. */
+  #app .app-shell--comic-page .projects-page--catalog .project-peek--above { transform: translateY(-100%); }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek::after {
+    content: ''; position: absolute; z-index: -1; inset: -2px -5px -5px -2px; pointer-events: none;
+    border-style: solid; border-color: transparent; border-width: 10px 75px 71px 7px;
+    border-image: var(--p-card) 30 225 213 21 / 10px 75px 71px 7px stretch;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 18px 13px 14px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 0 7px;
+    background: linear-gradient(var(--p-ink), var(--p-ink)) 0 100% / 100% 1.5px no-repeat;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__name { min-width: 0; font-size: 14.5px; font-weight: 800; line-height: 20px; overflow-wrap: anywhere; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__owner { color: var(--p-muted); font-weight: 600; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__stars {
+    display: inline-flex; flex: none; align-items: center; gap: 3px; color: var(--p-ink);
+    font-size: 12.5px; font-weight: 800; line-height: 20px; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__stars svg { color: var(--p-star); fill: var(--p-star); }
+  /* README, latest commit and stars rule off with the rows' fading line. */
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__part {
+    padding: 9px 0 10px;
+    background: linear-gradient(90deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent) 0 100% / 100% 1px no-repeat;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__part:last-child { padding-bottom: 0; background-image: none; }
+  /* On any desktop chart the card splits in two, short enough to sit beside most rows: the README on the left at a
+     reading measure, the commit over the curve on the right, parted by a rule that fades the way the others do. */
+  @container project-chart (min-width: 680px) {
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__scroll {
+      display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 24px;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__head { grid-column: 1 / -1; }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__part--readme { padding-bottom: 0; background-image: none; }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__side { position: relative; }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__side::before {
+      content: ''; position: absolute; top: 9px; bottom: 0; left: -12px; width: 1px;
+      background: linear-gradient(180deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent);
+    }
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__label {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 0 0 4px;
+    color: var(--p-muted); font-size: 12px; font-weight: 800; line-height: 16px;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__readme { margin: 0 0 5px; color: var(--p-copy); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__link {
+    display: inline-flex; align-items: center; gap: 2px; color: var(--p-ink); font-size: 12.5px; font-weight: 800; line-height: 20px;
+    text-decoration: underline; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; text-underline-offset: 3px;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__link:hover { text-decoration-color: var(--p-ink); }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__note { margin: 0; color: var(--p-hint); font-size: 13px; line-height: 1.55; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__note .project-peek__link { margin-left: 6px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__commit { display: block; color: var(--p-ink); font-size: 13px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; text-decoration: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__commit:hover { text-decoration: underline; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; text-underline-offset: 3px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__facts {
+    display: flex; flex-wrap: wrap; align-items: baseline; margin: 2px 0 0; color: var(--p-hint);
+    font-size: 12px; font-weight: 600; line-height: 18px;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__facts > * + *::before { content: '·'; margin: 0 6px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__sha { font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__delta { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__delta--up { color: var(--p-today); }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__delta--down { color: var(--tone-coral); }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__delta--flat { color: var(--p-hint); }
+  /* The curve stretches across the card; its last day is an HTML dot so it stays round. */
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__plot { position: relative; height: 52px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__area { fill: color-mix(in srgb, var(--p-today) 13%, transparent); stroke: none; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__line {
+    fill: none; stroke: var(--p-today); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__bridge { fill: none; stroke: var(--p-hint); stroke-width: 1.25; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__dot {
+    position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+    border: 1.5px solid var(--p-ink); border-radius: 50%; background: var(--p-lime);
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__axis {
+    display: flex; justify-content: space-between; margin-top: 3px; color: var(--p-hint);
+    font-size: 11px; font-weight: 600; line-height: 14px; font-variant-numeric: tabular-nums;
+  }
+  /* the frame's dotted shade reaches into the bottom-right corner: the last date is knocked out of it on the corner's wash */
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__axis span:last-child {
+    border-radius: 2px; background: var(--p-wash); box-shadow: 0 0 0 3px var(--p-wash);
+  }
+  /* while GitHub is read: the README's lines, the commit's two, the curve's box */
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton {
+    display: block; height: 11px; margin: 4px 0 9px; border-radius: 3px; background: color-mix(in srgb, var(--p-ink) 9%, transparent);
+    animation: project-peek-loading 1.4s ease-in-out infinite;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton:nth-of-type(2n) { width: 92%; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton:last-child { width: 64%; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton.is-short { width: 55%; }
+  #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton.project-peek__skeleton--plot { width: auto; height: 52px; margin-bottom: 17px; }
+  @keyframes project-peek-loading { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__skeleton { animation: none; }
+  }
+}

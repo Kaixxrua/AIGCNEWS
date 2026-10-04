@@ -1,0 +1,144 @@
+@media (min-width: 1024px) {
+  /* ── Paper reader (paper-read-C, compact head): the page's name rides in the folio, so the paper's heading card
+     opens the page, its title at 26px over one line of small print (authors, the date, arXiv id, Hugging Face
+     upvotes, the board rank) and the link's slip; the summary sets at 16px on a 46em measure under a small label slip.
+     Guests get a narrow rail at the right: the sign-in card, then the same day's board. Signed in, the conversation
+     keeps the rail and the same day's board follows the summary, beside it when the column has the room. ── */
+  #app .app-shell--comic-page .paper-read-shell {
+    --paper: var(--comic-paper); --paper-raised: var(--comic-paper-raised); --ink: var(--comic-ink); --rule: var(--comic-ink);
+    --pr-f-head: url('/assets/comic/pr-head.webp'); --pr-f-sum: url('/assets/comic/pr-sum.webp'); --pr-f-cta: url('/assets/comic/pr-cta.webp'); --pr-f-btn: url('/assets/comic/pr-btn.webp'); --pr-f-slip: url('/assets/comic/pr-slip.webp'); --pr-f-label: url('/assets/comic/pr-label.webp');
+    --pr-rail: clamp(300px, 25vw, 440px);
+    display: grid; grid-template-columns: minmax(0, 60rem) var(--pr-rail); grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: 'doc cta' 'doc same'; justify-content: center; column-gap: 24px; row-gap: 18px; padding: 10px 14px 0 30px;
+    background: transparent;
+  }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) {
+    grid-template-columns: minmax(0, 1400px) clamp(340px, 31%, 470px); grid-template-rows: minmax(0, 1fr); grid-template-areas: 'doc conv';
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .paper-read-shell {
+    --pr-f-head: url('/assets/comic/pr-head-night.webp'); --pr-f-sum: url('/assets/comic/pr-sum-night.webp'); --pr-f-cta: url('/assets/comic/pr-cta-night.webp'); --pr-f-btn: url('/assets/comic/pr-btn-night.webp'); --pr-f-slip: url('/assets/comic/pr-slip-night.webp'); --pr-f-label: url('/assets/comic/pr-label-night.webp');
+  }
+
+  /* The sign-in card heads the rail: the prompt in bold italics over the lime button. */
+  #app .app-shell--comic-page .paper-read-shell.guest-mode .guest-cta {
+    grid-area: cta; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 12px; min-height: 0;
+    margin: 0 8px 0 0; padding: 16px 40px 30px 18px; border: 0 solid transparent; background: var(--paper-raised) !important;
+    border-image: var(--pr-f-cta) 24 312 216 21 / 8px 104px 72px 7px / 2px 10px 11px 2px stretch;
+    color: var(--ink); font-size: 15px; font-style: italic; font-weight: 800; line-height: 1.5; text-align: left;
+  }
+  #app .app-shell--comic-page .paper-read-shell .guest-cta-link {
+    display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 34px; padding: 0 18px;
+    border: 0 solid transparent; border-radius: 6px; background: var(--acid); color: var(--acid-ink);
+    border-image: var(--pr-f-btn) 33 39 45 33 / 11px 13px 15px 11px / 2px 4px 6px 2px stretch;
+    font-size: 15px; font-style: normal; font-weight: 900; text-decoration: none; transition: background-color .12s linear;
+  }
+  #app .app-shell--comic-page .paper-read-shell .guest-cta-link:hover { background: var(--acid-bright, var(--acid)); filter: brightness(1.04); }
+
+  /* The document: one scroll for both cards. */
+  #app .app-shell--comic-page .paper-read-shell .paper-document-panel {
+    grid-area: doc; display: block; overflow-y: auto; padding: 0 14px calc(var(--peel-clear) + 30px) 0; background: transparent;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header {
+    min-height: 0; padding: 14px 40px 18px 22px; border: 0 solid transparent; background: var(--paper-raised);
+    border-image: var(--pr-f-head) 27 549 522 21 / 9px 183px 174px 7px / 2px 11px 12px 2px stretch;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header h1 {
+    max-width: 1240px; color: var(--ink); font-family: inherit; font-size: 26px; font-style: italic; font-weight: 900; letter-spacing: -.3px; line-height: 34px;
+    text-wrap: balance;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header > div { gap: 8px 12px; margin-top: 10px; color: var(--ink); }
+  #app .app-shell--comic-page .paper-document-panel > header > div > :is(time, a) {
+    display: inline-flex; align-items: center; min-height: 30px; padding: 0 16px 0 18px; border: 0 solid transparent; color: var(--ink);
+    border-image: var(--pr-f-slip) 36 57 51 81 fill / 12px 19px 17px 27px / 2px 3px 5px 5px stretch;
+    font-size: 14px; font-style: italic; font-weight: 800; letter-spacing: 0; text-decoration: none; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .paper-document-panel > header > div > a:hover { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+  /* Authors in ink, then the date and the facts in a lighter ink as one unbroken group, before the link's slip;
+     past four authors the rest fold behind a dotted「等 N 人」. */
+  #app .app-shell--comic-page .paper-document-panel .paper-authors { margin: 0; color: var(--ink); font-size: 14px; font-weight: 700; line-height: 1.5; }
+  #app .app-shell--comic-page .paper-document-panel .paper-authors-rest { animation: motion-fade 220ms var(--motion-ease-out) both; }
+  #app .app-shell--comic-page .paper-document-panel .paper-authors-toggle {
+    margin-left: 2px; padding: 0 3px; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 800;
+    text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; transition: background-color var(--motion-fast) linear;
+  }
+  #app .app-shell--comic-page .paper-document-panel .paper-authors-toggle:hover { background: var(--acid-soft); text-decoration-style: solid; }
+  #app .app-shell--comic-page .paper-document-panel .paper-facts {
+    display: inline-flex; gap: 7px; margin-left: 2px; color: var(--ink-secondary); font-size: 14px; font-weight: 700; line-height: 1.5;
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  #app .app-shell--comic-page .paper-document-panel .paper-fact + .paper-fact::before { content: '·'; margin-right: 7px; color: var(--ink-muted); }
+  #app .app-shell--comic-page .paper-document-panel > header > p[role='alert'] { font-size: 16px; font-weight: 700; }
+  #app .app-shell--comic-page .paper-document-panel > div { overflow: visible; margin-top: 14px; padding: 0; }
+  #app .app-shell--comic-page .paper-document-panel article {
+    position: relative; max-width: none; min-height: 150px; margin-inline: 0; padding: 12px 48px 24px 40px; border: 0 solid transparent; background: var(--paper-raised);
+    border-image: var(--pr-f-sum) 30 543 531 21 / 10px 181px 177px 7px / 2px 11px 13px 2px stretch;
+  }
+  /* The lime tab at the card's left edge, over the label's end. */
+  #app .app-shell--comic-page .paper-document-panel article::before {
+    content: ''; position: absolute; z-index: 1; left: 0; top: 14px; width: 29px; height: 40px;
+    background: linear-gradient(90deg, var(--acid) 0 14px, transparent 14px);
+  }
+  #app .app-shell--comic-page .paper-document-panel article::after {
+    content: ''; position: absolute; z-index: 1; left: 14px; top: 13px; width: 15px; height: 42px;
+    border: 2px solid var(--ink); border-radius: 1.5px; background: var(--acid);
+  }
+  #app .app-shell--comic-page .paper-document-panel article > h2 {
+    display: inline-block; margin: 2px 0 8px -26px; padding: 2px 22px 3px 34px; color: var(--ink);
+    border-image: var(--pr-f-label) 42 66 57 54 fill / 14px 22px 19px 18px / 2px 2px 3px 2px stretch;
+    font-size: 20px; font-style: italic; font-weight: 900; line-height: 30px; transform: rotate(-3deg); transform-origin: left bottom;
+  }
+  #app .app-shell--comic-page .paper-document-panel .paper-summary { max-width: 46em; color: var(--ink); font-size: 16px; line-height: 1.85; }
+  #app .app-shell--comic-page .paper-document-panel article > p { color: var(--ink); font-size: 16px; line-height: 1.85; }
+
+  /* The same day's board: ranked rows under a small label slip, three lines of title each; the open paper sits
+     on a lime wash with an ink bar. In the guests' rail it scrolls by itself under the sign-in card. */
+  #app .app-shell--comic-page .paper-read-shell .paper-same-day { min-width: 0; color: var(--ink); }
+  #app .app-shell--comic-page .paper-read-shell > .paper-same-day {
+    grid-area: same; min-height: 0; overflow-y: auto; margin: 0 8px 0 0; padding: 0 2px calc(var(--peel-clear) + 30px) 0;
+  }
+  #app .app-shell--comic-page .paper-same-day-title {
+    display: inline-block; margin: 4px 0 8px 2px; padding: 1px 18px 2px 20px; color: var(--ink);
+    border-image: var(--pr-f-label) 42 66 57 54 fill / 14px 22px 19px 18px / 2px 2px 3px 2px stretch;
+    font-size: 16px; font-style: italic; font-weight: 900; line-height: 26px; transform: rotate(-2deg); transform-origin: left bottom;
+  }
+  #app .app-shell--comic-page .paper-same-day-list { margin: 0; padding: 0; list-style: none; }
+  #app .app-shell--comic-page .paper-same-day-list > li + li { border-top: 1px solid color-mix(in srgb, var(--ink) 16%, transparent); }
+  #app .app-shell--comic-page .paper-same-day-link {
+    display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline;
+    padding: 8px 8px 8px 4px; border-radius: 4px; color: var(--ink); text-decoration: none;
+    transition: background-color var(--motion-fast) linear, box-shadow var(--motion-fast) linear;
+  }
+  #app .app-shell--comic-page .paper-same-day-link:hover { background: color-mix(in srgb, var(--acid-soft) 70%, transparent); }
+  #app .app-shell--comic-page .paper-same-day-link:hover .paper-same-day-name { text-decoration: underline; text-underline-offset: 3px; }
+  #app .app-shell--comic-page .paper-same-day-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  #app .app-shell--comic-page .paper-same-day-link.is-current { background: var(--acid-soft); box-shadow: inset 3px 0 0 var(--ink); }
+  #app .app-shell--comic-page .paper-same-day-rank { font-size: 15px; font-style: italic; font-weight: 900; text-align: right; font-variant-numeric: tabular-nums; }
+  #app .app-shell--comic-page .paper-same-day-name {
+    display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+    font-size: 14px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere;
+  }
+  #app .app-shell--comic-page .paper-same-day-votes { color: var(--ink-secondary); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+  /* Signed in: the conversation stands at the right on the summary's frame, the column stopping at 1400px on the
+     widest screens; the board follows the summary, and sits beside it once the column is wider than the summary's
+     card and the board's least width, the board taking the spare room first. Alone on its line, the summary's card
+     keeps the heading card's width. */
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) > div:not(.paper-read-heading) {
+    grid-area: conv; width: auto; height: auto; min-height: 0; margin: 0 12px calc(var(--peel-clear) + 30px) 0; border: 0 solid transparent;
+    background: var(--paper-raised) !important;
+    border-image: var(--pr-f-sum) 30 543 531 21 / 10px 181px 177px 7px / 2px 11px 13px 2px stretch;
+  }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) > div:not(.paper-read-heading) > :is(header, footer) { background: transparent; }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) .paper-document-panel > div { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px 28px; }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) .paper-document-panel > div > :not(article, .paper-same-day) { flex: 1 1 100%; }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) .paper-document-panel article { flex: 1 1 824px; }
+  #app .app-shell--comic-page .paper-read-shell:not(.guest-mode) .paper-document-panel .paper-same-day { flex: 10 1 280px; max-width: 520px; }
+  @media (max-width: 1279px) {
+    /* Narrower screens: a smaller title, so long names keep to two lines beside the rail. */
+    #app .app-shell--comic-page .paper-document-panel > header h1 { font-size: 22px; line-height: 30px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .paper-read-shell :is(.guest-cta-link, .paper-authors-toggle, .paper-same-day-link) { transition: none; }
+    #app .app-shell--comic-page .paper-document-panel .paper-authors-rest { animation: none; }
+  }
+}

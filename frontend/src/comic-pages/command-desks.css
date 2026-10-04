@@ -1,0 +1,52 @@
+@media (min-width: 1024px) {
+  /* ── The two command desks share their labels, the segmented switches and the terminal (CommandPreview): the
+     step number on a lime disc; the choices on one ink-ruled face, the lime sliding to the chosen one; the
+     command in a dark terminal box, the token as a dashed lime slot that turns solid once the real command is
+     ready to copy (the real token never shows on the page). ── */
+  #app .app-shell--comic-page :is(.mcp-desk-label, .dsh-desk-label) {
+    display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--ink); font-size: 16px; font-weight: 900; line-height: 24px; white-space: nowrap;
+  }
+  #app .app-shell--comic-page :is(.mcp-desk-num, .dsh-desk-num) {
+    display: inline-grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border: 2px solid var(--rule-strong); border-radius: 50%;
+    background: var(--acid); color: var(--acid-ink); font-size: 13px; font-weight: 950; line-height: 1;
+  }
+  #app .app-shell--comic-page :is(.mcp-desk-tabs, .dsh-desk-tabs) {
+    position: relative; isolation: isolate; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; padding: 3px;
+    border: solid var(--rule-strong); border-width: 1.5px 2px 2px 1.5px; border-radius: 4px 6px 4px 5px;
+    background: var(--paper-raised); box-shadow: 2px 2px 0 var(--comic-shadow);
+  }
+  #app .app-shell--comic-page :is(.mcp-desk-tabs, .dsh-desk-tabs)[data-indicator-mark]::before {
+    content: ''; z-index: -1; border-radius: 3px; background: var(--acid); box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+  }
+  #app .app-shell--comic-page :is(.mcp-desk-tab, .dsh-desk-tab) {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 3px; background: transparent; box-shadow: none;
+    color: var(--ink); font-size: 14px; font-weight: 800; line-height: 1; white-space: nowrap; cursor: pointer;
+    transition: color 150ms ease, background-color 150ms ease;
+  }
+  #app .app-shell--comic-page :is(.mcp-desk-tab, .dsh-desk-tab)[aria-pressed='false']:hover { background: var(--acid-soft); }
+  #app .app-shell--comic-page :is(.mcp-desk-tab, .dsh-desk-tab)[aria-pressed='true'] { color: var(--acid-ink); transition-delay: 70ms; }
+  #app .app-shell--comic-page :is(.mcp-desk-tabs, .dsh-desk-tabs):not([data-indicator]) [aria-pressed='true'] { background: var(--acid); }
+  #app .app-shell--comic-page :is(.mcp-desk-tab, .dsh-desk-tab):focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .mcp-desk-tab { padding: 0 9px; font-size: 13.5px; }
+  }
+  #app .app-shell--comic-page .command-preview {
+    min-width: 0; border: 0 solid transparent; border-radius: 5px; background: #10151c;
+    border-image: var(--cmd-frame) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .command-preview-term {
+    margin: 0; padding: 13px 18px 14px; color: #e6edf3; background: transparent;
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 21px;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  #app .app-shell--comic-page .command-slot {
+    display: inline-block; margin: 0 1px; padding: 0 7px; border: 1.5px dashed var(--acid); border-radius: 4px; color: var(--acid);
+    font-family: inherit; font-size: 12px; font-weight: 800; line-height: 17px; white-space: nowrap; vertical-align: 1px;
+    transition: background-color .2s linear, color .2s linear;
+  }
+  #app .app-shell--comic-page .command-slot--filled { border-style: solid; background: var(--acid); color: #10151c; }
+  #app .app-shell--comic-page .command-slot--encoded { border-color: #a99bff; color: #cdc4ff; }
+  @media (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page :is(.mcp-desk-tab, .dsh-desk-tab, .command-slot) { transition: none; }
+  }
+}

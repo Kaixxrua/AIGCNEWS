@@ -1,0 +1,155 @@
+@media (min-width: 1024px) {
+  /* ── Register (register-C): a standalone route outside LayoutView, so it carries its own corner stickers and the
+     masthead wordmark. Measured off the concept at 1536 × 1024: the title centred with its icon hung to the left,
+     then a 510px form card drawn in ink with a navy block to the lower right and dots down its top-right corner;
+     lime label slips, plain inked inputs, a white "send code" slip, a lime bar, and the login link on a tipped
+     slip below. The hand-drawn frames are generated (reg-*.webp, 3x 9-slice, -night for the dark theme). The card,
+     its slips and fields are shared with the auth dialogs (.comic-auth, teleported out of #app). ── */
+  :is(#app .register-page, .comic-auth) {
+    --reg-card: url('/assets/comic/reg-card.webp');
+    --reg-label: url('/assets/comic/reg-label.webp');
+    --reg-otp: url('/assets/comic/reg-otp.webp');
+    --reg-submit: url('/assets/comic/reg-submit.webp');
+    --reg-login: url('/assets/comic/reg-login.webp');
+    --reg-ink: #04090e;
+    --reg-copy: #01050f;
+    --reg-rule: #0d141c;
+    --reg-field: #fdfcfb;
+    --reg-hint: #8b929c;
+    --reg-icon: #ebf6f4;
+    --reg-wen: #0f3471;
+    --reg-lime: #cbf946;
+  }
+  #app .register-page {
+    /* h-full resolves to the content height here (the root has no set height), so the paper fills the viewport itself. */
+    position: relative; align-items: flex-start; min-height: 100dvh; padding: 20px 24px 32px; background: var(--paper);
+  }
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) {
+    --reg-card: url('/assets/comic/reg-card-night.webp');
+    --reg-label: url('/assets/comic/reg-label-night.webp');
+    --reg-otp: url('/assets/comic/reg-otp-night.webp');
+    --reg-submit: url('/assets/comic/reg-submit-night.webp');
+    --reg-login: url('/assets/comic/reg-login-night.webp');
+    --reg-ink: var(--ink); --reg-copy: var(--ink); --reg-rule: #cfd4cb; --reg-field: #1d1f22; --reg-hint: var(--ink-muted);
+    --reg-icon: #22302f; --reg-wen: #8fb4ee; --reg-lime: var(--acid);
+  }
+  #app .register-page .register-deco { display: block; }
+  #app .register-page .register-corner { position: absolute; left: 0; top: 0; width: 300px; aspect-ratio: 852 / 345; z-index: 0; }
+  #app .register-page .register-shout { position: absolute; right: 0; top: 0; width: 372px; aspect-ratio: 1101 / 324; z-index: 0; }
+  #app .register-page .register-peel { display: none; position: fixed; right: 0; bottom: 0; width: min(430px, 28vw); aspect-ratio: 1100 / 713; z-index: 0; }
+  @media (min-width: 1280px) { #app .register-page .register-peel { display: block; } }
+  :root:lang(en) #app .register-page .register-peel { display: none; }
+  #app .register-page .register-shell { position: relative; z-index: 1; max-width: 510px; padding: 0; }
+  #app .register-page .register-wordmark { display: block; width: 288px; margin: 0 auto; }
+  #app .register-page .register-wordmark img { display: block; width: 100%; height: auto; }
+  :root[data-theme='dark'] #app .register-page .register-wordmark img { content: url('/assets/comic/aigc-news-wordmark-night.webp'); }
+
+  /* The title sits on the page's centre line; its icon hangs to the left of it, the language switch off to the right. */
+  #app .register-page .auth-page-header {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin: 0 0 26px; padding-top: 38px;
+  }
+  #app .register-page .auth-page-header__icon {
+    position: relative; top: 3px; grid-row: 1; grid-column: 1; justify-self: end; margin: 0 28px 0 0; width: 50px; height: 50px;
+    border: 2px solid var(--reg-rule); border-radius: 50%; background: var(--reg-icon); box-shadow: none;
+  }
+  #app .register-page .auth-page-header__icon svg { width: 27px; height: 27px; color: var(--reg-ink); stroke-width: 1.9; }
+  #app .register-page .auth-page-header h1.comic-title {
+    top: -4px; grid-row: 1; grid-column: 2; margin: 0; color: var(--reg-copy); font-size: 40px; font-weight: 900; line-height: 50px;
+    -webkit-text-stroke: .35px currentColor; text-shadow: none;
+  }
+  #app .register-page .auth-page-header h1.comic-title::before { display: none; }
+  #app .register-page .auth-page-header h1.comic-title::after { right: -30px; top: -14px; width: 23px; height: 27px; background: var(--reg-lime); }
+  #app .register-page .auth-page-header p {
+    grid-column: 1 / -1; margin: 3px 0 0 -40px; color: var(--reg-copy); font-size: 19px; font-weight: 700; line-height: 24px;
+  }
+  #app .register-page .auth-page-header > .absolute { top: 15px; right: -2px; }
+  /* The English title runs about 100px wider; the switch steps out past it. */
+  :root:lang(en) #app .register-page .auth-page-header > .absolute { right: -84px; }
+  #app .register-page .auth-page-header .locale-toggle { width: 52px; height: 52px; flex-basis: 52px; color: var(--reg-ink); }
+  #app .register-page .auth-page-header .locale-icon { width: 52px; height: 52px; }
+  #app .register-page .auth-page-header .locale-icon__orbit { stroke: var(--reg-wen); stroke-width: 2.4; }
+  #app .register-page .auth-page-header .locale-icon__accent { stroke: currentColor; stroke-width: 2.6; }
+  #app .register-page .auth-page-header .locale-icon__tick { stroke: var(--reg-lime); stroke-width: 2.4; }
+
+  /* The card and every slip paint their frame from ::after, stretched as a 9-slice around the box. */
+  :is(#app .register-page, .comic-auth) :is(.auth-card, .auth-card label:not(.auth-terms label), .auth-card .auth-otp-btn,
+    .auth-card :is(.btn-primary, .btn-secondary), .auth-switch) {
+    position: relative; isolation: isolate; border: 0 !important; background: transparent !important; box-shadow: none;
+  }
+  :is(#app .register-page, .comic-auth) :is(.auth-card, .auth-card label:not(.auth-terms label), .auth-card .auth-otp-btn,
+    .auth-card :is(.btn-primary, .btn-secondary), .auth-switch)::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; border-style: solid; border-color: transparent;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card { padding: 21px 29px 31px 28px; border-radius: 0; backdrop-filter: none; }
+  :is(#app .register-page, .comic-auth) .auth-card::after {
+    inset: -2px -13px -12px -2px; border-width: 129px 123px 28px 16px; border-image: var(--reg-card) 387 369 84 48 fill / 129px 123px 28px 16px stretch;
+  }
+  #app .register-page .auth-card > * { margin-block: 0; }
+  #app .register-page .auth-card > * + * { margin-top: 10px; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > * { margin-block: 0; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > label + * { margin-top: 5px; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > p { margin-top: 5px; }
+
+  :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label) {
+    display: block; width: fit-content; height: 28px; margin: 0 0 0 -6px; padding: 0 9px;
+    color: var(--reg-copy); font-size: 19.5px; font-style: italic; font-weight: 900; line-height: 28px; letter-spacing: -.02em;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label)::after {
+    inset: -2px -2px -6px -4px; border-width: 11px 12px 15px 14px; border-image: var(--reg-label) 33 36 45 42 fill / 11px 12px 15px 14px stretch;
+  }
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label) { color: var(--acid-ink); }
+  :is(#app .register-page, .comic-auth) .auth-card .input {
+    height: 42px; min-height: 42px; padding: 0 16px; border: 2px solid var(--reg-rule); border-radius: 6px;
+    background: var(--reg-field); box-shadow: none; color: var(--reg-copy); font-size: 16px; letter-spacing: 0;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card .input::placeholder { color: var(--reg-hint); opacity: 1; }
+  :is(#app .register-page, .comic-auth) .auth-card .input:focus { border-color: var(--reg-rule); box-shadow: 0 0 0 3px var(--acid); outline: none; }
+  :is(#app .register-page, .comic-auth) .auth-card .space-y-1\.5 > .flex { gap: 16px; }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn {
+    width: auto; min-width: 117px; height: 40px; min-height: 40px; padding: 0 16px 0 6px; border-radius: 0; color: var(--reg-copy) !important;
+    backdrop-filter: none !important; font-size: 17.5px; font-style: italic; font-weight: 900; letter-spacing: -.02em;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn::after {
+    inset: -2px -5px -6px -2px; border-width: 11px 16px 15px 13px; border-image: var(--reg-otp) 33 48 45 39 fill / 11px 16px 15px 13px stretch;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn:hover:not(:disabled) { transform: translate(-1px, -1px); }
+  /* Drawn ready like the concept while the address is still empty; the pointer shows it is waiting. */
+  :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn:disabled { opacity: .55; cursor: not-allowed; }
+  :is(#app .register-page, .comic-auth) .auth-card .text-2xs { font-size: 13px; }
+  :is(#app .register-page, .comic-auth) .auth-card .rounded-2xl.border { border-width: 2px; border-radius: 6px; font-size: 14px; }
+
+  :is(#app .register-page, .comic-auth) .auth-terms { gap: 18px; margin-top: 30px; padding: 0; }
+  :is(#app .register-page, .comic-auth) .auth-terms > button {
+    width: 22px; height: 21px; margin-top: 0; border: 2px solid var(--reg-rule); border-radius: 4px; background: var(--reg-field);
+  }
+  :is(#app .register-page, .comic-auth) .auth-terms > button svg { width: 14px; height: 14px; }
+  :is(#app .register-page, .comic-auth) .auth-terms > button[aria-pressed='true'] { background: var(--acid); }
+  :is(#app .register-page, .comic-auth) .auth-terms label { max-width: 378px; margin-top: -3px; color: var(--reg-copy); font-size: 15px; font-weight: 500; line-height: 25px; }
+  :is(#app .register-page, .comic-auth) .auth-terms a { color: var(--reg-copy); font-weight: 500; text-decoration-thickness: 1px; }
+
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary {
+    height: 57px; min-height: 57px; margin-top: 21px; gap: 13px; padding: 0; border-radius: 0;
+    color: var(--reg-copy); font-size: 26px; font-style: normal; font-weight: 900; letter-spacing: .02em;
+  }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary::after {
+    inset: -2px -8px -9px -2px; border-width: 11px 17px 18px 11px; border-image: var(--reg-submit) 33 51 54 33 fill / 11px 17px 18px 11px stretch;
+  }
+  :root[data-theme='dark'] :is(#app .register-page, .comic-auth) .auth-card .btn-primary { color: var(--acid-ink); }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary svg { width: 27px; height: 27px; stroke-width: 2.1; }
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary:hover:not(:disabled) { background: transparent; color: var(--reg-copy); transform: translate(-1px, -1px); }
+  /* The concept draws the bar ready while the terms box is still empty; it only stops answering to the pointer. */
+  :is(#app .register-page, .comic-auth) .auth-card .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+
+  :is(#app .register-page, .comic-auth) .auth-switch {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: fit-content; min-width: 187px; height: 53px; margin: 21px auto 0; padding: 4px 24px 0 18px;
+    left: -6px; color: var(--reg-copy); font-size: 17px; font-weight: 800; transform: none;
+  }
+  :is(#app .register-page, .comic-auth) .auth-switch::after {
+    inset: -2px -8px -8px -2px; border-width: 11px 21px 17px 15px; border-image: var(--reg-login) 33 63 51 45 fill / 11px 21px 17px 15px stretch;
+  }
+  :is(#app .register-page, .comic-auth) .auth-switch button { color: var(--reg-copy); font-weight: 800; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+  @media (max-width: 1279px) {
+    #app .register-page .register-corner { width: 220px; }
+    #app .register-page .register-shout { width: 280px; }
+  }
+}

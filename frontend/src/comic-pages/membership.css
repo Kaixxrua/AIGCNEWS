@@ -1,0 +1,210 @@
+@media (min-width: 1024px) {
+  /* ── Membership (membership-C): three price cards drawn in ink, their tops climbing to the right, a navy extrusion
+     to the lower right and halftone in two corners; the vip card is taller, with a lime spine and a lime flag. Tier
+     names are tilted white slips, the billing switch and the savings slip are hand-inked too (all generated frames,
+     see assets/comic/README.md). The call to action is a navy block with a tilted lime label between sparks.
+     Sizes are the concept's (1536 × 1024) at four fifths, frames included, so the cards read at the density of the
+     other pages and fit a laptop's height. ── */
+  #app .app-shell--comic-page .membership-page {
+    --mem-card: url('/assets/comic/mem-card.webp'); --mem-card-b: url('/assets/comic/mem-card-b.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip.webp');
+    --mem-tag: url('/assets/comic/mem-tag.webp'); --mem-badge: url('/assets/comic/mem-badge.webp'); --mem-toggle: url('/assets/comic/mem-toggle.webp');
+    --mem-chip: url('/assets/comic/mem-chip.webp'); --mem-savings: url('/assets/comic/mem-savings.webp');
+    --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #838e9d; --mem-off: #8f939b; --mem-check: #168c48; --mem-x: #b2b3b4;
+    --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
+    --mem-mark: #d9fb52; --mem-same: #5c6a7e; --mem-check-same: #4f9a6c;
+    display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
+    --mem-card: url('/assets/comic/mem-card-night.webp'); --mem-card-b: url('/assets/comic/mem-card-b-night.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip-night.webp');
+    --mem-tag: url('/assets/comic/mem-tag-night.webp'); --mem-badge: url('/assets/comic/mem-badge-night.webp'); --mem-toggle: url('/assets/comic/mem-toggle-night.webp');
+    --mem-chip: url('/assets/comic/mem-chip-night.webp'); --mem-savings: url('/assets/comic/mem-savings-night.webp');
+    --mem-ink: var(--ink); --mem-copy: var(--ink); --mem-muted: var(--ink-muted); --mem-off: var(--ink-muted); --mem-check: #4cc27a; --mem-x: var(--ink-muted);
+    --mem-rule: color-mix(in srgb, var(--ink) 45%, var(--paper)); --mem-dash: color-mix(in srgb, #7997bc 70%, var(--paper)); --mem-hint: #8fb0d6;
+    --mem-cta: color-mix(in srgb, var(--acid) 12%, var(--paper-raised)); --mem-cta-ink: var(--acid); --mem-halo: var(--paper);
+    --mem-mark: color-mix(in srgb, var(--acid) 30%, transparent); --mem-same: color-mix(in srgb, var(--ink) 62%, var(--paper));
+    --mem-check-same: color-mix(in srgb, #4cc27a 62%, var(--paper));
+  }
+  #app .app-shell--comic-page .membership-card { max-width: 1280px; margin: 0 auto; gap: 0; }
+  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 80px; padding: 10px 0 0 3px; text-align: left; }
+  #app .app-shell--comic-page .membership-title.comic-title {
+    margin: 0; padding: 0 1px; color: var(--mem-ink); font-size: 42px; font-style: normal; font-weight: 950; line-height: 1.12;
+    -webkit-text-stroke: .4px currentColor; transform: rotate(-4deg); transform-origin: 0 100%;
+    text-shadow: 1.5px 0 var(--mem-halo), -1.5px 0 var(--mem-halo), 0 1.5px var(--mem-halo), 0 -1.5px var(--mem-halo), 1.2px 1.2px var(--mem-halo), -1.2px -1.2px var(--mem-halo), 1.2px -1.2px var(--mem-halo), -1.2px 1.2px var(--mem-halo);
+  }
+  /* The brush is a flat lime block under the lower half; the spark is three wedges fanning up and out. */
+  #app .app-shell--comic-page .membership-title.comic-title::before { inset: 54% -12px -6px -8px; background: #cef92c; transform: skewX(-12deg); }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::before { background: var(--acid); }
+  #app .app-shell--comic-page .membership-title.comic-title::after {
+    right: -46px; top: -17px; width: 31px; height: 42px; background: #cef92c; clip-path: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 31 42'%3E%3Cpath d='M6.5 0 12 1.2 6.2 19 3.8 18.6zM25.5 3.5 31 7.5 16.5 27 13.8 25zM29 23.5 31 29.5 12.5 41 10.5 38.2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::after { background: var(--acid); }
+  #app .app-shell--comic-page .membership-subtitle {
+    max-width: none; margin: 5px 0 0 -4px; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5;
+    transform: rotate(-2.6deg); transform-origin: 0 50%;
+  }
+  #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 22px; padding-top: 11px; }
+  #app .app-shell--comic-page .tier-card {
+    position: relative; isolation: isolate; min-height: 450px; padding: 25px 19px 24px 24px;
+    border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none;
+  }
+  #app .app-shell--comic-page .tier-card::before { content: none; }
+  #app .app-shell--comic-page .tier-card::after {
+    content: ''; position: absolute; inset: -2px -10px -13px -2px; z-index: -1; pointer-events: none;
+    border: solid transparent; border-width: 90px 112px 76px 90px; border-image: var(--mem-card) 336 420 285 336 fill / 90px 112px 76px 90px stretch;
+  }
+  #app .app-shell--comic-page .tier-card:nth-of-type(2)::after { border-width: 90px 112px 76px 90px; border-image: var(--mem-card-b) 339 420 285 336 fill / 90px 112px 76px 90px stretch; }
+  /* The vip card stands 16px above the others and reaches 9px lower. */
+  #app .app-shell--comic-page .tier-card--member { margin: -16px 0 -9px; padding: 22px 22px 23px 34px; }
+  #app .app-shell--comic-page .tier-card--member::after { border-width: 80px 99px 79px 98px; border-image: var(--mem-card-vip) 300 372 297 366 fill / 80px 99px 79px 98px stretch; }
+
+  /* Hand-inked slips: each paints nothing itself and wears its generated frame. */
+  #app .app-shell--comic-page :is(.tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings) {
+    position: relative; isolation: isolate; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  }
+  #app .app-shell--comic-page :is(.tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings)::after {
+    content: ''; position: absolute; z-index: -1; pointer-events: none; border: solid transparent;
+  }
+  #app .app-shell--comic-page .tier-name {
+    align-self: flex-start; min-height: 33px; margin: 0 0 18px -5px; padding: 2px 16px 3px 15px; color: var(--mem-ink);
+    font-size: 20px; font-style: italic; font-weight: 950; letter-spacing: .01em; line-height: 28px; text-align: center; -webkit-text-stroke: .7px currentColor; transform: skewY(-9.5deg) skewX(-4deg);
+  }
+  #app .app-shell--comic-page .tier-name::after { inset: -2px -2px -3px -2px; border-width: 10px 6px 7px 6px; border-image: var(--mem-tag) 30 18 21 18 fill / 10px 6px 7px 6px stretch; }
+  #app .app-shell--comic-page .tier-card--member .tier-name { margin-left: -10px; }
+  #app .app-shell--comic-page .tier-badge {
+    position: absolute; top: 7px; right: 14px; min-width: 76px; padding: 4px 13px 6px 16px; color: #071633;
+    font-size: 18px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 23px; text-align: center; transform: rotate(-10deg);
+  }
+  #app .app-shell--comic-page .tier-badge::after { inset: -2px -3px -5px -2px; border-width: 9px 11px 12px 10px; border-image: var(--mem-badge) 33 42 45 36 fill / 9px 11px 12px 10px stretch; }
+  #app .app-shell--comic-page .tier-badge--current { color: var(--mem-ink); }
+  #app .app-shell--comic-page .tier-badge--current::after { filter: grayscale(1) brightness(1.15); }
+  #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 8px; }
+  #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 56px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1px currentColor; }
+  #app .app-shell--comic-page .tier-price-period { margin-left: 7px; color: var(--mem-ink); font-size: 17px; font-weight: 600; }
+  #app .app-shell--comic-page .tier-billing-btn {
+    align-self: center; gap: 7px; min-height: 38px; margin: -11px 0 0 auto; padding: 6px 10px 7px 13px; color: var(--mem-ink);
+    font-size: 16px; font-style: italic; font-weight: 900; -webkit-text-stroke: .3px currentColor; transform: rotate(-2.5deg);
+  }
+  #app .app-shell--comic-page .tier-billing-btn::after { inset: -2px -2px -3px -2px; border-width: 8px 6px 6px 6px; border-image: var(--mem-toggle) 30 21 24 21 fill / 8px 6px 6px 6px stretch; }
+  #app .app-shell--comic-page .tier-billing-btn:hover { background: transparent; color: var(--mem-ink); transform: rotate(-2.5deg) translateY(-1px); }
+  #app .app-shell--comic-page .tier-billing-btn[aria-pressed='true'] { border-color: transparent; background: transparent; color: var(--mem-ink); }
+  #app .app-shell--comic-page .tier-billing-btn svg { width: 14px; height: 14px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-billing-tag { margin-left: 3px; padding: 2px 7px 3px; color: #071633; font-size: 13px; font-style: italic; font-weight: 900; line-height: 18px; transform: rotate(-2deg); }
+  #app .app-shell--comic-page .tier-billing-tag::after { inset: -2px -2px -3px -2px; border-width: 7px 5px 6px 5px; border-image: var(--mem-chip) 27 18 21 18 fill / 7px 5px 6px 5px stretch; }
+  #app .app-shell--comic-page .tier-price-yearly { display: flex; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 16px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-savings {
+    margin: -5px 0 0 18px; padding: 5px 11px 7px; color: #071633; font-size: 14px; font-style: italic; font-weight: 900; line-height: 21px; transform: rotate(-5deg);
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-savings, .tier-billing-tag, .tier-badge) { color: var(--ink); }
+  :root[data-theme='dark'] #app .app-shell--comic-page :is(.tier-billing-tag, .tier-badge) { color: #10140a; }
+  #app .app-shell--comic-page .tier-savings::after { inset: -2px -2px -3px -2px; border-width: 9px 9px 10px 9px; border-image: var(--mem-savings) 33 33 36 33 fill / 9px 9px 10px 9px stretch; }
+  #app .app-shell--comic-page .tier-divider { margin: 17px 0 16px; border-top: 1.5px solid var(--mem-rule); }
+  #app .app-shell--comic-page .tier-card--member .tier-divider { margin-top: 11px; }
+  #app .app-shell--comic-page .tier-features { gap: 9px; margin-bottom: 19px; color: var(--mem-copy); font-size: 15px; line-height: 23.5px; }
+  #app .app-shell--comic-page .tier-features li { gap: 12px; }
+  #app .app-shell--comic-page :is(.tier-check, .tier-x) { width: 18px; height: 18px; margin-top: 2.8px; stroke-width: 3.2; }
+  #app .app-shell--comic-page .tier-check { color: var(--mem-check); }
+  #app .app-shell--comic-page .tier-x { width: 15px; margin-inline: 1.5px; color: var(--mem-x); stroke-width: 2.6; }
+  #app .app-shell--comic-page .tier-feature--excluded { color: var(--mem-off); }
+  /* A dashed rule of 8px dashes, as drawn, over the plan's note. */
+  #app .app-shell--comic-page :is(.tier-plan-note, .tier-member-note) {
+    padding-top: 16px; border-top: 0; background: linear-gradient(90deg, var(--mem-dash) 0 7px, transparent 7px 11px) 0 0 / 11px 1.5px repeat-x;
+    font-size: 14px; line-height: 1.5;
+  }
+  #app .app-shell--comic-page .tier-plan-note { color: var(--mem-muted); }
+  #app .app-shell--comic-page .tier-cta {
+    gap: 17px; min-height: 56px; margin-inline: 3px 4px; padding: 6px 18px 10px; border: 0; border-radius: 8px; background: var(--mem-cta); box-shadow: none;
+    color: var(--mem-cta-ink); font-size: 25px; font-style: italic; font-weight: 950; letter-spacing: .02em;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .tier-cta { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--acid) 55%, transparent); }
+  #app .app-shell--comic-page .tier-cta:hover { background: var(--mem-cta); color: var(--mem-cta-ink); filter: brightness(1.18); }
+  /* The label tilts and carries its lime underline; the sparks fan in toward it from both sides. */
+  #app .app-shell--comic-page .tier-cta-label {
+    display: inline-block; transform: rotate(-4deg); text-decoration: underline 2.5px; text-underline-offset: 8px; text-decoration-skip-ink: none;
+  }
+  #app .app-shell--comic-page .tier-cta::before,
+  #app .app-shell--comic-page .tier-cta::after {
+    content: ''; flex: 0 0 13px; height: 16px; background: var(--mem-cta-ink); clip-path: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 20'%3E%3Cpath d='M.4 2.6 1.6.6 14.6 7.2 13.8 8.6zM0 9.2 14.2 9.9 14.2 11.5 0 12zM1 18.2 13.8 12.6 14.6 14 2.2 19.8z'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  #app .app-shell--comic-page .tier-cta::before { transform: translateY(7px); }
+  #app .app-shell--comic-page .tier-cta::after { transform: translateY(-8px) scaleX(-1); }
+  #app .app-shell--comic-page .tier-cta-hint { margin-top: 9px; color: var(--mem-hint); font-size: 14px; line-height: 20px; }
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    #app .app-shell--comic-page .tier-card { padding-inline: 18px 16px; }
+    #app .app-shell--comic-page .tier-card--member { padding-left: 28px; }
+    #app .app-shell--comic-page .tier-price-amount { font-size: 46px; }
+    #app .app-shell--comic-page .tier-features { font-size: 14px; line-height: 22px; }
+    #app .app-shell--comic-page .tier-cta { font-size: 22px; }
+  }
+  /* Desktop comparison (membership-compare): the three cards stand as the columns of one table. The title takes the
+     corner, the left column names the rows, and the cards share the page's rows through subgrid, so each plan's name,
+     price, action and every benefit sit level with the others'; the rows are split by the drawn dashes. The buy button
+     sits under the price in the action row and stays in view when a short window scrolls. The last row keeps the
+     benefits clear of the halftone in the frames' lower corners even when a member's card has no hint to put there. ── */
+  #app .app-shell--comic-page .membership-card--compare {
+    display: grid; grid-template-columns: clamp(164px, 15%, 228px) 420fr 460fr 560fr; column-gap: 22px; max-width: 1320px; padding-top: 6px;
+    grid-template-rows: auto auto auto minmax(58px, auto) repeat(var(--compare-rows), auto) minmax(54px, auto);
+  }
+  #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { padding-bottom: calc(var(--peel-clear) + 14px); }
+  #app .app-shell--comic-page .membership-card--compare .tier-grid { display: contents; }
+  #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 1; grid-row: 1 / 5; height: auto; padding: 16px 0 0 3px; }
+  #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin-top: 14px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-rows {
+    display: grid; grid-column: 1; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; animation: cardPopIn .7s cubic-bezier(.34, 1.56, .64, 1) .05s both;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-card {
+    display: grid; grid-row: 1 / -1; grid-template-rows: subgrid; min-height: 0; padding-top: 12px; animation: cardPopIn .7s cubic-bezier(.34, 1.56, .64, 1) both;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(1) { grid-column: 2; animation-delay: .05s; }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(2) { grid-column: 3; animation-delay: .1s; }
+  #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(3) { grid-column: 4; animation-delay: .15s; }
+  /* Everything in a card keeps to the card's one column; the button and the rows overlap on purpose. */
+  #app .app-shell--comic-page .membership-card--compare .tier-card > :not(.tier-badge) { grid-column: 1; }
+  #app .app-shell--comic-page .membership-card--compare .tier-name { grid-row: 1; align-self: end; justify-self: start; margin-bottom: 6px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-price { grid-row: 2; }
+  /* A slip that no longer fits beside the yearly price drops under it whole rather than breaking across two lines. */
+  #app .app-shell--comic-page .membership-card--compare .tier-price-yearly { grid-row: 3; flex-wrap: wrap; row-gap: 6px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-savings { white-space: nowrap; }
+  #app .app-shell--comic-page .membership-card--compare .tier-divider { display: none; }
+  #app .app-shell--comic-page .membership-card--compare :is(.tier-plan-note, .tier-member-note) { grid-row: 4; align-self: center; margin: 0; padding: 0; background: none; }
+  /* The button spans down to the last row so that, when the window is too short for the table, it can ride along at the top. */
+  #app .app-shell--comic-page .membership-card--compare .tier-cta {
+    position: sticky; top: 8px; z-index: 2; grid-row: 4 / -1; align-self: start; min-height: 46px; margin-top: 6px;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-cta-label { white-space: nowrap; }
+  #app .app-shell--comic-page .membership-card--compare .tier-cta-hint { grid-row: -2 / -1; margin: 6px 0 0; font-size: 12px; line-height: 17px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare {
+    display: grid; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; gap: 0; margin: 0; font-size: 15px; line-height: 22px;
+  }
+  #app .app-shell--comic-page .membership-card--compare :is(.tier-row-label, .tier-features--compare li) {
+    padding: 5px 0 4px; background: linear-gradient(90deg, var(--mem-dash) 0 7px, transparent 7px 11px) 0 0 / 11px 1.5px repeat-x;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-row-label { color: var(--mem-ink); font-size: 15px; font-weight: 800; line-height: 22px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare :is(.tier-check, .tier-x) { flex-shrink: 0; margin-top: 2px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-cell { display: flex; flex-direction: column; min-width: 0; }
+  /* A plan that gives more of a benefit than the plan to its left has the words run under a lime highlighter, the
+     title's stroke; a ✗ to ✓ step stays plain, the ✗ already shows it. The row every plan has alike steps back a
+     shade, so the eye lands on the rows that set the plans apart. The stroke's padding is paid back in margin, so no
+     line breaks anywhere it did not before. */
+  #app .app-shell--comic-page .membership-card--compare .tier-feature--upgrade .tier-cell-text {
+    margin-inline: -3px; padding-inline: 3px; background: linear-gradient(transparent 52%, var(--mem-mark) 52% 94%, transparent 94%);
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  }
+  #app .app-shell--comic-page .membership-card--compare .tier-row-label--same { color: var(--mem-same); font-weight: 700; }
+  #app .app-shell--comic-page .membership-card--compare .tier-feature--same .tier-check { color: var(--mem-check-same); }
+  /* English row names run longer: the name column widens so none of them breaks, and the title steps down to fit it. */
+  :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: clamp(214px, 17%, 240px) 420fr 460fr 560fr; }
+  :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 30px; }
+  /* Below 1280 the table tightens: a narrower name column, 14px rows, and the room the guest column does not need goes
+     to the vip column, so the hint keeps to two lines and the whole table still fits a 1024 × 700 window. */
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 160px 400fr 460fr 560fr; column-gap: 18px; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 186px 400fr 460fr 560fr; }
+    #app .app-shell--comic-page .membership-card--compare :is(.tier-row-label, .tier-features--compare) { font-size: 14px; line-height: 21px; }
+    #app .app-shell--comic-page .membership-card--compare .tier-cta { gap: 10px; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 25px; }
+  }
+}

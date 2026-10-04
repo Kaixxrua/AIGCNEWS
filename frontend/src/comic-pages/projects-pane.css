@@ -1,0 +1,154 @@
+@media (min-width: 1024px) {
+  /* ── Detail pane (≥1600px, useProjectPane): a project clicked in the chart (or reached with j / k while the pane is
+     open) opens in a third column instead of leaving for GitHub, and the list stays on the left to go on with the
+     next. The column runs the page's whole height without sizing its rows (size containment); the pane pins inside it
+     from the top of the page down to the peel, in the lime card's drawn frame: a slip tag, the place in the whole
+     list and the arrows at its head; the name, the whole description, the figures with a taller curve right under
+     them (so a short screen sees the trend without scrolling), every tag and the actions; the quick look's README and
+     commit, all scrolling on their own; the keys at its foot. The row it shows keeps a lime wash. Leaving, the view
+     pins it where it stood while the chart widens under it. ── */
+  @media (max-width: 1599.98px) {
+    /* the pane closes below 1600px; until it has, it stays out of the way */
+    #app .app-shell--comic-page .projects-page--catalog > .project-pane { display: none; }
+  }
+  @media (min-width: 1600px) {
+    /* none of these transition anything, but the reduced-motion rule hands every property a 0.01ms transition: the
+       chart would be laid out for a frame in its old columns and the open row kept in place against those */
+    #app .app-shell--comic-page .projects-page--catalog { transition-property: none; }
+    #app .app-shell--comic-page .projects-page--catalog.has-pane {
+      --pane-w: clamp(440px, 29vw, 580px);
+      grid-template-columns: 239px minmax(0, 1fr) var(--pane-w);
+    }
+    #app .app-shell--comic-page .projects-page--catalog.has-pane:lang(en) { grid-template-columns: 271px minmax(0, 1fr) var(--pane-w); }
+    #app .app-shell--comic-page .projects-page--catalog > .project-pane {
+      --p-card: url('/assets/comic/p-card-lime.webp');
+      --p-wash: #ecf5c9;
+      grid-column: 3; grid-row: 1 / span 20; align-self: stretch; min-width: 0; contain: size;
+    }
+    :root[data-theme='dark'] #app .app-shell--comic-page .projects-page--catalog > .project-pane {
+      --p-card: url('/assets/comic/p-card-lime-night.webp');
+      --p-wash: #30361f;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__box {
+      position: sticky; top: 6px; isolation: isolate; display: flex; flex-direction: column;
+      height: min(100%, max(360px, calc(var(--projects-view-h, 100dvh) - var(--peel-clear) - 18px)));
+      margin-left: 6px; padding: 12px 20px 10px 18px; color: var(--p-ink);
+      background: radial-gradient(ellipse 320px 200px at 100% 100%, var(--p-wash), transparent 100%), var(--p-paper);
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__box::after {
+      content: ''; position: absolute; z-index: -1; inset: -2px -5px -5px -2px; pointer-events: none;
+      border-style: solid; border-color: transparent; border-width: 10px 75px 71px 7px;
+      border-image: var(--p-card) 30 225 213 21 / 10px 75px 71px 7px stretch;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__head { display: flex; flex: none; align-items: center; gap: 12px; margin: 0 0 12px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__kicker {
+      padding: 0 9px; border: 0 solid transparent; border-radius: 3px; background: var(--p-lime); color: var(--acid-ink);
+      font-size: 12.5px; font-style: italic; font-weight: 900; line-height: 22px; white-space: nowrap;
+      border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__count { color: var(--p-muted); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__count i { margin: 0 2px; font-style: normal; font-weight: 600; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__nav { display: flex; gap: 2px; margin: -4px -8px -4px auto; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__btn {
+      display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+      border: 0; border-radius: 4px; background: none; box-shadow: none; color: var(--p-ink); cursor: pointer;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__btn svg { width: 19px; height: 19px; stroke-width: 2.4; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__btn:hover:not(:disabled) { background: var(--p-lime-hover); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__btn:disabled { cursor: default; opacity: .3; }
+    /* the project scrolls on its own and doesn't hand the wheel on to the list at its ends */
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__scroll {
+      flex: 1 1 auto; min-height: 0; margin: 0 -14px 0 0; padding: 0 14px 14px 0; overflow-y: auto; overscroll-behavior: contain;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__title { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 6px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__logo { width: 30px; height: 30px; flex: 0 0 30px; margin-top: 1px; font-size: 13px; font-weight: 800; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__name {
+      min-width: 0; margin: 0; color: var(--p-ink); font-size: 18px; font-weight: 900; line-height: 26px; letter-spacing: 0; overflow-wrap: anywhere;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__name a { color: inherit; text-decoration: none; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__name a:hover { text-decoration: underline; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__owner { color: var(--p-muted); font-weight: 600; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__marks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__pick { display: inline-flex; gap: 4px; color: var(--p-star); font-size: 13px; font-weight: 800; line-height: 20px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__gone {
+      padding: 0 6px; border: 1px dashed var(--p-rule); border-radius: 3px; color: var(--p-hint);
+      font-size: 11.5px; font-weight: 700; line-height: 18px; white-space: nowrap;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__desc { margin: 0 0 12px; color: var(--p-copy); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+    /* the figures in four columns between two of the rows' fading rules, the label over the number; the columns take
+       their figures' width and share what is left, so a date keeps to one line beside the short numbers */
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__facts {
+      display: grid; grid-template-columns: repeat(4, auto); gap: 9px 14px; margin: 0; padding: 10px 0 11px;
+      background:
+        linear-gradient(90deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent) 0 0 / 100% 1px no-repeat,
+        linear-gradient(90deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent) 0 100% / 100% 1px no-repeat;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact dt {
+      overflow: hidden; color: var(--p-muted); font-size: 11.5px; font-weight: 700; line-height: 16px; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact dd {
+      margin: 1px 0 0; color: var(--p-ink); font-size: 14.5px; font-weight: 800; line-height: 20px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact--gain dd { color: var(--p-today); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact--heat dd { color: var(--p-heat); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact:is(.project-pane__fact--created, .project-pane__fact--pushed) dd { font-size: 13px; font-weight: 700; white-space: nowrap; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__fact.is-flat dd { color: var(--p-hint); font-weight: 600; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__chips { display: flex; flex-wrap: wrap; gap: 7px 8px; margin: 0 0 14px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__chip {
+      min-height: 22px; padding: 0 9px; border: 0 solid transparent; border-radius: 2.5px; background: var(--p-face); box-shadow: none;
+      color: var(--p-ink); font-size: 12.5px; font-weight: 800; line-height: 22px; white-space: nowrap; cursor: pointer;
+      border-image: var(--p-tag) 24 24 27 24 / 8px 8px 9px 8px / 2px 2px 3px 2px stretch;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__chip:hover { background: var(--p-lime-hover); }
+    /* GitHub on the lime key, favourite (and the curator's pick) on the pagination's keys */
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__actions { display: flex; flex-wrap: wrap; gap: 10px 12px; margin: 0 0 6px; padding: 2px 0 0 2px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action {
+      display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 13px 0 11px;
+      border: 0 solid transparent; border-radius: 4px; background: var(--p-face); box-shadow: none;
+      color: var(--p-ink); font-size: 13.5px; font-weight: 800; line-height: 1; text-decoration: none; white-space: nowrap; cursor: pointer;
+      border-image: var(--p-pg) 27 33 36 27 / 9px 11px 12px 9px / 2px 4px 5px 2px stretch;
+      transition: transform .12s cubic-bezier(.2, .8, .2, 1);
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action svg { flex: none; width: 15px; height: 15px; stroke-width: 2.4; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:hover:not(:disabled) { background: var(--p-lime-hover); transform: translate(-1px, -1px); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:active:not(:disabled) { transform: translate(1px, 1px); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:disabled { cursor: not-allowed; opacity: .45; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:is(.is-primary, .is-on),
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:is(.is-primary, .is-on):hover:not(:disabled) {
+      background: var(--p-lime); color: var(--acid-ink);
+      border-image: var(--p-active) 27 27 30 27 / 9px 9px 10px 9px / 2px 2px 3px 2px stretch;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__favorite:not(.is-on) svg { color: var(--p-star); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__recommend.is-on,
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__recommend.is-on:hover:not(:disabled) { background: var(--p-today); color: var(--p-paper); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__peek { margin-top: 4px; }
+    /* the curve has the pane's width to itself: taller, and its last date clear of the frame's corner */
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__curve { margin: 0 0 12px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane :is(.project-peek__plot, .project-peek__skeleton--plot) { height: 84px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane .project-peek__axis span:last-child { background: none; box-shadow: none; }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__retry {
+      margin-left: 6px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--p-ink); cursor: pointer;
+      font-size: 12.5px; font-weight: 800; line-height: 20px;
+      text-decoration: underline; text-decoration-color: var(--p-key); text-decoration-thickness: 3px; text-underline-offset: 3px;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-peek__retry:hover { text-decoration-color: var(--p-ink); }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__keys {
+      display: flex; flex: none; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; padding-top: 7px;
+      background: linear-gradient(90deg, transparent, var(--p-rule) 4%, color-mix(in srgb, var(--p-rule) 55%, transparent) 70%, transparent) 0 0 / 100% 1px no-repeat;
+      color: var(--p-hint); font-size: 12px; font-weight: 600; line-height: 20px;
+    }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__keys span { display: inline-flex; align-items: center; gap: 4px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__keys kbd + kbd { margin-left: -1px; }
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__keys kbd {
+      display: inline-grid; min-width: 20px; height: 19px; place-items: center; padding: 0 5px;
+      border: 1px solid var(--p-rule); border-radius: 5px; background: var(--p-face); box-shadow: 0 1.5px 0 var(--p-rule);
+      color: var(--p-ink); font-family: inherit; font-size: 11px; font-weight: 800; line-height: 1;
+    }
+    /* rows open in the pane from anywhere on them; the one it shows keeps a lime wash */
+    #app .app-shell--comic-page .projects-page--catalog .project-row--paneable { cursor: pointer; }
+    #app .app-shell--comic-page .projects-page--catalog .project-row.is-paned { background-color: color-mix(in srgb, var(--p-lime) 30%, transparent); }
+  }
+  @media (min-width: 1600px) and (prefers-reduced-motion: reduce) {
+    #app .app-shell--comic-page .projects-page--catalog .project-pane__action:is(:hover, :active):not(:disabled) { transform: none; }
+  }
+}
