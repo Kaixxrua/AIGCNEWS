@@ -33,7 +33,8 @@ const metrics = computed(() => [
       @click="card.key === 'github' && emit('selectSource', 'github')">
       <span class="stat-cell-icon" aria-hidden="true"><component :is="card.icon" :stroke-width="2.5" /></span>
       <span class="stat-cell-body"><span class="stat-cell-label">{{ t(card.label) }}</span>
-        <RollingNumber :value="card.value ?? 0" grouping class="stat-cell-num" />
+        <span v-if="loading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
+        <RollingNumber v-else :value="card.value ?? 0" grouping class="stat-cell-num" />
       </span>
     </component>
     <RouterLink :to="{ name: 'ui-library' }" class="stat-cell stat-cell--ui" :aria-label="t('dashboard.editorial.uiTotal')" :aria-busy="uiLoading">
@@ -62,7 +63,8 @@ const metrics = computed(() => [
 .stat-cell-num { font-size: clamp(16px, 2.3cqw, 23px); font-weight: 800; line-height: 1.2; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
 .stat-cell--github:hover, .stat-cell--ui:hover { border-color: var(--muted); background: var(--acid-soft); }
 .stat-cell--github:focus-visible, .stat-cell--ui:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-.stat-cell-num--loading { width: 35px; height: 20px; border-radius: 4px; background: var(--rule); }
+/* 和滚动数字同高（number-flow 上下留遮罩边，实测 1.7em），数字到了格子不长高。 */
+.stat-cell-num--loading { width: 35px; height: 1.7em; border-radius: 4px; background: var(--rule); }
 @media (min-width: 1200px) and (max-width: 1499px) { .stat-cell { gap: 5px; padding: 12px 7px; } .stat-cell-icon { flex-basis: 24px; width: 24px; height: 24px; padding: 5px; } .stat-cell-label { font-size: 10px; } }
 @media (max-width: 639px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat-cell { padding: 12px 8px; } .stat-cell-icon { display: none; } }
 @container (max-width: 900px) { .stat-cell-icon { display: none; } }

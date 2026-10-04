@@ -155,6 +155,8 @@ section.ui-library.view-container { overflow-y:auto; overflow-x:hidden; scrollba
 .ui-library__rankbar button { border:1px solid transparent; border-radius:6px; padding:7px 12px; color:var(--ink-secondary); background:transparent; font-size:12px; }
 .ui-library__rankbar button[aria-pressed=true] { background:var(--ink); color:var(--paper-raised); }
 .ui-library__rankbar>span { color:var(--ink-secondary); font-size:10px; }
+/* 手机上排行签固定排成三列两行。自由折行时一行放几个取决于字宽，英文标签在 Inter 晚到换上时会多折一行、把下面的卡片推下去。 */
+@media (max-width:767px) { .ui-library__rankbar nav { flex:1 1 100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); } }
 .ui-library__quota { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--ink-secondary); font-size:11px; margin:8px 0 12px; }
 .ui-library__quota a { color:var(--ink); text-underline-offset:3px; }
 .ui-library__like-wrap { margin-left:auto; display:inline-flex; align-items:center; gap:4px; }

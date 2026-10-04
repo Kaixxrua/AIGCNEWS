@@ -66,6 +66,19 @@ describe('DashboardOverviewPanel', () => {
     expect(wrapper.get('.stat-cell--total-visitors').text()).toContain('500')
   })
 
+  it('keeps all six mobile cells in place with placeholders while the dashboard loads', async () => {
+    const wrapper = mount(MobileDashboardOverviewPanel, {
+      props: { loading: true, activeTab: 'github', statValues: [0, 0], visitorValues: [0, 0, 0], uiCount: null, uiLoading: true },
+      global,
+    })
+    expect(wrapper.findAll('.stat-cell')).toHaveLength(6)
+    expect(wrapper.findAll('.stat-cell-num--loading')).toHaveLength(6)
+    expect(wrapper.find('.rolling-number').exists()).toBe(false)
+    await wrapper.setProps({ loading: false, statValues: [100, 20], visitorValues: [30, 500, 12], uiCount: 157, uiLoading: false })
+    expect(wrapper.find('.stat-cell-num--loading').exists()).toBe(false)
+    expect(wrapper.get('.stat-cell--total').text()).toContain('100')
+  })
+
   it('uses a compact loading placeholder while the catalog loads', () => {
     const wrapper = mountPanel(true)
     expect(wrapper.find('.stat-cell-num--loading').exists()).toBe(true)

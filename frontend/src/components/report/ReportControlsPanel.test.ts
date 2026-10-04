@@ -99,3 +99,22 @@ describe('ReportControlsPanel saved tab', () => {
     expect(wrapper.get('.report-saved-tab__count').text()).toBe('0')
   })
 })
+
+describe('ReportControlsPanel cached status', () => {
+  it('keeps the cached status in place before the briefing arrives, so the actions do not rewrap when it does', async () => {
+    const wrapper = mount(ReportControlsPanel, {
+      props: props({ isCached: false, reportContent: '', isLoggedIn: false }),
+      global: { plugins: [i18n] },
+    })
+    const chip = wrapper.get('.report-cache-chip')
+    expect(chip.classes()).toContain('is-pending')
+    expect(wrapper.get('.report-controls__actions').element.firstElementChild).toBe(chip.element)
+
+    await wrapper.setProps({ isCached: true, reportContent: 'briefing' })
+    expect(wrapper.get('.report-cache-chip').classes()).not.toContain('is-pending')
+    expect(wrapper.get('.report-cache-chip').text()).toContain('已缓存')
+
+    await wrapper.setProps({ isGenerating: true })
+    expect(wrapper.find('.report-cache-chip').exists()).toBe(false)
+  })
+})

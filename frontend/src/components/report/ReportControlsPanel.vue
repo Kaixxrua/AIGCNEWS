@@ -92,7 +92,7 @@ watch(() => props.savedCount ?? 0, (count, previous) => { savedDirection.value =
       </div>
     </div>
     <div class="report-controls__actions flex min-w-0 flex-wrap items-center gap-2 sm:shrink-0">
-      <div v-if="isCached && !isGenerating && !savedView" class="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200">
+      <div v-if="!isGenerating && !savedView" class="report-cache-chip flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 border border-green-200" :class="{ 'is-pending': !isCached }">
         <span class="status-dot bg-brand-green" />
         <span class="text-2xs font-medium text-green-700">{{ t('report.cached') }}</span>
       </div>
@@ -206,4 +206,8 @@ watch(() => props.savedCount ?? 0, (count, previous) => { savedDirection.value =
 
 <style scoped>
 .report-ai-bubble { display: none; }
+/* 「已缓存」随简报一起到：手机和平板上先隐身占好位置，免得那时操作区才换行、把分区签和正文往下推；
+   桌面大报版按实际有的按钮排版，没缓存时照旧不占位。 */
+.report-cache-chip.is-pending { visibility: hidden; }
+@media (min-width: 1024px) { .report-cache-chip.is-pending { display: none; } }
 </style>

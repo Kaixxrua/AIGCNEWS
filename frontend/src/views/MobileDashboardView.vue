@@ -94,9 +94,9 @@ onBeforeUnmount(() => uiCatalogController.abort())
       <div class="dashboard-heading__copy">
         <h1>{{ t('dashboard.editorial.title') }}</h1>
         <p>{{ t('dashboard.editorial.subtitle') }}</p>
-        <span v-if="!loading" class="dashboard-history"><CalendarDays :size="14" />{{ resolvedDate || currentDate }}</span>
+        <span class="dashboard-history" :class="{ 'is-pending': loading }"><CalendarDays :size="14" />{{ resolvedDate || currentDate }}</span>
       </div>
-      <DashboardOverviewPanel v-if="!loading" :loading="loading" :active-tab="activeTab"
+      <DashboardOverviewPanel :loading="loading" :active-tab="activeTab"
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
@@ -159,6 +159,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-heading h1 { margin: 0 0 4px; font-size: 40px; line-height: 1.2; font-weight: 800; letter-spacing: -.035em; }
 .dashboard-heading p { color: #51545b; font-size: 20px; line-height: 1.4; }
 .dashboard-history { display: flex; gap: 5px; align-items: center; font-size: 12px; margin-top: 5px; }
+/* 日期行和统计格在加载时就占好位置（统计格显示占位条），数据到了不把榜单往下推。 */
+.dashboard-history.is-pending { visibility: hidden; }
 .dashboard-heading :deep(.stat-strip) { flex: 1; }
 .dashboard-main { display: grid; grid-template-columns: minmax(0, 1fr) calc(var(--sidebar-width) - 14px); gap: calc(var(--column-gap) + 14px); align-items: start; }
 .dashboard-main > * { min-width: 0; }
