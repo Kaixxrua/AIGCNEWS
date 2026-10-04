@@ -47,9 +47,11 @@ if (env.LAYOUT_RESOLVE) {
 const browser = await chromium.launch({ headless: true, executablePath: env.CHROME_PATH || undefined, args })
 
 // 首屏完整条目：整块在视口里，上下沿各取一点做命中测试，被报头、页脚、浮层或滚动容器裁掉的不算。
+// 连同页面上一共有几条一起报：数据少的日子（推文墙按账号折叠后只剩几张卡）凑不满下限，不算版面问题。
 function countWhole(selector) {
   let count = 0
-  for (const el of document.querySelectorAll(selector)) {
+  const items = document.querySelectorAll(selector)
+  for (const el of items) {
     const box = el.getBoundingClientRect()
     if (!box.width || !box.height || box.top < 0 || box.left < 0 || box.bottom > innerHeight || box.right > innerWidth) continue
     const x = box.left + box.width / 2
@@ -59,7 +61,7 @@ function countWhole(selector) {
     }
     if (sees(box.top + 2) && sees(box.bottom - 2)) count++
   }
-  return count
+  return { count, total: items.length }
 }
 
 function fitsInView(selector) {
@@ -138,9 +140,12 @@ async function measure(spec, [width, height], locale) {
     if (shot.cls > CLS_LIMIT) result.failures.push(`CLS ${shot.cls.toFixed(3)} > ${CLS_LIMIT}`)
     if (shot.overflow > 0) result.failures.push(`横向溢出 ${shot.overflow}px`)
     if (spec.whole) {
-      const floor = spec.whole[1][width][locale === 'zh-CN' ? 0 : 1]
-      result.notes.push(`首屏 ${shot.whole} 条（≥${floor}）`)
-      if (shot.whole < floor) result.failures.push(`首屏完整条目 ${shot.whole} < ${floor}`)
+      // 页面上的条目本来就不到下限时，要求它们全都完整落在首屏；一条都没有算失败，多半是数据没取到。
+      const { count, total } = shot.whole
+      const floor = Math.min(spec.whole[1][width][locale === 'zh-CN' ? 0 : 1], total)
+      result.notes.push(`首屏 ${count} 条（≥${floor}${floor < total ? '' : `，页面共 ${total} 条`}）`)
+      if (!total) result.failures.push('页面上没有条目')
+      else if (count < floor) result.failures.push(`首屏完整条目 ${count} < ${floor}`)
     }
     if (spec.fits && width >= spec.fits[1]) {
       result.notes.push(shot.fits ? '整块在首屏' : '整块不在首屏')
