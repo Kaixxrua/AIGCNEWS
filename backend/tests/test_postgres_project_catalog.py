@@ -150,8 +150,11 @@ def test_list_github_hot_dates_returns_descending_strings_bounded() -> None:
     result = PostgresProjectCatalogRepository(database).list_github_hot_dates(limit=1000)
     assert result == ["2026-08-10", "2026-08-09"]
     sql, params = database.cursor.calls[1]
-    assert "SELECT DISTINCT metric_date" in sql
-    assert "ORDER BY metric_date DESC" in sql
+    # 跳跃扫描：逐个取「早于上一日期」的最新日期，不对整表指标行去重。
+    assert "DISTINCT" not in sql
+    assert "WITH RECURSIVE dates AS" in sql
+    assert "WHERE m.metric_date < dates.metric_date" in sql
+    assert "ORDER BY m.metric_date DESC LIMIT 1" in sql
     assert params == (365,)
 
 

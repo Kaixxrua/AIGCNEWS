@@ -938,16 +938,30 @@ class PostgresProjectCatalogRepository:
                 return list(cursor.fetchall())
 
     def list_github_hot_dates(self, *, limit: int = 60) -> list[str]:
-        """有日度热度指标的日期降序列表，供看板 github 分支做日期回溯。"""
+        """有日度热度指标的日期降序列表，供看板 github 分支做日期回溯。
+
+        跳跃扫描：每步沿 (metric_date DESC, …) 索引取「早于上一日期」的
+        第一行，limit 个索引探针即止；勿改回 SELECT DISTINCT——那要把全部
+        指标行（每天上万行、累计上百万）读一遍去重，交付 CI 抢 IO 时会拖到
+        看板日期接口 500。
+        """
         limit = max(1, min(int(limit or 1), 365))
         with self._transaction() as connection:
             with connection.cursor() as cursor:
                 self._begin_read(cursor)
                 cursor.execute(
                     """
-                    SELECT DISTINCT metric_date
-                    FROM github_repo_daily_metrics
-                    ORDER BY metric_date DESC
+                    WITH RECURSIVE dates AS (
+                        (SELECT metric_date FROM github_repo_daily_metrics
+                         ORDER BY metric_date DESC LIMIT 1)
+                        UNION ALL
+                        SELECT (SELECT m.metric_date FROM github_repo_daily_metrics m
+                                WHERE m.metric_date < dates.metric_date
+                                ORDER BY m.metric_date DESC LIMIT 1)
+                        FROM dates WHERE dates.metric_date IS NOT NULL
+                    )
+                    SELECT metric_date FROM dates
+                    WHERE metric_date IS NOT NULL
                     LIMIT %s
                     """,
                     (limit,),
