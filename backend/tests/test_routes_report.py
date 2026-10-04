@@ -10,7 +10,11 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from backend.app.api import routes_report
-from backend.app.api.dependencies import get_evaluation_repository
+from backend.app.api.dependencies import (
+    get_briefing_repository,
+    get_briefing_subscription_repository,
+    get_evaluation_repository,
+)
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.repositories.briefing_repository import (
     BriefingReader,
@@ -427,6 +431,61 @@ class ReportBriefingSubscriptionRepositoryTests(unittest.TestCase):
                 },
             ],
         )
+
+
+class ReportBriefingIdRouteTests(unittest.TestCase):
+    """GET /report/{briefing_id} 只认数字 id，不截走注册在它后面的同层具名路由。
+
+    历史事故：subscription-plan、subscriptions 都曾被它按 int 解析拦下返回 422，
+    直调 handler 的单测发现不了，只能经 ASGI 路由验证。
+    """
+
+    def setUp(self) -> None:
+        self.briefings = MagicMock(spec=BriefingReader)
+        self.briefings.get_briefing.return_value = {"id": 42, "content": "briefing"}
+        self.subscriptions = MagicMock(spec=BriefingSubscriptionRepository)
+        self.subscriptions.get_user_briefing_subscriptions.return_value = [
+            {"source": "all", "is_active": 1}
+        ]
+        app = FastAPI()
+        app.include_router(routes_report.router, prefix="/api")
+        app.dependency_overrides[get_briefing_repository] = lambda: self.briefings
+        app.dependency_overrides[get_briefing_subscription_repository] = (
+            lambda: self.subscriptions
+        )
+        self.client = TestClient(app)
+
+    def test_subscriptions_asks_anonymous_readers_to_log_in(self) -> None:
+        response = self.client.get("/api/report/subscriptions")
+
+        self.assertEqual(response.status_code, 401)
+        self.briefings.get_briefing.assert_not_called()
+        self.subscriptions.get_user_briefing_subscriptions.assert_not_called()
+
+    def test_subscriptions_lists_the_signed_in_readers_items(self) -> None:
+        self.client.app.dependency_overrides[RequireUser] = lambda: {"user_id": 7}
+
+        response = self.client.get("/api/report/subscriptions")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"items": [{"source": "all", "is_active": 1}]})
+        self.subscriptions.get_user_briefing_subscriptions.assert_called_once_with(
+            user_id=7
+        )
+        self.briefings.get_briefing.assert_not_called()
+
+    def test_numeric_id_still_reads_the_briefing(self) -> None:
+        response = self.client.get("/api/report/42")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"id": 42, "content": "briefing"})
+        self.briefings.get_briefing.assert_called_once_with(42)
+
+    def test_non_numeric_names_are_not_found(self) -> None:
+        response = self.client.get("/api/report/whatever")
+
+        self.assertEqual(response.status_code, 404)
+        self.briefings.get_briefing.assert_not_called()
 
 
 if __name__ == "__main__":

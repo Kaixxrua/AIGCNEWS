@@ -354,7 +354,8 @@ async def apply_subscription_plan(
     return result
 
 
-@router.get("/report/{briefing_id}")
+# 只认数字 id：同层的具名路由（如 GET /report/subscriptions）注册在后面，不能被这里按 id 截走再报 422。
+@router.get("/report/{briefing_id:int}")
 async def get_briefing(
     briefing_id: int,
     repository: BriefingReader = Depends(get_briefing_repository),
