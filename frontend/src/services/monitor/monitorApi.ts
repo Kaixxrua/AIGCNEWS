@@ -93,7 +93,8 @@ export const monitorApi: MonitorApi = {
     return { items: data?.items || [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchPaymentOrders({ status, channel, planCode, email, page, pageSize }) {
-    const { data } = await api.get('/ops/payments/orders', { params: { status, channel, plan_code: planCode, email, page, page_size: pageSize } })
+    // 筛选项选「全部」时是空串：不下发，否则后端按未知状态回 400
+    const { data } = await api.get('/ops/payments/orders', { params: { status: status || undefined, channel: channel || undefined, plan_code: planCode || undefined, email: email || undefined, page, page_size: pageSize } })
     return { items: Array.isArray(data?.items) ? data.items : [], total: data?.total || 0, page: data?.page || page, page_size: data?.page_size || pageSize }
   },
   async fetchPaymentOrderDetail(orderNo) { return (await api.get(`/ops/payments/orders/${encodeURIComponent(orderNo)}`)).data },
