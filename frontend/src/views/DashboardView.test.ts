@@ -1,10 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadCatalog } from '@/features/ui-library/catalog'
 
 const layout = vi.hoisted(() => ({ desktop: false }))
+const dashboardState = vi.hoisted(() => ({ loadError: null as 'network' | 'server' | null, tabList: [] as unknown[], retry: vi.fn() }))
 vi.mock('@vueuse/core', async (original) => {
   const actual = await original<typeof import('@vueuse/core')>()
   const { ref } = await import('vue')
@@ -25,11 +26,13 @@ vi.mock('@/composables/useDashboardData', async () => {
   return {
     useDashboardData: () => ({
       activeTab: ref('github'),
-      tabList: ref([]),
+      tabList: ref(dashboardState.tabList),
       stats: ref({}),
       loading: ref(false),
       tabLoading: ref(false),
-      errorMsg: ref(''),
+      loadError: ref(dashboardState.loadError),
+      retrying: ref(false),
+      retry: dashboardState.retry,
       currentDate: ref('2026-08-19'),
       availableDates: ref([]),
       isViewingHistory: ref(false),
@@ -60,12 +63,14 @@ vi.mock('@/composables/useDashboardStats', async () => {
 })
 
 const messages = {
+  common: { retry: '重试', loading: '加载中…' },
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
     editorial: { digestTitle: '每日 AI 简报' },
     digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报',
       featureSchedule: '每天 08:00 更新', featureEmailRss: '邮件、RSS 订阅', featureChat: 'Telegram、Discord', featureWebhook: 'Webhook 推送' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
+    loadError: { stale: '刷新失败，下面是上次加载的榜单。' },
   },
 }
 
@@ -96,7 +101,7 @@ const mountView = async () => {
         GlassCalendar: { template: '<div />' },
         DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
         DashboardRankingPanel: { template: '<div />' },
-        DashboardEmptyState: { template: '<div />' },
+        DashboardEmptyState: { props: ['variant', 'error'], emits: ['retry'], template: '<button class="empty-stub" :data-variant="variant" :data-error="error" @click="$emit(\'retry\')" />' },
         DigestGeometry: { template: '<div />' },
         RollingNumber: { template: '<span />' },
       },
@@ -107,6 +112,13 @@ const mountView = async () => {
 }
 
 describe('DashboardView', () => {
+  afterEach(() => {
+    layout.desktop = false
+    dashboardState.loadError = null
+    dashboardState.tabList = []
+    dashboardState.retry.mockClear()
+  })
+
   it('loads the total catalog count and selects a real editorial preview', async () => {
     const wrapper = await mountView()
     expect(wrapper.get('.overview-stub').attributes('data-count')).toBe('2')
@@ -166,5 +178,33 @@ describe('DashboardView', () => {
     } finally {
       layout.desktop = false
     }
+  })
+
+  it.each([false, true])('shows a retryable failure instead of “no data” when the board did not load (desktop: %s)', async (desktop) => {
+    layout.desktop = desktop
+    dashboardState.loadError = 'network'
+    const wrapper = await mountView()
+    const failure = wrapper.get('.empty-stub')
+    expect(failure.attributes('data-variant')).toBe('error')
+    expect(failure.attributes('data-error')).toBe('network')
+    expect(wrapper.find('.dashboard-error').exists()).toBe(false)
+    await failure.trigger('click')
+    expect(dashboardState.retry).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('keeps the last rankings with a notice and a retry when a refresh fails (desktop: %s)', async (desktop) => {
+    layout.desktop = desktop
+    dashboardState.loadError = 'server'
+    dashboardState.tabList = [{ id: 1, title: 'Top' }]
+    const wrapper = await mountView()
+    const notice = wrapper.get('.dashboard-error')
+    expect(notice.attributes('role')).toBe('alert')
+    expect(notice.text()).toContain('刷新失败，下面是上次加载的榜单。')
+    expect(notice.text()).not.toContain('Error')
+    expect(wrapper.find('.empty-stub').exists()).toBe(false)
+    await notice.get('button').trigger('click')
+    expect(dashboardState.retry).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 })

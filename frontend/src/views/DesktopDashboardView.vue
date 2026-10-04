@@ -48,7 +48,9 @@ const {
   stats,
   loading,
   tabLoading,
-  errorMsg,
+  loadError,
+  retrying,
+  retry,
   currentDate,
   todayStr,
   availableDates,
@@ -88,7 +90,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 </script>
 
 <template>
-  <div class="dashboard-page">
+  <div class="dashboard-page" :class="{ 'dashboard-page--notice': loadError && tabList.length }">
     <header class="dashboard-heading">
       <div class="dashboard-heading__copy">
         <h1>{{ t('dashboard.editorial.title') }}</h1>
@@ -98,9 +100,14 @@ onBeforeUnmount(() => uiCatalogController.abort())
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
-    <div v-if="errorMsg" class="dashboard-error" role="alert">{{ errorMsg }}</div>
+    <!-- 后台刷新失败但还有上次的榜单：保留榜单，顶部说明并给重试；一条都没有时见下方失败状态 -->
+    <div v-if="loadError && tabList.length" class="dashboard-error" role="alert">
+      <span>{{ t('dashboard.loadError.stale') }}</span>
+      <button type="button" class="btn-secondary px-3 py-1 text-xs" :disabled="retrying" :aria-busy="retrying ? 'true' : undefined" @click="retry">{{ retrying ? t('common.loading') : t('common.retry') }}</button>
+    </div>
     <div class="dashboard-main">
       <SpinnerLoader v-if="loading" class="min-h-[360px]" />
+      <DashboardEmptyState v-else-if="loadError && !tabList.length && !tabLoading" variant="error" :error="loadError" :retrying="retrying" @retry="retry" />
       <DashboardEmptyState v-else-if="isEmbargoed" variant="embargoed" />
       <DashboardEmptyState v-else-if="!hasData && !tabLoading" variant="no-data" />
       <DashboardRankingPanel v-else :active-tab="activeTab" :tab-list="tabList" :tab-loading="tabLoading"
@@ -157,7 +164,11 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-main > :not(aside) { grid-column:1;grid-row:2;min-width:0; }
 .dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px minmax(180px,226px) 66px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0; }
 .dashboard-sidebar a:focus-visible { outline:2px solid var(--ink);outline-offset:3px; }
-.dashboard-error { position:absolute;top:0;left:12px;right:12px;z-index:3;padding:8px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
+/* 刷新失败的提示单占一行：榜单整体下移、列表在自己的滚动区里变短，不再盖住标题、统计和日历。 */
+.dashboard-error { grid-column:1;grid-row:2;display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:6px 8px 6px 12px;font-size:14px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
+.dashboard-page--notice { grid-template-rows:74px auto minmax(0,1fr); }
+.dashboard-page--notice .dashboard-main > :not(aside) { grid-row:3; }
+.dashboard-page--notice .dashboard-sidebar { grid-row:1/4; }
 
 .dashboard-sidebar :deep(.dash-calendar) { padding:8px 12px;border:solid var(--rule-strong);border-width:2px 2.5px 2px 2px;border-radius:5px 9px 4px 6px;background:var(--paper);box-shadow:inset -2px -2px 0 color-mix(in srgb,var(--rule-strong) 12%,transparent); }
 .dashboard-sidebar :deep(.dash-calendar h3) { color:var(--ink);font-family:inherit;font-size:24px;font-weight:850; }
@@ -250,6 +261,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 @media (max-width:1199px) {
   /* The stacked layout outgrows the viewport; scroll inside the canvas so nothing slips under the dock. */
   .dashboard-page { grid-template-columns:minmax(0,1fr) 29%;grid-template-rows:auto auto;align-content:start;overflow:hidden auto;overscroll-behavior:contain;padding-top:15px;gap:14px; }
+  .dashboard-page--notice { grid-template-rows:auto auto auto; }
   .dashboard-heading { flex-wrap:wrap; }
   .dashboard-heading__copy { flex-basis:100%; }
   .dashboard-heading h1 { font-size:34px;line-height:1.2;margin-bottom:5px;letter-spacing:-.045em; }
@@ -268,6 +280,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 @media (min-width:1200px) and (max-height:820px) {
   .dashboard-page { grid-template-rows:64px minmax(0,1fr);padding-top:10px; }
+  .dashboard-page--notice { grid-template-rows:64px auto minmax(0,1fr); }
   .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
   .dashboard-sidebar { gap:9px;grid-template-rows:187px 170px 58px minmax(62px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:19px; }

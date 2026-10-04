@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import type { DashboardLoadError } from '@/composables/useDashboardData'
 const { t } = useI18n()
 defineProps<{
-  variant: 'embargoed' | 'no-data'
+  variant: 'embargoed' | 'no-data' | 'error'
+  /** variant=error 时的失败原因：连不上 / 服务端出错，提示语不同。 */
+  error?: DashboardLoadError | null
+  /** 重试请求进行中：按钮禁用并显示加载中。 */
+  retrying?: boolean
 }>()
+const emit = defineEmits<{ retry: [] }>()
 </script>
 
 <template>
@@ -31,6 +37,23 @@ defineProps<{
   </div>
 
   <div
+    v-else-if="variant === 'error'"
+    class="dashboard-empty-state dashboard-load-error stagger-enter flex flex-col items-center justify-center flex-1 min-h-0 py-24 text-center"
+    role="alert"
+  >
+    <div class="w-16 h-16 mb-4 rounded-full flex items-center justify-center bg-stone-100">
+      <svg class="dashboard-load-error__icon w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+    <h3 class="text-lg font-medium text-stone-500 font-serif">{{ t(error === 'network' ? 'dashboard.loadError.networkTitle' : 'dashboard.loadError.serverTitle') }}</h3>
+    <p class="mt-1 text-sm text-stone-400">{{ t(error === 'network' ? 'dashboard.loadError.networkHint' : 'dashboard.loadError.serverHint') }}</p>
+    <button type="button" class="btn-secondary mt-4 px-4 py-1.5 text-sm" :disabled="retrying" :aria-busy="retrying ? 'true' : undefined" @click="emit('retry')">
+      {{ retrying ? t('common.loading') : t('common.retry') }}
+    </button>
+  </div>
+
+  <div
     v-else
     class="dashboard-empty-state stagger-enter flex flex-col items-center justify-center flex-1 min-h-0 py-24 text-center"
     style="animation-delay: 0.5s"
@@ -48,4 +71,5 @@ defineProps<{
 <style scoped>
 .dashboard-empty-state :deep(.bg-gradient-to-br) { background-image: none; background-color: var(--acid); }
 .dashboard-empty-state :deep(.blur-xl) { filter: none; }
+.dashboard-load-error__icon { color: var(--tone-coral); }
 </style>

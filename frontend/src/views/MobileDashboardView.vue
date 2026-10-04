@@ -48,7 +48,9 @@ const {
   stats,
   loading,
   tabLoading,
-  errorMsg,
+  loadError,
+  retrying,
+  retry,
   currentDate,
   resolvedDate,
   todayStr,
@@ -100,9 +102,14 @@ onBeforeUnmount(() => uiCatalogController.abort())
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
-    <div v-if="errorMsg" class="dashboard-error" role="alert">{{ errorMsg }}</div>
+    <!-- 后台刷新失败但还有上次的榜单：保留榜单，顶部说明并给重试；一条都没有时见下方失败状态 -->
+    <div v-if="loadError && tabList.length" class="dashboard-error" role="alert">
+      <span>{{ t('dashboard.loadError.stale') }}</span>
+      <button type="button" class="btn-secondary px-3 py-1 text-xs" :disabled="retrying" :aria-busy="retrying ? 'true' : undefined" @click="retry">{{ retrying ? t('common.loading') : t('common.retry') }}</button>
+    </div>
     <div class="dashboard-main">
       <SpinnerLoader v-if="loading" class="min-h-[360px]" />
+      <DashboardEmptyState v-else-if="loadError && !tabList.length && !tabLoading" variant="error" :error="loadError" :retrying="retrying" @retry="retry" />
       <DashboardEmptyState v-else-if="isEmbargoed" variant="embargoed" />
       <DashboardEmptyState v-else-if="!hasData && !tabLoading" variant="no-data" />
       <DashboardRankingPanel v-else :active-tab="activeTab" :tab-list="tabList" :tab-loading="tabLoading"
@@ -174,7 +181,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.dash-calendar .grid > span) { font-size: 14px !important; line-height: 28px !important; color: var(--muted); }
 .dashboard-sidebar :deep(.calendar-day--active) { width: 30px; justify-self: center; background: var(--acid); box-shadow: none; border-radius: 7px; }
 .dashboard-sidebar :deep(.snapshot-dot) { display: none; }
-.dashboard-error { padding: 12px; margin-bottom: 16px; color: var(--tone-coral); border: 1px solid currentColor; border-radius: 8px; }
+.dashboard-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; margin-bottom: 16px; color: var(--tone-coral); border: 1px solid currentColor; border-radius: 8px; }
 .digest-card { position: relative; isolation: isolate; overflow: hidden; padding: 22px 20px 18px; min-height: 186px; border-radius: 11px; color: #f3f5ef; background: radial-gradient(ellipse at 100% 100%, #272b26, transparent 65%), #141917; }
 .digest-heading { display: flex; gap: 12px; align-items: center; }
 .digest-heading > svg { color: #cefc50; flex-shrink: 0; }

@@ -341,7 +341,7 @@ describe('Dashboard request lifecycle contract', () => {
     const mounted = mountDashboard()
     await flush()
     expect(mounted.dashboard.loading.value).toBe(false)
-    expect(mounted.dashboard.errorMsg.value).toBe('')
+    expect(mounted.dashboard.loadError.value).toBeNull()
     expect(mounted.dashboard.tabList.value).toHaveLength(1)
     mounted.app.unmount()
   })
@@ -412,7 +412,7 @@ describe('Dashboard request lifecycle contract', () => {
     defaultDashboardApi.fetchSummaryStatic.mockRejectedValue(new Error('summary unavailable'))
     await mounted.dashboard.onDateChange('2026-07-26')
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 1 }])
-    expect(mounted.dashboard.errorMsg.value).toBe('')
+    expect(mounted.dashboard.loadError.value).toBeNull()
     mounted.app.unmount()
   })
 
@@ -437,9 +437,9 @@ describe('Dashboard request lifecycle contract', () => {
     defaultDashboardApi.fetchTop.mockRejectedValueOnce(new Error('temporary outage'))
     await vi.advanceTimersByTimeAsync(60_000)
     expect(mounted.dashboard.tabList.value).toEqual([{ id: 2 }])
-    expect(mounted.dashboard.errorMsg.value).toContain('temporary outage')
+    expect(mounted.dashboard.loadError.value).toBe('server')
     await vi.advanceTimersByTimeAsync(60_000)
-    expect(mounted.dashboard.errorMsg.value).toBe('')
+    expect(mounted.dashboard.loadError.value).toBeNull()
     mounted.app.unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
@@ -461,6 +461,51 @@ describe('Dashboard request lifecycle contract', () => {
     expect(mounted.dashboard.currentDate.value).toBe('2026-07-26')
     expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ date: '2026-07-26' }))
     mounted.app.unmount()
+  })
+
+  it('reports an unreachable server as a network failure and retries with a fresh request', async () => {
+    defaultDashboardApi.fetchTop.mockRejectedValueOnce(Object.assign(new Error('Network Error'), { name: 'AxiosError', code: 'ERR_NETWORK' }))
+    const mounted = mountDashboard()
+    await flush()
+    expect(mounted.dashboard.loading.value).toBe(false)
+    expect(mounted.dashboard.tabList.value).toEqual([])
+    expect(mounted.dashboard.loadError.value).toBe('network')
+
+    let finishTop!: (value: unknown) => void
+    defaultDashboardApi.fetchTop.mockImplementationOnce(() => new Promise(resolve => { finishTop = resolve }))
+    const retried = mounted.dashboard.retry()
+    expect(mounted.dashboard.retrying.value).toBe(true)
+    void mounted.dashboard.retry()
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(2)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenLastCalledWith(expect.objectContaining({ cacheBuster: expect.any(Number) }))
+    finishTop({ items: [{ id: 7 }], sourceStatus: {} })
+    await retried
+    expect(mounted.dashboard.retrying.value).toBe(false)
+    expect(mounted.dashboard.loadError.value).toBeNull()
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: 7 }])
+    mounted.app.unmount()
+  })
+
+  it('classifies timeouts and offline browsers as network failures, HTTP errors as server failures', async () => {
+    const cases: Array<[unknown, boolean, 'network' | 'server']> = [
+      [{ code: 'ECONNABORTED', message: 'timeout of 15000ms exceeded' }, true, 'network'],
+      [{ code: 'ERR_BAD_RESPONSE', response: { status: 502 } }, true, 'server'],
+      [{ code: 'ERR_NETWORK', response: { status: 503 } }, true, 'server'],
+      [new TypeError('items is not iterable'), true, 'server'],
+      [new TypeError('items is not iterable'), false, 'network'],
+    ]
+    for (const [error, online, expected] of cases) {
+      const onLine = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(online)
+      defaultDashboardApi.fetchTop.mockRejectedValueOnce(error)
+      const mounted = mountDashboard()
+      try {
+        await flush()
+        expect(mounted.dashboard.loadError.value).toBe(expected)
+      } finally {
+        mounted.app.unmount()
+        onLine.mockRestore()
+      }
+    }
   })
 
   it('pauses requests in a hidden page and refreshes when visible, with no work after unmount', async () => {

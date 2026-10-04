@@ -36,6 +36,19 @@ const isCanceledError = (error: unknown): boolean => {
   return candidate.name === 'CanceledError' || candidate.code === 'ERR_CANCELED'
 }
 
+/** 榜单没加载出来的原因：network 是连不上（离线、断网、超时），server 是服务端出错或其他异常。 */
+export type DashboardLoadError = 'network' | 'server'
+
+const NETWORK_ERROR_CODES = new Set(['ERR_NETWORK', 'ECONNABORTED', 'ETIMEDOUT'])
+
+// 页面只说原因和下一步，不显示 AxiosError 原文。
+const classifyLoadError = (error: unknown): DashboardLoadError => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'network'
+  if (!error || typeof error !== 'object') return 'server'
+  const candidate = error as { response?: unknown; code?: string }
+  return candidate.response === undefined && NETWORK_ERROR_CODES.has(candidate.code ?? '') ? 'network' : 'server'
+}
+
 const cstDate = (timestamp: number) => new Date(timestamp + 8 * 3_600_000).toISOString().slice(0, 10)
 
 /* 动态计数由实时推送和 live-stats 常驻值提供，静态 summary 只负责快照元数据。
@@ -71,7 +84,8 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const stats = ref<Stats>({})
   const loading = ref(true)
   const tabLoading = ref(false)
-  const errorMsg = ref('')
+  const loadError = ref<DashboardLoadError | null>(null)
+  const retrying = ref(false)
   const viewRefreshInterval = 60_000
   let lastSuccessfulFetchAt = 0
   let hasActivatedOnce = false
@@ -140,7 +154,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     isEmbargoed.value = top.isEmbargoed ?? false
     resolvedDate.value = top.resolvedDate || selectedDate
     sourceStatus.value = top.sourceStatus
-    errorMsg.value = ''
+    loadError.value = null
     lastSuccessfulFetchAt = now()
     scheduleRefresh()
     return true
@@ -186,7 +200,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.warn('[Dashboard] 后台刷新失败', error)
-      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
+      if (isCurrentDashboardRequest(controller, generation)) loadError.value = classifyLoadError(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
@@ -254,7 +268,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
       void fetchAvailableDates()
       await fetchDashboardData(activeTab.value, currentDate.value, controller, generation)
     } catch (error: unknown) {
-      if (!isCanceledError(error) && isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
+      if (!isCanceledError(error) && isCurrentDashboardRequest(controller, generation)) loadError.value = classifyLoadError(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
@@ -290,7 +304,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data', error)
-      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
+      if (isCurrentDashboardRequest(controller, generation)) loadError.value = classifyLoadError(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
@@ -312,13 +326,24 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.error('Failed to load dashboard data by date', error)
-      if (isCurrentDashboardRequest(controller, generation)) errorMsg.value = String(error)
+      if (isCurrentDashboardRequest(controller, generation)) loadError.value = classifyLoadError(error)
     } finally {
       if (isCurrentDashboardRequest(controller, generation)) {
         loading.value = false
         tabLoading.value = false
         scheduleRefresh()
       }
+    }
+  }
+
+  /* 失败后手动重试：走后台刷新同一条路径（带 cacheBuster），返回前按钮保持忙碌。 */
+  const retry = async () => {
+    if (retrying.value) return
+    retrying.value = true
+    try {
+      await refreshDashboardInBackground()
+    } finally {
+      retrying.value = false
     }
   }
 
@@ -337,7 +362,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     stats,
     loading,
     tabLoading,
-    errorMsg,
+    loadError,
+    retrying,
+    retry,
     currentDate,
     todayStr,
     resolvedDate,
