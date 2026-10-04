@@ -26,6 +26,12 @@
     后续替换 condense_briefing_markdown 输出即可。渲染走规则 Markdown→HTML
     片段（rss_render 纯函数），description 按 RSS 惯例整体 XML 转义。
   - XML 渲染为纯函数，路由层只做读库与鉴权，便于契约测试。
+  - 各 feed 都认 ?locale=，认法与 /api/report/latest 相同（en 开头即英文，其余
+    一律中文）。英文版简报取英文正文，不回退到中文：阅读器按 guid 记住已推送
+    的条目，先推了另一种语言，补上正文后也不会换回来。资讯条目在英文版里用
+    原文标题和摘要，频道与钩子文案也换成英文。
+  - 频道 <link> 指网站页面（资讯 feed 指首页，简报 feed 指 /report），feed
+    自身的地址写在 atom:link rel="self"。
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from typing import Any
@@ -52,7 +59,7 @@ from backend.app.core.auth import hash_feed_token
 from backend.app.repositories.briefing_repository import BriefingContentRepository
 from backend.app.repositories.document_repository import DocumentRecentReader
 from backend.app.repositories.feed_token_repository import FeedTokenRepository
-from backend.app.services.briefing.daily_briefing import _truncate_summary
+from backend.app.services.briefing.daily_briefing import _truncate_summary, normalize_briefing_locale
 from backend.app.services.briefing.rss_render import (
     condense_briefing_markdown,
     render_briefing_markdown_html,
@@ -108,15 +115,78 @@ _BRIEFING_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报全文：跨源技术�
 _BRIEFING_DIGEST_CHANNEL_DESCRIPTION = "每日 AIGC 综合简报速览：内容摘要 + 条目标题一览（注册用户免费订阅；内容由 AI 生成）"
 
 
-def _project_to_feed_row(item: dict[str, Any]) -> dict[str, Any]:
-    """项目库热榜条目 → feed 行（与 documents 行同形，供统一渲染/归并排序）。"""
+@dataclass(frozen=True)
+class _FeedCopy:
+    """一种语言的频道与条目文案；简报条目标题里的 {date} 换成期号。"""
+
+    english: bool
+    language: str
+    description: str
+    hook_prefix: str
+    archive_title: str
+    briefing_title: str
+    briefing_digest_title: str
+    briefing_description: str
+    briefing_digest_description: str
+    briefing_item_title: str
+    briefing_digest_item_title: str
+
+
+_FEED_COPY_ZH = _FeedCopy(
+    english=False,
+    language="zh-cn",
+    description=_CHANNEL_DESCRIPTION,
+    hook_prefix=_PUBLIC_HOOK_PREFIX,
+    archive_title="全文归档",
+    briefing_title="每日简报",
+    briefing_digest_title="每日简报速览",
+    briefing_description=_BRIEFING_CHANNEL_DESCRIPTION,
+    briefing_digest_description=_BRIEFING_DIGEST_CHANNEL_DESCRIPTION,
+    briefing_item_title="{date} 每日 AIGC 简报",
+    briefing_digest_item_title="{date} 每日 AIGC 简报（速览）",
+)
+_FEED_COPY_EN = _FeedCopy(
+    english=True,
+    language="en",
+    description=(
+        "AI news roundup: arXiv papers, GitHub projects, Product Hunt, Hacker News, X and tech media"
+        " (summaries are AI-generated, for reference only)"
+    ),
+    hook_prefix="📮 Full-text RSS with the complete archive, free for registered users: ",
+    archive_title="Full archive",
+    briefing_title="Daily briefing",
+    briefing_digest_title="Daily briefing digest",
+    briefing_description=(
+        "The full daily AIGC briefing: cross-source technical highlights, engineering news and industry updates"
+        " (AI-generated, for reference only)"
+    ),
+    briefing_digest_description=(
+        "The daily AIGC briefing at a glance: the summary plus every item title"
+        " (free for registered users; AI-generated)"
+    ),
+    briefing_item_title="{date} Daily AIGC Briefing",
+    briefing_digest_item_title="{date} Daily AIGC Briefing (digest)",
+)
+
+
+def _feed_copy(locale: str | None) -> _FeedCopy:
+    return _FEED_COPY_EN if normalize_briefing_locale(locale) == "en" else _FEED_COPY_ZH
+
+
+def _project_to_feed_row(item: dict[str, Any], *, english: bool = False) -> dict[str, Any]:
+    """项目库热榜条目 → feed 行（与 documents 行同形，供统一渲染/归并排序）。
+
+    中文版优先中文简介，英文版优先原简介。
+    """
     full_name = str(item.get("full_name") or "").strip()
-    description = str(item.get("description_zh") or item.get("description") or "").strip()
+    preferred, fallback = ("description", "description_zh") if english else ("description_zh", "description")
+    description = str(item.get(preferred) or item.get(fallback) or "").strip()
     stars = item.get("stars")
     stats = f"⭐ {int(stars):,}" if isinstance(stars, (int, float)) else ""
     growth = item.get("daily_star_growth")
     if isinstance(growth, (int, float)) and growth > 0:
-        stats = f"{stats} · 今日 +{int(growth):,}" if stats else f"今日 +{int(growth):,}"
+        today = f"+{int(growth):,} today" if english else f"今日 +{int(growth):,}"
+        stats = f"{stats} · {today}" if stats else today
     summary = f"{description}\n\n{stats}" if description and stats else description or stats
 
     topics = item.get("topics")
@@ -144,6 +214,7 @@ async def _github_feed_rows(
     *,
     since_iso: str,
     limit: int,
+    english: bool = False,
 ) -> list[dict[str, Any]]:
     """github 源行：优先站内今日热榜，热榜不可用/为空时回退 documents 池。"""
     if catalog is not None:
@@ -160,7 +231,7 @@ async def _github_feed_rows(
                 user_id=None,
             )
             items = page.result.get("items") or []
-            rows = [_project_to_feed_row(item) for item in items if isinstance(item, dict)]
+            rows = [_project_to_feed_row(item, english=english) for item in items if isinstance(item, dict)]
             rows = [row for row in rows if row["id"]]
             if rows:
                 # 整榜共用最新快照时间作 pubDate：各条目 captured_at 来自不同时次的
@@ -320,30 +391,31 @@ def _row_title(row: dict[str, Any]) -> str:
     return title
 
 
-def _public_item_title(row: dict[str, Any]) -> str:
+def _public_item_title(row: dict[str, Any], *, english: bool = False) -> str:
     """公开条目展示标题：X 源有中文译文时用译文截断，其余源保持原 title。
 
     库中无 title_zh 字段，X 的「标题」即推文原文（英文为主）；译文截断到
     80 字符当标题。榜单/媒体源本身已有面向中文读者的标题或仓库名，不动。
+    英文版不换译文，推文原文同样截断到 80 字符。
     """
     title = _row_title(row)
     if str(row.get("source") or "").strip() != "x":
         return title
-    translation = str(row.get("translation_zh") or "").strip()
-    if not translation:
+    text = title if english else str(row.get("translation_zh") or "").strip()
+    if not text:
         return title
-    return _truncate_summary(translation, _PUBLIC_TITLE_TRANSLATION_LIMIT)
+    return _truncate_summary(text, _PUBLIC_TITLE_TRANSLATION_LIMIT)
 
 
-def _item_description(row: dict[str, Any], *, full: bool, title: str = "") -> str:
+def _item_description(row: dict[str, Any], *, full: bool, title: str = "", english: bool = False) -> str:
     """摘要文本：公开 feed 优先中文译文截断（无译文回退原摘要）；token feed
-    为原摘要 + 完整中文译文（不截断）。
+    为原摘要 + 完整中文译文（不截断）。英文版只用原摘要。
 
     与展示标题同文的段落不再重复一遍：HN 的摘要就是标题，X 短推文的
     译文标题与译文摘要截断后同文。
     """
     summary = _row_summary(row)
-    translation = str(row.get("translation_zh") or "").strip()
+    translation = "" if english else str(row.get("translation_zh") or "").strip()
     if full:
         parts = [summary] if summary and not _same_text(summary, title) else []
         # 未翻译内容回填的「译文」与库中原摘要同文，不重复
@@ -375,19 +447,22 @@ def _parse_tags(value: Any) -> list[str]:
     return [tag.strip() for tag in value.split(",") if tag.strip()]
 
 
-def build_feed_item(row: dict[str, Any], base_url: str, *, full: bool = False) -> str | None:
+def build_feed_item(
+    row: dict[str, Any], base_url: str, *, full: bool = False, locale: str | None = None
+) -> str | None:
     """把文档行渲染为 <item> XML；缺 id/title/link 的行返回 None。"""
     doc_id = str(row.get("id") or "").strip()
     title = _row_title(row)
     link = _item_link(row, base_url)
     if not doc_id or not title or not link:
         return None
+    copy = _feed_copy(locale)
     # 公开条目面向中文读者：X 源有译文时标题换成译文截断；token feed 条目保留原标题
-    display_title = title if full else _public_item_title(row)
+    display_title = title if full else _public_item_title(row, english=copy.english)
 
-    description = _item_description(row, full=full, title=display_title)
+    description = _item_description(row, full=full, title=display_title, english=copy.english)
     if not full:
-        hook = f"{_PUBLIC_HOOK_PREFIX}{base_url}/subscriptions"
+        hook = f"{copy.hook_prefix}{base_url}/subscriptions"
         description = f"{description}\n\n{hook}" if description else hook
     categories = "".join(f"<category>{escape(tag)}</category>" for tag in _parse_tags(row.get("tags")))
 
@@ -409,10 +484,15 @@ def build_rss_xml(
     *,
     channel_title: str,
     channel_link: str,
+    self_link: str,
     channel_description: str,
     items: list[str],
+    language: str = "zh-cn",
 ) -> str:
-    """渲染 RSS 2.0 channel；items 为已渲染的 <item> 片段列表。"""
+    """渲染 RSS 2.0 channel；items 为已渲染的 <item> 片段列表。
+
+    channel_link 是频道对应的网站页面，self_link 是 feed 自身的地址。
+    """
     body = "\n".join(items)
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -421,8 +501,8 @@ def build_rss_xml(
         f"<title>{escape(channel_title)}</title>\n"
         f"<link>{escape(channel_link)}</link>\n"
         f"<description>{escape(channel_description)}</description>\n"
-        "<language>zh-cn</language>\n"
-        f'<atom:link href="{escape(channel_link)}" rel="self" type="application/rss+xml"/>\n'
+        f"<language>{escape(language)}</language>\n"
+        f'<atom:link href="{escape(self_link)}" rel="self" type="application/rss+xml"/>\n'
         f"{body}\n"
         "</channel>\n"
         "</rss>\n"
@@ -485,6 +565,7 @@ async def _collect_rows(
     limit: int,
     catalog: ProjectCatalogQueryService | None = None,
     per_source_limit: int | None = None,
+    english: bool = False,
 ) -> list[dict[str, Any]]:
     """并发拉取各源滚动窗口文档（github 改由站内今日热榜供稿），按发布时间归并后截断。
 
@@ -508,7 +589,7 @@ async def _collect_rows(
     if "github" in sources:
         tasks.append(
             _github_feed_rows(
-                documents, catalog, since_iso=since, limit=candidate_limit
+                documents, catalog, since_iso=since, limit=candidate_limit, english=english
             )
         )
     batches = await asyncio.gather(*tasks)
@@ -532,13 +613,20 @@ def _resolve_base_url(request: Request) -> str:
     return public_base_url(request) or _BRAND_BASE_URL
 
 
+def _self_link(base_url: str, path: str, copy: _FeedCopy) -> str:
+    """feed 自身的地址；英文版带上 ?locale=en，与订阅时用的地址一致。"""
+    return f"{base_url}{path}?locale=en" if copy.english else f"{base_url}{path}"
+
+
 @router.get("/feed.xml", include_in_schema=False)
 async def feed_all(
     request: Request,
+    locale: str = Query(default="zh-CN"),
     documents: DocumentRecentReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
     """综合公开 feed：全部源按发布时间归并（每源限额），摘要 + 回链。"""
+    copy = _feed_copy(locale)
     rows = await _collect_rows(
         documents,
         FEED_SOURCES,
@@ -546,14 +634,17 @@ async def feed_all(
         limit=_PUBLIC_FEED_LIMIT,
         catalog=catalog,
         per_source_limit=_PUBLIC_FEED_PER_SOURCE_LIMIT,
+        english=copy.english,
     )
     base_url = _resolve_base_url(request)
-    items = [item for row in rows if (item := build_feed_item(row, base_url)) is not None]
+    items = [item for row in rows if (item := build_feed_item(row, base_url, locale=locale)) is not None]
     xml = build_rss_xml(
         channel_title=_CHANNEL_TITLE,
-        channel_link=f"{base_url}/api/feed.xml",
-        channel_description=_CHANNEL_DESCRIPTION,
+        channel_link=f"{base_url}/",
+        self_link=_self_link(base_url, "/api/feed.xml", copy),
+        channel_description=copy.description,
         items=items,
+        language=copy.language,
     )
     return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)
 
@@ -583,22 +674,30 @@ async def _require_feed_identity(
     return identity
 
 
-def build_briefing_feed_item(row: dict[str, Any], base_url: str, *, digest: bool = False) -> str | None:
+def build_briefing_feed_item(
+    row: dict[str, Any], base_url: str, *, digest: bool = False, locale: str | None = None
+) -> str | None:
     """把综合简报行渲染为 <item> XML；缺日期/正文的行返回 None。
 
     digest=False 全文（公开，与 /report 同内容）；digest=True 规则压缩速览
     （注册用户）。description 承载渲染后的 HTML 片段，按 RSS 惯例整体 XML 转义。
     guid 以期号（date）为身份：同一期重生成原地更新内容，阅读器不重复推送。
     link 带期号（/report?date=）：不带时，阅读器里点任何一期都打开当天简报。
+    英文版只取英文正文，没有就跳过这一期（不回退中文，见模块说明）；guid 加
+    -en，与中文版的同一期区分开。
     """
+    copy = _feed_copy(locale)
     date_str = str(row.get("date") or "").strip()
-    content = str(row.get("content_zh") or row.get("content") or "").strip()
+    if copy.english:
+        content = str(row.get("content_en") or "").strip()
+    else:
+        content = str(row.get("content_zh") or row.get("content") or "").strip()
     if not date_str or not content:
         return None
     markdown = condense_briefing_markdown(content) if digest else content
     description = render_briefing_markdown_html(markdown)
-    title = f"{date_str} 每日 AIGC 简报{'（速览）' if digest else ''}"
-    guid = f"briefing-digest:{date_str}" if digest else f"briefing:{date_str}"
+    title = (copy.briefing_digest_item_title if digest else copy.briefing_item_title).format(date=date_str)
+    guid = f"{'briefing-digest' if digest else 'briefing'}{'-en' if copy.english else ''}:{date_str}"
     link = f"{base_url}/report"
     if _DATE_ONLY_VALUE.fullmatch(date_str):
         link = f"{link}?date={date_str}"
@@ -635,17 +734,23 @@ def _parse_member_sources(raw: str | None) -> set[str]:
 @router.get("/feeds/briefing.xml", include_in_schema=False)
 async def feed_briefing(
     request: Request,
+    locale: str = Query(default="zh-CN"),
     briefings: BriefingContentRepository = Depends(get_briefing_repository),
 ):
     """每日综合简报全文公开 feed：免鉴权（与 /report 同口径），近 7 期，边缘可缓存。"""
+    copy = _feed_copy(locale)
     rows = await asyncio.to_thread(briefings.list_recent_daily_briefings, _BRIEFING_FEED_LIMIT)
     base_url = _resolve_base_url(request)
-    items = [item for row in rows if (item := build_briefing_feed_item(row, base_url)) is not None]
+    items = [
+        item for row in rows if (item := build_briefing_feed_item(row, base_url, locale=locale)) is not None
+    ]
     xml = build_rss_xml(
-        channel_title=f"{_CHANNEL_TITLE} · 每日简报",
-        channel_link=f"{base_url}/api/feeds/briefing.xml",
-        channel_description=_BRIEFING_CHANNEL_DESCRIPTION,
+        channel_title=f"{_CHANNEL_TITLE} · {copy.briefing_title}",
+        channel_link=f"{base_url}/report",
+        self_link=_self_link(base_url, "/api/feeds/briefing.xml", copy),
+        channel_description=copy.briefing_description,
         items=items,
+        language=copy.language,
     )
     return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)
 
@@ -654,22 +759,28 @@ async def feed_briefing(
 async def feed_briefing_digest(
     request: Request,
     token: str = Query(default=""),
+    locale: str = Query(default="zh-CN"),
     briefings: BriefingContentRepository = Depends(get_briefing_repository),
     tokens: FeedTokenRepository = Depends(get_feed_token_repository),
 ):
     """注册用户简报速览 feed：规则压缩版（内容摘要 + 条目标题一览），feed token 鉴权。"""
     await _require_feed_identity(token, tokens)
 
+    copy = _feed_copy(locale)
     rows = await asyncio.to_thread(briefings.list_recent_daily_briefings, _BRIEFING_FEED_LIMIT)
     base_url = _resolve_base_url(request)
     items = [
-        item for row in rows if (item := build_briefing_feed_item(row, base_url, digest=True)) is not None
+        item
+        for row in rows
+        if (item := build_briefing_feed_item(row, base_url, digest=True, locale=locale)) is not None
     ]
     xml = build_rss_xml(
-        channel_title=f"{_CHANNEL_TITLE} · 每日简报速览",
-        channel_link=f"{base_url}/api/feeds/briefing-digest.xml",
-        channel_description=_BRIEFING_DIGEST_CHANNEL_DESCRIPTION,
+        channel_title=f"{_CHANNEL_TITLE} · {copy.briefing_digest_title}",
+        channel_link=f"{base_url}/report",
+        self_link=_self_link(base_url, "/api/feeds/briefing-digest.xml", copy),
+        channel_description=copy.briefing_digest_description,
         items=items,
+        language=copy.language,
     )
     return Response(
         content=xml,
@@ -686,6 +797,7 @@ async def feed_member(
     request: Request,
     token: str = Query(default=""),
     source: str | None = Query(default=None),
+    locale: str = Query(default="zh-CN"),
     documents: DocumentRecentReader = Depends(get_document_repository),
     tokens: FeedTokenRepository = Depends(get_feed_token_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
@@ -693,6 +805,7 @@ async def feed_member(
     """注册用户全文 feed：独立 RSS feed token 鉴权，任意注册用户可用。"""
     await _require_feed_identity(token, tokens)
 
+    copy = _feed_copy(locale)
     sources = _parse_member_sources(source)
     rows = await _collect_rows(
         documents,
@@ -700,14 +813,19 @@ async def feed_member(
         window=_MEMBER_FEED_WINDOW,
         limit=_MEMBER_FEED_LIMIT,
         catalog=catalog,
+        english=copy.english,
     )
     base_url = _resolve_base_url(request)
-    items = [item for row in rows if (item := build_feed_item(row, base_url, full=True)) is not None]
+    items = [
+        item for row in rows if (item := build_feed_item(row, base_url, full=True, locale=locale)) is not None
+    ]
     xml = build_rss_xml(
-        channel_title=f"{_CHANNEL_TITLE} · 全文归档",
-        channel_link=f"{base_url}/api/feeds/member.xml",
-        channel_description=_CHANNEL_DESCRIPTION,
+        channel_title=f"{_CHANNEL_TITLE} · {copy.archive_title}",
+        channel_link=f"{base_url}/",
+        self_link=_self_link(base_url, "/api/feeds/member.xml", copy),
+        channel_description=copy.description,
         items=items,
+        language=copy.language,
     )
     return Response(
         content=xml,
@@ -723,6 +841,7 @@ async def feed_member(
 async def feed_by_source(
     source: str,
     request: Request,
+    locale: str = Query(default="zh-CN"),
     documents: DocumentRecentReader = Depends(get_document_repository),
     catalog: ProjectCatalogQueryService = Depends(get_project_catalog_query_service),
 ):
@@ -733,19 +852,23 @@ async def feed_by_source(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"未知 feed 源：{normalized}",
         )
+    copy = _feed_copy(locale)
     rows = await _collect_rows(
         documents,
         {normalized},
         window=_PUBLIC_FEED_WINDOW,
         limit=_PUBLIC_FEED_LIMIT,
         catalog=catalog,
+        english=copy.english,
     )
     base_url = _resolve_base_url(request)
-    items = [item for row in rows if (item := build_feed_item(row, base_url)) is not None]
+    items = [item for row in rows if (item := build_feed_item(row, base_url, locale=locale)) is not None]
     xml = build_rss_xml(
         channel_title=f"{_CHANNEL_TITLE} · {normalized}",
-        channel_link=f"{base_url}/api/feeds/{normalized}.xml",
-        channel_description=_CHANNEL_DESCRIPTION,
+        channel_link=f"{base_url}/",
+        self_link=_self_link(base_url, f"/api/feeds/{normalized}.xml", copy),
+        channel_description=copy.description,
         items=items,
+        language=copy.language,
     )
     return _xml_response(xml, cache_control=_PUBLIC_CACHE_CONTROL)

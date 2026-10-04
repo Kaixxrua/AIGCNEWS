@@ -383,7 +383,7 @@ export const useReportSubscriptions = ({
   }
 
   // 速览 RSS 已对所有注册用户免费开放：统一复制带 token 的 briefing-digest.xml
-  // （token 属敏感凭证，走 sensitive 剪贴板路径）。
+  // （token 属敏感凭证，走 sensitive 剪贴板路径）。英文界面复制英文版（locale=en）。
   const copyRssLink = async (): Promise<boolean> => {
     if (isRssBusy.value || !isLoggedIn.value || !Number.isInteger(userId.value) || (userId.value ?? 0) <= 0) return false
     const generation = accountGeneration
@@ -393,7 +393,8 @@ export const useReportSubscriptions = ({
       const token = encodeURIComponent(await ensureFeedToken(generation))
       if (!isCurrent(generation)) return false
       const origin = typeof window === 'undefined' ? '' : window.location.origin
-      const url = `${origin}/api/feeds/briefing-digest.xml?token=${token}`
+      const localeParam = locale.value.toLowerCase().startsWith('en') ? '&locale=en' : ''
+      const url = `${origin}/api/feeds/briefing-digest.xml?token=${token}${localeParam}`
       await copySensitiveToClipboard(url)
       if (!isCurrent(generation)) return false
       rssNotice.value = 'rss-copied'

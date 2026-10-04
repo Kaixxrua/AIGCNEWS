@@ -16,7 +16,10 @@
     规则压缩速览（摘要节保留、条目正文丢弃、空章节回扫、标题剥 tag）、
     条目回链带期号（/report?date=，脏期号回落裸 /report）、
     /feeds/briefing.xml 公开全文（边缘缓存）、/feeds/briefing-digest.xml
-    注册用户 token 门禁与 noindex/no-store、字面量路由均不被 {source} 捕获。
+    注册用户 token 门禁与 noindex/no-store、字面量路由均不被 {source} 捕获；
+  - 频道 <link> 指网站页面、atom:link rel="self" 指 feed 自身；?locale=en
+    出英文版（简报只取英文正文、资讯用原文、频道与钩子文案换英文），
+    不带或不认识的 locale 仍是中文版。
 """
 
 from __future__ import annotations
@@ -51,6 +54,7 @@ from backend.app.api.routes_feed import (
     build_feed_item,
     build_rss_xml,
 )
+from backend.app.core.config import settings
 from backend.app.main import app
 from backend.app.services.briefing.rss_render import (
     condense_briefing_markdown,
@@ -452,6 +456,13 @@ def test_project_to_feed_row_maps_hot_board_item() -> None:
     assert "<pubDate>Tue, 18 Aug 2026 06:48:47 +0000</pubDate>" in item
 
 
+def test_project_to_feed_row_prefers_the_original_description_in_english() -> None:
+    row = _project_to_feed_row(_hot_item(), english=True)
+    assert row["summary"] == "English description\n\n⭐ 12,345 · +843 today"
+    # 没有原简介时用中文简介，不留空
+    assert _project_to_feed_row(_hot_item(description=""), english=True)["summary"].startswith("中文简介")
+
+
 def test_project_to_feed_row_tolerates_missing_optional_fields() -> None:
     row = _project_to_feed_row(_hot_item(description_zh=None, daily_star_growth=None, language="", topics=None, url=""))
     # 无中文简介回退英文；无增量不渲染「今日 +」；url 缺失按 full_name 拼 GitHub 链接
@@ -464,14 +475,18 @@ def test_project_to_feed_row_tolerates_missing_optional_fields() -> None:
 def test_build_rss_xml_channel_structure() -> None:
     xml = build_rss_xml(
         channel_title="AIGC NEWS",
-        channel_link="https://aigcnews.cn/api/feed.xml",
+        channel_link="https://aigcnews.cn/",
+        self_link="https://aigcnews.cn/api/feed.xml",
         channel_description="描述 & 更多",
         items=["<item><title>t</title></item>"],
     )
     assert xml.startswith('<?xml version="1.0" encoding="UTF-8"?>')
     assert '<rss version="2.0"' in xml
     assert "描述 &amp; 更多" in xml
-    assert 'rel="self" type="application/rss+xml"' in xml
+    # <link> 是频道对应的网站页面，feed 自身的地址只写在 atom:link rel="self"
+    assert "<link>https://aigcnews.cn/</link>" in xml
+    assert '<atom:link href="https://aigcnews.cn/api/feed.xml" rel="self" type="application/rss+xml"/>' in xml
+    assert "<language>zh-cn</language>" in xml
     assert xml.rstrip().endswith("</rss>")
 
 
@@ -968,6 +983,7 @@ def test_briefing_xml_is_well_formed_and_contains_no_unsafe_resource_tokens() ->
     xml = build_rss_xml(
         channel_title="AIGC NEWS · 每日简报",
         channel_link="https://aigcnews.cn/report",
+        self_link="https://aigcnews.cn/api/feeds/briefing.xml",
         channel_description="每日简报",
         items=[item],
     )
@@ -1143,3 +1159,182 @@ def test_briefing_digest_returns_condensed_content_for_member() -> None:
     assert "<title>2026-08-27 每日 AIGC 简报（速览）</title>" in response.text
     assert "本报梳理" in response.text
     assert "话题概述" not in response.text
+
+
+# ---------------------------------------------------------------- 频道链接与 ?locale=
+
+_ATOM_LINK = "{http://www.w3.org/2005/Atom}link"
+
+_BRIEFING_MD_EN = """# AIGC Daily Briefing `#news`
+
+## Issue Summary `#news`
+
+Two stories today.
+
+## Highlights `#LLM`
+
+### 1. `ModelX`: a new architecture `#LLM`
+
+**Overview:** item body."""
+
+
+def _channel(response) -> ElementTree.Element:
+    assert response.status_code == 200
+    channel = ElementTree.fromstring(response.content).find("channel")
+    assert channel is not None
+    return channel
+
+
+def _free_tokens() -> MagicMock:
+    tokens = MagicMock()
+    tokens.get_user_by_feed_token_hash.return_value = {"user_id": 7, "membership_tier": "free"}
+    return tokens
+
+
+def test_channel_link_points_at_the_site_and_self_link_at_the_feed(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "public_base_url", "https://aigcnews.example")
+    documents = MagicMock()
+    documents.list_recent_by_source.return_value = []
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [_briefing_row()]
+    client = _client(documents=documents, tokens=_free_tokens(), briefings=briefings)
+
+    site = "https://aigcnews.example"
+    cases = {
+        "/api/feed.xml": (f"{site}/", f"{site}/api/feed.xml"),
+        "/api/feeds/arxiv.xml": (f"{site}/", f"{site}/api/feeds/arxiv.xml"),
+        "/api/feeds/member.xml?token=ok": (f"{site}/", f"{site}/api/feeds/member.xml"),
+        "/api/feeds/briefing.xml": (f"{site}/report", f"{site}/api/feeds/briefing.xml"),
+        "/api/feeds/briefing-digest.xml?token=ok": (f"{site}/report", f"{site}/api/feeds/briefing-digest.xml"),
+    }
+    for path, (page, feed) in cases.items():
+        channel = _channel(client.get(path))
+        assert channel.findtext("link") == page, path
+        self_link = channel.find(_ATOM_LINK)
+        assert self_link is not None and self_link.get("href") == feed, path
+        assert channel.findtext("language") == "zh-cn", path
+
+    # 英文版的 self 地址带 ?locale=en，和订阅时用的地址一致
+    channel = _channel(client.get("/api/feeds/briefing.xml?locale=en"))
+    self_link = channel.find(_ATOM_LINK)
+    assert self_link is not None and self_link.get("href") == f"{site}/api/feeds/briefing.xml?locale=en"
+    assert channel.findtext("link") == f"{site}/report"
+
+
+def test_briefing_feeds_serve_the_english_briefing_for_locale_en() -> None:
+    english = _briefing_row()
+    english["content_en"] = _BRIEFING_MD_EN
+    # 08-26 只有中文正文：英文版跳过这一期，不拿中文顶替
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [english, _briefing_row(date="2026-08-26")]
+    client = _client(documents=MagicMock(), tokens=_free_tokens(), briefings=briefings)
+
+    response = client.get("/api/feeds/briefing.xml?locale=en")
+    channel = _channel(response)
+    assert channel.findtext("title") == "AIGC NEWS · Daily briefing"
+    assert channel.findtext("language") == "en"
+    assert (channel.findtext("description") or "").startswith("The full daily AIGC briefing")
+    items = channel.findall("item")
+    assert [item.findtext("title") for item in items] == ["2026-08-27 Daily AIGC Briefing"]
+    # guid 与中文版的同一期区分开；回链仍带期号
+    assert items[0].findtext("guid") == "briefing-en:2026-08-27"
+    assert (items[0].findtext("link") or "").endswith("/report?date=2026-08-27")
+    assert "Two stories today." in (items[0].findtext("description") or "")
+    assert "item body." in (items[0].findtext("description") or "")
+    assert "本报梳理" not in response.text
+    assert response.headers["cache-control"] == "public, max-age=900"
+
+    # 速览同样认 en-US 之类的写法
+    digest = _channel(client.get("/api/feeds/briefing-digest.xml?token=ok&locale=en-US"))
+    assert digest.findtext("title") == "AIGC NEWS · Daily briefing digest"
+    digest_items = digest.findall("item")
+    assert [item.findtext("title") for item in digest_items] == ["2026-08-27 Daily AIGC Briefing (digest)"]
+    assert digest_items[0].findtext("guid") == "briefing-digest-en:2026-08-27"
+    assert "Two stories today." in (digest_items[0].findtext("description") or "")
+    assert "item body." not in (digest_items[0].findtext("description") or "")
+
+
+def test_briefing_feed_stays_chinese_without_a_recognised_locale() -> None:
+    english = _briefing_row()
+    english["content_en"] = _BRIEFING_MD_EN
+    briefings = MagicMock()
+    briefings.list_recent_daily_briefings.return_value = [english]
+    client = _client(documents=MagicMock(), briefings=briefings)
+
+    for path in ("/api/feeds/briefing.xml", "/api/feeds/briefing.xml?locale=zh-CN", "/api/feeds/briefing.xml?locale=fr"):
+        channel = _channel(client.get(path))
+        assert channel.findtext("title") == "AIGC NEWS · 每日简报", path
+        assert channel.findtext("language") == "zh-cn", path
+        item = channel.find("item")
+        assert item is not None
+        assert item.findtext("title") == "2026-08-27 每日 AIGC 简报", path
+        assert item.findtext("guid") == "briefing:2026-08-27", path
+        assert "Two stories today." not in (item.findtext("description") or ""), path
+
+
+def test_document_feeds_use_original_text_and_english_copy_for_locale_en() -> None:
+    tweet = (
+        "Shipping a new agent runtime today: sandboxed tools, streaming traces and a hosted eval harness"
+        " for every team that runs agents in production"
+    )
+
+    def fake_list(source: str, *, since_iso: str, until_iso=None, limit: int = 500):
+        if source == "x":
+            return [
+                _doc(
+                    "x1",
+                    source="x",
+                    title=tweet,
+                    summary=tweet,
+                    url="https://x.com/a/status/1",
+                    translation_zh="今天发布新的智能体运行时",
+                    published_at=_iso_hours_ago(1),
+                )
+            ]
+        if source == "news":
+            return [
+                _doc(
+                    "n1",
+                    source="news",
+                    title="Headline",
+                    summary="Original summary",
+                    url="https://example.com/n1",
+                    translation_zh="中文摘要",
+                    published_at=_iso_hours_ago(2),
+                )
+            ]
+        return []
+
+    documents = MagicMock()
+    documents.list_recent_by_source.side_effect = fake_list
+    catalog = _catalog([_hot_item(captured_at=_iso_hours_ago(3))])
+    client = _client(documents=documents, tokens=_free_tokens(), catalog=catalog)
+
+    response = client.get("/api/feed.xml?locale=en")
+    channel = _channel(response)
+    assert channel.findtext("language") == "en"
+    assert (channel.findtext("description") or "").startswith("AI news roundup")
+    items = {item.findtext("guid"): item for item in channel.findall("item")}
+
+    # 推文原文截断成标题，全文进摘要；不出中文译文
+    tweet_title = items["x:x1"].findtext("title") or ""
+    assert tweet_title.endswith("…") and tweet.startswith(tweet_title[:-1])
+    assert tweet in (items["x:x1"].findtext("description") or "")
+    news = items["news:n1"].findtext("description") or ""
+    assert news.startswith("Original summary\n\n📮 Full-text RSS")
+    assert news.endswith("/subscriptions")
+    hot = items["github:ifixai-ai/iFixAi"].findtext("description") or ""
+    assert hot.startswith("English description\n\n⭐ 12,345 · +843 today")
+    for chinese in ("今天发布", "中文摘要", "中文简介", "今日 +", "注册登录"):
+        assert chinese not in response.text
+
+    single = _channel(client.get("/api/feeds/news.xml?locale=en"))
+    assert single.findtext("language") == "en"
+    assert "中文摘要" not in ElementTree.tostring(single, encoding="unicode")
+
+    # 全文 feed 的英文版不附中文译文
+    member = client.get("/api/feeds/member.xml?token=ok&locale=en")
+    member_channel = _channel(member)
+    assert member_channel.findtext("title") == "AIGC NEWS · Full archive"
+    assert "中文摘要" not in member.text and "今天发布" not in member.text
+    assert member.headers["cache-control"] == "private, no-store"
