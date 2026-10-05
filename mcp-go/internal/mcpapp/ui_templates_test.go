@@ -85,12 +85,13 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 	init := uiRPC(t, app, "initialize", map[string]any{})
 	instructions := init["instructions"].(string)
 	for _, required := range []string{
-		"MUST call search_ui_templates before writing implementation code",
-		"change the visual styling",
-		"existing-component changes to colors, spacing, typography",
-		"MUST then call get_ui_template for the best result",
-		"For a narrow style adjustment, search once",
-		"Do not call it for a copy-only edit or a behavior-only localized bug fix",
+		"always call search_ui_templates, even if unasked",
+		"redesigned, or restyled UI (colors, spacing, typography",
+		"it overrides project discovery for visual work",
+		"open the best match with get_ui_template before coding",
+		"for small tweaks, only if directly reusable",
+		"Skip copy-only and behavior-only fixes",
+		"Icons: search_ui_icons, then get_ui_icon",
 	} {
 		if !strings.Contains(instructions, required) {
 			t.Fatalf("missing proactive UI discovery instruction %q", required)

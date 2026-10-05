@@ -79,6 +79,13 @@ MCP_TOOLS = [
     "mcp__aigc_news__get_project_categories",
 ]
 HOST_TOOLS = ["Agent", "WebSearch", "WebFetch", "Bash", "Skill", "multi_tool_use.parallel"]
+# Claude Code 2.1 起 MCP 工具名保留服务器名里的连字符（mcp__aigc-news__x），旧版归一成下划线。
+# 统计一律按 MCP_TOOLS 的下划线写法，放行名单两种写法都给。
+SERVER_TOOL_PREFIX = "mcp__aigc-news__"
+CANONICAL_TOOL_PREFIX = "mcp__aigc_news__"
+# --deferred：工具名先只露名字，模型要先用 ToolSearch 取 schema（Claude Code 默认形态）。
+# ToolSearch 只是取 schema，判首个工具时跳过它。
+TOOL_SEARCH = "ToolSearch"
 
 
 @dataclass
@@ -100,11 +107,17 @@ class TrialResult:
     stderr_file: str
 
 
+def _canonical_tool_name(name: str) -> str:
+    if name.startswith(SERVER_TOOL_PREFIX):
+        return CANONICAL_TOOL_PREFIX + name[len(SERVER_TOOL_PREFIX) :]
+    return name
+
+
 def _tool_names(value: Any) -> list[str]:
     names: list[str] = []
     if isinstance(value, dict):
         if value.get("type") in {"tool_use", "server_tool_use"} and isinstance(value.get("name"), str):
-            names.append(value["name"])
+            names.append(_canonical_tool_name(value["name"]))
         else:
             for item in value.values():
                 names.extend(_tool_names(item))
@@ -138,8 +151,11 @@ def run_trial(
     timeout: float,
     complete_turn: bool,
     cwd: Path,
+    deferred: bool = False,
 ) -> TrialResult:
     probe = PROBES[probe_name]
+    available_tools = HOST_TOOLS + ([TOOL_SEARCH] if deferred else [])
+    server_tool_names = [SERVER_TOOL_PREFIX + name[len(CANONICAL_TOOL_PREFIX) :] for name in MCP_TOOLS]
     config = {"mcpServers": {"aigc-news": {"type": "http", "url": endpoint}}}
     config_file = output_dir / f"mcp-{probe_name}-{trial}.json"
     config_file.write_text(json.dumps(config), encoding="utf-8")
@@ -162,9 +178,9 @@ def run_trial(
         "stream-json",
         "--verbose",
         "--tools",
-        ",".join(HOST_TOOLS),
+        ",".join(available_tools),
         "--allowedTools",
-        ",".join(HOST_TOOLS + MCP_TOOLS),
+        ",".join(available_tools + MCP_TOOLS + server_tool_names),
         "--max-budget-usd",
         "2.00",
     ]
@@ -217,9 +233,10 @@ def run_trial(
                         timeline_by_message[message_id] = []
                         tool_timeline.append(timeline_by_message[message_id])
                     timeline_by_message[message_id].extend(assistant_tools)
-                    if first_tool_message_id is None:
+                    if first_tool_message_id is None and any(
+                        name != TOOL_SEARCH for name in timeline_by_message[message_id]
+                    ):
                         first_tool_message_id = message_id
-                        first_tools = timeline_by_message[message_id]
                 elif first_tool_message_id is not None and message_id != first_tool_message_id and not complete_turn:
                     process.terminate()
                     break
@@ -231,6 +248,8 @@ def run_trial(
             process.kill()
             process.wait(timeout=5)
 
+    if first_tool_message_id is not None:
+        first_tools = [name for name in timeline_by_message[first_tool_message_id] if name != TOOL_SEARCH]
     expected = str(probe["expected"])
     initial_host_tool_violations = [name for name in first_tools if name in HOST_TOOLS]
     flattened_timeline = [name for tools in tool_timeline for name in tools]
@@ -288,6 +307,11 @@ def main() -> int:
     parser.add_argument("--complete-turn", action="store_true", help="Let each child finish after recording its first tool call.")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--cwd", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument(
+        "--deferred",
+        action="store_true",
+        help="Expose ToolSearch so MCP tools load on demand (Claude Code default); ToolSearch calls are skipped when judging the first tool.",
+    )
     args = parser.parse_args()
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -310,6 +334,7 @@ def main() -> int:
                 timeout=args.timeout,
                 complete_turn=args.complete_turn,
                 cwd=args.cwd.resolve(),
+                deferred=args.deferred,
             )
             results.append(result)
             status = "PASS" if result.passed else "FAIL"
@@ -320,6 +345,7 @@ def main() -> int:
         "model": args.model,
         "endpoint": args.endpoint,
         "complete_turn": args.complete_turn,
+        "deferred": args.deferred,
         "output_dir": str(output_dir),
         "probes": {},
         "results": [asdict(result) for result in results],

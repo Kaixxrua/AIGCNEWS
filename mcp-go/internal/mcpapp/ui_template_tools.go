@@ -2,7 +2,7 @@ package mcpapp
 
 import "aigcnews/mcp-go/internal/jsonx"
 
-const uiHostInstructions = "Whenever the user asks to create, build, redesign, substantially improve, or change the visual styling of a user-facing frontend UI, you MUST call search_ui_templates before writing implementation code, even when the user never mentions templates, assets, search, or MCP. This includes existing-component changes to colors, spacing, typography, borders, radii, shadows, visual states, responsive presentation, themes, shaders, animated backgrounds, and text effects. For a new page, replacement, substantial redesign, or reusable component, if search returns a relevant result, you MUST then call get_ui_template for the best result to inspect its original source, dependencies, author, and license before implementation; do not stop at the search summary. For a narrow style adjustment, search once for relevant references and call get_ui_template only when a returned candidate is directly reusable. The search tool automatically relaxes long natural-language briefs when exact matching is empty. Reuse a chosen original effect and adapt only integration details; preserve its visual design. This UI-specific route takes priority over the general project search route below. Do not call it for a copy-only edit or a behavior-only localized bug fix with no visual styling work. When the task needs icons, call search_ui_icons and then get_ui_icon for verbatim, license-audited SVG source instead of redrawing or approximating icons. "
+const uiHostInstructions = "Frontend UI: before coding new, redesigned, or restyled UI (colors, spacing, typography, states, themes, shaders, animation), always call search_ui_templates, even if unasked; it overrides project discovery for visual work. For a new page, redesign, or reusable component, open the best match with get_ui_template before coding and reuse its source, adapting only integration; for small tweaks, only if directly reusable. Skip copy-only and behavior-only fixes. Icons: search_ui_icons, then get_ui_icon; never redraw them."
 
 func (a *App) hasUILibrary() bool {
 	if a.tools == nil {
@@ -13,9 +13,11 @@ func (a *App) hasUILibrary() bool {
 	return search && get
 }
 
+// instructions 把项目发现放在最前：Claude Code 只保留服务器说明的前 2048 个字符，
+// UI 路线接在后面，整体压在 2000 字符内（见 instructions_budget_test.go）。
 func (a *App) instructions() string {
 	if a.hasUILibrary() {
-		return uiHostInstructions + hostInstructions
+		return hostInstructions + " " + uiHostInstructions
 	}
 	return hostInstructions
 }

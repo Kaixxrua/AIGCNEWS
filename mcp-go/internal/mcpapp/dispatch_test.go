@@ -45,7 +45,7 @@ func TestInitializeExactShapeAndSession(t *testing.T) {
 		`"protocolVersion":"2025-06-18"`,
 		`"capabilities":{"tools":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"prompts":{"listChanged":false}}`,
 		`"serverInfo":{"name":"aigc-radar","version":"1.2.0"}`,
-		`"instructions":"When the user explicitly asks`,
+		`"instructions":"Project discovery: when the user asks`,
 	} {
 		if !strings.Contains(body, fragment) {
 			t.Errorf("initialize body 缺片段 %q:\n%s", fragment, body)
