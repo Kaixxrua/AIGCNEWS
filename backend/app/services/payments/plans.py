@@ -4,8 +4,8 @@
 （1 月 31 日 + 1 月 → 2 月 28 日）。本文件常量是默认商业承诺；管理员可在
 监控页通过 payment_plan_overrides 表运行时调价（见 plan_overrides.py），
 缺行即按本文件默认价生效。前端营销卡金额/折扣由 plans 接口数据自算，
-兜底常量在 paymentModel.ts 与本文件由两侧测试钉住防漂移；收银台交易面
-金额只从 GET /api/payments/plans 渲染。
+接口没拿到时不报价（前端不留兜底价）；收银台交易面金额只从
+GET /api/payments/plans 渲染。
 """
 
 from __future__ import annotations

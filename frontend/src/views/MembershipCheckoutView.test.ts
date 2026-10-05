@@ -73,7 +73,7 @@ const i18n = createI18n({
           channelWechat: '微信支付',
           channelAlipay: '支付宝',
           channelOverseas: '海外支付（银行卡 / PayPal）',
-          channelSoon: '即将开放',
+          noChannel: '暂时没有可用的支付方式，请稍后再试或联系我们开通。',
           submit: '去支付',
           submitting: '创建订单中…',
           createFailed: '创建订单失败，请稍后重试。',
@@ -113,7 +113,7 @@ const i18n = createI18n({
           channelWechat: 'WeChat Pay',
           channelAlipay: 'Alipay',
           channelOverseas: 'Card / PayPal',
-          channelSoon: 'Coming soon',
+          noChannel: 'No payment method is available right now.',
           submit: 'Pay now',
           submitting: 'Creating order…',
           createFailed: 'Could not create the order. Please try again.',
@@ -244,20 +244,29 @@ describe('MembershipCheckoutView', () => {
     )
   })
 
-  it('greys out unavailable channels and selects the first available one', async () => {
+  it('lists only the available channels and selects the first one', async () => {
     const { wrapper } = await mountView()
     const channels = wrapper.findAll('.checkout-channel')
 
-    // 中文界面只出国内渠道集（微信/支付宝），海外槽不渲染
-    expect(channels).toHaveLength(2)
+    // 中文界面只出国内渠道集（微信/支付宝），海外槽不渲染；没接通的支付宝不再摆一个置灰的「即将开放」
+    expect(channels).toHaveLength(1)
     expect(channels[0]!.text()).toContain('微信支付')
     expect(channels[0]!.classes()).toContain('checkout-channel--selected')
-    expect(channels[1]!.text()).toContain('支付宝')
-    expect(channels[1]!.attributes('disabled')).toBeDefined()
-    expect(channels[1]!.text()).toContain('即将开放')
+    expect(wrapper.text()).not.toContain('支付宝')
+    expect(wrapper.text()).not.toContain('即将开放')
+    expect(wrapper.find('.checkout-channels .checkout-note').exists()).toBe(false)
   })
 
   it('renders each channel brand icon with its locked brand color', async () => {
+    apiBox.listPlans.mockResolvedValue(
+      plansResponse({
+        channels: [
+          { channel: 'wechat_native', available: true },
+          { channel: 'alipay_page', available: true },
+          { channel: 'overseas_redirect', available: true },
+        ],
+      }),
+    )
     const { wrapper } = await mountView()
     const channels = wrapper.findAll('.checkout-channel')
 
@@ -274,15 +283,13 @@ describe('MembershipCheckoutView', () => {
     expect(overseas.attributes('fill')).toBe('#003087')
   })
 
-  it('shows only the overseas channel in English, greyed out when unconfigured', async () => {
+  it('says no payment method is available in English while the overseas slot is unconfigured', async () => {
     i18n.global.locale.value = 'en-US'
     const { wrapper } = await mountView()
-    const channels = wrapper.findAll('.checkout-channel')
 
-    expect(channels).toHaveLength(1)
-    expect(channels[0]!.text()).toContain('Card / PayPal')
-    expect(channels[0]!.attributes('disabled')).toBeDefined()
-    expect(channels[0]!.text()).toContain('Coming soon')
+    expect(wrapper.findAll('.checkout-channel')).toHaveLength(0)
+    expect(wrapper.find('.checkout-channels .checkout-note').text()).toBe('No payment method is available right now.')
+    expect(wrapper.text()).not.toContain('Card / PayPal')
     expect(wrapper.text()).not.toContain('WeChat Pay')
     // 英文界面按 USD 套餐目录渲染金额
     expect(wrapper.find('.checkout-amount').text()).toContain('$4.9')

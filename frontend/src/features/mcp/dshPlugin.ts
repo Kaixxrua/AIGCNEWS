@@ -35,7 +35,7 @@ export const DSH_PLUGIN_INSTALL_METHODS: readonly DshPluginInstallMethod[] = [
   },
 ]
 
-/** VIP 会员的 MCP/API 共用额度（滚动 24 小时 / 滚动 30 天），与 mcp-go ratelimit 的会员默认值及
+/** VIP 会员的 MCP/API 共用额度（每 24 小时 / 每 30 天，窗口从其中第一次调用起算），与 mcp-go ratelimit 的会员默认值及
  * dsh.wizard.vipHint 文案同值；改额度时三处一起改。 */
 export const MCP_MEMBER_QUOTA = { rolling24h: 400, rolling30d: 8000 } as const
 

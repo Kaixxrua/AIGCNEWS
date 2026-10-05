@@ -23,7 +23,7 @@ CHANNEL_OVERSEAS_REDIRECT = "overseas_redirect"
 
 
 class UnselectedOverseasProvider:
-    """未选海外服务商的 fail-closed 桩；渠道对外表现为「即将开放」。"""
+    """未选海外服务商的 fail-closed 桩；渠道对外 available=false，收银台不列出。"""
 
     channel = CHANNEL_OVERSEAS_REDIRECT
 

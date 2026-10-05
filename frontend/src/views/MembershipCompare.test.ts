@@ -1,4 +1,4 @@
-import { mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
@@ -19,8 +19,9 @@ vi.mock('@vueuse/core', async (importOriginal) => {
 
 const authBox = vi.hoisted(() => ({ isMember: false }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+// 支付总开关关闭：plans 整组 404，vip 卡不报价、开通走联系兜底。
 vi.mock('@/services/payments/paymentApi', () => ({
-  paymentApi: { listPlans: vi.fn(async () => Promise.reject(new Error('payments disabled'))) },
+  paymentApi: { listPlans: vi.fn(async () => Promise.reject(Object.assign(new Error('Not Found'), { response: { status: 404 } }))) },
 }))
 vi.mock('@/composables/useContactPageConfig', async () => {
   const { ref } = await import('vue')
@@ -30,7 +31,7 @@ vi.mock('@/composables/useContactPageConfig', async () => {
   return { useContactPageConfig: () => ({ contactPageConfig }) }
 })
 
-const ROW_NAMES = ['浏览榜单、论文与项目库', '关键词或项目追踪', '每日个人简报', 'MCP/API 额度（共用）', '个人网页收藏', '简报邮件订阅', '简报 RSS 订阅']
+const ROW_NAMES = ['浏览榜单、论文与项目库', '关键词或项目追踪', '每日个人简报', '个人网页收藏', 'UI 灵感库复制', 'MCP/API 额度（共用）', '简报邮件订阅', '简报 RSS 订阅']
 
 const mounted: VueWrapper[] = []
 const mountView = () => {
@@ -61,19 +62,21 @@ describe('MembershipView desktop comparison', () => {
     const wrapper = mountView()
     const card = wrapper.get('.membership-card')
     expect(card.classes()).toContain('membership-card--compare')
-    expect(card.attributes('style')).toContain('--compare-rows: 7')
+    expect(card.attributes('style')).toContain('--compare-rows: 8')
 
     const names = wrapper.get('.tier-rows')
     expect(names.attributes('aria-hidden')).toBe('true')
     expect(names.findAll('.tier-row-label').map((label) => label.text())).toEqual(ROW_NAMES)
 
     for (const tier of [0, 1, 2]) expect(column(wrapper, tier)).toHaveLength(ROW_NAMES.length)
-    expect(column(wrapper, 0).filter((cell) => cell.classes('tier-feature--excluded'))).toHaveLength(5)
+    expect(column(wrapper, 0).filter((cell) => cell.classes('tier-feature--excluded'))).toHaveLength(6)
     expect(column(wrapper, 1).filter((cell) => cell.classes('tier-feature--excluded'))).toHaveLength(0)
     expect(column(wrapper, 2).filter((cell) => cell.classes('tier-feature--excluded'))).toHaveLength(0)
 
-    expect(column(wrapper, 1)[4]?.find('.tier-cell-line').text()).toBe('滚动 24 小时最多添加 3 个')
-    expect(column(wrapper, 2)[3]?.findAll('.tier-cell-line').map((line) => line.text())).toEqual(['每 24 小时最多 400 次', '滚动 30 天最多 8,000 次'])
+    expect(column(wrapper, 1)[3]?.find('.tier-cell-line').text()).toBe('滚动 24 小时最多添加 3 个')
+    expect(column(wrapper, 1)[4]?.find('.tier-cell-line').text()).toBe('每天 5 次，源码与提示词共用')
+    expect(column(wrapper, 2)[4]?.find('.tier-cell-line').text()).toBe('不限次')
+    expect(column(wrapper, 2)[5]?.findAll('.tier-cell-line').map((line) => line.text())).toEqual(['每 24 小时最多 400 次', '每 30 天最多 8,000 次'])
     expect(wrapper.find('.tier-card ul:not(.tier-features--compare)').exists()).toBe(false)
   })
 
@@ -97,19 +100,20 @@ describe('MembershipView desktop comparison', () => {
       .filter((cell) => cell.classes('tier-feature--upgrade'))
       .map((cell) => cell.findAll('.tier-cell-text').map((text) => text.text()))
     expect(marked(0)).toEqual([])
-    expect(marked(1)).toEqual([['每 24 小时最多 60 次', '滚动 30 天最多 1,200 次']])
-    expect(marked(2)).toEqual([['10 条，支持排除词'], ['自选时间与已验证投递渠道'], ['每 24 小时最多 400 次', '滚动 30 天最多 8,000 次'], ['添加不限量']])
+    expect(marked(1)).toEqual([['每 24 小时最多 60 次', '每 30 天最多 1,200 次']])
+    expect(marked(2)).toEqual([['10 条，支持排除词'], ['自选时间与已验证投递渠道'], ['添加不限量'], ['不限次'], ['每 24 小时最多 400 次', '每 30 天最多 8,000 次']])
     // ✗ 到 ✓ 不划：免费档的追踪比游客多，但游客那格的 ✗ 已经说明了
     expect(column(wrapper, 1)[1]?.classes()).not.toContain('tier-feature--upgrade')
 
     expect(wrapper.findAll('.tier-row-label--same').map((label) => label.text())).toEqual([ROW_NAMES[0]])
     for (const tier of [0, 1, 2]) {
-      expect(column(wrapper, tier).map((cell) => cell.classes('tier-feature--same'))).toEqual([true, false, false, false, false, false, false])
+      expect(column(wrapper, tier).map((cell) => cell.classes('tier-feature--same'))).toEqual([true, false, false, false, false, false, false, false])
     }
   })
 
-  it('keeps the buy button and its hint in the vip column', () => {
+  it('keeps the buy button and its hint in the vip column', async () => {
     const wrapper = mountView()
+    await flushPromises()
     const member = wrapper.get('.tier-card--member')
     expect(member.get('a.tier-cta').text()).toBe('联系开通')
     expect(member.get('.tier-cta-hint').text()).toBe('在线支付接入中：先联系我们开通，确认后立即生效。')
@@ -127,7 +131,7 @@ describe('MembershipView desktop comparison', () => {
     expect(wrapper.get('.membership-card').attributes('style')).toBeUndefined()
     expect(wrapper.find('.tier-rows').exists()).toBe(false)
     expect(wrapper.find('.tier-features--compare').exists()).toBe(false)
-    expect(wrapper.findAll('.tier-card')[0]?.findAll('.tier-features li')).toHaveLength(5)
+    expect(wrapper.findAll('.tier-card')[0]?.findAll('.tier-features li')).toHaveLength(6)
 
     setAppDensity('compact')
     await nextTick()
@@ -144,8 +148,8 @@ describe('MembershipView desktop comparison', () => {
     expect(wrapper.find('.tier-rows').exists()).toBe(false)
     expect(wrapper.find('.tier-features--compare').exists()).toBe(false)
     const guest = wrapper.findAll('.tier-card')[0]
-    expect(guest?.findAll('.tier-features li')).toHaveLength(5)
-    expect(guest?.findAll('.tier-feature--excluded')).toHaveLength(3)
+    expect(guest?.findAll('.tier-features li')).toHaveLength(6)
+    expect(guest?.findAll('.tier-feature--excluded')).toHaveLength(4)
     expect(guest?.text()).toContain('MCP 匿名额度：每 24 小时 30 次')
   })
 })

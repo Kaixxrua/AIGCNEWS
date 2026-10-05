@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   DOMESTIC_CHANNELS,
-  FALLBACK_MEMBER_MONTHLY_CENTS,
-  FALLBACK_MEMBER_MONTHLY_USD_CENTS,
-  FALLBACK_MEMBER_YEARLY_CENTS,
-  FALLBACK_MEMBER_YEARLY_USD_CENTS,
   OVERSEAS_CHANNELS,
   PAYMENT_CHANNELS,
   computeYearlyDiscountPercent,
@@ -156,17 +152,6 @@ describe('visibleChannelsForLocale', () => {
   it('treats empty and unknown locales as overseas (English is the default foreign UI)', () => {
     expect(visibleChannelsForLocale('')).toEqual(['overseas_redirect'])
     expect(visibleChannelsForLocale('fr-FR')).toEqual(['overseas_redirect'])
-  })
-})
-
-describe('fallback plan price constants', () => {
-  // 与 backend/app/services/payments/plans.py 常量跨侧钉死：plans 探测失败时
-  // 会员卡按兜底价渲染，漂移必须改两侧测试。
-  it('pins the fallback prices to the backend default catalog', () => {
-    expect(FALLBACK_MEMBER_MONTHLY_CENTS).toBe(1900)
-    expect(FALLBACK_MEMBER_YEARLY_CENTS).toBe(15900)
-    expect(FALLBACK_MEMBER_MONTHLY_USD_CENTS).toBe(490)
-    expect(FALLBACK_MEMBER_YEARLY_USD_CENTS).toBe(3900)
   })
 })
 

@@ -11,10 +11,6 @@ import { vMorph } from '@/motion/morph'
 import { popIn, popOut } from '@/motion/presence'
 import { vSwap } from '@/motion/swap'
 import {
-  FALLBACK_MEMBER_MONTHLY_CENTS,
-  FALLBACK_MEMBER_MONTHLY_USD_CENTS,
-  FALLBACK_MEMBER_YEARLY_CENTS,
-  FALLBACK_MEMBER_YEARLY_USD_CENTS,
   computeYearlyDiscountPercent,
   computeYearlySavingsCents,
   formatAmountCents,
@@ -30,11 +26,11 @@ defineOptions({ name: 'MembershipView' })
 
 /**
  * 会员页：三档对比（guest / free / vip）+ 定价 + 开通 CTA。
- * 游客可见（获客入口）。CTA 分三支：支付开关开启（plans 接口可达）→
+ * 游客可见（获客入口）。CTA 分三支：支付开着（plans 接口没回 404 且有当前币种的套餐）→
  * 在线收银台；否则退回联系合作页，页面未启用时回退站长邮箱。
  * 定价卡为商业化布局：动作收进卡内、付费档抬升 + 推荐徽章、年付价格锚定。
  * 会员卡金额/折扣由 plans 接口价自算（管理员可在监控页运行时调价）；
- * 探测失败按 paymentModel 兜底常量渲染（与 plans.py 默认价钉住）。
+ * 价格只认接口：加载中先占住价格的位置，没加载出来给重试，确定买不了时不报价，不拿默认价顶上。
  * 特性列表勾/叉双态：✓ 为已含权益，✗ 为该档不可用（升级诱因）；
  * 公共简报与 RSS 免费；个人追踪为 free 1 条、vip 10 条规则。
  * 桌面（≥1024px）三张卡排成一张对比表：左列是行名，三档的权益逐行对齐（行与格见 features/membership/membershipCompare），
@@ -69,52 +65,61 @@ const billingLabel = computed(() =>
 // 折扣标等按钮撑开一截再盖上去，不从还没展开的按钮边上探出来。
 const popInTag = (el: Element, done: () => void) => popIn(el, done, { delay: 120 })
 
-// 在线收银台可用性 = plans 接口可达（payments_enabled 关闭时整组 404）。
-// 探测失败静默保持 false，CTA 维持联系开通兜底；金额渲染退回兜底常量。
-const checkoutAvailable = ref(false)
-const memberPlans = ref<PaymentPlan[] | null>(null)
+// 价格只认 plans 接口：以前探测没回来时先亮默认价，现价一到再滚过去，每次打开都先闪一个旧价。
+// 现在加载中只占位；请求失败给重试；接口 404（payments_enabled 关闭时整组 404）算支付没开。
+type PlansState = 'loading' | 'ready' | 'disabled' | 'failed'
+const plansState = ref<PlansState>('loading')
+const memberPlans = ref<PaymentPlan[]>([])
+const isNotFound = (error: unknown) =>
+  (error as { response?: { status?: unknown } } | null)?.response?.status === 404
+
+const loadPlans = async () => {
+  plansState.value = 'loading'
+  try {
+    memberPlans.value = (await paymentApi.listPlans()).plans
+    plansState.value = 'ready'
+  } catch (error) {
+    plansState.value = isNotFound(error) ? 'disabled' : 'failed'
+  }
+}
+
+onMounted(loadPlans)
+
+// 币种随界面语言：中文 CNY、其他语言 USD（与收银台渠道门控同一判定，英文界面只卖美元套餐）。
+const plansCurrency = computed(() => planCurrencyForLocale(locale.value))
+const monthlyPlan = computed(() => resolvePlan(memberPlans.value, 'monthly', plansCurrency.value))
+const yearlyPlan = computed(() => resolvePlan(memberPlans.value, 'yearly', plansCurrency.value))
+/** 价格栏四态：ready 报价；loading 占位；failed 给重试；unavailable（支付没开，或缺当前币种的月付/年付）不报价。 */
+const priceState = computed<'loading' | 'ready' | 'failed' | 'unavailable'>(() => {
+  if (plansState.value === 'ready') return monthlyPlan.value && yearlyPlan.value ? 'ready' : 'unavailable'
+  return plansState.value === 'disabled' ? 'unavailable' : plansState.value
+})
+// 计费周期按钮和年付锚点行只在报价或等价格时出现；价格栏换态时宽高一起过渡（比如价格到了、按钮里多出折扣标）。
+const showBilling = computed(() => priceState.value === 'ready' || priceState.value === 'loading')
+const priceMorphKey = computed(() => `${billingPeriod.value} ${priceState.value}`)
+
+// 开通走在线收银台，除非确定买不了；价格一时没加载出来时收银台会自己再拉一次。
+const checkoutAvailable = computed(() => priceState.value !== 'unavailable')
 const checkoutTo = computed(() => ({
   path: '/membership/checkout',
   query: { plan: billingPeriod.value },
 }))
 
-onMounted(async () => {
-  try {
-    const response = await paymentApi.listPlans()
-    memberPlans.value = response.plans
-    checkoutAvailable.value = true
-  } catch {
-    memberPlans.value = null
-    checkoutAvailable.value = false
-  }
-})
-
-// 金额一律整数分；缺 plans 数据（探测失败/套餐缺席）一律回落兜底常量——
-// 单一代码路径，兜底渲染与调价前逐字节一致。币种随界面语言：中文 CNY、
-// 其他语言 USD（与收银台渠道门控同一判定，英文界面只卖美元套餐）。
-const plansCurrency = computed(() => planCurrencyForLocale(locale.value))
-const monthlyCents = computed(
-  () =>
-    (memberPlans.value ? resolvePlan(memberPlans.value, 'monthly', plansCurrency.value) : null)
-      ?.amount_cents ??
-    (plansCurrency.value === 'USD' ? FALLBACK_MEMBER_MONTHLY_USD_CENTS : FALLBACK_MEMBER_MONTHLY_CENTS),
-)
-const yearlyCents = computed(
-  () =>
-    (memberPlans.value ? resolvePlan(memberPlans.value, 'yearly', plansCurrency.value) : null)
-      ?.amount_cents ??
-    (plansCurrency.value === 'USD' ? FALLBACK_MEMBER_YEARLY_USD_CENTS : FALLBACK_MEMBER_YEARLY_CENTS),
-)
+// 金额一律整数分；没报价时按 0 算，省钱标和折扣标随之不出。
+const monthlyCents = computed(() => monthlyPlan.value?.amount_cents ?? 0)
+const yearlyCents = computed(() => yearlyPlan.value?.amount_cents ?? 0)
 
 const memberAmountText = computed(() =>
   formatAmountCents(isYearly.value ? yearlyCents.value : monthlyCents.value, plansCurrency.value),
 )
 // 锚点行两种态的字距保持既有排版：月付态看年付锚「¥159 / 年」（斜杠两侧空格），
 // 年付态看月付锚「¥19/ 月」（无空格，period 键内自带前导空格）。
-const anchorText = computed(() =>
+const anchorFor = (monthly: string, yearly: string) =>
   isYearly.value
-    ? `${formatAmountCents(monthlyCents.value, plansCurrency.value)}${t('membership.member.priceMonthlyPeriod')}`
-    : `${formatAmountCents(yearlyCents.value, plansCurrency.value)} ${t('membership.member.priceYearlyPeriod')}`,
+    ? `${monthly}${t('membership.member.priceMonthlyPeriod')}`
+    : `${yearly} ${t('membership.member.priceYearlyPeriod')}`
+const anchorText = computed(() =>
+  anchorFor(formatAmountCents(monthlyCents.value, plansCurrency.value), formatAmountCents(yearlyCents.value, plansCurrency.value)),
 )
 const savingsCents = computed(() =>
   computeYearlySavingsCents(monthlyCents.value, yearlyCents.value),
@@ -130,6 +135,12 @@ const discountPercent = computed(() =>
 const discountText = computed(() =>
   t('membership.member.yearlyDiscount', { percent: discountPercent.value }),
 )
+// 等价格时锚点、省钱标、折扣标按同样的措辞隐形占位，金额拿 00.0 顶上（不是任何真实或默认的价）：
+// 窄栏里省钱标放不下会折到锚点下面，占位也一样折，价格到了版面不跳。
+const PENDING_AMOUNT = '00.0'
+const pendingAnchorText = computed(() => anchorFor(PENDING_AMOUNT, PENDING_AMOUNT))
+const pendingSavingsText = computed(() => t('membership.member.yearlySavings', { amount: PENDING_AMOUNT }))
+const pendingDiscountText = computed(() => t('membership.member.yearlyDiscount', { percent: '00' }))
 
 const contactHref = computed(() =>
   contactPageConfig.value.enabled
@@ -146,19 +157,23 @@ const GUEST_FEATURES: readonly TierFeature[] = [
   { key: 'rss', included: false },
   { key: 'briefing', included: false },
   { key: 'website', included: false },
+  { key: 'uiCopy', included: false },
 ]
+// 网页上就能用到的权益在前，接 AI 客户端才用得上的 MCP/API 额度在后（与对比表行序一致）。
 const FREE_FEATURES: readonly TierFeature[] = [
   { key: 'tracking', included: true },
-  { key: 'mcpFree', included: true },
   { key: 'websiteFree', included: true },
+  { key: 'uiCopyFree', included: true },
+  { key: 'mcpFree', included: true },
   { key: 'briefingFree', included: true },
   { key: 'rssFree', included: true },
 ]
 const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'tracking', included: true },
   { key: 'personalDigest', included: true },
-  { key: 'mcpMember', included: true },
   { key: 'websiteMember', included: true },
+  { key: 'uiCopyMember', included: true },
+  { key: 'mcpMember', included: true },
 ]
 </script>
 
@@ -237,14 +252,26 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
           <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
           <!-- 切换计费周期：价格整块滚动换值（去年付向上、回月付向下），锚点行稍后跟上；按钮图标翻转、折扣标弹入弹出。
                价格与按钮的宽度一起过渡（同一行里此消彼长，不会中途把按钮挤到下一行）；较窄时按钮在两行之间滑动，
-               价格行高度随之过渡。 -->
-          <p v-morph="billingPeriod" class="tier-price">
-            <RollText :value="`${memberAmountText} ${periodText}`" :direction="billingDirection">
+               价格行高度随之过渡。价格还没到时只画一块占位、不出任何金额，折扣标和省钱标隐形占住宽高，价格到了版面不跳；
+               没加载出来给重试，确定买不了时不报价。 -->
+          <p v-morph="priceMorphKey" class="tier-price">
+            <RollText v-if="priceState === 'ready'" :value="`${memberAmountText} ${periodText}`" :direction="billingDirection">
               <span class="tier-price-amount">{{ memberAmountText }}</span>
               <span class="tier-price-period">{{ periodText }}</span>
             </RollText>
+            <span v-else-if="priceState === 'loading'" class="tier-price-pending">
+              <span class="tier-price-amount tier-price-amount--pending" aria-hidden="true">&#8203;</span>
+              <span class="tier-price-period" aria-hidden="true">{{ periodText }}</span>
+              <span class="sr-only">{{ t('membership.member.priceLoading') }}</span>
+            </span>
+            <span v-else-if="priceState === 'failed'" class="tier-price-note">
+              {{ t('membership.member.priceFailed') }}
+              <button type="button" class="tier-price-retry" @click="loadPlans">{{ t('membership.member.priceRetry') }}</button>
+            </span>
+            <span v-else class="tier-price-note">{{ t('membership.member.priceUnavailable') }}</span>
             <button
-              v-morph="billingPeriod"
+              v-if="showBilling"
+              v-morph="priceMorphKey"
               type="button"
               class="tier-billing-btn"
               :aria-pressed="isYearly"
@@ -257,11 +284,17 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
                    年付态按钮是降级动作，不带折扣标 -->
               <Transition @enter="popInTag" @leave="popOut">
                 <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
+                <span v-else-if="!isYearly && priceState === 'loading'" class="tier-billing-tag tier-billing-tag--pending" aria-hidden="true">{{ pendingDiscountText }}</span>
               </Transition>
             </button>
           </p>
-          <p class="tier-price-yearly">
-            <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
+          <p v-if="showBilling" class="tier-price-yearly">
+            <template v-if="priceState === 'ready'">
+              <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
+            </template>
+            <template v-else>
+              <span class="tier-price-anchor--pending" aria-hidden="true">{{ pendingAnchorText }}</span> <span class="tier-savings tier-savings--pending" aria-hidden="true">{{ pendingSavingsText }}</span>
+            </template>
           </p>
           <hr class="tier-divider" />
           <TierCompareList v-if="compare" tier="member" />
@@ -478,6 +511,59 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   letter-spacing: -0.01em;
   line-height: 1;
   color: var(--ink);
+}
+
+/* 价格还没到：与 RollText 同样的行内排法。占位块里不放任何金额（样式被别处盖掉也露不出旧价），
+   靠一个零宽字符撑出与价格同一条基线和行高，画一块约两个字宽的浅底 */
+.tier-price-pending {
+  display: inline-flex;
+  align-items: baseline;
+  white-space: nowrap;
+}
+
+.tier-price-amount--pending {
+  display: inline-block;
+  width: 2em;
+  border-radius: 6px;
+  background: var(--rule);
+}
+
+/* 等价格时隐形占位的折扣标、锚点、省钱标：留着宽高，看不见也不读 */
+.tier-billing-tag--pending,
+.tier-price-anchor--pending,
+.tier-savings--pending {
+  visibility: hidden;
+}
+
+/* 价格没加载出来 / 不报价：一行说明，重试按钮沿用计费周期按钮的描边小按钮配方 */
+.tier-price-note {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.tier-price-retry {
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 4px 10px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.tier-price-retry:hover {
+  background: var(--acid-soft);
+}
+
+.tier-price-retry:active {
+  transform: translateY(1px);
 }
 
 .tier-price-period {

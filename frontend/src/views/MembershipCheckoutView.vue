@@ -27,7 +27,7 @@ defineOptions({ name: 'MembershipCheckoutView' })
 /**
  * 收银台：金额/套餐只渲染 GET /api/payments/plans 响应（后端 plans.py 是唯一
  * 权威）；渠道按界面语言门控——中文只出微信/支付宝，其他语言只出海外跳转槽
- * （纯展示层门控，渠道凭证未配置时 available=false 置灰「即将开放」）。
+ * （纯展示层门控）；available=false 的渠道（凭证未配置）不列出来，一个可用的都没有时说明一句。
  * qr_code 指令骨架期渲染占位框 + 原文文本（不引二维码库，渠道接入后替换为
  * 真实二维码）。redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与
  * 倒计时；回跳（?order_no=）恢复订单状态并续上轮询（回跳续单）。
@@ -83,6 +83,9 @@ const plan = computed(() =>
 
 const channelAvailable = (channel: PaymentChannel) =>
   channels.value.find((item) => item.channel === channel)?.available ?? false
+
+// 只列能付的渠道：不可用的渠道不再摆一个置灰的「即将开放」占位。
+const payableChannels = computed(() => visibleChannels.value.filter((channel) => channelAvailable(channel)))
 
 // 会话中切换语言：当前选中渠道掉出可见集时按新可见集重选（无可用则清空待用户/默认逻辑）
 watch(visibleChannels, (next) => {
@@ -211,31 +214,25 @@ const submit = () => {
           </span>
         </section>
 
-        <!-- 渠道选择：available=false 置灰「即将开放」 -->
+        <!-- 渠道选择：只列可用的渠道；一个都没有时说明一句，提交按钮保持禁用 -->
         <section class="checkout-channels" role="radiogroup" :aria-label="t('membership.checkout.channelTitle')">
           <p class="checkout-section-label">{{ t('membership.checkout.channelTitle') }}</p>
           <button
-            v-for="channel in visibleChannels"
+            v-for="channel in payableChannels"
             :key="channel"
             type="button"
             class="checkout-channel"
-            :class="{
-              'checkout-channel--selected': selectedChannel === channel,
-              'checkout-channel--disabled': !channelAvailable(channel),
-            }"
+            :class="{ 'checkout-channel--selected': selectedChannel === channel }"
             role="radio"
             :aria-checked="selectedChannel === channel"
-            :disabled="!channelAvailable(channel)"
             @click="selectChannel(channel)"
           >
             <span class="checkout-channel-main">
               <component :is="CHANNEL_ICONS[channel]" class="checkout-channel-icon" />
               <span>{{ t(CHANNEL_LABEL_KEYS[channel]) }}</span>
             </span>
-            <span v-if="!channelAvailable(channel)" class="checkout-channel-soon">
-              {{ t('membership.checkout.channelSoon') }}
-            </span>
           </button>
+          <p v-if="!payableChannels.length" class="checkout-note">{{ t('membership.checkout.noChannel') }}</p>
         </section>
 
         <!-- 支付指令与等待态：qr_code 骨架期占位框 + 原文；redirect_url 新标签页
@@ -440,17 +437,6 @@ const submit = () => {
 .checkout-channel--selected {
   border-color: var(--ink);
   border-width: 2px;
-}
-
-.checkout-channel--disabled {
-  cursor: not-allowed;
-  color: var(--ink-faint);
-}
-
-.checkout-channel-soon {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--ink-faint);
 }
 
 .checkout-instruction {

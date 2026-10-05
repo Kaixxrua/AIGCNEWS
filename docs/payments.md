@@ -25,7 +25,7 @@
 - Ops API：`GET/PUT /api/ops/payments/plans`（`RequireAdmin`，刻意不挂 `payments_enabled` 门——可先调价再开支付）。PUT 为整体聚合语义：`{monthly_amount_cents, yearly_amount_cents, monthly_usd_amount_cents, yearly_usd_amount_cents}` 整数 = upsert 覆盖，`null`/缺省 = 删除覆盖恢复默认价；越界返回 400 中文 detail。
 - 读路径：`plan_overrides.py` 以 60 秒 TTL 缓存合并默认目录与覆盖行；面板保存即失效缓存（本实例即时生效），其余实例最迟 60 秒内跟随；读库异常按默认价降级，绝不影响下单。
 - **在途订单快照语义**：调价只影响新订单。`GET /api/payments/plans` 与创建订单走生效价；在途 pending 订单仍以 `payment_orders` 行内金额快照收款，回调验款也对快照校验，天然免疫运行时调价。回调发放只取静态 `get_plan` 的 months/tier。
-- 前端会员卡（`MembershipView.vue`）的金额、年付锚定、「年付省 ¥N」与「-N%」折扣标全部由 plans 接口数据自算（`paymentModel.ts` 纯函数，向下取整、非正隐藏）；plans 探测失败按兜底常量渲染（按界面语言分 CNY/USD 两组），兜底常量与 plans.py 默认价跨侧钉死。
+- 前端会员卡（`MembershipView.vue`）的金额、年付锚定、「年付省 ¥N」与「-N%」折扣标全部由 plans 接口数据自算（`paymentModel.ts` 纯函数，向下取整、非正隐藏）；价格只认 plans 接口：加载中按价格字形占位，请求失败给「重试」，接口 404（支付总开关关闭）或缺当前币种套餐时不报价、开通走联系兜底；前端不再保留兜底价常量（以前先亮默认价再滚到现价）。
 
 ## 支付渠道
 
@@ -84,7 +84,7 @@ provider 位于 `backend/app/services/payments/providers/`。三渠道均已接�
 | `overseas_client_secret` | Client Secret | 签名盐 salt（下单加签与回调验签共用） |
 | `overseas_webhook_secret` | Webhook ID | accId（门店号，回调归属钉死） |
 
-`overseas_sandbox` 勾选后两家都走各自沙箱端点（PayPal `api-m.sandbox.paypal.com`，PingPong `sandbox-acquirer-payment.pingpongx.com`）。未选择服务商时渠道 fail-closed（前端显示「即将开放」）。注意：**面板徽标「已配置」≠ 收银台可用**——徽标只看凭证齐全，收银台可用性还受 `payments_enabled` 总开关门控，两者刻意解耦。
+`overseas_sandbox` 勾选后两家都走各自沙箱端点（PayPal `api-m.sandbox.paypal.com`，PingPong `sandbox-acquirer-payment.pingpongx.com`）。未选择服务商时渠道 fail-closed（available=false，收银台不列出该渠道）。注意：**面板徽标「已配置」≠ 收银台可用**——徽标只看凭证齐全，收银台可用性还受 `payments_enabled` 总开关门控，两者刻意解耦。
 
 两家回调共用同一个渠道地址：
 
@@ -126,7 +126,7 @@ provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 
 ## 前端收银台
 
-路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；渠道按界面语言门控（`visibleChannelsForLocale`：zh 前缀出微信/支付宝，其余语言出海外跳转槽），不可用渠道置灰并显示“即将开放”；会话中切换语言会按新可见集重选渠道。Native 渠道显示二维码占位与原始支付指令，支付宝/海外渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
+路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；渠道按界面语言门控（`visibleChannelsForLocale`：zh 前缀出微信/支付宝，其余语言出海外跳转槽），不可用渠道不列出（一个可用的都没有时说明一句、提交按钮禁用）；会话中切换语言会按新可见集重选渠道。Native 渠道显示二维码占位与原始支付指令，支付宝/海外渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
 
 ## 代码位置
 

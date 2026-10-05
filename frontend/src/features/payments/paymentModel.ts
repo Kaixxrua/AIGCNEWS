@@ -1,8 +1,7 @@
 // 支付收费骨架（用户域）：套餐/订单/渠道的视图模型与纯函数助手。
 // 词汇表与后端 schema_payments / services/payments 保持一致：
 // 金额一律整数分，权威金额来源是 GET /api/payments/plans 响应。
-// 营销卡金额/折扣由前端用 plans 数据自算；plans 探测失败时用下方
-// 兜底常量渲染（与后端 plans.py 默认价由两侧测试钉住防漂移）。
+// 营销卡金额/折扣由前端用 plans 数据自算；plans 没拿到时不报价（不拿默认价顶上）。
 
 export type PaymentPlanCode =
   | 'member_monthly'
@@ -112,13 +111,6 @@ export const formatAmountCents = (amountCents: number, currency: string): string
   if (currency === 'USD') return `$${digits}`
   return `${currency} ${digits}`
 }
-
-// 营销卡兜底价：plans 探测失败时按默认商业承诺渲染，与后端 plans.py
-// 常量钉住（backend/tests/test_payment_plans.py ↔ paymentModel.test.ts）。
-export const FALLBACK_MEMBER_MONTHLY_CENTS = 1900
-export const FALLBACK_MEMBER_YEARLY_CENTS = 15900
-export const FALLBACK_MEMBER_MONTHLY_USD_CENTS = 490
-export const FALLBACK_MEMBER_YEARLY_USD_CENTS = 3900
 
 /** 年付相对月付 ×12 的省钱额（分）；非正即无优惠（调用方据此隐藏 pill）。 */
 export const computeYearlySavingsCents = (

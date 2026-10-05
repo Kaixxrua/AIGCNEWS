@@ -24,8 +24,9 @@ describe('compareColumn', () => {
       { row: 'browse', included: true, lines: [], upgrade: false, same: true },
       { row: 'tracking', included: false, lines: [], upgrade: false, same: false },
       { row: 'digest', included: false, lines: [], upgrade: false, same: false },
-      { row: 'quota', included: true, lines: ['quotaGuestDay', 'quotaGuestScope'], upgrade: false, same: false },
       { row: 'website', included: false, lines: [], upgrade: false, same: false },
+      { row: 'uiCopy', included: false, lines: [], upgrade: false, same: false },
+      { row: 'quota', included: true, lines: ['quotaGuestDay', 'quotaGuestScope'], upgrade: false, same: false },
       { row: 'briefing', included: false, lines: [], upgrade: false, same: false },
       { row: 'rss', included: false, lines: [], upgrade: false, same: false },
     ])
@@ -33,8 +34,9 @@ describe('compareColumn', () => {
       [true, []],
       [true, ['trackingMember']],
       [true, ['digestMember']],
-      [true, ['quotaMemberDay', 'quotaMemberMonth']],
       [true, ['websiteMember']],
+      [true, ['uiCopyMember']],
+      [true, ['quotaMemberDay', 'quotaMemberMonth']],
       [true, ['briefingAll']],
       [true, ['rssAll']],
     ])
@@ -54,7 +56,7 @@ describe('compareColumn', () => {
     expect(TIERS).toEqual(COMPARE_TIERS)
     expect(upgraded('guest')).toEqual([])
     expect(upgraded('free')).toEqual(['quota'])
-    expect(upgraded('member')).toEqual(['tracking', 'digest', 'quota', 'website'])
+    expect(upgraded('member')).toEqual(['tracking', 'digest', 'website', 'uiCopy', 'quota'])
     expect(COMPARE_ROWS.filter(sameAcrossTiers).map((row) => row.key)).toEqual(['browse'])
     for (const tier of TIERS) {
       expect(compareColumn(tier).filter((entry) => entry.same).map((entry) => entry.row)).toEqual(['browse'])
@@ -95,6 +97,7 @@ describe('membership.compare copy', () => {
     ['free.features.tracking', ['trackingFree']],
     ['free.features.mcpFree', ['quotaFreeDay', 'quotaFreeMonth']],
     ['free.features.websiteFree', ['websiteFree']],
+    ['free.features.uiCopyFree', ['uiCopyFree']],
     ['free.features.briefingFree', ['briefingAll']],
     ['member.features.tracking', ['trackingMember']],
     ['member.features.mcpMember', ['quotaMemberDay', 'quotaMemberMonth']],

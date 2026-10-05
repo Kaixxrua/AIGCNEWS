@@ -5,7 +5,7 @@ export type CompareTier = 'guest' | 'free' | 'member'
 /** 对比表从左到右的档位顺序，越往右给得越多。 */
 export const COMPARE_TIERS: readonly CompareTier[] = ['guest', 'free', 'member']
 
-export type CompareRowKey = 'browse' | 'tracking' | 'digest' | 'quota' | 'website' | 'briefing' | 'rss'
+export type CompareRowKey = 'browse' | 'tracking' | 'digest' | 'website' | 'uiCopy' | 'quota' | 'briefing' | 'rss'
 
 /**
  * 一格写什么：true 为含（只画 ✓），false 为不含（画 ✗）；
@@ -18,11 +18,16 @@ export interface CompareRow {
   cells: Readonly<Record<CompareTier, CompareCell>>
 }
 
-/** 行序沿用 vip 卡原来的顺序（追踪、个人简报、额度、网页收藏），免费档另有的简报和 RSS 排在后面。 */
+/**
+ * 行序跟 vip 卡一致：先摆网页上就能用到的（追踪、个人简报、网页收藏、UI 灵感库复制），再摆接 AI 客户端才用得上的 MCP/API 额度，
+ * 免费档另有的简报和 RSS 排在最后。
+ */
 export const COMPARE_ROWS: readonly CompareRow[] = [
   { key: 'browse', cells: { guest: true, free: true, member: true } },
   { key: 'tracking', cells: { guest: false, free: 'trackingFree', member: 'trackingMember' } },
   { key: 'digest', cells: { guest: false, free: true, member: 'digestMember' } },
+  { key: 'website', cells: { guest: false, free: 'websiteFree', member: 'websiteMember' } },
+  { key: 'uiCopy', cells: { guest: false, free: 'uiCopyFree', member: 'uiCopyMember' } },
   {
     key: 'quota',
     cells: {
@@ -31,7 +36,6 @@ export const COMPARE_ROWS: readonly CompareRow[] = [
       member: ['quotaMemberDay', 'quotaMemberMonth'],
     },
   },
-  { key: 'website', cells: { guest: false, free: 'websiteFree', member: 'websiteMember' } },
   { key: 'briefing', cells: { guest: false, free: 'briefingAll', member: 'briefingAll' } },
   { key: 'rss', cells: { guest: false, free: 'rssAll', member: 'rssAll' } },
 ]

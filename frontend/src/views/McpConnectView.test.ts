@@ -124,7 +124,7 @@ const i18n = createI18n({
         },
         copyQuick: '复制配置命令',
         quota: {
-          free: '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
+          free: '当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 每 30 天 1,200 次；开通 vip 升至 400 次 + 8,000 次。',
           loginCta: '登录提升额度',
           vipCta: '开通 vip',
         },
@@ -449,7 +449,7 @@ describe('McpConnectView quota upsell notice', () => {
   it('prompts free-tier users to open VIP for a higher quota', async () => {
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 滚动 30 天 1,200 次')
+    expect(wrapper.text()).toContain('当前 Free 的 MCP/API 共用额度：每 24 小时 60 次 + 每 30 天 1,200 次')
     const cta = wrapper.get('a[href="/membership"]')
     expect(cta.text()).toContain('开通 vip')
   })
