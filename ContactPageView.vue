@@ -13,7 +13,21 @@ import type { SiteContactEntry } from '@/services/site/contactPageApi'
  */
 const { contactPageConfig } = useContactPageConfig()
 const config = contactPageConfig
-const { t } = useI18n()
+const { t, locale } = useI18n()
+
+/**
+ * 后台文案只有中文。英文界面下，认得的原文换成英文；管理员改了文案就对不上，
+ * 照原样显示，不会挂着过期的译文。
+ */
+const ENGLISH_CONFIG_TEXT = new Map<string, string>([
+  ['联系与合作', 'Contact & Collaboration'],
+  ['开发者交流群：聊 AI 编程与 Vibe Coding，也聊这个网站和各自的项目。', 'A developer group for AI coding and vibe coding, plus this site and everyone’s own projects.'],
+  ['网站及 Vibe Coding 交流群', 'Site & Vibe Coding group'],
+  // 桌面漫画版主按钮最宽 208px，长句会被截成省略号。
+  ['点击加入 QQ 群', 'Join us on QQ'],
+])
+const shown = (text: string): string =>
+  (locale.value.startsWith('en') ? ENGLISH_CONFIG_TEXT.get(text.trim()) ?? text : text)
 
 const isExternalLink = (href: string): boolean => /^https?:\/\//i.test(href)
 const linkAttrs = (entry: SiteContactEntry) =>
@@ -60,8 +74,8 @@ const sceneOverlay = ref(false)
       <div class="hero-inner">
         <div class="hero-heading">
           <p class="contact-kicker">{{ t('contact.kicker') }}</p>
-          <h1 class="contact-title comic-title">{{ config.title }}</h1>
-          <p v-if="config.subtitle" class="contact-subtitle">{{ config.subtitle }}</p>
+          <h1 class="contact-title comic-title">{{ shown(config.title) }}</h1>
+          <p v-if="config.subtitle" class="contact-subtitle">{{ shown(config.subtitle) }}</p>
         </div>
         <div v-if="config.contactEntries.length" class="hero-dock">
           <p class="contact-hero-note">{{ t('contact.heroNote') }}</p>
@@ -75,17 +89,17 @@ const sceneOverlay = ref(false)
               <span class="tree-branch" aria-hidden="true">{{ treeBranch(index === config.contactEntries.length - 1) }}</span>
               <div class="entry-body">
                 <div class="entry-meta">
-                  <span class="entry-label">{{ entry.label }}</span>
+                  <span class="entry-label">{{ shown(entry.label) }}</span>
                   <span v-if="isPrimaryEntry(index)" class="entry-badge">{{ t('contact.primaryBadge') }}</span>
                 </div>
                 <div v-if="entry.qrImageUrl && showQr(index)" class="entry-qr-frame">
-                  <img v-if="!failedQrEntries[index]" class="entry-qr" :src="entry.qrImageUrl" :alt="entry.label" loading="lazy" @error="markQrFailed(index)" />
+                  <img v-if="!failedQrEntries[index]" class="entry-qr" :src="entry.qrImageUrl" :alt="shown(entry.label)" loading="lazy" @error="markQrFailed(index)" />
                   <div v-else class="entry-qr-fallback" role="img" :aria-label="t('contact.qrUnavailable')">{{ t('contact.qrUnavailable') }}</div>
                 </div>
                 <a v-if="entry.href" class="entry-value entry-value--link" :class="{ 'entry-action--primary': isPrimaryEntry(index) }" :href="entry.href" v-bind="linkAttrs(entry)">
-                  <span class="entry-link-text">{{ entry.value || entry.href }}</span><span class="entry-arrow" aria-hidden="true">↗</span>
+                  <span class="entry-link-text">{{ shown(entry.value) || entry.href }}</span><span class="entry-arrow" aria-hidden="true">↗</span>
                 </a>
-                <span v-else-if="entry.value" class="entry-value">{{ entry.value }}</span>
+                <span v-else-if="entry.value" class="entry-value">{{ shown(entry.value) }}</span>
                 <span v-if="entry.qrImageUrl && showQr(index) && !failedQrEntries[index]" class="entry-qr-hint">{{ t('contact.qrHint') }}</span>
               </div>
             </li>

@@ -1,11 +1,11 @@
 {
-  "manifest_sha256": "8d1fab012ca9aad36fa75832e436bf88315d256399b94294e6b148e9430f3de5",
-  "release_id": "20260929-contact-comic2",
+  "manifest_sha256": "238883e4ded3b84e6db0f5154af6ce48768c3fa7dd70eccb69a63703351e225d",
+  "release_id": "20261005-contact-i18n",
   "schema": "aigcnews.private-frontend-release.v1",
   "source_files": {
-    "components/contact/GodotContactScene.test.ts": "04ff92515ee38c08f5386cfd722bda15c82b64b5bd6fb19a8b48d7f6ba81af55",
-    "components/contact/GodotContactScene.vue": "67116141f8c26211f0493011d237a0faadaba38fe5c3896348827f8d1a574fa6",
-    "views/ContactPageView.test.ts": "55a9bd896512a1742bc0e20060eee514d3af57a1ecca6e46bfc920a7b85d04d4",
-    "views/ContactPageView.vue": "85c3010484ae2cc3a428ec27c9525aa94da3c0264e87b351d174890628172745"
+    "components/contact/GodotContactScene.test.ts": "818d481854ee84567a671976acc52371cc545a74268b2ef8a2fdfb474b44694c",
+    "components/contact/GodotContactScene.vue": "dfffa143b49aa9d5284ca68b078766619889f7bb4adef4e7e416045cdd2271a1",
+    "views/ContactPageView.test.ts": "c39ef0830b846e79caa0355946cf285eade273840a7b53f9657e5a83399538e2",
+    "views/ContactPageView.vue": "8997d3b92c74a6f284020c4dbe6d1c657a43343952e9cbbf472f000de935c3c2"
   }
 }

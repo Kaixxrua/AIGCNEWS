@@ -83,6 +83,36 @@ describe('ContactPageView', () => {
     expect(wrapper.find('.section-heading').exists()).toBe(false)
   })
 
+  it('shows English for the admin’s known Chinese copy on the English site, and other copy as written', async () => {
+    setConfig({
+      title: '联系与合作',
+      subtitle: '开发者交流群：聊 AI 编程与 Vibe Coding，也聊这个网站和各自的项目。',
+      contactEntries: [
+        { label: '网站及 Vibe Coding 交流群', value: '点击加入 QQ 群', href: 'https://qm.qq.com/q/example', qrImageUrl: '/qr.png' },
+        { label: '邮箱', value: 'hi@example.com', href: 'mailto:hi@example.com', qrImageUrl: '' },
+      ],
+    })
+    const wrapper = mountView()
+    expect(wrapper.find('.contact-title').text()).toBe('联系与合作')
+
+    i18n.global.locale.value = 'en-US'
+    try {
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.contact-kicker').text()).toBe('CONTACT & PARTNERSHIPS')
+      expect(wrapper.find('.contact-title').text()).toBe('Contact & Collaboration')
+      expect(wrapper.find('.contact-subtitle').text()).toBe('A developer group for AI coding and vibe coding, plus this site and everyone’s own projects.')
+      const entries = wrapper.findAll('.entry-item')
+      expect(entries[0]!.find('.entry-label').text()).toBe('Site & Vibe Coding group')
+      expect(entries[0]!.find('img.entry-qr').attributes('alt')).toBe('Site & Vibe Coding group')
+      expect(entries[0]!.find('.entry-link-text').text()).toBe('Join us on QQ')
+      // 没有译文的条目（管理员新写或改过的文案）照原样显示。
+      expect(entries[1]!.find('.entry-label').text()).toBe('邮箱')
+      expect(entries[1]!.find('.entry-link-text').text()).toBe('hi@example.com')
+    } finally {
+      i18n.global.locale.value = DEFAULT_LOCALE
+    }
+  })
+
   it('docks the entry list inside the full-bleed hero', () => {
     const wrapper = mountView()
 

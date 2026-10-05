@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 /**
  * 联系页风起原野：默认只显示静态截图（零引擎下载、零 GPU 占用）。
  * 访客点「选择画质」→ 页内面板选档 →「开启」后才把 Godot 场景以 iframe 内嵌进同一张卡片；
  * 场景核心真正画出来之前截图一直盖在上面，之后淡出；「退出」卸载 iframe 回到截图。
  * 从不自动启动：画质只记为下次的默认选项（与场景内「画质」按钮共用同一个存储键）。
+ * 文案随站点语言切换；iframe 里的场景外壳随 Godot 发布包冻结，只有中文。
  */
 type Quality = 'lite' | 'balanced' | 'original'
 type Phase = 'poster' | 'choosing' | 'loading' | 'live'
+type Status = 'waiting_for_core' | 'waiting_for_state' | 'loading' | 'applying' | 'pack_ready' | 'ready'
+  | 'missing_assets' | 'unsafe_placement' | 'stale' | 'unavailable' | 'error' | 'reload_required'
 
 const PROTOCOL = 'meadow-camp-presentation'
 const QUALITY_KEY = 'meadow-texture-quality-v1'
@@ -18,14 +22,133 @@ const poster = (width: number) => `/camp-scene/contact-poster-${width}.webp?v=${
 const posterSrc = poster(1600)
 const posterSrcset = [960, 1600, 2400].map((width) => `${poster(width)} ${width}w`).join(', ')
 
-const qualities: ReadonlyArray<{ value: Quality, label: string, note: string, size: string }> = [
-  { value: 'lite', label: '极速', note: '先进入低细节场景，高清细节随后补齐', size: '首屏约 13 MB' },
-  { value: 'balanced', label: '均衡', note: '部分地表材质轻度压缩', size: '约 113 MB' },
-  { value: 'original', label: '原画', note: '无损纹理，保留全部细节', size: '约 126 MB' },
-]
-const isQuality = (value: unknown): value is Quality => qualities.some((item) => item.value === value)
+const QUALITIES: readonly Quality[] = ['lite', 'balanced', 'original']
+const isQuality = (value: unknown): value is Quality => QUALITIES.includes(value as Quality)
+
+interface Copy {
+  qualities: Record<Quality, { label: string, note: string, size: string }>
+  statuses: Record<Status, string>
+  fullscreenFailed: string
+  notConnected: string
+  loading: (quality: string, progress: string) => string
+  /** 场景外壳 #loading-message 的原文（中文）→ 状态条里可显示的进度；不合适时给空串。 */
+  progress: (shellText: string) => string
+  scene: string
+  frameTitle: string
+  posterAlt: string
+  reload: string
+  posterBadge: string
+  choose: string
+  enterFullscreen: string
+  exitFullscreen: string
+  fullscreenTitle: string
+  exitLive: string
+  exitLiveTitle: string
+  chooserNote: string
+  chooserLegend: string
+  recommended: string
+  chooserHint: string
+  cancel: string
+  start: string
+}
+
+const COPY: Record<'zh' | 'en', Copy> = {
+  zh: {
+    qualities: {
+      lite: { label: '极速', note: '先进入低细节场景，高清细节随后补齐', size: '首屏约 13 MB' },
+      balanced: { label: '均衡', note: '部分地表材质轻度压缩', size: '约 113 MB' },
+      original: { label: '原画', note: '无损纹理，保留全部细节', size: '约 126 MB' },
+    },
+    statuses: {
+      waiting_for_core: '正在连接风起原野…',
+      waiting_for_state: '原野核心已就绪，正在载入演示伙伴…',
+      loading: '原野已显示，正在载入演示伙伴…',
+      applying: '正在安置演示伙伴…',
+      pack_ready: '伙伴资源已载入…',
+      ready: '风起原野实时演示',
+      missing_assets: '原野已载入，部分演示伙伴暂不可用。',
+      unsafe_placement: '原野已载入，伙伴演出已暂停。',
+      stale: '正在重新同步原野演示…',
+      unavailable: '原野演示暂不可用。',
+      error: '原野载入失败，可重新载入。',
+      reload_required: '原野需要重新载入。',
+    },
+    fullscreenFailed: '浏览器未能进入全屏，原野仍可继续使用。',
+    notConnected: '原野暂未连接，可重新载入。',
+    loading: (quality, progress) => `正在载入原野 · ${quality}${progress ? ` · ${progress}` : '…'}`,
+    progress: (shellText) => (shellText.length <= 48 ? shellText : ''),
+    scene: '风起原野实时场景',
+    frameTitle: '风起原野：昼夜切换与伙伴演示',
+    posterAlt: '风起原野静态截图：晴天草原、河上木桥与山顶城堡',
+    reload: '重新载入',
+    posterBadge: '静态预览',
+    choose: '选择画质',
+    enterFullscreen: '全屏显示原野',
+    exitFullscreen: '退出全屏',
+    fullscreenTitle: '全屏',
+    exitLive: '退出实时场景，回到静态预览',
+    exitLiveTitle: '退出实时场景',
+    chooserNote: '三档都是完整的实时原野，点「开启」才开始下载。',
+    chooserLegend: '场景画质',
+    recommended: '推荐',
+    chooserHint: '实时场景较吃显卡与内存，可随时点右上角 ✕ 退出，回到静态预览。',
+    cancel: '取消',
+    start: '开启',
+  },
+  en: {
+    qualities: {
+      lite: { label: 'Lite', note: 'Opens a low-detail scene first, then streams in the full detail', size: '~13 MB to start' },
+      balanced: { label: 'Balanced', note: 'Some ground textures lightly compressed', size: '~113 MB' },
+      original: { label: 'Original', note: 'Lossless textures with every detail', size: '~126 MB' },
+    },
+    statuses: {
+      waiting_for_core: 'Connecting to Windrise Meadow…',
+      waiting_for_state: 'The meadow is ready, loading the demo companions…',
+      loading: 'The meadow is up, loading the demo companions…',
+      applying: 'Placing the demo companions…',
+      pack_ready: 'Companions loaded…',
+      ready: 'Windrise Meadow live demo',
+      missing_assets: 'The meadow loaded, but some demo companions are unavailable.',
+      unsafe_placement: 'The meadow loaded; the companion show is paused.',
+      stale: 'Resyncing the meadow demo…',
+      unavailable: 'The meadow demo is unavailable right now.',
+      error: 'The meadow failed to load. You can reload it.',
+      reload_required: 'The meadow needs to be reloaded.',
+    },
+    fullscreenFailed: 'Your browser could not go full screen; the meadow still works here.',
+    notConnected: 'The meadow has not connected yet. You can reload it.',
+    loading: (quality, progress) => `Loading the meadow · ${quality}${progress ? ` · ${progress}` : '…'}`,
+    // 外壳只写中文：英文界面只取其中的下载量（「正在接收引擎与素材 · 12.3 / 113.0 MiB（解压后）」）。
+    progress: (shellText) => {
+      const received = /(\d+(?:\.\d+)?) \/ (\d+(?:\.\d+)?) MiB/.exec(shellText)
+      return received ? `${received[1]} / ${received[2]} MiB unpacked` : ''
+    },
+    scene: 'Windrise Meadow live scene',
+    frameTitle: 'Windrise Meadow: day and night with a companion demo',
+    posterAlt: 'Still of Windrise Meadow: a sunny meadow, a wooden bridge over the river and a castle on the hill',
+    reload: 'Reload',
+    posterBadge: 'Still preview',
+    choose: 'Choose quality',
+    enterFullscreen: 'Show the meadow full screen',
+    exitFullscreen: 'Exit full screen',
+    fullscreenTitle: 'Full screen',
+    exitLive: 'Leave the live scene and go back to the still preview',
+    exitLiveTitle: 'Leave the live scene',
+    chooserNote: 'All three are the full live meadow. Nothing downloads until you press Start.',
+    chooserLegend: 'Scene quality',
+    recommended: 'Recommended',
+    chooserHint: 'The live scene is heavy on graphics and memory. Press ✕ at the top right at any time to go back to the still preview.',
+    cancel: 'Cancel',
+    start: 'Start',
+  },
+}
+const isStatus = (value: unknown): value is Status =>
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(COPY.zh.statuses, value)
 
 const emit = defineEmits<{ overlay: [open: boolean] }>()
+const { locale } = useI18n()
+const copy = computed(() => COPY[locale.value.startsWith('en') ? 'en' : 'zh'])
+const qualityOptions = computed(() => QUALITIES.map((value) => ({ value, ...copy.value.qualities[value] })))
 
 const frame = ref<HTMLIFrameElement | null>(null)
 const container = ref<HTMLElement | null>(null)
@@ -35,7 +158,7 @@ const phase = ref<Phase>('poster')
 const selected = ref<Quality>('lite')
 const active = ref<Quality>('lite')
 const src = ref('')
-const status = ref('waiting_for_core')
+const status = ref<Status>('waiting_for_core')
 const progress = ref('')
 const failed = ref(false)
 const fullscreenError = ref(false)
@@ -45,31 +168,16 @@ let sequence = 0
 let deadline: ReturnType<typeof setTimeout> | null = null
 let progressTimer: ReturnType<typeof setInterval> | null = null
 
-const labels: Record<string, string> = {
-  waiting_for_core: '正在连接风起原野…',
-  waiting_for_state: '原野核心已就绪，正在载入演示伙伴…',
-  loading: '原野已显示，正在载入演示伙伴…',
-  applying: '正在安置演示伙伴…',
-  pack_ready: '伙伴资源已载入…',
-  ready: '风起原野实时演示',
-  missing_assets: '原野已载入，部分演示伙伴暂不可用。',
-  unsafe_placement: '原野已载入，伙伴演出已暂停。',
-  stale: '正在重新同步原野演示…',
-  unavailable: '原野演示暂不可用。',
-  error: '原野载入失败，可重新载入。',
-  reload_required: '原野需要重新载入。',
-}
-const FAILURES = ['unavailable', 'error', 'reload_required']
+const FAILURES: readonly Status[] = ['unavailable', 'error', 'reload_required']
 
-const activeLabel = computed(() => qualities.find((item) => item.value === active.value)?.label ?? '')
 const loadFailed = computed(() => failed.value || (phase.value !== 'poster' && FAILURES.includes(status.value)))
 const message = computed(() => {
-  if (fullscreenError.value) return '浏览器未能进入全屏，原野仍可继续使用。'
-  if (failed.value) return '原野暂未连接，可重新载入。'
+  if (fullscreenError.value) return copy.value.fullscreenFailed
+  if (failed.value) return copy.value.notConnected
   if (phase.value === 'loading' && !FAILURES.includes(status.value)) {
-    return `正在载入原野 · ${activeLabel.value}${progress.value ? ` · ${progress.value}` : '…'}`
+    return copy.value.loading(copy.value.qualities[active.value].label, copy.value.progress(progress.value))
   }
-  return labels[status.value] ?? labels.unavailable
+  return copy.value.statuses[status.value]
 })
 const statusVisible = computed(() => phase.value === 'loading' || failed.value || fullscreenError.value
   || (phase.value === 'live' && ['missing_assets', 'unsafe_placement', ...FAILURES].includes(status.value)))
@@ -99,11 +207,10 @@ function clearTimers() {
   progressTimer = null
 }
 
-/** 截图盖住场景时，同源读取场景自带的下载进度文案，让等待有真实反馈。 */
+/** 截图盖住场景时，同源读取场景自带的下载进度文案，让等待有真实反馈（按语言取舍见 copy.progress）。 */
 function readProgress() {
   try {
-    const text = frame.value?.contentDocument?.getElementById('loading-message')?.textContent?.trim() ?? ''
-    progress.value = text.length <= 48 ? text : ''
+    progress.value = frame.value?.contentDocument?.getElementById('loading-message')?.textContent?.trim() ?? ''
   } catch {
     progress.value = ''
   }
@@ -197,8 +304,7 @@ function receive(event: MessageEvent) {
     }
     sendDemo()
   } else if (data.type === 'presentation_status' && data.session === session
-    && Object.keys(data).length === 5 && typeof data.status === 'string'
-    && Object.prototype.hasOwnProperty.call(labels, data.status)) {
+    && Object.keys(data).length === 5 && isStatus(data.status)) {
     status.value = data.status
     failed.value = false
     // 除 waiting_for_core 与失败态外，任何状态都意味着原野核心已真实画出：揭开截图。
@@ -237,12 +343,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="container" class="godot-contact-scene" :class="`godot-contact-scene--${phase}`" aria-label="风起原野实时场景">
+  <section ref="container" class="godot-contact-scene" :class="`godot-contact-scene--${phase}`" :aria-label="copy.scene">
     <iframe
       v-if="src"
       ref="frame"
       :src="src"
-      title="风起原野：昼夜切换与伙伴演示"
+      :title="copy.frameTitle"
       referrerpolicy="no-referrer"
       allow="fullscreen"
       @error="failed = true"
@@ -253,7 +359,7 @@ onBeforeUnmount(() => {
         :src="posterSrc"
         :srcset="posterSrcset"
         sizes="100vw"
-        alt="风起原野静态截图：晴天草原、河上木桥与山顶城堡"
+        :alt="copy.posterAlt"
         decoding="async"
         fetchpriority="high"
       >
@@ -261,47 +367,47 @@ onBeforeUnmount(() => {
 
     <p class="scene-status" :class="{ 'scene-status--visible': statusVisible, 'scene-status--busy': phase === 'loading' && !loadFailed }" role="status">
       <span>{{ message }}</span>
-      <button v-if="loadFailed" type="button" class="scene-status-retry" @click="reload">重新载入</button>
+      <button v-if="loadFailed" type="button" class="scene-status-retry" @click="reload">{{ copy.reload }}</button>
     </p>
 
     <div v-if="phase === 'poster'" class="scene-actions scene-actions--poster">
-      <span class="scene-poster-badge" aria-hidden="true">静态预览</span>
+      <span class="scene-poster-badge" aria-hidden="true">{{ copy.posterBadge }}</span>
       <button ref="launcher" type="button" class="scene-launch" @click="openChooser">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z" /></svg>
-        <span>选择画质</span>
+        <span>{{ copy.choose }}</span>
       </button>
     </div>
     <div v-else-if="phase !== 'choosing'" class="scene-actions">
-      <button v-if="phase === 'live'" type="button" :aria-label="expanded ? '退出全屏' : '全屏显示原野'" :title="expanded ? '退出全屏' : '全屏'" :aria-pressed="expanded" @click="toggleFullscreen">
+      <button v-if="phase === 'live'" type="button" :aria-label="expanded ? copy.exitFullscreen : copy.enterFullscreen" :title="expanded ? copy.exitFullscreen : copy.fullscreenTitle" :aria-pressed="expanded" @click="toggleFullscreen">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path v-if="expanded" d="M9 4v5H4M15 4v5h5M9 20v-5H4m11 5v-5h5" />
           <path v-else d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5" />
         </svg>
       </button>
-      <button type="button" aria-label="退出实时场景，回到静态预览" title="退出实时场景" @click="exitLive">
+      <button type="button" :aria-label="copy.exitLive" :title="copy.exitLiveTitle" @click="exitLive">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
     </div>
 
     <div v-if="phase === 'choosing'" class="scene-chooser" @keydown.esc.stop="closeChooser">
       <form ref="panel" class="scene-chooser-panel" role="group" aria-labelledby="scene-chooser-title" aria-describedby="scene-chooser-note" @submit.prevent="enter">
-        <h2 id="scene-chooser-title" class="scene-chooser-title">选择画质</h2>
-        <p id="scene-chooser-note" class="scene-chooser-note">三档都是完整的实时原野，点「开启」才开始下载。</p>
+        <h2 id="scene-chooser-title" class="scene-chooser-title">{{ copy.choose }}</h2>
+        <p id="scene-chooser-note" class="scene-chooser-note">{{ copy.chooserNote }}</p>
         <fieldset class="scene-chooser-options">
-          <legend class="scene-sr-only">场景画质</legend>
-          <label v-for="item in qualities" :key="item.value" class="scene-option">
+          <legend class="scene-sr-only">{{ copy.chooserLegend }}</legend>
+          <label v-for="item in qualityOptions" :key="item.value" class="scene-option">
             <input v-model="selected" type="radio" name="contact-scene-quality" :value="item.value">
             <span class="scene-option-body">
-              <strong>{{ item.label }}<em v-if="item.value === 'lite'">推荐</em></strong>
+              <strong>{{ item.label }}<em v-if="item.value === 'lite'">{{ copy.recommended }}</em></strong>
               <small>{{ item.note }}</small>
             </span>
             <span class="scene-option-size">{{ item.size }}</span>
           </label>
         </fieldset>
-        <p class="scene-chooser-hint">实时场景较吃显卡与内存，可随时点右上角 ✕ 退出，回到静态预览。</p>
+        <p class="scene-chooser-hint">{{ copy.chooserHint }}</p>
         <div class="scene-chooser-actions">
-          <button type="button" class="scene-chooser-cancel" @click="closeChooser">取消</button>
-          <button type="submit" class="scene-chooser-enter">开启</button>
+          <button type="button" class="scene-chooser-cancel" @click="closeChooser">{{ copy.cancel }}</button>
+          <button type="submit" class="scene-chooser-enter">{{ copy.start }}</button>
         </div>
       </form>
     </div>
