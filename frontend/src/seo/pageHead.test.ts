@@ -33,7 +33,7 @@ afterEach(() => {
 describe('resolvePageHead', () => {
   it('gives every named route its own title in both languages, and the home title matches index.html', () => {
     const routerSource = readFileSync(`${frontendRoot}/src/router/index.ts`, 'utf-8')
-    const names = [...routerSource.matchAll(/name: '([^']+)'/g)].map((match) => match[1]!).filter((name) => name !== 'not-found')
+    const names = [...routerSource.matchAll(/name: '([^']+)'/g)].map((match) => match[1]!)
     expect(names.length).toBeGreaterThan(15)
     for (const locale of ['zh-CN', 'en-US'] as const) {
       i18n.global.locale.value = locale
@@ -90,6 +90,9 @@ describe('resolvePageHead', () => {
   it('marks missing content noindex and gives it no canonical', () => {
     expect(resolvePageHead(at('paper-read', '/papers/404/read'), { noindex: true }, t))
       .toMatchObject({ title: '论文 · AIGCNEWS', noindex: true, canonical: null })
+    // 未知地址的兜底页本身就是「没有这一页」，不用页面另外声明。
+    expect(resolvePageHead(at('not-found', '/no-such-page'), null, t))
+      .toMatchObject({ title: '页面不存在 · AIGCNEWS', noindex: true, canonical: null })
   })
 })
 

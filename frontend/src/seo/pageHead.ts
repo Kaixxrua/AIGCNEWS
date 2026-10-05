@@ -16,7 +16,8 @@ import { installSeoMessages } from '@/i18n/locales/seo'
  *
  * 各路径拿到的都是同一份 index.html，静态 head 只有首页那一份；Google 渲染 JS 后读的是这里写进
  * document 的值，所以按路由名给每页单独的标题和描述，详情页再用 usePageHead 换成论文标题、素材名。
- * 内容不存在（论文 404、素材 id 不在目录里）时标 noindex、不给 canonical，免得被当成正常页面收录。
+ * 内容不存在（论文 404、素材 id 不在目录里）和未知地址的「页面不存在」页标 noindex、不给 canonical，
+ * 免得被当成正常页面收录。
  * canonical 一律指主站：备用入口 aigcradar.online 是整站镜像，不该和主站抢收录。筛选、来源标记之类的查询参数
  * 不进 canonical；决定页面内容的参数（某一期简报的 ?date=）由页面经 canonicalQuery 交代。
  */
@@ -46,10 +47,14 @@ const ROUTE_TITLE_KEYS: Readonly<Record<string, string>> = {
   register: 'register',
   'oauth-callback': 'oauth',
   'oauth-action-callback': 'oauth',
+  'not-found': 'notFound',
 }
 
 /** 有专门描述的页面（seo.descriptions.*），其余用 default。 */
 const DESCRIBED_PAGES = new Set(['projects', 'websites', 'uiLibrary', 'report', 'xboard', 'mcp', 'dsh', 'membership', 'disclaimer', 'privacy'])
+
+/** 本身就是「没有这一页」的页面，不论内容一律 noindex。 */
+const NOINDEX_PAGES = new Set(['notFound'])
 
 export interface PageHeadOverride {
   /** 页面自己的标题（论文标题、素材名），会拼上品牌后缀。 */
@@ -110,7 +115,7 @@ export function resolvePageHead(
   const description = ownDescription
     ? clip(ownDescription, DESCRIPTION_LIMIT)
     : t(`seo.descriptions.${key && DESCRIBED_PAGES.has(key) ? key : 'default'}`)
-  const noindex = override?.noindex === true
+  const noindex = override?.noindex === true || (key !== null && NOINDEX_PAGES.has(key))
   return { title, description, canonical: noindex ? null : canonicalUrl(route, override?.canonicalQuery), noindex }
 }
 

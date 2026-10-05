@@ -194,6 +194,8 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 
 守卫为纯函数（`features/navigation/routePolicy.ts`）：匿名访问受保护页 → 拒绝本次导航（首次深链落到安全路由 `/`），记录完整目标并打开全局登录弹窗；登录成功后恢复目标。非管理员 → `/`；特性关闭 → `/`。
 
+未知路径（含已下线的 `/wechat`、`/chat`，以及不存在的 `/login`）落到 Layout 里的兜底子路由 `not-found`（NotFoundView）：地址原样保留，页面显示「页面不存在」并标 noindex。HTTP 状态码由边缘给：`frontend/public/__routes/` 下每个顶层路由首段放一个空文件（另加由全局守卫处理、没有路由记录的 `forgot-password`），两台边缘的 Caddy（`/etc/caddy/Caddyfile`，不在仓库）对首段不在清单里、本身也不是文件的地址回 404，正文仍是 index.html。清单和路由表的一致性由 `router/index.test.ts` 守护，新增顶层路由要同步加文件，首段是动态参数的路由会让清单失效、契约测试直接拒绝。边缘只认首段：`/papers`、`/oauth/xyz` 这类首段在清单里的未知地址仍回 200，页面照样显示「页面不存在」。清单目录不存在时边缘规则不生效，退回一律 200。
+
 ### 6.3 关键机制
 
 - **SSE**：`useEventSource` 基于 fetch ReadableStream（非原生 EventSource），自动带 Bearer，解析 `data:` 帧与 `[DONE]`，429 映射为配额提示。

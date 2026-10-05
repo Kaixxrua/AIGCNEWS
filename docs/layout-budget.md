@@ -2,8 +2,8 @@
 
 `frontend/scripts/layout-budget.mjs` 把改版后的人工复测固定成一条命令。它分桌面、手机两套跑，逐个组合检查，超预算的列出原因。
 
-- **桌面**：10 项 × 4 档视口（1024×640、1350×657、1536×730、1920×960）× 中英文，共 80 个组合。
-- **手机**：20 项 × 3 档视口（360×740、390×664、430×740）× 中英文，共 120 个组合。按触屏手机模拟：`isMobile`、`hasTouch`、3 倍像素密度，用 Android 手机的 UA。UA 里留着 `HeadlessChrome`，站点按自动化流量计，不算访客。
+- **桌面**：11 项 × 4 档视口（1024×640、1350×657、1536×730、1920×960）× 中英文，共 88 个组合。
+- **手机**：21 项 × 3 档视口（360×740、390×664、430×740）× 中英文，共 126 个组合。按触屏手机模拟：`isMobile`、`hasTouch`、3 倍像素密度，用 Android 手机的 UA。UA 里留着 `HeadlessChrome`，站点按自动化流量计，不算访客。
 
 每个组合都查以下三项：
 
@@ -32,7 +32,7 @@
 
 ## 测哪些页面
 
-桌面：简报（钉在 10-03 那一期）、项目库、推文墙、UI 灵感库、会员、MCP、网页收藏（`/projects?source=website`）、dsh，从 dock 账号按钮打开的登录弹窗（login），以及游客打开订阅页时看到的首页加登录框（gate）。
+桌面：简报（钉在 10-03 那一期）、项目库、推文墙、UI 灵感库、会员、MCP、网页收藏（`/projects?source=website`）、dsh、未知地址的「页面不存在」页（not-found，`/no-such-page`），从 dock 账号按钮打开的登录弹窗（login），以及游客打开订阅页时看到的首页加登录框（gate）。
 
 手机见下表。表里只列各项另外加的检查。
 
@@ -49,6 +49,7 @@
 | contact、paper | `/contact`、一篇论文的阅读页 | |
 | disclaimer、privacy | `/disclaimer`、`/privacy` | |
 | register、recommended | `/register`、`/websites` | |
+| not-found | `/no-such-page` | 未知地址，「页面不存在」页 |
 | forgot | `/forgot-password` | 落在 `/`，找回密码弹窗 |
 | more | `/privacy` | 点底栏「更多」，菜单弹窗 |
 | login | `/privacy` | 点「更多」→「登录」，登录弹窗 |
@@ -81,7 +82,7 @@ LAYOUT_BASE_URL=https://aigcnews.cn LAYOUT_RESOLVE=aigcnews.cn=<边缘 IP> npm r
 | `LAYOUT_RESOLVE` | 把域名钉到某个边缘，如 `aigcnews.cn=<边缘 IP>`；钉了就不走代理 |
 | `LAYOUT_PROFILE` | 只测一套：`desktop` 或 `mobile`，缺省两套都测 |
 | `LAYOUT_PAGES` | 只测这几项，逗号分隔，如 `report,projects`；同名的项两套里都会测 |
-| `LAYOUT_CONCURRENCY` | 同时开几页，默认 3；两套共 200 个组合，并发 4 时本地构建实测约 3 分半 |
+| `LAYOUT_CONCURRENCY` | 同时开几页，默认 3；两套共 214 个组合，并发 4 时本地构建约 3 分半（200 个组合时实测） |
 | `LAYOUT_REPORT_DIR` | 超预算的组合截一张图存到这里 |
 | `CHROME_PATH` | 换用指定的 Chromium，缺省用 Playwright 自带的（`npx playwright install chromium`） |
 

@@ -1,3 +1,5 @@
+/// <reference types="node" />
+import { readdirSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteLocationNormalized } from 'vue-router'
 import router from './index'
@@ -19,17 +21,19 @@ describe('modal-only login route contract', () => {
   })
 })
 
-// 契约：未知路径一律回首页（replace，不留历史）；/forgot-password 仍先由全局守卫
-// 打开重置密码弹框，不被兜底路由吞掉
+// 契约：未知路径显示「页面不存在」，地址原样保留、不再跳回首页；兜底挂在 Layout 里，报头和 dock
+// 照常可用。/forgot-password 仍先由全局守卫打开重置密码弹框，不被兜底路由吞掉
 describe('unknown path fallback contract', () => {
   afterEach(async () => {
     requestPasswordReset.mockClear()
     await router.replace('/')
   })
 
-  it.each(['/no-such-page', '/papers', '/a/b/c?x=1'])('navigating to %s lands on home', async (path) => {
+  it.each(['/no-such-page', '/papers', '/a/b/c?x=1'])('navigating to %s shows the not-found page in place', async (path) => {
     await router.push(path)
-    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(router.currentRoute.value.name).toBe('not-found')
+    expect(router.currentRoute.value.fullPath).toBe(path)
+    expect(router.currentRoute.value.matched.map((record) => record.path)).toEqual(['/', '/:pathMatch(.*)*'])
   })
 
   it('keeps known pages reachable', async () => {
@@ -44,13 +48,43 @@ describe('unknown path fallback contract', () => {
   })
 })
 
-// 契约：微信公众号页与对话聊天页已整体移除 —— 路由不再匹配、导航不再出现
+// 契约：微信公众号页与对话聊天页已整体移除 —— 路由不再匹配、导航不再出现，旧书签打开显示「页面不存在」
 describe('removed pages contract', () => {
-  it.each(['/wechat', '/chat'])('route %s is gone and falls back to home', async (path) => {
+  afterEach(async () => {
+    await router.replace('/')
+  })
+
+  it.each(['/wechat', '/chat'])('route %s is gone and shows the not-found page', async (path) => {
     expect(router.resolve(path).name).toBe('not-found')
     expect(NAV_ITEMS.some((n) => n.to === path)).toBe(false)
     await router.push(path)
-    expect(router.currentRoute.value.fullPath).toBe('/')
+    expect(router.currentRoute.value.name).toBe('not-found')
+    expect(router.currentRoute.value.fullPath).toBe(path)
+  })
+})
+
+// 契约：边缘按 public/__routes 的首段清单判断地址有没有页面，清单外的地址回 404 状态码（正文仍是
+// index.html，由上面的兜底页显示「页面不存在」）。清单必须和路由表的顶层首段一一对应：漏一个，那个
+// 栏目在搜索引擎眼里就成了 404；多一个，下线的地址就还是 200。/forgot-password 没有路由记录、由全局
+// 守卫处理，单列在 GUARD_ENTRIES。
+describe('edge route allowlist contract', () => {
+  const GUARD_ENTRIES = ['forgot-password']
+  const allowlist = () => readdirSync(`${process.cwd()}/public/__routes`).sort()
+
+  it('lists exactly the first path segments the router serves', () => {
+    const segments = new Set(GUARD_ENTRIES)
+    for (const record of router.getRoutes()) {
+      const first = record.path.split('/')[1] ?? ''
+      if (first === '' || first.startsWith(':pathMatch')) continue
+      // 首段是动态参数的路由（如 /:slug）会让任何首段都可能有页面，清单就失效了，加这种路由要先改边缘规则
+      expect(first, `top-level dynamic segment in ${record.path}`).not.toMatch(/^:/)
+      segments.add(first)
+    }
+    expect(allowlist()).toEqual([...segments].sort())
+  })
+
+  it.each(['login', 'wechat', 'chat', 'news', 'no-such-page'])('does not list %s', (segment) => {
+    expect(allowlist()).not.toContain(segment)
   })
 })
 

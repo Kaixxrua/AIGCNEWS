@@ -47,7 +47,7 @@ const quickSearchMounted = ref(false)
 watch(isDesktop, (desktop) => { if (desktop) quickSearchMounted.value = true }, { immediate: true })
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
-const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
+const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'not-found', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 // 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
 const DESKTOP_COMIC_ROUTES = new Set(['contact'])
 // 项目库目录（projects-C）与我的网页收藏（source=website，websites-mine-C）同样按漫画概念图复刻。
@@ -62,7 +62,9 @@ const comicPage = computed(() => comicProjects.value || comicRoute.value)
 // 内页的报头在桌面压成一行报眉（小号字标、版名、日期与今日更新、工具、头像），漫画贴纸与标语只留在首页。
 // 联系页是占满一屏的场景页，场景与报头的咬合在私有覆盖层里调好，保持原样。
 const folioPage = computed(() => comicPage.value && route.name !== 'contact')
-const section = computed(() => folioPage.value ? folioSection(route.path, route.query, String(route.name ?? '')) : null)
+// 未知地址的「页面不存在」页不属于任何栏目：dock 不亮、报眉不写版名。栏目按路径前缀认，不排除的话 /xyz 会亮 X 动态。
+const navPath = computed(() => (route.name === 'not-found' ? '' : route.path))
+const section = computed(() => folioPage.value ? folioSection(navPath.value, route.query, String(route.name ?? '')) : null)
 // 报眉中间那一栏空着，各页的本版工具（FolioTools）放得下就传送进去；挂载点常驻，只在有报眉时显示。
 provide(FOLIO_TOOLS_AVAILABLE, computed(() => folioPage.value && isDesktop.value))
 // 版面密度：有舒适版面的内页在报眉右侧放开关；选了舒适时这几页的外壳挂一个类，舒适版面的样式据此生效（只在桌面，
@@ -126,7 +128,7 @@ let pageAxis: RouteAxis = 'rise'
 let dockIndex = -1
 const routeTransition = createRouteTransition(() => pageAxis)
 watch([viewKey, () => route.fullPath], (next, previous) => {
-  const index = visibleNavItems.value.findIndex((item) => isNavigationItemActive(item, route.path, route.query))
+  const index = visibleNavItems.value.findIndex((item) => isNavigationItemActive(item, navPath.value, route.query))
   pageAxis = routeAxis(dockIndex, index)
   dockIndex = index
   if (!previous || next[0] !== previous[0] || pageAxis === 'rise') return
@@ -216,7 +218,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
       v-show="!dockSuppressed"
       :items="visibleNavItems"
       :brand-name="brandName"
-      :current-path="route.path"
+      :current-path="navPath"
       :current-query="route.query"
       :is-admin="authStore.isAdmin"
       :is-logged-in="authStore.isLoggedIn"

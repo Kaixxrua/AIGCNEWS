@@ -27,6 +27,7 @@ const ContactPageView = () => import('@/views/ContactPageView.vue')
 const MembershipView = () => import('@/views/MembershipView.vue')
 const MembershipCheckoutView = () => import('@/views/MembershipCheckoutView.vue')
 const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
+const NotFoundView = () => import('@/views/NotFoundView.vue')
 
 const router = createRouter({
   history: createWebHistory(),
@@ -152,17 +153,16 @@ const router = createRouter({
           component: ContactPageView,
           meta: { sitePage: 'contactPage' },
         },
+        // ── 兜底：未知路径（含已下线的 /wechat、/chat 旧书签）显示「页面不存在」，地址原样保留 ──
+        // 挂在 Layout 里，报头和 dock 照常可用。/forgot-password 没有路由记录，由全局守卫先行处理，
+        // 这里不用路由级 redirect，免得抢在守卫前面。边缘按 public/__routes 的首段清单给未知地址回
+        // 404 状态码（页面仍是这份 index.html），新增顶层路由要同步加清单文件，契约见 index.test.ts。
+        {
+          path: ':pathMatch(.*)*',
+          name: 'not-found',
+          component: NotFoundView,
+        },
       ],
-    },
-
-    // ── 兜底：未知路径（含已下线的 /wechat、/chat 旧书签）回首页 ──
-    // 用 beforeEnter 而不用 redirect：路由级 redirect 先于全局 beforeEach 生效，
-    // 会吞掉 /forgot-password 这类没有独立页面、由守卫按路径处理的入口
-    {
-      path: '/:pathMatch(.*)*',
-      name: 'not-found',
-      component: LayoutView,
-      beforeEnter: () => ({ path: '/', replace: true }),
     },
   ],
 })

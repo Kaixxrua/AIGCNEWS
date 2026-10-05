@@ -29,6 +29,7 @@ type SeoMessages = {
       privacy: string
       register: string
       oauth: string
+      notFound: string
     }
     descriptions: {
       default: string
@@ -68,6 +69,7 @@ const zhCN: SeoMessages = {
       privacy: '隐私政策',
       register: '注册',
       oauth: '登录',
+      notFound: '页面不存在',
     },
     descriptions: {
       default: 'AIGCNEWS（AIGC Radar）：AI 垂直资讯索引——arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。',
@@ -107,6 +109,7 @@ const enUS: SeoMessages = {
       privacy: 'Privacy Policy',
       register: 'Sign up',
       oauth: 'Sign in',
+      notFound: 'Page not found',
     },
     descriptions: {
       default: 'AIGCNEWS (AIGC Radar): an AI news index — arXiv papers, a GitHub AI project library, daily/weekly/monthly rankings and daily briefings.',
