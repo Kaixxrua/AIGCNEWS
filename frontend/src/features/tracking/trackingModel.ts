@@ -42,9 +42,22 @@ export interface TrackingOverview {
   settings: TrackingSettings
   digests: TrackingDigest[]
 }
+export interface TrackingSourceCount {
+  source: string
+  count: number
+}
+export interface TrackingExpansion {
+  term: string
+  aliases: string[]
+  exclude: boolean
+}
 export interface TrackingPreview {
   items: TrackingItem[]
   truncated: boolean
+  // Matches in the preview window (items list at most 50 of them). Older backends omit these three.
+  total?: number
+  sources?: TrackingSourceCount[]
+  expansions?: TrackingExpansion[]
 }
 
 export const emptyRule = (): TrackingRuleInput => ({

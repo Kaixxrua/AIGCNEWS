@@ -30,6 +30,11 @@ const nextRun = computed(() => {
   if (!data.value?.settings.enabled) return t('tracking.statusPaused')
   return `${String(data.value.settings.delivery_hour).padStart(2, '0')}:00`
 })
+// 命中多于 50 条时只列最新 50 条，total 仍是全部；没有 total 的旧后端按列出的条数。
+const previewTotal = computed(() => preview.value?.total ?? preview.value?.items.length ?? 0)
+const previewSources = computed(() =>
+  (preview.value?.sources ?? []).map((row) => `${t('subscriptions.sources.' + row.source)} ${row.count}`).join(' · '),
+)
 const quotaPercent = computed(() => {
   if (!data.value) return 0
   return Math.min(100, Math.round((data.value.rules.length / data.value.limit) * 100))
@@ -242,6 +247,23 @@ async function closeDelete() {
       <div v-if="preview" class="tracking-preview" aria-live="polite">
         <h3 class="font-bold">{{ t('tracking.previewTitle', { query: previewTitle }) }}</h3>
         <p class="tracking-hint mt-1">{{ t('tracking.previewHint') }}</p>
+        <p v-if="previewTotal" class="tracking-preview-count mt-2">
+          <strong>{{ t('tracking.previewCount', { count: previewTotal }) }}</strong
+          ><template v-if="previewSources"> · {{ previewSources }}</template>
+        </p>
+        <!-- 中文词按词表也匹配了英文同义词：说明为什么列出了英文内容。 -->
+        <p
+          v-for="row in preview.expansions ?? []"
+          :key="(row.exclude ? '-' : '+') + row.term"
+          class="tracking-hint tracking-preview-expansion mt-1"
+        >
+          {{
+            t(row.exclude ? 'tracking.previewExcludeExpansion' : 'tracking.previewExpansion', {
+              term: row.term,
+              aliases: row.aliases.join(' / '),
+            })
+          }}
+        </p>
         <TrackingResults :items="preview.items" :truncated="preview.truncated" preview />
       </div>
       <div class="tracking-bottom">

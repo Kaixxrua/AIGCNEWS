@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 
 from backend.app.api.routes_tracking import get_tracking_repository, router
 from backend.app.core.auth import RequireUser
+from backend.app.domain.tracking_terms import _NEWS_TERMS, _equivalents, _key, english_equivalents
 from backend.app.models.schema_tracking import TrackingRuleInput
 from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
 from backend.app.services.tracking.content import public_link, render_digest
@@ -50,12 +52,13 @@ def vip(database, user_id):
         connection.execute("UPDATE users SET membership_tier = 'member' WHERE id = %s", (user_id,))
 
 
-def document(database, title, *, when=None, url=None):
+def document(database, title, *, when=None, url=None, source="news", translation_zh=None):
     key = uuid.uuid4().hex
     with database.transaction() as connection:
         connection.execute(
-            "INSERT INTO documents (id, source, title, url, summary, created_at) VALUES (%s, 'news', %s, %s, 'A useful update', %s)",
-            (key, title, url or f"https://example.com/{key}", when or now().isoformat()),
+            "INSERT INTO documents (id, source, title, url, summary, translation_zh, created_at) "
+            "VALUES (%s, %s, %s, %s, 'A useful update', %s, %s)",
+            (key, source, title, url or f"https://example.com/{key}", translation_zh, when or now().isoformat()),
         )
     return "document:" + key
 
@@ -148,7 +151,10 @@ def test_matching_exclusions_literal_patterns_and_bad_dates(setup):
     document(database, f"{term} 100% malformed", when="2026-99-99")
     document(database, f"{term} 100% private", url="https://127.0.0.1/a")
     saved = repository.overview(user_id)["rules"][0]
-    assert [item["key"] for item in repository.preview(user_id, saved["id"])["items"]] == [good]
+    preview = repository.preview(user_id, saved["id"])
+    assert [item["key"] for item in preview["items"]] == [good]
+    # 命中数按列出的结果计：非公开链接不展示也不计数
+    assert preview["total"] == 1 and preview["sources"] == [{"source": "news", "count": 1}]
     assert repository.overview(user_id)["digests"] == []
 
 
@@ -273,6 +279,83 @@ def test_english_exclusions_do_not_remove_words_containing_the_same_letters(setu
     assert [item["key"] for item in repository.preview(user_id, saved["id"])["items"]] == [expected]
 
 
+def test_chinese_terms_expand_to_english_only_as_whole_terms():
+    assert {"agent", "ai agent", "agentic"} <= set(english_equivalents("智能体"))
+    assert "agents" not in english_equivalents("智能体")  # 匹配时允许复数 s，不再单列
+    assert english_equivalents(" ＡＩ绘画 ") == english_equivalents("ai绘画") != ()
+    assert english_equivalents("入门") == ("tutorial",)  # machine learning 不是入门
+    for term in ("智能体平台", "agent", "RAG", "代理", "pluto", "焚决"):
+        assert english_equivalents(term) == (), term
+
+
+def test_tracking_term_table_maps_chinese_to_lowercase_english():
+    assert all(_key(phrase) == phrase for phrase in _NEWS_TERMS)
+    for phrase, aliases in _equivalents().items():
+        assert re.search(r"[㐀-䶿一-鿿]", phrase), phrase
+        assert aliases and len(set(aliases)) == len(aliases), phrase
+        for alias in aliases:
+            assert alias and alias.isascii() and alias == alias.strip().casefold(), (phrase, alias)
+        assert not {"learning", "notes", "metrics", "budget"} & set(aliases), phrase
+
+
+def test_x_translations_and_english_equivalents_match_chinese_keywords(setup):
+    database, repository, user_id = setup
+    marker = uuid.uuid4().hex
+    repository.save_rule(user_id, rule(f"{marker} 智能体"))
+    expected = {
+        document(database, f"{marker} weekly roundup", source="x", translation_zh="本周智能体动态"),
+        document(database, f"{marker} New AI agent framework"),
+        document(database, f"{marker} Agents that browse"),
+        document(database, f"{marker} agentic coding"),
+        document(database, f"{marker} 智能体平台上线", source="dailyhot"),
+    }
+    for title in ("reagent chemistry", "agency news", "weekly roundup"):
+        document(database, f"{marker} {title}")
+    saved = repository.overview(user_id)["rules"][0]
+    preview = repository.preview(user_id, saved["id"])
+    assert {item["key"] for item in preview["items"]} == expected
+    assert preview["total"] == 5 and not preview["truncated"]
+    assert preview["sources"] == [
+        {"source": "news", "count": 3}, {"source": "dailyhot", "count": 1}, {"source": "x", "count": 1},
+    ]
+    assert preview["expansions"] == [{"term": "智能体", "aliases": list(english_equivalents("智能体")), "exclude": False}]
+    schedule(repository, user_id)
+    assert {item["key"] for item in repository.generate_digest(user_id, now())["items"]} == expected
+
+
+@pytest.mark.parametrize("term,matched,unmatched", [
+    ("大模型", "Open LLMs ranked", "LLMOps tooling"),
+    ("入门", "Rust tutorial for beginners", "Deep learning at scale"),
+    ("长上下文", "long-context retrieval", "context window tricks"),
+    ("智能体平台", "智能体平台发布", "AI agent platform"),
+    ("代理", "AI 代理上线", "Utah VPN law"),
+])
+def test_chinese_expansion_is_whole_term_and_skips_ambiguous_words(setup, term, matched, unmatched):
+    database, repository, user_id = setup
+    marker = uuid.uuid4().hex
+    repository.save_rule(user_id, rule(f"{marker} {term}"))
+    expected = document(database, f"{marker} {matched}")
+    document(database, f"{marker} {unmatched}")
+    saved = repository.overview(user_id)["rules"][0]
+    assert [item["key"] for item in repository.preview(user_id, saved["id"])["items"]] == [expected]
+
+
+def test_chinese_exclusions_also_drop_english_equivalents(setup):
+    database, repository, user_id = setup
+    marker = uuid.uuid4().hex
+    repository.save_rule(user_id, rule(marker, excludes=["融资", "RAG"]))
+    expected = document(database, f"{marker} refunding policy")
+    document(database, f"{marker} raises a Series A")
+    document(database, f"{marker} new funding round")
+    document(database, f"{marker} 完成新一轮融资", source="dailyhot")
+    # 英文排除词同样查 X 中文译文
+    document(database, f"{marker} weekly roundup", source="x", translation_zh="RAG 实战")
+    saved = repository.overview(user_id)["rules"][0]
+    preview = repository.preview(user_id, saved["id"])
+    assert [item["key"] for item in preview["items"]] == [expected]
+    assert preview["expansions"] == [{"term": "融资", "aliases": list(english_equivalents("融资")), "exclude": True}]
+
+
 def test_project_growth_uses_existing_metrics_and_never_repeats(setup):
     database, repository, user_id = setup
     repo_id = uuid.uuid4().hex
@@ -361,6 +444,9 @@ def test_api_contract_and_ownership(setup):
     assert client.post("/api/tracking/rules", json={"query": "agents"}).status_code == 409
     assert client.put("/api/tracking/settings", json={"delivery_hour": 24}).status_code == 422
     assert client.get("/api/tracking/rules/0/preview").status_code == 422
+    preview = client.get(f"/api/tracking/rules/{rule_id}/preview").json()
+    assert set(preview) == {"items", "truncated", "total", "sources", "expansions"}
+    assert preview["total"] == sum(row["count"] for row in preview["sources"]) and preview["expansions"] == []
     assert client.delete(f"/api/tracking/rules/{rule_id}").status_code == 200
     app.dependency_overrides[RequireUser] = lambda: {"user_id": 0}
     assert client.get("/api/tracking").status_code == 401
@@ -469,3 +555,6 @@ def test_newly_enriched_projects_are_not_lost_and_results_are_bounded(setup):
         document(database, f"{term} {index}")
     preview = repository.preview(user_id, saved["id"])
     assert len(preview["items"]) == 50 and preview["truncated"]
+    # 超过 50 条时命中数仍是全部
+    assert preview["total"] == 56
+    assert preview["sources"] == [{"source": "news", "count": 55}, {"source": "github", "count": 1}]

@@ -218,6 +218,45 @@ describe('personal tracking', () => {
     await flushPromises()
     expect(trackingApi.preview).toHaveBeenCalledWith(1)
     expect(wrapper.text()).toContain('最近 24 小时暂无匹配')
+    // 旧后端没有命中数与扩展词：不画计数行
+    expect(wrapper.find('.tracking-preview-count').exists()).toBe(false)
     expect(trackingApi.settings).not.toHaveBeenCalled()
+  })
+
+  it('counts every match by source and names the English words a Chinese term also matched', async () => {
+    const wrapper = await render({ ...snapshot(), rules: [{ ...saved(), query: '智能体', excludes: ['融资'] }] })
+    vi.mocked(trackingApi.preview).mockResolvedValue({
+      items: [
+        {
+          key: 'document:1',
+          title: 'New AI agent framework',
+          url: 'https://example.com/a',
+          summary: 'A useful update',
+          source: 'news',
+          observed_at: '2026-10-05T08:00:00Z',
+          matched_rules: ['智能体'],
+        },
+      ],
+      truncated: true,
+      total: 63,
+      sources: [
+        { source: 'news', count: 40 },
+        { source: 'x', count: 23 },
+      ],
+      expansions: [
+        { term: '智能体', aliases: ['agent', 'ai agent', 'agentic'], exclude: false },
+        { term: '融资', aliases: ['funding', 'series a'], exclude: true },
+      ],
+    })
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '预览匹配')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.tracking-preview-count').text()).toBe('命中 63 条 · 新闻 40 · X 23')
+    expect(wrapper.findAll('.tracking-preview-expansion').map((row) => row.text())).toEqual([
+      '「智能体」也匹配英文：agent / ai agent / agentic',
+      '排除「融资」时也排除英文：funding / series a',
+    ])
   })
 })

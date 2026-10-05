@@ -84,9 +84,25 @@ class TrackingOverview(BaseModel):
     digests: list[TrackingDigest]
 
 
+class TrackingSourceCount(BaseModel):
+    source: str
+    count: int = Field(ge=0)
+
+
+class TrackingExpansion(BaseModel):
+    term: str
+    aliases: list[str]
+    exclude: bool
+
+
 class TrackingPreview(BaseModel):
     items: list[TrackingItem]
     truncated: bool
+    # Matches in the preview window; items list at most the newest 50 of them.
+    total: int = Field(ge=0)
+    sources: list[TrackingSourceCount]
+    # English equivalents a Chinese keyword or exclusion also matched.
+    expansions: list[TrackingExpansion]
 
 
 class TrackingUnread(BaseModel):

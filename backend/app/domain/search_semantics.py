@@ -839,6 +839,22 @@ def _project_concept_matches(
     return tuple(sorted(selected, key=lambda item: item[0]))
 
 
+def han_concept_english_aliases() -> dict[str, tuple[str, ...]]:
+    """中文触发词（NFKC 后 casefold）→ 所属概念的英文别名，按概念表顺序去重。
+
+    供关键词追踪做整词中译英扩展；项目搜索不经过这里，行为不变。
+    """
+    mapping: dict[str, list[str]] = {}
+    for spec in _PROJECT_CONCEPT_LEXICON:
+        english = [alias for alias in spec.aliases if alias.isascii()]
+        for phrase in spec.phrases:
+            if not _HAN_RE.search(phrase):
+                continue
+            bucket = mapping.setdefault(unicodedata.normalize("NFKC", phrase).casefold(), [])
+            bucket.extend(alias for alias in english if alias not in bucket)
+    return {phrase: tuple(aliases) for phrase, aliases in mapping.items() if aliases}
+
+
 def _project_literal_terms(
     value: str,
     matches: tuple[tuple[int, str, _ProjectConceptSpec], ...],

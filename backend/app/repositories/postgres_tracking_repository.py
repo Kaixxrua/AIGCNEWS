@@ -1,6 +1,7 @@
 """Owner-scoped tracking persistence with atomic quotas and delivery claims."""
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -14,7 +15,8 @@ from backend.app.domain.tracking import (
     active_rules,
     rule_limit,
 )
-from backend.app.repositories.tracking_matches import find_matches
+from backend.app.domain.tracking_terms import rule_expansions
+from backend.app.repositories.tracking_matches import count_matches, find_matches
 
 _RULE_FIELDS = "id, kind, query, source, excludes, star_threshold, enabled, created_at"
 _DIGEST_FIELDS = "id, issue_date, items, truncated, delivery_status, created_at"
@@ -172,10 +174,24 @@ class PostgresTrackingRepository:
                 raise TrackingError("rule_not_found", 404)
             if rule_id not in {row["id"] for row in active_rules(rules, rule_limit(user))}:
                 raise TrackingError("rule_inactive", 403)
+            since = now - timedelta(days=1)
             items, truncated = find_matches(
-                connection, rule, user_id=user_id, since=now - timedelta(days=1), until=now, include_seen=True,
+                connection, rule, user_id=user_id, since=since, until=now, include_seen=True,
             )
-            return {"items": items, "truncated": truncated}
+            # 不到 50 条时按列出的结果计数；超出时再按同一条件数一遍全部命中。
+            counts = count_matches(
+                connection, rule, user_id=user_id, since=since, until=now, include_seen=True,
+            ) if truncated else Counter(item["source"] for item in items)
+            return {
+                "items": items,
+                "truncated": truncated,
+                "total": sum(counts.values()),
+                "sources": [
+                    {"source": source, "count": count}
+                    for source, count in sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
+                ],
+                "expansions": rule_expansions(rule),
+            }
 
     def due_users(self, now: datetime, after: int = 0) -> list[int]:
         local = now.astimezone(CST)
