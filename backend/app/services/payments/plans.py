@@ -80,7 +80,7 @@ MEMBER_YEARLY = MembershipPlan(
     months=12,
 )
 # 美元套餐：海外界面（非 zh 前缀）的唯一可购目录，走 overseas_redirect 槽。
-# 价位锚定跨境手续费后的国际档（$4.9/$39 ≈ ¥35/¥279，高于国内 ¥19/¥159）。
+# 月付锚定跨境手续费后的国际档（$4.9 ≈ ¥35）；年付 2026-10 起从 $39 降到 $14.9（≈ ¥107）。
 MEMBER_MONTHLY_USD = MembershipPlan(
     code=PLAN_CODE_MEMBER_MONTHLY_USD,
     tier=MEMBERSHIP_TIER_MEMBER,
@@ -91,7 +91,7 @@ MEMBER_MONTHLY_USD = MembershipPlan(
 MEMBER_YEARLY_USD = MembershipPlan(
     code=PLAN_CODE_MEMBER_YEARLY_USD,
     tier=MEMBERSHIP_TIER_MEMBER,
-    amount_cents=3900,
+    amount_cents=1490,
     currency="USD",
     months=12,
 )

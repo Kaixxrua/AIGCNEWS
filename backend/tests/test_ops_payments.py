@@ -277,14 +277,14 @@ def test_get_plan_pricing_default_projection(harness: Any) -> None:
     assert yearly["months"] == 12
     assert yearly["currency"] == "CNY"
     assert monthly["updated_at"] is None
-    # 美元套餐同投影：默认价钉 $4.9/$39，币种 USD，时长语义与 CNY 对齐
+    # 美元套餐同投影：默认价钉 $4.9/$14.9，币种 USD，时长语义与 CNY 对齐
     assert monthly_usd["default_amount_cents"] == 490
     assert monthly_usd["override_amount_cents"] is None
     assert monthly_usd["amount_cents"] == 490
     assert monthly_usd["currency"] == "USD"
     assert monthly_usd["months"] == 1
-    assert yearly_usd["default_amount_cents"] == 3900
-    assert yearly_usd["amount_cents"] == 3900
+    assert yearly_usd["default_amount_cents"] == 1490
+    assert yearly_usd["amount_cents"] == 1490
     assert yearly_usd["currency"] == "USD"
     assert yearly_usd["months"] == 12
 
