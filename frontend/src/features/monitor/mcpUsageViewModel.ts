@@ -38,12 +38,27 @@ const LIMIT_KIND_KEYS: Record<string, string> = {
   monthly: 'mcpUsage.limitKind.monthly',
 }
 
+/** 429 文案链接的来源标记，与后端 landing_sources.LANDING_SOURCES 同一组值。 */
+const LANDING_SOURCE_KEYS: Record<string, string> = {
+  'mcp-429-anon': 'mcpUsage.landingSource.mcpAnon',
+  'mcp-429-daily': 'mcpUsage.landingSource.mcpDaily',
+  'mcp-429-monthly': 'mcpUsage.landingSource.mcpMonthly',
+  'api-429-anon': 'mcpUsage.landingSource.apiAnon',
+  'api-429-daily': 'mcpUsage.landingSource.apiDaily',
+  'api-429-monthly': 'mcpUsage.landingSource.apiMonthly',
+}
+
 /** 兜底桶与限流类别的文案键；普通名字返回 null，按原样显示。 */
 export const specialToolKey = (tool: string): string | null => SPECIAL_TOOL_KEYS[tool] ?? null
 
 export const specialClientNameKey = (name: string): string | null => SPECIAL_CLIENT_KEYS[name] ?? null
 
 export const limitKindKey = (kind: string): string | null => LIMIT_KIND_KEYS[kind] ?? null
+
+/** 落地来源标记与「其他页面」桶的文案键；/mcp、/membership 这类真实路径返回 null，按原样显示。 */
+export const landingSourceKey = (source: string): string | null => LANDING_SOURCE_KEYS[source] ?? null
+
+export const landingPathKey = (path: string): string | null => (path === 'other' ? 'mcpUsage.landingOtherPath' : null)
 
 /** 开始统计之前的日子不进日表，免得一列 0 被误读成没人用。 */
 export const trackedDays = (usage: McpDailyUsageResponse | null | undefined): McpUsageDay[] =>

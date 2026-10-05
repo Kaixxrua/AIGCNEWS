@@ -513,6 +513,26 @@ def test_site_visit_platform_days_schema_is_additive_and_day_platform_keyed() ->
     assert "CHECK" not in normalized
 
 
+def test_site_landing_days_schema_is_additive_and_day_source_path_keyed() -> None:
+    # 429 提示链接落地计数表：source/path 值域由应用层白名单约束（landing_sources），
+    # 刻意不加 CHECK——新增来源标记只是统计维度变化，不应触发 schema 迁移。
+    # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0083_site_landing_days.sql"
+    )
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert "CREATE TABLE IF NOT EXISTS site_landing_days" in migration.sql
+    assert "PRIMARY KEY (day, source, path)" in migration.sql
+    assert "landings BIGINT NOT NULL DEFAULT 0" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+    assert "CHECK" not in normalized
+
+
 def test_payment_wechat_public_key_schema_is_additive() -> None:
     # 微信支付公钥模式：回调验签材料（公钥 ID + 公钥 PEM）随面板/DB 配置面下发，
     # 只加列不动存量——默认空串表示"未配置"，fail-closed 由 provider 侧 7 字段门控。
@@ -673,6 +693,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "project_catalog_migration_checkpoints",
             "project_catalog_migration_failures",
             "project_catalog_applied_events",
+            "site_landing_days",
         } <= tables
         assert {
             "idx_gh_candidates_stars",

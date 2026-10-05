@@ -455,8 +455,14 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["tier"], "free")
         self.assertEqual(payload["limit"], 1)
         self.assertEqual(payload["identity_kind"], "ip")
-        self.assertIn("aigcnews.cn/mcp", payload["detail"])
-        self.assertIn("aigcnews.cn/membership", payload["detail"])
+        # 升级链接带 429 来源标记，网站按 ref 记录落地（见 routes_dashboard 落地统计）
+        self.assertEqual(
+            payload["detail"].count("https://aigcnews.cn/mcp?ref=api-429-anon "), 2
+        )
+        self.assertEqual(
+            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-anon"), 2
+        )
+        self.assertNotIn("mcp-429", payload["detail"])
 
     def test_free_user_daily_quota_exceeded_guides_to_membership(self) -> None:
         """登录免费档日 pacing 429：identity_kind=user，文案指向 membership。"""
@@ -479,7 +485,9 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["quota_scope"], "daily")
         self.assertEqual(payload["tier"], "free")
         self.assertEqual(payload["identity_kind"], "user")
-        self.assertIn("aigcnews.cn/membership", payload["detail"])
+        self.assertEqual(
+            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-daily "), 2
+        )
         self.assertIn("Free per-24-hour quota exhausted", payload["detail"])
         # 被日桶拒绝的请求不消耗月配额：月度键只有第 1 发
         self.assertEqual(
@@ -519,7 +527,9 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["quota_scope"], "monthly")
         self.assertEqual(payload["tier"], "free")
-        self.assertIn("aigcnews.cn/membership", payload["detail"])
+        self.assertEqual(
+            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-monthly "), 2
+        )
         self.assertIn("VIP", payload["detail"])
 
     def test_member_user_gets_member_quota(self) -> None:

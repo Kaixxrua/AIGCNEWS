@@ -13,13 +13,14 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes_monitor
+from backend.app.api import routes_dashboard, routes_monitor
 from backend.app.core.auth import RequireAdmin, RequireUser
 from backend.app.monitoring.mcp_daily_usage import (
     MAX_CLIENT_NAME_ROWS,
     read_mcp_daily_usage,
     read_mcp_daily_usage_safely,
 )
+from backend.app.repositories.site_visit_repository import LandingVisits
 
 
 class _FakePipeline:
@@ -250,11 +251,16 @@ class McpUsageRouteTests(unittest.TestCase):
     """GET /api/monitor/mcp-usage：管理员专属。"""
 
     @staticmethod
-    def _build_app(redis: Any = None, *, admin: bool = True) -> FastAPI:
+    def _build_app(redis: Any = None, *, admin: bool = True, landings: Any = None) -> FastAPI:
         app = FastAPI()
         app.include_router(routes_monitor.router, prefix="/api")
         if admin:
             app.dependency_overrides[RequireAdmin] = lambda: {"role": "admin"}
+        if landings is None:
+            landings = MagicMock()
+            landings.get_landing_breakdown.return_value = []
+        # 落地来源读 PostgreSQL；Depends 键与 /dashboard/visit 同一函数对象
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: landings
         app.state.redis = redis
         return app
 
@@ -318,6 +324,58 @@ class McpUsageRouteTests(unittest.TestCase):
         body = response.json()
         self.assertFalse(body["available"])
         self.assertEqual(len(body["daily"]), 7)
+        # 落地来源走 PostgreSQL，Redis 缺席不影响它
+        self.assertEqual(body["landings"], {"available": True, "rows": []})
+
+    def test_landings_cover_the_same_window_sorted_by_count(self) -> None:
+        landings = MagicMock()
+        landings.get_landing_breakdown.return_value = [
+            LandingVisits(source="mcp-429-daily", path="/membership", landings=1),
+            LandingVisits(source="mcp-429-anon", path="/mcp", landings=6),
+        ]
+        app = self._build_app(_FakeRedis(), landings=landings)
+
+        with patch.object(routes_monitor, "cst_today", return_value=END):
+            response = TestClient(app).get("/api/monitor/mcp-usage", params={"days": 7})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        landings.get_landing_breakdown.assert_called_once_with(date(2026, 9, 29), END)
+        self.assertEqual(body["start_date"], "2026-09-29")
+        self.assertEqual(
+            body["landings"],
+            {
+                "available": True,
+                "rows": [
+                    {"source": "mcp-429-anon", "path": "/mcp", "landings": 6},
+                    {"source": "mcp-429-daily", "path": "/membership", "landings": 1},
+                ],
+            },
+        )
+
+    def test_landing_read_failure_is_soft(self) -> None:
+        landings = MagicMock()
+        landings.get_landing_breakdown.side_effect = RuntimeError("relation does not exist")
+        app = self._build_app(_seeded_redis(), landings=landings)
+
+        with patch.object(routes_monitor, "cst_today", return_value=END):
+            with self.assertLogs(routes_monitor.logger, level="WARNING"):
+                response = TestClient(app).get("/api/monitor/mcp-usage", params={"days": 3})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertTrue(body["available"])
+        self.assertEqual(body["summary"]["total"], _stats(5, 6, 8, 4))
+        self.assertEqual(body["landings"], {"available": False, "rows": []})
+
+    def test_non_admin_never_reads_landings(self) -> None:
+        landings = MagicMock()
+        app = self._build_app(MagicMock(), admin=False, landings=landings)
+
+        response = TestClient(app).get("/api/monitor/mcp-usage")
+
+        self.assertIn(response.status_code, (401, 403))
+        landings.get_landing_breakdown.assert_not_called()
 
 
 if __name__ == "__main__":

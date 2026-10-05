@@ -44,6 +44,7 @@ from backend.app.repositories.site_visit_repository import (
 from backend.app.repositories.user_account_repository import UserStatisticsReader
 from backend.app.repositories.x_watch_repository import XWatchAccountRepository
 from backend.app.services.dashboard import policy
+from backend.app.services.dashboard.landing_sources import normalize_landing
 from backend.app.services.dashboard.query_service import (
     DashboardQueryService,
     GitHubHotBoardReader,
@@ -51,6 +52,7 @@ from backend.app.services.dashboard.query_service import (
 from backend.app.services.dashboard.visit_platforms import classify_platform
 from backend.app.services.dashboard.visitor_deduplication import (
     InvalidVisitorId,
+    mark_new_daily_landing,
     mark_new_daily_visitor,
 )
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
@@ -63,6 +65,10 @@ logger = logging.getLogger(__name__)
 
 class SiteVisitBeacon(BaseModel):
     visitor_id: str = Field(min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    # 落地来源（可选）：429 提示链接的 ?ref= 与落地路径，前端在路由接管前读出。
+    # 只兜长度不校格式：值不认识时只是不记落地，访问照常计数（见 landing_sources）。
+    landing_ref: Optional[str] = Field(default=None, max_length=64)
+    landing_path: Optional[str] = Field(default=None, max_length=256)
 
 
 def _get_optional_github_enrichment_repository(request: Request) -> Any:
@@ -858,6 +864,10 @@ async def record_site_visit(
     并按 User-Agent 归类平台桶。爬虫、无头浏览器等自动化访问只记平台维度的
     bot 桶，不计入访问量，也不触发实时统计推送。Redis 不可用时 fail closed，
     避免故障期间把重复请求膨胀成访客数。
+
+    带白名单 landing_ref 的请求另记一次落地来源（从 429 提示链接点进来）：
+    同一访客同一天同一来源与落地页只记一次，与这次访问是否首次无关；
+    自动化访问不记；落地记录失败只写日志，不影响访问计数与响应。
     """
     try:
         is_new = await mark_new_daily_visitor(
@@ -871,8 +881,8 @@ async def record_site_visit(
         logger.warning("[Dashboard] visitor deduplication unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail="visitor counting unavailable") from None
 
+    platform = classify_platform(request.headers.get("user-agent"))
     if is_new:
-        platform = classify_platform(request.headers.get("user-agent"))
         if platform == AUTOMATED_PLATFORM:
             await asyncio.to_thread(visits.record_automated_visit, cst_today())
             stats = await _get_site_visit_stats(visits)
@@ -881,4 +891,33 @@ async def record_site_visit(
             live_stats_broadcaster.notify_live_stats_changed("site-visit")
     else:
         stats = await _get_site_visit_stats(visits)
+
+    landing = normalize_landing(payload.landing_ref, payload.landing_path)
+    if landing is not None and platform != AUTOMATED_PLATFORM:
+        await _record_landing(
+            getattr(request.app.state, "redis", None),
+            visits,
+            visitor_id=payload.visitor_id,
+            source=landing[0],
+            path=landing[1],
+        )
     return {"today_visits": stats.today_visits, "total_visits": stats.total_visits}
+
+
+async def _record_landing(
+    redis: Any,
+    visits: SiteVisitRecorder,
+    *,
+    visitor_id: str,
+    source: str,
+    path: str,
+) -> None:
+    """记一次 429 提示链接落地；Redis 或数据库出错只写日志（统计旁路，不连累访问计数）。"""
+    day = cst_today()
+    try:
+        if await mark_new_daily_landing(
+            redis, day=day, visitor_id=visitor_id, source=source, path=path
+        ):
+            await asyncio.to_thread(visits.record_landing, day, source, path)
+    except Exception:  # noqa: BLE001 - 落地统计 fail-soft，只记日志
+        logger.warning("[Dashboard] landing source recording failed", exc_info=True)

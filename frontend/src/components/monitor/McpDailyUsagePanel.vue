@@ -13,6 +13,8 @@ import {
   barPercent,
   dailyMax,
   hasUsage,
+  landingPathKey,
+  landingSourceKey,
   limitKindKey,
   nonZeroAudiences,
   specialClientNameKey,
@@ -57,6 +59,16 @@ const clientLabel = (name: string): string => {
 const limitLabel = (kind: string): string => {
   const key = limitKindKey(kind)
   return key ? t(key) : kind
+}
+
+const landingSourceLabel = (source: string): string => {
+  const key = landingSourceKey(source)
+  return key ? t(key) : source
+}
+
+const landingPathLabel = (path: string): string => {
+  const key = landingPathKey(path)
+  return key ? t(key) : path
 }
 
 // 客户端名下的分布小字逐段成块，只在受众之间换行（不会把「会员 1」拆成两行）。
@@ -260,6 +272,36 @@ onBeforeUnmount(dispose)
                 </tbody>
               </table>
             </div>
+
+            <!-- 429 之后有没有人点进网站：紧跟限流表，同一时间窗。早于本字段的后端不返回 landings，整块不画。 -->
+            <template v-if="data.landings">
+              <h4 class="mcp-usage-subtitle mt-4">{{ t('mcpUsage.landingTitle') }}</h4>
+              <p class="monitor-caption mt-1 text-2xs">{{ t('mcpUsage.landingNote') }}</p>
+              <p v-if="!data.landings.available" class="mcp-usage-note mt-2 rounded-md border px-4 py-2 text-xs monitor-status-unknown">
+                {{ t('mcpUsage.landingUnavailable') }}
+              </p>
+              <div v-else class="mt-2 overflow-x-auto">
+                <table class="monitor-table mcp-usage-landings">
+                  <thead>
+                    <tr>
+                      <th scope="col">{{ t('mcpUsage.landingSourceColumn') }}</th>
+                      <th scope="col">{{ t('mcpUsage.landingPathColumn') }}</th>
+                      <th scope="col">{{ t('mcpUsage.landingCountColumn') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody v-swap="{ key: data.days, stagger: true }">
+                    <tr v-if="!data.landings.rows.length">
+                      <td colspan="3" class="text-center monitor-caption">{{ t('mcpUsage.noLandings') }}</td>
+                    </tr>
+                    <tr v-for="row in data.landings.rows" :key="`${row.source}|${row.path}`">
+                      <th scope="row" class="mcp-usage-row-head">{{ landingSourceLabel(row.source) }}</th>
+                      <td :class="{ 'font-mono': !landingPathKey(row.path) }">{{ landingPathLabel(row.path) }}</td>
+                      <td class="mcp-usage-total tabular-nums">{{ row.landings }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
           </section>
         </div>
       </template>
@@ -341,7 +383,8 @@ onBeforeUnmount(dispose)
   cursor: help;
 }
 
-.mcp-usage-limited .mcp-usage-row-head {
+.mcp-usage-limited .mcp-usage-row-head,
+.mcp-usage-landings .mcp-usage-row-head {
   cursor: default;
 }
 

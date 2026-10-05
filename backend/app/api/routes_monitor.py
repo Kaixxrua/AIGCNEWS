@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -26,12 +27,16 @@ from backend.app.repositories.document_repository import DocumentStatisticsReade
 from backend.app.repositories.error_event_repository import ErrorEventReader
 from backend.app.repositories.evaluation_repository import EvaluationSummaryReader
 from backend.app.repositories.payment_order_repository import PaymentRevenueReader
-from backend.app.repositories.site_visit_repository import SiteVisitPlatformReader
+from backend.app.repositories.site_visit_repository import (
+    SiteLandingReader,
+    SiteVisitPlatformReader,
+)
 from backend.app.repositories.task_repository import (
     MonitorTaskRepository,
     RecentTaskReader,
 )
 from backend.app.repositories.user_account_repository import UserStatisticsReader
+from backend.app.services.dashboard.landing_sources import build_landing_rows
 from backend.app.services.dashboard.visit_platforms import (
     build_platform_breakdown_response,
     window_start_date,
@@ -112,6 +117,7 @@ async def mcp_daily_usage(
     request: Request,
     days: int = Query(default=14, ge=1, le=31),
     _: dict = Depends(RequireAdmin),
+    landings: SiteLandingReader = Depends(get_site_visit_repository),
 ):
     """MCP 每日用量汇总：含今天在内最近 days 天（北京时间计日）。
 
@@ -119,9 +125,29 @@ async def mcp_daily_usage(
     按匿名/免费/会员给出去重客户端、连接（initialize）、工具调用与 429 次数；
     不含管理员与压测流量，匿名按 IP 摘要去重、原始 IP 不入库。
     Redis 未接线或读取失败时返回 available=false 的零值结构。
+
+    landings 是同一窗口内从 429 提示链接点进网站的落地次数（PostgreSQL
+    site_landing_days，按来源标记与落地页聚合，同访客同日只计一次）；
+    读取失败时 landings.available=false，不影响其余字段。
     """
     redis = getattr(request.app.state, "redis", None)
-    return await read_mcp_daily_usage_safely(redis, end_date=cst_today(), days=days)
+    today = cst_today()
+    usage = await read_mcp_daily_usage_safely(redis, end_date=today, days=days)
+    usage["landings"] = await _read_landing_breakdown_safely(
+        landings, start=today - timedelta(days=days - 1), end=today
+    )
+    return usage
+
+
+async def _read_landing_breakdown_safely(
+    reader: SiteLandingReader, *, start: date, end: date
+) -> Dict[str, Any]:
+    try:
+        rows = await asyncio.to_thread(reader.get_landing_breakdown, start, end)
+    except Exception:  # noqa: BLE001 - 监控读路径 fail-soft，只记日志
+        logger.warning("[Monitor] landing source read failed", exc_info=True)
+        return {"available": False, "rows": []}
+    return {"available": True, "rows": build_landing_rows(rows)}
 
 
 @router.get("/monitor/tasks")

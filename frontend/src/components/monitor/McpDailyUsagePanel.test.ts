@@ -216,6 +216,68 @@ describe('McpDailyUsagePanel', () => {
     expect(wrapper.text()).not.toContain('只列连接次数最多')
   })
 
+  it('lists landings from 429 links under the limit table with source and page in words', async () => {
+    fetchMock.mockResolvedValue(
+      usage({
+        landings: {
+          available: true,
+          rows: [
+            { source: 'mcp-429-anon', path: '/mcp', landings: 3 },
+            { source: 'api-429-monthly', path: '/membership', landings: 2 },
+            { source: 'mcp-429-daily', path: 'other', landings: 1 },
+          ],
+        },
+      }),
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('从 429 提示点进网站')
+    const headers = wrapper.findAll('table.mcp-usage-landings thead th').map((cell) => cell.text())
+    expect(headers).toEqual(['来源', '落地页', '次数'])
+    const rows = wrapper.findAll('table.mcp-usage-landings tbody tr')
+    expect(rows.map(cellTexts)).toEqual([
+      ['MCP · 匿名 24 小时配额', '/mcp', '3'],
+      ['API · 免费 30 天额度', '/membership', '2'],
+      ['MCP · 免费 24 小时配额', '其他页面', '1'],
+    ])
+    // 真实路径用等宽字，「其他页面」是文案不是路径
+    expect(rows.map((row) => row.findAll('td')[0]!.classes('font-mono'))).toEqual([true, true, false])
+    // 落地表跟限流表在同一个分区里
+    expect(wrapper.find('table.mcp-usage-limited').element.closest('section')).toBe(
+      wrapper.find('table.mcp-usage-landings').element.closest('section'),
+    )
+  })
+
+  it('says so when no 429 link brought a visit in the window', async () => {
+    fetchMock.mockResolvedValue(usage({ landings: { available: true, rows: [] } }))
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const rows = wrapper.findAll('table.mcp-usage-landings tbody tr').map(cellTexts)
+    expect(rows).toEqual([['这段时间还没有从 429 提示点进来的访问']])
+  })
+
+  it('notes unreadable landing records without hiding the usage tables', async () => {
+    fetchMock.mockResolvedValue(usage({ landings: { available: false, rows: [] } }))
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂时读不到落地记录')
+    expect(wrapper.find('table.mcp-usage-landings').exists()).toBe(false)
+    expect(wrapper.find('table.mcp-usage-limited').exists()).toBe(true)
+  })
+
+  it('draws no landing block for a backend that does not report landings yet', async () => {
+    fetchMock.mockResolvedValue(usage())
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('table.mcp-usage-limited').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('从 429 提示点进网站')
+    expect(wrapper.find('table.mcp-usage-landings').exists()).toBe(false)
+  })
+
   it('notes when the client list is cut to the top rows', async () => {
     fetchMock.mockResolvedValue(usage({ client_names_truncated: true }))
     const wrapper = mountPanel()
@@ -300,5 +362,29 @@ describe('McpDailyUsagePanel', () => {
     expect(wrapper.text()).toContain('Unknown tool name')
     expect(wrapper.find('table.mcp-usage-clients .mcp-usage-split').text()).toBe('Anonymous 1, Free 1')
     expect(wrapper.find('button.mcp-usage-metric-tab:last-child').text()).toBe('429s')
+  })
+
+  it('labels landing sources in English when the locale is en-US', async () => {
+    i18n.global.locale.value = 'en-US'
+    fetchMock.mockResolvedValue(
+      usage({
+        landings: {
+          available: true,
+          rows: [
+            { source: 'api-429-anon', path: '/mcp', landings: 2 },
+            { source: 'mcp-429-monthly', path: 'other', landings: 1 },
+          ],
+        },
+      }),
+    )
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Visits from 429 links')
+    const rows = wrapper.findAll('table.mcp-usage-landings tbody tr').map(cellTexts)
+    expect(rows).toEqual([
+      ['API · anonymous 24-hour quota', '/mcp', '2'],
+      ['MCP · free 30-day allowance', 'Other page', '1'],
+    ])
   })
 })

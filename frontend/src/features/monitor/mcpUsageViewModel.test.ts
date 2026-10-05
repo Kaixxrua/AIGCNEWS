@@ -4,6 +4,8 @@ import {
   barPercent,
   dailyMax,
   hasUsage,
+  landingPathKey,
+  landingSourceKey,
   limitKindKey,
   nonZeroAudiences,
   specialClientNameKey,
@@ -53,6 +55,20 @@ describe('mcpUsageViewModel', () => {
     expect(limitKindKey('daily')).toBe('mcpUsage.limitKind.daily')
     expect(limitKindKey('monthly')).toBe('mcpUsage.limitKind.monthly')
     expect(limitKindKey('weekly')).toBeNull()
+  })
+
+  it('labels every 429 link source tag and the other-page bucket, leaving real paths alone', () => {
+    // 与后端 landing_sources.LANDING_SOURCES 同一组值：两侧 × 三种文案变体
+    for (const side of ['mcp', 'api'] as const) {
+      for (const kind of ['anon', 'daily', 'monthly'] as const) {
+        const camel = `${side}${kind[0]!.toUpperCase()}${kind.slice(1)}`
+        expect(landingSourceKey(`${side}-429-${kind}`)).toBe(`mcpUsage.landingSource.${camel}`)
+      }
+    }
+    expect(landingSourceKey('mcp-429-weekly')).toBeNull()
+    expect(landingPathKey('other')).toBe('mcpUsage.landingOtherPath')
+    expect(landingPathKey('/mcp')).toBeNull()
+    expect(landingPathKey('/membership')).toBeNull()
   })
 
   it('drops days before tracking started and keeps the newest-first order', () => {
