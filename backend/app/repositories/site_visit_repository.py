@@ -36,10 +36,21 @@ class PlatformVisits:
     visits: int
 
 
+@dataclass(frozen=True)
+class LandingVisits:
+    """单个（来源标记, 落地页）在窗口内的落地次数：同一访客同一天只计一次。"""
+
+    source: str
+    path: str
+    landings: int
+
+
 class SiteVisitRecorder(Protocol):
     def record_visit(self, day: date, platform: str = DEFAULT_PLATFORM) -> SiteVisitStats: ...
 
     def record_automated_visit(self, day: date) -> None: ...
+
+    def record_landing(self, day: date, source: str, path: str) -> None: ...
 
 
 class SiteVisitStatsReader(Protocol):
@@ -52,5 +63,13 @@ class SiteVisitPlatformReader(Protocol):
     def get_platform_breakdown(self, since: date | None) -> list[PlatformVisits]: ...
 
 
-class SiteVisitRepository(SiteVisitRecorder, SiteVisitStatsReader, SiteVisitPlatformReader, Protocol):
-    """Persistence boundary for site visit day counters (total + per-platform)."""
+class SiteLandingReader(Protocol):
+    """落地来源聚合读取：start、end 为窗口上下界（均含）。"""
+
+    def get_landing_breakdown(self, start: date, end: date) -> list[LandingVisits]: ...
+
+
+class SiteVisitRepository(
+    SiteVisitRecorder, SiteVisitStatsReader, SiteVisitPlatformReader, SiteLandingReader, Protocol
+):
+    """Persistence boundary for site visit day counters (total + per-platform + landing source)."""

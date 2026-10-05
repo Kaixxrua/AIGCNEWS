@@ -577,6 +577,22 @@ export interface McpUsageClientNameRow {
   clients: McpUsageAudienceCounts
 }
 
+/* 从 429 提示链接点进网站的落地（同一响应的 landings，后端读 PostgreSQL site_landing_days）：
+   source 是 429 文案链接里的 ref 来源标记（mcp-429-* / api-429-*），path 是落地页
+   /mcp、/membership 或 other；同一访客同一天同一链接只计一次。 */
+export interface McpLandingRow {
+  source: string
+  path: string
+  landings: number
+}
+
+export interface McpLandingBreakdown {
+  /** 读库失败时为 false，rows 为空 */
+  available: boolean
+  /** 落地次数多的在前 */
+  rows: McpLandingRow[]
+}
+
 export interface McpDailyUsageResponse {
   /** Redis 未接线或读取失败时为 false，其余字段是同形零值 */
   available: boolean
@@ -592,6 +608,8 @@ export interface McpDailyUsageResponse {
   client_names: McpUsageClientNameRow[]
   client_names_truncated: boolean
   limited: McpUsageLimitRow[]
+  /** 落地来源走数据库，Redis 不可用时照样有；早于本字段的后端不返回 */
+  landings?: McpLandingBreakdown
 }
 
 /* 用户与会员统计：member_users 是生效 VIP 数（member 档且未到期），

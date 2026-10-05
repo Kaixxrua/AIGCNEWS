@@ -41,6 +41,22 @@ type McpUsageMessages = {
     limitedTitle: string
     kind: string
     limitKind: { burst: string; daily: string; monthly: string }
+    landingTitle: string
+    landingNote: string
+    landingUnavailable: string
+    noLandings: string
+    landingSourceColumn: string
+    landingPathColumn: string
+    landingCountColumn: string
+    landingSource: {
+      mcpAnon: string
+      mcpDaily: string
+      mcpMonthly: string
+      apiAnon: string
+      apiDaily: string
+      apiMonthly: string
+    }
+    landingOtherPath: string
   }
 }
 
@@ -86,6 +102,22 @@ const enUS: McpUsageMessages = {
     limitedTitle: 'Where 429s come from',
     kind: 'Limit',
     limitKind: { burst: 'Per-minute burst', daily: '24-hour quota', monthly: '30-day allowance' },
+    landingTitle: 'Visits from 429 links',
+    landingNote: 'Links in 429 messages carry a source tag. A visitor counts once per link per day; bots are left out.',
+    landingUnavailable: 'Landing records are unavailable right now. Refresh later.',
+    noLandings: 'No visits from 429 links in this window yet',
+    landingSourceColumn: 'Source',
+    landingPathColumn: 'Landing page',
+    landingCountColumn: 'Visits',
+    landingSource: {
+      mcpAnon: 'MCP · anonymous 24-hour quota',
+      mcpDaily: 'MCP · free 24-hour quota',
+      mcpMonthly: 'MCP · free 30-day allowance',
+      apiAnon: 'API · anonymous 24-hour quota',
+      apiDaily: 'API · free 24-hour quota',
+      apiMonthly: 'API · free 30-day allowance',
+    },
+    landingOtherPath: 'Other page',
   },
 }
 
@@ -130,6 +162,22 @@ const zhCN: McpUsageMessages = {
     limitedTitle: '429 来源',
     kind: '类别',
     limitKind: { burst: '分钟突发', daily: '24 小时配额', monthly: '30 天额度' },
+    landingTitle: '从 429 提示点进网站',
+    landingNote: '429 文案里的链接带来源标记；同一访客同一天同一链接只计一次，爬虫不计。',
+    landingUnavailable: '暂时读不到落地记录，稍后刷新再看。',
+    noLandings: '这段时间还没有从 429 提示点进来的访问',
+    landingSourceColumn: '来源',
+    landingPathColumn: '落地页',
+    landingCountColumn: '次数',
+    landingSource: {
+      mcpAnon: 'MCP · 匿名 24 小时配额',
+      mcpDaily: 'MCP · 免费 24 小时配额',
+      mcpMonthly: 'MCP · 免费 30 天额度',
+      apiAnon: 'API · 匿名 24 小时配额',
+      apiDaily: 'API · 免费 24 小时配额',
+      apiMonthly: 'API · 免费 30 天额度',
+    },
+    landingOtherPath: '其他页面',
   },
 }
 

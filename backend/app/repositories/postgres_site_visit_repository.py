@@ -6,6 +6,7 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.repositories.site_visit_repository import (
     AUTOMATED_PLATFORM,
     DEFAULT_PLATFORM,
+    LandingVisits,
     PlatformVisits,
     SiteVisitStats,
 )
@@ -63,6 +64,20 @@ class PostgresSiteVisitRepository:
                     (day, AUTOMATED_PLATFORM),
                 )
 
+    def record_landing(self, day: date, source: str, path: str) -> None:
+        """计数一次带来源标记的落地；同访客同日去重已在 Redis 侧做完，这里只累加。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO site_landing_days (day, source, path, landings)
+                    VALUES (%s, %s, %s, 1)
+                    ON CONFLICT (day, source, path) DO UPDATE
+                        SET landings = site_landing_days.landings + 1
+                    """,
+                    (day, source, path),
+                )
+
     def get_visit_stats(self, day: date) -> SiteVisitStats:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -98,5 +113,28 @@ class PostgresSiteVisitRepository:
                 rows = cursor.fetchall()
         return [
             PlatformVisits(platform=str(row["platform"]), visits=int(row["visits"]))
+            for row in rows
+        ]
+
+    def get_landing_breakdown(self, start: date, end: date) -> list[LandingVisits]:
+        """聚合 [start, end] 窗口内各来源标记与落地页的落地次数。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT source, path, SUM(landings) AS landings
+                    FROM site_landing_days
+                    WHERE day BETWEEN %s AND %s
+                    GROUP BY source, path
+                    """,
+                    (start, end),
+                )
+                rows = cursor.fetchall()
+        return [
+            LandingVisits(
+                source=str(row["source"]),
+                path=str(row["path"]),
+                landings=int(row["landings"]),
+            )
             for row in rows
         ]

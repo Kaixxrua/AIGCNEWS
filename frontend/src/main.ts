@@ -14,6 +14,9 @@ import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
 import { installPressFeedback } from './motion/press'
 import { installPageHead } from './seo/pageHead'
 
+// 429 提示里的链接带 ?ref= 来源标记：路由接管、页面改写地址之前先记下落地地址，随访问 beacon 上报。
+const landingLocation = { pathname: window.location.pathname, search: window.location.search }
+
 // 漫画版内页样式只在桌面宽度下载（comic-pages.css，见 theme/desktopStyles.ts）。要赶在路由加载各页样式表之前挂上，
 // 层叠先后才不变；桌面上等它到位再挂载应用。
 const desktopStylesReady = installDesktopStyles()
@@ -37,7 +40,7 @@ void desktopStylesReady.then(() => {
 
 // 站点访问 beacon：进来一次计一次（sessionStorage 守卫，异步不打断首屏）。
 void import('./services/visit/visitBeacon').then(({ sendVisitBeacon }) => {
-  sendVisitBeacon()
+  sendVisitBeacon(landingLocation)
 })
 
 // 页面先可用，再异步确认已保存的登录状态。
