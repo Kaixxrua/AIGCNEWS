@@ -4,7 +4,7 @@ import type {
   EmailPoolConfig, EmailPoolForm, EmailPoolTestResult, EmailDeliveryDayStat,
   GithubCrawlForm, GithubCrawlStatus, GithubCrawlStatusQuery, GithubCrawlTriggerResult,
   GithubEnrichmentConfig, GithubEnrichmentProjectPages, GithubEnrichmentStatus, GithubEnrichmentTriggerResult, GithubEnrichmentCancelResult, GithubRetainedProject, GithubUnprocessableProject,
-  McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, OAuthConfig, OAuthConfigForm, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
+  McpDailyUsageResponse, McpServerConfig, McpServerForm, McpToolCallMetricsSnapshot, MembershipGrantForm, MembershipGrantResult, MembershipUserPage, OAuthConfig, OAuthConfigForm, PagedResult, PaymentConfig, PaymentConfigForm, PaymentPlanPricing, PaymentPlanPricingForm, ProviderConfig, ProviderForm, ProviderTestResult,
   SchedulerJobConfig, SchedulerJobConfigForm, SchedulerStatus, SiteContactPageConfig, SiteContactPageForm, SiteImageUploadResult, SmtpConfig, SmtpForm, SmtpTestResult, SourceKey, TelegramConfig, TelegramConfigForm, RevenueStatsResponse, UserStatsResponse, VisitPlatformStatsResponse, VisitStatsWindow, XCredential, XCredentialForm, XTranslationRetryResult, XTranslationStatus, XWatchAccount, XWatchAccountForm, UiDiscoverySource, UiDiscoverySourceForm,
 } from '@/features/monitor/monitorModel'
 import { buildEmailPoolPayload, buildGithubCrawlPayload, buildMcpPayload, buildMembershipGrantPayload, buildOAuthConfigPayload, buildPaymentConfigPayload, buildPaymentPlanPricingPayload, buildProviderPayload, buildSchedulerJobConfigPayload, buildSiteContactPagePayload, buildSmtpPayload, buildTelegramConfigPayload, buildXCredentialPayload, buildXWatchPayload, createEmptyMcpToolCallMetrics, normalizeReasoningEffort } from '@/features/monitor/monitorModel'
@@ -79,6 +79,7 @@ export interface MonitorApi {
   grantMembership(form: MembershipGrantForm): Promise<MembershipGrantResult>
   listMembershipUsers(params: { query?: string; page: number; pageSize: number }): Promise<MembershipUserPage>
   fetchVisitPlatformStats(window: VisitStatsWindow): Promise<VisitPlatformStatsResponse>
+  fetchMcpDailyUsage(days: number): Promise<McpDailyUsageResponse>
   fetchUserStats(): Promise<UserStatsResponse>
   fetchRevenueStats(): Promise<RevenueStatsResponse>
 }
@@ -308,6 +309,10 @@ export const monitorApi: MonitorApi = {
   },
   async fetchVisitPlatformStats(window) {
     return (await api.get('/monitor/visit-platforms', { params: { window } })).data
+  },
+  // MCP 每日用量汇总：含今天在内最近 days 天，北京时间计日（admin 专属）
+  async fetchMcpDailyUsage(days) {
+    return (await api.get('/monitor/mcp-usage', { params: { days } })).data
   },
   async fetchUserStats() {
     return (await api.get('/monitor/user-stats')).data

@@ -56,6 +56,10 @@ describe('Monitor API contract', () => {
     await expect(monitorApi.fetchVisitPlatformStats('7d')).resolves.toEqual({ window: '7d', platforms: [] })
     expect(transport.get).toHaveBeenLastCalledWith('/monitor/visit-platforms', { params: { window: '7d' } })
 
+    transport.get.mockResolvedValueOnce({ data: { available: true, days: 14 } })
+    await expect(monitorApi.fetchMcpDailyUsage(14)).resolves.toEqual({ available: true, days: 14 })
+    expect(transport.get).toHaveBeenLastCalledWith('/monitor/mcp-usage', { params: { days: 14 } })
+
     transport.get.mockResolvedValueOnce({ data: { total_users: 120, member_users: 7 } })
     await expect(monitorApi.fetchUserStats()).resolves.toEqual({ total_users: 120, member_users: 7 })
     expect(transport.get).toHaveBeenLastCalledWith('/monitor/user-stats')

@@ -23,6 +23,7 @@ import (
 	"aigcnews/mcp-go/internal/jsonx"
 	"aigcnews/mcp-go/internal/metrics"
 	"aigcnews/mcp-go/internal/ratelimit"
+	"aigcnews/mcp-go/internal/usage"
 	"aigcnews/mcp-go/internal/wire"
 )
 
@@ -348,6 +349,7 @@ type Handler struct {
 	app     *App
 	auth    Authenticator
 	limiter *ratelimit.Limiter
+	usage   *usage.Recorder
 }
 
 // NewHandler 接线；limiter 为 nil 时不限流（回放多数用例与 Redis 未接线
@@ -355,6 +357,9 @@ type Handler struct {
 func NewHandler(app *App, auth Authenticator, limiter *ratelimit.Limiter) *Handler {
 	return &Handler{app: app, auth: auth, limiter: limiter}
 }
+
+// SetUsage 接线每日用量汇总（可选）；未接线时不记录。
+func (h *Handler) SetUsage(recorder *usage.Recorder) { h.usage = recorder }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
@@ -397,13 +402,40 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 限流缝：enforce_mcp_rate_limit 的调用点在 parse 之后、dispatch 之前；
 	// 身份（user_id/role/生效档位）与可信代理 XFF 链全部由限流器消费。
 	if exceeded := h.limiter.Enforce(r.Context(), req.Method, identity, r); exceeded != nil {
+		h.recordUsage(r, req, identity, usage.LimitKind(exceeded.Quota, exceeded.QuotaScope))
 		exceeded.Projection(req.RequestID).Write(w)
 		return
 	}
+	h.recordUsage(r, req, identity, "")
 	// PR 1.4 起 tools/list 私有工具按 is_authenticated 分叉，身份经参数传入分派。
 	// User-Agent 在分派前读取（对齐 application.py），供 dashboard 计数
 	// 按 bench/客户端分桶；不参与协议行为。
 	h.app.DispatchWithIdentityUA(req, identity, authenticated, r.Header.Get("User-Agent")).Write(w)
+}
+
+// recordUsage 写每日用量汇总（被限流时 limited 为限流类别）。只读请求，
+// 不改变任何响应字节；未接线时直接返回。
+func (h *Handler) recordUsage(r *http.Request, req wire.ValidatedRequest, identity authn.Identity, limited string) {
+	if h.usage == nil {
+		return
+	}
+	event := usage.Event{
+		Identity:  identity,
+		ClientIP:  h.limiter.ClientIP(r),
+		UserAgent: r.Header.Get("User-Agent"),
+		Method:    req.Method,
+		Limited:   limited,
+	}
+	switch req.Method {
+	case "tools/call":
+		name, _ := req.Params["name"].(string)
+		event.Tool = metrics.BucketToolName(name, h.app.knownToolNames)
+	case "initialize":
+		if info, ok := req.Params["clientInfo"].(map[string]any); ok {
+			event.ClientName, _ = info["name"].(string)
+		}
+	}
+	h.usage.Record(r.Context(), event)
 }
 
 // writeInternalServerError 对齐 ServerErrorMiddleware：纯文本定长 500。

@@ -43,6 +43,7 @@ import (
 	"aigcnews/mcp-go/internal/projectsearch"
 	"aigcnews/mcp-go/internal/ratelimit"
 	"aigcnews/mcp-go/internal/uisemantic"
+	"aigcnews/mcp-go/internal/usage"
 	"aigcnews/mcp-go/internal/version"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -312,6 +313,8 @@ func run() int {
 	app.SetMetrics(metrics.NewRecorder(redisClient), knownToolNames)
 
 	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)
+	// 每日用量汇总（mcpusage:*，管理员监控页读）：不含管理员与压测，不存 IP。
+	mcpHandler.SetUsage(usage.NewRecorder(redisClient))
 	mux := probes.NewMuxWithCORS(serverVersion, func(ctx context.Context) bool {
 		return postgres.Ping(ctx, pool, cfg.Postgres.PoolTimeoutSeconds) == nil
 	}, probes.CORSConfig{

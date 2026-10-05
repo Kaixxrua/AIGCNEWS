@@ -128,6 +128,14 @@ func NewLimiter(r Redis, trustedProxyRaw string, overrides ...func(*Limits)) *Li
 	}
 }
 
+// ClientIP 按本限流器的可信代理配置解析请求来源 IP；nil 限流器只认直连对端。
+func (l *Limiter) ClientIP(r *http.Request) string {
+	if l == nil {
+		return ClientIP(r, nil)
+	}
+	return ClientIP(r, l.trusted)
+}
+
 // Enforce 为本次请求消费一发额度；返回 nil 表示放行，非 nil 表示超限。
 // 语义严格按 Python enforce_mcp_rate_limit 的顺序：分钟桶 →（tools/call
 // 且非 admin）配额桶；被分钟桶 429 的请求不消耗配额。

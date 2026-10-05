@@ -188,6 +188,15 @@ npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` �
 - 解析失败的畸形请求直接返回 JSON-RPC 错误，不计入配额。
 - Redis 不可用时放行（可用性优先于限流严格性），与认证端点限流策略一致。
 
+## 每日用量汇总
+
+实现见 [`mcp-go/internal/usage/usage.go`](../mcp-go/internal/usage/usage.go)，读取见 [`backend/app/monitoring/mcp_daily_usage.py`](../backend/app/monitoring/mcp_daily_usage.py)。管理员在监控页「MCP 调用」分区查看，接口为 `GET /api/monitor/mcp-usage?days=1..31`（默认 14，仅管理员）。
+
+- 按北京时间计日，分匿名（未带令牌）/ 免费 / 会员（实时生效档位）三类；管理员请求与压测 UA 整体不记。
+- 指标：去重客户端（HyperLogLog；登录用户按账号，匿名按「当天日期 + IP」的 SHA-256 摘要前 16 位，Redis 里不出现原始 IP；多天合计取并集，不是逐日相加）、连接次数（`initialize`）、放行的 `tools/call` 次数（按工具名，不在注册表的名字记 `__unknown__`）、429 次数（按分钟突发 / 24 小时 / 30 天分类，被拒请求不算调用）。
+- 客户端名取 `initialize` 的 `params.clientInfo.name` 并小写；空名记 `__unknown__`，含非法字符或超过 48 个字符记 `__other__`；每天最多收 64 个名字（三类合计），之后的新名字并入 `__other__`。
+- 键为 `mcpusage:{day}:*`，保留 400 天；`mcpusage:since` 记首次记录日，监控页据此不把开始统计前的日子显示成 0。写入是单次 Lua 原子执行、250 ms 超时且失败只记日志，不影响 MCP 响应；读取时 Redis 不可用返回 `available=false` 的同形零值。
+
 ## 与 `/api/ops/mcp-servers` 的区别
 
 管理员页面中的 `/api/ops/mcp-servers` 是配置**外部** MCP Server 的出站管理能力（含连接测试），

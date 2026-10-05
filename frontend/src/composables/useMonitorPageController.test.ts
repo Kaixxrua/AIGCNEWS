@@ -86,6 +86,7 @@ const createApi = (): MonitorApi => ({
   })),
   retryXTranslations: vi.fn(async () => ({ status: 'queued', message: '' })),
   fetchVisitPlatformStats: vi.fn(), fetchUserStats: vi.fn(), fetchRevenueStats: vi.fn(),
+  fetchMcpDailyUsage: vi.fn(),
 })
 
 const createController = (api = createApi(), isAdmin = true) => {

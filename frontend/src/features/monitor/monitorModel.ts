@@ -538,6 +538,62 @@ export interface VisitPlatformStatsResponse {
   automated_visits?: number
 }
 
+/* MCP 每日用量汇总（GET /monitor/mcp-usage）：受众与限流类别集合与后端
+   mcp_daily_usage.AUDIENCES / LIMIT_KINDS、Go internal/usage 常量对齐。
+   clients 是去重客户端（登录按用户、匿名按 IP 摘要），跨天取并集而非相加；
+   connections 是 initialize 次数；calls 只计放行的 tools/call；limited 是 429 次数。 */
+export type McpUsageAudience = 'anonymous' | 'free' | 'member'
+
+export type McpUsageDays = 7 | 14 | 30
+
+export interface McpUsageStats {
+  clients: number
+  connections: number
+  calls: number
+  limited: number
+}
+
+export type McpUsageAudienceStats = Record<McpUsageAudience | 'total', McpUsageStats>
+
+export type McpUsageAudienceCounts = Record<McpUsageAudience | 'total', number>
+
+export interface McpUsageDay extends McpUsageAudienceStats {
+  date: string
+  /** 早于首次记录日（since）的日子为 false：不是没人用，是还没开始统计 */
+  tracked: boolean
+}
+
+export interface McpUsageToolRow extends McpUsageAudienceCounts {
+  tool: string
+}
+
+export interface McpUsageLimitRow extends McpUsageAudienceCounts {
+  kind: string
+}
+
+export interface McpUsageClientNameRow {
+  name: string
+  connections: McpUsageAudienceCounts
+  clients: McpUsageAudienceCounts
+}
+
+export interface McpDailyUsageResponse {
+  /** Redis 未接线或读取失败时为 false，其余字段是同形零值 */
+  available: boolean
+  timezone: string
+  days: number
+  start_date: string
+  end_date: string
+  since: string | null
+  summary: McpUsageAudienceStats
+  /** 新的在前 */
+  daily: McpUsageDay[]
+  tools: McpUsageToolRow[]
+  client_names: McpUsageClientNameRow[]
+  client_names_truncated: boolean
+  limited: McpUsageLimitRow[]
+}
+
 /* 用户与会员统计：member_users 是生效 VIP 数（member 档且未到期），
    口径与后端 tiers.resolve_effective_tier 一致（到期自动回落 free，库内不回写）。 */
 export interface UserStatsResponse {

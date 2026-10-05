@@ -118,12 +118,12 @@
   #app .app-shell--comic-page .monitor-page .monitor-btn-danger:hover:not(:disabled)::before { background: color-mix(in srgb, var(--mon-danger) 10%, transparent); }
   #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):focus-visible { outline: 2px solid var(--mon-ink); outline-offset: 4px; }
   #app .app-shell--comic-page .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost):disabled { box-shadow: none; opacity: .5; }
-  /* Visit windows: every one wears its own rule, so nothing slides; the chosen window sits on the pager's lime chip and a
-     new choice is stamped in (v-indicator pop). */
-  #app .app-shell--comic-page .visit-window-tabs[data-indicator-mark]::before { content: none; }
-  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true'],
-  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true']:hover:not(:disabled) { color: var(--mon-on-chip); }
-  #app .app-shell--comic-page .monitor-page .visit-window-tab[aria-pressed='true']::after {
+  /* Visit and MCP usage windows (and the usage metric switch): every one wears its own rule, so nothing slides; the chosen
+     one sits on the pager's lime chip and a new choice is stamped in (v-indicator pop). */
+  #app .app-shell--comic-page :is(.visit-window-tabs, .mcp-usage-tabs)[data-indicator-mark]::before { content: none; }
+  #app .app-shell--comic-page .monitor-page :is(.visit-window-tab, .mcp-usage-tab)[aria-pressed='true'],
+  #app .app-shell--comic-page .monitor-page :is(.visit-window-tab, .mcp-usage-tab)[aria-pressed='true']:hover:not(:disabled) { color: var(--mon-on-chip); }
+  #app .app-shell--comic-page .monitor-page :is(.visit-window-tab, .mcp-usage-tab)[aria-pressed='true']::after {
     inset: -2px -2px -3px; border-width: 9px 9px 10px; border-image: var(--mon-pg-on) 27 27 30 fill / 9px 9px 10px stretch;
   }
 

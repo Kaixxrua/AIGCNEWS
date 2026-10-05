@@ -20,6 +20,7 @@ from backend.app.api.dependencies import (
 from backend.app.api.routes_dashboard import cst_today, get_site_visit_repository
 from backend.app.core.auth import RequireAdmin
 from backend.app.monitoring.health import HealthCheckService, ReadinessCheck
+from backend.app.monitoring.mcp_daily_usage import read_mcp_daily_usage_safely
 from backend.app.repositories.briefing_repository import BriefingReader
 from backend.app.repositories.document_repository import DocumentStatisticsReader
 from backend.app.repositories.error_event_repository import ErrorEventReader
@@ -104,6 +105,23 @@ async def system_metrics(
         mcp_tool_calls_snapshot=mcp_snapshot,
     )
     return result
+
+
+@router.get("/monitor/mcp-usage")
+async def mcp_daily_usage(
+    request: Request,
+    days: int = Query(default=14, ge=1, le=31),
+    _: dict = Depends(RequireAdmin),
+):
+    """MCP 每日用量汇总：含今天在内最近 days 天（北京时间计日）。
+
+    管理员口径与 /monitor/tasks 一致。数据由 Go MCP 服务写入 mcpusage:*，
+    按匿名/免费/会员给出去重客户端、连接（initialize）、工具调用与 429 次数；
+    不含管理员与压测流量，匿名按 IP 摘要去重、原始 IP 不入库。
+    Redis 未接线或读取失败时返回 available=false 的零值结构。
+    """
+    redis = getattr(request.app.state, "redis", None)
+    return await read_mcp_daily_usage_safely(redis, end_date=cst_today(), days=days)
 
 
 @router.get("/monitor/tasks")
