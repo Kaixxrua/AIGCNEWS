@@ -1,0 +1,105 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { i18n } from '@/i18n'
+import type { UiTemplate } from '@/features/ui-library/catalog'
+import { __resetPageHeadForTest, installPageHead } from '@/seo/pageHead'
+import UiLibraryView from './UiLibraryView.vue'
+
+vi.mock('@/features/ui-library/useUiLibraryAccount', async () => {
+  const { ref } = await import('vue')
+  return {
+    provideUiLibraryAccount: () => ({ stats: ref({}), loadError: ref(false), quotaText: ref(''), refresh: async () => undefined }),
+  }
+})
+
+const template: UiTemplate = {
+  id: 'demo:glass-button',
+  kind: 'component',
+  name: { zh: '玻璃按钮', en: 'Glass Button' },
+  description: { zh: '一枚半透明的按钮。', en: 'A translucent button.' },
+  notes: { zh: '', en: '' },
+  provider: 'Demo',
+  provider_id: 'demo',
+  author: 'someone',
+  license: 'MIT',
+  license_url: '',
+  revision: '1',
+  source_url: '',
+  demo_url: '',
+  category: 'button',
+  frameworks: ['html'],
+  aliases: [],
+  files: [],
+  notices: [],
+  dependencies: {},
+  export_name: 'GlassButton',
+  props: {},
+  assets: [],
+  preview_url: '',
+  clip_url: '',
+  poster_url: '',
+}
+
+const stubs = { UiTemplateDialog: true, UiTemplateCard: true, UiIconCard: true, UiIconDialog: true, UiMcpRecommendation: true }
+let stopHead: (() => void) | null = null
+
+async function openLibraryAt(path: string) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/ui-library/:id?', name: 'ui-library', component: UiLibraryView },
+      { path: '/mcp', name: 'mcp-connect', component: defineComponent({ render: () => null }) },
+    ],
+  })
+  await router.push(path)
+  stopHead = installPageHead(router, document)
+  const wrapper = mount(UiLibraryView, { global: { plugins: [router, i18n], stubs } })
+  await flushPromises()
+  return wrapper
+}
+
+beforeEach(() => {
+  i18n.global.locale.value = 'zh-CN'
+  document.head.innerHTML = ''
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: [template], icon_count: 0 }) })))
+})
+
+afterEach(() => {
+  stopHead?.()
+  stopHead = null
+  __resetPageHeadForTest()
+  vi.unstubAllGlobals()
+})
+
+describe('UiLibraryView item address', () => {
+  it('opens a known item without the not-found notice and titles the page after it', async () => {
+    const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
+    expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(true)
+    expect(wrapper.find('.ui-library__not-found').exists()).toBe(false)
+    expect(document.title).toBe('玻璃按钮 · AIGCNEWS')
+    expect(document.head.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('一枚半透明的按钮。')
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull()
+    expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://aigcnews.cn/ui-library/demo:glass-button')
+    wrapper.unmount()
+  })
+
+  it('says an unknown item is not there and keeps that address out of search results', async () => {
+    const wrapper = await openLibraryAt('/ui-library/demo:gone')
+    expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(false)
+    expect(wrapper.find('.ui-library__not-found').exists()).toBe(true)
+    expect(document.title).toBe('UI 灵感库 · AIGCNEWS')
+    expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
+    expect(document.head.querySelector('link[rel="canonical"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('does not call the item missing while the catalog failed to load', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })))
+    const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
+    expect(wrapper.find('.ui-library__not-found').exists()).toBe(false)
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull()
+    wrapper.unmount()
+  })
+})

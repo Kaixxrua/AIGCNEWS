@@ -12,6 +12,7 @@ import { installAppTheme } from './theme'
 import { installDesktopStyles } from './theme/desktopStyles'
 import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
 import { installPressFeedback } from './motion/press'
+import { installPageHead } from './seo/pageHead'
 
 // 漫画版内页样式只在桌面宽度下载（comic-pages.css，见 theme/desktopStyles.ts）。要赶在路由加载各页样式表之前挂上，
 // 层叠先后才不变；桌面上等它到位再挂载应用。
@@ -26,6 +27,8 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(i18n)
 app.use(router)
+// 每页的标题、描述、canonical 与 noindex（各路径拿到的是同一份 index.html，见 seo/pageHead.ts）。
+installPageHead(router)
 
 void desktopStylesReady.then(() => {
   app.mount('#app')

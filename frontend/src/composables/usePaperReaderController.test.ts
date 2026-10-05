@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
+import { i18n } from '@/i18n'
 import type { ChatMessage, ConversationSummary } from '@/stores/chatStore'
 import { usePaperReaderController } from './usePaperReaderController'
 
@@ -41,7 +42,7 @@ const createController = (overrides: { conversationEnabled?: Ref<boolean> } = {}
   })
   const loadConversations = vi.fn(async () => undefined)
   const ensureGlobalConversation = vi.fn(async () => undefined)
-  const fetchPaper = vi.fn(async (id: string) => ({ id, title: 'Paper' }))
+  const fetchPaper = vi.fn(async (id: string): Promise<{ id: string; title: string } | null> => ({ id, title: 'Paper' }))
   const sendMessage = vi.fn(async () => undefined)
   const openConversation = vi.fn(async (id: string) => {
     activeConversationId.value = id
@@ -98,6 +99,37 @@ describe('usePaperReaderController paper conversations', () => {
     expect(fixture.loadConversations).toHaveBeenCalledOnce()
     expect(fixture.messageMap.value['2']).toBeUndefined()
     expect(fixture.controller.messages.value).toEqual([])
+  })
+})
+
+describe('usePaperReaderController paper loading', () => {
+  it('tells a missing paper apart from a failed load and never keeps showing the previous paper', async () => {
+    const fixture = createController({ conversationEnabled: ref(false) })
+    const { controller } = fixture
+    await controller.initializePaperContext('paper-1')
+    expect(controller.paper.value?.id).toBe('paper-1')
+    expect(controller.paperMissing.value).toBe(false)
+
+    // 网络或服务出错：这篇可能存在，只是没加载出来。
+    fixture.fetchPaper.mockRejectedValueOnce(new Error('Network Error'))
+    await controller.initializePaperContext('paper-2')
+    expect(controller.paper.value).toBeNull()
+    expect(controller.paperError.value).toBe(i18n.global.t('paper.loadFailed'))
+    expect(controller.paperMissing.value).toBe(false)
+
+    fixture.fetchPaper.mockResolvedValueOnce(null)
+    await controller.initializePaperContext('paper-3')
+    expect(controller.paperError.value).toBe(i18n.global.t('paper.notFound'))
+    expect(controller.paperMissing.value).toBe(true)
+
+    await controller.initializePaperContext('paper-1')
+    expect(controller.paper.value?.id).toBe('paper-1')
+    expect(controller.paperError.value).toBe('')
+    expect(controller.paperMissing.value).toBe(false)
+
+    await controller.initializePaperContext('')
+    expect(controller.paper.value).toBeNull()
+    expect(controller.paperMissing.value).toBe(true)
   })
 })
 

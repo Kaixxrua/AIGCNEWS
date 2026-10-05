@@ -45,7 +45,7 @@ const {
 </script>
 
 <template>
-  <div class="register-page flex h-full items-center justify-center overflow-y-auto p-3 sm:p-6">
+  <main class="register-page flex h-full items-center justify-center overflow-y-auto p-3 sm:p-6">
     <!-- 桌面漫画版的角落贴纸与刊头字标（register-C）；窄屏不渲染。 -->
     <ComicSticker variant="corner" class="register-deco register-corner" />
     <ComicSticker variant="shout" class="register-deco register-shout" :text="t('dashboard.editorial.creationMark')" />
@@ -171,7 +171,7 @@ const {
       </p>
 
     </div>
-  </div>
+  </main>
 </template>
 
 <style scoped>

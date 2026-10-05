@@ -20,6 +20,7 @@ import { libraryKinds, styleTags, browseMaterials, resolveLibraryKind, type Libr
 import { categoryGroups } from '@/features/ui-library/taxonomyData'
 import { vIndicator } from '@/motion/indicator'
 import { vSwap } from '@/motion/swap'
+import { usePageHead } from '@/seo/pageHead'
 
 defineOptions({ name: 'UiLibraryView' })
 const route = useRoute()
@@ -89,6 +90,13 @@ const filtered = computed(() => {
   return matches
 })
 const selected = computed(() => items.value.find(item => item.id === route.params.id))
+// 地址里的素材 id 不在目录里（目录已加载成功）。
+const missingItem = computed(() => Boolean(route.params.id) && !selected.value && !loading.value && !failed.value)
+// 打开的素材用它的名称和简介做标题与描述；素材不存在时这个地址不让搜索引擎收录。
+usePageHead(() => {
+  if (selected.value) return { title: selected.value.name[lang.value], description: selected.value.description[lang.value] }
+  return missingItem.value ? { noindex: true } : null
+})
 const visibleLimit = ref(96)
 const visibleItems = computed(() => filtered.value.slice(0, visibleLimit.value))
 const resultCount = computed(() => iconMode.value ? filteredIcons.value.length : filtered.value.length)
@@ -207,6 +215,6 @@ onBeforeUnmount(() => controller.abort())
     </div>
     <UiTemplateDialog v-if="selected" :key="selected.id" :item="selected" :lang="lang" @close="close" />
     <UiIconDialog v-if="selectedIcon" :key="selectedIcon.id" :icon="selectedIcon" :set="iconSetOf(selectedIcon)" :lang="lang" @close="closeIcon" />
-    <div v-else-if="route.params.id && !loading && !failed" class="ui-library__not-found" role="alert">{{ text.notFound }} <button type="button" @click="close">{{ text.back }}</button></div>
+    <div v-if="missingItem" class="ui-library__not-found" role="alert">{{ text.notFound }} <button type="button" @click="close">{{ text.back }}</button></div>
   </section>
 </template>
