@@ -98,6 +98,7 @@ describe('formatAmountCents', () => {
   it('formats USD amounts with the dollar sign', () => {
     expect(formatAmountCents(490, 'USD')).toBe('$4.9')
     expect(formatAmountCents(3900, 'USD')).toBe('$39')
+    expect(formatAmountCents(1490, 'USD')).toBe('$14.9')
     expect(formatAmountCents(499, 'USD')).toBe('$4.99')
   })
 
@@ -158,6 +159,8 @@ describe('visibleChannelsForLocale', () => {
 describe('computeYearlySavingsCents', () => {
   it('computes monthly×12 − yearly for the default catalog', () => {
     expect(computeYearlySavingsCents(1900, 15900)).toBe(6900)
+    // 美元目录：$4.9 × 12 − $14.9 = $43.9
+    expect(computeYearlySavingsCents(490, 1490)).toBe(4390)
   })
 
   it('tracks runtime overrides', () => {
@@ -173,6 +176,8 @@ describe('computeYearlySavingsCents', () => {
 describe('computeYearlyDiscountPercent', () => {
   it('computes floor((1 − yearly/(monthly×12)) × 100) for the default catalog', () => {
     expect(computeYearlyDiscountPercent(1900, 15900)).toBe(30)
+    // 美元目录：1 − 14.9/58.8 = 74.66…% → 74
+    expect(computeYearlyDiscountPercent(490, 1490)).toBe(74)
   })
 
   it('floors odd ratios instead of rounding up', () => {

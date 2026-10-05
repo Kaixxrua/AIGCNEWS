@@ -11,7 +11,7 @@
 | `member_monthly` | member | ¥19（1900 cents） | 1 个日历月 |
 | `member_yearly` | member | ¥159（15900 cents） | 12 个月 |
 | `member_monthly_usd` | member | $4.9（490 cents） | 1 个日历月 |
-| `member_yearly_usd` | member | $39（3900 cents） | 12 个月 |
+| `member_yearly_usd` | member | $14.9（1490 cents） | 12 个月 |
 
 金额始终以整数分存储。月末续费按日历月扩展并钳制到目标月份最后一天；有效期内的 member 从现有到期时间顺延，free 或已过期用户从当前时间起算。
 

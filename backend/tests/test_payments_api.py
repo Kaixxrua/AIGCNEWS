@@ -302,7 +302,7 @@ def test_plans_are_public_and_pin_amounts(harness: Any) -> None:
     # 美元套餐与 CNY 目录并列返回；前端按界面语言拣选币种
     assert plans["member_monthly_usd"]["amount_cents"] == 490
     assert plans["member_monthly_usd"]["months"] == 1
-    assert plans["member_yearly_usd"]["amount_cents"] == 3900
+    assert plans["member_yearly_usd"]["amount_cents"] == 1490
     assert plans["member_yearly_usd"]["months"] == 12
     for code in ("member_monthly", "member_yearly"):
         assert plans[code]["currency"] == "CNY"
@@ -429,7 +429,7 @@ def test_create_order_usd_overseas_happy_path(harness: Any) -> None:
     body = response.json()
     order = body["order"]
     assert order["plan_code"] == "member_yearly_usd"
-    assert order["amount_cents"] == 3900
+    assert order["amount_cents"] == 1490
     assert order["currency"] == "USD"
     assert order["status"] == "pending"
     call = harness.providers["overseas_redirect"].create_calls[0]
