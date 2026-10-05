@@ -54,7 +54,6 @@ const overrides = {
     member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', priceLoading: '价格加载中', priceFailed: '价格没加载出来', priceRetry: '重试', priceUnavailable: '价格请联系咨询', features: { tracking: '10 条关键词或项目追踪，支持排除词', personalDigest: '每日个人简报，自选时间与已验证投递渠道', mcpMember: 'MCP/API 共用：每 24 小时最多 400 次，每 30 天最多 8,000 次', websiteMember: '个人网页收藏添加不限量', uiCopyMember: 'UI 灵感库复制不限次', support: 'MCP 接入问题支持' } },
     currentMember: '当前已是 vip', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News vip 开通咨询', memberNote: '感谢支持！vip 权益已生效。',
     ctaOnline: '立即开通', ctaOnlineHint: '在线支付：支付成功后权益立即生效；会员为在线交付的虚拟商品，一经开通不支持退款。',
-    trial: { start: '免费试用 {days} 天', startVip: '免费试用 vip {days} 天', starting: '开通中…', note: '每个账号一次，到期自动回到免费档，不扣费', active: '试用中 · {date} 到期；现在开通会接在试用之后。', activeShort: 'vip 试用至 {date}', alreadyUsed: '这个账号已经用过试用了。', alreadyMember: '已经是 vip 了，不用再试用。', failed: '没开通成功，请稍后再试。' },
     compare: {
       rowLabel: '{label}：', included: '包含', excluded: '不包含',
       rows: { browse: '浏览榜单、论文与项目库', tracking: '关键词或项目追踪', digest: '每日个人简报', website: '个人网页收藏', uiCopy: 'UI 灵感库复制', quota: 'MCP/API 额度（共用）', briefing: '简报邮件订阅', rss: '简报 RSS 订阅' },

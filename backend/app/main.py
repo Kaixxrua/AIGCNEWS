@@ -22,7 +22,6 @@ from backend.app.api import (
     routes_features,
     routes_feed,
     routes_github_projects,
-    routes_membership,
     routes_monitor,
     routes_oauth,
     routes_ops,
@@ -606,6 +605,5 @@ app.include_router(routes_report.router, prefix="/api", tags=["Report"])
 app.include_router(routes_sitemap.router, prefix="/api", tags=["Sitemap"])
 app.include_router(routes_feed.router, prefix="/api", tags=["Feed"])
 app.include_router(routes_payments.router, prefix="/api", tags=["Payments"])
-app.include_router(routes_membership.router, prefix="/api", tags=["Membership"])
 app.include_router(routes_ops.router, prefix="/api", tags=["Ops"])
 app.include_router(routes_x_media.router, prefix="/api", tags=["Media"])

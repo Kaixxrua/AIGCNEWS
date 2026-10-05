@@ -534,8 +534,9 @@ def test_site_landing_days_schema_is_additive_and_day_source_path_keyed() -> Non
 
 
 def test_membership_trials_schema_is_additive_and_user_keyed() -> None:
-    # 会员试用记录：user_id 主键即「每个账号一次」。开通时写 users 会员列在应用层
-    # 同一事务里完成（postgres_membership_trial_repository），迁移只建表、不碰存量用户。
+    # 0084 只建了会员试用记录表。试用已撤下（不提供会员试用），但生产已应用 0084，
+    # 迁移台账要求已应用版本保留逐字节相同的本地文件，所以文件与本测试原样保留；
+    # 表已无代码读写，留待单独的迁移删除。
     # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
     migration = next(
         item
