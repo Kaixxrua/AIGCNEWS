@@ -5,13 +5,13 @@ from typing import Any
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.domain.membership import MEMBERSHIP_TIER_MEMBER
-from backend.app.repositories.membership_trial_repository import TrialStartResult
-from backend.app.services.membership.trial import (
+from backend.app.domain.membership_trial import (
     TrialRecord,
     TrialSnapshot,
     is_effective_member,
     trial_expiry,
 )
+from backend.app.repositories.membership_trial_repository import TrialStartResult
 
 
 def _snapshot(user: dict[str, Any], trial: TrialRecord | None) -> TrialSnapshot:

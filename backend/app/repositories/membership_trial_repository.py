@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
 
-from backend.app.services.membership.trial import TrialSnapshot
+from backend.app.domain.membership_trial import TrialSnapshot
 
 #: started=本次开通成功；already_used=这个账号用过试用；already_member=眼下是有效会员；
 #: user_missing=账号不存在（注销与请求并发）。

@@ -1,7 +1,7 @@
 """会员试用：每个账号一次的 7 天会员（GET 查状态 / POST 开通）。
 
 开通写的是付费开通同一组列，读取侧统一经 resolve_effective_tier 判定，
-到期自动回落免费档，不需要定时任务；规则见 services/membership/trial.py。
+到期自动回落免费档，不需要定时任务；规则见 domain/membership_trial.py。
 """
 
 from __future__ import annotations
