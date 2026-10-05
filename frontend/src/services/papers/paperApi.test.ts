@@ -10,17 +10,24 @@ describe('Paper API transport contract', () => {
     transport.get.mockReset()
   })
 
-  it('returns paper data on success and null for empty or failed detail requests', async () => {
+  it('returns paper data on success, null when the paper does not exist, and an error when the request fails', async () => {
     const paper = { id: 'paper-1', source: 'arxiv', title: 'Paper' }
     transport.get.mockResolvedValueOnce({ data: paper })
     await expect(fetchPaperDetail('paper-1')).resolves.toEqual(paper)
     expect(transport.get).toHaveBeenLastCalledWith('/papers/paper-1')
 
     transport.get.mockResolvedValueOnce({ data: undefined })
+    await expect(fetchPaperDetail('empty')).resolves.toBeNull()
+
+    transport.get.mockRejectedValueOnce({ response: { status: 404, data: { detail: "Paper 'missing' not found" } } })
     await expect(fetchPaperDetail('missing')).resolves.toBeNull()
 
-    transport.get.mockRejectedValueOnce(new Error('network unavailable'))
-    await expect(fetchPaperDetail('failed')).resolves.toBeNull()
+    const failure = new Error('network unavailable')
+    transport.get.mockRejectedValueOnce(failure)
+    await expect(fetchPaperDetail('failed')).rejects.toBe(failure)
+
+    transport.get.mockRejectedValueOnce({ response: { status: 503 } })
+    await expect(fetchPaperDetail('unavailable')).rejects.toEqual({ response: { status: 503 } })
   })
 
   it('looks a paper up by its arXiv id: null when the site has no such paper, an error when the request fails', async () => {

@@ -9,6 +9,8 @@ import { useLatexRenderer } from '@/composables/useLatexRenderer'
 import { usePaperReaderController } from '@/composables/usePaperReaderController'
 import { useSameDayPapers } from '@/composables/useSameDayPapers'
 import { paperDay } from '@/features/papers/paperHead'
+import { paperPlainText } from '@/features/papers/paperLatex'
+import { usePageHead } from '@/seo/pageHead'
 import { fetchPaperDetail, type PaperItem } from '@/services/papers/paperApi'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
@@ -41,13 +43,19 @@ const controller = usePaperReaderController<PaperItem>({
 })
 
 const {
-  paper, paperLoading, paperError, showConvPanel, currentConversationId,
+  paper, paperLoading, paperError, paperMissing, showConvPanel, currentConversationId,
   conversationList, activeConversationTitle, inputText, isSending, messages,
   initializePaperContext, handlePaperIdChange,
   switchConversation, newConversation, deleteCurrentConversation, toggleThinking,
   isThinkingExpanded, sendText,
   handleKeydown, setChatListRef,
 } = controller
+
+// 标签页标题和搜索摘要用论文自己的标题与摘要；站内确实没有这篇时，这个地址不让搜索引擎收录。
+usePageHead(() => {
+  if (paper.value) return { title: paperPlainText(paper.value.title), description: paperPlainText(paper.value.summary) }
+  return paperMissing.value ? { noindex: true } : null
+})
 
 // 桌面（漫画版）版头多一行作者、arXiv 编号、点赞和名次，旁边列出同一天日榜上的论文；窄屏沿用原来的阅读布局。
 const desktop = useMediaQuery('(min-width: 1024px)')

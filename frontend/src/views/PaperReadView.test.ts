@@ -1,9 +1,12 @@
 import { RouterLinkStub, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { ref } from 'vue'
 import { createI18n } from 'vue-i18n'
+import type { Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { messages } from '@/i18n'
 import PaperSameDayList from '@/components/papers/PaperSameDayList.vue'
 import { fetchPaperDetail } from '@/services/papers/paperApi'
+import { __resetPageHeadForTest, installPageHead } from '@/seo/pageHead'
 import PaperReadView from './PaperReadView.vue'
 
 // 紧凑版头的细节行和「同一天的论文」只在桌面（≥1024px）出现；jsdom 没有 matchMedia，按标志切换。
@@ -35,7 +38,7 @@ vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return {
     ...actual,
-    useRoute: () => ({ params: { id: 'second' }, fullPath: '/papers/second/read' }),
+    useRoute: () => ({ name: 'paper-read', params: { id: 'second' }, path: '/papers/second/read', fullPath: '/papers/second/read' }),
     useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
   }
 })
@@ -150,5 +153,45 @@ describe('PaperReadView desktop density', () => {
     const wrapper = await mountView()
     expect(wrapper.get('[role="alert"]').text()).toBe('未找到论文')
     expect(wrapper.find('.guest-cta').exists()).toBe(false)
+  })
+})
+
+describe('PaperReadView page head', () => {
+  let stopHead: (() => void) | null = null
+  const watchHead = () => {
+    const route = ref({ name: 'paper-read', params: { id: 'second' }, path: '/papers/second/read', query: {} })
+    stopHead = installPageHead({ currentRoute: route } as unknown as Router, document)
+  }
+
+  beforeEach(() => { document.head.innerHTML = '' })
+  afterEach(() => {
+    stopHead?.()
+    stopHead = null
+    __resetPageHeadForTest()
+  })
+
+  it('titles the tab after the paper and describes it with the abstract', async () => {
+    watchHead()
+    await mountView()
+    expect(document.title).toBe('Second paper · AIGCNEWS')
+    expect(document.head.querySelector('meta[name="description"]')?.getAttribute('content')).toBe('A useful abstract')
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull()
+    expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://aigcnews.cn/papers/second/read')
+  })
+
+  it('keeps a paper the site does not have out of search results', async () => {
+    watchHead()
+    vi.mocked(fetchPaperDetail).mockResolvedValueOnce(null)
+    await mountView()
+    expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
+    expect(document.head.querySelector('link[rel="canonical"]')).toBeNull()
+  })
+
+  it('does not call a paper missing when it only failed to load', async () => {
+    watchHead()
+    vi.mocked(fetchPaperDetail).mockRejectedValueOnce(new Error('Network Error'))
+    const wrapper = await mountView()
+    expect(wrapper.get('[role="alert"]').text()).toBe('论文加载失败')
+    expect(document.head.querySelector('meta[name="robots"]')).toBeNull()
   })
 })

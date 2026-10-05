@@ -18,12 +18,17 @@ export interface PaperItem {
   created_at?: string
 }
 
+/**
+ * 站内没有这篇（404 或空响应）为 null；网络或服务出错时照样抛出——阅读页据此区分「论文不存在」
+ * （标 noindex）和「暂时没加载出来」，不能把一次网络抖动说成论文不存在。
+ */
 export async function fetchPaperDetail(paperId: string): Promise<PaperItem | null> {
   try {
     const res = await api.get(`/papers/${paperId}`)
     return res.data ?? null
-  } catch {
-    return null
+  } catch (error) {
+    if ((error as { response?: { status?: unknown } } | null)?.response?.status === 404) return null
+    throw error
   }
 }
 

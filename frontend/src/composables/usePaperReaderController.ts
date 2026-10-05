@@ -43,6 +43,8 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
   const paper = ref<TPaper | null>(null) as Ref<TPaper | null>
   const paperLoading = ref(true)
   const paperError = ref('')
+  /** 确认站内没有这篇（id 不合法或接口 404）；加载失败不算，免得把一次网络抖动当成论文不存在。 */
+  const paperMissing = ref(false)
   const showConvPanel = ref(false)
   const inputText = ref('')
   const chatListRef = ref<HTMLElement | null>(null)
@@ -64,17 +66,26 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
 
   const loadPaper = async (id: string) => {
     if (!id) {
+      paper.value = null
       paperError.value = i18n.global.t('paper.invalidId')
+      paperMissing.value = true
       paperLoading.value = false
       return
     }
     paperLoading.value = true
     paperError.value = ''
+    paperMissing.value = false
     try {
       paper.value = await options.fetchPaper(id)
-      if (!paper.value) paperError.value = i18n.global.t('paper.notFound')
-    } catch (error) {
-      paperError.value = String(error)
+      if (!paper.value) {
+        paperError.value = i18n.global.t('paper.notFound')
+        paperMissing.value = true
+      }
+    } catch {
+      // 从上一篇站内跳过来时，不能在这篇的地址下接着显示上一篇。
+      paper.value = null
+      // 原样显示 AxiosError 对读者没有意义，给一句能看懂的。
+      paperError.value = i18n.global.t('paper.loadFailed')
     } finally {
       paperLoading.value = false
     }
@@ -139,7 +150,7 @@ export function usePaperReaderController<TPaper extends PaperReaderPaper>(option
     }
   }
   return {
-    paper, paperLoading, paperError, showConvPanel, currentConversationId, conversationList,
+    paper, paperLoading, paperError, paperMissing, showConvPanel, currentConversationId, conversationList,
     activeConversationTitle, inputText, setChatListRef, isSending, messages,
     initializePaperContext, handlePaperIdChange,
     switchConversation, newConversation, deleteCurrentConversation, toggleThinking,

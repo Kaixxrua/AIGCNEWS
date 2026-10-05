@@ -191,7 +191,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
       <!-- 内容区（顶栏占位 56px；pb-7 保证末端内容不被悬浮 dock 遮挡，
            部分浏览器不会把滚动容器的 end padding 计入可滚动区域） -->
-      <div ref="appContent" class="app-content absolute inset-0 pt-[56px] pb-7 flex flex-col">
+      <main ref="appContent" class="app-content absolute inset-0 pt-[56px] pb-7 flex flex-col">
         <router-view v-slot="{ Component }">
           <Transition :css="false" v-bind="routeTransition">
             <KeepAlive :include="KEEP_ALIVE_VIEW_NAMES" :max="KEEP_ALIVE_MAX">
@@ -199,7 +199,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
             </KeepAlive>
           </Transition>
         </router-view>
-      </div>
+      </main>
 
       <!-- 漫画外壳（首页与内容页）的画框下沿：与报头墨线同笔，在 dock 处抬起让出一格 -->
       <div v-if="editorialLayout" class="comic-footer-rule" aria-hidden="true">

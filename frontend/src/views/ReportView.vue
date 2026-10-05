@@ -25,6 +25,7 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { slideIn, slideOut } from '@/motion/presence'
 import { vSwap } from '@/motion/swap'
 import { preloadWhen } from '@/utils/lazyComponent'
+import { usePageHead } from '@/seo/pageHead'
 import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBriefing'
 import {
   getReportTypeInfo,
@@ -42,6 +43,15 @@ const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const route = useRoute()
 const router = useRouter()
+
+// 某一期简报（RSS 与站内速查按 ?date= 回链）单独收录：标题带上日期，canonical 保留期号和种类。
+// 不带期号的 /report 是「今天这一期」，用路由级的默认标题。
+usePageHead(() => {
+  const date = parseReportDateQuery(route.query.date)
+  if (!date) return null
+  const type = parseReportTypeQuery(route.query.type)
+  return { title: `${t('seo.titles.report')} ${date}`, canonicalQuery: { date, type: type === 'all' ? null : type } }
+})
 
 // 从 Dashboard 一键订阅入口进入时，自动打开订阅向导；已登录则清理 query 避免重复触发。
 onMounted(() => {
