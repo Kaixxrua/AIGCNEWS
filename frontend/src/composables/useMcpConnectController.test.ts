@@ -1,5 +1,5 @@
 import { nextTick, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpHandshakeOptions } from '@/features/mcp/mcpHandshake'
 import type { McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
 import {
@@ -275,5 +275,68 @@ describe('MCP connect controller', () => {
     const { controller } = createController({ navigateToLogin })
     await controller.requestLogin()
     expect(navigateToLogin).toHaveBeenCalledOnce()
+  })
+})
+
+describe('MCP connect controller connection watch', () => {
+  beforeEach(() => vi.useFakeTimers({ now: Date.parse('2026-10-05T12:00:00Z') }))
+  afterEach(() => vi.useRealTimers())
+
+  it('watches the created token until the client first uses it', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchMcpTokens).mockResolvedValue([token(1)])
+    const { controller } = createController({ api })
+
+    await controller.startSetup()
+    expect(controller.connection.status.value).toBe('waiting')
+    vi.mocked(api.fetchMcpTokens).mockClear()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(api.fetchMcpTokens).toHaveBeenCalledOnce()
+    expect(controller.connection.status.value).toBe('waiting')
+
+    vi.mocked(api.fetchMcpTokens).mockResolvedValue([{ ...token(1), last_used_at: '2026-10-05T12:00:04Z' }])
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(controller.connection.status.value).toBe('connected')
+    expect(controller.connection.fresh.value).toBe(true)
+    expect(controller.connection.lastUsedAt.value).toBe('2026-10-05T12:00:04Z')
+  })
+
+  it('looks again quickly after the command is copied', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchMcpTokens).mockResolvedValue([token(1)])
+    const { controller } = createController({ api, copy: vi.fn(async () => undefined) })
+
+    await controller.startSetup()
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(controller.connection.status.value).toBe('paused')
+    vi.mocked(api.fetchMcpTokens).mockClear()
+
+    await controller.copyGeneratedCommand()
+    expect(controller.connection.status.value).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(api.fetchMcpTokens).toHaveBeenCalledOnce()
+  })
+
+  it('stops watching once the command is invalidated, on sign-out and on dispose', async () => {
+    const api = createApi()
+    vi.mocked(api.fetchMcpTokens).mockResolvedValue([token(1)])
+    const { controller } = createController({ api })
+
+    await controller.startSetup()
+    controller.selectedShell.value = controller.selectedShell.value === 'bash' ? 'powershell' : 'bash'
+    await nextTick()
+    expect(controller.connection.status.value).toBe('idle')
+
+    await controller.startSetup()
+    expect(controller.connection.status.value).toBe('waiting')
+    controller.clearAuthenticatedState()
+    expect(controller.connection.status.value).toBe('idle')
+
+    await controller.startSetup()
+    controller.dispose()
+    expect(controller.connection.status.value).toBe('idle')
+    vi.mocked(api.fetchMcpTokens).mockClear()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(api.fetchMcpTokens).not.toHaveBeenCalled()
   })
 })

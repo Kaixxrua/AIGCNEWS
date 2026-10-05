@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import DshView from './DshView.vue'
+import { mcpConnectionMessages } from '@/i18n/locales/mcpConnection'
 import { useAuthStore } from '@/stores/authStore'
 import type { AuthUser } from '@/stores/authStore'
 
@@ -11,11 +12,12 @@ const freeUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', membershi
 
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
+const fetchMcpTokens = vi.hoisted(() => vi.fn())
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
-  return { ...actual, ensureDshMcpToken, rotateDshMcpToken }
+  return { ...actual, ensureDshMcpToken, rotateDshMcpToken, fetchMcpTokens }
 })
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
@@ -64,7 +66,7 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/mcp', component: { template: '<div />' } },
   { path: '/membership', component: { template: '<div />' } },
 ] })
-const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
+const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...messages, ...mcpConnectionMessages['zh-CN'] } } })
 
 const mountView = async () => {
   // 组件必须与测试体共享同一个 active pinia，否则各自读到不同的 auth store
@@ -76,6 +78,7 @@ const mountView = async () => {
 beforeEach(() => {
   ensureDshMcpToken.mockReset()
   rotateDshMcpToken.mockReset()
+  fetchMcpTokens.mockReset().mockResolvedValue([])
   copy.mockClear()
   requestLogin.mockClear()
   setActivePinia(createPinia())

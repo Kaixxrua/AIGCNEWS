@@ -3,10 +3,12 @@ import axios from 'axios'
 import { DSH_PLUGIN_INSTALL_METHODS, type DshPluginInstallMethodId } from '@/features/mcp/dshPlugin'
 import {
   ensureDshMcpToken as defaultEnsureDshMcpToken,
+  fetchMcpTokens as defaultFetchMcpTokens,
   isDshTokenRecoveryRequired,
   rotateDshMcpToken as defaultRotateDshMcpToken,
   type DshMcpTokenResponse,
 } from '@/services/mcp/mcpTokenApi'
+import { useTokenConnectionWatch, type TokenConnectionWatchOptions } from '@/composables/useTokenConnectionWatch'
 
 /**
  * DSH 接入向导控制器。
@@ -17,12 +19,17 @@ import {
  * 计算。Token 只保存在本控制器的内存 ref 中——不写入
  * localStorage/sessionStorage/URL/日志；认证丢失或组件卸载立即清空，
  * 且迟到响应（generation/disposed 守卫）不得回填凭证。
+ * 拿到 Token 后由 connection 盯着它（只按 id 对令牌列表，不碰明文）：新 Token 等第一次连接，
+ * 以前连过的复用 Token 显示上次使用时间，用户复制命令后才接着查。
  */
 export type DshTokenPhase = 'idle' | 'loading' | 'ready' | 'error' | 'recovery'
 
 export interface DshSetupOptions {
   ensureDshMcpToken?: typeof defaultEnsureDshMcpToken
   rotateDshMcpToken?: typeof defaultRotateDshMcpToken
+  fetchMcpTokens?: typeof defaultFetchMcpTokens
+  /** 测试注入时钟、定时器与页面可见性。 */
+  connectionWatch?: Omit<TokenConnectionWatchOptions, 'fetchTokens'>
 }
 
 const DSH_PATCH_PATH = '~/.dsh/profiles/web/cordis.patch.yml'
@@ -58,6 +65,8 @@ const toErrorKey = (cause: unknown) =>
 export const useDshSetupController = (options: DshSetupOptions = {}) => {
   const ensureTokenApi = options.ensureDshMcpToken ?? defaultEnsureDshMcpToken
   const rotateTokenApi = options.rotateDshMcpToken ?? defaultRotateDshMcpToken
+  const fetchTokensApi = options.fetchMcpTokens ?? defaultFetchMcpTokens
+  const connection = useTokenConnectionWatch({ ...options.connectionWatch, fetchTokens: () => fetchTokensApi() })
   const selectedMethod = ref<DshPluginInstallMethodId>('npm')
   // 两步：0 = 安装方式，1 = 接入命令
   const step = ref(0)
@@ -78,6 +87,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     tokenReused.value = result.reused
     phase.value = 'ready'
     error.value = ''
+    connection.start(result.token_metadata)
   }
 
   const ensure = async (): Promise<boolean> => {
@@ -98,6 +108,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
       } catch (cause) {
         if (disposed || current !== generation) return false
         token.value = ''
+        connection.stop()
         if (isDshTokenRecoveryRequired(cause)) {
           // 旧版 hash-only token 无法回显明文：引导用户显式重新生成
           phase.value = 'recovery'
@@ -120,6 +131,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     phase.value = 'loading'
     error.value = ''
     token.value = ''
+    connection.stop()
     try {
       const result = await rotateTokenApi()
       if (disposed || current !== generation) return false
@@ -141,6 +153,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     tokenReused.value = false
     error.value = ''
     phase.value = 'idle'
+    connection.stop()
   }
 
   const dispose = () => {
@@ -148,6 +161,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     generation += 1
     token.value = ''
     tokenReused.value = false
+    connection.dispose()
   }
 
   const next = () => { step.value = Math.min(1, step.value + 1) }
@@ -162,6 +176,7 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     error,
     command,
     installLine,
+    connection,
     ensure,
     rotate,
     clearToken,

@@ -12,6 +12,7 @@ import { vMorph } from '@/motion/morph'
 import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
 import CommandPreview from './CommandPreview.vue'
+import McpConnectionStatus from './McpConnectionStatus.vue'
 
 /**
  * /mcp 桌面版的接入命令台：不再分三步翻页。默认选中 Claude Code，命令模板与复制按钮打开就在首屏；九个客户端
@@ -28,6 +29,7 @@ const { t } = useI18n()
 const {
   clientDisplayLabel,
   clientOption,
+  connection,
   copiedKey,
   copyAgentSetupPrompt,
   copyGeneratedCommand,
@@ -101,6 +103,7 @@ const deskState = computed(() => {
           <button type="button" class="btn-primary" @click="copyGeneratedCommand"><RollText :value="t(copiedKey === 'command' ? 'mcp.copied' : 'mcpAutoCommand.copy')" /></button>
           <button type="button" class="btn-secondary" :title="t('mcpAutoCommand.agentPromptHint')" @click="copyAgentSetupPrompt"><RollText :value="t(copiedKey === 'agent-prompt' ? 'mcp.copied' : 'mcpAutoCommand.copyAgentPrompt')" /></button>
           <p v-if="setupErrorDisplay" class="mcp-desk-error">{{ setupErrorDisplay }}</p>
+          <McpConnectionStatus :connection="connection" :client="clientDisplayLabel(clientOption)" :live="false" />
           <p class="mcp-desk-note mcp-desk-note--warn">{{ t('mcp.bearerWarningDetail') }}</p>
           <p class="mcp-desk-note">{{ resultDescription }}</p>
         </template>

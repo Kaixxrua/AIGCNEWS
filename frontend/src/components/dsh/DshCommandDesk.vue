@@ -16,6 +16,7 @@ import { vMorph } from '@/motion/morph'
 import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
 import CommandPreview from '@/components/mcp/CommandPreview.vue'
+import McpConnectionStatus from '@/components/mcp/McpConnectionStatus.vue'
 
 /**
  * /dsh 桌面版的接入命令台：安装方式缩成两枚标签，命令模板打开就在首屏，Token 处是占位。
@@ -45,6 +46,11 @@ const agentSetupPrompt = computed(() => t('dsh.wizard.agentSetupPrompt', {
   command: controller.installLine,
   method: t(selectedMethod.value.titleKey),
 }))
+// 复制了命令，接下来几分钟最可能连上：让连接检测重新勤快地查。
+const copyAndWatch = async (key: string, value: string) => {
+  await installCopy.copyValue(key, value)
+  controller.connection.nudge()
+}
 
 // 右栏：游客先登录；登录后取 Token 中；就绪可复制；旧版 Token 需重新生成；出错可重试。
 const deskState = computed(() => {
@@ -88,8 +94,9 @@ onBeforeUnmount(() => {
       <p class="dsh-desk-label"><span class="dsh-desk-num" aria-hidden="true">2</span>{{ t('dsh.wizard.stepCommand') }}</p>
       <div v-morph="deskState" v-swap="{ key: deskState, y: 8 }" class="dsh-desk-side-body">
         <template v-if="deskState === 'ready'">
-          <button type="button" class="btn-primary" @click="installCopy.copyValue('dsh-install-line', controller.installLine)"><RollText :value="t(installCopy.copiedKey === 'dsh-install-line' ? 'mcp.copied' : 'dsh.copy')" /></button>
-          <button type="button" class="btn-secondary" :title="t('dsh.wizard.agentPromptHint')" @click="installCopy.copyValue('dsh-agent-prompt', agentSetupPrompt)"><RollText :value="t(installCopy.copiedKey === 'dsh-agent-prompt' ? 'mcp.copied' : 'dsh.wizard.copyAgentPrompt')" /></button>
+          <button type="button" class="btn-primary" @click="copyAndWatch('dsh-install-line', controller.installLine)"><RollText :value="t(installCopy.copiedKey === 'dsh-install-line' ? 'mcp.copied' : 'dsh.copy')" /></button>
+          <button type="button" class="btn-secondary" :title="t('dsh.wizard.agentPromptHint')" @click="copyAndWatch('dsh-agent-prompt', agentSetupPrompt)"><RollText :value="t(installCopy.copiedKey === 'dsh-agent-prompt' ? 'mcp.copied' : 'dsh.wizard.copyAgentPrompt')" /></button>
+          <McpConnectionStatus variant="dsh" :connection="controller.connection" :live="false" />
           <p class="dsh-desk-note">{{ t('dsh.wizard.tokenCommandNote') }}</p>
           <p class="dsh-desk-note dsh-desk-note--warn">{{ t('dsh.wizard.tokenReuseNote') }}</p>
           <button type="button" class="dsh-desk-link" @click="controller.rotate">{{ t('dsh.wizard.tokenRotate') }}</button>

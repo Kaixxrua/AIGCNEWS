@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildDshInstallLine, useDshSetupController } from './useDshSetupController'
 import { COMMAND_TOKEN_SLOT, splitCommandPreview } from '@/features/mcp/commandPreview'
-import type { DshMcpTokenResponse } from '@/services/mcp/mcpTokenApi'
+import type { DshMcpTokenResponse, McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
+
+// 没注入 fetchMcpTokens 的用例也不能触网：连接检测用的令牌列表默认换成空表。
+vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
+  return { ...actual, fetchMcpTokens: vi.fn().mockResolvedValue([]) }
+})
 
 const readyResult = (token: string, reused = false): DshMcpTokenResponse => ({
   token,
@@ -119,9 +125,10 @@ describe('useDshSetupController', () => {
     expect(await controller.rotate()).toBe(false)
     expect(controller.phase.value).toBe('error')
     expect(controller.error.value).toBe('mcp.tokenCreateFailed')
-    // rotate 开始即清空旧 token：失败也不回退展示旧凭证
+    // rotate 开始即清空旧 token：失败也不回退展示旧凭证，也不再盯着旧 token 的连接
     expect(controller.token.value).toBe('')
     expect(controller.installLine.value).toBe('')
+    expect(controller.connection.status.value).toBe('idle')
   })
 
   it('clears the in-memory token on auth loss and ignores late responses', async () => {
@@ -180,6 +187,65 @@ describe('useDshSetupController', () => {
     await controller.ensure()
     expect(controller.installLine.value.startsWith('dsh plugin --profile web add github:Kaixxrua/dsh-aigc-radar && printf ')).toBe(true)
     expect(controller.installLine.value).toContain("mcpToken: 'aigc_mcp_gh'")
+  })
+})
+
+describe('useDshSetupController connection watch', () => {
+  beforeEach(() => { vi.useFakeTimers({ now: Date.parse('2026-10-05T12:00:00Z') }) })
+  afterEach(() => { vi.useRealTimers() })
+
+  const tokenRow = (lastUsedAt: string | null, id = 21): McpTokenMetadata => ({ ...readyResult('').token_metadata, id, last_used_at: lastUsedAt })
+
+  it('waits for a fresh token to be used and then reports it connected', async () => {
+    const fetchMcpTokens = vi.fn().mockResolvedValue([tokenRow(null)])
+    const controller = useDshSetupController({ ensureDshMcpToken: vi.fn().mockResolvedValue(readyResult('aigc_mcp_new')), fetchMcpTokens })
+
+    await controller.ensure()
+    expect(controller.connection.status.value).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(fetchMcpTokens).toHaveBeenCalledOnce()
+    expect(controller.connection.status.value).toBe('waiting')
+
+    fetchMcpTokens.mockResolvedValue([tokenRow('2026-10-05T12:00:04Z')])
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(controller.connection.status.value).toBe('connected')
+    expect(controller.connection.fresh.value).toBe(true)
+    controller.dispose()
+  })
+
+  it('shows a reused token as connected before, without polling', async () => {
+    const fetchMcpTokens = vi.fn()
+    const reused: DshMcpTokenResponse = { ...readyResult('aigc_mcp_old', true), token_metadata: tokenRow('2026-10-02T08:00:00Z') }
+    const controller = useDshSetupController({ ensureDshMcpToken: vi.fn().mockResolvedValue(reused), fetchMcpTokens })
+
+    await controller.ensure()
+    expect(controller.connection.status.value).toBe('connected')
+    expect(controller.connection.fresh.value).toBe(false)
+    expect(controller.connection.lastUsedAt.value).toBe('2026-10-02T08:00:00Z')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMcpTokens).not.toHaveBeenCalled()
+    controller.dispose()
+  })
+
+  it('follows the new token after a rotate and lets go when the session ends', async () => {
+    const fetchMcpTokens = vi.fn().mockResolvedValue([tokenRow(null, 22)])
+    const controller = useDshSetupController({
+      ensureDshMcpToken: vi.fn().mockResolvedValue(readyResult('aigc_mcp_old')),
+      rotateDshMcpToken: vi.fn().mockResolvedValue({ ...readyResult('aigc_mcp_new'), token_metadata: tokenRow(null, 22) }),
+      fetchMcpTokens,
+    })
+
+    await controller.ensure()
+    await controller.rotate()
+    expect(controller.connection.status.value).toBe('waiting')
+    // 列表里只剩新 token 22：盯的是新的那枚，所以仍在等，而不是报「已失效」
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(controller.connection.status.value).toBe('waiting')
+
+    controller.clearToken()
+    expect(controller.connection.status.value).toBe('idle')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMcpTokens).toHaveBeenCalledOnce()
   })
 })
 

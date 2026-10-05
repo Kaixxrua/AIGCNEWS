@@ -33,6 +33,7 @@ import {
   type CreateMcpTokenResponse,
   type McpTokenMetadata,
 } from '@/services/mcp/mcpTokenApi'
+import { useTokenConnectionWatch, type PageVisibility } from '@/composables/useTokenConnectionWatch'
 
 const SCOPE = 'projects:favorites:read'
 const COPY_NOTICE_MS = 1800
@@ -72,6 +73,7 @@ export interface McpConnectControllerOptions {
   now?: () => Date
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   cancelSchedule?: (timer: ReturnType<typeof setTimeout>) => void
+  visibility?: PageVisibility
 }
 
 const createTestPhases = (): McpTestPhase[] => [
@@ -136,6 +138,14 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
       : generateMcpClientCommand(clientOption.value, normalizedEndpoint.value, undefined, selectedShell.value)
   ))
   const discoveryState = ref<PublicToolDiscoveryState>({ status: 'idle', endpoint: normalizedEndpoint.value })
+  // 一次性命令交出去后，盯着这枚令牌看客户端连没连上；命令清掉（换客户端、登出、删令牌）就不再盯。
+  const connection = useTokenConnectionWatch({
+    fetchTokens: () => api.fetchMcpTokens(),
+    now: () => now().getTime(),
+    schedule,
+    cancelSchedule,
+    visibility: options.visibility,
+  })
   const testing = computed(() => discoveryState.value.status === 'running')
   const displayedPublicTools = computed(() => resolveDisplayedPublicTools(normalizedEndpoint.value, discoveryState.value))
 
@@ -159,6 +169,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
 
   const clearTransientCommand = () => {
     transientCommand.value = ''
+    connection.stop()
     if (copiedKey.value === 'command' || copiedKey.value === 'agent-prompt') copiedKey.value = ''
   }
 
@@ -243,6 +254,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
       if (activeLifecycle(lifecycle) && generation === setupGeneration) {
         transientCommand.value = generateMcpClientCommand(selectedOption, endpoint, result.token, shell)
         setupNotice.value = feedbackKey('mcp.tokenCreated')
+        connection.start(result.token_metadata)
       }
       if (activeLifecycle(lifecycle)) await loadTokens()
     } catch (error) {
@@ -270,7 +282,9 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   }
 
   const copyGeneratedCommand = async () => {
-    if (transientCommand.value) await copyText(transientCommand.value, 'command')
+    if (!transientCommand.value) return
+    await copyText(transientCommand.value, 'command')
+    connection.nudge()
   }
 
   const copyAgentSetupPrompt = async () => {
@@ -285,6 +299,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
       target,
     })
     await copyText(prompt, 'agent-prompt')
+    connection.nudge()
   }
 
   const copyQuickCommand = async () => {
@@ -368,6 +383,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     copiedKey.value = ''
     if (copyTimer) cancelSchedule(copyTimer)
     copyTimer = undefined
+    connection.dispose()
   }
 
   return {
@@ -376,6 +392,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     clientOption,
     clearAuthenticatedState,
     clearTransientCommand,
+    connection,
     copiedKey,
     copyAgentSetupPrompt,
     copyGeneratedCommand,

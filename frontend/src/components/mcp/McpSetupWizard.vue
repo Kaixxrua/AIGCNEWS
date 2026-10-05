@@ -6,6 +6,7 @@ import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys, type McpClie
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
 import { clientConfigTarget as configTargetOf, setupResultDescription as resultDescriptionOf, setupScopeLabel as scopeLabelOf, setupTargetDescription as targetDescriptionOf } from '@/features/mcp/mcpSetupTarget'
 import { vIndicator } from '@/motion/indicator'
+import McpConnectionStatus from './McpConnectionStatus.vue'
 
 const props = defineProps<{
   controller: McpConnectController
@@ -16,6 +17,7 @@ const { t } = useI18n()
 const {
   clientDisplayLabel,
   clientOption,
+  connection,
   copiedKey,
   copyAgentSetupPrompt,
   copyGeneratedCommand,
@@ -150,11 +152,13 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
               <button type="button" class="btn-secondary w-full justify-center text-xs" @click="copyAgentSetupPrompt">{{ t(copiedKey === 'agent-prompt' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copyAgentPrompt') }}</button>
             </div>
             <p class="mt-2 text-2xs leading-4 text-amber-700">{{ t('mcpAutoCommand.agentPromptHint') }}</p>
+            <McpConnectionStatus class="mt-3" :connection="connection" :client="clientDisplayLabel(clientOption)" />
           </div>
           <div v-else-if="setupErrorDisplay" class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700"><p>{{ setupErrorDisplay }}</p><button type="button" class="mt-2 underline" @click="startSetup">{{ t('common.retry') }}</button></div>
         </div>
 
         <div v-else-if="currentStep === 2" class="mcp-verify-panel">
+          <McpConnectionStatus v-if="transientCommand" class="mcp-verify-connection mb-4 rounded-2xl border border-stone-200 bg-card/75 p-4" :connection="connection" :client="clientDisplayLabel(clientOption)" :divider="false" />
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.publicEndpoint') }}</p>
           <div class="mt-3 rounded-2xl border border-stone-200 bg-stone-50/80 px-3 py-2 font-mono text-xs text-stone-700">{{ normalizedEndpoint }}</div>
           <div class="mt-3 flex flex-col gap-2 sm:flex-row"><input v-model.trim="endpointUrl" class="input min-w-0 flex-1 font-mono text-xs" :aria-label="t('mcp.endpointAria')" /><button type="button" class="btn-secondary justify-center text-xs" :disabled="testing || Boolean(endpointWarning)" @click="testPublicHandshake">{{ t(testing ? 'mcp.testing' : 'mcp.publicHandshake') }}</button></div>

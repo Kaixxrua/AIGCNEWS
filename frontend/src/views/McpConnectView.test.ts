@@ -56,6 +56,18 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     copyHostInstruction: vi.fn(),
     copyQuickCommand: vi.fn(),
     clearAuthenticatedState: vi.fn(),
+    connection: {
+      status: ref('idle'),
+      lastUsedAt: ref(null),
+      fresh: ref(false),
+      slow: ref(false),
+      checking: ref(false),
+      start: vi.fn(),
+      nudge: vi.fn(),
+      checkNow: vi.fn(),
+      stop: vi.fn(),
+      dispose: vi.fn(),
+    },
     creating: ref(false),
     deletingId: ref(null),
     displayedPublicTools: ref([
@@ -206,6 +218,11 @@ beforeEach(() => {
   controller().transientCommand.value = ''
   controller().selectedClient.value = 'claude-code'
   controller().selectedShell.value = 'bash'
+  controller().connection.status.value = 'idle'
+  controller().connection.lastUsedAt.value = null
+  controller().connection.fresh.value = false
+  controller().connection.slow.value = false
+  controller().connection.checking.value = false
   for (const fn of [
     controller().clientDisplayLabel,
     controller().clearAuthenticatedState,
@@ -497,6 +514,20 @@ describe('McpConnectView on desktop', () => {
     const wrapper = await mountView()
 
     expect(wrapper.find('.command-slot--filled').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
+  })
+
+  it('shows beside the one-time command whether the client has connected yet', async () => {
+    controller().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
+    controller().connection.status.value = 'waiting'
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.mcp-desk-side [data-connection="waiting"]').exists()).toBe(true)
+    controller().connection.status.value = 'connected'
+    controller().connection.fresh.value = true
+    controller().connection.lastUsedAt.value = '2026-10-05T12:00:05Z'
+    await flushPromises()
+    expect(wrapper.find('.mcp-desk-side [data-connection="connected"]').exists()).toBe(true)
     expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
   })
 })

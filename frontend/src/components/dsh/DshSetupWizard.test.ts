@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import DshSetupWizard from './DshSetupWizard.vue'
+import { mcpConnectionMessages } from '@/i18n/locales/mcpConnection'
 import { useAuthStore } from '@/stores/authStore'
 import type { AuthUser } from '@/stores/authStore'
 
@@ -13,12 +14,13 @@ const memberUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', members
 
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
+const fetchMcpTokens = vi.hoisted(() => vi.fn())
 const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
-  // 保留 isDshTokenRecoveryRequired 等真实辅助，只替换触网的 ensure/rotate
+  // 保留 isDshTokenRecoveryRequired 等真实辅助，只替换触网的 ensure/rotate 与连接检测用的令牌列表
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
-  return { ...actual, ensureDshMcpToken, rotateDshMcpToken }
+  return { ...actual, ensureDshMcpToken, rotateDshMcpToken, fetchMcpTokens }
 })
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
@@ -65,7 +67,7 @@ const messages = {
     },
   },
 }
-const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
+const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...messages, ...mcpConnectionMessages['zh-CN'] } } })
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/dsh', component: DshSetupWizard },
   { path: '/membership', component: { template: '<div />' } },
@@ -97,6 +99,7 @@ const nextButton = (wrapper: ReturnType<typeof mount>) =>
 beforeEach(() => {
   ensureDshMcpToken.mockReset()
   rotateDshMcpToken.mockReset()
+  fetchMcpTokens.mockReset().mockResolvedValue([readyResult('').token_metadata])
   copy.mockClear()
   requestLogin.mockClear()
   setActivePinia(createPinia())
@@ -244,6 +247,22 @@ describe('DshSetupWizard', () => {
     expect(rotateDshMcpToken).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('aigc_mcp_regen')
     expect(wrapper.text()).not.toContain('aigc_mcp_old')
+  })
+
+  it('shows under the ready command whether dsh has connected yet', async () => {
+    ensureDshMcpToken.mockResolvedValue(readyResult('aigc_mcp_watch'))
+    const wrapper = await mountWizard()
+    await nextButton(wrapper).trigger('click')
+    await nextTick()
+    expect(wrapper.get('[data-connection="waiting"]').text()).toContain('等待 dsh 连接')
+
+    fetchMcpTokens.mockResolvedValue([{ ...readyResult('').token_metadata, last_used_at: '2026-10-05T12:00:05Z' }])
+    await wrapper.get('[data-connection-action="check"]').trigger('click')
+    await flushPromises()
+
+    expect(fetchMcpTokens).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-connection="connected"]').text()).toContain('已连接')
+    wrapper.unmount()
   })
 })
 

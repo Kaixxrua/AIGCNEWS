@@ -12,6 +12,7 @@ import { useDshInstallController } from '@/composables/useDshInstallController'
 import { Check, Github, Package } from 'lucide-vue-next'
 import { vIndicator } from '@/motion/indicator'
 import { vSwap } from '@/motion/swap'
+import McpConnectionStatus from '@/components/mcp/McpConnectionStatus.vue'
 
 // 获客入口：游客可浏览第 1 步并选择安装方式；前进到命令步时弹登录。
 // 登录后自动 ensure 当前用户的 DSH 专用 MCP Token（跨刷新复用同一枚，
@@ -35,6 +36,11 @@ const agentSetupPrompt = computed(() => t('dsh.wizard.agentSetupPrompt', {
   command: controller.installLine,
   method: t(selectedMethod.value.titleKey),
 }))
+// 复制了命令，接下来几分钟最可能连上：让连接检测重新勤快地查。
+const copyAndWatch = async (key: string, value: string) => {
+  await installCopy.copyValue(key, value)
+  controller.connection.nudge()
+}
 
 // 前进（「下一步」按钮或前方步骤点）：游客先弹登录并留在当前步
 const advance = () => {
@@ -109,11 +115,12 @@ onBeforeUnmount(() => {
         <div class="dsh-command-main">
         <code class="dsh-install-command block border border-stone-700 bg-stone-900 p-3 font-mono text-xs text-white">{{ controller.installLine }}</code>
         <div class="mt-3 grid gap-2 sm:grid-cols-2">
-          <button type="button" class="btn-primary text-xs" @click="installCopy.copyValue('dsh-install-line', controller.installLine)">{{ t(installCopy.copiedKey === 'dsh-install-line' ? 'mcp.copied' : 'dsh.copy') }}</button>
-          <button type="button" class="btn-secondary text-xs" @click="installCopy.copyValue('dsh-agent-prompt', agentSetupPrompt)">{{ t(installCopy.copiedKey === 'dsh-agent-prompt' ? 'mcp.copied' : 'dsh.wizard.copyAgentPrompt') }}</button>
+          <button type="button" class="btn-primary text-xs" @click="copyAndWatch('dsh-install-line', controller.installLine)">{{ t(installCopy.copiedKey === 'dsh-install-line' ? 'mcp.copied' : 'dsh.copy') }}</button>
+          <button type="button" class="btn-secondary text-xs" @click="copyAndWatch('dsh-agent-prompt', agentSetupPrompt)">{{ t(installCopy.copiedKey === 'dsh-agent-prompt' ? 'mcp.copied' : 'dsh.wizard.copyAgentPrompt') }}</button>
         </div>
         <p class="mt-2 text-2xs leading-4 text-amber-700">{{ t('dsh.wizard.agentPromptHint') }}</p>
         <button type="button" class="mt-2 text-xs text-stone-500 underline" @click="controller.rotate">{{ t('dsh.wizard.tokenRotate') }}</button>
+        <McpConnectionStatus class="mt-3" variant="dsh" :connection="controller.connection" />
         </div>
         <div class="dsh-command-notes space-y-3">
         <p class="text-xs text-stone-500">{{ t('dsh.wizard.tokenCommandNote') }}</p>

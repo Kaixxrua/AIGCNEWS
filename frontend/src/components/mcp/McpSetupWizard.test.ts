@@ -4,11 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
 
+const buildConnection = () => ({
+  status: ref<'idle' | 'waiting' | 'paused' | 'connected' | 'gone'>('idle'),
+  lastUsedAt: ref<string | null>(null),
+  fresh: ref(false),
+  slow: ref(false),
+  checking: ref(false),
+  start: vi.fn(),
+  nudge: vi.fn(),
+  checkNow: vi.fn(),
+  stop: vi.fn(),
+  dispose: vi.fn(),
+})
+
 const buildController = () => ({
   clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
   clientLabel: ref(''),
   clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
   clearTransientCommand: vi.fn(() => { controllerBox.transientCommand.value = '' }),
+  connection: buildConnection(),
   copiedKey: ref(''),
   copyAgentSetupPrompt: vi.fn(),
   copyGeneratedCommand: vi.fn(),
@@ -248,5 +262,38 @@ describe('McpSetupWizard step content', () => {
 
     expect(wrapper.text()).toContain('正在创建专属 MCP Token 并生成配置命令…')
     expect(wrapper.text()).not.toContain('收藏授权')
+  })
+
+  it('watches for the client to connect next to the command and again on the verify step', async () => {
+    ctl().transientCommand.value = 'claude mcp add --header "Authorization: Bearer SECRET-TOKEN-VALUE"'
+    ctl().connection.status.value = 'waiting'
+    const wrapper = await mountWizard()
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-connection="waiting"]').exists()).toBe(true)
+    await wrapper.find('[data-connection-action="check"]').trigger('click')
+    expect(ctl().connection.checkNow).toHaveBeenCalledTimes(1)
+
+    ctl().connection.status.value = 'connected'
+    ctl().connection.fresh.value = true
+    ctl().connection.lastUsedAt.value = '2026-10-05T12:00:05Z'
+    await flushPromises()
+    expect(wrapper.find('[data-connection="connected"]').exists()).toBe(true)
+    expect(wrapper.find('[data-connection-action="check"]').exists()).toBe(false)
+
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-connection="connected"]').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
+  })
+
+  it('keeps the connection status off the verify step until a command was generated', async () => {
+    ctl().connection.status.value = 'waiting'
+    const wrapper = await mountWizard()
+    await wrapper.findAll('.mcp-step-dot')[2]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.token-connection').exists()).toBe(false)
   })
 })
