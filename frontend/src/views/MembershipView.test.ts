@@ -3,13 +3,45 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipView from './MembershipView.vue'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { formatTrialEnd } from '@/features/membership/membershipTrial'
 
 const authBox = vi.hoisted(() => ({ isMember: false }))
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
 const paymentBox = vi.hoisted(() => ({ listPlans: vi.fn() }))
 
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
+// jsdom 没有 matchMedia，桌面断点恒为 false（三张卡）；测对比表时把 desktop 置 true。
+const mediaBox = vi.hoisted(() => ({ desktop: false }))
+vi.mock('@vueuse/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@vueuse/core')>()
+  const { ref } = await import('vue')
+  return {
+    ...actual,
+    useMediaQuery: (query: unknown) => ref(query === '(min-width: 1024px)' && mediaBox.desktop),
+  }
+})
 vi.mock('@/services/payments/paymentApi', () => ({ paymentApi: paymentBox }))
+// 试用入口的状态由 useMembershipTrial 给（它自己的读写与竞态见 useMembershipTrial.test.ts），这里只钉页面怎么画。
+const trialBox = vi.hoisted(() => ({
+  offer: 'none' as 'none' | 'guest' | 'available' | 'active',
+  status: null as null | { days: number; available: boolean; active: boolean; started_at: string | null; expires_at: string | null },
+  starting: false,
+  messageKey: null as string | null,
+  start: vi.fn(),
+}))
+vi.mock('@/composables/useMembershipTrial', async () => {
+  const { computed, ref } = await import('vue')
+  return {
+    useMembershipTrial: () => ({
+      offer: computed(() => trialBox.offer),
+      status: ref(trialBox.status),
+      starting: ref(trialBox.starting),
+      messageKey: ref(trialBox.messageKey),
+      start: trialBox.start,
+    }),
+  }
+})
 
 vi.mock('@/composables/useContactPageConfig', async () => {
   const { ref } = await import('vue')
@@ -90,6 +122,17 @@ const i18n = createI18n({
         ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。',
         ctaMailSubject: 'AIGC News vip 开通咨询',
         memberNote: '感谢支持！vip 权益已生效。',
+        trial: {
+          start: '免费试用 {days} 天',
+          startVip: '免费试用 vip {days} 天',
+          starting: '开通中…',
+          note: '每个账号一次，到期自动回到免费档，不扣费',
+          active: '试用中 · {date} 到期；现在开通会接在试用之后。',
+          activeShort: 'vip 试用至 {date}',
+          alreadyUsed: '这个账号已经用过试用了。',
+          alreadyMember: '已经是 vip 了，不用再试用。',
+          failed: '没开通成功，请稍后再试。',
+        },
       },
     },
     // 英文只钉定价区所需键（其余键缺失时按 key 渲染，不影响金额断言）
@@ -130,6 +173,13 @@ const paymentsOff = () => Object.assign(new Error('Request failed with status co
 
 beforeEach(() => {
   authBox.isMember = false
+  mediaBox.desktop = false
+  trialBox.offer = 'none'
+  trialBox.status = null
+  trialBox.starting = false
+  trialBox.messageKey = null
+  trialBox.start.mockReset()
+  useLoginPrompt().closeLoginPrompt()
   configBox.current!.value = { ...configBox.current!.value, enabled: false }
   paymentBox.listPlans.mockReset().mockResolvedValue(livePlans(990, 8880))
   i18n.global.locale.value = 'zh-CN'
@@ -243,6 +293,147 @@ describe('MembershipView', () => {
     expect(anchor.exists()).toBe(true)
     expect(anchor.attributes('href')).toContain('mailto:kaixxrua@gmail.com')
     expect(anchor.attributes('href')).toContain(encodeURIComponent('AIGC News vip 开通咨询'))
+  })
+
+  it('offers guests the 7-day trial under the checkout button and asks them to sign in first', async () => {
+    trialBox.offer = 'guest'
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+    const button = memberCard.find('.tier-cta-foot .tier-trial-btn')
+
+    expect(memberCard.findComponent(RouterLinkStub).text()).toContain('立即开通')
+    expect(button.text()).toBe('免费试用 7 天')
+    expect(memberCard.find('.tier-trial-note').text()).toBe('每个账号一次，到期自动回到免费档，不扣费')
+
+    await button.trigger('click')
+
+    expect(useLoginPrompt().isOpen.value).toBe(true)
+    expect(useLoginPrompt().redirectTarget.value).toBe('/membership')
+    expect(trialBox.start).not.toHaveBeenCalled()
+  })
+
+  it('starts the trial for signed-in users who have not used it', async () => {
+    trialBox.offer = 'available'
+    trialBox.status = { days: 7, available: true, active: false, started_at: null, expires_at: null }
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('.tier-trial-btn').trigger('click')
+
+    expect(trialBox.start).toHaveBeenCalledTimes(1)
+    expect(useLoginPrompt().isOpen.value).toBe(false)
+  })
+
+  it('disables the trial button while the trial is being started', async () => {
+    trialBox.offer = 'available'
+    trialBox.starting = true
+    const wrapper = mountView()
+    await flushPromises()
+    const button = wrapper.find('.tier-trial-btn')
+
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.text()).toBe('开通中…')
+  })
+
+  it('keeps the checkout button during a trial and says when the trial ends', async () => {
+    authBox.isMember = true
+    trialBox.offer = 'active'
+    trialBox.status = {
+      days: 7,
+      available: false,
+      active: true,
+      started_at: '2026-10-05T12:00:00+00:00',
+      expires_at: '2026-10-12T12:00:00+00:00',
+    }
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-badge').text()).toBe('当前已是 vip')
+    expect(memberCard.findComponent(RouterLinkStub).props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'monthly' } })
+    expect(memberCard.find('.tier-trial-note--active').text()).toBe(
+      `试用中 · ${formatTrialEnd('2026-10-12T12:00:00+00:00', 'zh-CN')} 到期；现在开通会接在试用之后。`,
+    )
+    expect(memberCard.find('.tier-trial-btn').exists()).toBe(false)
+    expect(memberCard.text()).not.toContain('感谢支持！vip 权益已生效。')
+  })
+
+  it('shows no trial entry when there is nothing to offer', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.tier-trial').exists()).toBe(false)
+    expect(wrapper.find('.tier-cta-foot .tier-cta-hint').text()).toBe('在线支付：支付成功后权益立即生效。')
+  })
+
+  it('says why the trial did not start even after the entry is gone', async () => {
+    trialBox.messageKey = 'membership.trial.alreadyUsed'
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.tier-trial-btn').exists()).toBe(false)
+    expect(wrapper.find('.tier-trial-message').text()).toBe('这个账号已经用过试用了。')
+  })
+
+  it('moves the trial into the free plan\'s action cell in the desktop table, level with the checkout button', async () => {
+    mediaBox.desktop = true
+    trialBox.offer = 'guest'
+    const wrapper = mountView()
+    await flushPromises()
+    const cell = wrapper.find('.tier-plan-note--free')
+    const button = cell.find('.tier-trial-btn')
+
+    expect(wrapper.find('.membership-card--compare').exists()).toBe(true)
+    expect(cell.text()).toContain('当前默认方案')
+    expect(button.text()).toBe('免费试用 vip 7 天')
+    expect(button.attributes('title')).toBe('每个账号一次，到期自动回到免费档，不扣费')
+    expect(wrapper.find('.tier-card--member .tier-trial').exists()).toBe(false)
+    expect(wrapper.find('.tier-card--member .tier-cta-hint').text()).toBe('在线支付：支付成功后权益立即生效。')
+
+    await button.trigger('click')
+
+    expect(useLoginPrompt().isOpen.value).toBe(true)
+    expect(useLoginPrompt().redirectTarget.value).toBe('/membership')
+  })
+
+  it('starts the trial from the desktop table and then says when it ends in the same cell', async () => {
+    mediaBox.desktop = true
+    trialBox.offer = 'available'
+    let wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('.tier-plan-note--free .tier-trial-btn').trigger('click')
+    expect(trialBox.start).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+
+    authBox.isMember = true
+    trialBox.offer = 'active'
+    trialBox.status = {
+      days: 7,
+      available: false,
+      active: true,
+      started_at: '2026-10-05T12:00:00+00:00',
+      expires_at: '2026-10-12T12:00:00+00:00',
+    }
+    wrapper = mountView()
+    await flushPromises()
+    const end = formatTrialEnd('2026-10-12T12:00:00+00:00', 'zh-CN')
+    const status = wrapper.find('.tier-plan-note--free .tier-trial-note--active')
+
+    expect(status.text()).toBe(`vip 试用至 ${end}`)
+    expect(status.attributes('title')).toBe(`试用中 · ${end} 到期；现在开通会接在试用之后。`)
+    expect(wrapper.find('.tier-card--member .tier-trial').exists()).toBe(false)
+    expect(wrapper.find('.tier-card--member').findComponent(RouterLinkStub).exists()).toBe(true)
+  })
+
+  it('leaves the free plan\'s cell as it was in the desktop table when there is no trial to offer', async () => {
+    mediaBox.desktop = true
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.tier-plan-note--free').text()).toBe('当前默认方案')
+    expect(wrapper.find('.tier-trial').exists()).toBe(false)
   })
 
   it('shows the active-member state instead of the CTA for members', () => {

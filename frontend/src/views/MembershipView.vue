@@ -21,6 +21,10 @@ import type { PaymentPlan } from '@/features/payments/paymentModel'
 import { COMPARE_ROWS, sameAcrossTiers } from '@/features/membership/membershipCompare'
 import TierCompareList from '@/components/membership/TierCompareList.vue'
 import { useAppDensity } from '@/composables/useAppDensity'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { useMembershipTrial } from '@/composables/useMembershipTrial'
+import { TRIAL_DAYS, formatTrialEnd } from '@/features/membership/membershipTrial'
+import { fold, unfold } from '@/motion/fold'
 
 defineOptions({ name: 'MembershipView' })
 
@@ -35,6 +39,8 @@ defineOptions({ name: 'MembershipView' })
  * 公共简报与 RSS 免费；个人追踪为 free 1 条、vip 10 条规则。
  * 桌面（≥1024px）三张卡排成一张对比表：左列是行名，三档的权益逐行对齐（行与格见 features/membership/membershipCompare），
  * 开通按钮挪到价格下面；手机与平板仍是三张卡、各列各的权益，报眉的版面密度选了舒适时桌面也是三张卡。
+ * 7 天试用（每个账号一次）挂在开通按钮下面；桌面对比表里挪进 free 列的动作格，和开通按钮同一行，表不加高、矮窗口也在首屏。
+ * 游客点了先登录；试用中照样给开通按钮（付费接在试用到期之后）。
  */
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
@@ -175,6 +181,29 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'uiCopyMember', included: true },
   { key: 'mcpMember', included: true },
 ]
+
+// 7 天试用：能领时多一个描边小按钮（三张卡时在开通按钮下面，对比表里在 free 列的动作格），开通仍是主角；
+// 读不到试用状态时不显示，开通照常。
+// 试用中的人身份已是会员，但照样给开通按钮和到期时间——付费接在试用到期之后，不会白白重叠。
+const { requestLogin } = useLoginPrompt()
+const {
+  offer: trialOffer,
+  status: trialStatus,
+  starting: trialStarting,
+  messageKey: trialMessageKey,
+  start: startTrial,
+} = useMembershipTrial()
+const trialActive = computed(() => trialOffer.value === 'active')
+const trialClaimable = computed(() => trialOffer.value === 'guest' || trialOffer.value === 'available')
+// 有试用可说：能领、试用中，或者刚才没开通成功要说原因。
+const trialShown = computed(() => trialOffer.value !== 'none' || Boolean(trialMessageKey.value))
+const showCheckout = computed(() => !isMember.value || trialActive.value)
+const trialDays = computed(() => trialStatus.value?.days ?? TRIAL_DAYS)
+const trialEndText = computed(() => formatTrialEnd(trialStatus.value?.expires_at, locale.value))
+const onTrialClick = () => {
+  if (trialOffer.value === 'guest') requestLogin('/membership')
+  else void startTrial()
+}
 </script>
 
 <template>
@@ -242,7 +271,33 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
               <span>{{ t(`membership.free.features.${feature.key}`) }}</span>
             </li>
           </ul>
-          <p class="tier-plan-note">{{ t('membership.free.currentPlan') }}</p>
+          <!-- 桌面对比表里试用挪到这一格（动作行，和开通按钮同一行）：表不加高，矮窗口也在首屏；说明收进悬停提示 -->
+          <p class="tier-plan-note tier-plan-note--free">
+            {{ t('membership.free.currentPlan') }}
+            <Transition @enter="popIn" @leave="popOut">
+              <span v-if="compare && trialShown" v-swap="{ key: trialOffer }" class="tier-trial">
+                <button
+                  v-if="trialClaimable"
+                  type="button"
+                  class="tier-trial-btn"
+                  :disabled="trialStarting"
+                  :title="t('membership.trial.note')"
+                  @click="onTrialClick"
+                >
+                  {{ trialStarting ? t('membership.trial.starting') : t('membership.trial.startVip', { days: trialDays }) }}
+                </button>
+                <span
+                  v-else-if="trialActive"
+                  class="tier-trial-note tier-trial-note--active"
+                  role="status"
+                  :title="t('membership.trial.active', { date: trialEndText })"
+                >
+                  {{ t('membership.trial.activeShort', { date: trialEndText }) }}
+                </span>
+                <span v-if="trialMessageKey" class="tier-trial-message" role="status">{{ t(trialMessageKey) }}</span>
+              </span>
+            </Transition>
+          </p>
         </article>
 
         <article class="tier-card tier-card--member">
@@ -315,7 +370,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
               <span>{{ t(`membership.member.features.${feature.key}`) }}</span>
             </li>
           </ul>
-          <template v-if="!isMember">
+          <template v-if="showCheckout">
             <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
               <span class="tier-cta-label">{{ t('membership.ctaOnline') }}</span>
             </RouterLink>
@@ -323,9 +378,26 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
               <span class="tier-cta-label">{{ t('membership.cta') }}</span>
             </RouterLink>
             <a v-else :href="contactHref" class="tier-cta"><span class="tier-cta-label">{{ t('membership.cta') }}</span></a>
-            <p class="tier-cta-hint">
-              {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
-            </p>
+            <div class="tier-cta-foot">
+              <p class="tier-cta-hint">
+                {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
+              </p>
+              <!-- 三张卡时试用在这里（对比表里在 free 列的动作格）；出现、收起时高度过渡（不跳版），能领 → 试用中换态时新内容浮现 -->
+              <Transition @enter="unfold" @leave="fold">
+                <div v-if="!compare && trialShown" v-swap="{ key: trialOffer }" class="tier-trial">
+                  <template v-if="trialClaimable">
+                    <button type="button" class="tier-trial-btn" :disabled="trialStarting" @click="onTrialClick">
+                      {{ trialStarting ? t('membership.trial.starting') : t('membership.trial.start', { days: trialDays }) }}
+                    </button>
+                    <span class="tier-trial-note">{{ t('membership.trial.note') }}</span>
+                  </template>
+                  <span v-else-if="trialActive" class="tier-trial-note tier-trial-note--active" role="status">
+                    {{ t('membership.trial.active', { date: trialEndText }) }}
+                  </span>
+                  <span v-if="trialMessageKey" class="tier-trial-message" role="status">{{ t(trialMessageKey) }}</span>
+                </div>
+              </Transition>
+            </div>
           </template>
           <p v-else class="tier-member-note">{{ t('membership.memberNote') }}</p>
         </article>
@@ -673,6 +745,57 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   line-height: 1.5;
   text-align: center;
   color: var(--ink-muted);
+}
+
+/* 7 天试用：提示下面一行，描边小按钮（计费周期按钮同一配方）+ 一句说明；开通按钮仍是主角 */
+.tier-trial {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.tier-trial-btn {
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  padding: 5px 12px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.tier-trial-btn:hover {
+  background: var(--acid-soft);
+}
+
+.tier-trial-btn:active {
+  transform: translateY(1px);
+}
+
+.tier-trial-btn:disabled {
+  cursor: progress;
+}
+
+/* 试用中：与「vip 权益已生效」同一语义绿 */
+.tier-trial-note--active {
+  font-weight: 700;
+  color: var(--projects-success);
+}
+
+.tier-trial-message {
+  flex-basis: 100%;
+  font-weight: 600;
+  color: var(--ink-secondary);
 }
 
 .tier-member-note {

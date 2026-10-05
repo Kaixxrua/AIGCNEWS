@@ -533,6 +533,27 @@ def test_site_landing_days_schema_is_additive_and_day_source_path_keyed() -> Non
     assert "CHECK" not in normalized
 
 
+def test_membership_trials_schema_is_additive_and_user_keyed() -> None:
+    # 会员试用记录：user_id 主键即「每个账号一次」。开通时写 users 会员列在应用层
+    # 同一事务里完成（postgres_membership_trial_repository），迁移只建表、不碰存量用户。
+    # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0084_membership_trials.sql"
+    )
+    normalized = " ".join(migration.sql.split()).upper()
+
+    assert "CREATE TABLE IF NOT EXISTS membership_trials" in migration.sql
+    assert "user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE" in migration.sql
+    assert "started_at TIMESTAMPTZ NOT NULL" in migration.sql
+    assert "expires_at TIMESTAMPTZ NOT NULL" in migration.sql
+    assert "ALTER TABLE" not in normalized
+    assert "DROP" not in normalized
+    assert "UPDATE " not in normalized
+    assert "INSERT " not in normalized
+
+
 def test_payment_wechat_public_key_schema_is_additive() -> None:
     # 微信支付公钥模式：回调验签材料（公钥 ID + 公钥 PEM）随面板/DB 配置面下发，
     # 只加列不动存量——默认空串表示"未配置"，fail-closed 由 provider 侧 7 字段门控。
@@ -694,6 +715,7 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "project_catalog_migration_failures",
             "project_catalog_applied_events",
             "site_landing_days",
+            "membership_trials",
         } <= tables
         assert {
             "idx_gh_candidates_stars",
