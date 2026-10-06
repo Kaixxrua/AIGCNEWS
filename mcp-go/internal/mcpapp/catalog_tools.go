@@ -538,7 +538,7 @@ var publicTools = []any{
 	},
 }
 
-// privateTools 逐字冻结 _PRIVATE_MCP_TOOLS：仅认证会话可见。
+// privateTools 仅认证会话可见：收藏检索逐字冻结 _PRIVATE_MCP_TOOLS，其后追加 Go 独有的会员工具。
 var privateTools = []any{
 	jsonx.Object{
 		{Key: "name", Value: "search_my_project_favorites"},
@@ -614,6 +614,41 @@ var privateTools = []any{
 				}},
 			}},
 			{Key: "title", Value: "SearchMyProjectFavoritesInput"},
+			{Key: "type", Value: "object"},
+		}},
+	},
+	// get_my_tracking 是 Go 独有的会员工具（无 Python 冻结源），实现见 tracking.go。
+	jsonx.Object{
+		{Key: "name", Value: "get_my_tracking"},
+		{Key: "description", Value: "Read the authenticated user's own tracking on AIGC Radar: their keyword and GitHub project tracking rules, plus the items those rules matched in their recent daily tracking issues, newest first. Call this only when the user asks what their tracked topics or projects turned up, or asks about their tracking rules. A vip membership benefit: free accounts get an upgrade message instead of results."},
+		{Key: "annotations", Value: jsonx.Object{{Key: "readOnlyHint", Value: true}, {Key: "destructiveHint", Value: false}, {Key: "idempotentHint", Value: true}, {Key: "openWorldHint", Value: false}}},
+		{Key: "inputSchema", Value: jsonx.Object{
+			{Key: "additionalProperties", Value: false},
+			{Key: "properties", Value: jsonx.Object{
+				{Key: "days", Value: jsonx.Object{
+					{Key: "default", Value: 7},
+					{Key: "description", Value: "How many daily issues to include, counting back from today (UTC+8)."},
+					{Key: "maximum", Value: 30},
+					{Key: "minimum", Value: 1},
+					{Key: "title", Value: "Days"},
+					{Key: "type", Value: "integer"},
+				}},
+				{Key: "rule", Value: jsonx.Object{
+					{Key: "default", Value: ""},
+					{Key: "description", Value: "Only items matched by this tracking rule. Pass the rule's query exactly as listed in rules (case-insensitive)."},
+					{Key: "maxLength", Value: 120},
+					{Key: "title", Value: "Rule"},
+					{Key: "type", Value: "string"},
+				}},
+				{Key: "limit", Value: jsonx.Object{
+					{Key: "default", Value: 20},
+					{Key: "maximum", Value: 50},
+					{Key: "minimum", Value: 1},
+					{Key: "title", Value: "Limit"},
+					{Key: "type", Value: "integer"},
+				}},
+			}},
+			{Key: "title", Value: "GetMyTrackingInput"},
 			{Key: "type", Value: "object"},
 		}},
 	},

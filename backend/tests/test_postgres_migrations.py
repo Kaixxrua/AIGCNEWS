@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import uuid
 from contextlib import contextmanager
@@ -12,6 +13,7 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 
+from backend.app.api.routes_auth import DEFAULT_MCP_TOKEN_SCOPES
 from backend.app.core.postgres_migrations import (
     MigrationError,
     MigrationStatus,
@@ -553,6 +555,33 @@ def test_membership_trials_schema_is_additive_and_user_keyed() -> None:
     assert "DROP" not in normalized
     assert "UPDATE " not in normalized
     assert "INSERT " not in normalized
+
+
+def test_mcp_token_tracking_scope_backfill_is_literal_and_live_only() -> None:
+    # get_my_tracking 的 scope 回填：只把存量默认字面量升级为新的默认集合
+    # （routes_auth.DEFAULT_MCP_TOKEN_SCOPES 的紧凑 JSON），只动仍可认证的行。
+    # 字面量匹配意味着不解析 JSON，坏数据不会让迁移中断；不加列、不改结构。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0085_mcp_token_tracking_scope.sql"
+    )
+    statement = " ".join(
+        line.split("--", 1)[0] for line in migration.sql.splitlines() if line.split("--", 1)[0].strip()
+    )
+    normalized = " ".join(statement.split())
+
+    assert normalized == (
+        "UPDATE user_mcp_tokens"
+        " SET scopes_json = '[\"projects:favorites:read\",\"tracking:read\"]'"
+        " WHERE scopes_json = '[\"projects:favorites:read\"]'"
+        " AND revoked_at IS NULL"
+        " AND deleted_at IS NULL"
+        " AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP);"
+    )
+    assert json.dumps(list(DEFAULT_MCP_TOKEN_SCOPES), separators=(",", ":")) == (
+        '["projects:favorites:read","tracking:read"]'
+    )
 
 
 def test_payment_wechat_public_key_schema_is_additive() -> None:

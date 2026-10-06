@@ -31,6 +31,7 @@ MCP_TOOL_NAMES: tuple[str, ...] = (
     "get_project_categories",
     "submit_project_adoption",
     "search_my_project_favorites",
+    "get_my_tracking",
 )
 
 

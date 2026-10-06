@@ -35,7 +35,6 @@ import {
 } from '@/services/mcp/mcpTokenApi'
 import { useTokenConnectionWatch, type PageVisibility } from '@/composables/useTokenConnectionWatch'
 
-const SCOPE = 'projects:favorites:read'
 const COPY_NOTICE_MS = 1800
 
 const defaultApi = { fetchMcpTokens, createMcpToken, deleteMcpToken }
@@ -246,10 +245,10 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     const displayLabel = clientDisplayLabel(selectedOption)
     creating.value = true
     try {
+      // 不传 scopes：由后端签发默认集合（收藏、追踪只读），前后端发布先后不会 422。
       const result = await api.createMcpToken({
         client_type: selectedOption.apiType,
         client_label: label ? `${displayLabel} · ${label}` : displayLabel,
-        scopes: [SCOPE],
       })
       if (activeLifecycle(lifecycle) && generation === setupGeneration) {
         transientCommand.value = generateMcpClientCommand(selectedOption, endpoint, result.token, shell)

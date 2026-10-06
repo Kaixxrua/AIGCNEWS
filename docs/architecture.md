@@ -230,6 +230,7 @@ Python 侧保留（`services/mcp/`）：`contracts.py`（工具输入模型，RE
 
 - 工具错误一律以 `isError: true` 的工具结果返回（非协议错误）；未知方法 `-32601`、参数 `-32602`、内部 `-32603`，协议错误 HTTP 200。
 - `search_my_project_favorites` 需 scope `projects:favorites:read`，匿名调用短路为"需要认证"工具错误；base64 游标分页。
+- `get_my_tracking`（Go 独有的会员工具）需 scope `tracking:read`，判定顺序为匿名 → 参数校验 → scope → 实时会员档位；只读本人的 `tracking_rules` / `tracking_settings` / `tracking_digests`（同一 REPEATABLE READ 只读事务），不推进已读游标。条目字段与后端 `domain/tracking.clean_item` 的跨语言契约见 `test_mcp_tracking_contract.py`。
 - 工具与 REST 共用同一套数据端口（同一 Postgres 仓储语义）。
 - token 模型：SHA-256 摘要 + 展示 hint、scopes、client_type/label、有效期、撤销、每用户活跃上限 20（事务内软淘汰最旧）。
 

@@ -74,6 +74,32 @@ class McpTokenManagementTests(unittest.TestCase):
         self.assertEqual(unknown.status_code, 422)
         self.assertEqual(expired.status_code, 422)
 
+    def test_scope_defaults_and_explicit_subsets(self) -> None:
+        # 路由会 pop 掉返回值里的 token_metadata，每次调用给一份新的
+        self.repository.create_user_mcp_token.side_effect = lambda **_: {
+            "token_metadata": {"id": 9, "scopes": []},
+            "replaced_count": 0,
+        }
+        cases = [
+            # 不传 scopes：网页 /mcp 走这条，签发收藏 + 追踪两个只读 scope
+            (None, ["projects:favorites:read", "tracking:read"]),
+            # 旧客户端显式只要收藏：照旧放行，不被追加
+            (["projects:favorites:read"], ["projects:favorites:read"]),
+            ([" tracking:read ", "tracking:read"], ["tracking:read"]),
+        ]
+        for requested, granted in cases:
+            with self.subTest(requested=requested):
+                self.repository.create_user_mcp_token.reset_mock()
+                body: dict[str, object] = {"client_type": "claude"}
+                if requested is not None:
+                    body["scopes"] = requested
+                response = self.client.post("/api/auth/me/mcp-tokens", json=body)
+                self.assertEqual(response.status_code, 200)
+                kwargs = self.repository.create_user_mcp_token.call_args.kwargs
+                self.assertEqual(kwargs["scopes"], granted)
+        empty = self.client.post("/api/auth/me/mcp-tokens", json={"client_type": "claude", "scopes": []})
+        self.assertEqual(empty.status_code, 422)
+
     def test_list_contract_and_no_cache_headers(self) -> None:
         repository = self.repository
         repository.list_user_mcp_tokens.return_value = [

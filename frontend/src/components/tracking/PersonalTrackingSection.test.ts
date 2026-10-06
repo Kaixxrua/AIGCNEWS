@@ -100,6 +100,16 @@ describe('personal tracking', () => {
     expect(wrapper.text()).not.toContain('解锁 VIP 情报能力')
   })
 
+  it('points both plans to reading tracking results over MCP', async () => {
+    for (const data of [snapshot(), { ...snapshot(), limit: 10 }]) {
+      const wrapper = await render(data)
+      const benefits = wrapper.get('.tracking-benefits')
+      expect(benefits.text()).toContain('在 Claude、Cursor 等 AI 客户端里经 MCP 读取追踪结果')
+      expect(benefits.getComponent(RouterLinkStub).props('to')).toBe('/mcp')
+      wrapper.unmount()
+    }
+  })
+
   it('saves a usable rule then reflects the server quota', async () => {
     const wrapper = await render()
     vi.mocked(trackingApi.saveRule).mockResolvedValue({ ...snapshot(), rules: [saved()] })

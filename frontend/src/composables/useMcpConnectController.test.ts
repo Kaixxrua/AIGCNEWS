@@ -71,7 +71,6 @@ describe('MCP connect controller', () => {
     expect(api.createMcpToken).toHaveBeenCalledWith({
       client_type: 'claude',
       client_label: 'Claude Code · Laptop',
-      scopes: ['projects:favorites:read'],
     })
     controller.selectedShell.value = 'bash'
     await nextTick()

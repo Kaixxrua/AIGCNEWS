@@ -80,6 +80,7 @@ const i18n = createI18n({
             websiteMember: '个人网页收藏添加不限量',
             uiCopyMember: 'UI 灵感库复制不限次',
             tracking: '10 条关键词或项目追踪',
+            mcpTracking: '在 AI 客户端里经 MCP 读取自己的追踪结果',
             personalDigest: '每日个人简报',
           },
         },
@@ -191,10 +192,11 @@ describe('MembershipView', () => {
     expect(freeRssRow?.find('.tier-check').exists()).toBe(true)
 
     // VIP 展示个人追踪和个人简报，公共 RSS 仍属于免费权益
-    expect(memberCard.findAll('.tier-check')).toHaveLength(5)
+    expect(memberCard.findAll('.tier-check')).toHaveLength(6)
     expect(memberCard.text()).not.toContain('RSS')
     expect(memberCard.text()).toContain('10 条关键词或项目追踪')
     expect(memberCard.text()).toContain('每日个人简报')
+    expect(memberCard.text()).toContain('经 MCP 读取自己的追踪结果')
     expect(memberCard.text()).not.toContain('后续 vip 权益')
 
     // 排除项图标总数 = guest 的 4 项

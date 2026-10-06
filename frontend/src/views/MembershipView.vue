@@ -170,6 +170,7 @@ const FREE_FEATURES: readonly TierFeature[] = [
 ]
 const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'tracking', included: true },
+  { key: 'mcpTracking', included: true },
   { key: 'personalDigest', included: true },
   { key: 'websiteMember', included: true },
   { key: 'uiCopyMember', included: true },

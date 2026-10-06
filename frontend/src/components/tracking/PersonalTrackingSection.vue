@@ -221,6 +221,12 @@ async function closeDelete() {
             <li><Check />{{ t('tracking.benefitRules') }}</li>
             <li><Check />{{ t('tracking.benefitPreserve') }}</li>
             <li><Check />{{ t('tracking.benefitQuota') }}</li>
+            <li>
+              <Check /><span
+                >{{ t('tracking.benefitMcp')
+                }}<RouterLink to="/mcp" class="tracking-benefit-link">{{ t('tracking.benefitMcpAction') }}</RouterLink></span
+              >
+            </li>
           </ul>
           <RouterLink v-if="!isMember" to="/membership" class="tracking-button tracking-button-primary w-full"
             ><Crown class="h-4 w-4" />{{ t('tracking.viewVip') }}</RouterLink

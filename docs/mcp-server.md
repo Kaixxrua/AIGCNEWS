@@ -47,6 +47,7 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 | 工具 | 用途 |
 | --- | --- |
 | `search_my_project_favorites` | 检索当前认证用户的个人项目收藏（需 Bearer Token） |
+| `get_my_tracking` | 读当前认证用户的追踪规则与近 N 天追踪简报里命中的条目（需 Bearer Token 与 `tracking:read` scope；VIP 会员权益，免费账号得到升级提示） |
 
 输入按发布的 JSON Schema 严格校验；日期参数必须是真实的 `YYYY-MM-DD` 日历日期。
 项目搜索使用一致的关键词、排序和分页语义；结果通过 `result_origin` 标记来源（本地目录或
@@ -158,7 +159,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 ### MCP 运行平面
 
 - 没有 `Authorization` 头：请求按 anonymous/guest 处理，公开工具、resources 与 prompts 继续可用，使用游客/IP 配额；不会投影为某个 Free 账号。
-- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`。
+- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）与 `get_my_tracking`（scope `tracking:read`，调用时再按实时会员档位放行）。网站 `/mcp` 与 DSH 向导签发的 Token 默认带这两个只读 scope。
 - 只要显式提供了凭证但凭证为非 Bearer、格式错误、未知、过期、已撤销、已删除、所属用户已禁用或 scopes JSON 无效，均在 JSON-RPC 解析前返回 HTTP 401，并带 `WWW-Authenticate: Bearer`；绝不降级为游客，也不消耗游客配额。
 - 认证顺序固定为：方法校验 → Bearer 认证 → JSON-RPC 解析 → 限流 → 分派。MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
 

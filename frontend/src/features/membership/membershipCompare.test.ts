@@ -32,7 +32,7 @@ describe('compareColumn', () => {
     ])
     expect(compareColumn('member').map(({ included, lines }) => [included, lines])).toEqual([
       [true, []],
-      [true, ['trackingMember']],
+      [true, ['trackingMember', 'trackingMcp']],
       [true, ['digestMember']],
       [true, ['websiteMember']],
       [true, ['uiCopyMember']],

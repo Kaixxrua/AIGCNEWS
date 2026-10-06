@@ -274,6 +274,9 @@ func run() int {
 		))
 	}
 	app.RegisterIdentityTool("search_my_project_favorites", favorites.Get)
+	// 会员工具：读本人的追踪规则与追踪简报（tracking:read scope + 实时会员档位）。
+	tracking := mcpapp.NewTrackingService(postgres.NewTrackingRepository(pool), publicBaseURL)
+	app.RegisterIdentityTool("get_my_tracking", tracking.Get)
 	// resources/read 装配（PR 2.4/2.8）：榜单快照 + 看板统计 + 简报
 	// 复用 Postgres 适配器，projects/library 与 AI 搜索共用同一服务。
 	resources := mcpapp.NewResourceService(
@@ -305,11 +308,12 @@ func run() int {
 	// mcpmetrics:*，与 Python 双写收敛）。已知工具名集合对齐 Python
 	// MCP_TOOL_REGISTRY：注册表内按原名统计，其余归 __unknown__。
 	// bench UA（mcp-latency-bench/）在分派层免计数。
-	knownToolNames := make(map[string]struct{}, len(registry)+1)
+	knownToolNames := make(map[string]struct{}, len(registry)+2)
 	for name := range registry {
 		knownToolNames[name] = struct{}{}
 	}
 	knownToolNames["search_my_project_favorites"] = struct{}{}
+	knownToolNames["get_my_tracking"] = struct{}{}
 	app.SetMetrics(metrics.NewRecorder(redisClient), knownToolNames)
 
 	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)

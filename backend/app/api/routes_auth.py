@@ -317,14 +317,18 @@ class ConfirmEmailChangeRequest(BaseModel):
         return _validate_email_code(value)
 
 
-MCP_TOKEN_SCOPES = frozenset({"projects:favorites:read"})
+# token 可授予的 scope；字面量与 mcp-go 处理器里的 scope 判定对钉
+# （test_mcp_tracking_contract.py）。未显式指定时网页 /mcp 与 DSH 向导都签发
+# DEFAULT_MCP_TOKEN_SCOPES：读本人收藏、读本人追踪（会员工具，档位在调用时判）。
+MCP_TOKEN_SCOPES = frozenset({"projects:favorites:read", "tracking:read"})
+DEFAULT_MCP_TOKEN_SCOPES = ("projects:favorites:read", "tracking:read")
 MCP_CLIENT_TYPES = frozenset({"claude", "cursor", "vscode", "other"})
 
 
 class CreateMcpTokenRequest(BaseModel):
     client_type: str
     client_label: str = Field(default="", max_length=128)
-    scopes: list[str] = Field(default_factory=lambda: ["projects:favorites:read"])
+    scopes: list[str] = Field(default_factory=lambda: list(DEFAULT_MCP_TOKEN_SCOPES))
     expires_at: datetime | None = None
 
     @field_validator("client_type")
@@ -860,7 +864,7 @@ async def delete_mcp_token(
 # DSH 向导签发参数全部由服务端固定：purpose/scope/客户端标识不接受请求体
 # 覆盖，客户端更不能声明 membership_tier/group——MCP 调用按 token 属主
 # 在 users 表中的实时生效档位计费（Python 与 mcp-go 同口径）。
-_DSH_MCP_TOKEN_SCOPES = ["projects:favorites:read"]
+_DSH_MCP_TOKEN_SCOPES = list(DEFAULT_MCP_TOKEN_SCOPES)
 _DSH_MCP_TOKEN_CLIENT_TYPE = "other"
 _DSH_MCP_TOKEN_CLIENT_LABEL = "dsh-aigc-radar"
 # rotate 吊销旧凭证，限速防脚本化刷量（窗口与认证端点同）

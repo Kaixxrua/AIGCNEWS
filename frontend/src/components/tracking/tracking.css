@@ -147,6 +147,9 @@
 .tracking-benefits li {
   @apply flex items-start gap-2;
 }
+.tracking-benefit-link {
+  @apply ml-1 font-black text-ink underline underline-offset-2;
+}
 .tracking-benefits svg {
   @apply mt-0.5 h-4 w-4 shrink-0 rounded-full bg-ink p-0.5 text-paper;
 }

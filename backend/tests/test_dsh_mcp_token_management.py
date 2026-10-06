@@ -79,7 +79,7 @@ class DshMcpTokenManagementTests(unittest.TestCase):
             self.assertEqual(token_hash, hash_mcp_token(token))
             self.assertNotIn(token, token_encrypted)
             self.assertEqual(token_hint, f"{token[:12]}...{token[-4:]}")
-            self.assertEqual(scopes, ["projects:favorites:read"])
+            self.assertEqual(scopes, ["projects:favorites:read", "tracking:read"])
             self.assertEqual(client_type, "other")
             self.assertEqual(client_label, "dsh-aigc-radar")
             return {"status": "created", "token": token, "token_metadata": _metadata()}
@@ -139,7 +139,7 @@ class DshMcpTokenManagementTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         kwargs = self.repository.ensure_user_dsh_mcp_token.call_args.kwargs
-        self.assertEqual(kwargs["scopes"], ["projects:favorites:read"])
+        self.assertEqual(kwargs["scopes"], ["projects:favorites:read", "tracking:read"])
         self.assertEqual(kwargs["client_type"], "other")
         self.assertEqual(kwargs["client_label"], "dsh-aigc-radar")
         self.assertNotIn("membership_tier", kwargs)
@@ -205,7 +205,7 @@ class DshMcpTokenManagementTests(unittest.TestCase):
         self.assertEqual(response.headers["pragma"], "no-cache")
         kwargs = self.repository.rotate_user_dsh_mcp_token.call_args.kwargs
         self.assertEqual(kwargs["user_id"], 7)
-        self.assertEqual(kwargs["scopes"], ["projects:favorites:read"])
+        self.assertEqual(kwargs["scopes"], ["projects:favorites:read", "tracking:read"])
         self.assertEqual(kwargs["client_label"], "dsh-aigc-radar")
 
     def test_rotate_rate_limited_returns_429(self) -> None:
