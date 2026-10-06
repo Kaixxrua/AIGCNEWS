@@ -538,7 +538,7 @@ def test_site_landing_days_schema_is_additive_and_day_source_path_keyed() -> Non
 def test_membership_trials_schema_is_additive_and_user_keyed() -> None:
     # 0084 只建了会员试用记录表。试用已撤下（不提供会员试用），但生产已应用 0084，
     # 迁移台账要求已应用版本保留逐字节相同的本地文件，所以文件与本测试原样保留；
-    # 表已无代码读写，留待单独的迁移删除。
+    # 表已无代码读写，由 0087 删除。
     # 按文件名定位而非下标：相邻迁移在并行会话中停驻/变动，位置钉法会被牵连。
     migration = next(
         item
@@ -599,6 +599,31 @@ def test_tracking_digest_surges_schema_is_additive() -> None:
         "ALTER TABLE tracking_digests"
         " ADD COLUMN IF NOT EXISTS surges JSONB NOT NULL DEFAULT '[]'::jsonb"
         " CHECK (jsonb_typeof(surges) = 'array');"
+    )
+
+
+def test_membership_trials_drop_refuses_rows_and_bounds_lock_wait() -> None:
+    # 删试用空表：锁表后确认没有记录才删，有记录就中止迁移；拿 users 外键锁最多等 5 秒。
+    # 只删这一张表，不碰 users 等其他表。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0087_drop_membership_trials.sql"
+    )
+    statement = " ".join(
+        line.split("--", 1)[0] for line in migration.sql.splitlines() if line.split("--", 1)[0].strip()
+    )
+
+    assert " ".join(statement.split()) == (
+        "SET LOCAL lock_timeout = '5s';"
+        " DO $$ DECLARE remaining BIGINT; BEGIN"
+        " IF to_regclass('membership_trials') IS NOT NULL THEN"
+        " LOCK TABLE membership_trials IN ACCESS EXCLUSIVE MODE;"
+        " SELECT count(*) INTO remaining FROM membership_trials;"
+        " IF remaining > 0 THEN"
+        " RAISE EXCEPTION 'migration 0087 aborted: membership_trials 仍有 % 行记录，请先人工核对后再删表', remaining;"
+        " END IF; END IF; END $$;"
+        " DROP TABLE IF EXISTS membership_trials;"
     )
 
 
@@ -763,8 +788,9 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "project_catalog_migration_failures",
             "project_catalog_applied_events",
             "site_landing_days",
-            "membership_trials",
         } <= tables
+        # 0084 建、0087 删
+        assert "membership_trials" not in tables
         assert {
             "idx_gh_candidates_stars",
             "idx_gh_repo_alias_canonical",
@@ -786,6 +812,76 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             ("tool_website_enrichments", "tags_en_json"),
         }
         assert score_version_default == "'daily_hot_v5'::character varying"
+    finally:
+        connection.rollback()
+        try:
+            with connection.transaction():
+                connection.execute(
+                    sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+                        sql.Identifier(schema_name)
+                    )
+                )
+        finally:
+            connection.close()
+
+
+def test_live_postgres_trials_drop_refuses_rows_then_drops_empty_table(tmp_path: Path) -> None:
+    # 0087 遇到试用记录时整条迁移回滚：表和记录原样保留、台账停在 0086；清空后再跑才删表。
+    dsn = os.getenv("TEST_POSTGRES_DSN", "").strip()
+    if not dsn:
+        pytest.skip("TEST_POSTGRES_DSN is not configured")
+    database_name = conninfo_to_dict(dsn).get("dbname", "")
+    if "test" not in database_name.casefold():
+        pytest.skip("TEST_POSTGRES_DSN database name must contain 'test'")
+
+    migrations = discover_migrations()
+    drop = next(item for item in migrations if item.filename == "0087_drop_membership_trials.sql")
+    for item in migrations:
+        if item.version < drop.version:
+            (tmp_path / item.filename).write_bytes(item.sql.encode("utf-8"))
+
+    schema_name = f"migration_trials_{uuid.uuid4().hex}"
+    connection = psycopg.connect(dsn)
+
+    class DirectDatabase:
+        @contextmanager
+        def connection(self) -> Iterator[Any]:
+            yield connection
+
+    def scalar(query: str, params: tuple[Any, ...] = ()) -> Any:
+        with connection.transaction():
+            return connection.execute(query, params).fetchone()[0]
+
+    try:
+        with connection.transaction():
+            connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_name)))
+            connection.execute(
+                sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema_name))
+            )
+        runner = PostgresMigrationRunner(DirectDatabase(), migrations_dir=tmp_path)  # type: ignore[arg-type]
+        assert runner.apply()[-1].version == drop.version - 1
+        user_id = scalar(
+            "INSERT INTO users (email, hashed_password) VALUES ('trial@example.test', 'hash') RETURNING id"
+        )
+        scalar(
+            "INSERT INTO membership_trials (user_id, started_at, expires_at)"
+            " VALUES (%s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '7 days') RETURNING user_id",
+            (user_id,),
+        )
+        trials = f"{schema_name}.membership_trials"
+
+        (tmp_path / drop.filename).write_bytes(drop.sql.encode("utf-8"))
+        with pytest.raises(psycopg.errors.RaiseException, match="membership_trials 仍有 1 行记录"):
+            runner.apply()
+        assert scalar("SELECT to_regclass(%s)::text", (trials,)) is not None
+        assert scalar("SELECT count(*) FROM membership_trials") == 1
+        assert scalar("SELECT max(version) FROM app_schema_migrations") == drop.version - 1
+
+        scalar("DELETE FROM membership_trials RETURNING user_id")
+        assert [item.version for item in runner.apply()] == [drop.version]
+        assert scalar("SELECT to_regclass(%s)::text", (trials,)) is None
+        # 只删试用表，账号不受牵连
+        assert scalar("SELECT count(*) FROM users WHERE id = %s", (user_id,)) == 1
     finally:
         connection.rollback()
         try:
