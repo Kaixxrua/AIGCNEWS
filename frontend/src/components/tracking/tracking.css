@@ -215,6 +215,29 @@
 .tracking-digest {
   @apply min-w-0;
 }
+/* 简报标题右侧：vip 导出（免费账号是开通入口）和期号选择。手机上占满一行，选择框补足剩余宽度。 */
+.tracking-digest-tools {
+  @apply flex w-full min-w-0 items-center gap-2 sm:w-auto;
+}
+.tracking-digest-tools .tracking-input {
+  @apply w-auto min-w-0 flex-1 sm:flex-none;
+}
+.tracking-export {
+  @apply flex shrink-0 items-center gap-1.5;
+}
+.tracking-export-label {
+  @apply flex items-center gap-1 text-xs font-bold text-ink-secondary;
+}
+.tracking-export-label svg,
+.tracking-export-vip svg {
+  @apply h-3.5 w-3.5 shrink-0;
+}
+.tracking-export-button {
+  @apply shrink-0 px-2.5 py-1.5;
+}
+.tracking-export-error {
+  @apply mt-2;
+}
 /* vip 关键词热度飙升：本期简报顶上一块浅荧光底的提示。 */
 .tracking-surges {
   @apply mt-3 flex flex-col gap-1 rounded-lg border border-rule bg-accent-soft px-3 py-2 text-sm text-ink;

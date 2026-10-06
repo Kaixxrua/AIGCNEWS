@@ -331,10 +331,21 @@
   #app .app-shell--comic-page .tracking-digest { position: static; }
   #app .app-shell--comic-page .tracking-digest > div:first-child { display: block; padding-left: 48px; }
   #app .app-shell--comic-page .tracking-digest h3 { color: var(--sub-ink); font-size: 18.5px; font-weight: 900; letter-spacing: 0; line-height: 1.3; }
+  /* 期号选择连同 vip 导出签一起钉在右上角；导出签同「查看全部」按钮的墨线描边。 */
+  #app .app-shell--comic-page .tracking-digest-tools { position: absolute; right: 21px; top: 17px; gap: 8px; }
   #app .app-shell--comic-page .tracking-digest .tracking-input {
-    position: absolute; right: 21px; top: 17px; width: 135px; height: 30px; min-height: 0; padding: 0 28px 0 11px;
+    flex: none; width: 135px; height: 30px; min-height: 0; padding: 0 28px 0 11px;
     border: 1.5px solid var(--sub-field-ink); border-radius: 6px; background-color: var(--sub-field-bg); color: var(--sub-ink); font-size: 14px; font-weight: 500;
   }
+  #app .app-shell--comic-page .tracking-export { gap: 6px; }
+  #app .app-shell--comic-page .tracking-export-label { gap: 4px; color: var(--sub-meta); font-size: 13px; font-weight: 700; }
+  #app .app-shell--comic-page .tracking-export-button {
+    height: 26px; padding: 0 10px; border: solid var(--sub-ink); border-width: 1.5px 1.8px 2.4px 1.5px; border-radius: 9px;
+    background: var(--paper-raised); color: var(--sub-ink); font-size: 13px; font-weight: 800; line-height: 1;
+  }
+  #app .app-shell--comic-page .tracking-export-button:hover:not(:disabled) { background: var(--acid-soft); color: var(--sub-ink); }
+  #app .app-shell--comic-page .tracking-export-vip svg { fill: var(--sub-gold); }
+  #app .app-shell--comic-page .tracking-digest > .tracking-export-error { margin: 6px 0 0 49px; padding: 4px 10px; font-size: 13px; }
   #app .app-shell--comic-page .tracking-digest > .tracking-hint { margin: 4px 0 0 49px; color: var(--sub-meta); font-size: 12.5px; line-height: 1.4; }
   /* vip 热度飙升：跟日期行对齐，一张墨线描边的荧光签（同「查看全部」按钮的描边），每个关键词一行。 */
   #app .app-shell--comic-page .tracking-digest > .tracking-surges {

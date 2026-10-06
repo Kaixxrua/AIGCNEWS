@@ -4,10 +4,17 @@ import { createI18n } from 'vue-i18n'
 import PersonalTrackingSection from './PersonalTrackingSection.vue'
 import { trackingZh } from '@/i18n/locales/tracking'
 import { trackingApi } from '@/services/tracking/trackingApi'
-import type { TrackingOverview } from '@/features/tracking/trackingModel'
+import type { TrackingExportFile, TrackingOverview } from '@/features/tracking/trackingModel'
 
 vi.mock('@/services/tracking/trackingApi', () => ({
-  trackingApi: { load: vi.fn(), saveRule: vi.fn(), settings: vi.fn(), deleteRule: vi.fn(), preview: vi.fn() },
+  trackingApi: {
+    load: vi.fn(),
+    saveRule: vi.fn(),
+    settings: vi.fn(),
+    deleteRule: vi.fn(),
+    preview: vi.fn(),
+    exportHistory: vi.fn(),
+  },
 }))
 vi.mock('@/stores/trackingUnreadStore', () => ({ useTrackingUnreadStore: () => ({ markRead: vi.fn() }) }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ token: 'preview-account' }) }))
@@ -28,6 +35,24 @@ const saved = () => ({
   active: true,
   star_threshold: 50,
   created_at: '2026-09-10T00:00:00Z',
+})
+const issue = () => ({
+  id: 3,
+  issue_date: '2026-10-06',
+  truncated: false,
+  delivery_status: 'none' as const,
+  created_at: '2026-10-06T00:00:00Z',
+  items: [
+    {
+      key: 'document:1',
+      title: 'RAG launch',
+      url: 'https://example.com/a',
+      summary: '',
+      source: 'news',
+      observed_at: '2026-10-06T00:00:00Z',
+      matched_rules: ['RAG'],
+    },
+  ],
 })
 async function render(data = snapshot()) {
   vi.mocked(trackingApi.load).mockResolvedValue(data)
@@ -268,5 +293,69 @@ describe('personal tracking', () => {
       '「智能体」也匹配英文：agent / ai agent / agentic',
       '排除「融资」时也排除英文：funding / series a',
     ])
+  })
+
+  it('downloads a vip export without leaving the page', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const created = vi.fn(() => 'blob:tracking-export')
+    const revoked = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { value: created, configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revoked, configurable: true })
+    const clicked: HTMLAnchorElement[] = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this)
+    })
+    try {
+      const blob = new Blob(['issue_date'], { type: 'text/csv' })
+      let finish!: (file: TrackingExportFile) => void
+      vi.mocked(trackingApi.exportHistory).mockReturnValue(new Promise((resolve) => (finish = resolve)))
+      const wrapper = await render({ ...snapshot(), limit: 10, digests: [issue()] })
+      expect(wrapper.get('.tracking-benefits').text()).toContain('导出最近 90 天简报（CSV / JSON）')
+      await wrapper.get('.tracking-export button').trigger('click')
+      expect(wrapper.get('.tracking-export button').attributes('disabled')).toBeDefined()
+      finish({ blob, filename: 'aigcnews-tracking-2026-10-06.csv' })
+      await flushPromises()
+      expect(trackingApi.exportHistory).toHaveBeenCalledWith('csv')
+      expect(created).toHaveBeenCalledWith(blob)
+      expect(clicked.map((link) => [link.download, link.getAttribute('href'), link.isConnected])).toEqual([
+        ['aigcnews-tracking-2026-10-06.csv', 'blob:tracking-export', false],
+      ])
+      expect(wrapper.get('.tracking-export button').attributes('disabled')).toBeUndefined()
+      expect(revoked).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(10_000)
+      expect(revoked).toHaveBeenCalledWith('blob:tracking-export')
+    } finally {
+      click.mockRestore()
+      vi.useRealTimers()
+      Reflect.deleteProperty(URL, 'createObjectURL')
+      Reflect.deleteProperty(URL, 'revokeObjectURL')
+    }
+  })
+
+  it('explains a refused export next to the digest', async () => {
+    const wrapper = await render({ ...snapshot(), limit: 10, digests: [issue()] })
+    vi.mocked(trackingApi.exportHistory).mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 403, data: { detail: 'membership_required' } },
+    })
+    await wrapper.findAll('.tracking-export button')[1]!.trigger('click')
+    await flushPromises()
+    expect(trackingApi.exportHistory).toHaveBeenCalledWith('json')
+    expect(wrapper.get('.tracking-export-error').text()).toBe('导出是 VIP 权益，开通后即可使用。')
+    // 其他失败不借用「保存或加载失败」那句规则填写提示
+    vi.mocked(trackingApi.exportHistory).mockRejectedValue(new Error('offline'))
+    await wrapper.findAll('.tracking-export button')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.tracking-export-error').text()).toBe('导出失败，请稍后重试。')
+    expect(wrapper.find('.tracking-section > [role="alert"]').exists()).toBe(false)
+  })
+
+  it('shows free accounts where export unlocks instead of the buttons', async () => {
+    const wrapper = await render({ ...snapshot(), digests: [issue()] })
+    expect(wrapper.find('.tracking-export').exists()).toBe(false)
+    const link = wrapper.findAllComponents(RouterLinkStub).find((stub) => stub.classes('tracking-export-vip'))!
+    expect(link.props('to')).toBe('/membership')
+    expect(link.text()).toBe('VIP 可导出')
+    expect(trackingApi.exportHistory).not.toHaveBeenCalled()
   })
 })

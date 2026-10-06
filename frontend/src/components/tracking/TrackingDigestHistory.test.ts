@@ -1,4 +1,4 @@
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
@@ -29,11 +29,12 @@ afterEach(() => {
   vi.useRealTimers()
   Reflect.deleteProperty(document, 'hidden')
 })
-async function render(digests = [issue(10)]) {
-  wrapper = mount(TrackingDigestHistory, { attachTo: document.body, props: { digests }, global: {
+async function render(digests = [issue(10)], props: Record<string, unknown> = {}) {
+  wrapper = mount(TrackingDigestHistory, { attachTo: document.body, props: { digests, ...props }, global: {
     plugins: [createI18n({ legacy: false, locale: 'zh', messages: { zh: {
       tracking: trackingZh, subscriptions: { sources: { news: '新闻' } },
     } } })],
+    stubs: { RouterLink: RouterLinkStub },
   } })
   await nextTick()
 }
@@ -97,5 +98,39 @@ describe('viewing tracking results', () => {
     await wrapper.setProps({ digests: [{ ...issue(10), items: [] }] })
     expect(observations).toHaveLength(0)
     expect(wrapper.emitted('viewed')).toBeUndefined()
+  })
+})
+
+describe('exporting digest history', () => {
+  it('offers vip members CSV and JSON next to the issue picker', async () => {
+    await render([issue(10)], { member: true })
+    const group = wrapper.get('.tracking-digest-tools [role="group"]')
+    expect(group.attributes('aria-label')).toBe('导出最近 90 天简报')
+    const buttons = group.findAll('button')
+    expect(buttons.map((button) => button.text())).toEqual(['CSV', 'JSON'])
+    expect(buttons[0]!.attributes('title')).toBe('CSV：一行一条结果，可用 Excel 打开')
+    await buttons[1]!.trigger('click')
+    expect(wrapper.emitted('export')).toEqual([['json']])
+    expect(wrapper.find('.tracking-digest-tools select').exists()).toBe(true)
+    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
+  })
+  it('locks both formats while one downloads and shows why an export failed', async () => {
+    await render([issue(10)], { member: true, exporting: 'csv' })
+    const buttons = wrapper.findAll('.tracking-export button')
+    expect(buttons.map((button) => button.attributes('disabled'))).toEqual(['', ''])
+    expect(buttons.map((button) => button.attributes('aria-busy'))).toEqual(['true', 'false'])
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await wrapper.setProps({ exporting: '', exportError: 'membership_required' })
+    expect(wrapper.get('[role="alert"]').text()).toBe('导出是 VIP 权益，开通后即可使用。')
+  })
+  it('points free accounts to vip instead, and shows nothing without digests', async () => {
+    await render()
+    expect(wrapper.find('.tracking-export').exists()).toBe(false)
+    const link = wrapper.getComponent(RouterLinkStub)
+    expect(link.props('to')).toBe('/membership')
+    expect(link.text()).toBe('VIP 可导出')
+    expect(link.attributes('title')).toBe('开通 VIP 后可导出最近 90 天简报（CSV / JSON）')
+    await wrapper.setProps({ digests: [], member: true })
+    expect(wrapper.find('.tracking-digest-tools').exists()).toBe(false)
   })
 })

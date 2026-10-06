@@ -2,12 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { TrendingUp } from 'lucide-vue-next'
-import type { TrackingDigest } from '@/features/tracking/trackingModel'
+import { Crown, Download, TrendingUp } from 'lucide-vue-next'
+import type { TrackingDigest, TrackingExportFormat } from '@/features/tracking/trackingModel'
 import TrackingResults from './TrackingResults.vue'
 
-const props = defineProps<{ digests: TrackingDigest[] }>()
-const emit = defineEmits<{ viewed: [id: number] }>()
+const props = defineProps<{
+  digests: TrackingDigest[]
+  // vip 可导出最近 90 天简报；免费账号在同一位置看到开通入口
+  member?: boolean
+  exporting?: TrackingExportFormat | ''
+  exportError?: string
+}>()
+const emit = defineEmits<{ viewed: [id: number]; export: [format: TrackingExportFormat] }>()
+const exportFormats: readonly TrackingExportFormat[] = ['csv', 'json']
 const { t, locale } = useI18n()
 const desktop = useMediaQuery('(min-width: 1024px)')
 // 日均保留一位小数：2 写成 2，0.7 写成 0.7
@@ -62,15 +69,37 @@ watch(
   <div class="tracking-digest">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="font-bold">{{ t('tracking.digestTitle') }}</h3>
-      <select
-        v-if="digests.length"
-        v-model="issueId"
-        class="tracking-input w-auto"
-        :aria-label="t('tracking.selectIssue')"
-      >
-        <option v-for="issue in digests" :key="issue.id" :value="issue.id">{{ issue.issue_date }}</option>
-      </select>
+      <div v-if="digests.length" class="tracking-digest-tools">
+        <div v-if="member" class="tracking-export" role="group" :aria-label="t('tracking.exportLabel')">
+          <span class="tracking-export-label" aria-hidden="true"><Download />{{ t('tracking.exportShort') }}</span>
+          <button
+            v-for="format in exportFormats"
+            :key="format"
+            type="button"
+            class="tracking-button tracking-export-button"
+            :title="t('tracking.exportTitle.' + format)"
+            :disabled="!!exporting"
+            :aria-busy="exporting === format"
+            @click="emit('export', format)"
+          >
+            {{ format.toUpperCase() }}
+          </button>
+        </div>
+        <RouterLink
+          v-else
+          to="/membership"
+          class="tracking-button tracking-export-button tracking-export-vip"
+          :title="t('tracking.exportVipHint')"
+          ><Crown aria-hidden="true" />{{ t('tracking.exportVip') }}</RouterLink
+        >
+        <select v-model="issueId" class="tracking-input w-auto" :aria-label="t('tracking.selectIssue')">
+          <option v-for="issue in digests" :key="issue.id" :value="issue.id">{{ issue.issue_date }}</option>
+        </select>
+      </div>
     </div>
+    <p v-if="exportError" role="alert" class="tracking-error tracking-export-error">
+      {{ t('tracking.errors.' + exportError) }}
+    </p>
     <p v-if="!digest" class="tracking-hint mt-3">{{ t('tracking.noDigest') }}</p>
     <template v-else>
       <p class="tracking-hint mt-2">

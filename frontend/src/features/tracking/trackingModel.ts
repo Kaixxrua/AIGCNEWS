@@ -89,3 +89,9 @@ export interface TrackingUnread {
   last_read_digest_id: number
   unread: boolean
 }
+/** vip 导出最近 90 天简报：CSV 每行一条结果，JSON 另含规则和热度飙升。 */
+export type TrackingExportFormat = 'csv' | 'json'
+export interface TrackingExportFile {
+  blob: Blob
+  filename: string
+}

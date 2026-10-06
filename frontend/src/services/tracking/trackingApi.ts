@@ -1,5 +1,8 @@
+import { isAxiosError } from 'axios'
 import { api } from '@/services/http/apiClient'
 import type {
+  TrackingExportFile,
+  TrackingExportFormat,
   TrackingOverview,
   TrackingPreview,
   TrackingRuleInput,
@@ -31,5 +34,22 @@ export const trackingApi = {
   },
   async preview(id: number): Promise<TrackingPreview> {
     return (await api.get('/tracking/rules/' + id + '/preview')).data
+  },
+  async exportHistory(format: TrackingExportFormat): Promise<TrackingExportFile> {
+    try {
+      const response = await api.get<Blob>('/tracking/export', { params: { format }, responseType: 'blob' })
+      const named = /filename="([^"]+)"/.exec(String(response.headers['content-disposition'] ?? ''))
+      return { blob: response.data, filename: named?.[1] ?? 'aigcnews-tracking.' + format }
+    } catch (cause) {
+      // 错误正文也按 Blob 取回，转回 JSON 才能读出 detail；不是 JSON（如网关错误页）就保持原样
+      if (isAxiosError(cause) && cause.response?.data instanceof Blob) {
+        try {
+          cause.response.data = JSON.parse(await cause.response.data.text()) as unknown
+        } catch {
+          // 保留原始 Blob
+        }
+      }
+      throw cause
+    }
   },
 }

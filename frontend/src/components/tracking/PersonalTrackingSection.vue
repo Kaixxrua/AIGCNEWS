@@ -18,7 +18,7 @@ const { t } = useI18n()
 const auth = useAuthStore()
 const unread = useTrackingUnreadStore()
 const ctl = usePersonalTracking()
-const { data, loading, busy, error, notice, preview, previewTitle, atLimit } = ctl
+const { data, loading, busy, error, notice, preview, previewTitle, exporting, exportError, atLimit } = ctl
 const formOpen = ref(false)
 const editing = ref<TrackingRule>()
 const deleting = ref<TrackingRule>()
@@ -220,6 +220,7 @@ async function closeDelete() {
           <ul class="tracking-benefits">
             <li><Check />{{ t('tracking.benefitRules') }}</li>
             <li><Check />{{ t('tracking.benefitSurge') }}</li>
+            <li><Check />{{ t('tracking.benefitExport') }}</li>
             <li><Check />{{ t('tracking.benefitPreserve') }}</li>
             <li><Check />{{ t('tracking.benefitQuota') }}</li>
             <li>
@@ -276,7 +277,14 @@ async function closeDelete() {
       <div class="tracking-bottom">
         <section class="tracking-panel tracking-digest-panel">
           <p class="tracking-kicker"><BellRing class="h-3.5 w-3.5" />{{ t('tracking.resultsKicker') }}</p>
-          <TrackingDigestHistory :digests="data.digests" @viewed="unread.markRead" />
+          <TrackingDigestHistory
+            :digests="data.digests"
+            :member="isMember"
+            :exporting="exporting"
+            :export-error="exportError"
+            @viewed="unread.markRead"
+            @export="ctl.exportHistory"
+          />
         </section>
         <section class="tracking-panel tracking-delivery-panel">
           <p class="tracking-kicker"><CalendarClock class="h-3.5 w-3.5" />{{ t('tracking.deliveryKicker') }}</p>

@@ -94,6 +94,24 @@ class TrackingOverview(BaseModel):
     digests: list[TrackingDigest]
 
 
+class TrackingExportRule(BaseModel):
+    kind: str
+    query: str
+    source: str
+    excludes: list[str]
+    star_threshold: int
+    enabled: bool
+    created_at: datetime
+
+
+class TrackingExport(BaseModel):
+    exported_at: datetime
+    # 导出范围起点：此后生成的简报（保留期 90 天）
+    since: datetime
+    rules: list[TrackingExportRule]
+    digests: list[TrackingDigest]
+
+
 class TrackingSourceCount(BaseModel):
     source: str
     count: int = Field(ge=0)

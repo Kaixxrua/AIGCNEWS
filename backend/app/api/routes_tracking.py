@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any, Callable, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 
 from backend.app.api.dependencies import get_application_repositories
 from backend.app.core.auth import RequireUser
 from backend.app.models.schema_tracking import (
+    TrackingExport,
     TrackingOverview,
     TrackingPreview,
     TrackingReadInput,
@@ -18,7 +19,8 @@ from backend.app.models.schema_tracking import (
 )
 from backend.app.repositories.application_repository_factory import ApplicationRepositories
 from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
-from backend.app.services.tracking.policy import TrackingError
+from backend.app.services.tracking.content import export_csv
+from backend.app.services.tracking.policy import CST, TrackingError
 
 router = APIRouter(prefix="/tracking", tags=["Personal tracking"])
 
@@ -34,6 +36,7 @@ def get_tracking_repository(
 User = Annotated[dict[str, Any], Depends(RequireUser)]
 Repository = Annotated[PostgresTrackingRepository, Depends(get_tracking_repository)]
 RuleId = Annotated[int, Path(gt=0)]
+ExportFormat = Annotated[Literal["csv", "json"], Query(alias="format")]
 
 
 def _user_id(user: dict[str, Any]) -> int:
@@ -96,3 +99,21 @@ async def update_settings(body: TrackingSettingsInput, user: User, repository: R
 @router.get("/rules/{rule_id}/preview", response_model=TrackingPreview)
 async def preview(rule_id: RuleId, user: User, repository: Repository) -> Any:
     return await _call(repository.preview, _user_id(user), rule_id)
+
+
+@router.get(
+    "/export",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}, "application/json": {}}}, 403: {"description": "membership_required"}},
+)
+async def export(user: User, repository: Repository, export_format: ExportFormat = "csv") -> Response:
+    data = await _call(repository.export, _user_id(user))
+    if export_format == "json":
+        body, media_type = TrackingExport.model_validate(data).model_dump_json(indent=2), "application/json"
+    else:
+        body, media_type = export_csv(data["digests"]), "text/csv; charset=utf-8"
+    day = data["exported_at"].astimezone(CST).date().isoformat()
+    return Response(body, media_type=media_type, headers={
+        "Content-Disposition": f'attachment; filename="aigcnews-tracking-{day}.{export_format}"',
+        "Cache-Control": "no-store",
+    })

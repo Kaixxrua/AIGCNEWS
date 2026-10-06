@@ -11,6 +11,7 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.domain.tracking import (
     CST,
     DIGEST_ITEM_LIMIT,
+    HISTORY_DAYS,
     SURGE_BASELINE_DAYS,
     TrackingError,
     active_rules,
@@ -210,6 +211,23 @@ class PostgresTrackingRepository:
                 "expansions": rule_expansions(rule),
             }
 
+    def export(self, user_id: int, now: datetime | None = None) -> dict[str, Any]:
+        # 导出是 vip 权益，按数据库里的实时会员档位判断；只导保留期内生成的简报。
+        now = now or datetime.now(timezone.utc)
+        since = now - timedelta(days=HISTORY_DAYS)
+        with self._database.transaction() as connection:
+            if not is_member(self._user(connection, user_id), now):
+                raise TrackingError("membership_required", 403)
+            digests = connection.execute(
+                f"SELECT {_DIGEST_FIELDS} FROM tracking_digests WHERE user_id = %s AND created_at >= %s "
+                "ORDER BY issue_date DESC",
+                (user_id, since),
+            ).fetchall()
+            return {
+                "exported_at": now, "since": since, "rules": self._rules(connection, user_id),
+                "digests": [dict(row) for row in digests],
+            }
+
     def due_users(self, now: datetime, after: int = 0) -> list[int]:
         local = now.astimezone(CST)
         with self._database.transaction() as connection:
@@ -275,8 +293,9 @@ class PostgresTrackingRepository:
                     "INSERT INTO tracking_seen (user_id, item_key, seen_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                     (user_id, item["key"], now),
                 )
-            connection.execute("DELETE FROM tracking_seen WHERE user_id = %s AND seen_at < %s", (user_id, now - timedelta(days=90)))
-            connection.execute("DELETE FROM tracking_digests WHERE user_id = %s AND created_at < %s", (user_id, now - timedelta(days=90)))
+            expired = now - timedelta(days=HISTORY_DAYS)
+            connection.execute("DELETE FROM tracking_seen WHERE user_id = %s AND seen_at < %s", (user_id, expired))
+            connection.execute("DELETE FROM tracking_digests WHERE user_id = %s AND created_at < %s", (user_id, expired))
             return dict(row)
 
     def claim_delivery(self, now: datetime) -> dict[str, Any] | None:

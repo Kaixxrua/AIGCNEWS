@@ -173,6 +173,7 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   { key: 'mcpTracking', included: true },
   { key: 'personalDigest', included: true },
   { key: 'surgeAlerts', included: true },
+  { key: 'historyExport', included: true },
   { key: 'websiteMember', included: true },
   { key: 'uiCopyMember', included: true },
   { key: 'mcpMember', included: true },

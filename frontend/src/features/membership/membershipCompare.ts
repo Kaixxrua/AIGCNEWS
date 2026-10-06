@@ -25,7 +25,7 @@ export interface CompareRow {
 export const COMPARE_ROWS: readonly CompareRow[] = [
   { key: 'browse', cells: { guest: true, free: true, member: true } },
   { key: 'tracking', cells: { guest: false, free: 'trackingFree', member: ['trackingMember', 'trackingMcp'] } },
-  { key: 'digest', cells: { guest: false, free: true, member: ['digestMember', 'digestSurge'] } },
+  { key: 'digest', cells: { guest: false, free: true, member: ['digestMember', 'digestSurge', 'digestExport'] } },
   { key: 'website', cells: { guest: false, free: 'websiteFree', member: 'websiteMember' } },
   { key: 'uiCopy', cells: { guest: false, free: 'uiCopyFree', member: 'uiCopyMember' } },
   {

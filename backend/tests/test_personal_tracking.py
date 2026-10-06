@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,7 +16,7 @@ from pydantic import ValidationError
 
 from backend.app.api.routes_tracking import get_tracking_repository, router
 from backend.app.core.auth import RequireUser
-from backend.app.domain.tracking import detect_surge
+from backend.app.domain.tracking import detect_surge, export_csv
 from backend.app.domain.tracking_terms import _NEWS_TERMS, _equivalents, _key, english_equivalents
 from backend.app.models.schema_tracking import TrackingRuleInput
 from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
@@ -140,6 +142,76 @@ def test_surges_lead_the_digest_escaped_and_mail_shows_them_as_quotes():
     assert render_digest({"issue_date": "2026-10-06", "truncated": False, "items": [], "surges": []}) == (
         "# 我的 AI 情报 · 2026-10-06\n"
     )
+
+
+HEADER = "issue_date,observed_at,source,title,url,matched_rules,summary"
+
+
+def exported_item(title, **values):
+    return {"key": uuid.uuid4().hex, "observed_at": "2026-10-05T01:00:00+00:00", "source": "news", "title": title,
+            "url": "https://example.com/a", "summary": "A useful update", "matched_rules": ["RAG"], **values}
+
+
+def test_history_csv_opens_in_excel_and_never_runs_formulas():
+    text = export_csv([{"issue_date": date(2026, 10, 5), "items": [
+        exported_item('=HYPERLINK("https://example.org","打开")', matched_rules=["RAG", "-agent"],
+                      summary='逗号, "引号"'),
+        exported_item("@mention +1", source="x", summary="\t缩进"),
+        exported_item("+1 launch", matched_rules=["-agent"]),
+        exported_item("RAG 2.0 正常标题"),
+    ]}])
+    # BOM 让 Excel 按 UTF-8 打开中文；行尾按 CSV 惯例是 CRLF
+    assert text.startswith("\ufeff" + HEADER + "\r\n")
+    rows = list(csv.reader(io.StringIO(text.removeprefix("\ufeff"))))
+    assert rows[1] == ["2026-10-05", "2026-10-05T01:00:00+00:00", "news",
+                       '\'=HYPERLINK("https://example.org","打开")', "https://example.com/a", "RAG; -agent",
+                       '逗号, "引号"']
+    assert (rows[2][3], rows[2][6]) == ("'@mention +1", "'\t缩进")
+    assert (rows[3][3], rows[3][5]) == ("'+1 launch", "'-agent")
+    assert rows[4][3] == "RAG 2.0 正常标题" and len(rows) == 5
+    assert export_csv([]) == "\ufeff" + HEADER + "\r\n"
+
+
+def test_export_http_contract():
+    repository = MagicMock()
+    moment = datetime(2026, 10, 5, 18, 30, tzinfo=timezone.utc)  # 北京时间已是 10 月 6 日
+    repository.export.return_value = {
+        "exported_at": moment, "since": moment - timedelta(days=90),
+        "rules": [{"id": 3, "kind": "keyword", "query": "RAG", "source": "all", "excludes": ["demo"],
+                   "star_threshold": 50, "enabled": True, "created_at": moment}],
+        "digests": [{"id": 9, "issue_date": date(2026, 10, 6), "items": [exported_item("RAG launch")],
+                     "truncated": False, "surges": [{"query": "RAG", "count": 6, "baseline": 1.0}],
+                     "delivery_status": "sent", "created_at": moment}],
+    }
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_tracking_repository] = lambda: repository
+    client = TestClient(app)
+    assert client.get("/api/tracking/export").status_code == 401
+    app.dependency_overrides[RequireUser] = lambda: {"user_id": 7, "membership_tier": "member"}
+    response = client.get("/api/tracking/export")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/csv; charset=utf-8"
+    assert response.headers["content-disposition"] == 'attachment; filename="aigcnews-tracking-2026-10-06.csv"'
+    assert response.headers["cache-control"] == "no-store"
+    assert response.content.startswith("\ufeff".encode() + HEADER.encode() + b"\r\n2026-10-06,")
+    # 会员资格只看数据库，令牌里的会员声明不往下传
+    repository.export.assert_called_once_with(7)
+    response = client.get("/api/tracking/export", params={"format": "json"})
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["content-disposition"] == 'attachment; filename="aigcnews-tracking-2026-10-06.json"'
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert set(body) == {"exported_at", "since", "rules", "digests"}
+    assert body["rules"] == [{"kind": "keyword", "query": "RAG", "source": "all", "excludes": ["demo"],
+                              "star_threshold": 50, "enabled": True, "created_at": "2026-10-05T18:30:00Z"}]
+    assert body["digests"][0]["surges"] == [{"query": "RAG", "count": 6, "baseline": 1.0}]
+    assert body["digests"][0]["items"][0]["title"] == "RAG launch"
+    assert client.get("/api/tracking/export", params={"format": "xlsx"}).status_code == 422
+    repository.export.side_effect = TrackingError("membership_required", 403)
+    response = client.get("/api/tracking/export")
+    assert response.status_code == 403 and response.json() == {"detail": "membership_required"}
+    assert "/api/tracking/export" in client.get("/openapi.json").json()["paths"]
 
 
 def test_atomic_quota_and_owner_isolation(setup):
@@ -688,3 +760,61 @@ def test_surge_alerts_are_vip_only_and_need_three_times_the_usual_volume(setup):
     digest = repository.generate_digest(user_id, later)
     assert len(digest["items"]) == 8 and digest["surges"] == []
 
+
+
+
+def test_vip_export_has_only_the_owners_last_90_days(setup):
+    database, repository, user_id = setup
+    marker = uuid.uuid4().hex
+    moment = now()
+    repository.save_rule(user_id, rule(marker))
+    schedule(repository, user_id)
+    document(database, f"={marker} launch", when=(moment - timedelta(hours=2)).isoformat())
+    digest = repository.generate_digest(user_id, moment)
+    stranger = setup_user(database)
+    with database.transaction() as connection:
+        # 保留期外的旧简报和别人的简报都不导出
+        connection.execute(
+            "INSERT INTO tracking_digests (user_id, issue_date, items, created_at) VALUES (%s, %s, '[]', %s)",
+            (user_id, (moment - timedelta(days=91)).date(), moment - timedelta(days=90, minutes=1)),
+        )
+        connection.execute(
+            "INSERT INTO tracking_digests (user_id, issue_date, items) VALUES (%s, %s, '[]')",
+            (stranger, moment.date()),
+        )
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_tracking_repository] = lambda: repository
+    # 免费账号：令牌里写着会员也不行
+    app.dependency_overrides[RequireUser] = lambda: {"user_id": user_id, "membership_tier": "member"}
+    client = TestClient(app)
+    response = client.get("/api/tracking/export")
+    assert response.status_code == 403 and response.json() == {"detail": "membership_required"}
+
+    vip(database, user_id)
+    exported = repository.export(user_id, moment)
+    assert exported["since"] == moment - timedelta(days=90)
+    assert [row["id"] for row in exported["digests"]] == [digest["id"]]
+    assert [row["query"] for row in exported["rules"]] == [marker]
+    rows = list(csv.reader(io.StringIO(client.get("/api/tracking/export").text.removeprefix("\ufeff"))))
+    assert rows[0] == HEADER.split(",") and len(rows) == 2
+    assert rows[1][3] == f"'={marker} launch" and rows[1][5] == marker
+    body = client.get("/api/tracking/export", params={"format": "json"}).json()
+    assert [row["id"] for row in body["digests"]] == [digest["id"]]
+    assert body["digests"][0]["items"][0]["title"] == f"={marker} launch"
+
+    # 会员到期后不能再导出，数据仍在
+    with database.transaction() as connection:
+        connection.execute(
+            "UPDATE users SET membership_expires_at = %s WHERE id = %s", (moment - timedelta(days=1), user_id),
+        )
+    assert client.get("/api/tracking/export").status_code == 403
+    assert repository.overview(user_id)["digests"][0]["id"] == digest["id"]
+
+
+def setup_user(database):
+    with database.transaction() as connection:
+        return connection.execute(
+            "INSERT INTO users (email, hashed_password) VALUES (%s, 'unused') RETURNING id",
+            (f"tracking-{uuid.uuid4().hex}@example.com",),
+        ).fetchone()["id"]

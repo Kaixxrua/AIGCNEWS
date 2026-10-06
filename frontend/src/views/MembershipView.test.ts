@@ -83,6 +83,7 @@ const i18n = createI18n({
             mcpTracking: '在 AI 客户端里经 MCP 读取自己的追踪结果',
             personalDigest: '每日个人简报',
             surgeAlerts: '关注的关键词热度飙升时，在简报里提醒',
+            historyExport: '导出最近 90 天个人简报（CSV / JSON）',
           },
         },
         currentMember: '当前已是 vip',
@@ -193,12 +194,13 @@ describe('MembershipView', () => {
     expect(freeRssRow?.find('.tier-check').exists()).toBe(true)
 
     // VIP 展示个人追踪和个人简报，公共 RSS 仍属于免费权益
-    expect(memberCard.findAll('.tier-check')).toHaveLength(7)
+    expect(memberCard.findAll('.tier-check')).toHaveLength(8)
     expect(memberCard.text()).not.toContain('RSS')
     expect(memberCard.text()).toContain('10 条关键词或项目追踪')
     expect(memberCard.text()).toContain('每日个人简报')
     expect(memberCard.text()).toContain('经 MCP 读取自己的追踪结果')
     expect(memberCard.text()).toContain('关注的关键词热度飙升时，在简报里提醒')
+    expect(memberCard.text()).toContain('导出最近 90 天个人简报（CSV / JSON）')
     expect(memberCard.text()).not.toContain('后续 vip 权益')
 
     // 排除项图标总数 = guest 的 4 项

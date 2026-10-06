@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import ipaddress
 import re
 from datetime import datetime, timedelta, timezone
@@ -23,6 +25,9 @@ DIGEST_ITEM_LIMIT = 50
 SURGE_MIN_COUNT = 5
 SURGE_RATIO = 3
 SURGE_BASELINE_DAYS = 7
+# 简报和去重记录保留 90 天（生成新简报时清理），vip 导出的也是这 90 天
+HISTORY_DAYS = 90
+EXPORT_COLUMNS = ("issue_date", "observed_at", "source", "title", "url", "matched_rules", "summary")
 
 
 class TrackingError(Exception):
@@ -137,3 +142,24 @@ def render_digest(digest: dict[str, Any]) -> str:
     if digest["truncated"]:
         lines.append("本期展示最近 50 条匹配内容，可缩小追踪范围以减少遗漏。")
     return "\n".join(lines)
+
+
+def spreadsheet_cell(value: object) -> str:
+    """以 = + - @ 或制表、换行符开头的单元格前加 '，表格软件打开时不会当成公式执行。"""
+    text = str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r", "\n") else text
+
+
+def export_csv(digests: list[dict[str, Any]]) -> str:
+    """简报历史导出为 CSV：一行一条结果，带 BOM 方便 Excel 识别 UTF-8。"""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(EXPORT_COLUMNS)
+    for digest in digests:
+        for item in digest["items"]:
+            row = (
+                digest["issue_date"], item["observed_at"], item["source"], item["title"], item["url"],
+                "; ".join(item.get("matched_rules", ())), item["summary"],
+            )
+            writer.writerow([spreadsheet_cell(value) for value in row])
+    return "\ufeff" + buffer.getvalue()
