@@ -20,6 +20,19 @@ def isolate_git_environment(monkeypatch):
             monkeypatch.delenv(name)
 
 
+@pytest.fixture(autouse=True)
+def block_host_image_pruning(monkeypatch):
+    """Delivered-release housekeeping runs real docker rmi and builder prune.
+
+    Against a test's disposable authority repository every production release
+    image looks superseded, so an unstubbed call deletes the host's in-flight
+    release images. Tests that reach delivery must record the call instead.
+    """
+    import local_release
+    monkeypatch.setattr(local_release, 'prune_release_images',
+                        lambda config, sha: pytest.fail('release image pruning must be stubbed'))
+
+
 @pytest.fixture
 def setup(tmp_path):
     repo=tmp_path/'source';repo.mkdir()
@@ -541,6 +554,12 @@ def test_transient_release_retry_keeps_candidate_when_main_advances(setup, monke
         Path(config['production'], '.aigcnews-deploy/edge-state.json').write_text(json.dumps({
             'source_sha': base, 'frontend_image': 'digest', 'sites': {'app': 'published'}}))
     monkeypatch.setattr(d, 'trusted_run', finish)
+    import local_release
+    pruned = []
+    monkeypatch.setattr(local_release, 'prune_release_images',
+                        lambda config, sha: pruned.append(sha) or {'status': 'pruned'})
     assert d.release_once(c, db)
     assert calls == [base]
     assert d.meta(db, 'release')['status'] == 'delivered'
+    assert pruned == [base]
+    assert d.meta(db, 'image_retention')['status'] == 'pruned'
