@@ -215,6 +215,20 @@
 .tracking-digest {
   @apply min-w-0;
 }
+/* vip 关键词热度飙升：本期简报顶上一块浅荧光底的提示。 */
+.tracking-surges {
+  @apply mt-3 flex flex-col gap-1 rounded-lg border border-rule bg-accent-soft px-3 py-2 text-sm text-ink;
+}
+.tracking-surges-title {
+  @apply flex items-center gap-1.5 font-black;
+}
+.tracking-surges-title svg {
+  @apply h-4 w-4 shrink-0;
+}
+.tracking-surges li {
+  @apply break-words leading-relaxed;
+  overflow-wrap: anywhere;
+}
 .tracking-results {
   @apply mt-3 divide-y divide-rule;
 }

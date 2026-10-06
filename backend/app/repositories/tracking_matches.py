@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from backend.app.domain.project_visibility import PUBLIC_PROJECT_MIN_STARS
@@ -38,9 +38,10 @@ def _text_match(term: str, *, exclude: bool = False) -> tuple[str, list[str]]:
     return ("NOT " + predicate if exclude else predicate), [pattern for _, pattern in checks]
 
 
-def _match_query(
+def _match_parts(
     rule: dict[str, Any], *, user_id: int, since: datetime, until: datetime, include_seen: bool,
-) -> tuple[str, list[Any]]:
+) -> tuple[str, list[Any], list[str], list[Any]]:
+    """窗口内全部内容的 CTE 与命中条件分开返回：(cte, cte 参数, 条件, 条件参数)。"""
     params: list[Any] = []
     if rule["kind"] == "project":
         timestamp = _timestamp("m.updated_at")
@@ -77,17 +78,28 @@ def _match_query(
         window.append("source = %s")
         params.append(rule["source"])
     filters: list[str] = []
+    filter_params: list[Any] = []
     terms = [(term, False) for term in rule["query"].split()] if rule["kind"] == "keyword" else []
     for term, exclude in (*terms, *((term, True) for term in rule["excludes"])):
         predicate, patterns = _text_match(term, exclude=exclude)
         filters.append(predicate)
-        params.extend(patterns)
+        filter_params.extend(patterns)
     if not include_seen:
         filters.append("NOT EXISTS (SELECT 1 FROM tracking_seen s WHERE s.user_id = %s AND s.item_key = content.key)")
-        params.append(user_id)
+        filter_params.append(user_id)
     # Window first: MATERIALIZED keeps the planner from running the text patterns over every row.
-    query = f"WITH content AS MATERIALIZED (SELECT * FROM ({base}) windowed WHERE {' AND '.join(window)}) SELECT * FROM content"
-    return (f"{query} WHERE {' AND '.join(filters)}" if filters else query), params
+    cte = f"WITH content AS MATERIALIZED (SELECT * FROM ({base}) windowed WHERE {' AND '.join(window)})"
+    return cte, params, filters, filter_params
+
+
+def _match_query(
+    rule: dict[str, Any], *, user_id: int, since: datetime, until: datetime, include_seen: bool,
+) -> tuple[str, list[Any]]:
+    cte, params, filters, filter_params = _match_parts(
+        rule, user_id=user_id, since=since, until=until, include_seen=include_seen,
+    )
+    query = f"{cte} SELECT * FROM content"
+    return (f"{query} WHERE {' AND '.join(filters)}" if filters else query), [*params, *filter_params]
 
 
 def find_matches(
@@ -112,3 +124,25 @@ def count_matches(
         f"SELECT source, count(*) AS total FROM ({query}) matched GROUP BY source", params,
     ).fetchall()
     return {str(row["source"]): int(row["total"]) for row in rows}
+
+
+def count_by_day(
+    connection: Any, rule: dict[str, Any], *, user_id: int, until: datetime, days: int,
+) -> tuple[list[int], list[int]]:
+    """按 24 小时倒数分桶（下标 0 是最近 24 小时）返回 (命中数, 同来源全部内容数)。
+
+    量的是热度，已推送过的内容也计入；全部内容数用来认出采集中断的日子。
+    """
+    cte, params, filters, filter_params = _match_parts(
+        rule, user_id=user_id, since=until - timedelta(days=days), until=until, include_seen=True,
+    )
+    rows = connection.execute(
+        f"{cte} SELECT floor(extract(epoch FROM (%s - observed_at)) / 86400)::int AS day, count(*) AS total, "
+        f"count(*) FILTER (WHERE {' AND '.join(filters) or 'TRUE'}) AS matched FROM content GROUP BY day",
+        (*params, until, *filter_params),
+    ).fetchall()
+    matched, totals = [0] * days, [0] * days
+    for row in rows:
+        if 0 <= row["day"] < days:
+            matched[row["day"]], totals[row["day"]] = int(row["matched"]), int(row["total"])
+    return matched, totals

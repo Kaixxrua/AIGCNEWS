@@ -72,6 +72,25 @@ describe('viewing tracking results', () => {
     intersect(true)
     expect(wrapper.emitted('viewed')).toEqual([[10], [11]])
   })
+  it('flags surging keywords above the results, with the daily average to one decimal', async () => {
+    await render([{ ...issue(10), surges: [
+      { query: 'Agent', count: 23, baseline: 4 },
+      { query: 'RAG', count: 5, baseline: 0.7 },
+    ] }])
+    const surges = wrapper.get('.tracking-surges')
+    expect(surges.get('.tracking-surges-title').text()).toBe('热度飙升')
+    expect(surges.findAll('li').map((line) => line.text())).toEqual([
+      '「Agent」近 24 小时 23 条，前 7 天日均 4 条',
+      '「RAG」近 24 小时 5 条，前 7 天日均 0.7 条',
+    ])
+    const results = wrapper.get('.tracking-results').element
+    expect(surges.element.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // 免费账号与存量简报是空列表，旧后端没有这个字段：都不显示
+    await wrapper.setProps({ digests: [{ ...issue(11), surges: [] }] })
+    expect(wrapper.find('.tracking-surges').exists()).toBe(false)
+    await wrapper.setProps({ digests: [issue(12)] })
+    expect(wrapper.find('.tracking-surges').exists()).toBe(false)
+  })
   it('has no receipt for missing or empty results', async () => {
     await render([])
     expect(observations).toHaveLength(0)

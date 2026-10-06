@@ -14,9 +14,12 @@ from pydantic import ValidationError
 
 from backend.app.api.routes_tracking import get_tracking_repository, router
 from backend.app.core.auth import RequireUser
+from backend.app.domain.tracking import detect_surge
 from backend.app.domain.tracking_terms import _NEWS_TERMS, _equivalents, _key, english_equivalents
 from backend.app.models.schema_tracking import TrackingRuleInput
 from backend.app.repositories.postgres_tracking_repository import PostgresTrackingRepository
+from backend.app.repositories.tracking_matches import count_by_day
+from backend.app.services.email.message_renderer import EmailMessageRenderer
 from backend.app.services.tracking.content import public_link, render_digest
 from backend.app.services.tracking.dispatch import dispatch_tracking
 from backend.app.services.tracking.policy import CST, TrackingError
@@ -98,6 +101,45 @@ def test_email_html_escaping():
         "summary": "<script>bad()</script>", "matched_rules": ["<b>RAG</b>"],
     }]})
     assert "<img" not in body and "<script>" not in body and "<b>" not in body
+
+
+@pytest.mark.parametrize("matched,totals,expected", [
+    # 近 24 小时 6 条，前 7 天日均 1 条：够 5 条，也到了日均的 3 倍
+    ([6, 1, 1, 1, 1, 1, 1, 1], [9] * 8, {"count": 6, "baseline": 1.0}),
+    # 不到 5 条不报，前 7 天一条没有也不报
+    ([4, 0, 0, 0, 0, 0, 0, 0], [9] * 8, None),
+    # 日均不足 1 条按 1 条算
+    ([5, 1, 0, 1, 0, 1, 1, 1], [9] * 8, {"count": 5, "baseline": 0.7}),
+    # 3 倍是下限，正好 3 倍也算
+    ([8, 3, 3, 3, 3, 3, 3, 3], [9] * 8, None),
+    ([9, 3, 3, 3, 3, 3, 3, 3], [9] * 8, {"count": 9, "baseline": 3.0}),
+    # 来源当天一条内容都没有是采集中断，不拉低日均（算进去会是 1.7，8 条就报了）
+    ([8, 0, 0, 0, 3, 3, 3, 3], [9, 0, 0, 0, 9, 9, 9, 9], None),
+    # 前 7 天全部中断，无从比较
+    ([9, 0, 0, 0, 0, 0, 0, 0], [9, 0, 0, 0, 0, 0, 0, 0], None),
+    ([], [], None),
+])
+def test_surge_needs_five_hits_and_three_times_the_daily_average(matched, totals, expected):
+    assert detect_surge("Agent", matched, totals) == (expected and {"query": "Agent", **expected})
+
+
+def test_surges_lead_the_digest_escaped_and_mail_shows_them_as_quotes():
+    body = render_digest({"issue_date": "2026-10-06", "truncated": False, "items": [], "surges": [
+        {"query": "<b>Agent</b> **x** [y]", "count": 12, "baseline": 2.0},
+        {"query": "RAG", "count": 5, "baseline": 0.7},
+    ]})
+    assert body.split("\n")[2:5] == [
+        "> 热度飙升：「&lt;b&gt;Agent&lt;/b&gt; x y」近 24 小时 12 条，前 7 天日均 2 条",
+        "> 热度飙升：「RAG」近 24 小时 5 条，前 7 天日均 0.7 条",
+        "",
+    ]
+    html = EmailMessageRenderer().briefing_html(body, "我的 AI 情报", "每日", "2026-10-06")
+    assert html.count("<blockquote") == 2 and "<b>" not in html
+    # 没有飙升（免费账号、存量简报）时正文与原来一致
+    assert "热度飙升" not in render_digest({"issue_date": "2026-10-06", "truncated": False, "items": []})
+    assert render_digest({"issue_date": "2026-10-06", "truncated": False, "items": [], "surges": []}) == (
+        "# 我的 AI 情报 · 2026-10-06\n"
+    )
 
 
 def test_atomic_quota_and_owner_isolation(setup):
@@ -558,3 +600,91 @@ def test_newly_enriched_projects_are_not_lost_and_results_are_bounded(setup):
     # 超过 50 条时命中数仍是全部
     assert preview["total"] == 56
     assert preview["sources"] == [{"source": "news", "count": 55}, {"source": "github", "count": 1}]
+
+
+def hacker_news(database, title, when):
+    return document(database, title, when=when.isoformat(), source="hackernews")
+
+
+def surge_history(database, marker, moment, *, daily):
+    # 前 7 天每天 daily 条命中，外加一条无关内容表明那天采集正常
+    for day in range(1, 8):
+        when = moment - timedelta(days=day, hours=12)
+        for index in range(daily):
+            hacker_news(database, f"{marker} earlier {index}", when)
+        hacker_news(database, f"unrelated {uuid.uuid4().hex}", when)
+
+
+def test_daily_volume_counts_every_match_by_24_hour_bucket(setup):
+    database, repository, user_id = setup
+    marker = uuid.uuid4().hex
+    moment = now()
+    repository.save_rule(user_id, rule(marker, source="hackernews", excludes=["demo"]))
+    seen = hacker_news(database, f"{marker} seen", moment - timedelta(hours=1))
+    hacker_news(database, f"{marker} fresh", moment - timedelta(hours=23))
+    hacker_news(database, f"{marker} yesterday", moment - timedelta(hours=25))
+    hacker_news(database, f"{marker} demo", moment - timedelta(hours=25))
+    hacker_news(database, f"{marker} news", moment - timedelta(days=3, hours=1))
+    hacker_news(database, f"{marker} too old", moment - timedelta(days=8, hours=1))
+    hacker_news(database, f"{marker} ahead", moment + timedelta(minutes=5))
+    with database.transaction() as connection:
+        # 量热度时已推送过的内容也算
+        connection.execute("INSERT INTO tracking_seen (user_id, item_key) VALUES (%s, %s)", (user_id, seen))
+        saved = repository.overview(user_id)["rules"][0]
+        matched, totals = count_by_day(connection, saved, user_id=user_id, until=moment, days=8)
+    assert matched == [2, 1, 0, 1, 0, 0, 0, 0]
+    # 全部内容数不看关键词与排除词：被排除的 demo 也算那天有内容
+    assert totals[1] >= 2 and all(total >= hits for hits, total in zip(matched, totals))
+
+
+def test_vip_digest_flags_a_keyword_surging_against_its_daily_average(setup):
+    database, repository, user_id = setup
+    vip(database, user_id)
+    marker, quiet = uuid.uuid4().hex, uuid.uuid4().hex
+    moment = now()
+    repository.save_rule(user_id, rule(marker, source="hackernews"))
+    repository.save_rule(user_id, rule(marker))  # 同一关键词的多条规则只记一次
+    repository.save_rule(user_id, rule(quiet, source="hackernews"))
+    schedule(repository, user_id, channel(database, user_id))
+    surge_history(database, marker, moment, daily=1)
+    for hour in range(1, 7):
+        hacker_news(database, f"{marker} launch {hour}", moment - timedelta(hours=hour))
+    hacker_news(database, f"{quiet} once", moment - timedelta(hours=2))
+    digest = repository.generate_digest(user_id, moment)
+    surge = {"query": marker, "count": 6, "baseline": 1.0}
+    assert len(digest["items"]) == 7 and digest["surges"] == [surge]
+    assert repository.overview(user_id)["digests"][0]["surges"] == [surge]
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_tracking_repository] = lambda: repository
+    app.dependency_overrides[RequireUser] = lambda: {"user_id": user_id}
+    assert TestClient(app).get("/api/tracking").json()["digests"][0]["surges"] == [surge]
+    # 推送读库里存的飙升，不在投递时重算
+    claim = repository.claim_delivery(moment)
+    assert f"> 热度飙升：「{marker}」近 24 小时 6 条，前 7 天日均 1 条" in render_digest(claim)
+
+
+def test_surge_alerts_are_vip_only_and_need_three_times_the_usual_volume(setup):
+    database, repository, user_id = setup
+    marker, busy = uuid.uuid4().hex, uuid.uuid4().hex
+    moment = now()
+    repository.save_rule(user_id, rule(marker, source="hackernews"))
+    schedule(repository, user_id)
+    surge_history(database, marker, moment, daily=1)
+    for hour in range(1, 7):
+        hacker_news(database, f"{marker} launch {hour}", moment - timedelta(hours=hour))
+    # 免费账号：同样的数据不报飙升
+    assert repository.generate_digest(user_id, moment)["surges"] == []
+    assert repository.overview(user_id)["digests"][0]["surges"] == []
+
+    vip(database, user_id)
+    rule_id = repository.overview(user_id)["rules"][0]["id"]
+    repository.save_rule(user_id, rule(busy, source="hackernews"), rule_id)
+    later = moment + timedelta(days=1)
+    surge_history(database, busy, later, daily=3)
+    for hour in range(1, 9):
+        hacker_news(database, f"{busy} launch {hour}", later - timedelta(hours=hour))
+    # 8 条不到前 7 天日均 3 条的 3 倍
+    digest = repository.generate_digest(user_id, later)
+    assert len(digest["items"]) == 8 and digest["surges"] == []
+

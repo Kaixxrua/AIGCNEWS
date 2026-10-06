@@ -219,6 +219,7 @@ async function closeDelete() {
           <p class="tracking-hint mt-2">{{ t(isMember ? 'tracking.vipBenefitsHint' : 'tracking.unlockHint') }}</p>
           <ul class="tracking-benefits">
             <li><Check />{{ t('tracking.benefitRules') }}</li>
+            <li><Check />{{ t('tracking.benefitSurge') }}</li>
             <li><Check />{{ t('tracking.benefitPreserve') }}</li>
             <li><Check />{{ t('tracking.benefitQuota') }}</li>
             <li>

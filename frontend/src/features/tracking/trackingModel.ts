@@ -28,11 +28,19 @@ export interface TrackingItem {
   observed_at: string
   matched_rules: string[]
 }
+/** vip 关键词热度飙升：最近 24 小时命中数与前 7 天日均（保留一位小数）。 */
+export interface TrackingSurge {
+  query: string
+  count: number
+  baseline: number
+}
 export interface TrackingDigest {
   id: number
   issue_date: string
   items: TrackingItem[]
   truncated: boolean
+  // Older backends omit it; free accounts and older issues get an empty list.
+  surges?: TrackingSurge[]
   delivery_status: 'none' | 'pending' | 'sending' | 'sent' | 'failed' | 'cancelled'
   created_at: string
 }

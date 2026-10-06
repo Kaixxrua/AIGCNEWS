@@ -11,15 +11,18 @@ from backend.app.core.postgres_database import PostgresDatabaseLifecycle
 from backend.app.domain.tracking import (
     CST,
     DIGEST_ITEM_LIMIT,
+    SURGE_BASELINE_DAYS,
     TrackingError,
     active_rules,
+    detect_surge,
+    is_member,
     rule_limit,
 )
 from backend.app.domain.tracking_terms import rule_expansions
-from backend.app.repositories.tracking_matches import count_matches, find_matches
+from backend.app.repositories.tracking_matches import count_by_day, count_matches, find_matches
 
 _RULE_FIELDS = "id, kind, query, source, excludes, star_threshold, enabled, created_at"
-_DIGEST_FIELDS = "id, issue_date, items, truncated, delivery_status, created_at"
+_DIGEST_FIELDS = "id, issue_date, items, truncated, surges, delivery_status, created_at"
 
 
 class PostgresTrackingRepository:
@@ -42,6 +45,20 @@ class PostgresTrackingRepository:
         return [dict(row) for row in connection.execute(
             f"SELECT {_RULE_FIELDS} FROM tracking_rules WHERE user_id = %s ORDER BY id", (user_id,),
         ).fetchall()]
+
+    @staticmethod
+    def _surges(connection: Any, rules: list[dict[str, Any]], user_id: int, now: datetime) -> list[dict[str, Any]]:
+        # 只看关键词规则；同一关键词的多条规则记一次。最剧烈的排在前面。
+        surges: dict[str, dict[str, Any]] = {}
+        for rule in rules:
+            if rule["kind"] != "keyword" or rule["query"] in surges:
+                continue
+            matched, totals = count_by_day(
+                connection, rule, user_id=user_id, until=now, days=SURGE_BASELINE_DAYS + 1,
+            )
+            if surge := detect_surge(rule["query"], matched, totals):
+                surges[rule["query"]] = surge
+        return sorted(surges.values(), key=lambda surge: surge["count"] / max(surge["baseline"], 1), reverse=True)
 
     @staticmethod
     def _channel(connection: Any, user_id: int, channel_id: int | None) -> dict[str, Any] | None:
@@ -238,15 +255,18 @@ class PostgresTrackingRepository:
             # No matching news: advance the cursor, stay quiet, never send empty mail.
             if not items:
                 return None
+            # 热度飙升是 vip 权益，按生成时的实时会员档位判断。
+            surges = self._surges(connection, rules, user_id, now) if is_member(user, now) else []
             channel_id = settings["channel_id"]
             try:
                 self._channel(connection, user_id, channel_id)
             except TrackingError:
                 channel_id = None
             row = connection.execute(
-                f"INSERT INTO tracking_digests (user_id, issue_date, items, truncated, channel_id, delivery_status) "
-                f"VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (user_id, issue_date) DO NOTHING RETURNING {_DIGEST_FIELDS}",
-                (user_id, local.date(), Jsonb(items), truncated, channel_id, "pending" if channel_id else "none"),
+                f"INSERT INTO tracking_digests (user_id, issue_date, items, truncated, surges, channel_id, delivery_status) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (user_id, issue_date) DO NOTHING RETURNING {_DIGEST_FIELDS}",
+                (user_id, local.date(), Jsonb(items), truncated, Jsonb(surges), channel_id,
+                 "pending" if channel_id else "none"),
             ).fetchone()
             if not row:
                 return None

@@ -336,6 +336,18 @@
     border: 1.5px solid var(--sub-field-ink); border-radius: 6px; background-color: var(--sub-field-bg); color: var(--sub-ink); font-size: 14px; font-weight: 500;
   }
   #app .app-shell--comic-page .tracking-digest > .tracking-hint { margin: 4px 0 0 49px; color: var(--sub-meta); font-size: 12.5px; line-height: 1.4; }
+  /* vip 热度飙升：跟日期行对齐，一张墨线描边的荧光签（同「查看全部」按钮的描边），每个关键词一行。 */
+  #app .app-shell--comic-page .tracking-digest > .tracking-surges {
+    flex-direction: row; align-items: flex-start; gap: 10px; margin: 8px 0 10px 49px; padding: 0;
+    border: 0; border-radius: 0; background: none; color: var(--sub-copy); font-size: 14px; line-height: 24px;
+  }
+  #app .app-shell--comic-page .tracking-surges-title {
+    flex: none; gap: 5px; height: 24px; padding: 0 9px; border: solid var(--sub-ink); border-width: 1.5px 1.8px 2.4px 1.5px; border-radius: 9px;
+    background: var(--acid); color: var(--acid-ink); font-size: 13px; font-weight: 800; line-height: 1;
+  }
+  #app .app-shell--comic-page .tracking-surges-title svg { width: 14px; height: 14px; stroke-width: 2.6; }
+  #app .app-shell--comic-page .tracking-surges ul { min-width: 0; }
+  #app .app-shell--comic-page .tracking-surges li { line-height: 24px; }
   #app .app-shell--comic-page .tracking-results { margin-top: 0; border-top: 1px solid var(--sub-rule); }
   #app .app-shell--comic-page .tracking-results > li {
     display: grid; grid-template-columns: 38px auto minmax(0, max-content) auto minmax(0, 1fr); grid-template-rows: 28px 20px;

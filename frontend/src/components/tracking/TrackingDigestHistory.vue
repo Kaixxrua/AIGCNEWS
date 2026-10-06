@@ -2,13 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
+import { TrendingUp } from 'lucide-vue-next'
 import type { TrackingDigest } from '@/features/tracking/trackingModel'
 import TrackingResults from './TrackingResults.vue'
 
 const props = defineProps<{ digests: TrackingDigest[] }>()
 const emit = defineEmits<{ viewed: [id: number] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const desktop = useMediaQuery('(min-width: 1024px)')
+// 日均保留一位小数：2 写成 2，0.7 写成 0.7
+const dailyAverage = (value: number) => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 1 }).format(value)
 const issueId = ref<number>()
 const digest = computed(() => props.digests.find((item) => item.id === issueId.value) ?? props.digests[0])
 const results = ref<HTMLElement>()
@@ -73,6 +76,14 @@ watch(
       <p class="tracking-hint mt-2">
         {{ digest.issue_date }} · {{ t('tracking.deliveryStatus.' + digest.delivery_status) }}
       </p>
+      <div v-if="digest.surges?.length" class="tracking-surges">
+        <p class="tracking-surges-title"><TrendingUp aria-hidden="true" />{{ t('tracking.surgeTitle') }}</p>
+        <ul>
+          <li v-for="surge in digest.surges" :key="surge.query">
+            {{ t('tracking.surgeLine', { query: surge.query, count: surge.count, baseline: dailyAverage(surge.baseline) }) }}
+          </li>
+        </ul>
+      </div>
       <div :key="digest.id" ref="results">
         <TrackingResults :items="digest.items" :truncated="digest.truncated" :collapsed="desktop ? 3 : 5" />
       </div>

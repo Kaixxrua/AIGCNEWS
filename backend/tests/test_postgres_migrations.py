@@ -584,6 +584,24 @@ def test_mcp_token_tracking_scope_backfill_is_literal_and_live_only() -> None:
     )
 
 
+def test_tracking_digest_surges_schema_is_additive() -> None:
+    # 关键词热度飙升存进当期简报；只加列，存量简报默认空数组，回退旧应用时插入走默认值。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0086_tracking_digest_surges.sql"
+    )
+    statement = " ".join(
+        line.split("--", 1)[0] for line in migration.sql.splitlines() if line.split("--", 1)[0].strip()
+    )
+
+    assert " ".join(statement.split()) == (
+        "ALTER TABLE tracking_digests"
+        " ADD COLUMN IF NOT EXISTS surges JSONB NOT NULL DEFAULT '[]'::jsonb"
+        " CHECK (jsonb_typeof(surges) = 'array');"
+    )
+
+
 def test_payment_wechat_public_key_schema_is_additive() -> None:
     # 微信支付公钥模式：回调验签材料（公钥 ID + 公钥 PEM）随面板/DB 配置面下发，
     # 只加列不动存量——默认空串表示"未配置"，fail-closed 由 provider 侧 7 字段门控。

@@ -68,11 +68,21 @@ class TrackingItem(BaseModel):
     matched_rules: list[str] = Field(default_factory=list)
 
 
+class TrackingSurge(BaseModel):
+    query: str
+    # 最近 24 小时的命中数
+    count: int = Field(ge=0)
+    # 前 7 天日均命中数（不计采集中断的日子），保留一位小数
+    baseline: float = Field(ge=0)
+
+
 class TrackingDigest(BaseModel):
     id: int
     issue_date: date
     items: list[TrackingItem]
     truncated: bool
+    # vip 关键词热度飙升；免费账号和存量简报为空列表
+    surges: list[TrackingSurge] = Field(default_factory=list)
     delivery_status: str
     created_at: datetime
 
