@@ -4,7 +4,7 @@ import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 import pytest
 
@@ -494,3 +494,157 @@ def test_token_list_and_delete_remain_owner_scoped() -> None:
     assert "revoked_at = COALESCE" in deletion.args[0]
     assert "user_id = %s AND deleted_at IS NULL" in deletion.args[0]
     assert deletion.args[1] == (21, 7)
+
+
+def test_manual_token_create_never_touches_oauth_tables() -> None:
+    repository, _, cursor = repository_with_cursor(PostgresMcpAccessTokenRepository)
+    cursor.rowcount = 0
+    cursor.fetchone.side_effect = [{"id": 7}, {"id": 21}, {"id": 21, "user_id": 7, "scopes_json": "[]"}]
+
+    repository.create_user_mcp_token(
+        user_id=7, token_hash="a" * 64, token_hint="hint", scopes=[], client_type="claude"
+    )
+
+    assert cursor.execute.call_count == 5
+    assert all("oauth" not in call.args[0] for call in cursor.execute.call_args_list)
+    insert = cursor.execute.call_args_list[2]
+    assert len(insert.args[1]) == 8
+
+
+def test_oauth_token_create_supersedes_same_client_and_marks_authorization() -> None:
+    repository, _, cursor = repository_with_cursor(PostgresMcpAccessTokenRepository)
+    # 先吊销同一客户端上的 2 个旧 token，封顶淘汰再淘汰 1 个
+    type(cursor).rowcount = PropertyMock(side_effect=[2, 1])
+    cursor.fetchone.side_effect = [
+        {"id": 7},
+        {"id": 22},
+        {"id": 22, "user_id": 7, "scopes_json": '["tracking:read"]'},
+    ]
+
+    result = repository.create_user_mcp_token(
+        user_id=7,
+        token_hash="a" * 64,
+        token_hint="hint",
+        scopes=["tracking:read"],
+        client_type="claude",
+        client_label="Claude Code",
+        oauth_client_id="aigc_oc_client",
+    )
+
+    lock, purge, supersede, insert, evict, touch, select = cursor.execute.call_args_list
+    assert "FOR UPDATE" in lock.args[0]
+    assert "revoked_at IS NOT NULL" in purge.args[0]
+    assert "revoked_at = COALESCE" in supersede.args[0]
+    assert "user_id = %s AND oauth_client_id = %s AND deleted_at IS NULL" in supersede.args[0]
+    assert supersede.args[1] == (7, "aigc_oc_client")
+    assert "oauth_client_id" in insert.args[0]
+    assert insert.args[1] == (
+        7,
+        "a" * 64,
+        "hint",
+        '["tracking:read"]',
+        "claude",
+        "Claude Code",
+        None,
+        "generic",
+        "aigc_oc_client",
+    )
+    assert evict.args[1] == (7, 7, 20)
+    assert "UPDATE mcp_oauth_clients SET last_authorized_at = CURRENT_TIMESTAMP" in touch.args[0]
+    assert touch.args[1] == ("aigc_oc_client",)
+    assert select.args[1] == (22, 7)
+    assert result["replaced_count"] == 3
+    assert result["token_metadata"]["scopes"] == ["tracking:read"]
+
+
+def test_oauth_client_registration_prunes_stale_clients_then_inserts() -> None:
+    repository, database, cursor = repository_with_cursor(PostgresMcpAccessTokenRepository)
+    created_at = datetime(2026, 10, 6, 1, 2, 3, tzinfo=timezone.utc)
+    cursor.fetchone.return_value = {
+        "client_id": "aigc_oc_client",
+        "client_name": "Claude Code",
+        "redirect_uris_json": '["http://localhost:1234/callback"]',
+        "token_endpoint_auth_method": "none",
+        "client_secret_hash": None,
+        "created_at": created_at,
+        "last_authorized_at": None,
+    }
+
+    client = repository.register_mcp_oauth_client(
+        client_id="aigc_oc_client",
+        client_name="Claude Code",
+        redirect_uris=["http://localhost:1234/callback"],
+        token_endpoint_auth_method="none",
+        client_secret_hash=None,
+    )
+
+    prune, insert = cursor.execute.call_args_list
+    assert database.transaction_count == 1
+    # 只清理注册满 30 天且从未完成授权的客户端；授权过的客户端永久保留
+    assert "DELETE FROM mcp_oauth_clients" in prune.args[0]
+    assert "last_authorized_at IS NULL" in prune.args[0]
+    assert "INTERVAL '30 days'" in prune.args[0]
+    assert len(prune.args) == 1
+    assert insert.args[1] == (
+        "aigc_oc_client",
+        "Claude Code",
+        '["http://localhost:1234/callback"]',
+        "none",
+        None,
+    )
+    assert client == {
+        "client_id": "aigc_oc_client",
+        "client_name": "Claude Code",
+        "redirect_uris": ["http://localhost:1234/callback"],
+        "token_endpoint_auth_method": "none",
+        "client_secret_hash": None,
+        "created_at": "2026-10-06T01:02:03Z",
+        "last_authorized_at": None,
+    }
+
+    cursor.fetchone.return_value = None
+    with pytest.raises(RuntimeError):
+        repository.register_mcp_oauth_client(
+            client_id="aigc_oc_other",
+            client_name="",
+            redirect_uris=["https://app.example/cb"],
+            token_endpoint_auth_method="client_secret_basic",
+            client_secret_hash="b" * 64,
+        )
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [
+        ('["https://app.example/cb","http://localhost/cb"]', ["https://app.example/cb", "http://localhost/cb"]),
+        ("not-json", []),
+        ('{"uri": "https://app.example/cb"}', []),
+        ('["https://app.example/cb", 42, null]', ["https://app.example/cb"]),
+        (None, []),
+    ],
+)
+def test_oauth_client_lookup_treats_bad_redirect_lists_as_empty(stored, expected) -> None:
+    repository, _, cursor = repository_with_cursor(PostgresMcpAccessTokenRepository)
+    cursor.fetchone.return_value = {
+        "client_id": "aigc_oc_client",
+        "client_name": "",
+        "redirect_uris_json": stored,
+        "token_endpoint_auth_method": "none",
+        "client_secret_hash": None,
+        "created_at": None,
+        "last_authorized_at": None,
+    }
+
+    client = repository.get_mcp_oauth_client("aigc_oc_client")
+
+    lookup = cursor.execute.call_args
+    assert "FROM mcp_oauth_clients WHERE client_id = %s" in lookup.args[0]
+    assert lookup.args[1] == ("aigc_oc_client",)
+    assert client["redirect_uris"] == expected
+    assert "redirect_uris_json" not in client
+
+
+def test_oauth_client_lookup_returns_none_for_unknown_client() -> None:
+    repository, _, cursor = repository_with_cursor(PostgresMcpAccessTokenRepository)
+    cursor.fetchone.return_value = None
+    assert repository.get_mcp_oauth_client("aigc_oc_missing") is None

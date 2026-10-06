@@ -287,3 +287,126 @@ def test_postgres_dsh_mcp_token_ensure_reuse_rotate_and_legacy_recovery(database
     assert recovered["revoked_count"] == 1
     assert repository.get_user_by_mcp_token_hash("3" * 64) is None
     assert repository.get_user_by_mcp_token_hash("5" * 64)["user_id"] == legacy_user
+
+
+def _oauth_token(repository, user_id: int, letter: str, client_id: str | None, label: str = "Claude Code"):
+    return repository.create_user_mcp_token(
+        user_id=user_id,
+        token_hash=letter * 64,
+        token_hint=f"hint-{letter}",
+        scopes=["projects:favorites:read", "tracking:read"],
+        client_type="claude",
+        client_label=label,
+        oauth_client_id=client_id,
+    )
+
+
+def test_postgres_mcp_oauth_client_registration_and_reauthorization(database) -> None:
+    repository = PostgresMcpAccessTokenRepository(database)
+    user_id = _create_user(database)
+    other_user = _create_user(database, "other@example.com")
+
+    registered = repository.register_mcp_oauth_client(
+        client_id="aigc_oc_one",
+        client_name="Claude Code",
+        redirect_uris=["http://localhost:1234/callback"],
+        token_endpoint_auth_method="none",
+        client_secret_hash=None,
+    )
+    assert registered["redirect_uris"] == ["http://localhost:1234/callback"]
+    assert registered["created_at"].endswith("Z")
+    assert registered["last_authorized_at"] is None
+    assert repository.get_mcp_oauth_client("aigc_oc_one") == registered
+    assert repository.get_mcp_oauth_client("aigc_oc_missing") is None
+
+    manual = _oauth_token(repository, user_id, "m", None, label="Desktop")
+    first = _oauth_token(repository, user_id, "d", "aigc_oc_one")
+    assert first["replaced_count"] == 0
+    authorized = repository.get_mcp_oauth_client("aigc_oc_one")["last_authorized_at"]
+    assert authorized is not None and authorized.endswith("Z")
+    assert repository.get_user_by_mcp_token_hash("d" * 64)["user_id"] == user_id
+
+    # 另一个用户经同一客户端授权，不影响前一个用户的令牌
+    _oauth_token(repository, other_user, "o", "aigc_oc_one")
+    assert repository.get_user_by_mcp_token_hash("d" * 64)["user_id"] == user_id
+
+    # 同一用户在同一客户端重新授权：旧令牌立即失效，手动令牌不受影响
+    second = _oauth_token(repository, user_id, "e", "aigc_oc_one")
+    assert second["replaced_count"] == 1
+    assert repository.get_user_by_mcp_token_hash("d" * 64) is None
+    assert repository.get_user_by_mcp_token_hash("e" * 64)["user_id"] == user_id
+    assert repository.get_user_by_mcp_token_hash("m" * 64)["user_id"] == user_id
+    assert repository.get_user_by_mcp_token_hash("o" * 64)["user_id"] == other_user
+    listed = {item["id"] for item in repository.list_user_mcp_tokens(user_id=user_id)}
+    assert listed == {manual["token_metadata"]["id"], second["token_metadata"]["id"]}
+
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT oauth_client_id FROM user_mcp_tokens WHERE token_hash = %s",
+                ("e" * 64,),
+            )
+            assert cursor.fetchone()["oauth_client_id"] == "aigc_oc_one"
+            cursor.execute(
+                "SELECT oauth_client_id FROM user_mcp_tokens WHERE token_hash = %s",
+                ("m" * 64,),
+            )
+            assert cursor.fetchone()["oauth_client_id"] is None
+
+
+def test_postgres_mcp_oauth_registration_prunes_only_stale_unused_clients(database) -> None:
+    repository = PostgresMcpAccessTokenRepository(database)
+    user_id = _create_user(database)
+    for client_id in ("aigc_oc_stale", "aigc_oc_used", "aigc_oc_recent"):
+        repository.register_mcp_oauth_client(
+            client_id=client_id,
+            client_name="",
+            redirect_uris=["https://app.example/cb"],
+            token_endpoint_auth_method="client_secret_basic",
+            client_secret_hash="f" * 64,
+        )
+    _oauth_token(repository, user_id, "u", "aigc_oc_used")
+    with database.transaction() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE mcp_oauth_clients SET created_at = CURRENT_TIMESTAMP - INTERVAL '31 days'
+                WHERE client_id IN ('aigc_oc_stale', 'aigc_oc_used')
+                """
+            )
+
+    repository.register_mcp_oauth_client(
+        client_id="aigc_oc_new",
+        client_name="",
+        redirect_uris=["https://app.example/cb"],
+        token_endpoint_auth_method="none",
+        client_secret_hash=None,
+    )
+
+    assert repository.get_mcp_oauth_client("aigc_oc_stale") is None
+    assert repository.get_mcp_oauth_client("aigc_oc_used")["client_secret_hash"] == "f" * 64
+    assert repository.get_mcp_oauth_client("aigc_oc_recent") is not None
+    assert repository.get_user_by_mcp_token_hash("u" * 64)["user_id"] == user_id
+
+
+@pytest.mark.parametrize(
+    ("auth_method", "secret_hash"),
+    [
+        ("none", "f" * 64),
+        ("client_secret_post", None),
+        ("client_secret_basic", None),
+        ("private_key_jwt", "f" * 64),
+    ],
+)
+def test_postgres_mcp_oauth_client_constraints(database, auth_method, secret_hash) -> None:
+    repository = PostgresMcpAccessTokenRepository(database)
+    with pytest.raises(Exception) as context:
+        repository.register_mcp_oauth_client(
+            client_id="aigc_oc_bad",
+            client_name="",
+            redirect_uris=["https://app.example/cb"],
+            token_endpoint_auth_method=auth_method,
+            client_secret_hash=secret_hash,
+        )
+    assert getattr(context.value, "sqlstate", None) == "23514"
+    assert repository.get_mcp_oauth_client("aigc_oc_bad") is None

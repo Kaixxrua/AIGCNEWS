@@ -627,6 +627,35 @@ def test_membership_trials_drop_refuses_rows_and_bounds_lock_wait() -> None:
     )
 
 
+def test_mcp_oauth_clients_schema_is_additive_and_bounds_lock_wait() -> None:
+    # MCP OAuth：新建客户端表、给令牌表加可空列，不改存量数据；给 user_mcp_tokens
+    # 加列要拿排他锁，最多等 5 秒。客户端认证方法与密钥摘要由两条 CHECK 约束成对出现。
+    migration = next(
+        item
+        for item in discover_migrations()
+        if item.filename == "0088_mcp_oauth_clients.sql"
+    )
+    statement = " ".join(
+        line.split("--", 1)[0] for line in migration.sql.splitlines() if line.split("--", 1)[0].strip()
+    )
+
+    assert " ".join(statement.split()) == (
+        "SET LOCAL lock_timeout = '5s';"
+        " CREATE TABLE IF NOT EXISTS mcp_oauth_clients ("
+        " client_id VARCHAR(64) PRIMARY KEY,"
+        " client_name VARCHAR(128) NOT NULL DEFAULT '',"
+        " redirect_uris_json TEXT NOT NULL,"
+        " token_endpoint_auth_method VARCHAR(32) NOT NULL DEFAULT 'none'"
+        " CHECK (token_endpoint_auth_method IN ('none', 'client_secret_post', 'client_secret_basic')),"
+        " client_secret_hash VARCHAR(64),"
+        " created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        " last_authorized_at TIMESTAMPTZ,"
+        " CHECK ((token_endpoint_auth_method = 'none') = (client_secret_hash IS NULL))"
+        " );"
+        " ALTER TABLE user_mcp_tokens ADD COLUMN IF NOT EXISTS oauth_client_id VARCHAR(64);"
+    )
+
+
 def test_payment_wechat_public_key_schema_is_additive() -> None:
     # 微信支付公钥模式：回调验签材料（公钥 ID + 公钥 PEM）随面板/DB 配置面下发，
     # 只加列不动存量——默认空串表示"未配置"，fail-closed 由 provider 侧 7 字段门控。
@@ -776,6 +805,17 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
                 (schema_name,),
             )
             score_version_default = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'user_mcp_tokens'
+                  AND column_name = 'oauth_client_id'
+                """,
+                (schema_name,),
+            )
+            oauth_client_columns = cursor.fetchall()
 
         assert {
             "app_schema_migrations",
@@ -791,6 +831,8 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
         } <= tables
         # 0084 建、0087 删
         assert "membership_trials" not in tables
+        assert "mcp_oauth_clients" in tables
+        assert oauth_client_columns == [("oauth_client_id", "character varying", "YES")]
         assert {
             "idx_gh_candidates_stars",
             "idx_gh_repo_alias_canonical",

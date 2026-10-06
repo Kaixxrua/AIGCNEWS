@@ -16,6 +16,7 @@ class McpAccessTokenManager(Protocol):
         client_type: str,
         client_label: str = "",
         expires_at: Any = None,
+        oauth_client_id: str | None = None,
     ) -> dict[str, Any]: ...
 
     def list_user_mcp_tokens(
@@ -74,10 +75,30 @@ class McpAccessTokenAuthenticator(Protocol):
     ) -> dict[str, Any] | None: ...
 
 
+class McpOAuthClientStore(Protocol):
+    """Dynamically registered MCP OAuth clients (RFC 7591).
+
+    返回的客户端字典含库内 ``client_secret_hash``，只供令牌端点核验，不得外发。
+    """
+
+    def register_mcp_oauth_client(
+        self,
+        *,
+        client_id: str,
+        client_name: str,
+        redirect_uris: list[str],
+        token_endpoint_auth_method: str,
+        client_secret_hash: str | None,
+    ) -> dict[str, Any]: ...
+
+    def get_mcp_oauth_client(self, client_id: str) -> dict[str, Any] | None: ...
+
+
 class McpAccessTokenRepository(
     McpAccessTokenManager,
     McpAccessTokenAuthenticator,
     DshMcpTokenManager,
+    McpOAuthClientStore,
     Protocol,
 ):
     """Combined internal MCP access-token persistence boundary."""

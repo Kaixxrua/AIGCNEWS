@@ -128,7 +128,24 @@ class PostgresMcpAccessTokenRepository:
         client_type: str,
         client_label: str = "",
         expires_at: Any = None,
+        oauth_client_id: str | None = None,
     ) -> dict[str, Any]:
+        """签发通用 token；``oauth_client_id`` 非空表示 MCP OAuth 授权签发（0088）。
+
+        OAuth 签发时同事务吊销该用户在同一客户端上的旧 token（重新授权即替换），
+        并记下客户端最近一次成功授权的时间；``replaced_count`` 含这部分吊销数。
+        手动创建（``oauth_client_id`` 为空）的 SQL 与 0088 之前逐字相同。
+        """
+        values = (
+            int(user_id),
+            token_hash,
+            token_hint,
+            json.dumps(scopes, ensure_ascii=False, separators=(",", ":")),
+            client_type,
+            client_label,
+            expires_at,
+            GENERIC_MCP_TOKEN_PURPOSE,
+        )
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -144,24 +161,38 @@ class PostgresMcpAccessTokenRepository:
                     """,
                     (int(user_id),),
                 )
-                cursor.execute(
-                    """
-                    INSERT INTO user_mcp_tokens
-                        (user_id, token_hash, token_hint, scopes_json, client_type, client_label, expires_at, purpose)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (
-                        int(user_id),
-                        token_hash,
-                        token_hint,
-                        json.dumps(scopes, ensure_ascii=False, separators=(",", ":")),
-                        client_type,
-                        client_label,
-                        expires_at,
-                        GENERIC_MCP_TOKEN_PURPOSE,
-                    ),
-                )
+                superseded_count = 0
+                if oauth_client_id is None:
+                    cursor.execute(
+                        """
+                        INSERT INTO user_mcp_tokens
+                            (user_id, token_hash, token_hint, scopes_json, client_type, client_label, expires_at, purpose)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        values,
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE user_mcp_tokens
+                        SET revoked_at = COALESCE(revoked_at, CURRENT_TIMESTAMP),
+                            deleted_at = CURRENT_TIMESTAMP
+                        WHERE user_id = %s AND oauth_client_id = %s AND deleted_at IS NULL
+                        """,
+                        (int(user_id), oauth_client_id),
+                    )
+                    superseded_count = max(0, int(cursor.rowcount))
+                    cursor.execute(
+                        """
+                        INSERT INTO user_mcp_tokens
+                            (user_id, token_hash, token_hint, scopes_json, client_type, client_label, expires_at, purpose,
+                             oauth_client_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (*values, oauth_client_id),
+                    )
                 inserted = cursor.fetchone()
                 if inserted is None:
                     raise RuntimeError("PostgreSQL MCP token insert did not return an id")
@@ -187,6 +218,14 @@ class PostgresMcpAccessTokenRepository:
                     (int(user_id), int(user_id), self._max_active_tokens),
                 )
                 replaced_count = cursor.rowcount
+                if oauth_client_id is not None:
+                    cursor.execute(
+                        """
+                        UPDATE mcp_oauth_clients SET last_authorized_at = CURRENT_TIMESTAMP
+                        WHERE client_id = %s
+                        """,
+                        (oauth_client_id,),
+                    )
                 cursor.execute(
                     """
                     SELECT id, user_id, token_hint, scopes_json, client_type, client_label,
@@ -198,8 +237,83 @@ class PostgresMcpAccessTokenRepository:
                 row = cursor.fetchone() or {}
                 return {
                     "token_metadata": self._mcp_token_metadata(dict(row)),
-                    "replaced_count": max(0, int(replaced_count)),
+                    "replaced_count": superseded_count + max(0, int(replaced_count)),
                 }
+
+    # ------------------------------------------------------------ MCP OAuth
+
+    @staticmethod
+    def _mcp_oauth_client(row: dict[str, Any]) -> dict[str, Any]:
+        item = dict(row)
+        try:
+            redirect_uris = json.loads(item.pop("redirect_uris_json", "[]") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            redirect_uris = []
+        if not isinstance(redirect_uris, list):
+            redirect_uris = []
+        # 回调地址是授权时比对的白名单：解析失败或不是数组就一个都不认，非字符串项丢弃
+        item["redirect_uris"] = [uri for uri in redirect_uris if isinstance(uri, str)]
+        for field in ("created_at", "last_authorized_at"):
+            item[field] = _to_iso_string(item.get(field))
+        return item
+
+    def register_mcp_oauth_client(
+        self,
+        *,
+        client_id: str,
+        client_name: str,
+        redirect_uris: list[str],
+        token_endpoint_auth_method: str,
+        client_secret_hash: str | None,
+    ) -> dict[str, Any]:
+        """登记动态注册的客户端，并顺手清理注册满 30 天仍未完成过授权的客户端。
+
+        返回值含 ``client_secret_hash``（库内字段），只供令牌端点核验，不得外发。
+        """
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    DELETE FROM mcp_oauth_clients
+                    WHERE last_authorized_at IS NULL
+                      AND created_at < CURRENT_TIMESTAMP - INTERVAL '30 days'
+                    """
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO mcp_oauth_clients
+                        (client_id, client_name, redirect_uris_json, token_endpoint_auth_method, client_secret_hash)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING client_id, client_name, redirect_uris_json, token_endpoint_auth_method,
+                              client_secret_hash, created_at, last_authorized_at
+                    """,
+                    (
+                        client_id,
+                        client_name,
+                        json.dumps(redirect_uris, ensure_ascii=False, separators=(",", ":")),
+                        token_endpoint_auth_method,
+                        client_secret_hash,
+                    ),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RuntimeError("PostgreSQL MCP OAuth client insert did not return a row")
+                return self._mcp_oauth_client(dict(row))
+
+    def get_mcp_oauth_client(self, client_id: str) -> dict[str, Any] | None:
+        """按 client_id 读取客户端；返回值含 ``client_secret_hash``，不得外发。"""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT client_id, client_name, redirect_uris_json, token_endpoint_auth_method,
+                           client_secret_hash, created_at, last_authorized_at
+                    FROM mcp_oauth_clients WHERE client_id = %s
+                    """,
+                    (client_id,),
+                )
+                row = cursor.fetchone()
+                return self._mcp_oauth_client(dict(row)) if row else None
 
     def list_user_mcp_tokens(self, *, user_id: int) -> list[dict[str, Any]]:
         with self._database.transaction() as connection:
