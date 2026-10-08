@@ -1,6 +1,8 @@
 import { nextTick, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mcpClientOptions } from '@/features/mcp/mcpClientCatalog'
 import type { McpHandshakeOptions } from '@/features/mcp/mcpHandshake'
+import { MCP_OAUTH_ENDPOINT } from '@/features/mcp/mcpOAuth'
 import type { McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
 import {
   useMcpConnectController,
@@ -39,10 +41,14 @@ const createController = (overrides: Parameters<typeof useMcpConnectController>[
     isLoggedIn: () => true,
     translate: (key, params) => `${key}${params ? JSON.stringify(params) : ''}`,
     confirm: () => true,
+    // 这些用例覆盖手动 Token 流程；浏览器授权版在文件末尾单独测
+    authMode: 'token',
     ...overrides,
   })
   return { api, controller }
 }
+
+const clientById = (id: string) => mcpClientOptions.find((client) => client.id === id)!
 
 describe('MCP connect controller', () => {
   beforeEach(() => vi.useFakeTimers())
@@ -337,5 +343,99 @@ describe('MCP connect controller connection watch', () => {
     vi.mocked(api.fetchMcpTokens).mockClear()
     await vi.advanceTimersByTimeAsync(60_000)
     expect(api.fetchMcpTokens).not.toHaveBeenCalled()
+  })
+})
+
+describe('MCP connect controller browser authorization', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('defaults OAuth-capable clients to browser authorization and leaves token-only clients on tokens', () => {
+    const controller = useMcpConnectController({ api: createApi(), isLoggedIn: () => false })
+    expect(controller.authMode.value).toBe('oauth')
+    expect(controller.oauthCommand.value).toContain(MCP_OAUTH_ENDPOINT)
+    expect(controller.oauthCommand.value).toContain('mcp login aigc-news')
+    expect(controller.oauthCommand.value).not.toContain('Bearer')
+
+    controller.selectedClient.value = 'cline-roo'
+    expect(controller.authMode.value).toBe('token')
+    expect(controller.oauthCommand.value).toBe('')
+    controller.dispose()
+  })
+
+  it('lets guests copy the OAuth command without signing in or creating a token', async () => {
+    const copy = vi.fn(async (_text: string) => undefined)
+    const navigateToLogin = vi.fn(async () => undefined)
+    const { api, controller } = createController({ authMode: 'oauth', copy, isLoggedIn: () => false, navigateToLogin })
+
+    await controller.startSetup()
+    expect(navigateToLogin).not.toHaveBeenCalled()
+    expect(api.createMcpToken).not.toHaveBeenCalled()
+
+    await controller.copyGeneratedCommand()
+    expect(copy).toHaveBeenCalledWith(controller.oauthCommand.value)
+    expect(controller.copiedKey.value).toBe('command')
+    expect(controller.transientCommand.value).toBe('')
+    expect(controller.connection.status.value).toBe('idle')
+  })
+
+  it('never issues a token from the page in OAuth mode, even when signed in', async () => {
+    const { api, controller } = createController({ authMode: 'oauth' })
+    await controller.startSetup()
+    expect(api.createMcpToken).not.toHaveBeenCalled()
+    expect(controller.transientCommand.value).toBe('')
+  })
+
+  it('builds the Agent prompt from the OAuth command and the fixed endpoint', async () => {
+    const copy = vi.fn(async (_text: string) => undefined)
+    const { controller } = createController({ authMode: 'oauth', copy })
+    controller.selectedShell.value = 'bash'
+    await nextTick()
+
+    await controller.copyAgentSetupPrompt()
+
+    const prompt = vi.mocked(copy).mock.calls[0]?.[0] ?? ''
+    expect(prompt).toContain('mcpOAuthSetup.agentPrompt')
+    expect(prompt).toContain('Claude Code')
+    expect(prompt).toContain(MCP_OAUTH_ENDPOINT)
+    expect(prompt).toContain('claude mcp login aigc-news')
+    expect(prompt).not.toContain('https://example.test/api/mcp')
+    expect(controller.copiedKey.value).toBe('agent-prompt')
+  })
+
+  it('remembers the manual-token choice across clients until browser authorization is picked again', () => {
+    const { controller } = createController({ authMode: 'oauth' })
+    controller.setAuthMode('token')
+    expect(controller.authMode.value).toBe('token')
+    controller.selectedClient.value = 'codex'
+    expect(controller.authMode.value).toBe('token')
+    expect(controller.authModeFor(clientById('cursor'))).toBe('token')
+
+    controller.setAuthMode('oauth')
+    expect(controller.authMode.value).toBe('oauth')
+    expect(controller.authModeFor(clientById('cline-roo'))).toBe('token')
+  })
+
+  it('drops a generated token command when switching to browser authorization', async () => {
+    const { api, controller } = createController()
+    await controller.startSetup()
+    expect(api.createMcpToken).toHaveBeenCalledOnce()
+    expect(controller.transientCommand.value).toContain('secret')
+    expect(controller.connection.status.value).toBe('waiting')
+
+    controller.setAuthMode('oauth')
+    await nextTick()
+    expect(controller.transientCommand.value).toBe('')
+    expect(controller.connection.status.value).toBe('idle')
+  })
+
+  it('clears a stale error when the mode changes', async () => {
+    const copy = vi.fn(async () => { throw new Error('clipboard denied') })
+    const { controller } = createController({ authMode: 'oauth', copy })
+    await controller.copyGeneratedCommand()
+    expect(controller.setupError.value).toEqual({ kind: 'key', key: 'mcp.copyFailed', params: undefined })
+
+    controller.setAuthMode('token')
+    expect(controller.setupError.value).toBeNull()
   })
 })

@@ -150,6 +150,15 @@ MCP 与 `/api/v1` 共用同一配额池：匿名按 IP 每个固定 24 小时窗
 
 携带 `Authorization: Bearer <MCP access token>` 时额外解锁 `search_my_project_favorites`（个人收藏检索），会员还可用 `get_my_tracking`（读自己的关键词 / GitHub 项目追踪规则在近期追踪简报里的命中）。登录用户可签发最小权限、可撤销的只读 Token，支持设备标签与有效期 —— 明文仅在创建时展示一次，服务端只保存摘要。
 
+也可以不复制 Token：让支持 MCP OAuth 的客户端连 OAuth 入口。入口回 401 质询并带上 RFC 9728 资源元数据，客户端自行注册（动态客户端注册），在浏览器里打开本站授权页，登录并点「同意」后拿到只属于它的 Token。Claude Code：
+
+```bash
+claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp/oauth
+claude mcp login aigc-radar   # 较旧的 Claude Code：输入 /mcp，选 aigc-radar，再选 Authenticate
+```
+
+Codex、Cursor、VS Code、OpenCode 走同一流程，`/mcp` 页会为每个客户端生成命令。同一客户端再次授权会替换它之前的 Token。OAuth 入口绑定 `aigcnews.cn`：从备用域名访问，或客户端不支持 MCP OAuth 时，改用手动 Token。匿名的 `/api/mcp` 端点不变。
+
 **复用闭环** —— 产品赌注是"做项目的时候，AI 自动发现成熟技术，避免重复造轮子"，闭环端到端打通：确定性触发（[dsh 插件](https://github.com/Kaixxrua/dsh-aigc-radar)监听 `agent/pre-step`、Claude Code `UserPromptSubmit` hook、MCP `instructions` 本身）在 agent 动手写代码之前推它先检索；检索工具返回精选且有 Stars 门槛的项目；agent 随后写一条采纳回执（`submit_project_adoption` 或 `POST /api/projects/adoptions`），记录 adopted / reference_only / declined；回执聚合成复用率指标，见 `GET /api/projects/adoptions/stats`。完整机制、决策语义与 hook 配方：[docs/reuse-loop.md](docs/reuse-loop.md)。
 
 Context 侧提供 resources（`aigc-news://dashboard/summary`、`aigc-news://report/latest` 等）、resource templates 与 prompts（`daily_research_brief`、`project_discovery`）。完整的协议参数、MCP-first 策略与 fallback 语义见 [docs/mcp-server.md](docs/mcp-server.md)。

@@ -153,6 +153,15 @@ Public tools (no auth required; all read-only except the append-only adoption re
 
 Sending `Authorization: Bearer <MCP access token>` additionally unlocks `search_my_project_favorites` (personal favorites search) and, for members, `get_my_tracking` (what your keyword and GitHub project tracking rules matched in recent daily tracking issues). Logged-in users can mint minimal-scope, revocable read-only tokens with device labels and expiry — the plaintext token is shown only once, and the server stores only its digest.
 
+You can also skip copying a token: point an OAuth-capable client at the OAuth entry instead. It answers with a 401 challenge carrying RFC 9728 resource metadata; the client registers itself (dynamic client registration), opens this site's authorization page in your browser, and receives its own token once you sign in and click Allow. In Claude Code:
+
+```bash
+claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp/oauth
+claude mcp login aigc-radar   # older Claude Code: run /mcp, pick aigc-radar, choose Authenticate
+```
+
+Codex, Cursor, VS Code, and OpenCode run the same flow, and the `/mcp` page generates the command for each of them. Authorizing the same client again replaces its previous token. The OAuth entry is bound to `aigcnews.cn`: on the fallback domain, or for clients without MCP OAuth support, use a manual token. The anonymous `/api/mcp` endpoint is unchanged.
+
 **The reuse loop** — the product bet is "while building, the AI proactively surfaces mature technology instead of reinventing wheels", and the loop is closed end to end: deterministic triggers (a [dsh plugin](https://github.com/Kaixxrua/dsh-aigc-radar) listening on `agent/pre-step`, a Claude Code `UserPromptSubmit` hook, and the MCP `instructions` themselves) nudge the agent to search *before* writing code; the search tools answer with curated, star-gated projects; the agent files one adoption receipt (`submit_project_adoption` or `POST /api/projects/adoptions`) recording adopted / reference_only / declined; receipts aggregate into a reuse-rate metric at `GET /api/projects/adoptions/stats`. Full mechanics, decision semantics, and hook recipes: [docs/reuse-loop.md](docs/reuse-loop.md).
 
 On the context side, it provides resources (`aigc-news://dashboard/summary`, `aigc-news://report/latest`, etc.), resource templates, and prompts (`daily_research_brief`, `project_discovery`). For full protocol parameters, the MCP-first policy, and fallback semantics, see [docs/mcp-server.md](docs/mcp-server.md).

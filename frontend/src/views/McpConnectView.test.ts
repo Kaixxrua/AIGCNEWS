@@ -47,6 +47,8 @@ vi.mock('@/composables/useLoginPrompt', () => ({
 vi.mock('@/composables/useMcpConnectController', async () => {
   const { ref } = await import('vue')
   ctlBox.current = {
+    authMode: ref('token'),
+    authModeFor: vi.fn(() => 'token'),
     clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
     clientLabel: ref(''),
     clientOption: ref({ id: 'claude-code', label: 'Claude Code', format: 'claude-cli', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
@@ -81,11 +83,13 @@ vi.mock('@/composables/useMcpConnectController', async () => {
     loadTokens: vi.fn(),
     loadingTokens: ref(false),
     normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
+    oauthCommand: ref(''),
     quickCommand: ref(''),
     removeToken: vi.fn(),
     requestLogin: vi.fn(),
     selectedClient: ref('claude-code'),
     selectedShell: ref('bash'),
+    setAuthMode: vi.fn(),
     setupError: ref(null),
     setupNotice: ref(null),
     startSetup: vi.fn(),
@@ -201,6 +205,8 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  controller().authMode.value = 'token'
+  controller().oauthCommand.value = ''
   controller().clientLabel.value = ''
   controller().copiedKey.value = ''
   controller().creating.value = false
@@ -529,5 +535,16 @@ describe('McpConnectView on desktop', () => {
     await flushPromises()
     expect(wrapper.find('.mcp-desk-side [data-connection="connected"]').exists()).toBe(true)
     expect(wrapper.html()).not.toContain('SECRET-TOKEN-VALUE')
+  })
+
+  it('shows the browser-authorization command when the controller is in OAuth mode', async () => {
+    controller().authMode.value = 'oauth'
+    controller().oauthCommand.value = "claude mcp add --scope user --transport http aigc-news 'https://aigcnews.cn/api/mcp/oauth' && claude mcp login aigc-news"
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.mcp-desk-side--oauth').exists()).toBe(true)
+    expect(wrapper.get('.command-preview-term').text()).toContain('https://aigcnews.cn/api/mcp/oauth')
+    expect(wrapper.find('.command-slot').exists()).toBe(false)
+    expect(controller().startSetup).not.toHaveBeenCalled()
   })
 })

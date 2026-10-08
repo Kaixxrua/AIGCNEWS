@@ -19,15 +19,18 @@ const props = defineProps<{
   swapKey: string
   /** 1：往右边的标签切，新命令从右边滑入；-1：往左。 */
   direction: number
+  /** 编码脚本占位的说明，默认「编码脚本 · 含 Token」；命令里没有 Token 时（浏览器授权版）换掉。 */
+  encodedLabel?: string
 }>()
 
 const { t } = useI18n()
 const segments = computed(() => splitCommandPreview(props.command))
 const slotLabel = computed(() => t(props.filled ? 'mcp.desk.tokenFilled' : 'mcp.desk.tokenSlot'))
+const encodedText = computed(() => props.encodedLabel ?? t('mcp.desk.encodedSlot'))
 </script>
 
 <template>
   <div v-morph="swapKey" class="command-preview">
-    <pre v-swap="{ key: swapKey, x: direction * 16, y: 0 }" class="command-preview-term"><code><template v-for="(segment, index) in segments" :key="index"><span v-if="segment.kind === 'token'" class="command-slot" :class="{ 'command-slot--filled': filled }"><RollText :value="slotLabel" /></span><span v-else-if="segment.kind === 'encoded'" class="command-slot command-slot--encoded">{{ t('mcp.desk.encodedSlot') }}</span><template v-else>{{ segment.text }}</template></template></code></pre>
+    <pre v-swap="{ key: swapKey, x: direction * 16, y: 0 }" class="command-preview-term"><code><template v-for="(segment, index) in segments" :key="index"><span v-if="segment.kind === 'token'" class="command-slot" :class="{ 'command-slot--filled': filled }"><RollText :value="slotLabel" /></span><span v-else-if="segment.kind === 'encoded'" class="command-slot command-slot--encoded">{{ encodedText }}</span><template v-else>{{ segment.text }}</template></template></code></pre>
   </div>
 </template>

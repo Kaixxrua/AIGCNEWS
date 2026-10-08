@@ -20,6 +20,9 @@ Python MCP 入站（`backend/app/services/mcp/inbound/*` 与独立进程
   Bearer token 认证（authn，SQL 与 Python 仓储逐字同义）、无状态分派
   （mcpapp：initialize/通知/未知方法/tools/call、resources、prompts）；非 POST 405、
   panic → 500 纯文本均按 Starlette 口径复刻
+- ✅ `/api/mcp/oauth` OAuth 入口（`mcpapp.OAuthEntry`）：与 `/api/mcp` 共用 App、认证器、
+  限流器与用量记录，只是不收匿名请求；401 质询带 RFC 9728 `resource_metadata`，
+  授权服务器在 Python 主后端（流程见 `docs/mcp-server.md`「浏览器授权（OAuth）」）
 - ✅ Redis 固定窗口限流：分钟突发桶 + tools/call 分层配额、TTL 自愈、
   Redis 故障 fail-open、可信代理 XFF 首跳归因；限流缝严格位于解析之后、
   分派之前，429 JSON-RPC 投影与 Python 逐字节一致
