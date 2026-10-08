@@ -205,14 +205,17 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 
 	return Identity{
 		UserID:              row.UserID,
-		Email:               row.Email,
-		Role:                row.Role,
+		Email:               stringOrEmpty(row.Email),
+		Role:                stringOrEmpty(row.Role),
 		MembershipTier:      row.MembershipTier,
 		MembershipExpiresAt: row.MembershipExpiresAt,
 		Scopes:              scopes,
 	}, true, nil
 }
 
+// Email、Role 对应可空列 users.email、users.role（手机号注册的用户就没有邮箱）。扫进 string 时
+// pgx 遇到 NULL 会报错，有效令牌就成了 500；所以用 *string 接，NULL 读成空串：Role 只用来判断是不是
+// admin，Email 没有下游消费方。
 type tokenRow struct {
 	TokenID             int
 	UserID              int
@@ -220,8 +223,8 @@ type tokenRow struct {
 	ExpiresAt           any
 	RevokedAt           any
 	DeletedAt           any
-	Email               string
-	Role                string
+	Email               *string
+	Role                *string
 	MembershipTier      string
 	MembershipExpiresAt *time.Time
 }
@@ -243,6 +246,13 @@ const lastUsedSQL = `
                         UPDATE user_mcp_tokens SET last_used_at = CURRENT_TIMESTAMP
                         WHERE id = $1
                           AND (last_used_at IS NULL OR last_used_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')`
+
+func stringOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
 
 // decodeScopes 对齐 OptionalMcpUser 的 isinstance(list) + 全 str 校验：
 // scopes_json 非数组、元素非字符串、或 JSON 非法/为 null 均属权限无效。

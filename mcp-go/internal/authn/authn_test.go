@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type fakeDB struct {
@@ -63,6 +64,8 @@ func (t *fakeTx) Commit(context.Context) error {
 
 func (t *fakeTx) Rollback(context.Context) error { t.rolledBack = true; return nil }
 
+// fakeRow 的 nil 表示 SQL NULL，照 pgx 的规则处理：扫进 *string 报错，扫进指针得 nil
+// （见 TestFakeRowNullRulesMatchPgx）。
 type fakeRow struct {
 	values []any
 	err    error
@@ -77,7 +80,17 @@ func (r fakeRow) Scan(dest ...any) error {
 		case *int:
 			*d = value.(int)
 		case *string:
+			if value == nil {
+				return errors.New("can't scan NULL into *string")
+			}
 			*d = value.(string)
+		case **string:
+			if value == nil {
+				*d = nil
+			} else {
+				v := value.(string)
+				*d = &v
+			}
 		case **time.Time:
 			if value == nil {
 				*d = nil
@@ -174,6 +187,40 @@ func TestAuthenticateLookupAndConditionalTouch(t *testing.T) {
 	}
 	if len(tx.updateArgs) != 1 || tx.updateArgs[0] != 7 {
 		t.Fatalf("last_used update args = %v, want token id 7", tx.updateArgs)
+	}
+}
+
+func TestFakeRowNullRulesMatchPgx(t *testing.T) {
+	types := pgtype.NewMap()
+	var plain string
+	if err := types.Scan(pgtype.TextOID, pgtype.TextFormatCode, nil, &plain); err == nil {
+		t.Fatal("pgx scanned NULL into *string; fakeRow's NULL rule is out of date")
+	}
+	if err := (fakeRow{values: []any{nil}}).Scan(&plain); err == nil {
+		t.Fatal("fakeRow scanned NULL into *string")
+	}
+	pointer := new(string)
+	if err := types.Scan(pgtype.TextOID, pgtype.TextFormatCode, nil, &pointer); err != nil || pointer != nil {
+		t.Fatalf("pgx NULL into **string: pointer=%v err=%v", pointer, err)
+	}
+	pointer = new(string)
+	if err := (fakeRow{values: []any{nil}}).Scan(&pointer); err != nil || pointer != nil {
+		t.Fatalf("fakeRow NULL into **string: pointer=%v err=%v", pointer, err)
+	}
+}
+
+// 手机号注册的用户 email 为 NULL，role 列也可空：令牌照常可用，按空串处理（不是 admin）。
+func TestAuthenticateNullUserColumns(t *testing.T) {
+	tx := &fakeTx{row: fakeRow{values: []any{7, 42, `["projects:favorites:read"]`, nil, nil, nil, nil, nil, "member", nil}}}
+	identity, authenticated, response := authenticator(tx).Authenticate(context.Background(), "Bearer secret")
+	if response != nil || !authenticated {
+		t.Fatalf("authenticated=%v response=%+v", authenticated, response)
+	}
+	if identity.UserID != 42 || identity.Email != "" || identity.Role != "" || identity.MembershipTier != "member" {
+		t.Fatalf("bad identity: %+v", identity)
+	}
+	if !tx.committed || tx.rolledBack || len(tx.updateArgs) != 1 || tx.updateArgs[0] != 7 {
+		t.Fatalf("token use not recorded and committed: %+v", tx)
 	}
 }
 
