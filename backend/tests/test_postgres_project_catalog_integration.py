@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 from datetime import date, datetime, tzinfo
@@ -535,3 +536,41 @@ def test_real_popularity_map_sums_window_growth(catalog: Any) -> None:
     assert popularity["acme/beta"] == (12, 800)
     assert popularity["acme/draft"][0] == 0
     assert "missing/repo" not in popularity
+
+
+def test_recommended_membership_is_applied_before_candidate_limits(catalog: Any) -> None:
+    try:
+        with catalog._database.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, url, description, stars)
+                SELECT 'scope-audit/' || n, 'scope-audit/' || n, 'scopeaudit',
+                       'https://github.com/scope-audit/' || n, 'scopeaudit', 100000 - n
+                FROM generate_series(1, 161) n
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, description_zh, tags_json, source_fingerprint, prompt_version, status, enriched_at, updated_at)
+                SELECT repo_id, 'agents_automation', 'Agents', 'scopeaudit', '[]', repeat('a',64), 'test', 'succeeded', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM github_repo_candidates WHERE repo_id LIKE 'scope-audit/%%'
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_recommendations (repo_id, active, recommended_by_user_id)
+                VALUES ('scope-audit/161', TRUE, 7), ('scope-audit/160', FALSE, 7)
+            """)
+        assert 'scope-audit/161' not in catalog.find_lexical_candidate_repo_ids(q='scopeaudit', limit=150)
+        assert catalog.find_lexical_candidate_repo_ids(q='scopeaudit', scope='recommended', limit=150) == ['scope-audit/161']
+        plan = build_project_lexical_retrieval_plan(build_project_search_intent('scopeaudit'))
+        lanes = catalog.find_lexical_candidate_lanes(q=plan, scope='recommended')
+        assert [item.repo_id for item in lanes.strict] == ['scope-audit/161']
+        assert [item.repo_id for item in lanes.relaxed] == ['scope-audit/161']
+        from backend.app.services import project_discovery
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(project_discovery.settings, "project_ai_search_strategy", "v2")
+            patch.setattr(project_discovery.settings, "project_semantic_search_enabled", False)
+            patch.setattr(project_discovery.settings, "project_reranker_enabled", False)
+            result = asyncio.run(project_discovery.search_projects(
+                query="scopeaudit", mode="ai", scope="recommended", repository_factory=lambda: catalog,
+            ))
+        assert result["total"] == 1
+        assert result["items"][0]["full_name"] == "scope-audit/161"
+    finally:
+        with catalog._database.transaction() as connection:
+            connection.execute("DELETE FROM github_repo_candidates WHERE repo_id LIKE 'scope-audit/%%'")

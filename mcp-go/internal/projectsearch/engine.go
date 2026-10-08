@@ -31,15 +31,15 @@ type EngineConfig struct {
 }
 
 type LexicalCandidateSearchInput struct {
-	Q, Category, Subcategory, Language, Tag string
-	MinStars, Limit                         int
-	EnrichedOnly                            bool
+	Q, Scope, Category, Subcategory, Language, Tag string
+	MinStars, Limit                                int
+	EnrichedOnly                                   bool
 }
 type LexicalLaneSearchInput struct {
-	Plan                                projectsem.LexicalRetrievalPlan
-	Category, Subcategory, Language     string
-	MinStars, StrictLimit, RelaxedLimit int
-	EnrichedOnly                        bool
+	Plan                                   projectsem.LexicalRetrievalPlan
+	Scope, Category, Subcategory, Language string
+	MinStars, StrictLimit, RelaxedLimit    int
+	EnrichedOnly                           bool
 }
 type ListProjectsInput struct {
 	Source, Scope, Category, Subcategory, Q, Language, Sort string
@@ -208,7 +208,7 @@ func (e *Engine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, 
 	var lanes projectsem.LexicalCandidateLanes
 	if hybrid {
 		if strategy == "v2" {
-			lanes, err = e.catalog.FindLexicalCandidateLanes(LexicalLaneSearchInput{Plan: r.plan, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, StrictLimit: 150, RelaxedLimit: 150, EnrichedOnly: true})
+			lanes, err = e.catalog.FindLexicalCandidateLanes(LexicalLaneSearchInput{Plan: r.plan, Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, StrictLimit: 150, RelaxedLimit: 150, EnrichedOnly: true})
 			if err != nil {
 				slog.Warn("projectsearch lexical lanes failed", "err", err)
 				lanes = projectsem.LexicalCandidateLanes{}
@@ -219,7 +219,7 @@ func (e *Engine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, 
 			}
 		} else {
 			var lexical []string
-			lexical, err = e.catalog.FindLexicalCandidateRepoIDs(LexicalCandidateSearchInput{Q: r.lexicalQuery, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, Limit: 150, EnrichedOnly: true})
+			lexical, err = e.catalog.FindLexicalCandidateRepoIDs(LexicalCandidateSearchInput{Q: r.lexicalQuery, Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, Limit: 150, EnrichedOnly: true})
 			if err != nil {
 				slog.Warn("projectsearch lexical search failed", "err", err)
 				lexical = nil

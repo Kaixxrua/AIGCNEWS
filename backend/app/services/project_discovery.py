@@ -273,6 +273,7 @@ async def _retrieve_hybrid_candidates(
     lexical_task = asyncio.to_thread(
         lexical_search,
         q=request.lexical_plan if use_lanes else request.lexical_query,
+        scope=request.scope,
         category=request.category,
         subcategory=request.subcategory,
         language=request.language,
@@ -455,6 +456,7 @@ def _submit_shadow_comparison(
 
     lane_arguments = {
         "q": request.lexical_plan,
+        "scope": request.scope,
         "category": request.category,
         "subcategory": request.subcategory,
         "language": request.language,
