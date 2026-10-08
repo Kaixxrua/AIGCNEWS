@@ -415,34 +415,34 @@ func projectConceptMatches(value string, maxConcepts int) []conceptMatch {
 	return selected
 }
 
-// projectLiteralTerms 复刻 _project_literal_terms：covered 区间取
-// (start, start+len(选中文本))（注意是选中文本的码点长，不是 folded 区间长）；
-// finditer 在**原串**上进行；剔 HAN 词、概念覆盖区间（start<stop && end>begin）、
-// transport 词（casefold 比对）。
+// projectLiteralTerms preserves literal Han names outside recognized concepts.
 func projectLiteralTerms(value string, matches []conceptMatch) []tokenSpan {
-	covered := make([][2]int, 0, len(matches))
+	uncovered := []rune(value)
 	for _, m := range matches {
-		covered = append(covered, [2]int{m.start, m.start + utf8.RuneCountInString(m.text)})
+		end := min(m.start+utf8.RuneCountInString(m.text), len(uncovered))
+		for i := m.start; i < end; i++ {
+			uncovered[i] = ' '
+		}
 	}
-	terms := []tokenSpan{}
 	for _, tok := range technicalTokenSpans(value) {
 		if containsHan(tok.text) {
 			continue
 		}
-		overlap := false
-		for _, iv := range covered {
-			if tok.start < iv[1] && tok.end > iv[0] {
-				overlap = true
+		for _, m := range matches {
+			if tok.start < m.start+utf8.RuneCountInString(m.text) && tok.end > m.start {
+				for i := tok.start; i < tok.end; i++ {
+					uncovered[i] = ' '
+				}
 				break
 			}
 		}
-		if overlap {
-			continue
+	}
+	fillers := map[string]bool{"学习": true, "提升": true, "的": true, "和": true, "与": true, "及": true, "以及": true, "的项目": true, "的仓库": true, "的工具": true}
+	terms := []tokenSpan{}
+	for _, tok := range technicalTokenSpans(string(uncovered)) {
+		if !projectTransportTerms[fold(tok.text)] && !fillers[tok.text] {
+			terms = append(terms, tok)
 		}
-		if projectTransportTerms[fold(tok.text)] {
-			continue
-		}
-		terms = append(terms, tok)
 	}
 	return terms
 }

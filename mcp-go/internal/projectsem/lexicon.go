@@ -42,7 +42,7 @@ var projectConceptLexicon = []conceptSpec{
 	{
 		conceptID: "workflow",
 		phrases:   []string{"智能体工作流", "工作流", "agent workflow", "workflow", "workflows"},
-		aliases:   []string{"workflow automation", "agent workflow", "工作流", "智能体工作流"},
+		aliases:   []string{"workflow automation", "agent workflow", "workflow", "workflows", "工作流", "智能体工作流"},
 	},
 	{
 		conceptID: "rag",
@@ -57,7 +57,7 @@ var projectConceptLexicon = []conceptSpec{
 	{
 		conceptID: "learning",
 		phrases:   []string{"入门教程", "教程", "入门", "tutorial", "tutorials"},
-		aliases:   []string{"tutorial", "learning"},
+		aliases:   []string{"tutorial", "learning", "tutorials"},
 	},
 	{
 		conceptID: "agent",
@@ -67,12 +67,12 @@ var projectConceptLexicon = []conceptSpec{
 	{
 		conceptID: "llm",
 		phrases:   []string{"大语言模型", "大模型", "large language model", "llms", "llm"},
-		aliases:   []string{"large language model", "llm", "大模型", "大语言模型"},
+		aliases:   []string{"large language model", "llm", "llms", "大模型", "大语言模型"},
 	},
 	{
 		conceptID: "prompt_engineering",
 		phrases:   []string{"提示词", "提示工程", "prompt engineering", "prompt management", "prompts", "prompt"},
-		aliases:   []string{"prompt engineering", "prompt management", "prompt", "提示词", "提示工程"},
+		aliases:   []string{"prompt engineering", "prompt management", "prompt", "prompts", "提示词", "提示工程"},
 	},
 	{
 		conceptID: "llm_evaluation",
@@ -187,7 +187,7 @@ var projectConceptLexicon = []conceptSpec{
 	{
 		conceptID: "screenshot",
 		phrases:   []string{"屏幕截图", "截图", "抓图", "screenshots", "screenshot", "screen capture", "screen shot", "snip"},
-		aliases:   []string{"screenshot", "screen capture", "screen shot", "snipping", "截图", "抓图"},
+		aliases:   []string{"screenshot", "screenshots", "screen capture", "screen shot", "snipping", "截图", "抓图"},
 	},
 	{
 		conceptID: "screen_recording",

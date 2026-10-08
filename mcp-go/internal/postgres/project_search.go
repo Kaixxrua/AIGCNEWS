@@ -148,6 +148,9 @@ func (r *ProjectSearchRepository) FindLexicalCandidateRepoIDs(input projectsearc
 	if input.EnrichedOnly {
 		filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter)
 	}
+	if input.Scope == "recommended" {
+		filters = append(filters, "EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
+	}
 	if input.Category != "" {
 		filters = append(filters, "ge.category_slug = %s")
 		params = append(params, input.Category)
@@ -255,6 +258,9 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 	filterParams := []any{minStars}
 	if input.EnrichedOnly {
 		filters = append(filters, "ge.status = 'succeeded'", ghQuarantineFilter)
+	}
+	if input.Scope == "recommended" {
+		filters = append(filters, "EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
 	}
 	if input.Category != "" {
 		filters = append(filters, "ge.category_slug = %s")

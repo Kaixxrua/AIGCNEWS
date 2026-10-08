@@ -250,11 +250,16 @@ func clipped(value any, limit int) string {
 // 输入返回空列表；每条 clipped(40)，丢空、去重（保持先现序）、最多 4 条。
 // 返回非 nil 切片：空结果编码为 [] 而非 null。
 func boundedStrings(value any) []any {
-	list, ok := value.([]any)
-	items := make([]any, 0, 4)
-	if !ok {
-		return items
+	var list []any
+	switch values := value.(type) {
+	case []any:
+		list = values
+	case []string:
+		for _, item := range values {
+			list = append(list, item)
+		}
 	}
+	items := make([]any, 0, 4)
 	seen := make(map[string]bool, 4)
 	for _, raw := range list {
 		item := clipped(raw, 40)

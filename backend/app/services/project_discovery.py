@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from backend.app.core.config import settings
@@ -193,6 +193,7 @@ class _ProjectSearchRequest:
     client_intent_used: bool
     lexical_query: str
     lexical_plan: ProjectLexicalRetrievalPlan
+    user_id: int | None = None
 
 
 def _normalize_search_request(
@@ -273,6 +274,7 @@ async def _retrieve_hybrid_candidates(
     lexical_task = asyncio.to_thread(
         lexical_search,
         q=request.lexical_plan if use_lanes else request.lexical_query,
+        scope=request.scope,
         category=request.category,
         subcategory=request.subcategory,
         language=request.language,
@@ -455,6 +457,7 @@ def _submit_shadow_comparison(
 
     lane_arguments = {
         "q": request.lexical_plan,
+        "scope": request.scope,
         "category": request.category,
         "subcategory": request.subcategory,
         "language": request.language,
@@ -502,7 +505,7 @@ async def _list_candidate_page(
         sort="relevance",
         min_stars=request.min_stars,
         enriched_only=True,
-        user_id=None,
+        user_id=request.user_id,
         candidate_repo_ids=candidate_repo_ids,
     )
 
@@ -654,7 +657,7 @@ async def _list_plain_page(repository: Any, request: _ProjectSearchRequest) -> d
         sort=request.effective_sort,
         min_stars=request.min_stars,
         enriched_only=True,
-        user_id=None,
+        user_id=request.user_id,
     )
 
 
@@ -721,7 +724,7 @@ async def _semantic_zero_result_retry(
             sort=request.effective_sort,
             min_stars=request.min_stars,
             enriched_only=True,
-            user_id=None,
+            user_id=request.user_id,
             candidate_repo_ids=candidate_repo_ids,
         )
         semantic_total = int(semantic_result.get("total") or 0)
@@ -785,7 +788,7 @@ async def _run_github_fallback(
         }
 
     fallback_items = [public_project_item(item) for item in fallback.get("items") or []]
-    return {
+    result = {
         **base,
         "items": fallback_items,
         "total": len(fallback_items),
@@ -798,6 +801,74 @@ async def _run_github_fallback(
         "fallback_queries": fallback.get("queries") or [],
         "fallback_cache_hit": bool(fallback.get("cache_hit")),
     }
+    if fallback.get("error"):
+        for key in ("items", "total", "has_next", "result_origin"):
+            result[key] = base[key]
+    return result
+
+
+async def _search_local_page(
+    request: _ProjectSearchRequest,
+    repository: Any,
+    *,
+    semantic_search_factory: Any | None,
+    reranker_factory: Any | None,
+    shadow_manager_factory: Any | None,
+) -> tuple[dict[str, Any], bool, bool]:
+    """Shared candidate/ranking pipeline; presentation and fallback stay at the edge."""
+    strategy = _resolve_strategy()
+    lexical_candidate_search = _declared_callable(
+        repository,
+        "find_lexical_candidate_repo_ids",
+    )
+    hybrid_attempted = bool(
+        request.query
+        and request.effective_sort == "relevance"
+        and callable(lexical_candidate_search)
+    )
+    strict_lexical_empty = False
+    if hybrid_attempted:
+        result, strict_lexical_empty = await _hybrid_search(
+            request,
+            repository,
+            strategy=strategy,
+            semantic_search_factory=semantic_search_factory,
+            reranker_factory=reranker_factory,
+            shadow_manager_factory=shadow_manager_factory,
+        )
+    else:
+        result = await _list_plain_page(repository, request)
+    return result, strict_lexical_empty, hybrid_attempted
+
+
+async def search_catalog_projects(
+    *,
+    query: str,
+    scope: str = "all",
+    category: str = "",
+    subcategory: str = "",
+    language: str = "",
+    sort: str | None = None,
+    page: int = 1,
+    page_size: int = 24,
+    user_id: int | None = None,
+    repository_factory: Any = get_project_catalog_repository,
+    semantic_search_factory: Any | None = None,
+    reranker_factory: Any | None = None,
+    shadow_manager_factory: Any | None = None,
+) -> dict[str, Any]:
+    """Local catalog search with full rows, favorites and REST pagination intact."""
+    request = _normalize_search_request(
+        query=query, mode="ai", language=language, client_intent=None,
+        category=category, subcategory=subcategory, scope=scope, sort=sort,
+        page=page, limit=page_size,
+    )
+    request = replace(request, limit=max(1, min(int(page_size), 60)), user_id=user_id)
+    result, _, _ = await _search_local_page(
+        request, repository_factory(), semantic_search_factory=semantic_search_factory,
+        reranker_factory=reranker_factory, shadow_manager_factory=shadow_manager_factory,
+    )
+    return {**result, "page": request.page, "page_size": request.limit}
 
 
 async def search_projects(
@@ -835,28 +906,10 @@ async def search_projects(
         if repository_factory is not None
         else get_project_catalog_repository()
     )
-    strategy = _resolve_strategy()
-    lexical_candidate_search = _declared_callable(
-        repository,
-        "find_lexical_candidate_repo_ids",
+    result, strict_lexical_empty, hybrid_attempted = await _search_local_page(
+        request, repository, semantic_search_factory=semantic_search_factory,
+        reranker_factory=reranker_factory, shadow_manager_factory=shadow_manager_factory,
     )
-    hybrid_attempted = bool(
-        request.query
-        and request.effective_sort == "relevance"
-        and callable(lexical_candidate_search)
-    )
-    strict_lexical_empty = False
-    if hybrid_attempted:
-        result, strict_lexical_empty = await _hybrid_search(
-            request,
-            repository,
-            strategy=strategy,
-            semantic_search_factory=semantic_search_factory,
-            reranker_factory=reranker_factory,
-            shadow_manager_factory=shadow_manager_factory,
-        )
-    else:
-        result = await _list_plain_page(repository, request)
     base = _assemble_base_response(request, result)
     skip_reason = _github_fallback_skip_reason(request)
     # generic 低相关护栏：strict 词法 lane 全空 = 本地精选库没有任何项目

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 from datetime import date, datetime, tzinfo
@@ -535,3 +536,99 @@ def test_real_popularity_map_sums_window_growth(catalog: Any) -> None:
     assert popularity["acme/beta"] == (12, 800)
     assert popularity["acme/draft"][0] == 0
     assert "missing/repo" not in popularity
+
+
+def test_recommended_membership_is_applied_before_candidate_limits(catalog: Any) -> None:
+    try:
+        with catalog._database.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, url, description, stars)
+                SELECT 'scope-audit/' || n, 'scope-audit/' || n, 'scopeaudit',
+                       'https://github.com/scope-audit/' || n, 'scopeaudit', 100000 - n
+                FROM generate_series(1, 161) n
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, description_zh, tags_json, source_fingerprint, prompt_version, status, enriched_at, updated_at)
+                SELECT repo_id, 'agents_automation', 'Agents', 'scopeaudit', '[]', repeat('a',64), 'test', 'succeeded', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP FROM github_repo_candidates WHERE repo_id LIKE 'scope-audit/%%'
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_recommendations (repo_id, active, recommended_by_user_id)
+                VALUES ('scope-audit/161', TRUE, 7), ('scope-audit/160', FALSE, 7)
+            """)
+        assert 'scope-audit/161' not in catalog.find_lexical_candidate_repo_ids(q='scopeaudit', limit=150)
+        assert catalog.find_lexical_candidate_repo_ids(q='scopeaudit', scope='recommended', limit=150) == ['scope-audit/161']
+        plan = build_project_lexical_retrieval_plan(build_project_search_intent('scopeaudit'))
+        lanes = catalog.find_lexical_candidate_lanes(q=plan, scope='recommended')
+        assert [item.repo_id for item in lanes.strict] == ['scope-audit/161']
+        assert [item.repo_id for item in lanes.relaxed] == ['scope-audit/161']
+        from backend.app.services import project_discovery
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(project_discovery.settings, "project_ai_search_strategy", "v2")
+            patch.setattr(project_discovery.settings, "project_semantic_search_enabled", False)
+            patch.setattr(project_discovery.settings, "project_reranker_enabled", False)
+            result = asyncio.run(project_discovery.search_projects(
+                query="scopeaudit", mode="ai", scope="recommended", repository_factory=lambda: catalog,
+            ))
+        assert result["total"] == 1
+        assert result["items"][0]["full_name"] == "scope-audit/161"
+    finally:
+        with catalog._database.transaction() as connection:
+            connection.execute("DELETE FROM github_repo_candidates WHERE repo_id LIKE 'scope-audit/%%'")
+
+
+def test_rest_quick_search_and_mcp_share_recall_without_losing_catalog_fields(catalog: Any, monkeypatch) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.app.api import routes_github_projects
+    from backend.app.api.dependencies import get_project_catalog_query_service
+    from backend.app.core.auth import OptionalUser
+    from backend.app.services import project_discovery
+    from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
+    from backend.app.services.search.quick_search import _projects
+
+    monkeypatch.setattr(project_discovery.settings, "project_ai_search_strategy", "v2")
+    monkeypatch.setattr(project_discovery.settings, "project_semantic_search_enabled", False)
+    monkeypatch.setattr(project_discovery.settings, "project_reranker_enabled", False)
+    service = ProjectCatalogQueryService(repository_factory=lambda: catalog)
+    app = FastAPI()
+    app.include_router(routes_github_projects.router, prefix="/api")
+    app.dependency_overrides[get_project_catalog_query_service] = lambda: service
+    app.dependency_overrides[OptionalUser] = lambda: {"user_id": 42}
+    try:
+        with catalog._database.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, url, description, stars)
+                SELECT 'recall-audit/memory-' || n, 'recall-audit/memory-' || n, 'Memory',
+                       'https://github.com/recall-audit/memory-' || n,
+                       'Universal long-term memory for AI Agents', 10000-n
+                FROM generate_series(1, 30) n
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_enrichments (repo_id, category_slug, category_name, description_zh, tags_json, source_fingerprint, prompt_version, status)
+                SELECT repo_id, 'agents_automation', 'Agents', '', '["memory"]', repeat('a',64), 'test', 'succeeded'
+                FROM github_repo_candidates WHERE repo_id LIKE 'recall-audit/%%'
+            """)
+            connection.execute("INSERT INTO project_favorites (user_id, project_source, project_id) VALUES (42, 'github', 'recall-audit/memory-1')")
+        client = TestClient(app)
+        params = {"q": "智能体长期记忆", "page_size": 24}
+        response = client.get("/api/projects", params=params)
+        assert response.status_code == 200, response.text
+        first = response.json()
+        assert first["total"] == 30
+        assert len(first["items"]) == 24
+        assert first["items"][0]["is_favorited"] is True
+        assert first["items"][0]["tags"] == ["memory"]
+        second = client.get("/api/projects", params={**params, "page": 2}).json()
+        assert len(second["items"]) == 6
+        assert not {item["id"] for item in first["items"]} & {item["id"] for item in second["items"]}
+        large = client.get("/api/projects", params={**params, "page_size": 60}).json()
+        assert large["page_size"] == 60 and len(large["items"]) == 30
+        mcp = asyncio.run(project_discovery.search_projects(query=params["q"], mode="ai", limit=20, repository_factory=lambda: catalog))
+        assert [item["full_name"] for item in mcp["items"]] == [item["full_name"] for item in first["items"][:20]]
+        quick = asyncio.run(_projects(service, params["q"], 5))
+        assert quick["total"] == 30 and len(quick["items"]) == 5
+    finally:
+        with catalog._database.transaction() as connection:
+            connection.execute("DELETE FROM project_favorites WHERE project_id LIKE 'recall-audit/%%'")
+            connection.execute("DELETE FROM github_repo_candidates WHERE repo_id LIKE 'recall-audit/%%'")

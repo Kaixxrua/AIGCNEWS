@@ -80,6 +80,22 @@ def test_runtime_owned_options_cannot_be_overridden_by_callers() -> None:
     assert search.await_args.kwargs["fallback_search"] is fallback_search
 
 
+def test_catalog_and_mcp_share_runtime_resources() -> None:
+    semantic = MagicMock()
+    runtime = ApplicationProjectSearchRuntime(
+        config=_config(), semantic_search_factory=MagicMock(return_value=semantic),
+    )
+    with patch("backend.app.services.project_search_runtime.search_catalog_projects", new=AsyncMock(return_value={})) as catalog_search:
+        asyncio.run(runtime.search_catalog_projects(query="智能体长期记忆", page_size=60, user_id=42))
+    with patch("backend.app.services.project_search_runtime.search_projects", new=AsyncMock(return_value={})) as mcp_search:
+        asyncio.run(runtime.search_projects(query="智能体长期记忆"))
+    assert catalog_search.await_args.kwargs["page_size"] == 60
+    assert catalog_search.await_args.kwargs["user_id"] == 42
+    assert catalog_search.await_args.kwargs["semantic_search_factory"]() is semantic
+    assert mcp_search.await_args.kwargs["semantic_search_factory"]() is semantic
+    runtime._semantic_search_factory.assert_called_once()
+
+
 def test_semantic_warmup_is_lazy_disabled_and_retryable() -> None:
     disabled_factory = MagicMock()
     disabled = ApplicationProjectSearchRuntime(

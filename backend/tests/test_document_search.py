@@ -67,7 +67,7 @@ class PaperRouteTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.repository.search_documents.assert_called_once_with("Agent", 100)
+        self.repository.search_documents.assert_called_once_with("Agent", 100, source="arxiv")
         payload = response.json()
         self.assertEqual(payload["q"], "Agent")
         self.assertEqual(payload["total"], 1)

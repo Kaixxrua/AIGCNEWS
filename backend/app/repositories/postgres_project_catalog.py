@@ -539,6 +539,7 @@ class PostgresProjectCatalogRepository:
         self,
         *,
         q: str,
+        scope: str = "all",
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -559,6 +560,9 @@ class PostgresProjectCatalogRepository:
             "ga.alias_repo_id IS NULL",
         ]
         params: list[Any] = [] if enriched_only else [min_stars]
+        # Filter membership before either bounded candidate lane is truncated.
+        if scope == "recommended":
+            filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
         if category:
             filters.append("ge.category_slug = %s"); params.append(category)
         if subcategory:
@@ -630,6 +634,7 @@ class PostgresProjectCatalogRepository:
         self,
         *,
         q: str | ProjectLexicalRetrievalPlan,
+        scope: str = "all",
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -666,6 +671,9 @@ class PostgresProjectCatalogRepository:
             else f"COALESCE(c.stars, 0) >= %s AND {_GH_CANONICAL_ALIAS_FILTER}"
         ]
         filter_params: list[Any] = [] if enriched_only else [min_stars]
+        # Filter membership before either bounded candidate lane is truncated.
+        if scope == "recommended":
+            filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
         if category:
             filters.append("ge.category_slug = %s")
             filter_params.append(category)

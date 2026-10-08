@@ -31,15 +31,15 @@ type EngineConfig struct {
 }
 
 type LexicalCandidateSearchInput struct {
-	Q, Category, Subcategory, Language, Tag string
-	MinStars, Limit                         int
-	EnrichedOnly                            bool
+	Q, Scope, Category, Subcategory, Language, Tag string
+	MinStars, Limit                                int
+	EnrichedOnly                                   bool
 }
 type LexicalLaneSearchInput struct {
-	Plan                                projectsem.LexicalRetrievalPlan
-	Category, Subcategory, Language     string
-	MinStars, StrictLimit, RelaxedLimit int
-	EnrichedOnly                        bool
+	Plan                                   projectsem.LexicalRetrievalPlan
+	Scope, Category, Subcategory, Language string
+	MinStars, StrictLimit, RelaxedLimit    int
+	EnrichedOnly                           bool
 }
 type ListProjectsInput struct {
 	Source, Scope, Category, Subcategory, Q, Language, Sort string
@@ -208,7 +208,7 @@ func (e *Engine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, 
 	var lanes projectsem.LexicalCandidateLanes
 	if hybrid {
 		if strategy == "v2" {
-			lanes, err = e.catalog.FindLexicalCandidateLanes(LexicalLaneSearchInput{Plan: r.plan, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, StrictLimit: 150, RelaxedLimit: 150, EnrichedOnly: true})
+			lanes, err = e.catalog.FindLexicalCandidateLanes(LexicalLaneSearchInput{Plan: r.plan, Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, StrictLimit: 150, RelaxedLimit: 150, EnrichedOnly: true})
 			if err != nil {
 				slog.Warn("projectsearch lexical lanes failed", "err", err)
 				lanes = projectsem.LexicalCandidateLanes{}
@@ -219,7 +219,7 @@ func (e *Engine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, 
 			}
 		} else {
 			var lexical []string
-			lexical, err = e.catalog.FindLexicalCandidateRepoIDs(LexicalCandidateSearchInput{Q: r.lexicalQuery, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, Limit: 150, EnrichedOnly: true})
+			lexical, err = e.catalog.FindLexicalCandidateRepoIDs(LexicalCandidateSearchInput{Q: r.lexicalQuery, Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, MinStars: r.minStars, Limit: 150, EnrichedOnly: true})
 			if err != nil {
 				slog.Warn("projectsearch lexical search failed", "err", err)
 				lexical = nil
@@ -358,7 +358,7 @@ func candidatePool(l projectsem.LexicalCandidateLanes, s []string) []string {
 	return out
 }
 func (e *Engine) hydrate(r searchRequest, ids []string, page, size int) (CatalogPage, error) {
-	return e.catalog.ListProjects(ListProjectsInput{Source: "github", Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, Page: page, PageSize: size, Sort: "relevance", MinStars: r.minStars, EnrichedOnly: true, CandidateRepoIDs: ids})
+	return e.catalog.ListProjects(ListProjectsInput{Source: "github", Scope: r.scope, Category: r.category, Subcategory: r.subcategory, Language: r.language, Page: page, PageSize: size, Sort: r.effectiveSort, MinStars: r.minStars, EnrichedOnly: true, CandidateRepoIDs: ids})
 }
 
 func (e *Engine) applyReranker(r searchRequest, ids []string, initial CatalogPage) (CatalogPage, error) {
@@ -476,6 +476,14 @@ func (e *Engine) runFallback(r searchRequest, base jsonx.Object, reason string) 
 	out = setObject(out, "fallback_used", true)
 	out = setObject(out, "fallback_reason", reason)
 	out = append(out, jsonx.Pair{Key: "fallback_error", Value: result.Error}, jsonx.Pair{Key: "github_total_count", Value: result.GitHubTotalCount}, jsonx.Pair{Key: "fallback_queries", Value: result.Queries}, jsonx.Pair{Key: "fallback_cache_hit", Value: result.CacheHit})
+	if result.Error != "" {
+		for _, field := range base {
+			switch field.Key {
+			case "items", "total", "has_next", "result_origin":
+				out = setObject(out, field.Key, field.Value)
+			}
+		}
+	}
 	return out, nil
 }
 

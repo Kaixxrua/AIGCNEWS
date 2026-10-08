@@ -52,7 +52,7 @@ async def search_papers(
     if not normalized_q:
         raise HTTPException(status_code=422, detail="搜索关键词不能为空")
 
-    rows = await asyncio.to_thread(documents.search_documents, normalized_q, limit)
+    rows = await asyncio.to_thread(documents.search_documents, normalized_q, limit, source="arxiv")
     docs = [safe_document(dict(row)) for row in rows]
     enriched = [project_pdf_media_url(document, request) for document in docs]
     return {"items": enriched, "total": len(enriched), "q": normalized_q}
@@ -93,5 +93,4 @@ async def get_paper_detail(
     if row is None:
         raise HTTPException(status_code=404, detail=f"Paper {paper_id!r} not found")
     return project_pdf_media_url(safe_document(dict(row)), request)
-
 

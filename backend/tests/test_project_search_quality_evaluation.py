@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,43 @@ def test_ranking_metrics_reward_relevant_results_near_the_top() -> None:
 
     assert MODULE.precision_at_k(relevance, 3) == pytest.approx(2 / 3)
     assert MODULE.reciprocal_rank(relevance, 3) == 1.0
-    assert MODULE.ndcg_at_k(relevance, 3) == pytest.approx(0.9558305893)
+    assert MODULE.ndcg_at_k(relevance, 3) == pytest.approx(8.5 / (7 + 3 / math.log2(3) + 0.5))
     assert MODULE.success_at_k(["owner/a", "owner/b"], ["owner/b"], 1) == 0.0
     assert MODULE.success_at_k(["owner/a", "owner/b"], ["owner/b"], 2) == 1.0
     assert MODULE.recall_at_k(["owner/a", "owner/b"], ["owner/a", "owner/b", "owner/c"], 2) == pytest.approx(2 / 3)
+
+
+def test_ndcg_penalizes_a_highly_relevant_answer_below_the_cutoff() -> None:
+    assert MODULE.ndcg_at_k([1, 0, 0, 3], 3) == pytest.approx(0.1310456304)
+
+
+def test_systems_share_ideal_judgments_including_answers_neither_retrieved() -> None:
+    case = {
+        "id": "shared-qrels", "intent": "learning", "must_find": ["owner/gold"],
+        "judgments": {"owner/gold": 3, "owner/unseen": 2},
+        "systems": {
+            "legacy": {"result_ids": ["owner/weak"], "relevance": [1]},
+            "v2": {"result_ids": ["owner/gold", "owner/weak"], "relevance": [3, 1]},
+        },
+    }
+    report = MODULE.evaluate_cases({"schema_version": 1, "cases": [case]}, cutoffs=(3,))
+    ideal = 7 + 3 / math.log2(3) + 1 / 2
+    assert report["systems"]["legacy"]["ndcg@3"] == pytest.approx(1 / ideal)
+    assert report["systems"]["v2"]["ndcg@3"] == pytest.approx((7 + 1 / math.log2(3)) / ideal)
+    del case["judgments"]
+    pooled = MODULE.evaluate_cases({"schema_version": 1, "cases": [case]}, cutoffs=(3,))
+    assert pooled["systems"]["legacy"]["ndcg@3"] == pytest.approx(0.1310456304)
+    case["systems"]["v2"]["relevance"] = [3, 2]
+    with pytest.raises(ValueError, match="judgments disagree"):
+        MODULE.evaluate_cases({"schema_version": 1, "cases": [case]})
+
+
+@pytest.mark.parametrize("judgments", [[], {"owner/a": True}, {"owner/a": 4}, {"owner/a": float("nan")}])
+def test_invalid_explicit_judgments_are_rejected(judgments) -> None:
+    case = {"id": "invalid-qrels", "intent": "test", "must_find": [], "judgments": judgments,
+            "systems": {"v2": {"result_ids": [], "relevance": []}}}
+    with pytest.raises(ValueError, match="judgments"):
+        MODULE.evaluate_cases({"schema_version": 1, "cases": [case]})
 
 
 def test_quality_fixture_produces_stratified_paired_report() -> None:

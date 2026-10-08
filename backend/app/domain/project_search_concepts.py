@@ -137,7 +137,7 @@ PROJECT_CONCEPT_LEXICON = (
     ProjectConceptSpec(
         "workflow",
         ("智能体工作流", "工作流", "agent workflow", "workflow", "workflows"),
-        ("workflow automation", "agent workflow", "工作流", "智能体工作流"),
+        ("workflow automation", "agent workflow", "workflow", "workflows", "工作流", "智能体工作流"),
     ),
     ProjectConceptSpec(
         "rag",
@@ -149,11 +149,10 @@ PROJECT_CONCEPT_LEXICON = (
         ("本地部署", "自托管", "私有化部署", "self-hosted", "self hosted", "selfhost", "self hosting"),
         ("self-hosted", "self hosted", "local deployment", "自托管", "本地部署", "私有化部署"),
     ),
-    # learning 的别名被测试精确冻结（"tutorial","learning"），只扩展触发词。
     ProjectConceptSpec(
         "learning",
         ("入门教程", "教程", "入门", "tutorial", "tutorials"),
-        ("tutorial", "learning"),
+        ("tutorial", "learning", "tutorials"),
     ),
     ProjectConceptSpec(
         "agent",
@@ -164,12 +163,12 @@ PROJECT_CONCEPT_LEXICON = (
     ProjectConceptSpec(
         "llm",
         ("大语言模型", "大模型", "large language model", "llms", "llm"),
-        ("large language model", "llm", "大模型", "大语言模型"),
+        ("large language model", "llm", "llms", "大模型", "大语言模型"),
     ),
     ProjectConceptSpec(
         "prompt_engineering",
         ("提示词", "提示工程", "prompt engineering", "prompt management", "prompts", "prompt"),
-        ("prompt engineering", "prompt management", "prompt", "提示词", "提示工程"),
+        ("prompt engineering", "prompt management", "prompt", "prompts", "提示词", "提示工程"),
     ),
     ProjectConceptSpec(
         "llm_evaluation",
@@ -302,7 +301,7 @@ PROJECT_CONCEPT_LEXICON = (
     ProjectConceptSpec(
         "screenshot",
         ("屏幕截图", "截图", "抓图", "screenshots", "screenshot", "screen capture", "screen shot", "snip"),
-        ("screenshot", "screen capture", "screen shot", "snipping", "截图", "抓图"),
+        ("screenshot", "screenshots", "screen capture", "screen shot", "snipping", "截图", "抓图"),
     ),
     ProjectConceptSpec(
         "screen_recording",

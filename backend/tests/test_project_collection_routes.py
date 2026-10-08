@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -97,6 +98,20 @@ def test_canonical_query_defaults_to_relevance_and_honors_explicit_sort() -> Non
     empty_response = client.get("/api/projects?sort=relevance")
     assert empty_response.status_code == 200
     assert repository.list_projects.call_args.kwargs["sort"] == "stars"
+
+
+def test_real_catalog_dependency_uses_application_search_runtime() -> None:
+    search = AsyncMock(return_value={"items": [], "total": 0, "page": 1, "page_size": 60})
+    app = FastAPI()
+    app.include_router(routes_github_projects.router, prefix="/api")
+    app.state.project_search_runtime = SimpleNamespace(search_catalog_projects=search)
+    app.dependency_overrides[OptionalUser] = lambda: {"user_id": 42}
+    response = TestClient(app).get("/api/projects", params={"q": "智能体长期记忆", "page_size": 60})
+    assert response.status_code == 200
+    assert search.await_args.kwargs["query"] == "智能体长期记忆"
+    assert search.await_args.kwargs["page_size"] == 60
+    assert search.await_args.kwargs["user_id"] == 42
+
 
 
 @pytest.mark.parametrize(

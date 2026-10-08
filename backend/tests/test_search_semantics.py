@@ -65,7 +65,8 @@ def test_project_intent_extracts_bounded_chinese_concepts_and_aliases() -> None:
 def test_longest_chinese_phrase_wins_and_unknown_name_is_not_translated() -> None:
     intent = build_project_search_intent("星火智能体工作流")
 
-    assert intent.lexical_terms == ("智能体工作流",)
+    assert intent.lexical_terms == ("星火", "智能体工作流")
+    assert build_project_lexical_retrieval_plan(intent).strict_terms == ("星火",)
     assert intent.concept_ids == ("workflow",)
     assert intent.intent_class == "general_discovery"
     assert "星火" not in " ".join(intent.bilingual_aliases)
@@ -146,7 +147,7 @@ def test_unknown_chinese_name_does_not_fabricate_translation() -> None:
     intent = build_project_search_intent("学习 LangGraph 星火教程")
 
     assert intent.language == "mixed"
-    assert intent.semantic_queries == ("学习 LangGraph 星火教程", "学习 LangGraph 星火教程 tutorial learning")
+    assert intent.semantic_queries == ("学习 LangGraph 星火教程", "学习 LangGraph 星火教程 tutorial learning tutorials")
 
 
 def test_ascii_concept_triggers_require_word_boundaries() -> None:
