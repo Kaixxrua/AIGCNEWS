@@ -40,6 +40,7 @@ const PROFILES = [
     // 订阅页要登录，游客会被送回首页，量不到页面本身，量的是游客看到的首页加登录框（gate）；
     // 自己点开的登录弹窗从 dock 上的账号按钮打开来测（login）。
     pages: [
+      { name: 'home', path: '/', ready: '.ui-inspiration', fits: ['.ui-inspiration', 1024], fitChildren: '.dashboard-sidebar' },
       { name: 'report', path: '/report?date=2026-10-03', ready: '.report-broadsheet__item', whole: ['.report-broadsheet__item', { 1024: [0, 0], 1350: [2, 0], 1536: [2, 2], 1920: [7, 5] }], keys: true },
       { name: 'projects', path: '/projects', ready: '.project-row', whole: ['.project-row', { 1024: [2, 2], 1350: [4, 2], 1536: [5, 4], 1920: [8, 8] }], keys: true },
       { name: 'x', path: '/x', ready: '.tweet-card', whole: ['.tweet-card', { 1024: [2, 2], 1350: [3, 3], 1536: [4, 4], 1920: [6, 6] }], keys: true },
@@ -387,6 +388,16 @@ async function measure(profile, spec, [width, height], locale) {
     if (spec.fits && width >= spec.fits[1]) {
       result.notes.push(shot.fits ? '整块在首屏' : '整块不在首屏')
       if (!shot.fits) result.failures.push(`${spec.fits[0]} 没有整个落在首屏里`)
+    }
+    if (spec.fitChildren) {
+      const children = await page.evaluate(countWhole, `${spec.fitChildren} > *`)
+      const scroll = await page.locator(spec.fitChildren).evaluate((element) => ({
+        overflow: element.scrollHeight - element.clientHeight,
+        top: element.scrollTop,
+      }))
+      if (!children.total || children.count !== children.total || scroll.overflow > 1 || scroll.top !== 0) {
+        result.failures.push(`${spec.fitChildren} 首屏仅完整显示 ${children.count}/${children.total} 张卡片，溢出 ${scroll.overflow}px、已滚动 ${scroll.top}px`)
+      } else result.notes.push('侧栏全部卡片无需滚动即可完整显示')
     }
     if (spec.keys) {
       const problems = await checkKeys(page)

@@ -238,4 +238,51 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading h1 { font-size:28px; }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:44px;min-height:44px; }
 }
+
+/* Budget the sidebar against the content frame, including the shell's desktop zoom. */
+@media (min-width:1024px) {
+  .dashboard-page { container:dashboard / size; }
+  .dashboard-sidebar { --ui-showcase-min-height:0px;position:sticky;top:0;align-self:start;height:100cqh;grid-template-rows:clamp(180px,28cqh,214px) max-content max-content clamp(48px,8cqh,66px) minmax(0,1fr);gap:clamp(6px,1.2cqh,12px); }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:19px; }
+  .dashboard-sidebar :deep(.new-word span) { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden; }
+  .integration-card { display:flex;gap:6px;padding:5px 8px; }
+  .integration-card > svg { width:26px;height:26px;padding:5px; }
+  .integration-card > span { display:flex;font-size:10px; }
+  .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:19px; }
+}
+@media (min-width:1024px) and (max-height:700px) {
+  .dashboard-page { padding-block:8px; }
+}
+@container dashboard (max-height:730px) {
+  .dashboard-sidebar :deep(.new-words-card) { padding:7px 10px 9px; }
+  .dashboard-sidebar :deep(.new-words-card h2) { font-size:20px; }
+  .dashboard-sidebar :deep(.new-words-subtitle) { display:none; }
+  .dashboard-sidebar :deep(.new-words-list) { margin-top:7px;gap:7px; }
+  .dashboard-sidebar :deep(.new-word) { min-height:32px;padding:4px 7px;font-size:14px; }
+  .dashboard-sidebar :deep(.new-words-state) { margin-top:7px;min-height:20px; }
+  .dashboard-sidebar :deep(.digest-card) { padding:7px 10px; }
+  .dashboard-sidebar :deep(.digest-heading h2) { gap:5px;font-size:16px; }
+  .dashboard-sidebar :deep(.digest-heading h2 svg) { width:18px;height:18px; }
+  .dashboard-sidebar :deep(.digest-body) { margin-top:4px; }
+  .dashboard-sidebar :deep(.digest-cta) { min-height:32px;padding:3px 7px;font-size:12px; }
+}
+/* On short screens the calendar and vocabulary share a row, preserving the full preview. */
+@container dashboard (max-height:560px) {
+  .dashboard-sidebar { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);grid-template-rows:180px max-content 48px minmax(0,1fr);gap:6px; }
+  .dashboard-sidebar :deep(.dash-calendar) { grid-column:1;grid-row:1;min-width:0;padding:5px 6px; }
+  .dashboard-sidebar :deep(.dash-calendar h3) { font-size:14px;line-height:1.2; }
+  .dashboard-sidebar :deep(.dash-calendar > div:first-child) { margin-bottom:2px; }
+  .dashboard-sidebar :deep(.cal-nav) { width:24px;height:24px; }
+  .dashboard-sidebar :deep(.dash-calendar .grid > span) { font-size:11px !important;line-height:18px !important; }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { font-size:12px; }
+  .dashboard-sidebar :deep(.calendar-day--active) { width:100%;font-size:14px !important; }
+  .dashboard-sidebar :deep(.new-words-card) { grid-column:2;grid-row:1;padding:7px 6px; }
+  .dashboard-sidebar :deep(.new-words-card h2) { font-size:16px; }
+  .dashboard-sidebar :deep(.new-words-list) { grid-template-columns:minmax(0,1fr);margin:9px 1px 0;gap:9px; }
+  .dashboard-sidebar :deep(.new-word) { width:100%;gap:3px;padding:5px;font-size:13px;transform:none; }
+  .dashboard-sidebar :deep(.new-word svg) { width:14px;height:14px; }
+  .dashboard-sidebar :deep(.digest-body p) { font-size:10px; }
+  .dashboard-sidebar :deep(.digest-cta svg) { display:none; }
+  .dashboard-sidebar :deep(.digest-card),.integration-grid,.dashboard-sidebar :deep(.ui-inspiration) { grid-column:1 / -1; }
+}
 </style>
