@@ -122,10 +122,27 @@ describe('homepage new concepts', () => {
     await flushPromises()
     const dialog = document.querySelector('dialog')!
     expect(dialog.open).toBe(true)
-    expect(dialog.textContent).toContain('50% 独立来源覆盖 + 30% 讨论增长 + 20% 原文新鲜度')
+    expect(dialog.textContent).toContain('40% 独立来源覆盖 + 25% 讨论增长 + 20% 渠道广度 + 15% 原文新鲜度')
     expect(dialog.textContent).toContain('不是全网流量排名')
-    expect(dialog.textContent).toContain('两个发布者')
+    expect(dialog.textContent).toContain('3 个独立发布者')
     expect(fetchNewWordsHistory).not.toHaveBeenCalled()
+  })
+
+  it('shows measured sampling coverage and independent support separately from citation count', async () => {
+    vi.mocked(fetchNewWords).mockResolvedValue(snapshot('2026-10-08', [{ ...word,
+      support: { publishers: 3, channels: 2 },
+      sampling: { feeds_checked: 31, feeds_available: 29, feeds_with_recent_items: 22, documents: 192, publishers: 45 },
+    }]))
+    const view = render()
+    await flushPromises()
+    await view.get('.new-word').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('dialog')!.textContent).toContain('3 个独立发布者、2 类渠道')
+    ;(document.querySelector('.new-word-close') as HTMLButtonElement).click()
+    await view.get('.new-words-method').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('dialog')!.textContent).toContain('29 / 31 个可用')
+    expect(document.querySelector('dialog')!.textContent).toContain('22 个有近 7 天内容')
   })
 
   it('paginates saved history and opens its original sources without changing today', async () => {
