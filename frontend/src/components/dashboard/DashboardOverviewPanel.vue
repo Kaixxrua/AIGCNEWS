@@ -53,7 +53,7 @@ const metrics = computed(() => [
 <style scoped>
 
 .stat-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; min-width:0; }
-.stat-cell { --metric:var(--comic-cyan-line); container-type:inline-size; position:relative;isolation:isolate;display:flex; align-items:center; gap:8px; min-width:0; min-height:94px; padding:12px 13px; border:2px solid transparent; border-radius:5px 8px 4px 6px; background:linear-gradient(130deg,var(--paper-raised),color-mix(in srgb,var(--metric) 5%,var(--paper-raised))); color:var(--ink); text-align:left; }
+.stat-cell { --metric:var(--comic-cyan-line); --metric-ink:var(--metric-total-ink); container-type:inline-size; position:relative;isolation:isolate;display:flex; align-items:center; gap:8px; min-width:0; min-height:94px; padding:12px 13px; border:2px solid transparent; border-radius:5px 8px 4px 6px; background:linear-gradient(130deg,var(--paper-raised),color-mix(in srgb,var(--metric) 5%,var(--paper-raised))); color:var(--ink); text-align:left; }
 .stat-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:1.5;pointer-events:none; }
 .stat-ink-frame path { vector-effect:non-scaling-stroke; }
 .stat-cell:nth-child(even) .stat-ink-frame { transform:scaleX(-1); }
@@ -61,12 +61,13 @@ const metrics = computed(() => [
 .stat-cell-icon :deep(svg) { width:100%; height:100%; }
 .stat-cell-body { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .stat-cell-label { font-size:12px; line-height:1.35; white-space:nowrap; }
-.stat-cell-num { font-size:clamp(18px,1.3vw,23px); font-weight:850; line-height:1.15; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
-.stat-cell--github { --metric:var(--metric-github); }
-.stat-cell--new,.stat-cell--total-visitors { --metric:var(--metric-new); }
-.stat-cell--visitors { --metric:var(--metric-visitors); }
-.stat-cell--ui { --metric:var(--metric-ui); }
-.stat-cell--ui .stat-cell-icon,.stat-cell--ui .stat-cell-num { color:var(--metric-ui-ink); }
+.stat-cell-num { color:var(--metric-ink); font-size:clamp(18px,1.3vw,23px); font-weight:850; line-height:1.15; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+.stat-cell--github { --metric:var(--metric-github); --metric-ink:var(--metric-github-ink); }
+.stat-cell--new { --metric:var(--metric-new); --metric-ink:var(--metric-new-ink); }
+.stat-cell--total-visitors { --metric:var(--metric-new); --metric-ink:var(--metric-total-visitors-ink); }
+.stat-cell--visitors { --metric:var(--metric-visitors); --metric-ink:var(--metric-visitors-ink); }
+.stat-cell--ui { --metric:var(--metric-ui); --metric-ink:var(--metric-ui-ink); }
+.stat-cell--ui .stat-cell-icon { color:var(--metric-ui-ink); }
 .stat-cell--visitors .stat-cell-icon { color:var(--metric-visitors-ink); }
 .stat-cell--total-visitors .stat-cell-icon { color:var(--metric-total-visitors-ink); }
 .stat-cell--github:hover,.stat-cell--ui:hover { background:color-mix(in srgb,var(--metric) 16%,var(--paper-raised)); }
@@ -82,11 +83,12 @@ const metrics = computed(() => [
 @container (max-width:103px) { .stat-cell-icon { display:none; } }
 
 @media (max-width:1023px) {
-  .stat-strip { gap:8px;grid-auto-rows:84px; }
-  .stat-cell { height:84px;min-height:84px;padding:10px; }
-  .stat-cell-label { font-size:12px;white-space:normal; }
-  .stat-cell-num { font-size:22px; }
-  .stat-cell-icon { top:8px;bottom:auto; }
+  .stat-strip { gap:8px;grid-auto-rows:96px; }
+  .stat-cell { display:grid;grid-template-columns:minmax(0,1fr) 22px;grid-template-rows:minmax(0,1fr) auto;gap:4px;height:96px;min-height:96px;padding:10px; }
+  .stat-cell-body { display:contents; }
+  .stat-cell-label { grid-column:1;grid-row:1;align-self:center;font-size:12px;white-space:normal;word-break:keep-all; }
+  .stat-cell-num { grid-column:1 / -1;grid-row:2;font-size:22px; }
+  .stat-cell-icon { position:static;display:grid;grid-column:2;grid-row:1;align-self:start;width:22px;height:22px;padding:4px; }
 }
 @media (max-width:359px) {
   .stat-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
