@@ -22,10 +22,10 @@ from backend.app.services.papers.presentation import (
 
 class SearchRepository:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple[str, int, str | None]] = []
 
     def search_documents(self, query: str, limit: int = 20, *, source=None):
-        self.calls.append((query, limit))
+        self.calls.append((query, limit, source))
         return [{"id": "paper-1", "source": "arxiv", "published_date": date(2026, 7, 27)}]
 
 
@@ -73,7 +73,7 @@ class PapersContractsTests(unittest.TestCase):
             headers={"host": "evil.example", "x-forwarded-proto": "https"},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.search.calls, [("agents", 7)])
+        self.assertEqual(self.search.calls, [("agents", 7, "arxiv")])
         self.assertEqual(
             response.json(),
             {

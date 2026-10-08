@@ -61,6 +61,9 @@ class Repository:
             document(),
             document("discussion", source="hackernews", title="Testing Prism Routing",
                      url="https://discussion.example/prism", published_at=(NOW - timedelta(hours=2)).isoformat()),
+            document("coverage", source="news", title="Prism Routing explained",
+                     summary="A closer look at Prism Routing for neural networks.", url="https://coverage.example/prism",
+                     published_at=(NOW - timedelta(hours=3)).isoformat()),
         ]
         self.history = []
         self.snapshots = {}
@@ -98,7 +101,7 @@ def test_specific_new_concept_requires_verified_primary_and_independent_discussi
     repo = Repository()
     words = select(repo)
     assert [word["term"] for word in words] == ["Prism Routing"]
-    assert [e["id"] for e in words[0]["evidence"]] == ["paper", "discussion"]
+    assert [e["id"] for e in words[0]["evidence"]] == ["paper", "discussion", "coverage"]
     # A next-day selection can keep the same concept; there is no daily novelty reset.
     assert select(repo, now=NOW + timedelta(days=1), previous=words)[0]["id"] == words[0]["id"]
 
@@ -174,7 +177,7 @@ def test_citations_keep_independent_and_earliest_evidence_when_one_publisher_dom
         repo.docs.append(document(f"extra{i}", title=f"Prism Routing experiment {i}",
                                   url=f"https://arxiv.org/abs/{i}", published_at=(NOW - timedelta(hours=1)).isoformat()))
     words = select(repo)
-    assert len(words[0]["evidence"]) == 6
+    assert len(words[0]["evidence"]) == 12
     assert "discussion" in {e["id"] for e in words[0]["evidence"]}
     assert words[0]["first_seen"] == "2026-10-02"
 
@@ -188,8 +191,10 @@ def test_card_returns_at_most_two_distinct_concepts_and_preserves_close_ties():
         proposals.append(proposal)
         repo.docs.extend([
             document(f"paper{i}", title=term, url=f"https://papers{i}.example/paper", summary=proposal.primary_quote),
-            document(f"news{i}", title=f"Testing {term}", summary=term,
+            document(f"news{i}", source="news", title=f"Testing {term}", summary=term,
                      url=f"https://news{i}.example/story", published_at=(NOW - timedelta(hours=2)).isoformat()),
+            document(f"community{i}", source="hackernews", title=f"Discussing {term}", summary=term,
+                     url=f"https://community{i}.example/story", published_at=(NOW - timedelta(hours=3)).isoformat()),
         ])
     words = select(repo, proposals)
     assert len(words) == 2
@@ -224,7 +229,7 @@ def test_recent_proven_words_can_repeat_when_new_search_yields_no_candidates():
     repo.save_snapshot(service.today(NOW) - timedelta(days=1), prior, NOW - timedelta(hours=1))
     repo.save_snapshot(service.today(NOW), [], NOW - timedelta(minutes=1))
     assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({"candidates": []})))
-    assert repo.snapshots[service.today(NOW)]["items"] == prior
+    assert [{k: v for k, v in item.items() if k != "sampling"} for item in repo.snapshots[service.today(NOW)]["items"]] == prior
     assert service.reusable_words(repo, {"items": prior}, NOW + timedelta(days=3)) == []
     repo.docs.pop()
     assert service.reusable_words(repo, {"items": prior}, NOW) == []
@@ -314,26 +319,27 @@ def test_history_lists_saved_selections_with_exclusive_date_pagination(monkeypat
 def test_global_candidates_publish_without_any_indexed_documents():
     repo = Repository()
     repo.docs = []
-    original = web_document()
+    original = web_document("https://openai.com/index/prism")
     discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
-    web = web_research([original, discussion])
+    coverage = web_document("https://coverage.example/prism", title="Prism Routing in practice")
+    web = web_research([original, discussion, coverage])
     proposal = candidate().model_copy(update={"primary_id": original["id"]})
     model = model_response({"candidates": [proposal.model_dump()]})
     assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model, web=web))
     snapshot = service.public_snapshot(repo, service.today(NOW))
     assert snapshot["status"] == "ready"
     assert snapshot["items"][0]["term"] == "Prism Routing"
-    assert {e["url"] for e in snapshot["items"][0]["evidence"]} == {original["url"], discussion["url"]}
+    assert {e["url"] for e in snapshot["items"][0]["evidence"]} == {original["url"], discussion["url"], coverage["url"]}
     assert all(e["source"] == "web" and "verified_at" not in e for e in snapshot["items"][0]["evidence"])
     payload = json.loads(model.ainvoke.call_args.args[0][1].content)
-    assert {d["id"] for d in payload["documents"]} == {original["id"], discussion["id"]}
+    assert {d["id"] for d in payload["documents"]} == {original["id"], discussion["id"], coverage["id"]}
 
 
 def test_targeted_search_can_complete_evidence_for_one_indexed_primary():
     repo = Repository()
     repo.docs = repo.docs[:1]
     discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
-    web = web_research(investigated=[discussion])
+    web = web_research(investigated=[discussion, web_document("https://coverage.example/prism", title="Prism Routing explained")])
     assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({
         "candidates": [candidate().model_dump()],
     }), web=web))
@@ -363,10 +369,10 @@ def test_external_evidence_requires_a_matching_fetch_receipt(changes):
 
 def test_public_snapshot_rejects_tampered_web_citation_receipts():
     repo = Repository()
-    original = web_document()
+    original = web_document("https://openai.com/index/prism")
     discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
     proposal = candidate().model_copy(update={"primary_id": original["id"]})
-    words = service.select_words([proposal], [original, discussion], repo, NOW, [])
+    words = service.select_words([proposal], [original, discussion, repo.docs[2]], repo, NOW, [])
     repo.save_snapshot(service.today(NOW), words, NOW)
     words[0]["evidence"][0]["url"] = "https://other.example/unfetched"
     assert service.public_snapshot(repo, service.today(NOW))["items"] == []
@@ -423,6 +429,7 @@ def test_indexed_news_title_is_a_lead_not_a_verified_original():
     ("https://openai.com/index/story", "OpenAI"),
     ("https://anthropic.com/news/story", "AnthropicAI"),
     ("https://blog.google/technology/ai/story", "GoogleDeepMind"),
+    ("https://mistral.ai/news/story", "MistralAI"),
 ])
 def test_official_website_and_social_account_are_one_publisher(website, account):
     repo = Repository()
@@ -480,3 +487,56 @@ def test_fetched_official_full_text_replaces_an_indexed_title_only_lead():
     payload = json.loads(model.ainvoke.call_args.args[0][1].content)["documents"]
     assert next(d for d in payload if d["url"] == original["url"])["summary"] == original["summary"]
     assert service.public_snapshot(repo, service.today(NOW))["status"] == "ready"
+
+
+def test_two_publishers_are_insufficient_even_with_a_verified_primary():
+    repo = Repository()
+    repo.docs = repo.docs[:2]
+    assert select(repo) == []
+
+
+def test_many_media_publishers_without_another_channel_type_do_not_qualify():
+    repo = Repository()
+    repo.docs = [web_document(f"https://news{i}.example/story", title=f"Prism Routing report {i}") for i in range(5)]
+    assert select(repo, [candidate().model_copy(update={"primary_id": repo.docs[0]["id"]})]) == []
+
+
+def test_named_new_model_release_can_qualify_with_cross_channel_evidence():
+    repo = Repository()
+    quote = "We release Nimbus 2, our new AI language model for software development."
+    repo.docs = [{**doc, "summary": quote, "title": doc["title"].replace("Prism Routing", "Nimbus 2")} for doc in repo.docs]
+    proposal = candidate("Nimbus 2").model_copy(update={"kind": "release", "primary_quote": quote})
+    assert select(repo, [proposal])[0]["term"] == "Nimbus 2"
+
+
+def test_two_terms_from_the_same_announcement_do_not_occupy_both_slots():
+    repo = Repository()
+    second = candidate("Prism Canvas")
+    repo.docs = [{**doc, "summary": doc["summary"] + " " + second.primary_quote + " " + doc["title"]} for doc in repo.docs]
+    words = select(repo, [candidate(), second])
+    assert len(words) == 1
+
+
+def test_public_support_counts_publishers_not_urls_and_tracks_actual_sample():
+    repo = Repository()
+    web = web_research()
+    web.discover.return_value.channels = [
+        {"available": True, "recent_items": 5}, {"available": False, "recent_items": 0},
+        {"available": True, "recent_items": 0},
+    ]
+    asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({"candidates": [candidate().model_dump()]}), web=web))
+    result = service.public_snapshot(repo, service.today(NOW))["items"][0]
+    assert result["support"] == {"publishers": 3, "channels": 3}
+    assert result["sampling"] == {"feeds_checked": 3, "feeds_available": 2, "feeds_with_recent_items": 1, "documents": 3, "publishers": 3}
+
+
+def test_previous_algorithm_cache_is_refreshed_at_startup():
+    repo = Repository()
+    prior = select(repo)
+    for item in prior:
+        item.pop("selection_version")
+    repo.save_snapshot(service.today(NOW), prior, NOW - timedelta(minutes=1))
+    model = model_response({"candidates": [candidate().model_dump()]})
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model))
+    model.ainvoke.assert_awaited_once()
+    assert repo.snapshots[service.today(NOW)]["items"][0]["selection_version"] == 2

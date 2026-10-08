@@ -744,6 +744,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
         query: str = "AI coding agent CLI",
         mode: str = "generic",
         client_intent: dict[str, Any] | None = None,
+        limit: int = 10,
     ) -> list[str]:
         semantic_search = MagicMock()
         semantic_search.search_repo_ids = MagicMock(
@@ -766,6 +767,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
                     query=query,
                     mode=mode,
                     client_intent=client_intent,
+                    limit=limit,
                     repository_factory=lambda: repo,
                     semantic_search_factory=lambda: semantic_search,
                 )
@@ -825,15 +827,15 @@ class ProjectDiscoveryTests(unittest.TestCase):
             self._build_v2_semantic_repository(), heat_first=True
         )
 
-        # strict lane 仅 1 条（一页放得下）：全词命中的拟合冠军钉在榜首，
+        # 全词命中的拟合冠军钉在榜首，
         # 其后才是相关性+长期热度序——相关且人气高的元老压过语义独苗
         self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
 
-    def test_v2_semantic_heat_order_rules_when_strict_lane_exceeds_one_page(self) -> None:
+    def test_v2_semantic_heat_order_preserves_strict_matches_across_page_sizes(self) -> None:
         class WideStrictRepository:
             def __init__(self) -> None:
                 self.find_lexical_candidate_repo_ids = MagicMock(return_value=[])
-                # 11 条 strict 命中 > 默认页大小 10：宽泛探索查询，不钉
+                # 完整匹配超过一页，热度也不能把部分匹配推到它们前面。
                 self.find_lexical_candidate_lanes = MagicMock(
                     return_value=ProjectLexicalCandidateLanes(
                         strict=tuple(
@@ -863,13 +865,14 @@ class ProjectDiscoveryTests(unittest.TestCase):
                     }
                 )
 
-        ranked = self._run_v2_semantic_heat_search(WideStrictRepository(), heat_first=True)
-
-        # 大 strict lane 不钉，走相关性为主的热度融合：人气冠军 veteran 本就
-        # 相关性第一；融合第 11 的语义独苗 deep-sem 只前移到第 8，不再像
-        # 今日热度序那样插到整个 strict 群前面
-        self.assertEqual(ranked[:3], ["owner/veteran", "owner/fit-0", "owner/fit-1"])
-        self.assertEqual(ranked.index("owner/deep-sem"), 7)
+        expected = [f"owner/fit-{index}" for index in range(11)]
+        expected.extend(["owner/veteran", "owner/deep-sem"])
+        for limit in (3, 5, 10, 20):
+            with self.subTest(limit=limit):
+                ranked = self._run_v2_semantic_heat_search(
+                    WideStrictRepository(), heat_first=True, limit=limit,
+                )
+                self.assertEqual(ranked, expected)
 
     def test_v2_semantic_heat_order_keeps_exact_match_first(self) -> None:
         ranked = self._run_v2_semantic_heat_search(
@@ -887,7 +890,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
             self._build_v2_semantic_repository(), heat_first=False
         )
 
-        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+        self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
 
     def test_v2_semantic_heat_lookup_failure_falls_back_to_fit_order(self) -> None:
         repo = self._build_v2_semantic_repository()
@@ -895,7 +898,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
 
         ranked = self._run_v2_semantic_heat_search(repo, heat_first=True)
 
-        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+        self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
 
     def test_v2_client_intent_search_keeps_fit_order_over_heat(self) -> None:
         intent = {
@@ -915,7 +918,7 @@ class ProjectDiscoveryTests(unittest.TestCase):
         # 宿主 agent 传入结构化 intent 的是任务型复用检索：即使语义 lane 有
         # 产出且 heat_first 开启，也保持 v2 拟合序——零人气的拟合冠军 fit
         # 不被人气更高的语义独苗 deep-sem 罢黜（对照 generic 热度融合用例）。
-        self.assertEqual(ranked, ["owner/veteran", "owner/fit", "owner/deep-sem"])
+        self.assertEqual(ranked, ["owner/fit", "owner/veteran", "owner/deep-sem"])
 
     def _build_low_relevance_repository(self) -> Any:
         """strict lane 全空、仅宽松 lane 有一条部分命中（噪声）的仓库。"""

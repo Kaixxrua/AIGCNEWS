@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, ref, watch } from 'vue'
-import { useDocumentVisibility, useElementVisibility, useIntervalFn, usePreferredReducedMotion } from '@vueuse/core'
+import { useDocumentVisibility, useElementVisibility, usePreferredReducedMotion } from '@vueuse/core'
 import { ArrowUpRight, ChevronLeft, ChevronRight, Pause, Play, Sparkles } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import type { UiTemplate } from '@/features/ui-library/catalog'
@@ -13,10 +13,9 @@ const visible = useElementVisibility(element)
 const visibility = useDocumentVisibility()
 const motion = usePreferredReducedMotion()
 const active = ref(true)
-const hovered = ref(false)
-const focused = ref(false)
 const paused = ref(false)
 const selectedId = ref('')
+const lastTemplateKey = 'aigcnews:ui-showcase:last'
 const failedClips = ref<string[]>([])
 const failedPosters = ref<string[]>([])
 const slides = computed(() => selectUiShowcase(props.items).filter(slide => !failedPosters.value.includes(slide.id)))
@@ -25,14 +24,25 @@ const current = computed(() => slides.value[index.value])
 const language = computed(() => locale.value.startsWith('zh') ? 'zh' : 'en')
 const name = computed(() => current.value?.name[language.value] ?? t('dashboard.editorial.explore'))
 const text = computed(() => language.value === 'zh'
-  ? { featured: '精选动效', previous: '上一个模板', next: '下一个模板', pause: '暂停轮换', play: '开始轮换', open: '查看模板', carousel: '精选 UI 模板轮播' }
-  : { featured: 'IN THE SPOTLIGHT', previous: 'Previous template', next: 'Next template', pause: 'Pause slideshow', play: 'Start slideshow', open: 'Explore template', carousel: 'Featured UI templates' })
+  ? { featured: '精选动效', previous: '上一个模板', next: '下一个模板', pause: '暂停动效', play: '播放动效', open: '查看模板', carousel: '精选 UI 模板' }
+  : { featured: 'IN THE SPOTLIGHT', previous: 'Previous template', next: 'Next template', pause: 'Pause animation', play: 'Play animation', open: 'Explore template', carousel: 'Featured UI templates' })
 const playing = computed(() => active.value && visible.value && visibility.value === 'visible' && motion.value !== 'reduce' && !paused.value)
-const rotating = computed(() => playing.value && !hovered.value && !focused.value && slides.value.length > 1)
 
+function select(id: string) {
+  selectedId.value = id
+  try { localStorage.setItem(lastTemplateKey, id) } catch { /* Storage is optional. */ }
+}
+function randomize() {
+  if (!slides.value.length) return
+  let previous = selectedId.value
+  try { previous ||= localStorage.getItem(lastTemplateKey) ?? '' } catch { /* Storage is optional. */ }
+  const alternatives = slides.value.filter(slide => slide.id !== previous)
+  const candidates = alternatives.length ? alternatives : slides.value
+  select(candidates[Math.floor(Math.random() * candidates.length)]!.id)
+}
 function step(direction: number) {
   const length = slides.value.length
-  if (length) selectedId.value = slides.value[(index.value + direction + length) % length]!.id
+  if (length) select(slides.value[(index.value + direction + length) % length]!.id)
 }
 function mediaError(event: Event) {
   const media = event.currentTarget as HTMLVideoElement | HTMLImageElement
@@ -40,19 +50,20 @@ function mediaError(event: Event) {
   const failed = media.tagName === 'VIDEO' ? failedClips : failedPosters
   failed.value = [...failed.value, media.dataset.id]
 }
-function blur(event: FocusEvent) {
-  focused.value = !!event.relatedTarget && !!element.value?.contains(event.relatedTarget as Node)
-}
-
-const timer = useIntervalFn(() => step(1), 8000, { immediate: false })
-watch(rotating, value => value ? timer.resume() : timer.pause(), { immediate: true })
-onActivated(() => { active.value = true })
+// Choose once after the catalog arrives; background updates keep a valid selection.
+watch(slides, value => {
+  if (active.value && !value.some(slide => slide.id === selectedId.value)) randomize()
+}, { immediate: true })
+onActivated(() => {
+  if (active.value) return // KeepAlive also activates on the initial mount.
+  active.value = true
+  randomize()
+})
 onDeactivated(() => { active.value = false })
 </script>
 
 <template>
-  <section ref="element" class="ui-inspiration" :aria-label="text.carousel" aria-roledescription="carousel"
-    @mouseenter="hovered = true" @mouseleave="hovered = false" @focusin="focused = true" @focusout="blur">
+  <section ref="element" class="ui-inspiration" :aria-label="text.carousel" aria-roledescription="carousel">
     <RouterLink :to="current ? { name: 'ui-library', params: { id: current.id } } : { name: 'ui-library' }"
       class="ui-inspiration__art" :aria-label="`${text.open} · ${name}`">
       <Transition name="ui-showcase">

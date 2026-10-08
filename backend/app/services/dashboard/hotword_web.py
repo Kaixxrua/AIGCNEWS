@@ -17,11 +17,12 @@ from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import AsyncSession
 
 from backend.app.core.config import settings
+from backend.app.services.dashboard.hotword_sources import AI_CONTEXT, FEEDS, on_domain, parse_feed
 from backend.app.services.outbound_target_policy import pin_http_target
 
 logger = logging.getLogger(__name__)
 MAX_PAGE_BYTES = 1024 * 1024
-MAX_PAGES = 64
+MAX_PAGES = 128
 MAX_REDIRECTS = 4
 _ARTICLE_TYPES = {"Article", "NewsArticle", "BlogPosting", "ScholarlyArticle", "TechArticle"}
 _ORIGINAL_HOSTS = {"openai.com", "anthropic.com", "blog.google", "deepmind.google", "mistral.ai",
@@ -73,7 +74,7 @@ def _article_dates(node: Any) -> list[datetime]:
     return result
 
 
-def parse_page(url: str, html: str, now: datetime) -> dict[str, Any] | None:
+def parse_page(url: str, html: str | bytes, now: datetime) -> dict[str, Any] | None:
     soup = BeautifulSoup(html, "html.parser")
     dates = []
     for meta in soup.find_all("meta"):
@@ -141,11 +142,15 @@ def parse_page(url: str, html: str, now: datetime) -> dict[str, Any] | None:
 def verified_citation(doc: dict[str, Any], generated_at: datetime) -> bool:
     url = canonical_url(str(doc.get("url") or ""))
     verified, published = timestamp(doc.get("verified_at")), timestamp(doc.get("published_at"))
+    if doc.get("evidence_kind") == "feed" and not any(
+        doc.get("feed_url") == feed.url and on_domain(urlsplit(url).hostname or "", feed.domains) for feed in FEEDS
+    ):
+        return False
     return bool(url and doc.get("source") == "web" and doc.get("id") == web_id(url)
                 and verified and published and generated_at - timedelta(days=7) <= published <= verified <= generated_at)
 
 
-async def fetch_page(url: str, now: datetime) -> dict[str, Any] | None:
+async def fetch_resource(url: str, *, feed: bool = False) -> tuple[str, bytes] | None:
     """Pin every redirect, limit decompressed bytes, and never forward credentials."""
     try:
         async with asyncio.timeout(15):
@@ -178,7 +183,8 @@ async def fetch_page(url: str, now: datetime) -> dict[str, Any] | None:
                     # it must outlive the request and be freed after the session.
                     async with AsyncSession(
                         proxy=settings.outbound_proxy or None, verify=True, trust_env=True,
-                        headers={"User-Agent": "AIGCNEWS-Hotwords/1.0", "Accept": "text/html"},
+                        headers={"User-Agent": "AIGCNEWS-Hotwords/1.0", "Accept":
+                                 "application/rss+xml, application/atom+xml, application/xml, text/xml" if feed else "text/html"},
                         curl_options={CurlOpt.CONNECT_TO: connections, CurlOpt.HTTPPROXYTUNNEL: 1,
                                       CurlOpt.MAXFILESIZE_LARGE: MAX_PAGE_BYTES},
                     ) as client:
@@ -192,19 +198,30 @@ async def fetch_page(url: str, now: datetime) -> dict[str, Any] | None:
                         return None
                     url = urljoin(target.logical_url, location)
                     continue
-                if response.status_code != 200 or "html" not in response.headers.get("content-type", "").lower():
+                content_type = response.headers.get("content-type", "").lower()
+                if response.status_code != 200 or ("xml" if feed else "html") not in content_type:
                     return None
-                return parse_page(target.logical_url, body.decode(response.encoding or "utf-8", errors="replace"), now)
+                return target.logical_url, bytes(body)
     except Exception as exc:
         # Proxy addresses may contain secrets; never log exception text or fetched bodies.
         logger.debug("Hotword original-page fetch failed: %s", type(exc).__name__)
     return None
 
 
+async def fetch_page(url: str, now: datetime) -> dict[str, Any] | None:
+    resource = await fetch_resource(url)
+    try:
+        return parse_page(resource[0], resource[1], now) if resource else None
+    except Exception as exc:
+        logger.debug("Hotword original-page parsing failed: %s", type(exc).__name__)
+        return None
+
+
 @dataclass
 class WebEvidence:
     documents: list[dict[str, Any]] = field(default_factory=list)
     available: bool = False
+    channels: list[dict[str, Any]] = field(default_factory=list)
 
 
 class PublicWebResearch:
@@ -281,13 +298,50 @@ class PublicWebResearch:
         return result
 
     async def discover(self, now: datetime, *, seed_urls: list[str] | None = None) -> WebEvidence:
-        return await self._scan([
+        feeds = await self.read_feeds(now)
+        # Round-robin publisher feeds before taking a second article from any.
+        buckets = [[doc for doc in feeds.documents if doc["feed_url"] == feed.url] for feed in FEEDS]
+        firsts = [bucket[0]["url"] for bucket in buckets if bucket]
+        seconds = [bucket[1]["url"] for bucket in buckets if len(bucket) > 1]
+        urls = list(dict.fromkeys([*firsts, *(seed_urls or []), *seconds]))[:max(1, MAX_PAGES // 3)]
+        result = await self._scan([
             f'AI new features developer tools {now:%B %Y}',
-            f'AI 新功能 新玩法 发布 {now:%Y年%m月}',
+            f'AI 新模型 新产品 新功能 发布 {now:%Y年%m月}',
             f'site:openai.com/index/ OR site:anthropic.com/news/ AI {now:%B %Y}',
             f'site:blog.google OR site:deepmind.google AI new {now:%B %Y}',
-            f'AI research new method {now:%B %Y}',
-        ], now, recent=True, seed_urls=seed_urls, page_limit=max(2, MAX_PAGES // 2))
+            f'site:qwen.ai OR site:deepseek.com OR site:moonshot.ai AI {now:%B %Y}',
+            f'site:mistral.ai OR site:x.ai OR site:ai.meta.com AI {now:%B %Y}',
+            f'site:ithome.com OR site:qbitai.com AI 大模型 发布 {now:%Y年%m月}',
+            f'site:jiqizhixin.com OR site:infoq.cn AI 模型 新功能 {now:%Y年%m月}',
+            f'site:venturebeat.com OR site:latent.space AI launch {now:%B %Y}',
+        ], now, recent=True, seed_urls=urls, page_limit=max(2, MAX_PAGES // 2))
+        # Full pages precede their own feed excerpts during document dedup.
+        result.documents.extend(feeds.documents)
+        result.channels = feeds.channels
+        result.available = result.available or feeds.available
+        return result
+
+    async def read_feeds(self, now: datetime) -> WebEvidence:
+        result = WebEvidence()
+
+        async def read(feed) -> None:
+            try:
+                async with self._page_slots:
+                    resource = await fetch_resource(feed.url, feed=True)
+                rows = await asyncio.to_thread(parse_feed, resource[1], feed, now) if resource else None
+            except Exception:
+                rows = None
+            result.channels.append({"name": feed.name, "url": feed.url, "group": feed.group,
+                                    "available": rows is not None, "recent_items": len(rows or [])})
+            if rows is not None:
+                result.available = True
+                result.documents.extend({**doc, "source": "web", "id": web_id(doc["url"]),
+                                         "verified_at": now.isoformat()} for doc in rows
+                                        if AI_CONTEXT.search(doc["title"] + " " + doc["summary"]))
+
+        await asyncio.gather(*(read(feed) for feed in FEEDS))
+        logger.info("Hotword feed coverage: %s", json.dumps(result.channels, ensure_ascii=False))
+        return result
 
     async def investigate(self, terms: list[str], now: datetime, *, contexts: dict[str, str] | None = None) -> WebEvidence:
         cutoff = (now - timedelta(days=7)).date().isoformat()

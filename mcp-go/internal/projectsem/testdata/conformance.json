@@ -77,7 +77,9 @@
    },
    "plan": {
     "normalized_query": "中文",
-    "strict_terms": [],
+    "strict_terms": [
+     "中文"
+    ],
     "concepts": []
    }
   },
@@ -108,7 +110,9 @@
    },
    "plan": {
     "normalized_query": "纯中文项目",
-    "strict_terms": [],
+    "strict_terms": [
+     "纯中文项目"
+    ],
     "concepts": []
    }
   },
@@ -325,6 +329,7 @@
     "normalized_query": "中英 mixed query",
     "language": "mixed",
     "lexical_terms": [
+     "中英",
      "mixed",
      "query"
     ],
@@ -343,6 +348,7 @@
    "plan": {
     "normalized_query": "中英 mixed query",
     "strict_terms": [
+     "中英",
      "mixed",
      "query"
     ],
@@ -986,7 +992,8 @@
     "normalized_query": "MCP 服务",
     "language": "zh",
     "lexical_terms": [
-     "MCP"
+     "MCP",
+     "服务"
     ],
     "semantic_queries": [
      "MCP 服务",
@@ -1008,7 +1015,9 @@
    },
    "plan": {
     "normalized_query": "MCP 服务",
-    "strict_terms": [],
+    "strict_terms": [
+     "服务"
+    ],
     "concepts": [
      {
       "concept_id": "mcp",
@@ -1107,7 +1116,7 @@
     ],
     "semantic_queries": [
      "教程",
-     "教程 tutorial learning"
+     "教程 tutorial learning tutorials"
     ],
     "intent_class": "learning",
     "topics": [],
@@ -1120,7 +1129,8 @@
     ],
     "bilingual_aliases": [
      "tutorial",
-     "learning"
+     "learning",
+     "tutorials"
     ]
    },
    "plan": {
@@ -1134,7 +1144,8 @@
       ],
       "aliases": [
        "tutorial",
-       "learning"
+       "learning",
+       "tutorials"
       ]
      }
     ]
@@ -1157,7 +1168,7 @@
     ],
     "semantic_queries": [
      "a workflow",
-     "a workflow workflow automation agent workflow 工作流 智能体工作流"
+     "a workflow workflow automation agent workflow workflows 工作流 智能体工作流"
     ],
     "intent_class": "general_discovery",
     "topics": [],
@@ -1171,6 +1182,7 @@
     "bilingual_aliases": [
      "workflow automation",
      "agent workflow",
+     "workflows",
      "工作流",
      "智能体工作流"
     ]
@@ -1189,6 +1201,8 @@
       "aliases": [
        "workflow automation",
        "agent workflow",
+       "workflow",
+       "workflows",
        "工作流",
        "智能体工作流"
       ]
@@ -1267,7 +1281,7 @@
     ],
     "semantic_queries": [
      "智能体工作流",
-     "智能体工作流 workflow automation agent workflow"
+     "智能体工作流 workflow automation agent workflow workflow workflows"
     ],
     "intent_class": "general_discovery",
     "topics": [],
@@ -1280,7 +1294,9 @@
     ],
     "bilingual_aliases": [
      "workflow automation",
-     "agent workflow"
+     "agent workflow",
+     "workflow",
+     "workflows"
     ]
    },
    "plan": {
@@ -1295,6 +1311,8 @@
       "aliases": [
        "workflow automation",
        "agent workflow",
+       "workflow",
+       "workflows",
        "工作流",
        "智能体工作流"
       ]
@@ -1319,7 +1337,7 @@
     ],
     "semantic_queries": [
      "工作流 automation",
-     "工作流 automation workflow automation agent workflow 智能体工作流"
+     "工作流 automation workflow automation agent workflow workflow workflows 智能体工作流"
     ],
     "intent_class": "general_discovery",
     "topics": [],
@@ -1333,6 +1351,8 @@
     "bilingual_aliases": [
      "workflow automation",
      "agent workflow",
+     "workflow",
+     "workflows",
      "智能体工作流"
     ]
    },
@@ -1350,6 +1370,8 @@
       "aliases": [
        "workflow automation",
        "agent workflow",
+       "workflow",
+       "workflows",
        "工作流",
        "智能体工作流"
       ]
@@ -1636,6 +1658,7 @@
     "normalized_query": "框架 sdk",
     "language": "mixed",
     "lexical_terms": [
+     "框架",
      "sdk"
     ],
     "semantic_queries": [
@@ -1653,6 +1676,7 @@
    "plan": {
     "normalized_query": "框架 sdk",
     "strict_terms": [
+     "框架",
      "sdk"
     ],
     "concepts": []
@@ -1721,7 +1745,9 @@
    },
    "plan": {
     "normalized_query": "示例项目",
-    "strict_terms": [],
+    "strict_terms": [
+     "示例项目"
+    ],
     "concepts": []
    }
   },
@@ -1896,7 +1922,7 @@
     ],
     "semantic_queries": [
      "屏幕截图",
-     "屏幕截图 screenshot screen capture screen shot snipping 抓图"
+     "屏幕截图 screenshot screenshots screen capture screen shot snipping 抓图"
     ],
     "intent_class": "general_discovery",
     "topics": [],
@@ -1909,6 +1935,7 @@
     ],
     "bilingual_aliases": [
      "screenshot",
+     "screenshots",
      "screen capture",
      "screen shot",
      "snipping",
@@ -1926,6 +1953,7 @@
       ],
       "aliases": [
        "screenshot",
+       "screenshots",
        "screen capture",
        "screen shot",
        "snipping",
@@ -2074,9 +2102,7 @@
    "plan": {
     "normalized_query": "foo foo FOO",
     "strict_terms": [
-     "foo",
-     "foo",
-     "FOO"
+     "foo"
     ],
     "concepts": []
    }
@@ -2363,6 +2389,319 @@
        "agents",
        "智能体",
        "助手"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "混元",
+   "normalized": "混元",
+   "terms": [
+    "混元"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "混元",
+    "language": "zh",
+    "lexical_terms": [
+     "混元"
+    ],
+    "semantic_queries": [
+     "混元"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "混元",
+    "strict_terms": [
+     "混元"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "扣子",
+   "normalized": "扣子",
+   "terms": [
+    "扣子"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "扣子",
+    "language": "zh",
+    "lexical_terms": [
+     "扣子"
+    ],
+    "semantic_queries": [
+     "扣子"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "扣子",
+    "strict_terms": [
+     "扣子"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "可灵",
+   "normalized": "可灵",
+   "terms": [
+    "可灵"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "可灵",
+    "language": "zh",
+    "lexical_terms": [
+     "可灵"
+    ],
+    "semantic_queries": [
+     "可灵"
+    ],
+    "intent_class": "exact_lookup",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [],
+    "bilingual_aliases": []
+   },
+   "plan": {
+    "normalized_query": "可灵",
+    "strict_terms": [
+     "可灵"
+    ],
+    "concepts": []
+   }
+  },
+  {
+   "q": "LangGraph 星火教程",
+   "normalized": "LangGraph 星火教程",
+   "terms": [
+    "LangGraph",
+    "星火教程"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "LangGraph 星火教程",
+    "language": "mixed",
+    "lexical_terms": [
+     "LangGraph",
+     "星火",
+     "教程"
+    ],
+    "semantic_queries": [
+     "LangGraph 星火教程",
+     "LangGraph 星火教程 tutorial learning tutorials"
+    ],
+    "intent_class": "learning",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "learning"
+    ],
+    "bilingual_aliases": [
+     "tutorial",
+     "learning",
+     "tutorials"
+    ]
+   },
+   "plan": {
+    "normalized_query": "LangGraph 星火教程",
+    "strict_terms": [
+     "LangGraph",
+     "星火"
+    ],
+    "concepts": [
+     {
+      "concept_id": "learning",
+      "primary_terms": [
+       "教程"
+      ],
+      "aliases": [
+       "tutorial",
+       "learning",
+       "tutorials"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "tutorial",
+   "normalized": "tutorial",
+   "terms": [
+    "tutorial"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "tutorial",
+    "language": "en",
+    "lexical_terms": [
+     "tutorial"
+    ],
+    "semantic_queries": [
+     "tutorial",
+     "tutorial learning tutorials"
+    ],
+    "intent_class": "learning",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "learning"
+    ],
+    "bilingual_aliases": [
+     "learning",
+     "tutorials"
+    ]
+   },
+   "plan": {
+    "normalized_query": "tutorial",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "learning",
+      "primary_terms": [
+       "tutorial"
+      ],
+      "aliases": [
+       "tutorial",
+       "learning",
+       "tutorials"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "workflow",
+   "normalized": "workflow",
+   "terms": [
+    "workflow"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "workflow",
+    "language": "en",
+    "lexical_terms": [
+     "workflow"
+    ],
+    "semantic_queries": [
+     "workflow",
+     "workflow workflow automation agent workflow workflows 工作流 智能体工作流"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "workflow"
+    ],
+    "bilingual_aliases": [
+     "workflow automation",
+     "agent workflow",
+     "workflows",
+     "工作流",
+     "智能体工作流"
+    ]
+   },
+   "plan": {
+    "normalized_query": "workflow",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "workflow",
+      "primary_terms": [
+       "workflow"
+      ],
+      "aliases": [
+       "workflow automation",
+       "agent workflow",
+       "workflow",
+       "workflows",
+       "工作流",
+       "智能体工作流"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "q": "workflows",
+   "normalized": "workflows",
+   "terms": [
+    "workflows"
+   ],
+   "intent": {
+    "schema_version": "project-search-intent-v1",
+    "normalized_query": "workflows",
+    "language": "en",
+    "lexical_terms": [
+     "workflows"
+    ],
+    "semantic_queries": [
+     "workflows",
+     "workflows workflow automation agent workflow 工作流 智能体工作流"
+    ],
+    "intent_class": "general_discovery",
+    "topics": [],
+    "languages": [],
+    "artifact_types": [],
+    "must_have": [],
+    "should_have": [],
+    "concept_ids": [
+     "workflow"
+    ],
+    "bilingual_aliases": [
+     "workflow automation",
+     "agent workflow",
+     "工作流",
+     "智能体工作流"
+    ]
+   },
+   "plan": {
+    "normalized_query": "workflows",
+    "strict_terms": [],
+    "concepts": [
+     {
+      "concept_id": "workflow",
+      "primary_terms": [
+       "workflows"
+      ],
+      "aliases": [
+       "workflow automation",
+       "agent workflow",
+       "workflow",
+       "workflows",
+       "工作流",
+       "智能体工作流"
       ]
      }
     ]

@@ -615,8 +615,14 @@ def get_personal_projects_service(
     return PersonalProjectsService(collection=collection, enrichment=enrichment)
 
 
-def get_project_catalog_query_service() -> ProjectCatalogQueryService:
-    """公共项目目录查询编排服务；仓储仍经工厂按次解析，保持既有连接语义。"""
+def get_project_catalog_query_service(request: Request = None) -> ProjectCatalogQueryService:
+    """REST and quick search share the application's owned search resources."""
+    runtime = getattr(request.app.state, "project_search_runtime", None) if request else None
+    if runtime is not None:
+        return ProjectCatalogQueryService(
+            repository_factory=get_project_catalog_repository,
+            searcher=runtime.search_catalog_projects,
+        )
     return ProjectCatalogQueryService(repository_factory=get_project_catalog_repository)
 
 

@@ -15,6 +15,11 @@ NOW = datetime(2026, 10, 8, 8, tzinfo=timezone.utc)
 BODY = "We introduce Prism Routing, a new training mechanism that allocates tokens across sparse networks efficiently."
 
 
+@pytest.fixture(autouse=True)
+def isolate_feeds(monkeypatch):
+    monkeypatch.setattr(web.PublicWebResearch, "read_feeds", AsyncMock(return_value=web.WebEvidence()))
+
+
 def page(head='', body=BODY):
     return f'<html><head><title>Prism Routing</title>{head}</head><body><article><h1>Prism Routing</h1>{body}</article></body></html>'
 
@@ -275,3 +280,29 @@ def test_discovery_reserves_page_budget_for_candidate_corroboration(monkeypatch)
         assert result.documents[0]['url'] == 'https://discussion.example/independent'
 
     asyncio.run(run())
+
+
+def test_feed_transport_uses_the_same_redirect_and_size_guards(monkeypatch):
+    monkeypatch.setattr(web, 'pin_http_target', public_pinner)
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(302, headers={'location': 'http://169.254.169.254/latest/meta-data'})
+
+    install_transport(monkeypatch, handler)
+    assert asyncio.run(web.fetch_resource('https://research.example/rss', feed=True)) is None
+    assert len(seen) == 1 and 'xml' in seen[0].headers['accept']
+    monkeypatch.setattr(web, 'MAX_PAGE_BYTES', 10)
+    install_transport(monkeypatch, lambda r: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, content=b'x' * 20))
+    assert asyncio.run(web.fetch_resource('https://research.example/rss', feed=True)) is None
+
+
+def test_malformed_original_does_not_abort_other_sources(monkeypatch):
+    monkeypatch.setattr(web, 'fetch_resource', AsyncMock(return_value=('https://research.example/story', b'malformed')))
+
+    def reject(*_):
+        raise ValueError('parser rejected the page')
+
+    monkeypatch.setattr(web, 'parse_page', reject)
+    assert asyncio.run(web.fetch_page('https://research.example/story', NOW)) is None

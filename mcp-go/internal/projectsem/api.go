@@ -216,38 +216,33 @@ func BuildProjectSearchIntent(value string) Intent {
 	}
 }
 
-// BuildProjectLexicalRetrievalPlan 复刻 build_project_lexical_retrieval_plan：
-// 概念过滤 intent.ConceptIDs 子集；字面词剔除概念覆盖区间、HAN 词、
-// transport 词与 casefold=="ai"。
+// BuildProjectLexicalRetrievalPlan uses the original query and validated host hints.
 func BuildProjectLexicalRetrievalPlan(intent Intent) LexicalRetrievalPlan {
-	matches := projectConceptMatches(intent.NormalizedQuery, 8)
-	conceptFilter := make(map[string]bool, len(intent.ConceptIDs))
-	for _, id := range intent.ConceptIDs {
-		conceptFilter[id] = true
+	inputs := []string{intent.NormalizedQuery}
+	if intent.SchemaVersion == "project-search-intent-client-v1" {
+		inputs = append(inputs, intent.LexicalTerms...)
 	}
 	concepts := []LexicalConcept{}
-	for _, m := range matches {
-		spec := &projectConceptLexicon[m.spec]
-		if !conceptFilter[spec.conceptID] {
-			continue
-		}
-		concepts = append(concepts, LexicalConcept{
-			ConceptID:    spec.conceptID,
-			PrimaryTerms: []string{m.text},
-			Aliases:      append([]string{}, spec.aliases...),
-		})
-	}
 	strictTerms := []string{}
-	for _, tok := range projectLiteralTerms(intent.NormalizedQuery, matches) {
-		if fold(tok.text) != "ai" {
-			strictTerms = append(strictTerms, tok.text)
+	seenConcepts, seenTerms := map[string]bool{}, map[string]bool{}
+	for _, value := range inputs {
+		matches := projectConceptMatches(value, 8)
+		for _, m := range matches {
+			spec := &projectConceptLexicon[m.spec]
+			if !seenConcepts[spec.conceptID] {
+				seenConcepts[spec.conceptID] = true
+				concepts = append(concepts, LexicalConcept{ConceptID: spec.conceptID, PrimaryTerms: []string{m.text}, Aliases: append([]string{}, spec.aliases...)})
+			}
+		}
+		for _, tok := range projectLiteralTerms(value, matches) {
+			key := fold(tok.text)
+			if key != "ai" && !seenTerms[key] {
+				seenTerms[key] = true
+				strictTerms = append(strictTerms, tok.text)
+			}
 		}
 	}
-	return LexicalRetrievalPlan{
-		NormalizedQuery: intent.NormalizedQuery,
-		StrictTerms:     strictTerms,
-		Concepts:        concepts,
-	}
+	return LexicalRetrievalPlan{NormalizedQuery: intent.NormalizedQuery, StrictTerms: strictTerms, Concepts: concepts}
 }
 
 // NormalizeClientIntentValues 复刻 normalize_client_intent_values：

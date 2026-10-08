@@ -310,7 +310,8 @@ def test_typed_lexical_plan_counts_each_concept_once_and_binds_aliases() -> None
     assert "SELECT DISTINCT repo_id, group_id" in sql
     assert params.count("term:0") == 2
     assert params.count("concept:agent") == 6
-    for pattern in ("%local%", "%智能体%", "%agent%", "%agent framework%"):
+    for pattern in ("%local%", "智能体", "(^|[^a-z0-9])agent($|[^a-z0-9])",
+                    "(^|[^a-z0-9])agent framework($|[^a-z0-9])"):
         assert params.count(pattern) == 2
     assert params[-3:] == (2, 150, 150)
     assert "智能体" not in sql
@@ -346,8 +347,9 @@ def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
     assert params[2:18] == (
         "term:0", "%ai%", "term:0", "%ai%",
         "term:1", "%agent%", "term:1", "%agent%",
-        "concept:agent", "%agent%", "concept:agent", "%agent%",
-        "concept:agent", "%智能体%", "concept:agent", "%智能体%",
+        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])",
+        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])",
+        "concept:agent", "智能体", "concept:agent", "智能体",
     )
     # 3. scored 匹配强度：normalized_query ×3（full_name/名段/title 精确等值）
     #    + prefix ×3（名段/full_name/title 前缀）

@@ -147,11 +147,23 @@ def test_process_hard_timeout_fails_hung_task_and_does_not_block(monkeypatch) ->
 
 def test_process_resets_not_started_after_consecutive_failures(monkeypatch) -> None:
     monkeypatch.setattr(x_translation_service.time, "sleep", lambda _: None)
-    _patch_translate(
-        monkeypatch, lambda task: (_ for _ in ()).throw(RuntimeError("boom"))
-    )
+    breaker_tripped = threading.Event()
+
+    def translate(task):
+        # Keep task 7 queued even if the worker outruns the completion consumer.
+        if task["id"] >= 6:
+            assert breaker_tripped.wait(5), "circuit breaker did not reset queued tasks"
+        raise RuntimeError("boom")
+
+    class GatedRepository(FakeRepository):
+        def reset_claimed_to_pending(self, task_ids, claim_token=""):
+            count = super().reset_claimed_to_pending(task_ids, claim_token)
+            breaker_tripped.set()
+            return count
+
+    _patch_translate(monkeypatch, translate)
     tasks = [_task(i) for i in range(1, 8)]
-    repository = FakeRepository(tasks)
+    repository = GatedRepository(tasks)
     processor = XTranslationProcessor(repository, concurrency=1)
 
     result = processor.process(10)

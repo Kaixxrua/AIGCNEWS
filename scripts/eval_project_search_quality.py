@@ -30,17 +30,38 @@ def reciprocal_rank(relevance: Iterable[float], k: int) -> float:
     return 0.0
 
 
-def ndcg_at_k(relevance: Iterable[float], k: int) -> float:
+def ndcg_at_k(
+    relevance: Iterable[float], k: int, *, ideal_relevance: Iterable[float] | None = None,
+) -> float:
     if k <= 0:
         raise ValueError("k must be positive")
-    values = list(relevance)[:k]
+    values = list(relevance)
 
     def dcg(items: list[float]) -> float:
         return sum((2**value - 1) / math.log2(rank + 1) for rank, value in enumerate(items, start=1))
 
-    ideal = sorted(values, reverse=True)
+    ideal = sorted(values if ideal_relevance is None else ideal_relevance, reverse=True)[:k]
     ideal_score = dcg(ideal)
-    return dcg(values) / ideal_score if ideal_score else 0.0
+    return dcg(values[:k]) / ideal_score if ideal_score else 0.0
+
+
+def _case_judgments(case: dict[str, Any]) -> dict[str, float]:
+    """One query-wide ideal shared by all systems, including known missed answers."""
+    explicit = case.get("judgments", {})
+    if not isinstance(explicit, dict) or any(
+        not isinstance(repo_id, str) or not repo_id
+        or isinstance(grade, bool) or not isinstance(grade, (int, float))
+        or not math.isfinite(grade) or not 0 <= grade <= MAX_RELEVANCE
+        for repo_id, grade in explicit.items()
+    ):
+        raise ValueError("judgments must map repository ids to finite relevance grades from 0 to 3")
+    judgments = dict(explicit)
+    for result in case["systems"].values():
+        for repo_id, grade in zip(result["result_ids"], result["relevance"]):
+            if repo_id in judgments and judgments[repo_id] != grade:
+                raise ValueError(f"relevance judgments disagree for {repo_id}")
+            judgments[repo_id] = grade
+    return judgments
 
 
 def success_at_k(result_ids: Iterable[str], must_find: Iterable[str], k: int) -> float:
@@ -122,6 +143,7 @@ def _validate_payload(payload: dict[str, Any], cutoffs: tuple[int, ...]) -> tupl
                 raise ValueError("error must be a string")
             if "fallback_used" in result and not isinstance(result["fallback_used"], bool):
                 raise ValueError("fallback_used must be a boolean")
+        _case_judgments(case)
     assert systems is not None
     return cases, systems
 
@@ -131,6 +153,7 @@ def _system_metrics(case: dict[str, Any], system: str, cutoffs: tuple[int, ...])
     relevance = [float(value) for value in result["relevance"]]
     result_ids = [str(value) for value in result["result_ids"]]
     must_find = [str(value) for value in case["must_find"]]
+    ideal_relevance = _case_judgments(case).values()
     metrics: dict[str, float] = {
         "mrr": reciprocal_rank(relevance, max(cutoffs)),
         "latency_ms": float(result.get("latency_ms", 0.0)),
@@ -140,7 +163,7 @@ def _system_metrics(case: dict[str, Any], system: str, cutoffs: tuple[int, ...])
     }
     for cutoff in cutoffs:
         metrics[f"precision@{cutoff}"] = precision_at_k(relevance, cutoff)
-        metrics[f"ndcg@{cutoff}"] = ndcg_at_k(relevance, cutoff)
+        metrics[f"ndcg@{cutoff}"] = ndcg_at_k(relevance, cutoff, ideal_relevance=ideal_relevance)
         metrics[f"recall@{cutoff}"] = recall_at_k(result_ids, must_find, cutoff)
         metrics[f"success@{cutoff}"] = success_at_k(result_ids, must_find, cutoff)
     return metrics

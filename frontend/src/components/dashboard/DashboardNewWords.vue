@@ -19,6 +19,7 @@ const historyLoading = ref(false)
 const historyFailed = ref(false)
 const methodSteps = ['candidateStep', 'verifyStep', 'filterStep', 'rankStep', 'repeatStep'] as const
 const words = computed(() => snapshot.value?.items.slice(0, 2) ?? [])
+const sampling = computed(() => snapshot.value?.items[0]?.sampling)
 const chinese = computed(() => locale.value.startsWith('zh'))
 const stateLabel = computed(() => loading.value ? 'loading' : failed.value ? 'failed' : snapshot.value?.status === 'pending' ? 'pending' : 'empty')
 let controller: AbortController | undefined
@@ -181,6 +182,7 @@ onBeforeUnmount(() => {
         <h3>{{ t('dashboard.newWords.why') }}</h3>
         <p>{{ chinese ? selected.reason_zh : selected.reason_en }}</p>
         <h3>{{ t('dashboard.newWords.sources') }}</h3>
+        <p v-if="selected.support">{{ t('dashboard.newWords.support', selected.support) }}</p>
         <ul>
           <li v-for="source in selected.evidence.filter(e => sourceUrl(e.url))" :key="source.id">
             <span class="new-word-source-meta">{{ sourceHost(source.url) }} · {{ source.published_at.slice(0, 10) }}</span>
@@ -192,6 +194,7 @@ onBeforeUnmount(() => {
       <template v-else-if="panel === 'method'">
         <h2 id="new-word-detail-title" tabindex="-1">{{ t('dashboard.newWords.method') }}</h2>
         <p>{{ t('dashboard.newWords.methodIntro') }}</p>
+        <p v-if="sampling">{{ t('dashboard.newWords.sampling', sampling) }}</p>
         <ol class="new-word-method-steps">
           <li v-for="step in methodSteps" :key="step">{{ t('dashboard.newWords.' + step) }}</li>
         </ol>

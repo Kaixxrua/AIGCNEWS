@@ -10,6 +10,7 @@ from backend.app.core.postgres_database import (
     postgres_database,
 )
 from backend.app.domain.github_heat import SUSPICION_DEMOTION_THRESHOLD, heat_growth_sql
+from backend.app.domain.project_search_patterns import concept_search_pattern
 from backend.app.domain.project_taxonomy import (
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
     PROJECT_TAXONOMY,
@@ -538,6 +539,7 @@ class PostgresProjectCatalogRepository:
         self,
         *,
         q: str,
+        scope: str = "all",
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -558,6 +560,9 @@ class PostgresProjectCatalogRepository:
             "ga.alias_repo_id IS NULL",
         ]
         params: list[Any] = [] if enriched_only else [min_stars]
+        # Filter membership before either bounded candidate lane is truncated.
+        if scope == "recommended":
+            filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
         if category:
             filters.append("ge.category_slug = %s"); params.append(category)
         if subcategory:
@@ -629,6 +634,7 @@ class PostgresProjectCatalogRepository:
         self,
         *,
         q: str | ProjectLexicalRetrievalPlan,
+        scope: str = "all",
         category: str = "",
         subcategory: str = "",
         language: str = "",
@@ -665,6 +671,9 @@ class PostgresProjectCatalogRepository:
             else f"COALESCE(c.stars, 0) >= %s AND {_GH_CANONICAL_ALIAS_FILTER}"
         ]
         filter_params: list[Any] = [] if enriched_only else [min_stars]
+        # Filter membership before either bounded candidate lane is truncated.
+        if scope == "recommended":
+            filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
         if category:
             filters.append("ge.category_slug = %s")
             filter_params.append(category)
@@ -690,29 +699,30 @@ class PostgresProjectCatalogRepository:
         enrichment_document = (
             "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
         )
-        rows: list[tuple[str, str]] = []
+        rows: list[tuple[str, str, bool]] = []
         for index, term in enumerate(strict_terms):
-            rows.append((f"term:{index}", f"%{escape_like_literal(term)}%"))
+            rows.append((f"term:{index}", f"%{escape_like_literal(term)}%", False))
         for concept_id, terms in concepts:
             for term in terms:
-                rows.append((f"concept:{concept_id}", f"%{escape_like_literal(term)}%"))
-        group_ids = tuple(dict.fromkeys(group_id for group_id, _ in rows))
+                rows.append((f"concept:{concept_id}", concept_search_pattern(term), True))
+        group_ids = tuple(dict.fromkeys(group_id for group_id, _, _ in rows))
         hit_parts: list[str] = []
         hit_params: list[Any] = []
-        for group_id, pattern in rows:
+        for group_id, pattern, is_concept in rows:
+            predicate = "~* %s" if is_concept else "ILIKE %s ESCAPE '='"
             hit_parts.extend(
                 (
                     f"""
                         SELECT c.repo_id, %s::text AS group_id
                         FROM github_repo_candidates c
                         JOIN eligible e ON e.repo_id = c.repo_id
-                        WHERE {candidate_document} ILIKE %s ESCAPE '='
+                        WHERE {candidate_document} {predicate}
                     """,
                     f"""
                         SELECT ge.repo_id, %s::text AS group_id
                         FROM github_repo_enrichments ge
                         JOIN eligible e ON e.repo_id = ge.repo_id
-                        WHERE {enrichment_document} ILIKE %s ESCAPE '='
+                        WHERE {enrichment_document} {predicate}
                     """,
                 )
             )

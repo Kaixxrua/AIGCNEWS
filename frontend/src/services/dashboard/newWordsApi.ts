@@ -8,6 +8,8 @@ export interface NewWord {
   reason_zh: string
   reason_en: string
   first_seen: string
+  support?: { publishers: number; channels: number }
+  sampling?: { feeds_checked: number; feeds_available: number; feeds_with_recent_items: number; documents: number; publishers: number }
   evidence: { id: string; title: string; url: string; source: string; published_at: string }[]
 }
 
