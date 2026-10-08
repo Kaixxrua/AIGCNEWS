@@ -3,8 +3,8 @@
 // 与 backend/app/services/auth/rate_limit.py 的 hit_rate_limit 等价：
 //
 //   - 两层正交限速：分钟级突发桶防爬（所有方法），tools/call 再叠加
-//     分层配额桶（匿名按 IP 每 24 小时 30 次；Free 按用户每 24 小时
-//     60 次 + 滚动 30 天 1200 次；VIP 按用户每 24 小时 400 次 + 滚动
+//     分层配额桶（匿名按 IP 每 24 小时 10 次；Free 按用户每 24 小时
+//     20 次 + 滚动 30 天 400 次；VIP 按用户每 24 小时 400 次 + 滚动
 //     30 天 8000 次；24 小时桶是 pacing 层，防脉冲烧穿长窗口额度）；
 //   - 先分钟桶后配额桶，被分钟桶 429 的请求不消耗配额；
 //   - admin 豁免配额（运营排查不受商业约束），但不豁免分钟桶；
@@ -56,9 +56,9 @@ type Limits struct {
 	AnonymousToolCallPerMinute     int64 // MCP_ANONYMOUS_TOOL_CALL_LIMIT = 30
 	AuthenticatedProtocolPerMinute int64 // MCP_AUTHENTICATED_PROTOCOL_LIMIT = 240
 	AuthenticatedToolCallPerMinute int64 // MCP_AUTHENTICATED_TOOL_CALL_LIMIT = 120
-	AnonymousDailyToolCallQuota    int64 // MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA = 30
-	FreeDailyToolCallQuota         int64 // MCP_FREE_DAILY_TOOL_CALL_QUOTA = 60
-	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 1200
+	AnonymousDailyToolCallQuota    int64 // MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA = 10
+	FreeDailyToolCallQuota         int64 // MCP_FREE_DAILY_TOOL_CALL_QUOTA = 20
+	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 400
 	MemberDailyToolCallQuota       int64 // MCP_MEMBER_DAILY_TOOL_CALL_QUOTA = 400
 	MemberMonthlyToolCallQuota     int64 // MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA = 8000
 }
@@ -69,9 +69,9 @@ func defaultLimits() Limits {
 		AnonymousToolCallPerMinute:     30,
 		AuthenticatedProtocolPerMinute: 240,
 		AuthenticatedToolCallPerMinute: 120,
-		AnonymousDailyToolCallQuota:    30,
-		FreeDailyToolCallQuota:         60,
-		FreeMonthlyToolCallQuota:       1200,
+		AnonymousDailyToolCallQuota:    10,
+		FreeDailyToolCallQuota:         20,
+		FreeMonthlyToolCallQuota:       400,
 		MemberDailyToolCallQuota:       400,
 		MemberMonthlyToolCallQuota:     8000,
 	}

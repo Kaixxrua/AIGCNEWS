@@ -100,7 +100,7 @@ describe('MembershipView desktop comparison', () => {
       .filter((cell) => cell.classes('tier-feature--upgrade'))
       .map((cell) => cell.findAll('.tier-cell-text').map((text) => text.text()))
     expect(marked(0)).toEqual([])
-    expect(marked(1)).toEqual([['每 24 小时最多 60 次', '每 30 天最多 1,200 次']])
+    expect(marked(1)).toEqual([['每 24 小时最多 20 次', '每 30 天最多 400 次']])
     expect(marked(2)).toEqual([['10 条，支持排除词', 'AI 客户端经 MCP 可读'], ['自选时间与已验证投递渠道', '附关键词热度飙升提醒', '可导出最近 90 天'], ['添加不限量'], ['不限次'], ['每 24 小时最多 400 次', '每 30 天最多 8,000 次']])
     // ✗ 到 ✓ 不划：免费档的追踪比游客多，但游客那格的 ✗ 已经说明了
     expect(column(wrapper, 1)[1]?.classes()).not.toContain('tier-feature--upgrade')
@@ -150,6 +150,6 @@ describe('MembershipView desktop comparison', () => {
     const guest = wrapper.findAll('.tier-card')[0]
     expect(guest?.findAll('.tier-features li')).toHaveLength(6)
     expect(guest?.findAll('.tier-feature--excluded')).toHaveLength(4)
-    expect(guest?.text()).toContain('MCP 匿名额度：每 24 小时 30 次')
+    expect(guest?.text()).toContain('MCP 匿名额度：每 24 小时 10 次')
   })
 })

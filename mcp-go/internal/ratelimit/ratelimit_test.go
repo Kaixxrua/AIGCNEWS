@@ -72,6 +72,26 @@ func TestEnforceAnonymousProtocolBurstBucket(t *testing.T) {
 	}
 }
 
+// 默认额度与 REST 侧 backend/app/services/api_access/quota.py 同值即同池；
+// Python 侧 SharedPoolContract 直接解析本文件的 defaultLimits() 反向核对，
+// 任一侧单独改额度都会显红。
+func TestDefaultLimitsMatchSharedPool(t *testing.T) {
+	want := Limits{
+		AnonymousProtocolPerMinute:     60,
+		AnonymousToolCallPerMinute:     30,
+		AuthenticatedProtocolPerMinute: 240,
+		AuthenticatedToolCallPerMinute: 120,
+		AnonymousDailyToolCallQuota:    10,
+		FreeDailyToolCallQuota:         20,
+		FreeMonthlyToolCallQuota:       400,
+		MemberDailyToolCallQuota:       400,
+		MemberMonthlyToolCallQuota:     8000,
+	}
+	if got := defaultLimits(); got != want {
+		t.Fatalf("defaultLimits() = %+v, want %+v", got, want)
+	}
+}
+
 func TestEnforceToolCallBurstBucketLimits(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -156,20 +176,20 @@ func TestEnforceAnonymousDailyQuota(t *testing.T) {
 		l.AnonymousToolCallPerMinute = 1000
 	})
 	ctx := context.Background()
-	for i := int64(1); i <= 30; i++ {
+	for i := int64(1); i <= 10; i++ {
 		if exceeded := limiter.Enforce(ctx, "tools/call", authn.Identity{}, anonymousRequest()); exceeded != nil {
 			t.Fatalf("call %d should pass, got %+v", i, exceeded)
 		}
 	}
 	exceeded := limiter.Enforce(ctx, "tools/call", authn.Identity{}, anonymousRequest())
 	if exceeded == nil {
-		t.Fatal("31st call should be rejected")
+		t.Fatal("11th call should be rejected")
 	}
 	if !exceeded.Quota || exceeded.QuotaScope != "daily" {
-		t.Fatalf("31st call should hit daily quota, got %+v", exceeded)
+		t.Fatalf("11th call should hit daily quota, got %+v", exceeded)
 	}
-	if exceeded.Tier != authn.TierFree || exceeded.Limit != 30 {
-		t.Fatalf("daily quota should report tier=free limit=30, got %+v", exceeded)
+	if exceeded.Tier != authn.TierFree || exceeded.Limit != 10 {
+		t.Fatalf("daily quota should report tier=free limit=10, got %+v", exceeded)
 	}
 	if exceeded.IdentityKind != "ip" {
 		t.Fatalf("anonymous daily quota should report identity_kind=ip, got %+v", exceeded)
@@ -179,8 +199,8 @@ func TestEnforceAnonymousDailyQuota(t *testing.T) {
 		t.Fatalf("RetryAfter = %d, want %d", exceeded.RetryAfter, QuotaDailyWindowSeconds)
 	}
 	key := "ratelimit:mcp.quota.daily:ip:192.0.2.1"
-	if value, err := mr.Get(key); err != nil || value != "31" {
-		t.Fatalf("key %s = %q, %v; want %q", key, value, err, "31")
+	if value, err := mr.Get(key); err != nil || value != "11" {
+		t.Fatalf("key %s = %q, %v; want %q", key, value, err, "11")
 	}
 }
 
