@@ -100,6 +100,7 @@ const groupLabel = computed(() => t('masthead.userGroup', { tier: tierLabel.valu
 
 .masthead-user__expiry {
   font-variant-numeric: tabular-nums;
+  white-space: normal;
 }
 
 /* 窄屏隐藏：避免与居中字标/工具组挤压（与 MastheadMeta 同口径） */
