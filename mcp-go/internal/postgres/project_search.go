@@ -276,15 +276,18 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 
 	candidateDocument := "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '') || ' ' || COALESCE(c.topics_json, ''))"
 	enrichmentDocument := "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
-	type hit struct{ group, pattern string }
+	type hit struct {
+		group, pattern string
+		isConcept      bool
+	}
 	hits := make([]hit, 0)
 	for i, term := range strictTerms {
-		hits = append(hits, hit{fmt.Sprintf("term:%d", i), "%" + escapeLikeLiteral.Replace(term) + "%"})
+		hits = append(hits, hit{fmt.Sprintf("term:%d", i), "%" + escapeLikeLiteral.Replace(term) + "%", false})
 	}
 	for _, concept := range concepts {
 		terms := append(append([]string{}, concept.PrimaryTerms...), concept.Aliases...)
 		for _, term := range terms {
-			hits = append(hits, hit{"concept:" + concept.ConceptID, "%" + escapeLikeLiteral.Replace(term) + "%"})
+			hits = append(hits, hit{"concept:" + concept.ConceptID, projectsem.ConceptSearchPattern(term), true})
 		}
 	}
 	groups := make([]string, 0, len(hits))
@@ -298,9 +301,13 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 	branches := make([]string, 0, len(hits)*2)
 	hitParams := make([]any, 0, len(hits)*4)
 	for _, h := range hits {
+		predicate := "ILIKE %s ESCAPE '='"
+		if h.isConcept {
+			predicate = "~* %s"
+		}
 		branches = append(branches,
-			fmt.Sprintf("SELECT c.repo_id, %%s::text AS group_id FROM github_repo_candidates c JOIN eligible e ON e.repo_id = c.repo_id WHERE %s ILIKE %%s ESCAPE '='", candidateDocument),
-			fmt.Sprintf("SELECT ge.repo_id, %%s::text AS group_id FROM github_repo_enrichments ge JOIN eligible e ON e.repo_id = ge.repo_id WHERE %s ILIKE %%s ESCAPE '='", enrichmentDocument),
+			fmt.Sprintf("SELECT c.repo_id, %%s::text AS group_id FROM github_repo_candidates c JOIN eligible e ON e.repo_id = c.repo_id WHERE %s %s", candidateDocument, predicate),
+			fmt.Sprintf("SELECT ge.repo_id, %%s::text AS group_id FROM github_repo_enrichments ge JOIN eligible e ON e.repo_id = ge.repo_id WHERE %s %s", enrichmentDocument, predicate),
 		)
 		hitParams = append(hitParams, h.group, h.pattern, h.group, h.pattern)
 	}

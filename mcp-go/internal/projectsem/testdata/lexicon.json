@@ -54,7 +54,8 @@
    "项目持久记忆",
    "代码库记忆",
    "项目记忆",
-   "长期记忆",
+   "代码库长期记忆",
+   "项目长期记忆",
    "codebase memory",
    "code intelligence",
    "codebase indexing"
@@ -257,14 +258,18 @@
    "评估",
    "benchmarks",
    "benchmark",
+   "evaluations",
    "evaluation",
    "evals",
    "eval"
   ],
   "aliases": [
    "evaluation",
+   "evaluations",
    "benchmark",
+   "benchmarks",
    "eval",
+   "evals",
    "评测",
    "评估",
    "基准测试"
@@ -319,14 +324,29 @@
  {
   "concept_id": "agent_memory",
   "phrases": [
+   "智能体长期记忆",
+   "智能体持久记忆",
    "智能体记忆",
+   "长期记忆",
+   "持久记忆",
+   "agent long-term memory",
+   "agent long term memory",
+   "long-term memory",
+   "long term memory",
+   "persistent memory",
    "agent memory",
    "agentic memory"
   ],
   "aliases": [
    "agent memory",
    "agentic memory",
-   "智能体记忆"
+   "long-term memory",
+   "long term memory",
+   "persistent memory",
+   "memory layer",
+   "智能体记忆",
+   "长期记忆",
+   "持久记忆"
   ]
  },
  {

@@ -52,6 +52,7 @@ def rank_v2_project_candidate_ids(
     adoption_stars: Mapping[str, int] | None = None,
     adoption_weight: float = 0.0,
 ) -> list[str]:
+    strict_ids = {candidate.repo_id.strip() for candidate in strict_candidates}
     scores: dict[str, float] = {}
     best_rank: dict[str, int] = {}
     coverage: dict[str, int] = {}
@@ -94,6 +95,7 @@ def rank_v2_project_candidate_ids(
         scores,
         key=lambda repo_id: (
             0 if normalized_exact and repo_id.casefold() == normalized_exact else 1,
+            0 if repo_id in strict_ids else 1,
             -scores[repo_id],
             -strength.get(repo_id, 0),
             -coverage.get(repo_id, 0),
@@ -132,8 +134,8 @@ def order_candidates_by_popularity(
     首页，相关且有人气的项目则前移；7 日窗口跨过零点，不随当天首轮
     指标的有无而整体翻转。
 
-    精确命中钉在榜首；pinned_repo_ids（调用方仅在 strict lane 一页放得
-    下时传入）是全部严格查询词都命中的确定答案，钉在精确命中之后、
+    精确命中钉在榜首；pinned_repo_ids 是全部严格查询词都命中的候选，
+    不受页大小影响，钉在精确命中之后、
     融合序之上，相互间保持相关性序。
     """
     ordered_ids = [str(repo_id) for repo_id in repo_ids]

@@ -121,11 +121,11 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 	strictIDs := make([]string, 0, len(strict))
 	relaxedIDs := make([]string, 0, len(relaxed))
 	for _, c := range strict {
-		strictMap[c.RepoID] = c
+		strictMap[strings.TrimSpace(c.RepoID)] = c
 		strictIDs = append(strictIDs, c.RepoID)
 	}
 	for _, c := range relaxed {
-		relaxedMap[c.RepoID] = c
+		relaxedMap[strings.TrimSpace(c.RepoID)] = c
 		relaxedIDs = append(relaxedIDs, c.RepoID)
 	}
 	add(0.45, strictIDs, strictMap)
@@ -165,6 +165,11 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 		exactB := exact != "" && strings.EqualFold(b, exact)
 		if exactA != exactB {
 			return exactA
+		}
+		_, strictA := strictMap[a]
+		_, strictB := strictMap[b]
+		if strictA != strictB {
+			return strictA
 		}
 		if scores[a] != scores[b] {
 			return scores[a] > scores[b]

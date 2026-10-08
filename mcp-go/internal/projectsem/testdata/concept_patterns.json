@@ -1,0 +1,17 @@
+[
+  {"term": "eval", "text": "retrieval engine", "match": false},
+  {"term": "rag", "text": "Storage evaluation", "match": false},
+  {"term": "eval", "text": "RAG-eval toolkit", "match": true},
+  {"term": "rag", "text": "RAG_eval toolkit", "match": true},
+  {"term": "rag", "text": "中文RAG评测", "match": true},
+  {"term": "evaluation", "text": "LLM evaluation toolkit", "match": true},
+  {"term": "长期记忆", "text": "智能体长期记忆系统", "match": true},
+  {"term": "c++", "text": "C++ toolkit", "match": true},
+  {"term": "c++", "text": "ccc toolkit", "match": false},
+  {"term": "a.b", "text": "axb", "match": false},
+  {"term": "a.b", "text": "use a.b today", "match": true},
+  {"term": "50%_ready", "text": "50XXready", "match": false},
+  {"term": "50%_ready", "text": "50%_ready", "match": true},
+  {"term": "x' OR TRUE --", "text": "unrelated", "match": false},
+  {"term": "x' OR TRUE --", "text": "x' OR TRUE --", "match": true}
+]

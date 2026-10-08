@@ -11,11 +11,11 @@ class ProjectConceptSpec:
 
 
 # 词法概念表：触发词（phrases）在查询上命中，别名（aliases）同时用于
-# SQL ILIKE 概念组与语义查询扩展。约束：
+# SQL 概念组与语义查询扩展。约束：
 # 1. 纯 ASCII 触发词按词边界匹配（cli 不命中 client、git 不命中 digital）；
 #    含中文等宽字符的短语保持子串匹配。
-# 2. 别名会进入 SQL ILIKE 子串匹配，禁用会被常见词误吞的短 ASCII
-#    （如 ide→video、md→amd64、otel→hotel、mod→modern、diff→different）。
+# 2. SQL 对纯 ASCII 概念词使用字母/数字边界，避免 eval→retrieval、
+#    rag→storage；中文概念词保持子串匹配，名称与普通词仍使用 ILIKE。
 # 3. 每个概念的第一别名 = 跨语言规范词：多概念命中时仅第一别名参与语义扩展。
 PROJECT_CONCEPT_LEXICON = (
     # —— 编程效率/上下文/记忆/任务/助手（既有概念，扩展双语触发与别名）——
@@ -67,7 +67,8 @@ PROJECT_CONCEPT_LEXICON = (
             "项目持久记忆",
             "代码库记忆",
             "项目记忆",
-            "长期记忆",
+            "代码库长期记忆",
+            "项目长期记忆",
             "codebase memory",
             "code intelligence",
             "codebase indexing",
@@ -172,8 +173,8 @@ PROJECT_CONCEPT_LEXICON = (
     ),
     ProjectConceptSpec(
         "llm_evaluation",
-        ("基准测试", "评测", "评估", "benchmarks", "benchmark", "evaluation", "evals", "eval"),
-        ("evaluation", "benchmark", "eval", "评测", "评估", "基准测试"),
+        ("基准测试", "评测", "评估", "benchmarks", "benchmark", "evaluations", "evaluation", "evals", "eval"),
+        ("evaluation", "evaluations", "benchmark", "benchmarks", "eval", "evals", "评测", "评估", "基准测试"),
     ),
     ProjectConceptSpec(
         "mcp",
@@ -192,8 +193,15 @@ PROJECT_CONCEPT_LEXICON = (
     ),
     ProjectConceptSpec(
         "agent_memory",
-        ("智能体记忆", "agent memory", "agentic memory"),
-        ("agent memory", "agentic memory", "智能体记忆"),
+        (
+            "智能体长期记忆", "智能体持久记忆", "智能体记忆", "长期记忆", "持久记忆",
+            "agent long-term memory", "agent long term memory", "long-term memory",
+            "long term memory", "persistent memory", "agent memory", "agentic memory",
+        ),
+        (
+            "agent memory", "agentic memory", "long-term memory", "long term memory",
+            "persistent memory", "memory layer", "智能体记忆", "长期记忆", "持久记忆",
+        ),
     ),
     ProjectConceptSpec(
         "llm_observability",

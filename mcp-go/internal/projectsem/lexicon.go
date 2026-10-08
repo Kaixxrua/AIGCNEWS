@@ -21,7 +21,7 @@ var projectConceptLexicon = []conceptSpec{
 	},
 	{
 		conceptID: "codebase_memory",
-		phrases:   []string{"代码库持久记忆", "项目持久记忆", "代码库记忆", "项目记忆", "长期记忆", "codebase memory", "code intelligence", "codebase indexing"},
+		phrases:   []string{"代码库持久记忆", "项目持久记忆", "代码库记忆", "项目记忆", "代码库长期记忆", "项目长期记忆", "codebase memory", "code intelligence", "codebase indexing"},
 		aliases:   []string{"codebase memory", "code intelligence", "codebase indexing", "persistent memory", "knowledge graph", "编程智能体", "代码库索引", "知识图谱"},
 	},
 	{
@@ -76,8 +76,8 @@ var projectConceptLexicon = []conceptSpec{
 	},
 	{
 		conceptID: "llm_evaluation",
-		phrases:   []string{"基准测试", "评测", "评估", "benchmarks", "benchmark", "evaluation", "evals", "eval"},
-		aliases:   []string{"evaluation", "benchmark", "eval", "评测", "评估", "基准测试"},
+		phrases:   []string{"基准测试", "评测", "评估", "benchmarks", "benchmark", "evaluations", "evaluation", "evals", "eval"},
+		aliases:   []string{"evaluation", "evaluations", "benchmark", "benchmarks", "eval", "evals", "评测", "评估", "基准测试"},
 	},
 	{
 		conceptID: "mcp",
@@ -96,8 +96,8 @@ var projectConceptLexicon = []conceptSpec{
 	},
 	{
 		conceptID: "agent_memory",
-		phrases:   []string{"智能体记忆", "agent memory", "agentic memory"},
-		aliases:   []string{"agent memory", "agentic memory", "智能体记忆"},
+		phrases:   []string{"智能体长期记忆", "智能体持久记忆", "智能体记忆", "长期记忆", "持久记忆", "agent long-term memory", "agent long term memory", "long-term memory", "long term memory", "persistent memory", "agent memory", "agentic memory"},
+		aliases:   []string{"agent memory", "agentic memory", "long-term memory", "long term memory", "persistent memory", "memory layer", "智能体记忆", "长期记忆", "持久记忆"},
 	},
 	{
 		conceptID: "llm_observability",
