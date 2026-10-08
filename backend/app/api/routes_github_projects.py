@@ -73,10 +73,21 @@ def get_github_logo_repository():
 def github_project_logo(
     owner: str, repo: str, request: Request,
     repository: Any = Depends(get_github_logo_repository),
+    avatar: bool = False,
 ) -> Response:
     if not _REPO_ID_PATTERN.fullmatch(f"{owner}/{repo}"):
         raise HTTPException(404, "Logo not found")
-    row = repository.get(f"{owner}/{repo}")
+    if avatar:
+        from backend.app.services.github_owner_avatar import get_owner_avatar
+
+        current_owner = repository.avatar_owner(f"{owner}/{repo}")
+        if not current_owner:
+            raise HTTPException(404, "Logo not found")
+        row = get_owner_avatar(current_owner)
+        if not row:
+            raise HTTPException(503, "Avatar temporarily unavailable", headers={"Cache-Control": "no-store"})
+    else:
+        row = repository.get(f"{owner}/{repo}")
     if not row:
         raise HTTPException(404, "Logo not found")
     etag = f'"{row["sha256"]}"'

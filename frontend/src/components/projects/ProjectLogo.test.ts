@@ -5,10 +5,13 @@ import ProjectHeat from './ProjectHeat.vue'
 import i18n from '@/i18n'
 
 describe('project identity and heat', () => {
-  it('uses stored artwork and falls back to initials without external requests', async () => {
+  it('tries a same-origin owner avatar before the initial when artwork fails', async () => {
     const logo = mount(ProjectLogo, { props: { logo: '/api/projects/github/logo/acme/demo', repositoryUrl: 'https://github.com/acme/demo', name: 'Demo' } })
     expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/demo')
     await logo.get('img').trigger('error')
+    expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/demo?avatar=true')
+    await logo.get('img').trigger('error')
+    expect(logo.find('img').exists()).toBe(false)
     expect(logo.text()).toBe('D')
     await logo.setProps({ logo: '/api/projects/github/logo/acme/next' })
     expect(logo.get('img').attributes('src')).toContain('/acme/next')
@@ -17,7 +20,7 @@ describe('project identity and heat', () => {
     const logo = mount(ProjectLogo, { props: { repositoryUrl: 'https://github.com/acme/demo', name: 'Demo' } })
     expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/demo')
   })
-  it('replaces a wordmark with the initial and backs transparent marks with a contrasting plate', async () => {
+  it('replaces a wordmark with the owner avatar and backs transparent marks with a contrasting plate', async () => {
     const pixel = (rgba: number[]) => ({
       canvas: {}, drawImage: () => {},
       getImageData: () => ({ data: new Uint8ClampedArray(Array.from({ length: 24 * 24 }, (_, i) => i % 2 ? rgba : [0, 0, 0, 0]).flat()) }),
@@ -30,8 +33,13 @@ describe('project identity and heat', () => {
     }
     const logo = mount(ProjectLogo, { props: { logo: '/api/projects/github/logo/acme/wordmark', name: 'Acme' } })
     await load(logo, 256, 47)
-    expect(logo.find('img').exists()).toBe(false)
+    expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/acme/wordmark?avatar=true')
     expect(logo.text()).toBe('A')
+
+    getContext.mockReturnValue(pixel([60, 60, 60, 255]) as never)
+    await load(logo, 128, 128)
+    expect(logo.get('img').classes()).toContain('loaded')
+    expect(logo.text()).toBe('')
 
     getContext.mockReturnValue(pixel([255, 255, 255, 255]) as never)
     await logo.setProps({ logo: '/api/projects/github/logo/acme/white-mark' })
@@ -44,6 +52,26 @@ describe('project identity and heat', () => {
     expect(logo.classes()).not.toContain('project-logo--dark')
     await load(logo, 100, 110)
     expect(logo.classes()).toContain('project-logo--light')
+    getContext.mockRestore()
+  })
+  it('falls back for a completely transparent image and ignores events from a replaced image', async () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      canvas: {}, drawImage: () => {}, getImageData: () => ({ data: new Uint8ClampedArray(24 * 24 * 4) }),
+    } as never)
+    const logo = mount(ProjectLogo, { props: { repositoryUrl: 'https://github.com/acme/demo', name: 'Demo' } })
+    const old = logo.get('img')
+    Object.defineProperties(old.element, { naturalWidth: { value: 128 }, naturalHeight: { value: 128 } })
+    await old.trigger('load')
+    expect(logo.get('img').attributes('src')).toContain('?avatar=true')
+    await old.trigger('error')
+    await old.trigger('load')
+    expect(logo.get('img').attributes('src')).toContain('?avatar=true')
+    expect(logo.get('img').classes()).not.toContain('loaded')
+    await logo.get('img').trigger('error')
+    await logo.setProps({ repositoryUrl: 'https://github.com/new-owner/next' })
+    expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/new-owner/next')
+    await logo.get('img').trigger('error')
+    expect(logo.get('img').attributes('src')).toBe('/api/projects/github/logo/new-owner/next?avatar=true')
     getContext.mockRestore()
   })
   it('shows the initial without requesting a logo for a repository that is gone', () => {

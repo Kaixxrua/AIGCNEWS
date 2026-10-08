@@ -196,6 +196,18 @@ def test_logo_route_name_resolves_artwork_stored_under_github_node_id():
         assert bytes(repo.get('acme/demo')['content']) == b'artwork'
         assert repo.get('R_kgDOexample')['sha256'] == 'good'
         assert repo.get('acme/missing') is None
+        assert repo.avatar_owner('acme/demo') == 'acme'
+        assert repo.avatar_owner('acme/missing') is None
+        with db.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_aliases (alias_repo_id, canonical_repo_id, full_name)
+                VALUES ('old-owner/demo', 'R_kgDOexample', 'old-owner/demo')
+            """)
+        assert repo.avatar_owner('old-owner/demo') == 'acme'
+        with db.transaction() as connection:
+            connection.execute("UPDATE github_repo_candidates SET availability_status='not_found' WHERE repo_id='R_kgDOexample'")
+        assert repo.avatar_owner('acme/demo') is None
+        assert repo.avatar_owner('old-owner/demo') is None
 
 
 def test_avatar_upgrade_snapshot_excludes_project_logos_and_inactive_rows():

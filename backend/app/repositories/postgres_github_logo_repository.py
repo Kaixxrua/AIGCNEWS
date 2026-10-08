@@ -114,6 +114,20 @@ class PostgresGitHubLogoRepository:
             """, (GITHUB_DEFAULT_AVATAR_SHA256,))
             return cursor.rowcount
 
+    def avatar_owner(self, repo_id: str) -> str | None:
+        """Resolve the current owner only for an active, indexed repository."""
+        with self.database.transaction() as connection, connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT split_part(c.full_name, '/', 1) AS owner
+                FROM github_repo_candidates c
+                WHERE c.repo_id = COALESCE(
+                    (SELECT canonical_repo_id FROM github_repo_aliases WHERE alias_repo_id = %s),
+                    (SELECT repo_id FROM github_repo_candidates WHERE full_name = %s LIMIT 1), %s)
+                  AND c.availability_status = 'active'
+            """, (repo_id, repo_id, repo_id))
+            row = cursor.fetchone()
+            return row["owner"] if row else None
+
     def get(self, repo_id: str) -> dict[str, Any] | None:
         with self.database.transaction() as connection, connection.cursor() as cursor:
             cursor.execute("""

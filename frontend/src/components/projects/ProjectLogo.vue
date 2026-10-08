@@ -12,16 +12,21 @@ const cachedLogo = computed(() => {
       ? `/api/projects/github/logo/${repository}` : ''
   } catch { return '' }
 })
-// The logo endpoint only serves repositories that still exist; a removed one keeps its initial.
-const candidates = computed(() => props.unavailable ? [] : [
-  /^\/api\/projects\/github\/logo\/[a-z\d-]+\/[a-z\d_.-]+$/i.test(props.logo || '') ? props.logo! : '',
-  cachedLogo.value,
-].filter(Boolean))
+// Keep both artwork and the owner fallback same-origin, including on restricted networks.
+const candidates = computed(() => {
+  if (props.unavailable) return []
+  const logos = [...new Set([
+    /^\/api\/projects\/github\/logo\/[a-z\d-]+\/[a-z\d_.-]+$/i.test(props.logo || '') ? props.logo! : '',
+    cachedLogo.value,
+  ].filter(Boolean))]
+  const repository = cachedLogo.value || logos[0]
+  return [...logos, ...(repository ? [`${repository}?avatar=true`] : [])]
+})
 const source = computed(() => candidates.value.find(url => !failed.value.includes(url)))
 watch(source, () => { loaded.value = false; plate.value = undefined })
-watch(() => [props.logo, props.repositoryUrl], () => { failed.value = [] })
+watch(() => [props.logo, props.repositoryUrl, props.unavailable], () => { failed.value = [] })
 
-// A wordmark shrinks to a sliver inside the round tile, so it yields to the initial.
+// A wordmark shrinks to a sliver inside the round tile, so try the owner avatar next.
 // A mark drawn on transparency needs a plate it contrasts with in either theme.
 const SAMPLE = 24
 function inspect(img: HTMLImageElement): 'reject' | 'light' | 'dark' | undefined {
@@ -41,22 +46,28 @@ function inspect(img: HTMLImageElement): 'reject' | 'light' | 'dark' | undefined
       covered++
       luminance += 0.2126 * (pixels[i]! / 255) ** 2.2 + 0.7152 * (pixels[i + 1]! / 255) ** 2.2 + 0.0722 * (pixels[i + 2]! / 255) ** 2.2
     }
-    if (!covered || covered > SAMPLE * SAMPLE * 0.95) return undefined
+    if (!covered) return 'reject'
+    if (covered > SAMPLE * SAMPLE * 0.95) return undefined
     return luminance / covered > 0.5 ? 'dark' : 'light'
   } catch { return undefined }
 }
 function onLoad(event: Event) {
+  if ((event.target as HTMLImageElement).getAttribute('src') !== source.value) return
   const verdict = inspect(event.target as HTMLImageElement)
   if (verdict === 'reject') { failed.value.push(source.value!); return }
   plate.value = verdict
   loaded.value = true
+}
+function onError(event: Event) {
+  const url = (event.target as HTMLImageElement).getAttribute('src')
+  if (url === source.value) failed.value.push(url!)
 }
 </script>
 
 <template>
   <span class="project-logo" :class="plate && loaded ? `project-logo--${plate}` : undefined" aria-hidden="true">
     <span v-if="!source || !loaded">{{ (name || '?').slice(0, 1).toUpperCase() }}</span>
-    <img v-if="source" :src="source" :class="{ loaded }" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @load="onLoad" @error="failed.push(source!)" />
+    <img v-if="source" :key="source" :src="source" :class="{ loaded }" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @load="onLoad" @error="onError" />
   </span>
 </template>
 
