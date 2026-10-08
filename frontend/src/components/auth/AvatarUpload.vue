@@ -14,7 +14,7 @@ const preview = ref('')
 const uploading = ref(false)
 const error = ref('')
 const success = ref('')
-const name = computed(() => auth.user?.username || auth.user?.email || '?')
+const name = computed(() => auth.user?.username?.trim() || auth.user?.email || '')
 const clearSelection = () => {
   if (preview.value) URL.revokeObjectURL(preview.value)
   preview.value = ''
@@ -53,7 +53,7 @@ const save = async () => {
 
 <template>
   <section aria-labelledby="account-avatar-title" class="avatar-upload" :aria-busy="uploading">
-    <UserAvatar :src="preview || auth.user?.avatar_url" :name="name" class="avatar-upload__preview" />
+    <UserAvatar :src="preview || auth.user?.avatar_url" :name="name" :seed="auth.user?.user_id" class="avatar-upload__preview" />
     <div class="avatar-upload__content">
       <h4 id="account-avatar-title">{{ t('auth.avatar') }}</h4>
       <p class="monitor-caption">{{ t('auth.avatarHint') }}</p>
