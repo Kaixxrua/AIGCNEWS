@@ -31,6 +31,7 @@ JobSource = Literal[
     "hackernews_closing",
     "news_closing",
     "daily_briefing",
+    "new_words",
     "subscription_dispatch",
     "project_semantic_warmup",
     "conversation_cleanup",
@@ -261,6 +262,12 @@ DAILY_BRIEFING_JOB = CronJobDescriptor(
     name="每日自动简报生成（全维度）",
     schedule=CronSchedule(hour=8, minute=0),
 )
+
+NEW_WORDS_JOB = CronJobDescriptor(
+    id="dashboard_new_words", source="new_words", name="首页新概念筛选",
+    schedule=CronSchedule(minute=20), coalesce=True, misfire_grace_time=600,
+)
+
 
 # 订阅派发只读简报缓存（不触发生成），每半小时一轮幂等投递：
 # daily 消费 8:00 生成任务填充的缓存，weekly/monthly 消费按需生成的缓存；

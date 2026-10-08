@@ -116,6 +116,14 @@ class ApplyConfigUpdateTests(unittest.TestCase):
         # 覆盖仍然入库，下次 start() 时生效
         self.assertIn("arxiv_papers", runtime._job_config_overrides)
 
+    def test_new_words_can_be_enabled_and_disabled_without_restarting(self) -> None:
+        runtime, fake_scheduler = _runtime(live_job=None)
+        self.assertTrue(runtime.apply_config_update(_config("dashboard_new_words", interval=60)))
+        self.assertEqual(fake_scheduler.add_job.call_args.args[0], runtime._run_new_words_job)
+        fake_scheduler.get_job.return_value = MagicMock()
+        self.assertTrue(runtime.apply_config_update(_config("dashboard_new_words", enabled=False)))
+        fake_scheduler.remove_job.assert_called_once_with("dashboard_new_words")
+
     def test_unknown_job_is_not_applied(self) -> None:
         runtime, fake_scheduler = _runtime()
 

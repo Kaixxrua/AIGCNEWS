@@ -1,0 +1,24 @@
+import { api } from '@/services/http/apiClient'
+
+export interface NewWord {
+  id: string
+  term: string
+  definition_zh: string
+  definition_en: string
+  reason_zh: string
+  reason_en: string
+  first_seen: string
+  evidence: { id: string; title: string; url: string; source: string; published_at: string }[]
+}
+
+export interface NewWordsSnapshot {
+  date: string
+  generated_at: string | null
+  status: 'ready' | 'pending' | 'empty'
+  items: NewWord[]
+}
+
+export async function fetchNewWords(date: string, signal: AbortSignal): Promise<NewWordsSnapshot> {
+  const response = await api.get<NewWordsSnapshot>('/dashboard/new-words', { params: { date }, signal })
+  return response.data
+}
