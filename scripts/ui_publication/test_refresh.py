@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import refresh
 
@@ -204,6 +206,81 @@ class EvidenceAndCommitTests(unittest.TestCase):
         refresh.write_json(state / 'withdrawn.json', {'version': 1, 'ids': ['../catalog']})
         with self.assertRaises(ValueError):
             refresh.load_state(state)
+
+
+class RefreshBatchTests(unittest.TestCase):
+    def test_same_revision_preserves_published_sources_when_draining_later_batches(self):
+        class StopBeforeRendering(Exception):
+            pass
+
+        for remaining in (True, False):
+            with self.subTest(remaining=remaining), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                production = root / 'production'
+                data = production / 'mcp-go/internal/uicatalog/data'
+                revision = 'a' * 40
+                scope = f'r{revision[:12]}/'
+                checkout = root / 'checkout'
+                checkout.mkdir()
+                (checkout / 'LICENSE').write_bytes(b'MIT License\n')
+                source = {'repository': 'owner/repo', 'revision': revision,
+                          'license_source': 'LICENSE', 'license_sha256': refresh.sha(b'MIT License\n')}
+                items = []
+                for name in ('published', 'next', 'deferred'):
+                    row = item('p-' + name, provider='p', files=tuple(
+                        (scope + path, refresh.sha(path.encode())) for path in (name + '.tsx', 'shared.tsx')))
+                    row.update(revision=revision, notices=[], assets=[])
+                    items.append(row)
+                published = items[:1] if remaining else items
+                for row in published:
+                    for file in row['files']:
+                        path = data / file['path']
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(path.name.encode())
+                refresh.write_json(data / 'catalog.json', {'items': published})
+                refresh.write_json(data / 'upstreams.json', {'p': {'revision': revision}})
+                state = root / 'state'
+                refresh.write_json(state / 'providers.json', {'p': {'known': [], 'baseline_revision': revision}})
+                original_catalog = (data / 'catalog.json').read_bytes()
+
+                def import_candidates(_module, _provider, _source, _checkout, _rev, staging,
+                                      _scope, _modules, _previous, _report):
+                    for row in items:
+                        for file in row['files']:
+                            path = staging / file['path']
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            path.write_bytes(path.name.encode())
+                    return items
+
+                args = SimpleNamespace(state=state, production=production, providers=None,
+                                       recheck=False, limit=1, dry_run=True)
+                with (patch.object(refresh, 'registry', return_value={'p': ('import_batch_registry_sources', source)}),
+                      patch.object(refresh, 'Upstreams') as upstreams,
+                      patch.object(refresh, 'ensure_node_modules', return_value=root / 'node_modules'),
+                      patch.object(refresh, 'import_at', side_effect=import_candidates),
+                      patch.object(refresh, 'prepare_frontend', side_effect=StopBeforeRendering)):
+                    upstreams.return_value.head.return_value = revision
+                    upstreams.return_value.checkout.return_value = checkout
+                    if remaining:
+                        with self.assertRaises(StopBeforeRendering):
+                            refresh.refresh(args)
+                    else:
+                        self.assertEqual(refresh.refresh(args)['status'], 'no_changes')
+
+                run = next((state / 'runs').iterdir())
+                staged = run / 'data'
+                catalog = refresh.read_json(staged / 'catalog.json')
+                self.assertEqual([row['id'] for row in catalog['items']],
+                                 ['p-published', 'p-next'] if remaining else [row['id'] for row in items])
+                for row in catalog['items']:
+                    for file in row['files']:
+                        self.assertEqual(refresh.sha((staged / file['path']).read_bytes()), file['sha256'])
+                if remaining:
+                    self.assertFalse((staged / items[-1]['files'][0]['path']).exists())
+                self.assertEqual((data / 'catalog.json').read_bytes(), original_catalog)
+                for row in published:
+                    for file in row['files']:
+                        self.assertEqual(refresh.sha((data / file['path']).read_bytes()), file['sha256'])
 
 
 class UpstreamTests(unittest.TestCase):

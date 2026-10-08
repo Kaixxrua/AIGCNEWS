@@ -592,6 +592,8 @@ def refresh(args) -> dict:
     catalog_raw = (production_data / 'catalog.json').read_bytes()
     catalog = json.loads(catalog_raw)
     catalog_ids = {item['id'] for item in catalog['items']}
+    catalog_files = {file['path'] for item in catalog['items']
+                     for key in ('files', 'notices', 'assets') for file in item.get(key, [])}
     previous = {item['id']: item for item in catalog['items']}
     fingerprints = {fingerprint(item) for item in catalog['items'] if item.get('files')}
     locks = read_json(production_data / 'upstreams.json', {})
@@ -667,7 +669,9 @@ def refresh(args) -> dict:
             state['providers'][provider_id]['checked_revision'] = heads[provider_id]
             state['providers'][provider_id].pop('hold', None)
         head = heads[provider_id]
-        keep = {f['path'] for item in fresh if item['id'] in chosen_ids for f in item['files']}
+        # A previous batch can already use files in this exact revision scope.
+        # Retain its complete file closure alongside the newly selected batch.
+        keep = catalog_files | {f['path'] for item in fresh if item['id'] in chosen_ids for f in item['files']}
         gc_scope(staging, provider_id, f'r{head[:12]}/', keep)
     if not chosen:
         persist()
