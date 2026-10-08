@@ -142,6 +142,14 @@
   #app .app-shell--comic-page .mcp-desk .btn-secondary:hover:not(:disabled) { color: var(--ink); filter: brightness(.96); }
   #app .app-shell--comic-page .mcp-desk :is(.btn-primary, .btn-secondary):disabled { opacity: .55; }
   #app .app-shell--comic-page .mcp-desk-side :is(.btn-primary, .btn-secondary) { width: 100%; }
+  /* Switching between browser authorization and a manual token: quiet beside the two buttons yet plain to see,
+     solid ink on a dashed underline that firms up on hover. */
+  #app .app-shell--comic-page .mcp-desk-switch {
+    align-self: flex-start; padding: 2px 0; border: 0; background: none; color: var(--ink); cursor: pointer;
+    font-size: 12.5px; font-weight: 800; line-height: 19px; text-decoration: underline dashed; text-underline-offset: 4px;
+  }
+  #app .app-shell--comic-page .mcp-desk-switch:hover { text-decoration-style: solid; }
+  #app .app-shell--comic-page .mcp-desk-switch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   /* The endpoint check: the label, the endpoint in a terminal box and the handshake on one line, the three phases under it. */
   #app .app-shell--comic-page .mcp-desk-verify {
     grid-area: verify; display: grid; grid-template-columns: auto minmax(0, 560px) auto; justify-content: start; align-items: center; gap: 10px 14px;

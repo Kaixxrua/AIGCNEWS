@@ -57,13 +57,14 @@ Infra       repositories/postgres_*.py / milvus_repo.py / graph_repo.py …  适
 | 文件 | 鉴权 | 内容 |
 |---|---|---|
 | `routes_auth.py` | 公开 + RequireUser | 邮箱 OTP 注册 / 登录 / 忘记密码重置；`/auth/me`；`/auth/me/mcp-tokens` CRUD（IP 与账号双维限流） |
+| `routes_mcp_oauth.py` | 公开 + RequireUser | MCP OAuth 授权服务器：`/oauth/register` 动态客户端注册（公开）、`/oauth/authorize/preview` 与 `/oauth/authorize` 同意页接口（用户）、`/oauth/token` 授权码换令牌（公开，PKCE S256）；签发的仍是 `user_mcp_tokens` 普通令牌（见第七节） |
 | `routes_dashboard.py` | 公开，Redis 缓存 | top / radar / summary / live-stats / snapshot-dates / visitor-count / x/recent；静默期读侧拦截 |
 | `routes_github_projects.py` | OptionalUser / RequireUser | 公共项目库检索、分类、taxonomy；我的收藏、工具书架 CRUD |
 | `routes_papers.py` | 公开 | 论文搜索、top10-today、详情（PDF 仅供后台处理） |
 | `routes_report.py` | 公开 + RequireUser + RequireAdmin | 简报读取（公开）；订阅 / 立即发送（用户）；SSE 生成、评估记录（管理员） |
 | `routes_push.py` | RequireUser | 推送渠道（邮箱 OTP / webhook 验证、测试）与订阅 CRUD |
 | `routes_chat.py` / `routes_attachments.py` / `routes_vision.py` | RequireUser | 对话 SSE、会话与消息管理、图片附件（零落盘）、视觉问答 |
-| —（独立 Go 服务 `mcp-go/`，nginx `location = /api/mcp` 直达） | MCP token | **POST `/api/mcp` 单端点**，JSON-RPC 全协议（见第七节；Python 入站已随 W6 退役删除） |
+| —（独立 Go 服务 `mcp-go/`，nginx `location = /api/mcp` 与 `location = /api/mcp/oauth` 直达） | MCP token | **POST `/api/mcp`**，JSON-RPC 全协议；`/api/mcp/oauth` 是同一服务的 OAuth 入口，不收匿名请求（见第七节；Python 入站已随 W6 退役删除） |
 | `routes_monitor.py` | 公开 + RequireAdmin | `/live` `/ready` 健康探针（公开）；health / metrics / tasks（管理员） |
 | `routes_ops.py` + 子路由 | RequireAdmin | 采集触发 / 数据清理 / 调度器状态与配置 / Provider 配置与测试 / 简报批量 / 缓存清理 / 项目运维；`routes_ops_github.py`（爬取、富化、推荐、指标）、`routes_ops_mcp.py`（出站 MCP 配置）、`routes_ops_smtp.py`（SMTP 面板）、`routes_ops_x.py`（见下行）、`routes_ops_payments.py`（支付订单列表、详情、补单、关单） |
 | `routes_ops_x.py` | RequireAdmin | X watchlist / 凭据池 CRUD 与测活、日榜快照回填 |
@@ -184,7 +185,8 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 | `/` | DashboardView | 公开 |
 | `/projects` | GitHubProjectsView（826 行，逻辑委派 controller + presentation） | 公开 |
 | `/report` · `/papers/:id/read` · `/disclaimer` · `/privacy` | 简报 · 论文阅读 · 法务 | 公开（论文对话游客降级为登录引导） |
-| `/mcp` | McpConnectView | `requiresAuth`（网站客户端配置与 Token 管理） |
+| `/mcp` | McpConnectView | 公开（游客可复制公开命令与浏览器授权命令；生成含手动 Token 的命令时页内弹出登录） |
+| `/oauth/authorize` | McpOAuthAuthorizeView（MCP OAuth 同意页，在主 Layout 之外） | 公开（未登录时页内弹出登录，不走守卫，以免丢掉授权参数） |
 | `/dsh` | DshView | `requiresAuth`（网站 DSH 配置与账号 Token） |
 | `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
 | `/subscriptions` | SubscriptionsView | requiresAuth |
@@ -211,6 +213,13 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 自 W5 起由独立 Go 服务（`mcp-go/`，compose 服务 `mcp-api-go`）承载，
 frontend nginx `location = /api/mcp` 直接路由；Python 入站实现已随 W6
 全部退役删除。
+
+`/api/mcp/oauth` 是同一服务的第二个入口（nginx `location = /api/mcp/oauth`）：认证、限流、
+分派与工具都和 `/api/mcp` 共用，只是不收匿名请求——401 的 `WWW-Authenticate` 带 RFC 9728
+`resource_metadata`，支持 MCP 授权规范的客户端据此走浏览器授权换令牌。授权服务器在 Python
+主后端（`routes_mcp_oauth.py`，迁移 `0088`），发现元数据是 `frontend/public/.well-known/` 下的
+静态文件；资源地址在 Python、Go、前端元数据与 `/mcp` 页命令里四方对钉
+（`test_mcp_oauth_metadata_contract.py`）。流程与限制见 `docs/mcp-server.md`「浏览器授权（OAuth）」。
 
 Go 侧布局：
 

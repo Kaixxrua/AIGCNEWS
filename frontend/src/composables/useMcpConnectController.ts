@@ -6,7 +6,7 @@ import {
   type McpClientOption,
   type McpShellId,
 } from '@/features/mcp/mcpClientCatalog'
-import { generateMcpClientCommand } from '@/features/mcp/mcpCommandGenerator'
+import { generateMcpClientCommand, generateMcpOAuthCommand } from '@/features/mcp/mcpCommandGenerator'
 import {
   feedbackKey,
   feedbackLiteral,
@@ -19,6 +19,7 @@ import {
   type McpHandshakePhase,
   type McpHandshakePhaseStatus,
 } from '@/features/mcp/mcpHandshake'
+import { MCP_OAUTH_ENDPOINT, type McpAuthMode } from '@/features/mcp/mcpOAuth'
 import {
   displayedPublicTools as resolveDisplayedPublicTools,
   isActivePublicToolDiscovery,
@@ -69,6 +70,8 @@ export interface McpConnectControllerOptions {
   confirm?: (message: string) => boolean
   translate?: McpFeedbackTranslator
   defaultEndpoint?: string
+  /** 起始的认证方式：默认浏览器授权；不支持 OAuth 的客户端总是走 Token。 */
+  authMode?: McpAuthMode
   now?: () => Date
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>
   cancelSchedule?: (timer: ReturnType<typeof setTimeout>) => void
@@ -103,6 +106,8 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   const selectedShell = ref<McpShellId>('powershell')
   const selectedClient = ref<McpClientId>('claude-code')
   const clientLabel = ref('')
+  // 用户点过「改用手动 Token」：换客户端也记着，回到支持 OAuth 的客户端时仍给 Token 版
+  const preferToken = ref(options.authMode === 'token')
   const tokens = ref<McpTokenMetadata[]>([])
   const loadingTokens = ref(false)
   const creating = ref(false)
@@ -131,6 +136,12 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   })
   const clientOption = computed(() => mcpClientOptions.find((item) => item.id === selectedClient.value)!)
   const clientDisplayLabel = (option: McpClientOption) => (option.labelKey ? translate(option.labelKey) : option.label)
+  const authModeFor = (option: McpClientOption): McpAuthMode => (option.oauth && !preferToken.value ? 'oauth' : 'token')
+  const authMode = computed(() => authModeFor(clientOption.value))
+  // 浏览器授权版命令里没有任何密钥，打开页面就是可复制的完整命令，游客也能直接复制
+  const oauthCommand = computed(() => (
+    clientOption.value.oauth ? generateMcpOAuthCommand(clientOption.value, selectedShell.value) : ''
+  ))
   const quickCommand = computed(() => (
     endpointWarningKey.value
       ? ''
@@ -185,7 +196,7 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     testPhases.value = createTestPhases()
   }
 
-  watch([selectedClient, selectedShell, endpointUrl, clientLabel], invalidateSetup)
+  watch([selectedClient, selectedShell, endpointUrl, clientLabel, authMode], invalidateSetup)
   watch(normalizedEndpoint, (endpoint) => resetDiscovery(endpoint))
 
   const loadTokens = async () => {
@@ -223,7 +234,15 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     clearTransientCommand()
   }
 
+  const setAuthMode = (mode: McpAuthMode) => {
+    preferToken.value = mode === 'token'
+    setupError.value = null
+    setupNotice.value = null
+  }
+
   const startSetup = async () => {
+    // 浏览器授权不在页面上签发 Token：客户端授权时由本站授权页签发
+    if (authMode.value === 'oauth') return
     setupError.value = null
     setupNotice.value = null
     invalidateSetup()
@@ -281,15 +300,30 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   }
 
   const copyGeneratedCommand = async () => {
+    if (authMode.value === 'oauth') {
+      await copyText(oauthCommand.value, 'command')
+      return
+    }
     if (!transientCommand.value) return
     await copyText(transientCommand.value, 'command')
     connection.nudge()
   }
 
   const copyAgentSetupPrompt = async () => {
-    if (!transientCommand.value) return
     const option = clientOption.value
     const target = option.configPathKey ? translate(option.configPathKey) : option.configPath
+    if (authMode.value === 'oauth') {
+      const prompt = translate('mcpOAuthSetup.agentPrompt', {
+        client: clientDisplayLabel(option),
+        command: oauthCommand.value,
+        endpoint: MCP_OAUTH_ENDPOINT,
+        shell: selectedShell.value,
+        target,
+      })
+      await copyText(prompt, 'agent-prompt')
+      return
+    }
+    if (!transientCommand.value) return
     const prompt = translate('mcp.agentSetup.prompt', {
       client: clientDisplayLabel(option),
       command: transientCommand.value,
@@ -386,6 +420,8 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
   }
 
   return {
+    authMode,
+    authModeFor,
     clientDisplayLabel,
     clientLabel,
     clientOption,
@@ -409,12 +445,14 @@ export const useMcpConnectController = (options: McpConnectControllerOptions = {
     loadTokens,
     loadingTokens,
     normalizedEndpoint,
+    oauthCommand,
     quickCommand,
     removeToken,
     requestLogin,
     resetDiscovery,
     selectedClient,
     selectedShell,
+    setAuthMode,
     setupError,
     setupNotice,
     startSetup,

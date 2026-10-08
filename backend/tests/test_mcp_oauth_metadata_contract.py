@@ -108,3 +108,10 @@ def test_oauth_entry_is_routed_to_the_go_gateway() -> None:
     assert f'case "{resource_path}":' in probes
     main = (MCP_GO / "cmd" / "mcp-server" / "main.go").read_text(encoding="utf-8")
     assert "mcpHandler.OAuthEntry(mcpapp.OAuthResourceMetadataURL)" in main
+
+
+def test_mcp_page_points_clients_at_the_oauth_resource() -> None:
+    # /mcp 接入页的浏览器授权命令连这个地址。客户端按 RFC 9728 核对元数据里的 resource 与所连地址一致，
+    # 授权请求带的 resource 也必须等于后端的 MCP_OAUTH_RESOURCE；差一个字符，登录就走不通
+    source = (FRONTEND / "src" / "features" / "mcp" / "mcpOAuth.ts").read_text(encoding="utf-8")
+    assert f"export const MCP_OAUTH_ENDPOINT = '{MCP_OAUTH_RESOURCE}'" in source

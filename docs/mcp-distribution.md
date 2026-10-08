@@ -19,6 +19,7 @@
 | --- | --- |
 | Name | AIGC Radar |
 | Endpoint | `https://aigcnews.cn/api/mcp`（streamable-http，零安装） |
+| OAuth endpoint | `https://aigcnews.cn/api/mcp/oauth`（同一服务；客户端动态注册 + PKCE，浏览器里登录点「同意」后解锁个人收藏；表单只收一个地址时填上面的匿名端点） |
 | Website | `https://aigcnews.cn/mcp?utm_source=<目录名>&utm_medium=directory`（落地页，内置 9 客户端一键导入） |
 | Icon | `https://aigcnews.cn/logo.png` |
 | Repo | `https://github.com/Kaixxrua/AIGC_NEWS` |

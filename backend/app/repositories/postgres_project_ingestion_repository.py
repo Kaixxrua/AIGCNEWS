@@ -15,6 +15,10 @@ from backend.app.monitoring import live_stats_broadcaster
 logger = logging.getLogger(__name__)
 
 
+class GitHubIdentityConflict(ValueError):
+    """An observation belongs to a different repository behind a reused name."""
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -48,12 +52,18 @@ _CANDIDATE_UPSERT_SQL = """
             ELSE github_repo_candidates.created_at
         END,
         pushed_at=GREATEST(COALESCE(github_repo_candidates.pushed_at, ''), COALESCE(EXCLUDED.pushed_at, '')),
-        stars=GREATEST(COALESCE(github_repo_candidates.stars, 0), COALESCE(EXCLUDED.stars, 0)),
-        forks=GREATEST(COALESCE(github_repo_candidates.forks, 0), COALESCE(EXCLUDED.forks, 0)),
+        stars=CASE WHEN %(community_metrics_complete)s IS TRUE THEN
+            CASE WHEN COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
+                THEN EXCLUDED.stars ELSE github_repo_candidates.stars END
+            ELSE GREATEST(github_repo_candidates.stars, EXCLUDED.stars) END,
+        forks=CASE WHEN %(community_metrics_complete)s IS TRUE THEN
+            CASE WHEN COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
+                THEN EXCLUDED.forks ELSE github_repo_candidates.forks END
+            ELSE GREATEST(github_repo_candidates.forks, EXCLUDED.forks) END,
         watchers=CASE
-            WHEN %(community_metrics_complete)s IS TRUE
-             AND COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
-            THEN EXCLUDED.watchers
+            WHEN %(community_metrics_complete)s IS TRUE THEN
+                CASE WHEN COALESCE(EXCLUDED.last_snapshot_at, '') >= COALESCE(github_repo_candidates.last_snapshot_at, '')
+                    THEN EXCLUDED.watchers ELSE github_repo_candidates.watchers END
             ELSE github_repo_candidates.watchers
         END,
         source_channels=(
@@ -111,7 +121,14 @@ _SNAPSHOT_UPSERT_SQL = """
               OR EXCLUDED.community_metrics_complete IS FALSE THEN FALSE
             ELSE NULL END,
         open_issues=GREATEST(COALESCE(github_repo_snapshots.open_issues,0),COALESCE(EXCLUDED.open_issues,0)),
-        repo_created_at=COALESCE(NULLIF(github_repo_snapshots.repo_created_at,''),EXCLUDED.repo_created_at),
+        repo_created_at=CASE
+            WHEN NULLIF(%(repo_created_at)s::character varying, '') IS NULL
+            THEN COALESCE(NULLIF(github_repo_snapshots.repo_created_at,''),EXCLUDED.repo_created_at)
+            WHEN NULLIF(EXCLUDED.repo_created_at, '') IS NULL THEN github_repo_snapshots.repo_created_at
+            WHEN NULLIF(github_repo_snapshots.repo_created_at, '') IS NULL
+                OR LEFT(github_repo_snapshots.repo_created_at,10)<>LEFT(EXCLUDED.repo_created_at,10)
+                OR LENGTH(EXCLUDED.repo_created_at)>LENGTH(github_repo_snapshots.repo_created_at)
+            THEN EXCLUDED.repo_created_at ELSE github_repo_snapshots.repo_created_at END,
         repo_pushed_at=GREATEST(COALESCE(github_repo_snapshots.repo_pushed_at,''),COALESCE(EXCLUDED.repo_pushed_at,''))
 """
 
@@ -222,6 +239,13 @@ class PostgresGitHubProjectIngestionRepository:
 
     def __init__(self, database: PostgresDatabaseLifecycle = postgres_database) -> None:
         self._database = database
+
+    @staticmethod
+    def _lock_identities(cursor: Any, *names: str) -> None:
+        # Serialize discovery of the same previously unknown identity across
+        # independent writers; row locks cannot lock a row that does not exist.
+        for name in sorted({name.strip().lower() for name in names if name.strip()}):
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", ("github-identity:" + name,))
 
     @staticmethod
     def _resolve_repo_id(cursor: Any, repo_id: str = "", full_name: str = "") -> str:
@@ -373,7 +397,12 @@ class PostgresGitHubProjectIngestionRepository:
             "WHERE canonical_repo_id=%s AND POSITION('/' IN alias_repo_id)=0",
             (canonical_repo_id,),
         )
-        return {str(row["alias_repo_id"]) for row in cursor.fetchall()}
+        nodes = {str(row["alias_repo_id"]) for row in cursor.fetchall()}
+        if "/" not in canonical_repo_id:
+            nodes.add(canonical_repo_id)
+        # REST database IDs and GraphQL node IDs are different representations;
+        # a legacy numeric alias alone does not contradict an incoming node ID.
+        return {node for node in nodes if not node.isdecimal()}
 
     @staticmethod
     def _apply_not_found_observation(
@@ -706,6 +735,7 @@ class PostgresGitHubProjectIngestionRepository:
             return "noop"
         if old_full_name == new_full_name:
             return "noop"
+        self._lock_identities(cursor, old_full_name, new_full_name)
         old_row = self._find_candidate_row_by_name(cursor, old_full_name)
         if not old_row:
             return "missing"
@@ -720,6 +750,19 @@ class PostgresGitHubProjectIngestionRepository:
                 )
                 return "casing"
             return "noop"
+        new_row = self._find_candidate_row_by_name(cursor, new_full_name)
+        old_nodes = self._node_alias_ids(cursor, old_row["repo_id"])
+        new_nodes = self._node_alias_ids(cursor, new_row["repo_id"]) if new_row else set()
+        if old_nodes and new_nodes and old_nodes.isdisjoint(new_nodes):
+            logger.warning("GitHub identity conflict: refusing merge %s -> %s", old_full_name, new_full_name)
+            return "conflict_name_reuse"
+        # Both sides must agree. A node alias pointing at either side is not
+        # evidence that the other side is the same repository (names get reused).
+        if seen_repo_id and "/" not in seen_repo_id and not seen_repo_id.isdecimal():
+            for known in (old_nodes, new_nodes):
+                if known and seen_repo_id not in known:
+                    logger.warning("GitHub identity conflict: refusing merge %s -> %s", old_full_name, new_full_name)
+                    return "conflict_name_reuse"
         # node id 防线：拿到 API 返回的 node id 时，确认它与旧名行同源，
         # 防止“旧仓删除 + 同名新仓”被误当成改名而吞掉别人的历史。
         if seen_repo_id and "/" not in seen_repo_id:
@@ -754,7 +797,6 @@ class PostgresGitHubProjectIngestionRepository:
                         seen_repo_id,
                     )
                     return "conflict_name_reuse"
-        new_row = self._find_candidate_row_by_name(cursor, new_full_name)
         if not new_row:
             if old_row["repo_id"].lower() == old_row["full_name"].lower():
                 # name 型 PK 内嵌旧名：克隆新身份行再并入旧行，
@@ -827,10 +869,24 @@ class PostgresGitHubProjectIngestionRepository:
         仅 node 形态 repo_id 参与自愈：名称型 repo_id（trending 等）无法证明
         与既有行同源，不做改名动作。
         """
-        canonical = self._resolve_repo_id(cursor, requested, full_name)
         requested = (requested or "").strip()
         full_name = (full_name or "").strip()
-        if "/" in requested or not full_name or canonical == requested:
+        self._lock_identities(cursor, full_name or requested)
+        # A current name row wins over a historical name alias. The alias can
+        # outlive a rename and subsequently refer to an unrelated new project.
+        if "/" in requested and full_name:
+            current = self._find_candidate_row_by_name(cursor, full_name)
+            if current:
+                return str(current["repo_id"])
+        canonical = self._resolve_repo_id(cursor, requested, full_name)
+        if "/" in requested or not requested:
+            if full_name and canonical.lower() != full_name.lower():
+                raise GitHubIdentityConflict(f"GitHub identity conflict: unverified name alias {full_name}")
+            return canonical
+        known = self._node_alias_ids(cursor, canonical)
+        if known and not requested.isdecimal() and requested not in known:
+            raise GitHubIdentityConflict(f"GitHub identity conflict: {full_name or canonical}")
+        if not full_name or canonical == requested:
             return canonical
         cursor.execute(
             "SELECT full_name FROM github_repo_candidates WHERE repo_id=%s LIMIT 1",
@@ -846,8 +902,9 @@ class PostgresGitHubProjectIngestionRepository:
                 seen_repo_id=requested,
                 checked_at=checked_at,
             )
-            if action != "conflict_name_reuse":
-                canonical = self._resolve_repo_id(cursor, requested, full_name)
+            if action == "conflict_name_reuse":
+                raise GitHubIdentityConflict(f"GitHub identity conflict: {stored} -> {full_name}")
+            canonical = self._resolve_repo_id(cursor, requested, full_name)
         return canonical
 
     # ---------- 候选与快照写入 ----------
@@ -963,6 +1020,12 @@ class PostgresGitHubProjectIngestionRepository:
         """
         if not observations:
             return 0
+        batch_nodes: dict[str, set[str]] = {}
+        for observation in observations:
+            candidate = observation.get("candidate") or {}
+            node = str(candidate.get("repo_id") or "")
+            if node and "/" not in node and not node.isdecimal():
+                batch_nodes.setdefault(str(candidate.get("full_name") or "").lower(), set()).add(node)
         skipped: set[int] = set()
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -975,6 +1038,10 @@ class PostgresGitHubProjectIngestionRepository:
                     )
                     requested = payload["repo_id"]
                     node_hint = requested if "/" not in requested else ""
+                    if len(batch_nodes.get(payload["full_name"].lower(), set())) > 1:
+                        logger.warning("GitHub identity conflict within batch: %s", payload["full_name"])
+                        skipped.add(index)
+                        continue
                     renamed_from = str(observation.get("renamed_from") or "").strip()
                     if renamed_from:
                         action = self._reconcile_repo_rename(
@@ -995,12 +1062,18 @@ class PostgresGitHubProjectIngestionRepository:
                             )
                             skipped.add(index)
                             continue
-                    canonical = self._resolve_for_write(
-                        cursor,
-                        requested=requested,
-                        full_name=payload["full_name"],
-                        checked_at=checked_at,
-                    )
+                    try:
+                        canonical = self._resolve_for_write(
+                            cursor,
+                            requested=requested,
+                            full_name=payload["full_name"],
+                            checked_at=checked_at,
+                        )
+                    except GitHubIdentityConflict:
+                        self._apply_not_found_observation(cursor, payload["full_name"], checked_at)
+                        logger.warning("GitHub identity conflict: skipping %s", payload["full_name"])
+                        skipped.add(index)
+                        continue
                     if node_hint and not renamed_from:
                         # 名称未变但返回陌生 node id → 旧仓已删、名字被重用：
                         # 累计不可用观测并跳过，绝不用别人的数据覆盖旧行

@@ -343,7 +343,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.commandPrompt': '命令提示符',
   'mcp.aiArtifacts': 'AI / 智能体 / MCP / RAG',
   'mcp.title': 'AIGC Radar MCP：公开 AI 情报即接即用',
-  'mcp.description': '公开 MCP 工具免登录、免 Token。游客可先选择客户端，登录后继续配置，并按需生成个人 Token：读个人收藏，vip 还能读追踪结果。',
+  'mcp.description': '公开 MCP 工具免登录、免 Token。想读个人收藏（vip 还能读追踪结果），运行下面的命令，在浏览器里登录并点「同意」即可，不用复制 Token；也可以改用手动 Token。',
   'mcp.publicEndpoint': '公开端点',
   'mcp.authRestoring': '正在恢复登录状态…',
   'mcp.authDegraded': '登录状态校验失败。为安全起见，登录状态确认前不会签发 MCP Token。',
