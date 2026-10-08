@@ -123,7 +123,7 @@ watch(() => props.savedCount ?? 0, (count, previous) => { savedDirection.value =
       </span>
 
       <!-- 订阅按钮 -->
-      <button
+      <button data-tour="subscribe"
         class="flex items-center gap-1 rounded-full px-2.5 py-1 text-2xs font-medium transition-all duration-200 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
         :disabled="isSubscribing"
         @click="isLoggedIn ? emit('toggleSubscribe') : emit('promptLoginForSubscribe')"

@@ -74,7 +74,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
     <template v-else>
   <nav v-indicator="{ active: '.dock-item--active', follow: 'a.dock-item' }" class="dock" :aria-label="t('navigation.primary')">
     <RouterLink
-      v-for="item in visibleItems" :key="item.to" :to="item.to"
+      v-for="item in visibleItems" :key="item.to" :to="item.to" :data-tour-nav="item.to"
       :aria-label="props.alertItems?.includes(item.to) ? label(item) + '，' + alertLabel(item.to) : label(item)" :title="label(item)"
       :aria-current="isActive(item) ? 'page' : undefined"
       class="dock-item"

@@ -16,6 +16,32 @@ class PostgresUserAccountRepository:
         row = self._fetchone("SELECT COUNT(*) AS cnt FROM users")
         return int(row["cnt"] if row else 0)
 
+    def get_onboarding_status(self, *, user_id: int) -> str | None:
+        row = self._fetchone(
+            "SELECT onboarding_status FROM users WHERE id = %s AND NOT disabled",
+            (int(user_id),),
+        )
+        return str(row["onboarding_status"]) if row else None
+
+    def save_onboarding_status(self, *, user_id: int, status: str) -> str | None:
+        if status not in {"skipped", "completed"}:
+            raise ValueError("Invalid onboarding status")
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                # Concurrent replays / delayed guest sync cannot undo completion.
+                cursor.execute(
+                    """
+                    UPDATE users SET onboarding_status = CASE
+                        WHEN onboarding_status = 'completed' THEN onboarding_status
+                        ELSE %s END
+                    WHERE id = %s AND NOT disabled
+                    RETURNING onboarding_status
+                    """,
+                    (status, int(user_id)),
+                )
+                row = cursor.fetchone()
+                return str(row["onboarding_status"]) if row else None
+
     def get_today_registered_user_count(self) -> int:
         tz_cst = timezone(timedelta(hours=8))
         today = datetime.now(tz_cst).date()

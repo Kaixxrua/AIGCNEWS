@@ -140,6 +140,15 @@ const testRouter = createRouter({
   routes: [{ path: '/projects', name: 'github-projects', component: GitHubProjectsView }],
 })
 
+// The controller refs are shared by every fixture. Dispose views before the next
+// case resets those refs, including KeepAlive harnesses and failed assertions.
+const mountedViews: VueWrapper[] = []
+afterEach(() => {
+  for (const wrapper of mountedViews.splice(0)) {
+    if (wrapper.exists()) wrapper.unmount()
+  }
+})
+
 const mountView = async () => {
   await testRouter.push('/projects')
   await testRouter.isReady()
@@ -149,6 +158,7 @@ const mountView = async () => {
       stubs: { Teleport: true, McpPromptExampleList: true },
     },
   })
+  mountedViews.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -434,6 +444,7 @@ describe('GitHubProjectsView controller wiring', () => {
     const wrapper = mount(Harness, {
       global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
     })
+    mountedViews.push(wrapper)
     await flushPromises()
     expect(controller().activate).toHaveBeenCalledTimes(1)
 
@@ -463,6 +474,7 @@ describe('GitHubProjectsView controller wiring', () => {
     const wrapper = mount(Harness, {
       global: { plugins: [testRouter, i18n], stubs: { Teleport: true, McpPromptExampleList: true } },
     })
+    mountedViews.push(wrapper)
     await flushPromises()
 
     ;(wrapper.vm as unknown as { show: boolean }).show = false
