@@ -95,7 +95,7 @@ describe('homepage new concepts', () => {
     await flushPromises()
     expect(document.querySelector('dialog')!.open).toBe(false)
     expect(view.find('.new-word').exists()).toBe(false)
-    expect(view.text()).toContain('暂无符合条件的新概念')
+    expect(view.text()).toContain('暂无符合条件的 AI 热词')
   })
 
   it('retries failures and preserves same-day words during a failed refresh', async () => {
@@ -122,7 +122,7 @@ describe('homepage new concepts', () => {
     await flushPromises()
     const dialog = document.querySelector('dialog')!
     expect(dialog.open).toBe(true)
-    expect(dialog.textContent).toContain('55% 讨论增长 + 30% 来源多样性 + 15% 原始资料新鲜度')
+    expect(dialog.textContent).toContain('50% 独立来源覆盖 + 30% 讨论增长 + 20% 原文新鲜度')
     expect(dialog.textContent).toContain('不是全网流量排名')
     expect(dialog.textContent).toContain('两个发布者')
     expect(fetchNewWordsHistory).not.toHaveBeenCalled()

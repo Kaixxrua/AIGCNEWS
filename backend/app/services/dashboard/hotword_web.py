@@ -24,6 +24,8 @@ MAX_PAGE_BYTES = 1024 * 1024
 MAX_PAGES = 64
 MAX_REDIRECTS = 4
 _ARTICLE_TYPES = {"Article", "NewsArticle", "BlogPosting", "ScholarlyArticle", "TechArticle"}
+_ORIGINAL_HOSTS = {"openai.com", "anthropic.com", "blog.google", "deepmind.google", "mistral.ai",
+                   "huggingface.co", "qwenlm.github.io", "qwen.ai", "moonshot.ai"}
 
 
 def canonical_url(value: str) -> str:
@@ -110,6 +112,11 @@ def parse_page(url: str, html: str, now: datetime) -> dict[str, Any] | None:
         title = title_node.get_text(" ", strip=True) if title_node else ""
     # The abstract is the original source text, not an aggregator/search summary.
     body = soup.select_one("blockquote.abstract") or soup.find("article") or soup.find("main") or soup
+    for node in body.select('script, style, nav, header, footer, aside, form, button, noscript, iframe, '
+                            '[class*="related"], [id*="related"], [class*="recommend"], [id*="recommend"], '
+                            '.comments, .comment-list'):
+        if node.parent is not None:
+            node.decompose()
     primary_urls = []
     for link in body.select("a[href]"):
         address = canonical_url(urljoin(url, str(link.get("href") or "")))
@@ -120,8 +127,8 @@ def parse_page(url: str, html: str, now: datetime) -> dict[str, Any] | None:
                 primary_urls.append("https://arxiv.org/abs/" + match[1])
         elif parts.hostname in {"doi.org", "openreview.net"}:
             primary_urls.append(address)
-    for node in body.select("script, style, nav, header, footer, aside, form, button, noscript, iframe"):
-        node.decompose()
+        elif parts.hostname and parts.hostname.removeprefix("www.") in _ORIGINAL_HOSTS and len(parts.path.strip("/").split("/")) >= 2:
+            primary_urls.append(address)
     content = " ".join(body.get_text(" ", strip=True).split())[:16000]
     content = re.sub(r"^Abstract\s*[:：]\s*", "", content, flags=re.I)
     if not title.strip() or len(content) < 80:
@@ -223,7 +230,8 @@ class PublicWebResearch:
             async with asyncio.timeout(25):
                 return await asyncio.to_thread(run)
 
-    async def _scan(self, queries: list[str], now: datetime, *, recent: bool) -> WebEvidence:
+    async def _scan(self, queries: list[str], now: datetime, *, recent: bool,
+                    seed_urls: list[str] | None = None, page_limit: int | None = None) -> WebEvidence:
         result = WebEvidence()
 
         async def fetch(url: str) -> dict[str, Any] | None:
@@ -236,29 +244,30 @@ class PublicWebResearch:
                 url = canonical_url(raw)
                 if not url:
                     continue
-                if url not in self._pages and len(self._pages) < MAX_PAGES:
+                if url not in self._pages and len(self._pages) < min(MAX_PAGES, page_limit or MAX_PAGES):
                     self._pages[url] = asyncio.create_task(fetch(url))
                 if url in self._pages:
                     tasks.append(self._pages[url])
             return tasks
 
+        async def read_pages(urls: list[str]) -> None:
+            documents = await asyncio.gather(*page_tasks(urls))
+            result.documents.extend(doc for doc in documents if doc)
+            originals = [link for doc in documents if doc for link in doc.get("primary_urls", [])]
+            primary_docs = await asyncio.gather(*page_tasks(originals))
+            result.documents.extend(doc for doc in primary_docs if doc)
+
         async def search(query: str) -> None:
             try:
                 urls = await self._search(query, recent)
                 result.available = True
-                documents = await asyncio.gather(*page_tasks(urls))
-                result.documents.extend(doc for doc in documents if doc)
-                # Search can first find a report. Read its actual paper links so
-                # an unindexed concept can obtain a primary source before the LLM.
-                originals = [link for doc in documents if doc for link in doc.get("primary_urls", [])]
-                primary_docs = await asyncio.gather(*page_tasks(originals))
-                result.documents.extend(doc for doc in primary_docs if doc)
+                await read_pages(urls)
             except Exception as exc:
                 logger.debug("Hotword public search failed: %s", type(exc).__name__)
 
         try:
             async with asyncio.timeout(100):
-                await asyncio.gather(*(search(query) for query in queries))
+                await asyncio.gather(read_pages(seed_urls or []), *(search(query) for query in queries))
         except TimeoutError:
             logger.warning("Hotword public search reached its time budget")
         finally:
@@ -271,12 +280,14 @@ class PublicWebResearch:
         logger.info("Hotword public evidence: available=%s verified_pages=%d", result.available, len(result.documents))
         return result
 
-    async def discover(self, now: datetime) -> WebEvidence:
+    async def discover(self, now: datetime, *, seed_urls: list[str] | None = None) -> WebEvidence:
         return await self._scan([
+            f'AI new features developer tools {now:%B %Y}',
+            f'AI 新功能 新玩法 发布 {now:%Y年%m月}',
+            f'site:openai.com/index/ OR site:anthropic.com/news/ AI {now:%B %Y}',
+            f'site:blog.google OR site:deepmind.google AI new {now:%B %Y}',
             f'AI research new method {now:%B %Y}',
-            'AI "we introduce"',
-            f'AI 新方法 推理 训练 {now:%Y年%m月}',
-        ], now, recent=True)
+        ], now, recent=True, seed_urls=seed_urls, page_limit=max(2, MAX_PAGES // 2))
 
     async def investigate(self, terms: list[str], now: datetime, *, contexts: dict[str, str] | None = None) -> WebEvidence:
         cutoff = (now - timedelta(days=7)).date().isoformat()
