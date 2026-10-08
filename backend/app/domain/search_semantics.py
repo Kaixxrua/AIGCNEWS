@@ -40,6 +40,9 @@ _PROJECT_TRANSPORT_TERMS = {
     "仓库",
     "工具",
 }
+_PROJECT_QUERY_FILLERS = frozenset({
+    "学习", "提升", "的", "和", "与", "及", "以及", "的项目", "的仓库", "的工具",
+})
 
 
 ProjectQueryLanguage = Literal["zh", "en", "mixed", "und"]
@@ -171,15 +174,20 @@ def _project_literal_terms(
     value: str,
     matches: tuple[tuple[int, str, _ProjectConceptSpec], ...],
 ) -> list[tuple[int, str]]:
-    covered = [(start, start + len(phrase)) for start, phrase, _ in matches]
-    terms: list[tuple[int, str]] = []
-    for match in TECHNICAL_TOKEN_RE.finditer(value):
-        token = match.group(0)
-        if _HAN_RE.search(token) or any(
-            match.start() < stop and match.end() > begin for begin, stop in covered
+    # Mask only recognized concepts, preserving unknown Han names beside them.
+    uncovered = list(value)
+    for start, phrase, _ in matches:
+        uncovered[start:start + len(phrase)] = " " * len(phrase)
+    for token in TECHNICAL_TOKEN_RE.finditer(value):
+        if not _HAN_RE.search(token.group()) and any(
+            token.start() < start + len(phrase) and token.end() > start
+            for start, phrase, _ in matches
         ):
-            continue
-        if token.casefold() in _PROJECT_TRANSPORT_TERMS:
+            uncovered[token.start():token.end()] = " " * len(token.group())
+    terms: list[tuple[int, str]] = []
+    for match in TECHNICAL_TOKEN_RE.finditer("".join(uncovered)):
+        token = match.group(0)
+        if token.casefold() in _PROJECT_TRANSPORT_TERMS or token in _PROJECT_QUERY_FILLERS:
             continue
         terms.append((match.start(), token))
     return terms
@@ -216,25 +224,24 @@ def build_project_lexical_retrieval_plan(
         ProjectLexicalRetrievalPlan,
     )
 
-    matches = _project_concept_matches(intent.normalized_query)
-    concepts = tuple(
-        ProjectLexicalConcept(
-            concept_id=spec.concept_id,
-            primary_terms=(phrase,),
-            aliases=spec.aliases,
-        )
-        for _, phrase, spec in matches
-        if spec.concept_id in intent.concept_ids
-    )
-    literal_terms = tuple(
-        term
-        for _, term in _project_literal_terms(intent.normalized_query, matches)
-        if term.casefold() != "ai"
-    )
+    inputs = [intent.normalized_query]
+    if intent.schema_version == "project-search-intent-client-v1":
+        inputs.extend(intent.lexical_terms)
+    concepts: dict[str, ProjectLexicalConcept] = {}
+    literal_terms: dict[str, str] = {}
+    for value in inputs:
+        matches = _project_concept_matches(value)
+        for _, phrase, spec in matches:
+            concepts.setdefault(spec.concept_id, ProjectLexicalConcept(
+                concept_id=spec.concept_id, primary_terms=(phrase,), aliases=spec.aliases,
+            ))
+        for _, term in _project_literal_terms(value, matches):
+            if term.casefold() != "ai":
+                literal_terms.setdefault(term.casefold(), term)
     return ProjectLexicalRetrievalPlan(
         normalized_query=intent.normalized_query,
-        strict_terms=literal_terms,
-        concepts=concepts,
+        strict_terms=tuple(literal_terms.values()),
+        concepts=tuple(concepts.values()),
     )
 
 

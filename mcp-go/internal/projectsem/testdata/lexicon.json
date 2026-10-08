@@ -145,6 +145,8 @@
   "aliases": [
    "workflow automation",
    "agent workflow",
+   "workflow",
+   "workflows",
    "工作流",
    "智能体工作流"
   ]
@@ -197,7 +199,8 @@
   ],
   "aliases": [
    "tutorial",
-   "learning"
+   "learning",
+   "tutorials"
   ]
  },
  {
@@ -228,6 +231,7 @@
   "aliases": [
    "large language model",
    "llm",
+   "llms",
    "大模型",
    "大语言模型"
   ]
@@ -246,6 +250,7 @@
    "prompt engineering",
    "prompt management",
    "prompt",
+   "prompts",
    "提示词",
    "提示工程"
   ]
@@ -672,6 +677,7 @@
   ],
   "aliases": [
    "screenshot",
+   "screenshots",
    "screen capture",
    "screen shot",
    "snipping",
