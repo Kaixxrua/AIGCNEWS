@@ -416,6 +416,8 @@ class Settings(BaseSettings):
     # Embedding 独立的 API 配置（可选，留空则复用 OPENAI_API_KEY / OPENAI_BASE_URL）
     embedding_api_key: str = ""
     embedding_base_url: str = ""
+    # Embedding 专用出口；留空保持原路由，显式设置优先于环境代理。
+    embedding_proxy: str = ""
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     embedding_model_name: str = "nomic-embed-text"

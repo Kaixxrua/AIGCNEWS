@@ -60,8 +60,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-}
       - https_proxy=${OUTBOUND_PROXY:-}
       - all_proxy=${OUTBOUND_PROXY:-}
-      # api.siliconflow.cn：embedding 直连（国内可达）；gptsakura.com 直连会被
-      # 间歇性 RST，必须走 socks 隧道（VPS 出口抖动时会批量报 ProxyError）
+      # SiliconFlow 默认直连；配置 EMBEDDING_PROXY 可仅为嵌入请求指定出口，
+      # 同步/异步客户端显式使用该出口，不受下面的 NO_PROXY 影响。
       - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
       - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
     extra_hosts:

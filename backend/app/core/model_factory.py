@@ -262,9 +262,10 @@ def create_embedding_model():
         emb_base_url = settings.embedding_base_url or effective_value(
             runtime_config, "base_url", settings.openai_base_url or None
         )
+        is_siliconflow = bool(emb_base_url and "siliconflow." in emb_base_url.lower())
         siliconflow_key = (
             settings.siliconflow_api_key
-            if emb_base_url and "siliconflow." in emb_base_url.lower()
+            if is_siliconflow
             else ""
         )
         emb_api_key = settings.embedding_api_key or siliconflow_key or effective_value(
@@ -272,21 +273,32 @@ def create_embedding_model():
         )
 
         embedding_http_client = None
-        if emb_base_url and "siliconflow." in emb_base_url.lower():
+        embedding_http_async_client = None
+        embedding_proxy = str(getattr(settings, "embedding_proxy", "") or "").strip()
+        if is_siliconflow or embedding_proxy:
             import httpx
 
-            embedding_http_client = httpx.Client(trust_env=False)
+            # An explicit embedding route must also override NO_PROXY. Keep
+            # sync indexing and async retrieval on the same configured route.
+            client_kwargs: dict[str, Any] = {"trust_env": False}
+            if embedding_proxy:
+                client_kwargs["proxy"] = embedding_proxy
+            embedding_http_client = httpx.Client(**client_kwargs)
+            embedding_http_async_client = httpx.AsyncClient(**client_kwargs)
 
-        return constructors.create_openai_embeddings(
-            {
-                "api_key": emb_api_key,
-                "base_url": emb_base_url,
-                "model": settings.embedding_model_name,
-                "http_client": embedding_http_client,
-                "tiktoken_enabled": embedding_http_client is None,
-                "check_embedding_ctx_length": embedding_http_client is None,
-            }
-        )
+        embedding_kwargs = {
+            "api_key": emb_api_key,
+            "base_url": emb_base_url,
+            "model": settings.embedding_model_name,
+            "http_client": embedding_http_client,
+            # SiliconFlow accepts raw text; proxy choice does not change
+            # tokenization for other OpenAI-compatible providers.
+            "tiktoken_enabled": not is_siliconflow,
+            "check_embedding_ctx_length": not is_siliconflow,
+        }
+        if embedding_http_async_client is not None:
+            embedding_kwargs["http_async_client"] = embedding_http_async_client
+        return constructors.create_openai_embeddings(embedding_kwargs)
 
     if provider == HUGGINGFACE_PROVIDER:
         import os
