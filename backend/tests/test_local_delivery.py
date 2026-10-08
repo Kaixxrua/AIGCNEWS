@@ -109,6 +109,47 @@ def test_failed_release_does_not_auto_loop(setup):
         run.assert_not_called()
 
 
+@pytest.mark.parametrize('exact_receipt', [True, False])
+def test_new_catalog_releases_without_code_commit_and_requires_content_receipt(setup, monkeypatch, exact_receipt):
+    import local_release
+    from ui_catalog_release import catalog_digest
+
+    c, db, base, _ = setup
+    catalog = Path(c['production']) / 'mcp-go/internal/uicatalog/data/catalog.json'
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text('{"items":[{"id":"new"}]}')
+    digest = catalog_digest(c)
+    control = Path(c['production']) / '.aigcnews-deploy'
+    state = {'active_release': base, 'in_progress': None, 'ui_catalog_sha256': 'old',
+             'images': {'frontend': 'digest'}}
+    (control / 'state.json').write_text(json.dumps(state))
+    d.meta(db, 'validated_main', {'sha': base})
+    d.meta(db, 'release', {'sha': base, 'status': 'delivered'})
+    calls = []
+
+    def publish(config, script, args, log, timeout):
+        selected = d.meta(db, 'release')
+        assert selected['reason'] == 'UI catalog updated'
+        assert selected['ui_catalog_sha256'] == digest
+        assert args[args.index('--sha')+1] == base
+        calls.append(base)
+        if exact_receipt:
+            state['ui_catalog_sha256'] = digest
+        (control / 'state.json').write_text(json.dumps(state))
+        (control / 'edge-config.json').write_text(json.dumps({'sites': ['app']}))
+        (control / 'edge-state.json').write_text(json.dumps({
+            'source_sha': base, 'frontend_image': 'digest', 'sites': {'app': 'published'}}))
+
+    monkeypatch.setattr(d, 'trusted_run', publish)
+    monkeypatch.setattr(local_release, 'prune_release_images', lambda *args: {'status': 'pruned'})
+    assert d.release_once(c, db)
+    receipt = d.meta(db, 'release')
+    assert receipt['ui_catalog_sha256'] == digest
+    assert receipt['status'] == ('delivered' if exact_receipt else 'failed')
+    assert not d.release_once(c, db)
+    assert calls == [base]  # Neither delivered content nor a failed switch is replayed.
+
+
 def test_bare_hook_rejects_main_and_force(setup):
     import local_receive
     c,db,base,head=setup
