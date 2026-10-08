@@ -14,7 +14,7 @@ describe('public MCP tool display model', () => {
   it('provides the public discovery tools including UI sources with localizable descriptions', () => {
     const tools = displayedPublicTools(endpoint, { status: 'idle', endpoint })
 
-    expect(tools).toHaveLength(9)
+    expect(tools).toHaveLength(10)
     expect(tools.map((tool) => tool.name)).toContain('search_ui_templates')
     expect(tools.map((tool) => tool.name)).toContain('get_ui_template')
     expect(tools.map((tool) => tool.name)).toEqual(PUBLIC_TOOLS.map((tool) => tool.name))
