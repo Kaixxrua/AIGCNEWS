@@ -331,6 +331,99 @@ SOURCES = {
         "slug": "filename",
         "demo_base": "https://reui.io/",
     },
+    "retroui": {
+        "repository": "neobrutalism/neobrutalism",
+        "revision": "d5fbc0e823bb66575f5372c3df03ee43be45c91b",
+        "license_source": "LICENCE.md",
+        "license_sha256": "2f433f700979ef136548076bff149a88333258596a6a3b3fefa4296b41ef27ce",
+        "provider": "RetroUI",
+        "alias_root": "",
+        "css": "app/global.css",
+        "glob": "preview/**/*.tsx",
+        "include": [
+            "/charts/",
+            "/blocks/",
+            "/components/(?:card-|calendar-|empty-|table)"
+        ],
+        "exclude": [r"/bar-chart-style-horizontal\.tsx$"],  # Cropped axis labels in the standalone preview.
+        "slug": "filename",
+        "category": "component",
+        "demo_base": "https://neobrutalism.com/"
+    },
+    "crafter-elements": {
+        "repository": "crafter-station/elements",
+        "revision": "cb4d5283443a3b565893821257c886a0b6b6553b",
+        "license_source": "LICENSE",
+        "license_sha256": "e010eef83778a3408f26d873349e61a4a5e159a7a1ab6ae1b843fab3b8a9e7e3",
+        "provider": "Crafter Elements",
+        "alias_root": "src",
+        "alias_rules": [
+            [
+                "registry/",
+                "registry/"
+            ]
+        ],
+        "css": "src/app/globals.css",
+        "glob": "registry/default/examples/*.tsx",
+        "exclude": [
+            "/(?:clerk|polar|upstash|uploadthing|github|aws|create-your|theme-switcher|sponsor|logo|generate-badge)",
+            # This demo is an empty composition scaffold, without a conversation or input.
+            r"/ai-chat-demo\.tsx$",
+            r"/ai-conversation-tree-demo\.tsx$",  # Requires a sized React Flow parent; nodes are invisible here.
+            # Third-party brand assets, a live backend dependency, or inconsistent demo state.
+            r"/(?:page-comments|use-ai-avatar|ai-task-list)-demo\.tsx$",
+        ],
+        "slug": "filename",
+        "slug_suffix": "-demo",
+        "category": "component",
+        "kind": "block",
+        "demo_base": "https://www.tryelements.dev/"
+    },
+    "componentry": {
+        "repository": "harshjdhv/componentry",
+        "revision": "4591f4235837f1eb378cf1642ff9f63b48c7e435",
+        "license_source": "LICENSE",
+        "license_sha256": "bc600731e5efb47721989e2ca834302a01093b4a8370d4d9b5bf153bcfc340f0",
+        "provider": "Componentry",
+        "alias_root": "apps/web",
+        "package_dirs": {
+            "@workspace/ui": "packages/ui/src"
+        },
+        "css": "packages/ui/src/styles/globals.css",
+        "glob": "apps/web/**/*.tsx",
+        "include": [
+            "/registry/blocks/[^/]+/[^/]+\\.tsx$",
+            "/components/docs/previews/.*-preview\\.tsx$"
+        ],
+        # Collapsed height, unreadable contrast, or an initial view without the demonstrated effect.
+        "exclude": [r"/(?:dither-gradient|matrix-rain|pixel-canvas|scroll-based-velocity)-preview\.tsx$"],
+        "slug": "filename",
+        "slug_suffix": "-preview",
+        "category": "block",
+        "kind": "block",
+        "preview_fill": True,
+        "demo_base": "https://componentry.dev/"
+    },
+    "launchmvpfast": {
+        "repository": "alifarooq9/launchmvpfast",
+        "revision": "af5684527804826186c6eb463df673bd703dad64",
+        "license_source": "LICENSE.md",
+        "license_sha256": "b179d364a952344c679cebf5f2a7f83a53ef62b6d1929a7f085a7fcb7f6bc3bc",
+        "provider": "LaunchMVPFast",
+        "alias_root": "apps/www",
+        "css": "apps/www/styles/globals.css",
+        "glob": "apps/www/registry/default/**/*.tsx",
+        "include": [
+            "/blocks/",
+            "/components/input/"
+        ],
+        # Navigation helpers remain dependencies of complete navbar examples.
+        "exclude": [r"/blocks/navbar/(?!navbar-\d+\.tsx$)"],
+        "slug": "filename",
+        "category": "block",
+        "kind": "block",
+        "demo_base": "https://www.launchmvpfast.com/"
+    },
 }
 
 
@@ -400,6 +493,11 @@ def import_provider(provider_id: str, upstreams: Path, previous: dict, available
                 available_packages=available,
                 alias_rules=[tuple(rule) for rule in source.get("alias_rules", [])],
                 package_dirs=source.get("package_dirs"))
+            # Go's directory embedding omits dot/underscore names. A working
+            # browser bundle must not break the entire MCP catalog at publication.
+            if any(part.startswith((".", "_")) for path in [*closure, source["css"]]
+                   for part in Path(path).parts):
+                raise Reject("source path excluded by Go embed")
             entry_path = next((p for p in closure if p.endswith((".tsx", ".jsx"))), relative)
             export_name = detect_export((root / entry_path).read_text(encoding="utf-8"), slug)
             allowed = set(source.get("reviewed_allow_files", ()))
@@ -425,6 +523,7 @@ def import_provider(provider_id: str, upstreams: Path, previous: dict, available
                 demo_url=source["demo_base"],
                 export_name=export_name,
                 preview_root=source["alias_root"] or None,
+                preview_alias_rules=source.get("alias_rules"),
                 preview_package_dirs=source.get("package_dirs"))
             if "kind" in source:
                 item["kind"] = source["kind"]

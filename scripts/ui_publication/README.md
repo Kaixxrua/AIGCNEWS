@@ -8,6 +8,8 @@ Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Li
 
 2026-10-08 新增 Blocks.so、beUI、Sera UI、Shadcn UI Blocks、ShadcnStore、ReUI 六个来源，沿用上述每日检查与自动发布流程；详细筛选范围、暂缓来源及首轮验收见 [扩充记录](../../docs/ui-source-expansion-2026-10-08.md)。只枚举完整区块或官方组合示例，内部 Logo/菜单片段不独立入库；同一设计的 Radix/Base UI 或 Next/Vite 副本只选择一种。
 
+同日第二轮登记 RetroUI、Crafter Elements、Componentry、LaunchMVPFast，补充 AI 业务区块、图表和营销界面。混合目录来源的别名映射同时交给依赖收集器与预览器；不会改写上游源码。Go 目录嵌入不能收录的点号/下划线路径按单项暂缓，避免整个批次失败。实际入库数量、暂缓的 Studio Admin 整页及 Vue/Astro/HTML 后续候选见 [深入探索记录](../../docs/ui-deeper-discovery-2026-10-08.md)。
+
 每轮流程：
 
 1. `git ls-remote` 取上游 HEAD；与上次检查一致则跳过。浅克隆固定 commit，不执行任何 npm 脚本。

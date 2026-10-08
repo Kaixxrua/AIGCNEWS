@@ -206,6 +206,61 @@ class DirectoryCandidateDiscoveryTest(unittest.TestCase):
             self.assertEqual((root / "data" / stored["path"]).read_bytes(), original)
 
 
+    def test_directory_aliases_resolve_and_reach_the_preview_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream = root / "upstreams/crafter-elements"
+            originals = {
+                "registry/default/examples/ai-context-demo.tsx": (
+                    'import { Context } from "@/registry/shared";\n'
+                    'export default function Demo() { return <Context /> }\n'
+                ),
+                "registry/shared.tsx": (
+                    'import { label } from "@/lib/utils";\n'
+                    'export function Context() { return <section>{label}</section> }\n'
+                ),
+                "src/lib/utils.ts": 'export const label = "Session context";\n',
+                "src/app/globals.css": ":root { --background: white; }\n",
+                "LICENSE": "fixture license\n",
+            }
+            for name, content in originals.items():
+                path = upstream / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            with patch.object(common, "DATA", root / "data"), patch.object(batch_directory, "checked_checkout"):
+                items = batch_directory.import_provider("crafter-elements", root / "upstreams", {}, set(), None, {})
+            self.assertEqual(len(items), 1)
+            item = items[0]
+            self.assertEqual(item["preview_root"], "src")
+            self.assertEqual(item["preview_alias_rules"], [["registry/", "registry/"]])
+            self.assertEqual(item["id"], "crafter-elements-ai-context")
+            self.assertEqual({f["name"] for f in item["files"]}, set(originals) - {"LICENSE"})
+            for file in item["files"]:
+                self.assertEqual((root / "data" / file["path"]).read_text(), originals[file["name"]])
+
+    def test_unembeddable_dependency_holds_only_its_candidate(self) -> None:
+        for folder in ("_components", ".private"):
+            with self.subTest(folder=folder), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                upstream = root / "upstreams/blocks-so"
+                directory = upstream / "content/components/pricing"
+                (directory / folder).mkdir(parents=True)
+                (directory / "good.tsx").write_text('export default function Good() { return <div>Plans</div> }')
+                (directory / "bad.tsx").write_text(
+                    f'import Price from "./{folder}/price";\n'
+                    'export default function Bad() { return <Price /> }'
+                )
+                (directory / folder / "price.tsx").write_text('export default function Price() { return <div>42</div> }')
+                (upstream / "app").mkdir()
+                (upstream / "app/globals.css").write_text(":root { --background: white; }")
+                (upstream / "LICENSE.md").write_text("fixture license")
+                report = {}
+                with patch.object(common, "DATA", root / "data"), patch.object(batch_directory, "checked_checkout"):
+                    items = batch_directory.import_provider("blocks-so", root / "upstreams", {}, set(), None, report)
+                self.assertEqual([item["id"] for item in items], ["blocks-so-good"])
+                self.assertEqual(report["blocks-so"]["rejected"]["source path excluded by Go embed"], ["bad"])
+
+
 class CommonGuardsTest(unittest.TestCase):
     def test_media_guard_allows_w3c_svg_namespaces(self) -> None:
         self.assertFalse(common.has_external_media(
