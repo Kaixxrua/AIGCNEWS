@@ -40,7 +40,11 @@ const groupLabel = computed(() => t('masthead.userGroup', { tier: tierLabel.valu
 
 <template>
   <div class="masthead-user">
-    <UserAvatar :src="authStore.isLoggedIn ? authStore.user?.avatar_url : null" :name="userName || '?'" />
+    <UserAvatar
+      :src="authStore.isLoggedIn ? authStore.user?.avatar_url : null"
+      :name="authStore.isLoggedIn ? userName : ''"
+      :seed="authStore.isLoggedIn ? authStore.user?.user_id : null"
+    />
     <div class="masthead-user__copy">
       <template v-if="authStore.isLoggedIn">
         <span class="masthead-user__status">{{ userName }}</span>
