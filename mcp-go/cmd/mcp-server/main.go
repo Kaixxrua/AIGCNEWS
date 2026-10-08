@@ -188,12 +188,15 @@ func run() int {
 	registry["submit_project_adoption"] = mcpapp.NewAdoptionsService(
 		postgres.NewProjectAdoptionsRepository(pool), publicBaseURL).Submit
 	projectCatalog := postgres.NewProjectSearchRepository(pool, cfg.SchedulerTimezone, cfg.Postgres.StatementTimeoutMillis)
-	projectFallback := projectsearch.NewGitHubFallback(projectsearch.GitHubFallbackConfig{
+	projectGitHubConfig := projectsearch.GitHubFallbackConfig{
 		Enabled:        cfg.ProjectSearch.FallbackEnabled,
 		UseToken:       cfg.ProjectSearch.FallbackUseToken,
 		Token:          cfg.ProjectSearch.GitHubToken,
 		TimeoutSeconds: cfg.ProjectSearch.FallbackTimeoutSeconds,
-	})
+	}
+	projectFallback := projectsearch.NewGitHubFallback(projectGitHubConfig)
+	registry["get_github_project_detail"] = mcpapp.NewGitHubProjectDetailService(
+		projectsearch.NewGitHubDetailClient(projectGitHubConfig), publicBaseURL).Get
 	// 项目向量集合由项目语义检索与收藏语义通道共用（懒连接、带锁）。
 	var projectVectors *projectsearch.MilvusVectorRepository
 	if cfg.ProjectSearch.SemanticEnabled || cfg.FavoritesSemantic.Enabled {

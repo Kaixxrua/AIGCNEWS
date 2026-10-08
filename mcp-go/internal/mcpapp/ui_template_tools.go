@@ -23,13 +23,17 @@ func (a *App) instructions() string {
 }
 
 func (a *App) toolsList(authenticated bool) jsonx.Object {
-	if !a.hasUILibrary() {
-		return ToolsList(authenticated)
-	}
-	tools := make([]any, 0, len(publicTools)+len(uiTemplateTools)+len(uiIconTools)+len(privateTools))
+	tools := make([]any, 0, len(publicTools)+len(uiTemplateTools)+len(uiIconTools)+len(privateTools)+1)
 	tools = append(tools, publicTools...)
-	tools = append(tools, uiTemplateTools...)
-	tools = append(tools, uiIconTools...)
+	if a.hasUILibrary() {
+		tools = append(tools, uiTemplateTools...)
+		tools = append(tools, uiIconTools...)
+	}
+	if a.tools != nil {
+		if _, available := a.tools.Lookup("get_github_project_detail"); available {
+			tools = append(tools, githubProjectDetailTool)
+		}
+	}
 	if authenticated {
 		tools = append(tools, privateTools...)
 	}

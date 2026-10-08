@@ -479,6 +479,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.clients.generic-json.description': '生成带 headers 的标准 mcpServers JSON。',
   'mcp.tools.search_papers': '检索公开 arXiv 论文与学术文献。',
   'mcp.tools.search_documents': '检索新闻、论文、GitHub 等跨来源索引内容。',
+  'mcp.tools.get_github_project_detail': '按需读取公开 GitHub 项目资料与原始 README。',
   'mcp.tools.get_paper_detail': '读取单篇公开索引文档的详细元数据。',
   'mcp.tools.get_top_items': '读取日榜、周榜和月榜公开排行。',
   'mcp.tools.search_github_projects': '优先搜索非 AI 项目、组件、SDK、框架、模板与开源软件。',

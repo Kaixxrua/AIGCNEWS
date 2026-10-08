@@ -143,6 +143,7 @@ Public tools (no auth required; all read-only except the append-only adoption re
 | --- | --- |
 | `search_github_ai_projects` | Local-first search of the curated GitHub AI project library (AI/Agent/MCP/RAG/LLM engineering artifacts) |
 | `search_github_projects` | Search non-AI GitHub open-source software and components |
+| `get_github_project_detail` | Optionally inspect one public repository and its original README, including installation commands and links |
 | `search_papers` | arXiv paper search |
 | `search_documents` | Cross-source index search (arXiv / GitHub / news / Product Hunt / Hacker News) |
 | `get_top_items` | Daily / weekly / monthly ranking snapshots |
