@@ -116,11 +116,12 @@ onBeforeUnmount(closeMenu)
 </template>
 
 <style scoped>
-.mobile-nav { position: fixed; z-index: 100; inset: auto max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 6px; background: var(--dock-surface); border: 1px solid var(--dock-edge); border-radius: 16px; box-shadow: 0 8px 24px rgb(17 25 10 / .22); }
-.mobile-nav__item { position: relative; display: flex; min-width: 0; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 10px; color: var(--dock-text); font-size: 11px; font-weight: 600; line-height: 1.3; text-decoration: none; }
+/* The opaque bottom bar covers the safe area so scrolling content cannot show around the dock. */
+.mobile-nav { position: fixed; z-index: 100; inset: auto 0 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 6px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: var(--dock-surface); border: 0; border-top: 1.5px solid var(--dock-edge); }
+.mobile-nav__item { position: relative; display: flex; min-width: 0; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; color: var(--dock-text); font-size: 11px; font-weight: 600; line-height: 1.3; text-decoration: none; }
 .mobile-nav__item.is-active { color: var(--acid-ink); background: var(--acid); }
 /* 选中底色由 v-indicator 画在导航条的 ::before 上滑动；打开「更多」时滑到菜单键，关上再滑回来。 */
-.mobile-nav::before { z-index: -1; border-radius: 10px; background: var(--acid); }
+.mobile-nav::before { z-index: -1; border-radius: 6px; background: var(--acid); }
 .mobile-nav__item { transition: color 160ms ease; }
 .mobile-nav[data-indicator] .mobile-nav__item.is-active { background: transparent; transition-delay: 70ms; }
 .mobile-nav[data-indicator-pending] .mobile-nav__item.is-active { color: var(--dock-text); transition-delay: 0ms; }
@@ -146,9 +147,6 @@ onBeforeUnmount(closeMenu)
 .mobile-menu__footer a { display: inline-flex; min-height: 44px; align-items: center; }
 .mobile-menu__utilities { display: flex; gap: 12px; margin-top: 16px; }
 .mobile-menu__utilities :deep(button), .mobile-menu__utilities :deep(a) { min-width: 44px; min-height: 44px; }
-/* Same paper dock and ink outline as desktop, sized for thumbs. */
-.mobile-nav { border:1.5px solid var(--dock-edge);border-radius:10px;box-shadow:3px 3px 0 var(--shadow-ink-soft); }
-.mobile-nav__item,.mobile-nav::before { border-radius:6px; }
 .mobile-menu { border-width:2px;border-radius:12px 12px 0 0; }
 .mobile-menu__link { border-color:var(--rule-strong);background:var(--paper); }
 .mobile-menu__link.is-active { color:var(--acid-ink);background:var(--acid);border-color:var(--rule-strong); }
