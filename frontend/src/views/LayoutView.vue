@@ -10,6 +10,8 @@ import MastheadMeta from '@/components/layout/MastheadMeta.vue'
 import MastheadUser from '@/components/layout/MastheadUser.vue'
 import ComicSticker from '@/components/layout/ComicSticker.vue'
 import FavoritesLink from '@/components/FavoritesLink.vue'
+import TourHelpButton from '@/components/onboarding/TourHelpButton.vue'
+import { tourActive } from '@/features/onboarding/signals'
 import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
@@ -40,6 +42,7 @@ import { lazyComponent } from '@/utils/lazyComponent'
 
 const isMobile = useMediaQuery('(max-width: 767px)')
 const isDesktop = useMediaQuery('(min-width: 1024px)')
+const { component: OnboardingTour } = lazyComponent(() => import('@/components/onboarding/OnboardingTour.vue'))
 // 站内速查只在桌面宽度可用：面板连同查询、分组逻辑单独成包，宽度头一回到桌面才加载，之后一直挂着（变窄时由 enabled 关掉），
 // 手机不下载。
 const { component: QuickSearch } = lazyComponent(() => import('@/components/search/QuickSearch.vue'))
@@ -139,7 +142,7 @@ watch([viewKey, () => route.fullPath], (next, previous) => {
 }, { flush: 'pre', immediate: true })
 
 // 读报态：桌面内页往下读时 dock 和页脚滑出屏幕，画板一直伸到底边，只留一条荧光拉手；换页时先回来。
-const readingEnabled = computed(() => folioPage.value && isDesktop.value && !dockSuppressed.value)
+const readingEnabled = computed(() => folioPage.value && isDesktop.value && !dockSuppressed.value && !tourActive.value)
 const { hidden: readingHidden, reveal: revealChrome } = useReadingMode({ enabled: readingEnabled, scope: appContent })
 watch(viewKey, revealChrome)
 const pullChromeBack = (event: MouseEvent) => {
@@ -187,6 +190,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
             <DensityToggle v-if="densityToggleShown" />
             <ThemeToggle />
             <LocaleToggle />
+            <TourHelpButton v-if="isDesktop" />
           </div>
         </div>
       </div>
@@ -245,6 +249,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     </button>
 
     <AccountSettingsDialog v-model="accountSettingsOpen" />
+    <OnboardingTour v-if="isDesktop" :blocked="accountSettingsOpen" />
 
     <!-- 站内速查（⌘K / Ctrl+K）：桌面端任何一页都能叫出来；报眉上的放大镜只在内页出现，首页不动 -->
     <QuickSearch v-if="quickSearchMounted" :enabled="isDesktop" />

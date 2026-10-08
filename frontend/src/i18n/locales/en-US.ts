@@ -1,6 +1,8 @@
 import { trackingEn } from './tracking'
+import { onboardingEn } from './onboarding'
 
 const enUSCatalog = {
+  onboarding: onboardingEn,
   aiOpsTitle: 'AI Operations',
   recommendedWebsites: {
     title: "Editor's picks", subtitle: 'Websites I recommend, and why.', collectionNav: 'Website collections',

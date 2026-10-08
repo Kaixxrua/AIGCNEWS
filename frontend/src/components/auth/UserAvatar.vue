@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { defaultAvatarFor } from '@/features/auth/defaultAvatar'
 
-const props = defineProps<{ src?: string | null; name?: string | null }>()
+const props = defineProps<{ src?: string | null; name?: string | null; seed?: string | number | null }>()
 const failed = ref(false)
 watch(() => props.src, () => { failed.value = false })
-const initial = computed(() => Array.from(props.name?.trim() || '?')[0]?.toLocaleUpperCase() || '?')
+const fallback = computed(() => defaultAvatarFor(props.seed ?? props.name))
 </script>
 
 <template>
   <span class="user-avatar" aria-hidden="true">
     <img v-if="src && !failed" :src="src" alt="" @error="failed = true" />
-    <span v-else>{{ initial }}</span>
+    <img v-else :src="fallback" class="user-avatar__default" alt="" />
   </span>
 </template>
 

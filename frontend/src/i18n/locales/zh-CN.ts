@@ -1,7 +1,9 @@
 import { enUS } from './en-US'
 import { trackingZh } from './tracking'
+import { onboardingZh } from './onboarding'
 
 const overrides = {
+  onboarding: onboardingZh,
   aiOpsTitle: 'AI 运维',
   recommendedWebsites: {
     title: '站长推荐', subtitle: '我挑选的网站，以及推荐它们的理由。', collectionNav: '网站收藏',
