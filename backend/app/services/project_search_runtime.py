@@ -11,7 +11,7 @@ from backend.app.core.config import settings
 from backend.app.services.ingestion.source_github_mcp import (
     search_github_projects_fallback,
 )
-from backend.app.services.project_discovery import search_projects
+from backend.app.services.project_discovery import search_catalog_projects, search_projects
 from backend.app.services.project_reranker import ProjectReranker
 from backend.app.services.project_search_shadow import ProjectSearchShadowManager
 from backend.app.services.project_semantic_search import ProjectSemanticSearch
@@ -108,6 +108,17 @@ class ApplicationProjectSearchRuntime:
         if self._repository_factory is not None:
             options["repository_factory"] = self._repository_factory
         return await search_projects(**options)
+
+    async def search_catalog_projects(self, **arguments: Any) -> dict[str, Any]:
+        options = dict(arguments)
+        options.update(
+            semantic_search_factory=self._get_semantic_search,
+            reranker_factory=self._get_reranker,
+            shadow_manager_factory=self._get_shadow_manager,
+        )
+        if self._repository_factory is not None:
+            options["repository_factory"] = self._repository_factory
+        return await search_catalog_projects(**options)
 
     def warmup_semantic_search(self) -> dict[str, Any]:
         if not bool(

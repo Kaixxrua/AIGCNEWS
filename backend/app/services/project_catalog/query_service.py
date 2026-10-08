@@ -9,7 +9,7 @@ from backend.app.repositories.project_catalog_factory import (
     get_project_catalog_repository,
 )
 from backend.app.services.ingestion.source_github_mcp import PUBLIC_PROJECT_MIN_STARS
-from backend.app.services.project_discovery import resolve_project_sort
+from backend.app.services.project_discovery import resolve_project_sort, search_catalog_projects
 
 __all__ = [
     "PUBLIC_PROJECT_MIN_STARS",
@@ -37,8 +37,11 @@ class ProjectCatalogQueryService:
     def __init__(
         self,
         repository_factory: Callable[[], ProjectCatalogRepository] = get_project_catalog_repository,
+        *,
+        searcher: Callable[..., Any] = search_catalog_projects,
     ) -> None:
         self._repository_factory = repository_factory
+        self._searcher = searcher
 
     @property
     def min_stars(self) -> int:
@@ -61,20 +64,10 @@ class ProjectCatalogQueryService:
         effective_sort = resolve_project_sort(
             scope, sort, has_query=bool(q), prefer_relevance=True
         )
-        result = await asyncio.to_thread(
-            self._repository_factory().list_projects,
-            source="github",
-            scope=scope,
-            category=category,
-            subcategory=subcategory,
-            q=q,
-            language=language,
-            page=page,
-            page_size=page_size,
-            sort=effective_sort,
-            min_stars=PUBLIC_PROJECT_MIN_STARS,
-            enriched_only=True,
-            user_id=user_id,
+        result = await self._searcher(
+            query=q, scope=scope, category=category, subcategory=subcategory,
+            language=language, page=page, page_size=page_size, sort=effective_sort,
+            user_id=user_id, repository_factory=self._repository_factory,
         )
         return ProjectCatalogPage(result=result, effective_sort=effective_sort)
 

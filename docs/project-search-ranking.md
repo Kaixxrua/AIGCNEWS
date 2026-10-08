@@ -1,8 +1,9 @@
 # 项目语义搜索展示序：相关性 + 长期热度
 
 适用范围：`/api/projects` 的 AI 搜索（`PROJECT_AI_SEARCH_STRATEGY=v2`）与
-MCP `search_github_ai_projects`（Go 端 `internal/projectsearch`）。两侧实现逐位一致，
-由镜像字面量测试钉住（`backend/tests/test_project_search_ranking.py` ↔
+MCP `search_github_ai_projects`（Go 端 `internal/projectsearch`）及全站快捷搜索的项目结果。
+Python REST 与 MCP 共用本地候选编排，Go 实现相同意图与排序契约，
+由数据库贯通测试及镜像测试验证（`backend/tests/test_project_search_ranking.py` ↔
 `mcp-go/internal/projectsearch/ranking_test.go`）。
 
 ## 为什么不再按今日热度排
@@ -70,3 +71,12 @@ PostgreSQL 集成测试另行验证真实 SQL 的边界、字面转义和名称�
 当天首轮落库前沿用昨日指标，首轮落库后即切到当天；最多回退一天，
 更早的断档照常显示为空。Python（`postgres_project_catalog._EFFECTIVE_METRIC_DATE_SQL`）
 与 Go（`internal/postgres.effectiveMetricDateSQL`）逐字一致。
+
+## 搜索入口与结果契约
+
+- 有查询且按 relevance 排序时，网页与快捷搜索复用 discovery 的概念/词法/语义候选和排序流程；HTTP 注入应用持有的语义、重排和 shadow 资源，不创建另一套运行实例。
+- REST 保留完整项目行、当前用户收藏状态、24 条默认分页及最多 60 条页大小；MCP 保留精简公开投影和最多 20 条。网页只展示已入库项目，GitHub 外部回退仍由 MCP 入口处理。
+- 行为变化：网页相关性搜索的 total 现在表示经过可见性/分类过滤的候选集总数（上限 200），与 MCP 的有界发现检索一致。无查询浏览和显式 stars/hot 等排序继续使用原有目录查询。
+- 未收录于概念表的中文专名保留为字面条件，已验证的客户端 lexical_terms 会补入词法计划；tutorial/tutorials、workflow/workflows 等词形显式扩展，保留英文词边界。
+- recommended 在词法候选截断前应用 active 推荐成员过滤。普通目录筛选与候选回填仍再次执行可见性与筛选条件。
+- GitHub 返回限流/禁用等错误对象时保留已有本地结果，并通过 fallback_error 报告失败；语义补搜沿用显式排序。MCP 的 tags/topics 接受数据库规范化后的字符串数组。
