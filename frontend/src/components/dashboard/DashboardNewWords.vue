@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
     <h2 id="new-words-title">{{ t(historical ? 'dashboard.newWords.historyTitle' : 'dashboard.newWords.title') }}</h2>
     <p class="new-words-subtitle">{{ t('dashboard.newWords.subtitle') }}</p>
     <div v-if="words.length" class="new-words-list">
-      <button v-for="word in words" :key="word.id" type="button" class="new-word" aria-haspopup="dialog" @click="open(word)">
+      <button v-for="word in words" :key="word.id" type="button" class="new-word" :title="word.term" aria-haspopup="dialog" @click="open(word)">
         <span>{{ word.term }}</span><ArrowUpRight :size="18" aria-hidden="true" />
       </button>
     </div>
