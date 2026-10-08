@@ -32,6 +32,10 @@ def test_migration_and_daily_snapshot_repository_on_postgres():
         assert repo.get_snapshot(day)["items"] == [{"term": "Prism Routing"}]
         repo.save_snapshot(day + timedelta(days=1), [], now + timedelta(days=1))
         assert repo.get_snapshot(day)["items"] == [{"term": "Prism Routing"}]
+        repo.save_snapshot(day - timedelta(days=2), [{"term": "Older Routing"}], now)
+        assert repo.snapshot_dates(day + timedelta(days=2), 5) == [day, day - timedelta(days=2)]
+        assert repo.snapshot_dates(day + timedelta(days=2), 1) == [day]
+        assert repo.snapshot_dates(day, 5) == [day - timedelta(days=2)]
         with pytest.raises(CheckViolation):
             repo.save_snapshot(day, [{}, {}, {}], now + timedelta(hours=1))
         repo.save_snapshot(day, [], now + timedelta(hours=1))

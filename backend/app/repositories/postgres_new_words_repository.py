@@ -56,6 +56,15 @@ class PostgresNewWordsRepository:
             ).fetchone()
         return dict(row) if row else None
 
+    def snapshot_dates(self, before: date, limit: int) -> list[date]:
+        with self._database.transaction() as conn:
+            rows = conn.execute(
+                """SELECT snapshot_date FROM dashboard_new_words
+                    WHERE snapshot_date < %s AND jsonb_array_length(items) > 0
+                    ORDER BY snapshot_date DESC LIMIT %s""", (before, limit),
+            ).fetchall()
+        return [row["snapshot_date"] for row in rows]
+
     def save_snapshot(self, day: date, items: list[dict[str, Any]], generated_at: datetime) -> None:
         with self._database.transaction() as conn:
             conn.execute(

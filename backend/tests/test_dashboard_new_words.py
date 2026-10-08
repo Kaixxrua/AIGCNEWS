@@ -80,6 +80,10 @@ class Repository:
     def get_snapshot(self, day):
         return self.snapshots.get(day)
 
+    def snapshot_dates(self, before, limit):
+        return sorted((day for day, snapshot in self.snapshots.items() if day < before and snapshot["items"]),
+                      reverse=True)[:limit]
+
     def save_snapshot(self, day, items, now):
         self.save_calls.append(day)
         self.snapshots[day] = {"items": items, "generated_at": now}
@@ -276,6 +280,34 @@ def test_endpoint_is_read_only_date_scoped_and_validates_dates(monkeypatch):
         assert client.get("/dashboard/new-words?date=2026-10-07").json()["items"] == []
         assert client.get("/dashboard/new-words?date=2026-10-09").status_code == 422
         assert client.get("/dashboard/new-words?date=bad").status_code == 422
+    assert repo.save_calls == []
+
+
+def test_history_lists_saved_selections_with_exclusive_date_pagination(monkeypatch):
+    repo = Repository()
+    words = select(repo)
+    for day in (1, 6, 8, 9):
+        repo.save_snapshot(date(2026, 10, day), words, NOW)
+    repo.save_snapshot(date(2026, 10, 7), [], NOW)
+    repo.save_calls.clear()
+    monkeypatch.setattr("backend.app.api.routes_new_words.today", lambda: date(2026, 10, 8))
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_application_repositories] = lambda: SimpleNamespace(new_words=repo)
+    with TestClient(app) as client:
+        first = client.get("/dashboard/new-words/history?limit=1").json()
+        assert [row["date"] for row in first["items"]] == ["2026-10-08"]
+        assert first["next_before"] == "2026-10-08"
+        second = client.get("/dashboard/new-words/history?before=2026-10-08&limit=1").json()
+        assert [row["date"] for row in second["items"]] == ["2026-10-06"]
+        last = client.get("/dashboard/new-words/history?before=2026-10-06&limit=1").json()
+        assert [row["date"] for row in last["items"]] == ["2026-10-01"]
+        assert last["next_before"] is None
+        assert "primary_id" not in first["items"][0]["items"][0]
+        for query in ("before=bad", "before=2026-10-10", "limit=0", "limit=32"):
+            assert client.get("/dashboard/new-words/history?" + query).status_code == 422
+        repo.docs = []
+        assert client.get("/dashboard/new-words/history").json()["items"] == []
     assert repo.save_calls == []
 
 

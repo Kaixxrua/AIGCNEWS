@@ -22,3 +22,13 @@ export async function fetchNewWords(date: string, signal: AbortSignal): Promise<
   const response = await api.get<NewWordsSnapshot>('/dashboard/new-words', { params: { date }, signal })
   return response.data
 }
+
+export interface NewWordsHistory {
+  items: NewWordsSnapshot[]
+  next_before: string | null
+}
+
+export async function fetchNewWordsHistory(before: string, signal: AbortSignal): Promise<NewWordsHistory> {
+  const response = await api.get<NewWordsHistory>('/dashboard/new-words/history', { params: { before }, signal })
+  return response.data
+}
