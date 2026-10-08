@@ -130,6 +130,26 @@ func TestMCPMountAndTrailingSlash(t *testing.T) {
 	}
 }
 
+// OAuth 入口 /api/mcp/oauth 挂第二个处理器；和 /api/mcp 一样，单层尾斜杠 307 到去斜杠形式。
+// 没挂时按未注册 404，尾斜杠也不重定向。
+func TestMCPOAuthMount(t *testing.T) {
+	mux := NewMux(version.Fallback, readyTrue, echoHandler{body: `{"entry":"mcp"}`}, echoHandler{body: `{"entry":"oauth"}`})
+	requireExchange(t, do(t, mux, "POST", "/api/mcp"), http.StatusOK, `{"entry":"mcp"}`)
+	requireExchange(t, do(t, mux, "POST", "/api/mcp/oauth"), http.StatusOK, `{"entry":"oauth"}`)
+
+	req := httptest.NewRequest("POST", "http://example.test/api/mcp/oauth/", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTemporaryRedirect ||
+		rec.Header().Get("Location") != "http://example.test/api/mcp/oauth" {
+		t.Fatalf("redirect = %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	only := NewMux(version.Fallback, readyTrue, echoHandler{body: `{"ok":true}`})
+	requireExchange(t, do(t, only, "POST", "/api/mcp/oauth"), http.StatusNotFound, `{"detail":"Not Found"}`)
+	requireExchange(t, do(t, only, "POST", "/api/mcp/oauth/"), http.StatusNotFound, `{"detail":"Not Found"}`)
+}
+
 // Starlette redirect_slashes 实测：单层尾斜杠 307 到去斜杠绝对 URL，空体；
 // 双层尾斜杠不递归，落 404。
 func TestTrailingSlashRedirect(t *testing.T) {

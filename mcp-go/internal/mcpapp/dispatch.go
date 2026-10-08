@@ -350,6 +350,8 @@ type Handler struct {
 	auth    Authenticator
 	limiter *ratelimit.Limiter
 	usage   *usage.Recorder
+	// resourceMetadata 非空时是 OAuth 入口（见 oauth.go）：不收匿名请求，401 带 resource_metadata。
+	resourceMetadata string
 }
 
 // NewHandler 接线；limiter 为 nil 时不限流（回放多数用例与 Redis 未接线
@@ -379,7 +381,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.auth != nil {
 		authorizations := r.Header.Values("Authorization")
 		if len(authorizations) > 1 {
-			unauthorizedHeaderResponse().Write(w)
+			h.challenge(unauthorizedHeaderResponse()).Write(w)
 			return
 		}
 		authorization := ""
@@ -388,11 +390,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		id, ok, authFailure := h.auth.Authenticate(r.Context(), authorization)
 		if authFailure != nil {
-			authFailure.Write(w)
+			h.challenge(authFailure).Write(w)
 			return
 		}
 		identity = id
 		authenticated = ok
+	}
+	// OAuth 入口不收匿名请求：回质询，客户端据此走授权；不解析、不计限流与用量。
+	if h.resourceMetadata != "" && !authenticated {
+		h.challenge(missingTokenResponse()).Write(w)
+		return
 	}
 	req, parseErr := wire.ParseRequest(r)
 	if parseErr != nil {
@@ -441,9 +448,10 @@ func (h *Handler) recordUsage(r *http.Request, req wire.ValidatedRequest, identi
 // writeInternalServerError 对齐 ServerErrorMiddleware：纯文本定长 500。
 func unauthorizedHeaderResponse() *authn.Response {
 	return &authn.Response{
-		Status:  http.StatusUnauthorized,
-		Body:    []byte(`{"detail":"Authorization must contain exactly one value"}`),
-		Headers: http.Header{"WWW-Authenticate": []string{"Bearer"}},
+		Status:      http.StatusUnauthorized,
+		Body:        []byte(`{"detail":"Authorization must contain exactly one value"}`),
+		Headers:     http.Header{"WWW-Authenticate": []string{"Bearer"}},
+		BearerError: authn.BearerInvalidRequest,
 	}
 }
 

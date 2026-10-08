@@ -81,3 +81,30 @@ def test_authorization_endpoint_is_a_frontend_page_the_edges_serve() -> None:
     assert re.search(rf"path: '{re.escape(path)}'", router)
     # 边缘只给 __routes 清单里的首段返回 200，清单外一律 404
     assert (FRONTEND / "public" / "__routes" / path.split("/")[1]).is_file()
+
+
+MCP_GO = Path(__file__).resolve().parents[2] / "mcp-go"
+
+
+def test_go_oauth_entry_challenge_points_at_the_published_metadata() -> None:
+    # Go 的 /api/mcp/oauth 回 401 时把客户端指向这份资源元数据（RFC 9728 §5.1）；
+    # 地址由资源路径推出，Go 侧 TestOAuthResourceMetadataMatchesPublishedFile 反向读同一份文件
+    resource_path = urlsplit(MCP_OAUTH_RESOURCE).path
+    metadata_url = f"{MCP_OAUTH_ISSUER}/.well-known/oauth-protected-resource{resource_path}"
+    oauth_go = (MCP_GO / "internal" / "mcpapp" / "oauth.go").read_text(encoding="utf-8")
+    assert f'const OAuthResourceMetadataURL = "{metadata_url}"' in oauth_go
+    assert PROTECTED_RESOURCE.is_file()
+
+
+def test_oauth_entry_is_routed_to_the_go_gateway() -> None:
+    # 资源地址的路径要一路接到 Go：前端 nginx 精确转发、Go 路由挂载、main 接线，缺一处就回落
+    # Python 主后端 404，客户端拿不到质询
+    resource_path = urlsplit(MCP_OAUTH_RESOURCE).path
+    nginx = (FRONTEND / "nginx.conf").read_text(encoding="utf-8")
+    block = re.search(rf"\n    location = {re.escape(resource_path)} \{{\n(.*?)\n    \}}\n", nginx, re.S)
+    assert block, resource_path
+    assert "proxy_pass $mcp_go_upstream$request_uri;" in block.group(1)
+    probes = (MCP_GO / "internal" / "probes" / "probes.go").read_text(encoding="utf-8")
+    assert f'case "{resource_path}":' in probes
+    main = (MCP_GO / "cmd" / "mcp-server" / "main.go").read_text(encoding="utf-8")
+    assert "mcpHandler.OAuthEntry(mcpapp.OAuthResourceMetadataURL)" in main

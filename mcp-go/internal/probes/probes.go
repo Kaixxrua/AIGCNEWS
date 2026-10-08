@@ -45,11 +45,13 @@ type handler struct {
 	versionBody string
 	readiness   Readiness
 	mcp         http.Handler
+	mcpOAuth    http.Handler
 }
 
 // NewMux 装配探活路由（实为单一 Handler；保留 NewMux 命名以对齐
 // “接线在启动期完成一次”的语义）。serverVersion 在启动时解析一次，之后不变。
-// 可选的 mcp 处理器挂载 /api/mcp（PR 1.2 起）；缺省时该路径按未注册 404。
+// 可选的 mcp 处理器：第一个挂 /api/mcp（PR 1.2 起），第二个挂 OAuth 入口 /api/mcp/oauth；
+// 缺省时对应路径按未注册 404。
 func NewMux(serverVersion string, readiness Readiness, mcp ...http.Handler) http.Handler {
 	h := &handler{
 		versionBody: `{"name":"` + serverName + `","version":` + strconv.Quote(serverVersion) + `}`,
@@ -57,6 +59,9 @@ func NewMux(serverVersion string, readiness Readiness, mcp ...http.Handler) http
 	}
 	if len(mcp) > 0 {
 		h.mcp = mcp[0]
+	}
+	if len(mcp) > 1 {
+		h.mcpOAuth = mcp[1]
 	}
 	return h
 }
@@ -92,6 +97,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.mcp.ServeHTTP(w, r)
+	case "/api/mcp/oauth":
+		if h.mcpOAuth == nil {
+			writeJSON(w, http.StatusNotFound, notFoundBody)
+			return
+		}
+		h.mcpOAuth.ServeHTTP(w, r)
 	default:
 		writeJSON(w, http.StatusNotFound, notFoundBody)
 	}
@@ -103,6 +114,8 @@ func (h *handler) isRegistered(path string) bool {
 		return true
 	case "/api/mcp":
 		return h.mcp != nil
+	case "/api/mcp/oauth":
+		return h.mcpOAuth != nil
 	}
 	return false
 }

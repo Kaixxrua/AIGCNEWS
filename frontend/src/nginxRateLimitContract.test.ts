@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
  * - 项目 logo 走独立的 api_logo 桶。一屏榜单/项目库会同时发几十个 logo 请求，
  *   与数据接口共用 api_general 时 logo 先把桶耗尽，随后的数据请求被 429；
  * - 数据接口（/api/、/api/mcp）仍走 api_general，认证端点仍走 api_auth；
+ * - MCP OAuth 入口（/api/mcp/oauth）与 /api/mcp 是同一个 Go 网关，块内指令逐条一致；
  * - logo 块的转发口径与 /api/ 块一致（后端按 X-Forwarded-For 首跳取客户端）；
  * - 不能有正则 location 抢先匹配 logo 路径（nginx 中正则优先于普通前缀）。
  */
@@ -50,6 +51,17 @@ describe('nginx 限流分桶契约', () => {
     expect(limitZones(extractLocationBody(nginxConf, '/api/'))).toEqual(['api_general'])
     expect(limitZones(extractLocationBody(nginxConf, '= /api/mcp'))).toEqual(['api_general'])
     expect(limitZones(extractLocationBody(nginxConf, '/api/auth/'))).toEqual(['api_auth'])
+  })
+
+  it('MCP OAuth 入口与 /api/mcp 块指令逐条一致（同桶、同上游、同 SSE 设置）', () => {
+    const directives = (body: string) =>
+      body
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+    const oauth = directives(extractLocationBody(nginxConf, '= /api/mcp/oauth'))
+    expect(oauth).toContain('proxy_pass $mcp_go_upstream$request_uri;')
+    expect(oauth).toEqual(directives(extractLocationBody(nginxConf, '= /api/mcp')))
   })
 
   it('logo 块转发到主后端，转发头与 /api/ 块同口径', () => {

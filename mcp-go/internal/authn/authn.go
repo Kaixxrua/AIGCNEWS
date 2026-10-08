@@ -34,6 +34,12 @@ const (
 	invalidScopesDetail = "MCP Token 权限无效"
 )
 
+// RFC 6750 §3.1 的错误码，写进 Response.BearerError。
+const (
+	BearerInvalidRequest = "invalid_request"
+	BearerInvalidToken   = "invalid_token"
+)
+
 // 会员档位常量，对齐 backend/app/services/membership/tiers.py。
 const (
 	TierFree   = "free"
@@ -82,6 +88,10 @@ type Response struct {
 	Status  int
 	Body    []byte
 	Headers http.Header
+	// BearerError 是 RFC 6750 §3.1 的错误码（凭证无效时为 invalid_token）；没带 Bearer
+	// 凭证的失败按 §3.1 不给错误码，留空。只供 OAuth 入口拼质询头，Write 不读它，
+	// /api/mcp 的 401 仍是裸 "Bearer"。
+	BearerError string
 }
 
 // Write 按 FastAPI JSONResponse/ServerErrorMiddleware 口径写出：
@@ -141,7 +151,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 		return Identity{}, false, nil
 	}
 	if !strings.HasPrefix(strings.ToLower(authorization), "bearer ") {
-		return Identity{}, false, unauthorized(invalidSchemeDetail)
+		return Identity{}, false, unauthorized(invalidSchemeDetail, "")
 	}
 
 	token := authorization[len("Bearer "):]
@@ -149,7 +159,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 	// 在开启事务前拒绝，保证 malformed credential 不触碰数据库。
 	if token == "" || token != strings.TrimSpace(token) ||
 		strings.IndexFunc(token, func(r rune) bool { return r == '\t' || r == '\n' || r == '\r' }) >= 0 {
-		return Identity{}, false, unauthorized(invalidTokenDetail)
+		return Identity{}, false, unauthorized(invalidTokenDetail, BearerInvalidToken)
 	}
 	digest := sha256.Sum256([]byte(token))
 	if a.DB == nil {
@@ -173,7 +183,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 		&row.MembershipTier, &row.MembershipExpiresAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Identity{}, false, unauthorized(invalidTokenDetail)
+		return Identity{}, false, unauthorized(invalidTokenDetail, BearerInvalidToken)
 	}
 	if err != nil {
 		return Identity{}, false, internalError()
@@ -183,7 +193,7 @@ func (a Authenticator) Authenticate(ctx context.Context, authorization string) (
 	// malformed scope 由 deferred rollback 收尾，不能留下 last_used_at 写入。
 	scopes, ok := decodeScopes(row.ScopesJSON)
 	if !ok {
-		return Identity{}, false, unauthorized(invalidScopesDetail)
+		return Identity{}, false, unauthorized(invalidScopesDetail, BearerInvalidToken)
 	}
 	if _, err = tx.Exec(ctx, lastUsedSQL, row.TokenID); err != nil {
 		return Identity{}, false, internalError()
@@ -244,13 +254,14 @@ func decodeScopes(raw string) ([]string, bool) {
 	return scopes, true
 }
 
-func unauthorized(detail string) *Response {
+func unauthorized(detail, bearerError string) *Response {
 	headers := http.Header{}
 	headers.Set("WWW-Authenticate", "Bearer")
 	return &Response{
-		Status:  http.StatusUnauthorized,
-		Body:    jsonx.MustMarshalCompact(jsonx.Object{{Key: "detail", Value: detail}}),
-		Headers: headers,
+		Status:      http.StatusUnauthorized,
+		Body:        jsonx.MustMarshalCompact(jsonx.Object{{Key: "detail", Value: detail}}),
+		Headers:     headers,
+		BearerError: bearerError,
 	}
 }
 

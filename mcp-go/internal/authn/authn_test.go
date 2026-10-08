@@ -108,7 +108,7 @@ func TestAuthenticateRejectsNonBearer(t *testing.T) {
 	if authenticated {
 		t.Fatal("invalid scheme marked authenticated")
 	}
-	assertUnauthorized(t, response, invalidSchemeDetail)
+	assertUnauthorized(t, response, invalidSchemeDetail, "")
 }
 
 func TestAuthenticateRejectsMalformedBearerBeforeDatabase(t *testing.T) {
@@ -125,7 +125,7 @@ func TestAuthenticateRejectsMalformedBearerBeforeDatabase(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			begins := 0
 			identity, authenticated, response := (Authenticator{DB: fakeDB{begins: &begins}}).Authenticate(context.Background(), header)
-			if response == nil || response.Status != http.StatusUnauthorized {
+			if response == nil || response.Status != http.StatusUnauthorized || response.BearerError != BearerInvalidToken {
 				t.Fatalf("header %q got response=%+v", header, response)
 			}
 			if authenticated || identity.UserID != 0 {
@@ -145,7 +145,7 @@ func TestAuthenticateAcceptsOpaqueEmbeddedSpaceToken(t *testing.T) {
 	if authenticated {
 		t.Fatal("unknown opaque token marked authenticated")
 	}
-	assertUnauthorized(t, response, invalidTokenDetail)
+	assertUnauthorized(t, response, invalidTokenDetail, BearerInvalidToken)
 	if begins != 1 {
 		t.Fatalf("embedded ordinary spaces should be treated as token data, begins=%d", begins)
 	}
@@ -183,7 +183,7 @@ func TestAuthenticateMissingToken(t *testing.T) {
 	if authenticated {
 		t.Fatal("missing token marked authenticated")
 	}
-	assertUnauthorized(t, response, invalidTokenDetail)
+	assertUnauthorized(t, response, invalidTokenDetail, BearerInvalidToken)
 	if !tx.rolledBack || tx.committed {
 		t.Fatalf("missing token must rollback without commit: %+v", tx)
 	}
@@ -203,7 +203,7 @@ func TestAuthenticateMalformedScopes(t *testing.T) {
 			if authenticated {
 				t.Fatal("malformed scopes marked authenticated")
 			}
-			assertUnauthorized(t, response, invalidScopesDetail)
+			assertUnauthorized(t, response, invalidScopesDetail, BearerInvalidToken)
 			if tx.updateSQL != "" || tx.committed || !tx.rolledBack {
 				t.Fatalf("malformed scopes must rollback without usage write or commit: %+v", tx)
 			}
@@ -275,10 +275,13 @@ func TestAuthenticateDatabaseFailures(t *testing.T) {
 	})
 }
 
-func assertUnauthorized(t *testing.T, response *Response, detail string) {
+func assertUnauthorized(t *testing.T, response *Response, detail, bearerError string) {
 	t.Helper()
 	if response == nil || response.Status != http.StatusUnauthorized {
 		t.Fatalf("got %+v", response)
+	}
+	if response.BearerError != bearerError {
+		t.Fatalf("bearer error=%q, want %q", response.BearerError, bearerError)
 	}
 	if string(response.Body) != `{"detail":"`+detail+`"}` {
 		t.Fatalf("body=%s", response.Body)
@@ -307,7 +310,11 @@ func assertInternalError(t *testing.T, response *Response) {
 // 401 写出形状钉死：application/json + 显式长度 + WWW-Authenticate。
 func TestResponseWrite(t *testing.T) {
 	rec := httptest.NewRecorder()
-	unauthorized(invalidTokenDetail).Write(rec)
+	// BearerError 不进 /api/mcp 的线上字节：质询头仍是裸 Bearer。
+	unauthorized(invalidTokenDetail, BearerInvalidToken).Write(rec)
+	if rec.Header().Get("WWW-Authenticate") != "Bearer" {
+		t.Fatalf("www-authenticate=%q", rec.Header().Get("WWW-Authenticate"))
+	}
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d", rec.Code)
 	}

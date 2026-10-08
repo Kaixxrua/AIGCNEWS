@@ -322,11 +322,14 @@ func run() int {
 	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)
 	// 每日用量汇总（mcpusage:*，管理员监控页读）：不含管理员与压测，不存 IP。
 	mcpHandler.SetUsage(usage.NewRecorder(redisClient))
+	// OAuth 入口 /api/mcp/oauth：同一套认证、限流与分派，只是不收匿名请求，401 带
+	// resource_metadata 引导客户端走浏览器授权（授权服务器在 Python 主后端）。
+	mcpOAuthHandler := mcpHandler.OAuthEntry(mcpapp.OAuthResourceMetadataURL)
 	mux := probes.NewMuxWithCORS(serverVersion, func(ctx context.Context) bool {
 		return postgres.Ping(ctx, pool, cfg.Postgres.PoolTimeoutSeconds) == nil
 	}, probes.CORSConfig{
 		AllowedOrigins: config.ParseCORSAllowedOrigins(cfg.CORSAllowedOrigins),
-	}, mcpHandler)
+	}, mcpHandler, mcpOAuthHandler)
 
 	server := &http.Server{
 		Addr:              net.JoinHostPort("", strconv.Itoa(cfg.Port)),
