@@ -1,5 +1,4 @@
 .comic-masthead-rule,.comic-footer-rule,.comic-speech-outline,.comic-masthead-creation,.comic-masthead-corner,.comic-footer-sticker { display:none; }
-@media (min-width: 1024px) {
 /* Shared comic palette; component-specific geometry remains with its owner. */
 :root {
   --paper: #fffef9;
@@ -89,6 +88,7 @@
 #app .app-shell--editorial {
   background: var(--paper);
 }
+@media (min-width: 1024px) {
 #app .app-shell--editorial .brand-wordmark__text { font-size: 94px; }
 
 @media (min-width: 1024px) {

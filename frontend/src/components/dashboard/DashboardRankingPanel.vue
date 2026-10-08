@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { projectDescription } from '@/features/projects/projectPresentation'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import DashboardTweetPreview from './DashboardTweetPreview.vue'
 import { displayTweetText } from '@/features/xboard/xBoardViewModel'
@@ -55,6 +55,19 @@ const summary = (doc: TopDoc) => doc.source === 'github'
   ? projectDescription(doc, locale.value.startsWith('zh') ? 'zh-CN' : 'en-US', t('projects.fallbackProject'))
   : doc.summary
 const isMobile = useMediaQuery('(max-width: 767px)')
+const sourceTabs = ref<HTMLElement>()
+// A selection made via statistics or before rotating the phone must stay visible in the swipeable strip.
+function revealActiveSource() {
+  const strip = sourceTabs.value
+  const tab = strip?.querySelector<HTMLElement>('[aria-selected="true"]')
+  if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return
+  const start = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left
+  const end = start + tab.offsetWidth
+  if (start < 0) strip.scrollLeft += start - 5
+  else if (end > strip.clientWidth) strip.scrollLeft += end - strip.clientWidth + 5
+}
+watch(() => props.activeTab, () => { void nextTick(revealActiveSource) })
+useResizeObserver(sourceTabs, revealActiveSource)
 
 const hasDistinctSummary = (doc: TopDoc) => Boolean(summary(doc)?.trim())
   && summary(doc)?.replace(/\s+/g, ' ').trim() !== doc.title?.replace(/\s+/g, ' ').trim()
@@ -82,7 +95,7 @@ const boardDateHint = computed(() => {
 <template>
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
     <div class="ranking-toolbar">
-      <div v-indicator="{ active: '[aria-selected=true]', flip: true }" class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
+      <div ref="sourceTabs" v-indicator="{ active: '[aria-selected=true]', flip: true }" class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
         <button v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
           type="button" class="ranking-tab" role="tab" aria-controls="ranking-content"
           :aria-selected="activeTab === tab.key" :aria-label="t(`dashboard.sources.${tab.labelKey}`)"
@@ -288,5 +301,34 @@ const boardDateHint = computed(() => {
   .ranking-row--featured .ranking-heat { top:11px;font-size:15px; }
   .ranking-row--featured .ranking-score { font-size:13px; }
   .ranking-row--featured .ranking-arrow { top:11px; }
+}
+@media (max-width:1023px) {
+  .ranking-toolbar { gap:10px; }
+  .ranking-tabs { flex:1 1 100%;justify-content:flex-start;overflow-x:auto;padding:4px 5px 7px;scrollbar-width:thin;scrollbar-color:var(--rule) transparent; }
+  .ranking-tab { flex-shrink:0;min-height:44px; }
+  .ranking-source-status { flex-wrap:wrap;max-width:100%; }
+  .ranking-live-status { white-space:normal; }
+  .editorial-list { grid-template-rows:190px;grid-auto-rows:minmax(90px,auto);gap:10px;padding-bottom:0; }
+  .ranking-link { padding:12px; }
+  .ranking-title { font-size:15px; }
+  .ranking-summary { margin-top:5px;font-size:13px; }
+  .ranking-row:not(.ranking-row--featured) .ranking-meta { display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px; }
+  .ranking-list > ol:not(.editorial-list) { display:grid;gap:12px; }
+}
+@media (max-width:599px) {
+  .editorial-list { grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-auto-rows:auto; }
+  .ranking-link { gap:10px;align-items:flex-start; }
+  .ranking-number { flex-basis:24px;width:24px;font-size:21px; }
+  .ranking-link :deep(.ranking-avatar) { width:36px;height:36px;flex-basis:36px; }
+  .ranking-title { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere;font-size:16px;line-height:1.45; }
+  .ranking-summary { -webkit-line-clamp:2;font-size:14px;line-height:1.6; }
+  .ranking-row--featured .ranking-link { min-height:164px;padding:48px 14px 16px;align-items:center;gap:14px; }
+  .ranking-row--featured .ranking-link :deep(.ranking-avatar) { width:58px;height:58px;flex-basis:58px; }
+  .ranking-row--featured .ranking-title { font-size:17px;letter-spacing:0; }
+  .ranking-row--featured .ranking-summary { font-size:14px;line-height:1.6;margin:6px 0 10px; }
+  .ranking-row--featured .ranking-meta { flex-wrap:wrap;gap:8px 14px; }
+  .ranking-row--featured .ranking-number { font-size:32px; }
+  .ranking-row--featured .ranking-heat { font-size:17px; }
+  .ranking-arrow { width:18px;height:18px; }
 }
 </style>

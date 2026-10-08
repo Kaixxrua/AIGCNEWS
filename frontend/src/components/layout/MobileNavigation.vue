@@ -146,4 +146,11 @@ onBeforeUnmount(closeMenu)
 .mobile-menu__footer a { display: inline-flex; min-height: 44px; align-items: center; }
 .mobile-menu__utilities { display: flex; gap: 12px; margin-top: 16px; }
 .mobile-menu__utilities :deep(button), .mobile-menu__utilities :deep(a) { min-width: 44px; min-height: 44px; }
+/* Same paper dock and ink outline as desktop, sized for thumbs. */
+.mobile-nav { border:1.5px solid var(--dock-edge);border-radius:10px;box-shadow:3px 3px 0 var(--shadow-ink-soft); }
+.mobile-nav__item,.mobile-nav::before { border-radius:6px; }
+.mobile-menu { border-width:2px;border-radius:12px 12px 0 0; }
+.mobile-menu__link { border-color:var(--rule-strong);background:var(--paper); }
+.mobile-menu__link.is-active { color:var(--acid-ink);background:var(--acid);border-color:var(--rule-strong); }
+.mobile-menu__header h2 { font-style:italic;font-weight:850; }
 </style>

@@ -2,7 +2,6 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardRankingPanel from './DashboardRankingPanel.vue'
-import MobileDashboardRankingPanel from './MobileDashboardRankingPanel.vue'
 import i18n, { setAppLocale } from '@/i18n'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
@@ -179,7 +178,8 @@ describe('paper ranking', () => {
   })
 
   it('shows paper titles and summaries without LaTeX on phones', async () => {
-    wrapper = mount(MobileDashboardRankingPanel, { props, global: { plugins: [i18n] } })
+    viewport.mobile = true
+    wrapper = mount(DashboardRankingPanel, { props, global: { plugins: [i18n] } })
     await flushPromises()
     expect(wrapper.get('.ranking-title').text()).toBe('Aphanta: Steering–Free Agents')
     expect(wrapper.get('.ranking-summary').text()).toBe('We present The Harness of Harnesses, cutting cost by 2%.')

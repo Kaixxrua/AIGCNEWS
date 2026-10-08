@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { computed, ref } from 'vue'
+import { computed, defineComponent, onMounted, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { useMediaQuery } from '@vueuse/core'
 import DashboardView from './DashboardView.vue'
@@ -10,27 +10,35 @@ vi.mock('@vueuse/core', async (original) => ({
 }))
 
 describe('dashboard responsive rendering', () => {
-  it('keeps the existing mobile view and mounts only one dashboard across breakpoint changes', async () => {
+  it('preserves the selected date and dashboard instance when the screen crosses the desktop breakpoint', async () => {
     const desktop = ref(false)
+    const mounted = vi.fn()
     vi.mocked(useMediaQuery).mockReturnValue(computed(() => desktop.value))
+    const content = defineComponent({
+      setup() {
+        onMounted(mounted)
+        return { date: ref('2026-10-07') }
+      },
+      template: '<div data-dashboard><input v-model="date" type="date" aria-label="Date" /></div>',
+    })
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
-          DesktopDashboardView: { template: '<div data-dashboard="desktop" />' },
-          MobileDashboardView: { template: '<div data-dashboard="mobile" />' },
+          DashboardContent: content,
         },
       },
     })
-    expect(useMediaQuery).toHaveBeenCalledWith('(min-width: 1024px)')
-    expect(wrapper.findAll('[data-dashboard]')).toHaveLength(1)
-    expect(wrapper.get('[data-dashboard]').attributes('data-dashboard')).toBe('mobile')
+    const input = wrapper.get('input')
+    await input.setValue('2026-10-01')
     desktop.value = true
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('[data-dashboard]')).toHaveLength(1)
-    expect(wrapper.get('[data-dashboard]').attributes('data-dashboard')).toBe('desktop')
+    expect(wrapper.get('input').element).toBe(input.element)
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('2026-10-01')
     desktop.value = false
     await wrapper.vm.$nextTick()
-    expect(wrapper.get('[data-dashboard]').attributes('data-dashboard')).toBe('mobile')
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('2026-10-01')
+    expect(mounted).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 })

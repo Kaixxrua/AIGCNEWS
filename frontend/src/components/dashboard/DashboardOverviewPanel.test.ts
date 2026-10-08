@@ -2,7 +2,6 @@ import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { describe, expect, it } from 'vitest'
 import DashboardOverviewPanel from './DashboardOverviewPanel.vue'
-import MobileDashboardOverviewPanel from './MobileDashboardOverviewPanel.vue'
 
 const i18n = createI18n({
   legacy: false,
@@ -55,19 +54,8 @@ describe('DashboardOverviewPanel', () => {
     expect(wrapper.find('.daily-ui').exists()).toBe(false)
   })
 
-  it('shows the same six statistics on mobile', () => {
-    const wrapper = mount(MobileDashboardOverviewPanel, {
-      props: { loading: false, activeTab: 'github', statValues: [100, 20], visitorValues: [30, 500, 12], uiCount: 157, uiLoading: false },
-      global,
-    })
-    expect(wrapper.findAll('.stat-cell').map(cell => cell.find('.stat-cell-label').text())).toEqual(['内容总量', 'GitHub 项目', '今日新增', '今日访客', '总访客', 'UI 库总量'])
-    expect(wrapper.get('.stat-cell--new').text()).toContain('12')
-    expect(wrapper.get('.stat-cell--visitors').text()).toContain('30')
-    expect(wrapper.get('.stat-cell--total-visitors').text()).toContain('500')
-  })
-
-  it('keeps all six mobile cells in place with placeholders while the dashboard loads', async () => {
-    const wrapper = mount(MobileDashboardOverviewPanel, {
+  it('keeps all six cells in place with placeholders while the dashboard loads', async () => {
+    const wrapper = mount(DashboardOverviewPanel, {
       props: { loading: true, activeTab: 'github', statValues: [0, 0], visitorValues: [0, 0, 0], uiCount: null, uiLoading: true },
       global,
     })

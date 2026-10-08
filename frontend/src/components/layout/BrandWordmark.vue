@@ -433,8 +433,15 @@ onUnmounted(() => {
 .brand-wordmark:not(:hover) .bw-fringe { opacity: .14; }
 :root[data-theme='dark'] .brand-wordmark__text::after { mix-blend-mode: screen; }
 @media (max-width: 767px) { .brand-wordmark__text { font-size: 20px; } .brand-wordmark { --bw-tracking: -.035em; } }
-/* Desktop artwork follows the supplied comic letterforms; compact remains original. */
+/* Both layouts use the same artwork; compact only changes its size and motion. */
 .brand-comic { display:none; }
+@media (max-width:1023px) {
+  .brand-wordmark--comic .brand-wordmark__text,
+  .brand-wordmark--comic .brand-wordmark__logo { display:none; }
+  .brand-comic { display:block;position:relative;width:158px;height:42px; }
+  .brand-comic__base { width:100%;height:100%;object-fit:contain; }
+  .brand-comic__slice { display:none; }
+}
 @media (min-width:1024px) {
   .brand-wordmark--comic .brand-wordmark__text { display:none; }
   .brand-comic { display:block;position:relative;width:420px;height:102px; }

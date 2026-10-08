@@ -34,14 +34,15 @@ const metrics = computed(() => [
       <svg class="stat-ink-frame" viewBox="0 0 160 94" preserveAspectRatio="none" aria-hidden="true"><path d="M6 1.5 154 2 Q159 2 158.5 8 L158 87 Q158.5 92 153 92 L7 91.5 Q1.5 92 2 86 L1.5 8 Q1 2 6 1.5Z" /></svg>
       <span class="stat-cell-icon" aria-hidden="true"><component :is="card.icon" :stroke-width="2.5" /></span>
       <span class="stat-cell-body"><span class="stat-cell-label">{{ t(card.label) }}</span>
-        <RollingNumber :value="card.value ?? 0" grouping class="stat-cell-num" />
+        <span v-if="loading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
+        <RollingNumber v-else :value="card.value ?? 0" grouping class="stat-cell-num" />
       </span>
     </component>
-    <RouterLink :to="{ name: 'ui-library' }" class="stat-cell stat-cell--ui" :aria-label="t('dashboard.editorial.uiTotal')" :aria-busy="uiLoading">
+    <RouterLink :to="{ name: 'ui-library' }" class="stat-cell stat-cell--ui" :aria-label="t('dashboard.editorial.uiTotal')" :aria-busy="loading || uiLoading">
       <svg class="stat-ink-frame" viewBox="0 0 160 94" preserveAspectRatio="none" aria-hidden="true"><path d="M6 1.5 154 2 Q159 2 158.5 8 L158 87 Q158.5 92 153 92 L7 91.5 Q1.5 92 2 86 L1.5 8 Q1 2 6 1.5Z" /></svg>
       <span class="stat-cell-icon" aria-hidden="true"><Blocks :stroke-width="2.5" /></span>
       <span class="stat-cell-body"><span class="stat-cell-label">{{ t('dashboard.editorial.uiTotal') }}</span>
-        <span v-if="uiLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
+        <span v-if="loading || uiLoading" class="stat-cell-num stat-cell-num--loading" aria-hidden="true" />
         <span v-else-if="uiCount === null" class="stat-cell-num">—</span>
         <RollingNumber v-else :value="uiCount" grouping class="stat-cell-num" />
       </span>
@@ -80,4 +81,14 @@ const metrics = computed(() => [
 @container (max-width:150px) { .stat-cell-icon { position:absolute;right:7px;bottom:8px;width:24px;height:24px;padding:4px;border-radius:50%; } }
 @container (max-width:103px) { .stat-cell-icon { display:none; } }
 
+@media (max-width:1023px) {
+  .stat-strip { gap:8px;grid-auto-rows:84px; }
+  .stat-cell { height:84px;min-height:84px;padding:10px; }
+  .stat-cell-label { font-size:12px;white-space:normal; }
+  .stat-cell-num { font-size:22px; }
+  .stat-cell-icon { top:8px;bottom:auto; }
+}
+@media (max-width:359px) {
+  .stat-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
 </style>
