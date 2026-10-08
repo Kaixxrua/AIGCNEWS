@@ -12,6 +12,7 @@ export const onboardingZh = {
     mobileAccount: { title: '账户入口在“更多”里', body: '点底部“更多”，就能找到注册和登录入口；登录后可在这里管理账户。引导完成或跳过后，会记住你的选择，登录后还能跨设备保存。' },
     mobileTools: { title: '把手机上的阅读调顺手', body: '顶部可以切换浅深主题和中英文。“更多”里还能收藏本站、查看源码或安装网站应用，按你的习惯选择。' },
     mobileFooter: { title: '网站说明也收在“更多”里', body: '“更多”菜单底部提供免责声明、隐私说明和联系入口，需要时随时都能找到。' },
+    mobileBookmark: { title: '收藏本站，下次直接回来', body: '在浏览器的分享或菜单中选择“添加书签”或“收藏”，下次就能直接打开 AIGCNEWS。星标入口可查看收藏方法，手机上收在底部“更多”里。也可以先继续探索。' },
     navigation: { title: '每一版，都有一个入口', body: '底部导航带你切换所有栏目。接下来我们会逐页参观，用“下一步”前进，也可以随时返回上一步。' },
     home: { title: '从今天值得关注的内容开始', body: '首页汇集 AI 资讯、项目与论文榜单。切换来源或日期，查看你关心的内容；点击条目继续阅读。' },
     projects: { title: '找到适合你的项目', body: '输入项目名称或需求，再结合分类、语言和排序缩小范围。“今日”适合发现新热点，完整项目库适合按需查找。' },
@@ -34,6 +35,7 @@ export const onboardingZh = {
     tools: { title: '把网站调成顺手的样子', body: '顶部工具可以切换语言和主题、收藏本站、查看源码或安装网站应用；支持的内页还可以切换版面密度。' },
     contact: { title: '需要交流或合作？', body: '这个页面介绍本站提供的合作方向和联系入口。按你的需要查看说明，再选择合适的联系方式。' },
     footer: { title: '关于网站，也能随时找到', body: '页脚提供网站介绍、隐私说明和联系入口，方便你了解内容来源与站点信息。' },
+    bookmark: { title: '收藏本站，下次直接回来', body: '把 AIGCNEWS 加入浏览器书签，下次看资讯、找项目更方便。现在按 Ctrl+D（Mac 用 ⌘D），或打开浏览器菜单选择“添加书签”即可。顶部星标可以随时查看收藏方法，也可以先继续探索。' },
     help: { title: '地图在手，开始探索吧', body: '顶部这个帮助按钮可以随时从头重看引导。点“完成”回到刚才的页面；以后不会自动打扰你。' },
   },
 }
@@ -52,6 +54,7 @@ export const onboardingEn = {
     mobileAccount: { title: 'Find your account in More', body: 'Open More to register or sign in, then manage your account from the same menu. We remember when you finish or skip the tour; signing in also saves that choice across devices.' },
     mobileTools: { title: 'Make reading comfortable', body: 'Switch the theme and language at the top. Open More to bookmark the site, view its source or install the web app.' },
     mobileFooter: { title: 'Site information lives in More', body: 'The bottom of the More menu keeps the disclaimer, privacy information and contact links within reach.' },
+    mobileBookmark: { title: 'Bookmark the site for your next visit', body: 'Choose Add bookmark or Favorites from your browser’s share sheet or menu to keep AIGCNEWS close at hand. The star shows bookmarking instructions; on phones, find it in More at the bottom. You can also keep exploring for now.' },
     navigation: { title: 'Every section has an entrance', body: 'The bottom navigation connects all the sections. We will visit them in order. Use Next to continue or Back to revisit a step.' },
     home: { title: 'Start with what matters today', body: 'The home page brings together AI news, projects and paper rankings. Switch sources or dates, then open an item to keep reading.' },
     projects: { title: 'Find a project that fits', body: 'Search by name or need, then narrow the results by category, language and sort order. Today highlights fresh activity; the full catalog helps with a specific search.' },
@@ -74,6 +77,7 @@ export const onboardingEn = {
     tools: { title: 'Make the site comfortable to use', body: 'The top tools let you change language and theme, bookmark the site, view its source or install the web app. Supported inner pages also offer a layout-density switch.' },
     contact: { title: 'Get in touch', body: 'Explore the available collaboration options and contact details. Read the descriptions and choose the most suitable way to connect.' },
     footer: { title: 'Learn more about the site', body: 'The footer keeps the site introduction, privacy information and contact details within reach.' },
+    bookmark: { title: 'Bookmark the site for your next visit', body: 'Save AIGCNEWS in your browser bookmarks to return to the news and projects easily. Press Ctrl+D (⌘D on Mac), or choose Add bookmark from your browser menu. The star at the top always shows these instructions. You can also keep exploring for now.' },
     help: { title: 'You have the map. Go explore.', body: 'This help button always lets you replay the tour. Select Finish to return to where you started. The tour will not appear automatically again.' },
   },
 }

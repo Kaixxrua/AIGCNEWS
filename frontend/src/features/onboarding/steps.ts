@@ -33,6 +33,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'tools', route: '/membership', targets: ['.app-masthead__actions'], compact: { copy: 'mobileTools' } },
   { id: 'contact', route: '/contact', targets: ['.app-content .view-container'], feature: 'contact', compact: { targets: ['.app-content h1', '[data-tour="more"]'] } },
   { id: 'footer', route: '/', targets: ['.footer-right', '.dock-footer'], compact: { targets: ['[data-tour="more"]'], copy: 'mobileFooter' } },
+  { id: 'bookmark', route: '/', targets: ['[data-tour="bookmark"]'], compact: { targets: ['[data-tour="bookmark"]', '[data-tour="more"]'], copy: 'mobileBookmark' } },
   { id: 'help', route: '/', targets: ['[data-tour="help"]'] },
 ]
 
