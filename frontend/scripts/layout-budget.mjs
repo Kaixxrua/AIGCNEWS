@@ -297,6 +297,8 @@ async function measure(profile, spec, [width, height], locale) {
       localStorage.setItem('app_locale', locale)
       localStorage.setItem('app_density', 'compact')
       localStorage.setItem('list_keys_hint', '1')
+      // Measure normal page layouts; the onboarding overlay has its own flow checks.
+      localStorage.setItem('aigcnews:onboarding:v1', JSON.stringify({ browserDone: true, users: {} }))
     } catch {
       // 存不进就按站点默认
     }

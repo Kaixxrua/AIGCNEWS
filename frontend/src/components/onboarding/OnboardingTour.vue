@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, ArrowRight, Compass, X } from 'lucide-vue-next'
 import { useTour } from '@/features/onboarding/useTour'
 import { placeCard, spotlightBox, type Box } from '@/features/onboarding/geometry'
 
 const props = withDefaults(defineProps<{ blocked?: boolean }>(), { blocked: false })
 const { t } = useI18n()
-const { phase, index, step, steps, busy, navigationFailed, start, previous, next, skip } = useTour(toRef(props, 'blocked'))
+const compact = useMediaQuery('(max-width: 1023px)')
+const { phase, index, step, steps, busy, navigationFailed, start, previous, next, skip } = useTour(toRef(props, 'blocked'), compact)
 const dialog = ref<HTMLDialogElement>()
 const card = ref<HTMLElement>()
 const title = ref<HTMLElement>()
@@ -16,8 +18,8 @@ const position = ref({ left: '16px', top: '16px' })
 const missing = ref(false)
 const locating = ref(false)
 const welcome = computed(() => phase.value === 'welcome')
-const heading = computed(() => welcome.value ? t('onboarding.welcomeTitle') : t(`onboarding.steps.${step.value?.id}.title`))
-const description = computed(() => welcome.value ? t('onboarding.welcomeBody') : t(`onboarding.steps.${step.value?.id}.body`))
+const heading = computed(() => welcome.value ? t('onboarding.welcomeTitle') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.title`))
+const description = computed(() => welcome.value ? t('onboarding.welcomeBody') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.body`))
 const holeStyle = computed(() => hole.value ? {
   left: `${hole.value.left}px`, top: `${hole.value.top}px`,
   width: `${hole.value.width}px`, height: `${hole.value.height}px`,
@@ -43,7 +45,10 @@ function measure() {
   const settled = performance.now() - changedAt > 400
   const element = settled ? findTarget() : null
   if (element && element !== scrolled) {
-    element.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    const margin = element.style.scrollMarginTop
+    if (compact.value) element.style.scrollMarginTop = 'max(16px, env(safe-area-inset-top))'
+    element.scrollIntoView({ block: compact.value ? 'start' : 'nearest', inline: 'nearest', behavior: 'instant' })
+    element.style.scrollMarginTop = margin
     scrolled = element
   }
   const rect = element?.getBoundingClientRect()
@@ -53,7 +58,12 @@ function measure() {
   missing.value = !welcome.value && !element && !locating.value
   if (card.value) {
     const dimensions = card.value.getBoundingClientRect()
-    const placed = placeCard(box, dimensions, innerWidth, innerHeight)
+    const surface = dialog.value!.getBoundingClientRect()
+    const style = getComputedStyle(dialog.value!)
+    const placed = placeCard(box, dimensions, surface.width, surface.height, {
+      top: parseFloat(style.paddingTop), right: parseFloat(style.paddingRight),
+      bottom: parseFloat(style.paddingBottom), left: parseFloat(style.paddingLeft),
+    })
     const nextPosition = { left: `${Math.round(placed.left)}px`, top: `${Math.round(placed.top)}px` }
     if (position.value.left !== nextPosition.left || position.value.top !== nextPosition.top) position.value = nextPosition
   }
@@ -105,7 +115,7 @@ onBeforeUnmount(() => {
           <div class="onboarding-progress__track" aria-hidden="true"><div :style="{ width: `${(index + 1) / steps.length * 100}%` }"></div></div>
           <span>{{ String(steps.length).padStart(2, '0') }}</span>
         </div>
-        <div aria-live="polite" aria-atomic="true">
+        <div class="onboarding-copy" aria-live="polite" aria-atomic="true">
           <h2 id="onboarding-title" ref="title" tabindex="-1">{{ heading }}</h2>
           <p id="onboarding-description">{{ description }}</p>
         </div>
@@ -127,7 +137,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.onboarding-dialog { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; overflow: hidden; color: var(--ink); }
+.onboarding-dialog { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); border: 0; background: transparent; overflow: hidden; color: var(--ink); }
 .onboarding-dialog::backdrop { background: transparent; }
 .onboarding-shade { position: absolute; inset: 0; background: rgb(15 19 16 / 64%); }
 .onboarding-spotlight { position: absolute; border: 3px solid var(--acid, #c9ef42); border-radius: 7px; box-shadow: 0 0 0 9999px rgb(15 19 16 / 64%); pointer-events: none; }
@@ -153,5 +163,33 @@ onBeforeUnmount(() => {
 .onboarding-dialog button:disabled { opacity: 0.45; cursor: wait; box-shadow: none; }
 .onboarding-dialog button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
 .onboarding-dialog button:not(:disabled):hover { filter: brightness(0.94); }
-@media (max-width: 1023px) { .onboarding-dialog { display: none; } }
+@media (max-width: 1023px) {
+  .onboarding-card {
+    display: flex; flex-direction: column; padding: 16px;
+    max-width: calc(100vw - max(16px, env(safe-area-inset-left)) - max(16px, env(safe-area-inset-right)));
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+    overflow: hidden; box-shadow: 4px 4px 0 var(--ink);
+  }
+  .onboarding-card--welcome { width: 432px; }
+  .onboarding-topline, .onboarding-progress, .onboarding-emblem, .onboarding-actions, .onboarding-note { flex-shrink: 0; }
+  .onboarding-topline { margin-bottom: 10px; }
+  .onboarding-close { width: 44px; height: 44px; margin: -8px -8px -8px 0; }
+  .onboarding-emblem { width: 58px; height: 58px; margin-bottom: 18px; }
+  .onboarding-emblem svg { width: 36px; height: 36px; }
+  .onboarding-card h2 { font-size: 22px; margin-bottom: 10px; }
+  .onboarding-card--welcome h2 { font-size: 28px; }
+  .onboarding-card p { line-height: 1.75; }
+  .onboarding-copy { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .onboarding-actions { gap: 6px; margin-top: 16px; padding-top: 10px; }
+  .onboarding-actions__steps { gap: 8px; }
+  .onboarding-skip, .onboarding-next, .onboarding-back { min-height: 44px; }
+}
+@media (max-width: 1023px) and (max-height: 600px) {
+  .onboarding-card { padding: 12px 16px; }
+  .onboarding-topline { margin-bottom: 8px; }
+  .onboarding-card h2 { font-size: 20px; }
+  .onboarding-progress { margin-bottom: 10px; }
+  .onboarding-actions { margin-top: 10px; padding-top: 8px; }
+}
+@media (max-width: 1023px) and (max-height: 500px) { .onboarding-emblem { display: none; } }
 </style>

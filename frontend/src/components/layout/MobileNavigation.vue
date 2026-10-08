@@ -23,9 +23,9 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 const dialog = ref<HTMLDialogElement>()
 const menuButton = ref<HTMLButtonElement>()
 const menuOpen = ref(false)
-const primaryPaths = ['/', '/projects', '/report', '/mcp', '/subscriptions']
+const primaryPaths = ['/', '/projects', '/report', '/subscriptions']
 const accessibleItems = computed(() => props.items.filter(item =>
-  (!item.requiresAdmin || props.isAdmin) && (!item.requiresAuth || props.isLoggedIn),
+  !['/mcp', '/dsh'].includes(item.to) && (!item.requiresAdmin || props.isAdmin) && (!item.requiresAuth || props.isLoggedIn),
 ))
 const primaryItems = computed(() => accessibleItems.value.filter(item => primaryPaths.includes(item.to)))
 const secondaryItems = computed(() => accessibleItems.value.filter(item => !primaryPaths.includes(item.to)))
@@ -58,7 +58,7 @@ onBeforeUnmount(closeMenu)
 <template>
   <nav v-indicator="{ active: '.mobile-nav__item.is-active', follow: 'a.mobile-nav__item' }" class="mobile-nav" :aria-label="t('navigation.mainNavigation')">
     <RouterLink
-      v-for="item in primaryItems" :key="item.to" :to="item.to"
+      v-for="item in primaryItems" :key="item.to" :to="item.to" :data-tour-nav="item.to"
       class="mobile-nav__item" :class="{ 'is-active': isActive(item) }"
       :aria-current="isActive(item) ? 'page' : undefined"
     >
@@ -67,7 +67,7 @@ onBeforeUnmount(closeMenu)
       <span>{{ item.to === '/' ? t('navigation.home') : item.labelText || t(item.labelKey) }}</span>
     </RouterLink>
     <button
-      ref="menuButton" type="button" class="mobile-nav__item"
+      ref="menuButton" type="button" class="mobile-nav__item" data-tour="more"
       :class="{ 'is-active': moreActive || menuOpen }"
       aria-haspopup="dialog" :aria-expanded="menuOpen" @click="openMenu"
     >
@@ -117,7 +117,7 @@ onBeforeUnmount(closeMenu)
 
 <style scoped>
 /* The opaque bottom bar covers the safe area so scrolling content cannot show around the dock. */
-.mobile-nav { position: fixed; z-index: 100; inset: auto 0 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 6px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: var(--dock-surface); border: 0; border-top: 1.5px solid var(--dock-edge); }
+.mobile-nav { position: fixed; z-index: 100; inset: auto 0 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 6px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: var(--dock-surface); border: 0; border-top: 1.5px solid var(--dock-edge); }
 .mobile-nav__item { position: relative; display: flex; min-width: 0; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; color: var(--dock-text); font-size: 11px; font-weight: 600; line-height: 1.3; text-decoration: none; }
 .mobile-nav__item.is-active { color: var(--acid-ink); background: var(--acid); }
 /* 选中底色由 v-indicator 画在导航条的 ::before 上滑动；打开「更多」时滑到菜单键，关上再滑回来。 */

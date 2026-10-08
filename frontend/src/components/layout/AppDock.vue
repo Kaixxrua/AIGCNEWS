@@ -94,7 +94,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
       <LogOut class="dock-icon" aria-hidden="true" />
       <span class="dock-label">退出</span>
     </button>
-    <button class="dock-item dock-item--more" :class="{ 'dock-item--active': moreActive }" :aria-label="t('navigation.more')" aria-haspopup="dialog" aria-controls="dock-more-menu" :aria-expanded="moreOpen" @click="openMore">
+    <button class="dock-item dock-item--more" data-tour="more" :class="{ 'dock-item--active': moreActive }" :aria-label="t('navigation.more')" aria-haspopup="dialog" aria-controls="dock-more-menu" :aria-expanded="moreOpen" @click="openMore">
       <MoreHorizontal class="dock-icon" aria-hidden="true" />
       <span v-if="moreAlert" class="dock-alert-dot" :aria-label="t('navigation.monitorAlert')" />
       <span class="dock-label">更多</span>
