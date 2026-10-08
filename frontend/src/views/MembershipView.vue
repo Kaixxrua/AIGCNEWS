@@ -506,9 +506,11 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   line-height: 1.5;
 }
 
-/* 价格用 Playfair 大字号：订阅制编辑流派的价格牌惯例 */
+/* 价格用 Playfair 大字号：订阅制编辑流派的价格牌惯例。Playfair 默认是老式数字（0 只有小写字母高、
+   看着像 o，4 和 9 沉到基线下），价格改用等高数字 */
 .tier-price-amount {
   font-family: 'Playfair Display', serif;
+  font-variant-numeric: lining-nums;
   font-size: 40px;
   font-weight: 700;
   letter-spacing: -0.01em;

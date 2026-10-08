@@ -50,7 +50,8 @@ const quickSearchMounted = ref(false)
 watch(isDesktop, (desktop) => { if (desktop) quickSearchMounted.value = true }, { immediate: true })
 const route = useRoute()
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
-const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'monitor', 'not-found', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
+// 收银台跟着会员页走：留在旧外壳里，首页那条大字标报头比旧外壳给内容留的 56px 高，会盖住卡片顶部。
+const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'membership-checkout', 'monitor', 'not-found', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
 // 联系页是占满一屏的场景页：窄屏的漫画外壳按文档流排版、给不出固定高度，只在桌面接入。
 const DESKTOP_COMIC_ROUTES = new Set(['contact'])
 // 项目库目录（projects-C）与我的网页收藏（source=website，websites-mine-C）同样按漫画概念图复刻。

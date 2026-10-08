@@ -369,8 +369,10 @@ const submit = () => {
   color: var(--ink-secondary);
 }
 
+/* 与会员页价格牌一致：Playfair 默认的老式数字高低错落，金额用等高数字 */
 .checkout-amount {
   font-family: 'Playfair Display', serif;
+  font-variant-numeric: lining-nums;
   font-size: 30px;
   font-weight: 700;
   color: var(--ink);
