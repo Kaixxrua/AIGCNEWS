@@ -525,3 +525,200 @@ def test_hot_repos_exclude_not_found_and_alias_hidden(
     assert "acme/hot-keep" in names
     assert "acme/hot-dead" not in names
     assert "acme/hot-hidden" not in names
+
+
+@pytest.mark.parametrize("observed_node", ["R_conflict_old", "R_conflict_new"])
+def test_rename_never_merges_distinct_known_nodes(postgres_ingestion, observed_node):
+    repository, database = postgres_ingestion
+    suffix = observed_node.rsplit("_", 1)[-1]
+    old, new = f"acme/conflict-{suffix}-old", f"acme/conflict-{suffix}-new"
+    _seed_candidate(repository, repo_id="R_conflict_old_" + suffix, full_name=old, stars=31000)
+    _seed_candidate(repository, repo_id="R_conflict_new_" + suffix, full_name=new, stars=2600)
+    _execute(database, "INSERT INTO github_repo_snapshots (repo_id,snapshot_date,captured_at,stars) VALUES (%s,'2026-08-13',%s,31000),(%s,'2026-08-13',%s,2600)", (old, _CHECKED_AT, new, _CHECKED_AT))
+
+    written = repository.upsert_github_repo_metric_observations(
+        [_observation(node_id=observed_node + "_" + suffix, requested_name=old, api_name=new, stars=32000)],
+        checked_at=_CHECKED_AT,
+    )
+
+    assert written == 0
+    rows = _fetchall(database, "SELECT repo_id,stars FROM github_repo_snapshots WHERE repo_id=ANY(%s) ORDER BY repo_id", ([old, new],))
+    assert {r["repo_id"]: r["stars"] for r in rows} == {old: 31000, new: 2600}
+    assert _fetchone(database, "SELECT COUNT(*) AS n FROM github_repo_candidates WHERE repo_id=ANY(%s)", ([old, new],))["n"] == 2
+
+
+@pytest.mark.parametrize("writer", ["candidate", "ensure", "snapshot"])
+def test_all_single_writers_reject_reused_name(postgres_ingestion, writer):
+    repository, database = postgres_ingestion
+    name = f"acme/reused-{writer}"
+    _seed_candidate(repository, repo_id="R_original_" + writer, full_name=name, stars=31000)
+    observation = _observation(node_id="R_impostor_" + writer, requested_name=name, api_name=name, stars=2600)
+    method, payload = {
+        "candidate": (repository.upsert_github_repo_candidate, observation["candidate"]),
+        "ensure": (repository.ensure_github_repo_candidate, observation["candidate"]),
+        "snapshot": (repository.insert_github_repo_snapshot, observation["snapshot"]),
+    }[writer]
+
+    with pytest.raises(ValueError, match="identity conflict"):
+        method(payload)
+
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 31000
+    assert _fetchone(database, "SELECT alias_repo_id FROM github_repo_aliases WHERE alias_repo_id=%s", ("R_impostor_" + writer,)) is None
+    assert _fetchone(database, "SELECT repo_id FROM github_repo_snapshots WHERE repo_id=%s", (name,)) is None
+
+
+def test_name_write_cannot_follow_alias_over_different_live_identity(postgres_ingestion):
+    repository, database = postgres_ingestion
+    old, new = "acme/reclaimed-name", "acme/other-project"
+    _seed_candidate(repository, repo_id="R_reclaimed", full_name=old, stars=2600)
+    _seed_candidate(repository, repo_id="R_other", full_name=new, stars=31000)
+    _execute(database, "INSERT INTO github_repo_aliases (alias_repo_id,canonical_repo_id,full_name) VALUES (%s,%s,%s)", (old, new, old))
+
+    repository.insert_github_repo_snapshot(_observation(node_id=old, requested_name=old, api_name=old, stars=2700)["snapshot"])
+
+    assert _fetchone(database, "SELECT stars FROM github_repo_snapshots WHERE repo_id=%s", (old,))["stars"] == 2700
+    assert _fetchone(database, "SELECT repo_id FROM github_repo_snapshots WHERE repo_id=%s", (new,)) is None
+
+
+def test_batch_rejects_two_new_identities_claiming_the_same_name(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/conflicting-new-batch"
+    observations = [_observation(node_id=node, requested_name=name, api_name=name, stars=stars)
+                    for node, stars in (("R_batch_a", 31000), ("R_batch_b", 2600))]
+    assert repository.upsert_github_repo_metric_observations(observations, checked_at=_CHECKED_AT) == 0
+    assert _fetchone(database, "SELECT repo_id FROM github_repo_candidates WHERE full_name=%s", (name,)) is None
+
+
+def test_concurrent_new_identities_cannot_bind_to_one_name(postgres_ingestion):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    repository, database = postgres_ingestion
+    barrier = Barrier(2)
+    name = "acme/concurrent-identities"
+
+    def write(node):
+        barrier.wait(timeout=5)
+        try:
+            _seed_candidate(repository, repo_id=node, full_name=name)
+            return True
+        except ValueError as exc:
+            assert "identity conflict" in str(exc)
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        assert sorted(executor.map(write, ["R_concurrent_a", "R_concurrent_b"])) == [False, True]
+    assert _fetchone(database, "SELECT COUNT(*) AS n FROM github_repo_aliases WHERE canonical_repo_id=%s", (name,))["n"] == 1
+
+
+def test_authoritative_observation_can_correct_stale_candidate_maxima(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/current-counts"
+    _seed_candidate(repository, repo_id="R_counts", full_name=name, stars=31000)
+    observation = _observation(node_id="R_counts", requested_name=name, api_name=name, stars=2600)
+    repository.upsert_github_repo_metric_observations([observation], checked_at=_CHECKED_AT)
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 2600
+    before = _fetchone(database, "SELECT stars,forks,watchers FROM github_repo_candidates WHERE repo_id=%s", (name,))
+    repository.upsert_github_repo_candidate({
+        **observation["candidate"], "stars": 40000, "forks": 4000, "watchers": 4000,
+        "last_snapshot_at": "2026-08-01T00:00:00+00:00",
+    })
+    assert _fetchone(database, "SELECT stars,forks,watchers FROM github_repo_candidates WHERE repo_id=%s", (name,)) == before
+
+
+def test_snapshot_corrects_creation_date_without_losing_precision(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/creation-correction"
+    _seed_candidate(repository, repo_id="R_created", full_name=name)
+    snapshot = _observation(node_id="R_created", requested_name=name, api_name=name, stars=500)["snapshot"]
+    repository.insert_github_repo_snapshot({**snapshot, "repo_created_at": "2026-08-13"})
+    repository.insert_github_repo_snapshot({**snapshot, "repo_created_at": "2024-08-04T12:15:06Z"})
+    repository.insert_github_repo_snapshot({**snapshot, "repo_created_at": "2024-08-04"})
+    assert _fetchone(database, "SELECT repo_created_at FROM github_repo_snapshots WHERE repo_id=%s", (name,))["repo_created_at"] == "2024-08-04T12:15:06Z"
+
+
+def test_legacy_node_primary_key_rejects_a_different_node_without_aliases(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/legacy-node-identity"
+    _seed_node_candidate(database, repo_id="R_legacy_primary", full_name=name, stars=31000)
+    observation = _observation(node_id="R_legacy_replacement", requested_name=name, api_name=name, stars=2600)
+
+    assert repository.upsert_github_repo_metric_observations([observation], checked_at=_CHECKED_AT) == 0
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id='R_legacy_primary'")["stars"] == 31000
+    assert _fetchone(database, "SELECT alias_repo_id FROM github_repo_aliases WHERE alias_repo_id='R_legacy_replacement'") is None
+
+
+def test_legacy_numeric_alias_can_be_augmented_with_a_graphql_node(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/numeric-identity"
+    _seed_candidate(repository, repo_id="123456789", full_name=name)
+    observation = _observation(node_id="R_numeric_equivalent", requested_name=name, api_name=name, stars=600)
+
+    assert repository.upsert_github_repo_metric_observations([observation], checked_at=_CHECKED_AT) == 1
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 600
+
+
+def test_unverified_historical_name_cannot_write_into_another_repo(postgres_ingestion):
+    repository, database = postgres_ingestion
+    name = "acme/alias-target"
+    _seed_candidate(repository, repo_id="R_alias_target", full_name=name)
+    _execute(database, "INSERT INTO github_repo_aliases (alias_repo_id,canonical_repo_id,full_name) VALUES ('acme/alias-reused',%s,'acme/alias-reused')", (name,))
+    with pytest.raises(ValueError, match="unverified name alias"):
+        _seed_candidate(repository, repo_id="acme/alias-reused", full_name="acme/alias-reused", stars=9000)
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 500
+
+
+def test_identity_repair_dry_run_backup_and_stale_plan(postgres_ingestion, tmp_path):
+    from scripts.apply_github_identity_repair import apply_plan
+
+    repository, database = postgres_ingestion
+    name = "acme/repair-manifest"
+    _seed_candidate(repository, repo_id="R_manifest", full_name=name, stars=31000)
+    target = _fetchone(database, "SELECT current_database() AS database,current_schema() AS schema")
+    plan = {"target": target, "operations": [{
+        "table": "github_repo_candidates", "key": {"repo_id": name},
+        "before": {"stars": 31000}, "after": {"stars": 2600},
+    }]}
+    backup = tmp_path / "before.json"
+    assert not apply_plan(database, plan, backup=backup)["applied"]
+    assert not backup.exists()
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 31000
+    assert apply_plan(database, plan, apply=True, backup=backup)["applied"]
+    import json
+    assert json.loads(backup.read_text())["preimages"][0]["row"]["stars"] == 31000
+    with pytest.raises(ValueError, match="preimage changed"):
+        apply_plan(database, plan, apply=True, backup=tmp_path / "stale.json")
+    assert not (tmp_path / "stale.json").exists()
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 2600
+
+
+def test_identity_repair_rolls_back_and_refuses_wrong_database(postgres_ingestion, tmp_path):
+    from scripts.apply_github_identity_repair import apply_plan
+
+    repository, database = postgres_ingestion
+    name = "acme/repair-rollback"
+    _seed_candidate(repository, repo_id="R_rollback", full_name=name)
+    target = _fetchone(database, "SELECT current_database() AS database,current_schema() AS schema")
+    operations = [
+        {"table": "github_repo_candidates", "key": {"repo_id": name}, "before": {"stars": 500}, "after": {"stars": 400}},
+        {"table": "github_repo_aliases", "key": {"alias_repo_id": "R_missing_parent"}, "before": None,
+         "after": {"canonical_repo_id": "acme/not-a-parent", "full_name": "acme/not-a-parent"}},
+    ]
+    with pytest.raises(ValueError, match="target"):
+        apply_plan(database, {"target": {**target, "database": "wrong"}, "operations": operations}, apply=True, backup=tmp_path / "wrong.json")
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        apply_plan(database, {"target": target, "operations": operations}, apply=True, backup=tmp_path / "rollback.json")
+    assert _fetchone(database, "SELECT stars FROM github_repo_candidates WHERE repo_id=%s", (name,))["stars"] == 500
+
+
+def test_identity_audit_finds_conflicting_aliases_without_writing(postgres_ingestion):
+    from scripts.audit_github_identity_pollution import audit
+
+    repository, database = postgres_ingestion
+    source, target = "acme/audit-source", "acme/audit-target"
+    _seed_candidate(repository, repo_id="R_audit_source", full_name=source)
+    _seed_candidate(repository, repo_id="R_audit_target", full_name=target)
+    _execute(database, "INSERT INTO github_repo_aliases (alias_repo_id,canonical_repo_id,full_name) VALUES (%s,%s,%s)", (source, target, source))
+    report = audit(database, since="2026-01-01")
+    assert any(row["alias_repo_id"] == source and row["canonical_repo_id"] == target for row in report["name_collisions"])
+    assert _fetchone(database, "SELECT canonical_repo_id FROM github_repo_aliases WHERE alias_repo_id=%s", (source,))["canonical_repo_id"] == target
