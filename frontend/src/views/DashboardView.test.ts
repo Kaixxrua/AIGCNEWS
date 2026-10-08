@@ -67,7 +67,7 @@ const messages = {
   dashboard: {
     title: '仪表盘', previousMonth: '上个月', nextMonth: '下个月',
     editorial: { digestTitle: '每日 AI 简报' },
-    digest: { title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报',
+    digest: { compactTime: '每日 08:00', compactEmail: '邮件 · RSS 订阅', compactCta: '订阅', title: '每日 AI 简报', description: '每天早上把榜单摘要发到你的邮箱。', cta: '订阅简报',
       featureSchedule: '每天 08:00 更新', featureEmailRss: '邮件、RSS 订阅', featureChat: 'Telegram、Discord', featureWebhook: 'Webhook 推送' },
     mcpCalls: { title: 'MCP 总调用次数' }, dshCalls: { title: 'dsh 插件调用' },
     loadError: { stale: '刷新失败，下面是上次加载的榜单。' },
@@ -99,6 +99,7 @@ const mountView = async () => {
       },
       stubs: {
         GlassCalendar: { template: '<div />' },
+        DashboardNewWords: { template: '<section class="new-words-stub" />' },
         DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { props: ['variant', 'error'], emits: ['retry'], template: '<button class="empty-stub" :data-variant="variant" :data-error="error" @click="$emit(\'retry\')" />' },
@@ -156,7 +157,7 @@ describe('DashboardView', () => {
     expect(wrapper.find('.ui-inspiration').exists()).toBe(true)
 
     const digestCta = wrapper.get('a[href="/report?subscribe=1"]')
-    expect(digestCta.text()).toContain(messages.dashboard.digest.cta)
+    expect(digestCta.text()).toContain(messages.dashboard.digest.compactCta)
 
     // 只保留一个订阅入口，RSS 在简报向导内复制；Dashboard 不暴露 feed token
     expect(wrapper.find('a[href="/api/feeds/briefing.xml"]').exists()).toBe(false)
@@ -170,9 +171,11 @@ describe('DashboardView', () => {
     try {
       const wrapper = await mountView()
       // 08:00 生成（daily_briefing）+ 订阅向导里实际可选的投递渠道
-      expect(wrapper.findAll('.digest-features li').map(item => item.text())).toEqual([
-        '每天 08:00 更新', '邮件、RSS 订阅', 'Telegram、Discord', 'Webhook 推送',
-      ])
+      expect(wrapper.get('.digest-card').text()).toContain('每日 08:00')
+      expect(wrapper.get('.digest-card').text()).toContain('邮件 · RSS 订阅')
+      expect(wrapper.get('.digest-card').text()).toContain('Telegram · Discord · Webhook')
+      expect(wrapper.find('.digest-card img').exists()).toBe(false)
+      expect(wrapper.get('.new-words-stub').element.nextElementSibling).toBe(wrapper.get('.digest-card').element)
       wrapper.unmount()
     } finally {
       layout.desktop = false

@@ -11,13 +11,14 @@ import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue'
 import DashboardOverviewPanel from '@/components/dashboard/DashboardOverviewPanel.vue'
 import DashboardRankingPanel from '@/components/dashboard/DashboardRankingPanel.vue'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
-import { ArrowRight, Mail, Plug, Terminal, Check } from 'lucide-vue-next'
+import DashboardNewWords from '@/components/dashboard/DashboardNewWords.vue'
+import DashboardDigestCard from '@/components/dashboard/DashboardDigestCard.vue'
+import { ArrowRight, Plug, Terminal } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
 
 defineOptions({ name: 'DashboardContent' })
 const { t, locale } = useI18n()
-const digestFeatures = ['featureSchedule', 'featureEmailRss', 'featureChat', 'featureWebhook'] as const
 const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
 const uiPreview = ref<UiTemplate | null>(null)
@@ -116,16 +117,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 
       <aside v-if="!loading" class="dashboard-sidebar min-h-0">
         <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />
-        <section class="digest-card">
-          <svg class="digest-ink-frame" viewBox="0 0 400 230" preserveAspectRatio="none" aria-hidden="true"><path d="M10 3 Q5 2 4 12 L3 216 Q2 225 13 226 L387 228 Q396 227 396 216 L398 14 Q399 5 388 4 Z" /></svg>
-          <div class="digest-heading"><span class="digest-mail"><Mail :size="30" :stroke-width="2.8" /></span><h2>{{ t('dashboard.editorial.digestTitle') }}</h2></div>
-          <p>{{ t('dashboard.editorial.digestDescription') }}</p>
-          <ul class="digest-features"><li v-for="feature in digestFeatures" :key="feature"><Check :size="16" aria-hidden="true" />{{ t(`dashboard.digest.${feature}`) }}</li></ul>
-          <RouterLink :to="{ path: '/report', query: { subscribe: '1' } }" class="digest-cta">
-            {{ t('dashboard.digest.cta') }}<ArrowRight :size="15" />
-          </RouterLink>
-          <img class="digest-robot" src="/assets/comic/digest-robot-integrated.webp" alt="" aria-hidden="true" />
-        </section>
+        <DashboardNewWords :date="currentDate" :historical="isViewingHistory" />
+        <DashboardDigestCard />
         <div class="integration-grid">
           <RouterLink to="/mcp" class="integration-card integration-card--mcp" :aria-label="t('dashboard.mcpCalls.title')">
             <Plug :size="19" /><span>{{ t('dashboard.mcpCalls.title') }}<RollingNumber :value="mcpTotalCalls" grouping /></span>
@@ -162,7 +155,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-heading :deep(.stat-strip) { flex:1;height:100%; }
 .dashboard-main { display:contents; }
 .dashboard-main > :not(aside) { grid-column:1;grid-row:2;min-width:0; }
-.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px minmax(180px,226px) 66px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0; }
+.dashboard-sidebar { grid-column:2;grid-row:1/3;display:grid;grid-template-rows:214px max-content max-content 66px minmax(81px,1fr);align-content:start;gap:12px;min-width:0;min-height:0;overflow-y:auto;padding:0 3px 4px 0; }
 .dashboard-sidebar a:focus-visible { outline:2px solid var(--ink);outline-offset:3px; }
 /* 刷新失败的提示单占一行：榜单整体下移、列表在自己的滚动区里变短，不再盖住标题、统计和日历。 */
 .dashboard-error { grid-column:1;grid-row:2;display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;padding:6px 8px 6px 12px;font-size:14px;color:var(--ink);background:var(--paper-raised);border:1px solid var(--tone-coral);border-radius:5px; }
@@ -188,38 +181,6 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.cal-nav svg) { width:19px;height:19px; }
 .dashboard-sidebar :deep(.snapshot-dot) { display:none; }
 
-/* Copy keeps its own rhythm; the illustration sits behind the ink frame, never the text. */
-.digest-card { position:relative;isolation:isolate;overflow:visible;display:flex;flex-direction:column;container-type:inline-size;padding:12px 14px;border:solid transparent;border-width:2px 2.5px 3px 2px;border-radius:6px 8px 5px 9px;background:var(--paper);box-shadow:none; }
-.digest-card::before { content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;background-image:linear-gradient(135deg,transparent 0 67%,var(--comic-cyan-line) 67% 70%,transparent 70% 73%,color-mix(in srgb,var(--comic-cyan-line) 33%,transparent) 73% 74%,transparent 74%),radial-gradient(var(--comic-cyan-dot) .6px,transparent .8px);background-size:100% 100%,3px 3px;mask-image:linear-gradient(120deg,transparent 43%,#000 90%);opacity:.38; }
-.digest-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:2.4;pointer-events:none;z-index:3; }
-.digest-ink-frame path { vector-effect:non-scaling-stroke; }
-.digest-heading { position:relative;z-index:1;display:flex;flex:none;align-items:center;gap:11px;margin-bottom:4px; }
-.digest-mail { display:grid;place-items:center;position:relative;width:37px;height:34px;flex-shrink:0;transform:rotate(-6deg);background:var(--comic-cyan);color:var(--ink);border-radius:3px 6px 2px 4px;box-shadow:2px 1px 0 color-mix(in srgb,var(--comic-cyan-line) 40%,transparent); }
-.digest-mail svg { width:31px;height:29px;filter:drop-shadow(1px 1px 0 var(--paper)); }
-.digest-heading h2 { font-size:25px;line-height:1.3;font-weight:950;letter-spacing:-.025em; }
-.digest-card p { position:relative;z-index:4;max-width:58%;margin:0 0 6px;color:var(--ink-secondary);font-size:12px;line-height:1.45;text-wrap:pretty; }
-.digest-features { position:relative;z-index:4;display:flex;flex-direction:column;gap:2px;max-width:48%;font-size:15px;line-height:18px;font-weight:750; }
-.digest-features li { display:flex;align-items:center;gap:10px;min-height:19px; }
-.digest-features svg { flex-shrink:0;background:var(--comic-cyan);color:var(--ink);border-radius:50%;padding:2px;width:19px;height:19px;stroke-width:3; }
-.digest-cta { position:relative;z-index:4;display:flex;flex:none;align-items:center;justify-content:center;gap:13px;width:48%;height:36px;margin-top:auto;border:solid var(--rule-strong);border-width:2px 3px 3px 2px;border-radius:12px 9px 13px 8px;background:var(--acid);color:var(--acid-ink);font-size:17px;font-weight:850; }
-.digest-cta svg { width:23px;height:23px; }
-/* The robot stays inside the card and under its ink frame, so no white art ever breaks the frame line. */
-.digest-robot { position:absolute;z-index:2;right:0;bottom:0;width:56%;height:100%;object-fit:contain;object-position:right bottom;pointer-events:none; }
-@container (max-width:419px) {
-  .digest-card p { max-width:62%;font-size:11px; }
-  .digest-features { max-width:52%;font-size:13px;line-height:16px; }
-  .digest-features li { gap:7px;min-height:17px; }
-  .digest-features svg { width:16px;height:16px; }
-  .digest-cta { width:52%;height:32px;font-size:15px; }
-  .digest-robot { width:52%; }
-}
-@container (max-width:359px) {
-  .digest-card p { max-width:66%; }
-  .digest-features { max-width:56%;font-size:12px;line-height:15px; }
-  .digest-cta { width:56%; }
-  .digest-robot { width:49%; }
-}
-
 .integration-grid { display:grid;container-type:inline-size;grid-template-columns:1fr 1fr;gap:10px; }
 .integration-card { height:100%;min-height:0;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px;border:1.5px solid var(--rule-strong);border-radius:8px 5px 7px 6px;background:var(--paper); }
 .integration-card > svg { width:40px;height:40px;padding:8px;flex-shrink:0;border-radius:10px;background:color-mix(in srgb,var(--integration-mcp) 22%,var(--paper-raised));color:var(--ink); }
@@ -240,12 +201,6 @@ onBeforeUnmount(() => uiCatalogController.abort())
 :root[data-theme='dark'] .dashboard-heading h1 { color:var(--acid); }
 :root[data-theme='dark'] .dashboard-heading h1::before { opacity:0; }
 :root[data-theme='dark'] .dashboard-sidebar :deep(.dash-calendar) { border-width:1px;background:var(--paper-raised); }
-:root[data-theme='dark'] .digest-card { border-width:1px;background:var(--paper-raised); }
-:root[data-theme='dark'] .digest-card::before { opacity:.12; }
-:root[data-theme='dark'] .digest-ink-frame { stroke-width:1; }
-:root[data-theme='dark'] .digest-mail { box-shadow:none; }
-:root[data-theme='dark'] .digest-mail svg { filter:none; }
-:root[data-theme='dark'] .digest-robot { filter:saturate(.64) brightness(.77); }
 :root[data-theme='dark'] .integration-card,:root[data-theme='dark'] .ui-inspiration { background:var(--paper-raised); }
 
 @media (max-width:1499px) {
@@ -267,9 +222,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading h1 { font-size:34px;line-height:1.2;margin-bottom:5px;letter-spacing:-.045em; }
   .dashboard-heading p { font-size:16px;line-height:1.4; }
   .dashboard-heading :deep(.stat-strip) { flex-basis:100%;height:auto; }
-  .dashboard-sidebar { grid-template-rows:214px auto 66px minmax(81px,1fr); }
+  .dashboard-sidebar { grid-template-rows:214px max-content max-content 66px minmax(81px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:28px; }
-  .digest-cta { margin-top:10px; }
   .integration-card > svg { width:30px;height:30px;padding:5px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:19px; }
   .ui-inspiration__body { grid-template-columns:55px minmax(0,1fr); }
@@ -282,18 +236,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-page { grid-template-rows:64px minmax(0,1fr);padding-top:10px; }
   .dashboard-page--notice { grid-template-rows:64px auto minmax(0,1fr); }
   .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
-  .dashboard-sidebar { gap:9px;grid-template-rows:187px 170px 58px minmax(62px,1fr); }
+  .dashboard-sidebar { gap:9px;grid-template-rows:187px max-content max-content 58px minmax(62px,1fr); }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:19px; }
-  .digest-card { min-height:0;padding:9px 11px; }
-  .digest-heading { margin-bottom:2px; }
-  .digest-mail { width:30px;height:28px; }
-  .digest-mail svg { width:27px;height:25px; }
-  .digest-heading h2 { font-size:21px; }
-  .digest-card p { max-width:80%;margin-bottom:4px;font-size:10px;line-height:1.3; }
-  .digest-features { gap:1px;font-size:11px;line-height:13px; }
-  .digest-features li { min-height:14px; }
-  .digest-features svg { width:15px;height:15px; }
-  .digest-cta { height:27px;font-size:14px; }
   .integration-card { padding-block:7px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:20px; }
   .ui-inspiration__body { grid-template-rows:20px 1fr; }
@@ -325,14 +269,11 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-heading :deep(.stat-strip) { flex:0 0 auto; }
   .dashboard-main { display:flex;flex-direction:column;gap:24px; }
   .dashboard-sidebar { grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto auto;gap:16px; }
-  .dashboard-sidebar :deep(.dash-calendar) { padding:14px; }
+  .dashboard-sidebar { overflow:visible;padding:0; }
+  .dashboard-sidebar :deep(.dash-calendar) { grid-row:span 2;padding:14px; }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:40px;min-height:40px; }
   .dashboard-sidebar :deep(.cal-nav) { width:44px;height:44px; }
   .dashboard-sidebar :deep(.dash-calendar > .grid:last-child) { flex:none; }
-  .digest-card { min-height:250px;padding:16px; }
-  .digest-card p { font-size:13px;line-height:1.6; }
-  .digest-features { font-size:13px;line-height:1.6; }
-  .digest-cta { min-height:44px;margin-top:16px; }
   .integration-grid { min-height:88px; }
   .ui-inspiration { min-height:110px;container-type:inline-size; }
   .ui-inspiration__body { grid-template-columns:100px minmax(0,1fr); }
@@ -341,6 +282,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 @media (max-width:599px) {
   .dashboard-sidebar { grid-template-columns:minmax(0,1fr);grid-template-rows:auto; }
+  .dashboard-sidebar :deep(.dash-calendar) { grid-row:auto; }
   .dashboard-heading h1 { font-size:28px; }
   .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:44px;min-height:44px; }
 }

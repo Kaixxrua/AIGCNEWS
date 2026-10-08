@@ -24,6 +24,7 @@ from backend.app.api import (
     routes_github_projects,
     routes_mcp_oauth,
     routes_monitor,
+    routes_new_words,
     routes_oauth,
     routes_onboarding,
     routes_ops,
@@ -596,6 +597,7 @@ app.include_router(routes_search.router, prefix="/api", tags=["Search"])
 app.include_router(routes_push.router, prefix="/api", tags=["Push"])
 app.include_router(routes_tracking.router, prefix="/api")
 app.include_router(routes_dashboard.router, prefix="/api", tags=["Dashboard"])
+app.include_router(routes_new_words.router, prefix="/api", tags=["Dashboard"])
 app.include_router(routes_features.router, prefix="/api", tags=["Features"])
 app.include_router(routes_site.router, prefix="/api", tags=["Site"])
 app.include_router(routes_ui_library.router, prefix="/api")

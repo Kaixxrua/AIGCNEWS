@@ -70,6 +70,7 @@ from backend.app.repositories.postgres_mcp_access_token_repository import (
 from backend.app.repositories.postgres_mcp_server_repository import (
     PostgresMcpServerConfigRepository,
 )
+from backend.app.repositories.postgres_new_words_repository import PostgresNewWordsRepository
 from backend.app.repositories.postgres_oauth_identity_repository import (
     PostgresOAuthIdentityRepository,
 )
@@ -230,6 +231,7 @@ class ApplicationRepositories:
     push_deliveries: PushDeliveryRepository
     telegram_link_attempts: TelegramLinkAttemptRepository
     telegram_settings: TelegramSettingsRepository
+    new_words: PostgresNewWordsRepository | None = None
     tracking: PostgresTrackingRepository | None = None
     document_semantic_sources: PostgresDocumentSemanticSourceRepository | None = None
 
@@ -302,6 +304,7 @@ def create_application_repositories(
         push_deliveries=PostgresPushDeliveryRepository(postgres),
         telegram_link_attempts=PostgresTelegramLinkAttemptRepository(postgres),
         telegram_settings=PostgresTelegramSettingsRepository(postgres),
+        new_words=PostgresNewWordsRepository(postgres),
         tracking=PostgresTrackingRepository(postgres),
         document_semantic_sources=PostgresDocumentSemanticSourceRepository(postgres),
     )

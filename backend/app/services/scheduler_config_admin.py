@@ -95,6 +95,12 @@ DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
         end_time=time(23, 59),
         interval_minutes=30,
     ),
+    "dashboard_new_words": SchedulerJobConfig(
+        job_id="dashboard_new_words",
+        start_time=time(0, 20),
+        end_time=time(23, 20),
+        interval_minutes=60,
+    ),
     "project_semantic_warmup": SchedulerJobConfig(
         job_id="project_semantic_warmup",
         start_time=time(0, 0),
@@ -127,6 +133,7 @@ _JOB_NAMES: dict[str, str] = {
     "github_fast_lane": "GitHub 新仓快车道（近 7 天新建越线项目每 15 分钟入库）",
     "daily_briefing": "每日自动简报生成（全维度）",
     "subscription_dispatch": "订阅简报派发（全频率幂等投递）",
+    "dashboard_new_words": "首页新概念筛选",
     "project_semantic_warmup": "项目语义搜索链路预热",
     "conversation_cleanup": "会话历史定期清理（7 天清 5 条）",
 }

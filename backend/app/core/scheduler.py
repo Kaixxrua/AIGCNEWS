@@ -32,6 +32,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from backend.app.core.scheduler_registry import (
     CONVERSATION_CLEANUP_JOB,
     DAILY_BRIEFING_JOB,
+    NEW_WORDS_JOB,
     PAYMENT_ORDER_CLOSING_JOB,
     SOURCE_JOB_DESCRIPTORS,
     SUBSCRIPTION_DISPATCH_JOB,
@@ -1571,6 +1572,16 @@ class ApplicationSchedulerRuntime:
             )
         )
 
+    async def _run_new_words_job(self) -> None:
+        from backend.app.services.dashboard.new_words import refresh_new_words
+
+        async def run() -> bool:
+            if self.repositories.new_words is None:
+                return False
+            return await refresh_new_words(self.repositories.new_words)
+
+        await self._run_tracked(lambda: self._guarded("dashboard_new_words", run))
+
     async def _run_daily_briefing_job(self) -> None:
         await self._run_tracked(
             lambda: self._guarded(
@@ -1818,6 +1829,8 @@ class ApplicationSchedulerRuntime:
         for descriptor in (*SOURCE_JOB_DESCRIPTORS, *UI_LIBRARY_JOBS):
             if descriptor.id == job_id:
                 return descriptor
+        if job_id == NEW_WORDS_JOB.id:
+            return NEW_WORDS_JOB
         if job_id == DAILY_BRIEFING_JOB.id:
             return DAILY_BRIEFING_JOB
         if job_id == SUBSCRIPTION_DISPATCH_JOB.id:
@@ -1837,6 +1850,8 @@ class ApplicationSchedulerRuntime:
         return None
 
     def _resolve_callback(self, descriptor: JobDescriptor) -> SchedulerCallback | None:
+        if descriptor.id == NEW_WORDS_JOB.id:
+            return self._run_new_words_job
         if descriptor.id == DAILY_BRIEFING_JOB.id:
             return self._run_daily_briefing_job
         if descriptor.id == SUBSCRIPTION_DISPATCH_JOB.id:
@@ -2001,6 +2016,10 @@ class ApplicationSchedulerRuntime:
                 logger.info("[Scheduler] 注册文档语义索引增量同步任务（每 30 分钟）")
             else:
                 logger.info("[Scheduler] 跳过已停用的文档语义索引同步任务")
+
+        new_words = self._effective_descriptor(NEW_WORDS_JOB)
+        if new_words is not None:
+            _register_job(self.scheduler, new_words, self._run_new_words_job)
 
         conversation_cleanup = self._effective_descriptor(CONVERSATION_CLEANUP_JOB)
         if conversation_cleanup is not None:

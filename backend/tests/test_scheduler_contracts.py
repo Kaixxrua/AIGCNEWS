@@ -108,6 +108,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 "news_closing",
                 "daily_briefing",
                 "subscription_dispatch",
+                "dashboard_new_words",
                 "conversation_cleanup",
                 "ui_library_discovery",
                 "ui_library_x_discovery",
@@ -251,7 +252,17 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
             {"minute": "*/30", "second": "0"},
         )
 
-        cleanup = fake_scheduler.add_job_calls[18][1]
+        new_words = fake_scheduler.add_job_calls[18][1]
+        self.assertEqual(new_words["id"], "dashboard_new_words")
+        self.assertTrue(new_words["coalesce"])
+        self.assertEqual(new_words["max_instances"], 1)
+        self.assertEqual(new_words["misfire_grace_time"], 600)
+        self.assertEqual(
+            {key: value for key, value in _cron_fields(new_words["trigger"]).items() if value != "*"},
+            {"minute": "20", "second": "0"},
+        )
+
+        cleanup = fake_scheduler.add_job_calls[19][1]
         self.assertEqual(
             {key: cleanup[key] for key in ("id", "name", "replace_existing", "max_instances", "misfire_grace_time")},
             {
