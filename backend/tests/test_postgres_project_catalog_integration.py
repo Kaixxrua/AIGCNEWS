@@ -8,11 +8,13 @@ from typing import Any, Iterator
 
 import pytest
 
+from backend.app.domain.search_semantics import build_project_lexical_retrieval_plan, build_project_search_intent
 from backend.app.repositories.project_catalog import (
     ProjectLexicalConcept,
     ProjectLexicalRetrievalPlan,
 )
 from backend.tests.postgres_test_safety import postgres_test_sandbox
+from backend.tests.test_project_search_patterns import CONCEPT_PATTERN_CASES, concept_search_pattern
 
 # Import application settings away from the repository root so pydantic cannot
 # discover a developer or production-like .env file during this opt-in test.
@@ -224,6 +226,66 @@ def test_real_catalog_empty_term_relevance_search_returns_empty_page(catalog: An
         assert result["items"] == []
         assert result["page"] == 1
         assert result["page_size"] == 24
+
+
+def test_concept_patterns_bind_literals_in_real_postgres(catalog: Any) -> None:
+    with catalog._database.transaction() as connection:
+        for case in CONCEPT_PATTERN_CASES:
+            row = connection.execute(
+                "SELECT %s ~* %s AS matched",
+                (case["text"], concept_search_pattern(case["term"])),
+            ).fetchone()
+            assert row["matched"] == case["match"], case
+
+
+def test_concept_search_rejects_substrings_and_preserves_agent_memory(catalog: Any) -> None:
+    examples = (
+        ("quality/retrieval", "RAG retrieval engine", 100000),
+        ("quality/ragas", "RAG evaluation toolkit", 600),
+        ("quality/evals", "RAG evaluations toolkit", 600),
+        ("quality/storage", "Storage evaluation", 100000),
+        ("quality/coding", "Coding agent with code intelligence", 100000),
+        ("quality/mem0", "Agent long-term memory layer", 600),
+    )
+    ids = [repo_id for repo_id, _, _ in examples]
+    try:
+        with catalog._database.transaction() as connection:
+            for repo_id, description, stars in examples:
+                connection.execute(
+                    """INSERT INTO github_repo_candidates (
+                        repo_id, full_name, title, url, description, language, topics_json,
+                        created_at, pushed_at, stars, forks, watchers, source_channels,
+                        first_seen_at, last_seen_at, last_snapshot_at
+                    ) SELECT %s, %s, %s, %s, %s, language, '[]',
+                        created_at, pushed_at, %s, 0, 0, 'fixture',
+                        first_seen_at, last_seen_at, last_snapshot_at
+                    FROM github_repo_candidates WHERE repo_id = 'acme/alpha'""",
+                    (repo_id, repo_id, repo_id, f"https://github.com/{repo_id}", description, stars),
+                )
+                connection.execute(
+                    """INSERT INTO github_repo_enrichments (
+                        repo_id, category_slug, category_name, subcategory_slug, subcategory_name,
+                        description_zh, tags_json, confidence, source_fingerprint, prompt_version,
+                        model_provider, model_name, status, enriched_at, updated_at
+                    ) SELECT %s, category_slug, category_name, subcategory_slug, subcategory_name,
+                        '', '[]', confidence, source_fingerprint, prompt_version,
+                        model_provider, model_name, status, enriched_at, updated_at
+                    FROM github_repo_enrichments WHERE repo_id = 'acme/alpha'""",
+                    (repo_id,),
+                )
+        for query, expected in (
+            ("RAG evaluation", {"quality/ragas", "quality/evals"}),
+            ("智能体长期记忆", {"quality/mem0"}),
+        ):
+            plan = build_project_lexical_retrieval_plan(build_project_search_intent(query))
+            lanes = catalog.find_lexical_candidate_lanes(q=plan)
+            assert {c.repo_id for c in lanes.strict} == expected
+        # Literal/name search keeps substring compatibility; only concept aliases gain boundaries.
+        assert "quality/retrieval" in catalog.find_lexical_candidate_repo_ids(q="retriev")
+    finally:
+        with catalog._database.transaction() as connection:
+            connection.execute("DELETE FROM github_repo_enrichments WHERE repo_id = ANY(%s)", (ids,))
+            connection.execute("DELETE FROM github_repo_candidates WHERE repo_id = ANY(%s)", (ids,))
 
 
 def test_real_repo_name_segment_outranks_owner_prefix(catalog: Any) -> None:

@@ -79,6 +79,20 @@ def test_v2_ranker_protects_exact_repository_lookup() -> None:
     assert ranked[0] == "DeusData/codebase-memory-mcp"
 
 
+def test_v2_ranker_keeps_complete_matches_before_truncation() -> None:
+    # A partial match receives two lane votes plus extreme popularity.
+    # It must not displace complete matches from a limited candidate pool.
+    ranked = rank_v2_project_candidate_ids(
+        [ProjectLexicalCandidate(f" owner/fit-{i} ", "strict", term_coverage=2) for i in range(3)],
+        [ProjectLexicalCandidate("owner/viral", "relaxed", term_coverage=1)],
+        ["owner/viral"],
+        adoption_stars={"owner/viral": 1_000_000},
+        adoption_weight=0.006,
+        limit=3,
+    )
+    assert ranked == ["owner/fit-0", "owner/fit-1", "owner/fit-2"]
+
+
 def test_v2_ranker_without_adoption_map_keeps_fit_only_order() -> None:
     strict = [ProjectLexicalCandidate("owner/fit", "strict", term_coverage=3)]
     relaxed = [ProjectLexicalCandidate("owner/veteran", "relaxed", term_coverage=1)]
