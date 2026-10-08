@@ -1,8 +1,10 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadCatalog } from '@/features/ui-library/catalog'
+
+enableAutoUnmount(afterEach)
 
 const layout = vi.hoisted(() => ({ desktop: false }))
 const dashboardState = vi.hoisted(() => ({ loadError: null as 'network' | 'server' | null, tabList: [] as unknown[], retry: vi.fn() }))
@@ -15,7 +17,7 @@ vi.mock('@vueuse/core', async (original) => {
 vi.mock('@/features/ui-library/catalog', () => ({
   loadCatalog: vi.fn().mockResolvedValue([
     { id: 'example', name: { zh: '示例组件', en: 'Example' }, poster_url: '/ui-library/posters/example.webp' },
-    { id: 'featured', name: { zh: '精选组件', en: 'Featured' }, clip_url: '/ui-library/clips/featured.mp4', poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
+    { id: 'eui-shader-worlds', name: { zh: '精选组件', en: 'Featured' }, clip_url: '/ui-library/clips/featured.mp4', poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
   ]),
 }))
 
