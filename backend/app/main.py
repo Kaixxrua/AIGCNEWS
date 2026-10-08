@@ -25,6 +25,7 @@ from backend.app.api import (
     routes_mcp_oauth,
     routes_monitor,
     routes_oauth,
+    routes_onboarding,
     routes_ops,
     routes_papers,
     routes_payments,
@@ -584,6 +585,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_auth.router, prefix="/api", tags=["Auth"])
+app.include_router(routes_onboarding.router, prefix="/api")
 app.include_router(routes_oauth.router, prefix="/api", tags=["Auth"])
 app.include_router(routes_mcp_oauth.router, prefix="/api", tags=["MCP OAuth"])
 app.include_router(routes_chat.router, prefix="/api", tags=["Chat"])

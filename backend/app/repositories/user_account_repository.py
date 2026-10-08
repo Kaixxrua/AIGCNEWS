@@ -15,9 +15,13 @@ class UserAccountReader(Protocol):
 
     def get_user_by_email(self, email: str) -> dict[str, Any] | None: ...
 
+    def get_onboarding_status(self, *, user_id: int) -> str | None: ...
+
 
 class UserAccountWriter(Protocol):
     """Create accounts and update already-hashed passwords."""
+
+    def save_onboarding_status(self, *, user_id: int, status: str) -> str | None: ...
 
     def create_user(
         self,
