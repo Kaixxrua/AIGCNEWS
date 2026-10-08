@@ -43,10 +43,10 @@ describe('mobile navigation', () => {
     await nav.setProps({ alertItems: [] })
     expect(nav.find(dot).exists()).toBe(false)
   })
-  it('keeps readable primary links including MCP available to guests', () => {
+  it('keeps the four mobile sections and removes MCP and DSH from both navigation levels', () => {
     const nav = render()
-    expect(nav.findAll('.mobile-nav > a').map(link => link.attributes('href'))).toEqual(['/', '/projects', '/report', '/mcp', '/subscriptions'])
-    expect(nav.get('a[href="/mcp"]').text()).toBe('MCP 接入')
+    expect(nav.findAll('.mobile-nav > a').map(link => link.attributes('href'))).toEqual(['/', '/projects', '/report', '/subscriptions'])
+    expect(document.querySelector('a[href="/mcp"], a[href="/dsh"]')).toBeNull()
     expect(document.querySelector('dialog a[href="/monitor"]')).toBeNull()
   })
 
@@ -55,7 +55,7 @@ describe('mobile navigation', () => {
     await nav.get('button[aria-haspopup="dialog"]').trigger('click')
     expect(document.querySelector('dialog')?.hasAttribute('open')).toBe(true)
     expect(nav.get('button[aria-haspopup="dialog"]').attributes('aria-expanded')).toBe('true')
-    await nav.setProps({ currentPath: '/dsh' })
+    await nav.setProps({ currentPath: '/ui-library' })
     expect(document.querySelector('dialog')?.hasAttribute('open')).toBe(false)
     expect(nav.get('button[aria-haspopup="dialog"]').classes()).toContain('is-active')
   })

@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { i18n } from '@/i18n'
 import { useTour } from './useTour'
-import { MEMORY_KEY, claimGuest, readProgress, readTerminal, saveTerminal } from './persistence'
+import { MEMORY_KEY, claimGuest, readProgress, readTerminal, saveProgress, saveTerminal } from './persistence'
 import { requestTour, tourActive, tourRequest } from './signals'
 import { TOUR_STEPS } from './steps'
 
@@ -28,6 +28,7 @@ let wrapper: VueWrapper | undefined
 let tour: ReturnType<typeof useTour>
 let router: Router
 const blocked = ref(false)
+const compact = ref(false)
 async function setup(initial = '/report?date=2026-10-01#saved') {
   router = createRouter({
     history: createMemoryHistory(),
@@ -38,7 +39,7 @@ async function setup(initial = '/report?date=2026-10-01#saved') {
   await router.push(initial)
   await router.isReady()
   wrapper = mount(defineComponent({
-    setup() { tour = useTour(blocked); return () => null },
+    setup() { tour = useTour(blocked, compact); return () => null },
   }), { global: { plugins: [router, i18n] } })
   await flushPromises()
 }
@@ -47,6 +48,7 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear()
   auth.status = 'anonymous'; auth.userId = null; auth.token = null
   tourRequest.value = 0; tourActive.value = false; blocked.value = false
+  compact.value = false
   api.fetch.mockReset().mockResolvedValue('unseen')
   api.update.mockReset().mockImplementation(async (_token, status) => status)
   api.toast.mockReset()
@@ -198,5 +200,47 @@ describe('desktop tour lifecycle', () => {
     expect(tour.phase.value).toBe('idle')
     expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
     remove()
+  })
+})
+
+describe('mobile tour lifecycle', () => {
+  it('offers and completes the mobile tour without visiting desktop integrations or requiring login', async () => {
+    compact.value = true
+    await setup()
+    expect(tour.phase.value).toBe('welcome')
+    tour.start(); await flushPromises()
+    const visited: string[] = []
+    while (tour.phase.value === 'tour') {
+      visited.push(tour.step.value!.id)
+      expect(['/mcp', '/dsh', '/subscriptions']).not.toContain(router.currentRoute.value.path)
+      if (tour.step.value?.id === 'papers') expect(router.currentRoute.value.query.type).toBe('arxiv')
+      tour.next(); await flushPromises()
+    }
+    expect(visited).toEqual(expect.arrayContaining(['navigation', 'projects', 'ui', 'report', 'tracking', 'account', 'help']))
+    expect(visited.filter(id => ['mcp', 'mcpExamples', 'dsh', 'search'].includes(id))).toEqual([])
+    expect(readTerminal('guest')?.status).toBe('completed')
+    expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
+    requestTour(); await flushPromises()
+    expect(tour.phase.value).toBe('welcome')
+  })
+  it('resumes past a saved desktop integration step and preserves the return location', async () => {
+    saveProgress('guest', { step: 'mcp', returnTo: '/projects?source=website', manual: true })
+    compact.value = true
+    await setup('/mcp')
+    expect(tour.step.value?.id).toBe('tracking')
+    expect(router.currentRoute.value.path).toBe('/')
+    tour.skip(); await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/projects?source=website')
+  })
+  it('preserves the current section across layout changes and advances past unavailable steps', async () => {
+    await setup()
+    tour.start(); await flushPromises()
+    while (tour.step.value?.id !== 'mcp') { tour.next(); await flushPromises() }
+    compact.value = true; await flushPromises()
+    expect(tour.step.value?.id).toBe('tracking')
+    expect(router.currentRoute.value.path).toBe('/')
+    compact.value = false; await flushPromises()
+    expect(tour.step.value?.id).toBe('tracking')
+    expect(tour.steps.value.some(step => step.id === 'mcp')).toBe(true)
   })
 })

@@ -8,6 +8,10 @@ export const onboardingZh = {
   missing: '这个区域暂时无法显示，你可以继续下一步。',
   pendingSync: '已在此浏览器记住，账号记录将在恢复连接后重试同步。',
   steps: {
+    mobileNavigation: { title: '从底部切换，去更多里发现', body: '首页、项目、报告和情报追踪就在底部。UI 灵感库、网页收藏等栏目收在“更多”里。用“下一步”跟着逛一遍，随时可以跳过。' },
+    mobileAccount: { title: '账户入口在“更多”里', body: '点底部“更多”，就能找到注册和登录入口；登录后可在这里管理账户。引导完成或跳过后，会记住你的选择，登录后还能跨设备保存。' },
+    mobileTools: { title: '把手机上的阅读调顺手', body: '顶部可以切换浅深主题和中英文。“更多”里还能收藏本站、查看源码或安装网站应用，按你的习惯选择。' },
+    mobileFooter: { title: '网站说明也收在“更多”里', body: '“更多”菜单底部提供免责声明、隐私说明和联系入口，需要时随时都能找到。' },
     navigation: { title: '每一版，都有一个入口', body: '底部导航带你切换所有栏目。接下来我们会逐页参观，用“下一步”前进，也可以随时返回上一步。' },
     home: { title: '从今天值得关注的内容开始', body: '首页汇集 AI 资讯、项目与论文榜单。切换来源或日期，查看你关心的内容；点击条目继续阅读。' },
     projects: { title: '找到适合你的项目', body: '输入项目名称或需求，再结合分类、语言和排序缩小范围。“今日”适合发现新热点，完整项目库适合按需查找。' },
@@ -44,6 +48,10 @@ export const onboardingEn = {
   missing: 'This area is temporarily unavailable. You can continue to the next step.',
   pendingSync: 'Saved in this browser. We will retry account sync when the connection returns.',
   steps: {
+    mobileNavigation: { title: 'Explore from the bottom bar', body: 'Home, Projects, Reports and Tracking are in the bottom bar. Open More for UI inspiration, website collections and other sections. Follow Next to explore, or skip whenever you like.' },
+    mobileAccount: { title: 'Find your account in More', body: 'Open More to register or sign in, then manage your account from the same menu. We remember when you finish or skip the tour; signing in also saves that choice across devices.' },
+    mobileTools: { title: 'Make reading comfortable', body: 'Switch the theme and language at the top. Open More to bookmark the site, view its source or install the web app.' },
+    mobileFooter: { title: 'Site information lives in More', body: 'The bottom of the More menu keeps the disclaimer, privacy information and contact links within reach.' },
     navigation: { title: 'Every section has an entrance', body: 'The bottom navigation connects all the sections. We will visit them in order. Use Next to continue or Back to revisit a step.' },
     home: { title: 'Start with what matters today', body: 'The home page brings together AI news, projects and paper rankings. Switch sources or dates, then open an item to keep reading.' },
     projects: { title: 'Find a project that fits', body: 'Search by name or need, then narrow the results by category, language and sort order. Today highlights fresh activity; the full catalog helps with a specific search.' },
