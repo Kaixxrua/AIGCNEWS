@@ -7,7 +7,9 @@ Go 网关（mcp-go）共享配额池的桶字符串契约（同值即同池，�
 
 from __future__ import annotations
 
+import re
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -66,6 +68,8 @@ def _request(
 # 可信代理对端（回环）：XFF 才被采信
 _TRUSTED_CLIENT = ("127.0.0.1", 5000)
 
+MCP_GO_RATELIMIT = Path(__file__).resolve().parents[2] / "mcp-go" / "internal" / "ratelimit" / "ratelimit.go"
+
 
 class SharedPoolContract(unittest.TestCase):
     """REST 配额桶与 MCP 通道同值——同值即同池，守护双通道共享语义。
@@ -83,11 +87,33 @@ class SharedPoolContract(unittest.TestCase):
         self.assertEqual(API_QUOTA_MONTHLY_WINDOW_SECONDS, 2592000)
 
     def test_quota_amounts_match_mcp_gateway(self) -> None:
-        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 30)
-        self.assertEqual(API_FREE_DAILY_SEARCH_QUOTA, 60)
-        self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 1200)
+        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 10)
+        self.assertEqual(API_FREE_DAILY_SEARCH_QUOTA, 20)
+        self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 400)
         self.assertEqual(API_MEMBER_DAILY_SEARCH_QUOTA, 400)
         self.assertEqual(API_MEMBER_MONTHLY_SEARCH_QUOTA, 8000)
+
+    def test_quota_amounts_match_go_defaults(self) -> None:
+        # 反向核对：直接读 Go 网关的 defaultLimits()，只改一侧额度会在这里显红
+        source = MCP_GO_RATELIMIT.read_text(encoding="utf-8")
+        body = re.search(r"func defaultLimits\(\) Limits \{(.*?)\n\}", source, re.S)
+        assert body is not None
+        go = {name: int(value) for name, value in re.findall(r"(\w+):\s+(\d+),", body.group(1))}
+        self.assertEqual(go["AnonymousDailyToolCallQuota"], API_ANONYMOUS_DAILY_SEARCH_QUOTA)
+        self.assertEqual(go["FreeDailyToolCallQuota"], API_FREE_DAILY_SEARCH_QUOTA)
+        self.assertEqual(go["FreeMonthlyToolCallQuota"], API_FREE_MONTHLY_SEARCH_QUOTA)
+        self.assertEqual(go["MemberDailyToolCallQuota"], API_MEMBER_DAILY_SEARCH_QUOTA)
+        self.assertEqual(go["MemberMonthlyToolCallQuota"], API_MEMBER_MONTHLY_SEARCH_QUOTA)
+        self.assertEqual(go["AnonymousToolCallPerMinute"], API_ANONYMOUS_SEARCH_LIMIT)
+        self.assertEqual(go["AuthenticatedToolCallPerMinute"], API_AUTHENTICATED_SEARCH_LIMIT)
+
+    def test_each_tier_gets_more_than_the_one_below(self) -> None:
+        # 登录总比匿名多、VIP 总比 Free 多：匿名每 24 小时用满、连用 30 天，也要低于 Free 的 30 天额度
+        windows_per_month = API_QUOTA_MONTHLY_WINDOW_SECONDS // API_QUOTA_DAILY_WINDOW_SECONDS
+        self.assertLess(API_ANONYMOUS_DAILY_SEARCH_QUOTA, API_FREE_DAILY_SEARCH_QUOTA)
+        self.assertLess(API_ANONYMOUS_DAILY_SEARCH_QUOTA * windows_per_month, API_FREE_MONTHLY_SEARCH_QUOTA)
+        self.assertLess(API_FREE_DAILY_SEARCH_QUOTA, API_MEMBER_DAILY_SEARCH_QUOTA)
+        self.assertLess(API_FREE_MONTHLY_SEARCH_QUOTA, API_MEMBER_MONTHLY_SEARCH_QUOTA)
 
     def test_burst_limits_match_mcp_tool_call(self) -> None:
         self.assertEqual(API_ANONYMOUS_SEARCH_LIMIT, 30)
@@ -142,7 +168,7 @@ class EnforceRateLimitTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """分层配额：匿名每 24 小时 30；Free 60/1,200、VIP 400/8,000（与 MCP 同池）。"""
+    """分层配额：匿名每 24 小时 10；Free 20/400、VIP 400/8,000（与 MCP 同池）。"""
 
     async def test_anonymous_call_consumes_daily_ip_quota_in_shared_bucket(self) -> None:
         redis = FakeRedis()
