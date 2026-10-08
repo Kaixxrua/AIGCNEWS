@@ -787,7 +787,7 @@ async def _run_github_fallback(
         }
 
     fallback_items = [public_project_item(item) for item in fallback.get("items") or []]
-    return {
+    result = {
         **base,
         "items": fallback_items,
         "total": len(fallback_items),
@@ -800,6 +800,10 @@ async def _run_github_fallback(
         "fallback_queries": fallback.get("queries") or [],
         "fallback_cache_hit": bool(fallback.get("cache_hit")),
     }
+    if fallback.get("error"):
+        for key in ("items", "total", "has_next", "result_origin"):
+            result[key] = base[key]
+    return result
 
 
 async def search_projects(
