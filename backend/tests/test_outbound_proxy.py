@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import httpx
 import pytest
+import yaml
 
 from backend.app.services.ingestion import source_news, tool_website_fetcher
 
@@ -163,3 +165,27 @@ def test_httpx_accepts_socks5h_proxy_when_socks_extra_is_installed() -> None:
     except ImportError as exc:  # pragma: no cover - documents the required extra
         pytest.fail(f"httpx SOCKS support is not installed: {exc}")
     transport.close()
+
+
+def test_compose_routes_first_party_model_relay_and_internal_services_directly(monkeypatch):
+    compose = yaml.safe_load((Path(__file__).resolve().parents[2] / 'docker/docker-compose.yml').read_text())
+    checked = 0
+    for service in compose['services'].values():
+        environment = service.get('environment', [])
+        if not isinstance(environment, list):
+            continue
+        for entry in environment:
+            if not isinstance(entry, str) or not entry.startswith(('NO_PROXY=', 'no_proxy=')):
+                continue
+            _, bypass = entry.split('=', 1)
+            monkeypatch.setenv('NO_PROXY', bypass)
+            monkeypatch.setenv('no_proxy', bypass)
+            monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:7897')
+            monkeypatch.setenv('https_proxy', 'http://127.0.0.1:7897')
+            with httpx.Client(trust_env=True) as client:
+                assert client._transport_for_url(httpx.URL('https://api.aigcnews.cn/v1')) is client._transport
+                assert client._transport_for_url(httpx.URL('http://minio:9000')) is client._transport
+                assert client._transport_for_url(httpx.URL('https://arxiv.org/abs/2610.12345')) is not client._transport
+                assert client._transport_for_url(httpx.URL('https://api.aigcnews.cn.attacker.example')) is not client._transport
+            checked += 1
+    assert checked == 4

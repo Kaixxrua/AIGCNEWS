@@ -1305,6 +1305,8 @@ def _register_job(
     scheduler: AsyncIOScheduler,
     descriptor: JobDescriptor,
     callback: SchedulerCallback,
+    *,
+    next_run_time: datetime | None = None,
 ) -> None:
     job_kwargs: Dict[str, Any] = {
         "trigger": build_trigger(descriptor),
@@ -1316,6 +1318,8 @@ def _register_job(
     }
     if descriptor.coalesce is not None:
         job_kwargs["coalesce"] = descriptor.coalesce
+    if next_run_time is not None:
+        job_kwargs["next_run_time"] = next_run_time
     scheduler.add_job(callback, **job_kwargs)
 
 
@@ -2019,7 +2023,10 @@ class ApplicationSchedulerRuntime:
 
         new_words = self._effective_descriptor(NEW_WORDS_JOB)
         if new_words is not None:
-            _register_job(self.scheduler, new_words, self._run_new_words_job)
+            # Fill an empty daily card on startup; APScheduler still owns the
+            # task, failure reporting and max_instances=1 with the hourly run.
+            _register_job(self.scheduler, new_words, self._run_new_words_job,
+                          next_run_time=datetime.now(timezone.utc))
 
         conversation_cleanup = self._effective_descriptor(CONVERSATION_CLEANUP_JOB)
         if conversation_cleanup is not None:

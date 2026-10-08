@@ -59,8 +59,8 @@ services:
       - all_proxy=${OUTBOUND_PROXY:-}
       # api.siliconflow.cn：embedding 直连（国内可达）；gptsakura.com 直连会被
       # 间歇性 RST，必须走 socks 隧道（VPS 出口抖动时会批量报 ProxyError）
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -129,8 +129,8 @@ services:
       - http_proxy=${OUTBOUND_PROXY:-}
       - https_proxy=${OUTBOUND_PROXY:-}
       - all_proxy=${OUTBOUND_PROXY:-}
-      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
-      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,mcp-api,aigc-mcp,mcp-api-go,aigc-mcp-go,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
     extra_hosts:
       - "host.docker.internal:host-gateway"
     security_opt:

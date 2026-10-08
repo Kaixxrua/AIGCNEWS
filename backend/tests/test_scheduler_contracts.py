@@ -257,6 +257,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         self.assertTrue(new_words["coalesce"])
         self.assertEqual(new_words["max_instances"], 1)
         self.assertEqual(new_words["misfire_grace_time"], 600)
+        self.assertLess(abs((new_words["next_run_time"] - datetime.now(timezone.utc)).total_seconds()), 5)
         self.assertEqual(
             {key: value for key, value in _cron_fields(new_words["trigger"]).items() if value != "*"},
             {"minute": "20", "second": "0"},
@@ -579,6 +580,10 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
                 interval_minutes=1440,
                 enabled=False,
             ),
+            "dashboard_new_words": SchedulerJobConfig(
+                job_id="dashboard_new_words", start_time=time(0, 20), end_time=time(23, 20),
+                interval_minutes=60, enabled=False,
+            ),
         }
         runtime = scheduler.ApplicationSchedulerRuntime(
             MagicMock(),
@@ -596,6 +601,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
         self.assertEqual(calls["arxiv_papers"]["trigger"].interval.total_seconds(), 5400)
 
         self.assertNotIn("daily_briefing", calls)
+        self.assertNotIn("dashboard_new_words", calls)
 
         # Jobs without overrides keep their default cron triggers.
         self.assertIsInstance(calls["github_trending"]["trigger"], CronTrigger)
