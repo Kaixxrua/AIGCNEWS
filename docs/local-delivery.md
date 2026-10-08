@@ -36,6 +36,12 @@ Stop hook 本地模式优先核对 localDeliveryState 的可靠交接回执，�
 
 Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_THREAD_ID` 时使用 `CLAUDE_CODE_SESSION_ID`，归属记为 `claude:<uuid>`，凭据 schema 为 `aigcnews.delivery-owner.v2` 并带 `provider=claude`；Codex 凭据仍是 v1，格式不变。两个变量同时存在（互相从父进程继承）时拒绝创建，不猜测归属；Claude 归属不能绑定 AO。Claude 任务与 Codex 任务同样经 pre-receive、精确 SHA CI、CAS 落地和发布，但目前没有唤醒通道：通道检查记 `no_wakeup_route`，失败与成功都不向任何 Codex thread 发送，只在看板可见，由 Claude 任务自行核对队列状态。v2 凭据保留 `thread_id` 字段，未升级的控制器仍能入队，其只认 v1 的唤醒与成功通知路径按无归属跳过。
 
+## UI 素材入库后自动发布
+
+发布器除已验证的 main SHA 外，也比较生产素材 `catalog.json` 的 SHA-256 与当前已上线内容。每日刷新器通过原有许可、渲染和目录校验并原子写入后，发布器在下一轮（通常约 10 秒）自动受理；无需等待代码提交。构建与源站/边缘同步仍需时间。同一内容不重复发布；旧回执缺少目录摘要时从不可变前端镜像读取并缓存基线，不把磁盘待发布目录当作线上版本。
+
+构建在刷新器共用的 `build-release.lock` 内固定目录版本，镜像复用身份包含目录摘要；生产回执和 `.release.env` 保存同一摘要。同一代码 SHA 下可以发布新的素材镜像，仍保留迁移、健康、回滚和全部边缘校验。后端的 Compose 标签随目录摘要变化，确保复用后端镜像时也重新打开原子替换的目录文件挂载。边缘重试继续完成已切换版本，再处理期间到达的新素材；失败不无限重放。
+
 ## 下载恢复与预验证复用
 
 执行器对依赖安装、Go tidy/build/vet、前端镜像构建中的明确网络暂态错误（EOF、连接重置、DNS 暂态、502/503/504、网络超时）最多执行三次，总计仍受原 job deadline 限制。断言失败、编译错误、校验和错误、测试、迁移不自动重放。Go 使用 `https://proxy.golang.org|https://goproxy.cn|direct`，竖线允许网络错误切换源，保留校验和验证。

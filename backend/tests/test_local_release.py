@@ -73,6 +73,59 @@ def test_release_rejects_unselected_sha_before_build(tmp_path, monkeypatch):
         local_release.release(config, 'a'*40)
 
 
+@pytest.mark.parametrize('edge_retry', [False, True])
+def test_same_code_publishes_new_content_but_edge_retry_keeps_its_original_content(tmp_path, monkeypatch, edge_retry):
+    import json
+
+    import local_delivery as delivery
+    import local_release
+    from ui_catalog_release import catalog_digest
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2] / 'scripts/release'))
+    import deploy_production
+    import publish_frontend_edges
+    sha = 'a'*40
+    production = tmp_path / 'production'
+    control = production / '.aigcnews-deploy'
+    control.mkdir(parents=True)
+    catalog = production / 'mcp-go/internal/uicatalog/data/catalog.json'
+    catalog.parent.mkdir(parents=True)
+    catalog.write_bytes(b'{"items":[{"id":"new"}]}')
+    config = {'state': str(tmp_path/'state'), 'production': str(production),
+              'runtime': str(Path(__file__).parents[2]/'scripts')}
+    digest = catalog_digest(config)
+    old_digest = 'b'*64
+    (control / 'state.json').write_text(json.dumps({
+        'active_release': sha, 'in_progress': None, 'ui_catalog_sha256': old_digest}))
+    db = delivery.database(config)
+    delivery.meta(db, 'release', {'sha': sha, 'status': 'deploying',
+                                 'ui_catalog_sha256': old_digest if edge_retry else digest})
+    db.close()
+    monkeypatch.setattr(local_release, 'deployment_environment', lambda config: None)
+    monkeypatch.setattr(delivery, 'git', lambda *args: sha)
+    monkeypatch.setattr(delivery, 'ancestor', lambda *args: True)
+    images = {key: 'example/'+key+'@sha256:'+'c'*64 for key in ('backend', 'mcp', 'frontend')}
+    calls = []
+
+    def cached(path, identity):
+        assert not edge_retry
+        assert identity == local_release.build_identity(config, sha, digest)
+        assert identity != local_release.build_identity(config, sha, old_digest)
+        return images
+
+    def deploy(root, release, **kwargs):
+        assert release.ui_catalog_sha256 == digest
+        calls.append('deploy')
+        return 'deployed'
+
+    monkeypatch.setattr(local_release, 'verified_images', cached)
+    monkeypatch.setattr(local_release, 'run', lambda *a, **kw: pytest.fail('unexpected build'))
+    monkeypatch.setattr(deploy_production, 'deploy', deploy)
+    monkeypatch.setattr(publish_frontend_edges, 'publish', lambda *args: calls.append('edge') or 'published')
+    local_release.release(config, sha)
+    assert calls == (['edge'] if edge_retry else ['deploy', 'edge'])
+
+
 class _Result:
     def __init__(self, returncode=0, stdout=''):
         self.returncode = returncode

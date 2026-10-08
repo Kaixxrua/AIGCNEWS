@@ -398,6 +398,7 @@ def recovered_worktree_failure(config, previous):
 
 def release_once(config,db):
     from release_progress import retryable
+    from ui_catalog_release import catalog_digest, published_digest
     previous=meta(db,'release')
     if previous.get('status') == 'failed':
         from edge_recovery import consider
@@ -416,7 +417,18 @@ def release_once(config,db):
     elif candidate!=main:return False
     same = previous.get('sha') == candidate
     retry = same and recovered_worktree_failure(config, previous)
-    if same and previous.get('status') in ('failed', 'delivered') and not retry:
+    ui_catalog = previous.get('ui_catalog_sha256') if resume else catalog_digest(config)
+    content_release = False
+    if same and previous.get('status') == 'delivered' and not retry:
+        if ui_catalog is None:
+            return False
+        state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
+        if state.get('in_progress') or state.get('active_release') != candidate:
+            return False
+        if published_digest(config, db, state) == ui_catalog:
+            return False
+        content_release = True
+    if same and previous.get('status') == 'failed' and not retry:
         return False
     retry = retry or resume
     attempt = previous.get('attempt', 1) + 1 if retry else 1
@@ -427,15 +439,21 @@ def release_once(config,db):
         if (root/'release.log').exists():
             import shutil
             shutil.copy2(root/'release.log', root/f'attempt-{attempt-1}.log')
-    meta(db,'release',{'sha':candidate,'status':'deploying','attempt':attempt,
-                       'reason':'worktree environment recovered; retry release only' if retry else 'validated main',
+    meta(db,'release',{'sha':candidate,'status':'deploying','attempt':attempt,'ui_catalog_sha256':ui_catalog,
+                       'reason':'worktree environment recovered; retry release only' if retry else
+                                'UI catalog updated' if content_release else 'validated main',
                        'started_at':now()});snapshot(config,db)
     delivered=False
     try:
         trusted_run(config,'local_release.py',['--config',config['config_path'],'--sha',candidate],root/'release.log',7200)
+        # The worker admits content under build-release.lock, also held by the
+        # UI importer while it commits the catalog.
+        ui_catalog = meta(db, 'release').get('ui_catalog_sha256')
         state=json.loads((Path(config['production'])/'.aigcnews-deploy/state.json').read_text())
         if state.get('active_release')!=candidate or state.get('in_progress'):
             raise RuntimeError('release command returned without exact production receipt')
+        if ui_catalog and state.get('ui_catalog_sha256') != ui_catalog:
+            raise RuntimeError('release command returned without exact UI catalog receipt')
         control = Path(config['production'])/'.aigcnews-deploy'
         edge = json.loads((control/'edge-state.json').read_text())
         sites = json.loads((control/'edge-config.json').read_text())['sites']
@@ -443,13 +461,14 @@ def release_once(config,db):
                 or edge.get('frontend_image') != state.get('images', {}).get('frontend')
                 or any(edge.get('sites', {}).get(site) != 'published' for site in sites)):
             raise RuntimeError('release command returned without exact edge receipts')
-        meta(db,'release',{'sha':candidate,'status':'delivered','finished_at':now()})
+        meta(db,'release',{'sha':candidate,'status':'delivered','ui_catalog_sha256':ui_catalog,'finished_at':now()})
         delivered=True
         for task in db.execute("SELECT * FROM tasks WHERE status='landed'").fetchall():
             if ancestor(config,task['sha'],candidate):update(db,task,'delivered')
     except Exception as exc:  # noqa: BLE001 - persist/report external operation failure
         can_retry = attempt < 3 and retryable(config, candidate)
         meta(db,'release',{'sha':candidate,'status':'retrying' if can_retry else 'failed',
+                          'ui_catalog_sha256':meta(db, 'release').get('ui_catalog_sha256'),
                           'attempt':attempt,'error':str(exc),'finished_at':now(),
                           'retry_at':time.time() + min(30 * 2**(attempt-1), 120) if can_retry else None})
     if delivered:

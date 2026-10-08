@@ -17,8 +17,8 @@ only components that did not exist before are considered:
 Already published components keep their pinned bytes: new files are stored
 under ``sources/<provider>/r<rev12>/``. The staged catalog is verified with the
 Go MCP catalog loader before anything touches production. Production files are
-written under the local delivery ``build-release.lock``; the next release
-builds them into the website and MCP images.
+written under the local delivery ``build-release.lock``; the delivery controller
+detects the new catalog digest and publishes website and MCP images automatically.
 
 Never executes upstream package scripts, never fetches arbitrary URLs.
 """

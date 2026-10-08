@@ -134,8 +134,8 @@ def deployment_environment(config):
     os.environ['AIGCNEWS_PRIVATE_COMPOSE']=str(overlay)
 
 
-def build_identity(config, sha):
-    return hashlib.sha256(json.dumps([sha, config, Path(__file__).read_text()], sort_keys=True).encode()).hexdigest()
+def build_identity(config, sha, ui_catalog_sha256=None):
+    return hashlib.sha256(json.dumps([sha, config, ui_catalog_sha256, Path(__file__).read_text()], sort_keys=True).encode()).hexdigest()
 
 
 def verified_images(path, identity):
@@ -158,6 +158,7 @@ def release(config,sha):
     from deploy_production import Release, deploy
     from local_delivery import SHA, ancestor, database, lock, meta
     from publish_frontend_edges import publish as edge_publish
+    from ui_catalog_release import catalog_digest
     def publish(root, source):
         if edge_publish(root, source) != "published":
             raise RuntimeError("edge publication did not finish selected candidate")
@@ -177,16 +178,23 @@ def release(config,sha):
         production=Path(config['production'])
         state=json.loads((production/'.aigcnews-deploy/state.json').read_text())
         if state.get('in_progress'):raise RuntimeError('unfinished production transition')
-        if state.get('active_release')==sha:
+        requested_catalog = selected.get('ui_catalog_sha256')
+        if (state.get('active_release')==sha
+                and (not requested_catalog or state.get('ui_catalog_sha256') == requested_catalog)):
             with stage(config, sha, 'edge'):
                 publish(production,sha)
             return
+        ui_catalog = catalog_digest(config)
+        if requested_catalog and ui_catalog is None:
+            raise RuntimeError('selected UI catalog disappeared')
+        with closing(database(config)) as db:
+            meta(db, 'release', {**selected, 'ui_catalog_sha256': ui_catalog})
         checkpoint = Path(config['state']) / 'releases' / sha / 'verified-images.json'
-        identity = build_identity(config, sha)
+        identity = build_identity(config, sha, ui_catalog)
         images = verified_images(checkpoint, identity)
         if images:
             with stage(config, sha, 'deploy'):
-                result = deploy(production, Release(sha, images['backend'], images['mcp'], images['frontend']), pinned=True)
+                result = deploy(production, Release(sha, images['backend'], images['mcp'], images['frontend'], ui_catalog), pinned=True)
                 if result not in ('deployed', 'already-active'):
                     raise RuntimeError('candidate superseded at deploy lock')
             with stage(config, sha, 'edge'):
@@ -231,7 +239,7 @@ def release(config,sha):
                 from local_delivery import atomic
                 atomic(checkpoint, {'identity': identity, 'images': images})
         with stage(config, sha, 'deploy'):
-            result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend']), pinned=True)
+            result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend'],ui_catalog), pinned=True)
             if result not in ('deployed','already-active'):raise RuntimeError('candidate superseded at deploy lock')
         with stage(config, sha, 'edge'):
             publish(production,sha)

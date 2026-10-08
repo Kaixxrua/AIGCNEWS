@@ -44,6 +44,45 @@ def test_release_requires_immutable_images_and_round_trips_env():
         deploy.Release(SHA_A, "ghcr.io/example/backend:latest", value.mcp_image, value.frontend_image)
 
 
+@pytest.mark.parametrize('fails', [False, True])
+def test_same_code_content_update_is_idempotent_and_rolls_back_prior_content(tmp_path, monkeypatch, fails):
+    original = release()
+    old = deploy.Release(SHA_A, original.backend_image, original.mcp_image, original.frontend_image, 'a'*64)
+    new = deploy.Release(SHA_A, original.backend_image, original.mcp_image, original.frontend_image, 'b'*64)
+    assert deploy.parse_release_env(new.env_text()) == new
+    state_path = tmp_path / '.aigcnews-deploy/state.json'
+    deploy.write_state(state_path, {'schema': deploy.SCHEMA, 'active_release': SHA_A, 'in_progress': None,
+                                   'ui_catalog_sha256': old.ui_catalog_sha256,
+                                   'images': {'backend': old.backend_image, 'mcp': old.mcp_image,
+                                              'frontend': old.frontend_image}})
+    (tmp_path / '.release.env').write_text(old.env_text())
+    monkeypatch.setattr(deploy, 'ensure_clean_tracked_tree', lambda *args: None)
+    monkeypatch.setattr(deploy, 'refresh_and_classify', lambda *args: 'current')
+    monkeypatch.setattr(deploy, 'run', lambda *args, **kwargs: SHA_A)
+    monkeypatch.setattr(deploy, 'checkout', lambda *args: None)
+    monkeypatch.setattr(deploy, 'migrate_candidate', lambda *args: None)
+    observed = []
+
+    def reconcile(root, candidate):
+        observed.append(candidate.ui_catalog_sha256)
+        if fails and candidate == new:
+            raise deploy.DeployError('health check failed')
+
+    monkeypatch.setattr(deploy, 'reconcile', reconcile)
+    if fails:
+        with pytest.raises(deploy.DeployError, match='restored'):
+            deploy.deploy(tmp_path, new)
+        expected = old
+        assert observed == [new.ui_catalog_sha256, old.ui_catalog_sha256]
+    else:
+        assert deploy.deploy(tmp_path, new) == 'deployed'
+        assert deploy.deploy(tmp_path, new) == 'already-active'
+        assert observed == [new.ui_catalog_sha256]
+        expected = new
+    assert deploy.read_state(state_path)['ui_catalog_sha256'] == expected.ui_catalog_sha256
+    assert deploy.parse_release_env((tmp_path / '.release.env').read_text()) == expected
+
+
 def test_state_is_atomic_and_fail_closed(tmp_path: Path):
     state_path = tmp_path / "control" / "state.json"
     expected = {"schema": deploy.SCHEMA, "active_release": SHA_A, "in_progress": None}

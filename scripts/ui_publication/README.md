@@ -15,7 +15,7 @@ Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Li
 5. 离线构建预览；在禁止联网的无头浏览器中等 `ready`，生成版本化 WebP 封面与 6 秒 H.264 MP4；异常、空白封面（灰度标准差 ≤ 3）记入 `held.json`，源码不变不再重试。
 6. 权利证据取自固定 commit 的 LICENSE 与 README（缺 README 则停下），并截取 GitHub 许可证页面；已有同 revision 证据只追加、不改历史哈希。截图失败只顺延，不拉黑。
 7. 按 `uiLibraryAssets.ts` 同款规则核对新素材，并用 Go 目录加载器（`TestPinnedSourcesAndLocalFileBoundary`）校验整个暂存目录。
-8. 持 `build-release.lock` 写入生产目录：只新增文件、拒绝覆盖不同内容，`catalog.json` 最后原子替换；期间目录被他人改动则放弃本轮。新素材随下一次 main 发布进入网站与 MCP 镜像。
+8. 持 `build-release.lock` 写入生产目录：只新增文件、拒绝覆盖不同内容，`catalog.json` 最后原子替换；期间目录被他人改动则放弃本轮。本地交付控制器同时检查代码 SHA 与素材目录 SHA-256，发现已入库目录与线上版本不同时自动发布网站、MCP 和公网边缘，无需等待新的代码提交。刷新器的 `published` 表示素材已写入；源站与全部边缘发布成功才表示前台可见。发布有串行锁和构建耗时，不承诺瞬时完成。
 
 状态目录 `~/.local/state/aigcnews-ui-refresh/`：`latest.json`、`runs/<UTC>/status.json` 与 `commands.log`、`providers.json`（基线/已检查 revision/停因）、`held.json`、`published.json`、`withdrawn.json`（`version: 1`，`ids` 数组；手动撤下的 ID 写这里）。管理员发现接口的 `publication` 行显示最近一轮结果。
 

@@ -37,10 +37,13 @@ class Release:
     backend_image: str
     mcp_image: str
     frontend_image: str
+    ui_catalog_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if SHA_RE.fullmatch(self.source_sha) is None:
             raise DeployError("source SHA must be 40 lowercase hexadecimal characters")
+        if self.ui_catalog_sha256 is not None and not re.fullmatch(r'[0-9a-f]{64}', self.ui_catalog_sha256):
+            raise DeployError("UI catalog digest must be 64 lowercase hexadecimal characters")
         for image in (self.backend_image, self.mcp_image, self.frontend_image):
             if IMAGE_RE.fullmatch(image) is None:
                 raise DeployError("application images must be immutable repository@sha256 references")
@@ -51,6 +54,7 @@ class Release:
             f"AIGCNEWS_BACKEND_IMAGE_DIGEST={self.backend_image}\n"
             f"AIGCNEWS_MCP_IMAGE_DIGEST={self.mcp_image}\n"
             f"AIGCNEWS_FRONTEND_IMAGE_DIGEST={self.frontend_image}\n"
+            + (f"AIGCNEWS_UI_CATALOG_SHA256={self.ui_catalog_sha256}\n" if self.ui_catalog_sha256 else "")
         )
 
 
@@ -191,7 +195,12 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600,
             return "superseded"
 
         state = read_state(state_path)
-        if state.get("active_release") == release.source_sha and state.get("in_progress") is None:
+        same_content = release.ui_catalog_sha256 is None or (
+            state.get('ui_catalog_sha256') == release.ui_catalog_sha256
+            and state.get('images') == {'backend': release.backend_image,
+                                       'mcp': release.mcp_image, 'frontend': release.frontend_image}
+        )
+        if state.get("active_release") == release.source_sha and state.get("in_progress") is None and same_content:
             return "already-active"
         if state.get("in_progress") is not None:
             raise DeployError("production state contains an unfinished deployment")
@@ -247,6 +256,7 @@ def deploy(root: Path, release: Release, *, lock_timeout: float = 600,
             "active_release": release.source_sha,
             "in_progress": None,
             "previous_release": old_sha,
+            "ui_catalog_sha256": release.ui_catalog_sha256,
             "images": {
                 "backend": release.backend_image,
                 "mcp": release.mcp_image,
@@ -269,6 +279,7 @@ def parse_release_env(content: str) -> Release:
             backend_image=values["AIGCNEWS_BACKEND_IMAGE_DIGEST"],
             mcp_image=values["AIGCNEWS_MCP_IMAGE_DIGEST"],
             frontend_image=values["AIGCNEWS_FRONTEND_IMAGE_DIGEST"],
+            ui_catalog_sha256=values.get("AIGCNEWS_UI_CATALOG_SHA256"),
         )
     except KeyError as exc:
         raise DeployError(f"previous release environment lacks {exc.args[0]}") from None

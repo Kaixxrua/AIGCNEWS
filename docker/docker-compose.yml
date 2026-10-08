@@ -39,6 +39,9 @@ services:
     env_file:
       - path: ../.env
         required: false
+    # Reopen atomic catalog file bind mounts even when the backend image is reused.
+    labels:
+      com.aigcnews.ui-catalog-sha256: ${AIGCNEWS_UI_CATALOG_SHA256:-}
     environment:
       # 显式钉死 Redis 目标容器名：经 overlay 附加其他编排网时，若那些网络内
       # 存在同样持有别名 "redis" 的容器，.env 的 REDIS_HOST=redis 会歧义解析到
