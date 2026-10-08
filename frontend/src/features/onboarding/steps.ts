@@ -30,6 +30,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'tools', route: '/membership', targets: ['.app-masthead__actions'] },
   { id: 'contact', route: '/contact', targets: ['.app-content .view-container'], feature: 'contact' },
   { id: 'footer', route: '/', targets: ['.footer-right', '.dock-footer'] },
+  { id: 'bookmark', route: '/', targets: ['[data-tour="bookmark"]'] },
   { id: 'help', route: '/', targets: ['[data-tour="help"]'] },
 ]
 

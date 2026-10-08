@@ -48,6 +48,7 @@ onBeforeUnmount(() => {
     <button
       type="button"
       class="favorites-link"
+      data-tour="bookmark"
       :class="{ 'favorites-link--open': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"

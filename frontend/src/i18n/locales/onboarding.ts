@@ -30,6 +30,7 @@ export const onboardingZh = {
     tools: { title: '把网站调成顺手的样子', body: '顶部工具可以切换语言和主题、收藏本站、查看源码或安装网站应用；支持的内页还可以切换版面密度。' },
     contact: { title: '需要交流或合作？', body: '这个页面介绍本站提供的合作方向和联系入口。按你的需要查看说明，再选择合适的联系方式。' },
     footer: { title: '关于网站，也能随时找到', body: '页脚提供网站介绍、隐私说明和联系入口，方便你了解内容来源与站点信息。' },
+    bookmark: { title: '收藏本站，下次直接回来', body: '把 AIGCNEWS 加入浏览器书签，下次看资讯、找项目更方便。现在按 Ctrl+D（Mac 用 ⌘D），或打开浏览器菜单选择“添加书签”即可。顶部星标可以随时查看收藏方法，也可以先继续探索。' },
     help: { title: '地图在手，开始探索吧', body: '顶部这个帮助按钮可以随时从头重看引导。点“完成”回到刚才的页面；以后不会自动打扰你。' },
   },
 }
@@ -66,6 +67,7 @@ export const onboardingEn = {
     tools: { title: 'Make the site comfortable to use', body: 'The top tools let you change language and theme, bookmark the site, view its source or install the web app. Supported inner pages also offer a layout-density switch.' },
     contact: { title: 'Get in touch', body: 'Explore the available collaboration options and contact details. Read the descriptions and choose the most suitable way to connect.' },
     footer: { title: 'Learn more about the site', body: 'The footer keeps the site introduction, privacy information and contact details within reach.' },
+    bookmark: { title: 'Bookmark the site for your next visit', body: 'Save AIGCNEWS in your browser bookmarks to return to the news and projects easily. Press Ctrl+D (⌘D on Mac), or choose Add bookmark from your browser menu. The star at the top always shows these instructions. You can also keep exploring for now.' },
     help: { title: 'You have the map. Go explore.', body: 'This help button always lets you replay the tour. Select Finish to return to where you started. The tour will not appear automatically again.' },
   },
 }
