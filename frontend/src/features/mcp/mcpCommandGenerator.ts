@@ -1,4 +1,5 @@
 import type { McpClientOption, McpShellId } from './mcpClientCatalog'
+import { MCP_OAUTH_ENDPOINT } from './mcpOAuth'
 
 const MCP_SERVER_KEY = 'aigc-news'
 const CODEX_TOKEN_ENV = 'AIGC_NEWS_MCP_TOKEN'
@@ -63,7 +64,7 @@ function serverEntry(url: string, token?: string) {
   return { type: 'http', url, headers: { Authorization: `Bearer ${token}` } }
 }
 
-function configFor(option: McpClientOption, url: string, token?: string): unknown {
+function configFor(option: McpClientOption, url: string, token?: string, oauth = false): unknown {
   if (option.format === 'opencode-remote') {
     return {
       $schema: 'https://opencode.ai/config.json',
@@ -72,7 +73,8 @@ function configFor(option: McpClientOption, url: string, token?: string): unknow
           type: 'remote',
           url,
           enabled: true,
-          oauth: false,
+          // 浏览器授权版让 OpenCode 自己走 OAuth；Token 版与公开版关掉，免得它见 401 就去找授权服务
+          ...(oauth ? {} : { oauth: false }),
           ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
         },
       },
@@ -173,28 +175,45 @@ function codexCommand(url: string, token: string | undefined, shell: McpShellId)
   return [setToken, remove, add].join(join(shell))
 }
 
-export function generateMcpClientCommand(option: McpClientOption, url: string, token: string | undefined, shell: McpShellId): string {
-  if (option.format === 'claude-cli') {
-    if (shell !== 'bash') {
-      const resolveExecutable = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }"
-      const headerFlag = token ? ` --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}` : ''
-      const command = [
-        resolveExecutable,
-        `& $claudeCommand.Source mcp remove --scope user ${MCP_SERVER_KEY} 2>$null`,
-        `& $claudeCommand.Source mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)}${headerFlag}`,
-      ].join('; ')
-      return shell === 'cmd'
-        ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(command)}`
-        : command
-    }
-    const headerFlag = token ? ` --header ${quote(`Authorization: Bearer ${token}`, shell)}` : ''
-    return [
-      `claude mcp remove --scope user ${MCP_SERVER_KEY} ${ignored(shell)}`,
-      `claude mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quote(url, shell)}${headerFlag}`,
-    ].join(join(shell))
+// login：注册成功后接着跑 claude mcp login，打开浏览器授权（浏览器授权版用）。
+function claudeCommand(url: string, token: string | undefined, shell: McpShellId, login = false): string {
+  if (shell !== 'bash') {
+    const resolveExecutable = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }"
+    const headerFlag = token ? ` --header ${quotePowerShellLiteral(`Authorization: Bearer ${token}`)}` : ''
+    const command = [
+      resolveExecutable,
+      `& $claudeCommand.Source mcp remove --scope user ${MCP_SERVER_KEY} 2>$null`,
+      `& $claudeCommand.Source mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quotePowerShellLiteral(url)}${headerFlag}`,
+      ...(login ? [`if ($LASTEXITCODE -eq 0) { & $claudeCommand.Source mcp login ${MCP_SERVER_KEY} }`] : []),
+    ].join('; ')
+    return shell === 'cmd'
+      ? `powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodePowerShellCommand(command)}`
+      : command
   }
+  const headerFlag = token ? ` --header ${quote(`Authorization: Bearer ${token}`, shell)}` : ''
+  const add = `claude mcp add --scope user --transport http ${MCP_SERVER_KEY} ${quote(url, shell)}${headerFlag}`
+  return [
+    `claude mcp remove --scope user ${MCP_SERVER_KEY} ${ignored(shell)}`,
+    login ? `${add} && claude mcp login ${MCP_SERVER_KEY}` : add,
+  ].join(join(shell))
+}
+
+export function generateMcpClientCommand(option: McpClientOption, url: string, token: string | undefined, shell: McpShellId): string {
+  if (option.format === 'claude-cli') return claudeCommand(url, token, shell)
   if (option.format === 'codex-cli') return codexCommand(url, token, shell)
   if (option.format === 'continue-yaml') return continueCommand(url, token, shell)
   if (option.format === 'vscode-cli') return vscodeCommand(url, token, shell)
   return writeJsonCommand(option.configPath, configFor(option, url, token), shell)
+}
+
+/**
+ * 浏览器授权版的接入命令：连 MCP_OAUTH_ENDPOINT、不带任何 Token，客户端第一次连接时被质询，打开本站授权页，
+ * 用户登录并点「同意」后客户端自己拿到 Token。只给目录里标了 oauth 的客户端用。
+ * Claude Code 注册完接着 claude mcp login 打开浏览器；Codex 的 mcp add 发现服务要授权会自己开浏览器，不再接 login；
+ * 其余客户端只写配置，授权在客户端里发起。
+ */
+export function generateMcpOAuthCommand(option: McpClientOption, shell: McpShellId): string {
+  if (option.format === 'claude-cli') return claudeCommand(MCP_OAUTH_ENDPOINT, undefined, shell, true)
+  if (option.format === 'opencode-remote') return writeJsonCommand(option.configPath, configFor(option, MCP_OAUTH_ENDPOINT, undefined, true), shell)
+  return generateMcpClientCommand(option, MCP_OAUTH_ENDPOINT, undefined, shell)
 }

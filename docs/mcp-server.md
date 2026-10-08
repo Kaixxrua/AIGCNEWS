@@ -11,8 +11,14 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 
 - 生产 endpoint：`https://aigcnews.cn/api/mcp`（Streamable HTTP）；自托管本地开发为 `http://localhost:8000/api/mcp`
 - Claude Code：`claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp`
+- 浏览器授权（OAuth）入口：`https://aigcnews.cn/api/mcp/oauth`。Claude Code 运行
+  `claude mcp add --transport http aigc-radar https://aigcnews.cn/api/mcp/oauth` 后再运行
+  `claude mcp login aigc-radar`（较旧的版本在 Claude Code 里输入 `/mcp`，选 Authenticate），
+  浏览器里登录并点「同意」即可，不用复制 Token；流程见下文「浏览器授权（OAuth）」
 - 站内 onboarding：Web 站点为 Claude Code、Cursor、Codex、OpenCode、Cline / Roo Code、Continue、
-  Windsurf、VS Code 与通用 JSON 共 9 类客户端生成导入配置与命令；网站 `/mcp` 配置页必须先登录
+  Windsurf、VS Code 与通用 JSON 共 9 类客户端生成导入配置与命令。游客也能打开 `/mcp`：支持 OAuth 的
+  Claude Code、Cursor、Codex、OpenCode、VS Code 默认给浏览器授权命令，免登录复制；改用手动 Token
+  或选其余客户端时，生成含 Token 的命令前才弹出登录
 - DSH：网站 `/dsh` 配置页同样必须登录；但从 npm 或 GitHub 安装 `dsh-aigc-radar` 插件本身不要求登录，
   省略 `mcpToken` 时仍可使用公开 runtime，登录后再按需把账号绑定的 DSH Token 写入本地 dsh profile
 - 仅支持 stdio 的客户端：经社区标准桥 `npx mcp-remote https://aigcnews.cn/api/mcp` 接入；
@@ -180,7 +186,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 ### 网站配置平面
 
-- 网站 `/mcp` 配置页必须登录；匿名深链会被拒绝并落到安全路由 `/`，同时打开全局登录弹窗并保留 `/mcp` 目标，登录成功后继续进入 `/mcp`。站点没有独立 `/login` 页面。
+- 网站 `/mcp` 配置页对游客开放：可选客户端与终端、复制免登录的公开命令和浏览器授权命令；生成含手动 Token 的命令时，页面内弹出全局登录弹窗，登录后回到 `/mcp` 继续。Token API 仍由后端 401 兜底。站点没有独立 `/login` 页面。
 - 网站 `/dsh` 配置页也必须登录；登录后才能取得或复用账号绑定的 DSH 专用 Token。
 - generic MCP Token 的创建、查看脱敏 metadata、删除与轮换，以及网站生成的客户端配置，均由登录账号执行；客户端不能提交 membership、group、quota 或 VIP 作为权限依据。
 - 登录 JWT 仅用于网站会话，不等于 MCP access token，也不会直接作为 `/api/mcp` runtime credential。
@@ -192,6 +198,24 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 - 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）与 `get_my_tracking`（scope `tracking:read`，调用时再按实时会员档位放行）。网站 `/mcp` 与 DSH 向导签发的 Token 默认带这两个只读 scope。
 - 只要显式提供了凭证但凭证为非 Bearer、格式错误、未知、过期、已撤销、已删除、所属用户已禁用或 scopes JSON 无效，均在 JSON-RPC 解析前返回 HTTP 401，并带 `WWW-Authenticate: Bearer`；绝不降级为游客，也不消耗游客配额。
 - 认证顺序固定为：方法校验 → Bearer 认证 → JSON-RPC 解析 → 限流 → 分派。MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
+
+### 浏览器授权（OAuth）
+
+`https://aigcnews.cn/api/mcp/oauth` 给支持 MCP 授权规范的客户端用。它与 `/api/mcp` 共用同一套认证、解析、限流、分派与工具（Go `mcpapp.OAuthEntry`），区别只有一处：不收匿名请求。授权服务器在 Python 主后端（`backend/app/services/auth/mcp_oauth.py`、`backend/app/api/routes_mcp_oauth.py`）。
+
+1. 客户端不带令牌请求入口，得到 HTTP 401 和 `WWW-Authenticate: Bearer resource_metadata="https://aigcnews.cn/.well-known/oauth-protected-resource/api/mcp/oauth"`（RFC 9728 §5.1）；带了无效凭证时，头里另有 RFC 6750 的 `error`（令牌无效为 `invalid_token`，凭证格式不对为 `invalid_request`）。
+2. 客户端读受保护资源元数据，再读授权服务器元数据 `/.well-known/oauth-authorization-server`（RFC 8414）。两份 JSON 在 `frontend/public/.well-known/` 下，随前端发布包上两个边缘。只给 `/api/mcp/oauth` 发资源元数据：根路径若也有一份，连匿名 `/api/mcp` 的客户端也会去走登录。
+3. 动态客户端注册 `POST /api/oauth/register`（RFC 7591）。公开客户端（`token_endpoint_auth_method=none`）不发密钥，只靠 PKCE；声明 `client_secret_post` / `client_secret_basic` 时才发密钥，库里只存 SHA-256 摘要。回调地址最多 10 个、每个不超过 2,000 字符，危险 scheme 拒收；本机回环地址匹配时不比端口（RFC 8252 §7.3）。从未完成授权、注册超过 30 天的客户端由注册接口顺手清理。
+4. 浏览器打开授权页 `/oauth/authorize`（前端页面，未登录时页内弹出登录，不走路由守卫，以免丢掉客户端带来的授权参数）。只支持 `response_type=code` + PKCE `S256`；`resource` 可省略，给了就必须是 `https://aigcnews.cn/api/mcp/oauth`（末尾斜杠视为同一资源），否则 `invalid_target`（RFC 8707）。scope 取客户端请求与本站支持的交集，一个都不认识时按默认的两个只读 scope 授予。用户点「同意」后签发授权码：一次性（Redis `GETDEL` 原子消费），5 分钟过期。
+5. 客户端在 `POST /api/oauth/token` 用授权码与 code_verifier 换令牌。令牌就是 `user_mcp_tokens` 里的普通行，另记 `oauth_client_id`（迁移 `0088_mcp_oauth_clients.sql`），Go 侧鉴权查询与手动 Token 完全相同；不设过期，不发 refresh_token。同一用户在同一客户端再次授权时，旧令牌在同一事务里吊销；每用户 20 个活跃令牌的上限照常生效。
+
+限流（均为 10 分钟窗口）：注册每 IP 20 次、全站 200 次；授权预览每用户 60 次、同意或拒绝每用户 30 次；换令牌每 IP 60 次。
+
+已知限制：
+
+- 资源地址与签发方都绑定 `aigcnews.cn`。从备用域名 `aigcradar.online` 接入的客户端，改用手动 Token。
+- 不支持 CIMD（Client ID Metadata Documents）。新版 MCP 授权规范推荐 CIMD、动态注册保留为兼容方式；授权服务器元数据不声明 `client_id_metadata_document_supported`，客户端据此回落到动态注册。
+- 网站页面还没有令牌列表与吊销按钮。吊销走 `DELETE /api/auth/me/mcp-tokens/{token_id}`，或在同一客户端重新授权以替换旧令牌。
 
 npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` 时完全省略 `Authorization` header，因此可直接使用公开 runtime；只有明确配置 Token 时才进入账号渠道，个人收藏等私有能力需要有效 Token。
 

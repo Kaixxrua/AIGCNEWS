@@ -3,7 +3,8 @@ import {
   mcpClientOptions,
   type McpShellId,
 } from '@/features/mcp/mcpClientCatalog'
-import { generateMcpClientCommand } from '@/features/mcp/mcpCommandGenerator'
+import { generateMcpClientCommand, generateMcpOAuthCommand } from '@/features/mcp/mcpCommandGenerator'
+import { MCP_OAUTH_ENDPOINT } from '@/features/mcp/mcpOAuth'
 
 const shells: McpShellId[] = ['powershell', 'cmd', 'bash']
 const endpoint = 'https://example.test/a path/符号?value=$&|;'
@@ -197,5 +198,61 @@ describe('MCP public tokenless configuration contract', () => {
     expect(generateMcpClientCommand(codexOption, endpoint, undefined, 'bash')).toBe(
       `codex mcp remove aigc-news 2>/dev/null; codex mcp add aigc-news --url '${endpoint}'`,
     )
+  })
+})
+
+describe('MCP browser authorization (OAuth) configuration contract', () => {
+  const oauthClients = mcpClientOptions.filter((client) => client.oauth)
+
+  it('offers browser authorization only to clients that run MCP OAuth themselves', () => {
+    expect(oauthClients.map((client) => client.id)).toEqual(['claude-code', 'cursor', 'codex', 'opencode', 'vscode'])
+  })
+
+  it('pins the endpoint to the resource the backend issues OAuth tokens for', () => {
+    expect(MCP_OAUTH_ENDPOINT).toBe('https://aigcnews.cn/api/mcp/oauth')
+  })
+
+  it.each(oauthClients.flatMap((client) => shells.map((shell) => [client, shell] as const)))(
+    'generates a token-free %s command for %s',
+    (client, shell) => {
+      const command = generateMcpOAuthCommand(client, shell)
+      const inspectable = shell === 'cmd' && client.id !== 'codex'
+        ? decodePowerShellCommand(command)
+        : command
+
+      expect(inspectable).toContain('aigc-news')
+      expect(inspectable).toContain(MCP_OAUTH_ENDPOINT)
+      expect(inspectable).not.toContain('Authorization')
+      expect(inspectable).not.toContain('Bearer')
+      expect(inspectable).not.toContain('AIGC_NEWS_MCP_TOKEN')
+      if (client.setupScope === 'import-file') {
+        expect(inspectable).toContain(client.configPath)
+        expect(inspectable).not.toContain('"headers"')
+      }
+    },
+  )
+
+  it('registers Claude Code and then opens the browser login in all three shells', () => {
+    const option = mcpClientOptions[0]!
+    expect(generateMcpOAuthCommand(option, 'bash')).toBe(
+      "claude mcp remove --scope user aigc-news 2>/dev/null; claude mcp add --scope user --transport http aigc-news 'https://aigcnews.cn/api/mcp/oauth' && claude mcp login aigc-news",
+    )
+    const powershell = "$claudeCommand = Get-Command claude.exe, claude.cmd -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $claudeCommand) { throw 'Claude Code executable not found. Install Claude Code and reopen the terminal.' }; & $claudeCommand.Source mcp remove --scope user aigc-news 2>$null; & $claudeCommand.Source mcp add --scope user --transport http aigc-news 'https://aigcnews.cn/api/mcp/oauth'; if ($LASTEXITCODE -eq 0) { & $claudeCommand.Source mcp login aigc-news }"
+    expect(generateMcpOAuthCommand(option, 'powershell')).toBe(powershell)
+    expect(decodePowerShellCommand(generateMcpOAuthCommand(option, 'cmd'))).toBe(powershell)
+  })
+
+  it('lets Codex start the browser authorization from mcp add', () => {
+    const option = mcpClientOptions.find((client) => client.id === 'codex')!
+    expect(generateMcpOAuthCommand(option, 'bash')).toBe(
+      "codex mcp remove aigc-news 2>/dev/null; codex mcp add aigc-news --url 'https://aigcnews.cn/api/mcp/oauth'",
+    )
+  })
+
+  it('turns OpenCode OAuth off everywhere except the browser authorization file', () => {
+    const option = mcpClientOptions.find((client) => client.id === 'opencode')!
+    expect(generateMcpOAuthCommand(option, 'bash')).not.toContain('"oauth":false')
+    expect(generateMcpClientCommand(option, endpoint, sentinelToken, 'bash')).toContain('"oauth":false')
+    expect(generateMcpClientCommand(option, endpoint, undefined, 'bash')).toContain('"oauth":false')
   })
 })

@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import McpSetupWizard from '@/components/mcp/McpSetupWizard.vue'
+import { mcpOAuthSetupMessages } from '@/i18n/locales/mcpOAuthSetup'
 
 const buildConnection = () => ({
   status: ref<'idle' | 'waiting' | 'paused' | 'connected' | 'gone'>('idle'),
@@ -18,9 +19,12 @@ const buildConnection = () => ({
 })
 
 const buildController = () => ({
+  // 既有用例走手动 Token 版；浏览器授权版的用例在文件末尾改 authMode
+  authMode: ref<'oauth' | 'token'>('token'),
+  authModeFor: vi.fn((_client: unknown) => 'token'),
   clientDisplayLabel: vi.fn((client: { id: string }) => client.id),
   clientLabel: ref(''),
-  clientOption: ref({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
+  clientOption: ref<{ id: string; setupScope: string; configPathKey: string; descriptionKey: string; oauth?: boolean }>({ id: 'claude-code', setupScope: 'user', configPathKey: 'mcp.pathClaude', descriptionKey: 'mcp.clients.claude-code.description' }),
   clearTransientCommand: vi.fn(() => { controllerBox.transientCommand.value = '' }),
   connection: buildConnection(),
   copiedKey: ref(''),
@@ -32,10 +36,12 @@ const buildController = () => ({
   endpointWarningKey: ref(''),
   isLoggedIn: ref(true),
   normalizedEndpoint: ref('https://aigcnews.cn/api/mcp'),
+  oauthCommand: ref(''),
   quickCommand: ref(''),
   requestLogin: vi.fn(),
   selectedClient: ref('claude-code'),
   selectedShell: ref('bash'),
+  setAuthMode: vi.fn(),
   setupError: ref(null),
   setupNotice: ref(null),
   startSetup: vi.fn(),
@@ -110,6 +116,7 @@ const i18n = createI18n({
         creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令',
         copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '粘贴给 Agent 自动配置。',
       },
+      ...mcpOAuthSetupMessages['zh-CN'],
     },
   },
   missingWarn: false,
@@ -295,5 +302,57 @@ describe('McpSetupWizard step content', () => {
     await flushPromises()
 
     expect(wrapper.find('.token-connection').exists()).toBe(false)
+  })
+})
+
+describe('McpSetupWizard browser authorization', () => {
+  const useBrowserAuthorization = () => {
+    ctl().authMode.value = 'oauth'
+    ctl().clientOption.value = { ...ctl().clientOption.value, oauth: true }
+  }
+
+  it('lets guests reach the command step and copy it without signing in or creating a token', async () => {
+    useBrowserAuthorization()
+    ctl().isLoggedIn.value = false
+    const wrapper = await mountWizard()
+
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('第 2 步 · 共 3 步')
+    expect(wrapper.text()).toContain('浏览器授权，不用复制 Token')
+    expect(wrapper.text()).toContain('浏览器会打开本站授权页')
+    expect(ctl().requestLogin).not.toHaveBeenCalled()
+    expect(ctl().startSetup).not.toHaveBeenCalled()
+
+    await wrapper.get('[data-wizard-action="copy-oauth"]').trigger('click')
+    expect(ctl().copyGeneratedCommand).toHaveBeenCalledTimes(1)
+    await buttonByText(wrapper, '复制给 Agent 的配置提示词')!.trigger('click')
+    expect(ctl().copyAgentSetupPrompt).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-wizard-action="use-token"]').trigger('click')
+    expect(ctl().setAuthMode).toHaveBeenCalledWith('token')
+  })
+
+  it('offers token generation and a way back to browser authorization in token mode', async () => {
+    ctl().clientOption.value = { ...ctl().clientOption.value, oauth: true }
+    const wrapper = await mountWizard()
+
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(ctl().startSetup).toHaveBeenCalledOnce()
+
+    await wrapper.get('[data-wizard-action="generate"]').trigger('click')
+    expect(ctl().startSetup).toHaveBeenCalledTimes(2)
+    await wrapper.get('[data-wizard-action="use-oauth"]').trigger('click')
+    expect(ctl().setAuthMode).toHaveBeenCalledWith('oauth')
+  })
+
+  it('shows no browser-authorization link for token-only clients', async () => {
+    const wrapper = await mountWizard()
+    await nextButton(wrapper)!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-wizard-action="use-oauth"]').exists()).toBe(false)
+    expect(wrapper.find('[data-wizard-action="use-token"]').exists()).toBe(false)
   })
 })

@@ -86,7 +86,7 @@ const enUS: McpOAuthMessages = {
       favorites: 'Read the projects you have favorited',
       tracking: 'Read your tracked topics and projects',
     },
-    tokenNote: 'The client gets its own token; authorizing the same client again replaces it. You can delete it any time under Token management on the MCP page.',
+    tokenNote: 'The client gets its own token; authorizing the same client again replaces it.',
     approve: 'Allow',
     deny: 'Deny',
     returning: {
@@ -139,7 +139,7 @@ const zhCN: McpOAuthMessages = {
       favorites: '读取你收藏的项目',
       tracking: '读取你的情报追踪',
     },
-    tokenNote: '同意后会给这个客户端签发一枚专属 Token，同一客户端再次授权时替换旧的那枚；可随时在 MCP 接入页的「Token 管理」里删除。',
+    tokenNote: '同意后会给这个客户端签发一枚专属 Token，同一客户端再次授权时替换旧的那枚。',
     approve: '同意',
     deny: '拒绝',
     returning: {

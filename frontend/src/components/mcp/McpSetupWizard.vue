@@ -4,17 +4,23 @@ import { useI18n } from 'vue-i18n'
 import type { McpConnectController } from '@/composables/useMcpConnectController'
 import { mcpClientOptions, mcpShellOptions, mcpWizardStepTitleKeys, type McpClientOption } from '@/features/mcp/mcpClientCatalog'
 import { resolveMcpFeedback } from '@/features/mcp/mcpFeedback'
-import { clientConfigTarget as configTargetOf, setupResultDescription as resultDescriptionOf, setupScopeLabel as scopeLabelOf, setupTargetDescription as targetDescriptionOf } from '@/features/mcp/mcpSetupTarget'
+import { clientConfigTarget as configTargetOf, clientDescription, setupResultDescription as resultDescriptionOf, setupScopeLabel as scopeLabelOf, setupTargetDescription as targetDescriptionOf } from '@/features/mcp/mcpSetupTarget'
+import { installMcpOAuthSetupMessages } from '@/i18n/locales/mcpOAuthSetup'
 import { vIndicator } from '@/motion/indicator'
+import { vMorph } from '@/motion/morph'
+import { vSwap } from '@/motion/swap'
 import McpConnectionStatus from './McpConnectionStatus.vue'
 
 const props = defineProps<{
   controller: McpConnectController
 }>()
 
+installMcpOAuthSetupMessages()
 const { t } = useI18n()
 
 const {
+  authMode,
+  authModeFor,
   clientDisplayLabel,
   clientOption,
   connection,
@@ -29,6 +35,7 @@ const {
   requestLogin,
   selectedClient,
   selectedShell,
+  setAuthMode,
   setupError,
   startSetup,
   testing,
@@ -39,11 +46,11 @@ const {
 } = props.controller
 
 const stepTitleKeys = mcpWizardStepTitleKeys
-const stepDescriptionKeys = [
+const stepDescriptionKeys = computed(() => [
   'mcp.wizard.stepClientDescription',
-  'mcpAutoCommand.description',
+  authMode.value === 'oauth' ? 'mcpOAuthSetup.stepDescription' : 'mcpAutoCommand.description',
   'mcp.wizard.stepVerifyDescription',
-] as const
+] as const)
 
 const currentStep = ref(0)
 // 步骤面板沿前进方向滑入：往后退时从左边进来。
@@ -54,10 +61,10 @@ const isLast = computed(() => currentStep.value === stepTitleKeys.length - 1)
 
 const shellOptions = mcpShellOptions
 const clientOptions = mcpClientOptions
-const setupScopeLabel = computed(() => scopeLabelOf(clientOption.value, t))
+const setupScopeLabel = computed(() => scopeLabelOf(clientOption.value, t, authMode.value))
 const clientConfigTarget = (option: McpClientOption) => configTargetOf(option, t)
-const setupTargetDescription = computed(() => targetDescriptionOf(clientOption.value, selectedShell.value, t))
-const setupResultDescription = computed(() => resultDescriptionOf(clientOption.value, t))
+const setupTargetDescription = computed(() => targetDescriptionOf(clientOption.value, selectedShell.value, t, authMode.value))
+const setupResultDescription = computed(() => resultDescriptionOf(clientOption.value, t, authMode.value))
 const setupErrorDisplay = computed(() => resolveMcpFeedback(setupError.value, t))
 const testMessageDisplay = computed(() => resolveMcpFeedback(testMessage.value, t))
 const endpointWarning = computed(() => endpointWarningKey.value ? t(endpointWarningKey.value) : '')
@@ -77,16 +84,16 @@ const scrollToWizardTop = async () => {
 
 const goTo = async (index: number) => {
   if (index === currentStep.value) return
-  // 游客可自由浏览第 1 步并选择客户端/终端；前进到命令与验证步须先登录
-  // （收藏 Token 在登录后才可签发）。返回已看过的步骤不受限。
-  if (index > currentStep.value && !isLoggedIn.value) {
+  // 游客可自由浏览第 1 步并选择客户端/终端；浏览器授权版命令里没有 Token，游客也能往后走，到授权页再登录。
+  // 手动 Token 版前进到命令与验证步须先登录（Token 在登录后才可签发）。返回已看过的步骤不受限。
+  if (index > currentStep.value && authMode.value === 'token' && !isLoggedIn.value) {
     await requestLogin()
     return
   }
   stepDir.value = index > currentStep.value ? 1 : -1
   currentStep.value = index
   await scrollToWizardTop()
-  if (index === 1 && !transientCommand.value && !creating.value && !endpointWarningKey.value) {
+  if (index === 1 && authMode.value === 'token' && !transientCommand.value && !creating.value && !endpointWarningKey.value) {
     void startSetup()
   }
 }
@@ -121,16 +128,16 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           <div class="mcp-client-list">
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcp.chooseClient') }}</p>
           <div v-indicator="{ active: '.mcp-choice--active', mark: false, pop: true }" class="mcp-client-grid mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <button v-for="client in clientOptions" :key="client.id" type="button" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" :aria-pressed="selectedClient === client.id" :title="t(client.descriptionKey)" @click="selectedClient = client.id">
+            <button v-for="client in clientOptions" :key="client.id" type="button" class="mcp-choice rounded-[18px] border p-3 text-left" :class="selectedClient === client.id ? 'mcp-choice--active' : 'border-stone-200 bg-card'" :aria-pressed="selectedClient === client.id" :title="clientDescription(client, t, authModeFor(client))" @click="selectedClient = client.id">
               <span class="text-sm font-semibold text-stone-800">{{ clientDisplayLabel(client) }}</span>
-              <span class="mcp-client-caption text-stone-500">{{ t(client.descriptionKey) }}</span>
+              <span class="mcp-client-caption text-stone-500">{{ clientDescription(client, t, authModeFor(client)) }}</span>
             </button>
           </div>
           </div>
           <div class="mcp-client-settings">
           <div class="mcp-client-detail mt-3 rounded-xl border border-stone-200 p-3" aria-live="polite">
             <span class="text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span>
-            <p class="mt-1 text-xs leading-5 text-stone-500">{{ t(clientOption.descriptionKey) }}</p>
+            <p class="mt-1 text-xs leading-5 text-stone-500">{{ clientDescription(clientOption, t, authMode) }}</p>
           </div>
           <div class="mcp-terminal">
           <p class="mt-5 text-sm font-semibold text-stone-700">{{ t('mcp.terminal') }}</p>
@@ -139,10 +146,19 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
           </div>
         </div>
 
-        <div v-else-if="currentStep === 1" class="mcp-command-panel">
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t('mcpAutoCommand.label') }}</p>
+        <div v-else-if="currentStep === 1" v-morph="authMode" v-swap="{ key: authMode, y: 8 }" class="mcp-command-panel">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-stone-400">{{ t(authMode === 'oauth' ? 'mcpOAuthSetup.title' : 'mcpAutoCommand.label') }}</p>
           <div class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4"><div class="flex flex-wrap items-center gap-2"><span class="rounded-full bg-stone-100 px-2.5 py-1 text-2xs font-semibold text-stone-600">{{ setupScopeLabel }}</span><span class="text-xs font-semibold text-stone-700">{{ clientConfigTarget(clientOption) }}</span></div><p class="mt-2 text-xs leading-5 text-stone-500">{{ setupTargetDescription }}</p></div>
-          <div v-if="creating" class="mt-4 rounded-2xl bg-stone-50 px-4 py-3 text-xs text-stone-600">{{ t('mcpAutoCommand.creating') }}</div>
+          <div v-if="authMode === 'oauth'" class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4">
+            <p class="text-xs leading-5 text-stone-600">{{ setupResultDescription }}</p>
+            <div class="mcp-command-actions mt-3 grid gap-2 sm:grid-cols-2">
+              <button type="button" class="btn-primary w-full justify-center text-xs" data-wizard-action="copy-oauth" @click="copyGeneratedCommand">{{ t(copiedKey === 'command' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copy') }}</button>
+              <button type="button" class="btn-secondary w-full justify-center text-xs" @click="copyAgentSetupPrompt">{{ t(copiedKey === 'agent-prompt' ? 'mcp.copiedClipboard' : 'mcpAutoCommand.copyAgentPrompt') }}</button>
+            </div>
+            <p class="mt-2 text-2xs leading-4 text-stone-500">{{ t('mcpOAuthSetup.agentPromptHint') }}</p>
+            <p v-if="setupErrorDisplay" class="mt-2 text-xs text-rose-700">{{ setupErrorDisplay }}</p>
+          </div>
+          <div v-else-if="creating" class="mt-4 rounded-2xl bg-stone-50 px-4 py-3 text-xs text-stone-600">{{ t('mcpAutoCommand.creating') }}</div>
           <div v-else-if="transientCommand" class="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
             <p class="text-sm font-semibold text-amber-900">{{ t('mcpAutoCommand.ready') }}</p>
             <p class="mt-1 text-xs font-semibold leading-5 text-amber-800">{{ t('mcp.bearerWarningDetail') }}</p>
@@ -155,6 +171,12 @@ const goNext = () => goTo(Math.min(stepTitleKeys.length - 1, currentStep.value +
             <McpConnectionStatus class="mt-3" :connection="connection" :client="clientDisplayLabel(clientOption)" />
           </div>
           <div v-else-if="setupErrorDisplay" class="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-xs text-rose-700"><p>{{ setupErrorDisplay }}</p><button type="button" class="mt-2 underline" @click="startSetup">{{ t('common.retry') }}</button></div>
+          <div v-else class="mt-4 rounded-2xl border border-stone-200 bg-card/75 p-4">
+            <button v-if="isLoggedIn" type="button" class="btn-primary w-full justify-center text-xs" data-wizard-action="generate" @click="startSetup">{{ t('mcp.desk.generate') }}</button>
+            <button v-else type="button" class="btn-primary w-full justify-center text-xs" @click="requestLogin">{{ t('mcp.desk.loginToCopy') }}</button>
+            <p class="mt-2 text-2xs leading-4 text-stone-500">{{ t(isLoggedIn ? 'mcp.desk.generateHint' : 'mcp.desk.guestHint') }}</p>
+          </div>
+          <button v-if="clientOption.oauth" type="button" class="mcp-auth-switch mt-3 self-start text-xs font-semibold text-stone-700 underline decoration-dashed underline-offset-4" :data-wizard-action="authMode === 'oauth' ? 'use-token' : 'use-oauth'" @click="setAuthMode(authMode === 'oauth' ? 'token' : 'oauth')">{{ t(authMode === 'oauth' ? 'mcpOAuthSetup.useToken' : 'mcpOAuthSetup.useOAuth') }}</button>
         </div>
 
         <div v-else-if="currentStep === 2" class="mcp-verify-panel">
