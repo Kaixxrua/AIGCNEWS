@@ -9,6 +9,7 @@ import tailwindcss from 'tailwindcss'
 import { compile as compileTailwind4 } from 'tailwindcss4'
 import { buildQualityPreview } from './quality-previews.mjs'
 import { buildOriginalPreview } from './original-react-previews.mjs'
+import { buildHtmlPreview } from './original-html-previews.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const data = process.env.UI_LIBRARY_DATA_ROOT
@@ -81,6 +82,7 @@ for (const item of items) {
   if (item.preview_package && Object.keys(item.preview_files ?? {}).length) continue
   if (await buildQualityPreview(item, data, output, root)) continue
   if (await buildOriginalPreview(item, data, output, root)) continue
+  if (await buildHtmlPreview(item, data, output, root)) continue
   const source = resolve(data, item.files[0].path)
   if (item.provider_id === 'galaxy') {
     const original = await readFile(source, 'utf8')

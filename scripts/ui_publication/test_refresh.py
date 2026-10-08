@@ -15,6 +15,13 @@ def item(item_id, provider='neobrutalism', files=(('a.tsx', '1'),)):
 
 
 class SelectionTests(unittest.TestCase):
+    def test_html_examples_in_one_document_are_distinct_but_aliases_are_not(self):
+        one, two, alias = [item(name, files=(('example.html', digest), ('docs.mdx', 'shared')))
+                           for name, digest in (('html-one', 'a'), ('html-two', 'b'), ('html-alias', 'a'))]
+        fresh, skipped = refresh.select_new([one, two, alias], catalog_ids=set(), known=set(), blocked=set(), held={})
+        self.assertEqual([row['id'] for row in fresh], ['html-one', 'html-two'])
+        self.assertEqual(skipped[0]['reason'], 'duplicate_source')
+
     def test_only_new_unrejected_ids_are_selected(self):
         held_item = item('neobrutalism-held')
         items = [item('neobrutalism-card'), item('neobrutalism-new'), item('neobrutalism-rejected'),

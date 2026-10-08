@@ -53,6 +53,7 @@ FAMILIES = {
     'import_batch_json_registry_sources': 'packages',
     'import_batch_directory_sources': 'packages',
     'import_batch4_demo_sources': 'versions',
+    'import_batch_html_sources': 'packages',
 }
 # Withdrawn by the operator on 2026-09-11 (3447 ids); never auto-publish again.
 WITHDRAWN_PROVIDERS = ('hyperui', 'galaxy', 'uiverse')
