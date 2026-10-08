@@ -194,10 +194,10 @@
    Every page draws them at the content pages' concept size (corner 250px, shout 330px, peel 400px). */
 @media (min-width: 1280px) {
   /* The shout is a hole torn from the masthead's top edge, a grid item in the third column beside the
-     account menu; a narrower column shrinks it, still hanging from the top edge. */
+     account menu; both reserve the same account width so the art cannot overlap the avatar. */
   #app .app-shell--editorial .app-masthead .comic-masthead-creation {
     display:block;position:relative;grid-column:3;grid-row:1;justify-self:end;align-self:start;
-    width:min(calc(100% - 80px),330px);aspect-ratio:1101/324;margin:0 112px 0 0;
+    width:min(calc(100% - var(--masthead-account-width)),330px);aspect-ratio:1101/324;margin:0 var(--masthead-account-width) 0 0;
   }
 }
 @media (min-width: 1500px) {
@@ -262,13 +262,13 @@
   #app .app-shell--editorial .app-masthead .masthead-user { width: 140px; }
 }
 /* From 1280px every page has the content pages' masthead (their concepts are drawn at 1536×1024): a smaller
-   tagline and a slim account column, leaving the shout its full size, and from 1500px, where the corner
+   tagline and room for the avatar and account text, and from 1500px, where the corner
    appears, the date line clear of it. */
 @media (min-width: 1280px) {
-  #app .app-shell--editorial .main-canvas--editorial .app-masthead { grid-template-columns: minmax(200px,1fr) auto minmax(200px,1.2fr); }
+  #app .app-shell--editorial .main-canvas--editorial .app-masthead { --masthead-account-width:160px;grid-template-columns: minmax(200px,1fr) auto minmax(200px,1.2fr); }
   #app .app-shell--editorial .app-masthead__tools { grid-template-columns: auto 248px; column-gap: 14px; }
   #app .app-shell--editorial .masthead-tagline { padding-inline: 12px; font-size: 19px; }
-  #app .app-shell--editorial .app-masthead .masthead-user { width: 112px; max-width: 112px; gap: 9px; padding-left: 12px; }
+  #app .app-shell--editorial .app-masthead .masthead-user { width: var(--masthead-account-width); max-width: 100%; gap: 9px; padding-left: 12px; }
   #app .app-shell--editorial .masthead-meta { font-size: 13.5px; }
 }
 @media (min-width: 1500px) {
