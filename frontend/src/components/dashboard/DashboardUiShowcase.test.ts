@@ -1,5 +1,5 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
-import { computed, nextTick, ref } from 'vue'
+import { computed, h, KeepAlive, nextTick, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,21 +22,25 @@ const template = (id: string, overrides = {}) => ({ id, clip_url: `/clips/${id}.
 const first = template('eui-shader-worlds')
 const second = template('threeui-liquidformbackground')
 const third = template('eui-fluid-studio')
+const plugins = () => [
+  createI18n({ legacy: false, locale: 'zh', messages: { zh: { dashboard: { editorial: { inspiration: 'UI 灵感库', explore: '探索更多' } } } } }),
+  createRouter({ history: createMemoryHistory(), routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/ui-library/:id?', name: 'ui-library', component: { template: '<div />' } },
+  ] }),
+]
 function showcase(items = [first, second, third]) {
   return mount(DashboardUiShowcase, {
     props: { items },
-    global: {
-      plugins: [
-        createI18n({ legacy: false, locale: 'zh', messages: { zh: { dashboard: { editorial: { inspiration: 'UI 灵感库', explore: '探索更多' } } } } }),
-        createRouter({ history: createMemoryHistory(), routes: [{ path: '/ui-library/:id?', name: 'ui-library', component: { template: '<div />' } }] }),
-      ],
-    },
+    global: { plugins: plugins() },
   })
 }
 
 describe('homepage UI showcase', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    localStorage.clear()
     visible.value = true
     visibility.value = 'visible'
     motion.value = 'no-preference'
@@ -44,7 +48,7 @@ describe('homepage UI showcase', () => {
     vi.mocked(useDocumentVisibility).mockReturnValue(visibility)
     vi.mocked(usePreferredReducedMotion).mockReturnValue(computed(() => motion.value))
   })
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
   it('shows only curated works with both media assets, in the chosen order', () => {
     const wrapper = showcase([template('ordinary-checkbox'), second, template(third.id, { clip_url: '' }), first])
@@ -55,51 +59,59 @@ describe('homepage UI showcase', () => {
     expect(wrapper.get('.ui-inspiration__heading').attributes('href')).toBe('/ui-library')
   })
 
-  it('rotates every eight seconds, wraps, and keeps the title, media and destination together', async () => {
+  it('keeps the entry selection until manually changed and keeps its title, media and destination together', async () => {
     const wrapper = showcase([first, second])
-    await vi.advanceTimersByTimeAsync(7999)
+    await vi.advanceTimersByTimeAsync(60000)
     expect(wrapper.get('video').attributes('src')).toBe(first.clip_url)
-    await vi.advanceTimersByTimeAsync(1)
+    await wrapper.get('button[aria-label="下一个模板"]').trigger('click')
     expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
     expect(wrapper.get('.ui-inspiration__art').attributes('href')).toBe(`/ui-library/${second.id}`)
     expect(wrapper.get('.ui-inspiration__caption').text()).toContain('液态金属')
-    await vi.advanceTimersByTimeAsync(8000)
+    await wrapper.get('button[aria-label="下一个模板"]').trigger('click')
     expect(wrapper.get('video').attributes('src')).toBe(first.clip_url)
     await wrapper.get('button[aria-label="上一个模板"]').trigger('click')
     expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
   })
 
-  it('holds the selected work while hovered or focused, then resumes with a full interval', async () => {
-    const wrapper = showcase()
-    await wrapper.trigger('mouseenter')
-    await vi.advanceTimersByTimeAsync(16000)
+  it('randomly selects a template on entry and avoids the previous selection after a reload', () => {
+    vi.mocked(Math.random).mockReturnValue(0.75)
+    const initial = showcase()
+    expect(initial.get('video').attributes('src')).toBe(third.clip_url)
+    expect(initial.get('.ui-inspiration__art').attributes('href')).toBe(`/ui-library/${third.id}`)
+    initial.unmount()
+    const reloaded = showcase()
+    expect(reloaded.get('video').attributes('src')).toBe(second.clip_url)
+  })
+
+  it('selects again when returning to the cached homepage, without selecting twice on initial mount', async () => {
+    const home = ref(true)
+    const wrapper = mount(() => h(KeepAlive, null, {
+      default: () => home.value ? h(DashboardUiShowcase, { items: [first, second, third] }) : h('div'),
+    }), { global: { plugins: plugins() } })
     expect(wrapper.get('video').attributes('src')).toBe(first.clip_url)
-    await wrapper.trigger('mouseleave')
-    await wrapper.trigger('focusin')
-    await vi.advanceTimersByTimeAsync(16000)
-    expect(wrapper.get('video').attributes('src')).toBe(first.clip_url)
-    await wrapper.trigger('focusout', { relatedTarget: wrapper.get('button').element })
-    await vi.advanceTimersByTimeAsync(8000)
-    expect(wrapper.get('video').attributes('src')).toBe(first.clip_url)
-    await wrapper.trigger('focusout', { relatedTarget: null })
-    await vi.advanceTimersByTimeAsync(8000)
+    const original = wrapper.get('.ui-inspiration').element
+    home.value = false
+    await nextTick()
+    home.value = true
+    await nextTick()
+    expect(wrapper.get('.ui-inspiration').element).toBe(original)
     expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
   })
 
   it('lets visitors pause motion and manually choose another template', async () => {
     const wrapper = showcase()
-    await wrapper.get('button[aria-label="暂停轮换"]').trigger('click')
+    await wrapper.get('button[aria-label="暂停动效"]').trigger('click')
     await vi.advanceTimersByTimeAsync(16000)
     expect(wrapper.find('video').exists()).toBe(false)
     expect(wrapper.get('img').attributes('src')).toBe(first.poster_url)
     await wrapper.get('button[aria-label="下一个模板"]').trigger('click')
     expect(wrapper.get('img').attributes('src')).toBe(second.poster_url)
-    await wrapper.get('button[aria-label="开始轮换"]').trigger('click')
+    await wrapper.get('button[aria-label="播放动效"]').trigger('click')
     await vi.advanceTimersByTimeAsync(8000)
-    expect(wrapper.get('video').attributes('src')).toBe(third.clip_url)
+    expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
   })
 
-  it.each(['viewport', 'document', 'reduced motion'])('stops automatic media and rotation for %s', async reason => {
+  it.each(['viewport', 'document', 'reduced motion'])('stops automatic media for %s without changing the selection', async reason => {
     const wrapper = showcase()
     if (reason === 'viewport') visible.value = false
     if (reason === 'document') visibility.value = 'hidden'
@@ -109,7 +121,7 @@ describe('homepage UI showcase', () => {
     expect(wrapper.find('video').exists()).toBe(false)
     expect(wrapper.get('img').attributes('src')).toBe(first.poster_url)
     if (reason === 'reduced motion') {
-      expect(wrapper.find('button[aria-label="开始轮换"]').exists()).toBe(false)
+      expect(wrapper.find('button[aria-label="播放动效"]').exists()).toBe(false)
       await wrapper.get('button[aria-label="下一个模板"]').trigger('click')
       expect(wrapper.get('img').attributes('src')).toBe(second.poster_url)
     }
@@ -129,13 +141,26 @@ describe('homepage UI showcase', () => {
     expect(wrapper.find('button').exists()).toBe(false)
   })
 
-  it('handles unavailable selections and cancels its timer when unmounted', async () => {
+  it('waits for the catalog, then preserves the random selection across catalog refreshes', async () => {
+    vi.mocked(Math.random).mockReturnValue(0.75)
     const wrapper = showcase([])
     expect(wrapper.find('.ui-inspiration__fallback').exists()).toBe(true)
-    expect(vi.getTimerCount()).toBe(0)
     await wrapper.setProps({ items: [first, second] })
-    expect(vi.getTimerCount()).toBe(1)
-    wrapper.unmount()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
+    await wrapper.setProps({ items: [first, second, third] })
+    expect(wrapper.get('video').attributes('src')).toBe(second.clip_url)
+  })
+
+  it('still displays a lone available template on repeated visits', () => {
+    const initial = showcase([first])
+    initial.unmount()
+    expect(showcase([first]).get('video').attributes('src')).toBe(first.clip_url)
+  })
+
+  it('still chooses a template when browser storage is blocked', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.mocked(Math.random).mockReturnValue(0.75)
+    expect(showcase().get('video').attributes('src')).toBe(third.clip_url)
   })
 })
