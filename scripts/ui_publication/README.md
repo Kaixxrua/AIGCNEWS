@@ -6,6 +6,8 @@ Windows 计划任务 `AIGCNEWS-UI-Publication` 随 2026-09-14 部署机迁到 Li
 
 覆盖范围：`import_batch_registry_sources`、`import_batch_json_registry_sources`、`import_batch_directory_sources`、`import_batch4_demo_sources` 四族登记的全部固定来源（8bitcn、HextaUI、Serenity、Intent UI、Shadcn Space、Eldora UI、Neobrutalism、systaliko、uitripled、Fancy、Jolly、Motion Primitives、Animata、Tailark、ThreeUI、UI Layouts、SyntaxUI、Tremor Blocks、Launch UI、visx、Base UI）。新增来源只需在对应导入脚本登记固定 commit 与许可证 SHA-256。
 
+2026-10-08 新增 Blocks.so、beUI、Sera UI、Shadcn UI Blocks、ShadcnStore、ReUI 六个来源，沿用上述每日检查与自动发布流程；详细筛选范围、暂缓来源及首轮验收见 [扩充记录](../../docs/ui-source-expansion-2026-10-08.md)。只枚举完整区块或官方组合示例，内部 Logo/菜单片段不独立入库；同一设计的 Radix/Base UI 或 Next/Vite 副本只选择一种。
+
 每轮流程：
 
 1. `git ls-remote` 取上游 HEAD；与上次检查一致则跳过。浅克隆固定 commit，不执行任何 npm 脚本。

@@ -223,16 +223,127 @@ SOURCES = {
         "reviewed_allow_files": {"config/site.ts", "components/sections/faq/default.tsx"},
         "demo_base": "https://www.launchuicomponents.com/",
     },
+    # Reviewed 2026-10-08: original, permissively licensed public demos/blocks.
+    # Network/media/dependency and real-browser gates still apply to every item.
+    "blocks-so": {
+        "repository": "ephraimduncan/blocks",
+        "revision": "3f759d5171c2391253ec4c772e9e5b3db2bc7c7f",
+        "license_source": "LICENSE.md",
+        "license_sha256": "2c3b49c0a1b827fbf29bcceff0a8fe4f456e104ca98da5b20843388bac5956fe",
+        "provider": "Blocks.so",
+        "alias_root": "",
+        "css": "app/globals.css",
+        "glob": "content/components/*/*.tsx",
+        # Quoted grid-area utilities are not preserved by the current preview
+        # compiler; this composer overlaps its controls in the captured preview.
+        "exclude": [r"/ai-01\.tsx$"],
+        "slug": "filename",
+        "category": "block",
+        "kind": "block",
+        "preview_fill": True,
+        "demo_base": "https://blocks.so/",
+    },
+    "beui": {
+        "repository": "starc007/ui-components",
+        "revision": "9deb728d936b5f89c859ab6c1f169235aa24b3ad",
+        "license_source": "LICENSE",
+        "license_sha256": "9e27b491d5691a1bd95708e79de23beb2962f33fe6c1ee31ab639f43009a0b20",
+        "provider": "beUI",
+        "checkout": "motion-components",
+        "alias_root": "",
+        "css": "app/globals.css",
+        "glob": "components/previews/*/*.preview.tsx",
+        # Only the public motion/chart demos; paid agent/block offerings stay out.
+        "exclude": [r"/previews/(?!(?:motion|charts)/)", r"/preview-rail\.preview\.tsx$"],
+        "slug": "filename",
+        "slug_suffix": ".preview",
+        "demo_base": "https://beui.dev/",
+    },
+    "seraui": {
+        "repository": "seraui/seraui",
+        "revision": "52dcbaddeb13a58675717f14a9801e7272344eb2",
+        "license_source": "LICENSE",
+        "license_sha256": "b9fe69d2c1cc330017518d787ea26a80567da9d42c5b030b8e2e589bdaf59c8c",
+        "provider": "Sera UI",
+        "alias_root": "src",
+        "css": "src/app/globals.css",
+        # Composed official examples, including their original demo content.
+        "glob": "src/app/docs/**/*view*.tsx",
+        # Fixed-width text clips, the spotlight demo has unreadable contrast,
+        # and the marquee embeds third-party brand glyphs without separate evidence.
+        "exclude": [r"/(?:curved-text|spotlightcard|marquee)-view\.tsx$"],
+        "slug": "filename",
+        "demo_base": "https://seraui.com/",
+    },
+    "akash-blocks": {
+        "repository": "akash3444/shadcn-ui-blocks",
+        "revision": "73a69e9e458ed3633897445f6588f8a001f43f29",
+        "license_source": "LICENSE",
+        "license_sha256": "6ca4fb00eedefee9f5b3b6b2cd0466c9ec1a45db92680c4272cbd66b16cad7c7",
+        "provider": "Shadcn UI Blocks",
+        "alias_root": "src",
+        "css": "src/app/globals.css",
+        # Radix only: the Base UI copy would duplicate the same templates.
+        "glob": "src/registry/blocks/radix/*/components/*.tsx",
+        # <family>-<variant>/components/<family>.tsx is the complete block;
+        # logos, menus and other helpers remain in its dependency closure only.
+        "include": [r"/radix/([a-z-]+)-\d+/components/\1\.tsx$"],
+        # Brand glyphs need their own evidence; the empty-state tabs also need
+        # shadcn's custom orientation variants, unavailable in this renderer.
+        "exclude": [r"/logo-cloud-\d+/", r"/empty-state-03/"],
+        "slug": "relative_path",
+        "slug_base": "src/registry/blocks/radix",
+        "category": "block",
+        "kind": "block",
+        "preview_fill": True,
+        # Reviewed: static site attribution URLs only; no requests or rendered media.
+        "reviewed_allow_files": {"src/config.ts"},
+        "demo_base": "https://shadcnui-blocks.com/",
+    },
+    "shadcnstore": {
+        "repository": "shadcnstore/shadcn-dashboard-landing-template",
+        "revision": "65fc11224e96d56a62e224a58f7ed590aea5ac24",
+        "license_source": "License.md",
+        "license_sha256": "2b8ea9b26bf945b4e343ac6865e72549b41844c20eaa1c4177f40301ad1b7ba8",
+        "provider": "ShadcnStore",
+        "alias_root": "nextjs-version/src",
+        "css": "nextjs-version/src/app/globals.css",
+        # The Vite version duplicates these sections.
+        "glob": "nextjs-version/src/app/landing/components/*.tsx",
+        "exclude": [r"/logo-carousel\.tsx$"],
+        "slug": "filename",
+        "category": "block",
+        "kind": "block",
+        "preview_fill": True,
+        "demo_base": "https://shadcnstore.com/",
+    },
+    "reui": {
+        "repository": "keenthemes/reui",
+        "revision": "ef0fe1252d9b24d69bdedee48a69ec9b29d1f217",
+        "license_source": "LICENSE.md",
+        "license_sha256": "09592ffefa6512b68dd7aa9031bc50d5d39cfcc9da08288f5eb1f9d236baca66",
+        "provider": "ReUI",
+        "alias_root": "",
+        "css": "styles/globals.css",
+        "glob": "registry-reui/bases/radix/components/*/*.tsx",
+        # Business interactions; avoid hundreds of primitive/alternate-base copies.
+        "exclude": [r"/components/(?!(?:timeline|stepper|sortable|event-calendar|file-upload|kanban|gantt|tree|filters|rating|signature-pad|questionnaire|scrollspy|date-selector|time-picker|number-field)/)"],
+        "slug": "filename",
+        "demo_base": "https://reui.io/",
+    },
 }
 
 
 def candidates(source: dict, root: Path) -> list[tuple[str, str]]:
     """(slug, repo-relative entry path) pairs from the source's convention."""
     excludes = [re.compile(pattern) for pattern in source.get("exclude", [])]
+    includes = [re.compile(pattern) for pattern in source.get("include", [])]
     seen: set[str] = set()
     pairs: list[tuple[str, str]] = []
     for path in sorted(root.glob(source["glob"])):
         relative = path.relative_to(root).as_posix()
+        if includes and not any(pattern.search(relative) for pattern in includes):
+            continue
         if any(pattern.search(relative) for pattern in excludes):
             continue
         mode = source["slug"]
@@ -246,6 +357,10 @@ def candidates(source: dict, root: Path) -> list[tuple[str, str]]:
                 slug = path.stem
             else:
                 slug = path.parent.name if path.stem.lower() == "index" else f"{path.parent.name}-{path.stem}"
+        elif mode == "relative_path":
+            # Preserve the block/variant directories even when every entry is
+            # named components/pricing.tsx. Adding a sibling cannot rename IDs.
+            slug = path.relative_to(root / source["slug_base"]).with_suffix("").as_posix().replace("/", "-")
         elif mode == "tailark_block":
             parts = relative.split("/")
             # registry/bases/base/<kit>/blocks/<category>/<variant>[.tsx|/index.tsx]
@@ -254,7 +369,7 @@ def candidates(source: dict, root: Path) -> list[tuple[str, str]]:
             slug = f"{kit}-{category}-{variant}"
         else:
             raise ValueError(f"unknown slug mode {mode}")
-        slug = slug.lower().replace("_", "-")
+        slug = slug.removesuffix(source.get("slug_suffix", "")).lower().replace("_", "-")
         if slug in seen:
             # keep ids unique when different folders reuse a demo filename
             parent = path.parent.name.lower().replace("_", "-")
@@ -311,6 +426,10 @@ def import_provider(provider_id: str, upstreams: Path, previous: dict, available
                 export_name=export_name,
                 preview_root=source["alias_root"] or None,
                 preview_package_dirs=source.get("package_dirs"))
+            if "kind" in source:
+                item["kind"] = source["kind"]
+            if source.get("preview_fill"):
+                item["preview_fill"] = True
             additions.append(item)
             stats["imported"] += 1
         except (Reject, ValueError) as error:

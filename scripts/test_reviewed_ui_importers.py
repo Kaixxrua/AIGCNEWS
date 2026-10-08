@@ -2,18 +2,19 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
-
-from scripts import import_reviewed_ui_sources as reviewed
 
 import import_batch4_demo_sources as batch4
 import import_batch_directory_sources as batch_directory
 import import_batch_json_registry_sources as batch_json
 import import_batch_registry_sources as batch_registry
 import ui_import_common as common
+
+from scripts import import_reviewed_ui_sources as reviewed
 
 
 class ReviewedUiImportersTest(unittest.TestCase):
@@ -133,6 +134,76 @@ class Batch4CandidateDiscoveryTest(unittest.TestCase):
                      "docs/src/app/(docs)/react/components/navigation-menu/demos/nested-inline/tailwind/index.tsx"),
                 ],
             )
+
+
+class DirectoryCandidateDiscoveryTest(unittest.TestCase):
+    def test_nested_block_ids_stay_stable_when_a_sibling_is_added(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = {"glob": "blocks/*/components/*.tsx", "slug": "relative_path", "slug_base": "blocks"}
+            first = root / "blocks/pricing-02/components/pricing.tsx"
+            first.parent.mkdir(parents=True)
+            first.touch()
+            before = batch_directory.candidates(source, root)
+            earlier = root / "blocks/pricing-01/components/pricing.tsx"
+            earlier.parent.mkdir(parents=True)
+            earlier.touch()
+            after = batch_directory.candidates(source, root)
+            self.assertEqual(before, [("pricing-02-components-pricing", "blocks/pricing-02/components/pricing.tsx")])
+            self.assertIn(before[0], after)
+            self.assertEqual(len({slug for slug, _ in after}), 2)
+
+    def test_beui_only_discovers_public_motion_and_chart_previews(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative in (
+                "motion/text-shimmer.preview.tsx", "motion/text-shimmer.usage.tsx",
+                "charts/funnel-chart.preview.tsx", "agents/agent-trace.preview.tsx",
+                "blocks/pricing.preview.tsx", "future-paid/demo.preview.tsx",
+            ):
+                path = root / "components/previews" / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            self.assertEqual(batch_directory.candidates(batch_directory.SOURCES["beui"], root), [
+                ("funnel-chart", "components/previews/charts/funnel-chart.preview.tsx"),
+                ("text-shimmer", "components/previews/motion/text-shimmer.preview.tsx"),
+            ])
+
+    def test_akash_discovers_complete_radix_blocks_without_helpers_or_base_copies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for relative in (
+                "radix/hero-03/components/hero.tsx", "radix/hero-03/components/logo.tsx",
+                "radix/hero-03/components/navbar.tsx", "radix/navbar-01/components/navbar.tsx",
+                "radix/navbar-01/components/nav-menu.tsx", "base/hero-03/components/hero.tsx",
+            ):
+                path = root / "src/registry/blocks" / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            self.assertEqual(batch_directory.candidates(batch_directory.SOURCES["akash-blocks"], root), [
+                ("hero-03-components-hero", "src/registry/blocks/radix/hero-03/components/hero.tsx"),
+                ("navbar-01-components-navbar", "src/registry/blocks/radix/navbar-01/components/navbar.tsx"),
+            ])
+
+    def test_block_import_preserves_original_source_and_preview_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            upstream = root / "upstreams/blocks-so"
+            entry = upstream / "content/components/pricing/pricing-01.tsx"
+            entry.parent.mkdir(parents=True)
+            original = b'export default function Pricing() { return <section>Plans</section> }\n'
+            entry.write_bytes(original)
+            (upstream / "app").mkdir()
+            (upstream / "app/globals.css").write_text(":root { --background: white; }")
+            (upstream / "LICENSE.md").write_text("fixture license")
+            with patch.object(common, "DATA", root / "data"), patch.object(batch_directory, "checked_checkout"):
+                items = batch_directory.import_provider("blocks-so", root / "upstreams", {}, set(), None, {})
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0]["kind"], "block")
+            self.assertTrue(items[0]["preview_fill"])
+            self.assertEqual(items[0]["export_name"], "default")
+            stored = next(f for f in items[0]["files"] if f["name"].endswith(".tsx"))
+            self.assertEqual((root / "data" / stored["path"]).read_bytes(), original)
 
 
 class CommonGuardsTest(unittest.TestCase):
