@@ -64,7 +64,7 @@ it('covers every public section in both languages and removes disabled sections'
 })
 
 it('keeps the card in the viewport and away from a small highlighted control', () => {
-  for (const [width, height] of [[1024, 640], [1440, 900], [2560, 1440]] as const) {
+  for (const [width, height] of [[320, 568], [390, 664], [1024, 640], [1440, 900], [2560, 1440]] as const) {
     const target = { left: width - 100, top: height - 80, width: 64, height: 32 }
     const box = placeCard(target, { width: 432, height: 340 }, width!, height!)
     expect(box.left).toBeGreaterThanOrEqual(16)
@@ -74,4 +74,21 @@ it('keeps the card in the viewport and away from a small highlighted control', (
     expect(box.top + box.height <= target.top || box.left + box.width <= target.left).toBe(true)
   }
   expect(spotlightBox({ left: -100, top: -100, width: 10, height: 10 }, 1024, 640)).toBeNull()
+})
+
+it('keeps mobile cards inside portrait and landscape safe areas', () => {
+  for (const [width, height, insets] of [
+    [390, 844, { top: 47, right: 16, bottom: 34, left: 16 }],
+    [667, 375, { top: 16, right: 44, bottom: 21, left: 44 }],
+  ] as const) {
+    const card = placeCard(null, { width: 432, height: 500 }, width, height, insets)
+    expect(card.left).toBeGreaterThanOrEqual(insets.left)
+    expect(card.top).toBeGreaterThanOrEqual(insets.top)
+    expect(card.left + card.width).toBeLessThanOrEqual(width - insets.right)
+    expect(card.top + card.height).toBeLessThanOrEqual(height - insets.bottom)
+  }
+  for (const step of availableSteps({ x: true, contact: true }, true)) {
+    expect(onboardingZh.steps).toHaveProperty(`${step.copy ?? step.id}.body`)
+    expect(onboardingEn.steps).toHaveProperty(`${step.copy ?? step.id}.title`)
+  }
 })

@@ -29,6 +29,7 @@ type SeoMessages = {
       privacy: string
       register: string
       oauth: string
+      mcpAuthorize: string
       notFound: string
     }
     descriptions: {
@@ -69,6 +70,7 @@ const zhCN: SeoMessages = {
       privacy: '隐私政策',
       register: '注册',
       oauth: '登录',
+      mcpAuthorize: '授权 MCP 客户端',
       notFound: '页面不存在',
     },
     descriptions: {
@@ -109,6 +111,7 @@ const enUS: SeoMessages = {
       privacy: 'Privacy Policy',
       register: 'Sign up',
       oauth: 'Sign in',
+      mcpAuthorize: 'Authorize an MCP client',
       notFound: 'Page not found',
     },
     descriptions: {

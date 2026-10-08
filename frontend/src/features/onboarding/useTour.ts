@@ -8,14 +8,14 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useQuickSearch } from '@/composables/useQuickSearch'
 import { showToast } from '@/composables/useToast'
 import { fetchOnboarding, updateOnboarding } from '@/services/onboarding/onboardingApi'
-import { availableSteps } from './steps'
+import { availableSteps, resumeStepIndex } from './steps'
 import { tourActive, tourRequest } from './signals'
 import {
   MEMORY_KEY, claimGuest, isTerminal, readProgress, readTerminal, saveProgress, saveTerminal,
   type Owner, type TerminalStatus,
 } from './persistence'
 
-export function useTour(blocked: Ref<boolean>) {
+export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false)) {
   const auth = useAuthStore()
   const router = useRouter()
   const route = useRoute()
@@ -24,7 +24,7 @@ export function useTour(blocked: Ref<boolean>) {
   const { contactPageConfig, ensureContactPageConfig } = useContactPageConfig()
   const login = useLoginPrompt()
   const quickSearch = useQuickSearch()
-  const steps = computed(() => availableSteps({ x: featureFlags.value.xSource, contact: contactPageConfig.value.enabled }))
+  const steps = computed(() => availableSteps({ x: featureFlags.value.xSource, contact: contactPageConfig.value.enabled }, compact.value))
   const phase = ref<'idle' | 'welcome' | 'tour'>('idle')
   const index = ref(0)
   const busy = ref(false)
@@ -141,7 +141,7 @@ export function useTour(blocked: Ref<boolean>) {
     if (progress && (progress.manual || !readTerminal(owner.value))) {
       returnTo = progress.returnTo
       manual = progress.manual
-      go(Math.max(0, steps.value.findIndex(item => item.id === progress.step)))
+      go(resumeStepIndex(steps.value, progress.step))
     } else if (!readTerminal(owner.value)) {
       rememberPlace()
       manual = false
@@ -190,6 +190,9 @@ export function useTour(blocked: Ref<boolean>) {
     }
   }
   watch(() => [auth.status, auth.userId, auth.token], initialize, { immediate: true })
+  watch(steps, (next, previous) => {
+    if (phase.value === 'tour') go(resumeStepIndex(next, previous[index.value]?.id))
+  })
   watch([eligible, () => route.fullPath], offer)
   watch(tourRequest, replay)
   watch(phase, value => { tourActive.value = value !== 'idle' }, { flush: 'sync' })

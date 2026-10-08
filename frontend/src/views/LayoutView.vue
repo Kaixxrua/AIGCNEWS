@@ -185,12 +185,12 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
           <div class="app-masthead__actions flex items-center gap-2">
             <QuickSearchButton v-if="isDesktop && folioPage" />
             <FavoritesLink v-if="!isMobile" />
-            <PwaInstallLink />
+            <PwaInstallLink v-if="!isMobile" />
             <GitHubLink v-if="!isMobile" />
             <DensityToggle v-if="densityToggleShown" />
             <ThemeToggle />
             <LocaleToggle />
-            <TourHelpButton v-if="isDesktop" />
+            <TourHelpButton />
           </div>
         </div>
       </div>
@@ -249,7 +249,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     </button>
 
     <AccountSettingsDialog v-model="accountSettingsOpen" />
-    <OnboardingTour v-if="isDesktop" :blocked="accountSettingsOpen" />
+    <OnboardingTour :blocked="accountSettingsOpen" />
 
     <!-- 站内速查（⌘K / Ctrl+K）：桌面端任何一页都能叫出来；报眉上的放大镜只在内页出现，首页不动 -->
     <QuickSearch v-if="quickSearchMounted" :enabled="isDesktop" />

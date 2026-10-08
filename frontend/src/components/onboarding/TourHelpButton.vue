@@ -15,4 +15,5 @@ const { t } = useI18n()
 .tour-help { display: inline-grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink-muted); cursor: pointer; }
 .tour-help:hover { background: var(--acid-soft); color: var(--ink); }
 .tour-help:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (max-width: 767px) { .tour-help { width: 44px; height: 44px; flex-basis: 44px; } }
 </style>
