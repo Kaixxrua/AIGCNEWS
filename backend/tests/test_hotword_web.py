@@ -63,6 +63,15 @@ def test_revised_arxiv_paper_retains_its_original_submission_date():
     assert not web.verified_citation(doc, NOW)
 
 
+def test_recommendation_widgets_are_not_mentions_or_original_source_leads():
+    html = page('<meta property="article:published_time" content="2026-10-07T12:00:00Z">', BODY +
+                '<div id="mvp-related-posts"><h4>Discover More</h4>SynthID Detector'
+                '<a href="https://openai.com/index/unrelated">Unrelated launch</a></div>')
+    doc = web.parse_page('https://research.example/story', html, NOW)
+    assert 'SynthID' not in doc['summary']
+    assert doc['primary_urls'] == []
+
+
 def public_pinner(url, **kwargs):
     return pin_http_target(url, resolver=lambda _: ['93.184.216.34'], **kwargs)
 
@@ -227,5 +236,42 @@ def test_news_discovery_reads_linked_original_papers_before_proposing_words(monk
         result = await research.discover(NOW)
         assert {doc['url'] for doc in result.documents} == {story['url'], original['url']}
         assert fetch.await_count == 2
+
+    asyncio.run(run())
+
+
+def test_news_discovery_reads_linked_official_ai_announcements(monkeypatch):
+    official_url = 'https://openai.com/index/new-ai-feature/'
+    story = web.parse_page('https://news.example/story', page(
+        '<meta property="article:published_time" content="2026-10-07T12:00:00Z">',
+        BODY + f'<a href="{official_url}">Official announcement</a>'
+        '<a href="https://openai.com/">Home</a><a href="https://openai.com.evil.example/index/story">Fake</a>',
+    ), NOW)
+    assert story['primary_urls'] == [official_url.rstrip('/')]
+    original = web.parse_page(official_url, dated_page(), NOW)
+    fetch = AsyncMock(side_effect=lambda url, now: story if url == story['url'] else original)
+    monkeypatch.setattr(web, 'fetch_page', fetch)
+
+    async def run():
+        research = web.PublicWebResearch()
+        research._search = AsyncMock(return_value=[])
+        result = await research.discover(NOW, seed_urls=[story['url']])
+        assert {doc['url'] for doc in result.documents} == {story['url'], original['url']}
+        assert fetch.await_count == 2
+
+    asyncio.run(run())
+
+
+def test_discovery_reserves_page_budget_for_candidate_corroboration(monkeypatch):
+    monkeypatch.setattr(web, 'MAX_PAGES', 6)
+    monkeypatch.setattr(web, 'fetch_page', AsyncMock(side_effect=lambda url, now: web.parse_page(url, dated_page(), now)))
+
+    async def run():
+        research = web.PublicWebResearch()
+        research._search = AsyncMock(return_value=[f'https://research.example/{i}' for i in range(10)])
+        assert len((await research.discover(NOW)).documents) == 3
+        research._search = AsyncMock(return_value=['https://discussion.example/independent'])
+        result = await research.investigate(['Prism Routing'], NOW)
+        assert result.documents[0]['url'] == 'https://discussion.example/independent'
 
     asyncio.run(run())

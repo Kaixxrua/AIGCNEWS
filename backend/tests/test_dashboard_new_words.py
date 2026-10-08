@@ -38,7 +38,7 @@ def web_document(url="https://research.example/prism", **overrides):
 def document(identity="paper", **overrides):
     return {
         "id": identity, "source": "arxiv", "title": "A new training mechanism",
-        "summary": "We introduce Prism Routing, a novel training mechanism for sparse networks.",
+        "summary": "We introduce Prism Routing, a novel training mechanism for sparse neural networks.",
         "url": "https://arxiv.org/abs/2610.12345",
         "published_at": (NOW - timedelta(hours=36)).isoformat(),
         **overrides,
@@ -48,7 +48,7 @@ def document(identity="paper", **overrides):
 def candidate(term="Prism Routing", **overrides):
     return service.Candidate(
         term=term, primary_id="paper",
-        primary_quote=f"We introduce {term}, a novel training mechanism for sparse networks.",
+        primary_quote=f"We introduce {term}, a novel training mechanism for sparse neural networks.",
         definition_zh="用于稀疏网络的训练机制。", definition_en="A training mechanism for sparse networks.",
         reason_zh="引入新的路由训练步骤。", reason_en="Introduces a new routing training step.",
         **overrides,
@@ -79,6 +79,10 @@ class Repository:
 
     def get_snapshot(self, day):
         return self.snapshots.get(day)
+
+    def snapshot_dates(self, before, limit):
+        return sorted((day for day, snapshot in self.snapshots.items() if day < before and snapshot["items"]),
+                      reverse=True)[:limit]
 
     def save_snapshot(self, day, items, now):
         self.save_calls.append(day)
@@ -279,6 +283,34 @@ def test_endpoint_is_read_only_date_scoped_and_validates_dates(monkeypatch):
     assert repo.save_calls == []
 
 
+def test_history_lists_saved_selections_with_exclusive_date_pagination(monkeypatch):
+    repo = Repository()
+    words = select(repo)
+    for day in (1, 6, 8, 9):
+        repo.save_snapshot(date(2026, 10, day), words, NOW)
+    repo.save_snapshot(date(2026, 10, 7), [], NOW)
+    repo.save_calls.clear()
+    monkeypatch.setattr("backend.app.api.routes_new_words.today", lambda: date(2026, 10, 8))
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_application_repositories] = lambda: SimpleNamespace(new_words=repo)
+    with TestClient(app) as client:
+        first = client.get("/dashboard/new-words/history?limit=1").json()
+        assert [row["date"] for row in first["items"]] == ["2026-10-08"]
+        assert first["next_before"] == "2026-10-08"
+        second = client.get("/dashboard/new-words/history?before=2026-10-08&limit=1").json()
+        assert [row["date"] for row in second["items"]] == ["2026-10-06"]
+        last = client.get("/dashboard/new-words/history?before=2026-10-06&limit=1").json()
+        assert [row["date"] for row in last["items"]] == ["2026-10-01"]
+        assert last["next_before"] is None
+        assert "primary_id" not in first["items"][0]["items"][0]
+        for query in ("before=bad", "before=2026-10-10", "limit=0", "limit=32"):
+            assert client.get("/dashboard/new-words/history?" + query).status_code == 422
+        repo.docs = []
+        assert client.get("/dashboard/new-words/history").json()["items"] == []
+    assert repo.save_calls == []
+
+
 def test_global_candidates_publish_without_any_indexed_documents():
     repo = Repository()
     repo.docs = []
@@ -355,3 +387,96 @@ def test_identical_copied_bodies_do_not_count_as_independent_publishers():
     body = "We introduce Prism Routing, a novel training mechanism for sparse networks. " * 4
     docs = [web_document(summary=body), web_document("https://copy.example/prism", title="Repost", summary=body)]
     assert len(service.eligible_documents(docs, NOW)) == 1
+
+
+def test_hot_ai_feature_with_a_new_release_can_have_an_older_name():
+    repo = Repository()
+    quote = "We launch Canvas Actions, a new interactive feature for our AI assistant."
+    repo.docs = [{**d, "summary": quote} for d in repo.docs]
+    repo.history = [document("old", summary="Canvas Actions was an older desktop menu name.",
+                             published_at="2025-10-01T00:00:00Z")]
+    proposal = candidate("Canvas Actions").model_copy(update={"kind": "feature", "primary_quote": quote})
+    assert select(repo, [proposal])[0]["term"] == "Canvas Actions"
+    assert select(repo, [proposal.model_copy(update={"kind": "method"})]) == []
+
+
+def test_non_ai_topic_cannot_publish_despite_novelty_and_multiple_sources():
+    repo = Repository()
+    quote = "We introduce Prism Routing, a new banking payment settlement mechanism."
+    repo.docs = [{**d, "title": "Banking product update", "summary": quote} for d in repo.docs]
+    assert select(repo, [candidate().model_copy(update={"primary_quote": quote})]) == []
+
+
+def test_html_link_spacing_does_not_reject_a_real_quote():
+    repo = Repository()
+    repo.docs[0]["summary"] = repo.docs[0]["summary"].replace("Routing,", "Routing ,")
+    assert select(repo)[0]["term"] == "Prism Routing"
+
+
+def test_indexed_news_title_is_a_lead_not_a_verified_original():
+    repo = Repository()
+    repo.docs[0].update(source="hackernews", url="https://openai.com/index/new-feature")
+    assert select(repo) == []
+
+
+@pytest.mark.parametrize("website,account", [
+    ("https://openai.com/index/story", "OpenAI"),
+    ("https://anthropic.com/news/story", "AnthropicAI"),
+    ("https://blog.google/technology/ai/story", "GoogleDeepMind"),
+])
+def test_official_website_and_social_account_are_one_publisher(website, account):
+    repo = Repository()
+    repo.docs[0]["url"] = website
+    repo.docs[1]["url"] = f"https://x.com/{account}/status/123"
+    assert select(repo) == []
+    assert select(repo, [candidate().model_copy(update={"primary_id": "discussion"})]) == []
+
+
+def test_broad_discussion_outranks_a_two_publisher_paper():
+    repo = Repository()
+    broad = candidate("Canvas Actions").model_copy(update={"primary_id": "official", "kind": "feature"})
+    repo.docs += [document("official", title="New AI feature", summary=broad.primary_quote,
+                           url="https://ai.example/feature")]
+    for i in range(5):
+        repo.docs.append(document(f"news{i}", source="news", title=f"Canvas Actions review {i}",
+                                  summary="Canvas Actions improves AI assistant interaction.",
+                                  url=f"https://news{i}.example/feature",
+                                  published_at=(NOW - timedelta(hours=2)).isoformat()))
+    assert [w["term"] for w in select(repo, [candidate(), broad])] == ["Canvas Actions", "Prism Routing"]
+
+
+def test_indexed_official_social_release_can_anchor_a_feature_but_not_a_new_method():
+    repo = Repository()
+    repo.docs[0].update(source="x", url="https://x.com/OpenAI/status/123456789")
+    proposal = candidate().model_copy(update={"kind": "feature"})
+    assert select(repo, [proposal])[0]["primary_id"] == "paper"
+    assert select(repo) == []
+    repo.docs[0]["url"] = "https://x.com/unverified/status/123456789"
+    assert select(repo, [proposal]) == []
+    repo.docs[0]["url"] = "https://x.com/OpenAI/status/123456789"
+    repo.docs[0]["source"] = "web"
+    assert not service.official_social(repo.docs[0])
+
+
+def test_news_and_community_leads_reach_model_without_paper_feed_crowding():
+    repo = Repository()
+    repo.docs += [document(f"paper{i}", title=f"Paper {i}", url=f"https://arxiv.org/abs/2610.{i:05}") for i in range(40)]
+    repo.docs.append(document("news", source="news", title="AI new feature", url="https://news.example/feature"))
+    model = model_response({"candidates": []})
+    web = web_research()
+    asyncio.run(service.refresh_new_words(repo, now=NOW, model=model, web=web))
+    payload = json.loads(model.ainvoke.call_args.args[0][1].content)["documents"]
+    assert {d["source"] for d in payload} == {"news", "hackernews", "arxiv"}
+    assert sum(d["source"] == "arxiv" for d in payload) <= 8
+    assert "https://news.example/feature" in web.discover.call_args.kwargs["seed_urls"]
+
+
+def test_fetched_official_full_text_replaces_an_indexed_title_only_lead():
+    repo = Repository()
+    original = web_document("https://ai.example/feature")
+    repo.docs[0] = {**original, "source": "hackernews", "id": "indexed", "summary": "AI new feature"}
+    model = model_response({"candidates": [candidate().model_copy(update={"primary_id": original["id"]}).model_dump()]})
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model, web=web_research([original])))
+    payload = json.loads(model.ainvoke.call_args.args[0][1].content)["documents"]
+    assert next(d for d in payload if d["url"] == original["url"])["summary"] == original["summary"]
+    assert service.public_snapshot(repo, service.today(NOW))["status"] == "ready"

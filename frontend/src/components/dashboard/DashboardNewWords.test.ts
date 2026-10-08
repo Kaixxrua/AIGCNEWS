@@ -2,10 +2,10 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import DashboardNewWords from './DashboardNewWords.vue'
-import { fetchNewWords, type NewWord, type NewWordsSnapshot } from '@/services/dashboard/newWordsApi'
+import { fetchNewWords, fetchNewWordsHistory, type NewWord, type NewWordsSnapshot } from '@/services/dashboard/newWordsApi'
 import zh from '@/i18n/locales/zh-CN'
 
-vi.mock('@/services/dashboard/newWordsApi', () => ({ fetchNewWords: vi.fn() }))
+vi.mock('@/services/dashboard/newWordsApi', () => ({ fetchNewWords: vi.fn(), fetchNewWordsHistory: vi.fn() }))
 const showModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal')
 const close = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close')
 beforeAll(() => {
@@ -51,15 +51,20 @@ describe('homepage new concepts', () => {
     const view = render()
     await flushPromises()
     expect(view.findAll('.new-word')).toHaveLength(2)
+    expect(view.get('.new-word').text()).toContain('1 条来源')
     await view.get('.new-word').trigger('click')
     await flushPromises()
     const dialog = document.querySelector('dialog')!
     expect(dialog.open).toBe(true)
     expect(dialog.textContent).toContain(word.definition_zh)
+    expect(dialog.textContent).toContain(word.definition_en)
+    expect(dialog.querySelector('[lang="zh-CN"]')?.textContent).toContain(word.definition_zh)
+    expect(dialog.querySelector('[lang="en"]')?.textContent).toContain(word.definition_en)
     expect(dialog.textContent).toContain(word.reason_zh)
     expect(dialog.querySelectorAll('a')).toHaveLength(1)
     expect(dialog.querySelector('a')?.rel).toBe('noopener noreferrer')
     expect(dialog.querySelector('a')?.href).toBe(word.evidence[0]!.url)
+    expect(dialog.textContent).toContain('arxiv.org · 2026-10-07')
     ;(dialog.querySelector('button') as HTMLButtonElement).click()
     await flushPromises()
     expect(dialog.open).toBe(false)
@@ -90,7 +95,7 @@ describe('homepage new concepts', () => {
     await flushPromises()
     expect(document.querySelector('dialog')!.open).toBe(false)
     expect(view.find('.new-word').exists()).toBe(false)
-    expect(view.text()).toContain('暂无符合条件的新概念')
+    expect(view.text()).toContain('暂无符合条件的 AI 热词')
   })
 
   it('retries failures and preserves same-day words during a failed refresh', async () => {
@@ -107,5 +112,66 @@ describe('homepage new concepts', () => {
     await flushPromises()
     expect(view.text()).toContain(word.term)
     expect(view.get('.new-words-retry').text()).toBe('重试')
+  })
+
+  it('explains the selection rules even when today has no terms', async () => {
+    vi.mocked(fetchNewWords).mockResolvedValue(snapshot('2026-10-08', []))
+    const view = render()
+    await flushPromises()
+    await view.get('.new-words-method').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('dialog')!
+    expect(dialog.open).toBe(true)
+    expect(dialog.textContent).toContain('50% 独立来源覆盖 + 30% 讨论增长 + 20% 原文新鲜度')
+    expect(dialog.textContent).toContain('不是全网流量排名')
+    expect(dialog.textContent).toContain('两个发布者')
+    expect(fetchNewWordsHistory).not.toHaveBeenCalled()
+  })
+
+  it('paginates saved history and opens its original sources without changing today', async () => {
+    vi.mocked(fetchNewWords).mockResolvedValue(snapshot())
+    vi.mocked(fetchNewWordsHistory)
+      .mockResolvedValueOnce({ items: [snapshot('2026-10-07')], next_before: '2026-10-07' })
+      .mockResolvedValueOnce({ items: [snapshot('2026-10-05', [{ ...word, id: 'old', term: 'Earlier concept' }])], next_before: null })
+    const view = render()
+    await flushPromises()
+    await view.get('.new-words-history').trigger('click')
+    await flushPromises()
+    expect(vi.mocked(fetchNewWordsHistory).mock.calls[0]![0]).toBe('2026-10-09')
+    const dialog = document.querySelector('dialog')!
+    ;(dialog.querySelector('.new-word-history-more') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(vi.mocked(fetchNewWordsHistory).mock.calls[1]![0]).toBe('2026-10-07')
+    expect([...dialog.querySelectorAll('time')].map(t => t.textContent)).toEqual(['2026-10-07', '2026-10-05'])
+    ;(dialog.querySelector('.new-word-history-item') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(dialog.querySelector('a')?.href).toBe(word.evidence[0]!.url)
+    ;(dialog.querySelector('.new-word-back') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(dialog.querySelectorAll('.new-word-history-day')).toHaveLength(2)
+    expect(view.get('.new-word').text()).toContain(word.term)
+    expect(fetchNewWordsHistory).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries a history failure and aborts stale history on a calendar change', async () => {
+    vi.mocked(fetchNewWords).mockResolvedValue(snapshot())
+    let resolveOld!: (value: { items: NewWordsSnapshot[]; next_before: null }) => void
+    vi.mocked(fetchNewWordsHistory).mockRejectedValueOnce(new Error('Offline'))
+      .mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve }))
+    const view = render()
+    await flushPromises()
+    await view.get('.new-words-history').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('dialog')!
+    expect(dialog.textContent).toContain('历史记录读取失败')
+    ;(dialog.querySelector('.new-word-history-more') as HTMLButtonElement).click()
+    await flushPromises()
+    const signal = vi.mocked(fetchNewWordsHistory).mock.calls[1]![1]
+    await view.setProps({ date: '2026-10-06', historical: true })
+    expect(signal.aborted).toBe(true)
+    resolveOld({ items: [snapshot()], next_before: null })
+    await flushPromises()
+    expect(dialog.open).toBe(false)
+    expect(dialog.querySelector('.new-word-history-day')).toBeNull()
   })
 })
