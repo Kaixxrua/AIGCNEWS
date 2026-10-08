@@ -382,7 +382,6 @@ async def _rank_hybrid_candidates(
     candidate_search: ProjectCandidateSearchResult,
     exact_repo_id: str,
     client_intent_used: bool = False,
-    strict_pin_max: int = 0,
 ) -> tuple[list[str], list[str]]:
     """Return (ranked candidate ids, legacy ranked ids); legacy stays authoritative outside v2."""
     legacy_repo_ids = rank_legacy_project_candidate_ids(
@@ -399,9 +398,8 @@ async def _rank_hybrid_candidates(
     # 关闭或检索失败）保持 lane 融合拟合序，优雅降级。
     # 例外一：宿主 agent 传入结构化 intent 的是任务型复用检索，要的是任务
     # 适配而非人气——此时保持 v2 拟合序。
-    # 例外二：strict lane 一页放得下时，这些全部严格词命中就是确定答案，
-    # 钉在热度融合之上（见下方 pinned_strict_ids）；lane 更大说明是宽泛
-    # 探索查询，保留热度融合的发现价值。
+    # 全概念匹配始终先于部分匹配；不能用页大小决定相关性，否则翻页或
+    # 改 limit 就会把热门但偏题的候选抬到前面。
     heat_first = (
         bool(candidate_search.semantic_repo_ids)
         and bool(getattr(settings, "project_semantic_heat_first", True))
@@ -428,16 +426,11 @@ async def _rank_hybrid_candidates(
         adoption_weight=adoption_weight,
     )
     if heat_first and popularity_map:
-        pinned_strict_ids: tuple[str, ...] = ()
-        if strict_pin_max > 0:
-            strict_ids = tuple(str(candidate.repo_id) for candidate in lanes.strict)
-            if 0 < len(strict_ids) <= strict_pin_max:
-                pinned_strict_ids = strict_ids
         ranked_repo_ids = order_candidates_by_popularity(
             ranked_repo_ids,
             popularity_map,
             exact_repo_id=exact_repo_id,
-            pinned_repo_ids=pinned_strict_ids,
+            pinned_repo_ids=tuple(candidate.repo_id for candidate in lanes.strict),
         )
     return ranked_repo_ids, legacy_repo_ids
 
@@ -625,7 +618,6 @@ async def _hybrid_search(
         candidate_search=candidate_search,
         exact_repo_id=exact_repo_id,
         client_intent_used=request.client_intent_used,
-        strict_pin_max=request.limit,
     )
     if strategy == "shadow" and callable(lexical_lane_search):
         _submit_shadow_comparison(

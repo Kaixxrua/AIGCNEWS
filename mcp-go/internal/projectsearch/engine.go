@@ -231,7 +231,7 @@ func (e *Engine) SearchProjects(input mcpapp.ProjectSearchInput) (jsonx.Object, 
 			semanticIDs = e.semanticIDs(r.intent.SemanticQueries)
 		}
 		if strategy == "v2" {
-			ranked = e.rankV2(ranked, lanes, semanticIDs, r)
+			ranked = e.rankV2(lanes, semanticIDs, r)
 		} else {
 			ranked = RankLegacyProjectCandidateIDs(ranked, semanticIDs, rankingK, 200)
 		}
@@ -306,7 +306,7 @@ func (e *Engine) semanticIDs(queries []string) []string {
 		return nil
 	}
 }
-func (e *Engine) rankV2(strictIDs []string, lanes projectsem.LexicalCandidateLanes, semantic []string, r searchRequest) []string {
+func (e *Engine) rankV2(lanes projectsem.LexicalCandidateLanes, semantic []string, r searchRequest) []string {
 	exact := ""
 	if exactRepoQuery.MatchString(r.query) {
 		exact = r.query
@@ -326,10 +326,8 @@ func (e *Engine) rankV2(strictIDs []string, lanes projectsem.LexicalCandidateLan
 	if e.cfg.SemanticHeatFirst && !r.clientIntentUsed && len(semantic) > 0 {
 		if popularity, err := e.catalog.GetProjectPopularityMap(pool); err == nil && len(popularity) > 0 {
 			pinned := []string{}
-			if len(lanes.Strict) > 0 && len(lanes.Strict) <= r.limit {
-				for _, c := range lanes.Strict {
-					pinned = append(pinned, c.RepoID)
-				}
+			for _, c := range lanes.Strict {
+				pinned = append(pinned, c.RepoID)
 			}
 			ranked = OrderCandidatesByPopularity(ranked, popularity, exact, pinned)
 		}

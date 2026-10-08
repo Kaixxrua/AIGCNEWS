@@ -22,6 +22,21 @@ func TestPopularityKeyWeighsRecentGrowthAndTotalStars(t *testing.T) {
 	}
 }
 
+func TestV2RankerKeepsCompleteMatchesBeforeTruncation(t *testing.T) {
+	strict := []LexicalCandidate{}
+	for i := 0; i < 3; i++ {
+		strict = append(strict, LexicalCandidate{RepoID: fmt.Sprintf(" owner/fit-%d ", i), TermCoverage: 2})
+	}
+	got := RankV2ProjectCandidateIDs(
+		strict, []LexicalCandidate{{RepoID: "owner/viral", TermCoverage: 1}},
+		[]string{"owner/viral"}, "", 60, 3, map[string]int{"owner/viral": 1_000_000}, 0.006,
+	)
+	want := []string{"owner/fit-0", "owner/fit-1", "owner/fit-2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
 func TestPopularityOrderingLiftsRelevantPopularCandidate(t *testing.T) {
 	got := OrderCandidatesByPopularity(
 		[]string{"owner/a", "owner/b", "owner/c"},

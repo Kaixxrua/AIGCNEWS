@@ -9,6 +9,16 @@ from backend.app.domain.search_semantics import (
 )
 
 
+@pytest.mark.parametrize("query", ["智能体长期记忆", "长期记忆", "agent long-term memory", "agent long term memory"])
+def test_agent_long_term_memory_does_not_expand_to_codebase_tools(query: str) -> None:
+    intent = build_project_search_intent(query)
+    assert intent.concept_ids == ("agent_memory",)
+    assert "codebase memory" not in " ".join(intent.semantic_queries)
+    plan = build_project_lexical_retrieval_plan(intent)
+    assert plan.strict_terms == ()
+    assert "长期记忆" in plan.concepts[0].aliases
+
+
 def test_project_intent_normalizes_request_and_expands_known_bilingual_concepts() -> None:
     intent = build_project_search_intent("  帮我找一下学习 Agent 工作流的仓库  ")
 
