@@ -80,3 +80,9 @@ PostgreSQL 集成测试另行验证真实 SQL 的边界、字面转义和名称�
 - 未收录于概念表的中文专名保留为字面条件，已验证的客户端 lexical_terms 会补入词法计划；tutorial/tutorials、workflow/workflows 等词形显式扩展，保留英文词边界。
 - recommended 在词法候选截断前应用 active 推荐成员过滤。普通目录筛选与候选回填仍再次执行可见性与筛选条件。
 - GitHub 返回限流/禁用等错误对象时保留已有本地结果，并通过 fallback_error 报告失败；语义补搜沿用显式排序。MCP 的 tags/topics 接受数据库规范化后的字符串数组。
+
+## 离线质量评估
+
+`scripts/eval_project_search_quality.py` 的 NDCG@k 分母使用查询级完整理想排序，先排序再取 k，不能只在系统已返回的前 k 条内计算理想值。例如 `[1, 0, 0, 3]` 的 NDCG@3 为约 0.131，而不是 1。
+
+每个 case 可在输入 schema v1 中添加 `judgments: {"owner/repo": 0..3}`，纳入所有已知相关项目，包括所有系统都漏掉的答案；它与各系统 `result_ids`/`relevance` 合并成共用标注池。未提供 judgments 的旧夹具使用所有系统返回项目的标注并集，因此仍不能衡量完全未知的漏召回。相同项目的冲突标注会拒绝评估，不静默取高值。新旧指标口径不同，历史报告应使用同一夹具重新计算后比较。
