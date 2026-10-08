@@ -48,7 +48,10 @@ class UserAccountWriter(Protocol):
         *,
         user_id: int,
         username: str,
-    ) -> int: ...
+    ) -> int:
+        """Atomically enforce 72 hours between changes; unchanged names keep the
+        deadline. Return 0 for a cooldown, missing user or disabled account."""
+        ...
 
     def update_user_email(
         self,

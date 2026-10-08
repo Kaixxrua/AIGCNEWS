@@ -14,6 +14,7 @@ const authStore = vi.hoisted(() => ({
     user_id: number
     email: string | null
     username: string
+    username_change_available_at?: string | null
     role: string
     email_verified: boolean
     membership_tier: string
@@ -43,6 +44,7 @@ vi.mock('@/components/auth/ChangePasswordDialog.vue', () => ({
 const messages = {
   common: { close: '关闭', cancel: '取消' },
   auth: {
+    changeUsernameAction: '改名', usernameChangeHint: '用户名每 3 天可修改一次。', usernameNextChange: '下次可修改时间：{time}。',
     accountSettings: '账户设置', accountOverview: '账户信息', accountOverviewDescription: '查看当前账户资料，并管理登录方式。',
     username: '用户名', email: '邮箱', emailVerified: '邮箱验证', registeredAt: '注册时间', role: '角色', membership: '会员状态', memberMembership: 'VIP 会员', freeMembership: '普通用户',
     verified: '已验证', unverified: '未验证', notAvailable: '暂无', notSet: '未设置', editUsername: '修改用户名', saveUsername: '保存用户名', savingUsername: '保存中…',
@@ -292,7 +294,12 @@ describe('AccountSettingsDialog', () => {
 
   it('trims and saves the username, then updates the authoritative store projection', async () => {
     const wrapper = mountDialog()
+    await nextTick()
     const input = document.body.querySelector('#account-settings-username') as HTMLInputElement
+    findButton('改名')!.click()
+    expect(document.activeElement).toBe(input)
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe('Reader'.length)
     input.value = '  New name  '
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
@@ -316,6 +323,43 @@ describe('AccountSettingsDialog', () => {
 
     expect(updateProfile).not.toHaveBeenCalled()
     expect(document.body.textContent).toContain('请输入用户名。')
+    wrapper.unmount()
+  })
+
+  it('shows the persisted cooldown and enables renaming when 72 hours have elapsed', async () => {
+    vi.useFakeTimers()
+    const start = new Date('2026-10-08T12:00:00Z')
+    const available = new Date(start.getTime() + 72 * 60 * 60 * 1000)
+    vi.setSystemTime(start)
+    authStore.user.username_change_available_at = available.toISOString()
+    const wrapper = mountDialog()
+    try {
+      const input = document.body.querySelector('#account-settings-username') as HTMLInputElement
+      const save = findButton('保存用户名')!
+      expect(input.readOnly).toBe(true)
+      expect(save.disabled).toBe(true)
+      expect(document.body.textContent).toContain('下次可修改时间：')
+      save.click()
+      expect(updateProfile).not.toHaveBeenCalled()
+      vi.setSystemTime(available)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(input.readOnly).toBe(false)
+      expect(save.disabled).toBe(false)
+      expect(document.body.textContent).toContain('用户名每 3 天可修改一次。')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('refreshes account details when another session has already renamed', async () => {
+    updateProfile.mockRejectedValueOnce({ isAxiosError: true, response: { status: 429, data: { detail: '用户名每 3 天只能修改一次' } } })
+    authStore.fetchMe.mockResolvedValueOnce(undefined)
+    const wrapper = mountDialog()
+    findButton('保存用户名')!.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('用户名每 3 天只能修改一次')
+    expect(authStore.fetchMe).toHaveBeenCalled()
     wrapper.unmount()
   })
 

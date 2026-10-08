@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useNow } from '@vueuse/core'
+import { isAxiosError } from 'axios'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
@@ -31,6 +33,7 @@ const visible = computed({ get: () => props.modelValue, set: value => emit('upda
 useDockSuppression(() => props.modelValue)
 
 const dialogRef = ref<HTMLElement | null>(null)
+const usernameInputRef = ref<HTMLInputElement | null>(null)
 const username = ref('')
 const saving = ref(false)
 const error = ref('')
@@ -41,6 +44,12 @@ let previouslyFocused: HTMLElement | null = null
 
 const currentUser = computed(() => authStore.user)
 const usernameValue = computed(() => currentUser.value?.username ?? '')
+const now = useNow({ interval: 1000 })
+const usernameAvailableAt = computed(() => new Date(currentUser.value?.username_change_available_at ?? '').getTime())
+const usernameOnCooldown = computed(() => usernameAvailableAt.value > now.value.getTime())
+const usernameCooldownHint = computed(() => usernameOnCooldown.value
+  ? t('auth.usernameNextChange', { time: new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'medium' }).format(usernameAvailableAt.value) })
+  : t('auth.usernameChangeHint'))
 const registeredAt = computed(() => {
   const value = currentUser.value?.created_at
   if (!value) return t('auth.notAvailable')
@@ -97,7 +106,12 @@ const onKeydown = (event: KeyboardEvent) => {
   if (emailChangeOpen.value) { closeEmailChange(); return }
   close()
 }
+const editUsername = () => {
+  usernameInputRef.value?.focus()
+  usernameInputRef.value?.select()
+}
 const saveUsername = async () => {
+  if (saving.value || usernameOnCooldown.value) return
   const next = username.value.trim()
   error.value = ''; success.value = ''
   if (!next) { error.value = t('auth.usernameRequired'); return }
@@ -110,6 +124,9 @@ const saveUsername = async () => {
     success.value = t('auth.usernameSaved')
   } catch (reason: unknown) {
     error.value = getErrorDetail(reason, t('auth.usernameSaveFailed'))
+    if (isAxiosError(reason) && reason.response?.status === 429) {
+      await authStore.fetchMe().catch(() => undefined)
+    }
   } finally { saving.value = false }
 }
 
@@ -150,7 +167,13 @@ watch(() => props.modelValue, async open => {
               <section aria-labelledby="account-overview-title" class="space-y-3">
                 <h4 id="account-overview-title" class="text-xs font-semibold uppercase tracking-wider text-stone-500">{{ t('auth.accountOverview') }}</h4>
                 <dl class="grid gap-3 text-sm sm:grid-cols-2">
-                  <div><dt class="text-xs text-stone-500">{{ t('auth.username') }}</dt><dd class="mt-1 font-medium">{{ usernameValue || t('auth.notSet') }}</dd></div>
+                  <div>
+                    <dt class="text-xs text-stone-500">{{ t('auth.username') }}</dt>
+                    <dd class="mt-1 flex items-center gap-2 font-medium">
+                      <span class="min-w-0 break-all">{{ usernameValue || t('auth.notSet') }}</span>
+                      <button type="button" class="shrink-0 text-xs font-normal text-stone-500 underline-offset-2 hover:text-stone-800 hover:underline" aria-controls="account-settings-username" :disabled="saving" @click="editUsername">{{ t('auth.changeUsernameAction') }}</button>
+                    </dd>
+                  </div>
                   <div>
                     <dt class="text-xs text-stone-500">{{ t('auth.email') }}</dt>
                     <dd class="mt-1 flex items-center gap-2 font-medium">
@@ -266,9 +289,10 @@ watch(() => props.modelValue, async open => {
 
               <section class="space-y-3 border-t border-stone-200/70 pt-4">
                 <label for="account-settings-username" class="text-xs font-semibold text-stone-500">{{ t('auth.editUsername') }}</label>
+                <p id="account-username-cooldown" class="monitor-caption text-xs" role="status">{{ usernameCooldownHint }}</p>
                 <div class="flex gap-2">
-                  <input id="account-settings-username" v-model="username" class="input min-w-0 flex-1" maxlength="64" autocomplete="username" :disabled="saving" />
-                  <button type="button" class="btn-primary shrink-0" :disabled="saving" @click="saveUsername">{{ saving ? t('auth.savingUsername') : t('auth.saveUsername') }}</button>
+                  <input id="account-settings-username" ref="usernameInputRef" v-model="username" class="input min-w-0 flex-1" maxlength="64" autocomplete="username" aria-describedby="account-username-cooldown" :readonly="usernameOnCooldown" :disabled="saving" />
+                  <button type="button" class="btn-primary shrink-0" :disabled="saving || usernameOnCooldown" @click="saveUsername">{{ saving ? t('auth.savingUsername') : t('auth.saveUsername') }}</button>
                 </div>
                 <AuthFeedback :message="error" type="error" /><AuthFeedback :message="success" type="success" />
               </section>

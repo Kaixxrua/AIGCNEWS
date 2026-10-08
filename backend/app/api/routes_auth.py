@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import secrets
 from datetime import datetime, timezone
@@ -1115,10 +1116,14 @@ async def _account_view(
     # 生效档位按 resolve_effective_tier 收口（member 过期按 free，未知值
     # fail-closed 归 free）；expires_at 原样透传供读取侧展示与前端二次判定。
     expires_at = record.get("membership_expires_at")
+    username_available_at = record.get("username_change_available_at")
     return {
         "user_id": user_id,
         "email": record.get("email"),
         "username": record.get("username"),
+        "username_change_available_at": (
+            username_available_at.isoformat() if isinstance(username_available_at, datetime) else None
+        ),
         "avatar_url": (
             f"/api/auth/avatars/{user_id}/{record['avatar_digest']}.png"
             if record.get("avatar_digest") else None
@@ -1157,6 +1162,13 @@ async def update_profile(
         await lifecycle.update_username(
             user_id=_user_id(current_user), username=body.username
         )
+    except account_lifecycle.UsernameChangeCooldown as exc:
+        retry_after = max(1, math.ceil((exc.available_at - datetime.now(timezone.utc)).total_seconds()))
+        raise HTTPException(
+            status_code=429,
+            detail="用户名每 3 天只能修改一次，请在冷却时间结束后重试",
+            headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
+        ) from exc
     except account_lifecycle.ProfileUpdateFailed as exc:
         raise HTTPException(status_code=500, detail="资料修改失败，请稍后重试") from exc
     return await _account_view(

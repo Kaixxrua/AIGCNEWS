@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 from backend.app.monitoring import live_stats_broadcaster
@@ -122,6 +123,12 @@ class PasswordChangeFailed(AccountLifecycleError):
 
 class ProfileUpdateFailed(AccountLifecycleError):
     """Profile persistence did not update exactly one account."""
+
+
+class UsernameChangeCooldown(AccountLifecycleError):
+    def __init__(self, available_at: datetime) -> None:
+        self.available_at = available_at
+        super().__init__("Username change is on cooldown")
 
 
 class EmailChangeUnavailable(AccountLifecycleError):
@@ -287,6 +294,10 @@ class AccountLifecycle:
             username=username.strip(),
         )
         if affected_rows != 1:
+            user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
+            available_at = user.get("username_change_available_at") if user else None
+            if user and not user.get("disabled") and isinstance(available_at, datetime):
+                raise UsernameChangeCooldown(available_at)
             raise ProfileUpdateFailed
 
     async def request_password_reset_otp(

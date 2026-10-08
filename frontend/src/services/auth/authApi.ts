@@ -12,6 +12,8 @@ export interface AuthUserDTO {
   email: string | null
   /** 用户名（注册必填 / OAuth 首次登录自动回填）；旧数据可能为 null 或空串 */
   username?: string | null
+  /** Earliest next rename time; null means this account has not renamed yet. */
+  username_change_available_at?: string | null
   avatar_url?: string | null
   role: 'user' | 'admin'
   email_verified?: boolean

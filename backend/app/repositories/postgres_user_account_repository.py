@@ -119,7 +119,8 @@ class PostgresUserAccountRepository:
             """
             SELECT id, phone, email, username, role, disabled, pwd_ver,
                    email_verified, password_login_enabled,
-                   membership_tier, membership_expires_at, created_at, avatar_digest
+                   membership_tier, membership_expires_at, created_at, avatar_digest,
+                   username_change_available_at
             FROM users
             WHERE id = %s
             """,
@@ -243,10 +244,17 @@ class PostgresUserAccountRepository:
                 cursor.execute(
                     """
                     UPDATE users
-                    SET username = %s
-                    WHERE id = %s
+                    SET username = %s,
+                        username_change_available_at = CASE
+                            WHEN username IS NOT DISTINCT FROM %s THEN username_change_available_at
+                            ELSE statement_timestamp() + INTERVAL '72 hours'
+                        END
+                    WHERE id = %s AND NOT disabled
+                      AND (username IS NOT DISTINCT FROM %s
+                           OR username_change_available_at IS NULL
+                           OR username_change_available_at <= statement_timestamp())
                     """,
-                    (username, int(user_id)),
+                    (username, username, int(user_id), username),
                 )
                 return int(cursor.rowcount)
 
