@@ -44,5 +44,7 @@ aiosmtplib
 email-validator
 # 联网搜索后端（DuckDuckGo 免费兜底）
 duckduckgo-search>=6.0.0
+# 首页热词公开检索（保留旧搜索调用方；新入口支持 Bing/Yahoo 互补）。
+ddgs==9.16.0
 # X 视频封面抽帧（自带静态 ffmpeg 二进制，无需 apt 安装）
 imageio-ffmpeg>=0.5

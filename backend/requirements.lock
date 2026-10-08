@@ -87,6 +87,7 @@ charset-normalizer==3.4.9
 click==8.4.2
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
+    #   ddgs
     #   duckduckgo-search
     #   twitter-cli
     #   uvicorn
@@ -113,6 +114,8 @@ curl-cffi==0.16.0
     #   -c /tmp/aigcnews-x-constraints.txt
     #   -r backend/requirements.txt
     #   twitter-cli
+ddgs==9.16.0
+    # via -r backend/requirements.txt
 distro==1.9.0
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
@@ -336,6 +339,7 @@ lxml==6.1.1
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
     #   arxiv
+    #   ddgs
     #   duckduckgo-search
 lz4==4.4.5
     # via
@@ -498,6 +502,7 @@ pillow==12.3.0
 primp==1.3.1
     # via
     #   -c /tmp/aigcnews-x-constraints.txt
+    #   ddgs
     #   duckduckgo-search
 propcache==0.5.2
     # via

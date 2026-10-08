@@ -14,8 +14,25 @@ from langchain_core.messages import AIMessage
 from backend.app.api.dependencies import get_application_repositories
 from backend.app.api.routes_new_words import router
 from backend.app.services.dashboard import new_words as service
+from backend.app.services.dashboard.hotword_web import WebEvidence, web_id
 
 NOW = datetime(2026, 10, 8, 8, tzinfo=timezone.utc)
+
+
+def web_research(discovered=None, investigated=None, available=True):
+    return SimpleNamespace(
+        discover=AsyncMock(return_value=WebEvidence(discovered or [], available=available)),
+        investigate=AsyncMock(return_value=WebEvidence(investigated or [], available=available)),
+    )
+
+
+@pytest.fixture(autouse=True)
+def isolate_public_network(monkeypatch):
+    monkeypatch.setattr(service, "PublicWebResearch", web_research)
+
+
+def web_document(url="https://research.example/prism", **overrides):
+    return document(web_id(url), source="web", url=url, verified_at=NOW.isoformat(), **overrides)
 
 
 def document(identity="paper", **overrides):
@@ -106,6 +123,16 @@ def test_old_concept_is_rejected_even_when_recent_articles_propose_it_again():
     assert repo.history_calls
 
 
+def test_short_acronym_does_not_match_an_ordinary_word_in_older_papers():
+    repo = Repository()
+    repo.docs = [{**d, "summary": d["summary"].replace("Prism Routing", "WISE")} for d in repo.docs]
+    repo.history = [document("old", title="Layer-wise training", summary="Token-wise gradients.",
+                             published_at="2025-10-01T00:00:00+00:00")]
+    assert select(repo, [candidate("WISE")])[0]["term"] == "WISE"
+    repo.history[0]["summary"] = "We introduced WISE in 2025."
+    assert select(repo, [candidate("WISE")]) == []
+
+
 @pytest.mark.parametrize("update", [
     {"url": "https://arxiv.org/abs/2610.12345?utm_source=copy"},
     {"title": "A new training mechanism"},
@@ -179,6 +206,26 @@ def test_generation_saves_daily_snapshot_and_avoids_repeated_model_calls():
     assert repo.snapshots[service.today(NOW)]["items"][0]["term"] == "Prism Routing"
 
 
+def test_empty_cached_snapshot_does_not_delay_recovery_after_startup():
+    repo = Repository()
+    repo.save_snapshot(service.today(NOW), [], NOW - timedelta(minutes=2))
+    model = model_response({"candidates": [candidate().model_dump()]})
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model))
+    assert service.public_snapshot(repo, service.today(NOW))["status"] == "ready"
+
+
+def test_recent_proven_words_can_repeat_when_new_search_yields_no_candidates():
+    repo = Repository()
+    prior = select(repo)
+    repo.save_snapshot(service.today(NOW) - timedelta(days=1), prior, NOW - timedelta(hours=1))
+    repo.save_snapshot(service.today(NOW), [], NOW - timedelta(minutes=1))
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({"candidates": []})))
+    assert repo.snapshots[service.today(NOW)]["items"] == prior
+    assert service.reusable_words(repo, {"items": prior}, NOW + timedelta(days=3)) == []
+    repo.docs.pop()
+    assert service.reusable_words(repo, {"items": prior}, NOW) == []
+
+
 @pytest.mark.parametrize("result", [None, {"wrong": []}, {"candidates": [{"bad": "schema"}]}])
 def test_failure_does_not_overwrite_successful_snapshot(result):
     repo = Repository()
@@ -230,3 +277,81 @@ def test_endpoint_is_read_only_date_scoped_and_validates_dates(monkeypatch):
         assert client.get("/dashboard/new-words?date=2026-10-09").status_code == 422
         assert client.get("/dashboard/new-words?date=bad").status_code == 422
     assert repo.save_calls == []
+
+
+def test_global_candidates_publish_without_any_indexed_documents():
+    repo = Repository()
+    repo.docs = []
+    original = web_document()
+    discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
+    web = web_research([original, discussion])
+    proposal = candidate().model_copy(update={"primary_id": original["id"]})
+    model = model_response({"candidates": [proposal.model_dump()]})
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model, web=web))
+    snapshot = service.public_snapshot(repo, service.today(NOW))
+    assert snapshot["status"] == "ready"
+    assert snapshot["items"][0]["term"] == "Prism Routing"
+    assert {e["url"] for e in snapshot["items"][0]["evidence"]} == {original["url"], discussion["url"]}
+    assert all(e["source"] == "web" and "verified_at" not in e for e in snapshot["items"][0]["evidence"])
+    payload = json.loads(model.ainvoke.call_args.args[0][1].content)
+    assert {d["id"] for d in payload["documents"]} == {original["id"], discussion["id"]}
+
+
+def test_targeted_search_can_complete_evidence_for_one_indexed_primary():
+    repo = Repository()
+    repo.docs = repo.docs[:1]
+    discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
+    web = web_research(investigated=[discussion])
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({
+        "candidates": [candidate().model_dump()],
+    }), web=web))
+    assert service.public_snapshot(repo, service.today(NOW))["status"] == "ready"
+    web.investigate.assert_awaited_once_with(["Prism Routing"], NOW, contexts={"Prism Routing": repo.docs[0]["title"]})
+    # Removing the indexed primary still hides the mixed local/web snapshot.
+    repo.docs = []
+    assert service.public_snapshot(repo, service.today(NOW))["items"] == []
+
+
+def test_verified_older_web_mentions_reject_apparently_new_local_terms():
+    repo = Repository()
+    old = web_document("https://research.example/original", published_at=(NOW - timedelta(days=30)).isoformat())
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({
+        "candidates": [candidate().model_dump()],
+    }), web=web_research(investigated=[old])))
+    assert repo.snapshots[service.today(NOW)]["items"] == []
+
+
+@pytest.mark.parametrize("changes", [
+    {"verified_at": None}, {"id": "made-up-web-id"},
+    {"verified_at": (NOW + timedelta(seconds=1)).isoformat()},
+])
+def test_external_evidence_requires_a_matching_fetch_receipt(changes):
+    assert service.eligible_documents([{**web_document(), **changes}], NOW) == []
+
+
+def test_public_snapshot_rejects_tampered_web_citation_receipts():
+    repo = Repository()
+    original = web_document()
+    discussion = web_document("https://discussion.example/prism", title="Testing Prism Routing")
+    proposal = candidate().model_copy(update={"primary_id": original["id"]})
+    words = service.select_words([proposal], [original, discussion], repo, NOW, [])
+    repo.save_snapshot(service.today(NOW), words, NOW)
+    words[0]["evidence"][0]["url"] = "https://other.example/unfetched"
+    assert service.public_snapshot(repo, service.today(NOW))["items"] == []
+
+
+def test_public_search_outage_does_not_erase_a_successful_daily_card():
+    repo = Repository()
+    old = {"items": select(repo), "generated_at": NOW - timedelta(hours=2)}
+    repo.snapshots[service.today(NOW)] = old
+    assert not asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({
+        "candidates": [],
+    }), web=web_research(available=False)))
+    assert repo.snapshots[service.today(NOW)] is old
+    assert repo.save_calls == []
+
+
+def test_identical_copied_bodies_do_not_count_as_independent_publishers():
+    body = "We introduce Prism Routing, a novel training mechanism for sparse networks. " * 4
+    docs = [web_document(summary=body), web_document("https://copy.example/prism", title="Repost", summary=body)]
+    assert len(service.eligible_documents(docs, NOW)) == 1
