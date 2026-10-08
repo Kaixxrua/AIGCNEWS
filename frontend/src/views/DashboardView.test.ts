@@ -102,7 +102,6 @@ const mountView = async () => {
         DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
         DashboardRankingPanel: { template: '<div />' },
         DashboardEmptyState: { props: ['variant', 'error'], emits: ['retry'], template: '<button class="empty-stub" :data-variant="variant" :data-error="error" @click="$emit(\'retry\')" />' },
-        DigestGeometry: { template: '<div />' },
         RollingNumber: { template: '<span />' },
       },
     },

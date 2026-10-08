@@ -15,7 +15,7 @@ import { ArrowRight, Mail, Plug, Terminal, Check } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
 import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
 
-defineOptions({ name: 'DesktopDashboardView' })
+defineOptions({ name: 'DashboardContent' })
 const { t, locale } = useI18n()
 const digestFeatures = ['featureSchedule', 'featureEmailRss', 'featureChat', 'featureWebhook'] as const
 const uiCount = ref<number | null>(null)
@@ -96,7 +96,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
         <h1>{{ t('dashboard.editorial.title') }}</h1>
         <p>{{ t('dashboard.editorial.subtitle') }}</p>
       </div>
-      <DashboardOverviewPanel v-if="!loading" :loading="loading" :active-tab="activeTab"
+      <DashboardOverviewPanel :loading="loading" :active-tab="activeTab"
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
         @select-source="selectSourceTab" />
     </header>
@@ -314,5 +314,34 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .ui-inspiration__preview { grid-row:2; }
   .ui-inspiration__caption { flex-direction:row;justify-content:space-between;align-items:baseline;gap:12px; }
   .ui-inspiration__caption > span:last-child { flex-shrink:0; }
+}
+/* Keep the desktop cards and content order in one flowing, touch-friendly page. */
+@media (max-width:1023px) {
+  .dashboard-page { display:flex;flex-direction:column;height:auto;overflow:visible;gap:20px;padding:22px 8px 28px; }
+  .dashboard-heading { flex-direction:column;align-items:stretch;gap:18px; }
+  .dashboard-heading__copy { flex-basis:auto;padding:0 30px 0 2px; }
+  .dashboard-heading h1 { font-size:30px;letter-spacing:0; }
+  .dashboard-heading p { margin-top:6px;font-size:14px;white-space:normal; }
+  .dashboard-heading :deep(.stat-strip) { flex:0 0 auto; }
+  .dashboard-main { display:flex;flex-direction:column;gap:24px; }
+  .dashboard-sidebar { grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto auto;gap:16px; }
+  .dashboard-sidebar :deep(.dash-calendar) { padding:14px; }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:40px;min-height:40px; }
+  .dashboard-sidebar :deep(.cal-nav) { width:44px;height:44px; }
+  .dashboard-sidebar :deep(.dash-calendar > .grid:last-child) { flex:none; }
+  .digest-card { min-height:250px;padding:16px; }
+  .digest-card p { font-size:13px;line-height:1.6; }
+  .digest-features { font-size:13px;line-height:1.6; }
+  .digest-cta { min-height:44px;margin-top:16px; }
+  .integration-grid { min-height:88px; }
+  .ui-inspiration { min-height:110px;container-type:inline-size; }
+  .ui-inspiration__body { grid-template-columns:100px minmax(0,1fr); }
+  .dashboard-error { align-items:flex-start;flex-wrap:wrap; }
+  .dashboard-error button { min-height:44px; }
+}
+@media (max-width:599px) {
+  .dashboard-sidebar { grid-template-columns:minmax(0,1fr);grid-template-rows:auto; }
+  .dashboard-heading h1 { font-size:28px; }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:44px;min-height:44px; }
 }
 </style>

@@ -148,9 +148,9 @@
   #app .project-card--catalog .project-card__rail { position: absolute; width: 40px; flex-direction: column; }
   #app .project-card--catalog .project-card__action { width: 40px; min-height: 40px; }
   #app .app-shell .project-card--catalog .project-card__details > summary { display: none; }
-  #app .app-shell .project-card--catalog .project-card__action { padding: 0; min-height: 40px; border: 0; background: transparent; }
-  #app .app-shell .project-card--catalog .project-card__rail { padding: 0; gap: 4px; width: 84px; flex-direction: row; }
-  #app .app-shell .project-card--catalog .project-card__header { padding-right: 84px; min-height: 44px; }
+  #app .app-shell .project-card--catalog .project-card__action { padding: 0; width: 44px; min-height: 44px; border: 1px solid var(--rule); background: var(--paper-raised); }
+  #app .app-shell .project-card--catalog .project-card__rail { position: static; padding-top: 8px; gap: 8px; width: auto; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
+  #app .app-shell .project-card--catalog .project-card__header { padding-right: 0; min-height: 36px; }
   #app .app-shell .project-card--catalog .project-card__body { padding: 14px; border: 1px solid var(--ink-muted); border-radius: 6px; }
   #app .app-shell .project-card--catalog { border: 0; padding: 0; }
   #app .app-shell .projects-page--catalog .projects-grid { gap: 14px; }
