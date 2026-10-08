@@ -44,6 +44,35 @@ def _insert_document(repository: Any, doc_id: str) -> None:
     )
 
 
+def test_paper_search_route_filters_mixed_sources_before_limit(postgres_documents) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.app.api.dependencies import get_document_repository
+    from backend.app.api.routes_papers import router
+
+    repository, database = postgres_documents
+    app = FastAPI()
+    app.include_router(router, prefix="/api")
+    app.dependency_overrides[get_document_repository] = lambda: repository
+    try:
+        for index, source in enumerate(("dailyhot", "x", "arxiv")):
+            repository.upsert_document({
+                "id": f"paper-scope-audit-{index}", "source": source,
+                "title": "paperscopeaudit", "summary": "paperscopeaudit",
+                "url": f"https://example.com/paperscopeaudit/{index}",
+                "published_date": "2026-10-08", "tags": [],
+            })
+        assert len(repository.search_documents("paperscopeaudit", 5)) == 3
+        response = TestClient(app).get("/api/papers/search", params={"q": "paperscopeaudit", "limit": 1})
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert [item["source"] for item in response.json()["items"]] == ["arxiv"]
+    finally:
+        with database.transaction() as connection:
+            connection.execute("DELETE FROM documents WHERE id LIKE 'paper-scope-audit-%%'")
+
+
 def test_public_x_watchlist_keeps_quiet_accounts_and_uses_latest_real_nickname(
     postgres_documents: tuple[Any, Any],
 ) -> None:
