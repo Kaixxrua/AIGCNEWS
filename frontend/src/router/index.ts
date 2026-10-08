@@ -18,6 +18,7 @@ const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
 const OAuthActionCallbackView = () => import('@/views/OAuthActionCallbackView.vue')
+const McpOAuthAuthorizeView = () => import('@/views/McpOAuthAuthorizeView.vue')
 const PaperReadView = () => import('@/views/PaperReadView.vue')
 const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
@@ -51,6 +52,13 @@ const router = createRouter({
       component: OAuthActionCallbackView,
       // 渠道绑定回调须携带当前登录会话：绑定目标 = 当前账户
       meta: { requiresAuth: true },
+    },
+    {
+      // MCP OAuth 授权端点（同意页）。不设 requiresAuth：守卫的登录流程会把首次打开的页面换成首页，
+      // 客户端带来的授权请求就丢了，登录由页面自己处理。
+      path: '/oauth/authorize',
+      name: 'oauth-authorize',
+      component: McpOAuthAuthorizeView,
     },
 
     // ── 主 Layout（大白卡片 + Dock + Auth） ──

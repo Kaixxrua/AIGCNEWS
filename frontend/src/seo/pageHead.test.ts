@@ -93,6 +93,9 @@ describe('resolvePageHead', () => {
     // 未知地址的兜底页本身就是「没有这一页」，不用页面另外声明。
     expect(resolvePageHead(at('not-found', '/no-such-page'), null, t))
       .toMatchObject({ title: '页面不存在 · AIGCNEWS', noindex: true, canonical: null })
+    // MCP OAuth 同意页只给客户端跳转用，带着一次性的授权参数，不该被收录。
+    expect(resolvePageHead(at('oauth-authorize', '/oauth/authorize'), null, t))
+      .toMatchObject({ title: '授权 MCP 客户端 · AIGCNEWS', noindex: true, canonical: null })
   })
 })
 

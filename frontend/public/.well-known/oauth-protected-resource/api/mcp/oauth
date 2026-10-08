@@ -1,0 +1,8 @@
+{
+  "resource": "https://aigcnews.cn/api/mcp/oauth",
+  "authorization_servers": ["https://aigcnews.cn"],
+  "scopes_supported": ["projects:favorites:read", "tracking:read"],
+  "bearer_methods_supported": ["header"],
+  "resource_name": "AIGC Radar MCP",
+  "resource_documentation": "https://aigcnews.cn/mcp"
+}
