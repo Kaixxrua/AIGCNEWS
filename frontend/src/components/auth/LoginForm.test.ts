@@ -31,7 +31,7 @@ describe('LoginForm', () => {
     const wrapper = mountForm({ redirect: '/projects?source=all' })
     await flushPromises()
     const button = wrapper.get('.auth-oauth button')
-    expect(button.text()).toBe(provider === 'qq' ? '使用 QQ 登录' : 'LD 使用 Linux DO 登录')
+    expect(button.text()).toBe(provider === 'qq' ? '使用 QQ 登录' : '使用 Linux DO 登录')
     await button.trigger('click')
     expect(startOAuth).toHaveBeenCalledWith(provider, '/projects?source=all')
     wrapper.unmount()

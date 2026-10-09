@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import linuxdoLogo from '@/assets/brands/linuxdo.svg'
+
 defineProps<{
   provider: string
 }>()
@@ -35,5 +37,5 @@ defineProps<{
   <path d="M12.75 7a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
   <path d="M9.25 7a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" />
 </svg>
-  <span v-else-if="provider === 'linuxdo'" class="flex h-5 w-5 shrink-0 items-center justify-center text-xs font-bold" aria-hidden="true">LD</span>
+  <img v-else-if="provider === 'linuxdo'" :src="linuxdoLogo" class="h-5 w-5 shrink-0" width="20" height="20" alt="" aria-hidden="true" />
 </template>
