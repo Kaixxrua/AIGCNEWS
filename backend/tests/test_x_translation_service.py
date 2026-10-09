@@ -282,3 +282,62 @@ def test_process_skips_persisting_when_lease_lost(monkeypatch) -> None:
     result = processor.process(10)
 
     assert result == {"claimed": 1, "completed": 0, "failed": 0}
+
+
+def test_process_reuses_completed_translation_without_calling_model(monkeypatch) -> None:
+    def unexpected_model(**kwargs):
+        pytest.fail("an identical translated tweet must not call the model again")
+
+    monkeypatch.setattr(x_translation_service, "get_chat_model", unexpected_model)
+    task = {**_task(4), "reusable_translation_zh": "已有译文 https://example.com"}
+    repository = FakeRepository([task])
+
+    result = XTranslationProcessor(repository).process(1)
+
+    assert result == {"claimed": 1, "completed": 1, "failed": 0}
+    assert repository.completed == [(4, task["reusable_translation_zh"], "token-4")]
+
+
+@pytest.mark.parametrize("cached", [None, "", "  "])
+def test_translate_calls_model_when_reusable_translation_is_empty(monkeypatch, cached) -> None:
+    class Model:
+        def invoke(self, messages):
+            return "新译文"
+
+    monkeypatch.setattr(x_translation_service, "get_chat_model", lambda **kwargs: Model())
+    task = {**_task(4), "reusable_translation_zh": cached}
+
+    assert XTranslationProcessor(FakeRepository([]))._translate_one(task) == "新译文"
+
+
+@pytest.mark.parametrize("previous_error", [None, "X translation timed out after 1200 seconds"])
+def test_image_failure_falls_back_to_text_and_preserves_source_links(monkeypatch, previous_error) -> None:
+    inputs = []
+
+    class Model:
+        def invoke(self, messages):
+            content = messages[-1].content
+            inputs.append(content)
+            if isinstance(content, list):
+                assert any(block.get("type") == "image_url" for block in content)
+                raise TimeoutError("image input stalled")
+            assert content == "more 🔛 XTRTOKEN0X"
+            return "更多 🔛 XTRTOKEN0X"
+
+    monkeypatch.setattr(x_translation_service, "get_chat_model", lambda **kwargs: Model())
+    monkeypatch.setattr(x_translation_service.time, "sleep", lambda _: None)
+    source = "more 🔛 https://github.com/Tencent-Hunyuan/ExplorationBench"
+    task = {
+        **_task(5), "source_text": source, "target_kind": "outer",
+        "document_source_text": source, "last_error": previous_error,
+        "document_media": [{"type": "photo", "url": "https://pbs.twimg.com/media/quote.jpg"}],
+    }
+    repository = FakeRepository([task])
+
+    result = XTranslationProcessor(repository).process(1)
+
+    assert result == {"claimed": 1, "completed": 1, "failed": 0}
+    assert len(inputs) == (1 if previous_error else 2)
+    assert isinstance(inputs[-1], str)
+    assert repository.completed == [(5, source.replace("more", "更多"), "token-5")]
+    assert "_translation_text_only" not in task

@@ -209,9 +209,21 @@ class PostgresXTranslationTaskRepository:
                     SELECT claimed.*, document.media AS document_media,
                            document.quote AS document_quote,
                            document.summary AS document_source_text,
-                           document.url AS document_url
+                           document.url AS document_url,
+                           cached.translation_zh AS reusable_translation_zh
                     FROM claimed
                     LEFT JOIN documents AS document ON document.id = claimed.document_id
+                    LEFT JOIN LATERAL (
+                        SELECT completed.translation_zh
+                        FROM x_translation_tasks AS completed
+                        WHERE completed.source_tweet_id = claimed.source_tweet_id
+                          AND completed.source_fingerprint = claimed.source_fingerprint
+                          AND completed.prompt_version = claimed.prompt_version
+                          AND completed.status = 'succeeded'
+                          AND NULLIF(BTRIM(completed.translation_zh), '') IS NOT NULL
+                        ORDER BY completed.completed_at DESC NULLS LAST, completed.id DESC
+                        LIMIT 1
+                    ) AS cached ON TRUE
                     """,
                     (batch_limit, str(uuid.uuid4()), lease),
                 )

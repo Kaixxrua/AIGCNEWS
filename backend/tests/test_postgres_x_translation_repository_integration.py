@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import threading
 import uuid
@@ -235,3 +236,60 @@ def test_retire_rejected_only_exhausted_output_rejections_and_summary_tracks_suc
     assert result[document_ids["legacy"]] == ("failed", None)
     assert result[document_ids["pending"]] == ("pending", None)
     assert summary["latest_success_at"].isoformat() == "2099-01-01T00:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [None, "tweet", "text", "prompt", "failed", "empty"],
+)
+def test_claim_reuses_only_matching_successful_translation_for_quote(
+    x_translation_repository: tuple[Any, PostgresDatabaseLifecycle], mismatch: str | None,
+) -> None:
+    repository, database = x_translation_repository
+    tag = uuid.uuid4().hex[:8]
+    source_id = f"source{tag}"
+    text = "New Research: We are releasing ExplorationBench."
+    source_doc = _insert_pending_task(database, source_id, text)
+    parent_doc = _insert_pending_task(database, f"parent{tag}", "more")
+    translation = "最新研究：我们发布了 ExplorationBench。"
+    quote = {"tweet_id": source_id, "text": text, "language": "en"}
+    try:
+        with database.transaction() as connection:
+            connection.execute(
+                """UPDATE x_translation_tasks
+                   SET status = %s, translation_zh = %s, completed_at = CURRENT_TIMESTAMP
+                   WHERE document_id = %s""",
+                ("failed" if mismatch == "failed" else "succeeded",
+                 "  " if mismatch == "empty" else translation, source_doc),
+            )
+            connection.execute(
+                """UPDATE x_translation_tasks
+                   SET target_kind = 'quote', source_tweet_id = %s, source_text = %s,
+                       source_fingerprint = %s, prompt_version = %s
+                   WHERE document_id = %s""",
+                (source_id if mismatch != "tweet" else f"other{tag}", text,
+                 "b" * 64 if mismatch == "text" else "a" * 64,
+                 "x-translation-v2" if mismatch == "prompt" else "x-translation-v1",
+                 parent_doc),
+            )
+            connection.execute(
+                "UPDATE documents SET quote = %s WHERE id = %s",
+                (json.dumps(quote), parent_doc),
+            )
+        tasks = repository.claim_retryable(100)
+        task = next(row for row in tasks if row["document_id"] == parent_doc)
+        assert task["reusable_translation_zh"] == (translation if mismatch is None else None)
+        if mismatch is None:
+            assert repository.complete_task(
+                task["id"], task["reusable_translation_zh"], "", "", task["claim_token"]
+            )
+            with database.transaction() as connection:
+                stored = connection.execute(
+                    "SELECT quote FROM documents WHERE id = %s", (parent_doc,)
+                ).fetchone()
+            assert json.loads(stored["quote"]) == {**quote, "translation_zh": translation}
+    finally:
+        with database.transaction() as connection:
+            connection.execute(
+                "DELETE FROM documents WHERE id = ANY(%s)", ([source_doc, parent_doc],)
+            )

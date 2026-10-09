@@ -107,8 +107,12 @@ class XTranslationProcessor:
         source = str(task.get("source_text") or "").strip()
         if not source:
             raise TranslationOutputError("empty source text")
+        # The repository matches tweet identity, source fingerprint and prompt version.
+        cached = task.get("reusable_translation_zh")
+        if isinstance(cached, str) and cached.strip():
+            return cached
         protected, tokens = _protect(source)
-        attachments = translation_photo_blocks(task)
+        attachments = [] if task.get("_translation_text_only") else translation_photo_blocks(task)
         content = (
             [{"type": "text", "text": protected}, *attachments]
             if attachments else protected
@@ -167,13 +171,17 @@ class XTranslationProcessor:
         def run(task: dict[str, Any]) -> tuple[int, str | None, str | None, bool]:
             task_id = int(task["id"])
             claim_token = str(task.get("claim_token") or "")
+            # Photos are context, not a prerequisite for translating the post.
+            # A previous failed invocation must not keep retrying the same images.
+            attempt_task = {**task, "_translation_text_only": bool(task.get("last_error"))}
             for attempt in range(_MAX_RETRIES):
                 if not self.repository.increment_attempt(task_id, claim_token):
                     return task_id, None, "translation lease lost", False
                 try:
-                    return task_id, self._translate_with_timeout(task), None, False
+                    return task_id, self._translate_with_timeout(attempt_task), None, False
                 except Exception as exc:
                     if attempt + 1 < _MAX_RETRIES:
+                        attempt_task = {**task, "_translation_text_only": True}
                         time.sleep(min(2 ** attempt, 4))
                     else:
                         return task_id, None, str(exc)[:1000], isinstance(exc, TranslationOutputError)
