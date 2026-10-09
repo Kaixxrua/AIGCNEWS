@@ -7,10 +7,13 @@ import type { UiTemplate } from '@/features/ui-library/catalog'
 import { __resetPageHeadForTest, installPageHead } from '@/seo/pageHead'
 import UiLibraryView from './UiLibraryView.vue'
 
+const mocks = vi.hoisted(() => ({ get: vi.fn(), isAdmin: { value: false } }))
+vi.mock('@/services/http/apiClient', () => ({ api: { get: mocks.get } }))
 vi.mock('@/features/ui-library/useUiLibraryAccount', async () => {
   const { ref } = await import('vue')
+  mocks.isAdmin = ref(false)
   return {
-    provideUiLibraryAccount: () => ({ stats: ref({}), loadError: ref(false), quotaText: ref(''), refresh: async () => undefined }),
+    provideUiLibraryAccount: () => ({ isAdmin: mocks.isAdmin, stats: ref({}), loadError: ref(false), quotaText: ref(''), refresh: async () => undefined }),
   }
 })
 
@@ -61,6 +64,8 @@ async function openLibraryAt(path: string) {
 }
 
 beforeEach(() => {
+  mocks.isAdmin.value = false
+  mocks.get.mockReset()
   i18n.global.locale.value = 'zh-CN'
   document.head.innerHTML = ''
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: [template], icon_count: 0 }) })))
@@ -74,6 +79,40 @@ afterEach(() => {
 })
 
 describe('UiLibraryView item address', () => {
+  it('lets admins restore deprecated items and closes their detail when admin access ends', async () => {
+    mocks.isAdmin.value = true
+    mocks.get.mockResolvedValue({ data: { version: 1, items: [{ ...template, deprecated: true }], icon_count: 0 } })
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: [], icon_count: 0 }) })))
+    const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
+    expect(mocks.get).toHaveBeenCalledWith('/ui-library/catalog', expect.objectContaining({ params: { include_deprecated: true } }))
+    expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'UiTemplateCard' }).props('item').deprecated).toBe(true)
+    mocks.isAdmin.value = false
+    await flushPromises()
+    expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(false)
+    expect(wrapper.find('ui-template-card-stub').exists()).toBe(false)
+    expect(wrapper.find('.ui-library__not-found').exists()).toBe(true)
+    expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
+    expect(fetch).toHaveBeenCalledWith('/api/ui-library/catalog', expect.objectContaining({ cache: 'no-store' }))
+    wrapper.unmount()
+  })
+
+  it('does not restore an admin catalog from a late response after logout', async () => {
+    mocks.isAdmin.value = true
+    let resolve!: (value: unknown) => void
+    mocks.get.mockReturnValue(new Promise(done => { resolve = done }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: [], icon_count: 0 }) })))
+    const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
+    mocks.isAdmin.value = false
+    await flushPromises()
+    resolve({ data: { version: 1, items: [{ ...template, deprecated: true }], icon_count: 0 } })
+    await flushPromises()
+    expect(wrapper.find('ui-template-card-stub').exists()).toBe(false)
+    expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(false)
+    expect(wrapper.find('.ui-library__not-found').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('opens a known item without the not-found notice and titles the page after it', async () => {
     const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
     expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(true)

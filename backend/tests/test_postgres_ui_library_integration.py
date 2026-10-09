@@ -35,6 +35,21 @@ def test_parallel_source_and_prompt_requests_share_five_slots(store):
     assert repo.consume_copy(user, 'sample', 'source', str(uuid4()), day + timedelta(days=1), 5) == 1
 
 
+def test_material_moderation_survives_new_repository_and_can_be_restored(store):
+    repo, user = store
+    assert repo.deprecated_ids() == set()
+    repo.set_deprecated('sample', True, user)
+    repo.set_deprecated('demo:icon', True, user)
+    reloaded = PostgresUiLibraryRepository(repo._database)
+    assert reloaded.deprecated_ids() == {'sample', 'demo:icon'}
+    reloaded.set_deprecated('sample', False, user)
+    assert repo.deprecated_ids() == {'demo:icon'}
+    with repo._database.transaction() as conn, conn.cursor() as cur:
+        cur.execute('SELECT deprecated, updated_by, updated_at FROM ui_material_visibility WHERE material_id=%s', ('sample',))
+        row = cur.fetchone()
+        assert row['deprecated'] is False and row['updated_by'] == user and row['updated_at'] is not None
+
+
 def test_receipt_retries_and_vip_do_not_lose_counts(store):
     repo, user = store
     day = datetime.now(timezone.utc).date()

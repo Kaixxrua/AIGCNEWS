@@ -1,6 +1,9 @@
+import { api } from '@/services/http/apiClient'
+
 export type UiLanguage = 'zh' | 'en'
 export interface UiTemplate {
   id: string
+  deprecated?: boolean
   added_at?: string
   preview_kind?: 'html'
   preview_width?: number
@@ -84,6 +87,7 @@ export function addedOnCalendarDay(items: UiTemplate[], now = Date.now(), timeZo
 }
 export interface UiIcon {
   id: string
+  deprecated?: boolean
   name: string
   display: Record<UiLanguage, string>
   style: string
@@ -109,10 +113,15 @@ export interface UiIconSet {
   rights_evidence_url: string
   icons: UiIcon[]
 }
-export async function loadIconSets(signal?: AbortSignal): Promise<UiIconSet[]> {
-  const response = await fetch('/ui-library/icons.json', { signal })
-  if (!response.ok) throw new Error('Icon catalog unavailable')
-  const data = await response.json()
+async function loadVisibleCatalog(path: string, signal?: AbortSignal, includeDeprecated = false) {
+  if (includeDeprecated) return (await api.get(path, { signal, params: { include_deprecated: true } })).data
+  const response = await fetch(`/api${path}`, { signal, cache: 'no-store' })
+  if (!response.ok) throw new Error('Catalog unavailable')
+  return response.json()
+}
+
+export async function loadIconSets(signal?: AbortSignal, includeDeprecated = false): Promise<UiIconSet[]> {
+  const data = await loadVisibleCatalog('/ui-library/icons', signal, includeDeprecated)
   if (data.version !== 1 || !Array.isArray(data.sets)) throw new Error('Invalid icon catalog')
   return data.sets
 }
@@ -155,10 +164,8 @@ export async function loadIconLicense(set: UiIconSet, signal?: AbortSignal): Pro
   return response.text()
 }
 
-export async function loadCatalogWithMeta(signal?: AbortSignal): Promise<{ items: UiTemplate[]; iconCount: number }> {
-  const response = await fetch('/ui-library/catalog.json', { signal })
-  if (!response.ok) throw new Error('Catalog unavailable')
-  const data = await response.json()
+export async function loadCatalogWithMeta(signal?: AbortSignal, includeDeprecated = false): Promise<{ items: UiTemplate[]; iconCount: number }> {
+  const data = await loadVisibleCatalog('/ui-library/catalog', signal, includeDeprecated)
   if (data.version !== 1 || !Array.isArray(data.items)) throw new Error('Invalid catalog')
   return { items: data.items, iconCount: Number(data.icon_count) || 0 }
 }

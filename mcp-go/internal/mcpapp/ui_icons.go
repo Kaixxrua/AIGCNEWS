@@ -3,6 +3,7 @@ package mcpapp
 import (
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 
 	"aigcnews/mcp-go/internal/jsonx"
@@ -12,9 +13,10 @@ import (
 
 // uiIconService serves the reviewed, pinned and license-audited icon sets.
 type uiIconService struct {
-	catalog  *uicatalog.IconCatalog
-	baseURL  string
-	semantic UISemanticSearcher
+	catalog    *uicatalog.IconCatalog
+	baseURL    string
+	semantic   UISemanticSearcher
+	deprecated UIDeprecatedLookup
 }
 
 // withSemantic fuses the lexical icons with the semantic lane (equal-weight
@@ -153,6 +155,11 @@ func (s *uiIconService) search(args map[string]any) (any, error) {
 		limit = int(value)
 	}
 	matches := s.withSemantic(q, setFilter, style, category, s.catalog.SearchIcons(q, setFilter, style, category))
+	deprecated, err := s.deprecated.ids()
+	if err != nil {
+		return nil, err
+	}
+	matches = slices.DeleteFunc(matches, func(icon uicatalog.Icon) bool { return deprecated[icon.ID] })
 	items := []any{}
 	for _, icon := range matches[:min(limit, len(matches))] {
 		items = append(items, s.summary(icon, language))
@@ -191,7 +198,11 @@ func (s *uiIconService) get(args map[string]any) (any, error) {
 		include = value
 	}
 	icon, set, ok := s.catalog.Get(id)
-	if !ok {
+	deprecated, err := s.deprecated.ids()
+	if err != nil {
+		return nil, err
+	}
+	if !ok || deprecated[id] {
 		return nil, ToolInputError{Message: "Unknown UI icon id. Use search_ui_icons to find an available id."}
 	}
 	result := s.summary(icon, language)

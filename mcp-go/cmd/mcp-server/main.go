@@ -145,7 +145,8 @@ func run() int {
 		}()
 		slog.Info("[Startup] UI 检索已启用关键词 + 语义混合通道", "collection", cfg.UISemantic.CollectionName, "documents", len(uiDocuments))
 	}
-	for name, handler := range mcpapp.NewUICatalogHandlers(uiCatalog, uiIcons, publicBaseURL, uiSemantic) {
+	uiVisibility := postgres.NewUIVisibilityRepository(pool)
+	for name, handler := range mcpapp.NewUICatalogHandlers(uiCatalog, uiIcons, publicBaseURL, uiSemantic, uiVisibility.DeprecatedIDs) {
 		registry[name] = handler
 	}
 	documents := postgres.NewDocumentRepository(pool, cfg.SchedulerTimezone)

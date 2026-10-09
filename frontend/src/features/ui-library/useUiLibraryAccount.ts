@@ -93,7 +93,7 @@ function createAccount(lang: Ref<UiLanguage>, ranking: Ref<Ranking>, beforeLogin
   watch(() => auth.userId, () => pending.clear())
   const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh() }, 60_000)
   onBeforeUnmount(() => { stopped = true; generation++; clearInterval(timer) })
-  return { stats, quotaText, loadError, liking, requireAccount, refresh, like, copyValue }
+  return { isAdmin: computed(() => auth.isAdmin), stats, quotaText, loadError, liking, requireAccount, refresh, like, copyValue }
 }
 
 export function provideUiLibraryAccount(lang: Ref<UiLanguage>, ranking: Ref<Ranking>, beforeLogin: () => Promise<void>) {

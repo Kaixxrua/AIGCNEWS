@@ -13,6 +13,34 @@ from backend.app.services.membership.tiers import resolve_effective_tier
 PERIOD_HOURS = {'daily': 24, 'weekly': 168, 'monthly': 720}
 
 
+@lru_cache(maxsize=4)
+def _read_catalog(path: str, modified_ns: int, size: int) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding='utf-8'))
+
+
+def visible_catalog(deprecated: set[str], *, icons: bool = False, include_deprecated: bool = False) -> dict[str, Any]:
+    path = Path(settings.ui_library_catalog_path)
+    if icons:
+        path = path.with_name('icons.json')
+    if icons and not path.exists():
+        return {'version': 1, 'sets': []}
+    stat = path.stat()
+    data = _read_catalog(str(path), stat.st_mtime_ns, stat.st_size)
+
+    def visible(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        # Copy each row: an admin response must never contaminate the cached public catalog.
+        return [
+            {**item, 'deprecated': item['id'] in deprecated} if include_deprecated else item
+            for item in items if include_deprecated or item['id'] not in deprecated
+        ]
+
+    if icons:
+        return {**data, 'sets': [{**group, 'icons': visible(group['icons'])} for group in data['sets']]}
+    icon_catalog = visible_catalog(deprecated, icons=True, include_deprecated=include_deprecated)
+    return {**data, 'items': visible(data['items']),
+            'icon_count': sum(len(group['icons']) for group in icon_catalog['sets'])}
+
+
 def catalog_ids(path: str) -> frozenset[str]:
     stat = Path(path).stat()
     icons = Path(path).with_name('icons.json')

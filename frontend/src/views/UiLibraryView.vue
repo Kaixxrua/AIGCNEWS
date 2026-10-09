@@ -104,25 +104,46 @@ const visibility = useDocumentVisibility()
 const autoplay = ref(true)
 const previewsEnabled = computed(() => autoplay.value && !contactSheet.value && visibility.value === 'visible' && !selected.value)
 let trigger: HTMLElement | null = null
+let catalogGeneration = 0
+let iconGeneration = 0
 async function refresh() {
+  const generation = ++catalogGeneration
   loading.value = true
   failed.value = false
   try {
-    const bundle = await loadCatalogWithMeta(controller.signal)
+    const bundle = await loadCatalogWithMeta(controller.signal, account.isAdmin.value)
+    if (generation !== catalogGeneration || controller.signal.aborted) return
     items.value = bundle.items
     iconCount.value = bundle.iconCount
   }
-  catch { if (!controller.signal.aborted) failed.value = true }
-  finally { loading.value = false }
+  catch { if (generation === catalogGeneration && !controller.signal.aborted) { failed.value = true; items.value = [] } }
+  finally { if (generation === catalogGeneration) loading.value = false }
 }
 async function loadIcons() {
+  const generation = ++iconGeneration
   iconsLoading.value = true
   iconsFailed.value = false
-  try { iconSets.value = await loadIconSets(controller.signal) }
-  catch { if (!controller.signal.aborted) iconsFailed.value = true }
-  finally { iconsLoading.value = false }
+  try {
+    const sets = await loadIconSets(controller.signal, account.isAdmin.value)
+    if (generation === iconGeneration && !controller.signal.aborted) iconSets.value = sets
+  }
+  catch { if (generation === iconGeneration && !controller.signal.aborted) { iconsFailed.value = true; iconSets.value = [] } }
+  finally { if (generation === iconGeneration) iconsLoading.value = false }
 }
 watch(iconMode, active => { if (active && !iconSets.value.length && !iconsLoading.value) void loadIcons() }, { immediate: true })
+// 登录身份改变时立即清掉管理员目录；迟到的旧请求不能把废弃素材带回普通用户界面。
+watch(account.isAdmin, () => {
+  catalogGeneration++
+  iconGeneration++
+  items.value = []
+  iconSets.value = []
+  iconCount.value = 0
+  iconsLoading.value = false
+  iconsFailed.value = false
+  selectedIcon.value = null
+  void refresh()
+  if (iconMode.value) void loadIcons()
+})
 function setFilter(key: string, value: string) {
   void router.replace({ query: { ...route.query, ...(['category', 'style', 'framework', 'set'].includes(key) ? { kind: kind.value } : {}), [key]: value || undefined } })
 }
@@ -195,7 +216,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-else-if="iconsFailed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="loadIcons">{{ text.retry }}</button></div>
           <div v-else-if="!filteredIcons.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ text.emptyIcons }}</h2><p>{{ text.emptyIconsHint }}</p><button type="button" @click="router.replace({ query: { kind: 'icon' } })">{{ text.clear }}</button></div>
           <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__icon-grid">
-            <UiIconCard v-for="icon in filteredIcons.slice(0, visibleLimit)" :key="icon.id" :icon="icon" :set="iconSetOf(icon)" :lang="lang" @open="openIcon(icon, $event)" />
+            <UiIconCard v-for="icon in filteredIcons.slice(0, visibleLimit)" :key="icon.id" :icon="icon" :set="iconSetOf(icon)" :lang="lang" @open="openIcon(icon, $event)" @visibility="icon.deprecated = $event" />
           </div>
           <div v-if="filteredIcons.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ Math.min(visibleLimit, filteredIcons.length) }} / {{ filteredIcons.length }}</button></div>
         </template>
@@ -204,7 +225,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-else-if="failed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="refresh">{{ text.retry }}</button></div>
           <div v-else-if="!filtered.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ ranking === 'new' ? text.emptyNew : text.empty }}</h2><p>{{ ranking === 'new' ? text.emptyNewHint : text.emptyHint }}</p><button type="button" @click="router.replace({ query: {} })">{{ text.clear }}</button></div>
           <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid" :data-density="density">
-            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" />
+            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" @visibility="item.deprecated = $event" />
           </div>
           <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>
         </template>
