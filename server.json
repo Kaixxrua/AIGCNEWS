@@ -4,10 +4,6 @@
   "title": "AIGC Radar MCP",
   "description": "AI-vertical index: arXiv papers, curated GitHub AI projects, daily rankings. Zero-setup, read-only.",
   "version": "1.2.0",
-  "repository": {
-    "source": "github",
-    "url": "https://github.com/Kaixxrua/AIGC_NEWS"
-  },
   "websiteUrl": "https://aigcnews.cn",
   "icons": [
     {
