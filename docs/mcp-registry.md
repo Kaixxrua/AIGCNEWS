@@ -46,13 +46,30 @@ mcp-publisher publish
 
 ## 其他目录站
 
-均为 Web 表单提交，无需仓库内元数据（或仅参考 server.json 内容填写）：
+下表是 2026-10 核实的提交方式。各站规则常变，提交前以站点当时的页面为准。
 
 | 目录 | 提交方式 | 填写要点 |
 | --- | --- | --- |
-| Smithery（smithery.ai） | 站点内 "Add Server" 表单 | Remote URL `https://aigcnews.cn/api/mcp`，transport 选 Streamable HTTP |
-| mcp.so | 站点提交表单 | 名称 AIGC Radar MCP，描述可复用 server.json 的 description |
-| awesome-mcp-servers | 向对应 GitHub 仓库提 PR | 条目要链接公开仓库，主仓库公开前不提 |
+| PulseMCP | 2026-09 起暂停人工提交；站方说明恢复后自动收录官方 registry | 无需操作，发布到官方 registry 即可 |
+| mcp.directory | 从官方 registry 自动发现 | registry 发布后可认领条目，获得验证标记和编辑权 |
+| Smithery（smithery.ai） | 登录后 smithery.ai/new，选 URL 方式；不要求仓库 | 填匿名入口 `https://aigcnews.cn/api/mcp`。用户经 Smithery 网关（`*.run.tools`）连接，匿名额度按网关出口 IP 计、被所有经它的用户共用。不填 OAuth 入口：Smithery 对上游走 CIMD，我们只支持 DCR |
+| mcp.so | `/submit?type=remote-server`（Remote Server 页），只填 Name 和 Remote endpoint URL | 页面只给 $39 付费提交；首页 FAQ 另写可在 GitHub chatmcp/mcp-directory 提 issue |
+| awesome-remote-mcp-servers（jaw9c） | 向 GitHub 仓库提 PR，在 README 表格加一行 | 接受 Open 鉴权和官网链接，不要求公开仓库；表格行见下 |
+| awesome-mcp-servers（punkpeye） | 向 GitHub 仓库提 PR | 只收源码公开的服务器，主仓库公开前不提 |
+
+### 提交素材
+
+- 名称：AIGC Radar MCP（awesome 表格里写 AIGC Radar）
+- 一句话描述（与 server.json 相同，≤100 字符）：AI-vertical index: arXiv papers, curated GitHub AI projects, daily rankings. Zero-setup, read-only.
+- 入口：
+  - 匿名 `https://aigcnews.cn/api/mcp`，也接受 /mcp 页创建的 Bearer 令牌；
+  - OAuth `https://aigcnews.cn/api/mcp/oauth`：浏览器授权，DCR + PKCE S256。
+- 官网 https://aigcnews.cn ，接入说明 https://aigcnews.cn/mcp ，图标 https://aigcnews.cn/logo.png
+- awesome-remote-mcp-servers 表格行：
+
+  ```text
+  | AIGC Radar | Search | `https://aigcnews.cn/api/mcp` | Open / API Key | [AIGCNEWS](https://aigcnews.cn) |
+  ```
 
 ## 变更与下线
 
