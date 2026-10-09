@@ -691,14 +691,23 @@ class PostgresProjectCatalogRepository:
             filters.append("COALESCE(ge.tags_json::text, '') ILIKE %s")
             filter_params.append(f'%"{tag.strip()}"%')
 
+        # Imported descriptions occasionally contain entire archives. Only the
+        # short profile can establish lexical eligibility; distant mentions
+        # remain available to semantic retrieval without pinning a strict hit.
         candidate_document = (
             "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '')"
-            " || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '')"
+            " || ' ' || LEFT(COALESCE(c.description, ''), 1024) || ' ' || COALESCE(c.language, '')"
             " || ' ' || COALESCE(c.topics_json, ''))"
         )
         enrichment_document = (
-            "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
+            "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.description_en, '')"
+            " || ' ' || COALESCE(ge.tags_json::text, '') || ' ' || COALESCE(ge.tags_zh_json::text, '')"
+            " || ' ' || COALESCE(ge.tags_en_json::text, ''))"
         )
+        # Per concept: prose=0, repository name/topics=1, curated tags=2.
+        # MAX below prevents synonym repetition or bilingual tags stacking.
+        candidate_profile = "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.topics_json, ''))"
+        enrichment_profile = "LOWER(COALESCE(ge.tags_json::text, '') || ' ' || COALESCE(ge.tags_zh_json::text, '') || ' ' || COALESCE(ge.tags_en_json::text, ''))"
         rows: list[tuple[str, str, bool]] = []
         for index, term in enumerate(strict_terms):
             rows.append((f"term:{index}", f"%{escape_like_literal(term)}%", False))
@@ -706,6 +715,12 @@ class PostgresProjectCatalogRepository:
             for term in terms:
                 rows.append((f"concept:{concept_id}", concept_search_pattern(term), True))
         group_ids = tuple(dict.fromkeys(group_id for group_id, _, _ in rows))
+        implementation_query = any(word in normalized_query.casefold() for word in ("framework", "框架", "sdk"))
+        learning_query = any(concept_id in {"learning", "examples"} for concept_id, _ in concepts)
+        artifact_mismatch = (
+            "(ge.category_slug = 'learning_resources')"
+            if implementation_query and not learning_query else "FALSE"
+        )
         hit_parts: list[str] = []
         hit_params: list[Any] = []
         for group_id, pattern, is_concept in rows:
@@ -713,35 +728,41 @@ class PostgresProjectCatalogRepository:
             hit_parts.extend(
                 (
                     f"""
-                        SELECT c.repo_id, %s::text AS group_id
+                        SELECT c.repo_id, %s::text AS group_id,
+                            CASE WHEN {candidate_profile} {predicate} THEN 1 ELSE 0 END AS profile_hit
                         FROM github_repo_candidates c
                         JOIN eligible e ON e.repo_id = c.repo_id
                         WHERE {candidate_document} {predicate}
                     """,
                     f"""
-                        SELECT ge.repo_id, %s::text AS group_id
+                        SELECT ge.repo_id, %s::text AS group_id,
+                            CASE WHEN {enrichment_profile} {predicate} THEN 2 ELSE 0 END AS profile_hit
                         FROM github_repo_enrichments ge
                         JOIN eligible e ON e.repo_id = ge.repo_id
                         WHERE {enrichment_document} {predicate}
                     """,
                 )
             )
-            hit_params.extend((group_id, pattern, group_id, pattern))
+            hit_params.extend((group_id, pattern, pattern, group_id, pattern, pattern))
         sql = f"""
             WITH eligible AS MATERIALIZED (
-                SELECT c.repo_id, c.full_name, c.title, COALESCE(c.stars, 0) AS stars
+                SELECT c.repo_id, c.full_name, c.title, COALESCE(c.stars, 0) AS stars,
+                    {artifact_mismatch} AS artifact_mismatch
                 FROM github_repo_candidates c
                 LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
                 WHERE {' AND '.join(filters)}
             ), raw_hits AS MATERIALIZED (
-                SELECT DISTINCT repo_id, group_id
+                SELECT repo_id, group_id, MAX(profile_hit) AS profile_hit
                 FROM ({' UNION ALL '.join(hit_parts)}) branch_hits
+                GROUP BY repo_id, group_id
             ), scored AS MATERIALIZED (
                 SELECT
                     e.repo_id,
                     e.full_name,
                     e.stars,
+                    e.artifact_mismatch,
                     COUNT(*)::integer AS term_coverage,
+                    SUM(hit.profile_hit)::integer AS profile_score,
                     CASE
                         WHEN LOWER(e.full_name) = LOWER(%s) THEN 6
                         WHEN LOWER(split_part(e.full_name, '/', 2)) = LOWER(%s) THEN 5
@@ -753,32 +774,32 @@ class PostgresProjectCatalogRepository:
                     END AS match_strength
                 FROM raw_hits hit
                 JOIN eligible e ON e.repo_id = hit.repo_id
-                GROUP BY e.repo_id, e.full_name, e.title, e.stars
+                GROUP BY e.repo_id, e.full_name, e.title, e.stars, e.artifact_mismatch
             ), bounded_lanes AS (
                 (SELECT 'strict'::text AS lane, 0 AS lane_order,
-                        repo_id, term_coverage, match_strength, stars, full_name
+                        repo_id, term_coverage, match_strength, profile_score, artifact_mismatch, stars, full_name
                  FROM scored
                  WHERE term_coverage = %s
-                 ORDER BY match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
+                 ORDER BY match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC
                  LIMIT %s)
                 UNION ALL
                 (SELECT 'relaxed'::text AS lane, 1 AS lane_order,
-                        repo_id, term_coverage, match_strength, stars, full_name
+                        repo_id, term_coverage, match_strength, profile_score, artifact_mismatch, stars, full_name
                  FROM scored
                  WHERE term_coverage > 0
-                 ORDER BY term_coverage DESC, match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
+                 ORDER BY term_coverage DESC, match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC
                  LIMIT %s)
             )
-            SELECT lane, repo_id, term_coverage, match_strength
+            SELECT lane, repo_id, term_coverage, match_strength, profile_score, artifact_mismatch
             FROM bounded_lanes
             ORDER BY lane_order,
                      CASE WHEN lane_order = 1 THEN term_coverage END DESC,
-                     match_strength DESC, stars DESC, repo_id COLLATE "C" ASC
+                     match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC
         """
         # 参数顺序契约（必须与上方 SQL 文本中 %s 的出现顺序严格一一对应）：
         #   1. filter_params —— eligible CTE 的 WHERE 条件（min_stars 及各维度过滤）
-        #   2. hit_params    —— raw_hits 每个词/别名两行分支，每行 4 个参数：
-        #                       (group_id, pattern) ×（候选文档分支 + 增强文档分支）
+        #   2. hit_params    —— 每个词/别名两行分支，每行 3 个参数：
+        #                       (group_id, profile_pattern, document_pattern)
         #   3. scored 匹配强度 —— normalized_query ×3（full_name/名段/title 精确等值）
         #                       + prefix ×3（名段/full_name/title 前缀）
         #   4. 车道边界      —— len(group_ids)（strict 覆盖度）、strict_limit、relaxed_limit
@@ -811,6 +832,8 @@ class PostgresProjectCatalogRepository:
                     lane=lane,
                     term_coverage=int(row.get("term_coverage") or 0),
                     match_strength=int(row.get("match_strength") or 0),
+                    profile_score=int(row.get("profile_score") or 0),
+                    artifact_mismatch=bool(row.get("artifact_mismatch")),
                 )
                 for row in lane_rows
                 if row.get("repo_id") and row.get("lane") == lane

@@ -273,7 +273,8 @@ def test_lexical_lanes_are_typed_filtered_and_independently_bounded() -> None:
     assert "LOWER(COALESCE(c.language, '')) = LOWER(%s)" in sql
     assert "COALESCE(ge.tags_json::text, '') ILIKE %s" in sql
     assert "UNION ALL" in sql
-    assert "SELECT DISTINCT repo_id, group_id" in sql
+    assert "GROUP BY repo_id, group_id" in sql
+    assert "MAX(profile_hit) AS profile_hit" in sql
     assert "unnest(" not in sql
     assert "bool_or(" not in sql
     assert "COALESCE(c.full_name, '') || ' '" in sql
@@ -307,12 +308,13 @@ def test_typed_lexical_plan_counts_each_concept_once_and_binds_aliases() -> None
     PostgresProjectCatalogRepository(database).find_lexical_candidate_lanes(q=plan)
 
     sql, params = database.cursor.calls[1]
-    assert "SELECT DISTINCT repo_id, group_id" in sql
+    assert "GROUP BY repo_id, group_id" in sql
+    assert "MAX(profile_hit) AS profile_hit" in sql
     assert params.count("term:0") == 2
     assert params.count("concept:agent") == 6
     for pattern in ("%local%", "智能体", "(^|[^a-z0-9])agent($|[^a-z0-9])",
                     "(^|[^a-z0-9])agent framework($|[^a-z0-9])"):
-        assert params.count(pattern) == 2
+        assert params.count(pattern) == 4
     assert params[-3:] == (2, 150, 150)
     assert "智能体" not in sql
     assert "agent framework" not in sql
@@ -343,21 +345,21 @@ def test_lexical_lanes_placeholder_count_and_param_order_align() -> None:
     # 1. filter_params：category、tag（succeeded-only 可见性过滤无参数）
     assert params[:2] == ("agents", '%"llm"%')
     # 2. hit_params：term:0、term:1、concept:agent 各词/别名 × 两个文档分支，
-    #    每行交错绑定 (group_id, pattern, group_id, pattern)
-    assert params[2:18] == (
-        "term:0", "%ai%", "term:0", "%ai%",
-        "term:1", "%agent%", "term:1", "%agent%",
-        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])",
-        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])",
-        "concept:agent", "智能体", "concept:agent", "智能体",
+    #    每行绑定 (group_id, profile_pattern, document_pattern)，两分支共 6 个参数
+    assert params[2:26] == (
+        "term:0", "%ai%", "%ai%", "term:0", "%ai%", "%ai%",
+        "term:1", "%agent%", "%agent%", "term:1", "%agent%", "%agent%",
+        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])", "(^|[^a-z0-9])agent($|[^a-z0-9])",
+        "concept:agent", "(^|[^a-z0-9])agent($|[^a-z0-9])", "(^|[^a-z0-9])agent($|[^a-z0-9])",
+        "concept:agent", "智能体", "智能体", "concept:agent", "智能体", "智能体",
     )
     # 3. scored 匹配强度：normalized_query ×3（full_name/名段/title 精确等值）
     #    + prefix ×3（名段/full_name/title 前缀）
-    assert params[18:24] == (
+    assert params[26:32] == (
         "ai agent", "ai agent", "ai agent", "ai agent%", "ai agent%", "ai agent%",
     )
     # 4. 车道边界：覆盖组数（term:0/term:1/concept:agent）、strict_limit、relaxed_limit
-    assert params[24:] == (3, 100, 80)
+    assert params[32:] == (3, 100, 80)
 
 
 def test_lexical_lanes_score_repo_name_segment_tiers() -> None:
@@ -372,9 +374,9 @@ def test_lexical_lanes_score_repo_name_segment_tiers() -> None:
     assert "WHEN LOWER(e.full_name) = LOWER(%s) THEN 6" in sql
     assert "WHEN e.full_name ILIKE %s ESCAPE '=' THEN 2" in sql
     assert sql.count("%s") == len(params)
-    # 单 term：filter 无参数（succeeded-only）+ hit(2 分支 × (group_id, pattern))
+    # 单 term：filter 无参数（succeeded-only）+ hit(2 分支 × (group_id, profile_pattern, document_pattern))
     # + 强度 6 + 边界 3
-    assert params == ("term:0", "%pi%", "term:0", "%pi%", "pi", "pi", "pi", "pi%", "pi%", "pi%", 1, 150, 150)
+    assert params == ("term:0", "%pi%", "%pi%", "term:0", "%pi%", "%pi%", "pi", "pi", "pi", "pi%", "pi%", "pi%", 1, 150, 150)
 
 
 def test_lexical_candidate_ids_order_by_repo_name_segment_tiers() -> None:

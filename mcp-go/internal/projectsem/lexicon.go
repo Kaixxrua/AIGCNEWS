@@ -22,12 +22,12 @@ var projectConceptLexicon = []conceptSpec{
 	{
 		conceptID: "codebase_memory",
 		phrases:   []string{"代码库持久记忆", "项目持久记忆", "代码库记忆", "项目记忆", "代码库长期记忆", "项目长期记忆", "codebase memory", "code intelligence", "codebase indexing"},
-		aliases:   []string{"codebase memory", "code intelligence", "codebase indexing", "persistent memory", "knowledge graph", "编程智能体", "代码库索引", "知识图谱"},
+		aliases:   []string{"codebase memory", "code intelligence", "codebase indexing", "codebase knowledge graph", "代码智能", "代码库索引", "代码库记忆"},
 	},
 	{
 		conceptID: "agent_task_tracking",
-		phrases:   []string{"Agent 任务跟踪", "智能体任务跟踪", "任务依赖管理", "依赖管理", "任务跟踪", "任务管理", "task tracking", "dependency tracking", "task management"},
-		aliases:   []string{"task tracking", "dependency tracking", "coding agent memory", "persistent memory", "context memory", "任务跟踪", "持久记忆", "上下文记忆"},
+		phrases:   []string{"Agent 任务跟踪", "agent task tracking", "智能体任务跟踪", "任务依赖管理", "依赖管理", "任务跟踪", "任务管理", "task tracking", "dependency tracking", "task management"},
+		aliases:   []string{"task tracking", "dependency tracking", "task management", "任务跟踪", "任务管理", "任务依赖"},
 	},
 	{
 		conceptID: "coding_assistant",

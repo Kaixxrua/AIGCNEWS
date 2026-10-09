@@ -11,16 +11,15 @@ import TweetMediaList from '@/components/xboard/TweetMediaList.vue'
 import TweetQuoteCard from '@/components/xboard/TweetQuoteCard.vue'
 import TweetLinkCard from '@/components/xboard/TweetLinkCard.vue'
 import { useXBoardController } from '@/composables/useXBoardController'
-import { useDockSuppression } from '@/composables/useDockSuppression'
+import { useTweetDetail } from '@/composables/useTweetDetail'
 import { useListKeys } from '@/composables/useListKeys'
 import { useReadMarks } from '@/composables/useReadMarks'
 import { useSavedItems } from '@/composables/useSavedItems'
 import { useAppDensity } from '@/composables/useAppDensity'
 import { showToast } from '@/composables/useToast'
-import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
+import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, paginateFoldedTweets, paginateItems, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
 import { groupXAccounts } from '@/features/xboard/xAccountGroups'
-import { isTypingTarget, listKeyAction } from '@/features/keyboard/listKeys'
 import { isSavedTweet } from '@/features/saved/savedTweet'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
@@ -33,7 +32,7 @@ import { vReflow } from '@/motion/reflow'
 import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
 import { preloadWhen } from '@/utils/lazyComponent'
-import type { TopDoc, TweetMediaItem } from '@/features/dashboard/dashboardViewModel'
+import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 import type { TweetCardLayout, TweetFold, TweetTextMetrics } from '@/features/xboard/xBoardViewModel'
 
 const { t, locale } = useI18n()
@@ -330,61 +329,17 @@ const formatTime = (doc: TopDoc) => formatLocalTime(tweetTimestamp(doc))
 // 内联渲染用约束框变体（thumb_url）降载，点开 lightbox 才拉大图变体（item.url）。
 // 长图按高度等比缩放会窄到不可读，改为限宽纵向滚动（lightboxLong）。
 // ESC 或点击遮罩关闭；预览不阻断视频点击播放逻辑。
-const lightboxUrl = ref<string | null>(null)
-const lightboxLong = ref(false)
-const openLightbox = (item: TweetMediaItem) => {
-  lightboxUrl.value = item.url
-  lightboxLong.value = isLongPhoto(item)
-}
-const closeLightbox = () => { lightboxUrl.value = null }
-
-// 推文详情浮层：点击卡片正文/引用区就地放大阅读，不直接跳走（跳转由
-// 显式按钮承担）。层级低于图片 lightbox（浮层内照片可再放大）；数据
-// 重载时关闭，避免悬在已失效的条目上。
-// 焦点管理：打开时聚焦关闭钮（键盘/读屏用户有明确落点），关闭后焦点
-// 还原到触发元素；下钻/返回后同样把焦点收回关闭钮。
-const detailTweet = ref<TopDoc | null>(null)
-const detailCloseEl = ref<HTMLButtonElement | null>(null)
-let detailReturnFocus: HTMLElement | null = null
-const focusDetailClose = () => { void nextTick(() => detailCloseEl.value?.focus()) }
-// 浮层内引用卡下钻：点击 = 就地切换为被引推文详情（quote 投影字段齐全，
-// 零请求），detailParent 记回跳目标；仅一层（投影不嵌套，与 X 一致）。
-// 下钻/返回时清空播放态：媒体块随内容切换整体卸载，不残留他条播放键。
-const detailParent = ref<TopDoc | null>(null)
-const openDetail = (tweet: TopDoc) => {
-  readMarks.markOpened(tweetReadId(tweet))
-  detailReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  detailTweet.value = tweet
-  detailParent.value = null
-  focusDetailClose()
-}
-const closeDetail = () => {
-  detailTweet.value = null
-  detailParent.value = null
-  // 焦点还原到打开浮层的触发元素；元素已随数据重载卸载时跳过。在详情里用 j / k 换过条目的，落到最后看的那条上
-  if (detailReturnFocus?.isConnected) detailReturnFocus.focus()
-  else if (desktop.value) listKeys.focusCursor()
-  detailReturnFocus = null
-}
-const drillIntoQuote = () => {
-  const quote = detailTweet.value ? tweetQuote(detailTweet.value) : null
-  if (!quote || detailParent.value) return
-  detailParent.value = detailTweet.value
-  detailTweet.value = quoteAsDoc(quote)
-  playingMedia.value = new Set()
-  focusDetailClose()
-}
-const backToParent = () => {
-  if (!detailParent.value) return
-  detailTweet.value = detailParent.value
-  detailParent.value = null
-  playingMedia.value = new Set()
-  focusDetailClose()
-}
+const listOrder = computed(() => [...wallSplit.value.fresh, ...wallSplit.value.earlier])
+const { lightboxUrl, lightboxLong, openLightbox, closeLightbox, detailTweet, detailParent, detailSwap, detailStep, openDetail, closeDetail, drillIntoQuote, backToParent, playingMedia, playVideo } = useTweetDetail({
+  docs, desktop, listOrder, wallPage, wallPageCount, onGoPage, toggleSave,
+  markOpened: (tweet) => readMarks.markOpened(tweetReadId(tweet)),
+  focusCursor: () => listKeys.focusCursor(),
+  setCursor: (key) => listKeys.setCursor(key, { reveal: true }),
+})
+watch(docs, () => { expandedFolds.value = new Set() })
 
 // 键盘流（只在桌面）：j / k 按时间线顺序在这一页的推文之间走（线上面新来的在前），走过的记为看过，走到一页头尾再按就翻页；
 // o 打开详情，x 开合同账号折叠（在展开的组里按也行，收回后光标落回领头那条）。
-const listOrder = computed(() => [...wallSplit.value.fresh, ...wallSplit.value.earlier])
 const listKeyOrder = computed(() => listOrder.value.map(tweetKey))
 const tweetOf = (key: string) => listOrder.value.find((doc) => tweetKey(doc) === key)
 // 这条所在折叠组领头那条的 key：它自己领头，或在展开的组里；不在折叠组里为 null
@@ -428,73 +383,6 @@ const { help: keysHelp, isCursor } = listKeys
 const ListKeysSheet = listKeysSheet.component
 preloadWhen(desktop, listKeysSheet.preload)
 
-// 详情开着时 j / k 换下一条、上一条（下钻看被引推文时不换），新的一条从按的方向滑进来，墙上的光标跟着走，到一页头尾接着翻页。
-const detailPanelEl = ref<HTMLElement | null>(null)
-const detailSwap = ref(0)
-const detailStep = ref<1 | -1>(1)
-const stepDetail = (direction: 1 | -1) => {
-  const tweet = detailTweet.value
-  const index = tweet ? listKeyOrder.value.indexOf(tweetKey(tweet)) : -1
-  if (index < 0) return
-  let next = listOrder.value[index + direction]
-  if (!next) {
-    const page = wallPage.value + direction
-    if (page < 1 || page > wallPageCount.value) return
-    onGoPage(page)
-    next = direction > 0 ? listOrder.value[0] : listOrder.value[listOrder.value.length - 1]
-    if (!next) return
-  }
-  readMarks.markOpened(tweetReadId(next))
-  detailReturnFocus = null
-  detailStep.value = direction
-  detailSwap.value += 1
-  detailTweet.value = next
-  playingMedia.value = new Set()
-  detailPanelEl.value?.scrollTo({ top: 0 })
-  listKeys.setCursor(tweetKey(next), { reveal: true })
-}
-const onDetailKeydown = (event: KeyboardEvent) => {
-  if (!detailTweet.value || detailParent.value || lightboxUrl.value || !desktop.value) return
-  const action = listKeyAction(event)
-  if (isTypingTarget(event.target)) return
-  if (action === 'save') {
-    // 详情里按 s 收下正在看的这条
-    event.preventDefault()
-    toggleSave(detailTweet.value)
-    return
-  }
-  if (action !== 'next' && action !== 'prev') return
-  event.preventDefault()
-  stepDetail(action === 'next' ? 1 : -1)
-}
-
-const onLightboxKeydown = (event: KeyboardEvent) => {
-  if (event.key !== 'Escape') return
-  // 分层关闭：先图片 lightbox，再详情浮层（遮罩嵌套时 ESC 只撤最上层）
-  if (lightboxUrl.value) {
-    event.stopPropagation()
-    closeLightbox()
-    return
-  }
-  if (detailTweet.value) {
-    event.stopPropagation()
-    closeDetail()
-  }
-}
-
-// 详情浮层/图片放大打开期间隐藏底部 dock 浮岛：全屏遮罩下 dock 会遮挡卡片
-useDockSuppression(() => detailTweet.value !== null || lightboxUrl.value !== null)
-
-// X 式点击播放：视频占位零流量（不经代理拉取元数据），点击后才挂载 <video>。
-// 键与 TweetMediaList 模板 :key 同源（`${tweet.url}-${index}`），重载推文时清空避免自动重播。
-const playingMedia = ref<Set<string>>(new Set())
-const playVideo = (key: string) => {
-  const next = new Set(playingMedia.value)
-  next.add(key)
-  playingMedia.value = next
-}
-watch(docs, () => { playingMedia.value = new Set(); detailTweet.value = null; detailParent.value = null; expandedFolds.value = new Set() })
-
 const isSelected = (doc: TopDoc) => doc.id ? selectedIds.value.has(String(doc.id)) : false
 
 // 空态文案三态：今天窗口暂无 / 早于最早数据日 / 该日窗口真空
@@ -522,8 +410,6 @@ const handleDeleteSelected = async () => {
 
 onMounted(() => {
   window.addEventListener('resize', updateColumnCount)
-  window.addEventListener('keydown', onLightboxKeydown)
-  window.addEventListener('keydown', onDetailKeydown)
   // 量主栏宽度与正文排版供瀑布流估高；clientWidth 不含滚动条。
   measureMasonry()
   if (mainEl.value && typeof ResizeObserver !== 'undefined') {
@@ -541,8 +427,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateColumnCount)
-  window.removeEventListener('keydown', onLightboxKeydown)
-  window.removeEventListener('keydown', onDetailKeydown)
   mainResizeObserver?.disconnect()
   dispose()
 })

@@ -64,17 +64,17 @@
    "codebase memory",
    "code intelligence",
    "codebase indexing",
-   "persistent memory",
-   "knowledge graph",
-   "编程智能体",
+   "codebase knowledge graph",
+   "代码智能",
    "代码库索引",
-   "知识图谱"
+   "代码库记忆"
   ]
  },
  {
   "concept_id": "agent_task_tracking",
   "phrases": [
    "Agent 任务跟踪",
+   "agent task tracking",
    "智能体任务跟踪",
    "任务依赖管理",
    "依赖管理",
@@ -87,12 +87,10 @@
   "aliases": [
    "task tracking",
    "dependency tracking",
-   "coding agent memory",
-   "persistent memory",
-   "context memory",
+   "task management",
    "任务跟踪",
-   "持久记忆",
-   "上下文记忆"
+   "任务管理",
+   "任务依赖"
   ]
  },
  {

@@ -93,6 +93,8 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 	best := map[string]int{}
 	coverage := map[string]int{}
 	strength := map[string]int{}
+	profileCoverage := map[string]int{}
+	artifactMismatch := map[string]bool{}
 	add := func(weight float64, ids []string, candidates map[string]LexicalCandidate) {
 		seen := map[string]bool{}
 		for rank, raw := range ids {
@@ -113,6 +115,8 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 				if candidate.MatchStrength > strength[id] {
 					strength[id] = candidate.MatchStrength
 				}
+				profileCoverage[id] = max(profileCoverage[id], candidate.ProfileScore)
+				artifactMismatch[id] = candidate.ArtifactMismatch
 			}
 		}
 	}
@@ -170,6 +174,12 @@ func RankV2ProjectCandidateIDs(strict, relaxed []LexicalCandidate, semantic []st
 		_, strictB := strictMap[b]
 		if strictA != strictB {
 			return strictA
+		}
+		if artifactMismatch[a] != artifactMismatch[b] {
+			return !artifactMismatch[a]
+		}
+		if profileCoverage[a] != profileCoverage[b] {
+			return profileCoverage[a] > profileCoverage[b]
 		}
 		if scores[a] != scores[b] {
 			return scores[a] > scores[b]

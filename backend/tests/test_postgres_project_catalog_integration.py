@@ -31,6 +31,14 @@ finally:
     os.chdir(_IMPORT_CWD)
 
 SEED_PATH = _TESTS_DIR / "fixtures" / "postgres_catalog_seed.sql"
+
+
+def test_bilingual_search_quality_release_gate(tmp_path, monkeypatch):
+    from backend.tests.project_search_quality import verify_quality_gate
+
+    verify_quality_gate(tmp_path, monkeypatch)
+
+
 EXPECTED_PUBLIC_FIELDS = {
     "id",
     "full_name",

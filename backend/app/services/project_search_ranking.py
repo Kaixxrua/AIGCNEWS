@@ -57,6 +57,8 @@ def rank_v2_project_candidate_ids(
     best_rank: dict[str, int] = {}
     coverage: dict[str, int] = {}
     strength: dict[str, int] = {}
+    profile_score: dict[str, int] = {}
+    artifact_mismatch: dict[str, bool] = {}
     rankings = (
         (0.45, [(candidate.repo_id, candidate) for candidate in strict_candidates]),
         (0.15, [(candidate.repo_id, candidate) for candidate in relaxed_candidates]),
@@ -74,6 +76,8 @@ def rank_v2_project_candidate_ids(
             if candidate is not None:
                 coverage[repo_id] = max(coverage.get(repo_id, 0), candidate.term_coverage)
                 strength[repo_id] = max(strength.get(repo_id, 0), candidate.match_strength)
+                profile_score[repo_id] = max(profile_score.get(repo_id, 0), candidate.profile_score)
+                artifact_mismatch[repo_id] = candidate.artifact_mismatch
     # 采用度压舱石：只对拟合 lane 已选出的候选加分，fame 无法单飞入榜。
     # log 压缩 + 相对候选集最大值归一，让 10 万星元老从 lane 位次噪声里被救回，
     # 而权重上限保证多 lane 拟合冠军不被罢黜。
@@ -96,6 +100,8 @@ def rank_v2_project_candidate_ids(
         key=lambda repo_id: (
             0 if normalized_exact and repo_id.casefold() == normalized_exact else 1,
             0 if repo_id in strict_ids else 1,
+            artifact_mismatch.get(repo_id, False),
+            -profile_score.get(repo_id, 0),
             -scores[repo_id],
             -strength.get(repo_id, 0),
             -coverage.get(repo_id, 0),
