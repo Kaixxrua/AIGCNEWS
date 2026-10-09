@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeftRight, Check, X } from 'lucide-vue-next'
+import { ArrowLeftRight, BadgeCheck, Check, X } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { paymentApi } from '@/services/payments/paymentApi'
@@ -35,12 +35,33 @@ defineOptions({ name: 'MembershipView' })
  * 公共简报与 RSS 免费；个人追踪为 free 1 条、vip 10 条规则。
  * 桌面（≥1024px）三张卡排成一张对比表：左列是行名，三档的权益逐行对齐（行与格见 features/membership/membershipCompare），
  * 开通按钮挪到价格下面；手机与平板仍是三张卡、各列各的权益，报眉的版面密度选了舒适时桌面也是三张卡。
+ * 会员本人看到的 vip 卡：徽章换成「已开通」；有到期日的给续费（后端从到期日起顺延），长期有效的付了款也不顺延，
+ * 所以不给买的入口，计费周期按钮、年付锚点行一并收起，开通按钮的位置改报会员状态。
  */
 const { t, locale } = useI18n()
 const authStore = useAuthStore()
 const { contactPageConfig } = useContactPageConfig()
 
 const isMember = computed(() => authStore.isMember)
+
+// 会员的到期日：空 = 长期有效；读不出来的历史值不当到期日用（不给续费，也不报日期）。
+const memberLifetime = computed(() => isMember.value && !authStore.user?.membership_expires_at?.trim())
+const memberExpiresAt = computed(() => {
+  const raw = isMember.value ? authStore.user?.membership_expires_at?.trim() : ''
+  if (!raw) return null
+  const timestamp = Date.parse(raw)
+  return Number.isNaN(timestamp) ? null : timestamp
+})
+// 与报眉用户组旁的到期日同一写法。
+const memberExpiryDate = computed(() =>
+  memberExpiresAt.value == null
+    ? ''
+    : new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(memberExpiresAt.value),
+)
+const memberTermText = computed(() => {
+  if (memberLifetime.value) return t('membership.memberLifetime')
+  return memberExpiryDate.value ? t('membership.memberUntil', { date: memberExpiryDate.value }) : ''
+})
 
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { comfortable } = useAppDensity()
@@ -95,12 +116,19 @@ const priceState = computed<'loading' | 'ready' | 'failed' | 'unavailable'>(() =
   if (plansState.value === 'ready') return monthlyPlan.value && yearlyPlan.value ? 'ready' : 'unavailable'
   return plansState.value === 'disabled' ? 'unavailable' : plansState.value
 })
-// 计费周期按钮和年付锚点行只在报价或等价格时出现；价格栏换态时宽高一起过渡（比如价格到了、按钮里多出折扣标）。
-const showBilling = computed(() => priceState.value === 'ready' || priceState.value === 'loading')
+// 计费周期按钮和年付锚点行只在能买、且报价或等价格时出现；价格栏换态时宽高一起过渡（比如价格到了、按钮里多出折扣标）。
+const showBilling = computed(() => canBuy.value && (priceState.value === 'ready' || priceState.value === 'loading'))
 const priceMorphKey = computed(() => `${billingPeriod.value} ${priceState.value}`)
 
 // 开通走在线收银台，除非确定买不了；价格一时没加载出来时收银台会自己再拉一次。
 const checkoutAvailable = computed(() => priceState.value !== 'unavailable')
+// 谁能在这张卡上买：非会员开通（买不了时走联系）；会员只有带到期日、收银台又开着时才能续费。
+// 买不了的会员价格栏只报价，价格没加载出来或不报价时留空，不出重试和「请联系咨询」。
+const canBuy = computed(() => !isMember.value || (memberExpiresAt.value != null && checkoutAvailable.value))
+const ctaHint = computed(() => {
+  if (isMember.value) return t('membership.renewHint', { date: memberExpiryDate.value })
+  return checkoutAvailable.value ? t('membership.ctaOnlineHint') : t('membership.ctaHint')
+})
 const checkoutTo = computed(() => ({
   path: '/membership/checkout',
   query: { plan: billingPeriod.value },
@@ -270,11 +298,11 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
                 <span class="tier-price-period" aria-hidden="true">{{ periodText }}</span>
                 <span class="sr-only">{{ t('membership.member.priceLoading') }}</span>
               </span>
-              <span v-else-if="priceState === 'failed'" class="tier-price-note">
+              <span v-else-if="priceState === 'failed' && canBuy" class="tier-price-note">
                 {{ t('membership.member.priceFailed') }}
                 <button type="button" class="tier-price-retry" @click="loadPlans">{{ t('membership.member.priceRetry') }}</button>
               </span>
-              <span v-else class="tier-price-note">{{ t('membership.member.priceUnavailable') }}</span>
+              <span v-else-if="canBuy" class="tier-price-note">{{ t('membership.member.priceUnavailable') }}</span>
               <button
                 v-if="showBilling"
                 v-morph="priceMorphKey"
@@ -302,19 +330,21 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
                 <span class="tier-price-anchor--pending" aria-hidden="true">{{ pendingAnchorText }}</span> <span class="tier-savings tier-savings--pending" aria-hidden="true">{{ pendingSavingsText }}</span>
               </template>
             </p>
-            <template v-if="!isMember">
+            <template v-if="canBuy">
               <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
-                <span class="tier-cta-label">{{ t('membership.ctaOnline') }}</span>
+                <span class="tier-cta-label">{{ isMember ? t('membership.renew') : t('membership.ctaOnline') }}</span>
               </RouterLink>
               <RouterLink v-else-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
                 <span class="tier-cta-label">{{ t('membership.cta') }}</span>
               </RouterLink>
               <a v-else :href="contactHref" class="tier-cta"><span class="tier-cta-label">{{ t('membership.cta') }}</span></a>
-              <p class="tier-cta-hint">
-                {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
-              </p>
+              <p class="tier-cta-hint">{{ ctaHint }}</p>
             </template>
-            <p v-else class="tier-member-note">{{ t('membership.memberNote') }}</p>
+            <p v-else class="tier-member-note">
+              <BadgeCheck :size="18" :stroke-width="2.4" class="tier-member-icon" aria-hidden="true" />
+              <span>{{ t('membership.memberNote') }}</span>
+              <span v-if="memberTermText" class="tier-member-term">{{ memberTermText }}</span>
+            </p>
             <hr class="tier-divider" />
             <TierCompareList v-if="compare" tier="member" />
             <ul v-else class="tier-features">
@@ -701,10 +731,16 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   color: var(--ink-muted);
 }
 
+/* 会员状态：勾、「权益已生效」、长期有效或到期日，一行居中，放不下时到期日折到下一行 */
 .tier-member-note {
   margin: auto 0 0;
   padding-top: 14px;
   border-top: 1px dashed var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 8px;
   font-size: 12px;
   font-weight: 600;
   text-align: center;
@@ -712,6 +748,14 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
 }
 
 :root[data-theme='dark'] .tier-savings { color: var(--ink); }
+
+.tier-member-icon {
+  flex-shrink: 0;
+}
+
+.tier-member-term {
+  color: var(--ink-secondary);
+}
 
 @media (max-width: 639px) {
   .membership-page {

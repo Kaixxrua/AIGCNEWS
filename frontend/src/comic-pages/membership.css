@@ -76,8 +76,6 @@
     font-size: 18px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 23px; text-align: center; transform: rotate(-10deg);
   }
   #app .app-shell--comic-page .tier-badge::after { inset: -2px -3px -5px -2px; border-width: 9px 11px 12px 10px; border-image: var(--mem-badge) 33 42 45 36 fill / 9px 11px 12px 10px stretch; }
-  #app .app-shell--comic-page .tier-badge--current { color: var(--mem-ink); }
-  #app .app-shell--comic-page .tier-badge--current::after { filter: grayscale(1) brightness(1.15); }
   #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 8px; }
   #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 56px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1px currentColor; }
   #app .app-shell--comic-page .tier-price-period { margin-left: 7px; color: var(--mem-ink); font-size: 17px; font-weight: 600; }
@@ -112,6 +110,14 @@
     font-size: 14px; line-height: 1.5;
   }
   #app .app-shell--comic-page .tier-plan-note { color: var(--mem-muted); }
+  /* A member with nothing to buy reads the plan's state where the buy button would be: a check, the words, and how
+     long the plan runs under the lime highlighter that marks the benefits. */
+  #app .app-shell--comic-page .tier-member-note { gap: 4px 10px; color: var(--mem-ink); font-weight: 900; }
+  #app .app-shell--comic-page .tier-member-icon { width: 20px; height: 20px; color: var(--mem-check); }
+  #app .app-shell--comic-page .tier-member-term {
+    margin-inline: -3px; padding-inline: 3px; color: var(--mem-ink); font-weight: 800;
+    background: linear-gradient(transparent 52%, var(--mem-mark) 52% 94%, transparent 94%);
+  }
   #app .app-shell--comic-page .tier-cta {
     gap: 17px; min-height: 56px; margin-inline: 3px 4px; padding: 6px 18px 10px; border: 0; border-radius: 8px; background: var(--mem-cta); box-shadow: none;
     color: var(--mem-cta-ink); font-size: 25px; font-style: italic; font-weight: 950; letter-spacing: .02em;
@@ -174,6 +180,10 @@
     grid-row: 4; align-self: center; justify-self: start; margin: 0; padding: 0; background: none; text-align: left;
   }
   #app .app-shell--comic-page .membership-card--compare .tier-register { grid-row: 4; align-self: center; justify-self: start; }
+  #app .app-shell--comic-page .membership-card--compare .tier-member-note { font-size: 16px; line-height: 24px; }
+  /* Without the billing rows the plans' heads end higher than the title column's text; keep paper between that text
+     and the first row's dashes. */
+  #app .app-shell--comic-page .membership-card--compare:has(.tier-member-note) .membership-hero { padding-bottom: 16px; }
   /* The button spans down to the last row so that, when the window is too short for the table, it can ride along at the top.
      Its label sets on a 30px line, so the button stays 46px at every width and sits in the 58px action row with 6px of
      paper above and below: clear of the first row's dashes and level with the notes beside it. */

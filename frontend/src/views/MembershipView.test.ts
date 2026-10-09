@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipView from './MembershipView.vue'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
 
-const authBox = vi.hoisted(() => ({ isMember: false, isLoggedIn: false }))
+const authBox = vi.hoisted(() => ({ isMember: false, isLoggedIn: false, user: null as null | { membership_expires_at: string | null } }))
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
 const paymentBox = vi.hoisted(() => ({ listPlans: vi.fn() }))
 
@@ -88,13 +88,17 @@ const i18n = createI18n({
             historyExport: '导出最近 90 天个人简报（CSV / JSON）',
           },
         },
-        currentMember: '当前已是 vip',
+        currentMember: '已开通',
         cta: '联系开通',
         ctaOnline: '立即开通',
         ctaOnlineHint: '在线支付：支付成功后权益立即生效。',
         ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。',
         ctaMailSubject: 'AIGC News vip 开通咨询',
-        memberNote: '感谢支持！vip 权益已生效。',
+        memberNote: '会员权益已生效',
+        memberLifetime: '长期有效',
+        memberUntil: '有效期至 {date}',
+        renew: '续费',
+        renewHint: '当前有效期至 {date}，续费从到期日起顺延。',
       },
     },
     // 英文只钉定价区所需键（其余键缺失时按 key 渲染，不影响金额断言）
@@ -136,6 +140,7 @@ const paymentsOff = () => Object.assign(new Error('Request failed with status co
 beforeEach(() => {
   authBox.isMember = false
   authBox.isLoggedIn = false
+  authBox.user = null
   configBox.current!.value = { ...configBox.current!.value, enabled: false }
   paymentBox.listPlans.mockReset().mockResolvedValue(livePlans(990, 8880))
   i18n.global.locale.value = 'zh-CN'
@@ -256,14 +261,76 @@ describe('MembershipView', () => {
     expect(anchor.attributes('href')).toContain(encodeURIComponent('AIGC News vip 开通咨询'))
   })
 
-  it('shows the active-member state instead of the CTA for members', () => {
+  it('shows lifetime members their plan state where the buy button would be', async () => {
+    // 长期有效的会员付了款也不顺延：不给买的入口，计费按钮与年付锚点行收起，价格照报
     authBox.isMember = true
+    authBox.user = { membership_expires_at: null }
     const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
 
-    expect(wrapper.find('.tier-badge').text()).toBe('当前已是 vip')
-    expect(wrapper.text()).toContain('感谢支持！vip 权益已生效。')
-    expect(wrapper.find('a.tier-cta').exists()).toBe(false)
-    expect(wrapper.find('.tier-card--member').findComponent(RouterLinkStub).exists()).toBe(false)
+    expect(wrapper.find('.tier-badge').text()).toBe('已开通')
+    expect(memberCard.find('.tier-price-amount').text()).toBe('¥9.9')
+    expect(memberCard.find('.tier-billing-btn').exists()).toBe(false)
+    expect(memberCard.find('.tier-price-yearly').exists()).toBe(false)
+    expect(memberCard.find('.tier-cta').exists()).toBe(false)
+    expect(memberCard.findComponent(RouterLinkStub).exists()).toBe(false)
+    expect(memberCard.find('.tier-cta-hint').exists()).toBe(false)
+    const note = memberCard.find('.tier-member-note')
+    expect(note.text()).toContain('会员权益已生效')
+    expect(note.find('.tier-member-term').text()).toBe('长期有效')
+  })
+
+  it('offers members with an expiry a renewal that extends from that date', async () => {
+    authBox.isMember = true
+    authBox.user = { membership_expires_at: '2027-10-09T12:00:00Z' }
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(wrapper.find('.tier-badge').text()).toBe('已开通')
+    expect(memberCard.find('.tier-billing-btn').exists()).toBe(true)
+    expect(memberCard.find('.tier-price-yearly').text()).toContain('¥88.8 / 年')
+    const link = memberCard.findComponent(RouterLinkStub)
+    expect(link.props('to')).toEqual({ path: '/membership/checkout', query: { plan: 'monthly' } })
+    expect(link.text()).toBe('续费')
+    expect(memberCard.find('.tier-cta-hint').text()).toBe('当前有效期至 2027/10/09，续费从到期日起顺延。')
+    expect(memberCard.find('.tier-member-note').exists()).toBe(false)
+  })
+
+  it('gives members no contact fallback or retry when they cannot renew online', async () => {
+    // 收银台关着：会员不出「价格请联系咨询」和联系开通，改报会员状态与到期日
+    authBox.isMember = true
+    authBox.user = { membership_expires_at: '2027-10-09T12:00:00Z' }
+    paymentBox.listPlans.mockRejectedValue(paymentsOff())
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-price-note').exists()).toBe(false)
+    expect(memberCard.find('.tier-cta').exists()).toBe(false)
+    expect(memberCard.find('.tier-member-term').text()).toBe('有效期至 2027/10/09')
+
+    // 长期有效的会员价格没加载出来：价格栏留空，不出重试
+    authBox.user = { membership_expires_at: null }
+    paymentBox.listPlans.mockRejectedValue(new Error('Network Error'))
+    const lifetimeCard = mountView().find('.tier-card--member')
+    await flushPromises()
+    expect(lifetimeCard.find('.tier-price-note').exists()).toBe(false)
+    expect(lifetimeCard.find('.tier-price-retry').exists()).toBe(false)
+    expect(lifetimeCard.find('.tier-member-term').text()).toBe('长期有效')
+  })
+
+  it('neither renews nor dates a member whose expiry cannot be read', async () => {
+    authBox.isMember = true
+    authBox.user = { membership_expires_at: 'not-a-date' }
+    const wrapper = mountView()
+    await flushPromises()
+    const memberCard = wrapper.find('.tier-card--member')
+
+    expect(memberCard.find('.tier-cta').exists()).toBe(false)
+    expect(memberCard.find('.tier-member-note').text()).toBe('会员权益已生效')
+    expect(memberCard.find('.tier-member-term').exists()).toBe(false)
   })
 
   it('marks the member card with the recommended badge for non-members', () => {
