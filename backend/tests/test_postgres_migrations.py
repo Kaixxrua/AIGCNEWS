@@ -840,6 +840,8 @@ def test_live_postgres_apply_twice_and_introspect_schema() -> None:
             "idx_project_semantic_index_status",
             "idx_gh_candidates_lexical_document_trgm",
             "idx_gh_enrichments_lexical_document_trgm",
+            "idx_gh_candidates_profile_v2_trgm",
+            "idx_gh_enrichments_profile_v2_trgm",
         } <= indexes
         assert {"PRIMARY KEY", "UNIQUE"} <= candidate_constraints
         assert {

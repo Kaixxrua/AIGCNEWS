@@ -307,9 +307,7 @@
       ],
       "aliases": [
        "rag",
-       "knowledge base",
        "retrieval augmented",
-       "知识库",
        "检索增强"
       ]
      }
@@ -1092,9 +1090,7 @@
       ],
       "aliases": [
        "rag",
-       "knowledge base",
        "retrieval augmented",
-       "知识库",
        "检索增强"
       ]
      }
@@ -1786,9 +1782,7 @@
    },
    "plan": {
     "normalized_query": "PDF tools",
-    "strict_terms": [
-     "tools"
-    ],
+    "strict_terms": [],
     "concepts": [
      {
       "concept_id": "pdf_tools",
@@ -2372,9 +2366,7 @@
       ],
       "aliases": [
        "rag",
-       "knowledge base",
        "retrieval augmented",
-       "知识库",
        "检索增强"
       ]
      },

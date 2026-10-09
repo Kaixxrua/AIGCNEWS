@@ -37,6 +37,25 @@ func TestV2RankerKeepsCompleteMatchesBeforeTruncation(t *testing.T) {
 	}
 }
 
+func TestCapabilityAndArtifactFitOutrankFameAndVectorNoise(t *testing.T) {
+	candidates := []LexicalCandidate{
+		{RepoID: "archive/mentions", TermCoverage: 2},
+		{RepoID: "course/tutorial", TermCoverage: 2, ProfileScore: 2, ArtifactMismatch: true},
+		{RepoID: "tool/evaluator", TermCoverage: 2, ProfileScore: 2},
+	}
+	got := RankV2ProjectCandidateIDs(candidates, candidates,
+		[]string{"archive/mentions", "course/tutorial"}, "", 60, 200,
+		map[string]int{"archive/mentions": 1000000, "course/tutorial": 200000, "tool/evaluator": 600}, 0.006)
+	want := []string{"tool/evaluator", "archive/mentions", "course/tutorial"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	got = RankV2ProjectCandidateIDs(candidates, candidates, nil, "course/tutorial", 60, 200, nil, 0)
+	if got[0] != "course/tutorial" {
+		t.Fatal("exact result must stay pinned")
+	}
+}
+
 func TestPopularityOrderingLiftsRelevantPopularCandidate(t *testing.T) {
 	got := OrderCandidatesByPopularity(
 		[]string{"owner/a", "owner/b", "owner/c"},

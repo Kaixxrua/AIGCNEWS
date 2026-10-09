@@ -280,8 +280,12 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 	}
 	filters = append(filters, "NOT EXISTS (SELECT 1 FROM github_repo_aliases ga WHERE ga.alias_repo_id = c.repo_id AND ga.canonical_repo_id <> c.repo_id)")
 
-	candidateDocument := "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.description, '') || ' ' || COALESCE(c.language, '') || ' ' || COALESCE(c.topics_json, ''))"
-	enrichmentDocument := "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.tags_json::text, ''))"
+	// Imported descriptions can contain entire catalog/README bodies. Their
+	// distant mentions must not count as the repository's own capabilities.
+	candidateDocument := "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || LEFT(COALESCE(c.description, ''), 1024) || ' ' || COALESCE(c.language, '') || ' ' || COALESCE(c.topics_json, ''))"
+	enrichmentDocument := "LOWER(COALESCE(ge.description_zh, '') || ' ' || COALESCE(ge.description_en, '') || ' ' || COALESCE(ge.tags_json::text, '') || ' ' || COALESCE(ge.tags_zh_json::text, '') || ' ' || COALESCE(ge.tags_en_json::text, ''))"
+	candidateProfile := "LOWER(COALESCE(c.full_name, '') || ' ' || COALESCE(c.title, '') || ' ' || COALESCE(c.topics_json, ''))"
+	enrichmentProfile := "LOWER(COALESCE(ge.tags_json::text, '') || ' ' || COALESCE(ge.tags_zh_json::text, '') || ' ' || COALESCE(ge.tags_en_json::text, ''))"
 	type hit struct {
 		group, pattern string
 		isConcept      bool
@@ -305,39 +309,50 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 		}
 	}
 	branches := make([]string, 0, len(hits)*2)
-	hitParams := make([]any, 0, len(hits)*4)
+	hitParams := make([]any, 0, len(hits)*6)
 	for _, h := range hits {
 		predicate := "ILIKE %s ESCAPE '='"
 		if h.isConcept {
 			predicate = "~* %s"
 		}
 		branches = append(branches,
-			fmt.Sprintf("SELECT c.repo_id, %%s::text AS group_id FROM github_repo_candidates c JOIN eligible e ON e.repo_id = c.repo_id WHERE %s %s", candidateDocument, predicate),
-			fmt.Sprintf("SELECT ge.repo_id, %%s::text AS group_id FROM github_repo_enrichments ge JOIN eligible e ON e.repo_id = ge.repo_id WHERE %s %s", enrichmentDocument, predicate),
+			fmt.Sprintf("SELECT c.repo_id, %%s::text AS group_id, CASE WHEN %s %s THEN 1 ELSE 0 END AS profile_hit FROM github_repo_candidates c JOIN eligible e ON e.repo_id = c.repo_id WHERE %s %s", candidateProfile, predicate, candidateDocument, predicate),
+			fmt.Sprintf("SELECT ge.repo_id, %%s::text AS group_id, CASE WHEN %s %s THEN 2 ELSE 0 END AS profile_hit FROM github_repo_enrichments ge JOIN eligible e ON e.repo_id = ge.repo_id WHERE %s %s", enrichmentProfile, predicate, enrichmentDocument, predicate),
 		)
-		hitParams = append(hitParams, h.group, h.pattern, h.group, h.pattern)
+		hitParams = append(hitParams, h.group, h.pattern, h.pattern, h.group, h.pattern, h.pattern)
 	}
 	prefix := escapeLikeLiteral.Replace(normalizedQuery) + "%"
+	implementationQuery := strings.Contains(strings.ToLower(normalizedQuery), "framework") || strings.Contains(normalizedQuery, "框架") || strings.Contains(strings.ToLower(normalizedQuery), "sdk")
+	learningQuery := false
+	for _, concept := range concepts {
+		learningQuery = learningQuery || concept.ConceptID == "learning" || concept.ConceptID == "examples"
+	}
+	artifactMismatch := "FALSE"
+	if implementationQuery && !learningQuery {
+		artifactMismatch = "(ge.category_slug = 'learning_resources')"
+	}
 	query := fmt.Sprintf(`WITH eligible AS MATERIALIZED (
-                SELECT c.repo_id, c.full_name, c.title, COALESCE(c.stars, 0) AS stars
+                SELECT c.repo_id, c.full_name, c.title, COALESCE(c.stars, 0) AS stars, %s AS artifact_mismatch
                 FROM github_repo_candidates c
                 LEFT JOIN github_repo_enrichments ge ON ge.repo_id = c.repo_id
                 WHERE %s
             ), raw_hits AS MATERIALIZED (
-                SELECT DISTINCT repo_id, group_id
+                SELECT repo_id, group_id, MAX(profile_hit) AS profile_hit
                 FROM (%s) branch_hits
+                GROUP BY repo_id, group_id
             ), scored AS MATERIALIZED (
-                SELECT e.repo_id, e.full_name, e.stars, COUNT(*)::integer AS term_coverage,
+                SELECT e.repo_id, e.full_name, e.stars, e.artifact_mismatch, COUNT(*)::integer AS term_coverage,
+                    SUM(hit.profile_hit)::integer AS profile_score,
                     CASE WHEN LOWER(e.full_name) = LOWER(%%s) THEN 6 WHEN LOWER(split_part(e.full_name, '/', 2)) = LOWER(%%s) THEN 5 WHEN LOWER(COALESCE(e.title, '')) = LOWER(%%s) THEN 4 WHEN split_part(e.full_name, '/', 2) ILIKE %%s ESCAPE '=' THEN 3 WHEN e.full_name ILIKE %%s ESCAPE '=' THEN 2 WHEN COALESCE(e.title, '') ILIKE %%s ESCAPE '=' THEN 1 ELSE 0 END AS match_strength
                 FROM raw_hits hit JOIN eligible e ON e.repo_id = hit.repo_id
-                GROUP BY e.repo_id, e.full_name, e.title, e.stars
+                GROUP BY e.repo_id, e.full_name, e.title, e.stars, e.artifact_mismatch
             ), bounded_lanes AS (
-                (SELECT 'strict'::text AS lane, 0 AS lane_order, repo_id, term_coverage, match_strength, stars, full_name FROM scored WHERE term_coverage = %%s ORDER BY match_strength DESC, stars DESC, repo_id COLLATE "C" ASC LIMIT %%s)
+                (SELECT 'strict'::text AS lane, 0 AS lane_order, repo_id, term_coverage, match_strength, profile_score, artifact_mismatch, stars, full_name FROM scored WHERE term_coverage = %%s ORDER BY match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC LIMIT %%s)
                 UNION ALL
-                (SELECT 'relaxed'::text AS lane, 1 AS lane_order, repo_id, term_coverage, match_strength, stars, full_name FROM scored WHERE term_coverage > 0 ORDER BY term_coverage DESC, match_strength DESC, stars DESC, repo_id COLLATE "C" ASC LIMIT %%s)
+                (SELECT 'relaxed'::text AS lane, 1 AS lane_order, repo_id, term_coverage, match_strength, profile_score, artifact_mismatch, stars, full_name FROM scored WHERE term_coverage > 0 ORDER BY term_coverage DESC, match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC LIMIT %%s)
             )
-            SELECT lane, repo_id, term_coverage, match_strength FROM bounded_lanes
-            ORDER BY lane_order, CASE WHEN lane_order = 1 THEN term_coverage END DESC, match_strength DESC, stars DESC, repo_id COLLATE "C" ASC`, strings.Join(filters, " AND "), strings.Join(branches, " UNION ALL "))
+            SELECT lane, repo_id, term_coverage, match_strength, profile_score, artifact_mismatch FROM bounded_lanes
+            ORDER BY lane_order, CASE WHEN lane_order = 1 THEN term_coverage END DESC, match_strength DESC, artifact_mismatch, profile_score DESC, stars DESC, repo_id COLLATE "C" ASC`, artifactMismatch, strings.Join(filters, " AND "), strings.Join(branches, " UNION ALL "))
 	params := append([]any{}, filterParams...)
 	params = append(params, hitParams...)
 	params = append(params, normalizedQuery, normalizedQuery, normalizedQuery, prefix, prefix, prefix, len(groups), strictLimit, relaxedLimit)
@@ -359,14 +374,15 @@ func (r *ProjectSearchRepository) FindLexicalCandidateLanes(input projectsearch.
 		if err != nil {
 			return projectsem.LexicalCandidateLanes{}, fmt.Errorf("postgres: lexical lanes row: %w", err)
 		}
-		if len(values) < 4 {
+		if len(values) < 6 {
 			continue
 		}
 		lane, _ := values[0].(string)
 		repoID, _ := values[1].(string)
 		coverage := intOrZero(values[2])
 		strength := intOrZero(values[3])
-		candidate := projectsem.LexicalCandidate{RepoID: repoID, Lane: lane, TermCoverage: coverage, MatchStrength: strength}
+		candidate := projectsem.LexicalCandidate{RepoID: repoID, Lane: lane, TermCoverage: coverage, MatchStrength: strength, ProfileScore: intOrZero(values[4])}
+		candidate.ArtifactMismatch, _ = values[5].(bool)
 		if repoID == "" {
 			continue
 		}

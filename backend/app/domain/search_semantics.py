@@ -232,12 +232,22 @@ def build_project_lexical_retrieval_plan(
     for value in inputs:
         matches = _project_concept_matches(value)
         for _, phrase, spec in matches:
+            aliases = spec.aliases
+            # A knowledge base is broader than retrieval-augmented generation.
+            # Keep the broad expansion for an explicit knowledge-base request.
+            if spec.concept_id == "rag" and phrase.casefold() not in {"知识库", "知识库问答", "knowledge base"}:
+                aliases = tuple(alias for alias in aliases if alias not in {"knowledge base", "知识库"})
             concepts.setdefault(spec.concept_id, ProjectLexicalConcept(
-                concept_id=spec.concept_id, primary_terms=(phrase,), aliases=spec.aliases,
+                concept_id=spec.concept_id, primary_terms=(phrase,), aliases=aliases,
             ))
         for _, term in _project_literal_terms(value, matches):
             if term.casefold() != "ai":
                 literal_terms.setdefault(term.casefold(), term)
+    # Generic artifact words express the requested deliverable, not a language-
+    # specific mandatory keyword. Preserve them for bare/exact name lookups.
+    if concepts:
+        for term in ("framework", "frameworks", "框架", "tool", "tools", "工具"):
+            literal_terms.pop(term, None)
     return ProjectLexicalRetrievalPlan(
         normalized_query=intent.normalized_query,
         strict_terms=tuple(literal_terms.values()),

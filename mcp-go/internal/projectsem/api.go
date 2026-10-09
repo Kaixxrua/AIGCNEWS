@@ -61,10 +61,12 @@ type LexicalRetrievalPlan struct {
 // LexicalCandidate 对应 ProjectLexicalCandidate（project_catalog.py:22）。
 // Lane ∈ "strict"|"relaxed"。
 type LexicalCandidate struct {
-	RepoID        string
-	Lane          string
-	TermCoverage  int
-	MatchStrength int
+	RepoID           string
+	Lane             string
+	TermCoverage     int
+	MatchStrength    int
+	ProfileScore     int
+	ArtifactMismatch bool
 }
 
 // LexicalCandidateLanes 对应 ProjectLexicalCandidateLanes（project_catalog.py:30）。
@@ -231,7 +233,14 @@ func BuildProjectLexicalRetrievalPlan(intent Intent) LexicalRetrievalPlan {
 			spec := &projectConceptLexicon[m.spec]
 			if !seenConcepts[spec.conceptID] {
 				seenConcepts[spec.conceptID] = true
-				concepts = append(concepts, LexicalConcept{ConceptID: spec.conceptID, PrimaryTerms: []string{m.text}, Aliases: append([]string{}, spec.aliases...)})
+				aliases := []string{}
+				broadRAG := m.text == "知识库" || m.text == "知识库问答" || fold(m.text) == "knowledge base"
+				for _, alias := range spec.aliases {
+					if spec.conceptID != "rag" || broadRAG || (alias != "knowledge base" && alias != "知识库") {
+						aliases = append(aliases, alias)
+					}
+				}
+				concepts = append(concepts, LexicalConcept{ConceptID: spec.conceptID, PrimaryTerms: []string{m.text}, Aliases: aliases})
 			}
 		}
 		for _, tok := range projectLiteralTerms(value, matches) {
@@ -241,6 +250,17 @@ func BuildProjectLexicalRetrievalPlan(intent Intent) LexicalRetrievalPlan {
 				strictTerms = append(strictTerms, tok.text)
 			}
 		}
+	}
+	if len(concepts) > 0 {
+		filtered := []string{}
+		for _, term := range strictTerms {
+			switch fold(term) {
+			case "framework", "frameworks", "框架", "tool", "tools", "工具":
+				continue
+			}
+			filtered = append(filtered, term)
+		}
+		strictTerms = filtered
 	}
 	return LexicalRetrievalPlan{NormalizedQuery: intent.NormalizedQuery, StrictTerms: strictTerms, Concepts: concepts}
 }

@@ -24,6 +24,8 @@ class ProjectLexicalCandidate:
     lane: Literal["strict", "relaxed"]
     term_coverage: int = 0
     match_strength: int = 0
+    profile_score: int = 0
+    artifact_mismatch: bool = False
 
 
 @dataclass(frozen=True)
