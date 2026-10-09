@@ -129,21 +129,21 @@ def _make_callback(
     sign_with: rsa.RSAPrivateKey | None = None,
 ) -> tuple[bytes, dict[str, str]]:
     """自制 AES-GCM 加密信封 + 支付公钥侧签名的回调报文。"""
-    if plaintext is None:
-        plaintext = {
-            "mchid": MCHID,
-            "appid": APPID,
-            "out_trade_no": ORDER["order_no"],
-            "transaction_id": "4200000000000000000000000001",
-            "trade_state": "SUCCESS",
-            "success_time": "2026-08-22T12:00:00+08:00",
-            "amount": {"total": 15900, "payer_total": 15900, "currency": "CNY"},
-        }
+    transaction = {
+        "mchid": MCHID,
+        "appid": APPID,
+        "out_trade_no": ORDER["order_no"],
+        "transaction_id": "4200000000000000000000000001",
+        "trade_state": "SUCCESS",
+        "success_time": "2026-08-22T12:00:00+08:00",
+        "amount": {"total": 15900, "payer_total": 15900, "currency": "CNY"},
+    }
+    transaction.update(plaintext or {})
     resource_nonce = "0123456789abcdef"
     associated_data = "transaction"
     ciphertext = AESGCM(API_V3_KEY.encode("utf-8")).encrypt(
         resource_nonce.encode("utf-8"),
-        json.dumps(plaintext, ensure_ascii=False).encode("utf-8"),
+        json.dumps(transaction, ensure_ascii=False).encode("utf-8"),
         associated_data.encode("utf-8"),
     )
     body = {
@@ -160,21 +160,40 @@ def _make_callback(
         },
     }
     raw_body = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return raw_body, _signature_headers(
+        raw_body, sign_with or pay_private, timestamp=timestamp, serial=serial
+    )
+
+
+def _signature_headers(
+    raw_body: bytes,
+    pay_private: rsa.RSAPrivateKey,
+    *,
+    timestamp: str | None = None,
+    serial: str = PAY_PUBLIC_KEY_ID,
+) -> dict[str, str]:
     ts = timestamp or str(int(time.time()))
     nonce = "5K8264ILTKCH16CQ2502SI8ZNMTM67VS"
     message = f"{ts}\n{nonce}\n{raw_body.decode('utf-8')}\n"
     signature = base64.b64encode(
-        (sign_with or pay_private).sign(
+        pay_private.sign(
             message.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256()
         )
     ).decode("ascii")
-    headers = {
+    return {
         "Wechatpay-Timestamp": ts,
         "Wechatpay-Nonce": nonce,
         "Wechatpay-Signature": signature,
         "Wechatpay-Serial": serial,
     }
-    return raw_body, headers
+
+
+def _signed_response(
+    pay_private: rsa.RSAPrivateKey, payload: dict[str, object]
+) -> httpx.Response:
+    # 与 API 文档一致，对包含空白和中文的原文签名；不得重新序列化后验签。
+    raw_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    return httpx.Response(200, content=raw_body, headers=_signature_headers(raw_body, pay_private))
 
 
 # ── 下单 ────────────────────────────────────────────────────────────────
@@ -189,7 +208,7 @@ def test_create_payment_posts_signed_native_order(
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, json={"code_url": "weixin://wxpay/bizpayurl?pr=abc"})
+        return _signed_response(pay_key_pair[0], {"code_url": "weixin://wxpay/bizpayurl?pr=abc"})
 
     provider = _provider(merchant_key_pair, pay_key_pair, transport=httpx.MockTransport(handler))
     instruction = provider.create_payment(
@@ -201,6 +220,7 @@ def test_create_payment_posts_signed_native_order(
     request = seen[0]
     assert request.method == "POST"
     assert request.url.path == "/v3/pay/transactions/native"
+    assert request.headers["Wechatpay-Serial"] == PAY_PUBLIC_KEY_ID
     body = request.content.decode("utf-8")
     payload = json.loads(body)
     assert payload == {
@@ -232,7 +252,7 @@ def test_create_payment_maps_upstream_rejection(
         provider.create_payment(order=ORDER, notify_url=NOTIFY_URL, return_url=None)
 
     def no_code_url(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={})
+        return _signed_response(pay_key_pair[0], {})
 
     provider = _provider(merchant_key_pair, pay_key_pair, transport=httpx.MockTransport(no_code_url))
     with pytest.raises(ChannelUpstreamError, match="code_url"):
@@ -377,13 +397,14 @@ def test_query_order_sends_signed_get(
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, json={"trade_state": "SUCCESS"})
+        return _signed_response(pay_key_pair[0], {"trade_state": "SUCCESS"})
 
     provider = _provider(merchant_key_pair, pay_key_pair, transport=httpx.MockTransport(handler))
     assert provider.query_order(order=ORDER) == "SUCCESS"
 
     request = seen[0]
     assert request.method == "GET"
+    assert request.headers["Wechatpay-Serial"] == PAY_PUBLIC_KEY_ID
     expected_path = f"/v3/pay/transactions/out-trade-no/{ORDER['order_no']}?mchid={MCHID}"
     assert request.url.path == f"/v3/pay/transactions/out-trade-no/{ORDER['order_no']}"
     assert request.url.query.decode() == f"mchid={MCHID}"
@@ -407,3 +428,75 @@ def test_query_order_maps_upstream_rejection(
     provider = _provider(merchant_key_pair, pay_key_pair, transport=httpx.MockTransport(not_found))
     with pytest.raises(ChannelUpstreamError, match="ORDER_NOT_EXIST"):
         provider.query_order(order=ORDER)
+
+
+@pytest.mark.parametrize("operation", ["create", "query"])
+@pytest.mark.parametrize("fault", [
+    "missing_headers", "wrong_serial", "tampered_body", "stale", "future",
+    "invalid_timestamp", "forged_signature", "signature_probe",
+])
+def test_payment_rejects_unverified_api_responses(merchant_key_pair, pay_key_pair, operation, fault):
+    payload = {
+        "code_url": "weixin://wxpay/bizpayurl?pr=abc", "trade_state": "SUCCESS", "description": "会员",
+    }
+    response = _signed_response(pay_key_pair[0], payload)
+    body, headers = response.content, dict(response.headers)
+    if fault == "missing_headers":
+        headers = {}
+    elif fault == "wrong_serial":
+        headers["wechatpay-serial"] = "PUB_KEY_ID_OTHER"
+    elif fault == "tampered_body":
+        body = body.replace(b"abc", b"xyz")
+    elif fault in ("stale", "future"):
+        headers = _signature_headers(
+            body, pay_key_pair[0], timestamp=str(int(time.time()) + (600 if fault == "future" else -600))
+        )
+    elif fault == "invalid_timestamp":
+        headers["wechatpay-timestamp"] = "not-a-timestamp"
+    elif fault == "forged_signature":
+        headers = _signature_headers(body, merchant_key_pair[0])
+    else:
+        headers["wechatpay-signature"] = "WECHATPAY/SIGNTEST/invalid"
+    provider = _provider(
+        merchant_key_pair, pay_key_pair,
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=body, headers=headers)),
+    )
+    with pytest.raises(ChannelUpstreamError, match="signature verification failed"):
+        if operation == "create":
+            provider.create_payment(order=ORDER, notify_url=NOTIFY_URL, return_url=None)
+        else:
+            provider.query_order(order=ORDER)
+
+
+@pytest.mark.parametrize("field", ["appid", "mchid"])
+@pytest.mark.parametrize("value", [None, "another-merchant-or-app"])
+def test_callback_rejects_missing_or_mismatched_merchant(merchant_key_pair, pay_key_pair, field, value):
+    raw_body, headers = _make_callback(pay_key_pair[0], plaintext={field: value})
+    with pytest.raises(CallbackVerificationError, match=f"{field} mismatch"):
+        _provider(merchant_key_pair, pay_key_pair).verify_and_parse_callback(raw_body=raw_body, headers=headers)
+
+
+@pytest.mark.parametrize("amount", [True, 15900.9, "15900", None, 0, -1])
+def test_callback_requires_positive_integer_cents(merchant_key_pair, pay_key_pair, amount):
+    raw_body, headers = _make_callback(
+        pay_key_pair[0], plaintext={"amount": {"total": amount, "currency": "CNY"}}
+    )
+    with pytest.raises(CallbackVerificationError, match="amount.total"):
+        _provider(merchant_key_pair, pay_key_pair).verify_and_parse_callback(raw_body=raw_body, headers=headers)
+
+
+def test_callback_maps_invalid_aes_tag_to_verification_error(merchant_key_pair, pay_key_pair):
+    raw_body, headers = _make_callback(pay_key_pair[0])
+    provider = _provider(merchant_key_pair, pay_key_pair, wechat_api_v3_key="x" * 32)
+    with pytest.raises(CallbackVerificationError, match="decryption failed"):
+        provider.verify_and_parse_callback(raw_body=raw_body, headers=headers)
+
+
+@pytest.mark.parametrize("code_url", ["https://example.com/pay", "", None])
+def test_create_payment_rejects_non_native_payment_link(merchant_key_pair, pay_key_pair, code_url):
+    provider = _provider(
+        merchant_key_pair, pay_key_pair,
+        transport=httpx.MockTransport(lambda _: _signed_response(pay_key_pair[0], {"code_url": code_url})),
+    )
+    with pytest.raises(ChannelUpstreamError, match="code_url"):
+        provider.create_payment(order=ORDER, notify_url=NOTIFY_URL, return_url=None)

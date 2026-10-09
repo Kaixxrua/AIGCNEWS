@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import QRCode from 'qrcode'
 import { createPinia, setActivePinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -60,7 +61,7 @@ const i18n = createI18n({
   locale: 'zh-CN',
   messages: {
     'zh-CN': {
-      common: { loading: '加载中…' },
+      common: { loading: '加载中…', retry: '重试' },
       membership: {
         checkout: {
           title: '开通 vip',
@@ -78,6 +79,7 @@ const i18n = createI18n({
           submitting: '创建订单中…',
           createFailed: '创建订单失败，请稍后重试。',
           qrPlaceholder: '支付二维码',
+          qrFailed: '二维码生成失败，请重试。',
           scanHint: '请使用对应 App「扫一扫」完成支付',
           redirectHint: '正在新标签页打开支付页，若未自动打开请点击下方按钮',
           redirectAction: '前往支付',
@@ -176,6 +178,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -374,7 +377,7 @@ describe('MembershipCheckoutView', () => {
     )
   })
 
-  it('creates an order on submit and renders the qr placeholder with raw content', async () => {
+  it('creates an order and locally renders the Native payment QR code', async () => {
     const { wrapper } = await mountView()
 
     await agreeToTerms(wrapper)
@@ -386,12 +389,49 @@ describe('MembershipCheckoutView', () => {
       'wechat_native',
       expect.any(String),
     )
-    expect(wrapper.find('.checkout-qr').exists()).toBe(true)
-    expect(wrapper.find('.checkout-instruction-raw').text()).toBe(
-      'weixin://wxpay/bizpayurl?pr=abc',
-    )
+    const qr = wrapper.get('img.checkout-qr')
+    expect(qr.attributes('alt')).toBe('支付二维码')
+    const source = qr.attributes('src')!
+    expect(source).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    const svg = decodeURIComponent(source.split(',')[1]!)
+    expect(svg).toContain('<svg')
+    expect(svg).toContain('<path')
+    expect(wrapper.find('.checkout-instruction-raw').exists()).toBe(false)
     expect(wrapper.text()).toContain('等待支付结果…')
     expect(wrapper.text()).toContain('P202608190001AB12CD')
+  })
+
+  it('retries a QR rendering failure without creating or charging a second order', async () => {
+    const encode = vi.spyOn(QRCode, 'toString').mockRejectedValueOnce(new Error('encoder unavailable'))
+    const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
+    await wrapper.get('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('二维码生成失败，请重试。')
+    expect(wrapper.find('img.checkout-qr').exists()).toBe(false)
+    await wrapper.get('.checkout-redirect').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('img.checkout-qr').attributes('src')).toMatch(/^data:image\/svg\+xml/)
+    expect(encode).toHaveBeenLastCalledWith(createResponse.instruction!.content, expect.objectContaining({ margin: 4 }))
+    expect(apiBox.createOrder).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('discards QR encoding that completes after payment succeeds', async () => {
+    let finishEncoding!: (value: string) => void
+    vi.spyOn(QRCode, 'toString').mockImplementationOnce(() => new Promise<string>((resolve) => { finishEncoding = resolve }))
+    const { wrapper } = await mountView()
+    await agreeToTerms(wrapper)
+    await wrapper.get('.checkout-submit').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('img.checkout-qr').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    finishEncoding('<svg />')
+    await flushPromises()
+    expect(wrapper.text()).toContain('支付成功，vip 已开通！')
+    expect(wrapper.find('img.checkout-qr').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('auto-opens redirect_url instructions in a new tab after a short delay and keeps a manual link', async () => {

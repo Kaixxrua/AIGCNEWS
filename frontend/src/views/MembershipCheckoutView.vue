@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type FunctionalComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Check, LoaderCircle, QrCode } from 'lucide-vue-next'
+import { Check, LoaderCircle } from 'lucide-vue-next'
+import QRCode from 'qrcode'
 import { WeChatIcon } from '@/components/icons/WeChatIcon'
 import { AlipayIcon } from '@/components/icons/AlipayIcon'
 import { PayPalIcon } from '@/components/icons/PayPalIcon'
@@ -28,8 +29,7 @@ defineOptions({ name: 'MembershipCheckoutView' })
  * 收银台：金额/套餐只渲染 GET /api/payments/plans 响应（后端 plans.py 是唯一
  * 权威）；渠道按界面语言门控——中文只出微信/支付宝，其他语言只出海外跳转槽
  * （纯展示层门控）；available=false 的渠道（凭证未配置）不列出来，一个可用的都没有时说明一句。
- * qr_code 指令骨架期渲染占位框 + 原文文本（不引二维码库，渠道接入后替换为
- * 真实二维码）。redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与
+ * qr_code 指令在浏览器本地生成可扫描二维码。redirect_url 指令在新标签页打开渠道收银台，本页保留轮询与
  * 倒计时；回跳（?order_no=）恢复订单状态并续上轮询（回跳续单）。
  */
 const { t, locale } = useI18n()
@@ -104,6 +104,26 @@ const periodSuffix = computed(() =>
 
 const submitting = computed(() => phase.value === 'creating')
 const awaitingPayment = computed(() => phase.value === 'awaiting_payment')
+const qrImage = ref('')
+const qrFailed = ref(false)
+const qrAttempt = ref(0)
+watch(
+  [() => awaitingPayment.value && instruction.value?.kind === 'qr_code' ? instruction.value.content : '', qrAttempt],
+  async ([content], _previous, onCleanup) => {
+    let active = true
+    onCleanup(() => { active = false })
+    qrImage.value = ''
+    qrFailed.value = false
+    if (!content) return
+    try {
+      // 本地编码；白底黑码与四格留白保证深色主题下也可扫描。
+      const svg = await QRCode.toString(content, { type: 'svg', width: 240, margin: 4, errorCorrectionLevel: 'M' })
+      if (active) qrImage.value = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    } catch {
+      if (active) qrFailed.value = true
+    }
+  },
+)
 
 // 消保合规：虚拟商品付款前必须主动勾选确认协议与不退款条款（默认不勾选、
 // 不预填），未勾选时提交按钮置灰且 submit() 直接拒绝。
@@ -239,12 +259,13 @@ const submit = () => {
              自动打开 + 兜底链接；回跳续单（无指令）只显等待、倒计时与订单号 -->
         <section v-if="awaitingPayment" class="checkout-instruction">
           <template v-if="instruction?.kind === 'qr_code'">
-            <div class="checkout-qr" aria-hidden="true">
-              <QrCode :size="44" :stroke-width="1.5" />
-              <span class="checkout-qr-label">{{ t('membership.checkout.qrPlaceholder') }}</span>
-            </div>
-            <p class="checkout-instruction-hint">{{ t('membership.checkout.scanHint') }}</p>
-            <code class="checkout-instruction-raw">{{ instruction.content }}</code>
+            <img v-if="qrImage" :src="qrImage" :alt="t('membership.checkout.qrPlaceholder')" class="checkout-qr" width="240" height="240" />
+            <template v-else-if="qrFailed">
+              <p class="checkout-error" role="alert">{{ t('membership.checkout.qrFailed') }}</p>
+              <button type="button" class="checkout-redirect" @click="qrAttempt++">{{ t('common.retry') }}</button>
+            </template>
+            <p v-else class="checkout-note" role="status">{{ t('common.loading') }}</p>
+            <p v-if="qrImage" class="checkout-instruction-hint">{{ t('membership.checkout.scanHint') }}</p>
           </template>
           <template v-else-if="instruction?.kind === 'redirect_url'">
             <p class="checkout-instruction-hint">{{ t('membership.checkout.redirectHint') }}</p>
@@ -452,22 +473,10 @@ const submit = () => {
 }
 
 .checkout-qr {
-  width: 180px;
-  height: 180px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--control-radius);
-  background: var(--paper-raised);
-  color: var(--ink-muted);
-}
-
-.checkout-qr-label {
-  font-size: 12px;
-  font-weight: 600;
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
 }
 
 .checkout-instruction-hint {
@@ -475,13 +484,6 @@ const submit = () => {
   font-size: 13px;
   color: var(--ink-secondary);
   text-align: center;
-}
-
-.checkout-instruction-raw {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-size: 11px;
-  color: var(--ink-faint);
 }
 
 .checkout-redirect {

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 import httpx
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -227,6 +227,9 @@ class WeChatNativePaymentProvider:
                         "Authorization": authorization,
                         "Content-Type": "application/json",
                         "Accept": "application/json",
+                        "Wechatpay-Serial": _config_value(
+                            self._settings, "wechat_public_key_id", "wechat_pay_public_key_id"
+                        ),
                     },
                 )
         except httpx.HTTPError as exc:
@@ -236,23 +239,18 @@ class WeChatNativePaymentProvider:
                 f"wechat native pay rejected: HTTP {response.status_code} "
                 f"{_upstream_message(response)}"
             )
+        self._verify_response(response)
         try:
             payload = response.json()
             code_url = payload["code_url"]
-            if not isinstance(code_url, str) or not code_url:
+            if not isinstance(code_url, str) or not code_url.startswith("weixin://wxpay/bizpayurl?"):
                 raise TypeError
         except (ValueError, KeyError, TypeError) as exc:
             raise ChannelUpstreamError("wechat native pay returned no code_url") from exc
         return PaymentInstruction(kind="qr_code", content=code_url)
 
-    def verify_and_parse_callback(
-        self,
-        *,
-        raw_body: bytes,
-        headers: Mapping[str, str],
-    ) -> VerifiedCallback:
-        if not self.is_configured():
-            raise ProviderNotConfiguredError("wechat_native channel not configured")
+    def _verify_signature(self, raw_body: bytes, headers: Mapping[str, str]) -> None:
+        """API 应答和通知都对原始字节验签，共用公钥归属与防重放检查。"""
         header_map = {key.lower(): value for key, value in headers.items()}
         timestamp = header_map.get("wechatpay-timestamp", "")
         nonce = header_map.get("wechatpay-nonce", "")
@@ -276,15 +274,31 @@ class WeChatNativePaymentProvider:
         )
         try:
             decoded_signature = base64.b64decode(signature, validate=True)
-            message = f"{timestamp}\n{nonce}\n{raw_body.decode('utf-8')}\n"
+            message = f"{timestamp}\n{nonce}\n".encode("utf-8") + raw_body + b"\n"
             public_key.verify(
                 decoded_signature,
-                message.encode("utf-8"),
+                message,
                 padding.PKCS1v15(),
                 hashes.SHA256(),
             )
         except (InvalidSignature, ValueError, TypeError, UnicodeDecodeError) as exc:
             raise CallbackVerificationError("wechat callback signature mismatch") from exc
+
+    def _verify_response(self, response: httpx.Response) -> None:
+        try:
+            self._verify_signature(response.content, response.headers)
+        except CallbackVerificationError as exc:
+            raise ChannelUpstreamError("wechat response signature verification failed") from exc
+
+    def verify_and_parse_callback(
+        self,
+        *,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+    ) -> VerifiedCallback:
+        if not self.is_configured():
+            raise ProviderNotConfiguredError("wechat_native channel not configured")
+        self._verify_signature(raw_body, headers)
         try:
             body = json.loads(raw_body)
             if not isinstance(body, dict):
@@ -297,6 +311,11 @@ class WeChatNativePaymentProvider:
         if body.get("event_type") != "TRANSACTION.SUCCESS":
             raise CallbackVerificationError("wechat callback is not a successful transaction")
         plaintext = self._decrypt_resource(resource)
+        for field in ("appid", "mchid"):
+            if plaintext.get(field) != _config_value(
+                self._settings, f"wechat_{field}", f"wechat_pay_{field}"
+            ):
+                raise CallbackVerificationError(f"wechat callback {field} mismatch")
         return self._to_verified_callback(plaintext)
 
     def _decrypt_resource(self, resource: Mapping[str, Any]) -> dict[str, Any]:
@@ -323,7 +342,7 @@ class WeChatNativePaymentProvider:
             if not isinstance(parsed, dict):
                 raise TypeError
             return parsed
-        except (ValueError, TypeError) as exc:
+        except (InvalidTag, ValueError, TypeError) as exc:
             raise CallbackVerificationError("wechat resource decryption failed") from exc
 
     @staticmethod
@@ -339,10 +358,9 @@ class WeChatNativePaymentProvider:
             raise CallbackVerificationError("wechat callback missing amount")
         if amount.get("currency") != "CNY":
             raise CallbackVerificationError("wechat amount currency mismatch")
-        try:
-            total = int(amount["total"])
-        except (TypeError, ValueError, KeyError) as exc:
-            raise CallbackVerificationError("invalid wechat amount.total") from exc
+        total = amount.get("total")
+        if type(total) is not int:
+            raise CallbackVerificationError("invalid wechat amount.total")
         if total <= 0:
             raise CallbackVerificationError("wechat amount.total must be positive")
         return VerifiedCallback(
@@ -378,7 +396,13 @@ class WeChatNativePaymentProvider:
             with httpx.Client(transport=self._transport, timeout=_HTTP_TIMEOUT_SECONDS) as client:
                 response = client.get(
                     f"{_WECHAT_API_BASE}{path}",
-                    headers={"Authorization": authorization, "Accept": "application/json"},
+                    headers={
+                        "Authorization": authorization,
+                        "Accept": "application/json",
+                        "Wechatpay-Serial": _config_value(
+                            self._settings, "wechat_public_key_id", "wechat_pay_public_key_id"
+                        ),
+                    },
                 )
         except httpx.HTTPError as exc:
             raise ChannelUpstreamError(f"wechat trade query request failed: {exc}") from exc
@@ -387,6 +411,7 @@ class WeChatNativePaymentProvider:
                 f"wechat trade query rejected: HTTP {response.status_code} "
                 f"{_upstream_message(response)}"
             )
+        self._verify_response(response)
         try:
             payload = response.json()
             trade_state = payload["trade_state"]
