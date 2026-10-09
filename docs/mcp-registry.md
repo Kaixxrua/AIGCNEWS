@@ -14,6 +14,8 @@
 - `remotes[0].url` 指向生产公网 endpoint（当前 `https://aigcnews.cn/api/mcp`）。
   更换域名或路径时同步修改本文件并重新 publish。
 - 命名空间 `io.github.kaixxrua` 绑定 GitHub 账号 Kaixxrua，publish 时用该账号完成 GitHub OAuth。
+- 主仓库未公开前，`server.json` 不带 `repository`：registry 与目录站会把它显示成链接，指向私有仓库只会 404。
+  仓库公开时再加回，并同步修改 `test_repository_omitted_while_main_repo_is_private`。
 - 不得带着未替换的占位符或不可达 URL publish。
 
 ## 官方 MCP Registry（registry.modelcontextprotocol.io）
@@ -50,7 +52,7 @@ mcp-publisher publish
 | --- | --- | --- |
 | Smithery（smithery.ai） | 站点内 "Add Server" 表单 | Remote URL `https://aigcnews.cn/api/mcp`，transport 选 Streamable HTTP |
 | mcp.so | 站点提交表单 | 名称 AIGC Radar MCP，描述可复用 server.json 的 description |
-| awesome-mcp-servers | 向对应 GitHub 仓库提 PR | 归入 Data / Search 分类，链接本仓库 |
+| awesome-mcp-servers | 向对应 GitHub 仓库提 PR | 条目要链接公开仓库，主仓库公开前不提 |
 
 ## 变更与下线
 

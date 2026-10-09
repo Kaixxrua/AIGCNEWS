@@ -73,11 +73,13 @@ class RegistryMetadataTests(unittest.TestCase):
         self.assertEqual(remote["url"], _PRODUCTION_MCP_URL)
         self.assertNotIn("packages", self.document)
 
-    def test_repository_and_website_are_public_urls(self) -> None:
-        repository = self.document["repository"]
-        self.assertEqual(repository["source"], "github")
-        self.assertTrue(repository["url"].startswith("https://"), repository["url"])
+    def test_website_is_public_url(self) -> None:
         self.assertTrue(self.document["websiteUrl"].startswith("https://"))
+
+    def test_repository_omitted_while_main_repo_is_private(self) -> None:
+        # 主仓库未公开：registry 与目录站会把 repository 显示成链接，指向私有仓库只会 404。
+        # 仓库公开时再加回 repository，并把本测试改回校验公开 URL。
+        self.assertNotIn("repository", self.document)
 
     def test_icons_use_allowed_mime_types(self) -> None:
         for icon in self.document.get("icons", []):
