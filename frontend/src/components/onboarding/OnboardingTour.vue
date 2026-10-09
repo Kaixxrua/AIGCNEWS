@@ -40,7 +40,7 @@ function findTarget(): HTMLElement | null {
   return null
 }
 function measure() {
-  if (phase.value === 'idle') return
+  if (phase.value !== 'tour') return
   // Route transitions can briefly keep the departing view mounted.
   const settled = performance.now() - changedAt > 400
   const element = settled ? findTarget() : null
@@ -104,7 +104,7 @@ onBeforeUnmount(() => {
     <dialog ref="dialog" class="onboarding-dialog" :data-step="welcome ? 'welcome' : step?.id" aria-labelledby="onboarding-title" aria-describedby="onboarding-description" @cancel.prevent="skip">
       <div v-if="hole" class="onboarding-spotlight" :style="holeStyle" aria-hidden="true"></div>
       <div v-else class="onboarding-shade" aria-hidden="true"></div>
-      <section ref="card" class="onboarding-card" :class="{ 'onboarding-card--welcome': welcome }" :style="position">
+      <section ref="card" class="onboarding-card" :class="{ 'onboarding-card--welcome': welcome }" :style="welcome ? undefined : position">
         <header class="onboarding-topline">
           <span class="onboarding-edition">{{ t('onboarding.edition') }}</span>
           <button class="onboarding-close" type="button" :aria-label="t('onboarding.close')" @click="skip"><X :size="20" aria-hidden="true" /></button>
@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
 .onboarding-shade { position: absolute; inset: 0; background: rgb(15 19 16 / 64%); }
 .onboarding-spotlight { position: absolute; border: 3px solid var(--acid, #c9ef42); border-radius: 7px; box-shadow: 0 0 0 9999px rgb(15 19 16 / 64%); pointer-events: none; }
 .onboarding-card { position: absolute; width: 432px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px 24px 20px; border: 2px solid var(--ink); border-radius: 3px 12px 4px 3px; background: var(--paper-raised, #fffdf3); box-shadow: 7px 7px 0 var(--ink); color: var(--ink); text-align: left; }
-.onboarding-card--welcome { width: 492px; padding: 26px 30px 24px; background-image: radial-gradient(var(--rule) 0.65px, transparent 0.65px); background-size: 7px 7px; }
+.onboarding-card--welcome { left: 50%; top: 50%; transform: translate(-50%, -50%); width: 492px; padding: 26px 30px 24px; background-image: radial-gradient(var(--rule) 0.65px, transparent 0.65px); background-size: 7px 7px; }
 .onboarding-topline { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .onboarding-edition { display: inline-block; padding: 4px 9px; border: 1.5px solid var(--ink); background: var(--acid); color: var(--acid-ink, #141913); font-size: 11px; font-weight: 900; letter-spacing: 0.12em; transform: rotate(-2deg); }
 .onboarding-close { display: grid; place-items: center; width: 28px; height: 28px; border: 0; background: transparent; color: inherit; cursor: pointer; }

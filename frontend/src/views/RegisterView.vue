@@ -163,7 +163,7 @@ const {
       </div>
 
       <!-- 底部登录链接 -->
-      <p class="auth-switch mt-5 text-center text-sm text-stone-400 stagger-enter" style="animation-delay: 0.2s">
+      <p class="auth-switch mt-5 text-center text-sm text-stone-600 stagger-enter" style="animation-delay: 0.2s">
         {{ t('auth.hasAccount') }}
         <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="requestLogin(redirect)">
           {{ t('auth.goLogin') }}

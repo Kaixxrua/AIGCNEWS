@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MembershipView from './MembershipView.vue'
 import type { SiteContactPage } from '@/services/site/contactPageApi'
 
-const authBox = vi.hoisted(() => ({ isMember: false }))
+const authBox = vi.hoisted(() => ({ isMember: false, isLoggedIn: false }))
 const configBox = vi.hoisted(() => ({ current: null as null | { value: SiteContactPage } }))
 const paymentBox = vi.hoisted(() => ({ listPlans: vi.fn() }))
 
@@ -53,6 +53,8 @@ const i18n = createI18n({
           name: 'free',
           price: '¥0',
           currentPlan: '当前默认方案',
+          register: '免费注册',
+          includedInMember: '已包含在会员权益中',
           features: {
             tracking: '1 条追踪规则',
             mcpFree: 'MCP/API 共用：每 24 小时 60 次 + 每 30 天 1,200 次',
@@ -133,6 +135,7 @@ const paymentsOff = () => Object.assign(new Error('Request failed with status co
 
 beforeEach(() => {
   authBox.isMember = false
+  authBox.isLoggedIn = false
   configBox.current!.value = { ...configBox.current!.value, enabled: false }
   paymentBox.listPlans.mockReset().mockResolvedValue(livePlans(990, 8880))
   i18n.global.locale.value = 'zh-CN'
@@ -153,7 +156,7 @@ describe('MembershipView', () => {
     expect(text).toContain('¥88.8 / 年')
     expect(text).toContain('年付省 ¥30')
     expect(text).toContain('推荐')
-    expect(text).toContain('当前默认方案')
+    expect(text).toContain('免费注册')
     expect(text).toContain('无需注册，打开即用')
     expect(text).toContain('浏览榜单、论文与项目库')
     expect(text).toContain('MCP 匿名额度：每 24 小时 30 次')
@@ -174,7 +177,9 @@ describe('MembershipView', () => {
     const cards = wrapper.findAll('.tier-card')
     expect(cards).toHaveLength(3)
 
-    const [guestCard, freeCard, memberCard] = cards
+    const guestCard = wrapper.get('.tier-card--guest')
+    const freeCard = wrapper.get('.tier-card--free')
+    const memberCard = wrapper.get('.tier-card--member')
     if (!guestCard || !freeCard || !memberCard) throw new Error('tier cards missing')
     // guest：RSS / 简报 / 网页收藏 / UI 灵感库复制四项排除；free 与 vip 均无排除项
     expect(guestCard.findAll('.tier-feature--excluded')).toHaveLength(4)

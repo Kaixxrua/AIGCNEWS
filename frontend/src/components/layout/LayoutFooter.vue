@@ -175,7 +175,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
  .dock-footer--editorial .footer-brand__tagline { border: 0; padding: 0; font-size: 11px; }
  .dock-footer--editorial .footer-right { grid-column: 3; min-width: 0; flex-direction: column; align-items: flex-end; gap: 6px; white-space: normal; }
  .dock-footer--editorial .footer-nav { justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
- .dock-footer--editorial .footer-link { white-space: nowrap; }
+ .dock-footer--editorial .footer-link { display:inline-flex;align-items:center;min-height:24px;white-space:nowrap; }
  .dock-footer--editorial .footer-copyright { border: 0; padding: 0; text-align: right; gap: 3px; }
 }
 @media (min-width: 1024px) and (max-width: 1199px) {

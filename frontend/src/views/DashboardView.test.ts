@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
-import { loadCatalog } from '@/features/ui-library/catalog'
+import { loadUiShowcaseCatalog } from '@/features/dashboard/uiShowcase'
 
 enableAutoUnmount(afterEach)
 
@@ -14,11 +14,12 @@ vi.mock('@vueuse/core', async (original) => {
   return { ...actual, useElementVisibility: () => ref(true), useMediaQuery: () => ref(layout.desktop) }
 })
 
-vi.mock('@/features/ui-library/catalog', () => ({
-  loadCatalog: vi.fn().mockResolvedValue([
+vi.mock('@/features/dashboard/uiShowcase', async (original) => ({
+  ...await original<typeof import('@/features/dashboard/uiShowcase')>(),
+  loadUiShowcaseCatalog: vi.fn().mockResolvedValue({ version: 1, total: 240, items: [
     { id: 'example', name: { zh: '示例组件', en: 'Example' }, poster_url: '/ui-library/posters/example.webp' },
     { id: 'eui-shader-worlds', name: { zh: '精选组件', en: 'Featured' }, clip_url: '/ui-library/clips/featured.mp4', poster_url: '/ui-library/posters/featured.webp', editorial: { status: 'approved' } },
-  ]),
+  ] }),
 }))
 
 vi.mock('@/composables/useLiveStatsStream', () => ({ subscribeLiveStats: vi.fn() }))
@@ -123,7 +124,7 @@ describe('DashboardView', () => {
 
   it('loads the total catalog count and selects a real editorial preview', async () => {
     const wrapper = await mountView()
-    expect(wrapper.get('.overview-stub').attributes('data-count')).toBe('2')
+    expect(wrapper.get('.overview-stub').attributes('data-count')).toBe('240')
     expect(wrapper.get('.ui-inspiration video').attributes('src')).toBe('/ui-library/clips/featured.mp4')
     await wrapper.get('.ui-inspiration video').trigger('error')
     expect(wrapper.get('.ui-inspiration img').attributes('src')).toBe('/ui-library/posters/featured.webp')
@@ -134,7 +135,7 @@ describe('DashboardView', () => {
   })
 
   it('keeps the dashboard usable when the UI catalog is unavailable', async () => {
-    vi.mocked(loadCatalog).mockRejectedValueOnce(new Error('Unavailable'))
+    vi.mocked(loadUiShowcaseCatalog).mockRejectedValueOnce(new Error('Unavailable'))
     const wrapper = await mountView()
     expect(wrapper.get('.overview-stub').attributes('data-count')).toBeUndefined()
     expect(wrapper.get('.overview-stub').attributes('data-loading')).toBe('false')

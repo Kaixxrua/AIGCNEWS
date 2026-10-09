@@ -86,7 +86,7 @@ const handleLogin = async () => {
         {{ loading ? t('auth.loggingIn') : t('auth.login') }}
       </button>
     </div>
-    <p class="auth-switch mt-5 text-center text-sm text-stone-400">
+    <p class="auth-switch mt-5 text-center text-sm text-stone-600">
       {{ t('auth.noAccount') }}
       <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-register')">{{ t('auth.registerNow') }}</button>
     </p>

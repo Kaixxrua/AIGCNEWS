@@ -3,10 +3,9 @@ import { computed, onActivated, onDeactivated, ref, watch } from 'vue'
 import { useDocumentVisibility, useElementVisibility, usePreferredReducedMotion } from '@vueuse/core'
 import { ArrowUpRight, ChevronLeft, ChevronRight, Pause, Play, Sparkles } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
-import type { UiTemplate } from '@/features/ui-library/catalog'
-import { selectUiShowcase } from '@/features/dashboard/uiShowcase'
+import { selectUiShowcase, type UiShowcaseItem } from '@/features/dashboard/uiShowcase'
 
-const props = defineProps<{ items: UiTemplate[] }>()
+const props = defineProps<{ items: UiShowcaseItem[] }>()
 const { t, locale } = useI18n()
 const element = ref<HTMLElement>()
 const visible = useElementVisibility(element)
@@ -98,7 +97,7 @@ onDeactivated(() => { active.value = false })
 .ui-inspiration__preview { overflow:hidden; }
 .ui-inspiration__preview video,.ui-inspiration__preview img { width:100%;height:100%;object-fit:cover;transform:scale(var(--preview-scale,1)); }
 .ui-inspiration__shade { background:linear-gradient(180deg,#050810a6,transparent 35%,#05081038 50%,#050810ed 100%);pointer-events:none; }
-.ui-inspiration__heading { position:absolute;top:10px;left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#fff;font-size:14px;font-weight:850;text-shadow:0 1px 6px #000; }
+.ui-inspiration__heading { min-height:24px;position:absolute;top:10px;left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#fff;font-size:14px;font-weight:850;text-shadow:0 1px 6px #000; }
 .ui-inspiration__heading svg { flex-shrink:0; }
 .ui-inspiration__caption { position:absolute;left:13px;right:13px;bottom:51px;display:flex;flex-direction:column;gap:3px;text-shadow:0 2px 12px #000; }
 .ui-inspiration__caption > span { color:#d4f98b;font-size:9px;font-weight:750;letter-spacing:.15em; }

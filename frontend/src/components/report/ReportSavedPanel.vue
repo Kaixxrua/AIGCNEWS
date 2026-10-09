@@ -42,7 +42,7 @@ const saves: BroadsheetSaves = {
 
 <template>
   <div v-if="shown.length" class="report-content p-5">
-    <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
+    <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">{{ t('report.aiGeneratedNotice') }}</p>
     <ReportBroadsheet :sheet="built.sheet" :mode="mode" :generating="false" :saves="saves" :dim-read="false" :peek="peek" />
   </div>
   <div v-else class="flex h-full flex-col items-center justify-center gap-2 text-stone-400 p-4">

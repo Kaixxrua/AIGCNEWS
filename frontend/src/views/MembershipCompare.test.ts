@@ -17,7 +17,7 @@ vi.mock('@vueuse/core', async (importOriginal) => {
   }
 })
 
-const authBox = vi.hoisted(() => ({ isMember: false }))
+const authBox = vi.hoisted(() => ({ isMember: false, isLoggedIn: false }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
 // 支付总开关关闭：plans 整组 404，vip 卡不报价、开通走联系兜底。
 vi.mock('@/services/payments/paymentApi', () => ({
@@ -49,6 +49,7 @@ const column = (wrapper: VueWrapper, tier: number) => {
 beforeEach(() => {
   viewport.desktop = true
   authBox.isMember = false
+  authBox.isLoggedIn = false
 })
 
 afterEach(() => {
@@ -124,6 +125,17 @@ describe('MembershipView desktop comparison', () => {
     expect(memberView.get('.tier-member-note').text()).toBe('感谢支持！vip 权益已生效。')
   })
 
+  it('shows the current free plan only for signed-in free accounts', () => {
+    authBox.isLoggedIn = true
+    const wrapper = mountView()
+    expect(wrapper.find('.tier-register').exists()).toBe(false)
+    expect(wrapper.get('.tier-card--free .tier-plan-note').text()).toBe('当前默认方案')
+    authBox.isMember = true
+    const member = mountView()
+    expect(member.get('.tier-card--free .tier-plan-note').text()).toBe('已包含在会员权益中')
+    expect(member.find('.tier-register').exists()).toBe(false)
+  })
+
   it('goes back to the three plan cards on the desktop when the masthead asks for the comfortable layout', async () => {
     setAppDensity('comfortable')
     const wrapper = mountView()
@@ -131,7 +143,7 @@ describe('MembershipView desktop comparison', () => {
     expect(wrapper.get('.membership-card').attributes('style')).toBeUndefined()
     expect(wrapper.find('.tier-rows').exists()).toBe(false)
     expect(wrapper.find('.tier-features--compare').exists()).toBe(false)
-    expect(wrapper.findAll('.tier-card')[0]?.findAll('.tier-features li')).toHaveLength(6)
+    expect(wrapper.get('.tier-card--guest').findAll('.tier-features li')).toHaveLength(6)
 
     setAppDensity('compact')
     await nextTick()
@@ -140,14 +152,18 @@ describe('MembershipView desktop comparison', () => {
     for (const tier of [0, 1, 2]) expect(column(wrapper, tier)).toHaveLength(ROW_NAMES.length)
   })
 
-  it('keeps phones and tablets on the three plan cards', () => {
+  it('leads with the paid plan on phones and keeps its action before the benefits', () => {
     viewport.desktop = false
     const wrapper = mountView()
+    expect(wrapper.findAll('.tier-name').map(node => node.text())).toEqual(['vip', 'free', 'guest'])
+    const member = wrapper.get('.tier-card--member')
+    expect(member.get('.tier-cta').element.compareDocumentPosition(member.get('.tier-features').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.get('.tier-card--free').getComponent(RouterLinkStub).props('to')).toEqual({ path: '/register', query: { redirect: '/membership' } })
     expect(wrapper.get('.membership-card').classes()).not.toContain('membership-card--compare')
     expect(wrapper.get('.membership-card').attributes('style')).toBeUndefined()
     expect(wrapper.find('.tier-rows').exists()).toBe(false)
     expect(wrapper.find('.tier-features--compare').exists()).toBe(false)
-    const guest = wrapper.findAll('.tier-card')[0]
+    const guest = wrapper.get('.tier-card--guest')
     expect(guest?.findAll('.tier-features li')).toHaveLength(6)
     expect(guest?.findAll('.tier-feature--excluded')).toHaveLength(4)
     expect(guest?.text()).toContain('MCP 匿名额度：每 24 小时 5 次')

@@ -1,5 +1,5 @@
 export const onboardingZh = {
-  help: '重新查看引导', edition: '新手特刊', welcomeTitle: '翻开你的 AI 情报地图',
+  help: '使用指南', edition: '新手特刊', welcomeTitle: '翻开你的 AI 情报地图',
   welcomeBody: '花几分钟，一起逛遍资讯、项目、灵感和工具。我们会带你找到每个栏目的关键入口，随时可以跳过。',
   welcomeNote: '无需登录即可参观 · 完成后回到这里',
   start: '开始引导', skip: '跳过引导', close: '关闭并跳过引导',
@@ -41,7 +41,7 @@ export const onboardingZh = {
 }
 
 export const onboardingEn = {
-  help: 'Replay the site tour', edition: 'FIRST EDITION', welcomeTitle: 'Your map to the AI world',
+  help: 'Site tour', edition: 'FIRST EDITION', welcomeTitle: 'Your map to the AI world',
   welcomeBody: 'Take a few minutes to explore the news, projects, inspiration and tools. We will point out the essentials in every section. Skip whenever you like.',
   welcomeNote: 'No sign-in needed · Return here when you finish',
   start: 'Start the tour', skip: 'Skip tour', close: 'Close and skip the tour',

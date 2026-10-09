@@ -15,13 +15,13 @@ import DashboardDigestCard from '@/components/dashboard/DashboardDigestCard.vue'
 import DashboardUiShowcase from '@/components/dashboard/DashboardUiShowcase.vue'
 import { Plug, Terminal } from 'lucide-vue-next'
 import type { Stats } from '@/features/dashboard/dashboardViewModel'
-import { loadCatalog, type UiTemplate } from '@/features/ui-library/catalog'
+import { loadUiShowcaseCatalog, type UiShowcaseItem } from '@/features/dashboard/uiShowcase'
 
 defineOptions({ name: 'DashboardContent' })
 const { t } = useI18n()
 const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
-const uiItems = ref<UiTemplate[]>([])
+const uiItems = ref<UiShowcaseItem[]>([])
 const uiCatalogController = new AbortController()
 let currentStats: () => Stats = () => ({})
 const {
@@ -64,8 +64,8 @@ subscribeLiveStats(applyLiveStats)
 
 onMounted(async () => {
   try {
-    const items = await loadCatalog(uiCatalogController.signal)
-    uiCount.value = items.length
+    const { total, items } = await loadUiShowcaseCatalog(uiCatalogController.signal)
+    uiCount.value = total
     uiItems.value = items
   } catch {
     // 目录不可用时显示未知，不把加载失败误报为零。
@@ -144,8 +144,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 .dashboard-sidebar :deep(.dash-calendar) { padding:8px 12px;border:solid var(--rule-strong);border-width:2px 2.5px 2px 2px;border-radius:5px 9px 4px 6px;background:var(--paper);box-shadow:inset -2px -2px 0 color-mix(in srgb,var(--rule-strong) 12%,transparent); }
 .dashboard-sidebar :deep(.dash-calendar h3) { color:var(--ink);font-family:inherit;font-size:24px;font-weight:850; }
 .dashboard-sidebar :deep(.dash-calendar > div:first-child) { margin-bottom:4px; }
-.dashboard-sidebar :deep(.dash-calendar > .grid:last-child) { flex:1;min-height:0;grid-auto-rows:minmax(0,1fr); }
-.dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:20px;font-size:15px;color:var(--ink); }
+.dashboard-sidebar :deep(.dash-calendar > .grid:last-child) { flex:1;min-height:0;grid-auto-rows:minmax(24px,1fr); }
+.dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:24px;font-size:15px;color:var(--ink); }
 .dashboard-sidebar :deep(.dash-calendar .calendar-day.text-stone-300) { color:var(--muted); }
 .dashboard-sidebar :deep(.dash-calendar .calendar-day--disabled) { opacity:.65; }
 .dashboard-sidebar :deep(.dash-calendar .grid > span) { font-size:14px !important;line-height:25px !important;color:var(--ink-secondary); }
@@ -202,7 +202,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-page--notice { grid-template-rows:64px auto minmax(0,1fr); }
   .dashboard-heading :deep(.stat-cell) { min-height:64px;padding-block:5px; }
   .dashboard-sidebar { gap:9px;grid-template-rows:187px max-content max-content 58px minmax(160px,1fr); }
-  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:19px; }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { min-height:24px; }
   .integration-card { padding-block:7px; }
   .integration-card :deep(number-flow-vue),.integration-card :deep(span > span) { font-size:20px; }
 }
@@ -242,8 +242,8 @@ onBeforeUnmount(() => uiCatalogController.abort())
 /* Budget the sidebar against the content frame, including the shell's desktop zoom. */
 @media (min-width:1024px) {
   .dashboard-page { container:dashboard / size; }
-  .dashboard-sidebar { --ui-showcase-min-height:0px;position:sticky;top:0;align-self:start;height:100cqh;grid-template-rows:clamp(180px,28cqh,214px) max-content max-content clamp(48px,8cqh,66px) minmax(0,1fr);gap:clamp(6px,1.2cqh,12px); }
-  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:19px; }
+  .dashboard-sidebar { --ui-showcase-min-height:0px;position:sticky;top:0;align-self:start;height:100cqh;grid-template-rows:minmax(min-content,clamp(204px,28cqh,234px)) max-content max-content clamp(48px,8cqh,66px) minmax(0,1fr);gap:clamp(6px,1.2cqh,12px); }
+  .dashboard-sidebar :deep(.dash-calendar .calendar-day) { height:100%;min-height:24px; }
   .dashboard-sidebar :deep(.new-word span) { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden; }
   .integration-card { display:flex;gap:6px;padding:5px 8px; }
   .integration-card > svg { width:26px;height:26px;padding:5px; }
@@ -268,7 +268,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
 }
 /* On short screens the calendar and vocabulary share a row, preserving the full preview. */
 @container dashboard (max-height:560px) {
-  .dashboard-sidebar { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);grid-template-rows:180px max-content 48px minmax(0,1fr);gap:6px; }
+  .dashboard-sidebar { grid-template-columns:minmax(190px,1.4fr) minmax(0,1fr);grid-template-rows:minmax(182px,min-content) max-content 48px minmax(0,1fr);gap:6px; }
   .dashboard-sidebar :deep(.dash-calendar) { grid-column:1;grid-row:1;min-width:0;padding:5px 6px; }
   .dashboard-sidebar :deep(.dash-calendar h3) { font-size:14px;line-height:1.2; }
   .dashboard-sidebar :deep(.dash-calendar > div:first-child) { margin-bottom:2px; }
@@ -281,6 +281,9 @@ onBeforeUnmount(() => uiCatalogController.abort())
   .dashboard-sidebar :deep(.new-words-list) { grid-template-columns:minmax(0,1fr);margin:9px 1px 0;gap:9px; }
   .dashboard-sidebar :deep(.new-word) { width:100%;gap:3px;padding:5px;font-size:13px;transform:none; }
   .dashboard-sidebar :deep(.new-word svg) { width:14px;height:14px; }
+  .dashboard-sidebar :deep(.new-words-tools) { flex-direction:column;align-items:stretch;gap:0;margin-top:6px;padding-top:3px; }
+  .dashboard-sidebar :deep(.new-words-tools button) { min-height:26px;font-size:9px;line-height:1.3;text-align:left; }
+  .dashboard-sidebar :deep(.new-words-tools svg) { width:11px;flex-shrink:0; }
   .dashboard-sidebar :deep(.digest-body p) { font-size:10px; }
   .dashboard-sidebar :deep(.digest-cta svg) { display:none; }
   .dashboard-sidebar :deep(.digest-card),.integration-grid,.dashboard-sidebar :deep(.ui-inspiration) { grid-column:1 / -1; }

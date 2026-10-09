@@ -59,7 +59,7 @@ useDialogFocus(() => props.modelValue, dialogRef, close)
                 {{ loading ? t('auth.resetting') : t('auth.reset') }}
               </button>
             </div>
-            <p class="auth-switch mt-5 text-center text-sm text-stone-400">{{ t('auth.rememberPassword') }} <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-login')">{{ t('auth.backToLogin') }}</button></p>
+            <p class="auth-switch mt-5 text-center text-sm text-stone-600">{{ t('auth.rememberPassword') }} <button type="button" class="font-medium text-stone-600 underline underline-offset-2 hover:text-stone-800 transition-colors" @click="emit('switch-to-login')">{{ t('auth.backToLogin') }}</button></p>
           </div>
         </div>
       </div>

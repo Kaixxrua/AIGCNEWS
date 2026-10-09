@@ -137,15 +137,12 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
   function offer() {
     if (!ready || !alive || !eligible.value || phase.value !== 'idle' || busy.value) return
     if (document.querySelector('dialog[open]')) return
+    // Resume an existing tour; fresh visitors open the guide from Help.
     const progress = readProgress(owner.value)
     if (progress && (progress.manual || !readTerminal(owner.value))) {
       returnTo = progress.returnTo
       manual = progress.manual
       go(resumeStepIndex(steps.value, progress.step))
-    } else if (!readTerminal(owner.value)) {
-      rememberPlace()
-      manual = false
-      phase.value = 'welcome'
     }
   }
 

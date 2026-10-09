@@ -45,6 +45,7 @@ const isMember = computed(() => authStore.isMember)
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { comfortable } = useAppDensity()
 const compare = computed(() => desktop.value && !comfortable.value)
+const tierOrder = computed(() => desktop.value ? ['guest', 'free', 'member'] : ['member', 'free', 'guest'])
 // 对比表的行数交给样式排网格：行名列和三档的格子都按这个数分行。
 const compareStyle = computed(() => (compare.value ? { '--compare-rows': String(COMPARE_ROWS.length) } : undefined))
 
@@ -194,144 +195,147 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
         <div v-if="compare" class="tier-rows" aria-hidden="true">
           <span v-for="row in COMPARE_ROWS" :key="row.key" class="tier-row-label" :class="{ 'tier-row-label--same': sameAcrossTiers(row) }">{{ t(`membership.compare.rows.${row.key}`) }}</span>
         </div>
-        <article class="glass-card tier-card">
-          <h2 class="tier-name">{{ t('membership.guest.name') }}</h2>
-          <p class="tier-price">
-            <span class="tier-price-amount">{{ t('membership.guest.price') }}</span>
-          </p>
-          <hr class="tier-divider" />
-          <TierCompareList v-if="compare" tier="guest" />
-          <ul v-else class="tier-features">
-            <li
-              v-for="feature in GUEST_FEATURES"
-              :key="feature.key"
-              :class="{ 'tier-feature--excluded': !feature.included }"
-            >
-              <Check
-                v-if="feature.included"
-                :size="14"
-                :stroke-width="2.5"
-                class="tier-check"
-                aria-hidden="true"
-              />
-              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
-              <span>{{ t(`membership.guest.features.${feature.key}`) }}</span>
-            </li>
-          </ul>
-          <p class="tier-plan-note">{{ t('membership.guest.note') }}</p>
-        </article>
-
-        <article class="glass-card tier-card">
-          <h2 class="tier-name">{{ t('membership.free.name') }}</h2>
-          <p class="tier-price">
-            <span class="tier-price-amount">{{ t('membership.free.price') }}</span>
-          </p>
-          <hr class="tier-divider" />
-          <TierCompareList v-if="compare" tier="free" />
-          <ul v-else class="tier-features">
-            <li
-              v-for="feature in FREE_FEATURES"
-              :key="feature.key"
-              :class="{ 'tier-feature--excluded': !feature.included }"
-            >
-              <Check
-                v-if="feature.included"
-                :size="14"
-                :stroke-width="2.5"
-                class="tier-check"
-                aria-hidden="true"
-              />
-              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
-              <span>{{ t(`membership.free.features.${feature.key}`) }}</span>
-            </li>
-          </ul>
-          <p class="tier-plan-note">{{ t('membership.free.currentPlan') }}</p>
-        </article>
-
-        <article class="tier-card tier-card--member">
-          <span class="tier-badge" :class="{ 'tier-badge--current': isMember }">
-            {{ isMember ? t('membership.currentMember') : t('membership.member.badge') }}
-          </span>
-          <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
-          <!-- 切换计费周期：价格整块滚动换值（去年付向上、回月付向下），锚点行稍后跟上；按钮图标翻转、折扣标弹入弹出。
-               价格与按钮的宽度一起过渡（同一行里此消彼长，不会中途把按钮挤到下一行）；较窄时按钮在两行之间滑动，
-               价格行高度随之过渡。价格还没到时只画一块占位、不出任何金额，折扣标和省钱标隐形占住宽高，价格到了版面不跳；
-               没加载出来给重试，确定买不了时不报价。 -->
-          <p v-morph="priceMorphKey" class="tier-price">
-            <RollText v-if="priceState === 'ready'" :value="`${memberAmountText} ${periodText}`" :direction="billingDirection">
-              <span class="tier-price-amount">{{ memberAmountText }}</span>
-              <span class="tier-price-period">{{ periodText }}</span>
-            </RollText>
-            <span v-else-if="priceState === 'loading'" class="tier-price-pending">
-              <span class="tier-price-amount tier-price-amount--pending" aria-hidden="true">&#8203;</span>
-              <span class="tier-price-period" aria-hidden="true">{{ periodText }}</span>
-              <span class="sr-only">{{ t('membership.member.priceLoading') }}</span>
-            </span>
-            <span v-else-if="priceState === 'failed'" class="tier-price-note">
-              {{ t('membership.member.priceFailed') }}
-              <button type="button" class="tier-price-retry" @click="loadPlans">{{ t('membership.member.priceRetry') }}</button>
-            </span>
-            <span v-else class="tier-price-note">{{ t('membership.member.priceUnavailable') }}</span>
-            <button
-              v-if="showBilling"
-              v-morph="priceMorphKey"
-              type="button"
-              class="tier-billing-btn"
-              :aria-pressed="isYearly"
-              @click="toggleBilling"
-            >
-              <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
-              <RollText :value="billingLabel" :direction="billingDirection" :morph="false" />
-              <!-- 折扣标只在月付态且真实存在折扣时出现：前端按 plans 价自算
-                   1 − yearly/(monthly×12)，向下取整（保守口径），≤0 即隐藏；
-                   年付态按钮是降级动作，不带折扣标 -->
-              <Transition @enter="popInTag" @leave="popOut">
-                <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
-                <span v-else-if="!isYearly && priceState === 'loading'" class="tier-billing-tag tier-billing-tag--pending" aria-hidden="true">{{ pendingDiscountText }}</span>
-              </Transition>
-            </button>
-          </p>
-          <p v-if="showBilling" class="tier-price-yearly">
-            <template v-if="priceState === 'ready'">
-              <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
-            </template>
-            <template v-else>
-              <span class="tier-price-anchor--pending" aria-hidden="true">{{ pendingAnchorText }}</span> <span class="tier-savings tier-savings--pending" aria-hidden="true">{{ pendingSavingsText }}</span>
-            </template>
-          </p>
-          <hr class="tier-divider" />
-          <TierCompareList v-if="compare" tier="member" />
-          <ul v-else class="tier-features">
-            <li
-              v-for="feature in MEMBER_FEATURES"
-              :key="feature.key"
-              :class="{ 'tier-feature--excluded': !feature.included }"
-            >
-              <Check
-                v-if="feature.included"
-                :size="14"
-                :stroke-width="2.5"
-                class="tier-check"
-                aria-hidden="true"
-              />
-              <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
-              <span>{{ t(`membership.member.features.${feature.key}`) }}</span>
-            </li>
-          </ul>
-          <template v-if="!isMember">
-            <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
-              <span class="tier-cta-label">{{ t('membership.ctaOnline') }}</span>
-            </RouterLink>
-            <RouterLink v-else-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
-              <span class="tier-cta-label">{{ t('membership.cta') }}</span>
-            </RouterLink>
-            <a v-else :href="contactHref" class="tier-cta"><span class="tier-cta-label">{{ t('membership.cta') }}</span></a>
-            <p class="tier-cta-hint">
-              {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
+        <template v-for="tier in tierOrder" :key="tier">
+          <article v-if="tier === 'guest'" class="glass-card tier-card tier-card--guest">
+            <h2 class="tier-name">{{ t('membership.guest.name') }}</h2>
+            <p class="tier-price">
+              <span class="tier-price-amount">{{ t('membership.guest.price') }}</span>
             </p>
-          </template>
-          <p v-else class="tier-member-note">{{ t('membership.memberNote') }}</p>
-        </article>
+            <hr class="tier-divider" />
+            <TierCompareList v-if="compare" tier="guest" />
+            <ul v-else class="tier-features">
+              <li
+                v-for="feature in GUEST_FEATURES"
+                :key="feature.key"
+                :class="{ 'tier-feature--excluded': !feature.included }"
+              >
+                <Check
+                  v-if="feature.included"
+                  :size="14"
+                  :stroke-width="2.5"
+                  class="tier-check"
+                  aria-hidden="true"
+                />
+                <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+                <span>{{ t(`membership.guest.features.${feature.key}`) }}</span>
+              </li>
+            </ul>
+            <p class="tier-plan-note">{{ t('membership.guest.note') }}</p>
+          </article>
+
+          <article v-else-if="tier === 'free'" class="glass-card tier-card tier-card--free">
+            <h2 class="tier-name">{{ t('membership.free.name') }}</h2>
+            <p class="tier-price">
+              <span class="tier-price-amount">{{ t('membership.free.price') }}</span>
+            </p>
+            <hr class="tier-divider" />
+            <RouterLink v-if="!authStore.isLoggedIn && !isMember" :to="{ path: '/register', query: { redirect: '/membership' } }" class="tier-register">{{ t('membership.free.register') }}</RouterLink>
+            <p v-else class="tier-plan-note">{{ t(isMember ? 'membership.free.includedInMember' : 'membership.free.currentPlan') }}</p>
+            <TierCompareList v-if="compare" tier="free" />
+            <ul v-else class="tier-features">
+              <li
+                v-for="feature in FREE_FEATURES"
+                :key="feature.key"
+                :class="{ 'tier-feature--excluded': !feature.included }"
+              >
+                <Check
+                  v-if="feature.included"
+                  :size="14"
+                  :stroke-width="2.5"
+                  class="tier-check"
+                  aria-hidden="true"
+                />
+                <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+                <span>{{ t(`membership.free.features.${feature.key}`) }}</span>
+              </li>
+            </ul>
+          </article>
+
+          <article v-else class="tier-card tier-card--member">
+            <span class="tier-badge" :class="{ 'tier-badge--current': isMember }">
+              {{ isMember ? t('membership.currentMember') : t('membership.member.badge') }}
+            </span>
+            <h2 class="tier-name">{{ t('membership.member.name') }}</h2>
+            <!-- 切换计费周期：价格整块滚动换值（去年付向上、回月付向下），锚点行稍后跟上；按钮图标翻转、折扣标弹入弹出。
+                 价格与按钮的宽度一起过渡（同一行里此消彼长，不会中途把按钮挤到下一行）；较窄时按钮在两行之间滑动，
+                 价格行高度随之过渡。价格还没到时只画一块占位、不出任何金额，折扣标和省钱标隐形占住宽高，价格到了版面不跳；
+                 没加载出来给重试，确定买不了时不报价。 -->
+            <p v-morph="priceMorphKey" class="tier-price">
+              <RollText v-if="priceState === 'ready'" :value="`${memberAmountText} ${periodText}`" :direction="billingDirection">
+                <span class="tier-price-amount">{{ memberAmountText }}</span>
+                <span class="tier-price-period">{{ periodText }}</span>
+              </RollText>
+              <span v-else-if="priceState === 'loading'" class="tier-price-pending">
+                <span class="tier-price-amount tier-price-amount--pending" aria-hidden="true">&#8203;</span>
+                <span class="tier-price-period" aria-hidden="true">{{ periodText }}</span>
+                <span class="sr-only">{{ t('membership.member.priceLoading') }}</span>
+              </span>
+              <span v-else-if="priceState === 'failed'" class="tier-price-note">
+                {{ t('membership.member.priceFailed') }}
+                <button type="button" class="tier-price-retry" @click="loadPlans">{{ t('membership.member.priceRetry') }}</button>
+              </span>
+              <span v-else class="tier-price-note">{{ t('membership.member.priceUnavailable') }}</span>
+              <button
+                v-if="showBilling"
+                v-morph="priceMorphKey"
+                type="button"
+                class="tier-billing-btn"
+                :aria-pressed="isYearly"
+                @click="toggleBilling"
+              >
+                <ArrowLeftRight :size="13" :stroke-width="2.5" aria-hidden="true" />
+                <RollText :value="billingLabel" :direction="billingDirection" :morph="false" />
+                <!-- 折扣标只在月付态且真实存在折扣时出现：前端按 plans 价自算
+                     1 − yearly/(monthly×12)，向下取整（保守口径），≤0 即隐藏；
+                     年付态按钮是降级动作，不带折扣标 -->
+                <Transition @enter="popInTag" @leave="popOut">
+                  <span v-if="!isYearly && discountPercent > 0" class="tier-billing-tag">{{ discountText }}</span>
+                  <span v-else-if="!isYearly && priceState === 'loading'" class="tier-billing-tag tier-billing-tag--pending" aria-hidden="true">{{ pendingDiscountText }}</span>
+                </Transition>
+              </button>
+            </p>
+            <p v-if="showBilling" class="tier-price-yearly">
+              <template v-if="priceState === 'ready'">
+                <RollText :value="anchorText" :direction="billingDirection" :delay="60" /> <span v-if="savingsCents > 0" class="tier-savings">{{ savingsText }}</span>
+              </template>
+              <template v-else>
+                <span class="tier-price-anchor--pending" aria-hidden="true">{{ pendingAnchorText }}</span> <span class="tier-savings tier-savings--pending" aria-hidden="true">{{ pendingSavingsText }}</span>
+              </template>
+            </p>
+            <template v-if="!isMember">
+              <RouterLink v-if="checkoutAvailable" :to="checkoutTo" class="tier-cta">
+                <span class="tier-cta-label">{{ t('membership.ctaOnline') }}</span>
+              </RouterLink>
+              <RouterLink v-else-if="contactPageConfig.enabled" to="/contact" class="tier-cta">
+                <span class="tier-cta-label">{{ t('membership.cta') }}</span>
+              </RouterLink>
+              <a v-else :href="contactHref" class="tier-cta"><span class="tier-cta-label">{{ t('membership.cta') }}</span></a>
+              <p class="tier-cta-hint">
+                {{ checkoutAvailable ? t('membership.ctaOnlineHint') : t('membership.ctaHint') }}
+              </p>
+            </template>
+            <p v-else class="tier-member-note">{{ t('membership.memberNote') }}</p>
+            <hr class="tier-divider" />
+            <TierCompareList v-if="compare" tier="member" />
+            <ul v-else class="tier-features">
+              <li
+                v-for="feature in MEMBER_FEATURES"
+                :key="feature.key"
+                :class="{ 'tier-feature--excluded': !feature.included }"
+              >
+                <Check
+                  v-if="feature.included"
+                  :size="14"
+                  :stroke-width="2.5"
+                  class="tier-check"
+                  aria-hidden="true"
+                />
+                <X v-else :size="14" :stroke-width="2.5" class="tier-x" aria-hidden="true" />
+                <span>{{ t(`membership.member.features.${feature.key}`) }}</span>
+              </li>
+            </ul>
+          </article>
+        </template>
       </section>
     </div>
   </div>
@@ -625,26 +629,43 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   color: var(--projects-success);
 }
 
-/* ✗ 排除项：图标与文案同步降透明度，一眼读出「该档不含」（对比 ✓ 即区分度） */
+/* Excluded benefits remain readable; the cross distinguishes unavailable features. */
 .tier-x {
   flex-shrink: 0;
   margin-top: 3px;
-  color: var(--ink-faint);
+  color: var(--ink-secondary);
 }
 
 .tier-feature--excluded {
-  color: var(--ink-faint);
+  color: var(--ink-secondary);
 }
 
-/* 免费档底部：无动作可言，安静标注默认身份（虚线发丝分隔） */
+/* Account status and the free registration entry share the plan action row. */
 .tier-plan-note {
   margin: auto 0 0;
   padding-top: 14px;
   border-top: 1px dashed var(--rule);
   font-size: 12px;
   text-align: center;
-  color: var(--ink-faint);
+  color: var(--ink-secondary);
 }
+
+.tier-register {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--control-radius);
+  color: var(--ink);
+  background: var(--paper-raised);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.tier-register:hover { background: var(--acid); color: var(--acid-ink); }
+.tier-register:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 /* 卡内 CTA：复用 btn-primary 的 ink 底 acid 字 → hover 反转配方，整宽拉伸 */
 .tier-cta {
@@ -689,6 +710,8 @@ const MEMBER_FEATURES: readonly TierFeature[] = [
   text-align: center;
   color: var(--projects-success);
 }
+
+:root[data-theme='dark'] .tier-savings { color: var(--ink); }
 
 @media (max-width: 639px) {
   .membership-page {

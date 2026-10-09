@@ -84,7 +84,7 @@ const emit = defineEmits<{
   <!-- 报告正文 -->
   <div v-if="reportContent" class="report-content p-5">
     <p v-if="fallbackFrom" class="report-fallback-notice mb-3 rounded-xl bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">{{ t('report.state.fallback', { type: currentTypeLabel, date: formatReportIssueDate(issueDate ?? '', locale) }) }}</p>
-    <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-500">{{ t('report.aiGeneratedNotice') }}</p>
+    <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">{{ t('report.aiGeneratedNotice') }}</p>
     <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" :saves="saves" :peek="peek" />
     <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />

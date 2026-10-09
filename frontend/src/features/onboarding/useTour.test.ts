@@ -56,8 +56,18 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
 describe('desktop tour lifecycle', () => {
+  it('does not open a welcome dialog or mark a fresh visitor as dismissed', async () => {
+    await setup('/')
+    expect(tour.phase.value).toBe('idle')
+    expect(tourActive.value).toBe(false)
+    expect(readTerminal('guest')).toBeUndefined()
+    await router.push('/membership'); await flushPromises()
+    expect(tour.phase.value).toBe('idle')
+    expect(readProgress('guest')).toBeNull()
+  })
   it('visits pages, skips back to the original location, suppresses automatic replay and permits manual replay', async () => {
     await setup()
+    requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
     tour.start()
     await flushPromises()
@@ -81,6 +91,7 @@ describe('desktop tour lifecycle', () => {
   })
   it('resumes after refresh and remembers the original return path', async () => {
     await setup()
+    requestTour(); await flushPromises()
     tour.start(); await flushPromises()
     tour.next(); await flushPromises()
     tour.next(); await flushPromises()
@@ -93,6 +104,7 @@ describe('desktop tour lifecycle', () => {
   })
   it('finishes without navigating to a protected route and records completion', async () => {
     await setup()
+    requestTour(); await flushPromises()
     tour.start(); await flushPromises()
     while (tour.index.value < tour.steps.value.length - 1) {
       tour.next(); await flushPromises()
@@ -103,7 +115,7 @@ describe('desktop tour lifecycle', () => {
     expect(readTerminal('guest')?.status).toBe('completed')
     expect(tourActive.value).toBe(false)
   })
-  it('waits for auth and other dialogs before offering the welcome', async () => {
+  it('keeps first visits unobstructed after auth and other dialogs settle', async () => {
     auth.status = 'initializing'
     blocked.value = true
     await setup()
@@ -111,6 +123,10 @@ describe('desktop tour lifecycle', () => {
     auth.status = 'anonymous'; await flushPromises()
     expect(tour.phase.value).toBe('idle')
     blocked.value = false; await flushPromises()
+    expect(tour.phase.value).toBe('idle')
+    await router.push('/membership'); await flushPromises()
+    expect(tour.phase.value).toBe('idle')
+    requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
   })
   it('waits for cross-device state without flashing the welcome', async () => {
@@ -143,15 +159,16 @@ describe('desktop tour lifecycle', () => {
     login(7); await flushPromises()
     expect(api.update).toHaveBeenCalledWith('token-7', 'skipped')
     login(8); await flushPromises()
-    expect(tour.phase.value).toBe('welcome')
+    expect(tour.phase.value).toBe('idle')
     resolve('skipped'); await flushPromises()
     expect(readTerminal('user:8')).toBeUndefined()
     expect(readTerminal('user:7')?.pending).toBe(true)
-    expect(tour.phase.value).toBe('welcome')
+    expect(tour.phase.value).toBe('idle')
   })
   it('keeps a failed save locally and retries only that account when online', async () => {
     login(7)
     await setup()
+    requestTour(); await flushPromises()
     api.update.mockRejectedValueOnce(new Error('offline'))
     tour.skip(); await flushPromises()
     expect(readTerminal('user:7')).toEqual({ status: 'skipped', pending: true })
@@ -182,6 +199,7 @@ describe('desktop tour lifecycle', () => {
     expect(readTerminal('user:7')?.pending).toBe(false)
   })
   it('closing an anonymous tab after another account finishes does not invent a guest choice', async () => {
+    saveProgress('guest', { step: 'projects', returnTo: '/report', manual: false })
     await setup()
     saveTerminal('user:7', 'completed', false)
     window.dispatchEvent(new StorageEvent('storage', { key: MEMORY_KEY }))
@@ -192,6 +210,7 @@ describe('desktop tour lifecycle', () => {
   })
   it('serializes skip behind a pending navigation so a late route cannot pull the user away', async () => {
     await setup()
+    requestTour(); await flushPromises()
     let release!: () => void
     const remove = router.beforeEach(to => to.path === '/' ? new Promise<void>(done => { release = done }) : undefined)
     tour.start(); await nextTick(); await flushPromises()
@@ -207,6 +226,7 @@ describe('mobile tour lifecycle', () => {
   it('offers and completes the mobile tour without visiting desktop integrations or requiring login', async () => {
     compact.value = true
     await setup()
+    requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
     tour.start(); await flushPromises()
     const visited: string[] = []
@@ -234,6 +254,7 @@ describe('mobile tour lifecycle', () => {
   })
   it('preserves the current section across layout changes and advances past unavailable steps', async () => {
     await setup()
+    requestTour(); await flushPromises()
     tour.start(); await flushPromises()
     while (tour.step.value?.id !== 'mcp') { tour.next(); await flushPromises() }
     compact.value = true; await flushPromises()

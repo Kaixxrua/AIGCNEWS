@@ -13,7 +13,7 @@ const mountCalendar = (availableDates?: string[]) => mount(GlassCalendar, {
 describe('GlassCalendar date selection', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 8, 9, 12))
+    vi.setSystemTime(new Date('2026-09-09T12:00:00+08:00'))
   })
 
   afterEach(() => vi.useRealTimers())
@@ -75,9 +75,9 @@ describe('GlassCalendar date selection', () => {
   })
 
   it.each([
-    { today: new Date(2026, 8, 1, 12), yesterday: '2026-08-31' },
-    { today: new Date(2026, 0, 1, 12), yesterday: '2025-12-31' },
-    { today: new Date(2024, 2, 1, 12), yesterday: '2024-02-29' },
+    { today: new Date('2026-09-01T12:00:00+08:00'), yesterday: '2026-08-31' },
+    { today: new Date('2026-01-01T12:00:00+08:00'), yesterday: '2025-12-31' },
+    { today: new Date('2024-03-01T12:00:00+08:00'), yesterday: '2024-02-29' },
   ])('allows yesterday across a month or year boundary ($yesterday)', async ({ today, yesterday }) => {
     vi.setSystemTime(today)
     const wrapper = mountCalendar([])
