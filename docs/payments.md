@@ -110,9 +110,17 @@ https://<public-base-url>/api/payments/callback/alipay_page
 
 ### 微信支付 Native 配置
 
-微信侧需要普通商户号 + Native 产品 + 一个已绑定的 AppID（已认证服务号或开放平台「网站应用」）。在 monitor 支付配置面板填写七项：AppID、商户号 mchid、商户 API 证书序列号、API v3 密钥、商户 API 证书私钥（PEM）、微信支付公钥 ID、微信支付公钥（PEM）；七项齐全渠道才判定为已配置（fail-closed）。
+微信侧需要普通商户号 + 已开通的 Native 产品 + 一个已绑定的 AppID。按[官方接入准备](https://pay.wechatpay.cn/doc/v3/merchant/4015614538)，AppID 可来自已认证的服务号、政府或媒体类型公众号、小程序或移动应用；不要把微信登录的「网站应用」AppID 直接当作 Native 支付 AppID。
 
-验签采用**微信支付公钥模式**（不做平台证书自动下载轮换）：商户平台「账户中心 → API 安全」页可申请「微信支付公钥」，一次性复制公钥 ID（`PUB_KEY_ID_...`）并下载公钥 PEM 静态配置；回调验签时 `Wechatpay-Serial` 头必须等于该公钥 ID。下单与查单请求用商户 API 证书私钥按 v3 规程加签（`WECHATPAY2-SHA256-RSA2048`）。
+已有商户号但尚未开通 Native 时，按以下顺序接入：
+
+1. 超级管理员登录商户平台，在「产品中心 → Native 支付 → 申请开通」提交申请；权限状态以商户平台审核结果为准，见[官方开通指引](https://pay.wechatpay.cn/doc/v3/merchant/4012791875)。
+2. 在商户平台发起 AppID 授权绑定，并在对应公众平台/开放平台确认，见[绑定指引](https://pay.wechatpay.cn/doc/v3/merchant/4013287246)。
+3. 在「账户中心 → API 安全」准备商户 API 证书序列号、对应私钥、32 字节 API v3 密钥、微信支付公钥 ID 和公钥 PEM。公钥模式必须在商户平台就绪；本实现不接受旧平台证书序列号。
+4. 在本站 monitor「支付配置」填写七项：AppID、商户号 mchid、商户 API 证书序列号、API v3 密钥、商户 API 证书私钥（PEM）、微信支付公钥 ID、微信支付公钥（PEM）。密钥直接在管理员面板输入，不写进 Git 或聊天记录。七项齐全渠道才判定为已配置，但「已配置」不代表微信已授予 Native 权限。
+5. 公网基址填写实际可接收通知的 HTTPS 域名；下单自动拼接下面的通知路径。微信回调需能匿名 POST 到此地址，不得被登录页、验证码或 WAF 挑战拦截。配置和权限就绪后才启用支付，并由商户用真实订单验证「扫码 → 回调 → 订单 paid → 会员到账」；本地模拟测试不能替代真实联调。
+
+验签采用**微信支付公钥模式**（不做平台证书自动下载轮换）：商户平台「账户中心 → API 安全」页可申请「微信支付公钥」，复制公钥 ID（`PUB_KEY_ID_...`）并下载公钥 PEM 静态配置；API 应答和回调中的 `Wechatpay-Serial` 必须等于该公钥 ID。下单与查单请求用商户 API 证书私钥按 v3 规程加签（`WECHATPAY2-SHA256-RSA2048`），并携带微信支付公钥 ID 选择应答验签模式。成功应答在解析二维码或交易状态前验证原始字节签名、时间戳和公钥归属；缺失或错误签名（含微信签名探测流量）返回 502，不接受其支付指令。见[官方公钥验签规则](https://pay.wechatpay.cn/doc/v3/merchant/4013053249)。
 
 回调通知地址（商户平台 Native 产品配置或下单 `notify_url` 均为此值）：
 
@@ -120,13 +128,13 @@ https://<public-base-url>/api/payments/callback/alipay_page
 https://<public-base-url>/api/payments/callback/wechat_native
 ```
 
-回调只接受 `event_type=TRANSACTION.SUCCESS` 且解密后 `trade_state=SUCCESS`；`resource` 为 `AEAD_AES_256_GCM`，用 API v3 密钥（必须 32 字节）解密；`amount.total` 单位为分、币种必须 CNY；时间戳超出 ±5 分钟即拒绝。关单对账/人工补单查单走 `GET /v3/pay/transactions/out-trade-no/{order_no}`。Native 扫码在微信侧完成支付，无前台回跳，下单不使用 `return_url`。
+回调只接受 `event_type=TRANSACTION.SUCCESS` 且解密后 `trade_state=SUCCESS`；`resource` 为 `AEAD_AES_256_GCM`，用 API v3 密钥（必须 32 字节）解密；AppID 和商户号必须与配置匹配，`amount.total` 必须是正整数分（不接受小数、布尔值或字符串），币种必须 CNY；时间戳超出 ±5 分钟即拒绝。关单对账/人工补单查单走 `GET /v3/pay/transactions/out-trade-no/{order_no}`。Native 扫码在微信侧完成支付，无前台回跳，下单不使用 `return_url`。
 
 provider ACK 形状见 [ADR 0002](adr/0002-payment-callback-verification.md)。
 
 ## 前端收银台
 
-路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；渠道按界面语言门控（`visibleChannelsForLocale`：zh 前缀出微信/支付宝，其余语言出海外跳转槽），不可用渠道不列出（一个可用的都没有时说明一句、提交按钮禁用）；会话中切换语言会按新可见集重选渠道。Native 渠道显示二维码占位与原始支付指令，支付宝/海外渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
+路由为 `/membership/checkout?plan=monthly|yearly`，由 `MembershipCheckoutView.vue` 懒加载。金额只取 `GET /api/payments/plans`；渠道按界面语言门控（`visibleChannelsForLocale`：zh 前缀出微信/支付宝，其余语言出海外跳转槽），不可用渠道不列出（一个可用的都没有时说明一句、提交按钮禁用）；会话中切换语言会按新可见集重选渠道。Native 渠道在浏览器本地生成白底黑色 SVG 二维码（四格留白），不向外部二维码服务发送支付链接；生成失败可重试同一订单，付款或过期后移除二维码。支付宝/海外渠道显示跳转指令。创建订单后每 3 秒轮询一次，最多 200 次或 10 分钟；`paid`、`expired`、`closed` 终止，组件卸载会清理计时器并丢弃在途响应。
 
 ## 代码位置
 

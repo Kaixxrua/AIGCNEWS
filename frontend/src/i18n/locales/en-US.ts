@@ -71,6 +71,7 @@ const enUSCatalog = {
       planMonthly: 'vip · Monthly', planYearly: 'vip · Annual', perMonth: '/ month', perYear: '/ year',
       channelTitle: 'Payment method', channelWechat: 'WeChat Pay', channelAlipay: 'Alipay', channelOverseas: 'Card / PayPal', noChannel: 'No payment method is available right now. Try again later or contact us to subscribe.',
       submit: 'Pay now', submitting: 'Creating order…', createFailed: 'Could not create the order. Please try again.',
+      qrFailed: 'Could not generate the QR code. Please try again.',
       qrPlaceholder: 'Payment QR code', scanHint: 'Scan with the corresponding app to pay', redirectHint: 'Opening the payment page in a new tab… If nothing happens, use the button below', redirectAction: 'Continue to payment',
       expireCountdown: 'Time left to pay: {time}', awaiting: 'Waiting for payment…', orderNo: 'Order no.',
       resumeHint: 'Pending order restored. If you have not paid yet, finish it on the payment page; you can start a new payment after it expires.',
