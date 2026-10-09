@@ -50,6 +50,8 @@ class Settings(BaseSettings):
         "github_oauth_client_secret",
         "google_oauth_client_secret",
         "wechat_oauth_app_secret",
+        "qq_oauth_client_secret",
+        "linuxdo_oauth_client_secret",
     )
     @classmethod
     def _validate_oauth_secret_placeholder(cls, value: str) -> str:
@@ -502,6 +504,10 @@ class Settings(BaseSettings):
     google_oauth_client_secret: str = ""
     wechat_oauth_app_id: str = ""
     wechat_oauth_app_secret: str = ""
+    qq_oauth_client_id: str = ""
+    qq_oauth_client_secret: str = ""
+    linuxdo_oauth_client_id: str = ""
+    linuxdo_oauth_client_secret: str = ""
     oauth_state_ttl_seconds: int = 300
     oauth_handoff_ttl_seconds: int = 120
     # OAuth 备用登录入口（逗号分隔的 https origin，须同时登记在各 provider 控制台）。

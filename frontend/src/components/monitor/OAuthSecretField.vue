@@ -8,6 +8,8 @@ type OAuthSecretFieldKey =
   | 'github_client_secret'
   | 'google_client_secret'
   | 'wechat_app_secret'
+  | 'qq_client_secret'
+  | 'linuxdo_client_secret'
 
 const { t } = useI18n()
 

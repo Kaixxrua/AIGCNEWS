@@ -22,11 +22,18 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-const PROVIDERS: { key: OAuthProviderKey; labelKey: string }[] = [
-  { key: 'github', labelKey: 'monitor.oauthConfig.providerGithub' },
-  { key: 'google', labelKey: 'monitor.oauthConfig.providerGoogle' },
-  { key: 'wechat', labelKey: 'monitor.oauthConfig.providerWechat' },
-]
+const PROVIDERS = [
+  { key: 'github', labelKey: 'monitor.oauthConfig.providerGithub', idField: 'github_client_id', secretField: 'github_client_secret', idLabel: 'clientId', secretLabel: 'clientSecret' },
+  { key: 'google', labelKey: 'monitor.oauthConfig.providerGoogle', idField: 'google_client_id', secretField: 'google_client_secret', idLabel: 'clientId', secretLabel: 'clientSecret' },
+  { key: 'wechat', labelKey: 'monitor.oauthConfig.providerWechat', idField: 'wechat_app_id', secretField: 'wechat_app_secret', idLabel: 'appId', secretLabel: 'appSecret' },
+  { key: 'qq', labelKey: 'monitor.oauthConfig.providerQq', idField: 'qq_client_id', secretField: 'qq_client_secret', idLabel: 'appId', secretLabel: 'appKey' },
+  { key: 'linuxdo', labelKey: 'monitor.oauthConfig.providerLinuxdo', idField: 'linuxdo_client_id', secretField: 'linuxdo_client_secret', idLabel: 'clientId', secretLabel: 'clientSecret' },
+] as const
+
+const callbackUrl = (provider: OAuthProviderKey) => {
+  const base = props.form.public_base_url.trim().replace(/\/+$/, '')
+  return base ? `${base}/api/auth/oauth/${provider}/callback` : ''
+}
 
 const updateForm = <K extends keyof OAuthConfigForm>(field: K, value: OAuthConfigForm[K]) => {
   // eslint-disable-next-line vue/no-mutating-props -- form 为父组件传入的草稿对象，此处为受控表单的有意回写
@@ -96,23 +103,26 @@ const providerBadge = (provider: OAuthProviderKey) => {
         </label>
         <span class="text-2xs monitor-caption">{{ t('monitor.oauthConfig.secretWriteOnly') }}</span>
       </div>
+      <p v-if="callbackUrl(provider.key)" class="mb-2 break-all text-xs monitor-caption">
+        {{ t('monitor.oauthConfig.callbackUrl') }}: <code>{{ callbackUrl(provider.key) }}</code>
+      </p>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label class="block">
           <span class="mb-1 block text-xs monitor-caption">
-            {{ provider.key === 'wechat' ? t('monitor.oauthConfig.appId') : t('monitor.oauthConfig.clientId') }}
+            {{ t(`monitor.oauthConfig.${provider.idLabel}`) }}
           </span>
           <input
-            :value="provider.key === 'github' ? form.github_client_id : provider.key === 'google' ? form.google_client_id : form.wechat_app_id"
+            :value="form[provider.idField]"
             type="text"
             class="input w-full py-2 text-xs"
             autocomplete="off"
             :disabled="loading || saving || resetting"
-            @input="updateForm(provider.key === 'github' ? 'github_client_id' : provider.key === 'google' ? 'google_client_id' : 'wechat_app_id', ($event.target as HTMLInputElement).value)"
+            @input="updateForm(provider.idField, ($event.target as HTMLInputElement).value)"
           />
         </label>
         <OAuthSecretField
-          :field-key="provider.key === 'github' ? 'github_client_secret' : provider.key === 'google' ? 'google_client_secret' : 'wechat_app_secret'"
-          :label-key="provider.key === 'wechat' ? 'monitor.oauthConfig.appSecret' : 'monitor.oauthConfig.clientSecret'"
+          :field-key="provider.secretField"
+          :label-key="`monitor.oauthConfig.${provider.secretLabel}`"
           :config="config"
           :form="form"
           :disabled="loading || saving || resetting"

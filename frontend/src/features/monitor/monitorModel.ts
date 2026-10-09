@@ -1206,7 +1206,7 @@ export const buildPaymentPlanPricingPayload = (
 // 密文（client secret / app secret）只写入不回填；留空=保留，勾选 clear_*=擦除。
 // 保存/重置后由控制器调用 refreshFeatureFlags() 让全局登录窗口中的按钮即时显隐。
 
-export type OAuthProviderKey = 'github' | 'google' | 'wechat'
+export type OAuthProviderKey = 'github' | 'google' | 'wechat' | 'qq' | 'linuxdo'
 
 export interface OAuthConfig {
   enabled_providers: OAuthProviderKey[]
@@ -1214,6 +1214,8 @@ export interface OAuthConfig {
   github_client_id: string
   google_client_id: string
   wechat_app_id: string
+  qq_client_id: string
+  linuxdo_client_id: string
   state_ttl_seconds: number
   handoff_ttl_seconds: number
   source: SmtpConfigSource
@@ -1224,6 +1226,10 @@ export interface OAuthConfig {
   google_client_secret_masked: string | null
   wechat_app_secret_configured: boolean
   wechat_app_secret_masked: string | null
+  qq_client_secret_configured: boolean
+  qq_client_secret_masked: string | null
+  linuxdo_client_secret_configured: boolean
+  linuxdo_client_secret_masked: string | null
 }
 
 export interface OAuthConfigForm {
@@ -1234,12 +1240,18 @@ export interface OAuthConfigForm {
   google_client_id: string
   google_client_secret: string
   wechat_app_id: string
+  qq_client_id: string
+  linuxdo_client_id: string
   wechat_app_secret: string
+  qq_client_secret: string
+  linuxdo_client_secret: string
   state_ttl_seconds: number
   handoff_ttl_seconds: number
   clear_github_client_secret: boolean
   clear_google_client_secret: boolean
   clear_wechat_app_secret: boolean
+  clear_qq_client_secret: boolean
+  clear_linuxdo_client_secret: boolean
 }
 
 export const createOAuthConfigForm = (config?: OAuthConfig | null): OAuthConfigForm => ({
@@ -1251,11 +1263,17 @@ export const createOAuthConfigForm = (config?: OAuthConfig | null): OAuthConfigF
   google_client_secret: '',
   wechat_app_id: config?.wechat_app_id || '',
   wechat_app_secret: '',
+  qq_client_id: config?.qq_client_id || '',
+  qq_client_secret: '',
+  linuxdo_client_id: config?.linuxdo_client_id || '',
+  linuxdo_client_secret: '',
   state_ttl_seconds: config?.state_ttl_seconds || 300,
   handoff_ttl_seconds: config?.handoff_ttl_seconds || 120,
   clear_github_client_secret: false,
   clear_google_client_secret: false,
   clear_wechat_app_secret: false,
+  clear_qq_client_secret: false,
+  clear_linuxdo_client_secret: false,
 })
 
 // null 密文 = 后端保留语义；绝不回传 masked 响应值
@@ -1268,11 +1286,17 @@ export const buildOAuthConfigPayload = (form: OAuthConfigForm) => ({
   google_client_secret: form.google_client_secret || null,
   wechat_app_id: form.wechat_app_id.trim(),
   wechat_app_secret: form.wechat_app_secret || null,
+  qq_client_id: form.qq_client_id.trim(),
+  qq_client_secret: form.qq_client_secret || null,
+  linuxdo_client_id: form.linuxdo_client_id.trim(),
+  linuxdo_client_secret: form.linuxdo_client_secret || null,
   state_ttl_seconds: form.state_ttl_seconds,
   handoff_ttl_seconds: form.handoff_ttl_seconds,
   clear_github_client_secret: form.clear_github_client_secret,
   clear_google_client_secret: form.clear_google_client_secret,
   clear_wechat_app_secret: form.clear_wechat_app_secret,
+  clear_qq_client_secret: form.clear_qq_client_secret,
+  clear_linuxdo_client_secret: form.clear_linuxdo_client_secret,
 })
 
 // ── Telegram 推送配置（Monitor 面板）─────────────────────────────────────────

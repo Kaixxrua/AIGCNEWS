@@ -1,6 +1,6 @@
 """第三方首登头像导入：登录响应发出后尽力而为地拉取 provider 头像。
 
-provider 返回的头像 URL 不可信：只接受 GitHub / Google 头像 CDN 的 https 地址、
+provider 返回的头像 URL 不可信：只接受已知 provider 头像域名的 https 地址、
 不跟随重定向、限时限量读取，并经 normalize_avatar 重编码后才落库；且只写入
 尚无头像的账户。任何失败只记日志，绝不影响已完成的登录。
 """
@@ -19,18 +19,22 @@ from backend.app.services.auth.avatar import MAX_AVATAR_BYTES, normalize_avatar
 
 logger = logging.getLogger(__name__)
 _TIMEOUT = httpx.Timeout(8.0, connect=5.0)
-_EXACT_HOSTS = frozenset({"avatars.githubusercontent.com"})
+_EXACT_HOSTS = frozenset({"avatars.githubusercontent.com", "q.qlogo.cn", "thirdqq.qlogo.cn", "linux.do"})
 _HOST_SUFFIXES = (".googleusercontent.com",)
 
 
 def provider_avatar_url_allowed(url: str | None) -> bool:
     if not url or len(url) > 2048 or any(ord(char) < 0x21 for char in url):
         return False
-    parsed = urlsplit(url)
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower()
+        port = parsed.port
+    except ValueError:
+        return False
     return bool(
         parsed.scheme == "https"
-        and parsed.port is None
+        and port is None
         and not parsed.username
         and not parsed.password
         and (host in _EXACT_HOSTS or any(host.endswith(suffix) for suffix in _HOST_SUFFIXES))

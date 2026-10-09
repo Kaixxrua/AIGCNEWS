@@ -9,6 +9,11 @@ const sendEmailChangeCurrentOtp = vi.hoisted(() => vi.fn())
 const sendEmailChangeNewOtp = vi.hoisted(() => vi.fn())
 const confirmEmailChange = vi.hoisted(() => vi.fn())
 const startOAuthBind = vi.hoisted(() => vi.fn())
+const flags = vi.hoisted(() => ({ oauthProviders: ['github', 'google', 'wechat'] }))
+vi.mock('@/composables/useFeatureFlags', () => ({
+  useFeatureFlags: () => ({ featureFlags: { value: flags } }),
+  ensureFeatureFlags: vi.fn(async () => flags),
+}))
 const authStore = vi.hoisted(() => ({
   user: null as unknown as {
     user_id: number
@@ -95,6 +100,7 @@ beforeEach(() => {
   confirmEmailChange.mockReset().mockResolvedValue({ ...baseUser(), email: 'newbox@example.com' })
   startOAuthBind.mockReset().mockResolvedValue(undefined)
   authStore.user = baseUser()
+  flags.oauthProviders = ['github', 'google', 'wechat']
   document.body.innerHTML = ''
 })
 
@@ -151,6 +157,32 @@ describe('AccountSettingsDialog', () => {
 
     expect(startOAuthBind).toHaveBeenCalledTimes(1)
     expect(startOAuthBind).toHaveBeenCalledWith('google', '/projects?source=all')
+    wrapper.unmount()
+  })
+
+  it('only offers configured providers and retains already linked identities', async () => {
+    flags.oauthProviders = ['qq', 'linuxdo']
+    const wrapper = mountDialog()
+    const buttons = [...document.body.querySelectorAll<HTMLButtonElement>('.oauth-provider-btn')]
+    expect(buttons.map(button => button.textContent)).toEqual([
+      expect.stringContaining('GitHub'), expect.stringContaining('QQ'), expect.stringContaining('Linux DO'),
+    ])
+    buttons[1]!.click()
+    await nextTick()
+    expect(startOAuthBind).toHaveBeenCalledWith('qq', '/projects?source=all')
+    buttons[2]!.click()
+    await nextTick()
+    expect(startOAuthBind).toHaveBeenCalledWith('linuxdo', '/projects?source=all')
+    wrapper.unmount()
+  })
+
+  it('hides unconfigured QQ and Linux DO binding entries', () => {
+    flags.oauthProviders = []
+    const wrapper = mountDialog()
+    const buttons = document.body.querySelectorAll<HTMLButtonElement>('.oauth-provider-btn')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]!.textContent).toContain('GitHub')
+    expect(buttons[0]!.disabled).toBe(true)
     wrapper.unmount()
   })
 

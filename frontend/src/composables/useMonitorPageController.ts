@@ -318,6 +318,8 @@ export const useMonitorPageController = ({
     form.github_client_secret = ''; form.google_client_secret = ''; form.wechat_app_secret = ''
     form.clear_github_client_secret = false; form.clear_google_client_secret = false
     form.clear_wechat_app_secret = false
+    form.qq_client_secret = ''; form.linuxdo_client_secret = ''
+    form.clear_qq_client_secret = false; form.clear_linuxdo_client_secret = false
   }
   const saveOAuthConfig = async () => {
     if (savingOAuthConfig.value) return

@@ -32,6 +32,10 @@ class EffectiveOAuthConfig:
     handoff_ttl_seconds: int
     source: OAuthConfigSource
     updated_at: datetime | None = None
+    qq_client_id: str = ""
+    qq_client_secret: str = ""
+    linuxdo_client_id: str = ""
+    linuxdo_client_secret: str = ""
 
     @property
     def public_base_url_valid(self) -> bool:
@@ -53,8 +57,14 @@ class EffectiveOAuthConfig:
             client_id, secret = self.github_client_id, self.github_client_secret
         elif provider == "google":
             client_id, secret = self.google_client_id, self.google_client_secret
-        else:
+        elif provider == "wechat":
             client_id, secret = self.wechat_app_id, self.wechat_app_secret
+        elif provider == "qq":
+            client_id, secret = self.qq_client_id, self.qq_client_secret
+        elif provider == "linuxdo":
+            client_id, secret = self.linuxdo_client_id, self.linuxdo_client_secret
+        else:
+            return False
         return bool(
             provider in self.enabled_providers
             and client_id.strip()
@@ -68,7 +78,7 @@ class EffectiveOAuthConfig:
             return ()
         return tuple(
             provider
-            for provider in ("github", "google", "wechat")
+            for provider in ("github", "google", "wechat", "qq", "linuxdo")
             if self.provider_configured(provider)
         )
 
@@ -107,6 +117,10 @@ def _environment_config(env: object) -> EffectiveOAuthConfig:
         google_client_secret=str(getattr(env, "google_oauth_client_secret", "") or ""),
         wechat_app_id=str(getattr(env, "wechat_oauth_app_id", "") or ""),
         wechat_app_secret=str(getattr(env, "wechat_oauth_app_secret", "") or ""),
+        qq_client_id=str(getattr(env, "qq_oauth_client_id", "") or ""),
+        qq_client_secret=str(getattr(env, "qq_oauth_client_secret", "") or ""),
+        linuxdo_client_id=str(getattr(env, "linuxdo_oauth_client_id", "") or ""),
+        linuxdo_client_secret=str(getattr(env, "linuxdo_oauth_client_secret", "") or ""),
         state_ttl_seconds=int(getattr(env, "oauth_state_ttl_seconds", 300)),
         handoff_ttl_seconds=int(getattr(env, "oauth_handoff_ttl_seconds", 120)),
     )
@@ -116,6 +130,7 @@ def _environment_config(env: object) -> EffectiveOAuthConfig:
         for field in (
             "github_client_id", "github_client_secret", "google_client_id",
             "google_client_secret", "wechat_app_id", "wechat_app_secret",
+            "qq_client_id", "qq_client_secret", "linuxdo_client_id", "linuxdo_client_secret",
         )
     )
     return EffectiveOAuthConfig(
@@ -136,6 +151,10 @@ def effective_oauth_config_from_row(
         google_client_secret=row.google_client_secret,
         wechat_app_id=row.wechat_app_id,
         wechat_app_secret=row.wechat_app_secret,
+        qq_client_id=row.qq_client_id,
+        qq_client_secret=row.qq_client_secret,
+        linuxdo_client_id=row.linuxdo_client_id,
+        linuxdo_client_secret=row.linuxdo_client_secret,
         state_ttl_seconds=int(row.state_ttl_seconds),
         handoff_ttl_seconds=int(row.handoff_ttl_seconds),
         source="database",

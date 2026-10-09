@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-OAuthProvider = Literal["github", "google", "wechat"]
+OAuthProvider = Literal["github", "google", "wechat", "qq", "linuxdo"]
 # OAuth 操作判别：login（游客登录，可建号/合并）与 bind（已登录绑定渠道）
 # 共用同一 provider 回调路径，但 state/handoff 以操作标记互相隔离，
 # 登录态产物永远不能用于绑定，反之亦然。
@@ -15,7 +15,7 @@ OAuthBindStatus = Literal["bound", "already_bound"]
 
 
 class OAuthCallbackQuery(BaseModel):
-    code: str = Field(min_length=1, max_length=8192)
+    code: str | None = Field(default=None, min_length=1, max_length=8192)
     state: str = Field(min_length=1, max_length=512)
     error: str | None = Field(default=None, max_length=128)
     error_description: str | None = Field(default=None, max_length=1024)

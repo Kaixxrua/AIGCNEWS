@@ -5,9 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LoginForm from './LoginForm.vue'
 
 const login = vi.hoisted(() => vi.fn())
+const startOAuth = vi.hoisted(() => vi.fn())
+const flags = vi.hoisted(() => ({ oauthProviders: [] as string[] }))
+vi.mock('@/services/auth/authApi', () => ({ startOAuth }))
+vi.mock('@/composables/useFeatureFlags', () => ({ ensureFeatureFlags: async () => flags }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ login }) }))
 
 const messages = { auth: {
+  oauthOr: '快捷登录', oauth: { qq: '使用 QQ 登录', linuxdo: '使用 Linux DO 登录' },
   loginTitle: '登录', loginDescription: '欢迎回来', email: '邮箱', emailPlaceholder: '邮箱地址', password: '密码', passwordPlaceholder: '密码',
   fillEmailPassword: '请填写邮箱和密码', forgotPassword: '忘记密码', loggingIn: '登录中', login: '登录', noAccount: '没有账号', registerNow: '立即注册', loginFailed: '登录失败',
 }, common: { close: '关闭' } }
@@ -18,9 +23,27 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
 ] })
 const mountForm = (props = {}) => mount(LoginForm, { props, global: { plugins: [router, i18n] } })
 
-beforeEach(async () => { login.mockReset(); login.mockResolvedValue({}); await router.push('/') })
+beforeEach(async () => { flags.oauthProviders = []; startOAuth.mockReset(); login.mockReset(); login.mockResolvedValue({}); await router.push('/') })
 
 describe('LoginForm', () => {
+  it.each(['qq', 'linuxdo'])('starts configured %s login with the internal return path', async provider => {
+    flags.oauthProviders = [provider]
+    const wrapper = mountForm({ redirect: '/projects?source=all' })
+    await flushPromises()
+    const button = wrapper.get('.auth-oauth button')
+    expect(button.text()).toBe(provider === 'qq' ? '使用 QQ 登录' : 'LD 使用 Linux DO 登录')
+    await button.trigger('click')
+    expect(startOAuth).toHaveBeenCalledWith(provider, '/projects?source=all')
+    wrapper.unmount()
+  })
+
+  it('hides OAuth entries until credentials are configured', async () => {
+    const wrapper = mountForm()
+    await flushPromises()
+    expect(wrapper.find('.auth-oauth').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('validates required credentials without calling the store', async () => {
     const wrapper = mountForm()
     await wrapper.get('.btn-primary').trigger('click')

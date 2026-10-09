@@ -51,6 +51,7 @@ from backend.app.services.auth.oauth.handoff import (
     OAuthHandoffStore,
     OAuthHandoffUnavailableError,
 )
+from backend.app.services.auth.oauth.providers._http import OAuthUpstreamError
 from backend.app.services.auth.oauth.providers.github import GitHubOAuthError
 from backend.app.services.auth.oauth.providers.google import GoogleOAuthError
 from backend.app.services.auth.oauth.providers.wechat import WeChatOAuthError
@@ -275,8 +276,8 @@ async def _oauth_callback_login(
         ))
     except HTTPException:
         raise
-    except (GitHubOAuthError, GoogleOAuthError, WeChatOAuthError) as exc:
-        # 三个 provider 的异常消息均为固定 reason code（已核查不含 token/上游
+    except (GitHubOAuthError, GoogleOAuthError, WeChatOAuthError, OAuthUpstreamError) as exc:
+        # 各 provider 的异常消息均为固定 reason code（已核查不含 token/上游
         # 原始响应），记录 reason 便于线上定位，不回传给浏览器。
         logger.warning(
             "OAuth callback failed: provider=%s reason=%s",
@@ -343,7 +344,7 @@ async def _oauth_callback_bind(
         ))
     except HTTPException:
         raise
-    except (GitHubOAuthError, GoogleOAuthError, WeChatOAuthError) as exc:
+    except (GitHubOAuthError, GoogleOAuthError, WeChatOAuthError, OAuthUpstreamError) as exc:
         logger.warning(
             "OAuth bind callback failed: provider=%s reason=%s",
             provider, str(exc) or type(exc).__name__,
@@ -369,7 +370,7 @@ async def oauth_callback(
 ):
     provider = provider.strip().lower()
     config = _config(request)
-    if query.error:
+    if query.error or not query.code:
         raise HTTPException(status_code=400, detail="oauth_authorization_failed")
     adapter = _adapter(request, provider, config)
     # state 的命名空间由载荷判别决定前的第一次消费：先按登录空间尝试，

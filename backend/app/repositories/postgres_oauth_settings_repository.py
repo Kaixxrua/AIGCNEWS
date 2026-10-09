@@ -16,12 +16,15 @@ _SECRET_FIELDS = (
     ("github_client_secret", "github_client_secret_envelope"),
     ("google_client_secret", "google_client_secret_envelope"),
     ("wechat_app_secret", "wechat_app_secret_envelope"),
+    ("qq_client_secret", "qq_client_secret_envelope"),
+    ("linuxdo_client_secret", "linuxdo_client_secret_envelope"),
 )
 _COLUMNS = (
     "enabled_providers, public_base_url, github_client_id, "
     "github_client_secret_envelope, google_client_id, google_client_secret_envelope, "
     "wechat_app_id, wechat_app_secret_envelope, state_ttl_seconds, "
-    "handoff_ttl_seconds, updated_at"
+    "handoff_ttl_seconds, updated_at, qq_client_id, qq_client_secret_envelope, "
+    "linuxdo_client_id, linuxdo_client_secret_envelope"
 )
 _SECRET_BOX_UNSET: Any = object()
 
@@ -111,6 +114,10 @@ class PostgresOAuthSettingsRepository:
         wechat_app_secret: str,
         state_ttl_seconds: int,
         handoff_ttl_seconds: int,
+        qq_client_id: str = "",
+        qq_client_secret: str = "",
+        linuxdo_client_id: str = "",
+        linuxdo_client_secret: str = "",
     ) -> OAuthSettings:
         if not 60 <= int(state_ttl_seconds) <= 900:
             raise ValueError("state_ttl_seconds must be within 60..900")
@@ -127,6 +134,10 @@ class PostgresOAuthSettingsRepository:
             self._seal_for_write(wechat_app_secret),
             int(state_ttl_seconds),
             int(handoff_ttl_seconds),
+            (qq_client_id or "").strip(),
+            self._seal_for_write(qq_client_secret),
+            (linuxdo_client_id or "").strip(),
+            self._seal_for_write(linuxdo_client_secret),
         )
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
@@ -137,9 +148,10 @@ class PostgresOAuthSettingsRepository:
                          github_client_secret_envelope, google_client_id,
                          google_client_secret_envelope, wechat_app_id,
                          wechat_app_secret_envelope, state_ttl_seconds,
-                         handoff_ttl_seconds, updated_at)
+                         handoff_ttl_seconds, qq_client_id, qq_client_secret_envelope,
+                         linuxdo_client_id, linuxdo_client_secret_envelope, updated_at)
                     VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            CURRENT_TIMESTAMP)
+                            %s, %s, %s, %s, CURRENT_TIMESTAMP)
                     ON CONFLICT (id) DO UPDATE SET
                         enabled_providers = EXCLUDED.enabled_providers,
                         public_base_url = EXCLUDED.public_base_url,
@@ -151,6 +163,10 @@ class PostgresOAuthSettingsRepository:
                         wechat_app_secret_envelope = EXCLUDED.wechat_app_secret_envelope,
                         state_ttl_seconds = EXCLUDED.state_ttl_seconds,
                         handoff_ttl_seconds = EXCLUDED.handoff_ttl_seconds,
+                        qq_client_id = EXCLUDED.qq_client_id,
+                        qq_client_secret_envelope = EXCLUDED.qq_client_secret_envelope,
+                        linuxdo_client_id = EXCLUDED.linuxdo_client_id,
+                        linuxdo_client_secret_envelope = EXCLUDED.linuxdo_client_secret_envelope,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING {_COLUMNS}
                     """,
@@ -202,6 +218,10 @@ class PostgresOAuthSettingsRepository:
             google_client_secret=self._unseal_for_read(row.get("google_client_secret_envelope")),
             wechat_app_id=str(row.get("wechat_app_id") or ""),
             wechat_app_secret=self._unseal_for_read(row.get("wechat_app_secret_envelope")),
+            qq_client_id=str(row.get("qq_client_id") or ""),
+            qq_client_secret=self._unseal_for_read(row.get("qq_client_secret_envelope")),
+            linuxdo_client_id=str(row.get("linuxdo_client_id") or ""),
+            linuxdo_client_secret=self._unseal_for_read(row.get("linuxdo_client_secret_envelope")),
             state_ttl_seconds=int(row.get("state_ttl_seconds") or 300),
             handoff_ttl_seconds=int(row.get("handoff_ttl_seconds") or 120),
             updated_at=row.get("updated_at") if isinstance(row.get("updated_at"), datetime) else None,

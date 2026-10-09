@@ -4,8 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
-OAuthProviderName = Literal["github", "google", "wechat"]
-OAUTH_PROVIDERS: Final[tuple[OAuthProviderName, ...]] = ("github", "google", "wechat")
+OAuthProviderName = Literal["github", "google", "wechat", "qq", "linuxdo"]
+OAUTH_PROVIDERS: Final[tuple[OAuthProviderName, ...]] = ("github", "google", "wechat", "qq", "linuxdo")
 
 
 @dataclass(frozen=True, slots=True)

@@ -40,7 +40,7 @@ class PostgresOAuthIdentityRepository:
         username: str = "",
     ) -> OAuthLoginResolution:
         """Resolve and persist one external identity in a single transaction."""
-        if provider not in {"github", "google", "wechat"}:
+        if provider not in {"github", "google", "wechat", "qq", "linuxdo"}:
             raise ValueError("unknown OAuth provider")
         subject = str(provider_subject)
         if not subject or not subject.strip():
@@ -304,7 +304,7 @@ class PostgresOAuthIdentityRepository:
         在数据库层互斥；返回结构化结果以区分幂等成功与他人占用，绝不把
         他人身份转移到本账户。
         """
-        if provider not in {"github", "google", "wechat"}:
+        if provider not in {"github", "google", "wechat", "qq", "linuxdo"}:
             raise ValueError("unknown OAuth provider")
         subject = str(provider_subject)
         if not subject or not subject.strip():

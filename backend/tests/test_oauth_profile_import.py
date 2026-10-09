@@ -58,7 +58,7 @@ class RecordingUsers:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("url", [GITHUB_AVATAR, GOOGLE_AVATAR])
+@pytest.mark.parametrize("url", [GITHUB_AVATAR, GOOGLE_AVATAR, "https://q.qlogo.cn/a", "https://thirdqq.qlogo.cn/a", "https://linux.do/user_avatar/a"])
 def test_provider_avatar_hosts_are_allowed(url: str) -> None:
     assert avatar_import.provider_avatar_url_allowed(url)
 
@@ -71,6 +71,11 @@ def test_provider_avatar_hosts_are_allowed(url: str) -> None:
         "https://avatars.githubusercontent.com:8443/u/1",
         "https://user@avatars.githubusercontent.com/u/1",
         "https://evil.test/u/1",
+        "https://q.qlogo.cn.evil.test/a",
+        "https://linux.do.evil.test/a",
+        "https://linux.do:invalid/a",
+        "https://[broken/avatar",
+        "https://q.qlogo.cn@127.0.0.1/a",
         "https://avatars.githubusercontent.com.evil.test/u/1",
         "https://evilgoogleusercontent.com/a",
         "https://127.0.0.1/avatar.png",

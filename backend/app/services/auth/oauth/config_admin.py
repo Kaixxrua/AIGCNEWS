@@ -21,11 +21,15 @@ _SECRET_FIELDS = (
     "github_client_secret",
     "google_client_secret",
     "wechat_app_secret",
+    "qq_client_secret",
+    "linuxdo_client_secret",
 )
 _CLIENT_ID_FIELDS = (
     "github_client_id",
     "google_client_id",
     "wechat_app_id",
+    "qq_client_id",
+    "linuxdo_client_id",
 )
 
 
@@ -36,6 +40,8 @@ class OAuthConfigProjection:
     github_client_id: str
     google_client_id: str
     wechat_app_id: str
+    qq_client_id: str
+    linuxdo_client_id: str
     state_ttl_seconds: int
     handoff_ttl_seconds: int
     source: str
@@ -46,6 +52,10 @@ class OAuthConfigProjection:
     google_client_secret_masked: str | None
     wechat_app_secret_configured: bool
     wechat_app_secret_masked: str | None
+    qq_client_secret_configured: bool
+    qq_client_secret_masked: str | None
+    linuxdo_client_secret_configured: bool
+    linuxdo_client_secret_masked: str | None
 
 
 class OAuthConfigAdminService:
@@ -111,6 +121,10 @@ class OAuthConfigAdminService:
             google_client_secret=secrets["google_client_secret"],
             wechat_app_id=str(values.get("wechat_app_id") or "").strip(),
             wechat_app_secret=secrets["wechat_app_secret"],
+            qq_client_id=str(values.get("qq_client_id") or "").strip(),
+            qq_client_secret=secrets["qq_client_secret"],
+            linuxdo_client_id=str(values.get("linuxdo_client_id") or "").strip(),
+            linuxdo_client_secret=secrets["linuxdo_client_secret"],
             state_ttl_seconds=state_ttl,
             handoff_ttl_seconds=handoff_ttl,
         )
@@ -143,6 +157,8 @@ class OAuthConfigAdminService:
             github_client_id=config.github_client_id,
             google_client_id=config.google_client_id,
             wechat_app_id=config.wechat_app_id,
+            qq_client_id=config.qq_client_id,
+            linuxdo_client_id=config.linuxdo_client_id,
             state_ttl_seconds=config.state_ttl_seconds,
             handoff_ttl_seconds=config.handoff_ttl_seconds,
             source=config.source,

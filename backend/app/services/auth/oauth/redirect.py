@@ -85,7 +85,7 @@ def entry_base_url(entry: str | None, config: EffectiveOAuthConfig | None = None
 
 
 def provider_callback_uri(provider: str, base_url: str) -> str:
-    if provider not in {"github", "google", "wechat"}:
+    if provider not in {"github", "google", "wechat", "qq", "linuxdo"}:
         raise OAuthRedirectError("unknown OAuth provider")
     return f"{base_url}{OAUTH_CALLBACK_PATH.format(provider=provider)}"
 
@@ -110,6 +110,6 @@ def canonical_callback_uri(
     provider: str,
     config: EffectiveOAuthConfig | None = None,
 ) -> str:
-    if provider not in {"github", "google", "wechat"}:
+    if provider not in {"github", "google", "wechat", "qq", "linuxdo"}:
         raise OAuthRedirectError("unknown OAuth provider")
     return provider_callback_uri(provider, canonical_base_url(config))

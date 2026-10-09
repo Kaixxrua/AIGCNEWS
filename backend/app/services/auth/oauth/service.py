@@ -13,6 +13,8 @@ from backend.app.services.auth.oauth.providers.github import (
     GitHubOAuthProvider,
 )
 from backend.app.services.auth.oauth.providers.google import GoogleOIDCProvider
+from backend.app.services.auth.oauth.providers.linuxdo import LinuxDOOAuthProvider
+from backend.app.services.auth.oauth.providers.qq import QQOAuthProvider
 from backend.app.services.auth.oauth.providers.wechat import WeChatOAuthProvider
 from backend.app.services.auth.oauth.runtime_config import EffectiveOAuthConfig, resolve_oauth_config
 
@@ -35,6 +37,14 @@ def build_oauth_adapters(
         adapters["wechat"] = WeChatOAuthProvider(
             OAuthProviderConfig("wechat", effective.wechat_app_id, effective.wechat_app_secret)
         )  # type: ignore[assignment]
+    if effective.provider_configured("qq"):
+        adapters["qq"] = QQOAuthProvider(
+            OAuthProviderConfig("qq", effective.qq_client_id, effective.qq_client_secret)
+        )
+    if effective.provider_configured("linuxdo"):
+        adapters["linuxdo"] = LinuxDOOAuthProvider(
+            OAuthProviderConfig("linuxdo", effective.linuxdo_client_id, effective.linuxdo_client_secret)
+        )
     return adapters
 
 

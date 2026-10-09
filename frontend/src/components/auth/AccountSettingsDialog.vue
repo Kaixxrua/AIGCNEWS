@@ -20,6 +20,7 @@ import AuthFeedback from '@/components/auth/AuthFeedback.vue'
 import { getErrorDetail } from '@/features/auth/authViewModel'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { useEmailChangeForm } from '@/composables/useEmailChangeForm'
+import { ensureFeatureFlags, useFeatureFlags } from '@/composables/useFeatureFlags'
 
 const props = defineProps<{
   modelValue: boolean
@@ -57,8 +58,11 @@ const registeredAt = computed(() => {
   if (Number.isNaN(date.getTime())) return t('auth.notAvailable')
   return new Intl.DateTimeFormat(locale.value, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 })
-const providerLabel = (provider: string) => provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : provider === 'wechat' ? '微信' : provider
-const providers = ['github', 'google', 'wechat']
+const providerLabel = (provider: string) => provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : provider === 'wechat' ? '微信' : provider === 'qq' ? 'QQ' : provider === 'linuxdo' ? 'Linux DO' : provider
+const { featureFlags } = useFeatureFlags()
+const providers = computed(() => ['github', 'google', 'wechat', 'qq', 'linuxdo'].filter(
+  provider => featureFlags.value.oauthProviders.includes(provider) || connectedProviders.value.has(provider),
+))
 const connectedProviders = computed(() => new Set((currentUser.value?.oauth_identities ?? []).map(identity => identity.provider)))
 
 // 换绑邮箱：双验证码表单（当前邮箱 + 新邮箱）；成功后安装服务端权威投影
@@ -95,7 +99,7 @@ const closeEmailChange = () => { emailChangeOpen.value = false; resetEmailChange
 
 // 未连接渠道点击发起「已认证绑定」：整页跳转后端 bind/start，目标账户只存服务端 state
 const bindProvider = (provider: string) => {
-  if (connectedProviders.value.has(provider)) return
+  if (connectedProviders.value.has(provider) || !featureFlags.value.oauthProviders.includes(provider)) return
   void startOAuthBind(provider, route.fullPath)
 }
 
@@ -132,6 +136,7 @@ const saveUsername = async () => {
 
 watch(() => props.modelValue, async open => {
   if (open) {
+    void ensureFeatureFlags()
     previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     username.value = usernameValue.value
     error.value = ''; success.value = ''

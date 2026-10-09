@@ -26,6 +26,12 @@ def _provider_config(
             client_id=effective.google_client_id,
             client_secret=effective.google_client_secret,
         )
+    if name in {"qq", "linuxdo"}:
+        return OAuthProviderConfig(
+            name=name,
+            client_id=getattr(effective, f"{name}_client_id"),
+            client_secret=getattr(effective, f"{name}_client_secret"),
+        )
     return OAuthProviderConfig(
         name=name,
         client_id=effective.wechat_app_id,

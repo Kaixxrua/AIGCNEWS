@@ -1,7 +1,7 @@
 import { api } from '@/services/http/apiClient'
 
 export interface OAuthIdentityDTO {
-  provider: 'github' | 'google' | 'wechat' | string
+  provider: 'github' | 'google' | 'wechat' | 'qq' | 'linuxdo' | string
   display_email?: string | null
   email_verified?: boolean
   linked_at?: string | null

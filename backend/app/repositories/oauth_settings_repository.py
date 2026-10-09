@@ -20,6 +20,10 @@ class OAuthSettings:
     state_ttl_seconds: int = 300
     handoff_ttl_seconds: int = 120
     updated_at: datetime | None = None
+    qq_client_id: str = ""
+    qq_client_secret: str = ""
+    linuxdo_client_id: str = ""
+    linuxdo_client_secret: str = ""
 
 
 class OAuthSettingsReader(Protocol):
@@ -40,6 +44,10 @@ class OAuthSettingsManager(OAuthSettingsReader, Protocol):
         wechat_app_secret: str,
         state_ttl_seconds: int,
         handoff_ttl_seconds: int,
+        qq_client_id: str = "",
+        qq_client_secret: str = "",
+        linuxdo_client_id: str = "",
+        linuxdo_client_secret: str = "",
     ) -> OAuthSettings: ...
 
     def delete_oauth_settings(self) -> int: ...

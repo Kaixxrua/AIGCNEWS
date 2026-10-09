@@ -723,6 +723,9 @@ describe('Monitor OAuth config controls', () => {
     google_client_secret_masked: null,
     wechat_app_secret_configured: false,
     wechat_app_secret_masked: null,
+    qq_client_id: '', linuxdo_client_id: '',
+    qq_client_secret_configured: false, qq_client_secret_masked: null,
+    linuxdo_client_secret_configured: false, linuxdo_client_secret_masked: null,
   }
 
   it('populates the OAuth form from the fetched config with blank secret drafts', async () => {
@@ -755,6 +758,8 @@ describe('Monitor OAuth config controls', () => {
       public_base_url: ' https://aigcnews.cn ',
       github_client_secret: 'new-secret',
       clear_github_client_secret: true,
+      qq_client_id: 'qq-app', qq_client_secret: 'qq-secret', clear_qq_client_secret: true,
+      linuxdo_client_id: 'linux-app', linuxdo_client_secret: 'linux-secret', clear_linuxdo_client_secret: true,
     }
 
     vi.mocked(api.saveOAuthConfig).mockResolvedValue(oauthConfig)
@@ -764,11 +769,17 @@ describe('Monitor OAuth config controls', () => {
       public_base_url: 'https://aigcnews.cn',
       github_client_secret: 'new-secret',
       clear_github_client_secret: true,
+      qq_client_id: 'qq-app', qq_client_secret: 'qq-secret', clear_qq_client_secret: true,
+      linuxdo_client_id: 'linux-app', linuxdo_client_secret: 'linux-secret', clear_linuxdo_client_secret: true,
     }))
     expect(controller.oauthConfig.value).toEqual(oauthConfig)
     // 保存成功后清掉敏感草稿与清空标志，防止下一次保存误擦 secret
     expect(controller.oauthForm.value.github_client_secret).toBe('')
     expect(controller.oauthForm.value.clear_github_client_secret).toBe(false)
+    expect(controller.oauthForm.value.qq_client_secret).toBe('')
+    expect(controller.oauthForm.value.linuxdo_client_secret).toBe('')
+    expect(controller.oauthForm.value.clear_qq_client_secret).toBe(false)
+    expect(controller.oauthForm.value.clear_linuxdo_client_secret).toBe(false)
     expect(controller.successMsg.value).toBe(i18n.global.t('monitor.oauthConfig.saved'))
     expect(controller.savingOAuthConfig.value).toBe(false)
   })
