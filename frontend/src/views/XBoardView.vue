@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { ArrowLeft, Bookmark, ChevronDown, ExternalLink, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
+import { ArrowLeft, Bookmark, ChevronDown, ExternalLink, Eye, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
 import SpinnerLoader from '@/components/SpinnerLoader.vue'
 import { listKeysSheet } from '@/components/keyboard/desktopParts'
 import FolioTools from '@/components/layout/FolioTools.vue'
@@ -58,7 +58,7 @@ const selectedCount = computed(() => selectedIds.value.size)
 const hasSelection = computed(() => selectedCount.value > 0)
 
 // 桌面推文墙排得更紧：同账号折叠、多图排成一行胶片、正文与配图限高、可一键切纯文字；手机与平板照旧，
-// 报眉的版面密度选了舒适时桌面也照旧（已读淡化、收藏与键盘流不分版面）。
+// 报眉的版面密度选了舒适时桌面也照旧（浏览提示、收藏与键盘流不分版面）。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { comfortable } = useAppDensity()
 const dense = computed(() => desktop.value && !comfortable.value)
@@ -69,7 +69,7 @@ const FOLIO_LEVELS = ['full', 'trim', 'compact', 'tight'] as const
 const iconOnly = (level: string | null) => level === 'trim' || level === 'compact' || level === 'tight'
 
 // 本机收藏（只在桌面）：点书签或按 s 收下推文，连内容一起存在本机。页头的窗口开关里多一段「收藏」，切过去看收下的推文：
-// 最近收的在前，不折叠、不变淡、不画「上次看到这里」。在收藏里取消的那条留到离开收藏再撤，点错了还能再收回来。
+// 最近收的在前，不折叠、不显示浏览提示与「上次看到这里」。在收藏里取消的那条留到离开收藏再撤，点错了还能再收回来。
 const saved = useSavedItems({ list: 'x', accept: isSavedTweet })
 const savedCount = saved.count
 const savedView = ref(false)
@@ -115,11 +115,12 @@ const toggleFoldOf = (key: string) => {
   expandedFolds.value = next
 }
 const toggleFold = (tweet: TopDoc) => toggleFoldOf(tweetKey(tweet))
-// 已读淡化（只在桌面）：看过的推文变淡；再来时，在新来的和上回看过的之间画「上次看到这里」，线上面全是新的。
+// 浏览提示（只在桌面）：看过的推文只在时间旁标「浏览过」，正文、图片与互动分始终保持原色，方便回看。
+// 再来时，在新来的和上回看过的之间画「上次看到这里」，线上面全是新的。
 // 记录只存在本机浏览器。每次重新拉取（进来、刷新、换窗口）算新的一次，这之前看过的都算上回看过的。
 const readMarks = useReadMarks({ list: 'x', enabled: desktop })
 const vReadMark = readMarks.directive
-const isRead = (tweet: TopDoc) => !savedView.value && readMarks.isRead(tweetReadId(tweet))
+const hasSeen = (tweet: TopDoc) => !savedView.value && readMarks.isRead(tweetReadId(tweet))
 watch(loading, (value) => { if (value) readMarks.snapshot() })
 const timelineIndex = computed(() => new Map(timelineDocs.value.map((doc, index) => [doc, index])))
 // 时间线上第一条上回就看过的推文；它前面的都是这之后新来的，也就是线上面的条数。
@@ -776,7 +777,7 @@ onBeforeUnmount(() => {
                   :data-reflow-key="tweetKey(tweet)"
                   :data-list-key="tweetKey(tweet)"
                   class="tweet-card"
-                  :class="{ 'is-read': isRead(tweet), 'is-cursor': isCursor(tweetKey(tweet)) }"
+                  :class="{ 'is-cursor': isCursor(tweetKey(tweet)) }"
                 >
                   <!-- 纯转贴标注行：转贴者在上、原作者在下（与 X 原生转发卡同形态） -->
                   <div v-if="retweetedByHandle(tweet)" class="tweet-retweet-line flex items-center gap-1.5 px-4 pt-2.5 text-2xs">
@@ -903,8 +904,9 @@ onBeforeUnmount(() => {
                       context="wall"
                       :compact="dense"
                     />
-                    <p v-if="formatTime(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
-                      {{ formatTime(tweet) }}
+                    <p v-if="formatTime(tweet) || hasSeen(tweet) || mediaHint(tweet) || isClamped(tweet)" class="tweet-time mt-2 px-1 text-2xs">
+                      <span v-if="formatTime(tweet)" class="tweet-time-value">{{ formatTime(tweet) }}</span>
+                      <span v-if="hasSeen(tweet)" class="tweet-seen-mark"><Eye aria-hidden="true" />{{ t('xboard.seenLabel') }}</span>
                       <!-- 截住了、收起了什么：「全文」点开看全文；纯文字时收起了几张图、几段视频、有没有链接卡，点开详情看 -->
                       <span v-if="isClamped(tweet) || mediaHint(tweet)" class="tweet-time-tools">
                         <button v-if="isClamped(tweet)" type="button" class="tweet-more" @click="openDetail(tweet)">{{ t('xboard.readMore') }}</button>
@@ -1472,6 +1474,23 @@ a.tweet-link:hover {
 
 .tweet-time {
   color: var(--ink-muted);
+}
+
+.tweet-time-value,
+.tweet-seen-mark {
+  white-space: nowrap;
+}
+
+.tweet-seen-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.tweet-seen-mark svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* ═══ 推文详情浮层：墨色遮罩 + 卡片面板；z 低于图片 lightbox(90)，

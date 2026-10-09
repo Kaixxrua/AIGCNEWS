@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import XBoardView from './XBoardView.vue'
 import { forgetSavedItems } from '@/composables/useSavedItems'
 import { setAppDensity } from '@/composables/useAppDensity'
+import { tweetReadId } from '@/features/xboard/xBoardViewModel'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
 // 桌面推文墙（≥1024px）的折叠、胶片、纯文字等按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
@@ -473,7 +474,7 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     viewport.desktop = true
     setViewportWidth(1280)
     i18n.global.setLocaleMessage('zh-CN', {
-      xboard: { foldMore: '＋{count} 条 {name} 的推文', foldShow: '展开', foldHide: '收起', readMore: '全文' },
+      xboard: { foldMore: '＋{count} 条 {name} 的推文', foldShow: '展开', foldHide: '收起', readMore: '全文', seenLabel: '浏览过', seenRule: '上次看到这里', seenRuleCount: '此后新增 {count} 条' },
     })
   })
 
@@ -495,6 +496,37 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
   }))
   const wallCards = (wrapper: VueWrapper) => wrapper.findAll('.masonry-grid article.tweet-card')
   const wallBodies = (wrapper: VueWrapper) => wallCards(wrapper).map((card) => card.get('.tweet-text').text()).sort()
+
+  it.each(['compact', 'comfortable'] as const)('%s 版面回看只显示浏览提示，打开详情和再次进入都保留完整卡片与进度线', async (density) => {
+    setAppDensity(density)
+    const tweets = byHandles(['alice', 'bob', 'carol'])
+    controller().docs.value = tweets
+    localStorage.setItem('read_marks_x', JSON.stringify({ [tweetReadId(tweets[1]!)]: Math.floor(Date.now() / 60_000) }))
+    const wrapper = await mountView()
+    const card = (index: number) => wallCards(wrapper).find((item) => item.get('.tweet-text').text() === `Tweet ${index} body`)!
+
+    expect(wallCards(wrapper)).toHaveLength(3)
+    expect(card(0).find('.tweet-seen-mark').exists()).toBe(false)
+    expect(card(1).get('.tweet-time .tweet-seen-mark').text()).toBe('浏览过')
+    expect(card(1).get('.tweet-text').text()).toBe('Tweet 1 body')
+    expect(wrapper.find('.masonry-grid .is-read').exists()).toBe(false)
+    expect(wrapper.get('.xboard-seen-rule__count').text()).toBe('此后新增 1 条')
+
+    await card(0).get('.tweet-text').trigger('click')
+    expect(wrapper.get('.detail-backdrop .tweet-text').text()).toContain('Tweet 0 body')
+    expect(card(0).get('.tweet-seen-mark').text()).toBe('浏览过')
+    expect(wrapper.find('.masonry-grid .is-read').exists()).toBe(false)
+    // 本次打开不挪动进度线；再次进入时才按保留的浏览记录重新定位。
+    expect(wrapper.get('.xboard-seen-rule__count').text()).toBe('此后新增 1 条')
+    wrapper.unmount()
+    mounted.splice(mounted.indexOf(wrapper), 1)
+    const revisited = await mountView()
+    expect(revisited.findAll('.tweet-seen-mark')).toHaveLength(2)
+    expect(revisited.find('.masonry-grid .is-read').exists()).toBe(false)
+    expect(wallCards(revisited)).toHaveLength(3)
+    // 没有新增内容时不画空分隔线。
+    expect(revisited.find('.xboard-seen-rule').exists()).toBe(false)
+  })
 
   it('同一页里一个账号达到 3 条只留第一条，折叠行点开就地展开、再点收回', async () => {
     controller().docs.value = byHandles(['alice', 'bob', 'alice', 'carol', 'alice', 'alice'])
@@ -712,7 +744,7 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     expect(wrapper.find('.masonry-grid article.is-cursor').exists()).toBe(false)
   })
 
-  it('收藏：书签或按 s 收下，「收藏」一段照收下的先后排、不折叠不变淡，在里面取消的留到离开再撤', async () => {
+  it('收藏：书签或按 s 收下，「收藏」一段照收下的先后排、不折叠不显示浏览提示，在里面取消的留到离开再撤', async () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       { top: 10, bottom: 90, left: 0, right: 300, width: 300, height: 80, x: 0, y: 10, toJSON: () => ({}) } as DOMRect,
     )
@@ -751,8 +783,8 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     await press('Escape')
     expect(wrapper.get('.xboard-saved .xboard-saved-count').text()).toBe('4')
 
-    // 「收藏」一段：最近收的在前，不折叠；开过详情的那条在窗口里变淡，在这里不淡
-    expect(card('Tweet 2 body').classes()).toContain('is-read')
+    // 「收藏」一段：最近收的在前，不折叠；开过详情的那条只在窗口里显示浏览提示
+    expect(card('Tweet 2 body').get('.tweet-seen-mark').text()).toBe('浏览过')
     await wrapper.get('.xboard-saved').trigger('click')
     expect(wrapper.get('.xboard-saved').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('.xboard-saved').classes()).toContain('xboard-window-active')
@@ -760,7 +792,7 @@ describe('XBoardView 桌面推文墙：同账号折叠、按卡位分页、纯�
     expect(wrapper.find('.xboard-follow-toggle').exists()).toBe(false)
     expect(bodiesInOrder()).toEqual(['Tweet 2 body', 'Tweet 1 body', 'Tweet 0 body', 'Tweet 3 body'])
     expect(wrapper.find('.tweet-fold').exists()).toBe(false)
-    expect(wrapper.find('.masonry-grid .is-read').exists()).toBe(false)
+    expect(wrapper.find('.masonry-grid .tweet-seen-mark').exists()).toBe(false)
     expect(wrapper.find('.tweet-head input[type="checkbox"]').exists()).toBe(false)
 
     // 在收藏里取消的那条留在墙上，书签变空，计数先减；刷新按此刻重拍才撤下，不去重拉窗口

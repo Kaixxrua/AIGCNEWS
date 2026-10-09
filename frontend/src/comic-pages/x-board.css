@@ -11,7 +11,6 @@
     --x-copy: #18233a;
     --x-muted: #5e7190;
     --x-hint: #5c6f8c;
-    --x-read: #5e7190;
     --x-face: #fefefb;
     --x-face-hover: #f3f9d6;
     --x-lime: #c1f41e;
@@ -38,7 +37,6 @@
     --x-copy: var(--ink);
     --x-muted: var(--ink-secondary);
     --x-hint: var(--ink-secondary);
-    --x-read: #8f96a3;
     --x-face: #2c2d30;
     --x-face-hover: #35392b;
     --x-lime: #a6c64e;
@@ -316,7 +314,7 @@
   #app .app-shell--comfortable .tweet-card .tweet-quote-photo { max-height: 220px; }
   /* the time row ends in small keys in the head's icon-key line: 全文 where the text was cut, and in text only what
      was put away (pictures, videos, a link card); either opens the detail */
-  #app .app-shell--comic-page .tweet-card .tweet-time { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--x-muted); font-size: 13px; line-height: 19px; }
+  #app .app-shell--comic-page .tweet-card .tweet-time { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; color: var(--x-muted); font-size: 13px; line-height: 19px; }
   #app .app-shell--comic-page .tweet-card .tweet-time-tools { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
   #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint) {
     display: inline-flex; align-items: center; gap: 6px; height: 19px; padding: 0 7px; border: 0 solid transparent; border-radius: 3px;
@@ -348,21 +346,6 @@
     #app .app-shell--comic-page .tweet-card :is(.tweet-fold, .tweet-fold-chevron) { transition: none; }
     #app .app-shell--comic-page .tweet-card :is(.tweet-more, .tweet-media-hint) { animation: none; }
   }
-  /* a tweet read before (useReadMarks): all its text, the repost line, time, quoted tweet and link card with it, drops
-     to one slate ink, the avatars and pictures wash out and the score loses its lime; the card's frame stays as drawn.
-     A video started in it plays in full. */
-  #app .app-shell--comic-page .tweet-card.is-read {
-    --x-copy: var(--x-read); --x-ink: var(--x-read); --x-navy: var(--x-read); --x-muted: var(--x-read);
-  }
-  #app .app-shell--comic-page .tweet-card.is-read :is(.tweet-retweet-line, .tweet-quote, .tweet-linkcard) {
-    --ink: var(--x-read); --ink-secondary: var(--x-read); --ink-muted: var(--x-read);
-  }
-  #app .app-shell--comic-page .tweet-card.is-read :is(
-    .tweet-avatar, .tweet-avatar-fallback, .tweet-media-list:not(:has(video)), .tweet-quote-avatar, .tweet-quote-media, .tweet-linkcard-image
-  ) {
-    filter: saturate(.3) opacity(.72);
-  }
-  #app .app-shell--comic-page .tweet-card.is-read .tweet-score { filter: saturate(.3); }
   /* where you left off: across the wall between the tweets that came in since and those read last time, a tag in the
      score's lime pill, the count of new ones in the muted ink, then an ink rule run out to the wall's right edge */
   #app .app-shell--comic-page .xboard-seen-rule { gap: 12px; height: 28px; color: var(--x-muted); font-size: 13px; font-weight: 700; }
