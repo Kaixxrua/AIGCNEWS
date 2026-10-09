@@ -52,6 +52,10 @@ Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_
 
 本地发布在三个镜像构建并校验 digest 后保存 `verified-images.json`。同一源码 SHA、私有制品配置及发布脚本一致的再次执行，会先确认三个不可变镜像仍存在，再直接进入原有部署/健康门禁；不重复构建，也不重新运行 CI。该检查点不代表已部署，不绕过发布锁、生产状态、迁移或健康检查。
 
+后端镜像默认通过 PyPI 官方索引下载依赖，使用固定版本的 uv，最多并行下载 8 个包，HTTP 读取超时 30 秒、重试 2 次。构建从 `backend/requirements.lock` 的固定版本和索引摘要生成临时哈希清单，并以 `--require-hashes` 安装，保留 TLS 与包完整性校验；安装后移除 uv 和临时清单。下载工具使用独立的 `aigcnews-uv-bootstrap` 缓存和构建层，避免长时间占用旧后端构建的 pip 缓存锁。
+
+`aigcnews-wheels` 缓存可导入 CI 依赖模板的 `/opt/aigcnews-dependencies/wheels` 文件，安装时只读挂载。先筛选版本及平台匹配的 wheel，保留原始哈希清单，离线校验安装；随后按完整清单安装剩余依赖。缓存版本过旧、平台不匹配或只有源码包时回到索引安装，缓存内容损坏则失败，不替换期望摘要。缓存由 BuildKit 持久保存。受控网络可通过 `--build-arg PIP_INDEX_URL=https://.../simple` 指定单一索引。
+
 ### 提交前快速验证
 
 暂存本次工作后运行安装后的 `local_preflight.py --repository "$PWD" --jobs frontend-build`（也支持 `backend-tests`、`mcp-go`）。入口对暂存 tree 创建不移动分支的验证对象，随后调用可信隔离执行器。前端单测/lint/typecheck、后端 lint、Go vet/test 可按步骤复用；准备依赖、生成测试夹具及生产构建仍执行。代码、测试、依赖或控制配置变化全部失效，partial preflight 永远不能作为完整 CI 回执。零散 pytest 文件子集尚不覆盖完整后端套件，不能据此跳过该套件。
