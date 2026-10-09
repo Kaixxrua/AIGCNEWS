@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import RollingNumber from './RollingNumber.vue'
 import { LibraryBig, Github, FilePlus, CircleUserRound, UsersRound, Blocks } from 'lucide-vue-next'
@@ -15,6 +15,8 @@ const props = defineProps<{
 }>()
 const { t } = useI18n()
 const emit = defineEmits<{ selectSource: [key: TabKey] }>()
+const expanded = ref(false)
+const overviewId = useId()
 const metrics = computed(() => [
   { key: 'total', label: 'dashboard.editorial.total', value: props.statValues[0], icon: LibraryBig },
   { key: 'github', label: 'dashboard.editorial.github', value: props.statValues[1], icon: Github },
@@ -25,7 +27,7 @@ const metrics = computed(() => [
 </script>
 
 <template>
-  <div class="stat-strip" :aria-busy="loading">
+  <div :id="overviewId" class="stat-strip" :data-expanded="expanded" :aria-busy="loading">
     <component :is="card.key === 'github' ? 'button' : 'div'" v-for="card in metrics" :key="card.key"
       class="stat-cell" :class="`stat-cell--${card.key}`"
       :type="card.key === 'github' ? 'button' : undefined"
@@ -47,12 +49,17 @@ const metrics = computed(() => [
         <RollingNumber v-else :value="uiCount" grouping class="stat-cell-num" />
       </span>
     </RouterLink>
+    <button type="button" class="stat-expand" :aria-expanded="expanded" :aria-controls="overviewId" @click="expanded = !expanded">
+      {{ t(expanded ? 'dashboard.collapseOverview' : 'dashboard.dataOverview') }}
+      <span aria-hidden="true">{{ expanded ? '−' : '+' }}</span>
+    </button>
   </div>
 </template>
 
 <style scoped>
 
 .stat-strip { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; min-width:0; }
+.stat-expand { display:none; }
 .stat-cell { --metric:var(--comic-cyan-line); --metric-ink:var(--metric-total-ink); container-type:inline-size; position:relative;isolation:isolate;display:flex; align-items:center; gap:8px; min-width:0; min-height:94px; padding:12px 13px; border:2px solid transparent; border-radius:5px 8px 4px 6px; background:linear-gradient(130deg,var(--paper-raised),color-mix(in srgb,var(--metric) 5%,var(--paper-raised))); color:var(--ink); text-align:left; }
 .stat-ink-frame { position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);fill:none;stroke:var(--rule-strong);stroke-width:1.5;pointer-events:none; }
 .stat-ink-frame path { vector-effect:non-scaling-stroke; }
@@ -83,14 +90,24 @@ const metrics = computed(() => [
 @container (max-width:103px) { .stat-cell-icon { display:none; } }
 
 @media (max-width:1023px) {
-  .stat-strip { gap:8px;grid-auto-rows:96px; }
-  .stat-cell { display:grid;grid-template-columns:minmax(0,1fr) 22px;grid-template-rows:minmax(0,1fr) auto;gap:4px;height:96px;min-height:96px;padding:10px; }
+  .stat-strip { gap:6px;grid-auto-rows:auto; }
+  .stat-strip:not([data-expanded="true"]) :is(.stat-cell--total,.stat-cell--visitors,.stat-cell--total-visitors) { display:none; }
+  .stat-cell { display:grid;grid-template-columns:minmax(0,1fr) 22px;grid-template-rows:minmax(0,1fr) auto;gap:3px;height:64px;min-height:64px;padding:8px; }
+  .stat-cell--github { order:0; }
+  .stat-cell--new { order:1; }
+  .stat-cell--ui { order:2; }
+  .stat-cell--total { order:3; }
+  .stat-cell--visitors { order:4; }
+  .stat-cell--total-visitors { order:5; }
   .stat-cell-body { display:contents; }
-  .stat-cell-label { grid-column:1;grid-row:1;align-self:center;font-size:12px;white-space:normal;word-break:keep-all; }
-  .stat-cell-num { grid-column:1 / -1;grid-row:2;font-size:22px; }
-  .stat-cell-icon { position:static;display:grid;grid-column:2;grid-row:1;align-self:start;width:22px;height:22px;padding:4px; }
+  .stat-cell-label { grid-column:1 / -1;grid-row:1;align-self:center;font-size:11px;white-space:normal;word-break:keep-all; }
+  .stat-cell-num { grid-column:1 / -1;grid-row:2;font-size:21px; }
+  .stat-cell-icon { display:none; }
+  .stat-expand { order:6;grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:0 6px;border:0;background:transparent;color:var(--ink-muted);font-size:12px;text-align:left; }
+  .stat-expand:focus-visible { outline:2px solid var(--ink);outline-offset:2px; }
 }
 @media (max-width:359px) {
-  .stat-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .stat-cell-label { font-size:10px; }
+  .stat-cell-num { font-size:19px; }
 }
 </style>

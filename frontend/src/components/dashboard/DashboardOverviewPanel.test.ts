@@ -9,6 +9,7 @@ const i18n = createI18n({
   messages: {
     'zh-CN': {
       dashboard: {
+        dataOverview: '查看数据概览', collapseOverview: '收起数据概览',
         editorial: { uiTotal: 'UI 库总量', total: '内容总量', github: 'GitHub 项目' },
         sourceRanking: '查看 {source} 排行榜',
         stats: {
@@ -40,6 +41,22 @@ const mountPanel = (loading = false) => mount(DashboardOverviewPanel, {
 })
 
 describe('DashboardOverviewPanel', () => {
+  it('retains live values and source navigation while expanding and collapsing secondary metrics', async () => {
+    const wrapper = mountPanel()
+    const toggle = wrapper.get('.stat-expand')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.attributes('aria-controls')).toBe(wrapper.attributes('id'))
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    await wrapper.setProps({ visitorValues: [31, 501, 13] })
+    expect(wrapper.get('.stat-cell--total-visitors').text()).toContain('501')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.stat-cell--new').text()).toContain('13')
+    await wrapper.get('button.stat-cell--github').trigger('click')
+    expect(wrapper.emitted('selectSource')).toEqual([['github']])
+  })
+
   it('shows the six core statistics, including today\'s count and both visitor metrics', () => {
     const wrapper = mountPanel()
     const card = wrapper.get('.stat-cell--ui')
