@@ -4,18 +4,11 @@ export type AppDensity = 'compact' | 'comfortable'
 export const APP_DENSITY_KEY = 'app_density'
 
 /** 有舒适版面的页（路由名）：报眉只在这几页放密度开关，在别的页按下去不会有变化。 */
-export const DENSITY_ROUTES: ReadonlySet<string> = new Set(['github-projects', 'membership', 'report', 'ui-library', 'x-board'])
+export const DENSITY_ROUTES: ReadonlySet<string> = new Set(['membership', 'report', 'x-board'])
 
-// 项目库只有公共目录排成榜单；我的收藏与网页收藏一直是原来的卡片，不放开关。
-const PERSONAL_PROJECT_SOURCES: ReadonlySet<string> = new Set(['favorites', 'website'])
-
-/** 这一页有没有两版可选（路由名 + 项目库的来源）。 */
+/** 这一页有没有两版可选；项目榜单与 UI 紧凑网格固定版式，不显示密度开关。 */
 export function routeHasDensityChoice(route: { name?: unknown; query?: Record<string, unknown> }): boolean {
-  const name = String(route.name ?? '')
-  if (!DENSITY_ROUTES.has(name)) return false
-  if (name !== 'github-projects') return true
-  const source = route.query?.source
-  return !PERSONAL_PROJECT_SOURCES.has(String((Array.isArray(source) ? source[0] : source) ?? ''))
+  return DENSITY_ROUTES.has(String(route.name ?? ''))
 }
 
 function readStoredDensity(): AppDensity {
@@ -40,7 +33,7 @@ export function setAppDensity(value: AppDensity): void {
 
 /**
  * 版面密度：紧凑（默认）是桌面各页提密度之后的版面，舒适保留改版前的卡片（简报一节一张卡、推文墙不折叠不限高、
- * 会员三张卡、UI 灵感库大卡片、项目库三列卡片）。报眉右侧一枚开关切换，选择只记在本机；手机与平板没有这一档，记下的选择在那里不生效，
+ * 会员三张卡）。报眉右侧一枚开关切换，选择只记在本机；手机与平板没有这一档，记下的选择在那里不生效，
  * 各页用「桌面且不是舒适」决定排哪一版。
  */
 export function useAppDensity() {

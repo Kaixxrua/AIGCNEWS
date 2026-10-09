@@ -768,8 +768,11 @@ describe('GitHubProjectsView chart header', () => {
     await flushPromises()
   }
 
-  it('keeps the page title for screen readers and folds the MCP strip into a button at the search field end', async () => {
+  it.each(['compact', 'comfortable'] as const)('keeps the chart and its search header with the stored %s preference', async (density) => {
+    setAppDensity(density)
     const wrapper = await mountChart()
+    expect(wrapper.find('.project-chart').exists()).toBe(true)
+    expect(wrapper.find('.project-card').exists()).toBe(false)
 
     expect(wrapper.get('.projects-hero').classes()).toContain('projects-hero--quiet')
     expect(wrapper.get('.projects-hero h1').text()).toBe('projects.pageTitle')
@@ -834,24 +837,23 @@ describe('GitHubProjectsView chart header', () => {
     expect(Number(window.localStorage.getItem(MCP_PROMO_DISMISSED_STORAGE_KEY))).toBeGreaterThan(Date.now())
   })
 
-  it('keeps the title and the expandable strip in the comfortable density, closed again on the way back', async () => {
+  it('keeps the chart header and open examples when the global density changes', async () => {
     const wrapper = await mountChart()
     await wrapper.get('.projects-ask').trigger('click')
     await flushPromises()
 
     setAppDensity('comfortable')
     await flushPromises()
-    expect(wrapper.get('.projects-hero').classes()).not.toContain('projects-hero--quiet')
-    expect(wrapper.find('.projects-ask').exists()).toBe(false)
-    const strip = wrapper.get('details.projects-mcp-promo')
-    expect(strip.classes()).not.toContain('projects-mcp-promo--panel')
-    expect(strip.find('summary.projects-mcp-promo__summary').exists()).toBe(true)
-    expect(strip.attributes('open')).toBeUndefined()
+    expect(wrapper.get('.projects-hero').classes()).toContain('projects-hero--quiet')
+    expect(wrapper.find('.project-chart').exists()).toBe(true)
+    expect(wrapper.find('.project-card').exists()).toBe(false)
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(true)
+    expect(wrapper.get('.projects-ask').attributes('aria-expanded')).toBe('true')
 
     setAppDensity('compact')
     await flushPromises()
-    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
-    expect(wrapper.get('.projects-ask').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(true)
+    expect(wrapper.get('.projects-ask').attributes('aria-expanded')).toBe('true')
   })
 })
 
@@ -1041,7 +1043,7 @@ describe('GitHubProjectsView chart keyboard flow', () => {
     expect(controller().loadProjects).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps repositories opened on an earlier visit dimmed, and leaves the comfortable cards without keys', async () => {
+  it('keeps read marks and chart keyboard navigation with a stored comfortable preference', async () => {
     localStorage.setItem('read_marks_projects', JSON.stringify({ 'github:acme/beta': Math.floor(Date.now() / 60_000) }))
     controller().projects.value = [chartRepo('alpha'), chartRepo('beta')]
     controller().total.value = 2
@@ -1057,14 +1059,15 @@ describe('GitHubProjectsView chart keyboard flow', () => {
     view = null
 
     setAppDensity('comfortable')
-    const cards = await mountChart()
-    expect(cards.find('.project-chart').exists()).toBe(false)
-    expect(cards.findAll('.project-card')).toHaveLength(2)
-    expect(cards.find('.is-read').exists()).toBe(false)
+    const chart = await mountChart()
+    expect(chart.find('.project-chart').exists()).toBe(true)
+    expect(chart.find('.project-card').exists()).toBe(false)
+    expect(row('alpha').classes()).toContain('is-read')
+    expect(row('beta').classes()).toContain('is-read')
     await press('j')
+    expect(cursorKey()).toBe('github:acme/alpha')
     await press('?')
-    expect(cards.find('.is-cursor').exists()).toBe(false)
-    expect(cards.find('.list-keys-sheet').exists()).toBe(false)
+    expect(chart.find('.list-keys-sheet').exists()).toBe(true)
   })
 
   it('peeks at a row the pointer rests on, keeps it lit, gives Esc to the card before the cursor and dims what the card opened', async () => {
