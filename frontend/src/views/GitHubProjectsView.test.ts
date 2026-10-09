@@ -374,20 +374,13 @@ describe('GitHubProjectsView controller wiring', () => {
       const wrapper = await mountView()
       const vm = wrapper.vm as unknown as {
         masonryGridTemplate: string
-        masonryColumnWidths: number[]
-        masonryColumnCount: number
-        effectiveMasonryColumnCount: number
       }
       const widths = [...String(vm.masonryGridTemplate).matchAll(/(\d+)px/g)].map((match) => Number(match[1]))
       expect(wrapper.findAll('.projects-col')).toHaveLength(2)
-      expect(vm.masonryColumnCount).toBe(5)
-      expect(vm.effectiveMasonryColumnCount).toBe(2)
-      expect(vm.masonryColumnWidths).toHaveLength(5)
       expect(widths).toHaveLength(2)
       // 1400px 容量约 5 列；稀疏行必须沿用满列轨道宽（~270px），而不是
       // 把两张卡均分整行（~688px）。jsdom 不解析 v-bind CSS，因此断言计算值。
       expect(widths.every((width) => width >= 260 && width <= 280)).toBe(true)
-      expect(vm.masonryColumnWidths.every((width) => width >= 260 && width <= 280)).toBe(true)
       wrapper.unmount()
     } finally {
       vi.unstubAllGlobals()
@@ -419,10 +412,9 @@ describe('GitHubProjectsView controller wiring', () => {
 
     try {
       const wrapper = await mountView()
-      const vm = wrapper.vm as unknown as { masonryColumnCount: number; masonryColumnWidths: number[] }
+      const vm = wrapper.vm as unknown as { masonryGridTemplate: string }
       // 默认 260/12 下 1436px 排 5 列；皮肤改成 330/20 后排 4 列，(1436 - 3 × 20) / 4 = 344。
-      expect(vm.masonryColumnCount).toBe(4)
-      expect(vm.masonryColumnWidths).toEqual([344, 344, 344, 344])
+      expect(vm.masonryGridTemplate).toBe('344px 344px 344px 344px')
       expect(wrapper.findAll('.projects-col')).toHaveLength(4)
       wrapper.unmount()
     } finally {
