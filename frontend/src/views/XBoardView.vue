@@ -19,6 +19,7 @@ import { useAppDensity } from '@/composables/useAppDensity'
 import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, isLongPhoto, paginateFoldedTweets, paginateItems, quoteAsDoc, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
+import { groupXAccounts } from '@/features/xboard/xAccountGroups'
 import { isTypingTarget, listKeyAction } from '@/features/keyboard/listKeys'
 import { isSavedTweet } from '@/features/saved/savedTweet'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
@@ -46,6 +47,11 @@ const {
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
   toggleFollowAccount, followAllAccounts, unfollowAllAccounts,
 } = useXBoardController({ translate: t })
+
+const accountGroups = computed(() => groupXAccounts(availableAccountOptions.value).map((group) => ({
+  ...group,
+  followed: group.accounts.filter((account) => !unfollowedAccounts.value.has(account.handle)).length,
+})))
 
 // 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
 const isToday = computed(() => selectedDate.value === today)
@@ -664,22 +670,33 @@ onBeforeUnmount(() => {
                 {{ t('xboard.clearFollowed') }}
               </button>
             </div>
-            <div class="xboard-follow-list mt-3 flex flex-wrap gap-2">
-              <label
-                v-for="account in availableAccountOptions"
-                :key="account.handle"
-                class="xboard-account-chip flex cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-xs"
-                :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
-                :title="`@${account.handle}`"
-              >
-                <input
-                  type="checkbox"
-                  class="h-3.5 w-3.5"
-                  :checked="!unfollowedAccounts.has(account.handle)"
-                  @change="toggleFollowAccount(account.handle); stampCheck($event)"
-                />
-                <span>{{ account.displayName }}</span>
-              </label>
+            <div class="xboard-follow-list mt-3">
+              <details v-for="group in accountGroups" :key="group.id" class="xboard-follow-group" :data-group="group.id" name="xboard-account-group" :open="group.id === 'openai'">
+                <summary class="xboard-group-heading">
+                  <ChevronDown class="xboard-group-chevron h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{{ t(`xAccountGroups.${group.id}`) }}</span>
+                  <span class="xboard-group-count" :aria-label="t('xboard.followSummary', { selected: group.followed, total: group.accounts.length })">
+                    {{ group.followed }}/{{ group.accounts.length }}
+                  </span>
+                </summary>
+                <div class="xboard-account-grid">
+                  <label
+                    v-for="account in group.accounts"
+                    :key="account.handle"
+                    class="xboard-account-chip flex cursor-pointer items-center gap-1.5 text-xs"
+                    :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
+                    :title="`@${account.handle}`"
+                  >
+                    <input
+                      type="checkbox"
+                      class="h-3.5 w-3.5"
+                      :checked="!unfollowedAccounts.has(account.handle)"
+                      @change="toggleFollowAccount(account.handle); stampCheck($event)"
+                    />
+                    <span>{{ account.displayName }}</span>
+                  </label>
+                </div>
+              </details>
             </div>
           </aside>
         </Transition>
@@ -1254,7 +1271,7 @@ onBeforeUnmount(() => {
   .xboard-follow-list {
     min-height: 0;
     overflow-y: auto;
-    padding: 2px 4px 4px 2px; /* 给芯片的硬阴影留位，免得被滚动区裁掉 */
+    padding: 2px 4px 4px 2px;
   }
 }
 
@@ -1308,17 +1325,64 @@ onBeforeUnmount(() => {
   box-shadow: 3px 3px 0 var(--shadow-hard);
 }
 
-.xboard-account-chip {
+.xboard-follow-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 6px;
+}
+
+.xboard-follow-group {
+  min-width: 0;
   border: 1px solid var(--rule);
   border-radius: 4px;
+}
+
+.xboard-follow-group[open] { grid-column: 1 / -1; }
+
+.xboard-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.xboard-group-heading::-webkit-details-marker { display: none; }
+.xboard-group-heading:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.xboard-group-chevron { flex-shrink: 0; }
+.xboard-follow-group:not([open]) .xboard-group-chevron { transform: rotate(-90deg); }
+.xboard-group-count { flex-shrink: 0; margin-left: auto; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.xboard-account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 4px 4px;
+}
+
+.xboard-account-chip {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   color: var(--ink-secondary);
-  background: var(--projects-paper-light);
+  background: transparent;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
   transition: background 150ms ease, border-color 150ms ease;
 }
 
+.xboard-account-chip input { flex-shrink: 0; }
+
 .xboard-account-chip:hover,
 .xboard-account-chip-active {
-  border-color: var(--ink);
   background: var(--acid-soft);
   color: var(--ink);
 }

@@ -210,7 +210,7 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     tweets[0]!.author_name = 'Alice Zhang'
     tweets[1]!.url = 'https://x.com/openai/status/1001'
     tweets[1]!.followed_account_name = 'OpenAI'
-    tweets[2]!.url = 'https://x.com/anthropic/status/1002'
+    tweets[2]!.url = 'https://x.com/anthropicai/status/1002'
     tweets[2]!.author_name = 'Anthropic'
     controller().docs.value = tweets
     const wrapper = await mountView()
@@ -226,10 +226,10 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('.xboard-follow-panel').attributes('id')).toBe(toggle.attributes('aria-controls'))
     const chips = wrapper.findAll('.xboard-account-chip')
-    expect(chips.map((chip) => chip.text())).toEqual(['Alice Zhang', 'Anthropic', 'OpenAI'])
+    expect(chips.map((chip) => chip.text())).toEqual(['OpenAI', 'Anthropic', 'Alice Zhang'])
     expect(chips.every((chip) => (chip.find('input').element as HTMLInputElement).checked)).toBe(true)
 
-    await chips[0]!.find('input').trigger('change')
+    await wrapper.get('.xboard-account-chip[title="@alice"] input').trigger('change')
     await nextTick()
     expect(controller().toggleFollowAccount).toHaveBeenCalledWith('alice')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
@@ -240,6 +240,45 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
+  })
+
+  it('按稳定账号分组，折叠保留筛选，分组计数随单选和全部操作更新', async () => {
+    const accounts = [
+      ['openai', 'Renamed research lab'], ['claudedevs', 'ClaudeDevs'],
+      ['thsottiaux', 'Tibo'], ['codexreleases', 'Codex Releases'],
+      ['arena', 'Arena.ai'], ['newaccount', 'New account'],
+    ]
+    controller().docs.value = makeTweets(accounts.length).map((tweet, i) => ({
+      ...tweet, url: `https://x.com/${accounts[i]![0]}/status/${1000 + i}`, author_name: accounts[i]![1],
+    }))
+    const wrapper = await mountView()
+    await wrapper.get('.xboard-follow-toggle').trigger('click')
+    const groups = wrapper.findAll('.xboard-follow-group')
+    expect(groups.map((group) => group.attributes('data-group'))).toEqual(['openai', 'anthropic', 'benchmarks', 'other'])
+    expect(groups[0]!.text()).toContain('Renamed research lab')
+    expect(groups[0]!.text()).toContain('Tibo')
+    expect(groups[0]!.text()).toContain('Codex Releases')
+    expect(groups[1]!.text()).toContain('ClaudeDevs')
+    expect(groups[3]!.text()).toContain('New account')
+    expect(wrapper.findAll('.xboard-account-chip')).toHaveLength(accounts.length)
+
+    const openai = groups[0]!
+    await openai.get('input').setValue(false)
+    expect(openai.get('.xboard-group-count').text()).toBe('2/3')
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(5)
+
+    // 原生 details 的展开状态与关注选择独立；批量操作也覆盖折叠组。
+    ;(openai.element as HTMLDetailsElement).open = false
+    await openai.trigger('toggle')
+    expect(controller().toggleFollowAccount).toHaveBeenCalledTimes(1)
+    const bulkButtons = wrapper.get('.xboard-follow-panel').findAll('button.btn-secondary')
+    await bulkButtons[1]!.trigger('click')
+    expect(groups.every((group) => group.get('.xboard-group-count').text().startsWith('0/'))).toBe(true)
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(0)
+    await bulkButtons[0]!.trigger('click')
+    expect(openai.get('.xboard-group-count').text()).toBe('3/3')
+    expect((openai.element as HTMLDetailsElement).open).toBe(false)
+    expect(wrapper.findAll('article.tweet-card')).toHaveLength(accounts.length)
   })
 
   it('桌面端展开关注账号侧栏时推文墙少排一列', async () => {

@@ -381,12 +381,10 @@
   #app .app-shell--comic-page .xboard-follow-panel h2 { color: var(--x-ink); font-size: 15px; font-weight: 800; }
   #app .app-shell--comic-page .xboard-follow-panel p { color: var(--x-copy); font-size: 12.5px; }
   #app .app-shell--comic-page .xboard-follow-panel .mt-3.flex > button { height: 35px; padding: 0 14px; font-size: 15px; }
-  #app .app-shell--comic-page .xboard-follow-list { gap: 13px 8px; }
-  /* a chip: a thin line round a lime-cream face with an ink bracket down its right end; a lime tick box */
+  /* Grouped account rows stay quiet inside the illustrated panel; lime marks the selected accounts. */
   #app .app-shell--comic-page .xboard-account-chip {
-    gap: 6px; height: 27px; padding: 0 10px 0 5px; border: 0 solid transparent; border-radius: 3px; box-shadow: none;
-    background: var(--x-face); color: var(--x-muted); font-size: 15px; font-style: italic; font-weight: 800; line-height: 1;
-    border-image: var(--x-chip) 24 36 30 24 / 8px 12px 10px 8px / 2px 6px 4px 2px stretch;
+    gap: 6px; min-height: 34px; padding: 6px; border: 1px solid transparent; border-radius: 4px; box-shadow: none;
+    background: transparent; color: var(--x-copy); font-size: 12px; font-style: normal; font-weight: 500; line-height: 1.35;
   }
   #app .app-shell--comic-page .xboard-account-chip-active { background: var(--x-chip-on); color: var(--x-ink); }
   #app .app-shell--comic-page .xboard-account-chip:hover { background: var(--x-face-hover); color: var(--x-ink); }
