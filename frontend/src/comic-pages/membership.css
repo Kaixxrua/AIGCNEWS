@@ -12,7 +12,7 @@
     --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #838e9d; --mem-off: #8f939b; --mem-check: #168c48; --mem-x: #b2b3b4;
     --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
     --mem-mark: #d9fb52; --mem-same: #5c6a7e; --mem-check-same: #4f9a6c;
-    display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent;
+    display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent; text-wrap: pretty;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
     --mem-card: url('/assets/comic/mem-card-night.webp'); --mem-card-b: url('/assets/comic/mem-card-b-night.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip-night.webp');
@@ -39,9 +39,9 @@
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 31 42'%3E%3Cpath d='M6.5 0 12 1.2 6.2 19 3.8 18.6zM25.5 3.5 31 7.5 16.5 27 13.8 25zM29 23.5 31 29.5 12.5 41 10.5 38.2z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::after { background: var(--acid); }
+  /* The title tilts; the line under it is body copy and runs level. */
   #app .app-shell--comic-page .membership-subtitle {
-    max-width: none; margin: 5px 0 0 -4px; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5;
-    transform: rotate(-2.6deg); transform-origin: 0 50%;
+    max-width: none; margin: 5px 0 0; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5;
   }
   #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 22px; padding-top: 11px; }
   #app .app-shell--comic-page .tier-card {
@@ -129,7 +129,8 @@
   }
   #app .app-shell--comic-page .tier-cta::before { transform: translateY(7px); }
   #app .app-shell--comic-page .tier-cta::after { transform: translateY(-8px) scaleX(-1); }
-  #app .app-shell--comic-page .tier-cta-hint { margin-top: 9px; color: var(--mem-hint); font-size: 14px; line-height: 20px; }
+  /* The fine print sets in even lines, so no line ends on half a word. */
+  #app .app-shell--comic-page .tier-cta-hint { margin-top: 9px; color: var(--mem-hint); font-size: 14px; line-height: 20px; text-wrap: balance; }
   @media (max-width: 1279px) {
     #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
     #app .app-shell--comic-page .tier-card { padding-inline: 18px 16px; }
@@ -168,13 +169,23 @@
   #app .app-shell--comic-page .membership-card--compare .tier-price-yearly { grid-row: 3; flex-wrap: wrap; row-gap: 6px; }
   #app .app-shell--comic-page .membership-card--compare .tier-savings { white-space: nowrap; }
   #app .app-shell--comic-page .membership-card--compare .tier-divider { display: none; }
-  #app .app-shell--comic-page .membership-card--compare :is(.tier-plan-note, .tier-member-note) { grid-row: 4; align-self: center; margin: 0; padding: 0; background: none; }
-  /* The button spans down to the last row so that, when the window is too short for the table, it can ride along at the top. */
+  /* Each plan's note keeps to the left edge its price and its rows start from, level with the buy button. */
+  #app .app-shell--comic-page .membership-card--compare :is(.tier-plan-note, .tier-member-note) {
+    grid-row: 4; align-self: center; justify-self: start; margin: 0; padding: 0; background: none; text-align: left;
+  }
+  /* The button spans down to the last row so that, when the window is too short for the table, it can ride along at the top.
+     Its label sets on a 30px line, so the button stays 46px at every width and sits in the 58px action row with 6px of
+     paper above and below: clear of the first row's dashes and level with the notes beside it. */
   #app .app-shell--comic-page .membership-card--compare .tier-cta {
-    position: sticky; top: 8px; z-index: 2; grid-row: 4 / -1; align-self: start; min-height: 46px; margin-top: 6px;
+    position: sticky; top: 8px; z-index: 2; grid-row: 4 / -1; align-self: start; min-height: 46px; margin-top: 6px; line-height: 30px;
   }
   #app .app-shell--comic-page .membership-card--compare .tier-cta-label { white-space: nowrap; }
-  #app .app-shell--comic-page .membership-card--compare .tier-cta-hint { grid-row: -2 / -1; margin: 6px 0 0; font-size: 12px; line-height: 17px; }
+  /* The fine print centres on the clear paper right of the halftone in the card's lower-left corner; where a narrow
+     window leaves it over the dots, a paper knockout keeps the dots off the letters. */
+  #app .app-shell--comic-page .membership-card--compare .tier-cta-hint {
+    grid-row: -2 / -1; margin: 6px 0 0; padding-left: 24px; font-size: 12px; line-height: 17px;
+    text-shadow: 0 0 1px var(--mem-halo), 0 0 2px var(--mem-halo), 0 0 3px var(--mem-halo);
+  }
   #app .app-shell--comic-page .membership-card--compare .tier-features--compare {
     display: grid; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; gap: 0; margin: 0; font-size: 15px; line-height: 22px;
   }
@@ -205,6 +216,7 @@
     :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 186px 400fr 460fr 560fr; }
     #app .app-shell--comic-page .membership-card--compare :is(.tier-row-label, .tier-features--compare) { font-size: 14px; line-height: 21px; }
     #app .app-shell--comic-page .membership-card--compare .tier-cta { gap: 10px; }
+    #app .app-shell--comic-page .membership-card--compare .tier-cta-hint { padding-left: 0; }
     :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 25px; }
   }
 }
