@@ -89,6 +89,10 @@ Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_
 这些动作不访问其他工作树或执行器。资源池的 6 CPU / 12 GiB 上限、
 90% 准入门槛以及启动中容器预算仍然生效。容器配置使用一次批量调用。
 
+创建 Python 虚拟环境前，执行器等待容器的 `systemd-tmpfiles-setup.service`
+完成，避免启动清理删除 ensurepip 正在读取的 `/tmp` 安装包。该等待仍在原有
+命令超时内；清理失败或超时会阻止环境就绪，保留失败回执，不重放测试。
+
 检查回执中的 `admission_acquired_at`、`launched_at`、`initialized_at`
 分别定位排队、启动和初始化耗时，避免将全部等待误算为测试耗时。
 

@@ -845,3 +845,23 @@ def test_bootstrap_releases_global_admission_lock(tmp_path, repository, monkeypa
     receipt = json.loads(output.read_text())
     for check in receipt['checks']:
         assert check['started_at'] <= check['admission_acquired_at'] <= check['launched_at'] <= check['initialized_at']
+
+
+def test_bootstrap_waits_for_tmpfiles_and_fails_closed(tmp_path, repository, monkeypatch):
+    initialize = ci.Runner.initialize
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    scripts = []
+
+    def shell(self, script, **kwargs):
+        scripts.append(script)
+        raise RuntimeError('boot-time tmpfiles cleanup failed')
+
+    monkeypatch.setattr(ci.Runner, 'initialize', initialize)
+    monkeypatch.setattr(ci.Runner, 'shell', shell)
+    assert ci.execute(repository, cfg['baseline_sha'], output, cfg) == 1
+    receipt = json.loads(output.read_text())
+    assert scripts == ['systemctl start systemd-tmpfiles-setup.service\n'] * len(ci.JOBS)
+    assert calls.count('cleanup') == len(ci.JOBS)
+    assert not any(key in calls for key in ci.JOBS)
+    assert all(not check['ready'] and not check['steps'] for check in receipt['checks'])
+    assert all('tmpfiles cleanup failed' in check['error'] for check in receipt['checks'])
