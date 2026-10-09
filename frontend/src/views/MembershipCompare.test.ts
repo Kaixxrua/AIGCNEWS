@@ -17,7 +17,7 @@ vi.mock('@vueuse/core', async (importOriginal) => {
   }
 })
 
-const authBox = vi.hoisted(() => ({ isMember: false }))
+const authBox = vi.hoisted(() => ({ isMember: false, user: null as null | { membership_expires_at: string | null } }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authBox }))
 // 支付总开关关闭：plans 整组 404，vip 卡不报价、开通走联系兜底。
 vi.mock('@/services/payments/paymentApi', () => ({
@@ -49,6 +49,7 @@ const column = (wrapper: VueWrapper, tier: number) => {
 beforeEach(() => {
   viewport.desktop = true
   authBox.isMember = false
+  authBox.user = null
 })
 
 afterEach(() => {
@@ -111,7 +112,7 @@ describe('MembershipView desktop comparison', () => {
     }
   })
 
-  it('keeps the buy button and its hint in the vip column', async () => {
+  it('keeps the buy button and its hint in the vip column, and a member’s plan state in their place', async () => {
     const wrapper = mountView()
     await flushPromises()
     const member = wrapper.get('.tier-card--member')
@@ -121,7 +122,10 @@ describe('MembershipView desktop comparison', () => {
     authBox.isMember = true
     const memberView = mountView()
     expect(memberView.find('.tier-cta').exists()).toBe(false)
-    expect(memberView.get('.tier-member-note').text()).toBe('感谢支持！vip 权益已生效。')
+    const note = memberView.get('.tier-member-note')
+    expect(note.text()).toContain('会员权益已生效')
+    expect(note.get('.tier-member-term').text()).toBe('长期有效')
+    expect(memberView.find('.tier-billing-btn').exists()).toBe(false)
   })
 
   it('goes back to the three plan cards on the desktop when the masthead asks for the comfortable layout', async () => {
