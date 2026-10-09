@@ -87,10 +87,10 @@ class SharedPoolContract(unittest.TestCase):
         self.assertEqual(API_QUOTA_MONTHLY_WINDOW_SECONDS, 2592000)
 
     def test_quota_amounts_match_mcp_gateway(self) -> None:
-        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 10)
-        self.assertEqual(API_FREE_DAILY_SEARCH_QUOTA, 20)
+        self.assertEqual(API_ANONYMOUS_DAILY_SEARCH_QUOTA, 5)
+        self.assertEqual(API_FREE_DAILY_SEARCH_QUOTA, 10)
         self.assertEqual(API_FREE_MONTHLY_SEARCH_QUOTA, 400)
-        self.assertEqual(API_MEMBER_DAILY_SEARCH_QUOTA, 400)
+        self.assertEqual(API_MEMBER_DAILY_SEARCH_QUOTA, 200)
         self.assertEqual(API_MEMBER_MONTHLY_SEARCH_QUOTA, 8000)
 
     def test_quota_amounts_match_go_defaults(self) -> None:
@@ -168,7 +168,7 @@ class EnforceRateLimitTests(unittest.IsolatedAsyncioTestCase):
 
 
 class QuotaEnforcementTests(unittest.IsolatedAsyncioTestCase):
-    """分层配额：匿名每 24 小时 10；Free 20/400、VIP 400/8,000（与 MCP 同池）。"""
+    """分层配额：匿名每 24 小时 5；Free 10/400、VIP 200/8,000（与 MCP 同池）。"""
 
     async def test_anonymous_call_consumes_daily_ip_quota_in_shared_bucket(self) -> None:
         redis = FakeRedis()
