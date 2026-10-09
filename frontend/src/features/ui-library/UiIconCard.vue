@@ -4,10 +4,11 @@ import { Check, Code2, LoaderCircle } from 'lucide-vue-next'
 import { iconUrl, loadIconSource, type UiIcon, type UiIconSet, type UiLanguage } from './catalog'
 import { uiLibraryMessages } from './messages'
 import { useUiLibraryAccount } from './useUiLibraryAccount'
+import UiDeprecationButton from './UiDeprecationButton.vue'
 const account = useUiLibraryAccount()
 
 const props = defineProps<{ icon: UiIcon; set: UiIconSet; lang: UiLanguage }>()
-const emit = defineEmits<{ open: [event: Event] }>()
+const emit = defineEmits<{ open: [event: Event]; visibility: [deprecated: boolean] }>()
 const text = computed(() => uiLibraryMessages[props.lang])
 const busy = ref(false)
 const copied = ref(false)
@@ -42,6 +43,7 @@ onBeforeUnmount(() => {
 
 <template>
   <article class="ui-library__icon-card" :data-icon-id="icon.id">
+    <UiDeprecationButton :id="icon.id" :deprecated="icon.deprecated" :lang="lang" @changed="emit('visibility', $event)" />
     <button type="button" class="ui-library__icon-open" :aria-label="`${text.preview}: ${icon.display[lang]}`" @click="emit('open', $event)">
       <img class="ui-library__icon-glyph" :src="iconUrl(icon)" :alt="icon.display[lang]" loading="lazy" />
       <span class="ui-library__icon-name">{{ icon.display[lang] }}</span>

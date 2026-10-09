@@ -24,18 +24,10 @@ export function selectUiShowcase(items: UiShowcaseItem[]) {
   })
 }
 
-// The homepage needs the count and eight previews, not source files and licenses.
-// Derive both from the same release catalog so the count cannot drift.
-export function buildUiShowcaseCatalog(items: UiTemplate[]): UiShowcaseCatalog {
-  return {
-    version: 1,
-    total: items.length,
-    items: selectUiShowcase(items).map(({ item: { id, poster_url, clip_url } }) => ({ id, poster_url, clip_url })),
-  }
-}
-
 export async function loadUiShowcaseCatalog(signal?: AbortSignal): Promise<UiShowcaseCatalog> {
-  const response = await fetch('/ui-library/dashboard.json', { signal })
+  // The summary uses live visibility rules while keeping the homepage payload small.
+  const query = new URLSearchParams(selections.map(({ id }) => ['ids', id]))
+  const response = await fetch(`/api/ui-library/dashboard?${query}`, { signal, cache: 'no-store' })
   if (!response.ok) throw new Error('Dashboard catalog unavailable')
   const data = await response.json()
   if (data.version !== 1 || !Number.isSafeInteger(data.total) || data.total < 0 || !Array.isArray(data.items)

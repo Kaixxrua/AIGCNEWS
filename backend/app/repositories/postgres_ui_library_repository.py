@@ -20,6 +20,20 @@ class PostgresUiLibraryRepository:
     def __init__(self, database: PostgresDatabaseLifecycle) -> None:
         self._database = database
 
+    def deprecated_ids(self) -> set[str]:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute('SELECT material_id FROM ui_material_visibility WHERE deprecated')
+            return {row['material_id'] for row in cur.fetchall()}
+
+    def set_deprecated(self, material_id: str, deprecated: bool, user_id: int) -> None:
+        with self._database.transaction() as conn, conn.cursor() as cur:
+            cur.execute('''
+                INSERT INTO ui_material_visibility(material_id, deprecated, updated_by)
+                VALUES (%s, %s, %s)
+                ON CONFLICT(material_id) DO UPDATE SET deprecated=EXCLUDED.deprecated,
+                    updated_by=EXCLUDED.updated_by, updated_at=CURRENT_TIMESTAMP
+            ''', (material_id, deprecated, user_id))
+
     def engagement(self, user_id: int | None, since: datetime, now: datetime) -> list[dict[str, Any]]:
         with self._database.transaction() as conn, conn.cursor() as cur:
             cur.execute("""

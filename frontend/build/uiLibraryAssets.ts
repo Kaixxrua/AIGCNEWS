@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import type { Plugin } from 'vite'
 import type { UiTemplate } from '../src/features/ui-library/catalog'
 import { previewFiles } from './uiPreviewManifest'
-import { buildUiShowcaseCatalog } from '../src/features/dashboard/uiShowcase'
 
 interface UiIconSetAssets {
   provider_id: string
@@ -30,7 +29,6 @@ function filesIn(folder: string): string[] {
 }
 export function uiLibraryAssets(): Plugin {
   const assets = new Map<string, string>()
-  let dashboardCatalog = ''
   let productionBuild = false
   let iconCatalog: UiIconSetAssets[] = []
   const iconFiles = new Set<string>()
@@ -38,7 +36,6 @@ export function uiLibraryAssets(): Plugin {
     assets.clear()
     const data = roots[0]!.folder
     const { items } = JSON.parse(readFileSync(resolve(data, 'catalog.json'), 'utf8')) as { items: UiTemplate[] }
-    dashboardCatalog = JSON.stringify(buildUiShowcaseCatalog(items))
     const allowed = new Set(['catalog.json', 'upstreams.json'])
     const evidence = new Set<string>()
     iconCatalog = []
@@ -161,14 +158,8 @@ export function uiLibraryAssets(): Plugin {
       server.middlewares.use((req, res, next) => {
         let key: string
         try { key = decodeURIComponent(req.url?.split('?')[0] ?? '') } catch { res.statusCode = 400; res.end(); return }
-        if (!/^\/ui-library\/(?:dashboard\.json|catalog\.json|icons\.json|upstreams\.json|previews\/|posters\/|clips\/|sources\/|licenses\/|assets\/)/.test(key)) return next()
+        if (!/^\/ui-library\/(?:catalog\.json|icons\.json|upstreams\.json|previews\/|posters\/|clips\/|sources\/|licenses\/|assets\/)/.test(key)) return next()
         if (req.method !== 'GET' && req.method !== 'HEAD') { res.statusCode = 405; res.setHeader('Allow', 'GET, HEAD'); res.end(); return }
-        if (key === '/ui-library/dashboard.json') {
-          res.setHeader('Content-Type', 'application/json; charset=utf-8')
-          res.setHeader('X-Content-Type-Options', 'nosniff')
-          res.end(req.method === 'HEAD' ? undefined : dashboardCatalog)
-          return
-        }
         let path = assets.get(key)
         if (!path) { collect(); path = assets.get(key) }
         if (!path) { res.statusCode = 404; res.end(); return }
@@ -197,7 +188,6 @@ export function uiLibraryAssets(): Plugin {
       })
     },
     generateBundle() {
-      this.emitFile({ type: 'asset', fileName: 'ui-library/dashboard.json', source: dashboardCatalog })
       // Release packagers can stream the already validated library directly into
       // an archive, avoiding tens of thousands of temporary Windows file writes.
       if (process.env.UI_LIBRARY_ASSET_MANIFEST) {

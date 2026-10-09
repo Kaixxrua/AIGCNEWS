@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from psycopg import IntegrityError
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,13 @@ from backend.app.services.outbound_target_policy import (
     resolve_public_ips,
 )
 from backend.app.services.ui_discovery import SOURCES, X_HANDLES
-from backend.app.services.ui_library import PERIOD_HOURS, known_template, quota_policy
+from backend.app.services.ui_library import (
+    PERIOD_HOURS,
+    dashboard_catalog,
+    known_template,
+    quota_policy,
+    visible_catalog,
+)
 
 router = APIRouter(tags=['UI Library'])
 
@@ -39,6 +45,47 @@ User = Annotated[dict[str, Any], Depends(RequireUser)]
 def validate_template(template_id: str) -> None:
     if not known_template(template_id):
         raise HTTPException(404, 'UI template not found')
+
+
+async def validate_visible_template(template_id: str, repo: Repo, user: dict[str, Any]) -> None:
+    validate_template(template_id)
+    if user.get('role') != 'admin' and template_id in await asyncio.to_thread(repo.deprecated_ids):
+        raise HTTPException(404, 'UI template not found')
+
+
+class VisibilityInput(BaseModel):
+    deprecated: bool
+
+
+@router.get('/ui-library/dashboard')
+async def material_dashboard(response: Response, repo: Repo,
+                             ids: Annotated[list[str] | None, Query(max_length=16)] = None) -> dict[str, Any]:
+    # This public projection always excludes deprecated rows, including for admins.
+    response.headers['Cache-Control'] = 'no-store'
+    deprecated = await asyncio.to_thread(repo.deprecated_ids)
+    return await asyncio.to_thread(dashboard_catalog, deprecated, ids or [])
+
+
+@router.get('/ui-library/catalog')
+@router.get('/ui-library/icons')
+async def material_catalog(request: Request, response: Response, repo: Repo,
+                           user: Annotated[dict[str, Any] | None, Depends(OptionalUser)],
+                           include_deprecated: bool = False) -> dict[str, Any]:
+    if include_deprecated and (not user or user.get('role') != 'admin'):
+        raise HTTPException(403, 'Admin required')
+    response.headers['Cache-Control'] = 'private, no-store'
+    response.headers['Vary'] = 'Authorization'
+    deprecated = await asyncio.to_thread(repo.deprecated_ids)
+    return await asyncio.to_thread(visible_catalog, deprecated, icons=request.url.path.endswith('/icons'),
+                                   include_deprecated=include_deprecated)
+
+
+@router.put('/ops/ui-library/{template_id}/visibility')
+async def set_material_visibility(template_id: str, body: VisibilityInput, repo: Repo,
+                                  user: Annotated[dict[str, Any], Depends(RequireAdmin)]) -> dict[str, Any]:
+    validate_template(template_id)
+    await asyncio.to_thread(repo.set_deprecated, template_id, body.deprecated, extract_user_id(user))
+    return {'id': template_id, 'deprecated': body.deprecated}
 
 
 class LikeInput(BaseModel):
@@ -98,12 +145,14 @@ async def engagement(repo: Repo, user: Annotated[dict[str, Any] | None, Depends(
                      period: Literal['daily', 'weekly', 'monthly'] = 'daily') -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     rows = await asyncio.to_thread(repo.engagement, extract_user_id(user or {}), now - timedelta(hours=PERIOD_HOURS[period]), now)
+    deprecated = await asyncio.to_thread(repo.deprecated_ids)
+    rows = [row for row in rows if row['template_id'] not in deprecated]
     return {'items': rows, 'period': period, 'window_end': now.isoformat()}
 
 
 @router.put('/ui-library/{template_id}/like')
 async def like(template_id: str, body: LikeInput, user: User, repo: Repo) -> dict[str, bool]:
-    validate_template(template_id)
+    await validate_visible_template(template_id, repo, user)
     await asyncio.to_thread(repo.set_like, extract_user_id(user), template_id, body.liked)
     return {'liked': body.liked}
 
@@ -117,7 +166,7 @@ async def copy_quota(user: User, repo: Repo) -> dict[str, Any]:
 
 @router.post('/ui-library/{template_id}/copy')
 async def copy(template_id: str, body: CopyInput, user: User, repo: Repo) -> dict[str, Any]:
-    validate_template(template_id)
+    await validate_visible_template(template_id, repo, user)
     policy = quota_policy(user)
     try:
         used = await asyncio.to_thread(repo.consume_copy, extract_user_id(user), template_id, body.kind,

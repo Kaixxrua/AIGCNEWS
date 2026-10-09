@@ -5,13 +5,14 @@ import { integrationPrompt, loadSources, sourceBundle, type UiLanguage, type UiT
 import { uiLibraryMessages } from './messages'
 import UiCardVideo from './UiCardVideo.vue'
 import UiLikeButton from './UiLikeButton.vue'
+import UiDeprecationButton from './UiDeprecationButton.vue'
 import { categoryLabel } from './taxonomy'
 import { useUiLibraryAccount } from './useUiLibraryAccount'
 import { useViewportPreview } from './useViewportPreview'
 const account = useUiLibraryAccount()
 
 const props = defineProps<{ item: UiTemplate; lang: UiLanguage; previewEnabled: boolean }>()
-const emit = defineEmits<{ open: [event: Event] }>()
+const emit = defineEmits<{ open: [event: Event]; visibility: [deprecated: boolean] }>()
 const text = computed(() => uiLibraryMessages[props.lang])
 const poster = ref<HTMLElement>()
 const { attached, playing } = useViewportPreview(poster, () => props.previewEnabled && Boolean(props.item.clip_url))
@@ -53,6 +54,7 @@ onBeforeUnmount(() => {
 
 <template>
   <article class="ui-library__card" :data-template-id="item.id" :data-preview-state="!item.clip_url ? 'static' : attached ? previewState : 'paused'">
+    <UiDeprecationButton :id="item.id" :deprecated="item.deprecated" :lang="lang" @changed="emit('visibility', $event)" />
     <div class="ui-library__card-open">
       <span ref="poster" class="ui-library__poster">
         <img :src="item.poster_url" :alt="item.name[lang]" loading="lazy" />

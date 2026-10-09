@@ -10,7 +10,6 @@ import UiIconCard from '@/features/ui-library/UiIconCard.vue'
 import UiIconDialog from '@/features/ui-library/UiIconDialog.vue'
 import UiMcpRecommendation from '@/features/ui-library/UiMcpRecommendation.vue'
 import { useLibraryDensity } from '@/features/ui-library/useLibraryDensity'
-import { useAppDensity } from '@/composables/useAppDensity'
 import { loadCatalogWithMeta, loadIconSets, recentlyAdded, searchIcons, searchTemplates, type UiIcon, type UiIconSet, type UiLanguage, type UiTemplate } from '@/features/ui-library/catalog'
 import { uiLibraryMessages } from '@/features/ui-library/messages'
 import '@/features/ui-library/library.css'
@@ -75,10 +74,8 @@ const ranking = computed<Ranking>(() => ['new', 'daily', 'weekly', 'monthly', 'l
 // 联系表只在桌面生效：一排更多、只看静态缩略图（几十个预览不同时解码，点开详情再播放）。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const { density, contactSheet, toggle: toggleDensity } = useLibraryDensity(desktop)
-// 报眉的版面密度选了舒适时，桌面卡片墙回到改版前的大卡片（标题换行、复制按钮常显）；联系表不受影响。
-const { comfortable: roomyCards } = useAppDensity()
-// 换了素材类型、用途、风格、榜单、图标集、切换联系表或版面密度时，结果网格整批依次浮现；搜索框逐字输入不重播。
-const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value, density.value, density.value === 'cards' && roomyCards.value ? 'roomy' : ''].join('|'))
+// 换了素材类型、用途、风格、榜单、图标集或切换联系表时，结果网格整批依次浮现；搜索框逐字输入不重播。
+const gridKey = computed(() => [kind.value, category.value, style.value, ranking.value, framework.value, iconProvider.value, density.value].join('|'))
 const account = provideUiLibraryAccount(lang, ranking, async () => { if (selected.value) await close(); selectedIcon.value = null })
 const rankOptions = computed<[Ranking, string][]>(() => lang.value === 'zh' ? [['all', '全部'], ['new', '今日新增'], ['daily', '今日热榜'], ['weekly', '周榜'], ['monthly', '月榜'], ['liked', '我的喜欢']] : [['all', 'All'], ['new', 'New today'], ['daily', 'Today'], ['weekly', 'Week'], ['monthly', 'Month'], ['liked', 'Liked']])
 const filtered = computed(() => {
@@ -107,25 +104,46 @@ const visibility = useDocumentVisibility()
 const autoplay = ref(true)
 const previewsEnabled = computed(() => autoplay.value && !contactSheet.value && visibility.value === 'visible' && !selected.value)
 let trigger: HTMLElement | null = null
+let catalogGeneration = 0
+let iconGeneration = 0
 async function refresh() {
+  const generation = ++catalogGeneration
   loading.value = true
   failed.value = false
   try {
-    const bundle = await loadCatalogWithMeta(controller.signal)
+    const bundle = await loadCatalogWithMeta(controller.signal, account.isAdmin.value)
+    if (generation !== catalogGeneration || controller.signal.aborted) return
     items.value = bundle.items
     iconCount.value = bundle.iconCount
   }
-  catch { if (!controller.signal.aborted) failed.value = true }
-  finally { loading.value = false }
+  catch { if (generation === catalogGeneration && !controller.signal.aborted) { failed.value = true; items.value = [] } }
+  finally { if (generation === catalogGeneration) loading.value = false }
 }
 async function loadIcons() {
+  const generation = ++iconGeneration
   iconsLoading.value = true
   iconsFailed.value = false
-  try { iconSets.value = await loadIconSets(controller.signal) }
-  catch { if (!controller.signal.aborted) iconsFailed.value = true }
-  finally { iconsLoading.value = false }
+  try {
+    const sets = await loadIconSets(controller.signal, account.isAdmin.value)
+    if (generation === iconGeneration && !controller.signal.aborted) iconSets.value = sets
+  }
+  catch { if (generation === iconGeneration && !controller.signal.aborted) { iconsFailed.value = true; iconSets.value = [] } }
+  finally { if (generation === iconGeneration) iconsLoading.value = false }
 }
 watch(iconMode, active => { if (active && !iconSets.value.length && !iconsLoading.value) void loadIcons() }, { immediate: true })
+// 登录身份改变时立即清掉管理员目录；迟到的旧请求不能把废弃素材带回普通用户界面。
+watch(account.isAdmin, () => {
+  catalogGeneration++
+  iconGeneration++
+  items.value = []
+  iconSets.value = []
+  iconCount.value = 0
+  iconsLoading.value = false
+  iconsFailed.value = false
+  selectedIcon.value = null
+  void refresh()
+  if (iconMode.value) void loadIcons()
+})
 function setFilter(key: string, value: string) {
   void router.replace({ query: { ...route.query, ...(['category', 'style', 'framework', 'set'].includes(key) ? { kind: kind.value } : {}), [key]: value || undefined } })
 }
@@ -198,7 +216,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-else-if="iconsFailed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="loadIcons">{{ text.retry }}</button></div>
           <div v-else-if="!filteredIcons.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ text.emptyIcons }}</h2><p>{{ text.emptyIconsHint }}</p><button type="button" @click="router.replace({ query: { kind: 'icon' } })">{{ text.clear }}</button></div>
           <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__icon-grid">
-            <UiIconCard v-for="icon in filteredIcons.slice(0, visibleLimit)" :key="icon.id" :icon="icon" :set="iconSetOf(icon)" :lang="lang" @open="openIcon(icon, $event)" />
+            <UiIconCard v-for="icon in filteredIcons.slice(0, visibleLimit)" :key="icon.id" :icon="icon" :set="iconSetOf(icon)" :lang="lang" @open="openIcon(icon, $event)" @visibility="icon.deprecated = $event" />
           </div>
           <div v-if="filteredIcons.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ Math.min(visibleLimit, filteredIcons.length) }} / {{ filteredIcons.length }}</button></div>
         </template>
@@ -207,7 +225,7 @@ onBeforeUnmount(() => controller.abort())
           <div v-else-if="failed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="refresh">{{ text.retry }}</button></div>
           <div v-else-if="!filtered.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ ranking === 'new' ? text.emptyNew : text.empty }}</h2><p>{{ ranking === 'new' ? text.emptyNewHint : text.emptyHint }}</p><button type="button" @click="router.replace({ query: {} })">{{ text.clear }}</button></div>
           <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid" :data-density="density">
-            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" />
+            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" @visibility="item.deprecated = $event" />
           </div>
           <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>
         </template>

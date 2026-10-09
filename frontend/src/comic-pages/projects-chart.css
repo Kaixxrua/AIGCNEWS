@@ -1,10 +1,10 @@
 @media (min-width: 1024px) {
-  /* ── Projects, compact density (the chart): the catalog as one ruled list in the cards' drawn frame. The header row
+  /* ── Projects, desktop chart: the catalog as one ruled list in the cards' drawn frame. The header row
      stays at the top of the page while the list scrolls; each row carries its rank (on today's chart also the move
      against yesterday), the name with its tags, the whole description with forks and the last push trailing it, then
      stars, the 24-hour gain, a 14-day spark line and heat in aligned columns, and the actions. Rows rule off with the
      cards' fading line and take a lime wash under the pointer. Below ~900px of list (1024–1199px windows) stars and
-     heat leave their columns for the trailing line. The comfortable density keeps the cards above. ── */
+     heat leave their columns for the trailing line. The chart is independent of the masthead density preference. ── */
   #app .app-shell--comic-page .projects-page--catalog .project-chart {
     --chart-gap: 14px;
     --chart-rank: 52px;

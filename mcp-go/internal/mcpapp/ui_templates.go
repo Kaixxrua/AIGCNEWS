@@ -42,13 +42,17 @@ func NewUITemplateHandlers(publicBaseURL string) (Handlers, error) {
 }
 
 // NewUICatalogHandlers serves validated catalogs; semantic may be nil.
-func NewUICatalogHandlers(catalog *uicatalog.Catalog, icons *uicatalog.IconCatalog, publicBaseURL string, semantic UISemanticSearcher) Handlers {
+func NewUICatalogHandlers(catalog *uicatalog.Catalog, icons *uicatalog.IconCatalog, publicBaseURL string, semantic UISemanticSearcher, visibility ...UIDeprecatedLookup) Handlers {
 	baseURL := strings.TrimRight(publicBaseURL, "/")
 	if baseURL == "" {
 		baseURL = "https://aigcnews.cn"
 	}
 	service := &uiTemplateService{catalog: catalog, baseURL: baseURL, semantic: semantic}
 	iconService := &uiIconService{catalog: icons, baseURL: baseURL, semantic: semantic}
+	if len(visibility) > 0 {
+		service.deprecated = visibility[0]
+		iconService.deprecated = visibility[0]
+	}
 	return Handlers{
 		"search_ui_templates": service.search,
 		"get_ui_template":     service.get,
@@ -58,9 +62,10 @@ func NewUICatalogHandlers(catalog *uicatalog.Catalog, icons *uicatalog.IconCatal
 }
 
 type uiTemplateService struct {
-	catalog  *uicatalog.Catalog
-	baseURL  string
-	semantic UISemanticSearcher
+	catalog    *uicatalog.Catalog
+	baseURL    string
+	semantic   UISemanticSearcher
+	deprecated UIDeprecatedLookup
 }
 
 // withSemantic fuses the lexical result with the semantic lane (equal-weight
@@ -183,6 +188,11 @@ func (s *uiTemplateService) search(args map[string]any) (any, error) {
 	}
 	matches, searchMode := s.catalog.SearchAdaptive(q, category, framework)
 	matches, searchMode = s.withSemantic(q, category, framework, matches, searchMode)
+	deprecated, err := s.deprecated.ids()
+	if err != nil {
+		return nil, err
+	}
+	matches = slices.DeleteFunc(matches, func(item uicatalog.Template) bool { return deprecated[item.ID] })
 	if kind != "" {
 		filtered := matches[:0]
 		for _, item := range matches {
@@ -227,7 +237,11 @@ func (s *uiTemplateService) get(args map[string]any) (any, error) {
 		include = value
 	}
 	item, found := s.catalog.Get(id)
-	if !found {
+	deprecated, err := s.deprecated.ids()
+	if err != nil {
+		return nil, err
+	}
+	if !found || deprecated[id] {
 		return nil, ToolInputError{Message: "Unknown UI template id. Use search_ui_templates to find an available id."}
 	}
 	selectedFile, err := uiString(args, "file", "", 240)

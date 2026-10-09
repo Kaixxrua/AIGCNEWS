@@ -30,7 +30,6 @@ import { useProjectCatalogController } from '@/composables/useProjectCatalogCont
 import { useProjectMasonry } from '@/composables/useProjectMasonry'
 import { defaultProjectScopeForQuery, defaultProjectSortForQuery, useProjectRouteState } from '@/composables/useProjectRouteState'
 import { useMcpPromoDismissed } from '@/composables/useMcpPromoDismissed'
-import { useAppDensity } from '@/composables/useAppDensity'
 import { useProjectTrends } from '@/composables/useProjectTrends'
 import { useListKeys } from '@/composables/useListKeys'
 import { useProjectPeek, useProjectPeekData } from '@/composables/useProjectPeek'
@@ -200,8 +199,8 @@ const canEditCard = (repo: GitHubProjectItem) => canEditWebsiteProject(repo, isW
 // 桌面紧凑版面把公共目录排成一张榜单：一行一个项目，描述写全，右边一排对齐的数字和近两周火花线。
 // 舒适版面、手机平板和个人收藏仍是原来的卡片。
 const isDesktop = useMediaQuery('(min-width: 1024px)')
-const { comfortable } = useAppDensity()
-const chartLayout = computed(() => isDesktop.value && !comfortable.value && !isPersonalView.value)
+// 桌面公共项目库固定使用榜单；全站版面密度不改变目录结构。
+const chartLayout = computed(() => isDesktop.value && !isPersonalView.value)
 const CHART_DAYS = 14
 const chartRanked = computed(() => projectChartRanked(sort.value))
 const chartMovement = computed(() => projectChartShowsMovement(selectedScope.value))

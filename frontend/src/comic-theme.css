@@ -314,7 +314,6 @@
   grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 0 0 18px; padding: 2px 0 2px 14px;
   border-left: 2px solid var(--ink); color: var(--ink); font-size: 18px; font-style: italic; font-weight: 900; line-height: 1.2; white-space: nowrap;
 }
-#app .app-shell--folio .masthead-folio small { color: var(--ink-muted); font-size: 12px; font-style: normal; font-weight: 700; letter-spacing: .04em; }
 #app .app-shell--folio .app-masthead .masthead-meta {
   grid-column: 3; grid-row: 1; flex-direction: row; align-items: baseline; gap: 14px; margin: 0 0 0 22px; font-size: 13px; line-height: 1.2;
 }
