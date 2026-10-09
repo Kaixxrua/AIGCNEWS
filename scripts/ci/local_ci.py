@@ -385,6 +385,9 @@ class Runner:
 
     def initialize(self):
         # Only clone-local bootstrap remains; admission/membership stay serialized.
+        # LXD exec can run before boot-time tmpfiles cleanup removes /tmp.
+        # Wait for that unit before ensurepip stages its wheel there.
+        self.shell('systemctl start systemd-tmpfiles-setup.service\n')
         self.shell('''
 # Clone only; no host directories/sockets are mounted.
 systemctl disable --now 'actions.runner.*.service' 2>/dev/null || true

@@ -243,7 +243,10 @@ class WeChatNativePaymentProvider:
         try:
             payload = response.json()
             code_url = payload["code_url"]
-            if not isinstance(code_url, str) or not code_url.startswith("weixin://wxpay/bizpayurl?"):
+            # 官方示例还包含 /bizpayurl/up?...，不能只接受旧版无子路径链接。
+            if not isinstance(code_url, str) or not code_url.startswith(
+                ("weixin://wxpay/bizpayurl?", "weixin://wxpay/bizpayurl/")
+            ):
                 raise TypeError
         except (ValueError, KeyError, TypeError) as exc:
             raise ChannelUpstreamError("wechat native pay returned no code_url") from exc

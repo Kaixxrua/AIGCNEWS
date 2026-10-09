@@ -199,16 +199,21 @@ def _signed_response(
 # ── 下单 ────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize("code_url", [
+    "weixin://wxpay/bizpayurl?pr=abc",
+    "weixin://wxpay/bizpayurl/up?pr=NwY5Mz9&groupid=00",
+])
 def test_create_payment_posts_signed_native_order(
     merchant_key_pair: tuple[rsa.RSAPrivateKey, str],
     pay_key_pair: tuple[rsa.RSAPrivateKey, str],
+    code_url: str,
 ) -> None:
     merchant_private, _ = merchant_key_pair
     seen: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return _signed_response(pay_key_pair[0], {"code_url": "weixin://wxpay/bizpayurl?pr=abc"})
+        return _signed_response(pay_key_pair[0], {"code_url": code_url})
 
     provider = _provider(merchant_key_pair, pay_key_pair, transport=httpx.MockTransport(handler))
     instruction = provider.create_payment(
@@ -216,7 +221,7 @@ def test_create_payment_posts_signed_native_order(
     )
 
     assert instruction.kind == "qr_code"
-    assert instruction.content == "weixin://wxpay/bizpayurl?pr=abc"
+    assert instruction.content == code_url
     request = seen[0]
     assert request.method == "POST"
     assert request.url.path == "/v3/pay/transactions/native"
@@ -492,7 +497,10 @@ def test_callback_maps_invalid_aes_tag_to_verification_error(merchant_key_pair, 
         provider.verify_and_parse_callback(raw_body=raw_body, headers=headers)
 
 
-@pytest.mark.parametrize("code_url", ["https://example.com/pay", "", None])
+@pytest.mark.parametrize("code_url", [
+    "https://example.com/pay", "", None,
+    "weixin://wxpay.evil/bizpayurl?pr=abc", "weixin://wxpay/bizpayurl-other?pr=abc",
+])
 def test_create_payment_rejects_non_native_payment_link(merchant_key_pair, pay_key_pair, code_url):
     provider = _provider(
         merchant_key_pair, pay_key_pair,
