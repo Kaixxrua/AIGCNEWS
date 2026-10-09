@@ -18,7 +18,8 @@ _NAME_RE = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
 _DESCRIPTION_MAX = 100
 _TITLE_MAX = 100
 _ICON_MIME_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"}
-_REGISTRY_NAME = "io.github.kaixxrua/aigc-radar"
+# registry 命名空间区分大小写，必须与 GitHub 登录名一致（大写 K），小写会被 publish 以 403 拒绝。
+_REGISTRY_NAME = "io.github.Kaixxrua/aigc-radar"
 _PRODUCTION_MCP_URL = "https://aigcnews.cn/api/mcp"
 
 

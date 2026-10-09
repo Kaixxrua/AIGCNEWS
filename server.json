@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.kaixxrua/aigc-radar",
+  "name": "io.github.Kaixxrua/aigc-radar",
   "title": "AIGC Radar MCP",
   "description": "AI-vertical index: arXiv papers, curated GitHub AI projects, daily rankings. Zero-setup, read-only.",
   "version": "1.2.0",
