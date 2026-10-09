@@ -13,7 +13,8 @@
   `websiteUrl` 指向 Web 站点首页；改域名时三处与 `remotes[0].url` 一起改。
 - `remotes[0].url` 指向生产公网 endpoint（当前 `https://aigcnews.cn/api/mcp`）。
   更换域名或路径时同步修改本文件并重新 publish。
-- 命名空间 `io.github.kaixxrua` 绑定 GitHub 账号 Kaixxrua，publish 时用该账号完成 GitHub OAuth。
+- 命名空间 `io.github.Kaixxrua` 绑定 GitHub 账号 Kaixxrua，publish 时用该账号完成 GitHub OAuth。
+  命名空间区分大小写，必须与 GitHub 登录名原样一致（大写 K）；写成小写 `io.github.kaixxrua` 会被 publish 以 403 拒绝。
 - 主仓库未公开前，`server.json` 不带 `repository`：registry 与目录站会把它显示成链接，指向私有仓库只会 404。
   仓库公开时再加回，并同步修改 `test_repository_omitted_while_main_repo_is_private`。
 - 不得带着未替换的占位符或不可达 URL publish。
@@ -26,7 +27,7 @@
 # 1. 安装（参见官方仓库 modelcontextprotocol/registry 的安装说明）
 brew install mcp-publisher        # 或 go install / 下载 release 二进制
 
-# 2. GitHub 设备码授权（绑定 io.github.kaixxrua 命名空间）
+# 2. GitHub 设备码授权（绑定 io.github.Kaixxrua 命名空间）
 mcp-publisher login github
 
 # 3. 本地校验 server.json
@@ -38,11 +39,12 @@ mcp-publisher validate
 schema 版本，按其提示升级 `$schema` URL 并重跑测试。
 
 ```bash
-# 4. 发布（在生产部署了对应 serverInfo 版本之后执行）
+# 4. 发布（在生产部署了对应 serverInfo 版本之后执行；
+#    login 拿到的 registry token 约 5 分钟过期，过期就重新 login）
 mcp-publisher publish
 ```
 
-发布后可在官方 registry 查询 `io.github.kaixxrua/aigc-radar` 确认上线。
+发布后可在官方 registry 查询 `io.github.Kaixxrua/aigc-radar` 确认上线（1.2.0 已于 2026-10-09 发布）。
 
 ## 其他目录站
 

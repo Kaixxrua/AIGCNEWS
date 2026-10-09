@@ -5,7 +5,7 @@
 
 ## 现状
 
-- 官方 registry：`io.github.kaixxrua/aigc-radar`（server.json 已注册，`websiteUrl` 指向主站）。
+- 官方 registry：`io.github.Kaixxrua/aigc-radar`（1.2.0 已于 2026-10-09 发布，`websiteUrl` 指向主站）。
 - 竞品面（2026-08 对 mcp.so 全量 18,455 个 server 的扫描结论）：**无同定位竞品**。
   最近邻均不构成同位竞争：
   - `agentic-news`——通用新闻情报 agent，无论文/项目库/榜单体系；
