@@ -290,7 +290,7 @@ def project_semantic_warmup_job_descriptor(
         id="project_semantic_warmup",
         source="project_semantic_warmup",
         name="项目语义搜索链路预热",
-        schedule=IntervalSchedule(minutes=30),
+        schedule=IntervalSchedule(minutes=5),
         timezone=timezone,
     )
 

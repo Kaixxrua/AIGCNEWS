@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.app.core import scheduler
+from backend.app.services.scheduler_config_admin import DEFAULT_JOB_CONFIGS
 
 
 class ProjectSemanticWarmupSchedulerTests(unittest.IsolatedAsyncioTestCase):
@@ -32,7 +33,7 @@ class ProjectSemanticWarmupSchedulerTests(unittest.IsolatedAsyncioTestCase):
 
         to_thread.assert_awaited_once_with(service.warmup_project_semantic_search)
 
-    def test_scheduler_registers_thirty_minute_warmup(self) -> None:
+    def test_scheduler_registers_five_minute_warmup(self) -> None:
         fake_scheduler = MagicMock()
         fake_scheduler.running = False
         fake_scheduler.get_jobs.return_value = []
@@ -55,7 +56,8 @@ class ProjectSemanticWarmupSchedulerTests(unittest.IsolatedAsyncioTestCase):
             for item in fake_scheduler.add_job.call_args_list
             if item.kwargs.get("id") == "project_semantic_warmup"
         )
-        self.assertEqual(call.kwargs["trigger"].interval.total_seconds(), 1800)
+        self.assertEqual(call.kwargs["trigger"].interval.total_seconds(), 300)
+        self.assertEqual(DEFAULT_JOB_CONFIGS["project_semantic_warmup"].interval_minutes, 5)
         self.assertEqual(call.kwargs["max_instances"], 1)
         self.assertTrue(call.kwargs["coalesce"])
 
