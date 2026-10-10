@@ -2,11 +2,13 @@ import { i18n } from './index'
 import type { AppLocale } from './locale'
 
 const localeFor = (locale?: AppLocale) => locale ?? i18n.global.locale.value
+const isCalendarDate = (value: string | Date) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 /** Parse database timestamps as UTC when the API omits an explicit offset. */
 export function parseImplicitUtc(value: string | Date): Date {
   if (value instanceof Date) return value
-  return new Date(value.endsWith('Z') || value.includes('+') ? value : `${value}Z`)
+  if (isCalendarDate(value)) return new Date(`${value}T00:00:00Z`)
+  return new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`)
 }
 
 export function formatLocaleDate(
@@ -16,7 +18,9 @@ export function formatLocaleDate(
 ): string {
   if (!value) return '—'
   const date = parseImplicitUtc(value)
-  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(localeFor(locale), options).format(date)
+  // A publication day is a calendar label, whereas a timestamp is an instant.
+  const displayOptions = isCalendarDate(value) ? { ...options, timeZone: 'UTC' } : options
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(localeFor(locale), displayOptions).format(date)
 }
 
 export function formatLocaleCompactNumber(value: number | null | undefined, locale?: AppLocale): string {
