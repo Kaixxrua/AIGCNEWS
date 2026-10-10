@@ -43,12 +43,13 @@ vi.mock('@/stores/authStore', () => ({ useAuthStore: () => authStore }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ fullPath: '/projects?source=all' }) }))
 vi.mock('@/composables/useDockSuppression', () => ({ useDockSuppression: vi.fn() }))
 vi.mock('@/components/auth/ChangePasswordDialog.vue', () => ({
-  default: { props: ['modelValue'], emits: ['update:modelValue'], template: '<div v-if="modelValue" data-testid="password-dialog" />' },
+  default: { props: ['modelValue', 'setupPassword'], emits: ['update:modelValue'], template: '<div v-if="modelValue" data-testid="password-dialog" :data-setup="setupPassword" />' },
 }))
 
 const messages = {
   common: { close: '关闭', cancel: '取消' },
   auth: {
+    setupPasswordAction: '设置密码',
     changeUsernameAction: '改名', usernameChangeHint: '用户名每 3 天可修改一次。', usernameNextChange: '下次可修改时间：{time}。',
     accountSettings: '账户设置', accountOverview: '账户信息', accountOverviewDescription: '查看当前账户资料，并管理登录方式。',
     username: '用户名', email: '邮箱', emailVerified: '邮箱验证', registeredAt: '注册时间', role: '角色', membership: '会员状态', memberMembership: 'VIP 会员', freeMembership: '普通用户',
@@ -338,16 +339,19 @@ describe('AccountSettingsDialog', () => {
     wrapper.unmount()
   })
 
-  it('gates the change-password button on password_login_enabled without obsolete captions', async () => {
+  it('offers first-password setup for OAuth accounts, including accounts without email', async () => {
     const wrapper = mountDialog()
     expect(findButton('修改密码')).toBeTruthy()
     wrapper.unmount()
 
-    authStore.user = { ...baseUser(), password_login_enabled: false }
+    authStore.user = { ...baseUser(), email: null, password_login_enabled: false }
     const second = mountDialog()
     expect(findButton('修改密码')).toBeUndefined()
     expect(document.body.textContent).toContain('未启用')
     expect(document.body.textContent).not.toContain('暂不可用')
+    findButton('设置密码')!.click()
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="password-dialog"]')?.getAttribute('data-setup')).toBe('true')
     second.unmount()
   })
 

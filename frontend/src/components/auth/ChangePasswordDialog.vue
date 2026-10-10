@@ -6,10 +6,12 @@ import PasswordConfirmationFields from '@/components/auth/PasswordConfirmationFi
 import { useChangePasswordForm } from '@/composables/useChangePasswordForm'
 import { useDockSuppression } from '@/composables/useDockSuppression'
 import { useAuthStore } from '@/stores/authStore'
-import { changePassword, sendChangePasswordOtp, type TokenRotationDTO } from '@/services/auth/authApi'
+import { changePassword, sendChangePasswordOtp, sendPasswordSetupOtp, setupPassword as setAccountPassword, type TokenRotationDTO } from '@/services/auth/authApi'
+import { isValidEmail } from '@/features/auth/authViewModel'
 
 const props = defineProps<{
   modelValue: boolean
+  setupPassword?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -18,6 +20,9 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+// Keep this flow stable when fetching the updated account enables password login.
+const settingPassword = ref(props.setupPassword === true)
+const email = ref(authStore.user?.email ?? '')
 const dialogRef = ref<HTMLElement | null>(null)
 let previouslyFocused: HTMLElement | null = null
 
@@ -44,8 +49,18 @@ const {
   handleSendOtp,
   handleSubmit,
 } = useChangePasswordForm({
-  submit: (code, next) => changePassword(code, next),
-  sendOtp: () => sendChangePasswordOtp(),
+  submit: (code, next) => {
+    if (!settingPassword.value) return changePassword(code, next)
+    if (!isValidEmail(email.value)) throw new Error(t('auth.invalidEmail'))
+    return setAccountPassword(email.value.trim(), code, next)
+  },
+  sendOtp: () => {
+    if (!settingPassword.value) return sendChangePasswordOtp()
+    if (!isValidEmail(email.value)) throw new Error(t('auth.invalidEmail'))
+    return sendPasswordSetupOtp(email.value.trim())
+  },
+  successMessage: () => t(settingPassword.value ? 'auth.setupPasswordSuccess' : 'auth.changeSuccess'),
+  otpSentMessage: () => t(settingPassword.value ? 'auth.setupPasswordOtpSent' : 'auth.changeOtpSent'),
   // 先安装 replacement token，再使用新 token 刷新资料。
   onChanged: async (result: unknown) => {
     const rotation = result as TokenRotationDTO
@@ -66,6 +81,8 @@ watch(
   () => props.modelValue,
   async (open) => {
     if (open) {
+      settingPassword.value = props.setupPassword === true
+      email.value = authStore.user?.email ?? ''
       previouslyFocused = document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null
@@ -99,7 +116,7 @@ watch(
         <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto" tabindex="-1">
           <div class="auth-card glass-card">
             <div class="auth-dialog-head monitor-divider flex items-center justify-between border-b p-4">
-              <h3 id="change-password-dialog-title" class="comic-title text-sm font-semibold">{{ t('auth.changeTitle') }}</h3>
+              <h3 id="change-password-dialog-title" class="comic-title text-sm font-semibold">{{ t(settingPassword ? 'auth.setupPasswordAction' : 'auth.changeTitle') }}</h3>
               <button
                 class="text-lg leading-none opacity-70 hover:opacity-100"
                 :aria-label="t('common.close')"
@@ -108,7 +125,22 @@ watch(
             </div>
 
             <div class="p-5 space-y-4">
-              <p class="text-xs leading-5 monitor-caption">{{ t('auth.changeDescription') }}</p>
+              <p class="text-xs leading-5 monitor-caption">{{ t(settingPassword ? 'auth.setupPasswordDescription' : 'auth.changeDescription') }}</p>
+
+              <div v-if="settingPassword" class="space-y-1.5">
+                <label for="password-setup-email" class="text-xs font-medium text-stone-500">{{ t('auth.email') }}</label>
+                <input
+                  id="password-setup-email"
+                  v-model="email"
+                  type="email"
+                  class="input w-full"
+                  autocomplete="email"
+                  :placeholder="t('auth.emailPlaceholder')"
+                  :readonly="Boolean(authStore.user?.email)"
+                  :disabled="loading || otpLoading || changeDone"
+                  @input="otp = ''; successMsg = ''"
+                />
+              </div>
 
               <div class="space-y-1.5">
                 <label class="text-xs font-medium text-stone-500">{{ t('auth.changeOtpLabel') }}</label>
@@ -125,7 +157,7 @@ watch(
                   <button
                     class="auth-otp-btn shrink-0 inline-flex w-full items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-xs font-medium sm:w-auto transition-all duration-150 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
                     style="background: rgb(var(--card-rgb) / 0.8); border: 1px solid rgb(var(--stone-400-rgb) / 0.25); color: rgb(var(--stone-600-rgb)); backdrop-filter: blur(10px); white-space: nowrap"
-                    :disabled="otpBtnDisabled || loading"
+                    :disabled="otpBtnDisabled || loading || (settingPassword && !isValidEmail(email))"
                     @click="handleSendOtp"
                   >
                     <span v-if="otpLoading" class="h-3.5 w-3.5 rounded-full border-2 border-stone-300 border-t-stone-600 animate-spin" />
@@ -164,7 +196,7 @@ watch(
                   @click="handleSubmit"
                 >
                   <span v-if="loading" class="h-4 w-4 rounded-full border-2 animate-spin" style="border-color: color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor" />
-                  {{ loading ? t('auth.changing') : t('auth.changeSubmit') }}
+                  {{ loading ? t('auth.changing') : t(settingPassword ? 'auth.setupPasswordAction' : 'auth.changeSubmit') }}
                 </button>
               </div>
             </div>

@@ -11,6 +11,7 @@ from backend.app.monitoring import live_stats_broadcaster
 REGISTRATION_PURPOSE = "registration"
 PASSWORD_RESET_PURPOSE = "password_reset"
 PASSWORD_CHANGE_PURPOSE = "password_change"
+PASSWORD_SETUP_PURPOSE = "password_setup"
 EMAIL_CHANGE_PURPOSE = "email_change"
 
 
@@ -36,6 +37,11 @@ class AccountRepository(Protocol):
         email: str,
         hashed_password: str,
     ) -> int: ...
+
+    def enable_password_login(
+        self, *, user_id: int, current_email: str | None, pwd_ver: int,
+        email: str, hashed_password: str,
+    ) -> Mapping[str, Any] | None: ...
 
     def update_user_username(
         self,
@@ -119,6 +125,10 @@ class PasswordResetFailed(AccountLifecycleError):
 
 class PasswordChangeFailed(AccountLifecycleError):
     """Authenticated password change did not update exactly one account."""
+
+
+class PasswordSetupUnavailable(AccountLifecycleError):
+    """First-password setup is unavailable or the account snapshot changed."""
 
 
 class ProfileUpdateFailed(AccountLifecycleError):
@@ -422,6 +432,47 @@ class AccountLifecycle:
             normalized_email, purpose=PASSWORD_CHANGE_PURPOSE
         )
         return PasswordChangeResult(access_token=access_token)
+
+    async def _password_setup_account(self, *, user_id: int, email: str) -> Mapping[str, Any]:
+        user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
+        if (
+            user is None or user.get("disabled")
+            or user.get("password_login_enabled") is not False
+            or (user.get("email") and str(user["email"]).lower() != email.lower())
+        ):
+            raise PasswordSetupUnavailable
+        return user
+
+    async def request_password_setup_otp(self, *, user_id: int, email: str) -> None:
+        await self._password_setup_account(user_id=user_id, email=email)
+        # Do not disclose another account's email ownership before verification.
+        await self._otp.send_otp(email.lower(), purpose=PASSWORD_SETUP_PURPOSE, deliver=True)
+
+    async def setup_password(
+        self, *, user_id: int, email: str, email_code: str, new_password: str,
+    ) -> PasswordChangeResult:
+        email = email.lower()
+        user = await self._password_setup_account(user_id=user_id, email=email)
+        if not await self._otp.verify_otp(
+            email, email_code, consume=False, purpose=PASSWORD_SETUP_PURPOSE,
+        ):
+            raise InvalidOtp
+        owner = await asyncio.to_thread(self._repository.get_user_by_email, email)
+        if owner is not None and int(owner["id"]) != int(user_id):
+            raise EmailAlreadyInUse
+        updated = await asyncio.to_thread(
+            self._repository.enable_password_login,
+            user_id=int(user_id), current_email=user.get("email"),
+            pwd_ver=int(user.get("pwd_ver") or 1), email=email,
+            hashed_password=self._hash_password(new_password),
+        )
+        if updated is None:
+            raise PasswordSetupUnavailable
+        await self._otp.consume_otp(email, purpose=PASSWORD_SETUP_PURPOSE)
+        return PasswordChangeResult(access_token=self._issue_token({
+            "user_id": updated["id"], "email": updated["email"],
+            "role": updated["role"], "pwd_ver": updated["pwd_ver"],
+        }))
 
     async def _current_email_for_change(
         self,

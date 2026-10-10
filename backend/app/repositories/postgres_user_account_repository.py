@@ -206,6 +206,26 @@ class PostgresUserAccountRepository:
                 )
                 return int(cursor.rowcount)
 
+    def enable_password_login(
+        self, *, user_id: int, current_email: str | None, pwd_ver: int,
+        email: str, hashed_password: str,
+    ) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET email = %s, email_verified = TRUE, hashed_password = %s,
+                        password_login_enabled = TRUE, pwd_ver = pwd_ver + 1
+                    WHERE id = %s AND email IS NOT DISTINCT FROM %s AND pwd_ver = %s
+                      AND NOT password_login_enabled AND NOT disabled
+                    RETURNING id, email, role, pwd_ver
+                    """,
+                    (email.lower(), hashed_password, int(user_id), current_email, pwd_ver),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+
     def update_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:

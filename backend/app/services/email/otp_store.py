@@ -6,7 +6,7 @@ import hmac
 from collections.abc import Callable
 from typing import Literal
 
-OtpPurpose = Literal["registration", "password_reset", "push_channel_verify", "password_change", "email_change"]
+OtpPurpose = Literal["registration", "password_reset", "push_channel_verify", "password_change", "password_setup", "email_change"]
 
 OTP_CODE_PREFIX = "email:code:"
 OTP_LOCK_PREFIX = "email:lock:"
@@ -45,6 +45,12 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
     在 5 分钟 TTL 内可被穷举，因此所有用途统一为 MAX_ATTEMPTS 次上限。
     """
     email_lower = email.lower()
+    if purpose == "password_setup":
+        return (
+            f"email:setup:code:{email_lower}",
+            f"email:setup:lock:{email_lower}",
+            f"email:setup:attempts:{email_lower}",
+        )
     if purpose == "password_reset":
         return (
             f"{RESET_CODE_PREFIX}{email_lower}",
