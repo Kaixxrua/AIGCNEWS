@@ -44,6 +44,10 @@ Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_
 
 ## 下载恢复与预验证复用
 
+长检查通过 LXD recorded-output task API 启动一次，控制器用短请求读取同一个 operation 的退出码和日志。
+状态或日志读取遇到暂时断连时，每次读取最多尝试三次，仍受原检查总时限限制；不重放测试、迁移或无法确认是否成功提交的执行请求。
+operation、实例、日志归属或退出码缺失时拒绝通过，并按原 run ID 清理隔离容器。
+
 执行器对依赖安装、Go tidy/build/vet、前端镜像构建中的明确网络暂态错误（EOF、连接重置、DNS 暂态、502/503/504、网络超时）最多执行三次，总计仍受原 job deadline 限制。断言失败、编译错误、校验和错误、测试、迁移不自动重放。Go 使用 `https://proxy.golang.org|https://goproxy.cn|direct`，竖线允许网络错误切换源，保留校验和验证。
 
 可信执行器支持 `--jobs mcp-go frontend-build` 预验证指定完整检查。预验证回执不是完整交付门禁；正式 CI 仍必须产生五项成功且清理完成的精确 SHA 回执。只有同一完整 Git tree、相同工作流/控制覆盖、执行器和可信配置的成功检查可以复用，复用时保留原 SHA/run ID，最长一小时且复用不续期。失败或未完成清理不缓存，源码变化使缓存失效。

@@ -317,11 +317,16 @@ class Runner:
     def info(self, name):
         return json.loads(self.lxc('query', f'/1.0/instances/{name}'))
 
-    def shell(self, script, *, timeout=None):
-        return command(['lxc', 'exec', self.name, '--', 'env', '-i',
+    def shell(self, script, *, timeout=None, recorded=False):
+        argv = ['env', '-i',
                         'HOME=/root', 'PATH=/ci/venv/bin:' + self.config['tool_path'],
                         'GOPROXY=https://proxy.golang.org|https://goproxy.cn|direct',
-                        'bash', '--noprofile', '--norc', '-euo', 'pipefail', '-s'],
+                        'bash', '--noprofile', '--norc', '-euo', 'pipefail']
+        if recorded:
+            from lxd_exec import recorded_exec
+            return recorded_exec(command, self.name, [*argv, '-c', script], self.log,
+                                 timeout or self.config['command_timeout'])
+        return command(['lxc', 'exec', self.name, '--', *argv, '-s'],
                        data=script.encode(), timeout=timeout or self.config['command_timeout'],
                        log=self.log)
 
@@ -484,7 +489,7 @@ docker info >/dev/null
                     result['attempts'] = attempt
                     self.progress(results)
                     try:
-                        self.shell(script, timeout=max(1, deadline - time.monotonic()))
+                        self.shell(script, timeout=max(1, deadline - time.monotonic()), recorded=True)
                         break
                     except RuntimeError:
                         self.log.flush()
