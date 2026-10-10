@@ -5,6 +5,11 @@ from uuid import uuid4
 
 from psycopg.types.json import Jsonb
 
+from backend.app.repositories.postgres_ai_ops_followup_repository import (
+    PostgresAiOpsFollowupRepository,
+    record_followup,
+)
+
 RECOVERY_JOBS = {"single:news": "news_techmeme", "single:hackernews": "hackernews",
                  "single:dailyhot": "dailyhot_hotlists"}
 
@@ -75,6 +80,11 @@ class PostgresAiOpsRepository:
             cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
                         (Jsonb([event]), run_id))
 
+            if status == "scheduled":
+                task_name = next(name for name, job in RECOVERY_JOBS.items() if job == action["job_id"])
+                record_followup(conn, run_id, action["id"], "public_feed_retry", task_name,
+                                {"task_id": action["task_id"]})
+
     def stale_running_tasks(self, older_than, limit):
         with self.database.transaction() as conn, conn.cursor() as cur:
             # started_at is ISO text; malformed values are never treated as stale.
@@ -133,6 +143,12 @@ class PostgresAiOpsRepository:
             # Preserve an admitted action's outcome even if the investigation was cancelled.
             cur.execute("UPDATE ai_ops_runs SET events=events || %s, updated_at=now() WHERE id=%s",
                         (Jsonb([event]), run_id))
+            if status in {"submitted", "completed"}:
+                baseline = {k: detail[k] for k in ("task_ids", "cache_key", "conditions") if detail and k in detail}
+                record_followup(conn, run_id, reservation["id"], reservation["action"], reservation["target"], baseline)
+
+    def translation_cohort(self, limit):
+        return PostgresAiOpsFollowupRepository(self.database).translation_cohort(limit)
 
     def create(self, trigger, *, scheduled=False):
         with self.database.transaction() as conn, conn.cursor() as cur:

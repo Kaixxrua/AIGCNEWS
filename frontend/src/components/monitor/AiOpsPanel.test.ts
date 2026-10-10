@@ -36,6 +36,22 @@ describe('AI operations console', () => {
     expect(wrapper.find('img').exists()).toBe(false)
     wrapper.unmount()
   })
+  it('shows scoped follow-up results and labels a failed model report as evidence', async () => {
+    vi.mocked(api.get).mockImplementation(async (path) => ({ data: path.endsWith('/runs')
+      ? { items: [{ ...run, status: 'failed' }], config: { enabled: false, interval_minutes: 15 } }
+      : { ...run, status: 'failed', events: [
+        { at: run.started_at, kind: 'followup_result', title: '修复回访', data: { status: 'verified', scope: '简报生成；邮件投递未验证' } },
+        { at: run.started_at, kind: 'followup_result', title: '修复回访', data: { status: 'not_recovered' } },
+      ], report: '模型不可用，程序采集摘要' } }))
+    const wrapper = mount(AiOpsPanel)
+    await flushPromises()
+    expect(wrapper.text()).toContain('结果已核实')
+    expect(wrapper.text()).toContain('观察期内未恢复')
+    expect(wrapper.text()).toContain('邮件投递未验证')
+    expect(wrapper.text()).toContain('证据摘要')
+    expect(wrapper.text()).not.toContain('调查结论')
+    wrapper.unmount()
+  })
   it('saves explicit recovery revocation and shows admitted action results', async () => {
     vi.mocked(api.get).mockImplementation(async (path) => ({ data: path.endsWith('/runs')
       ? { items: [run], config: { enabled: true, interval_minutes: 15, recovery_enabled: true } }
