@@ -39,6 +39,8 @@ const username = ref('')
 const saving = ref(false)
 const error = ref('')
 const success = ref('')
+const binding = ref(false)
+const bindError = ref('')
 const passwordOpen = ref(false)
 const emailChangeOpen = ref(false)
 let previouslyFocused: HTMLElement | null = null
@@ -97,10 +99,15 @@ const toggleEmailChange = () => {
 }
 const closeEmailChange = () => { emailChangeOpen.value = false; resetEmailChange() }
 
-// 未连接渠道点击发起「已认证绑定」：整页跳转后端 bind/start，目标账户只存服务端 state
-const bindProvider = (provider: string) => {
-  if (connectedProviders.value.has(provider) || !featureFlags.value.oauthProviders.includes(provider)) return
-  void startOAuthBind(provider, route.fullPath)
+const bindProvider = async (provider: string) => {
+  if (binding.value || connectedProviders.value.has(provider) || !featureFlags.value.oauthProviders.includes(provider)) return
+  binding.value = true
+  bindError.value = ''
+  try {
+    await startOAuthBind(provider, route.fullPath)
+  } catch (reason: unknown) {
+    bindError.value = getErrorDetail(reason, t('auth.oauthBindFailed'))
+  } finally { binding.value = false }
 }
 
 const close = () => { passwordOpen.value = false; visible.value = false }
@@ -140,6 +147,7 @@ watch(() => props.modelValue, async open => {
     previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     username.value = usernameValue.value
     error.value = ''; success.value = ''
+    bindError.value = ''
     passwordOpen.value = false
     closeEmailChange()
     window.addEventListener('keydown', onKeydown)
@@ -311,7 +319,7 @@ watch(() => props.modelValue, async open => {
                     type="button"
                     class="oauth-provider-btn"
                     :class="{ 'is-connected': connectedProviders.has(provider) }"
-                    :disabled="connectedProviders.has(provider)"
+                    :disabled="binding || connectedProviders.has(provider)"
                     :aria-label="connectedProviders.has(provider) ? `${providerLabel(provider)} ${t('auth.connected')}` : `${providerLabel(provider)} ${t('auth.notConnected')}`"
                     @click="bindProvider(provider)"
                   >
@@ -325,6 +333,7 @@ watch(() => props.modelValue, async open => {
                     </span>
                   </button>
                 </div>
+                <AuthFeedback :message="bindError" type="error" />
               </section>
 
               <section class="space-y-3 border-t border-stone-200/70 pt-4">

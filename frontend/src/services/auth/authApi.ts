@@ -105,9 +105,13 @@ export async function confirmEmailChange(newEmail: string, currentCode: string, 
   return res.data
 }
 
-/** 已登录发起渠道绑定：整页跳转后端 bind/start，目标账户只存服务端 state */
+/** 先用 Bearer 发起绑定，再导航到授权页面；整页跳转无法携带认证头。 */
 export async function startOAuthBind(provider: string, redirectTo: string): Promise<void> {
-  window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/bind/start?redirect_to=${encodeURIComponent(redirectTo)}`)
+  const res = await api.post<{ authorization_url: string }>(
+    `/auth/oauth/${encodeURIComponent(provider)}/bind/start`, undefined,
+    { params: { redirect_to: redirectTo } },
+  )
+  window.location.assign(res.data.authorization_url)
 }
 
 export interface OAuthBindConsumeResponse {
