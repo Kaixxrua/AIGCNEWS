@@ -8,7 +8,7 @@ import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useQuickSearch } from '@/composables/useQuickSearch'
 import { showToast } from '@/composables/useToast'
 import { fetchOnboarding, updateOnboarding } from '@/services/onboarding/onboardingApi'
-import { availableSteps, resumeStepIndex } from './steps'
+import { availableSteps, pageSteps, resumeStepIndex } from './steps'
 import { tourActive, tourRequest } from './signals'
 import {
   MEMORY_KEY, claimGuest, isTerminal, readProgress, readTerminal, saveProgress, saveTerminal,
@@ -24,7 +24,14 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
   const { contactPageConfig, ensureContactPageConfig } = useContactPageConfig()
   const login = useLoginPrompt()
   const quickSearch = useQuickSearch()
-  const steps = computed(() => availableSteps({ x: featureFlags.value.xSource, contact: contactPageConfig.value.enabled }, compact.value))
+  const manualScope = ref<string | null>(null)
+  const pageGuide = computed(() => manualScope.value !== null)
+  const steps = computed(() => {
+    const available = availableSteps({ x: featureFlags.value.xSource, contact: contactPageConfig.value.enabled }, compact.value)
+    if (!manualScope.value) return available
+    const page = router.resolve(manualScope.value)
+    return pageSteps(available, page.path, page.query.source, compact.value)
+  })
   const phase = ref<'idle' | 'welcome' | 'tour'>('idle')
   const index = ref(0)
   const busy = ref(false)
@@ -64,10 +71,11 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     index.value = next
     busy.value = true
     navigationFailed.value = false
-    saveProgress(owner.value, { step: target.id, returnTo, manual })
+    saveProgress(owner.value, { step: target.id, returnTo, manual, scope: manualScope.value ?? undefined })
     navigation = (async () => {
       try {
-        const failure = route.fullPath === router.resolve(target.route).fullPath ? undefined : await router.replace(target.route)
+        const destination = manualScope.value ?? target.route
+        const failure = route.fullPath === router.resolve(destination).fullPath ? undefined : await router.replace(destination)
         await nextTick()
         if (alive && revision === navigationRevision) {
           navigationFailed.value = !!failure && !isNavigationFailure(failure, NavigationFailureType.duplicated)
@@ -117,6 +125,7 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     if (record) saveTerminal(account, status)
     saveProgress(account, null)
     phase.value = 'idle'
+    manualScope.value = null
     busy.value = true
     if (record) void syncAccount(true)
     await navigation
@@ -135,13 +144,19 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
   }
 
   function offer() {
-    if (!ready || !alive || !eligible.value || phase.value !== 'idle' || busy.value) return
+    if (!ready || !alive || !canReplay.value || phase.value !== 'idle' || busy.value) return
     if (document.querySelector('dialog[open]')) return
     // Resume an existing tour; fresh visitors open the guide from Help.
     const progress = readProgress(owner.value)
     if (progress && (progress.manual || !readTerminal(owner.value))) {
+      if (!progress.scope && !eligible.value) return
+      if (progress.scope && progress.scope !== route.fullPath) {
+        saveProgress(owner.value, null)
+        return
+      }
       returnTo = progress.returnTo
       manual = progress.manual
+      manualScope.value = progress.scope ?? null
       go(resumeStepIndex(steps.value, progress.step))
     }
   }
@@ -152,6 +167,7 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     syncQueued = false
     ready = false
     if (phase.value !== 'idle') { ++navigationRevision; phase.value = 'idle'; busy.value = false }
+    manualScope.value = null
     if (auth.status !== 'authenticated' && auth.status !== 'anonymous') return
     await Promise.all([ensureFeatureFlags(), ensureContactPageConfig()])
     if (!alive || revision !== context) return
@@ -167,6 +183,8 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     if (!canReplay.value || busy.value || phase.value !== 'idle') return
     rememberPlace()
     manual = true
+    manualScope.value = readTerminal(owner.value) ? route.fullPath : null
+    if (!steps.value.length) { manualScope.value = null; return }
     phase.value = 'welcome'
   }
   async function retrySync() {
@@ -187,8 +205,8 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     }
   }
   watch(() => [auth.status, auth.userId, auth.token], initialize, { immediate: true })
-  watch(steps, (next, previous) => {
-    if (phase.value === 'tour') go(resumeStepIndex(next, previous[index.value]?.id))
+  watch([steps, manualScope], ([next, scope], [previous, previousScope]) => {
+    if (phase.value === 'tour' && scope === previousScope) go(resumeStepIndex(next, previous[index.value]?.id))
   })
   watch([eligible, () => route.fullPath], offer)
   watch(tourRequest, replay)
@@ -208,7 +226,7 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     window.removeEventListener('storage', storageChanged)
   })
   return {
-    phase, index, step, steps, busy, navigationFailed,
+    phase, index, step, steps, pageGuide, busy, navigationFailed,
     start: () => go(0),
     previous: () => { if (!busy.value) go(index.value - 1) },
     next: () => {

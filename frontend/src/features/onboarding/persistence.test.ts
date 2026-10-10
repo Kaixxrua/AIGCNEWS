@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MEMORY_KEY, claimGuest, readProgress, readTerminal, saveProgress, saveTerminal } from './persistence'
-import { availableSteps, TOUR_STEPS } from './steps'
+import { availableSteps, pageSteps, TOUR_STEPS } from './steps'
 import { onboardingEn, onboardingZh } from '@/i18n/locales/onboarding'
 import { placeCard, spotlightBox } from './geometry'
 
@@ -36,6 +36,8 @@ describe('tour memory and account handoff', () => {
     expect(readProgress('user:7')).toBeNull()
     saveProgress('guest', { step: 'home', returnTo: '//evil.example', manual: true })
     expect(readProgress('guest')?.returnTo).toBe('/')
+    saveProgress('guest', { step: 'home', returnTo: '/', manual: true, scope: '//evil.example' })
+    expect(readProgress('guest')?.scope).toBe('/')
     saveProgress('guest', null)
     expect(readProgress('guest')).toBeNull()
   })
@@ -61,6 +63,13 @@ it('covers every public section in both languages and removes disabled sections'
   }
   expect(new Set(TOUR_STEPS.map(s => s.id)).size).toBe(TOUR_STEPS.length)
   expect(availableSteps({ x: false, contact: false }).some(s => s.feature)).toBe(false)
+  const available = availableSteps({ x: true, contact: true })
+  for (const path of ['/subscriptions', '/monitor', '/membership/checkout', '/privacy', '/disclaimer', '/papers/42/read']) {
+    for (const step of pageSteps(available, path)) {
+      expect(onboardingZh.steps).toHaveProperty(`${step.id}.body`)
+      expect(onboardingEn.steps).toHaveProperty(`${step.id}.title`)
+    }
+  }
 })
 
 it('keeps the card in the viewport and away from a small highlighted control', () => {

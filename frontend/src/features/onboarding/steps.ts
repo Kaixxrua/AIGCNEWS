@@ -42,8 +42,50 @@ export function availableSteps(flags: { x: boolean; contact: boolean }, compact 
     .map(step => compact ? { ...step, ...step.compact } : step)
 }
 
+const PAGE_ONLY_STEPS: Record<string, TourStep> = {
+  '/subscriptions': { id: 'subscriptionsPage', route: '/subscriptions', targets: ['.subs-heading', '.subs-page'] },
+  '/monitor': { id: 'monitorPage', route: '/monitor', targets: ['.monitor-heading', '.monitor-page'] },
+  '/membership/checkout': { id: 'checkoutPage', route: '/membership/checkout', targets: ['.checkout-hero', '.checkout-card'] },
+  '/privacy': { id: 'privacyPage', route: '/privacy', targets: ['.legal-page .legal-head', '.legal-page'] },
+  '/disclaimer': { id: 'disclaimerPage', route: '/disclaimer', targets: ['.legal-page .legal-head', '.legal-page'] },
+}
+
+// The Help button describes only the view already on screen. Query variants of
+// /projects are different collections, even though they share a route component.
+export function pageSteps(steps: readonly TourStep[], path: string, source?: unknown, compact = false): TourStep[] {
+  if (/^\/papers\/[^/]+\/read$/.test(path)) {
+    return [{ id: 'paperReadPage', route: path, targets: ['.paper-read-heading', '.paper-read-shell'] }]
+  }
+  const local = PAGE_ONLY_STEPS[path]
+  if (local) return [local]
+  const ids: Record<string, readonly string[]> = {
+    '/': ['home'],
+    '/projects': source === 'website' ? ['myWebsites'] : ['projects', 'projectDetails'],
+    '/websites': ['websites'],
+    '/ui-library': ['ui', 'uiPreview'],
+    '/report': ['report', 'papers', 'subscribe'],
+    '/x': ['x'],
+    '/mcp': compact ? ['mcp'] : ['mcp', 'mcpExamples'],
+    '/dsh': ['dsh'],
+    '/membership': ['membership'],
+    '/contact': ['contact'],
+  }
+  const selected = ids[path.startsWith('/ui-library/') ? '/ui-library' : path] ?? []
+  return selected.flatMap(id => {
+    const step = steps.find(item => item.id === id)
+      // Desktop-only integrations are skipped in the full mobile tour, but a
+      // visitor already on one of those pages can still ask for its help.
+      ?? (compact && (id === 'mcp' || id === 'dsh') ? TOUR_STEPS.find(item => item.id === id) : undefined)
+    if (!step) return []
+    if (id === 'contact') return [{ ...step, targets: ['.contact-title', '.contact-page'] }]
+    return [compact ? { ...step, ...step.compact } : step]
+  })
+}
+
 // Keep the current section on resize/resume, or advance past desktop-only steps.
 export function resumeStepIndex(steps: readonly TourStep[], id?: string): number {
+  const exact = steps.findIndex(step => step.id === id)
+  if (exact >= 0) return exact
   const position = TOUR_STEPS.findIndex(step => step.id === id)
   return Math.max(0, steps.findIndex(step => TOUR_STEPS.findIndex(item => item.id === step.id) >= position))
 }
