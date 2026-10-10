@@ -77,6 +77,7 @@ export interface ProjectCatalogControllerOptions {
   routeState?: ProjectCatalogRouteStateRefs
   t?: Translate
   isLoggedIn?: () => boolean
+  ensureAuth?: () => Promise<unknown>
   isAdmin?: () => boolean
   currentRedirect?: () => string
   navigateToLogin?: (redirect: string) => void | Promise<void>
@@ -156,6 +157,9 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
   const isPersonalView = computed(() => source.value === 'favorites' || source.value === 'website')
   const isMyCollection = computed(() => isPersonalView.value)
   const requiresPersonalLogin = computed(() => isPersonalView.value && !loggedIn())
+  const requiresCatalogLogin = computed(() => !isPersonalView.value && !loggedIn()
+    && (Boolean(debouncedQuery.value.trim()) || page.value > 1))
+  let promptedLoginTarget = ''
 
   let viewGeneration = 0
   let projectRequestGeneration = 0
@@ -319,6 +323,10 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
   const loadProjects = async (loadOptions: ProjectCatalogLoadOptions = {}) => {
     const request = ++projectRequestGeneration
     const generation = viewGeneration
+    if (options.ensureAuth) {
+      await options.ensureAuth()
+      if (!activeGeneration(generation) || request !== projectRequestGeneration) return
+    }
     errorMsg.value = ''
     if (loadOptions.clearSuccess !== false) successMsg.value = ''
     if (requiresPersonalLogin.value) {
@@ -327,6 +335,19 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       loading.value = false
       return
     }
+    if (requiresCatalogLogin.value) {
+      projects.value = []
+      loading.value = false
+      await replaceRoute(true)
+      if (!activeGeneration(generation) || request !== projectRequestGeneration || !requiresCatalogLogin.value) return
+      const target = options.currentRedirect?.() ?? '/projects'
+      if (!loadOptions.preserveContent && target !== promptedLoginTarget) {
+        promptedLoginTarget = target
+        await options.navigateToLogin?.(target)
+      }
+      return
+    }
+    promptedLoginTarget = ''
     if (!loadOptions.preserveContent) loading.value = true
     const personalRequest = isMyCollection.value
     try {
@@ -545,7 +566,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
 
   const handleLogout = () => {
     invalidateView()
-    if (!isPersonalView.value) return
+    if (!isPersonalView.value && !requiresCatalogLogin.value) return
     projects.value = []
     personalTags.value = []
     total.value = 0
@@ -590,6 +611,7 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
     recommendProject,
     refreshReads,
     requiresPersonalLogin,
+    requiresCatalogLogin,
     searchQuery,
     savingEdit,
     selectedCategory,

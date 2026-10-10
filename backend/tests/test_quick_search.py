@@ -15,6 +15,7 @@ from backend.app.api.dependencies import (
     get_project_catalog_query_service,
 )
 from backend.app.api.routes_search import router
+from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.repositories.briefing_repository import BriefingSearchReader
 from backend.app.repositories.postgres_briefing_repository import PostgresBriefingRepository
@@ -268,6 +269,7 @@ class QuickSearchRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.app = FastAPI()
         self.app.include_router(router, prefix="/api")
+        self.app.dependency_overrides[RequireUser] = lambda: {"user_id": 42}
         self.documents = FakeDocuments()
         self.briefings = FakeBriefings()
         self.app.dependency_overrides[get_project_catalog_query_service] = FakeCatalog

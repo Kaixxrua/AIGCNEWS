@@ -475,6 +475,7 @@ class ReportBriefingIdRouteTests(unittest.TestCase):
         self.briefings.get_briefing.assert_not_called()
 
     def test_numeric_id_still_reads_the_briefing(self) -> None:
+        self.client.app.dependency_overrides[RequireUser] = lambda: {"user_id": 7}
         response = self.client.get("/api/report/42")
 
         self.assertEqual(response.status_code, 200)

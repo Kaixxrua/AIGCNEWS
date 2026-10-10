@@ -253,3 +253,61 @@ describe('project catalog controller', () => {
     expect(controller.errorMsg.value).toBe('newer view error')
   })
 })
+
+
+describe('public project member gates', () => {
+  it.each([{ q: 'agent', page: 1 }, { q: '', page: 2 }])('blocks guests and resumes $q / page $page after login', async ({ q, page }) => {
+    const api = createApi()
+    const loggedIn = ref(false)
+    const login = vi.fn()
+    const controller = useProjectCatalogController({
+      api, isLoggedIn: () => loggedIn.value, navigateToLogin: login,
+      currentRedirect: () => `/projects?q=${q}&page=${page}`,
+    })
+    controller.debouncedQuery.value = q
+    controller.page.value = page
+    await controller.loadProjects()
+    expect(api.fetchProjects).not.toHaveBeenCalled()
+    expect(login).toHaveBeenCalledWith(`/projects?q=${q}&page=${page}`)
+    await controller.loadProjects({ preserveContent: true })
+    expect(login).toHaveBeenCalledTimes(1)
+    loggedIn.value = true
+    vi.mocked(api.fetchProjects).mockResolvedValue(projectsResponse([githubItem()], 100))
+    await controller.loadProjects()
+    expect(api.fetchProjects).toHaveBeenCalledWith(expect.objectContaining({ q, page }))
+    expect(controller.projects.value).toHaveLength(1)
+  })
+
+  it('waits for session restoration before deciding whether to prompt', async () => {
+    const api = createApi()
+    const initialized = deferred<void>()
+    const login = vi.fn()
+    const loggedIn = ref(false)
+    const controller = useProjectCatalogController({ api, isLoggedIn: () => loggedIn.value,
+      ensureAuth: () => initialized.promise, navigateToLogin: login })
+    controller.debouncedQuery.value = 'agent'
+    const load = controller.loadProjects()
+    expect(login).not.toHaveBeenCalled()
+    loggedIn.value = true
+    vi.mocked(api.fetchProjects).mockResolvedValue(projectsResponse([]))
+    initialized.resolve()
+    await load
+    expect(login).not.toHaveBeenCalled()
+    expect(api.fetchProjects).toHaveBeenCalled()
+  })
+
+  it('discards an authenticated response arriving after logout', async () => {
+    const api = createApi()
+    const response = deferred<GitHubProjectsResponse>()
+    const loggedIn = ref(true)
+    const controller = useProjectCatalogController({ api, isLoggedIn: () => loggedIn.value })
+    controller.page.value = 2
+    vi.mocked(api.fetchProjects).mockReturnValue(response.promise)
+    const load = controller.loadProjects()
+    loggedIn.value = false
+    controller.handleLogout()
+    response.resolve(projectsResponse([githubItem()], 100))
+    await load
+    expect(controller.projects.value).toEqual([])
+  })
+})

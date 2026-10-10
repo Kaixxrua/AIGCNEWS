@@ -2,6 +2,11 @@ import { trackingEn } from './tracking'
 import { onboardingEn } from './onboarding'
 
 const enUSCatalog = {
+  memberContent: {
+    loginContinue: 'Sign in for free to continue',
+    projectsHint: 'Browse the first page freely. Sign in to search or view more pages, then continue where you left off.',
+    reportHint: 'This is a briefing preview. Sign in for free to read the full issue.',
+  },
   onboarding: onboardingEn,
   aiOpsTitle: 'AI Operations',
   recommendedWebsites: {
@@ -88,7 +93,7 @@ const enUSCatalog = {
   masthead: { edition: 'Section {letter}', sections: { projects: 'Projects', uiLibrary: 'UI Library', websites: 'Websites', report: 'Briefing', xboard: 'X Board', mcp: 'MCP', dsh: 'DSH', subscriptions: 'Tracking', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', paper: 'Paper', disclaimer: 'Disclaimer', privacy: 'Privacy' }, todayNew: 'New today', userGroup: 'Group: {tier}', memberUntil: 'until {date}', memberLifetime: 'lifetime', favoriteSite: 'Bookmark this site', favoriteSiteGuideText: 'to bookmark this site in your browser', favoriteSiteGuideTextTouch: 'Open the browser menu and choose “Bookmark” to save this site.' },
   auth: {
     login: 'Log in', logout: 'Log out', username: 'Username', password: 'Password', email: 'Email', otp: 'Verification code', newPassword: 'New password', confirmPassword: 'Confirm password',
-    loginTitle: 'AIGC News · Log in', loginDescription: 'Welcome back. Log in to your account.', registerTitle: 'AIGC News · Register', registerDescription: 'Create your account and start exploring AI news.', forgotTitle: 'AIGC News · Reset password', forgotDescription: 'Set a new password using an email verification code.',
+    loginTitle: 'AIGC News · Log in', loginDescription: 'Sign in or create a free account to continue where you left off.', registerTitle: 'AIGC News · Register', registerDescription: 'Create your account and start exploring AI news.', forgotTitle: 'AIGC News · Reset password', forgotDescription: 'Set a new password using an email verification code.',
     emailPlaceholder: "you{'@'}example.com", passwordPlaceholder: 'Enter your password', otpPlaceholder: '6-digit verification code', usernamePlaceholder: 'Choose a username', newPasswordPlaceholder: 'At least 8 characters', confirmPasswordPlaceholder: 'Enter your password again',
     fillEmailPassword: 'Enter your email and password', loginFailed: 'Login failed. Check your email and password.', loggingIn: 'Logging in…', forgotPassword: 'Forgot password?', noAccount: "Don't have an account?", registerNow: 'Register now', hasAccount: 'Already have an account?', goLogin: 'Log in', rememberPassword: 'Remembered your password?', backToLogin: 'Open login',
     getOtp: 'Get code', resendOtp: 'Get again ({countdown}s)', invalidEmail: 'Enter a correctly formatted email address', invalidEmailGeneric: 'Enter a valid email address', invalidOtp: 'The verification code must be 6 digits', invalidUsername: 'Enter a username (1-64 characters)', passwordMin: 'Password must be at least 8 characters', passwordMismatch: 'Passwords do not match', agreeTerms: 'I have read and agree to', terms: 'the User Agreement and Disclaimer', and: 'and', termsSuffix: ', including the AI content disclaimer and prohibition of unlawful input', agreeAria: 'Agree to the User Agreement and Disclaimer',

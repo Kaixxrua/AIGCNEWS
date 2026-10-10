@@ -3,6 +3,11 @@ import { trackingZh } from './tracking'
 import { onboardingZh } from './onboarding'
 
 const overrides = {
+  memberContent: {
+    loginContinue: '免费登录后继续',
+    projectsHint: '项目库第一页可以直接浏览，搜索和继续翻页需要登录。登录后将自动继续刚才的操作。',
+    reportHint: '当前显示简报预览，免费登录后可查看完整内容。',
+  },
   onboarding: onboardingZh,
   aiOpsTitle: 'AI 运维',
   recommendedWebsites: {
@@ -89,7 +94,7 @@ const overrides = {
   masthead: { edition: '{letter} 版', sections: { projects: '项目库', uiLibrary: 'UI 灵感库', websites: '网页收藏', report: '简报', xboard: 'X 动态', mcp: 'MCP 接入', dsh: 'DSH 插件', subscriptions: '情报追踪', membership: '会员', contact: '联系合作', monitor: '监控', paper: '论文', disclaimer: '免责声明', privacy: '隐私政策' }, todayNew: '今日更新', userGroup: '用户组：{tier}', memberUntil: '{date}到期', memberLifetime: '长期有效', favoriteSite: '收藏本站', favoriteSiteGuideText: '收藏本站到浏览器书签', favoriteSiteGuideTextTouch: '打开浏览器菜单，选择「书签」或「收藏」即可收藏本站' },
   auth: {
     login: '登录', logout: '退出登录', username: '用户名', password: '密码', email: '邮箱', otp: '验证码', newPassword: '新密码', confirmPassword: '确认密码',
-    loginTitle: 'AIGC 资讯 · 登录', loginDescription: '欢迎回来，请登录您的账号', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',
+    loginTitle: 'AIGC 资讯 · 登录', loginDescription: '免费登录或注册，完成后继续刚才的操作', registerTitle: 'AIGC 资讯 · 注册', registerDescription: '创建您的账号，开启 AI 资讯之旅', forgotTitle: 'AIGC 资讯 · 重置密码', forgotDescription: '通过邮箱验证码设置新密码',
     emailPlaceholder: "you{'@'}example.com", passwordPlaceholder: '请输入密码', otpPlaceholder: '6 位数字验证码', usernamePlaceholder: '设置一个用户名', newPasswordPlaceholder: '至少 8 个字符', confirmPasswordPlaceholder: '再次输入密码',
     fillEmailPassword: '请填写邮箱和密码', loginFailed: '登录失败，请检查邮箱和密码', loggingIn: '登录中…', forgotPassword: '忘记密码？', noAccount: '还没有账号？', registerNow: '立即注册', hasAccount: '已有账号？', goLogin: '登录', rememberPassword: '想起密码了？', backToLogin: '打开登录窗口',
     getOtp: '获取验证码', resendOtp: '重新获取({countdown}s)', invalidEmail: '请输入正确格式的邮箱地址', invalidEmailGeneric: '请输入有效的邮箱地址', invalidOtp: '验证码应为 6 位数字', invalidUsername: '请输入 1-64 个字符的用户名', passwordMin: '密码至少需要 8 个字符', passwordMismatch: '两次密码输入不一致', agreeTerms: '我已阅读并同意', terms: '《用户协议与免责声明》', and: '及', termsSuffix: '，包括但不限于 AI 内容免责、禁止违法输入等条款', agreeAria: '同意用户协议与免责声明',

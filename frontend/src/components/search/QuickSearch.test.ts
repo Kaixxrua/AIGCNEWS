@@ -10,6 +10,14 @@ import type { UiTemplate } from '@/features/ui-library/catalog'
 import type { QuickSearchResult } from '@/services/search/searchApi'
 import QuickSearch from './QuickSearch.vue'
 
+const auth = vi.hoisted(() => ({ state: null as any, requestLogin: vi.fn() }))
+vi.mock('@/stores/authStore', async () => {
+  const { reactive } = await import('vue')
+  auth.state = reactive({ isLoggedIn: true, ensureInitialized: vi.fn(async () => {}) })
+  return { useAuthStore: () => auth.state }
+})
+vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin: auth.requestLogin }) }))
+
 const search = vi.hoisted(() => ({ fetch: vi.fn() }))
 vi.mock('@/services/search/searchApi', async importOriginal => ({
   ...await importOriginal<typeof import('@/services/search/searchApi')>(),
@@ -100,6 +108,9 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  auth.state.isLoggedIn = true
+  auth.state.ensureInitialized.mockReset().mockResolvedValue(undefined)
+  auth.requestLogin.mockReset()
   search.fetch.mockReset()
   catalog.load.mockReset()
   catalog.load.mockResolvedValue([TEMPLATE])
@@ -273,5 +284,60 @@ describe('QuickSearch', () => {
 
     expect(wrapper!.find('.quick-search__notice').text()).toContain('only UI templates')
     expect(heads()).toEqual(['UI Library'])
+  })
+})
+
+
+describe('QuickSearch member access', () => {
+  it('prompts when a guest opens the lazily mounted panel', async () => {
+    auth.state.isLoggedIn = false
+    useQuickSearch().show()
+    await mountSearch()
+    await flushPromises()
+    expect(dialog().exists()).toBe(false)
+    expect(auth.requestLogin).toHaveBeenCalledWith('/?quickSearch=1')
+    expect(search.fetch).not.toHaveBeenCalled()
+  })
+
+  it('waits for the saved session before deciding to prompt', async () => {
+    auth.state.isLoggedIn = false
+    let finish!: () => void
+    auth.state.ensureInitialized.mockReturnValue(new Promise<void>(resolve => { finish = resolve }))
+    useQuickSearch().show()
+    await mountSearch()
+    await flushPromises()
+    expect(dialog().exists()).toBe(false)
+    expect(auth.requestLogin).not.toHaveBeenCalled()
+    auth.state.isLoggedIn = true
+    finish()
+    await flushPromises()
+    expect(dialog().exists()).toBe(true)
+    expect(auth.requestLogin).not.toHaveBeenCalled()
+  })
+
+  it('requires login before any search and reopens after the login redirect', async () => {
+    auth.state.isLoggedIn = false
+    const { router } = await mountSearch()
+    useQuickSearch().show()
+    await flushPromises()
+    expect(dialog().exists()).toBe(false)
+    expect(auth.requestLogin).toHaveBeenCalledWith('/?quickSearch=1')
+    expect(search.fetch).not.toHaveBeenCalled()
+    expect(catalog.load).not.toHaveBeenCalled()
+    auth.state.isLoggedIn = true
+    await router.push(auth.requestLogin.mock.calls[0]![0])
+    await flushPromises()
+    expect(dialog().exists()).toBe(true)
+    expect(router.currentRoute.value.query.quickSearch).toBeUndefined()
+  })
+
+  it('clears results and closes when the session ends', async () => {
+    search.fetch.mockResolvedValue(RESULT)
+    await mountSearch()
+    await openWith('agent')
+    expect(options().length).toBeGreaterThan(0)
+    auth.state.isLoggedIn = false
+    await flushPromises()
+    expect(dialog().exists()).toBe(false)
   })
 })

@@ -55,7 +55,7 @@ def test_github_projects_route_uses_catalog_repository() -> None:
         "page": 1,
         "page_size": 24,
     }
-    response = _catalog_client(repository).get(
+    response = _catalog_client(repository, user={"user_id": 42}).get(
         "/api/projects?source=github&q=agent&sort=stars"
     )
 
@@ -72,7 +72,7 @@ def test_github_projects_route_uses_catalog_repository() -> None:
         sort="stars",
         min_stars=500,
         enriched_only=True,
-        user_id=None,
+        user_id=42,
     )
 
 

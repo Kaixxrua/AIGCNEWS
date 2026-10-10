@@ -6,6 +6,8 @@ import { useEventListener } from '@vueuse/core'
 import { ArrowRight, ArrowUpRight, FileText, FolderGit2, History, LayoutTemplate, LoaderCircle, Newspaper, Search } from 'lucide-vue-next'
 import { XLogoIcon } from '@/components/icons/XLogoIcon'
 import { useQuickSearch } from '@/composables/useQuickSearch'
+import { useLoginPrompt } from '@/composables/useLoginPrompt'
+import { useAuthStore } from '@/stores/authStore'
 import { isModalOpen } from '@/features/keyboard/listKeys'
 import {
   buildSections,
@@ -51,6 +53,8 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
+const { requestLogin } = useLoginPrompt()
 const { open, show, hide } = useQuickSearch()
 const apple = isApplePlatform()
 
@@ -92,8 +96,10 @@ async function request(q: string, lang: AppLocale) {
   controller = current
   try {
     const result = await fetchQuickSearch(q, { locale: lang, limit: QUICK_SEARCH_LIMIT, signal: current.signal })
-    remember(cacheKey(q, lang), result)
-    if (controller === current) shown.value = { q, result, failed: false }
+    if (controller === current && authStore.isLoggedIn) {
+      remember(cacheKey(q, lang), result)
+      shown.value = { q, result, failed: false }
+    }
   } catch {
     if (controller === current) shown.value = { q, result: null, failed: true }
   } finally {
@@ -106,7 +112,7 @@ async function request(q: string, lang: AppLocale) {
 
 function search(q: string, { now = false } = {}) {
   cancel()
-  if (!q) {
+  if (!q || !authStore.isLoggedIn) {
     loading.value = false
     return
   }
@@ -313,8 +319,15 @@ function onRowClick(event: MouseEvent, row: QuickSearchRow) {
 }
 
 // 面板按需加载，点放大镜时可能还没加载完：挂上时已经开着的，同样记下打开前的焦点、聚焦搜索框。
-watch(open, (isOpen) => {
+watch(open, async (isOpen) => {
   if (isOpen) {
+    await authStore.ensureInitialized()
+    if (!open.value) return
+    if (!authStore.isLoggedIn) {
+      hide()
+      requestLogin(router.resolve({ path: route.path, query: { ...route.query, quickSearch: '1' }, hash: route.hash }).fullPath)
+      return
+    }
     const focused = document.activeElement
     opener = focused instanceof HTMLElement && focused !== document.body ? focused : null
     restoreFocus = true
@@ -336,6 +349,21 @@ watch(open, (isOpen) => {
 }, { immediate: true })
 
 watch(() => route.fullPath, () => { if (open.value) close(false) })
+watch([() => authStore.isLoggedIn, () => route.query.quickSearch], async ([loggedIn, resume], [wasLoggedIn]) => {
+  if (!loggedIn) {
+    cancel()
+    shown.value = null
+    cache.clear()
+    if (wasLoggedIn) {
+      draft.value = ''
+      hide()
+    }
+    return
+  }
+  if (resume !== '1' || !props.enabled) return
+  await router.replace({ query: { ...route.query, quickSearch: undefined }, hash: route.hash })
+  if (authStore.isLoggedIn && props.enabled) show()
+}, { immediate: true, flush: 'sync' })
 watch(() => props.enabled, (on) => { if (!on && open.value) close(false) })
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -382,7 +410,7 @@ function onLeave(el: Element, done: () => void) {
 <template>
   <Teleport to="body">
     <Transition :css="false" @enter="onEnter" @leave="onLeave">
-      <div v-if="open" class="quick-search">
+      <div v-if="open && authStore.isLoggedIn" class="quick-search">
         <div class="quick-search__scrim" aria-hidden="true" @click="close()" />
         <div class="quick-search__panel" role="dialog" aria-modal="true" :aria-label="t('quickSearch.title')" @keydown="onKeydown">
           <div class="quick-search__field">
