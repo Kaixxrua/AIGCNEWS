@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import '@/i18n/locales/monitorActivity'
 import type { MonitorNavCategory, MonitorSectionKey } from '@/features/monitor/monitorViewModel'
 import { fold, unfold } from '@/motion/fold'
 import { vIndicator } from '@/motion/indicator'

@@ -25,7 +25,7 @@ describe('MonitorSectionNav', () => {
     expect(headers.every(header => header.find('.monitor-nav-icon').exists())).toBe(true)
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
     expect(leaves.map(leaf => leaf.find('.monitor-nav-label').text())).toEqual([
-      '任务历史', 'MCP 调用', '错误日志', 'AI 运维', '访问统计',
+      '任务历史', 'MCP 调用', '错误日志', 'AI 运维', '访问统计', '邮件监测',
       '采集控制', 'GitHub 爬取', 'GitHub 富化', 'UI 素材来源',
       'X 关注账号', 'X 凭证',
       '模型服务', '定时任务', 'SMTP 邮件', 'MCP 服务', 'OAuth 登录', 'Telegram 推送',
@@ -37,9 +37,10 @@ describe('MonitorSectionNav', () => {
     const wrapper = mountNav({ active: 'crawl' })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
     expect(leaves.filter(leaf => leaf.classes().includes('active'))).toHaveLength(1)
-    expect(leaves[6]!.classes()).toContain('active')
-    expect(leaves[6]!.attributes('aria-current')).toBe('true')
-    expect(leaves[5]!.attributes('aria-current')).toBeUndefined()
+    const crawl = leaves.find(leaf => leaf.text() === 'GitHub 爬取')!
+    expect(crawl.classes()).toContain('active')
+    expect(crawl.attributes('aria-current')).toBe('true')
+    expect(leaves.find(leaf => leaf.text() === '采集控制')!.attributes('aria-current')).toBeUndefined()
   })
 
   it('renders the alert dot on the flagged leaf while its category is expanded', () => {
@@ -47,7 +48,7 @@ describe('MonitorSectionNav', () => {
     const dots = wrapper.findAll('.monitor-nav-alert')
     expect(dots).toHaveLength(1)
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
-    expect(leaves[7]!.find('.monitor-nav-alert').exists()).toBe(true)
+    expect(leaves.find(leaf => leaf.text() === 'GitHub 富化')!.find('.monitor-nav-alert').exists()).toBe(true)
     expect(dots[0]!.attributes('title')).toBe('GitHub 项目库存在富化失败，请到监控页处理')
   })
 
@@ -55,12 +56,20 @@ describe('MonitorSectionNav', () => {
     const onSelect = vi.fn()
     const wrapper = mountNav({ active: 'tasks', onSelect })
     const leaves = wrapper.findAll('button.monitor-nav-leaf')
-    await leaves[14]!.trigger('click')
+    const mcp = leaves.find(leaf => leaf.text() === 'MCP 服务')!
+    await mcp.trigger('click')
     // 监听 prop 断言替代 emitted()：本环境 VTU 的 emitted 追踪不记录模板内 emit
     expect(onSelect).toHaveBeenCalledWith('mcp-server')
     // 哑组件契约：激活态由父级持有，点击后不自动迁移
     expect(leaves[0]!.classes()).toContain('active')
-    expect(leaves[14]!.classes()).not.toContain('active')
+    expect(mcp.classes()).not.toContain('active')
+  })
+
+  it('opens the email monitoring section from its localized entry', async () => {
+    const onSelect = vi.fn()
+    const wrapper = mountNav({ onSelect })
+    await wrapper.findAll('button.monitor-nav-leaf').find(leaf => leaf.text() === '邮件监测')!.trigger('click')
+    expect(onSelect).toHaveBeenCalledWith('email-monitor')
   })
 
   it('collapses a category on header click and hands the alert dot to the header', async () => {

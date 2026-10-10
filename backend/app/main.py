@@ -24,6 +24,7 @@ from backend.app.api import (
     routes_github_projects,
     routes_mcp_oauth,
     routes_monitor,
+    routes_monitor_activity,
     routes_new_words,
     routes_oauth,
     routes_onboarding,
@@ -61,6 +62,8 @@ from backend.app.core.postgres_database import postgres_database
 from backend.app.core.postgres_migrations import pending_migration_labels
 from backend.app.core.redis_client import close_redis_client, create_redis_client
 from backend.app.core.scheduler import create_scheduler_runtime
+from backend.app.monitoring.email_events import configure_email_event_writer
+from backend.app.monitoring.email_monitor import EmailMonitor
 from backend.app.monitoring.error_event_capture import ErrorEventCapture
 from backend.app.monitoring.health import create_application_monitoring_runtime
 from backend.app.monitoring.live_stats_broadcaster import (
@@ -76,6 +79,7 @@ from backend.app.repositories.application_repository_context import (
 from backend.app.repositories.application_repository_factory import (
     create_application_repositories,
 )
+from backend.app.repositories.postgres_email_monitor_repository import PostgresEmailMonitorRepository
 from backend.app.repositories.postgres_error_event_repository import (
     PostgresErrorEventRepository,
 )
@@ -165,6 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     model_provider_runtime: ApplicationModelProviderRuntime | None = None
     scheduler_runtime = None
     ai_ops_task = None
+    email_monitor_task = None
 
     app.state.database = postgres_database
     app.state.postgres_database = postgres_database
@@ -247,6 +252,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         configure_email_pool_settings_reader(
             app.state.application_repositories.email_pool_settings
         )
+        email_monitor_repository = PostgresEmailMonitorRepository(postgres_database)
+        configure_email_event_writer(email_monitor_repository.record_event)
         repositories_configured = True
         # 开源自托管引导：空库首启动种子默认管理员（无 SMTP 也能获得管理入口）。
         # 非空库为 no-op；失败仅记 critical 不阻断启动（对齐迁移台账自检口径）。
@@ -413,6 +420,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.x_operation_lock = scheduler_runtime.x_operation_lock
         if scheduler_enabled:
             scheduler_runtime.start()
+            email_monitor_task = asyncio.create_task(
+                EmailMonitor(email_monitor_repository).run()
+            )
 
         app.state.ai_ops_service = create_ai_ops_service(
             database=postgres_database,
@@ -481,6 +491,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.mcp_metrics_checkpoint_runtime = None
 
         FastAPICache.reset()
+        await _cancel_background_task(email_monitor_task, name="Email monitor")
+        configure_email_event_writer(None)
         if redis_client is not None:
             try:
                 await close_redis_client(redis_client)
@@ -607,6 +619,7 @@ app.include_router(routes_projects_api.router, prefix="/api", tags=["Projects AP
 # （aigc-mcp-go，见 docs/mcp-go-w5-blue-green-cutover.md）；Python 入站
 # 工具栈（routes_mcp.py 等）已随 W6-U4 删除。
 app.include_router(routes_monitor.router, prefix="/api", tags=["Monitor"])
+app.include_router(routes_monitor_activity.router, prefix="/api", tags=["Monitor"])
 app.include_router(routes_report.router, prefix="/api", tags=["Report"])
 app.include_router(routes_sitemap.router, prefix="/api", tags=["Sitemap"])
 app.include_router(routes_feed.router, prefix="/api", tags=["Feed"])
