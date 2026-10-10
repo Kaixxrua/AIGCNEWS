@@ -51,6 +51,13 @@ const accountGroups = computed(() => groupXAccounts(availableAccountOptions.valu
   ...group,
   followed: group.accounts.filter((account) => !unfollowedAccounts.value.has(account.handle)).length,
 })))
+const groupFollowDirections = ref<Record<string, 1 | -1>>({})
+watch(accountGroups, (groups, previous) => {
+  const oldCounts = new Map(previous.map((group) => [group.id, group.followed]))
+  const next: Record<string, 1 | -1> = {}
+  for (const group of groups) next[group.id] = group.followed < (oldCounts.get(group.id) ?? group.followed) ? -1 : 1
+  groupFollowDirections.value = next
+}, { flush: 'sync' })
 
 // 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
 const isToday = computed(() => selectedDate.value === today)
@@ -555,12 +562,24 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div class="xboard-follow-list mt-3">
-              <details v-for="group in accountGroups" :key="group.id" class="xboard-follow-group" :data-group="group.id" name="xboard-account-group" :open="group.id === 'openai'">
+              <details
+                v-for="group in accountGroups"
+                :key="group.id"
+                class="xboard-follow-group"
+                :class="{
+                  'xboard-follow-group--partial': group.followed > 0 && group.followed < group.accounts.length,
+                  'xboard-follow-group--complete': group.followed === group.accounts.length,
+                }"
+                :style="{ '--group-progress': group.followed / group.accounts.length }"
+                :data-group="group.id"
+                name="xboard-account-group"
+                :open="group.id === 'openai'"
+              >
                 <summary class="xboard-group-heading">
                   <ChevronDown class="xboard-group-chevron h-3.5 w-3.5" aria-hidden="true" />
                   <span>{{ t(`xAccountGroups.${group.id}`) }}</span>
                   <span class="xboard-group-count" :aria-label="t('xboard.followSummary', { selected: group.followed, total: group.accounts.length })">
-                    {{ group.followed }}/{{ group.accounts.length }}
+                    <RollText :value="group.followed" :direction="groupFollowDirections[group.id] ?? 1" />/{{ group.accounts.length }}
                   </span>
                 </summary>
                 <div class="xboard-account-grid">
@@ -1217,14 +1236,35 @@ onBeforeUnmount(() => {
 }
 
 .xboard-follow-group {
+  position: relative;
   min-width: 0;
   border: 1px solid var(--rule);
   border-radius: 4px;
+  background: var(--projects-paper-light);
+  transition: border-color var(--motion-base) var(--motion-ease-out), background var(--motion-base) var(--motion-ease-out);
+}
+
+.xboard-follow-group--partial { border-color: var(--ink-muted); }
+.xboard-follow-group--complete { border-color: var(--ink); background: var(--acid-soft); }
+
+.xboard-group-heading::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--acid-strong);
+  transform: scaleX(var(--group-progress, 0));
+  transform-origin: left;
+  pointer-events: none;
+  transition: transform var(--motion-slow) var(--motion-ease-out);
 }
 
 .xboard-follow-group[open] { grid-column: 1 / -1; }
 
 .xboard-group-heading {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1239,9 +1279,11 @@ onBeforeUnmount(() => {
 
 .xboard-group-heading::-webkit-details-marker { display: none; }
 .xboard-group-heading:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-.xboard-group-chevron { flex-shrink: 0; }
+.xboard-group-chevron { flex-shrink: 0; transition: transform var(--motion-base) var(--motion-ease-out); }
 .xboard-follow-group:not([open]) .xboard-group-chevron { transform: rotate(-90deg); }
 .xboard-group-count { flex-shrink: 0; margin-left: auto; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.xboard-follow-group--partial .xboard-group-count,
+.xboard-follow-group--complete .xboard-group-count { color: var(--ink); }
 
 .xboard-account-grid {
   display: grid;
