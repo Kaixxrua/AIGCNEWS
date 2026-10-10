@@ -9,7 +9,7 @@ interface Memory {
   guest?: TerminalStatus
   users: Record<string, TerminalRecord>
 }
-export interface TourProgress { step: string; returnTo: string; manual: boolean }
+export interface TourProgress { step: string; returnTo: string; manual: boolean; scope?: string }
 export const MEMORY_KEY = 'aigcnews:onboarding:v1'
 const fallback = new Map<string, string>()
 
@@ -79,7 +79,12 @@ export function readProgress(owner: Owner): TourProgress | null {
   try {
     const raw = JSON.parse(read(progressKey(owner), true) ?? 'null')
     if (!raw || typeof raw.step !== 'string' || typeof raw.returnTo !== 'string') return null
-    return { step: raw.step, returnTo: getSafeInternalRedirect(raw.returnTo), manual: raw.manual === true }
+    return {
+      step: raw.step,
+      returnTo: getSafeInternalRedirect(raw.returnTo),
+      manual: raw.manual === true,
+      scope: typeof raw.scope === 'string' ? getSafeInternalRedirect(raw.scope) : undefined,
+    }
   } catch { return null }
 }
 export function saveProgress(owner: Owner, progress: TourProgress | null) {

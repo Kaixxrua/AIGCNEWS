@@ -6,7 +6,7 @@ import { i18n } from '@/i18n'
 import { useTour } from './useTour'
 import { MEMORY_KEY, claimGuest, readProgress, readTerminal, saveProgress, saveTerminal } from './persistence'
 import { requestTour, tourActive, tourRequest } from './signals'
-import { TOUR_STEPS } from './steps'
+import { TOUR_STEPS, availableSteps, pageSteps } from './steps'
 
 const api = vi.hoisted(() => ({ fetch: vi.fn(), update: vi.fn(), toast: vi.fn() }))
 const auth = reactive({
@@ -32,8 +32,11 @@ const compact = ref(false)
 async function setup(initial = '/report?date=2026-10-01#saved') {
   router = createRouter({
     history: createMemoryHistory(),
-    routes: [...new Set(TOUR_STEPS.map(step => step.route.split('?')[0]))].map(path => ({
+    routes: [...new Set([...TOUR_STEPS.map(step => step.route.split('?')[0]),
+      '/subscriptions', '/monitor', '/membership/checkout', '/privacy', '/disclaimer', '/papers/:id/read',
+    ])].map(path => ({
       path: path!, name: path!, component: { template: '<div />' },
+      meta: { requiresAuth: path === '/subscriptions' || path === '/membership/checkout', requiresAdmin: path === '/monitor' },
     })),
   })
   await router.push(initial)
@@ -65,18 +68,21 @@ describe('desktop tour lifecycle', () => {
     expect(tour.phase.value).toBe('idle')
     expect(readProgress('guest')).toBeNull()
   })
-  it('visits pages, skips back to the original location, suppresses automatic replay and permits manual replay', async () => {
+  it('guides only the current report and preserves its query and hash', async () => {
+    saveTerminal('guest', 'skipped')
     await setup()
     requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
+    expect(tour.pageGuide.value).toBe(true)
+    expect(tour.steps.value.map(step => step.id)).toEqual(['report', 'papers', 'subscribe'])
     tour.start()
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/')
+    expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
     tour.next(); await flushPromises()
     expect(tour.navigationFailed.value).toBe(false)
     tour.next(); await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/projects')
-    expect(readProgress('guest')?.step).toBe('projects')
+    expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
+    expect(readProgress('guest')).toMatchObject({ step: 'subscribe', scope: '/report?date=2026-10-01#saved' })
     tour.skip(); await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
     expect(readTerminal('guest')?.status).toBe('skipped')
@@ -88,23 +94,39 @@ describe('desktop tour lifecycle', () => {
     expect(tour.phase.value).toBe('welcome')
     tour.start(); await flushPromises()
     expect(tour.index.value).toBe(0)
+    expect(tour.step.value?.id).toBe('report')
   })
-  it('resumes after refresh and remembers the original return path', async () => {
+  it('resumes a page guide after refresh without visiting another page', async () => {
+    saveTerminal('guest', 'skipped')
     await setup()
     requestTour(); await flushPromises()
     tour.start(); await flushPromises()
     tour.next(); await flushPromises()
-    tour.next(); await flushPromises()
     wrapper?.unmount()
-    await setup('/projects')
+    await setup('/report?date=2026-10-01#saved')
     expect(tour.phase.value).toBe('tour')
-    expect(tour.step.value?.id).toBe('projects')
+    expect(tour.step.value?.id).toBe('papers')
+    expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
     tour.skip(); await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
   })
-  it('finishes without navigating to a protected route and records completion', async () => {
+  it('drops an unfinished page guide after moving to another page', async () => {
+    saveTerminal('guest', 'skipped')
+    await setup('/projects')
+    requestTour(); await flushPromises()
+    tour.start(); await flushPromises()
+    wrapper?.unmount()
+    await setup('/websites')
+    expect(tour.phase.value).toBe('idle')
+    expect(readProgress('guest')).toBeNull()
+    requestTour(); await flushPromises()
+    expect(tour.steps.value.map(step => step.id)).toEqual(['websites'])
+  })
+  it('keeps the first site tour and finishes without navigating to a protected route', async () => {
     await setup()
     requestTour(); await flushPromises()
+    expect(tour.pageGuide.value).toBe(false)
+    expect(tour.steps.value.length).toBeGreaterThan(10)
     tour.start(); await flushPromises()
     while (tour.index.value < tour.steps.value.length - 1) {
       tour.next(); await flushPromises()
@@ -142,12 +164,16 @@ describe('desktop tour lifecycle', () => {
   it('allows the help button to replay from a signed-in protected page', async () => {
     login(7)
     api.fetch.mockResolvedValue('completed')
-    await setup()
-    router.addRoute({ path: '/subscriptions', component: { template: '<div />' }, meta: { requiresAuth: true } })
-    await router.push('/subscriptions')
+    await setup('/subscriptions')
     requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
+    expect(tour.steps.value.map(step => step.id)).toEqual(['subscriptionsPage'])
     tour.start(); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/subscriptions')
+    wrapper?.unmount()
+    await setup('/subscriptions')
+    expect(tour.step.value?.id).toBe('subscriptionsPage')
+    expect(router.currentRoute.value.path).toBe('/subscriptions')
     tour.skip(); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/subscriptions')
   })
@@ -209,11 +235,12 @@ describe('desktop tour lifecycle', () => {
     expect(readTerminal('user:8')).toBeUndefined()
   })
   it('serializes skip behind a pending navigation so a late route cannot pull the user away', async () => {
+    saveProgress('guest', { step: 'navigation', returnTo: '/report?date=2026-10-01#saved', manual: false })
     await setup()
-    requestTour(); await flushPromises()
+    tour.next(); await flushPromises()
     let release!: () => void
-    const remove = router.beforeEach(to => to.path === '/' ? new Promise<void>(done => { release = done }) : undefined)
-    tour.start(); await nextTick(); await flushPromises()
+    const remove = router.beforeEach(to => to.path === '/projects' ? new Promise<void>(done => { release = done }) : undefined)
+    tour.next(); await nextTick(); await flushPromises()
     tour.skip(); await flushPromises()
     release(); await flushPromises()
     expect(tour.phase.value).toBe('idle')
@@ -227,7 +254,7 @@ describe('mobile tour lifecycle', () => {
     compact.value = true
     await setup()
     requestTour(); await flushPromises()
-    expect(tour.phase.value).toBe('welcome')
+    expect(tour.pageGuide.value).toBe(false)
     tour.start(); await flushPromises()
     const visited: string[] = []
     while (tour.phase.value === 'tour') {
@@ -242,6 +269,7 @@ describe('mobile tour lifecycle', () => {
     expect(router.currentRoute.value.fullPath).toBe('/report?date=2026-10-01#saved')
     requestTour(); await flushPromises()
     expect(tour.phase.value).toBe('welcome')
+    expect(tour.steps.value.map(step => step.id)).toEqual(['report', 'papers', 'subscribe'])
   })
   it('resumes past a saved desktop integration step and preserves the return location', async () => {
     saveProgress('guest', { step: 'mcp', returnTo: '/projects?source=website', manual: true })
@@ -253,9 +281,8 @@ describe('mobile tour lifecycle', () => {
     expect(router.currentRoute.value.fullPath).toBe('/projects?source=website')
   })
   it('preserves the current section across layout changes and advances past unavailable steps', async () => {
+    saveProgress('guest', { step: 'navigation', returnTo: '/report?date=2026-10-01#saved', manual: false })
     await setup()
-    requestTour(); await flushPromises()
-    tour.start(); await flushPromises()
     while (tour.step.value?.id !== 'mcp') { tour.next(); await flushPromises() }
     compact.value = true; await flushPromises()
     expect(tour.step.value?.id).toBe('tracking')
@@ -263,5 +290,20 @@ describe('mobile tour lifecycle', () => {
     compact.value = false; await flushPromises()
     expect(tour.step.value?.id).toBe('tracking')
     expect(tour.steps.value.some(step => step.id === 'mcp')).toBe(true)
+  })
+})
+
+describe('current-page guide selection', () => {
+  const desktop = availableSteps({ x: true, contact: true })
+  it('selects page content without global navigation or another collection', () => {
+    expect(pageSteps(desktop, '/').map(step => step.id)).toEqual(['home'])
+    expect(pageSteps(desktop, '/projects').map(step => step.id)).toEqual(['projects', 'projectDetails'])
+    expect(pageSteps(desktop, '/projects', 'website').map(step => step.id)).toEqual(['myWebsites'])
+    expect(pageSteps(desktop, '/papers/42/read').map(step => step.id)).toEqual(['paperReadPage'])
+  })
+  it('offers relevant help on a mobile integration page', () => {
+    const mobile = availableSteps({ x: true, contact: false }, true)
+    expect(pageSteps(mobile, '/mcp', undefined, true).map(step => step.id)).toEqual(['mcp'])
+    expect(pageSteps(mobile, '/dsh', undefined, true).map(step => step.id)).toEqual(['dsh'])
   })
 })
