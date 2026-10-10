@@ -1,7 +1,7 @@
 """Bounded local diagnostic reads, separate from public monitoring contracts."""
 from datetime import datetime, timedelta, timezone
 
-from backend.app.services.ai_ops_diagnostics import aggregate_errors
+from backend.app.domain.ai_ops_diagnostics import aggregate_errors
 
 
 class PostgresAiOpsDiagnosticsRepository:

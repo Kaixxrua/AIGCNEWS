@@ -87,21 +87,69 @@ class ProjectSemanticSearchTests(unittest.TestCase):
 
         self.assertEqual([hit.repo_id for hit in hits], ["owner/a", "owner/b"])
 
-    def test_warmup_uses_minimal_vector_search(self) -> None:
+    def test_warmup_covers_topics_at_search_depth_without_reembedding(self) -> None:
         vectors = MagicMock()
         embeddings = MagicMock()
         embeddings.embed_query.return_value = [0.1, 0.2]
         search = semantic.ProjectSemanticSearch(vectors=vectors, embeddings=embeddings)
 
-        search.warmup()
+        with (
+            patch.object(semantic.settings, "project_semantic_chunk_limit", 800),
+            patch.object(semantic.settings, "project_semantic_repo_limit", 200),
+            patch.object(semantic.settings, "project_semantic_min_score", 0.45),
+        ):
+            search.warmup()
+            first_embeddings = embeddings.embed_query.call_count
+            search.warmup()
 
-        embeddings.embed_query.assert_called_once()
-        vectors.search_repo_ids.assert_called_once_with(
-            [0.1, 0.2],
-            chunk_limit=1,
-            repo_limit=1,
-            min_score=-1.0,
+        queries = [call.args[0] for call in embeddings.embed_query.call_args_list]
+        for topic in ("AI 编程助手", "知识库问答", "自托管书签管理"):
+            self.assertIn(topic, queries)
+            self.assertTrue(any(query.startswith(topic + " ") for query in queries))
+        self.assertEqual(embeddings.embed_query.call_count, first_embeddings)
+        self.assertEqual(vectors.search_repo_ids.call_count, first_embeddings * 2)
+        for call in vectors.search_repo_ids.call_args_list:
+            self.assertEqual(call.kwargs, {
+                "chunk_limit": 800, "repo_limit": 200, "min_score": 0.45,
+            })
+
+    def test_warmup_keeps_bounded_recent_queries_without_reembedding_them(self) -> None:
+        vectors = MagicMock()
+        vectors.search_repo_ids.return_value = []
+        embeddings = MagicMock()
+        embedding_by_query = {"a": [1.0], "b": [2.0], "c": [3.0], "seed": [0.0]}
+        embeddings.embed_query.side_effect = embedding_by_query.__getitem__
+        search = semantic.ProjectSemanticSearch(vectors=vectors, embeddings=embeddings)
+        with (
+            patch.object(semantic.settings, "project_semantic_search_enabled", True),
+            patch.object(semantic, "_WARMUP_QUERIES", ("seed",)),
+            patch.object(semantic, "_RECENT_WARMUP_VECTOR_LIMIT", 2),
+        ):
+            for query in ("a", "b", "a", "c"):
+                self.assertEqual(search.search_repo_ids(query), [])
+            vectors.search_repo_ids.reset_mock()
+            embeddings.embed_query.reset_mock()
+            search.warmup()
+
+        embeddings.embed_query.assert_called_once_with("seed")
+        self.assertEqual(
+            [call.args[0] for call in vectors.search_repo_ids.call_args_list],
+            [[0.0], [1.0], [3.0]],
         )
+
+    def test_warmup_retries_failed_embedding_without_discarding_progress(self) -> None:
+        vectors = MagicMock()
+        embeddings = MagicMock()
+        embeddings.embed_query.side_effect = [[0.1], RuntimeError("temporary"), [0.2]]
+        search = semantic.ProjectSemanticSearch(vectors=vectors, embeddings=embeddings)
+        with patch.object(semantic, "_WARMUP_QUERIES", ("one", "two")):
+            with self.assertRaisesRegex(RuntimeError, "temporary"):
+                search.warmup()
+            search.warmup()
+            search.warmup()
+
+        self.assertEqual(embeddings.embed_query.call_count, 3)
+        self.assertEqual(vectors.search_repo_ids.call_count, 4)
 
     def test_disabled_warmup_does_not_initialize_dependencies(self) -> None:
         with (

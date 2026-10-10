@@ -9,11 +9,11 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from backend.app.domain.ai_ops_diagnostics import fallback_report, translation_evidence
 from backend.app.repositories.postgres_ai_ops_diagnostics_repository import PostgresAiOpsDiagnosticsRepository
 from backend.app.repositories.postgres_ai_ops_followup_repository import PostgresAiOpsFollowupRepository
 from backend.app.repositories.postgres_ai_ops_repository import PostgresAiOpsRepository
 from backend.app.services.ai_ops_actions import AiOpsActions, deferred_reasons, select_actions
-from backend.app.services.ai_ops_diagnostics import fallback_report, translation_evidence
 from backend.app.services.ai_ops_recovery import AiOpsRecovery
 from backend.app.services.ai_ops_runbooks import knowledge
 from backend.app.services.scheduler_admin import SchedulerAdminService

@@ -205,7 +205,7 @@ class SchedulerDescriptorTests(unittest.TestCase):
         semantic_trigger = build_trigger(semantic)
         self.assertIsInstance(semantic, IntervalJobDescriptor)
         self.assertIsInstance(semantic_trigger, IntervalTrigger)
-        self.assertEqual(semantic_trigger.interval.total_seconds(), 1800)
+        self.assertEqual(semantic_trigger.interval.total_seconds(), 300)
         self.assertEqual(str(semantic_trigger.timezone), "UTC")
         self.assertTrue(semantic.coalesce)
         self.assertEqual(semantic.misfire_grace_time, 300)

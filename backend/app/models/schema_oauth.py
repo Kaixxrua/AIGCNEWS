@@ -45,6 +45,11 @@ class OAuthStartQuery(BaseModel):
     redirect_to: str = Field(default="/", max_length=2048)
 
 
+class OAuthStartResponse(BaseModel):
+    authorization_url: str
+    expires_in: int
+
+
 class OAuthBindStartResponse(BaseModel):
     authorization_url: str
 

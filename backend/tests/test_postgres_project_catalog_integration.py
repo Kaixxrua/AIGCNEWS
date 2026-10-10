@@ -197,6 +197,45 @@ def test_real_catalog_typed_concepts_match_aliases_once_per_group(catalog: Any) 
     assert [item.term_coverage for item in lanes.relaxed] == [1, 1]
 
 
+def test_ineligible_raw_hits_cannot_displace_visible_lexical_candidates(catalog: Any) -> None:
+    # More than a full lane of high-star, unenriched matches must not consume
+    # the candidate budget before the public-catalog eligibility join.
+    try:
+        with catalog._database.transaction() as connection:
+            connection.execute("""
+                INSERT INTO github_repo_candidates (repo_id, full_name, title, url, description, stars)
+                SELECT 'eligibility-audit/' || n, 'eligibility-audit/' || n,
+                       'eligibilityaudit agent', 'https://github.com/eligibility-audit/' || n,
+                       'eligibilityaudit agent workflow', 100000 - n
+                FROM generate_series(1, 161) n
+            """)
+            connection.execute("""
+                INSERT INTO github_repo_enrichments (
+                    repo_id, category_slug, category_name, description_zh, tags_json,
+                    source_fingerprint, prompt_version, status
+                ) VALUES ('eligibility-audit/161', 'agents_automation', 'Agents',
+                          'eligibilityaudit 智能体', '["agent", "workflow"]',
+                          repeat('a', 64), 'test', 'succeeded')
+            """)
+        plan = ProjectLexicalRetrievalPlan(
+            normalized_query="eligibilityaudit agent",
+            strict_terms=("eligibilityaudit",),
+            concepts=(ProjectLexicalConcept(
+                concept_id="agent", primary_terms=("agent",), aliases=("智能体", "workflow"),
+            ),),
+        )
+        lanes = catalog.find_lexical_candidate_lanes(q=plan)
+        assert [hit.repo_id for hit in lanes.strict] == ["eligibility-audit/161"]
+        for lane in (lanes.strict, lanes.relaxed):
+            assert lane[0].repo_id == "eligibility-audit/161"
+            assert lane[0].term_coverage == 2
+            assert lane[0].profile_score == 3
+            assert [hit.repo_id for hit in lane if hit.repo_id.startswith("eligibility-audit/")] == ["eligibility-audit/161"]
+    finally:
+        with catalog._database.transaction() as connection:
+            connection.execute("DELETE FROM github_repo_candidates WHERE repo_id LIKE 'eligibility-audit/%%'")
+
+
 def test_real_catalog_scope_favorites_and_categories(catalog: Any) -> None:
     today = catalog.list_projects(source="github", scope="today", min_stars=500)
     assert [item["repo_id"] for item in today["items"]] == ["acme/alpha", "acme/beta"]

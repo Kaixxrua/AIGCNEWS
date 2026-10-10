@@ -105,7 +105,7 @@ DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
         job_id="project_semantic_warmup",
         start_time=time(0, 0),
         end_time=time(23, 59),
-        interval_minutes=30,
+        interval_minutes=5,
     ),
     "conversation_cleanup": SchedulerJobConfig(
         job_id="conversation_cleanup",

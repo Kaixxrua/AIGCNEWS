@@ -187,6 +187,7 @@ const refDefaults: Record<string, unknown> = {
   projects: [],
   recommendBusyKey: '',
   requiresPersonalLogin: false,
+  requiresCatalogLogin: false,
   savingEdit: false,
   successMsg: '',
   tagsLoading: false,
@@ -589,6 +590,35 @@ describe('GitHubProjectsView dialog orchestration', () => {
     const closed = wrapper.findComponent(ToolWebsiteEditDialog)
     expect(closed.props('open')).toBe(false)
     expect(closed.props('target')).toBeNull()
+  })
+
+  it('explains guest search inline and opens login only from its action', async () => {
+    auth().isLoggedIn = false
+    const wrapper = await mountView()
+    const init = controllerSpy.mock.calls[0]![0]
+    init.routeState.searchQuery.value = 'android-use'
+    init.routeState.debouncedQuery.value = 'android'
+    controller().requiresCatalogLogin.value = true
+    routeState().currentProjectsRedirect.mockReturnValueOnce('/projects?q=android-use')
+    await nextTick()
+
+    const hint = wrapper.get('.projects-login-prompt--search')
+    expect(hint.get('[role="status"]').text()).toContain('memberContent.searchLoginTitle')
+    expect(hint.text()).toContain('memberContent.searchLoginHint')
+    expect(hint.find('.projects-kicker').exists()).toBe(false)
+    expect(requestLogin).not.toHaveBeenCalled()
+    await hint.get('.projects-login-prompt__action').trigger('click')
+    await flushPromises()
+    expect(init.routeState.debouncedQuery.value).toBe('android-use')
+    expect(routeState().replaceRouteFromState).toHaveBeenCalledWith(true)
+    expect(requestLogin).toHaveBeenCalledExactlyOnceWith('/projects?q=android-use')
+    expect(init.routeState.searchQuery.value).toBe('android-use')
+
+    controller().requiresCatalogLogin.value = false
+    auth().isLoggedIn = true
+    await nextTick()
+    expect(wrapper.find('.projects-login-prompt--search').exists()).toBe(false)
+    expect(controller().refreshReads).toHaveBeenCalled()
   })
 
   it('routes the personal login prompt through the current redirect', async () => {

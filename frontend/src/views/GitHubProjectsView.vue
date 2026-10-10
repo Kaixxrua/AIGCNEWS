@@ -153,7 +153,10 @@ const ordinalOf = (repo: GitHubProjectItem) => projectOrdinal.value.get(projectK
 const WEBSITE_CARD_TONES = ['lime', 'cyan', 'purple', 'orange', 'purple', 'orange', 'lime', 'cyan'] as const
 const websiteCardToneClass = (repo: GitHubProjectItem) => `project-card--tone-${WEBSITE_CARD_TONES[ordinalOf(repo) % WEBSITE_CARD_TONES.length]}`
 const requiresCatalogLogin = controller.requiresCatalogLogin
-const personalLoginCopy = computed(() => requiresCatalogLogin.value
+const requiresSearchLogin = computed(() => requiresCatalogLogin.value && Boolean(debouncedQuery.value.trim()))
+const personalLoginCopy = computed(() => requiresSearchLogin.value
+  ? { kicker: '', title: t('memberContent.searchLoginTitle'), description: t('memberContent.searchLoginHint') }
+  : requiresCatalogLogin.value
   ? { kicker: t('projects.heroLibraryKicker'), title: t('memberContent.loginContinue'), description: t('memberContent.projectsHint') }
   : isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
@@ -545,7 +548,15 @@ watch(debouncedQuery, (value) => {
   }
 })
 
-const goToPersonalLogin = () => { requestLogin(currentProjectsRedirect()) }
+const goToPersonalLogin = async () => {
+  if (requiresSearchLogin.value) {
+    if (searchTimer) { window.clearTimeout(searchTimer); searchTimer = undefined }
+    debouncedQuery.value = searchQuery.value
+    await nextTick()
+    await replaceRouteFromState(true)
+  }
+  requestLogin(currentProjectsRedirect())
+}
 const openAddDialog = () => {
   if (!authStore.isLoggedIn) { requestLogin('/projects?source=website'); return }
   addToolError.value = ''
@@ -734,7 +745,7 @@ onBeforeUnmount(stopViewReads)
       {{ successMsg }}
     </section>
 
-    <section v-if="requiresPersonalLogin || requiresCatalogLogin" class="projects-login-prompt glass-card" aria-labelledby="personal-login-title">
+    <section v-if="requiresPersonalLogin || requiresCatalogLogin" class="projects-login-prompt glass-card" :class="{ 'projects-login-prompt--search': requiresSearchLogin }" aria-labelledby="personal-login-title">
       <div class="projects-login-prompt__mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <rect x="4" y="10" width="16" height="11" rx="3" />
@@ -742,8 +753,8 @@ onBeforeUnmount(stopViewReads)
           <path d="M12 14v3" />
         </svg>
       </div>
-      <div class="projects-login-prompt__copy">
-        <p class="projects-kicker">{{ personalLoginCopy.kicker }}</p>
+      <div class="projects-login-prompt__copy" :role="requiresSearchLogin ? 'status' : undefined">
+        <p v-if="!requiresSearchLogin" class="projects-kicker">{{ personalLoginCopy.kicker }}</p>
         <h2 id="personal-login-title">{{ personalLoginCopy.title }}</h2>
         <p>{{ personalLoginCopy.description }}</p>
         <div v-if="!requiresCatalogLogin" class="projects-login-prompt__notes" :aria-label="t('projects.loginFeatures')">
@@ -753,7 +764,7 @@ onBeforeUnmount(stopViewReads)
         </div>
       </div>
       <button type="button" class="projects-login-prompt__action" @click="goToPersonalLogin">
-        {{ t(requiresCatalogLogin ? 'memberContent.loginContinue' : 'projects.loginAction') }}
+        {{ t(requiresSearchLogin ? 'memberContent.searchLoginAction' : requiresCatalogLogin ? 'memberContent.loginContinue' : 'projects.loginAction') }}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M5 12h14" />
           <path d="m14 7 5 5-5 5" />
@@ -1203,6 +1214,14 @@ onBeforeUnmount(stopViewReads)
   height: 16px;
 }
 
+
+.projects-login-prompt.projects-login-prompt--search { display: flex; flex-direction: row; flex-wrap: wrap; gap: 12px; min-height: 0; padding: 16px; }
+.projects-login-prompt--search .projects-login-prompt__mark { flex-shrink: 0; width: 36px; height: 36px; border-radius: 6px; box-shadow: none; }
+.projects-login-prompt--search .projects-login-prompt__mark svg { width: 20px; height: 20px; }
+.projects-login-prompt--search .projects-login-prompt__copy { flex: 1 1 200px; max-width: none; }
+.projects-login-prompt--search .projects-login-prompt__copy h2 { font-size: 16px; line-height: 1.5; }
+.projects-login-prompt--search .projects-login-prompt__copy > p { margin-top: 4px; font-size: 13px; }
+.projects-login-prompt--search .projects-login-prompt__action:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 /* MCP 推广块（ProjectMcpPromo）的宽度与配色留在页面上：特异度和上面 .glass-card 那条相同，要在同一份样式表里排在它后面才压得过。 */
 .projects-page .projects-mcp-promo { width: 100%; min-width: 0; margin-bottom: 18px; border-color: var(--projects-accent); border-radius: 6px; background: var(--projects-acid-soft); }

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from backend.app.services.ai_ops_diagnostics import aggregate_errors, error_category, safe_error, translation_evidence
+from backend.app.domain.ai_ops_diagnostics import aggregate_errors, error_category, safe_error, translation_evidence
 from backend.app.services.ai_ops_runbooks import POLICY_VERSION, knowledge
 
 

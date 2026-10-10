@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 
-from backend.app.services.ai_ops_diagnostics import error_category
+from backend.app.domain.ai_ops_diagnostics import error_category
 from backend.app.services.briefing.daily_briefing import get_briefing_cache_key
 from backend.app.services.briefing.dispatch import BRIEFING_SOURCES, run_daily_briefing_dispatch
 from backend.app.services.ingestion.x_translation_service import XTranslationProcessor

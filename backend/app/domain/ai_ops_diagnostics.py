@@ -1,4 +1,7 @@
-"""Local, allowlisted error projection. Raw messages never leave this module."""
+"""Pure, allowlisted diagnostic projections shared by services and repositories.
+
+Raw messages never leave this module.
+"""
 from __future__ import annotations
 
 import hashlib
