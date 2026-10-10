@@ -5,6 +5,9 @@ import { onboardingZh } from './onboarding'
 const overrides = {
   memberContent: {
     loginContinue: '免费登录后继续',
+    searchLoginTitle: '搜索需要登录',
+    searchLoginHint: '已保留你的搜索词，免费登录后即可查看搜索结果。',
+    searchLoginAction: '登录后继续搜索',
     projectsHint: '项目库第一页可以直接浏览，搜索和继续翻页需要登录。登录后将自动继续刚才的操作。',
     reportHint: '当前显示简报预览，免费登录后可查看完整内容。',
   },
