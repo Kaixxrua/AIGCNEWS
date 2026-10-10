@@ -534,7 +534,7 @@ class SchedulerRegistrationContractTests(unittest.TestCase):
 
         semantic = calls["project_semantic_warmup"]
         self.assertIsInstance(semantic["trigger"], IntervalTrigger)
-        self.assertEqual(semantic["trigger"].interval.total_seconds(), 1800)
+        self.assertEqual(semantic["trigger"].interval.total_seconds(), 300)
         self.assertEqual(str(semantic["trigger"].timezone), "Asia/Shanghai")
         self.assertEqual(
             {key: semantic[key] for key in ("name", "replace_existing", "max_instances", "coalesce", "misfire_grace_time")},

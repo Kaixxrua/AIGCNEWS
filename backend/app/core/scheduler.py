@@ -1799,7 +1799,7 @@ class ApplicationSchedulerRuntime:
                     semantic_descriptor,
                     self._run_project_semantic_warmup_job,
                 )
-                logger.info("[Scheduler] 注册项目语义搜索预热任务（每 %d 分钟）", getattr(semantic_descriptor, "interval_minutes", 30))
+                logger.info("[Scheduler] 注册项目语义搜索预热任务（每 %d 分钟）", getattr(semantic_descriptor, "interval_minutes", 5))
             else:
                 logger.info("[Scheduler] 跳过已停用的语义搜索预热任务")
 
