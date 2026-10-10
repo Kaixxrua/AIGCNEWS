@@ -4,8 +4,8 @@
 //
 //   - 两层正交限速：分钟级突发桶防爬（所有方法），tools/call 再叠加
 //     分层配额桶（匿名按 IP 每 24 小时 5 次；Free 按用户每 24 小时
-//     10 次 + 滚动 30 天 400 次；VIP 按用户每 24 小时 200 次 + 滚动
-//     30 天 8000 次；24 小时桶是 pacing 层，防脉冲烧穿长窗口额度）；
+//     10 次 + 滚动 30 天 200 次；VIP 按用户每 24 小时 200 次 + 滚动
+//     30 天 4000 次；24 小时桶是 pacing 层，防脉冲烧穿长窗口额度）；
 //   - 先分钟桶后配额桶，被分钟桶 429 的请求不消耗配额；
 //   - admin 豁免配额（运营排查不受商业约束），但不豁免分钟桶；
 //   - 除超限外任何 Redis 错误 fail-open（可用性优先于严格性）。
@@ -58,9 +58,9 @@ type Limits struct {
 	AuthenticatedToolCallPerMinute int64 // MCP_AUTHENTICATED_TOOL_CALL_LIMIT = 120
 	AnonymousDailyToolCallQuota    int64 // MCP_ANONYMOUS_DAILY_TOOL_CALL_QUOTA = 5
 	FreeDailyToolCallQuota         int64 // MCP_FREE_DAILY_TOOL_CALL_QUOTA = 10
-	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 400
+	FreeMonthlyToolCallQuota       int64 // MCP_FREE_MONTHLY_TOOL_CALL_QUOTA = 200
 	MemberDailyToolCallQuota       int64 // MCP_MEMBER_DAILY_TOOL_CALL_QUOTA = 200
-	MemberMonthlyToolCallQuota     int64 // MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA = 8000
+	MemberMonthlyToolCallQuota     int64 // MCP_MEMBER_MONTHLY_TOOL_CALL_QUOTA = 4000
 }
 
 func defaultLimits() Limits {
@@ -71,9 +71,9 @@ func defaultLimits() Limits {
 		AuthenticatedToolCallPerMinute: 120,
 		AnonymousDailyToolCallQuota:    5,
 		FreeDailyToolCallQuota:         10,
-		FreeMonthlyToolCallQuota:       400,
+		FreeMonthlyToolCallQuota:       200,
 		MemberDailyToolCallQuota:       200,
-		MemberMonthlyToolCallQuota:     8000,
+		MemberMonthlyToolCallQuota:     4000,
 	}
 }
 

@@ -78,7 +78,7 @@ describe('MembershipView desktop comparison', () => {
     expect(column(wrapper, 1)[3]?.find('.tier-cell-line').text()).toBe('滚动 24 小时最多添加 3 个')
     expect(column(wrapper, 1)[4]?.find('.tier-cell-line').text()).toBe('每天 5 次，源码与提示词共用')
     expect(column(wrapper, 2)[4]?.find('.tier-cell-line').text()).toBe('不限次')
-    expect(column(wrapper, 2)[5]?.findAll('.tier-cell-line').map((line) => line.text())).toEqual(['每 24 小时最多 200 次', '每 30 天最多 8,000 次'])
+    expect(column(wrapper, 2)[5]?.findAll('.tier-cell-line').map((line) => line.text())).toEqual(['每 24 小时最多 200 次', '每 30 天最多 4,000 次'])
     expect(wrapper.find('.tier-card ul:not(.tier-features--compare)').exists()).toBe(false)
   })
 
@@ -102,8 +102,8 @@ describe('MembershipView desktop comparison', () => {
       .filter((cell) => cell.classes('tier-feature--upgrade'))
       .map((cell) => cell.findAll('.tier-cell-text').map((text) => text.text()))
     expect(marked(0)).toEqual([])
-    expect(marked(1)).toEqual([['每 24 小时最多 10 次', '每 30 天最多 400 次']])
-    expect(marked(2)).toEqual([['10 条，支持排除词', 'AI 客户端经 MCP 可读'], ['自选时间与已验证投递渠道', '附关键词热度飙升提醒', '可导出最近 90 天'], ['添加不限量'], ['不限次'], ['每 24 小时最多 200 次', '每 30 天最多 8,000 次']])
+    expect(marked(1)).toEqual([['每 24 小时最多 10 次', '每 30 天最多 200 次']])
+    expect(marked(2)).toEqual([['10 条，支持排除词', 'AI 客户端经 MCP 可读'], ['自选时间与已验证投递渠道', '附关键词热度飙升提醒', '可导出最近 90 天'], ['添加不限量'], ['不限次'], ['每 24 小时最多 200 次', '每 30 天最多 4,000 次']])
     // ✗ 到 ✓ 不划：免费档的追踪比游客多，但游客那格的 ✗ 已经说明了
     expect(column(wrapper, 1)[1]?.classes()).not.toContain('tier-feature--upgrade')
 

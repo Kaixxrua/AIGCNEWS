@@ -201,7 +201,7 @@ describe('DshView on desktop', () => {
     expect(stats).toHaveLength(4)
     expect(stats[1]!.get('strong').text()).toBe('2')
     expect(stats[2]!.get('strong').text()).toBe('200')
-    expect(stats[3]!.get('strong').text()).toBe('8,000')
+    expect(stats[3]!.get('strong').text()).toBe('4,000')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
   })
 })

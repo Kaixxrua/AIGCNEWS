@@ -4,8 +4,8 @@ import { MCP_FREE_QUOTA, MCP_MEMBER_QUOTA, buildDshInstallLine, dshPatchLines } 
 
 describe('dshPlugin', () => {
   it('matches the mcp-go quota defaults', () => {
-    expect(MCP_MEMBER_QUOTA).toEqual({ rolling24h: 200, rolling30d: 8000 })
-    expect(MCP_FREE_QUOTA).toEqual({ rolling24h: 10, rolling30d: 400 })
+    expect(MCP_MEMBER_QUOTA).toEqual({ rolling24h: 200, rolling30d: 4000 })
+    expect(MCP_FREE_QUOTA).toEqual({ rolling24h: 10, rolling30d: 200 })
   })
 
   it('writes one patch item that replaces the plugin config with the token', () => {

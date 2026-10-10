@@ -37,8 +37,8 @@ export const DSH_PLUGIN_INSTALL_METHODS: readonly DshPluginInstallMethod[] = [
 
 /** MCP/API 共用额度（每 24 小时 / 每 30 天，窗口从其中第一次调用起算），与 mcp-go ratelimit.go 的 defaultLimits
  * 及 dsh.wizard.vipHint、mcp.quota.free 文案同值；改额度时几处一起改。 */
-export const MCP_MEMBER_QUOTA = { rolling24h: 200, rolling30d: 8000 } as const
-export const MCP_FREE_QUOTA = { rolling24h: 10, rolling30d: 400 } as const
+export const MCP_MEMBER_QUOTA = { rolling24h: 200, rolling30d: 4000 } as const
+export const MCP_FREE_QUOTA = { rolling24h: 10, rolling30d: 200 } as const
 
 export const DSH_PLUGIN_REPOSITORY_URL =
   'https://github.com/Kaixxrua/dsh-aigc-radar'

@@ -74,8 +74,8 @@ const overrides = {
   membership: {
     title: '会员', subtitle: '持续追踪关注的 AI 主题与项目，接收个人简报；UI 灵感库复制不限次，MCP/API 额度也更高。',
     guest: { name: 'guest', price: '¥0', note: '无需注册，打开即用', features: { browse: '浏览榜单、论文与项目库', mcpAnonymous: 'MCP 匿名额度：每 24 小时 5 次', rss: '简报 RSS 订阅', briefing: '简报邮件订阅', website: '个人网页收藏', uiCopy: 'UI 灵感库复制源码与提示词' } },
-    free: { register: '免费注册', includedInMember: '已包含在会员权益中', name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { tracking: '1 条关键词或项目追踪，含每日个人简报', mcpFree: 'MCP/API 共用：每 24 小时最多 10 次，每 30 天最多 400 次', websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏', uiCopyFree: 'UI 灵感库每天复制 5 次，源码与提示词共用', briefingFree: '简报订阅全部 8 个日报模块', rssFree: 'RSS 每日综合简报与简报速览订阅' } },
-    member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', priceLoading: '价格加载中', priceFailed: '价格没加载出来', priceRetry: '重试', priceUnavailable: '价格请联系咨询', features: { tracking: '10 条关键词或项目追踪，支持排除词', mcpTracking: '在 AI 客户端里经 MCP 读取自己的追踪结果', personalDigest: '每日个人简报，自选时间与已验证投递渠道', surgeAlerts: '关注的关键词热度飙升时，在简报里提醒', historyExport: '导出最近 90 天个人简报（CSV / JSON）', mcpMember: 'MCP/API 共用：每 24 小时最多 200 次，每 30 天最多 8,000 次', websiteMember: '个人网页收藏添加不限量', uiCopyMember: 'UI 灵感库复制不限次', support: 'MCP 接入问题支持' } },
+    free: { register: '免费注册', includedInMember: '已包含在会员权益中', name: 'free', price: '¥0', currentPlan: '当前默认方案', features: { tracking: '1 条关键词或项目追踪，含每日个人简报', mcpFree: 'MCP/API 共用：每 24 小时最多 10 次，每 30 天最多 200 次', websiteFree: '滚动 24 小时最多添加 3 个个人网页收藏', uiCopyFree: 'UI 灵感库每天复制 5 次，源码与提示词共用', briefingFree: '简报订阅全部 8 个日报模块', rssFree: 'RSS 每日综合简报与简报速览订阅' } },
+    member: { name: 'vip', badge: '推荐', priceMonthlyPeriod: '/ 月', priceYearlyPeriod: '/ 年', yearlySavings: '年付省 {amount}', yearlyDiscount: '-{percent}%', billMonthly: '按月付', billYearly: '按年付', priceLoading: '价格加载中', priceFailed: '价格没加载出来', priceRetry: '重试', priceUnavailable: '价格请联系咨询', features: { tracking: '10 条关键词或项目追踪，支持排除词', mcpTracking: '在 AI 客户端里经 MCP 读取自己的追踪结果', personalDigest: '每日个人简报，自选时间与已验证投递渠道', surgeAlerts: '关注的关键词热度飙升时，在简报里提醒', historyExport: '导出最近 90 天个人简报（CSV / JSON）', mcpMember: 'MCP/API 共用：每 24 小时最多 200 次，每 30 天最多 4,000 次', websiteMember: '个人网页收藏添加不限量', uiCopyMember: 'UI 灵感库复制不限次', support: 'MCP 接入问题支持' } },
     currentMember: '已开通', cta: '联系开通', ctaHint: '在线支付接入中：先联系我们开通，确认后立即生效。', ctaMailSubject: 'AIGC News vip 开通咨询', memberNote: '会员权益已生效', memberLifetime: '长期有效', memberUntil: '有效期至 {date}',
     renew: '续费', renewHint: '当前有效期至 {date}，续费从到期日起顺延；会员为在线交付的虚拟商品，一经开通不支持退款。',
     ctaOnline: '立即开通', ctaOnlineHint: '在线支付：支付成功后权益立即生效；会员为在线交付的虚拟商品，一经开通不支持退款。',
@@ -85,8 +85,8 @@ const overrides = {
       cells: {
         trackingFree: '1 条', trackingMember: '10 条，支持排除词', trackingMcp: 'AI 客户端经 MCP 可读', digestMember: '自选时间与已验证投递渠道', digestSurge: '附关键词热度飙升提醒', digestExport: '可导出最近 90 天',
         quotaGuestDay: '每 24 小时 5 次', quotaGuestScope: '仅 MCP，匿名使用',
-        quotaFreeDay: '每 24 小时最多 10 次', quotaFreeMonth: '每 30 天最多 400 次',
-        quotaMemberDay: '每 24 小时最多 200 次', quotaMemberMonth: '每 30 天最多 8,000 次',
+        quotaFreeDay: '每 24 小时最多 10 次', quotaFreeMonth: '每 30 天最多 200 次',
+        quotaMemberDay: '每 24 小时最多 200 次', quotaMemberMonth: '每 30 天最多 4,000 次',
         websiteFree: '滚动 24 小时最多添加 3 个', websiteMember: '添加不限量', uiCopyFree: '每天 5 次，源码与提示词共用', uiCopyMember: '不限次', briefingAll: '全部 8 个日报模块', rssAll: '每日综合简报与简报速览',
       },
     },
@@ -290,7 +290,7 @@ const overrides = {
     },
     errors: { 'load-failed': '加载失败，请稍后重试', 'request-failed': '操作失败，请稍后重试', 'telegram-unavailable': 'Telegram 推送暂未配置或暂不可用，请稍后再试。' },
   },
-  dsh: { pageTitle: 'dsh 插件', desk: { ariaLabel: 'dsh 接入命令', summary: '一条命令装好插件，并把你的专属 Token 写进 dsh 的 web profile。', guestHint: '登录后，命令会带上你的 dsh 专属 Token，即可复制。' }, stats: { label: 'dsh 插件数据', calls: 'dsh 插件调用', methods: '安装方式', vipDaily: 'VIP 24 小时额度', vipMonthly: 'VIP 30 天额度' }, eyebrow: 'AIGC 雷达 · DSH', title: '在 dsh 终端里搜索 AI 项目', description: '安装原生 dsh-aigc-radar 插件，即可在 dsh 终端使用 AIGC Radar 项目库卡片与检索路由。登录后自动分配账号绑定的专属 MCP Token，无需手动选择身份。', mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令', capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件把 AIGC Radar 项目搜索卡片、Code Mode、路由提示和 pre-step 主动触发直接带进 dsh web profile。', authRestoring: '正在恢复登录状态…', authDegraded: '登录状态校验失败，无法安全获取你的专属 Token。', authRetry: '重试', wizard: { ariaLabel: 'dsh 接入向导', stepInstall: '选择安装方式', stepInstallDescription: '第 1 步：选择 dsh 安装插件的方式。', stepCommand: '获取接入命令', stepCommandDescription: '第 2 步：复制一行命令，完成安装并写入你的专属 Token。', tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试', tokenUnavailable: 'DSH Token 服务暂不可用，请稍后重试。', tokenRecovery: '检测到你仍在使用旧版 DSH Token，无法自动恢复明文。请重新生成一枚新 Token，旧 Token 会立即失效。', tokenRotate: '重新生成 Token', commandLabel: '安装命令', tokenCommandNote: '命令已内置你的专属 Token，执行后会自动写入 dsh 补丁配置（覆盖该 profile 默认的空补丁文件）。', tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变，调用配额按账号实时会员档位计算。请按密码妥善保管，不要分享给他人。', vipHint: 'VIP 的 MCP/API 共用额度：每 24 小时 200 次、每 30 天 8,000 次（Free 为 10 次、400 次）。', vipCta: '升级 VIP', memberStatus: '当前账号为 VIP 会员，已享最高调用配额。' } },
+  dsh: { pageTitle: 'dsh 插件', desk: { ariaLabel: 'dsh 接入命令', summary: '一条命令装好插件，并把你的专属 Token 写进 dsh 的 web profile。', guestHint: '登录后，命令会带上你的 dsh 专属 Token，即可复制。' }, stats: { label: 'dsh 插件数据', calls: 'dsh 插件调用', methods: '安装方式', vipDaily: 'VIP 24 小时额度', vipMonthly: 'VIP 30 天额度' }, eyebrow: 'AIGC 雷达 · DSH', title: '在 dsh 终端里搜索 AI 项目', description: '安装原生 dsh-aigc-radar 插件，即可在 dsh 终端使用 AIGC Radar 项目库卡片与检索路由。登录后自动分配账号绑定的专属 MCP Token，无需手动选择身份。', mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令', capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件把 AIGC Radar 项目搜索卡片、Code Mode、路由提示和 pre-step 主动触发直接带进 dsh web profile。', authRestoring: '正在恢复登录状态…', authDegraded: '登录状态校验失败，无法安全获取你的专属 Token。', authRetry: '重试', wizard: { ariaLabel: 'dsh 接入向导', stepInstall: '选择安装方式', stepInstallDescription: '第 1 步：选择 dsh 安装插件的方式。', stepCommand: '获取接入命令', stepCommandDescription: '第 2 步：复制一行命令，完成安装并写入你的专属 Token。', tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试', tokenUnavailable: 'DSH Token 服务暂不可用，请稍后重试。', tokenRecovery: '检测到你仍在使用旧版 DSH Token，无法自动恢复明文。请重新生成一枚新 Token，旧 Token 会立即失效。', tokenRotate: '重新生成 Token', commandLabel: '安装命令', tokenCommandNote: '命令已内置你的专属 Token，执行后会自动写入 dsh 补丁配置（覆盖该 profile 默认的空补丁文件）。', tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变，调用配额按账号实时会员档位计算。请按密码妥善保管，不要分享给他人。', vipHint: 'VIP 的 MCP/API 共用额度：每 24 小时 200 次、每 30 天 4,000 次（Free 为 10 次、200 次）。', vipCta: '升级 VIP', memberStatus: '当前账号为 VIP 会员，已享最高调用配额。' } },
   mcpExamples: { sectionKicker: '这样提问', sectionTitle: '连接后，用自然语言提问', sectionDescription: '以下示例对应上方公开工具，复制到已连接的客户端即可。', copy: '复制', copyAria: '复制该提示词', demoAria: '在站内搜索 {query}', toolTagLabel: '调用 {tool}', ragFrameworks: { prompt: '在 AI 项目库中找 RAG 框架，按 Star 数排序。' }, agentFrameworks: { prompt: '对比最近更新的 Agent 框架项目，推荐值得复用的。' }, weeklyRanking: { prompt: '看看本周 AI 项目和论文榜单前十。' }, papersRagSurvey: { prompt: '搜索关于检索增强生成评估的 arXiv 论文。' }, categories: { prompt: 'AI 项目库有哪些分类，各有多少项目？' }, nonAiScreenshot: { prompt: '找一个 Windows 上的开源截图工具。' } },
 } as const
 
@@ -409,7 +409,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'mcp.authRestoring': '正在恢复登录状态…',
   'mcp.authDegraded': '登录状态校验失败。为安全起见，登录状态确认前不会签发 MCP Token。',
   'mcp.authRetry': '重试',
-  'mcp.quota.free': '当前 Free 的 MCP/API 共用额度：每 24 小时最多 10 次，每 30 天最多 400 次；开通 vip 升至每 24 小时 200 次、每 30 天 8,000 次。',
+  'mcp.quota.free': '当前 Free 的 MCP/API 共用额度：每 24 小时最多 10 次，每 30 天最多 200 次；开通 vip 升至每 24 小时 200 次、每 30 天 4,000 次。',
   'mcp.quota.loginCta': '登录提升额度',
   'mcp.quota.vipCta': '开通 vip',
   'mcp.endpointAria': 'MCP 端点',

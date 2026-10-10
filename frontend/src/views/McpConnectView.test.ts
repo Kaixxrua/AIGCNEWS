@@ -163,7 +163,7 @@ describe('McpConnectView on desktop', () => {
 
     expect(stats).toHaveLength(3)
     expect(stats[1]!.get('strong').text()).toBe('200')
-    expect(stats[2]!.get('strong').text()).toBe('8,000')
+    expect(stats[2]!.get('strong').text()).toBe('4,000')
     expect(wrapper.get('.agent-page-hero .agent-setup-cta').text()).toBe('复制给 Agent 的配置提示词')
   })
 })

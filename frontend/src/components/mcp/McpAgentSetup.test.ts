@@ -116,7 +116,7 @@ describe('McpAgentSetup', () => {
     await flushPromises()
 
     expect(wrapper.get('.token-connection').attributes('data-connection')).toBe('connected')
-    expect(wrapper.get('.agent-setup-tier').text()).toBe('当前档位 Free：每 24 小时 10 次、每 30 天 400 次。')
+    expect(wrapper.get('.agent-setup-tier').text()).toBe('当前档位 Free：每 24 小时 10 次、每 30 天 200 次。')
   })
 
   it('reports the member tier to a vip', async () => {
@@ -128,7 +128,7 @@ describe('McpAgentSetup', () => {
     await wrapper.get('[data-connection-action="check"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.agent-setup-tier').text()).toBe('当前档位 vip：每 24 小时 200 次、每 30 天 8,000 次。')
+    expect(wrapper.get('.agent-setup-tier').text()).toBe('当前档位 vip：每 24 小时 200 次、每 30 天 4,000 次。')
   })
 
   it('stops watching when the reader signs out', async () => {

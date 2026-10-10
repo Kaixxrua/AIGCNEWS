@@ -83,9 +83,9 @@ func TestDefaultLimitsMatchSharedPool(t *testing.T) {
 		AuthenticatedToolCallPerMinute: 120,
 		AnonymousDailyToolCallQuota:    5,
 		FreeDailyToolCallQuota:         10,
-		FreeMonthlyToolCallQuota:       400,
+		FreeMonthlyToolCallQuota:       200,
 		MemberDailyToolCallQuota:       200,
-		MemberMonthlyToolCallQuota:     8000,
+		MemberMonthlyToolCallQuota:     4000,
 	}
 	if got := defaultLimits(); got != want {
 		t.Fatalf("defaultLimits() = %+v, want %+v", got, want)
