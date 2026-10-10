@@ -8,6 +8,8 @@ from backend.app.repositories.scheduler_job_config_repository import (
     SchedulerJobConfigRepository,
 )
 
+MIN_JOB_INTERVAL_MINUTES = {"x_watchlist": 15}
+
 DEFAULT_JOB_CONFIGS: dict[str, SchedulerJobConfig] = {
     "ui_library_discovery": SchedulerJobConfig(job_id="ui_library_discovery", start_time=time(9), end_time=time(9), interval_minutes=1440),
     "ui_library_x_discovery": SchedulerJobConfig(job_id="ui_library_x_discovery", start_time=time(9, 10), end_time=time(9, 10), interval_minutes=1440),
@@ -184,8 +186,9 @@ class SchedulerConfigAdminService:
             raise ValueError(f"未知定时任务: {job_id}")
         if start_time > end_time:
             raise ValueError("开始时间不能晚于结束时间")
-        if interval_minutes <= 0:
-            raise ValueError("轮询时间必须大于 0 分钟")
+        minimum = MIN_JOB_INTERVAL_MINUTES.get(job_id, 1)
+        if interval_minutes < minimum:
+            raise ValueError(f"轮询时间不得低于 {minimum} 分钟")
 
         updated = self._repository.upsert_scheduler_job_config(
             job_id,
@@ -202,6 +205,6 @@ class SchedulerConfigAdminService:
             name=_JOB_NAMES.get(config.job_id, config.job_id),
             start_time=config.start_time,
             end_time=config.end_time,
-            interval_minutes=config.interval_minutes,
+            interval_minutes=max(config.interval_minutes, MIN_JOB_INTERVAL_MINUTES.get(config.job_id, 1)),
             enabled=config.enabled,
         )

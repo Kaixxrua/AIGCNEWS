@@ -11,6 +11,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
+from backend.app.services.scheduler_config_admin import MIN_JOB_INTERVAL_MINUTES
 
 CronValue = int | str
 JobSource = Literal[
@@ -412,7 +413,7 @@ def apply_job_config(
 
     start = config.start_time
     end = config.end_time
-    interval = config.interval_minutes
+    interval = max(config.interval_minutes, MIN_JOB_INTERVAL_MINUTES.get(descriptor.id, 1))
 
     if isinstance(descriptor, CronJobDescriptor):
         return WindowedIntervalJobDescriptor(
