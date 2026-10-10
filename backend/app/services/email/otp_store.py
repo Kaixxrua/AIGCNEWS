@@ -105,7 +105,7 @@ def otp_keys(email: str, purpose: OtpPurpose) -> tuple[str, str, str]:
 
 
 class RedisOtpStore:
-    """Preserve the legacy non-atomic Redis OTP lifecycle."""
+    """Atomically reserve cooldowns and claim OTPs within each purpose namespace."""
 
     def __init__(
         self,
