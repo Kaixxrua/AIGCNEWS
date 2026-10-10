@@ -294,9 +294,17 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(openai.get('.xboard-group-count').text()).toBe('2/3')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(5)
 
-    // 原生 details 的展开状态与关注选择独立；批量操作也覆盖折叠组。
-    ;(openai.element as HTMLDetailsElement).open = false
-    await openai.trigger('toggle')
+    // 切换分类时只展开当前组，收起的账号不能获得键盘焦点；关注选择保持不变。
+    const openaiHeading = openai.get('.xboard-group-heading')
+    const anthropicHeading = groups[1]!.get('.xboard-group-heading')
+    expect(openaiHeading.attributes('aria-expanded')).toBe('true')
+    await anthropicHeading.trigger('click')
+    expect(openaiHeading.attributes('aria-expanded')).toBe('false')
+    expect(anthropicHeading.attributes('aria-expanded')).toBe('true')
+    expect(openai.get('.xboard-account-reveal').attributes('aria-hidden')).toBe('true')
+    expect(openai.get('.xboard-account-reveal').attributes('inert')).toBe('true')
+    await anthropicHeading.trigger('click')
+    expect(anthropicHeading.attributes('aria-expanded')).toBe('false')
     expect(controller().toggleFollowAccount).toHaveBeenCalledTimes(1)
     const bulkButtons = wrapper.get('.xboard-follow-panel').findAll('button.btn-secondary')
     await bulkButtons[1]!.trigger('click')
@@ -304,7 +312,7 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(0)
     await bulkButtons[0]!.trigger('click')
     expect(openai.get('.xboard-group-count').text()).toBe('3/3')
-    expect((openai.element as HTMLDetailsElement).open).toBe(false)
+    expect(openaiHeading.attributes('aria-expanded')).toBe('false')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(accounts.length)
   })
 

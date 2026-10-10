@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import type { Directive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, Bookmark, ChevronDown, ExternalLink, Eye, ImageIcon, ImageOff, Link2, Maximize2, PanelRightClose, Play, Repeat2, Users } from 'lucide-vue-next'
@@ -26,7 +27,7 @@ import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
 import { fold, unfold } from '@/motion/fold'
 import { vIndicator } from '@/motion/indicator'
-import { vMorph } from '@/motion/morph'
+import { morphSize, sizeOf, vMorph } from '@/motion/morph'
 import { canAnimate, popSpring } from '@/motion/motion'
 import { slideIn, slideOut } from '@/motion/presence'
 import { vReflow } from '@/motion/reflow'
@@ -59,6 +60,25 @@ watch(accountGroups, (groups, previous) => {
   for (const group of groups) next[group.id] = group.followed < (oldCounts.get(group.id) ?? group.followed) ? -1 : 1
   groupFollowDirections.value = next
 }, { flush: 'sync' })
+// 同时只展开一个分类；内容高度由 CSS 过渡，卡片换行交给 v-reflow。
+const expandedAccountGroup = ref<string | null>('openai')
+const toggleAccountGroup = (id: string) => {
+  expandedAccountGroup.value = expandedAccountGroup.value === id ? null : id
+}
+// 分类自身只需从半列伸到整列；高度由账号内容的 grid 行过渡负责，
+// 若再给外框做高度 morph，收起时会留下短暂的空白卡片。
+const groupWidths = new WeakMap<HTMLElement, number>()
+const vGroupWidth: Directive<HTMLElement, boolean> = {
+  beforeUpdate(el, { value, oldValue }) {
+    if (value !== oldValue && canAnimate(el)) groupWidths.set(el, sizeOf(el).width)
+  },
+  updated(el) {
+    const width = groupWidths.get(el)
+    if (width === undefined) return
+    groupWidths.delete(el)
+    morphSize(el, { width, height: sizeOf(el).height })
+  },
+}
 
 // 窗口日期是否就是今天：今天 = 最近 24h 滚动窗口（days_back=0）
 const isToday = computed(() => selectedDate.value === today)
@@ -563,45 +583,62 @@ onBeforeUnmount(() => {
                 {{ t('xboard.clearFollowed') }}
               </button>
             </div>
-            <div class="xboard-follow-list mt-3">
-              <details
+            <div v-reflow="{ key: expandedAccountGroup }" class="xboard-follow-list mt-3">
+              <section
                 v-for="group in accountGroups"
                 :key="group.id"
+                v-group-width="expandedAccountGroup === group.id"
                 class="xboard-follow-group"
                 :class="{
                   'xboard-follow-group--partial': group.followed > 0 && group.followed < group.accounts.length,
                   'xboard-follow-group--complete': group.followed === group.accounts.length,
+                  'xboard-follow-group--open': expandedAccountGroup === group.id,
                 }"
                 :style="{ '--group-progress': group.followed / group.accounts.length }"
                 :data-group="group.id"
-                name="xboard-account-group"
-                :open="group.id === 'openai'"
+                :data-reflow-key="group.id"
               >
-                <summary class="xboard-group-heading">
+                <button
+                  type="button"
+                  class="xboard-group-heading"
+                  :aria-expanded="expandedAccountGroup === group.id"
+                  :aria-controls="`xboard-account-group-${group.id}`"
+                  @click="toggleAccountGroup(group.id)"
+                >
                   <ChevronDown class="xboard-group-chevron h-3.5 w-3.5" aria-hidden="true" />
                   <span>{{ t(`xAccountGroups.${group.id}`) }}</span>
                   <span class="xboard-group-count" :aria-label="t('xboard.followSummary', { selected: group.followed, total: group.accounts.length })">
                     <RollText :value="group.followed" :direction="groupFollowDirections[group.id] ?? 1" />/{{ group.accounts.length }}
                   </span>
-                </summary>
-                <div class="xboard-account-grid">
-                  <label
-                    v-for="account in group.accounts"
-                    :key="account.handle"
-                    class="xboard-account-chip flex cursor-pointer items-center gap-1.5 text-xs"
-                    :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
-                    :title="`@${account.handle}`"
-                  >
-                    <input
-                      type="checkbox"
-                      class="h-3.5 w-3.5"
-                      :checked="!unfollowedAccounts.has(account.handle)"
-                      @change="toggleFollowAccount(account.handle); stampCheck($event)"
-                    />
-                    <span>{{ account.displayName }}</span>
-                  </label>
+                </button>
+                <div
+                  :id="`xboard-account-group-${group.id}`"
+                  class="xboard-account-reveal"
+                  :class="{ 'xboard-account-reveal--open': expandedAccountGroup === group.id }"
+                  :inert="expandedAccountGroup !== group.id"
+                  :aria-hidden="expandedAccountGroup !== group.id"
+                >
+                  <div class="xboard-account-reveal-inner">
+                    <div class="xboard-account-grid">
+                      <label
+                        v-for="account in group.accounts"
+                        :key="account.handle"
+                        class="xboard-account-chip flex cursor-pointer items-center gap-1.5 text-xs"
+                        :class="{ 'xboard-account-chip-active': !unfollowedAccounts.has(account.handle) }"
+                        :title="`@${account.handle}`"
+                      >
+                        <input
+                          type="checkbox"
+                          class="h-3.5 w-3.5"
+                          :checked="!unfollowedAccounts.has(account.handle)"
+                          @change="toggleFollowAccount(account.handle); stampCheck($event)"
+                        />
+                        <span>{{ account.displayName }}</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
-              </details>
+              </section>
             </div>
           </aside>
         </Transition>
@@ -1231,6 +1268,8 @@ onBeforeUnmount(() => {
 }
 
 .xboard-follow-list {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
@@ -1263,29 +1302,47 @@ onBeforeUnmount(() => {
   transition: transform var(--motion-slow) var(--motion-ease-out);
 }
 
-.xboard-follow-group[open] { grid-column: 1 / -1; }
+.xboard-follow-group--open { grid-column: 1 / -1; }
 
 .xboard-group-heading {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
+  width: 100%;
   min-height: 44px;
   padding: 6px;
+  border: 0;
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 700;
-  list-style: none;
+  text-align: left;
 }
 
-.xboard-group-heading::-webkit-details-marker { display: none; }
 .xboard-group-heading:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .xboard-group-chevron { flex-shrink: 0; transition: transform var(--motion-base) var(--motion-ease-out); }
-.xboard-follow-group:not([open]) .xboard-group-chevron { transform: rotate(-90deg); }
+.xboard-follow-group:not(.xboard-follow-group--open) .xboard-group-chevron { transform: rotate(-90deg); }
 .xboard-group-count { flex-shrink: 0; margin-left: auto; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .xboard-follow-group--partial .xboard-group-count,
 .xboard-follow-group--complete .xboard-group-count { color: var(--ink); }
+
+.xboard-account-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 360ms var(--motion-ease-out), opacity 120ms ease;
+}
+
+.xboard-account-reveal--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 360ms var(--motion-ease-out), opacity 180ms ease 100ms;
+}
+
+.xboard-account-reveal-inner { min-height: 0; overflow: hidden; }
 
 .xboard-account-grid {
   display: grid;
