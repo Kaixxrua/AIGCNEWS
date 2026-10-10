@@ -22,7 +22,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'report', route: '/report', targets: ['.report-shell > .comic-panel', '.report-shell'], compact: { targets: ['.report-controls__head', '.report-shell > .comic-panel'] } },
   { id: 'papers', route: '/report', targets: ['.report-reading'], compact: { route: '/report?type=arxiv', targets: ['.report-reading a[href*="arxiv.org/abs/"]', '.report-reading .prose-content h2', '.report-reading [role="status"] p', '.report-reading'] } },
   { id: 'subscribe', route: '/report', targets: ['[data-tour="subscribe"]', '.report-shell > .comic-panel'] },
-  { id: 'x', route: '/x', targets: ['.xboard-header', '.xboard-page'], feature: 'x', compact: { targets: ['.xboard-header h1', '.xboard-header'] } },
+  { id: 'x', route: '/x', targets: ['.xboard-follow-group[data-group="openai"]', '.xboard-follow-panel', '.xboard-follow-toggle', '.xboard-header', '.xboard-page'], feature: 'x' },
   { id: 'mcp', route: '/mcp', targets: ['.mcp-desk-clients', '.mcp-connect-page .connection-intro'], desktopOnly: true },
   { id: 'mcpExamples', route: '/mcp', targets: ['.mcp-desk-verify', '.mcp-desk'], desktopOnly: true },
   { id: 'dsh', route: '/dsh', targets: ['.dsh-desk-head', '.dsh-page .connection-intro'], desktopOnly: true },

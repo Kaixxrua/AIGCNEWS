@@ -6,6 +6,7 @@ import XBoardView from './XBoardView.vue'
 import { forgetSavedItems } from '@/composables/useSavedItems'
 import { setAppDensity } from '@/composables/useAppDensity'
 import { tweetReadId } from '@/features/xboard/xBoardViewModel'
+import { tourStep } from '@/features/onboarding/signals'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 
 // 桌面推文墙（≥1024px）的折叠、胶片、纯文字等按 useMediaQuery 判断；jsdom 没有 matchMedia，默认按手机与平板
@@ -155,6 +156,7 @@ const setViewportWidth = (width: number) => {
 }
 
 beforeEach(() => {
+  tourStep.value = null
   const ctl = controller()
   for (const [key, value] of Object.entries(ctl)) {
     if (typeof value === 'function' && 'mockClear' in value) value.mockClear()
@@ -240,6 +242,31 @@ describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
     expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.findAll('article.tweet-card')).toHaveLength(2)
+  })
+
+  it('引导 X 时展开异步加载的订阅列表，结束后恢复原来的开合状态', async () => {
+    const wrapper = await mountView()
+    tourStep.value = 'x'
+    await nextTick()
+    expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
+
+    controller().docs.value = [
+      { ...makeTweets(1)[0], url: 'https://x.com/openai/status/1000', author_name: 'OpenAI' },
+    ]
+    await nextTick()
+    expect(wrapper.get('.xboard-follow-toggle').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.xboard-follow-panel').text()).toContain('OpenAI')
+
+    tourStep.value = null
+    await nextTick()
+    expect(wrapper.find('.xboard-follow-panel').exists()).toBe(false)
+    await wrapper.get('.xboard-follow-toggle').trigger('click')
+    tourStep.value = 'x'
+    await nextTick()
+    tourStep.value = 'mcp'
+    await nextTick()
+    expect(wrapper.find('.xboard-follow-panel').exists()).toBe(true)
+    expect(controller().toggleFollowAccount).not.toHaveBeenCalled()
   })
 
   it('按稳定账号分组，折叠保留筛选，分组计数随单选和全部操作更新', async () => {

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, ArrowRight, Compass, X } from 'lucide-vue-next'
 import { useTour } from '@/features/onboarding/useTour'
+import { tourStep } from '@/features/onboarding/signals'
 import { placeCard, spotlightBox, type Box } from '@/features/onboarding/geometry'
 
 const props = withDefaults(defineProps<{ blocked?: boolean }>(), { blocked: false })
@@ -71,6 +72,7 @@ function measure() {
 }
 
 watch([phase, () => step.value?.id], async () => {
+  tourStep.value = phase.value === 'tour' ? step.value?.id ?? null : null
   cancelAnimationFrame(frame)
   changedAt = performance.now()
   scrolled = null
@@ -93,6 +95,7 @@ function keyboard(event: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', keyboard, true))
 onBeforeUnmount(() => {
+  tourStep.value = null
   cancelAnimationFrame(frame)
   document.removeEventListener('keydown', keyboard, true)
   dialog.value?.close()
