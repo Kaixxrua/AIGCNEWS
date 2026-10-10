@@ -10,9 +10,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 from backend.app.services.ingestion.base_crawler import CrawlResult
 from backend.app.services.ingestion.persistence_adapter import IngestionPersistenceResult
@@ -149,6 +152,29 @@ class TestSetPeriodFlags:
         assert papers[0]["in_daily"] == 0
         assert papers[0]["in_weekly"] == 1
         assert papers[0]["in_monthly"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["single", "all"])
+async def test_cancelled_pipeline_finishes_its_task_and_propagates_cancellation(mode):
+    started = asyncio.Event()
+    crawler = FakeCrawler("news", ["daily"])
+
+    async def fetch(**_):
+        started.set()
+        await asyncio.Event().wait()
+
+    crawler.fetch = fetch
+    host = FakeHost({"news": crawler})
+    runtime = MultiSourceIngestionRuntime(host)
+    task = asyncio.create_task(runtime.run_all() if mode == "all" else runtime.run_single_source("news"))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(host.finished) == 1
+    assert host.finished[0]["status"] == "failed"
+    assert host.finished[0]["error_msg"].startswith("cancelled:")
 
 
 class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
@@ -571,4 +597,3 @@ class TestXNewRowCacheInvalidation(unittest.IsolatedAsyncioTestCase):
         assert stats["new_x_rows"] == 4
         assert host.cache_cleared == 1
         assert host.cache_cleared_new_x_rows == [4]
-

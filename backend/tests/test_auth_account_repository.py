@@ -22,13 +22,13 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         )
         self.client = TestClient(app)
 
-    def test_register_uses_repository_and_consumes_otp_after_insert(self) -> None:
+    def test_register_uses_repository_and_claims_otp_before_insert(self) -> None:
         events: list[str] = []
         email_service = MagicMock()
-        email_service.verify_otp = AsyncMock(return_value=True)
-        email_service.consume_otp = AsyncMock(
-            side_effect=lambda *args, **kwargs: events.append("consume")
+        email_service.verify_otp = AsyncMock(
+            side_effect=lambda *args, **kwargs: events.append("claim") or True
         )
+        email_service.consume_otp = AsyncMock()
         self.repository.get_user_by_email.return_value = None
         self.repository.create_user_with_email.side_effect = (
             lambda *args, **kwargs: events.append("insert") or 42
@@ -55,9 +55,9 @@ class AuthAccountRepositoryRouteTests(unittest.TestCase):
         self.assertEqual(args[0], "reader@example.com")
         self.assertNotEqual(args[1], "Str0ng!Pass")
         self.assertEqual(args[2:], ("user", "读者甲"))
-        self.assertEqual(events, ["insert", "consume"])
+        self.assertEqual(events, ["claim", "insert"])
 
-    def test_register_duplicate_preserves_conflict_without_consuming_otp(self) -> None:
+    def test_register_duplicate_preserves_conflict_after_claiming_otp(self) -> None:
         email_service = MagicMock()
         email_service.verify_otp = AsyncMock(return_value=True)
         email_service.consume_otp = AsyncMock()

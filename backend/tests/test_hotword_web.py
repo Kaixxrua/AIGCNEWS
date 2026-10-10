@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
+from contextlib import nullcontext
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -224,6 +227,23 @@ def test_search_errors_are_distinct_from_successful_empty_results():
         assert empty.available and not empty.documents
 
     asyncio.run(run())
+
+
+def test_public_search_uses_another_engine_after_one_engine_fails(monkeypatch):
+    class SearchError(Exception):
+        pass
+
+    search = Mock()
+    search.text.side_effect = [SearchError("engine unavailable"), [{"href": "https://research.example/paper"}]]
+    monkeypatch.setitem(sys.modules, "ddgs", SimpleNamespace(DDGS=lambda **_: nullcontext(search)))
+    monkeypatch.setitem(sys.modules, "ddgs.exceptions", SimpleNamespace(DDGSException=SearchError))
+
+    result = asyncio.run(web.PublicWebResearch()._search("AI research", recent=True))
+
+    assert result == ["https://research.example/paper"]
+    backends = [call.kwargs["backend"] for call in search.text.call_args_list]
+    assert len(set(backends)) == 2
+    assert all("," not in backend for backend in backends)
 
 
 def test_news_discovery_reads_linked_original_papers_before_proposing_words(monkeypatch):

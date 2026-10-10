@@ -195,7 +195,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                 schemas[schema]["properties"][field]["format"], "email"
             )
 
-    def test_registration_preserves_normalized_domain_and_consumes_after_insert(self) -> None:
+    def test_registration_preserves_normalized_domain_and_claims_before_insert(self) -> None:
         service = FakeEmailService(self.events)
         payload = {
             "email": "Reader@EXAMPLE.COM",
@@ -215,7 +215,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "Reader@example.com", "123456", False, "registration"),
+                ("verify_otp", "Reader@example.com", "123456", True, "registration"),
                 ("get_user_by_email", "Reader@example.com"),
                 (
                     "create_user_with_email",
@@ -224,7 +224,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                     "user",
                     "读者甲",
                 ),
-                ("consume_otp", "Reader@example.com", "registration"),
+
             ],
         )
         self.assert_no_secret_leakage(
@@ -250,7 +250,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
                 self.assertEqual(self.events, [])
                 self.events.clear()
 
-    def test_duplicate_registration_returns_exact_conflict_without_consuming_otp(self) -> None:
+    def test_duplicate_registration_returns_exact_conflict_without_a_second_consume_otp(self) -> None:
         self.repository.users["Reader@example.com"] = {"id": 7}
         service = FakeEmailService(self.events)
         response = self._post(
@@ -270,7 +270,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "Reader@example.com", "123456", False, "registration"),
+                ("verify_otp", "Reader@example.com", "123456", True, "registration"),
                 ("get_user_by_email", "Reader@example.com"),
             ],
         )
@@ -294,7 +294,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "reader@example.com", "123456", False, "registration")
+                ("verify_otp", "reader@example.com", "123456", True, "registration")
             ],
         )
         self.assert_no_secret_leakage(response, "123456", "plain-secret")
@@ -347,7 +347,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
             ),
         )
 
-    def test_password_reset_verifies_then_updates_one_row_then_consumes(self) -> None:
+    def test_password_reset_verifies_claims_before_updating_one_row(self) -> None:
         self.repository.users["reader@example.com"] = {
             "id": 7,
             "email": "reader@example.com",
@@ -373,17 +373,17 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "reader@example.com", "654321", False, "password_reset"),
+                ("verify_otp", "reader@example.com", "654321", True, "password_reset"),
                 ("get_user_by_email", "reader@example.com"),
                 ("update_user_password", 7, "reader@example.com", "replacement-hash"),
-                ("consume_otp", "reader@example.com", "password_reset"),
+
             ],
         )
         self.assert_no_secret_leakage(
             response, "654321", "replacement-secret", "replacement-hash"
         )
 
-    def test_password_reset_requires_exactly_one_affected_row_without_consuming(self) -> None:
+    def test_password_reset_requires_exactly_one_affected_row_without_a_second_consume(self) -> None:
         for affected_rows in (0, 2):
             with self.subTest(affected_rows=affected_rows):
                 self.events.clear()
@@ -447,7 +447,7 @@ class AuthLifecycleRouteContracts(unittest.TestCase):
             self.assertEqual(
                 self.events[:2],
                 [
-                    ("verify_otp", "reader@example.com", "654321", False, "password_reset"),
+                    ("verify_otp", "reader@example.com", "654321", True, "password_reset"),
                     ("get_user_by_email", "reader@example.com"),
                 ],
             )

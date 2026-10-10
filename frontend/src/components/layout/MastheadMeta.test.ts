@@ -43,6 +43,7 @@ const expectedDateLine = (locale: string) =>
     month: 'short',
     day: 'numeric',
     weekday: 'short',
+    timeZone: 'Asia/Shanghai',
   }).format(new Date())
 
 describe('MastheadMeta', () => {
@@ -55,6 +56,7 @@ describe('MastheadMeta', () => {
     unmount?.()
     unmount = undefined
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
   it('renders the masthead date line and today-new label', async () => {
@@ -82,5 +84,16 @@ describe('MastheadMeta', () => {
     const date = host.querySelector('.masthead-meta__date')
     expect(date?.textContent).toBe(expectedDateLine('en-US'))
     expect(host.querySelector('.masthead-meta__today')?.textContent).toContain('New today')
+  })
+
+  it('moves to the new Shanghai business day while the browser stays on the previous day', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-09T15:59:50Z'))
+    const host = mountMasthead()
+    await nextTick()
+    const before = host.querySelector('.masthead-meta__date')?.textContent
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(host.querySelector('.masthead-meta__date')?.textContent).toBe(expectedDateLine('zh-CN'))
+    expect(host.querySelector('.masthead-meta__date')?.textContent).not.toBe(before)
   })
 })

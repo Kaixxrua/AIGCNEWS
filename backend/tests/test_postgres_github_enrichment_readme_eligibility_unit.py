@@ -99,14 +99,15 @@ class TestUnprocessableCteFilters:
     def test_unprocessable_excludes_repos_with_usable_readme(self) -> None:
         sql = self._status_sql()
         # unprocessable 判定 = description 空 + 无有效 README 快照
-        assert "BTRIM(COALESCE(c.description, '')) = ''" in sql
+        assert "BTRIM(COALESCE(c.description, '')) <> ''" in sql
+        assert "WHEN NOT has_input THEN 'unprocessable'" in sql
         assert "ss.readme_status = 'succeeded'" in sql
         assert "BTRIM(COALESCE(ss.readme_text, '')) <> ''" in sql
         # 无输入分支排在 failed 分支之前：有输入的失败留在可重试 failed 桶，
         # 无输入的失败统一归并 unprocessable
-        assert "WHEN e.status = 'failed' THEN 'failed'" in sql
+        assert "WHEN status='failed' THEN 'failed'" in sql
         assert sql.index("THEN 'unprocessable'") < sql.index(
-            "WHEN e.status = 'failed' THEN 'failed'"
+            "WHEN status='failed' THEN 'failed'"
         )
 
     def test_unprocessable_includes_not_found_repos_without_input(self) -> None:
@@ -167,14 +168,16 @@ class TestRetainedBreakdown:
         sql, _, _ = self._run_status()
         # 只统计富化成功过的在库行，且按当前口径不再可执行
         assert "retained AS" in sql
-        assert "e.status = 'succeeded'" in sql
-        assert "c.availability_status = 'not_found'" in sql
+        assert "status='succeeded' AND candidate_stars >= %s" in sql
+        assert "availability_status='not_found'" in sql
         assert "snapshot_below_threshold" in sql
         assert "lost_input" in sql
         assert "tombstone" in sql
         # 与 eligible 同构的否定谓词（快照星数 + 输入 + 非墓碑）；
-        # 单语句聚合后该谓词只在 eligible（正向）与 retained（否定）各出现一次
-        assert sql.count(_GITHUB_ENRICHMENT_INPUT_SQL.strip()) >= 2
+        # 输入谓词在窄候选关系中只计算一次，两种口径共用该结果。
+        assert sql.count(_GITHUB_ENRICHMENT_INPUT_SQL.strip()) == 1
+        assert "AND has_input AND canonical" in sql
+        assert "NOT (stars >= %s AND has_input AND canonical)" in sql
 
     def test_status_query_passes_five_min_stars_params(self) -> None:
         _, _, cursor = self._run_status()

@@ -89,7 +89,7 @@ describe('ProjectPane', () => {
       ['Forks', '321'],
       ['Open issues', '17'],
       ['Language', 'Rust'],
-      ['Created', 'Mar 4, 2025'],
+      ['Created', new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(repo().created_at!))],
       ['Last push', expect.any(String)],
     ])
     expect(pane.get('.project-pane__fact--stars dd').attributes('title')).toBe('12,345 GitHub stars')

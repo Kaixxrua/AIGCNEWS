@@ -306,14 +306,14 @@ class ConfirmEmailChangeTests(_EmailChangeRouteTestBase):
         self.assertNotIn("access_token", payload)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.headers["pragma"], "no-cache")
-        # 双码均以 consume=False 预验，归属正确邮箱与独立用途
+        # 双码均以 consume=True 预验，归属正确邮箱与独立用途
         verify_calls = email_service.verify_otp.await_args_list
         self.assertEqual(
             [(call.args[0], call.args[1]) for call in verify_calls],
             [(CURRENT_EMAIL, CURRENT_CODE), (NEW_EMAIL, NEW_CODE)],
         )
         for call in verify_calls:
-            self.assertIs(call.kwargs["consume"], False)
+            self.assertIs(call.kwargs["consume"], True)
             self.assertEqual(call.kwargs["purpose"], "email_change")
         self.assertEqual(
             self.repository.events,
@@ -322,14 +322,7 @@ class ConfirmEmailChangeTests(_EmailChangeRouteTestBase):
                 ("update_user_email", 7, CURRENT_EMAIL, NEW_EMAIL),
             ],
         )
-        # 仅在更新成功后消耗两枚验证码
-        consume_calls = email_service.consume_otp.await_args_list
-        self.assertEqual(
-            [call.args[0] for call in consume_calls],
-            [CURRENT_EMAIL, NEW_EMAIL],
-        )
-        for call in consume_calls:
-            self.assertEqual(call.kwargs["purpose"], "email_change")
+        email_service.consume_otp.assert_not_awaited()
         serialized = response.content.decode()
         self.assertNotIn(CURRENT_CODE, serialized)
         self.assertNotIn(NEW_CODE, serialized)
