@@ -299,6 +299,14 @@ async def list_projects(
     clean_category = category.strip()
     clean_subcategory = subcategory.strip()
     clean_q = q.strip()
+    if user_id is None and (clean_q or page > 1):
+        raise HTTPException(
+            status_code=401,
+            detail="免费登录后可搜索项目和继续翻页",
+            headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"},
+        )
+    if user_id is None:
+        page_size = min(page_size, 24)
     page_result = await catalog.list_public_projects(
         scope=scope,
         category=clean_category,

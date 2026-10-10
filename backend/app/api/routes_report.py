@@ -5,7 +5,7 @@ import json
 import logging
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -29,6 +29,7 @@ from backend.app.services.briefing.daily_briefing import (
     normalize_briefing_locale,
     select_briefing_content,
 )
+from backend.app.services.briefing.preview import briefing_preview
 from backend.app.services.email_service import (
     BriefingDeliveryError,
     EmailService,
@@ -167,7 +168,15 @@ async def stream_daily_report(
 # -----------------------------------------------------------------------
 
 
-@router.get("/report/latest")
+def _private_briefing_response(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"
+
+
+@router.get(
+    "/report/latest",
+    dependencies=[Depends(RequireUser), Depends(_private_briefing_response)],
+)
 async def get_latest_briefing(
     source: str = Query(
         default="all", description="all/arxiv/github/news/producthunt/hackernews/x/dailyhot"
@@ -199,6 +208,20 @@ async def get_latest_briefing(
         "source": source,
         "cache_key": cache_key,
     }
+
+
+@router.get("/report/preview")
+async def get_briefing_preview(
+    source: str = Query(default="all"),
+    date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
+    locale: str = Query(default="zh-CN"),
+    repository: BriefingReader = Depends(get_briefing_repository),
+):
+    """Public, bounded preview. No full body or alternate-language body is sent."""
+    result = await get_latest_briefing(source=source, date=date, locale=locale, repository=repository)
+    if isinstance(result, JSONResponse):
+        return result
+    return {**result, "content": briefing_preview(result["content"]), "is_preview": True}
 
 
 # -----------------------------------------------------------------------
@@ -355,7 +378,10 @@ async def apply_subscription_plan(
 
 
 # 只认数字 id：同层的具名路由（如 GET /report/subscriptions）注册在后面，不能被这里按 id 截走再报 422。
-@router.get("/report/{briefing_id:int}")
+@router.get(
+    "/report/{briefing_id:int}",
+    dependencies=[Depends(RequireUser), Depends(_private_briefing_response)],
+)
 async def get_briefing(
     briefing_id: int,
     repository: BriefingReader = Depends(get_briefing_repository),
@@ -595,5 +621,3 @@ async def send_briefing_to_email(
         locale=body.locale,
     )
     return {"message": f"简报已发送至 {email}", "sent_date": sent_date}
-
-

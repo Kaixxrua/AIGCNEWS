@@ -75,3 +75,13 @@ describe('ReportContentPanel with an earlier issue', () => {
     expect(wrapper.find('.report-fallback-notice').exists()).toBe(false)
   })
 })
+
+
+it('offers a free login action below the public preview', async () => {
+  const wrapper = mountPanel({ reportContent: 'Preview only', isPreview: true, loadState: 'ready' })
+  expect(wrapper.text()).toContain('免费登录后')
+  await wrapper.get('[role="note"] button').trigger('click')
+  expect(wrapper.emitted('login')).toHaveLength(1)
+  await wrapper.setProps({ isPreview: false })
+  expect(wrapper.find('[role="note"]').exists()).toBe(false)
+})
