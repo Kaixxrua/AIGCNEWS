@@ -231,7 +231,7 @@ def test_prune_removes_only_superseded_project_commit_tags(tmp_path, monkeypatch
     assert summary['kept'] == 1
     assert set(summary['removed']) == removed
     prune = [c for c in calls if c[:3] == ['docker', 'builder', 'prune']]
-    assert prune and prune[0][-2:] == ['--keep-storage', str(15 * 1024 ** 3)]
+    assert prune and prune[0][-2:] == ['--reserved-space', str(15 * 1024 ** 3)]
 
 
 def test_prune_skips_builder_prune_when_cache_budget_zero(tmp_path, monkeypatch):
@@ -281,3 +281,13 @@ def test_prune_contains_docker_failures(tmp_path, monkeypatch):
     assert summary['status'] == 'pruned'
     assert summary['removed'] == []
     assert summary['errors'] == [release.IMAGE_REPOSITORY + 'backend:' + '9' * 40]
+
+
+def test_cache_prune_failure_is_reported(tmp_path, monkeypatch):
+    import local_release as release
+    config = _write_state(tmp_path, active_release='a' * 40)
+    config['image_retention'] = 0
+    monkeypatch.setattr(release, '_capture', lambda args, **_: _Result(
+        1 if args[:3] == ['docker', 'builder', 'prune'] else 0, '',
+    ))
+    assert release.prune_release_images(config, 'a' * 40)['errors'] == ['build cache prune failed']

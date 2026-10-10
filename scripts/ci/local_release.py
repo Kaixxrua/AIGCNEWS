@@ -128,7 +128,12 @@ def prune_release_images(config, keep_sha):
         if cache > 0:
             # In-use cache for concurrent builds is protected; only least-recently
             # used records beyond the reservation are reclaimed.
-            _capture(['docker', 'builder', 'prune', '--force', '--keep-storage', str(cache)], timeout=1800)
+            result = _capture(
+                ['docker', 'builder', 'prune', '--force', '--reserved-space', str(cache)],
+                timeout=1800,
+            )
+            if result.returncode:
+                summary['errors'].append('build cache prune failed')
         summary['status'] = 'pruned'
     except Exception as exc:  # noqa: BLE001 - housekeeping never fails a delivered release
         summary['status'] = 'error'
