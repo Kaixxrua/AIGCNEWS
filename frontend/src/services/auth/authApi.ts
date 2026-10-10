@@ -78,6 +78,18 @@ export async function changePassword(emailCode: string, newPassword: string): Pr
   return res.data
 }
 
+export async function sendPasswordSetupOtp(email: string): Promise<{ detail: string }> {
+  const res = await api.post<{ detail: string }>('/auth/me/password-setup/send-otp', { email })
+  return res.data
+}
+
+export async function setupPassword(email: string, emailCode: string, newPassword: string): Promise<TokenRotationDTO> {
+  const res = await api.post<TokenRotationDTO>('/auth/me/password-setup', {
+    email, email_code: emailCode, new_password: newPassword,
+  })
+  return res.data
+}
+
 export async function updateProfile(username: string): Promise<AuthUserDTO> {
   const res = await api.patch<AuthUserDTO>('/auth/me/profile', { username })
   return res.data

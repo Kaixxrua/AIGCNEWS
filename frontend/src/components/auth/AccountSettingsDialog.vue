@@ -339,7 +339,7 @@ watch(() => props.modelValue, async open => {
               <section class="space-y-3 border-t border-stone-200/70 pt-4">
                 <div class="flex items-center justify-between">
                   <div><h4 class="text-xs font-semibold text-stone-500">{{ t('auth.passwordLogin') }}</h4><p class="mt-1 text-xs monitor-caption">{{ currentUser?.password_login_enabled === true ? t('auth.passwordEnabled') : t('auth.passwordDisabled') }}</p></div>
-                  <button v-if="currentUser?.password_login_enabled === true" type="button" class="btn-primary" @click="passwordOpen = true">{{ t('auth.changePasswordAction') }}</button>
+                  <button v-if="currentUser" type="button" class="btn-primary" @click="passwordOpen = true">{{ t(currentUser.password_login_enabled === false ? 'auth.setupPasswordAction' : 'auth.changePasswordAction') }}</button>
                 </div>
               </section>
             </div>
@@ -348,7 +348,7 @@ watch(() => props.modelValue, async open => {
       </div>
     </Transition>
   </Teleport>
-  <ChangePasswordDialog v-model="passwordOpen" />
+  <ChangePasswordDialog v-model="passwordOpen" :setup-password="currentUser?.password_login_enabled === false" />
 </template>
 
 <style scoped>

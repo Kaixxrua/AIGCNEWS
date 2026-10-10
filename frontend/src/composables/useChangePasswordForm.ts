@@ -15,10 +15,12 @@ interface ChangePasswordFormOptions {
   sendOtp: () => Promise<unknown>
   /** 改密成功后回调；调用方可先安装服务端返回的新令牌，再刷新账户资料。 */
   onChanged?: (result?: unknown) => Promise<void> | void
+  successMessage?: () => string
+  otpSentMessage?: () => string
 }
 
 /** 已登录改密表单状态：邮箱验证码 + 新密码确认（验证码替代当前密码） */
-export function useChangePasswordForm({ submit, sendOtp, onChanged }: ChangePasswordFormOptions) {
+export function useChangePasswordForm({ submit, sendOtp, onChanged, successMessage, otpSentMessage }: ChangePasswordFormOptions) {
   const { t } = useI18n()
 
   const otp = ref('')
@@ -61,7 +63,7 @@ export function useChangePasswordForm({ submit, sendOtp, onChanged }: ChangePass
     try {
       await sendOtp()
       startCountdown()
-      successMsg.value = t('auth.changeOtpSent')
+      successMsg.value = otpSentMessage?.() ?? t('auth.changeOtpSent')
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)
         ? t('auth.rateLimited')
@@ -72,6 +74,7 @@ export function useChangePasswordForm({ submit, sendOtp, onChanged }: ChangePass
   }
 
   const handleSubmit = async () => {
+    if (loading.value || changeDone.value) return
     errorMsg.value = ''
     successMsg.value = ''
     if (!isValidOtp(otp.value)) {
@@ -92,7 +95,7 @@ export function useChangePasswordForm({ submit, sendOtp, onChanged }: ChangePass
       const result = await submit(otp.value.trim(), password.value)
       await onChanged?.(result)
       changeDone.value = true
-      successMsg.value = t('auth.changeSuccess')
+      successMsg.value = successMessage?.() ?? t('auth.changeSuccess')
       resetCountdown()
     } catch (e: unknown) {
       errorMsg.value = isRateLimited(e)

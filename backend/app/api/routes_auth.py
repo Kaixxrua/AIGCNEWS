@@ -299,6 +299,16 @@ class UpdateProfileRequest(BaseModel):
         return _validate_username(value)
 
 
+class PasswordSetupEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+
+class SetPasswordRequest(ChangePasswordRequest):
+    model_config = ConfigDict(extra="forbid")
+    email: EmailStr
+
+
 class SendEmailChangeNewOtpRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -527,6 +537,55 @@ async def change_password(
         "token_type": result.token_type,
         "changed": result.changed,
     }
+
+
+@router.post("/auth/me/password-setup/send-otp", summary="发送首次设置密码验证码")
+async def send_password_setup_otp(
+    body: PasswordSetupEmailRequest, request: Request, response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    await _enforce_rate_limit(request, action="auth.password_setup_otp", limit=_OTP_SEND_RATE_LIMIT)
+    lifecycle = build_account_lifecycle(repository=repository, otp=_get_email_service(request))
+    try:
+        await lifecycle.request_password_setup_otp(
+            user_id=_user_id(current_user), email=str(body.email),
+        )
+    except account_lifecycle.PasswordSetupUnavailable as exc:
+        raise HTTPException(409, "当前账号无法设置密码，请刷新账户设置后重试") from exc
+    except OtpSendRateLimitedError as exc:
+        raise HTTPException(429, exc.detail) from exc
+    except OtpDeliveryUnavailableError as exc:
+        raise HTTPException(503, exc.detail) from exc
+    return {"detail": "验证码已发送，5 分钟内有效"}
+
+
+@router.post("/auth/me/password-setup", summary="快捷登录账号验证邮箱并设置密码")
+async def setup_password(
+    body: SetPasswordRequest, request: Request, response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+    repository: UserAccountRepository = Depends(get_user_account_repository),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    await _enforce_rate_limit(request, action="auth.password_setup", limit=_AUTH_ATTEMPT_RATE_LIMIT)
+    lifecycle = build_account_lifecycle(
+        repository=repository, otp=_get_email_service(request),
+        password_hasher=hash_password, token_issuer=create_access_token,
+    )
+    try:
+        result = await lifecycle.setup_password(
+            user_id=_user_id(current_user), email=str(body.email),
+            email_code=body.email_code, new_password=body.new_password,
+        )
+    except account_lifecycle.InvalidOtp as exc:
+        raise HTTPException(400, "验证码错误或已过期") from exc
+    except (account_lifecycle.EmailAlreadyInUse, pg_errors.UniqueViolation) as exc:
+        raise HTTPException(409, "该邮箱已有账号，请先登录原账号；如忘记密码，可通过“忘记密码”找回") from exc
+    except account_lifecycle.PasswordSetupUnavailable as exc:
+        raise HTTPException(409, "当前账号无法设置密码，请刷新账户设置后重试") from exc
+    return {"access_token": result.access_token, "token_type": result.token_type, "changed": result.changed}
 
 
 # ---------------------------------------------------------------- 邮箱换绑

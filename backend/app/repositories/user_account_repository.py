@@ -39,6 +39,13 @@ class UserAccountWriter(Protocol):
         hashed_password: str,
     ) -> int: ...
 
+    def enable_password_login(
+        self, *, user_id: int, current_email: str | None, pwd_ver: int,
+        email: str, hashed_password: str,
+    ) -> dict[str, Any] | None:
+        """Set the first password under an email/version snapshot; never merge users."""
+        ...
+
     def update_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int: ...
 
     def set_initial_user_avatar(self, *, user_id: int, png: bytes, digest: str) -> int: ...

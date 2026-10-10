@@ -118,7 +118,7 @@ class EmailService:
             subject, body = self._renderer.password_reset_otp(otp)
         elif purpose == "push_channel_verify":
             subject, body = self._renderer.channel_binding_otp(otp)
-        elif purpose == "password_change":
+        elif purpose in ("password_change", "password_setup"):
             subject, body = self._renderer.password_change_otp(otp)
         elif purpose == "email_change":
             subject, body = self._renderer.email_change_otp(otp)
