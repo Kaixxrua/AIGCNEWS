@@ -3,6 +3,7 @@ import { api } from '@/services/http/apiClient'
 export interface ReturnVisitDay {
   day: string
   coverage: 'unavailable' | 'partial' | 'complete'
+  total_visitors: number | null
   active_users: number | null
   returning_users: number | null
   new_users: number | null

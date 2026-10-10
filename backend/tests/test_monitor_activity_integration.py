@@ -27,15 +27,23 @@ def user(database, created_at):
         ).fetchone()["id"]
 
 
+def visitor_count(database, day, count):
+    with database.transaction() as conn:
+        conn.execute("INSERT INTO site_visit_days (day, visits) VALUES (%s, %s)", (day, count))
+
+
 def test_concurrent_devices_and_retries_count_account_once(database):
     repo = PostgresAccountVisitRepository(database)
     owner = user(database, MIDNIGHT - timedelta(days=1))
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(lambda _: repo.record(owner, now=MIDNIGHT), range(24)))
+    # A new worker/restart and later retries still share the database identity.
+    assert PostgresAccountVisitRepository(database).record(owner, now=MIDNIGHT)["recorded"]
+    visitor_count(database, "2026-10-10", 10)
     result = repo.stats(1, now=MIDNIGHT + timedelta(hours=2))
     assert result["days"][0] == {
         "day": "2026-10-10", "coverage": "partial", "active_users": 1,
-        "returning_users": 1, "new_users": 0, "return_rate": 1,
+        "returning_users": 1, "new_users": 0, "total_visitors": 10, "return_rate": .1,
     }
 
 
@@ -46,9 +54,12 @@ def test_exact_cst_boundary_and_registration_cutoff(database):
     repo.record(old, now=MIDNIGHT - timedelta(microseconds=1))
     repo.record(old, now=MIDNIGHT)
     receipt = repo.record(new, now=MIDNIGHT)
+    visitor_count(database, "2026-10-09", 4)
+    visitor_count(database, "2026-10-10", 10)
     result = repo.stats(4, now=MIDNIGHT + timedelta(hours=23))
     assert result["timezone"] == "Asia/Shanghai"
-    assert result["days"][0]["return_rate"] == .5
+    assert result["days"][0]["return_rate"] == .1
+    assert result["days"][0]["total_visitors"] == 10
     assert result["days"][0]["active_users"] == 2
     assert result["days"][1]["return_rate"] == 0  # registered on Oct 9, visited Oct 9
     assert result["days"][1]["coverage"] == "partial"
@@ -56,6 +67,7 @@ def test_exact_cst_boundary_and_registration_cutoff(database):
     assert result["days"][2]["return_rate"] is None
     assert receipt["next_day_at"] == "2026-10-11T00:00:00+08:00"
     repo.record(new, now=MIDNIGHT + timedelta(days=1))
+    visitor_count(database, "2026-10-11", 1)
     assert repo.stats(1, now=MIDNIGHT + timedelta(days=1))["days"][0]["return_rate"] == 1
 
 
@@ -73,6 +85,35 @@ def test_empty_days_disabled_accounts_and_deleted_history(database):
     assert rows[1]["active_users"] == 0
     assert rows[1]["coverage"] == "complete"
     assert rows[2]["active_users"] == 1  # account deletion does not rewrite history
+
+
+def test_denominator_includes_anonymous_visitors_and_handles_missing_history(database):
+    repo = PostgresAccountVisitRepository(database)
+    visitor_count(database, "2026-10-08", 12)  # UV history predates account tracking.
+    visitor_count(database, "2026-10-09", 5)  # Anonymous-only day is still known.
+    visitor_count(database, "2026-10-10", 10)
+    for registered_at in (MIDNIGHT - timedelta(days=2), MIDNIGHT - timedelta(days=1), MIDNIGHT):
+        repo.record(user(database, registered_at), now=MIDNIGHT)
+    rows = repo.stats(4, now=MIDNIGHT + timedelta(hours=1))["days"]
+    assert rows[0]["active_users"] == 3
+    assert rows[0]["returning_users"] == 2
+    assert rows[0]["total_visitors"] == 10
+    assert rows[0]["return_rate"] == .2  # 2/10, never 2/3 signed-in accounts.
+    assert rows[1]["active_users"] == 0
+    assert rows[1]["total_visitors"] == 5
+    assert rows[1]["return_rate"] == 0
+    assert rows[2]["total_visitors"] == 12
+    assert rows[2]["return_rate"] is None  # Cannot infer historical returning accounts.
+    assert rows[3]["total_visitors"] is None
+
+
+def test_missing_visitor_beacon_does_not_fall_back_to_signed_in_denominator(database):
+    repo = PostgresAccountVisitRepository(database)
+    repo.record(user(database, MIDNIGHT - timedelta(days=1)), now=MIDNIGHT)
+    row = repo.stats(1, now=MIDNIGHT)["days"][0]
+    assert row["returning_users"] == 1
+    assert row["total_visitors"] == 0
+    assert row["return_rate"] is None
 
 
 def test_email_check_lease_is_exclusive_and_restart_retains_state(database):

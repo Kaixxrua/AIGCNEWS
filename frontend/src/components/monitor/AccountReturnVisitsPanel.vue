@@ -44,22 +44,24 @@ onBeforeUnmount(() => { active = false; clearInterval(poll) })
       </div>
     </div>
     <p class="monitor-caption mt-2 text-xs leading-5">{{ t('monitorActivity.definition') }}</p>
+    <p class="monitor-caption mt-1 text-xs leading-5">{{ t('monitorActivity.visitorScope') }}</p>
     <p v-if="failed" role="alert" class="monitor-status-error mt-3 text-sm">{{ t('monitorActivity.loadFailed') }}</p>
     <p v-if="loading && !data" class="monitor-caption mt-4">{{ t('common.loading') }}</p>
     <template v-if="data && today">
-      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <MonitorMetricCard :label="t('monitorActivity.rateToday')" :value="formatReturnRate(today.return_rate)" :note="t('monitorActivity.inProgress')" />
+      <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MonitorMetricCard :label="t('monitorActivity.rateToday')" :value="formatReturnRate(today.return_rate)" :note="t('monitorActivity.fraction', { returning: today.returning_users ?? '—', visitors: today.total_visitors ?? '—' })" />
         <MonitorMetricCard :label="t('monitorActivity.returningToday')" :value="today.returning_users ?? '—'" :note="t('monitorActivity.oldAccount')" />
+        <MonitorMetricCard :label="t('monitorActivity.visitorsToday')" :value="today.total_visitors ?? '—'" :note="t('monitorActivity.allVisitors')" />
         <MonitorMetricCard :label="t('monitorActivity.activeToday')" :value="today.active_users ?? '—'" :note="t('monitorActivity.uniqueAccounts')" />
       </div>
       <p class="monitor-caption mt-4 text-xs leading-5">{{ t('monitorActivity.since', { time: cstTime(data.tracking_started_at) }) }}</p>
       <div class="mt-3 overflow-x-auto" role="region" :aria-label="t('monitorActivity.returns')" tabindex="0">
-        <table class="w-full min-w-[560px] text-left text-xs tabular-nums">
+        <table class="w-full min-w-[680px] text-left text-xs tabular-nums">
           <caption class="sr-only">{{ t('monitorActivity.returns') }}</caption>
-          <thead><tr class="border-b"><th class="py-3">{{ t('monitorActivity.date') }}</th><th>{{ t('monitorActivity.active') }}</th><th>{{ t('monitorActivity.returning') }}</th><th>{{ t('monitorActivity.new') }}</th><th>{{ t('monitorActivity.rate') }}</th><th>{{ t('monitorActivity.coverage') }}</th></tr></thead>
+          <thead><tr class="border-b"><th class="py-3">{{ t('monitorActivity.date') }}</th><th>{{ t('monitorActivity.visitors') }}</th><th>{{ t('monitorActivity.active') }}</th><th>{{ t('monitorActivity.returning') }}</th><th>{{ t('monitorActivity.new') }}</th><th>{{ t('monitorActivity.rate') }}</th><th>{{ t('monitorActivity.coverage') }}</th></tr></thead>
           <tbody><tr v-for="row in data.days" :key="row.day" class="border-b">
             <th scope="row" class="whitespace-nowrap py-3 font-normal">{{ row.day }}</th>
-            <td>{{ row.active_users ?? '—' }}</td><td>{{ row.returning_users ?? '—' }}</td><td>{{ row.new_users ?? '—' }}</td>
+            <td>{{ row.total_visitors ?? '—' }}</td><td>{{ row.active_users ?? '—' }}</td><td>{{ row.returning_users ?? '—' }}</td><td>{{ row.new_users ?? '—' }}</td>
             <td>{{ formatReturnRate(row.return_rate) }}</td><td class="monitor-caption">{{ t('monitorActivity.' + row.coverage) }}</td>
           </tr></tbody>
         </table>

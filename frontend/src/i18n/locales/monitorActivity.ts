@@ -2,7 +2,10 @@ import i18n from '@/i18n'
 
 const zh = {
   email: '邮件监测', returns: '每日用户回访', range: '统计范围', days: '最近 {n} 天',
-  definition: '回访比例 = 当天访问的老账号 ÷ 当天全部登录访客。老账号指北京时间当天 00:00 前注册的账号；同账号多次访问、多个设备均只计一次。包含管理员，仅记录网页在前台时的登录访问，不含匿名访客、MCP/API 调用及已识别机器人。',
+  definition: '回访比例 = 当天访问的老账号 ÷ 当天全部访客（含未登录访客）。老账号指北京时间当天 00:00 前注册的账号；同账号多次访问、多个设备均只计一次，包含管理员。登录账号仅统计前台网页访问，不含 MCP/API 调用及已识别机器人。',
+  visitorScope: '分母沿用站点访客 UV，按浏览器标识每日去重；更换浏览器或清除站点数据可能算作新访客，不能视作精确的自然人数。',
+  visitorsToday: '今日全部访客', allVisitors: '含登录及未登录访客 · UV', visitors: '全部访客 UV',
+  fraction: '{returning} 个老账号 / {visitors} 位访客',
   rateToday: '今日回访比例', returningToday: '今日回访老账号', activeToday: '今日登录访客',
   inProgress: '今日持续累计 · 北京时间', oldAccount: '当天 00:00 前注册', uniqueAccounts: '按账号去重，非页面浏览量',
   since: '精确采集起始：{time}（北京时间）。上线首日为部分数据；此前日期不补算，无访客时比例显示 —。',
@@ -27,11 +30,14 @@ const zh = {
 }
 const en: typeof zh = {
   email: 'Email monitoring', returns: 'Daily returning accounts', range: 'Date range', days: 'Last {n} days',
-  definition: 'Return rate = visiting existing accounts ÷ all signed-in visitors that day. Existing accounts were registered before 00:00 Asia/Shanghai. Each account counts once across devices and visits, including admins. Only foreground signed-in web visits count; anonymous visitors, MCP/API calls and recognized bots are excluded.',
+  definition: 'Return rate = visiting existing accounts ÷ all site visitors that day, including anonymous visitors. Existing accounts were registered before 00:00 Asia/Shanghai. Each account counts once across devices and visits, including admins. Account activity includes foreground web visits only, excluding MCP/API calls and recognized bots.',
+  visitorScope: 'The denominator uses the site visitor counter: browser IDs deduplicated per day. A different browser or cleared site data may count as a new visitor; this is not an exact count of people.',
+  visitorsToday: 'All visitors today', allVisitors: 'Signed-in and anonymous visitors · UV', visitors: 'All visitors · UV',
+  fraction: '{returning} existing accounts / {visitors} visitors',
   rateToday: 'Return rate today', returningToday: 'Returning accounts today', activeToday: 'Signed-in visitors today',
   inProgress: 'Today so far · Asia/Shanghai', oldAccount: 'Registered before 00:00', uniqueAccounts: 'Unique accounts, not page views',
   since: 'Tracking began: {time} (Asia/Shanghai). The first day is partial; earlier dates are unavailable. No visitors means —, not 0%.',
-  asOf: 'As of {time} (Asia/Shanghai)', date: 'Date', active: 'Visitors', returning: 'Existing', new: 'New accounts', rate: 'Return rate', coverage: 'Coverage',
+  asOf: 'As of {time} (Asia/Shanghai)', date: 'Date', active: 'Signed-in accounts', returning: 'Existing', new: 'New accounts', rate: 'Return rate', coverage: 'Coverage',
   unavailable: 'Not tracked', partial: 'Partial / today so far', complete: 'Full day',
   loadFailed: 'Could not refresh. Any displayed data is from the previous request.',
   emailDescription: 'Every five minutes, checks effective SMTP configuration, connection and authentication, Resend account quotas and recent delivery status. Refresh reads the latest check.',

@@ -18,18 +18,21 @@ describe('monitoring activity panels', () => {
     const data: ReturnVisits = {
       timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-10T08:00:00Z',
       days: [
-        { day: '2026-10-10', coverage: 'partial', active_users: 3, returning_users: 2, new_users: 1, return_rate: 2 / 3 },
-        { day: '2026-10-09', coverage: 'unavailable', active_users: null, returning_users: null, new_users: null, return_rate: null },
+        { day: '2026-10-10', coverage: 'partial', total_visitors: 10, active_users: 3, returning_users: 2, new_users: 1, return_rate: 2 / 10 },
+        { day: '2026-10-09', coverage: 'unavailable', total_visitors: null, active_users: null, returning_users: null, new_users: null, return_rate: null },
       ],
     }
     vi.mocked(activityApi.returnVisits).mockResolvedValue(data)
     const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('66.67%')
+    expect(wrapper.text()).toContain('20.00%')
+    expect(wrapper.text()).toContain('2 个老账号 / 10 位访客')
+    expect(wrapper.text()).toContain('当天全部访客（含未登录访客）')
+    expect(wrapper.findAll('tbody tr')[0]!.findAll('td').slice(0, 5).map(cell => cell.text())).toEqual(['10', '3', '2', '1', '20.00%'])
     expect(wrapper.findAll('tbody tr')[0]!.text()).toContain('部分时段')
     const history = wrapper.findAll('tbody tr')[1]!
     expect(history.text()).toContain('未开始采集')
-    expect(history.findAll('td').slice(0, 4).map(cell => cell.text())).toEqual(['—', '—', '—', '—'])
+    expect(history.findAll('td').slice(0, 5).map(cell => cell.text())).toEqual(['—', '—', '—', '—', '—'])
     wrapper.unmount()
   })
 

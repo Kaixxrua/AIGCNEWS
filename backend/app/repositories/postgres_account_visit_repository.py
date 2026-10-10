@@ -49,11 +49,20 @@ class PostgresAccountVisitRepository:
             ).fetchone()["started_at"]
             rows = connection.execute(
                 """
-                SELECT day, COUNT(*) AS active_users,
-                       COUNT(*) FILTER (WHERE is_returning) AS returning_users
-                FROM account_visit_days WHERE day BETWEEN %s AND %s
-                GROUP BY day
-                """, (since, today),
+                WITH accounts AS (
+                    SELECT day, COUNT(*) AS active_users,
+                           COUNT(*) FILTER (WHERE is_returning) AS returning_users
+                    FROM account_visit_days WHERE day BETWEEN %s AND %s
+                    GROUP BY day
+                ), visitors AS (
+                    SELECT day, visits FROM site_visit_days WHERE day BETWEEN %s AND %s
+                )
+                SELECT COALESCE(accounts.day, visitors.day) AS day,
+                       COALESCE(active_users, 0) AS active_users,
+                       COALESCE(returning_users, 0) AS returning_users,
+                       COALESCE(visitors.visits, 0) AS total_visitors
+                FROM accounts FULL OUTER JOIN visitors USING (day)
+                """, (since, today, since, today),
             ).fetchall()
         by_day = {row["day"]: row for row in rows}
         series = []
@@ -67,12 +76,16 @@ class PostgresAccountVisitRepository:
             )
             row = by_day.get(day, {})
             active, returning = int(row.get("active_users", 0)), int(row.get("returning_users", 0))
+            # Same browser-deduplicated UV as the site's visitor counter,
+            # including anonymous visitors. Read both counts in one snapshot.
+            visitors = int(row.get("total_visitors", 0)) if row or coverage != "unavailable" else None
             series.append({
                 "day": day.isoformat(), "coverage": coverage,
+                "total_visitors": visitors,
                 "active_users": active if coverage != "unavailable" else None,
                 "returning_users": returning if coverage != "unavailable" else None,
                 "new_users": active - returning if coverage != "unavailable" else None,
-                "return_rate": returning / active if active and coverage != "unavailable" else None,
+                "return_rate": returning / visitors if visitors and coverage != "unavailable" else None,
             })
         return {
             "timezone": "Asia/Shanghai", "tracking_started_at": started_at.isoformat(),
