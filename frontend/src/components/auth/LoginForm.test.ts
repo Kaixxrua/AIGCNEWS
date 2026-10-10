@@ -15,7 +15,7 @@ const messages = { auth: {
   oauthOr: '快捷登录', oauth: { wechat: '使用微信登录', qq: '使用 QQ 登录', linuxdo: '使用 Linux DO 登录' },
   loginTitle: '登录', loginDescription: '欢迎回来', email: '邮箱', emailPlaceholder: '邮箱地址', password: '密码', passwordPlaceholder: '密码',
   fillEmailPassword: '请填写邮箱和密码', forgotPassword: '忘记密码', loggingIn: '登录中', login: '登录', noAccount: '没有账号', registerNow: '立即注册', loginFailed: '登录失败',
-}, common: { close: '关闭' } }
+}, loginContext: { search: '登录后继续搜索', projects: '登录后可收藏项目', subscriptions: '登录后可管理订阅' }, common: { close: '关闭' } }
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': messages } })
 const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/', component: { template: '<div />' } },
@@ -26,6 +26,17 @@ const mountForm = (props = {}) => mount(LoginForm, { props, global: { plugins: [
 beforeEach(async () => { flags.oauthProviders = []; startOAuth.mockReset(); login.mockReset(); login.mockResolvedValue({}); await router.push('/') })
 
 describe('LoginForm', () => {
+  it('updates the explanation when another gated action changes the return destination', async () => {
+    const wrapper = mountForm({ redirect: '/projects?q=android-use' })
+    expect(wrapper.text()).toContain('登录后继续搜索')
+    await wrapper.setProps({ redirect: '/subscriptions' })
+    expect(wrapper.text()).toContain('登录后可管理订阅')
+    expect(wrapper.text()).not.toContain('登录后继续搜索')
+    await wrapper.setProps({ redirect: '/' })
+    expect(wrapper.text()).toContain('欢迎回来')
+    wrapper.unmount()
+  })
+
   it.each(['wechat', 'qq', 'linuxdo'])('starts configured %s login with the internal return path', async provider => {
     flags.oauthProviders = [provider]
     const wrapper = mountForm({ redirect: '/projects?source=all' })

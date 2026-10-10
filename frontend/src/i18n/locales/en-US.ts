@@ -2,6 +2,20 @@ import { trackingEn } from './tracking'
 import { onboardingEn } from './onboarding'
 
 const enUSCatalog = {
+  loginContext: {
+    search: 'Sign in to continue searching for projects and news.',
+    projects: 'Sign in to save projects, search the catalog, and browse more pages.',
+    moreProjects: 'Sign in to continue browsing more projects.',
+    favorites: 'Sign in to view and sync your saved projects.',
+    websites: 'Sign in to manage your website collection across devices.',
+    report: 'Sign in to read the full briefing and subscribe to updates.',
+    subscriptions: 'Sign in to manage your tracking and delivery subscriptions.',
+    paper: 'Sign in to discuss this paper with AI.',
+    mcp: 'Sign in to set up your credentials and connect your tools and favorites.',
+    dsh: 'Sign in to create your connection and continue setting up DSH.',
+    checkout: 'Sign in to continue choosing a membership plan and complete your order.',
+    protected: 'Sign in to verify your access to this page.',
+  },
   memberContent: {
     loginContinue: 'Sign in for free to continue',
     searchLoginTitle: 'Sign in to search',

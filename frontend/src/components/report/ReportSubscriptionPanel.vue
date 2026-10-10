@@ -57,7 +57,7 @@ const capabilityIcon = (cap: PlanDeliveryCapability) => {
 
 <template>
   <!-- 游客订阅登录提示 -->
-  <div v-if="showLoginPrompt" class="rounded-2xl border p-3 shadow-sm" style="border-color: var(--notice-warn-edge); background: var(--notice-warn-bg-strong)">
+  <div v-if="showLoginPrompt" class="auth-required-hint rounded-2xl border p-3 shadow-sm" style="border-color: var(--notice-warn-edge); background: var(--notice-warn-bg-strong)">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2 text-sm" style="color: var(--notice-warn-ink)">
         <Rss class="h-4 w-4 shrink-0" />

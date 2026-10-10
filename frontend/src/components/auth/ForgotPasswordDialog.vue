@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuthDialogTransition from '@/components/auth/AuthDialogTransition.vue'
 import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AuthFeedback from '@/components/auth/AuthFeedback.vue'
@@ -37,9 +38,9 @@ useDialogFocus(() => props.modelValue, dialogRef, close)
 
 <template>
   <Teleport to="body">
-    <Transition name="fade">
+    <AuthDialogTransition>
       <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" :aria-labelledby="titleId" @click.self="close">
-        <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
+        <div ref="dialogRef" class="auth-dialog__panel relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
           <div class="auth-card glass-card w-full p-4 sm:p-6">
             <AuthPageHeader :title="t('auth.forgotTitle')" :description="t('auth.forgotDescription')" :title-id="titleId">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 11V8a5 5 0 0110 0v3"/><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M12 15v2"/></svg>
@@ -63,11 +64,6 @@ useDialogFocus(() => props.modelValue, dialogRef, close)
           </div>
         </div>
       </div>
-    </Transition>
+    </AuthDialogTransition>
   </Teleport>
 </template>
-
-<style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-</style>
