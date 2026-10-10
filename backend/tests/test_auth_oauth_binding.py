@@ -230,27 +230,41 @@ def _seed_login_handoff(
 # ---------------------------------------------------------------------------
 
 
-def test_bind_start_requires_authentication(rig) -> None:
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_bind_start_requires_authentication(rig, method) -> None:
     client, redis, *_ = rig
 
-    response = client.get("/api/auth/oauth/github/bind/start", follow_redirects=False)
+    response = client.request(method, "/api/auth/oauth/github/bind/start", follow_redirects=False)
 
     assert response.status_code == 401
     assert redis.values == {}
 
 
-def test_bind_start_stores_bind_namespaced_state_and_redirects(rig) -> None:
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_bind_start_stores_bind_namespaced_state_and_authorization_url(rig, method) -> None:
     client, redis, *_ = rig
+    headers = _bearer()
 
-    response = client.get(
+    response = client.request(
+        method,
         "/api/auth/oauth/github/bind/start",
-        headers=_bearer(),
+        params={"redirect_to": "/projects?source=all", "target_user_id": 99},
+        headers=headers,
         follow_redirects=False,
     )
 
-    assert response.status_code == 307
-    location = response.headers["location"]
+    if method == "POST":
+        assert response.status_code == 200
+        assert set(response.json()) == {"authorization_url"}
+        assert "location" not in response.headers
+        assert response.headers["cache-control"] == "no-store"
+        location = response.json()["authorization_url"]
+    else:
+        assert response.status_code == 307
+        location = response.headers["location"]
     assert location.startswith("https://provider.test/authorize?state=")
+    assert headers["Authorization"].removeprefix("Bearer ") not in location
+    assert "target_user_id" not in location
     # provider 控制台无需新增 redirect URI：与登录共用同一回调地址
     assert "redirect_uri=https://example.test/api/auth/oauth/github/callback" in location
     bind_keys = [k for k in redis.values if k.startswith(OAUTH_BIND_STATE_PREFIX)]
@@ -260,22 +274,48 @@ def test_bind_start_stores_bind_namespaced_state_and_redirects(rig) -> None:
     assert payload["operation"] == "bind"
     assert payload["target_user_id"] == 7
     assert payload["provider"] == "github"
+    assert payload["redirect_to"] == "/projects?source=all"
+    assert payload["browser_binding_hash"] == digest_secret(client.cookies["aigc_oauth_browser"])
     assert "aigc_oauth_browser=" in response.headers["set-cookie"]
+    for flag in ("HttpOnly", "Secure", "SameSite=lax"):
+        assert flag in response.headers["set-cookie"]
 
 
-def test_bind_start_unavailable_provider_fails_closed(rig, monkeypatch) -> None:
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_bind_start_unavailable_provider_fails_closed(rig, monkeypatch, method) -> None:
     client, redis, *_ = rig
     monkeypatch.setattr(
         routes_oauth, "configured_oauth_providers", lambda **kwargs: []
     )
 
-    response = client.get(
+    response = client.request(
+        method,
         "/api/auth/oauth/github/bind/start",
         headers=_bearer(),
         follow_redirects=False,
     )
 
     assert response.status_code == 503
+    assert redis.values == {}
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+@pytest.mark.parametrize("account_change", [{"disabled": True}, {"pwd_ver": 2}])
+def test_bind_start_rejects_disabled_or_revoked_sessions(rig, method, account_change) -> None:
+    client, redis, users, *_ = rig
+    users.user.update(account_change)
+    response = client.request(method, "/api/auth/oauth/github/bind/start", headers=_bearer())
+    assert response.status_code == 401
+    assert redis.values == {}
+
+
+@pytest.mark.parametrize("redirect_to", ["https://evil.test", "//evil.test"])
+def test_bind_post_rejects_external_redirects(rig, redirect_to) -> None:
+    client, redis, *_ = rig
+    response = client.post(
+        "/api/auth/oauth/github/bind/start", headers=_bearer(), params={"redirect_to": redirect_to},
+    )
+    assert response.status_code == 400
     assert redis.values == {}
 
 

@@ -41,6 +41,7 @@ Linux DO：登录 [Linux DO Connect](https://connect.linux.do/)，进入「我�
 - QQ 以 OpenID 为身份键，核对 `/oauth2.0/me` 返回的 client_id；不把 QQ 昵称当成邮箱。
 - Linux DO 以不可变的数字 `id` 为身份键，忽略没有可信验证合同的邮箱字段及额外 API 密钥；不以用户名、信任等级或外部 ID 代替身份键。
 - 两者均不自动按昵称/未验证邮箱合并已有账号。已有账号应先登录，再选择绑定，避免创建独立账号。
+- 账号设置通过带 Bearer 认证的 `POST /api/auth/oauth/{provider}/bind/start?redirect_to=...` 获取 `authorization_url`，再整页导航到授权页；请求失败时在原页面提示并允许重试。原 GET 绑定入口保留认证与重定向语义，游客登录仍使用公开的 `/start` 入口。
 - 上游调用固定 HTTPS 地址，限制超时及响应体积，拒绝重定向。QQ 官方 GET 接口的密钥、令牌等查询参数从 HTTPX 请求日志中移除。
 - 头像仅从明确允许的 HTTPS 头像域名尽力导入，不跟随重定向，不影响登录结果。
 - 平台取消授权但不返回 code 时返回 `400 oauth_authorization_failed`；不交换令牌或写入身份。

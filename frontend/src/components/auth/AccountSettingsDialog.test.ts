@@ -55,6 +55,7 @@ const messages = {
     verified: '已验证', unverified: '未验证', notAvailable: '暂无', notSet: '未设置', editUsername: '修改用户名', saveUsername: '保存用户名', savingUsername: '保存中…',
     usernameRequired: '请输入用户名。', usernameTooLong: '用户名不能超过 64 个字符。', usernameSaved: '用户名已更新。', usernameSaveFailed: '用户名更新失败，请稍后重试。',
     connectedLoginMethods: '已连接的快捷登录', connected: '已连接', notConnected: '未连接',
+    oauthBindFailed: '渠道绑定失败，请重试',
     passwordLogin: '密码登录', passwordEnabled: '已启用', passwordDisabled: '未启用', changePasswordAction: '修改密码', closeAccountSettings: '关闭账户设置',
     changeEmailAction: '换绑', emailChangeTitle: '换绑邮箱', emailChangeHint: '验证码 5 分钟内有效，需同时验证当前邮箱与新邮箱。',
     newEmailLabel: '新邮箱', newEmailPlaceholder: '输入新邮箱', currentEmailOtpLabel: '当前邮箱验证码', newEmailOtpLabel: '新邮箱验证码',
@@ -168,11 +169,37 @@ describe('AccountSettingsDialog', () => {
       expect.stringContaining('GitHub'), expect.stringContaining('QQ'), expect.stringContaining('Linux DO'),
     ])
     buttons[1]!.click()
-    await nextTick()
+    await flushPromises()
     expect(startOAuthBind).toHaveBeenCalledWith('qq', '/projects?source=all')
     buttons[2]!.click()
     await nextTick()
     expect(startOAuthBind).toHaveBeenCalledWith('linuxdo', '/projects?source=all')
+    wrapper.unmount()
+  })
+
+  it('prevents duplicate binding requests and lets the user retry after a failure', async () => {
+    flags.oauthProviders = ['qq', 'linuxdo']
+    let rejectStart!: (reason: unknown) => void
+    startOAuthBind.mockImplementationOnce(() => new Promise((_, reject) => { rejectStart = reject }))
+    const wrapper = mountDialog()
+    const linuxdo = findButton('Linux DO')!
+
+    linuxdo.click()
+    linuxdo.click()
+    await nextTick()
+    expect(startOAuthBind).toHaveBeenCalledTimes(1)
+    expect(linuxdo.disabled).toBe(true)
+    expect(findButton('QQ')!.disabled).toBe(true)
+
+    rejectStart({})
+    await flushPromises()
+    expect(document.body.textContent).toContain('渠道绑定失败，请重试')
+    expect(linuxdo.disabled).toBe(false)
+
+    linuxdo.click()
+    await flushPromises()
+    expect(startOAuthBind).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent).not.toContain('渠道绑定失败，请重试')
     wrapper.unmount()
   })
 
