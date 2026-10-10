@@ -230,7 +230,7 @@ class AccountLifecycle:
         verified = await self._otp.verify_otp(
             normalized_email,
             email_code,
-            consume=False,
+            consume=True,
             purpose=REGISTRATION_PURPOSE,
         )
         if not verified:
@@ -242,16 +242,13 @@ class AccountLifecycle:
         if existing is not None:
             raise AccountAlreadyExists
 
-        hashed_password = self._hash_password(password)
+        hashed_password = await asyncio.to_thread(self._hash_password, password)
         user_id = await asyncio.to_thread(
             self._repository.create_user_with_email,
             normalized_email,
             hashed_password,
             "user",
             normalized_username,
-        )
-        await self._otp.consume_otp(
-            normalized_email, purpose=REGISTRATION_PURPOSE
         )
         # 注册成功 → 首页实时计数（registered_users）变更，推送 SSE 订阅者。
         live_stats_broadcaster.notify_live_stats_changed("user-registered")
@@ -269,7 +266,9 @@ class AccountLifecycle:
         )
         if user is None or not bool(user.get("password_login_enabled", True)):
             raise InvalidCredentials
-        if not self._verify_password(password, str(user["hashed_password"])):
+        if not await asyncio.to_thread(
+            self._verify_password, password, str(user["hashed_password"])
+        ):
             raise InvalidCredentials
         # 密码核验通过后才判定禁用：避免向密码错误的调用方泄露账号禁用状态
         if user.get("disabled"):
@@ -354,7 +353,7 @@ class AccountLifecycle:
         verified = await self._otp.verify_otp(
             normalized_email,
             email_code,
-            consume=False,
+            consume=True,
             purpose=PASSWORD_RESET_PURPOSE,
         )
         user = await asyncio.to_thread(
@@ -363,7 +362,7 @@ class AccountLifecycle:
         if not verified or user is None:
             raise InvalidOtp
 
-        hashed_password = self._hash_password(new_password)
+        hashed_password = await asyncio.to_thread(self._hash_password, new_password)
         affected_rows = await asyncio.to_thread(
             self._repository.update_user_password,
             user_id=int(user["id"]),
@@ -373,9 +372,6 @@ class AccountLifecycle:
         if affected_rows != 1:
             raise PasswordResetFailed
 
-        await self._otp.consume_otp(
-            normalized_email, purpose=PASSWORD_RESET_PURPOSE
-        )
         return PasswordResetResult()
 
     async def change_password(
@@ -388,7 +384,7 @@ class AccountLifecycle:
         """已登录用户凭邮箱验证码改密（验证码替代当前密码校验）。
 
         已确认产品决策：强制邮箱验证码，不保留免 SMTP 的旧口令回退路径。
-        与 reset_password 同构：先验码（consume=False）→ 更新 → 消耗。
+        与 reset_password 同构：先原子验码并核销 → 更新。写入失败须重新申请。
         """
         user = await asyncio.to_thread(self._repository.get_user_by_id, int(user_id))
         normalized_email = (
@@ -399,13 +395,13 @@ class AccountLifecycle:
         verified = await self._otp.verify_otp(
             normalized_email,
             email_code,
-            consume=False,
+            consume=True,
             purpose=PASSWORD_CHANGE_PURPOSE,
         )
         if not verified:
             raise InvalidOtp
 
-        hashed_password = self._hash_password(new_password)
+        hashed_password = await asyncio.to_thread(self._hash_password, new_password)
         affected_rows = await asyncio.to_thread(
             self._repository.update_user_password,
             user_id=int(user_id),
@@ -427,9 +423,6 @@ class AccountLifecycle:
                 "email": latest_user.get("email"),
                 "pwd_ver": int(latest_user.get("pwd_ver") or 1),
             }
-        )
-        await self._otp.consume_otp(
-            normalized_email, purpose=PASSWORD_CHANGE_PURPOSE
         )
         return PasswordChangeResult(access_token=access_token)
 
@@ -454,7 +447,7 @@ class AccountLifecycle:
         email = email.lower()
         user = await self._password_setup_account(user_id=user_id, email=email)
         if not await self._otp.verify_otp(
-            email, email_code, consume=False, purpose=PASSWORD_SETUP_PURPOSE,
+            email, email_code, consume=True, purpose=PASSWORD_SETUP_PURPOSE,
         ):
             raise InvalidOtp
         owner = await asyncio.to_thread(self._repository.get_user_by_email, email)
@@ -464,11 +457,10 @@ class AccountLifecycle:
             self._repository.enable_password_login,
             user_id=int(user_id), current_email=user.get("email"),
             pwd_ver=int(user.get("pwd_ver") or 1), email=email,
-            hashed_password=self._hash_password(new_password),
+            hashed_password=await asyncio.to_thread(self._hash_password, new_password),
         )
         if updated is None:
             raise PasswordSetupUnavailable
-        await self._otp.consume_otp(email, purpose=PASSWORD_SETUP_PURPOSE)
         return PasswordChangeResult(access_token=self._issue_token({
             "user_id": updated["id"], "email": updated["email"],
             "role": updated["role"], "pwd_ver": updated["pwd_ver"],
@@ -534,10 +526,8 @@ class AccountLifecycle:
     ) -> EmailChangeResult:
         """双验证码换绑登录邮箱：当前邮箱 + 新邮箱均须各自验真。
 
-        顺序约束（与 change_password 同构）：先验双码（consume=False，避免
-        验码消耗后归属冲突导致用户卡死）→ 归属预检 → 快照条件原子更新 →
-        仅更新成功后消耗两枚验证码。不做 token 轮换：RequireUser 只校验
-        disabled/role/pwd_ver，JWT email 声明仅为展示信息，DB 投影权威。
+        双码分别原子核销后才允许更新，避免并发重放。验证或写入失败时
+        已核销的验证码须重新申请。数据库快照条件更新仍校验邮箱归属。
         """
         _user, current_email = await self._current_email_for_change(user_id=user_id)
         normalized_new = _normalize_email_domain(new_email.strip()).lower()
@@ -547,7 +537,7 @@ class AccountLifecycle:
         current_verified = await self._otp.verify_otp(
             current_email,
             current_code,
-            consume=False,
+            consume=True,
             purpose=EMAIL_CHANGE_PURPOSE,
         )
         if not current_verified:
@@ -555,7 +545,7 @@ class AccountLifecycle:
         new_verified = await self._otp.verify_otp(
             normalized_new,
             new_code,
-            consume=False,
+            consume=True,
             purpose=EMAIL_CHANGE_PURPOSE,
         )
         if not new_verified:
@@ -576,6 +566,4 @@ class AccountLifecycle:
         if affected_rows != 1:
             raise EmailChangeFailed
 
-        await self._otp.consume_otp(current_email, purpose=EMAIL_CHANGE_PURPOSE)
-        await self._otp.consume_otp(normalized_new, purpose=EMAIL_CHANGE_PURPOSE)
         return EmailChangeResult()

@@ -17,50 +17,11 @@ from backend.app.services.email_service import (
     OtpSendRateLimitedError,
     build_email_service,
 )
-
-
-class FakeRedis:
-    def __init__(self) -> None:
-        self.values: dict[str, object] = {}
-        self.expirations: dict[str, int] = {}
-        self.calls: list[tuple[object, ...]] = []
-
-    async def get(self, key: str):
-        self.calls.append(("get", key))
-        return self.values.get(key)
-
-    async def set(self, key: str, value: object, *, ex: int | None = None):
-        self.calls.append(("set", key, value, ex))
-        self.values[key] = value
-        if ex is not None:
-            self.expirations[key] = ex
-
-    async def delete(self, *keys: str):
-        self.calls.append(("delete", *keys))
-        for key in keys:
-            self.values.pop(key, None)
-            self.expirations.pop(key, None)
-
-    async def incr(self, key: str) -> int:
-        self.calls.append(("incr", key))
-        value = int(self.values.get(key, 0)) + 1
-        self.values[key] = value
-        return value
-
-    async def expire(self, key: str, seconds: int):
-        self.calls.append(("expire", key, seconds))
-        self.expirations[key] = seconds
-
-    async def ttl(self, key: str) -> int:
-        self.calls.append(("ttl", key))
-        if key not in self.values:
-            return -2
-        # 未记剩余时间语义，存在到期时间即返回配置值（恒 > 0）
-        return self.expirations.get(key, -1)
+from backend.tests.otp_redis_fake import FakeRedis
 
 
 class EmailOtpContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_registration_uses_lowercase_keys_ttls_and_non_atomic_sequence(self) -> None:
+    async def test_registration_uses_lowercase_keys_ttls_and_atomic_store(self) -> None:
         redis = FakeRedis()
         service = EmailService(redis)
 
@@ -431,7 +392,7 @@ class EmailDeliveryContractTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExtractedEmailBoundaryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_otp_store_matches_legacy_sequence_and_attempt_policy(self) -> None:
+    async def test_otp_store_preserves_namespaces_and_attempt_policy(self) -> None:
         redis = FakeRedis()
         store = RedisOtpStore(redis)
 

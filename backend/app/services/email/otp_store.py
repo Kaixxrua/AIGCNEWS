@@ -29,6 +29,28 @@ OTP_TTL = 300
 LOCK_TTL = 60
 MAX_ATTEMPTS = 5
 
+# Keep the cooldown and code write indivisible. Attempts survive resends.
+_STORE_SCRIPT = """
+if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+redis.call('SET', KEYS[2], '1', 'EX', ARGV[3])
+return 1
+"""
+
+# Python performs the constant-time comparison; Redis validates that its snapshot
+# is still current and atomically claims the code or charges a failed attempt.
+_VERIFY_SCRIPT = """
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+if ARGV[2] == '1' then
+    if ARGV[3] == '1' then redis.call('DEL', KEYS[1], KEYS[2]) end
+    return 1
+end
+local attempts = redis.call('INCR', KEYS[2])
+if attempts == 1 then redis.call('EXPIRE', KEYS[2], ARGV[4]) end
+if attempts >= tonumber(ARGV[5]) then redis.call('DEL', KEYS[1], KEYS[2]) end
+return 0
+"""
+
 
 class OtpStoreUnavailableError(RuntimeError):
     """Raised when OTP state cannot be persisted."""
@@ -102,13 +124,11 @@ class RedisOtpStore:
         if not self.available:
             raise OtpStoreUnavailableError
 
-        code_key, lock_key, attempts_key = otp_keys(email, purpose)
-        # Deliberately preserve the existing non-atomic GET then SET cooldown.
-        if await self._redis.get(lock_key) is not None:
+        code_key, lock_key, _attempts_key = otp_keys(email, purpose)
+        if not await self._redis.eval(
+            _STORE_SCRIPT, 2, code_key, lock_key, code, OTP_TTL, LOCK_TTL
+        ):
             raise OtpCooldownError
-
-        await self._redis.set(code_key, code, ex=OTP_TTL)
-        await self._redis.set(lock_key, "1", ex=LOCK_TTL)
         # 不在重发时清零 attempts：6 位验证码的猜测预算必须按邮箱窗口累计，
         # 否则攻击者每 60 秒重发一次即可无限续杯穷举（AUTH-D）。
         # attempts 键随首次错误尝试建立并按 OTP_TTL 过期；验真成功 consume
@@ -131,17 +151,11 @@ class RedisOtpStore:
             return False
 
         stored_str = stored.decode("utf-8") if isinstance(stored, bytes) else str(stored)
-        if self._compare_digest(stored_str, code):
-            if consume:
-                await self.consume(email, purpose=purpose)
-            return True
-
-        attempts = await self._redis.incr(attempts_key)
-        if attempts == 1:
-            await self._redis.expire(attempts_key, OTP_TTL)
-        if attempts >= MAX_ATTEMPTS:
-            await self._redis.delete(code_key, attempts_key)
-        return False
+        return bool(await self._redis.eval(
+            _VERIFY_SCRIPT, 2, code_key, attempts_key, stored_str,
+            int(self._compare_digest(stored_str, code)), int(consume),
+            OTP_TTL, MAX_ATTEMPTS,
+        ))
 
     async def consume(self, email: str, *, purpose: OtpPurpose) -> None:
         if not self.available:
