@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuthDialogTransition from '@/components/auth/AuthDialogTransition.vue'
 import { ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDialogFocus } from '@/composables/useDialogFocus'
@@ -53,9 +54,9 @@ const {
 
 <template>
   <Teleport to="body">
-    <Transition name="fade">
+    <AuthDialogTransition>
       <div v-if="modelValue" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" :aria-labelledby="titleId" @click.self="close">
-        <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
+        <div ref="dialogRef" class="auth-dialog__panel relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
           <div class="auth-card glass-card p-4 sm:p-6">
             <AuthPageHeader :title="t('auth.registerTitle')" :description="t('auth.registerDescription')" :title-id="titleId">
               <svg class="h-7 w-7 text-stone-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -134,11 +135,6 @@ const {
           </div>
         </div>
       </div>
-    </Transition>
+    </AuthDialogTransition>
   </Teleport>
 </template>
-
-<style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-</style>
