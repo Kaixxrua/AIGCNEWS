@@ -28,6 +28,7 @@ type SeoMessages = {
       disclaimer: string
       privacy: string
       register: string
+      wechatLogin: string
       oauth: string
       mcpAuthorize: string
       notFound: string
@@ -69,6 +70,7 @@ const zhCN: SeoMessages = {
       disclaimer: '用户协议与免责声明',
       privacy: '隐私政策',
       register: '注册',
+      wechatLogin: '微信扫码登录',
       oauth: '登录',
       mcpAuthorize: '授权 MCP 客户端',
       notFound: '页面不存在',
@@ -110,6 +112,7 @@ const enUS: SeoMessages = {
       disclaimer: 'User Agreement and Disclaimer',
       privacy: 'Privacy Policy',
       register: 'Sign up',
+      wechatLogin: 'Sign in with WeChat',
       oauth: 'Sign in',
       mcpAuthorize: 'Authorize an MCP client',
       notFound: 'Page not found',

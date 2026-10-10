@@ -106,6 +106,7 @@ const providerBadge = (provider: OAuthProviderKey) => {
       <p v-if="callbackUrl(provider.key)" class="mb-2 break-all text-xs monitor-caption">
         {{ t('monitor.oauthConfig.callbackUrl') }}: <code>{{ callbackUrl(provider.key) }}</code>
       </p>
+      <p v-if="provider.key === 'wechat'" class="mb-2 text-xs monitor-caption">{{ t('monitor.oauthConfig.wechatWebsiteHint') }}</p>
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         <label class="block">
           <span class="mb-1 block text-xs monitor-caption">

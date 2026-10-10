@@ -12,6 +12,17 @@ vi.mock('@/composables/useLoginPrompt', () => ({
 }))
 vi.mock('@/views/DashboardView.vue', () => ({ default: { template: '<div />' } }))
 
+describe('WeChat quick sign-in route', () => {
+  it('serves a separate guest page without reviving the retired WeChat feed', () => {
+    const resolved = router.resolve('/oauth/wechat?redirect=/membership')
+    expect(resolved.name).toBe('wechat-login')
+    expect(resolved.meta.guestOnly).toBe(true)
+    expect(resolved.matched).toHaveLength(1)
+    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false })).toBeNull()
+    expect(router.resolve('/wechat').name).toBe('not-found')
+  })
+})
+
 describe('modal-only login route contract', () => {
   it('/login has no page of its own because login is rendered as a modal', () => {
     const resolved = router.resolve('/login')

@@ -41,7 +41,19 @@ export interface LoginResponse {
 }
 
 export async function startOAuth(provider: string, redirectTo: string): Promise<void> {
+  if (provider === 'wechat') {
+    window.location.assign(`/oauth/wechat?redirect=${encodeURIComponent(redirectTo)}`)
+    return
+  }
   window.location.assign(`/api/auth/oauth/${encodeURIComponent(provider)}/start?redirect_to=${encodeURIComponent(redirectTo)}`)
+}
+
+export async function prepareWeChatLogin(redirectTo: string, signal: AbortSignal): Promise<{ authorization_url: string; expires_in: number }> {
+  const res = await api.post<{ authorization_url: string; expires_in: number }>(
+    '/auth/oauth/wechat/start', undefined,
+    { params: { redirect_to: redirectTo }, signal, timeout: 15_000 },
+  )
+  return res.data
 }
 
 export interface OAuthConsumeResponse extends LoginResponse {

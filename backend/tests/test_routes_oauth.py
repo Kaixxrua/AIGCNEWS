@@ -85,6 +85,16 @@ def test_consume_requires_cookie_and_ignores_json_handoff(monkeypatch) -> None:
     assert response.json()["detail"] == "oauth_handoff_invalid"
 
 
+def test_preparing_unconfigured_wechat_login_fails_without_creating_state(monkeypatch) -> None:
+    client, redis = _client()
+    monkeypatch.setattr(routes_oauth, "_config", lambda request: _config())
+    response = client.post("/api/auth/oauth/wechat/start")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "oauth_provider_unavailable"
+    assert not redis.values
+    assert "set-cookie" not in response.headers
+
+
 def test_consume_success_is_cookie_only_and_clears_one_time_cookies(monkeypatch) -> None:
     client, redis = _client({"id": 7, "role": "user", "email": "u@example.test", "pwd_ver": 3})
     monkeypatch.setattr(routes_oauth, "_config", lambda request: _config())

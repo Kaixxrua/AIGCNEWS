@@ -186,6 +186,7 @@ stores/       Pinia：仅跨页共享状态（auth、chat、enrichment 红点）
 | `/projects` | GitHubProjectsView（826 行，逻辑委派 controller + presentation） | 公开 |
 | `/report` · `/papers/:id/read` · `/disclaimer` · `/privacy` | 简报 · 论文阅读 · 法务 | 公开（论文对话游客降级为登录引导） |
 | `/mcp` | McpConnectView | 公开（游客可复制公开命令与浏览器授权命令；生成含手动 Token 的命令时页内弹出登录） |
+| `/oauth/wechat` | WeChatLoginView（站内微信扫码登录，独立页面） | 游客；未配置时提示使用其他方式登录 |
 | `/oauth/authorize` | McpOAuthAuthorizeView（MCP OAuth 同意页，在主 Layout 之外） | 公开（未登录时页内弹出登录，不走守卫，以免丢掉授权参数） |
 | `/dsh` | DshView | `requiresAuth`（网站 DSH 配置与账号 Token） |
 | `/x` | XBoardView（828 行瀑布流） | 特性开关 `xSource` |
