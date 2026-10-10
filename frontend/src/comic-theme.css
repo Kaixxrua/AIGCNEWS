@@ -103,6 +103,8 @@
 @media (min-width: 1024px) {
   /* One dock width on every page (the comic pages' concept), so it holds still as the dock switches pages. */
   #app .app-shell { --home-dock-width: min(860px, 61vw); }
+  /* Wrapped footer copy grows upward; leave the same space below the content, including both 3px gutters. */
+  #app .app-shell--editorial { --shell-foot: max(74px, calc(var(--footer-height, 68px) + 6px)); }
   #app .app-shell--editorial .main-canvas.main-canvas--editorial { height: calc(100dvh / var(--shell-zoom, 1) - var(--shell-foot, 74px)); }
   #app .app-shell--editorial .main-canvas--editorial > .app-content { padding: 110px 12px 0; }
   #app .app-shell--editorial .main-canvas--editorial .app-masthead {
@@ -169,9 +171,15 @@
   #app .app-shell--editorial .dock::before { border-radius: 7px; }
   #app .app-shell--editorial .dock-label { font-size: 12px; line-height: 16px; }
   #app .app-shell--editorial .dock-auth-sep { display: block; width: 1px; height: 32px; margin: 0 10px; background: var(--dock-edge); }
-  #app .app-shell--editorial .dock-footer--editorial { bottom: 3px; height: 68px; left: 24px; right: 24px; }
+  #app .app-shell--editorial .dock-footer--editorial { bottom: 3px; min-height: 68px; left: 24px; right: 24px; }
   #app .app-shell--editorial .footer-wordmark { letter-spacing: 0; }
   #app .app-shell--editorial .footer-nav { font-size: 12px; }
+  @media (max-width: 1199px) {
+    #app .app-shell--editorial .footer-nav { font-size: 10px; }
+  }
+  @media (max-width: 1599px) {
+    :root:lang(en) #app .app-shell--editorial .footer-nav { font-size: 10px; gap: 4px; }
+  }
   /* The page's frame closes on the footer's top edge in the masthead rule's ink. The content ends on that edge, so
      a line cut there reads as running on past the panel's border rather than breaking off. Over the dock the rule lifts
      into a bay of paper that keeps the dock's top clear, as the masthead's steps round its ribbon; on the right it runs
@@ -292,7 +300,7 @@
 }
 
 /* The masthead's height, for page geometry that measures the view from the viewport (the view is the shell less
-   the masthead and the footer's --shell-foot: 74px, 6px in reading mode). */
+   the masthead and the measured footer's --shell-foot, 6px in reading mode). */
 #app .app-shell--editorial { --masthead-h: 110px; }
 /* Inside pages (LayoutView .app-shell--folio: every comic page but the contact scene) carry a one-line folio, as a
    paper's inside pages run a slim head under the front page's nameplate: the small wordmark, the page's section,
@@ -343,7 +351,6 @@
    at once; the dock and the footer slide over it on the compositor, out on ease-in and back on the spring, the footer
    far enough to take the peel's crest along. With no dock under it the rule runs straight, and the pull hangs from
    it in the rule's ink. */
-#app .app-shell--folio { --shell-foot: 74px; }
 #app .app-shell--folio.app-shell--reading { --shell-foot: 6px; }
 #app .app-shell--folio .dock,
 #app .app-shell--folio .dock-footer--editorial { transition: translate var(--motion-base) var(--motion-spring); }

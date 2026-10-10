@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useResizeObserver } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { dockSuppressed } from '@/composables/useDockSuppression'
 import ComicSticker from './ComicSticker.vue'
@@ -16,6 +17,13 @@ const icpNumber = '蜀ICP备2026011291号'
 const icpLookupUrl = 'https://beian.miit.gov.cn/'
 const year = new Date().getFullYear()
 const aboutDialog = ref<HTMLDialogElement | null>(null)
+const footerElement = ref<HTMLElement | null>(null)
+const emit = defineEmits<{ resize: [height: number] }>()
+useResizeObserver(footerElement, ([entry]) => {
+  // Border-box includes the content-page padding; keep the last size while overlays hide the footer.
+  const height = entry?.borderBoxSize[0]?.blockSize ?? footerElement.value?.offsetHeight ?? 0
+  if (height > 0) emit('resize', height)
+}, { box: 'border-box' })
 
 // 本行 z-index 高于全屏浮层遮罩，浮层（登录对话框等）打开期间须随 dock
 // 一起隐藏，否则会浮在遮罩上层且链接仍可点击
@@ -24,7 +32,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 
 <template>
   <!-- ═══ Dock 下方小字（版权 / 免责 / 隐私 / 商务合作 / 侵权投诉） ═══ -->
-  <div v-show="!dockSuppressed" class="dock-footer" :class="{ 'dock-footer--embedded': embedded, 'dock-footer--editorial': editorial && !embedded }">
+  <div ref="footerElement" v-show="!dockSuppressed" class="dock-footer" :class="{ 'dock-footer--embedded': embedded, 'dock-footer--editorial': editorial && !embedded }">
     <template v-if="editorial && !embedded">
       <ComicSticker variant="peel" class="comic-footer-sticker" />
       <div class="footer-brand">
@@ -136,7 +144,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
 .dock-footer--embedded .footer-link { color: var(--ink-secondary); }
 .dock-footer--editorial {
   bottom: 8px; left: 42px; right: 32px; width: auto; max-width: none;
-  height: 74px; transform: none; justify-content: space-between;
+  height: auto; min-height: 74px; transform: none; justify-content: space-between;
   flex-wrap: nowrap; font-size: 12px; color: var(--ink-muted); pointer-events: none;
 }
 .footer-brand, .footer-right { display: flex; align-items: center; gap: 20px; pointer-events: auto; }
@@ -173,7 +181,7 @@ const infringementMailto = computed(() => `mailto:kaixxrua@gmail.com?subject=${e
  .dock-footer--editorial { left: 16px; right: 16px; display: grid; grid-template-columns: minmax(0, 1fr) var(--home-dock-width, clamp(560px, 58vw, 900px)) minmax(0, 1fr); column-gap: 16px; }
  .dock-footer--editorial .footer-brand { grid-column: 1; max-width: none; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; white-space: normal; }
  .dock-footer--editorial .footer-brand__tagline { border: 0; padding: 0; font-size: 11px; }
- .dock-footer--editorial .footer-right { grid-column: 3; min-width: 0; flex-direction: column; align-items: flex-end; gap: 6px; white-space: normal; }
+ .dock-footer--editorial .footer-right { grid-column: 3; min-width: 0; flex-direction: column; align-items: flex-end; gap: 5px; white-space: normal; }
  .dock-footer--editorial .footer-nav { justify-content: flex-end; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; }
  .dock-footer--editorial .footer-link { display:inline-flex;align-items:center;min-height:24px;white-space:nowrap; }
  .dock-footer--editorial .footer-copyright { border: 0; padding: 0; text-align: right; gap: 3px; }
