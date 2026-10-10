@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from functools import partial
 from typing import AsyncGenerator
 
@@ -149,6 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Own application resources from startup through failure-isolated shutdown."""
     # 安全检查必须先于一切资源初始化：公开/缺失的 JWT 密钥等于管理端点完全失守。
     validate_jwt_secret(getattr(settings, "JWT_SECRET_KEY", ""))
+    startup_at = datetime.now(timezone.utc).isoformat()
 
     postgres_opened = False
     repositories_configured = False
@@ -412,6 +414,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         app.state.scheduler_runtime = scheduler_runtime
         app.state.x_operation_lock = scheduler_runtime.x_operation_lock
         if scheduler_enabled:
+            await asyncio.to_thread(
+                app.state.application_repositories.ingestion_tasks.interrupt_running_tasks,
+                started_before=startup_at,
+            )
             scheduler_runtime.start()
 
         app.state.ai_ops_service = create_ai_ops_service(

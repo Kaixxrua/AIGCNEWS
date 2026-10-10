@@ -279,6 +279,9 @@ class MultiSourceIngestionRuntime:
                 source_name,
                 total,
             )
+        except asyncio.CancelledError:
+            self.host._finish_task(task_id, status="failed", error_msg="cancelled: ingestion interrupted", item_count=total)
+            raise
         except Exception as exc:
             self.host._finish_task(task_id, status="failed", error_msg=str(exc))
             logger.error("[Orchestrator] 单源采集失败 %s: %s", source_name, exc)
@@ -457,6 +460,9 @@ class MultiSourceIngestionRuntime:
                 total,
             )
             self.host._start_arxiv_pdf_background(arxiv_papers_for_pdf)
+        except asyncio.CancelledError:
+            self.host._finish_task(task_id, status="failed", error_msg="cancelled: ingestion interrupted", item_count=total)
+            raise
         except Exception as exc:
             self.host._finish_task(task_id, status="failed", error_msg=str(exc))
             logger.error("[Orchestrator] ERROR: %s", exc)
