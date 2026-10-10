@@ -50,7 +50,7 @@ const overrides = {
     label: '项目榜单', rank: '名次', project: '项目', stars: '星标', gain: '24 小时', trend: '近 {days} 天', heat: '热度', actions: '操作',
     starsTitle: 'GitHub 星标 {count}', heatTitle: '热度 {score}',
     movedUp: '比昨天上升 {count} 名', movedDown: '比昨天下降 {count} 名', unmoved: '名次和昨天一样',
-    newEntry: '新', newEntryTitle: '昨天不在热榜前 200 名', pick: '站长推荐',
+    newEntry: '新', newEntryTitle: '昨天不在热榜前 200 名', pick: '站长推荐', read: '已看过',
     trendSummary: '近 {days} 天每天新增星标：合计 {total}，{date} 最多（{peak}）',
     trendEmpty: '近 {days} 天还没有每日星标数据',
     trendDay: '{date}：{gain}', trendDayMissing: '{date}：没有统计',
