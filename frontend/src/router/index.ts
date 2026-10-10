@@ -213,17 +213,22 @@ router.beforeEach(async (to, from) => {
     async () => (await import('@/composables/recommendedWebsitesSnapshot')).ensureRecommendedWebsites())
   if (websiteRedirect) return websiteRedirect
 
-  // 可插拔源特性门控：开关关闭时源路由回首页（开关进程内缓存，仅首次拉取）
-  const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')
-  const featureRedirect = getFeatureGateRedirect(to, await ensureFeatureFlags())
-  if (featureRedirect) return featureRedirect
+  // 只在受特性开关保护的路由等待配置；Layout 会异步拉取配置更新导航入口。
+  if (to.meta.feature) {
+    const { ensureFeatureFlags } = await import('@/composables/useFeatureFlags')
+    const featureRedirect = getFeatureGateRedirect(to, await ensureFeatureFlags())
+    if (featureRedirect) return featureRedirect
+  }
 
-  // 站点页面门控：联系合作页未启用时回首页（配置进程内缓存，仅首次拉取）
-  const { ensureContactPageConfig } = await import('@/composables/useContactPageConfig')
-  const sitePageRedirect = getSitePageGateRedirect(to, {
-    contactPage: (await ensureContactPageConfig()).enabled,
-  })
-  return sitePageRedirect ?? true
+  // 联系合作页仍须在进入前确认开关，其他页面不等待无关配置。
+  if (to.meta.sitePage) {
+    const { ensureContactPageConfig } = await import('@/composables/useContactPageConfig')
+    const sitePageRedirect = getSitePageGateRedirect(to, {
+      contactPage: (await ensureContactPageConfig()).enabled,
+    })
+    if (sitePageRedirect) return sitePageRedirect
+  }
+  return true
 })
 
 // afterEach 对确认与取消（含重定向）的导航都会触发；onError 兜底 chunk 加载失败等异常。
