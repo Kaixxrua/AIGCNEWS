@@ -1,8 +1,9 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import type { DashboardApi } from '@/services/dashboard/dashboardContracts'
 import { dashboardApi } from '@/services/dashboard/dashboardApi'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 import { clampPage, extractXHandle, followedAccountDisplayName, followedAccountHandle, groupTweetsByHandle, mergePagedTweets, pageCount } from '@/features/xboard/xBoardViewModel'
+import { useXAccountSubscriptions } from '@/features/xboard/useXAccountSubscriptions'
 
 export interface XBoardApi {
   fetchRecentX: DashboardApi['fetchRecentX']
@@ -59,17 +60,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const errorMsg = ref('')
   const isActive = ref(true)
   const selectedIds = ref<Set<string>>(new Set())
-  // 以“排除集”保存选择：初始为空即默认全部关注；后续加载出现的新账号也
-  // 会自然保持关注，不需要在每次请求后补写选中集。
-  const unfollowedAccounts = ref<Set<string>>(new Set())
-  const preferenceKey = 'aigcnews.x.unfollowedAccounts'
-  try {
-    const saved: unknown = JSON.parse(localStorage.getItem(preferenceKey) || '[]')
-    if (Array.isArray(saved)) unfollowedAccounts.value = new Set(saved.filter((v): v is string => typeof v === 'string'))
-  } catch { /* Storage may be unavailable in private browsing. */ }
-  watch(unfollowedAccounts, (value) => {
-    try { localStorage.setItem(preferenceKey, JSON.stringify([...value])) } catch { /* Keep in-memory selection. */ }
-  }, { flush: 'sync' })
+  const subscriptions = useXAccountSubscriptions()
   const page = ref(1)
 
   // 选中日期 → 整数天位移（未来日期已被 onDateChange 拦截，这里夹取兜底）
@@ -102,14 +93,15 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
       .map((handle) => ({ handle, displayName: nicknames.get(handle) || labels.get(handle) || `@${handle}` }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName))
   })
-  const followedAccounts = computed(() => availableAccounts.value.filter(
-    (handle) => !unfollowedAccounts.value.has(handle),
-  ))
+  const followedAccounts = computed(() => availableAccounts.value.filter(subscriptions.follows))
+  const unfollowedAccounts = computed(() => new Set(availableAccounts.value.filter(
+    (handle) => !subscriptions.follows(handle),
+  )))
   const visibleDocs = computed(() => docs.value.filter((doc) => {
     const handle = followedAccountHandle(doc)
     if (watchAccounts.value !== null && !availableAccounts.value.includes(handle)) return false
     // 无法识别归属账号的旧数据不静默丢弃。
-    return !handle || !unfollowedAccounts.value.has(handle)
+    return !handle || subscriptions.follows(handle)
   }))
   const sections = computed(() => groupTweetsByHandle(visibleDocs.value))
   const totalPages = computed(() => pageCount(visibleDocs.value.length, XBOARD_PAGE_SIZE))
@@ -239,22 +231,18 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   }
 
   const toggleFollowAccount = (handle: string) => {
-    const normalized = handle.toLowerCase()
-    const next = new Set(unfollowedAccounts.value)
-    if (next.has(normalized)) next.delete(normalized)
-    else next.add(normalized)
-    unfollowedAccounts.value = next
+    subscriptions.toggle(handle)
     page.value = 1
     removeHiddenTweetSelections()
   }
 
   const followAllAccounts = () => {
-    unfollowedAccounts.value = new Set()
+    subscriptions.followAll()
     page.value = 1
   }
 
   const unfollowAllAccounts = () => {
-    unfollowedAccounts.value = new Set(availableAccounts.value)
+    subscriptions.unfollowAll()
     page.value = 1
     removeHiddenTweetSelections()
   }

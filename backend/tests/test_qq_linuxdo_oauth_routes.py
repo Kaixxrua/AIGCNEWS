@@ -52,12 +52,13 @@ def rig(request, monkeypatch):
     asyncio.run(upstream.aclose())
 
 
-def start(provider, client, *, bind=False):
+def start(provider, client, *, bind=False, method="GET"):
     headers = {"Authorization": "Bearer " + create_access_token({"user_id": 7, "role": "user", "pwd_ver": 1})}
     path = "bind/start" if bind else "start"
-    response = client.get(f"/api/auth/oauth/{provider}/{path}?redirect_to=/projects", headers=headers, follow_redirects=False)
-    assert response.status_code in (302, 303, 307)
-    params = parse_qs(urlsplit(response.headers["location"]).query)
+    response = client.request(method, f"/api/auth/oauth/{provider}/{path}?redirect_to=/projects", headers=headers, follow_redirects=False)
+    assert response.status_code == (200 if method == "POST" else 307)
+    url = response.json()["authorization_url"] if method == "POST" else response.headers["location"]
+    params = parse_qs(urlsplit(url).query)
     assert params["redirect_uri"] == [f"https://example.test/api/auth/oauth/{provider}/callback"]
     return params["state"][0]
 
@@ -79,9 +80,10 @@ def test_new_provider_login_and_single_use_handoff(rig):
     assert len(requests) == len(responses(provider))
 
 
-def test_new_provider_bind_does_not_create_login_session(rig):
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_new_provider_bind_does_not_create_login_session(rig, method):
     provider, client, identities, _, _ = rig
-    state = start(provider, client, bind=True)
+    state = start(provider, client, bind=True, method=method)
     response = client.get(f"/api/auth/oauth/{provider}/callback?state={state}&code=code", follow_redirects=False)
     assert response.status_code == 303
     assert response.headers["location"].endswith("/oauth/action-callback")
@@ -89,6 +91,10 @@ def test_new_provider_bind_does_not_create_login_session(rig):
     assert identities.bind_calls[0]["user_id"] == 7
     assert not identities.resolve_calls
     assert not client.cookies.get("aigc_oauth_handoff")
+    headers = {"Authorization": "Bearer " + create_access_token({"user_id": 7, "role": "user", "pwd_ver": 1})}
+    consumed = client.post("/api/auth/oauth/bind/consume", headers=headers)
+    assert consumed.json() == {"provider": provider, "status": "bound", "redirect_to": "/projects"}
+    assert client.post("/api/auth/oauth/bind/consume", headers=headers).status_code == 400
 
 
 @pytest.mark.parametrize("failure", ["wrong_provider", "wrong_browser", "cancelled"])

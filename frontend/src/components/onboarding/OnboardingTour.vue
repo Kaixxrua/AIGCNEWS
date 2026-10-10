@@ -4,12 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
 import { ArrowLeft, ArrowRight, Compass, X } from 'lucide-vue-next'
 import { useTour } from '@/features/onboarding/useTour'
+import { tourStep } from '@/features/onboarding/signals'
 import { placeCard, spotlightBox, type Box } from '@/features/onboarding/geometry'
 
 const props = withDefaults(defineProps<{ blocked?: boolean }>(), { blocked: false })
 const { t } = useI18n()
 const compact = useMediaQuery('(max-width: 1023px)')
-const { phase, index, step, steps, busy, navigationFailed, start, previous, next, skip } = useTour(toRef(props, 'blocked'), compact)
+const { phase, index, step, steps, pageGuide, busy, navigationFailed, start, previous, next, skip } = useTour(toRef(props, 'blocked'), compact)
 const dialog = ref<HTMLDialogElement>()
 const card = ref<HTMLElement>()
 const title = ref<HTMLElement>()
@@ -18,8 +19,8 @@ const position = ref({ left: '16px', top: '16px' })
 const missing = ref(false)
 const locating = ref(false)
 const welcome = computed(() => phase.value === 'welcome')
-const heading = computed(() => welcome.value ? t('onboarding.welcomeTitle') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.title`))
-const description = computed(() => welcome.value ? t('onboarding.welcomeBody') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.body`))
+const heading = computed(() => welcome.value ? t(pageGuide.value ? 'onboarding.pageWelcomeTitle' : 'onboarding.welcomeTitle') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.title`))
+const description = computed(() => welcome.value ? t(pageGuide.value ? 'onboarding.pageWelcomeBody' : 'onboarding.welcomeBody') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.body`))
 const holeStyle = computed(() => hole.value ? {
   left: `${hole.value.left}px`, top: `${hole.value.top}px`,
   width: `${hole.value.width}px`, height: `${hole.value.height}px`,
@@ -71,6 +72,7 @@ function measure() {
 }
 
 watch([phase, () => step.value?.id], async () => {
+  tourStep.value = phase.value === 'tour' ? step.value?.id ?? null : null
   cancelAnimationFrame(frame)
   changedAt = performance.now()
   scrolled = null
@@ -93,6 +95,7 @@ function keyboard(event: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', keyboard, true))
 onBeforeUnmount(() => {
+  tourStep.value = null
   cancelAnimationFrame(frame)
   document.removeEventListener('keydown', keyboard, true)
   dialog.value?.close()
@@ -119,7 +122,7 @@ onBeforeUnmount(() => {
           <h2 id="onboarding-title" ref="title" tabindex="-1">{{ heading }}</h2>
           <p id="onboarding-description">{{ description }}</p>
         </div>
-        <p v-if="welcome" class="onboarding-note">{{ t('onboarding.welcomeNote') }}</p>
+        <p v-if="welcome" class="onboarding-note">{{ t(pageGuide ? 'onboarding.pageWelcomeNote' : 'onboarding.welcomeNote') }}</p>
         <p v-else-if="locating" class="onboarding-note" role="status">{{ t('onboarding.loading') }}</p>
         <p v-else-if="missing" class="onboarding-note" role="status">{{ t('onboarding.missing') }}</p>
         <footer class="onboarding-actions">

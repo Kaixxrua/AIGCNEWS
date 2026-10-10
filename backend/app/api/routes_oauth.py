@@ -18,7 +18,7 @@ import hmac
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.background import BackgroundTask
 
 from backend.app.api.dependencies import (
@@ -29,6 +29,7 @@ from backend.app.core.auth import RequireUser, create_access_token, extract_user
 from backend.app.models.schema_oauth import (
     OAuthBindConsumeResponse,
     OAuthBindHandoffPayload,
+    OAuthBindStartResponse,
     OAuthCallbackQuery,
     OAuthConsumeResponse,
     OAuthHandoffPayload,
@@ -198,13 +199,18 @@ async def oauth_start(provider: str, request: Request, query: OAuthStartQuery = 
 
 
 @router.get("/auth/oauth/{provider}/bind/start", summary="Start OAuth account binding")
+@router.post(
+    "/auth/oauth/{provider}/bind/start",
+    summary="Prepare OAuth account binding",
+    response_model=OAuthBindStartResponse,
+)
 async def oauth_bind_start(
     provider: str,
     request: Request,
     query: OAuthStartQuery = Depends(),
     current_user: dict = Depends(RequireUser),
 ):
-    """已认证用户发起渠道绑定：目标账户只写入服务端 state，不出现在 URL 中。"""
+    """已认证绑定：浏览器以 POST 携带 Bearer 后获取授权地址；GET 保留重定向兼容。"""
     provider = provider.strip().lower()
     target_user_id = _current_user_id(current_user)
     config = _config(request)
@@ -235,7 +241,12 @@ async def oauth_bind_start(
         await states.put(material, state_payload)
     except (OAuthStateUnavailableError, OAuthAdapterUnavailable, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
-    result = RedirectResponse(url, status_code=307)
+    # 整页导航无法附带 Bearer；POST 必须返回地址，让前端另行导航到 provider。
+    # 若直接返回重定向，XHR 会继续跨域请求 provider，无法完成浏览器授权。
+    result = (
+        JSONResponse(OAuthBindStartResponse(authorization_url=url).model_dump(), headers={"Cache-Control": "no-store"})
+        if request.method == "POST" else RedirectResponse(url, status_code=307)
+    )
     if response.headers.get("set-cookie"):
         result.headers["set-cookie"] = response.headers["set-cookie"]
     return result
