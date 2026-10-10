@@ -52,9 +52,22 @@ Claude Code 任务同样经 `dev_session.py start` 创建会话：没有 `CODEX_
 
 本地发布在三个镜像构建并校验 digest 后保存 `verified-images.json`。同一源码 SHA、私有制品配置及发布脚本一致的再次执行，会先确认三个不可变镜像仍存在，再直接进入原有部署/健康门禁；不重复构建，也不重新运行 CI。该检查点不代表已部署，不绕过发布锁、生产状态、迁移或健康检查。
 
-后端镜像默认通过 PyPI 官方索引下载依赖，使用固定版本的 uv，最多并行下载 8 个包，HTTP 读取超时 30 秒、重试 2 次。构建从 `backend/requirements.lock` 的固定版本和索引摘要生成临时哈希清单，并以 `--require-hashes` 安装，保留 TLS 与包完整性校验；安装后移除 uv 和临时清单。下载工具使用独立的 `aigcnews-uv-bootstrap` 缓存和构建层，避免长时间占用旧后端构建的 pip 缓存锁。
+后端镜像默认通过中科大 PyPI 镜像下载依赖，使用固定版本的 uv，串行下载 1 个包，HTTP 读取超时 30 秒、重试 3 次。构建从 `backend/requirements.lock` 的固定版本和索引摘要生成临时哈希清单，并以 `--require-hashes` 安装，保留 TLS 与包完整性校验；安装后移除 uv 和临时清单。下载工具使用独立的 `aigcnews-uv-bootstrap` 缓存和构建层，避免长时间占用旧后端构建的 pip 缓存锁。
 
 `aigcnews-wheels` 缓存可导入 CI 依赖模板的 `/opt/aigcnews-dependencies/wheels` 文件，安装时只读挂载。先筛选版本及平台匹配的 wheel，保留原始哈希清单，离线校验安装；随后按完整清单安装剩余依赖。缓存版本过旧、平台不匹配或只有源码包时回到索引安装，缓存内容损坏则失败，不替换期望摘要。缓存由 BuildKit 持久保存。受控网络可通过 `--build-arg PIP_INDEX_URL=https://.../simple` 指定单一索引。
+
+本机存在 TUN，清除 HTTP 代理并不能保证直连。专用 Mihomo 实例允许 `mirrors.ustc.edu.cn` 及其缓存未命中时重定向的 `mirrors.tuna.tsinghua.edu.cn`，通过 direct 节点的 `interface-name: enp3s0` 绑定实测物理网卡；其他目的地拒绝。配置见 `deploy/dependency-egress/config.yaml`，用户服务见 `deploy/systemd/aigcnews-dependency-egress.service`。仅监听 Docker bridge 的 `172.17.0.1:17901`，不改应用出站代理。节点参数依据 [Mihomo direct 文档](https://wiki.metacubex.one/en/config/proxies/direct/)，缓存未命中行为见 [USTC PyPI 帮助](https://mirrors.ustc.edu.cn/help/pypi.html)。
+
+安装前核对主机网卡及 bridge 地址，并备份已有可信配置。将上述文件分别复制到 `~/.config/aigcnews-dependency-egress/config.yaml` 和 `~/.config/systemd/user/`，运行 `mihomo -t -d ~/.config/aigcnews-dependency-egress` 后执行 `systemctl --user daemon-reload` 与 `systemctl --user enable --now aigcnews-dependency-egress.service`。发布角色的仓库外可信 JSON 固定：
+
+```json
+{
+  "backend_pip_index_url": "https://mirrors.ustc.edu.cn/pypi/simple",
+  "backend_build_proxy": "http://172.17.0.1:17901"
+}
+```
+
+控制器只向后端镜像传入这些构建参数，代理不进入镜像环境。默认单并发避免镜像 429；保留 uv、pip 和 wheel 缓存。新控制器按不可变 bundle 流程安装，等当前发布排空后切换发布服务。验收须从 Docker bridge 经该端口完整下载固定 wheel 并核对 SHA-256，再完成带哈希校验的后端镜像构建；同时验证其他目的地被拒绝、镜像不包含代理环境。回退时恢复备份的发布配置和服务 bundle，再停用专用代理，不能修改活动 bundle 或绕过发布门禁。
 
 ### 提交前快速验证
 

@@ -5,16 +5,16 @@ FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd
 # 设置工作目录为 src
 WORKDIR /src
 
-# 官方索引配合有界并行下载，避免第三方镜像超时和大包串行下载拖慢发布。
-ARG PIP_INDEX_URL=https://pypi.org/simple
+# 中科大镜像串行下载；本地发布通过专用物理网卡直连代理避开 TUN。
+ARG PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/simple
 RUN --mount=type=cache,id=aigcnews-uv-bootstrap,target=/root/.cache/pip,sharing=locked \
-    pip install --timeout 30 --retries 2 --index-url "$PIP_INDEX_URL" --no-deps uv==0.11.29
+    pip install --timeout 30 --retries 3 --index-url "$PIP_INDEX_URL" --no-deps uv==0.11.29
 
 # 拷贝依赖锁定文件（requirements.lock 由 uv pip compile 生成，见 requirements.txt 文首）
 COPY requirements.lock build_wheel_cache.py ./
 RUN --mount=type=cache,id=aigcnews-uv,target=/root/.cache/uv,sharing=locked \
     --mount=type=cache,id=aigcnews-wheels,target=/wheelhouse,readonly,sharing=shared \
-    export UV_HTTP_TIMEOUT=30 UV_HTTP_RETRIES=2 UV_CONCURRENT_DOWNLOADS=8 UV_CONCURRENT_INSTALLS=4 \
+    export UV_HTTP_TIMEOUT=30 UV_HTTP_RETRIES=3 UV_CONCURRENT_DOWNLOADS=1 UV_CONCURRENT_INSTALLS=4 \
     && uv pip compile requirements.lock --default-index "$PIP_INDEX_URL" \
         --generate-hashes --no-header --no-annotate --quiet -o /tmp/requirements-hashed.lock \
     && python build_wheel_cache.py /tmp/requirements-hashed.lock /wheelhouse /tmp/requirements-cached.lock \
