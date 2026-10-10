@@ -112,9 +112,9 @@
   /* The rest of the tags hide behind a quiet count rather than another framed key on every row. */
   #app .app-shell--comic-page .projects-page--catalog .project-row__chip--more { min-width: 0; padding: 0 3px; border-image: none; background: transparent; color: var(--p-hint); font-weight: 700; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__chip--more:hover { background: transparent; color: var(--p-ink); text-decoration: underline; text-underline-offset: 3px; }
-  /* The description in full under the name and the numbers; forks and the last push trail it as one unbroken unit. */
+  /* The description in full under the name and the numbers; forks and the last push trail it at the right edge. */
   #app .app-shell--comic-page .projects-page--catalog .project-row__desc { grid-area: desc; min-width: 0; margin: 0; color: var(--p-copy); font-size: 13.5px; line-height: 1.6; overflow-wrap: anywhere; }
-  #app .app-shell--comic-page .projects-page--catalog .project-row__meta { display: inline-flex; flex-wrap: wrap; gap: 0 12px; margin-left: 10px; color: var(--p-hint); font-size: 12px; font-weight: 600; line-height: 21px; }
+  #app .app-shell--comic-page .projects-page--catalog .project-row__meta { float: right; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 12px; margin-left: 10px; color: var(--p-hint); font-size: 12px; font-weight: 600; line-height: 21px; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__meta > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__meta > .project-row__meta-narrow { display: none; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__meta svg { flex: 0 0 12px; }
