@@ -25,7 +25,7 @@ const overrides = {
   },
   tracking: trackingZh,
   infrastructure: { appName: 'AIGC 新闻', loading: '加载中…', unavailable: '暂不可用' },
-  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', clear: '清除', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', myFavorites: '我的收藏', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
+  common: { confirm: '确认', cancel: '取消', save: '保存', close: '关闭', retry: '重试', search: '搜索', clear: '清除', noData: '暂无数据', language: '语言', chinese: '中文', english: 'English', back: '返回', edit: '编辑', delete: '删除', refresh: '刷新', refreshing: '刷新中…', loading: '加载中…', processing: '处理中…', send: '发送', previous: '上一页', next: '下一页', page: '页', unknown: '未知', never: '从未', githubRepo: 'GitHub 仓库', joinQQGroup: '加入 QQ 群', myFavorites: '我的收藏', noFormulas: '未检测到公式。', formulasCopied: '已复制 {count} 条公式。' },
   mcpAutoCommand: { label: '账号配置命令 · 自动包含 Token', description: '第 2 步：自动创建专属 Token，可复制命令，或复制自然语言提示词交给 Agent 配置。', creating: '正在创建专属 MCP Token 并生成配置命令…', ready: '配置命令已自动包含你的 MCP Token', copy: '复制配置命令', copyAgentPrompt: '复制给 Agent 的配置提示词', agentPromptHint: '将提示词粘贴给你的编码 Agent，它会自行完成配置并验证连接。提示词同样包含 Token，请按密码妥善保管。' },
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   density: { toCompact: '换成紧凑版面（一屏看更多）', toComfortable: '换成舒适版面（宽松的卡片）' },

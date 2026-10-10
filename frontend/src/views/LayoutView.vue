@@ -14,6 +14,7 @@ import TourHelpButton from '@/components/onboarding/TourHelpButton.vue'
 import { tourActive } from '@/features/onboarding/signals'
 import PwaInstallLink from '@/components/PwaInstallLink.vue'
 import GitHubLink from '@/components/GitHubLink.vue'
+import QQGroupLink from '@/components/QQGroupLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import DensityToggle from '@/components/DensityToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -189,6 +190,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
             <FavoritesLink v-if="!isMobile" />
             <PwaInstallLink v-if="!isMobile" />
             <GitHubLink v-if="!isMobile" />
+            <QQGroupLink />
             <DensityToggle v-if="densityToggleShown" />
             <ThemeToggle />
             <LocaleToggle />
