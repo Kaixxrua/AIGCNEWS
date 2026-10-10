@@ -23,6 +23,7 @@ def actions(now=NOON_CST, operations=True, stale=(), briefed=("all", "arxiv", "n
     repo = MagicMock()
     repo.config.return_value = {"recovery_enabled": True}
     repo.latest_error_at.return_value = briefing_error_at
+    repo.translation_cohort.return_value = [8]
     repo.stale_running_tasks.return_value = list(stale)
     repo.action_usage.side_effect = lambda action, spacing: (usage or {}).get(action, {})
     repo.reserve_action.side_effect = lambda run, action, target, **_: {
@@ -127,8 +128,31 @@ def test_x_translation_retry_only_when_backlog_is_stalled():
     repositories.x_translation_tasks.recover_stale_running.assert_called_once_with()
     operation, limit = stalled.operations.submit.call_args.args
     assert operation.__self__.repository is repositories.x_translation_tasks and limit == 200
-    repositories.x_translation_tasks.batch_running.return_value = 1
+    repositories.x_translation_tasks.get_status_summary.return_value["running"] = 1
     assert "x_translation_retry:queue" not in ids(stalled)
+
+
+def test_stale_translation_is_offered_but_live_lease_race_still_blocks_execution():
+    svc, repo, repositories = actions(summary={"retryable": 1, "running": 1, "stale_running": 1,
+                                               "latest_success_at": NOON_CST-timedelta(hours=1)})
+    candidate = next(c for c in svc.candidates() if c.action == "x_translation_retry")
+    repositories.x_translation_tasks.count_retryable.return_value = 1
+    result = asyncio.run(svc.execute("run", candidate))
+    assert result["status"] == "submitted" and result["task_ids"] == [8]
+    svc.operations.submit.reset_mock()
+    repositories.x_translation_tasks.batch_running.return_value = 1
+    result = asyncio.run(svc.execute("run", candidate))
+    assert result["status"] == "skipped"
+    svc.operations.submit.assert_not_called()
+
+
+def test_disappearing_translation_cohort_is_not_submitted():
+    svc, repo, repositories = actions(summary={"retryable": 1, "running": 0})
+    repo.translation_cohort.return_value = []
+    repositories.x_translation_tasks.count_retryable.return_value = 1
+    candidate = next(c for c in svc.candidates() if c.action == "x_translation_retry")
+    assert asyncio.run(svc.execute("run", candidate))["status"] == "skipped"
+    svc.operations.submit.assert_not_called()
 
 
 def test_execute_rechecks_state_budget_and_records_failures():

@@ -9,10 +9,12 @@ configuration, credentials or deployments.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 
+from backend.app.domain.ai_ops_diagnostics import error_category
 from backend.app.services.briefing.daily_briefing import get_briefing_cache_key
 from backend.app.services.briefing.dispatch import BRIEFING_SOURCES, run_daily_briefing_dispatch
 from backend.app.services.ingestion.x_translation_service import XTranslationProcessor
@@ -109,11 +111,13 @@ class AiOpsActions:
         idle = _age_seconds(summary.get("latest_success_at"), self.now())
         if not summary.get("retryable") or (idle is not None and idle < X_TRANSLATION_STALL.total_seconds()):
             return []
-        if queue.batch_running():
+        # Expired leases are recoverable work, not an active batch. The executor
+        # reclaims them and re-checks for live work immediately before submission.
+        if summary.get("running", 0) > summary.get("stale_running", 0):
             return []
         return [Candidate("x_translation_retry", "queue", {
             "retryable": summary["retryable"], "latest_success_at": summary.get("latest_success_at"),
-            "latest_failure_error": (summary.get("latest_failure_error") or "")[:200],
+            "latest_failure_category": error_category(message=summary.get("latest_failure_error")),
             "effect": f"提交一批最多 {X_TRANSLATION_LIMIT} 条的译文重试"})]
 
     def _briefing_candidates(self):
@@ -155,6 +159,10 @@ class AiOpsActions:
             status, detail = await getattr(self, "_run_" + candidate.action)(candidate)
         except Exception as exc:
             status, detail = "uncertain", {"error_type": type(exc).__name__}
+        detail["conditions"] = json.loads(json.dumps({
+            k: candidate.facts[k] for k in ("tasks", "oldest_started_at", "retryable", "latest_success_at",
+                                            "latest_failure_category", "date", "source", "latest_briefing_error_at")
+            if k in candidate.facts}, default=str))
         await asyncio.to_thread(self.repository.finish_action, run_id, reservation, status,
                                 spec.title, detail)
         return {**detail, **reservation, "status": status}
@@ -165,14 +173,16 @@ class AiOpsActions:
     def _close_orphans(self):
         tasks = self.repositories.ingestion_tasks
         closed = Counter()
+        task_ids = []
         for row in self.repository.stale_running_tasks(ORPHAN_AGE, ORPHAN_LIMIT):
             task = tasks.get_task(row["id"])
             if not task or task.get("status") != "running":
                 continue
             tasks.finish_task(row["id"], status="failed", error_msg=ORPHAN_MESSAGE,
                               item_count=int(task.get("item_count") or 0))
+            task_ids.append(row["id"])
             closed[":".join(row["task_name"].split(":")[:2])] += 1
-        return {"closed": sum(closed.values()), "by_task": dict(closed)}
+        return {"closed": sum(closed.values()), "by_task": dict(closed), "task_ids": task_ids}
 
     async def _run_x_translation_retry(self, candidate):
         # Same sequence as POST /ops/x-translations/retry.
@@ -183,10 +193,13 @@ class AiOpsActions:
         retryable = await asyncio.to_thread(queue.count_retryable)
         if not retryable:
             return "skipped", {"reason": "没有待重试任务"}
+        task_ids = await asyncio.to_thread(self.repository.translation_cohort, X_TRANSLATION_LIMIT)
+        if not task_ids:
+            return "skipped", {"reason": "待重试目标已消失"}
         processor = XTranslationProcessor(queue)
         if not self.operations.submit(processor.process, X_TRANSLATION_LIMIT):
             return "skipped", {"reason": "应用正在关闭"}
-        return "submitted", {"retryable": retryable, "limit": X_TRANSLATION_LIMIT}
+        return "submitted", {"retryable": retryable, "limit": X_TRANSLATION_LIMIT, "task_ids": task_ids}
 
     async def _run_briefing_regenerate(self, candidate):
         date, source = candidate.target.split(":")
@@ -195,7 +208,7 @@ class AiOpsActions:
                                       redis_client=self.redis_client, sources=[source],
                                       target_date=date):
             return "skipped", {"reason": "应用正在关闭"}
-        return "submitted", {"date": date, "source": source}
+        return "submitted", {"date": date, "source": source, "cache_key": get_briefing_cache_key(date, source)}
 
 
 def select_actions(decision, candidates):

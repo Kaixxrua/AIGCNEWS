@@ -25,22 +25,29 @@ def service(decisions):
     return AiOpsService(repo, tools, lambda: model), repo, model
 
 
-def test_real_tool_decisions_and_evidence():
-    svc, repo, model = service([{"tool": "tasks", "reason": "check tasks"}, "有限结论"])
+def test_fixed_tools_collect_without_model_routing():
+    svc, repo, model = service(["有限结论"])
     asyncio.run(svc.run("id"))
     svc.tools["tasks"].assert_called_once()
-    assert model.ainvoke.call_count == 2
+    assert model.ainvoke.call_count == 1
     repo.finish.assert_called_once_with("id", "completed", "有限结论")
     events = [c.args for c in repo.event.call_args_list]
     json.dumps(events)  # Evidence including timestamps is JSON-safe for PostgreSQL.
 
 
-@pytest.mark.parametrize("tool", ["shell", "health", "deploy"])
-def test_unknown_and_repeated_tools_never_execute(tool):
-    svc, repo, model = service([{"tool": tool}])
+@pytest.mark.parametrize("tool", ["shell", "deploy"])
+def test_unknown_tool_registry_is_rejected(tool):
+    with pytest.raises(ValueError, match="invalid_tool_registry"):
+        AiOpsService(MagicMock(), {tool: MagicMock()}, MagicMock())
+
+
+def test_report_text_never_executes_model_instructions():
+    svc, repo, model = service([{"tool": "deploy"}])
     asyncio.run(svc.run("id"))
-    repo.finish.assert_called_once_with("id", "failed")
     assert model.ainvoke.call_count == 1
+    assert set(svc.tools) == {"health", "tasks"}
+    for tool in svc.tools.values():
+        tool.assert_called_once()
 
 
 def test_cancelled_run_stops_before_model_call():
@@ -57,7 +64,8 @@ def test_provider_failure_keeps_evidence_and_hides_credentials():
     asyncio.run(svc.run("id"))
     assert "tool_result" in str(repo.event.call_args_list)
     assert "secret-key" not in str(repo.mock_calls)
-    repo.finish.assert_called_once_with("id", "failed")
+    assert repo.finish.call_args.args[:2] == ("id", "failed")
+    assert "未生成 AI 分析结论" in repo.finish.call_args.args[2]
 
 
 def test_delivery_bridge_allowlist_and_freshness(tmp_path):
@@ -87,16 +95,19 @@ def test_relay_duplicate_objects_are_deduplicated_but_conflicts_rejected():
         parse_decision('[]')
 
 
-def test_conflicting_gateway_reply_uses_explicit_read_only_checklist():
-    svc, repo, _ = service(['{"tool":"tasks"}{"report":"premature"}', "最终结论"])
+def test_failed_tool_does_not_prevent_other_evidence_or_report():
+    svc, repo, model = service(["有限结论"])
+    svc.tools["health"].side_effect = TimeoutError("secret")
     asyncio.run(svc.run("id"))
     svc.tools["tasks"].assert_called_once()
-    assert any(call.args[1] == "warning" for call in repo.event.call_args_list)
-    repo.finish.assert_called_once_with("id", "completed", "最终结论")
+    evidence = json.loads(model.ainvoke.call_args.args[0][-1].content)
+    assert evidence["health"]["result"] == {"status": "unavailable", "error_type": "TimeoutError"}
+    assert "secret" not in str(repo.mock_calls)
+    repo.finish.assert_called_once_with("id", "completed", "有限结论")
 
 
 def test_recovery_uses_fresh_delivery_and_report_receives_real_outcome():
-    svc, repo, model = service([{"tool": "tasks"}, "最终结论"])
+    svc, repo, model = service(["最终结论"])
     svc.tools["delivery"] = MagicMock(return_value={"status": "ok", "release_status": "delivered"})
     svc.recovery = MagicMock()
     svc.recovery.run.return_value = {"status": "scheduled", "task_id": 7}
@@ -108,14 +119,17 @@ def test_recovery_uses_fresh_delivery_and_report_receives_real_outcome():
 
 
 def test_cancel_before_policy_never_admits_action():
-    svc, repo, _ = service([{"tool": "tasks"}, "unused"])
+    svc, repo, _ = service(["unused"])
     svc.recovery = MagicMock()
     repo.event.side_effect = lambda run, kind, *args: kind != "policy"
     asyncio.run(svc.run("id"))
     svc.recovery.run.assert_not_called()
 
 
-def test_composition_uses_injected_dependencies_and_limits_evidence():
+def test_composition_uses_injected_dependencies_and_limits_evidence(monkeypatch):
+    diagnostics = MagicMock()
+    diagnostics.errors.return_value = {"total": 1, "groups": []}
+    monkeypatch.setattr("backend.app.services.ai_ops.PostgresAiOpsDiagnosticsRepository", lambda _: diagnostics)
     database, repositories, health, scheduler, provider = (MagicMock() for _ in range(5))
     health.run.return_value = {"status": "ok"}
     repositories.ingestion_tasks.list_tasks.return_value = {"items": [
@@ -131,10 +145,9 @@ def test_composition_uses_injected_dependencies_and_limits_evidence():
     assert svc.tools["health"]() == {"status": "ok"}
     assert svc.tools["tasks"]()[0]["id"] == 7
     assert "error_msg" not in svc.tools["tasks"]()[0]
-    assert svc.tools["errors"]()[0]["exception_type"] == "TimeoutError"
-    assert "message" not in svc.tools["errors"]()[0]
+    assert svc.tools["errors"]() == {"total": 1, "groups": []}
     assert svc.tools["scheduler"]() == {"running": True, "jobs": [], "job_count": 0}
-    assert svc.tools["x_translations"]() == {"pending": 22, "failed": 7}
+    assert svc.tools["x_translations"]()["pending"] == 22
     assert svc.model() is provider.get_chat_model.return_value.model_copy.return_value
     provider.get_chat_model.assert_called_once_with(reasoning_effort="high")
 
@@ -156,7 +169,6 @@ def acting_service(decisions, candidates):
 
 def test_model_selected_actions_run_before_fixed_recovery_and_reach_report():
     svc, repo, model, order = acting_service([
-        {"tool": "tasks"},
         {"actions": [{"id": "briefing_regenerate:2026-09-28:github", "reason": "missing"},
                      {"id": "briefing_regenerate:2026-09-28:news"},
                      {"id": "deploy:main"}]},
@@ -175,7 +187,6 @@ def test_model_selected_actions_run_before_fixed_recovery_and_reach_report():
 def test_deferred_candidates_are_audited_and_reported_but_never_run():
     github = "briefing_regenerate:2026-09-28:github"
     svc, repo, model, order = acting_service([
-        {"tool": "tasks"},
         {"actions": [], "skipped": [{"id": github, "reason": "上游仍在报错"}, {"id": "deploy:main"}]},
         "最终结论"], [("briefing_regenerate", "2026-09-28:github")])
     asyncio.run(svc.run("id"))
@@ -188,7 +199,7 @@ def test_deferred_candidates_are_audited_and_reported_but_never_run():
 
 @pytest.mark.parametrize("reply", ['{"tool":"tasks"}', "not json", '{"actions":"all"}'])
 def test_unusable_action_reply_executes_nothing_but_run_completes(reply):
-    svc, repo, _, order = acting_service([{"tool": "tasks"}, reply, "最终结论"],
+    svc, repo, _, order = acting_service([reply, "最终结论"],
                                          [("x_translation_retry", "queue")])
     asyncio.run(svc.run("id"))
     assert order == ["recovery"]
@@ -196,13 +207,13 @@ def test_unusable_action_reply_executes_nothing_but_run_completes(reply):
 
 
 def test_no_candidates_skips_the_action_model_call():
-    svc, repo, model, order = acting_service([{"tool": "tasks"}, "最终结论"], [])
+    svc, repo, model, order = acting_service(["最终结论"], [])
     asyncio.run(svc.run("id"))
-    assert model.ainvoke.call_count == 2 and order == ["recovery"]
+    assert model.ainvoke.call_count == 1 and order == ["recovery"]
 
 
 def test_cancel_during_action_phase_never_executes():
-    svc, repo, _, order = acting_service([{"tool": "tasks"}, {"actions": [{"id": "x_translation_retry:queue"}]}],
+    svc, repo, _, order = acting_service([{"actions": [{"id": "x_translation_retry:queue"}]}],
                                          [("x_translation_retry", "queue")])
     repo.event.side_effect = lambda run, kind, title, *args: title != "核对动作前置条件"
     asyncio.run(svc.run("id"))
@@ -218,3 +229,38 @@ def test_composition_wires_action_dependencies():
     assert svc.actions.repository is svc.repository
     assert svc.actions.operations is operations and svc.actions.redis_client == "redis"
     assert svc.actions.repositories is repositories and svc.actions.scheduler is scheduler
+
+
+def test_model_timeout_keeps_all_evidence_with_an_explicit_non_ai_summary():
+    svc, repo, model = service([])
+    model.ainvoke.side_effect = TimeoutError("private relay body")
+    asyncio.run(svc.run("id"))
+    assert all(tool.call_count == 1 for tool in svc.tools.values())
+    assert model.ainvoke.call_count == 1
+    assert repo.finish.call_args.args[:2] == ("id", "failed")
+    summary = repo.finish.call_args.args[2]
+    assert "程序采集摘要" in summary and "health" in summary and "tasks" in summary
+    assert "private relay" not in str(repo.mock_calls)
+
+
+def test_knowledge_and_observed_cases_are_supplied_to_the_model():
+    svc, repo, model = service(["报告"])
+    svc.followups = MagicMock()
+    svc.followups.cases.return_value = []
+    svc.tools["x_translations"] = lambda: {"retryable": 1, "running": 1, "stale_running": 1}
+    asyncio.run(svc.run("id"))
+    evidence = json.loads(model.ainvoke.call_args.args[0][-1].content)
+    books = evidence["knowledge"]["result"]["runbooks"]
+    assert "x-translation" in [book["id"] for book in books]
+    assert any(c.args[2] == "knowledge" for c in repo.event.call_args_list)
+
+
+def test_followups_continue_when_automatic_investigations_are_off(monkeypatch):
+    svc, repo, model = service([])
+    svc.followups = MagicMock()
+    repo.create.return_value = None
+    monkeypatch.setattr("backend.app.services.ai_ops.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(svc.watch())
+    svc.followups.review.assert_called_once()
+    model.ainvoke.assert_not_called()

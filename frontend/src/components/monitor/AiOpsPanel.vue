@@ -24,8 +24,13 @@ let timer: ReturnType<typeof setTimeout> | undefined
 let selectionVersion = 0
 const running = computed(() => runs.value.some(run => run.status === 'running'))
 const labels: Record<string, string> = { running: '调查中', completed: '已完成', failed: '调查失败', cancelled: '已停止', interrupted: '已中断' }
-const tools: Record<string, string> = { health: '依赖健康', tasks: '采集任务', errors: '错误摘要', scheduler: '调度状态', delivery: '自动交付', x_translations: 'X 译文队列' }
+const tools: Record<string, string> = { health: '依赖健康', tasks: '采集任务', errors: '脱敏错误诊断', scheduler: '调度状态', delivery: '自动交付', x_translations: 'X 译文队列', source_trends: '采集趋势', database: '数据库运行状态', investigation_history: '巡检可靠性', followups: '修复回访记录', knowledge: '故障手册与验证经验' }
 const time = (value: string) => new Date(value).toLocaleString()
+function followupLabel(event: Event): string {
+  if (event.kind !== 'followup_result' || !event.data || typeof event.data !== 'object') return ''
+  const status = String((event.data as Record<string, unknown>).status || '')
+  return ({ verified: '结果已核实', not_recovered: '观察期内未恢复', inconclusive: '证据不足' } as Record<string, string>)[status] || ''
+}
 
 async function select(id: string) {
   const version = ++selectionVersion
@@ -111,11 +116,11 @@ onUnmounted(() => { disposed = true; selectionVersion++; clearTimeout(timer) })
           </div>
           <TransitionGroup tag="ol" name="ai-ops-event" aria-live="polite" aria-relevant="additions" class="ai-ops-events">
             <li v-for="(event, index) in detail.events" :key="index" class="monitor-divider py-3 border-b">
-              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '使用固定清单', error: '失败', policy: '权限检查', action_start: '已准入', action_result: '执行结果' }[event.kind] || event.kind }}</span></div>
+              <div class="flex flex-wrap gap-2 text-sm"><time class="monitor-caption text-xs">{{ time(event.at) }}</time><strong>{{ tools[event.title] || event.title }}</strong><span class="monitor-caption text-xs">{{ { tool_start: '开始查询', tool_result: '证据已记录', model: '模型分析', model_result: '已返回', warning: '提示', error: '失败', policy: '权限检查', action_start: '已准入', action_result: '执行结果', followup_result: '恢复核验' }[event.kind] || event.kind }}</span><span v-if="followupLabel(event)">{{ followupLabel(event) }}</span></div>
               <details v-if="event.data" class="mt-2 text-xs"><summary class="cursor-pointer monitor-caption">查看记录</summary><pre class="monitor-surface-dim p-3 mt-2">{{ JSON.stringify(event.data, null, 2) }}</pre></details>
             </li>
           </TransitionGroup>
-          <div v-if="detail.report" class="pt-5"><h3 class="text-sm font-semibold mb-3">调查结论</h3><p class="ai-ops-report text-sm">{{ detail.report }}</p></div>
+          <div v-if="detail.report" class="pt-5"><h3 class="text-sm font-semibold mb-3">{{ detail.status === 'failed' ? '证据摘要' : '调查结论' }}</h3><p class="ai-ops-report text-sm">{{ detail.report }}</p></div>
           <p v-else-if="detail.status !== 'running'" class="monitor-caption text-sm pt-4">本次未生成调查结论。已收集的证据保留在活动记录中。</p>
         </template>
         <p v-else class="monitor-caption text-sm">{{ selected ? '正在读取调查' : '暂无活动' }}</p>
