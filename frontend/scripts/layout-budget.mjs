@@ -41,7 +41,7 @@ const PROFILES = [
     // 自己点开的登录弹窗从 dock 上的账号按钮打开来测（login）。
     pages: [
       { name: 'home', path: '/', ready: '.ui-inspiration', fits: ['.ui-inspiration', 1024], fitChildren: '.dashboard-sidebar' },
-      { name: 'report', path: '/report?date=2026-10-03', ready: '.report-broadsheet__item', whole: ['.report-broadsheet__item', { 1024: [0, 0], 1350: [2, 0], 1536: [2, 2], 1920: [7, 5] }], keys: true },
+      { name: 'report', path: '/report?date=2026-10-03', ready: '.report-broadsheet', preview: '.report-content [role="note"]', whole: ['.report-broadsheet__item', { 1024: [0, 0], 1350: [2, 0], 1536: [2, 2], 1920: [7, 5] }], keys: true },
       { name: 'projects', path: '/projects', ready: '.project-row', whole: ['.project-row', { 1024: [2, 2], 1350: [4, 2], 1536: [5, 4], 1920: [8, 8] }], keys: true },
       { name: 'x', path: '/x', ready: '.tweet-card', whole: ['.tweet-card', { 1024: [2, 2], 1350: [3, 3], 1536: [4, 4], 1920: [6, 6] }], keys: true },
       { name: 'ui-library', path: '/ui-library', ready: '.ui-library__card', whole: ['.ui-library__card', { 1024: [3, 3], 1350: [10, 10], 1536: [12, 12], 1920: [21, 21] }] },
@@ -145,6 +145,19 @@ function countSeen(selector) {
 function fitsInView(selector) {
   const box = document.querySelector(selector)?.getBoundingClientRect()
   return !!box && box.top >= 0 && box.bottom <= innerHeight
+}
+
+// 页脚按内容增长；逐行检查，避免容器在屏内而备案号已经溢出屏幕底边。
+function clippedFooter() {
+  const footer = document.querySelector('.dock-footer--editorial')
+  if (!footer?.getClientRects().length) return []
+  const bounds = footer.getBoundingClientRect()
+  return [...footer.querySelectorAll('.footer-wordmark, .footer-brand__tagline, .footer-nav > *, .footer-copyright > *')]
+    .filter((el) => {
+      const box = el.getBoundingClientRect()
+      return box.width && box.height && (box.top < Math.max(0, bounds.top) - 0.5 || box.bottom > Math.min(innerHeight, bounds.bottom) + 0.5)
+    })
+    .map((el) => el.textContent.trim())
 }
 
 // 横向溢出：文档比视口宽，或手机浏览器为了装下过宽的内容把视口撑宽了。超了就找出最外层的越界元素，最多报三个。
@@ -255,8 +268,14 @@ function checkDialog([open, panelSelector = open]) {
 function listState() {
   const active = document.activeElement
   const box = active?.getBoundingClientRect()
+  const keys = [...document.querySelectorAll('[data-list-key]')]
+    .filter((el) => el.getClientRects().length)
+    .map((el) => el.dataset.listKey)
+  const index = keys.indexOf(active?.dataset?.listKey)
   return {
     key: active?.dataset?.listKey ?? null,
+    nextKey: index < 0 ? null : keys[Math.min(index + 1, keys.length - 1)],
+    previousKey: index < 0 ? null : keys[Math.max(index - 1, 0)],
     inView: !!box && box.bottom > 0 && box.top < innerHeight,
     cursors: document.querySelectorAll('[data-list-key].is-cursor').length,
     sheet: (document.querySelector('.list-keys-sheet')?.getClientRects().length ?? 0) > 0,
@@ -275,9 +294,9 @@ async function checkKeys(page) {
   const first = await press('j')
   if (!first.key || !first.inView || first.cursors !== 1) problems.push(`j 没把光标亮在视野里的条目上（${JSON.stringify(first)}）`)
   const second = await press('j')
-  if (!second.key || second.key === first.key || !second.inView) problems.push('第二下 j 没走到下一条')
+  if (!second.key || second.key !== first.nextKey || !second.inView) problems.push('第二下 j 没走到下一条（末条应保持原位）')
   const back = await press('k')
-  if (back.key !== first.key) problems.push('k 没回到上一条')
+  if (back.key !== second.previousKey) problems.push('k 没回到上一条（首条应保持原位）')
   if (!(await press('?')).sheet) problems.push('? 没打开快捷键表')
   if ((await press('Escape')).sheet) problems.push('Esc 没关掉快捷键表')
   if ((await press('Escape')).cursors !== 0) problems.push('Esc 没收起光标')
@@ -298,6 +317,8 @@ async function measure(profile, spec, [width, height], locale) {
       localStorage.setItem('app_locale', locale)
       localStorage.setItem('app_density', 'compact')
       localStorage.setItem('list_keys_hint', '1')
+      // 和新手引导一样，项目 MCP 推广不占主列表的阅读预算。
+      localStorage.setItem('aigcnews:mcp-promo-dismissed', String(Date.now() + 86400000))
       // Measure normal page layouts; the onboarding overlay has its own flow checks.
       localStorage.setItem('aigcnews:onboarding:v1', JSON.stringify({ browserDone: true, users: {} }))
     } catch {
@@ -365,6 +386,8 @@ async function measure(profile, spec, [width, height], locale) {
     const counted = spec.whole ?? spec.seen
     const overflow = await page.evaluate(horizontalOverflow, width)
     const shot = {
+      preview: spec.preview ? await page.locator(spec.preview).count() > 0 : false,
+      clippedFooter: await page.evaluate(clippedFooter),
       cls: await page.evaluate(() => window.__layoutShift),
       overflow,
       // 视口被撑宽时，跟着变宽的底栏、弹窗也会越界，先只报溢出。
@@ -373,6 +396,7 @@ async function measure(profile, spec, [width, height], locale) {
       fits: spec.fits ? await page.evaluate(fitsInView, spec.fits[0]) : null,
     }
     result.notes.push(`CLS ${shot.cls.toFixed(3)}`)
+    if (shot.clippedFooter.length) result.failures.push(`页脚文字被裁切：${shot.clippedFooter.join('；')}`)
     if (shot.cls > CLS_LIMIT) result.failures.push(`CLS ${shot.cls.toFixed(3)} > ${CLS_LIMIT}`)
     if (shot.overflow.px > 0) result.failures.push(`横向溢出 ${shot.overflow.px}px${shot.overflow.offenders.length ? `：${shot.overflow.offenders.join('；')}` : ''}`)
     if (shot.cut.length) result.failures.push(`内容出了屏幕边：${shot.cut.join('；')}`)
@@ -382,7 +406,8 @@ async function measure(profile, spec, [width, height], locale) {
       const floor = Math.min(counted[1][width][locale === 'zh-CN' ? 0 : 1], total)
       const what = spec.whole ? '首屏' : '首屏露头'
       result.notes.push(`${what} ${count} 条（≥${floor}${floor < total ? '' : `，页面共 ${total} 条`}）`)
-      if (!total) result.failures.push('页面上没有条目')
+      if (!total && shot.preview) result.notes.push('游客预览未含列表条目')
+      else if (!total) result.failures.push('页面上没有条目')
       else if (count < floor) result.failures.push(`${what}条目 ${count} < ${floor}`)
     }
     if (spec.fits && width >= spec.fits[1]) {
@@ -399,7 +424,7 @@ async function measure(profile, spec, [width, height], locale) {
         result.failures.push(`${spec.fitChildren} 首屏仅完整显示 ${children.count}/${children.total} 张卡片，溢出 ${scroll.overflow}px、已滚动 ${scroll.top}px`)
       } else result.notes.push('侧栏全部卡片无需滚动即可完整显示')
     }
-    if (spec.keys) {
+    if (spec.keys && (!shot.preview || shot.first?.total > 0)) {
       const problems = await checkKeys(page)
       result.notes.push(problems.length ? '键盘流有问题' : '键盘流正常')
       result.failures.push(...problems)

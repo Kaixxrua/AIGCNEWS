@@ -89,6 +89,7 @@ const shellZoom = computed(() => {
   return zoom > 1 ? Math.floor(zoom * 1000) / 1000 : 1
 })
 const shellStyle = computed(() => shellZoom.value > 1 ? { zoom: shellZoom.value, '--shell-zoom': shellZoom.value } : undefined)
+const footerHeight = ref(68)
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 // 实例化即开始对 admin 轮询富化失败状态；失败 > 0 时「监控」导航按钮显示红点
@@ -161,7 +162,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
 
 <template>
   <!-- ═══ 全屏内容层 ═══ -->
-  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage, 'app-shell--reading': readingHidden, 'app-shell--comfortable': comfortableShell }" :style="shellStyle">
+  <div class="app-shell relative flex h-dvh w-full items-start justify-center overflow-hidden" :class="{ 'app-shell--editorial': editorialLayout, 'app-shell--comic-page': comicPage, 'app-shell--folio': folioPage, 'app-shell--reading': readingHidden, 'app-shell--comfortable': comfortableShell }" :style="[shellStyle, { '--footer-height': `${footerHeight}px` }]">
 
     <!-- ═══ 科技感背景光晕层 ═══ -->
 
@@ -255,7 +256,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <!-- 站内速查（⌘K / Ctrl+K）：桌面端任何一页都能叫出来；报眉上的放大镜只在内页出现，首页不动 -->
     <QuickSearch v-if="quickSearchMounted" :enabled="isDesktop" />
 
-    <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" />
+    <LayoutFooter :brand-name="brandName" :editorial="editorialLayout" @resize="footerHeight = $event" />
 
     <!-- 读报态的拉手：dock 收起后才露出来，点它（或往上滚、鼠标碰底边、按 Esc）dock 就回来 -->
     <button v-if="readingEnabled" type="button" class="reading-handle" :aria-label="$t('navigation.showDock')" :title="$t('navigation.showDock')" @click="pullChromeBack"></button>
