@@ -606,7 +606,7 @@ onBeforeUnmount(() => {
                   @click="toggleAccountGroup(group.id)"
                 >
                   <ChevronDown class="xboard-group-chevron h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{{ t(`xAccountGroups.${group.id}`) }}</span>
+                  <span class="xboard-group-name">{{ t(`xAccountGroups.${group.id}`) }}</span>
                   <span class="xboard-group-count" :aria-label="t('xboard.followSummary', { selected: group.followed, total: group.accounts.length })">
                     <RollText :value="group.followed" :direction="groupFollowDirections[group.id] ?? 1" />/{{ group.accounts.length }}
                   </span>
@@ -1319,13 +1319,21 @@ onBeforeUnmount(() => {
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.35;
   text-align: left;
+  white-space: normal;
+}
+
+.xboard-group-name {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .xboard-group-heading:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .xboard-group-chevron { flex-shrink: 0; transition: transform var(--motion-base) var(--motion-ease-out); }
 .xboard-follow-group:not(.xboard-follow-group--open) .xboard-group-chevron { transform: rotate(-90deg); }
-.xboard-group-count { flex-shrink: 0; margin-left: auto; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.xboard-group-count { flex-shrink: 0; margin-left: auto; color: var(--ink-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .xboard-follow-group--partial .xboard-group-count,
 .xboard-follow-group--complete .xboard-group-count { color: var(--ink); }
 
@@ -1366,7 +1374,11 @@ onBeforeUnmount(() => {
 
 .xboard-account-chip input { flex-shrink: 0; }
 
-.xboard-account-chip:hover,
+.xboard-account-chip:hover {
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
 .xboard-account-chip-active {
   background: var(--acid-soft);
   color: var(--ink);

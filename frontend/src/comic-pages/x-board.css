@@ -64,16 +64,16 @@
   #app .app-shell--comic-page .xboard-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   #app .app-shell--comic-page .xboard-header > .folio-tools { align-self: flex-end; }
 
-  /* the header's buttons: white faces in a 2px ink line on a solid block (the switch and refresh), 40px tall */
+  /* Action buttons use the illustrated frame; accordion headings keep their compact, wrapping layout. */
   #app .app-shell--comic-page .xboard-header-actions { gap: 20px; }
-  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)) {
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(.btn-secondary, .btn-danger) {
     display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; min-height: 0; padding: 0 18px;
     border: 0 solid transparent; border-radius: 3px; background: var(--x-face); box-shadow: none; color: var(--x-ink);
     font-size: 16px; font-weight: 800; line-height: 1; white-space: nowrap;
     border-image: var(--x-btn) 27 36 36 24 / 9px 12px 12px 8px / 2px 6px 6px 2px stretch;
   }
-  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)):hover:not(:disabled) { background: var(--x-face-hover); }
-  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(:not(.tweet-icon-btn)):disabled {
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(.btn-secondary, .btn-danger):hover:not(:disabled) { background: var(--x-face-hover); }
+  #app .app-shell--comic-page :is(.xboard-header-actions, .xboard-toolbar, .xboard-follow-panel) button:where(.btn-secondary, .btn-danger):disabled {
     opacity: 1; color: #9aa0a6; cursor: default;
     border-image: var(--x-btn-off) 24 30 33 24 / 8px 10px 11px 8px / 2px 4px 5px 2px stretch;
   }
@@ -387,7 +387,7 @@
     background: transparent; color: var(--x-copy); font-size: 12px; font-style: normal; font-weight: 500; line-height: 1.35;
   }
   #app .app-shell--comic-page .xboard-account-chip-active { background: var(--x-chip-on); color: var(--x-ink); }
-  #app .app-shell--comic-page .xboard-account-chip:hover { background: var(--x-face-hover); color: var(--x-ink); }
+  #app .app-shell--comic-page .xboard-account-chip:hover { border-color: var(--x-muted); color: var(--x-ink); }
   #app .app-shell--comic-page .xboard-account-chip input {
     flex: 0 0 14px; width: 14px; height: 14px; margin: 0; border: 1.2px solid #9aa3ad; border-radius: 2px; appearance: none; background: var(--x-face); cursor: pointer;
     transition: background-color 120ms ease, border-color 120ms ease;
