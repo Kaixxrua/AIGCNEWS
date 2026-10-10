@@ -505,76 +505,49 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
     @staticmethod
     def _github_project_enrichment_base_sql() -> str:
         return f"""
-            WITH latest_snap AS MATERIALIZED (
-                SELECT s.*
-                FROM github_repo_candidates c
-                CROSS JOIN LATERAL (
-                    SELECT *
-                    FROM github_repo_snapshots s
-                    WHERE s.repo_id = c.repo_id
-                    ORDER BY s.snapshot_date DESC
-                    LIMIT 1
-                ) s
-            ), eligible AS (
-                SELECT c.repo_id, c.full_name, c.url, c.description,
-                       COALESCE(ls.stars,c.stars,0) AS stars,
-                       e.status, e.category_slug, e.category_name
-                FROM github_repo_candidates c
-                LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
-                LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
-                LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
-                WHERE (COALESCE(ls.stars,c.stars,0) >= %s OR e.status = 'succeeded')
-                  AND {_GITHUB_ENRICHMENT_INPUT_SQL}
-                  AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
-            ), catalog AS (
-                SELECT c.repo_id, c.full_name, c.url,
+            WITH candidates AS MATERIALIZED (
+                SELECT c.repo_id, c.full_name, c.url, c.availability_status,
+                       COALESCE(c.stars,0) AS candidate_stars,
                        COALESCE(ls.stars,c.stars,0) AS stars,
                        e.status, e.category_slug, e.category_name,
-                       CASE
-                         WHEN e.status = 'succeeded' THEN 'succeeded'
-                         WHEN BTRIM(COALESCE(c.description, '')) = ''
-                              AND NOT (ss.readme_status = 'succeeded'
-                                       AND BTRIM(COALESCE(ss.readme_text, '')) <> '')
-                           THEN 'unprocessable'
-                         WHEN e.status = 'failed' THEN 'failed'
-                         ELSE 'pending'
-                       END AS state
+                       {_GITHUB_ENRICHMENT_INPUT_SQL} AS has_input,
+                       {_ALIAS_TOMBSTONE_EXCLUSION_SQL} AS canonical
                 FROM github_repo_candidates c
-                LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
+                LEFT JOIN LATERAL (
+                    SELECT s.stars FROM github_repo_snapshots s
+                    WHERE s.repo_id=c.repo_id ORDER BY s.snapshot_date DESC LIMIT 1
+                ) ls ON TRUE
                 LEFT JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
                 LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
-                CROSS JOIN (SELECT %s::integer AS _intake_threshold) scope
-                WHERE (COALESCE(ls.stars,c.stars,0) >= scope._intake_threshold
-                       OR e.status = 'succeeded')
-                  AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
-            ), content AS (
-                SELECT repo_id, status, category_slug, category_name, state
-                FROM catalog
-            ), unprocessable AS (
-                SELECT repo_id, full_name, url, stars,
-                       'missing_description' AS reason
-                FROM catalog
-                WHERE state = 'unprocessable'
-            ), retained AS (
-                SELECT c.repo_id, c.full_name, c.url,
-                       COALESCE(ls.stars,c.stars,0) AS stars,
+            ), eligible AS (
+                SELECT * FROM candidates
+                WHERE (stars >= %s OR status='succeeded') AND has_input AND canonical
+            ), catalog AS (
+                SELECT repo_id, full_name, url, stars, status, category_slug, category_name,
                        CASE
-                         WHEN EXISTS (SELECT 1 FROM github_repo_aliases ga
-                                      WHERE ga.alias_repo_id = c.repo_id
-                                        AND ga.canonical_repo_id <> c.repo_id) THEN 'tombstone'
-                         WHEN c.availability_status = 'not_found' THEN 'not_found'
-                         WHEN COALESCE(ls.stars,c.stars,0) < %s THEN 'snapshot_below_threshold'
+                         WHEN status='succeeded' THEN 'succeeded'
+                         WHEN NOT has_input THEN 'unprocessable'
+                         WHEN status='failed' THEN 'failed'
+                         ELSE 'pending'
+                       END AS state
+                FROM candidates
+                WHERE (stars >= %s OR status='succeeded') AND canonical
+            ), content AS (
+                SELECT repo_id, status, category_slug, category_name, state FROM catalog
+            ), unprocessable AS (
+                SELECT repo_id, full_name, url, stars, 'missing_description' AS reason
+                FROM catalog WHERE state='unprocessable'
+            ), retained AS (
+                SELECT repo_id, full_name, url, stars,
+                       CASE
+                         WHEN NOT canonical THEN 'tombstone'
+                         WHEN availability_status='not_found' THEN 'not_found'
+                         WHEN stars < %s THEN 'snapshot_below_threshold'
                          ELSE 'lost_input'
                        END AS reason
-                FROM github_repo_candidates c
-                JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
-                    AND e.status='succeeded'
-                LEFT JOIN latest_snap ls ON ls.repo_id=c.repo_id
-                LEFT JOIN github_project_semantic_sources ss ON ss.repo_id=c.repo_id
-                WHERE COALESCE(c.stars,0) >= %s
-                  AND NOT (COALESCE(ls.stars,c.stars,0) >= %s
-                           AND {_GITHUB_ENRICHMENT_INPUT_SQL}
-                           AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL})
+                FROM candidates
+                WHERE status='succeeded' AND candidate_stars >= %s
+                  AND NOT (stars >= %s AND has_input AND canonical)
             )
             """
 
@@ -586,12 +559,9 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         # 留有 failed 行。failed/pending 只统计有输入、真正可再跑的项目。该口径
         # 纯派生、可自愈：活仓补齐简介或 README bootstrap 成功即回到 pending，
         # 被下一轮流水线自动拉起。
-        # latest_snap 只取候选仓的最新快照：LATERAL 让每仓走 (repo_id, snapshot_date)
-        # 唯一索引的一次组内反向扫描 + 单次回表（25k 探针），取代对 64 万行快照表
-        # 全量回表读出再排序去重。MATERIALIZED 保持单次物化、代价有界（理由见
-        # get_github_projects_needing_enrichment 的事故注释）；下游一律
-        # LEFT JOIN latest_snap ON ls.repo_id = c.repo_id，语义与旧写法的
-        # 连接结果完全一致（快照表有 (repo_id, snapshot_date) 唯一约束，无并列）。
+        # Materialize one narrow candidate relation. Latest stars, README input
+        # eligibility and alias state are evaluated once for all aggregate buckets;
+        # neither snapshot payloads nor README bodies enter temporary hash tables.
         base = self._github_project_enrichment_base_sql()
         # base contains five independent intake-threshold placeholders:
         # eligible, catalog scope, retained snapshot classification, and the
