@@ -79,7 +79,7 @@ func TestUIToolsArePublicAdditiveAndReadOnly(t *testing.T) {
 	r := app.DispatchWithIdentity(rpc(7, "tools/list", "{}"), authn.Identity{UserID: 1}, true)
 	var authenticated map[string]any
 	_ = json.Unmarshal(r.Body, &authenticated)
-	if len(authenticated["result"].(map[string]any)["tools"].([]any)) != 14 {
+	if len(authenticated["result"].(map[string]any)["tools"].([]any)) != 15 {
 		t.Fatal("private tool authentication fork changed")
 	}
 	init := uiRPC(t, app, "initialize", map[string]any{})

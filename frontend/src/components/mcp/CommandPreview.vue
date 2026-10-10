@@ -8,7 +8,8 @@ import RollText from '@/motion/RollText.vue'
 
 /**
  * 终端样式的预览：命令、配置或提示词原样排出，Token 处是一块占位——还没准备好时写「你的 Token」，准备好后写「Token 已填入」；
- * 真实 Token 只在复制出去的内容里，页面上不出现。换安装方式时，新命令沿切换方向滑入，终端高度平滑过渡。
+ * 真实 Token 只在复制出去的内容里，页面上不出现。占位的是一次性安装码时，换用 slotKeys 给的文案。
+ * 换安装方式时，新命令沿切换方向滑入，终端高度平滑过渡。
  * 下面是各宽度通用的样子；桌面漫画页在 comic-pages/agent-setup.css 里换成手绘框。
  */
 const props = defineProps<{
@@ -20,11 +21,16 @@ const props = defineProps<{
   swapKey: string
   /** 1：往右边的标签切，新命令从右边滑入；-1：往左。 */
   direction: number
+  /** 占位两种状态的文案键；缺省是 Token 的「你的 Token / Token 已填入」。 */
+  slotKeys?: { empty: string; filled: string }
 }>()
 
 const { t } = useI18n()
 const segments = computed(() => splitCommandPreview(props.command))
-const slotLabel = computed(() => t(props.filled ? 'mcp.desk.tokenFilled' : 'mcp.desk.tokenSlot'))
+const slotLabel = computed(() => {
+  const keys = props.slotKeys ?? { empty: 'mcp.desk.tokenSlot', filled: 'mcp.desk.tokenFilled' }
+  return t(props.filled ? keys.filled : keys.empty)
+})
 </script>
 
 <template>

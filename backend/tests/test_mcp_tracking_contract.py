@@ -50,11 +50,13 @@ class TrackingToolNameContractTests(unittest.TestCase):
         main = _read("mcp-go/cmd/mcp-server/main.go")
         private = catalog[catalog.index("var privateTools = []any{") :]
         names = re.findall(r'\{Key: "name", Value: "([a-z_]+)"\}', private)
-        self.assertEqual(names, ["search_my_project_favorites", "get_my_tracking"])
+        self.assertEqual(names, ["search_my_project_favorites", "get_my_tracking", "get_my_quota"])
         self.assertIn('app.RegisterIdentityTool("get_my_tracking", tracking.Get)', main)
         self.assertIn('knownToolNames["get_my_tracking"] = struct{}{}', main)
         # Python 计数名单按 Go catalog 顺序同步：私有工具追加在末尾
-        self.assertEqual(MCP_TOOL_NAMES[-2:], ("search_my_project_favorites", "get_my_tracking"))
+        self.assertEqual(
+            MCP_TOOL_NAMES[-3:], ("search_my_project_favorites", "get_my_tracking", "get_my_quota")
+        )
 
 
 class TrackingItemShapeContractTests(unittest.TestCase):

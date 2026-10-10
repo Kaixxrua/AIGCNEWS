@@ -55,6 +55,7 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 | --- | --- |
 | `search_my_project_favorites` | 检索当前认证用户的个人项目收藏（需 Bearer Token） |
 | `get_my_tracking` | 读当前认证用户的追踪规则与近 N 天追踪简报里命中的条目（需 Bearer Token 与 `tracking:read` scope；VIP 会员权益，免费账号得到升级提示） |
+| `get_my_quota` | 查当前认证用户的档位（`free` / `vip`）与 24 小时、30 天窗口里剩余的工具调用次数和重置时间（需 Bearer Token，不要求 scope）；不计配额，额度用尽时也能查。接入提示词让 Agent 接好后先调它确认接通 |
 
 输入按发布的 JSON Schema 严格校验；日期参数必须是真实的 `YYYY-MM-DD` 日历日期。
 项目搜索使用一致的关键词、排序和分页语义；结果通过 `result_origin` 标记来源（本地目录或
@@ -186,8 +187,8 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 ### 网站配置平面
 
-- 网站 `/mcp` 配置页对游客开放：可选客户端与终端、复制免登录的公开命令和浏览器授权命令；生成含手动 Token 的命令时，页面内弹出全局登录弹窗，登录后回到 `/mcp` 继续。Token API 仍由后端 401 兜底。站点没有独立 `/login` 页面。
-- 网站 `/dsh` 配置页也必须登录；登录后才能取得或复用账号绑定的 DSH 专用 Token。
+- 网站 `/mcp` 配置页对游客开放：主按钮复制一段给 Agent 的配置提示词，让客户端连浏览器授权入口，游客也能复制。登录用户复制的提示词另附一枚一次性安装码，给不支持浏览器授权的客户端用（见下文「一次性安装码」）。「手动配置」要签 Token，未登录时页面内弹出全局登录弹窗，登录后回到 `/mcp` 继续。Token API 仍由后端 401 兜底。站点没有独立 `/login` 页面。
+- 网站 `/dsh` 配置页游客可看，复制提示词要先登录。提示词只带 `dsh` 用途的一次性安装码，Agent 在用户电脑上用它换来账号绑定的 DSH 专用 Token，写进 dsh web profile。
 - generic MCP Token 的创建、查看脱敏 metadata、删除与轮换，以及网站生成的客户端配置，均由登录账号执行；客户端不能提交 membership、group、quota 或 VIP 作为权限依据。
 - 登录 JWT 仅用于网站会话，不等于 MCP access token，也不会直接作为 `/api/mcp` runtime credential。
 - generic Token 只保存 SHA-256 lookup digest、hint、scopes、有效期与撤销状态；DSH Token 通过独立 `purpose` 隔离，并保存服务端加密材料以支持跨刷新复用。Token 明文不会进入网站的普通 storage、URL、页面日志或 analytics；目标客户端、终端、剪贴板或环境变量仍可能自行保存它。
@@ -195,7 +196,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 ### MCP 运行平面
 
 - 没有 `Authorization` 头：请求按 anonymous/guest 处理，公开工具、resources 与 prompts 继续可用，使用游客/IP 配额；不会投影为某个 Free 账号。
-- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）与 `get_my_tracking`（scope `tracking:read`，调用时再按实时会员档位放行）。网站 `/mcp` 与 DSH 向导签发的 Token 默认带这两个只读 scope。
+- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）、`get_my_tracking`（scope `tracking:read`，调用时再按实时会员档位放行）与 `get_my_quota`（不要求 scope）。网站 `/mcp`、DSH 向导与一次性安装码签发的 Token 默认带这两个只读 scope。
 - 只要显式提供了凭证但凭证为非 Bearer、格式错误、未知、过期、已撤销、已删除、所属用户已禁用或 scopes JSON 无效，均在 JSON-RPC 解析前返回 HTTP 401，并带 `WWW-Authenticate: Bearer`；绝不降级为游客，也不消耗游客配额。
 - 认证顺序固定为：方法校验 → Bearer 认证 → JSON-RPC 解析 → 限流 → 分派。MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
 
@@ -213,11 +214,26 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 已知限制：
 
-- 资源地址与签发方都绑定 `aigcnews.cn`。从备用域名 `aigcradar.online` 接入的客户端，改用手动 Token。
+- 资源地址与签发方都绑定 `aigcnews.cn`。从备用域名 `aigcradar.online` 接入的客户端，改用一次性安装码或手动 Token。
 - 不支持 CIMD（Client ID Metadata Documents）。新版 MCP 授权规范推荐 CIMD、动态注册保留为兼容方式；授权服务器元数据不声明 `client_id_metadata_document_supported`，客户端据此回落到动态注册。
 - 网站页面还没有令牌列表与吊销按钮。吊销走 `DELETE /api/auth/me/mcp-tokens/{token_id}`，或在同一客户端重新授权以替换旧令牌。
 
 npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` 时完全省略 `Authorization` header，因此可直接使用公开 runtime；只有明确配置 Token 时才进入账号渠道，个人收藏等私有能力需要有效 Token。
+
+### 一次性安装码
+
+不支持浏览器授权的客户端（以及 dsh 插件）只认配置里的 Token。为了不让 Token 经过聊天记录，`/mcp` 与 `/dsh` 复制给 Agent 的提示词只带一枚一次性安装码：Agent 先在客户端配置里写占位符 `__AIGC_RADAR_TOKEN__`，再在用户电脑上用一条命令拿安装码换 Token、原地替换占位符，Token 不出现在命令输出里。实现见 `backend/app/services/auth/mcp_install_codes.py` 与 `backend/app/api/routes_auth.py`。
+
+| 端点 | 调用方 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| `POST /api/auth/me/mcp-install-codes` | 登录的网站会话 | `{"purpose": "mcp"}` 或 `{"purpose": "dsh"}` | `{"code", "purpose", "expires_in": 600}` |
+| `POST /api/auth/mcp-install-codes/redeem` | 匿名（Agent 在用户电脑上调用） | `{"code", "client_name"}` | `{"purpose", "token", "token_type": "Bearer", "scopes"}`；`Accept` 只要 `text/plain` 时直接回 Token 原文 |
+
+- 码为 `aigc_ic_` 加 256 位随机串，10 分钟过期，只能兑换一次。Redis 只存码的 SHA-256 摘要作键，值为用户 id、用途与签发时的 `pwd_ver`；兑换用 `GETDEL`（没有时用 Lua）原子取出并删除，先作废再校验。
+- 码无效、过期、已用过，或账号已删除、已禁用、改过密码，都回 HTTP 400，`detail.code` 为 `install_code_invalid`。Redis 不可用时签发与兑换都回 503，不放行。
+- `mcp` 用途：每次兑换新签一枚普通 MCP Token，标签取 `client_name`（缺省 `MCP install code`），带默认的两个只读 scope；与手动签发一样，每用户超过 20 个活跃 Token 时最旧的自动吊销。`dsh` 用途：回这个账号的 DSH 专用 Token（与 `/dsh` 页同一枚，没有就先签发；旧版 Token 需要重新生成时与 `/dsh` 页一样回 409 `dsh_token_recovery_required`）。
+- 两个端点的响应都带 `Cache-Control: no-store`。限流均为 10 分钟窗口：签发每用户 60 次，兑换每 IP 20 次。
+- 页面登录后预取一枚码，只放内存；复制时同步拼进提示词，剩不到 5 分钟的码不再使用，每复制一次换一枚。带码的提示词只经安全剪贴板（不退回把文本写进 DOM 的 textarea），页面预览里码的位置是占位。后台标签页不签新码。拿不到码时，`/mcp` 退回不带码的提示词，`/dsh` 显示重试按钮。
 
 ## 限流与调用额度
 
@@ -245,6 +261,7 @@ npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` �
 - 登录档先检查 24 小时 pacing 桶，通过后才消耗滚动 30 天桶；被短窗口拒绝的请求不会消耗长窗口额度。
 - 超限返回 HTTP 429，响应体为 JSON-RPC error（code `-32000`），并带与实际剩余窗口相符的 `Retry-After` 头；`error.data.quota_scope` 为兼容保留 `daily` / `monthly` 字面量，但用户文案使用“每 24 小时”与“滚动 30 天”。
 - 解析失败的畸形请求直接返回 JSON-RPC 错误，不计入配额。
+- `get_my_quota` 只过每分钟突发限流，不进 24 小时与 30 天额度，额度用尽后仍能查到何时恢复；它只读这两个计数键（GET + TTL），不计数、不续期。
 - Redis 不可用时放行（可用性优先于限流严格性），与认证端点限流策略一致。
 
 ## 每日用量汇总

@@ -50,7 +50,7 @@ export interface TokenConnectionWatchOptions {
   visibility?: PageVisibility
 }
 
-const documentVisibility: PageVisibility = {
+export const documentVisibility: PageVisibility = {
   hidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
   subscribe: (listener) => {
     if (typeof document === 'undefined') return () => {}

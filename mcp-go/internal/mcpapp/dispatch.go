@@ -103,6 +103,21 @@ func (a *App) RegisterIdentityTool(name string, handler IdentityToolHandler) {
 	a.identityTools[name] = handler
 }
 
+// quotaFreeCall 判定请求是否为不计配额的工具调用：tools/call 且工具名是已
+// 注册的额度查询工具。未注册时（回放等装配）按普通调用计配额，借名调用
+// 未注册的工具照常消耗额度。
+func (a *App) quotaFreeCall(req wire.ValidatedRequest) bool {
+	if req.Method != "tools/call" {
+		return false
+	}
+	name, _ := req.Params["name"].(string)
+	if name != QuotaToolName {
+		return false
+	}
+	_, registered := a.identityTools[name]
+	return registered
+}
+
 // Dispatch 消费已校验请求并产出框架无关响应。
 func (a *App) Dispatch(req wire.ValidatedRequest) wire.Response {
 	return a.dispatch(req, authn.Identity{}, false, "")
@@ -408,7 +423,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// 限流缝：enforce_mcp_rate_limit 的调用点在 parse 之后、dispatch 之前；
 	// 身份（user_id/role/生效档位）与可信代理 XFF 链全部由限流器消费。
-	if exceeded := h.limiter.Enforce(r.Context(), req.Method, identity, r); exceeded != nil {
+	// 额度查询工具不计配额，只过分钟级突发桶：额度用尽的用户仍能查到何时恢复。
+	enforce := h.limiter.Enforce
+	if h.app.quotaFreeCall(req) {
+		enforce = h.limiter.EnforceBurst
+	}
+	if exceeded := enforce(r.Context(), req.Method, identity, r); exceeded != nil {
 		h.recordUsage(r, req, identity, usage.LimitKind(exceeded.Quota, exceeded.QuotaScope))
 		exceeded.Projection(req.RequestID).Write(w)
 		return

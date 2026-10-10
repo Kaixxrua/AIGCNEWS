@@ -104,9 +104,10 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 | `get_paper_detail` | 单条索引文档详情 |
 | `get_project_categories` | 项目分类与子类计数 |
 
-- 携带 `Authorization: Bearer <MCP token>` 解锁 `search_my_project_favorites`（scope `projects:favorites:read`）与会员工具 `get_my_tracking`（scope `tracking:read`，读本人追踪规则与追踪简报命中）
+- 携带 `Authorization: Bearer <MCP token>` 解锁 `search_my_project_favorites`（scope `projects:favorites:read`）、会员工具 `get_my_tracking`（scope `tracking:read`，读本人追踪规则与追踪简报命中）与 `get_my_quota`（查本人档位与剩余调用次数，不计配额）
 - 另提供 3 个 resources、4 个 resource templates、2 个 prompts；`initialize` 响应的 `instructions` 字段发布 MCP-first 路由策略
 - 登录用户在 `/mcp` 页自助签发 token：SHA-256 摘要存储、明文仅展示一次、设备标签、有效期、可撤销、每用户上限 20 个
+- `/mcp` 与 `/dsh` 复制给 Agent 的提示词不带 Token：登录用户的提示词附一枚 10 分钟内有效、只能兑换一次的安装码，Agent 在用户电脑上用它换 Token 并直接写进客户端配置
 - 限流：匿名按 IP 60/30 req-min，认证按用户 240/120 req-min；商业额度为匿名每个固定 24 小时窗口 5 次，Free 每 24 小时 10 次 + 滚动 30 天 200 次，VIP 每 24 小时 200 次 + 滚动 30 天 4,000 次，MCP 与 `/api/v1` 共池（Redis 固定窗口，故障时放行）
 - 协议参数与策略全文见 [mcp-server.md](mcp-server.md)
 

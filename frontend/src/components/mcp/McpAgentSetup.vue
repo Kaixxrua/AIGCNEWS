@@ -17,8 +17,8 @@ import './agent-setup.css'
 
 /**
  * /mcp 的主卡：一颗「复制给 Agent 的配置提示词」，选客户端、跑命令都交给用户自己的 Agent。
- * 提示词不带 Token（客户端走浏览器授权），游客也能复制、也能展开看全文；登录了才看得到接入回显（要读自己的令牌列表），
- * 接上后在回显里报档位与额度。
+ * 提示词不带 Token（客户端走浏览器授权），游客也能复制、也能展开看全文；登录了附一枚一次性安装码（预览里是占位），
+ * 也才看得到接入回显（要读自己的令牌列表），接上后在回显里报档位与额度。
  */
 installAgentSetupMessages()
 
@@ -32,7 +32,8 @@ const setup = useMcpAgentSetup({
   manualPageUrl: () => `${window.location.origin}/mcp`,
   copyNotice: { onError: () => showToast(t('mcp.copyFailed')) },
 })
-const { prompt, copiedKey, connection, copyPrompt } = setup
+const { prompt, installCodeAvailable, installCodeReady, copiedKey, connection, copyPrompt } = setup
+const installCodeSlot = { empty: 'agentSetup.installCode.slot', filled: 'agentSetup.installCode.slotFilled' }
 
 const copied = computed(() => copiedKey.value === 'agent-prompt')
 const previewOpen = ref(false)
@@ -71,11 +72,11 @@ onBeforeUnmount(setup.dispose)
     </div>
     <Transition @enter="unfold" @leave="fold">
       <div v-show="previewOpen" :id="previewId" role="region" :aria-label="t('agentSetup.previewLabel')">
-        <CommandPreview class="agent-setup-preview" :command="prompt" :filled="false" swap-key="mcp-agent-prompt" :direction="1" />
+        <CommandPreview class="agent-setup-preview" :command="prompt" :filled="installCodeReady" :slot-keys="installCodeSlot" swap-key="mcp-agent-prompt" :direction="1" />
       </div>
     </Transition>
     <AgentStoryboard :steps="steps" :label="t('agentSetup.stepsLabel')" />
-    <p v-if="signedIn" class="agent-setup-hint">{{ t('agentSetup.mcp.hint') }}</p>
+    <p v-if="signedIn" class="agent-setup-hint">{{ t(installCodeAvailable ? 'agentSetup.mcp.hint' : 'agentSetup.mcp.hintNoCode') }}</p>
     <p v-else class="agent-setup-hint">
       {{ t('agentSetup.mcp.guestHint') }}
       <button type="button" class="agent-setup-link" @click="requestLogin('/mcp')">{{ t('agentSetup.loginForStatus') }}</button>

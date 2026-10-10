@@ -49,8 +49,8 @@ func TestToolDescriptionsFitClaudeCodeBudget(t *testing.T) {
 	if err := json.Unmarshal(jsonx.MustMarshalCompact(uiApp(t).toolsList(true)), &listed); err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 14 {
-		t.Fatalf("expected 14 tools, got %d", len(listed.Tools))
+	if len(listed.Tools) != 15 {
+		t.Fatalf("expected 15 tools, got %d", len(listed.Tools))
 	}
 	for _, tool := range listed.Tools {
 		if n := utf16Len(tool.Description); n == 0 || n > claudeCodeTextBudget {

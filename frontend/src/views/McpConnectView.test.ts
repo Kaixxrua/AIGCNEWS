@@ -8,6 +8,7 @@ const copyToClipboard = vi.hoisted(() => vi.fn())
 const copySensitiveToClipboard = vi.hoisted(() => vi.fn())
 const fetchMcpTokens = vi.hoisted(() => vi.fn())
 const createMcpToken = vi.hoisted(() => vi.fn())
+const issueMcpInstallCode = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 type AuthStatus = 'initializing' | 'authenticated' | 'anonymous' | 'degraded'
 const authBox = vi.hoisted(() => ({ current: null as null | { status: AuthStatus; isLoggedIn: boolean; isMember: boolean; initFromStorage: ReturnType<typeof vi.fn> } }))
@@ -35,6 +36,7 @@ vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()),
   createMcpToken,
   fetchMcpTokens,
+  issueMcpInstallCode,
 }))
 vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
@@ -65,6 +67,7 @@ beforeEach(() => {
   copySensitiveToClipboard.mockReset().mockResolvedValue(undefined)
   fetchMcpTokens.mockReset().mockResolvedValue([])
   createMcpToken.mockReset()
+  issueMcpInstallCode.mockReset().mockResolvedValue({ code: 'aigc_ic_view', purpose: 'mcp', expires_in: 600 })
   requestLogin.mockReset()
 })
 

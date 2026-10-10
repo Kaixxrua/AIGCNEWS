@@ -307,17 +307,20 @@ func run() int {
 	limiter := ratelimit.NewLimiter(ratelimit.GoRedis{Client: redisClient}, cfg.TrustedProxyIPs)
 	slog.Info("[Startup] 限流层已接线（Redis 故障时请求级 fail-open）",
 		"addr", redisClient.Options().Addr, "db", cfg.Redis.DB)
+	// 账户工具：查本人档位与配额用量（只读限流键；Handler 对它不计配额）。
+	app.RegisterIdentityTool(mcpapp.QuotaToolName, mcpapp.NewQuotaService(limiter, publicBaseURL).Get)
 
 	// dashboard 工具调用计数写者（PR 0.2 过渡策略：Go 只写 Redis
 	// mcpmetrics:*，与 Python 双写收敛）。已知工具名集合对齐 Python
 	// MCP_TOOL_REGISTRY：注册表内按原名统计，其余归 __unknown__。
 	// bench UA（mcp-latency-bench/）在分派层免计数。
-	knownToolNames := make(map[string]struct{}, len(registry)+2)
+	knownToolNames := make(map[string]struct{}, len(registry)+3)
 	for name := range registry {
 		knownToolNames[name] = struct{}{}
 	}
 	knownToolNames["search_my_project_favorites"] = struct{}{}
 	knownToolNames["get_my_tracking"] = struct{}{}
+	knownToolNames[mcpapp.QuotaToolName] = struct{}{}
 	app.SetMetrics(metrics.NewRecorder(redisClient), knownToolNames)
 
 	mcpHandler := mcpapp.NewHandler(app, authn.Authenticator{DB: authn.PgxQuerier{Pool: pool}}, limiter)

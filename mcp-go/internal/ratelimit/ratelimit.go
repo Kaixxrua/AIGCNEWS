@@ -8,11 +8,13 @@
 //     30 天 4000 次；24 小时桶是 pacing 层，防脉冲烧穿长窗口额度）；
 //   - 先分钟桶后配额桶，被分钟桶 429 的请求不消耗配额；
 //   - admin 豁免配额（运营排查不受商业约束），但不豁免分钟桶；
-//   - 除超限外任何 Redis 错误 fail-open（可用性优先于严格性）。
+//   - 除超限外任何 Redis 错误 fail-open（可用性优先于严格性）；
+//   - 配额查询（QuotaStatus）只读：GET + TTL，不计数、不续期。
 package ratelimit
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -103,6 +105,20 @@ func (g GoRedis) Expire(ctx context.Context, key string, window time.Duration) (
 	return g.Client.Expire(ctx, key, window).Result()
 }
 
+// Reader 是只读配额查询额外需要的命令面（GoRedis 实现）；拆成可选接口，
+// 只做计数的测试替身不必实现 GET。键不存在读作 0。
+type Reader interface {
+	Get(ctx context.Context, key string) (int64, error)
+}
+
+func (g GoRedis) Get(ctx context.Context, key string) (int64, error) {
+	value, err := g.Client.Get(ctx, key).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return value, err
+}
+
 // Limiter 按请求执行两层限流；redis 为 nil 时整体禁用（Enforce 直接
 // 放行，对齐 Python 侧 app.state.redis 缺失的早期返回）。
 type Limiter struct {
@@ -144,7 +160,57 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		return nil
 	}
 
-	// 1. 分钟级突发桶：tools/call 独立成桶，认证按用户、匿名按 IP。
+	// 1. 分钟级突发桶。
+	if exceeded := l.enforceBurst(ctx, method, id, r); exceeded != nil {
+		return exceeded
+	}
+
+	// 2. 非 tools/call 或 admin → 放行（admin 豁免配额但不豁免分钟桶）。
+	if method != "tools/call" || id.Role == "admin" {
+		return nil
+	}
+
+	// 3. tools/call 分层配额桶：认证按用户先检查固定 24 小时 pacing 桶，
+	// 再检查滚动 30 天商业额度桶（档位取生效档，未知档 fail-closed 按
+	// free；被短窗口拒绝的请求不再消耗长窗口额度）；匿名按 IP 仅使用
+	// 固定 24 小时配额（按免费档口径报告）。配额是商业
+	// 软约束而非安全边界：固定窗口 + INCR 在并发下可能瞬时超 1，与
+	// Python 同口径，可接受。
+	if id.UserID > 0 {
+		tier := id.EffectiveTier(time.Now())
+		quotaIdentity := "user:" + strconv.Itoa(id.UserID)
+		dailyLimit, monthlyLimit := l.TierQuotaLimits(tier)
+		// 3.1 固定 24 小时 pacing 桶（与匿名同桶不同键）
+		if exceeded := l.enforceQuotaBucket(
+			ctx, QuotaDailyBucket, quotaIdentity, QuotaDailyWindowSeconds,
+			"daily", tier, dailyLimit, "user",
+		); exceeded != nil {
+			return exceeded
+		}
+		// 3.2 滚动 30 天商业额度桶
+		return l.enforceQuotaBucket(
+			ctx, QuotaMonthlyBucket, quotaIdentity, QuotaMonthlyWindowSeconds,
+			"monthly", tier, monthlyLimit, "user",
+		)
+	}
+	// 匿名没有账号档位，按免费档口径返回（24 小时配额本身更紧）
+	return l.enforceQuotaBucket(
+		ctx, QuotaDailyBucket, "ip:"+ClientIP(r, l.trusted), QuotaDailyWindowSeconds,
+		"daily", authn.TierFree, l.limits.AnonymousDailyToolCallQuota, "ip",
+	)
+}
+
+// EnforceBurst 只过分钟级突发桶、不碰配额桶：给不计配额的只读工具
+// （get_my_quota）用——额度用尽的用户仍能查到额度何时恢复，同时防刷。
+func (l *Limiter) EnforceBurst(ctx context.Context, method string, id authn.Identity, r *http.Request) *Exceeded {
+	if l == nil || l.redis == nil {
+		return nil
+	}
+	return l.enforceBurst(ctx, method, id, r)
+}
+
+// enforceBurst 是分钟级突发桶：tools/call 独立成桶，认证按用户、匿名按 IP。
+func (l *Limiter) enforceBurst(ctx context.Context, method string, id authn.Identity, r *http.Request) *Exceeded {
 	bucket := ProtocolBucket
 	anonymousLimit := l.limits.AnonymousProtocolPerMinute
 	authenticatedLimit := l.limits.AuthenticatedProtocolPerMinute
@@ -167,50 +233,100 @@ func (l *Limiter) Enforce(ctx context.Context, method string, id authn.Identity,
 		// 配额桶判定仍继续（enforce_mcp_rate_limit 的 except Exception 分支
 		// 之后顺序执行 _enforce_tool_call_quota）。
 		l.logger.Warn("MCP rate limit skipped: redis unavailable", "error", err)
-	} else if exceeded {
-		return &Exceeded{Quota: false, RetryAfter: WindowSeconds}
-	}
-
-	// 2. 非 tools/call 或 admin → 放行（admin 豁免配额但不豁免分钟桶）。
-	if method != "tools/call" || id.Role == "admin" {
 		return nil
 	}
-
-	// 3. tools/call 分层配额桶：认证按用户先检查固定 24 小时 pacing 桶，
-	// 再检查滚动 30 天商业额度桶（档位取生效档，未知档 fail-closed 按
-	// free；被短窗口拒绝的请求不再消耗长窗口额度）；匿名按 IP 仅使用
-	// 固定 24 小时配额（按免费档口径报告）。配额是商业
-	// 软约束而非安全边界：固定窗口 + INCR 在并发下可能瞬时超 1，与
-	// Python 同口径，可接受。
-	if id.UserID > 0 {
-		tier := id.EffectiveTier(time.Now())
-		quotaIdentity := "user:" + strconv.Itoa(id.UserID)
-		// 3.1 固定 24 小时 pacing 桶（与匿名同桶不同键）
-		dailyLimit := l.limits.FreeDailyToolCallQuota
-		if tier == authn.TierMember {
-			dailyLimit = l.limits.MemberDailyToolCallQuota
-		}
-		if exceeded := l.enforceQuotaBucket(
-			ctx, QuotaDailyBucket, quotaIdentity, QuotaDailyWindowSeconds,
-			"daily", tier, dailyLimit, "user",
-		); exceeded != nil {
-			return exceeded
-		}
-		// 3.2 滚动 30 天商业额度桶
-		monthlyLimit := l.limits.FreeMonthlyToolCallQuota
-		if tier == authn.TierMember {
-			monthlyLimit = l.limits.MemberMonthlyToolCallQuota
-		}
-		return l.enforceQuotaBucket(
-			ctx, QuotaMonthlyBucket, quotaIdentity, QuotaMonthlyWindowSeconds,
-			"monthly", tier, monthlyLimit, "user",
-		)
+	if exceeded {
+		return &Exceeded{Quota: false, RetryAfter: WindowSeconds}
 	}
-	// 匿名没有账号档位，按免费档口径返回（24 小时配额本身更紧）
-	return l.enforceQuotaBucket(
-		ctx, QuotaDailyBucket, "ip:"+ClientIP(r, l.trusted), QuotaDailyWindowSeconds,
-		"daily", authn.TierFree, l.limits.AnonymousDailyToolCallQuota, "ip",
-	)
+	return nil
+}
+
+// TierQuotaLimits 返回认证用户在给定生效档位下的 24 小时与 30 天限额（未知档
+// 按 free）；nil 限流器按默认限额。
+func (l *Limiter) TierQuotaLimits(tier string) (daily, monthly int64) {
+	limits := defaultLimits()
+	if l != nil {
+		limits = l.limits
+	}
+	if tier == authn.TierMember {
+		return limits.MemberDailyToolCallQuota, limits.MemberMonthlyToolCallQuota
+	}
+	return limits.FreeDailyToolCallQuota, limits.FreeMonthlyToolCallQuota
+}
+
+// QuotaWindow 是一个配额窗口的只读快照。Used 是窗口内已计数的调用（被拒的
+// 尝试也计数，可能超过 Limit）；ResetsIn 是窗口剩余秒数，0 表示窗口尚未
+// 开始——下一次计配额的调用才开窗。Used/ResetsIn 仅在 UsageKnown 时有意义。
+type QuotaWindow struct {
+	Scope         string // "daily"（24 小时 pacing 窗口）| "monthly"（30 天窗口）
+	WindowSeconds int64
+	Limit         int64
+	Used          int64
+	ResetsIn      int64
+}
+
+// QuotaStatus 是认证用户 tools/call 配额的只读快照。
+type QuotaStatus struct {
+	Tier string
+	// Exempt：admin 豁免配额（Enforce 不为其计数），此时不读用量。
+	Exempt bool
+	// UsageKnown 为 false：限流未接线、Redis 不支持 GET 或读取失败，只有限额可信。
+	UsageKnown bool
+	Windows    []QuotaWindow
+}
+
+// QuotaStatus 只读查询认证用户当前配额：对两个配额键只做 GET + TTL，不 INCR、
+// 不续期，查询本身既不消耗也不改变任何额度。档位与 Enforce 同口径（生效档，
+// 未知档按 free）；nil 限流器按默认限额报告、用量未知。
+func (l *Limiter) QuotaStatus(ctx context.Context, id authn.Identity, now time.Time) QuotaStatus {
+	tier := id.EffectiveTier(now)
+	daily, monthly := l.TierQuotaLimits(tier)
+	status := QuotaStatus{
+		Tier:   tier,
+		Exempt: id.Role == "admin",
+		Windows: []QuotaWindow{
+			{Scope: "daily", WindowSeconds: QuotaDailyWindowSeconds, Limit: daily},
+			{Scope: "monthly", WindowSeconds: QuotaMonthlyWindowSeconds, Limit: monthly},
+		},
+	}
+	if status.Exempt || id.UserID <= 0 || l == nil || l.redis == nil {
+		return status
+	}
+	reader, ok := l.redis.(Reader)
+	if !ok {
+		return status
+	}
+	identity := "user:" + strconv.Itoa(id.UserID)
+	buckets := [...]string{QuotaDailyBucket, QuotaMonthlyBucket}
+	var observed [2]QuotaWindow
+	for i, bucket := range buckets {
+		key := KeyPrefix + bucket + ":" + identity
+		used, err := reader.Get(ctx, key)
+		if err != nil {
+			l.logger.Warn("MCP quota status unavailable: redis read failed", "error", err)
+			return status
+		}
+		ttl, err := l.redis.TTL(ctx, key)
+		if err != nil {
+			l.logger.Warn("MCP quota status unavailable: redis read failed", "error", err)
+			return status
+		}
+		observed[i] = status.Windows[i]
+		switch {
+		case ttl > 0:
+			observed[i].Used = used
+			observed[i].ResetsIn = int64((ttl + time.Second - 1) / time.Second)
+		case ttl == time.Duration(-1):
+			// 无过期的残键（INCR 与 EXPIRE 之间进程被杀）：计数仍有效，下一次
+			// 计数调用会重新武装整窗，此刻没有可报告的重置时间。
+			observed[i].Used = used
+		default:
+			// 键不存在（含 GET 与 TTL 之间恰好过期）：窗口未开始。
+		}
+	}
+	status.Windows = observed[:]
+	status.UsageKnown = true
+	return status
 }
 
 // enforceQuotaBucket 镜像 Python 的 _hit_quota_bucket：单桶命中 + 超限

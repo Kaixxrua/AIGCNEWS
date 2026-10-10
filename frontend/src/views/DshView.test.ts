@@ -13,12 +13,13 @@ const memberUser: AuthUser = { ...freeUser, membership_tier: 'member', membershi
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
 const fetchMcpTokens = vi.hoisted(() => vi.fn())
+const issueMcpInstallCode = vi.hoisted(() => vi.fn())
 const copyToClipboard = vi.hoisted(() => vi.fn())
 const copySensitiveToClipboard = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
-  return { ...actual, ensureDshMcpToken, rotateDshMcpToken, fetchMcpTokens }
+  return { ...actual, ensureDshMcpToken, rotateDshMcpToken, fetchMcpTokens, issueMcpInstallCode }
 })
 vi.mock('@/composables/useClipboard', () => ({ copyToClipboard, copySensitiveToClipboard, useClipboard: () => ({ copy: copyToClipboard }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
@@ -70,6 +71,7 @@ beforeEach(() => {
   ensureDshMcpToken.mockReset().mockResolvedValue(issued)
   rotateDshMcpToken.mockReset()
   fetchMcpTokens.mockReset().mockResolvedValue([])
+  issueMcpInstallCode.mockReset().mockResolvedValue({ code: 'aigc_ic_view', purpose: 'dsh', expires_in: 600 })
   copyToClipboard.mockReset().mockResolvedValue(undefined)
   copySensitiveToClipboard.mockReset().mockResolvedValue(undefined)
   requestLogin.mockClear()
@@ -157,6 +159,7 @@ describe('DshView', () => {
     expect(wrapper.get('a[href="/membership"]').text()).toBe('升级 VIP')
     expect(wrapper.findAll('.command-slot--filled').length).toBeGreaterThan(0)
     expect(wrapper.html()).not.toContain(TOKEN)
+    expect(wrapper.html()).not.toContain('aigc_ic_view')
   })
 
   it('tells a member their quota is already the highest', async () => {

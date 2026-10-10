@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi.responses import JSONResponse, PlainTextResponse
 from psycopg import errors as pg_errors
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -51,6 +52,14 @@ from backend.app.services.auth.default_admin_bootstrap import (
     password_change_required_for_email,
     uses_configured_default_credentials,
 )
+from backend.app.services.auth.mcp_install_codes import (
+    MAX_INSTALL_CODE_LENGTH,
+    InstallCodePayload,
+    InstallCodePurpose,
+    InstallCodeStore,
+    McpInstallCodeUnavailableError,
+)
+from backend.app.services.auth.mcp_oauth import infer_client_type, normalize_client_name
 from backend.app.services.auth.rate_limit import (
     RateLimitExceededError,
     clear_login_failures,
@@ -989,11 +998,17 @@ async def ensure_dsh_mcp_token(
     """
     response.headers["Cache-Control"] = "no-store"
     response.headers["Pragma"] = "no-cache"
+    item = await _ensure_dsh_mcp_token_item(repository, _user_id(current_user))
+    return _dsh_mcp_token_payload(item)
+
+
+async def _ensure_dsh_mcp_token_item(repository: DshMcpTokenManager, user_id: int) -> dict[str, Any]:
+    """签发或回显账号唯一的 DSH token；ensure 端点与 dsh 用途的安装码兑换共用。"""
     try:
         material = _new_dsh_mcp_token_material()
         item = await asyncio.to_thread(
             repository.ensure_user_dsh_mcp_token,
-            **_dsh_repository_kwargs(_user_id(current_user), material),
+            **_dsh_repository_kwargs(user_id, material),
         )
     except DshMcpTokenSecretError as exc:
         raise HTTPException(
@@ -1013,7 +1028,7 @@ async def ensure_dsh_mcp_token(
                 "message": "旧版 DSH token 无法自动恢复，请重新生成",
             },
         )
-    return _dsh_mcp_token_payload(item)
+    return item
 
 
 @router.post(
@@ -1049,6 +1064,147 @@ async def rotate_dsh_mcp_token(
             detail="DSH token 生成冲突，请重试",
         ) from exc
     return _dsh_mcp_token_payload(item)
+
+
+# ---------------------------------------------------------------- MCP install codes
+
+# 「复制给 Agent」提示词里的一次性安装码（services/auth/mcp_install_codes.py）：网页登录态签发，
+# Agent 在用户电脑上匿名兑换成 Token 并直接写进客户端配置，Token 不进聊天记录。
+# 签发按用户限速（页面预取 + 每次复制后轮换一枚），兑换按 IP 限速；窗口与认证端点同。
+_MCP_INSTALL_CODE_ISSUE_RATE_LIMIT = 60
+_MCP_INSTALL_CODE_REDEEM_RATE_LIMIT = 20
+_MCP_INSTALL_CODE_DEFAULT_LABEL = "MCP install code"
+MCP_INSTALL_CODE_INVALID_CODE = "install_code_invalid"
+_NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+
+
+class IssueMcpInstallCodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    purpose: InstallCodePurpose = "mcp"
+
+
+class RedeemMcpInstallCodeRequest(BaseModel):
+    code: str = Field(max_length=MAX_INSTALL_CODE_LENGTH)
+    client_name: str = Field(default="", max_length=256)
+
+
+def _install_code_store(request: Request) -> InstallCodeStore:
+    return InstallCodeStore(getattr(request.app.state, "redis", None))
+
+
+def _install_code_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="安装码服务暂不可用，请稍后再试或改用手动配置",
+    )
+
+
+def _install_code_invalid() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail={
+            "code": MCP_INSTALL_CODE_INVALID_CODE,
+            "message": "安装码无效、已过期或已用过，请回网页重新复制提示词",
+        },
+    )
+
+
+def _jwt_pwd_ver(user: dict[str, Any]) -> int | None:
+    value = user.get("pwd_ver")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _wants_plain_text(request: Request) -> bool:
+    accept = request.headers.get("accept", "").lower()
+    return "text/plain" in accept and "application/json" not in accept
+
+
+@router.post("/auth/me/mcp-install-codes", summary="签发一次性 MCP 安装码（10 分钟内有效）")
+async def issue_mcp_install_code(
+    body: IssueMcpInstallCodeRequest,
+    request: Request,
+    response: Response,
+    current_user: dict[str, Any] = Depends(RequireUser),
+) -> dict[str, Any]:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    user_id = _user_id(current_user)
+    await _enforce_rate_limit(
+        request,
+        action="auth.mcp_install_code_issue",
+        limit=_MCP_INSTALL_CODE_ISSUE_RATE_LIMIT,
+        identity=f"user:{user_id}",
+    )
+    store = _install_code_store(request)
+    payload = InstallCodePayload(user_id=user_id, purpose=body.purpose, pwd_ver=_jwt_pwd_ver(current_user))
+    try:
+        code = await store.issue(payload)
+    except McpInstallCodeUnavailableError as exc:
+        raise _install_code_unavailable() from exc
+    return {"code": code, "purpose": body.purpose, "expires_in": store.ttl_seconds}
+
+
+@router.post(
+    "/auth/mcp-install-codes/redeem",
+    summary="用一次性安装码换取 MCP Token（Agent 在用户电脑上调用）",
+)
+async def redeem_mcp_install_code(
+    body: RedeemMcpInstallCodeRequest,
+    request: Request,
+    users: UserAccountRepository = Depends(get_user_account_repository),
+    mcp_tokens: McpAccessTokenManager = Depends(get_mcp_access_token_repository),
+    dsh_tokens: DshMcpTokenManager = Depends(get_mcp_access_token_repository),
+) -> Response:
+    """先消费再校验：码一经提交即作废。账号已删除、已禁用或改过密码的，按无效码处理。
+
+    默认回 JSON；Accept 只要 text/plain 时直接回 Token 原文，方便在一条命令里写进配置而不打印出来。
+    """
+    await _enforce_rate_limit(
+        request, action="auth.mcp_install_code_redeem", limit=_MCP_INSTALL_CODE_REDEEM_RATE_LIMIT
+    )
+    try:
+        payload = await _install_code_store(request).consume(body.code)
+    except McpInstallCodeUnavailableError as exc:
+        raise _install_code_unavailable() from exc
+    if payload is None:
+        raise _install_code_invalid()
+    record = await asyncio.to_thread(users.get_user_by_id, payload.user_id)
+    record_pwd_ver = record.get("pwd_ver") if record is not None else None
+    if (
+        record is None
+        or record.get("disabled")
+        or (record_pwd_ver is not None and payload.pwd_ver != record_pwd_ver)
+    ):
+        raise _install_code_invalid()
+
+    if payload.purpose == "dsh":
+        token = (await _ensure_dsh_mcp_token_item(dsh_tokens, payload.user_id))["token"]
+        scopes = list(_DSH_MCP_TOKEN_SCOPES)
+    else:
+        client_name = normalize_client_name(body.client_name)
+        token = "aigc_mcp_" + secrets.token_urlsafe(32)
+        scopes = list(DEFAULT_MCP_TOKEN_SCOPES)
+        try:
+            await asyncio.to_thread(
+                mcp_tokens.create_user_mcp_token,
+                user_id=payload.user_id,
+                token_hash=hash_mcp_token(token),
+                token_hint=f"{token[:12]}...{token[-4:]}",
+                scopes=scopes,
+                client_type=infer_client_type(client_name),
+                client_label=client_name or _MCP_INSTALL_CODE_DEFAULT_LABEL,
+                expires_at=None,
+            )
+        except ValueError as exc:  # 用户在兑换途中被删除
+            raise _install_code_invalid() from exc
+    logger.info("[MCP] install code redeemed user_id=%s purpose=%s", payload.user_id, payload.purpose)
+    if _wants_plain_text(request):
+        return PlainTextResponse(token, headers=_NO_STORE_HEADERS)
+    return JSONResponse(
+        {"purpose": payload.purpose, "token": token, "token_type": "Bearer", "scopes": scopes},
+        headers=_NO_STORE_HEADERS,
+    )
 
 
 # ---------------------------------------------------------------- RSS feed token

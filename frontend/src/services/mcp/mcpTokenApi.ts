@@ -45,6 +45,23 @@ export async function deleteMcpToken(tokenId: number): Promise<{ deleted: boolea
   return res.data
 }
 
+// ---------------------------------------------------------------- 一次性安装码
+
+export type McpInstallCodePurpose = 'mcp' | 'dsh'
+
+export interface McpInstallCode {
+  code: string
+  purpose: McpInstallCodePurpose
+  /** 有效秒数（后端 INSTALL_CODE_TTL_SECONDS，600）。 */
+  expires_in: number
+}
+
+/** 签一枚一次性安装码，写进「复制给 Agent」的提示词；Agent 在用户电脑上拿它换 Token，Token 不进聊天记录。 */
+export async function issueMcpInstallCode(purpose: McpInstallCodePurpose): Promise<McpInstallCode> {
+  const res = await api.post<McpInstallCode>('/auth/me/mcp-install-codes', { purpose })
+  return res.data
+}
+
 // ---------------------------------------------------------------- DSH 专用 token
 
 export interface DshMcpTokenResponse {

@@ -204,7 +204,7 @@ func TestToolsListAuthenticationFork(t *testing.T) {
 		t.Fatalf("匿名工具数漂移: %v", anonymous[0].Value)
 	}
 	authTools, ok := authenticated[0].Value.([]any)
-	if !ok || len(authTools) != 10 {
+	if !ok || len(authTools) != 11 {
 		t.Fatalf("认证工具数漂移: %v", authenticated[0].Value)
 	}
 	for i := range anonTools {
@@ -212,7 +212,7 @@ func TestToolsListAuthenticationFork(t *testing.T) {
 			t.Fatalf("公开段第 %d 项两态不一致", i)
 		}
 	}
-	for i, name := range []string{"search_my_project_favorites", "get_my_tracking"} {
+	for i, name := range []string{"search_my_project_favorites", "get_my_tracking", "get_my_quota"} {
 		appended, ok := authTools[len(anonTools)+i].(jsonx.Object)
 		if !ok || len(appended) == 0 || appended[0].Key != "name" || appended[0].Value != name {
 			t.Fatalf("认证追加项漂移: %v", authTools[len(anonTools)+i])

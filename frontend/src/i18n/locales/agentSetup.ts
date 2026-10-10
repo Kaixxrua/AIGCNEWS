@@ -19,6 +19,7 @@ type AgentSetupMessages = {
     previewLabel: string
     stepsLabel: string
     loginForStatus: string
+    installCode: { slot: string; slotFilled: string; failed: string }
     mcp: {
       kicker: string
       oauth: string
@@ -27,6 +28,7 @@ type AgentSetupMessages = {
       lede: string
       steps: { copy: StoryStep; paste: StoryStep; allow: StoryStep }
       hint: string
+      hintNoCode: string
       guestHint: string
       endpoint: { title: string; body: string; copy: string }
       manual: {
@@ -62,6 +64,11 @@ const zhCN: AgentSetupMessages = {
     previewLabel: '提示词全文',
     stepsLabel: '接入三步',
     loginForStatus: '登录查看接入状态',
+    installCode: {
+      slot: '一次性安装码',
+      slotFilled: '安装码已填入',
+      failed: '暂时拿不到安装码，请稍后重试。',
+    },
     mcp: {
       kicker: '一键接入',
       oauth: '浏览器授权',
@@ -73,7 +80,8 @@ const zhCN: AgentSetupMessages = {
         paste: { title: '粘给 Agent', body: '它自己认出客户端、运行命令' },
         allow: { title: '浏览器里点「同意」', body: '授权后这里显示「已接入」' },
       },
-      hint: '授权页会请你登录本站账号；接好后，这里显示接入状态和你的额度。',
+      hint: '提示词附了一枚一次性安装码（10 分钟内有效），给不支持浏览器授权的客户端换 Token；过期了重新复制就好。接好后，这里显示接入状态和你的额度。',
+      hintNoCode: '暂时拿不到一次性安装码，提示词先不带这一步；不支持浏览器授权的客户端可以用本页的「手动配置」。接好后，这里显示接入状态和你的额度。',
       guestHint: '授权时本站会请你登录。想在这页看到接入状态，也在这里登录一下。',
       endpoint: {
         title: '只能填网址的客户端',
@@ -102,12 +110,12 @@ const zhCN: AgentSetupMessages = {
     dsh: {
       lede: '点一下复制配置提示词，粘给你的 AI 编程 Agent：它会装好 dsh-aigc-radar 插件，再把你账号的专属 Token 写进 dsh 的 web 配置。',
       steps: {
-        copy: { title: '复制提示词', body: '带着你的专属 Token，只进剪贴板' },
+        copy: { title: '复制提示词', body: '只带一次性安装码，不含 Token' },
         paste: { title: '粘给 Agent', body: '它装插件、写配置' },
         ask: { title: '重启 dsh 问一句', body: '第一次搜索后这里显示「已连接」' },
       },
-      hint: 'Token 与账号绑定，刷新后不变；提示词里带着它，别分享给别人。',
-      guestHint: '提示词要带上你账号的专属 Token，所以先登录；Token 不会显示在页面上。',
+      hint: '提示词里的安装码 10 分钟内有效、只能用一次，Agent 用它换来你账号的专属 Token；过期了重新复制就好。',
+      guestHint: '提示词里的一次性安装码要登录后才能签发，所以先登录；Token 不会显示在页面上。',
       manual: {
         title: '手动安装',
         summary: '不经过 Agent：选一种安装方式，复制命令在终端里运行。',
@@ -126,6 +134,11 @@ const enUS: AgentSetupMessages = {
     previewLabel: 'The full prompt',
     stepsLabel: 'Three steps',
     loginForStatus: 'Sign in to see the status',
+    installCode: {
+      slot: 'One-time install code',
+      slotFilled: 'Install code added',
+      failed: 'Could not get an install code. Try again in a moment.',
+    },
     mcp: {
       kicker: 'One-click setup',
       oauth: 'Browser sign-in',
@@ -137,7 +150,8 @@ const enUS: AgentSetupMessages = {
         paste: { title: 'Paste it to your Agent', body: 'It works out the client and runs the commands' },
         allow: { title: 'Click Allow in the browser', body: 'This page then shows Connected' },
       },
-      hint: 'The authorization page asks you to sign in to this site. Once connected, this page shows the status and your quota.',
+      hint: 'The prompt carries a one-time install code (valid for 10 minutes) so clients without browser authorization can get a token; copy again if it expires. Once connected, this page shows the status and your quota.',
+      hintNoCode: 'Install codes are unavailable right now, so the prompt leaves that step out; clients without browser authorization can use Manual setup on this page. Once connected, this page shows the status and your quota.',
       guestHint: 'You sign in when you authorize. To follow the status on this page, sign in here as well.',
       endpoint: {
         title: 'Clients that only take a URL',
@@ -166,12 +180,12 @@ const enUS: AgentSetupMessages = {
     dsh: {
       lede: 'Copy the setup prompt and paste it to your AI coding agent: it installs the dsh-aigc-radar plugin and writes your account’s personal token into dsh’s web profile.',
       steps: {
-        copy: { title: 'Copy the prompt', body: 'It carries your personal token, straight to the clipboard' },
+        copy: { title: 'Copy the prompt', body: 'It carries a one-time install code, never your token' },
         paste: { title: 'Paste it to your Agent', body: 'It installs the plugin and writes the configuration' },
         ask: { title: 'Restart dsh and ask', body: 'After the first search this page shows Connected' },
       },
-      hint: 'The token belongs to your account and stays the same across reloads. The prompt carries it, so do not share it.',
-      guestHint: 'The prompt carries your account’s personal token, so sign in first. The token never shows on the page.',
+      hint: 'The install code in the prompt is valid for 10 minutes and works once; your Agent trades it for your account’s personal token. Copy again if it expires.',
+      guestHint: 'Install codes are only issued to signed-in accounts, so sign in first. The token never shows on the page.',
       manual: {
         title: 'Install by hand',
         summary: 'Skip the Agent: pick an install method, copy the command and run it in your terminal.',

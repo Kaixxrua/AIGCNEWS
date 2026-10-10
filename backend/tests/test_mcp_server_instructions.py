@@ -73,7 +73,7 @@ class ServerInstructionsTests(unittest.TestCase):
 
     def test_tool_descriptions_fit_budget(self) -> None:
         tools = _result(self.protocol["tools-list-authenticated"])["tools"]
-        self.assertEqual(len(tools), 10)
+        self.assertEqual(len(tools), 11)
         for tool in tools:
             with self.subTest(tool=tool["name"]):
                 self.assertLessEqual(_utf16_len(tool["description"]), _BUDGET)

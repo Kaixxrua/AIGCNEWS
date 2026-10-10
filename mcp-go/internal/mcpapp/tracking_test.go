@@ -347,9 +347,10 @@ func TestTrackingToolIsListedOnlyForAuthenticatedSessions(t *testing.T) {
 	if err := json.Unmarshal(jsonx.MustMarshalCompact(ToolsList(true)), &listed); err != nil {
 		t.Fatal(err)
 	}
-	last := listed.Tools[len(listed.Tools)-1]
-	if last.Name != "get_my_tracking" || last.Annotations["readOnlyHint"] != true || last.Annotations["destructiveHint"] != false {
-		t.Fatalf("tracking tool listing=%+v", last)
+	// get_my_tracking 之后紧跟 get_my_quota（见 quota.go）。
+	tracking := listed.Tools[len(listed.Tools)-2]
+	if tracking.Name != "get_my_tracking" || tracking.Annotations["readOnlyHint"] != true || tracking.Annotations["destructiveHint"] != false {
+		t.Fatalf("tracking tool listing=%+v", tracking)
 	}
 }
 

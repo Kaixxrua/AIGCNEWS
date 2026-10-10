@@ -24,8 +24,8 @@ describe('splitCommandPreview', () => {
   const previews = [
     ...DSH_PLUGIN_INSTALL_METHODS.map((method) => [`dsh install (${method.id})`, buildDshInstallLine(method.command, COMMAND_TOKEN_SLOT)] as const),
     ['manual MCP config', buildManualMcpConfig('https://aigcnews.cn/api/mcp', COMMAND_TOKEN_SLOT)] as const,
-    ['dsh agent prompt (zh)', buildDshAgentPrompt('zh-CN', COMMAND_TOKEN_SLOT)] as const,
-    ['dsh agent prompt (en)', buildDshAgentPrompt('en-US', COMMAND_TOKEN_SLOT)] as const,
+    ['dsh agent prompt (zh)', buildDshAgentPrompt('zh-CN', COMMAND_TOKEN_SLOT, 'https://aigcnews.cn/dsh')] as const,
+    ['dsh agent prompt (en)', buildDshAgentPrompt('en-US', COMMAND_TOKEN_SLOT, 'https://aigcnews.cn/dsh')] as const,
   ]
 
   it.each(previews)('%s shows the token only as one slot', (_name, text) => {

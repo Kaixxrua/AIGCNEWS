@@ -652,6 +652,18 @@ var privateTools = []any{
 			{Key: "type", Value: "object"},
 		}},
 	},
+	// get_my_quota 是 Go 独有的账户工具，实现见 quota.go；调用不计配额。
+	jsonx.Object{
+		{Key: "name", Value: "get_my_quota"},
+		{Key: "description", Value: "Show the authenticated user's AIGC Radar plan (free or vip) and how many MCP tool calls are left in the current 24-hour and 30-day windows, with when each window resets. Call this to confirm a new connection works, when the user asks about their plan, quota, or limits, or after a quota-exceeded error. Calling it does not count toward the quota."},
+		{Key: "annotations", Value: jsonx.Object{{Key: "readOnlyHint", Value: true}, {Key: "destructiveHint", Value: false}, {Key: "idempotentHint", Value: true}, {Key: "openWorldHint", Value: false}}},
+		{Key: "inputSchema", Value: jsonx.Object{
+			{Key: "additionalProperties", Value: false},
+			{Key: "properties", Value: jsonx.Object{}},
+			{Key: "title", Value: "GetMyQuotaInput"},
+			{Key: "type", Value: "object"},
+		}},
+	},
 }
 
 // ToolsList 复刻 application.py tools/list 分支：

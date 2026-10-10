@@ -1,15 +1,19 @@
 import { computed, watch, type Ref } from 'vue'
 import { buildMcpAgentPrompt } from '@/features/mcp/agentSetupPrompt'
+import { COMMAND_TOKEN_SLOT } from '@/features/mcp/commandPreview'
 import { DSH_MCP_TOKEN_LABEL } from '@/features/mcp/dshPlugin'
 import { MANUAL_MCP_TOKEN_LABEL } from '@/features/mcp/manualMcpConfig'
-import { fetchMcpTokens as defaultFetchMcpTokens } from '@/services/mcp/mcpTokenApi'
-import { copyToClipboard } from '@/composables/useClipboard'
+import { fetchMcpTokens as defaultFetchMcpTokens, issueMcpInstallCode } from '@/services/mcp/mcpTokenApi'
+import { copySensitiveToClipboard, copyToClipboard } from '@/composables/useClipboard'
 import { useCopyNotice, type CopyNoticeOptions } from '@/composables/useCopyNotice'
+import { useMcpInstallCode, type McpInstallCodeOptions } from '@/composables/useMcpInstallCode'
 import { useTokenConnectionWatch, type TokenConnectionWatchOptions } from '@/composables/useTokenConnectionWatch'
 
 /**
  * /mcp 的主按钮「复制给 Agent 的配置提示词」。提示词不带 Token，游客也能复制；Agent 让客户端连 OAuth 入口，
  * 用户在浏览器里登录、点「同意」，服务端这时才发令牌，所以回显盯的是「复制之后新出现的连接」（startNew）。
+ * 登录了还会附一枚预取的一次性安装码，给不支持浏览器授权的客户端在本机换 Token（新令牌同样被 startNew 盯到）；
+ * 带码的提示词只走安全剪贴板，复制后换一枚新码留给下一次。拿不到码时预览与复制都退回不带码的版本。
  * 只有登录了才盯得到（要读自己的令牌列表）：游客复制后在这页登录，或复制后刷新了页面，按记下的复制时刻接着等。
  * 复制时刻只记在本标签页的 sessionStorage，半小时作废，登出即清。
  */
@@ -29,7 +33,12 @@ export interface McpAgentSetupOptions {
   /** 当前入口的 /mcp 页，提示词里让不支持 OAuth 的客户端回到这里的「手动配置」。 */
   manualPageUrl: () => string
   write?: (text: string) => Promise<void>
+  /** 带安装码的提示词走它：缺省 copySensitiveToClipboard，不退回把明文写进 DOM 的 textarea。 */
+  writeSensitive?: (text: string) => Promise<void>
   fetchMcpTokens?: typeof defaultFetchMcpTokens
+  issueInstallCode?: typeof issueMcpInstallCode
+  /** 测试注入安装码的时钟、定时器与页面可见性。 */
+  installCode?: Pick<McpInstallCodeOptions, 'now' | 'schedule' | 'cancelSchedule' | 'visibility'>
   /** 缺省用 sessionStorage；传 null 只记在内存里。 */
   storage?: StorageLike | null
   now?: () => number
@@ -49,10 +58,25 @@ export const useMcpAgentSetup = (options: McpAgentSetupOptions) => {
   const now = options.now ?? Date.now
   const storage = options.storage === undefined ? sessionStorageOrNull() : options.storage
   const write = options.write ?? copyToClipboard
+  const writeSensitive = options.writeSensitive ?? copySensitiveToClipboard
   const fetchTokensApi = options.fetchMcpTokens ?? defaultFetchMcpTokens
   const connection = useTokenConnectionWatch({ now, ...options.connectionWatch, fetchTokens: () => fetchTokensApi() })
   const notice = useCopyNotice(options.copyNotice)
-  const prompt = computed(() => buildMcpAgentPrompt(options.locale(), options.manualPageUrl()))
+  const installCode = useMcpInstallCode({
+    visibility: options.connectionWatch?.visibility,
+    ...options.installCode,
+    purpose: 'mcp',
+    enabled: options.signedIn,
+    issue: options.issueInstallCode,
+  })
+  /** 提示词会带安装码那一步：登录了且没有拿码失败。 */
+  const installCodeAvailable = computed(() => options.signedIn.value && installCode.status.value !== 'error')
+  /** 页面上展示的提示词：在安装码处放占位，真码只在复制出去的文本里；拿不到码时与复制出去的一样不带这一步。 */
+  const prompt = computed(() =>
+    buildMcpAgentPrompt(options.locale(), options.manualPageUrl(), installCodeAvailable.value ? COMMAND_TOKEN_SLOT : null),
+  )
+  /** 安装码已备好：预览里的占位显示「已填入」。 */
+  const installCodeReady = computed(() => options.signedIn.value && installCode.status.value === 'ready')
   let copiedAtInMemory: number | null = null
 
   const readCopiedAt = (): number | null => {
@@ -75,8 +99,13 @@ export const useMcpAgentSetup = (options: McpAgentSetupOptions) => {
 
   /** 复制提示词；登录了就开始（或重新勤快地）等新连接。返回是否复制成功。 */
   const copyPrompt = async (): Promise<boolean> => {
-    const copied = await notice.copy('agent-prompt', () => write(prompt.value))
+    // 码在点击前已备好，同步拼进提示词：剪贴板写入不能先等网络（Safari 会拒绝）。
+    const code = options.signedIn.value ? installCode.current() : null
+    const text = buildMcpAgentPrompt(options.locale(), options.manualPageUrl(), code)
+    const copied = await notice.copy('agent-prompt', () => (code ? writeSensitive(text) : write(text)))
     if (!copied) return false
+    // 复制出去的码留给 Agent，换一枚新的给下一次；没拿到码的也借这次重试。游客不签码。
+    installCode.rotate()
     rememberCopy(now())
     if (!options.signedIn.value) return true
     const status = connection.status.value
@@ -100,8 +129,9 @@ export const useMcpAgentSetup = (options: McpAgentSetupOptions) => {
   const dispose = () => {
     stopWatch()
     notice.dispose()
+    installCode.dispose()
     connection.dispose()
   }
 
-  return { prompt, copiedKey: notice.copiedKey, connection, copyPrompt, dispose }
+  return { prompt, installCodeAvailable, installCodeReady, copiedKey: notice.copiedKey, connection, copyPrompt, dispose }
 }

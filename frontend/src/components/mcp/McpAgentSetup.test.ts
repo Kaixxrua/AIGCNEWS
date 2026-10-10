@@ -8,6 +8,7 @@ import McpAgentSetup from './McpAgentSetup.vue'
 const copyToClipboard = vi.hoisted(() => vi.fn())
 const copySensitiveToClipboard = vi.hoisted(() => vi.fn())
 const fetchMcpTokens = vi.hoisted(() => vi.fn())
+const issueMcpInstallCode = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 const showToast = vi.hoisted(() => vi.fn())
 const authBox = vi.hoisted(() => ({ current: null as null | { status: string; isLoggedIn: boolean; isMember: boolean } }))
@@ -21,9 +22,12 @@ vi.mock('@/composables/useClipboard', () => ({ copyToClipboard, copySensitiveToC
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()),
   fetchMcpTokens,
+  issueMcpInstallCode,
 }))
 vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
 vi.mock('@/composables/useToast', () => ({ showToast }))
+
+const CODE = 'aigc_ic_McpAgentSetup_install_code_0123456789abcd'
 
 const auth = () => authBox.current!
 const signIn = (member = false) => Object.assign(auth(), { status: 'authenticated', isLoggedIn: true, isMember: member })
@@ -49,6 +53,7 @@ beforeEach(() => {
   copyToClipboard.mockReset().mockResolvedValue(undefined)
   copySensitiveToClipboard.mockReset().mockResolvedValue(undefined)
   fetchMcpTokens.mockReset().mockResolvedValue([])
+  issueMcpInstallCode.mockReset().mockResolvedValue({ code: CODE, purpose: 'mcp', expires_in: 600 })
   requestLogin.mockReset()
   showToast.mockReset()
 })
@@ -73,6 +78,9 @@ describe('McpAgentSetup', () => {
     expect(copySensitiveToClipboard).not.toHaveBeenCalled()
     expect(requestLogin).not.toHaveBeenCalled()
     expect(cta(wrapper).text()).toBe('已复制，去粘给你的 Agent')
+    // 安装码要登录才签：游客的提示词不带这一步。
+    expect(issueMcpInstallCode).not.toHaveBeenCalled()
+    expect(prompt).not.toContain('一次性安装码')
     // 游客读不了自己的令牌列表：不回显，也不去查。
     expect(fetchMcpTokens).not.toHaveBeenCalled()
     expect(wrapper.find('.token-connection').exists()).toBe(false)
@@ -99,6 +107,48 @@ describe('McpAgentSetup', () => {
     expect(region.isVisible()).toBe(true)
     expect(region.text()).toContain('https://aigcnews.cn/api/mcp/oauth')
     expect(wrapper.html()).not.toMatch(/aigc_mcp_[A-Za-z0-9]/)
+    expect(wrapper.find('.command-slot').exists()).toBe(false)
+  })
+
+  it('copies a signed-in reader’s prompt with a one-time install code through the secure clipboard only', async () => {
+    signIn()
+    const wrapper = await mountSetup()
+    expect(issueMcpInstallCode).toHaveBeenCalledExactlyOnceWith('mcp')
+    await wrapper.get('.agent-setup-toggle').trigger('click')
+    await nextTick()
+    expect(wrapper.findAll('.command-slot')).toHaveLength(2)
+    expect(wrapper.get('.command-slot').text()).toBe('安装码已填入')
+
+    await cta(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(copyToClipboard).not.toHaveBeenCalled()
+    expect(copySensitiveToClipboard).toHaveBeenCalledOnce()
+    const prompt = copySensitiveToClipboard.mock.calls[0]![0] as string
+    expect(prompt.split(CODE)).toHaveLength(3)
+    expect(prompt).toContain(`${window.location.origin}/api/auth/mcp-install-codes/redeem`)
+    expect(prompt).not.toMatch(/aigc_mcp_/)
+    // 复制出去的那枚留给 Agent，换一枚给下一次；码只在剪贴板里，不在页面上。
+    expect(issueMcpInstallCode).toHaveBeenCalledTimes(2)
+    expect(wrapper.html()).not.toContain(CODE)
+  })
+
+  it('copies the prompt without the install code step when no code can be issued', async () => {
+    signIn()
+    issueMcpInstallCode.mockRejectedValue(new Error('503'))
+    const wrapper = await mountSetup()
+    await wrapper.get('.agent-setup-toggle').trigger('click')
+    await nextTick()
+    expect(wrapper.find('.command-slot').exists()).toBe(false)
+    expect(wrapper.get('.agent-setup-hint').text()).toBe(i18n.global.t('agentSetup.mcp.hintNoCode'))
+
+    await cta(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(copySensitiveToClipboard).not.toHaveBeenCalled()
+    const prompt = copyToClipboard.mock.calls[0]![0] as string
+    expect(prompt).toContain(`改用 ${window.location.origin}/mcp 页面里的「手动配置」`)
+    expect(prompt).not.toContain('aigc_ic_')
   })
 
   it('waits for the new connection after a signed-in reader copies, then reports the tier', async () => {
