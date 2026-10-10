@@ -11,9 +11,9 @@
 @import './comic-pages/websites.css';
 @import './comic-pages/x-board.css';
 @import './comic-pages/ui-library.css';
+@import './comic-pages/agent-setup.css';
 @import './comic-pages/dsh.css';
 @import './comic-pages/mcp.css';
-@import './comic-pages/command-desks.css';
 @import './comic-pages/paper-read.css';
 @import './comic-pages/legal.css';
 @import './comic-pages/membership.css';

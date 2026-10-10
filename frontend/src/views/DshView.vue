@@ -1,105 +1,87 @@
 <script setup lang="ts">
+import { onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useMediaQuery } from '@vueuse/core'
-import { Box, CalendarDays, Crown, Wrench } from 'lucide-vue-next'
-import '@/components/mcp/connection-layout.css'
 import { RouterLink } from 'vue-router'
-import DshCommandDesk from '@/components/dsh/DshCommandDesk.vue'
-import DshSetupWizard from '@/components/dsh/DshSetupWizard.vue'
-import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL, MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
+import { useMediaQuery } from '@vueuse/core'
+import { Box, CalendarDays, Crown, Github, Wrench } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
-import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import { useDshPluginCalls } from '@/composables/useDshPluginCalls'
+import { useDshSetupController } from '@/composables/useDshSetupController'
+import { DSH_PLUGIN_INSTALL_METHODS, DSH_PLUGIN_REPOSITORY_URL, MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
+import { installAgentSetupMessages } from '@/i18n/locales/agentSetup'
+import RollingNumber from '@/components/dashboard/RollingNumber.vue'
+import DshAgentSetup from '@/components/dsh/DshAgentSetup.vue'
+import DshManualInstall from '@/components/dsh/DshManualInstall.vue'
+import '@/components/mcp/agent-setup.css'
 
-// /dsh 对游客开放为获客入口：插件介绍、安装方式选择与命令模板免登录可见；
-// 登录在向导「下一步」或桌面命令台的「登录后复制命令」处按需弹窗，Token 签发仍由登录后的服务端完成。
+/**
+ * /dsh：一颗「复制给 Agent 的配置提示词」打头，Agent 装好 dsh-aigc-radar 插件（npm 优先、GitHub 兜底）并写好专属 Token；
+ * 侧栏是插件能力与折叠起来的「手动安装」。页面对游客开放，Token 只在登录后由服务端签发。
+ * 页面持有一个控制器，主卡与手动安装共用同一枚 Token 和同一个连接检测：登录了才取 Token，
+ * 认证一丢（登出、会话失效）立即清空，迟到的响应也回填不进来。
+ */
+installAgentSetupMessages()
+
 const { t, locale } = useI18n()
 const auth = useAuthStore()
-// 桌面漫画版标题旁的一行统计：调用数与首页「dsh 插件调用」同源实时计数，只在桌面上订阅。
+const controller = useDshSetupController()
+const count = (value: number) => value.toLocaleString(locale.value)
+
+watch(
+  () => auth.status,
+  (status) => {
+    if (status === 'authenticated') void controller.ensure()
+    else controller.clearToken()
+  },
+  { immediate: true },
+)
+
+// 桌面漫画版报头的一行统计：调用数与首页「dsh 插件调用」同源实时计数，只在桌面上订阅。
 const desktop = useMediaQuery('(min-width: 1024px)')
 const dshCalls = useDshPluginCalls(desktop)
+
+onBeforeUnmount(controller.dispose)
 </script>
 
 <template>
-  <div class="dsh-page connection-page flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="connection-scroll">
-      <div class="dsh-page-head">
-        <div class="dsh-page-heading">
-          <p class="dsh-page-title comic-title">{{ t('dsh.pageTitle') }}</p>
-          <p class="dsh-page-subtitle" aria-hidden="true">{{ t('dsh.title') }}</p>
-        </div>
-        <section v-if="desktop" class="dsh-stats" :aria-label="t('dsh.stats.label')">
+  <div class="dsh-page agent-page">
+    <div class="agent-page-scroll">
+      <header class="agent-page-head">
+        <p class="dsh-page-title comic-title agent-page-brush" aria-hidden="true">{{ t('dsh.pageTitle') }}</p>
+        <h1 class="agent-page-title">{{ t('dsh.title') }}</h1>
+        <p class="agent-page-description">{{ t('dsh.description') }}</p>
+        <section v-if="desktop" class="dsh-stats agent-page-stats" :aria-label="t('dsh.stats.label')">
           <div class="dsh-stat"><Box aria-hidden="true" /><span>{{ t('dsh.stats.calls') }}</span><strong><RollingNumber v-if="dshCalls !== null" :value="dshCalls" grouping /><template v-else>—</template></strong></div>
           <div class="dsh-stat"><Wrench aria-hidden="true" /><span>{{ t('dsh.stats.methods') }}</span><strong>{{ DSH_PLUGIN_INSTALL_METHODS.length }}</strong></div>
-          <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling24h.toLocaleString(locale) }}</strong></div>
-          <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ MCP_MEMBER_QUOTA.rolling30d.toLocaleString(locale) }}</strong></div>
+          <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
+          <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling30d) }}</strong></div>
         </section>
-      </div>
-      <div class="connection-layout connection-layout--dsh">
-        <div class="connection-aside">
-          <section class="connection-intro glass-card relative overflow-hidden p-4 md:p-5">
-            <div class="dsh-grid-overlay" />
-            <div class="connection-intro-content relative z-10">
-              <div class="connection-heading">
-              <p class="dsh-eyebrow text-2xs font-semibold uppercase tracking-[0.28em] text-stone-400">{{ t('dsh.eyebrow') }}</p>
-              <h1 class="mt-2 max-w-3xl text-2xl font-extrabold leading-tight md:text-4xl">{{ t('dsh.title') }}</h1>
-              </div>
-              <div class="connection-summary">
-              <p class="mt-3 max-w-3xl text-sm leading-6 text-stone-500">{{ t('dsh.description') }}</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <RouterLink to="/mcp" class="btn-secondary text-xs">{{ t('dsh.mcpLink') }}</RouterLink>
-                <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="btn-primary text-xs">{{ t('dsh.repository') }}</a>
-              </div>
-              </div>
+      </header>
+
+      <div class="agent-page-grid">
+        <DshAgentSetup v-if="auth.status === 'authenticated' || auth.status === 'anonymous'" class="agent-page-hero" :controller="controller" />
+        <section v-else-if="auth.status === 'initializing'" class="agent-card agent-page-hero agent-page-status">
+          <p class="agent-card-text">{{ t('dsh.authRestoring') }}</p>
+        </section>
+        <section v-else class="agent-card agent-page-hero agent-page-status">
+          <p class="agent-card-error">{{ t('dsh.authDegraded') }}</p>
+          <div class="agent-card-actions">
+            <button type="button" class="agent-btn" @click="auth.initFromStorage()">{{ t('dsh.authRetry') }}</button>
+          </div>
+        </section>
+        <div class="agent-page-side">
+          <section class="agent-card dsh-capabilities">
+            <p class="agent-setup-kicker dsh-eyebrow"><span aria-hidden="true">✦ </span>{{ t('dsh.capabilitiesKicker') }}</p>
+            <h2 class="agent-card-title">{{ t('dsh.capabilitiesTitle') }}</h2>
+            <p class="agent-card-text">{{ t('dsh.capabilitiesDescription') }}</p>
+            <div class="agent-card-actions">
+              <a :href="DSH_PLUGIN_REPOSITORY_URL" target="_blank" rel="noopener" class="agent-btn agent-btn--ink"><Github class="agent-btn-icon" aria-hidden="true" />{{ t('dsh.repository') }}</a>
+              <RouterLink to="/mcp" class="agent-btn">{{ t('dsh.mcpLink') }}</RouterLink>
             </div>
           </section>
-  
-          <section class="connection-details glass-card grid gap-3 p-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-start">
-            <div class="flex h-10 w-10 items-center justify-center border border-ink bg-[var(--acid)] text-lg font-black">✦</div>
-            <div>
-              <p class="dsh-eyebrow text-2xs font-semibold uppercase tracking-[0.22em] text-stone-400">{{ t('dsh.capabilitiesKicker') }}</p>
-              <h2 class="mt-1 text-lg font-extrabold">{{ t('dsh.capabilitiesTitle') }}</h2>
-              <p class="mt-2 text-sm leading-6 text-stone-500">{{ t('dsh.capabilitiesDescription') }}</p>
-            </div>
-          </section>
+          <DshManualInstall v-if="auth.status === 'authenticated' || auth.status === 'anonymous'" :controller="controller" />
         </div>
-
-        <section v-if="auth.status === 'initializing'" class="glass-card p-5 md:p-6">
-          <p class="text-xs text-stone-500">{{ t('dsh.authRestoring') }}</p>
-        </section>
-        <section v-else-if="auth.status === 'degraded'" class="glass-card p-5 md:p-6">
-          <p class="rounded bg-rose-50 p-3 text-xs text-rose-700">{{ t('dsh.authDegraded') }} <button type="button" class="underline" @click="auth.initFromStorage()">{{ t('dsh.authRetry') }}</button></p>
-        </section>
-        <DshCommandDesk v-else-if="desktop" />
-        <DshSetupWizard v-else />
-
-
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.dsh-page {
-  --paper: var(--projects-paper);
-  --paper-light: var(--projects-paper-light);
-  --ink: var(--projects-accent);
-  --muted: var(--dash-muted);
-  --acid: var(--projects-acid);
-  color: var(--ink);
-  background: var(--paper);
-  background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .035) 1px, transparent 1px);
-  background-size: 100% 32px;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-}
-.dsh-page-title, .dsh-page-subtitle { display: none; }
-.dsh-grid-overlay { position: absolute; inset: 0; pointer-events: none; opacity: .32; background-image: linear-gradient(rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px), linear-gradient(90deg, rgb(var(--ink-grid-rgb) / .08) 1px, transparent 1px); background-size: 34px 34px; }
-.dsh-page :deep(.glass-card) { border: 1px solid var(--rule); border-radius: var(--module-radius); background: rgb(var(--projects-paper-light-rgb) / .94); box-shadow: none; }
-.dsh-page :deep(.btn-primary), .dsh-page :deep(.btn-secondary) { border-radius: var(--control-radius); font-weight: 600; box-shadow: none; }
-.dsh-page :deep(.btn-primary) { border: 1px solid var(--ink); color: var(--mcp-btn-label); background: var(--ink); }
-.dsh-page :deep(.btn-secondary) { border: 1px solid var(--ink); color: var(--ink); background: var(--paper-light); }
-.dsh-install-method { border-radius: var(--control-radius); }
-.dsh-install-method--recommended { border-color: var(--ink); box-shadow: none; }
-.dsh-page :deep(h1) { font-size: var(--text-page); font-weight: 700; letter-spacing: -.02em; }
-@media (prefers-reduced-motion: reduce) { .dsh-page *, .dsh-page *::before, .dsh-page *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
-</style>

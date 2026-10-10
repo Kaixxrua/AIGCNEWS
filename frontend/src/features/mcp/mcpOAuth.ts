@@ -7,6 +7,3 @@
  * backend/tests/test_mcp_oauth_metadata_contract.py 钉住两边一致。
  */
 export const MCP_OAUTH_ENDPOINT = 'https://aigcnews.cn/api/mcp/oauth'
-
-/** oauth：浏览器授权（目录里标了 oauth 的客户端默认走它）；token：页面签发 Token、写进命令。 */
-export type McpAuthMode = 'oauth' | 'token'

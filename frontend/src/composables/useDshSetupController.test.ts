@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildDshInstallLine, useDshSetupController } from './useDshSetupController'
-import { COMMAND_TOKEN_SLOT, splitCommandPreview } from '@/features/mcp/commandPreview'
+import { useDshSetupController } from './useDshSetupController'
 import type { DshMcpTokenResponse, McpTokenMetadata } from '@/services/mcp/mcpTokenApi'
 
 // 没注入 fetchMcpTokens 的用例也不能触网：连接检测用的令牌列表默认换成空表。
@@ -50,11 +49,6 @@ describe('useDshSetupController', () => {
     expect(line.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
     expect(line).toContain('"        mcpToken: \'aigc_mcp_ab\'\'cd\'"')
     expect(line.endsWith('> ~/.dsh/profiles/web/cordis.patch.yml')).toBe(true)
-
-    controller.next()
-    expect(controller.step.value).toBe(1)
-    controller.previous()
-    expect(controller.step.value).toBe(0)
   })
 
   it('dedupes concurrent ensure calls and short-circuits once ready', async () => {
@@ -155,6 +149,25 @@ describe('useDshSetupController', () => {
     expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
   })
 
+  it('starts a fresh request when signing back in before the stale one settles', async () => {
+    const stale = deferred<DshMcpTokenResponse>()
+    const ensureDshMcpToken = vi.fn()
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValueOnce(readyResult('aigc_mcp_fresh'))
+    const controller = useDshSetupController({ ensureDshMcpToken })
+
+    const pending = controller.ensure()
+    // 登出后马上又登录：旧请求还没回来，新的 ensure 不能等它作废后的 false。
+    controller.clearToken()
+    expect(await controller.ensure()).toBe(true)
+    expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
+    expect(controller.installLine.value).toContain('aigc_mcp_fresh')
+
+    stale.resolve(readyResult('aigc_mcp_stale'))
+    expect(await pending).toBe(false)
+    expect(controller.installLine.value).toContain('aigc_mcp_fresh')
+  })
+
   it('dispose drops the token and blocks late refills', async () => {
     const gate = deferred<DshMcpTokenResponse>()
     const ensureDshMcpToken = vi.fn().mockReturnValue(gate.promise)
@@ -246,22 +259,5 @@ describe('useDshSetupController connection watch', () => {
     expect(controller.connection.status.value).toBe('idle')
     await vi.advanceTimersByTimeAsync(60_000)
     expect(fetchMcpTokens).toHaveBeenCalledOnce()
-  })
-})
-
-describe('buildDshInstallLine', () => {
-  it('folds the token patch into the install command with safe quoting', () => {
-    const line = buildDshInstallLine('dsh plugin --profile web add dsh-aigc-radar', "aigc_mcp_ab'cd")
-
-    expect(line.startsWith('dsh plugin --profile web add dsh-aigc-radar && printf ')).toBe(true)
-    expect(line).toContain('"        mcpToken: \'aigc_mcp_ab\'\'cd\'"')
-    expect(line.endsWith('> ~/.dsh/profiles/web/cordis.patch.yml')).toBe(true)
-  })
-
-  it('keeps the preview slot whole so the desktop desk can draw it as one placeholder', () => {
-    const segments = splitCommandPreview(buildDshInstallLine('dsh plugin --profile web add dsh-aigc-radar', COMMAND_TOKEN_SLOT))
-
-    expect(segments.filter((segment) => segment.kind === 'token')).toHaveLength(1)
-    expect(segments.map((segment) => (segment.kind === 'text' ? segment.text : '')).join('')).not.toContain(COMMAND_TOKEN_SLOT)
   })
 })

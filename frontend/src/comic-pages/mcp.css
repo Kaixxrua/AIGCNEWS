@@ -1,68 +1,39 @@
 @media (min-width: 1024px) {
-  /* ── MCP (mcp-C, command desk): the page title on its brush, the subtitle under it, three leaning slips and the
-     description beside them, the four facts on one framed strip (beside the slips from 1280px, 1440px in English,
-     under the heading below that); then the command desk, open on Claude Code: the nine clients on one segmented switch across the
-     desk, the terminal switch and the config target over the command, the copy card at the right and the
-     endpoint check under the command. The page flows and scrolls instead of fitting the viewport. ── */
+  /* ── MCP (agent setup, see agent-setup.css for the shared pieces): the title on its brush, three leaning slips and
+     the three facts on one framed strip (beside the slips from 1280px, 1440px in English, under the heading below
+     that); the hero card in the hand-inked card frame; at the right the endpoint card, the folded manual
+     configuration and, for a signed-in free reader, the quota note on amber; the prompts to try under the hero. ── */
   #app .app-shell--comic-page .mcp-connect-page {
-    --paper: var(--comic-paper); --paper-light: var(--comic-paper-raised); --ink: var(--comic-ink); --acid: var(--comic-acid);
-    --muted: var(--comic-ink-muted); --mcp-side: clamp(280px, 25%, 350px); --mcp-gap: 24px;
-    --mcp-amber: #fff1c9; --mcp-rose: #fde4e1;
-    background: transparent; font-family: inherit;
+    --mcp-amber: #fff1c9;
     /* Hand-inked frames (generated, see assets/comic/README.md) */
-    --mcp-f-card: url('/assets/comic/mcp-card.webp'); --mcp-f-slip: url('/assets/comic/mcp-slip.webp'); --mcp-f-pill: url('/assets/comic/mcp-pill.webp'); --mcp-f-term: url('/assets/comic/mcp-term.webp'); --mcp-f-prev: url('/assets/comic/mcp-prev.webp'); --mcp-f-next: url('/assets/comic/mcp-next.webp');
-    --mcp-disc-teal: url('/assets/comic/mcp-disc-teal.webp'); --mcp-disc-lavender: url('/assets/comic/mcp-disc-lavender.webp'); --mcp-disc-sky: url('/assets/comic/mcp-disc-sky.webp'); --mcp-disc-peach: url('/assets/comic/mcp-disc-peach.webp');
-    --cmd-frame: var(--mcp-f-term);
+    --mcp-f-card: url('/assets/comic/mcp-card.webp'); --mcp-f-slip: url('/assets/comic/mcp-slip.webp'); --mcp-f-next: url('/assets/comic/mcp-next.webp');
+    --mcp-disc-teal: url('/assets/comic/mcp-disc-teal.webp'); --mcp-disc-lavender: url('/assets/comic/mcp-disc-lavender.webp'); --mcp-disc-sky: url('/assets/comic/mcp-disc-sky.webp');
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .mcp-connect-page {
-    --mcp-amber: color-mix(in srgb, #ffc94d 20%, var(--paper-raised)); --mcp-rose: color-mix(in srgb, #ff7a6b 20%, var(--paper-raised));
-    --mcp-f-card: url('/assets/comic/mcp-card-night.webp'); --mcp-f-slip: url('/assets/comic/mcp-slip-night.webp'); --mcp-f-pill: url('/assets/comic/mcp-pill-night.webp'); --mcp-f-term: url('/assets/comic/mcp-term-night.webp'); --mcp-f-prev: url('/assets/comic/mcp-prev-night.webp'); --mcp-f-next: url('/assets/comic/mcp-next-night.webp');
-    --mcp-disc-teal: url('/assets/comic/mcp-disc-teal-night.webp'); --mcp-disc-lavender: url('/assets/comic/mcp-disc-lavender-night.webp'); --mcp-disc-sky: url('/assets/comic/mcp-disc-sky-night.webp'); --mcp-disc-peach: url('/assets/comic/mcp-disc-peach-night.webp');
+    --mcp-amber: color-mix(in srgb, #ffc94d 20%, var(--paper-raised));
+    --mcp-f-card: url('/assets/comic/mcp-card-night.webp'); --mcp-f-slip: url('/assets/comic/mcp-slip-night.webp'); --mcp-f-next: url('/assets/comic/mcp-next-night.webp');
+    --mcp-disc-teal: url('/assets/comic/mcp-disc-teal-night.webp'); --mcp-disc-lavender: url('/assets/comic/mcp-disc-lavender-night.webp'); --mcp-disc-sky: url('/assets/comic/mcp-disc-sky-night.webp');
   }
-  #app .app-shell--comic-page .mcp-connect-page::before,
-  #app .app-shell--comic-page .mcp-grid-overlay { display: none; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-scroll { padding: 4px 16px calc(var(--peel-clear) + 28px) 20px; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-layout { height: auto; grid-template-rows: auto auto; gap: 16px; }
-
-  /* Heading: title and subtitle, the slips over the description, the facts. */
-  #app .app-shell--comic-page .mcp-connect-page .connection-intro {
-    overflow: visible; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  /* The facts need the slips' row from 1280px; below that (and up to 1440px in English, whose labels run longer)
+     they take their own row under the heading. */
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .mcp-connect-page .agent-page-head {
+      grid-template-columns: fit-content(440px) minmax(0, 1fr); grid-template-areas: 'brush pills' 'title desc' 'stats stats';
+    }
+    #app .app-shell--comic-page .mcp-connect-page .agent-page-stats { justify-self: start; margin: 16px 0 0 2px; }
   }
-  #app .app-shell--comic-page .mcp-connect-page .connection-intro-content {
-    display: grid; grid-template-columns: fit-content(420px) minmax(0, 1fr) auto; grid-template-areas: 'title pills stats' 'sub summary summary' 'quota quota quota';
-    align-items: start; column-gap: 24px; row-gap: 0; height: auto;
-  }
-  #app .app-shell--comic-page .mcp-connect-page .connection-heading { display: contents; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-heading > p:not(.mcp-page-title) { display: none; }
-  #app .app-shell--comic-page .mcp-page-title { grid-area: title; justify-self: start; margin: 4px 36px 0 14px; font-size: 46px; line-height: 1.15; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-layout .connection-intro h1 {
-    grid-area: sub; max-width: none; margin: 14px 0 0; color: var(--ink); font-size: 19px; font-weight: 800; letter-spacing: 0; line-height: 1.35; text-wrap: balance;
-  }
-  #app .app-shell--comic-page .mcp-connect-page .mcp-hero-pills { grid-area: pills; align-self: end; gap: 14px; margin: 0 0 4px; padding-left: 2px; }
-  #app .app-shell--comic-page .mcp-connect-page .mcp-hero-pills > span {
-    padding: 2px 22px 2px 24px; border: 0 solid transparent; border-radius: 0; background: transparent; color: var(--ink);
-    border-image: var(--mcp-f-pill) 33 45 42 117 fill / 11px 15px 14px 39px / 2px 3px 5px 5px stretch;
-    font-size: 13.5px; font-style: italic; font-weight: 900; letter-spacing: 0; line-height: 20px; text-transform: none; transform: rotate(-2.5deg);
-  }
-  #app .app-shell--comic-page .mcp-connect-page .connection-summary { display: contents; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-summary > p { grid-area: summary; max-width: 560px; margin: 16px 0 0; color: var(--ink); font-size: 14px; line-height: 22px; }
-  /* A signed-in free reader's quota: a thin amber note across the heading, the upgrade on a slip. */
-  #app .app-shell--comic-page .mcp-connect-page .connection-summary > div {
-    grid-area: quota; justify-self: start; margin: 12px 0 0; padding: 7px 10px 7px 16px; border: 0 solid transparent; border-radius: 5px;
-    border-image: var(--mcp-f-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch; background: var(--mcp-amber);
-  }
-  #app .app-shell--comic-page .mcp-connect-page .connection-summary > div > p { color: var(--ink); font-size: 12.5px; line-height: 19px; }
-  #app .app-shell--comic-page .mcp-connect-page .connection-summary > div > a {
-    min-height: 32px; padding: 0 20px 0 18px; border: 0 solid transparent; border-radius: 0; background: transparent; color: var(--ink);
-    border-image: var(--mcp-f-slip) 33 51 45 42 fill / 11px 17px 15px 14px / 2px 5px 6px 2px stretch;
-    font-size: 13.5px; font-style: italic; font-weight: 900; transform: rotate(-3deg);
+  @media (min-width: 1280px) and (max-width: 1439px) {
+    :root:lang(en) #app .app-shell--comic-page .mcp-connect-page .agent-page-head {
+      grid-template-columns: fit-content(440px) minmax(0, 1fr); grid-template-areas: 'brush pills' 'title desc' 'stats stats';
+    }
+    :root:lang(en) #app .app-shell--comic-page .mcp-connect-page .agent-page-stats { justify-self: start; margin: 16px 0 0 2px; }
   }
 
-  /* Four facts on one framed strip: an icon on a watercolour disc, the label over the number, a dashed rule between. */
+  /* Three facts on one framed strip: an icon on a watercolour disc, the label over the number, a dashed rule between. */
   #app .app-shell--comic-page .mcp-stats {
-    grid-area: stats; justify-self: end; align-self: center; display: flex; flex-wrap: wrap; margin: 6px 4px 0 0; padding: 6px 2px;
+    display: flex; flex-wrap: wrap; margin: 6px 4px 0 0; padding: 6px 2px;
     border: 0 solid transparent; border-radius: 5px; background: var(--paper-raised);
-    border-image: var(--mcp-f-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+    border-image: var(--agent-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
   }
   #app .app-shell--comic-page .mcp-stat {
     position: relative; display: grid; grid-template-columns: 34px auto; grid-template-rows: auto auto; align-content: center; column-gap: 8px;
@@ -77,103 +48,46 @@
   }
   #app .app-shell--comic-page .mcp-stat:nth-child(2) svg { background-image: var(--mcp-disc-lavender); color: #5a3ec0; }
   #app .app-shell--comic-page .mcp-stat:nth-child(3) svg { background-image: var(--mcp-disc-sky); color: #245f9e; }
-  #app .app-shell--comic-page .mcp-stat:nth-child(4) svg { background-image: var(--mcp-disc-peach); color: #e8561c; }
   :root[data-theme='dark'] #app .app-shell--comic-page .mcp-stat svg { color: #a5e8ec; }
   :root[data-theme='dark'] #app .app-shell--comic-page .mcp-stat:nth-child(2) svg { color: #c3b4fb; }
   :root[data-theme='dark'] #app .app-shell--comic-page .mcp-stat:nth-child(3) svg { color: #9fd3f5; }
-  :root[data-theme='dark'] #app .app-shell--comic-page .mcp-stat:nth-child(4) svg { color: #ffac78; }
   #app .app-shell--comic-page .mcp-stat span { align-self: end; color: var(--ink); font-size: 12px; font-weight: 800; line-height: 1.3; white-space: nowrap; }
   #app .app-shell--comic-page .mcp-stat strong { color: var(--ink); font-size: 20px; font-weight: 950; line-height: 1.2; font-variant-numeric: tabular-nums; }
-  @media (max-width: 1279px) {
-    #app .app-shell--comic-page .mcp-connect-page .connection-intro-content {
-      grid-template-columns: fit-content(420px) minmax(0, 1fr); grid-template-areas: 'title pills' 'sub summary' 'quota quota' 'stats stats';
-    }
-    #app .app-shell--comic-page .mcp-stats { justify-self: start; margin: 14px 0 0 2px; }
-  }
-  /* The English labels make a longer strip, which would squeeze the slips into a column: it keeps its own row up to 1440px. */
-  @media (min-width: 1280px) and (max-width: 1439px) {
-    :root:lang(en) #app .app-shell--comic-page .mcp-connect-page .connection-intro-content {
-      grid-template-columns: fit-content(420px) minmax(0, 1fr); grid-template-areas: 'title pills' 'sub summary' 'quota quota' 'stats stats';
-    }
-    :root:lang(en) #app .app-shell--comic-page .mcp-stats { justify-self: start; margin: 14px 0 0 2px; }
-  }
 
-  /* The command desk (McpCommandDesk): the clients across the top; under them the command at the left (the
-     terminal switch and where the command writes over the terminal) and the endpoint check under it; the copy
-     card at the right, its face following the state (a guest's sign-in, generate, ready to copy, an error). */
-  #app .app-shell--comic-page .mcp-desk {
-    display: grid; grid-template-columns: minmax(0, 1fr) var(--mcp-side); grid-template-areas: 'clients clients' 'main side' 'verify side';
-    grid-template-rows: auto auto 1fr; align-items: start; gap: 14px var(--mcp-gap);
+  /* Cards: paper in the hand-inked card frame (its shadow and halftone at the lower right); the quota note and the
+     prompts to try in the lighter term frame. */
+  #app .app-shell--comic-page .mcp-connect-page :is(.agent-setup, .agent-card) {
+    border: 0 solid transparent; border-radius: 4px; background: var(--paper-raised); box-shadow: none;
+    border-image: var(--mcp-f-card) 27 207 120 27 / 9px 69px 40px 9px / 2px 7px 8px 2px stretch;
   }
-  #app .app-shell--comic-page .mcp-desk-clients { grid-area: clients; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
-  #app .app-shell--comic-page .mcp-desk-main { grid-area: main; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  #app .app-shell--comic-page .mcp-desk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
-  #app .app-shell--comic-page .mcp-desk-target { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; margin: 0 0 0 auto; }
-  #app .app-shell--comic-page .mcp-desk-scope {
-    padding: 1px 16px 1px 14px; border: 0 solid transparent; color: var(--ink);
+  #app .app-shell--comic-page .mcp-connect-page .agent-setup { padding: 2px 34px 28px 28px; }
+  #app .app-shell--comic-page .mcp-connect-page :is(.agent-quota, .agent-examples) {
+    border-radius: 5px; border-image: var(--agent-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .mcp-connect-page .agent-quota { padding: 12px 18px 16px; background: var(--mcp-amber); }
+  #app .app-shell--comic-page .mcp-connect-page .agent-quota .agent-card-text { font-size: 13.5px; line-height: 21px; }
+
+  /* Buttons: white slips leaning back with their hard shadow; the ready configuration on the dark arrow. */
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn {
+    min-height: 38px; padding: 0 24px 0 22px; border: 0 solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--ink);
     border-image: var(--mcp-f-slip) 33 51 45 42 fill / 11px 17px 15px 14px / 2px 5px 6px 2px stretch;
-    font-size: 13px; font-style: italic; font-weight: 900; line-height: 22px; transform: rotate(-3deg);
+    font-size: 14px; font-style: italic; font-weight: 900; transform: rotate(-2deg);
   }
-  #app .app-shell--comic-page .mcp-desk-path {
-    min-width: 0; color: var(--ink); font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12.5px; line-height: 20px; overflow-wrap: anywhere;
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn:hover:not(:disabled) { background: transparent; box-shadow: none; transform: rotate(-2deg) translate(-1px, -1px); }
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn:active:not(:disabled) { box-shadow: none; transform: rotate(-2deg) translate(1px, 1px); }
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn--ink {
+    min-height: 43px; padding: 0 30px 0 24px; color: #fff; transform: none;
+    border-image: var(--mcp-f-next) 33 66 48 54 fill / 11px 22px 16px 18px / 2px 6px 7px 2px stretch;
   }
-  #app .app-shell--comic-page .mcp-desk-side {
-    grid-area: side; min-width: 0; margin-right: 8px; padding: 16px 22px 20px 20px; border: 0 solid transparent; border-radius: 4px;
-    background: var(--paper-raised); color: var(--ink);
-    border-image: var(--mcp-f-card) 27 207 120 27 / 9px 69px 40px 9px / 2px 7px 8px 2px stretch; transition: background-color .2s linear;
+  :root[data-theme='dark'] #app .app-shell--comic-page .mcp-connect-page .agent-btn--ink { color: var(--paper); }
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn--ink:hover:not(:disabled) { color: var(--acid); transform: translate(-1px, -1px); }
+  #app .app-shell--comic-page .mcp-connect-page .agent-btn--ink:active:not(:disabled) { transform: translate(1px, 1px); }
+
+  /* Prompts to try: two columns of lines, each with its copy button, a dashed rule between the rows. */
+  #app .app-shell--comic-page .mcp-connect-page .agent-examples { gap: 8px; padding: 16px 24px 18px; }
+  #app .app-shell--comic-page .agent-examples .mcp-prompt-list.mcp-prompt-list--cards {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; margin-top: 4px;
   }
-  #app .app-shell--comic-page .mcp-desk-side--ready { background: var(--mcp-amber); }
-  #app .app-shell--comic-page .mcp-desk-side--error { background: var(--mcp-rose); }
-  #app .app-shell--comic-page .mcp-desk-side-body { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
-  #app .app-shell--comic-page .mcp-desk-side-title { margin: 0; font-size: 15px; font-weight: 900; line-height: 22px; }
-  #app .app-shell--comic-page .mcp-desk-note { margin: 0; color: var(--ink); font-size: 12.5px; line-height: 19px; }
-  #app .app-shell--comic-page .mcp-desk-note--warn { font-weight: 700; }
-  #app .app-shell--comic-page .mcp-desk-error { margin: 0; color: #b42318; font-size: 13px; font-weight: 700; line-height: 20px; }
-  :root[data-theme='dark'] #app .app-shell--comic-page .mcp-desk-error { color: #ffb4a8; }
-  #app .app-shell--comic-page .mcp-desk :is(.btn-primary, .btn-secondary) {
-    min-height: 43px; padding: 0 24px 0 28px; border: 0 solid transparent; border-radius: 0; background: transparent;
-    font-size: 15px; font-style: italic; font-weight: 900; letter-spacing: 0;
-  }
-  #app .app-shell--comic-page .mcp-desk .btn-primary { color: #fff; border-image: var(--mcp-f-next) 33 66 48 54 fill / 11px 22px 16px 18px / 2px 6px 7px 2px stretch; }
-  :root[data-theme='dark'] #app .app-shell--comic-page .mcp-desk .btn-primary { color: var(--paper); }
-  #app .app-shell--comic-page .mcp-desk .btn-secondary { color: var(--ink); border-image: var(--mcp-f-prev) 33 63 48 54 fill / 11px 21px 16px 18px / 2px 5px 7px 2px stretch; }
-  #app .app-shell--comic-page .mcp-desk .btn-primary:hover:not(:disabled) { color: var(--acid); }
-  #app .app-shell--comic-page .mcp-desk .btn-secondary:hover:not(:disabled) { color: var(--ink); filter: brightness(.96); }
-  #app .app-shell--comic-page .mcp-desk :is(.btn-primary, .btn-secondary):disabled { opacity: .55; }
-  #app .app-shell--comic-page .mcp-desk-side :is(.btn-primary, .btn-secondary) { width: 100%; }
-  /* Switching between browser authorization and a manual token: quiet beside the two buttons yet plain to see,
-     solid ink on a dashed underline that firms up on hover. */
-  #app .app-shell--comic-page .mcp-desk-switch {
-    align-self: flex-start; padding: 2px 0; border: 0; background: none; color: var(--ink); cursor: pointer;
-    font-size: 12.5px; font-weight: 800; line-height: 19px; text-decoration: underline dashed; text-underline-offset: 4px;
-  }
-  #app .app-shell--comic-page .mcp-desk-switch:hover { text-decoration-style: solid; }
-  #app .app-shell--comic-page .mcp-desk-switch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  /* The endpoint check: the label, the endpoint in a terminal box and the handshake on one line, the three phases under it. */
-  #app .app-shell--comic-page .mcp-desk-verify {
-    grid-area: verify; display: grid; grid-template-columns: auto minmax(0, 560px) auto; justify-content: start; align-items: center; gap: 10px 14px;
-    min-width: 0; margin-top: 4px;
-  }
-  #app .app-shell--comic-page .mcp-desk-endpoint {
-    min-width: 0; min-height: 40px; padding: 8px 14px; border: 0 solid transparent; border-radius: 5px; background: var(--paper-raised); color: var(--ink);
-    border-image: var(--mcp-f-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch; box-shadow: none;
-    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px;
-  }
-  #app .app-shell--comic-page .mcp-desk-endpoint:focus { box-shadow: none; }
-  #app .app-shell--comic-page .mcp-desk-endpoint:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-  #app .app-shell--comic-page .mcp-desk-verify .btn-secondary { min-width: 150px; }
-  #app .app-shell--comic-page .mcp-desk-phases { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 10px; margin: 0; padding: 0; list-style: none; }
-  #app .app-shell--comic-page .mcp-desk-phase {
-    display: inline-flex; align-items: baseline; gap: 8px; padding: 4px 12px; border: 1.5px dashed color-mix(in srgb, var(--rule-strong) 50%, transparent);
-    border-radius: 4px 6px 4px 5px; color: var(--ink); font-size: 12.5px; line-height: 18px; transition: background-color .2s linear, border-color .2s linear;
-  }
-  #app .app-shell--comic-page .mcp-desk-phase > span:first-child { font-weight: 800; }
-  #app .app-shell--comic-page .mcp-desk-phase[data-status='running'] { border-style: solid; border-color: var(--rule-strong); background: var(--mcp-amber); }
-  #app .app-shell--comic-page .mcp-desk-phase[data-status='success'] { border-style: solid; border-color: var(--rule-strong); background: var(--acid-soft); }
-  #app .app-shell--comic-page .mcp-desk-phase[data-status='error'] { border-style: solid; border-color: #b42318; background: var(--mcp-rose); }
-  #app .app-shell--comic-page .mcp-desk-verify > p:not(.mcp-desk-label) { grid-column: 1 / -1; }
-  @media (prefers-reduced-motion: reduce) {
-    #app .app-shell--comic-page :is(.mcp-desk-side, .mcp-desk-phase) { transition: none; }
-  }
+  #app .app-shell--comic-page .agent-examples .mcp-prompt-item:nth-child(-n+2) { padding-top: 2px; border-top: 0; }
+  #app .app-shell--comic-page .agent-examples .mcp-prompt-copy { border-width: 1.5px 2px 2px 1.5px; font-style: italic; font-weight: 900; }
 }

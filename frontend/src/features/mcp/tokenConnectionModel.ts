@@ -32,14 +32,85 @@ export type TokenSighting =
   | { kind: 'unused' }
   | { kind: 'used'; lastUsedAt: string; lastUsedMs: number }
 
+/** 令牌还能不能用：没被吊销、没被删除、没过期。 */
+const isLive = (token: McpTokenMetadata, nowMs: number): boolean => {
+  if (token.revoked_at || token.deleted_at) return false
+  const expiresMs = parseTimestampMs(token.expires_at)
+  return expiresMs == null || expiresMs > nowMs
+}
+
 /** 在令牌列表里找这枚令牌，看它还在不在、用没用过。 */
 export const sightToken = (tokens: readonly McpTokenMetadata[], tokenId: number, nowMs: number): TokenSighting => {
   const token = tokens.find((item) => item.id === tokenId)
-  if (!token || token.revoked_at || token.deleted_at) return { kind: 'gone' }
-  const expiresMs = parseTimestampMs(token.expires_at)
-  if (expiresMs != null && expiresMs <= nowMs) return { kind: 'gone' }
+  if (!token || !isLive(token, nowMs)) return { kind: 'gone' }
   const lastUsedMs = parseTimestampMs(token.last_used_at)
   return lastUsedMs == null ? { kind: 'unused' } : { kind: 'used', lastUsedAt: token.last_used_at!, lastUsedMs }
+}
+
+/**
+ * 「复制给 Agent」这条路网页事先不知道会用哪枚令牌：客户端走 OAuth 授权时服务端才新发一枚。
+ * 所以开始等之前先把现有令牌记成基线（id → 最近一次使用），之后多出来的就是这次授权的。
+ * sinceMs 给定时（页面晚于复制才打开或登录），之后创建的令牌不进基线，免得 Agent 已经授权过的那枚被当成旧的。
+ */
+export type TokenBaseline = ReadonlyMap<number, number | null>
+
+export const captureTokenBaseline = (
+  tokens: readonly McpTokenMetadata[],
+  sinceMs: number | null,
+): TokenBaseline => {
+  const baseline = new Map<number, number | null>()
+  for (const token of tokens) {
+    const createdMs = parseTimestampMs(token.created_at)
+    if (sinceMs != null && createdMs != null && createdMs >= sinceMs) continue
+    baseline.set(token.id, parseTimestampMs(token.last_used_at))
+  }
+  return baseline
+}
+
+export type NewConnectionSighting =
+  | { kind: 'none' }
+  | { kind: 'authorized'; label: string }
+  | { kind: 'connected'; label: string; lastUsedAt: string; lastUsedMs: number }
+
+type UsedToken = { label: string; lastUsedAt: string; lastUsedMs: number }
+
+const newestUse = (uses: UsedToken[]): NewConnectionSighting => {
+  const newest = uses.reduce((best, item) => (item.lastUsedMs > best.lastUsedMs ? item : best))
+  return { kind: 'connected', ...newest }
+}
+
+/**
+ * 对照基线看这次有没有接上：
+ * - 新令牌用过了 → 已接入（取最近用的那枚）；
+ * - 新令牌还没用 → 已授权，等客户端连上；
+ * - 没有新令牌，但基线里某枚令牌的使用时间变了 → 也算接上（客户端沿用了以前的授权）；
+ * 被吊销、删除、过期的不算；ignoreLabels 里的（dsh 专用令牌、手动配置令牌）有自己的检测，这里不认。
+ */
+export const sightNewConnection = (
+  tokens: readonly McpTokenMetadata[],
+  baseline: TokenBaseline,
+  nowMs: number,
+  ignoreLabels: readonly string[] = [],
+): NewConnectionSighting => {
+  const fresh: UsedToken[] = []
+  const reused: UsedToken[] = []
+  let authorizedLabel: string | null = null
+  for (const token of tokens) {
+    if (!isLive(token, nowMs) || ignoreLabels.includes(token.client_label)) continue
+    const lastUsedMs = parseTimestampMs(token.last_used_at)
+    const known = baseline.has(token.id)
+    if (lastUsedMs == null) {
+      if (!known && authorizedLabel == null) authorizedLabel = token.client_label
+      continue
+    }
+    const use = { label: token.client_label, lastUsedAt: token.last_used_at!, lastUsedMs }
+    if (!known) fresh.push(use)
+    else if (baseline.get(token.id) !== lastUsedMs) reused.push(use)
+  }
+  if (fresh.length) return newestUse(fresh)
+  if (authorizedLabel != null) return { kind: 'authorized', label: authorizedLabel }
+  if (reused.length) return newestUse(reused)
+  return { kind: 'none' }
 }
 
 /** 基线之后有没有新的使用记录：基线为空时任何使用都算，否则时间要变（比较服务端的时间，不掺浏览器时钟）。 */

@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import axios from 'axios'
-import { DSH_PLUGIN_INSTALL_METHODS, type DshPluginInstallMethodId } from '@/features/mcp/dshPlugin'
+import { DSH_PLUGIN_INSTALL_METHODS, buildDshInstallLine, type DshPluginInstallMethodId } from '@/features/mcp/dshPlugin'
 import {
   ensureDshMcpToken as defaultEnsureDshMcpToken,
   fetchMcpTokens as defaultFetchMcpTokens,
@@ -32,31 +32,6 @@ export interface DshSetupOptions {
   connectionWatch?: Omit<TokenConnectionWatchOptions, 'fetchTokens'>
 }
 
-const DSH_PATCH_PATH = '~/.dsh/profiles/web/cordis.patch.yml'
-
-const yamlQuote = (value: string) => `'${value.replace(/'/g, "''")}'`
-
-// 后端签发的 token 是 urlsafe 字符集（[A-Za-z0-9_-] 加 aigc_mcp_ 前缀），
-// 不含双引号、$、反引号或反斜杠，因此可以安全地置于 shell 双引号内；
-// YAML 侧的单引号由 yamlQuote 负责折转。
-const shellDoubleQuote = (value: string) => `"${value}"`
-
-const patchLines = (token: string) => [
-  '- replace:',
-  '    - id: aigc-radar',
-  '      name: dsh-aigc-radar',
-  '      config:',
-  `        mcpToken: ${yamlQuote(token)}`,
-]
-
-// 一条命令完成安装与 Token 落盘：安装插件后把 mcpToken 补丁写进 profile 补丁层。
-// cordis.patch.yml 默认只有注释与空数组，追加会破坏 YAML 结构，因此整文件覆盖。
-// /dsh 桌面版用占位串代替 Token 调它，拼出命令预览。
-export const buildDshInstallLine = (command: string, token: string) => {
-  const args = patchLines(token).map(shellDoubleQuote).join(' ')
-  return `${command} && printf '%s\\n' ${args} > ${DSH_PATCH_PATH}`
-}
-
 const toErrorKey = (cause: unknown) =>
   axios.isAxiosError(cause) && cause.response?.status === 503
     ? 'dsh.wizard.tokenUnavailable'
@@ -68,8 +43,6 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
   const fetchTokensApi = options.fetchMcpTokens ?? defaultFetchMcpTokens
   const connection = useTokenConnectionWatch({ ...options.connectionWatch, fetchTokens: () => fetchTokensApi() })
   const selectedMethod = ref<DshPluginInstallMethodId>('npm')
-  // 两步：0 = 安装方式，1 = 接入命令
-  const step = ref(0)
   const phase = ref<DshTokenPhase>('idle')
   const token = ref('')
   const tokenReused = ref(false)
@@ -146,9 +119,11 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
   }
 
   // 认证丢失/登出：立即丢弃内存 token 并使在途请求失效（generation 守卫
-  // 让迟到响应无法回填；在途 promise 自行结束并释放 inflight 槽位）
+  // 让迟到响应无法回填）。在途 promise 自行结束，但槽位当场让出：
+  // 登出后马上又登录，新的 ensure 要发新请求，不能等来旧请求作废后的 false。
   const clearToken = () => {
     generation += 1
+    inflight = null
     token.value = ''
     tokenReused.value = false
     error.value = ''
@@ -164,12 +139,8 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     connection.dispose()
   }
 
-  const next = () => { step.value = Math.min(1, step.value + 1) }
-  const previous = () => { step.value = Math.max(0, step.value - 1) }
-
   return {
     selectedMethod,
-    step,
     phase,
     token,
     tokenReused,
@@ -181,7 +152,8 @@ export const useDshSetupController = (options: DshSetupOptions = {}) => {
     rotate,
     clearToken,
     dispose,
-    next,
-    previous,
   }
 }
+
+/** /dsh 页面持有一个控制器，主卡（复制给 Agent）与「手动安装」共用同一枚 Token 和同一个连接检测。 */
+export type DshSetupController = ReturnType<typeof useDshSetupController>

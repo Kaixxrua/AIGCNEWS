@@ -1,0 +1,507 @@
+/* /mcp 与 /dsh「复制给 Agent」两页共用的结构与基础样式，手机上就是这一套轻量漫画风：墨线框、错位硬阴影、荧光绿。
+   桌面（≥1024px）的两栏版面、手绘框与配色在 comic-pages/agent-setup.css、mcp.css、dsh.css 里覆盖。
+   类名都带 agent- 前缀，不写 scoped：两个页面和主卡、手动配置、手动安装、地址卡几个组件共用。 */
+
+/* ── 页面骨架：报头（标题与说明），下面是主卡和侧栏；窄屏排成一列，主卡在前 ── */
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.agent-page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 8px 24px;
+}
+
+.agent-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 0 18px;
+}
+
+/* 刷子大标题只在桌面漫画版出现（报头里已经有页面名）；窄屏由 h1 打头。 */
+.agent-page-brush { display: none; }
+
+.agent-page-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-page-pills > li {
+  padding: 1px 10px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 3px 5px 3px 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-style: italic;
+  font-weight: 900;
+  line-height: 20px;
+}
+
+.agent-page-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.agent-page-description { margin: 0; color: var(--ink); font-size: 15px; line-height: 24px; }
+
+.agent-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+
+.agent-page-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+/* ── 主卡：标签、导语、主按钮与提示词预览、三格分镜、提示与接入回显 ── */
+.agent-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 18px 20px;
+  border: 2px solid var(--rule-strong);
+  border-radius: 6px 8px 6px 7px;
+  background: var(--paper-raised);
+  box-shadow: 4px 4px 0 var(--comic-shadow);
+  color: var(--ink);
+}
+
+.agent-setup-kicker,
+.agent-setup-lede,
+.agent-setup-hint,
+.agent-setup-tier,
+.agent-setup-warn,
+.agent-setup-error { margin: 0; }
+
+.agent-setup-kicker {
+  align-self: flex-start;
+  padding: 1px 10px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 3px 5px 3px 4px;
+  background: var(--acid);
+  color: var(--acid-ink);
+  font-size: 13px;
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 20px;
+  text-transform: none;
+  transform: rotate(-1.5deg);
+}
+
+.agent-setup-lede { font-size: 15px; line-height: 24px; }
+.agent-setup-hint { color: var(--ink-muted); font-size: 13px; line-height: 20px; }
+.agent-setup-tier { margin-top: 4px; font-weight: 800; }
+.agent-setup-warn { font-size: 14px; font-weight: 700; line-height: 21px; }
+.agent-setup-error,
+.agent-card-error { color: #b42318; font-size: 14px; font-weight: 700; line-height: 21px; }
+:root[data-theme='dark'] :is(.agent-setup-error, .agent-card-error) { color: #ffb4a8; }
+
+.agent-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  min-width: 0;
+}
+
+.agent-setup-face {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.agent-setup-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 24px;
+  border: 2px solid var(--rule-strong);
+  border-radius: 6px 8px 5px 9px;
+  background: var(--acid);
+  box-shadow: 3px 3px 0 var(--comic-shadow);
+  color: var(--acid-ink);
+  font: inherit;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.agent-setup-cta:hover:not(:disabled) { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--comic-shadow); }
+.agent-setup-cta:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--comic-shadow); }
+.agent-setup-cta:disabled { opacity: .55; cursor: progress; }
+.agent-setup-cta-icon { flex: none; width: 21px; height: 21px; stroke-width: 2.4; }
+
+.agent-setup-toggle,
+.agent-setup-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: underline dashed;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.agent-setup-link { align-self: flex-start; }
+.agent-setup-toggle:hover,
+.agent-setup-link:hover { text-decoration-style: solid; }
+
+.agent-setup-toggle-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1);
+}
+
+.agent-setup-toggle[aria-expanded='true'] .agent-setup-toggle-icon { transform: rotate(180deg); }
+
+/* 提示词全文比命令长，预览里限高滚动。 */
+.agent-setup-preview .command-preview-term { max-height: 280px; overflow: auto; }
+
+/* ── 侧栏卡片：地址、手动配置 / 手动安装、额度、插件能力、示例，以及登录状态恢复中 / 校验失败时的那一张 ── */
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 2px solid var(--rule-strong);
+  border-radius: 5px 7px 5px 6px;
+  background: var(--paper-raised);
+  box-shadow: 3px 3px 0 var(--comic-shadow);
+  color: var(--ink);
+}
+
+.agent-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 24px;
+}
+
+.agent-card-icon { flex: none; width: 20px; height: 20px; stroke-width: 2.3; }
+.agent-card-text { margin: 0; color: var(--ink); font-size: 14px; line-height: 22px; }
+.agent-card-note { margin: 0; color: var(--ink-muted); font-size: 12.5px; line-height: 19px; }
+
+.agent-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* 地址：一行等宽字，长了就折。 */
+.agent-endpoint {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+/* Free 的额度提示：浅琥珀底，升级按钮在下面。 */
+.agent-quota { background: #fff1c9; }
+:root[data-theme='dark'] .agent-quota { background: color-mix(in srgb, #ffc94d 20%, var(--paper-raised)); }
+
+/* 接好后这样问：一句一行，句子在左、复制在右，行与行之间一条虚线。 */
+/* 列表组件自带的 scoped 间距与这里同权重，多带一个修饰类压过它，不受样式表先后影响。 */
+.agent-examples .mcp-prompt-list.mcp-prompt-list--cards { gap: 0; }
+
+.agent-examples .mcp-prompt-item {
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1.5px dashed color-mix(in srgb, var(--rule-strong) 35%, transparent);
+}
+
+.agent-examples .mcp-prompt-item:first-child { padding-top: 2px; border-top: 0; }
+.agent-examples .mcp-prompt-text { min-width: 0; color: var(--ink); font-size: 14px; line-height: 22px; }
+
+.agent-examples .mcp-prompt-copy {
+  flex: none;
+  min-width: 64px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 4px 6px 4px 5px;
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--comic-shadow);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+
+.agent-examples .mcp-prompt-copy:hover { background: var(--acid-soft); }
+
+/* /dsh 主卡底下的额度条：皇冠打头；会员换成浅绿。 */
+.dsh-quota-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 4px 6px 4px 5px;
+  background: #feeba6;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 800;
+  line-height: 21px;
+}
+
+.dsh-quota-hint--member { background: color-mix(in srgb, #3ecf8e 26%, var(--paper-raised)); }
+:root[data-theme='dark'] .dsh-quota-hint:not(.dsh-quota-hint--member) { background: color-mix(in srgb, #ffc94d 22%, var(--paper-raised)); }
+
+.dsh-quota-hint::before {
+  content: '';
+  flex: 0 0 20px;
+  height: 20px;
+  background: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294z'/%3E%3Cpath d='M5 21h14'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.dsh-quota-hint a { color: var(--ink); font-weight: 900; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+/* 折叠卡：标题整行是开关，展开后内容在下面。 */
+.agent-manual { gap: 0; }
+
+.agent-manual-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-manual-chevron {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  stroke-width: 2.6;
+  transition: transform .2s cubic-bezier(.22, 1, .36, 1);
+}
+
+.agent-manual--open .agent-manual-chevron { transform: rotate(180deg); }
+
+.agent-manual-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 12px;
+}
+
+.agent-manual-face {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* ── 按钮 ── */
+.agent-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 2px solid var(--rule-strong);
+  border-radius: 5px 7px 4px 6px;
+  background: var(--paper-raised);
+  box-shadow: 2px 2px 0 var(--comic-shadow);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .15s ease;
+}
+
+.agent-btn:hover:not(:disabled) { background: var(--acid-soft); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--comic-shadow); }
+.agent-btn:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--comic-shadow); }
+.agent-btn--ink { background: var(--ink); color: var(--paper); }
+.agent-btn--ink:hover:not(:disabled) { background: var(--ink); }
+.agent-btn--acid { background: var(--acid); color: var(--acid-ink); }
+.agent-btn--acid:hover:not(:disabled) { background: var(--acid); }
+.agent-btn:disabled { opacity: .5; cursor: not-allowed; }
+.agent-btn-icon { flex: none; width: 17px; height: 17px; stroke-width: 2.4; }
+
+/* ── 分段切换（安装方式）：一张墨线面板，荧光绿滑到选中项 ── */
+.agent-tabs {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-self: flex-start;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border: solid var(--rule-strong);
+  border-width: 1.5px 2px 2px 1.5px;
+  border-radius: 4px 6px 4px 5px;
+  background: var(--paper-raised);
+  box-shadow: 2px 2px 0 var(--comic-shadow);
+}
+
+.agent-tabs[data-indicator-mark]::before {
+  content: '';
+  z-index: -1;
+  border-radius: 3px;
+  background: var(--acid);
+  box-shadow: inset 0 0 0 1.5px var(--rule-strong);
+}
+
+.agent-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.agent-tab[aria-pressed='false']:hover { background: var(--acid-soft); }
+.agent-tab[aria-pressed='true'] { color: var(--acid-ink); transition-delay: 70ms; }
+.agent-tabs:not([data-indicator]) .agent-tab[aria-pressed='true'] { background: var(--acid); }
+.agent-tab-icon { flex: none; width: 17px; height: 17px; stroke-width: 2.2; }
+
+.agent-tab-tag {
+  margin-left: 2px;
+  padding: 2px 6px 1px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px 5px 3px 4px;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 900;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+
+.agent-examples .mcp-prompt-copy:focus-visible,
+.dsh-quota-hint a:focus-visible,
+.agent-setup-cta:focus-visible,
+.agent-setup-toggle:focus-visible,
+.agent-setup-link:focus-visible,
+.agent-manual-toggle:focus-visible,
+.agent-btn:focus-visible,
+.agent-tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* ── 窄屏：主按钮占满一行，按钮与开关够手指点 ── */
+@media (max-width: 1023px) {
+  .agent-setup-cta { width: 100%; min-height: 52px; padding: 8px 16px; font-size: 16px; text-align: center; white-space: normal; }
+  /* 按钮字太长时在按钮里折行（换字组件默认不折行，会撑出按钮），两行尽量一样长。 */
+  .agent-setup .agent-setup-cta .roll-text { white-space: normal; text-wrap: balance; }
+  .agent-setup-actions { gap: 6px 18px; }
+  /* 额度条：皇冠挂在左边，文字和升级链接在它右边一栏里往下排，不让皇冠单独占一行。 */
+  .dsh-quota-hint { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; column-gap: 10px; }
+  .dsh-quota-hint::before { margin-top: 1px; }
+  .dsh-quota-hint:not(.dsh-quota-hint--member)::before { grid-row: span 2; }
+  .dsh-quota-hint a { justify-self: start; }
+  .agent-setup-face { width: 100%; }
+  .agent-setup-toggle,
+  .agent-setup-link,
+  .agent-manual-toggle { min-height: 44px; }
+  .agent-btn { min-height: 44px; }
+  .agent-tab { min-height: 38px; }
+  .agent-examples .mcp-prompt-copy { min-height: 40px; }
+}
+
+/* ── 手机：正文放大到 15px，次要说明不小于 13px ── */
+@media (max-width: 767px) {
+  /* 英文三枚标签在 430 宽上下：后备字体下要折成两行，网页字体一到又挤回一行，整页往上跳（CLS 0.29）。
+     手机上英文固定排成两行（前两枚一行，第三枚另起），换字体前后行数不变；中文三枚一行放得下，照旧。 */
+  :root:lang(en) .agent-page-pills { display: grid; grid-template-columns: repeat(2, max-content); justify-items: start; }
+  :root:lang(en) .agent-page-pills > li:nth-child(n + 3) { grid-column: 1 / -1; }
+  .agent-card-text { font-size: 15px; line-height: 24px; }
+  .agent-setup-hint { font-size: 14px; line-height: 21px; }
+  .agent-card-note { font-size: 13px; line-height: 20px; }
+  .agent-examples .mcp-prompt-text { font-size: 15px; line-height: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-examples .mcp-prompt-copy,
+  .agent-setup-cta,
+  .agent-btn,
+  .agent-tab,
+  .agent-setup-toggle-icon,
+  .agent-manual-chevron { transition: none; }
+}

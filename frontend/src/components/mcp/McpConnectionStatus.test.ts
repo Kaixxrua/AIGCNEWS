@@ -5,13 +5,17 @@ import i18n from '@/i18n'
 import type { TokenConnectionStatus, TokenConnectionWatch } from '@/composables/useTokenConnectionWatch'
 import McpConnectionStatus from './McpConnectionStatus.vue'
 
-const buildConnection = (status: TokenConnectionStatus, patch: { lastUsedAt?: string | null; fresh?: boolean; slow?: boolean } = {}) => ({
+type ConnectionPatch = { lastUsedAt?: string | null; fresh?: boolean; slow?: boolean; clientLabel?: string | null }
+
+const buildConnection = (status: TokenConnectionStatus, patch: ConnectionPatch = {}) => ({
   status: ref<TokenConnectionStatus>(status),
   lastUsedAt: ref<string | null>(patch.lastUsedAt ?? null),
   fresh: ref(patch.fresh ?? false),
   slow: ref(patch.slow ?? false),
   checking: ref(false),
+  clientLabel: ref<string | null>(patch.clientLabel ?? null),
   start: vi.fn(),
+  startNew: vi.fn(),
   nudge: vi.fn(),
   checkNow: vi.fn(),
   stop: vi.fn(),
@@ -20,9 +24,10 @@ const buildConnection = (status: TokenConnectionStatus, patch: { lastUsedAt?: st
 
 const mounted: VueWrapper[] = []
 // 挂到 document 上：jsdom 给游离节点算的样式会缓存，v-show 切换后 isVisible 读到的还是旧值。
-const mountStatus = (connection: ReturnType<typeof buildConnection>, props: Record<string, unknown> = {}) => {
+const mountStatus = (connection: ReturnType<typeof buildConnection>, props: Record<string, unknown> = {}, slots: Record<string, string> = {}) => {
   const wrapper = mount(McpConnectionStatus, {
-    props: { connection: connection as unknown as TokenConnectionWatch, client: 'Claude Code', ...props },
+    props: { connection: connection as unknown as TokenConnectionWatch, ...props },
+    slots,
     global: { plugins: [i18n] },
     attachTo: document.body,
   })
@@ -48,13 +53,13 @@ describe('McpConnectionStatus', () => {
     expect(wrapper.find('.token-connection').exists()).toBe(false)
   })
 
-  it('announces the wait for the chosen client and checks again on request', async () => {
+  it('waits for the Agent after the prompt is copied and checks again on request', async () => {
     const connection = buildConnection('waiting')
     const wrapper = mountStatus(connection)
 
     const text = wrapper.get('[role="status"]')
-    expect(text.text()).toContain('等待 Claude Code 连接…')
-    expect(text.text()).toContain('运行命令并重启 Claude Code')
+    expect(text.text()).toContain('等待 Agent 完成配置…')
+    expect(text.text()).toContain('把提示词粘给你的 Agent')
     expect(tipsList(wrapper).isVisible()).toBe(false)
 
     await wrapper.get('[data-connection-action="check"]').trigger('click')
@@ -66,7 +71,45 @@ describe('McpConnectionStatus', () => {
     expect(wrapper.get('[data-connection-action="check"]').text()).toBe('检查中…')
   })
 
-  it('opens the client tips on demand, wired up for screen readers', async () => {
+  it('names the client that was just authorized, and stays generic when it gave no name', async () => {
+    const connection = buildConnection('authorized', { clientLabel: 'Claude Code' })
+    const wrapper = mountStatus(connection)
+
+    expect(wrapper.get('.token-connection').attributes('data-connection')).toBe('authorized')
+    expect(wrapper.text()).toContain('Claude Code 已获授权，等它连上…')
+    expect(wrapper.find('[data-connection-action="check"]').exists()).toBe(true)
+
+    connection.clientLabel.value = 'MCP OAuth'
+    await nextTick()
+    expect(wrapper.text()).toContain('已授权，等客户端连上…')
+
+    connection.clientLabel.value = 'x'.repeat(80)
+    await nextTick()
+    expect(wrapper.text()).toContain(`${'x'.repeat(39)}… 已获授权`)
+  })
+
+  it('confirms the new client with its time, drops the actions and shows the slot', () => {
+    const lastUsedAt = '2026-10-05T12:00:05Z'
+    const connection = buildConnection('connected', { fresh: true, lastUsedAt, slow: true, clientLabel: 'Cursor' })
+    const wrapper = mountStatus(connection, {}, { default: '<p class="quota">每 24 小时 200 次</p>' })
+
+    const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(Date.parse(lastUsedAt))
+    expect(wrapper.text()).toContain('已接入')
+    expect(wrapper.text()).toContain(`Cursor 在 ${time} 连上了 AIGC Radar。`)
+    expect(wrapper.get('.token-connection-extra .quota').text()).toBe('每 24 小时 200 次')
+    expect(wrapper.find('.token-connection-actions').exists()).toBe(false)
+    expect(tipsList(wrapper).isVisible()).toBe(false)
+  })
+
+  it('says the client connected without a name when OAuth registration gave none', () => {
+    const lastUsedAt = '2026-10-05T12:00:05Z'
+    const wrapper = mountStatus(buildConnection('connected', { fresh: true, lastUsedAt, clientLabel: 'MCP OAuth' }))
+
+    const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(Date.parse(lastUsedAt))
+    expect(wrapper.text()).toContain(`客户端在 ${time} 连上了 AIGC Radar。`)
+  })
+
+  it('opens the Agent tips on demand, wired up for screen readers', async () => {
     const wrapper = mountStatus(buildConnection('waiting'))
 
     expect(tipsToggle(wrapper).attributes('aria-expanded')).toBe('false')
@@ -77,8 +120,33 @@ describe('McpConnectionStatus', () => {
     expect(tipsList(wrapper).isVisible()).toBe(true)
     const tips = tipsList(wrapper).findAll('li').map((item) => item.text())
     expect(tips).toHaveLength(4)
+    expect(tips[0]).toContain('claude mcp login aigc-news')
+    expect(tips[1]).toContain('现在这个账号')
+    expect(tips[2]).toContain('重启客户端')
+    expect(tips[3]).toContain('「手动配置」')
+  })
+
+  it('waits for a manual configuration with its own wording and tips', async () => {
+    const connection = buildConnection('waiting')
+    const wrapper = mountStatus(connection, { variant: 'manual' })
+
+    expect(wrapper.text()).toContain('等待客户端连接…')
+    expect(wrapper.text()).toContain('把配置填进客户端并重启它')
+    await tipsToggle(wrapper).trigger('click')
+    const tips = tipsList(wrapper).findAll('li').map((item) => item.text())
+    expect(tips).toHaveLength(4)
     expect(tips[0]).toContain('重启客户端')
-    expect(tips[3]).toContain(`「${i18n.global.t('mcp.wizard.stepVerify')}」`)
+    expect(tips[1]).toContain('合法的 JSON')
+    expect(tips.join('')).not.toContain('第 3 步')
+
+    const lastUsedAt = '2026-10-05T12:00:05Z'
+    connection.lastUsedAt.value = lastUsedAt
+    connection.fresh.value = true
+    connection.status.value = 'connected'
+    await nextTick()
+    const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(Date.parse(lastUsedAt))
+    expect(wrapper.text()).toContain('已连接')
+    expect(wrapper.text()).toContain(`客户端在 ${time} 用这枚 Token 连上了 AIGC Radar。`)
   })
 
   it('opens the tips by itself after a long wait, but not again once the user closed them', async () => {
@@ -97,23 +165,14 @@ describe('McpConnectionStatus', () => {
   })
 
   it('shows the tips straight away once checking has stopped', () => {
-    const wrapper = mountStatus(buildConnection('paused'))
+    const agent = mountStatus(buildConnection('paused'))
+    expect(agent.get('.token-connection').attributes('data-connection')).toBe('paused')
+    expect(agent.text()).toContain('还没检测到接入')
+    expect(tipsList(agent).isVisible()).toBe(true)
 
-    expect(wrapper.get('.token-connection').attributes('data-connection')).toBe('paused')
-    expect(wrapper.text()).toContain('还没检测到连接')
-    expect(tipsList(wrapper).isVisible()).toBe(true)
-  })
-
-  it('confirms a connection seen just now with its time and drops the actions', () => {
-    const lastUsedAt = '2026-10-05T12:00:05Z'
-    const wrapper = mountStatus(buildConnection('connected', { fresh: true, lastUsedAt, slow: true }))
-
-    const time = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(Date.parse(lastUsedAt))
-    expect(wrapper.get('.token-connection').attributes('data-connection')).toBe('connected')
-    expect(wrapper.text()).toContain('已连接')
-    expect(wrapper.text()).toContain(`Claude Code 在 ${time} 用这枚 Token 连上了 AIGC Radar。`)
-    expect(wrapper.find('.token-connection-actions').exists()).toBe(false)
-    expect(tipsList(wrapper).isVisible()).toBe(false)
+    const manual = mountStatus(buildConnection('paused'), { variant: 'manual' })
+    expect(manual.text()).toContain('还没检测到连接')
+    expect(tipsList(manual).isVisible()).toBe(true)
   })
 
   it('tells returning dsh users how long ago their reused token was used', () => {
@@ -130,7 +189,7 @@ describe('McpConnectionStatus', () => {
     const wrapper = mountStatus(buildConnection('gone'), { variant: 'dsh' })
 
     expect(wrapper.text()).toContain('这枚 Token 已失效')
-    expect(wrapper.text()).toContain('刷新页面获取新命令')
+    expect(wrapper.text()).toContain('刷新页面后再复制一次')
     expect(wrapper.find('.token-connection-actions').exists()).toBe(false)
   })
 

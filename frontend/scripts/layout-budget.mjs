@@ -36,7 +36,7 @@ const PROFILES = [
     label: '桌面',
     sizes: [[1024, 640], [1350, 657], [1536, 730], [1920, 960]],
     // whole：首屏里上下沿都露出来、没被报头页脚盖住的条目，按宽度给 [中文, 英文] 两个下限。数据天天变的页
-    // 留了余量，简报钉在一期上。fits：这块要整个落在首屏里（会员对比表、MCP 的接入命令）。keys：走一遍列表键盘流。
+    // 留了余量，简报钉在一期上。fits：这块要整个落在首屏里（会员对比表、MCP 与 dsh 的主按钮）。keys：走一遍列表键盘流。
     // 订阅页要登录，游客会被送回首页，量不到页面本身，量的是游客看到的首页加登录框（gate）；
     // 自己点开的登录弹窗从 dock 上的账号按钮打开来测（login）。
     pages: [
@@ -46,9 +46,9 @@ const PROFILES = [
       { name: 'x', path: '/x', ready: '.tweet-card', whole: ['.tweet-card', { 1024: [2, 2], 1350: [3, 3], 1536: [4, 4], 1920: [6, 6] }], keys: true },
       { name: 'ui-library', path: '/ui-library', ready: '.ui-library__card', whole: ['.ui-library__card', { 1024: [3, 3], 1350: [10, 10], 1536: [12, 12], 1920: [21, 21] }] },
       { name: 'membership', path: '/membership', ready: '.membership-card--compare', fits: ['.membership-card--compare', 1350] },
-      { name: 'mcp', path: '/mcp', ready: '.command-preview', fits: ['.command-preview', 1024] },
+      { name: 'mcp', path: '/mcp', ready: '.agent-setup-cta', fits: ['.agent-setup-cta', 1024] },
       WEBSITES,
-      { name: 'dsh', path: '/dsh', ready: 'h1' },
+      { name: 'dsh', path: '/dsh', ready: '.agent-setup-cta', fits: ['.agent-setup-cta', 1024] },
       { name: 'not-found', path: '/no-such-page', ready: 'h1' },
       { name: 'login', path: '/privacy', ready: 'h1', taps: ['.dock-item--account'], dialog: LOGIN_DIALOG },
       GATE,
@@ -72,8 +72,8 @@ const PROFILES = [
       { name: 'ui-item', path: '/ui-library/ruixen-claude-chat-input', ready: 'dialog.ui-detail[open]', dialog: ['dialog.ui-detail[open]'] },
       { name: 'report', path: '/report?date=2026-10-03', ready: '.report-section', seen: ['.report-section', { 360: [1, 1], 390: [1, 1], 430: [1, 1] }] },
       { name: 'x', path: '/x', ready: '.tweet-card', seen: ['.tweet-card', { 360: [1, 1], 390: [1, 1], 430: [1, 1] }] },
-      { name: 'mcp', path: '/mcp', ready: 'h1' },
-      { name: 'dsh', path: '/dsh', ready: 'h1' },
+      { name: 'mcp', path: '/mcp', ready: '.agent-setup-cta' },
+      { name: 'dsh', path: '/dsh', ready: '.agent-setup-cta' },
       { name: 'membership', path: '/membership', ready: 'h1' },
       { name: 'contact', path: '/contact', ready: 'h1' },
       { name: 'paper', path: '/papers/bf97c1cb0bd009600eb3af2e676883cc/read', ready: 'h1' },

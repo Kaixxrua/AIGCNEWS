@@ -1,0 +1,120 @@
+@media (min-width: 1024px) {
+  /* ── /mcp and /dsh (agent setup): the page title on its brush with the slips and the facts beside it, the headline
+     and the description under them; then two columns. At the left the hero card: a lime tag pinned over its top rule,
+     the one lime button that copies the setup prompt for the reader's own Agent, the prompt behind a toggle, three
+     panels of what happens next and the connection status. At the right the fallback cards. The pages flow and
+     scroll instead of fitting the viewport. Shared pieces are here; each page's frames are in mcp.css and dsh.css. ── */
+  #app .app-shell--comic-page .agent-page {
+    --agent-side: clamp(300px, 28%, 380px);
+    /* Hand-inked pieces (generated, see assets/comic/README.md) */
+    --agent-cta: url('/assets/comic/reg-submit.webp'); --agent-tag: url('/assets/comic/dsh-tag.webp');
+    --agent-pill: url('/assets/comic/mcp-pill.webp'); --agent-term: url('/assets/comic/mcp-term.webp');
+    --agent-disc-1: url('/assets/comic/mcp-disc-teal.webp'); --agent-disc-2: url('/assets/comic/mcp-disc-lavender.webp'); --agent-disc-3: url('/assets/comic/mcp-disc-sky.webp');
+    --cmd-frame: var(--agent-term);
+    background: transparent;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .agent-page {
+    --agent-cta: url('/assets/comic/reg-submit-night.webp'); --agent-tag: url('/assets/comic/dsh-tag-night.webp');
+    --agent-pill: url('/assets/comic/mcp-pill-night.webp'); --agent-term: url('/assets/comic/mcp-term-night.webp');
+    --agent-disc-1: url('/assets/comic/mcp-disc-teal-night.webp'); --agent-disc-2: url('/assets/comic/mcp-disc-lavender-night.webp'); --agent-disc-3: url('/assets/comic/mcp-disc-sky-night.webp');
+  }
+  #app .app-shell--comic-page .agent-page-scroll { padding: 4px 18px calc(var(--peel-clear) + 28px) 20px; }
+
+  /* Heading: the title on its brush, the slips and the facts on its row; the headline and the description under them. */
+  #app .app-shell--comic-page .agent-page-head {
+    display: grid; grid-template-columns: fit-content(440px) minmax(0, 1fr) auto; grid-template-areas: 'brush pills stats' 'title desc desc';
+    align-items: start; gap: 0 24px; margin: 0 0 26px;
+  }
+  #app .app-shell--comic-page .agent-page-brush { display: inline-block; grid-area: brush; justify-self: start; margin: 4px 36px 0 14px; font-size: 46px; line-height: 1.15; }
+  #app .app-shell--comic-page .agent-page-pills { grid-area: pills; align-self: end; gap: 14px; margin: 0 0 4px; padding-left: 2px; }
+  #app .app-shell--comic-page .agent-page-pills > li {
+    padding: 2px 22px 2px 24px; border: 0 solid transparent; border-radius: 0; background: transparent; color: var(--ink);
+    border-image: var(--agent-pill) 33 45 42 117 fill / 11px 15px 14px 39px / 2px 3px 5px 5px stretch;
+    font-size: 13.5px; font-style: italic; font-weight: 900; line-height: 20px; transform: rotate(-2.5deg);
+  }
+  #app .app-shell--comic-page .agent-page-title { grid-area: title; margin: 14px 0 0; font-size: 19px; font-weight: 800; line-height: 1.35; }
+  #app .app-shell--comic-page .agent-page-description { grid-area: desc; max-width: 620px; margin: 16px 0 0; font-size: 14px; line-height: 22px; }
+  #app .app-shell--comic-page .agent-page-stats { grid-area: stats; justify-self: end; align-self: center; }
+
+  /* Two columns: the hero and, under it, whatever the page adds (the examples on /mcp); the fallbacks at the right. */
+  #app .app-shell--comic-page .agent-page-grid {
+    grid-template-columns: minmax(0, 1fr) var(--agent-side); grid-template-areas: 'hero side' 'more side'; grid-template-rows: auto 1fr;
+    align-items: start; gap: 28px 32px;
+  }
+  #app .app-shell--comic-page .agent-page-hero { grid-area: hero; }
+  #app .app-shell--comic-page .agent-page-side { grid-area: side; gap: 26px; }
+  #app .app-shell--comic-page .agent-page-grid > .agent-examples { grid-area: more; }
+
+  /* The hero opens on its tag, pinned over the card's top rule; the copy keeps a readable measure. */
+  #app .app-shell--comic-page .agent-setup { gap: 16px; padding: 2px 30px 26px 28px; }
+  #app .app-shell--comic-page .agent-setup-lede { max-width: 660px; font-size: 15.5px; line-height: 25px; }
+  #app .app-shell--comic-page .agent-setup-kicker {
+    position: relative; isolation: isolate; margin: 0 0 0 -13px; padding: 2px 14px; border: 2px solid transparent; border-radius: 2px;
+    background: var(--acid); color: var(--acid-ink); font-size: 14px; line-height: 21px; transform: rotate(-2deg) skewX(-6deg);
+  }
+  #app .app-shell--comic-page .agent-setup-kicker::after {
+    content: ''; position: absolute; inset: -4px -4px -13px -6px; z-index: -1; pointer-events: none;
+    border: solid transparent; border-width: 7px 7px 16px 22px; border-image: var(--agent-tag) 21 21 48 66 / 7px 7px 16px 22px stretch;
+  }
+
+  /* The one button: the register page's lime bar with its hard shadow. */
+  #app .app-shell--comic-page .agent-setup-actions { gap: 12px 28px; }
+  #app .app-shell--comic-page .agent-setup-cta {
+    position: relative; isolation: isolate; min-height: 57px; padding: 0 36px 0 30px; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+    color: #01050f; font-size: 19px; font-style: italic; font-weight: 900; letter-spacing: .01em;
+  }
+  #app .app-shell--comic-page .agent-setup-cta::after {
+    content: ''; position: absolute; inset: -2px -8px -9px -2px; z-index: -1; pointer-events: none;
+    border: solid transparent; border-width: 11px 17px 18px 11px; border-image: var(--agent-cta) 33 51 54 33 fill / 11px 17px 18px 11px stretch;
+  }
+  :root[data-theme='dark'] #app .app-shell--comic-page .agent-setup-cta { color: var(--acid-ink); }
+  #app .app-shell--comic-page .agent-setup-cta:hover:not(:disabled) { box-shadow: none; transform: translate(-1px, -1px); }
+  #app .app-shell--comic-page .agent-setup-cta:active:not(:disabled) { box-shadow: none; transform: translate(1px, 1px); }
+  #app .app-shell--comic-page .agent-setup-cta-icon { width: 23px; height: 23px; }
+
+  /* The prompt, the manual configuration and the install line: a dark terminal in the hand-drawn term frame. */
+  #app .app-shell--comic-page .command-preview {
+    border: 0 solid transparent; border-radius: 5px; background: #10151c; box-shadow: none;
+    border-image: var(--cmd-frame) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+  }
+  #app .app-shell--comic-page .command-preview-term { padding: 13px 18px 14px; font-size: 13px; line-height: 21px; }
+
+  /* Three panels: each step's icon on a watercolour disc with its number on a lime badge, an inked arrow between. */
+  #app .app-shell--comic-page .agent-storyboard { gap: 14px 40px; margin: 6px 0 2px; }
+  #app .app-shell--comic-page .agent-storyboard-step { grid-template-columns: 48px minmax(0, 1fr); column-gap: 12px; }
+  #app .app-shell--comic-page .agent-storyboard-icon {
+    display: block; grid-column: 1; grid-row: 1 / span 2; width: 48px; height: 48px; padding: 13px; stroke-width: 2.3;
+    background: var(--agent-disc-1) center / 48px 48px no-repeat; color: #0b2233;
+  }
+  #app .app-shell--comic-page .agent-storyboard-step:nth-child(2) .agent-storyboard-icon { background-image: var(--agent-disc-2); color: #5a3ec0; }
+  #app .app-shell--comic-page .agent-storyboard-step:nth-child(3) .agent-storyboard-icon { background-image: var(--agent-disc-3); color: #245f9e; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .agent-storyboard-icon { color: #a5e8ec; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .agent-storyboard-step:nth-child(2) .agent-storyboard-icon { color: #c3b4fb; }
+  :root[data-theme='dark'] #app .app-shell--comic-page .agent-storyboard-step:nth-child(3) .agent-storyboard-icon { color: #9fd3f5; }
+  #app .app-shell--comic-page .agent-storyboard-num {
+    position: absolute; top: -5px; left: -7px; z-index: 1; width: 21px; height: 21px; border-width: 1.5px; font-size: 11.5px;
+  }
+  #app .app-shell--comic-page .agent-storyboard-title { grid-column: 2; grid-row: 1; align-self: end; font-size: 14.5px; font-weight: 900; line-height: 20px; }
+  #app .app-shell--comic-page .agent-storyboard-body { grid-column: 2; grid-row: 2; align-self: start; color: var(--ink); font-size: 12.5px; line-height: 18px; }
+  #app .app-shell--comic-page .agent-storyboard-step:not(:last-child)::after {
+    content: ''; position: absolute; top: 15px; right: -33px; width: 26px; height: 18px; background: var(--ink); opacity: .8; pointer-events: none;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 18' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 10.5c6-2.4 13-2.9 21-1.6'/%3E%3Cpath d='M17 3.5l6 5.6-6.6 4.9'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  /* Below 1280px the hero is narrower: the panels and their arrows close up. */
+  @media (max-width: 1279px) {
+    #app .app-shell--comic-page .agent-storyboard { column-gap: 30px; }
+    #app .app-shell--comic-page .agent-storyboard-step { grid-template-columns: 42px minmax(0, 1fr); column-gap: 10px; }
+    #app .app-shell--comic-page .agent-storyboard-icon { width: 42px; height: 42px; padding: 11px; background-size: 42px 42px; }
+    #app .app-shell--comic-page .agent-storyboard-step:not(:last-child)::after { top: 13px; right: -26px; width: 22px; height: 16px; }
+  }
+
+  /* Side cards: the title in heavy ink, the endpoint in the light term frame. */
+  #app .app-shell--comic-page .agent-card { gap: 10px; padding: 16px 22px 20px 20px; }
+  #app .app-shell--comic-page .agent-card-text { font-size: 14px; line-height: 22px; }
+  #app .app-shell--comic-page .agent-endpoint {
+    padding: 9px 14px; border: 0 solid transparent; border-radius: 5px; background: var(--paper);
+    border-image: var(--agent-term) 30 30 33 30 / 10px 10px 11px 10px / 2px 2px 3px 2px stretch;
+  }
+  /* The connection status under the storyboard, set off by a dashed rule. */
+  #app .app-shell--comic-page .agent-setup-status { padding-top: 14px; border-top: 2px dashed color-mix(in srgb, var(--rule-strong) 30%, transparent); }
+}

@@ -1,28 +1,29 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
-import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import i18n from '@/i18n'
 import DshView from './DshView.vue'
-import { mcpConnectionMessages } from '@/i18n/locales/mcpConnection'
 import { useAuthStore } from '@/stores/authStore'
 import type { AuthUser } from '@/stores/authStore'
 
 const freeUser: AuthUser = { user_id: 1, email: 'a@b.c', role: 'user', membership_tier: 'free' }
+const memberUser: AuthUser = { ...freeUser, membership_tier: 'member', membership_expires_at: null }
 
 const ensureDshMcpToken = vi.hoisted(() => vi.fn())
 const rotateDshMcpToken = vi.hoisted(() => vi.fn())
 const fetchMcpTokens = vi.hoisted(() => vi.fn())
-const copy = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const copyToClipboard = vi.hoisted(() => vi.fn())
+const copySensitiveToClipboard = vi.hoisted(() => vi.fn())
 const requestLogin = vi.hoisted(() => vi.fn())
 vi.mock('@/services/mcp/mcpTokenApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/mcp/mcpTokenApi')>()
   return { ...actual, ensureDshMcpToken, rotateDshMcpToken, fetchMcpTokens }
 })
-vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copy }) }))
+vi.mock('@/composables/useClipboard', () => ({ copyToClipboard, copySensitiveToClipboard, useClipboard: () => ({ copy: copyToClipboard }) }))
 vi.mock('@/composables/useToast', () => ({ showToast: vi.fn() }))
 vi.mock('@/composables/useLoginPrompt', () => ({ useLoginPrompt: () => ({ requestLogin }) }))
-// 桌面（≥1024px）打开就是接入命令台，手机与平板仍是两步向导；jsdom 没有 matchMedia，按标志切换。
+// 桌面（≥1024px）报头多一行统计；jsdom 没有 matchMedia，按标志切换。
 const viewport = vi.hoisted(() => ({ desktop: false }))
 vi.mock('@vueuse/core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@vueuse/core')>()
@@ -37,28 +38,10 @@ vi.mock('@/composables/useLiveCallCount', async () => {
   return { useLiveCallCount: () => ref(682) }
 })
 
-const messages = {
-  mcp: { copied: '已复制', copyFailed: '复制失败', tokenCreateFailed: 'Token 创建失败。', wizard: { prev: '上一步', next: '下一步', stepProgress: '{current}/{total}' }, dshPlugin: { methods: {
-    npm: { title: 'npm 最新版', description: '预构建。' }, github: { title: 'GitHub 源码', description: '源码。' },
-  } } },
-  dsh: {
-    eyebrow: 'AIGC RADAR FOR DSH', title: '在 dsh 终端里搜索 AI 项目', description: '登录后自动分配专属 Token。',
-    mcpLink: '改为配置 MCP', repository: 'GitHub 仓库', recommended: '推荐', copy: '复制安装命令',
-    capabilitiesKicker: '插件能力', capabilitiesTitle: '原生卡片与检索路由', capabilitiesDescription: '插件能力说明。',
-    authRestoring: '正在恢复登录状态…', authDegraded: '登录状态校验失败。', authRetry: '重试',
-    wizard: {
-      ariaLabel: 'dsh 接入向导',
-      stepInstall: '选择安装方式', stepInstallDescription: '选择安装方式。',
-      stepCommand: '获取接入命令', stepCommandDescription: '获取命令。',
-      tokenCreating: '正在获取你的专属 MCP Token…', tokenRetry: '重试',
-      tokenUnavailable: 'DSH Token 服务暂不可用。',
-      tokenRecovery: '旧版 Token 无法自动恢复。', tokenRotate: '重新生成 Token',
-      commandLabel: '安装命令', tokenCommandNote: '命令会写入 dsh 补丁配置。',
-      tokenReuseNote: 'Token 与账号绑定、跨刷新保持不变。',
-      vipHint: 'VIP 会员享更高调用次数。', vipCta: '升级 VIP',
-      memberStatus: '当前账号为 VIP 会员。',
-    },
-  },
+const TOKEN = 'aigc_mcp_view'
+const issued = {
+  token: TOKEN, reused: false,
+  token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null, created_at: '2026-10-01T08:00:00Z', last_used_at: null },
 }
 
 const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -66,118 +49,137 @@ const router = createRouter({ history: createMemoryHistory(), routes: [
   { path: '/mcp', component: { template: '<div />' } },
   { path: '/membership', component: { template: '<div />' } },
 ] })
-const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...messages, ...mcpConnectionMessages['zh-CN'] } } })
 
+const mounted: VueWrapper[] = []
 const mountView = async () => {
   // 组件必须与测试体共享同一个 active pinia，否则各自读到不同的 auth store
   await router.push('/dsh'); await router.isReady()
-  const wrapper = mount(DshView, { global: { plugins: [router, i18n, getActivePinia()!] } })
+  const wrapper = mount(DshView, { global: { plugins: [router, i18n, getActivePinia()!] }, attachTo: document.body })
+  mounted.push(wrapper)
   await flushPromises(); return wrapper
 }
+const signIn = (user: AuthUser = freeUser) => {
+  const auth = useAuthStore()
+  auth.status = 'authenticated'
+  auth.user = user
+}
+const cta = (wrapper: VueWrapper) => wrapper.get('.agent-page-hero .agent-setup-cta')
 
 beforeEach(() => {
-  ensureDshMcpToken.mockReset()
+  i18n.global.locale.value = 'zh-CN'
+  ensureDshMcpToken.mockReset().mockResolvedValue(issued)
   rotateDshMcpToken.mockReset()
   fetchMcpTokens.mockReset().mockResolvedValue([])
-  copy.mockClear()
+  copyToClipboard.mockReset().mockResolvedValue(undefined)
+  copySensitiveToClipboard.mockReset().mockResolvedValue(undefined)
   requestLogin.mockClear()
   setActivePinia(createPinia())
 })
 
+afterEach(() => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
+})
+
 describe('DshView', () => {
-  it('renders the wizard for anonymous visitors without requesting login on mount', async () => {
-    const auth = useAuthStore()
-    auth.status = 'anonymous'
+  it('opens on the one button for guests without requesting login or a token', async () => {
+    useAuthStore().status = 'anonymous'
     const wrapper = await mountView()
 
     expect(router.currentRoute.value.path).toBe('/dsh')
+    expect(cta(wrapper).text()).toBe('登录后复制提示词')
+    expect(wrapper.get('.agent-page-side .dsh-manual .agent-manual-toggle').attributes('aria-expanded')).toBe('false')
     expect(requestLogin).not.toHaveBeenCalled()
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
-    expect(wrapper.text()).toContain('npm 最新版')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
+    // 两步向导与命令台都已撤下。
+    expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
+    expect(wrapper.find('.dsh-desk').exists()).toBe(false)
   })
 
-  it('shows the wizard to late-resolving anonymous sessions without forcing login', async () => {
+  it('shows the setup to late-resolving anonymous sessions without forcing login', async () => {
     const auth = useAuthStore()
     auth.status = 'initializing'
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('正在恢复登录状态…')
-    expect(router.currentRoute.value.path).toBe('/dsh')
+    expect(wrapper.find('.agent-setup').exists()).toBe(false)
+    expect(wrapper.find('.dsh-manual').exists()).toBe(false)
 
     auth.status = 'anonymous'
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/dsh')
     expect(requestLogin).not.toHaveBeenCalled()
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
+    expect(wrapper.find('.agent-setup').exists()).toBe(true)
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
   })
 
-  it('defers the login prompt to the wizard next step for guests', async () => {
-    const auth = useAuthStore()
-    auth.status = 'anonymous'
+  it('asks guests to sign in only when they reach for the prompt', async () => {
+    useAuthStore().status = 'anonymous'
     const wrapper = await mountView()
 
-    await wrapper.findAll('button').find((b) => b.text().includes('下一步'))!.trigger('click')
-    await flushPromises()
-
+    await cta(wrapper).trigger('click')
     expect(requestLogin).toHaveBeenCalledWith('/dsh')
-    expect(wrapper.text()).toContain('1/2')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
+    expect(copySensitiveToClipboard).not.toHaveBeenCalled()
   })
 
-  it('auto-ensures the token when a guest signs in while staying on the page', async () => {
-    ensureDshMcpToken.mockResolvedValue({
-      token: 'aigc_mcp_view', reused: false,
-      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
-    })
-    const auth = useAuthStore()
-    auth.status = 'anonymous'
+  it('fetches the token when a guest signs in while staying on the page', async () => {
+    useAuthStore().status = 'anonymous'
     const wrapper = await mountView()
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
 
-    auth.status = 'authenticated'
-    auth.user = freeUser
+    signIn()
     await flushPromises()
 
     expect(ensureDshMcpToken).toHaveBeenCalledOnce()
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
+    expect(cta(wrapper).text()).toBe('复制给 Agent 的配置提示词')
   })
 
   it('fails closed while auth is degraded and never touches the token API', async () => {
     const auth = useAuthStore()
     auth.status = 'degraded'
+    const initFromStorage = vi.spyOn(auth, 'initFromStorage').mockResolvedValue()
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('登录状态校验失败。')
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
+    expect(wrapper.text()).toContain('登录状态校验失败')
+    expect(wrapper.find('.agent-setup').exists()).toBe(false)
+    expect(wrapper.find('.dsh-manual').exists()).toBe(false)
     expect(router.currentRoute.value.path).toBe('/dsh')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
+
+    await wrapper.get('.agent-page-status .agent-btn').trigger('click')
+    expect(initFromStorage).toHaveBeenCalledOnce()
   })
 
-  it('mounts the wizard and auto-ensures the token once authenticated', async () => {
-    ensureDshMcpToken.mockResolvedValue({
-      token: 'aigc_mcp_view', reused: false,
-      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
-    })
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
+  it('fetches the token once for a signed-in reader, points a free reader at VIP, and keeps the token off the page', async () => {
+    signIn()
     const wrapper = await mountView()
 
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(true)
     expect(ensureDshMcpToken).toHaveBeenCalledOnce()
-    // Free 用户看到 VIP 提示，但流程不被阻断
-    expect(wrapper.get('a[href="/membership"]').text()).toContain('升级 VIP')
+    expect(wrapper.get('a[href="/membership"]').text()).toBe('升级 VIP')
+    expect(wrapper.findAll('.command-slot--filled').length).toBeGreaterThan(0)
+    expect(wrapper.html()).not.toContain(TOKEN)
+  })
+
+  it('tells a member their quota is already the highest', async () => {
+    signIn(memberUser)
+    const wrapper = await mountView()
+
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.get('.dsh-quota-hint--member').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
+  })
+
+  it('drops the token as soon as the reader signs out', async () => {
+    signIn()
+    const wrapper = await mountView()
+    expect(wrapper.findAll('.command-slot--filled').length).toBeGreaterThan(0)
+
+    useAuthStore().status = 'anonymous'
+    await flushPromises()
+    expect(cta(wrapper).text()).toBe('登录后复制提示词')
+    expect(wrapper.find('.command-slot--filled').exists()).toBe(false)
   })
 
   it('links to MCP and the repository', async () => {
-    ensureDshMcpToken.mockResolvedValue({
-      token: 'aigc_mcp_view', reused: true,
-      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
-    })
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
+    signIn()
     const wrapper = await mountView()
 
     expect(wrapper.get('a[href="/mcp"]').text()).toBe('改为配置 MCP')
@@ -191,30 +193,15 @@ describe('DshView on desktop', () => {
   beforeEach(() => { viewport.desktop = true })
   afterEach(() => { viewport.desktop = false })
 
-  it('opens on the command desk with the stats strip instead of the wizard', async () => {
-    const auth = useAuthStore()
-    auth.status = 'anonymous'
+  it('heads the page with the stats strip', async () => {
+    useAuthStore().status = 'anonymous'
     const wrapper = await mountView()
+    const stats = wrapper.findAll('.dsh-stats .dsh-stat')
 
-    expect(wrapper.find('.dsh-desk').exists()).toBe(true)
-    expect(wrapper.find('.dsh-wizard').exists()).toBe(false)
-    expect(wrapper.findAll('.dsh-stats .dsh-stat')).toHaveLength(4)
-    expect(wrapper.get('.command-preview-term').text()).toContain('dsh plugin --profile web add dsh-aigc-radar && printf')
+    expect(stats).toHaveLength(4)
+    expect(stats[1]!.get('strong').text()).toBe('2')
+    expect(stats[2]!.get('strong').text()).toBe('200')
+    expect(stats[3]!.get('strong').text()).toBe('8,000')
     expect(ensureDshMcpToken).not.toHaveBeenCalled()
-  })
-
-  it('fetches the token for signed-in readers and keeps it off the page', async () => {
-    ensureDshMcpToken.mockResolvedValue({
-      token: 'aigc_mcp_view', reused: false,
-      token_metadata: { id: 21, token_hint: 'h', scopes: [], client_type: 'other', client_label: 'dsh-aigc-radar', expires_at: null, revoked_at: null },
-    })
-    const auth = useAuthStore()
-    auth.status = 'authenticated'
-    auth.user = freeUser
-    const wrapper = await mountView()
-
-    expect(ensureDshMcpToken).toHaveBeenCalledOnce()
-    expect(wrapper.get('.dsh-desk-side').classes()).toContain('dsh-desk-side--ready')
-    expect(wrapper.html()).not.toContain('aigc_mcp_view')
   })
 })

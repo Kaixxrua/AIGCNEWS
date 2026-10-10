@@ -233,4 +233,111 @@ describe('useTokenConnectionWatch', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     expect(fetchTokens).not.toHaveBeenCalled()
   })
+
+  describe('startNew (after copying the agent prompt)', () => {
+    const old = token({ id: 3, client_label: 'Cursor', created_at: '2026-10-01T08:00:00Z', last_used_at: '2026-10-05T11:00:00Z' })
+
+    it('records the existing tokens at once, then sees the client authorize and connect', async () => {
+      const fetchTokens = vi.fn().mockResolvedValue([old])
+      const { watch } = setup(fetchTokens)
+      watch.startNew()
+      expect(watch.status.value).toBe('waiting')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchTokens).toHaveBeenCalledTimes(1)
+
+      fetchTokens.mockResolvedValue([old, token({ id: 9, client_label: 'Codex' })])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('authorized')
+      expect(watch.clientLabel.value).toBe('Codex')
+
+      fetchTokens.mockResolvedValue([old, token({ id: 9, client_label: 'Codex', last_used_at: '2026-10-05T12:00:05Z' })])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('connected')
+      expect(watch.fresh.value).toBe(true)
+      expect(watch.clientLabel.value).toBe('Codex')
+      expect(watch.lastUsedAt.value).toBe('2026-10-05T12:00:05Z')
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fetchTokens).toHaveBeenCalledTimes(3)
+    })
+
+    it('does not mistake an existing token for the new client', async () => {
+      const fetchTokens = vi.fn().mockResolvedValue([old, token({ id: 4, client_label: 'dsh-aigc-radar' })])
+      const { watch } = setup(fetchTokens)
+      watch.startNew({ ignoreLabels: ['dsh-aigc-radar'] })
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('waiting')
+
+      fetchTokens.mockResolvedValue([old, token({ id: 4, client_label: 'dsh-aigc-radar', last_used_at: '2026-10-05T12:00:02Z' })])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('waiting')
+
+      fetchTokens.mockResolvedValue([{ ...old, last_used_at: '2026-10-05T12:00:04Z' }])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('connected')
+      expect(watch.clientLabel.value).toBe('Cursor')
+    })
+
+    it('connects at once when the client authorized before the page started watching', async () => {
+      const added = token({ id: 9, client_label: 'Claude Code', created_at: '2026-10-05T11:58:00Z', last_used_at: '2026-10-05T11:58:30Z' })
+      const { watch } = setup(vi.fn().mockResolvedValue([old, added]))
+      watch.startNew({ sinceMs: NOW - 5 * 60_000 })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(watch.status.value).toBe('connected')
+      expect(watch.clientLabel.value).toBe('Claude Code')
+    })
+
+    it('goes back to waiting when the authorized token disappears', async () => {
+      const fetchTokens = vi.fn().mockResolvedValue([])
+      const { watch } = setup(fetchTokens)
+      watch.startNew()
+      await vi.advanceTimersByTimeAsync(0)
+      fetchTokens.mockResolvedValue([token({ id: 9, client_label: 'Codex' })])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('authorized')
+
+      fetchTokens.mockResolvedValue([token({ id: 9, client_label: 'Codex', revoked_at: '2026-10-05T12:00:05Z' })])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('waiting')
+      expect(watch.clientLabel.value).toBeNull()
+    })
+
+    it('pauses after ten minutes, but keeps an authorized client and lets the user check again', async () => {
+      const fetchTokens = vi.fn().mockResolvedValue([])
+      const { watch } = setup(fetchTokens)
+      watch.startNew()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(watch.slow.value).toBe(true)
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(watch.status.value).toBe('paused')
+
+      const calls = fetchTokens.mock.calls.length
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fetchTokens).toHaveBeenCalledTimes(calls)
+
+      fetchTokens.mockResolvedValue([token({ id: 9, client_label: 'Codex' })])
+      watch.checkNow()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(watch.status.value).toBe('authorized')
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(watch.status.value).toBe('authorized')
+    })
+
+    it('starts over with a fresh baseline when started again after connecting', async () => {
+      const first = token({ id: 9, client_label: 'Codex', last_used_at: '2026-10-05T12:00:02Z' })
+      const fetchTokens = vi.fn().mockResolvedValue([])
+      const { watch } = setup(fetchTokens)
+      watch.startNew()
+      await vi.advanceTimersByTimeAsync(0)
+      fetchTokens.mockResolvedValue([first])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('connected')
+
+      watch.startNew()
+      expect(watch.status.value).toBe('waiting')
+      expect(watch.clientLabel.value).toBeNull()
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(watch.status.value).toBe('waiting')
+    })
+  })
 })

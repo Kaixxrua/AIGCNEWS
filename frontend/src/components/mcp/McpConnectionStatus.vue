@@ -11,30 +11,39 @@ import { vSwap } from '@/motion/swap'
 import RollText from '@/motion/RollText.vue'
 
 /**
- * 接入命令旁的连接状态：令牌交给用户后显示「等待 X 连接… → 已连接」，等久了（或停止自动检测后）自动展开排障提示。
- * 状态由控制器里的 useTokenConnectionWatch 维护（只在页面可见时轮询），这里只管显示。
- * /mcp（client）与 /dsh（dsh）共用；外层已是 aria-live 区域时传 live=false，免得读屏读两遍。
+ * 接入回显：交出提示词或令牌后显示「等待… → 已接入」，等久了（或停止自动检测后）自动展开排障提示。
+ * 状态由 useTokenConnectionWatch 维护（只在页面可见时轮询），这里只管显示。三种用法：
+ * - agent：/mcp「复制给 Agent」之后等新授权的客户端（startNew），中间多一步「已授权，等它连上」；
+ * - manual：/mcp 手动配置签发的令牌；dsh：/dsh 的专用令牌，以前连过的显示上次使用时间。
+ * 默认插槽拿到当前 face，排在说明文字下面（例如接入后的档位与额度）。外层已是 aria-live 区域时传 live=false，免得读屏读两遍。
  */
 installMcpConnectionMessages()
 
+/** OAuth 客户端注册时没报名字，后端（routes_mcp_oauth._FALLBACK_CLIENT_LABEL）记成这个。 */
+const UNNAMED_OAUTH_CLIENT = 'MCP OAuth'
+const CLIENT_NAME_MAX = 40
+
 const props = withDefaults(defineProps<{
   connection: TokenConnectionWatch
-  variant?: 'client' | 'dsh'
-  /** 客户端显示名（variant=client 时用）。 */
-  client?: string
+  variant?: 'agent' | 'manual' | 'dsh'
   live?: boolean
   /** 顶上一条虚线，与上方的复制按钮隔开；单独成块时关掉。 */
   divider?: boolean
-}>(), { variant: 'client', client: '', live: true, divider: true })
+}>(), { variant: 'agent', live: true, divider: true })
 
 const { t, locale } = useI18n()
-const { status, lastUsedAt, fresh, slow, checking, checkNow } = props.connection
+const { status, lastUsedAt, fresh, slow, checking, clientLabel, checkNow } = props.connection
 const tipsId = `token-connection-tips-${useId()}`
 
 // 以前连过的 dsh 令牌单独一种样子（seen）：不是这次亲眼看到连上，不播「连上」的盖章。
 const face = computed(() => (status.value === 'connected' && !fresh.value ? 'seen' : status.value))
-const clientName = computed(() => (props.variant === 'dsh' ? 'dsh' : props.client))
 const lastUsedMs = computed(() => parseTimestampMs(lastUsedAt.value))
+// 客户端名是 OAuth 注册时它自己报的（授权页上提示过未经核实），只拿来显示，太长的截断。
+const agentClient = computed(() => {
+  const label = clientLabel.value?.trim()
+  if (!label || label === UNNAMED_OAUTH_CLIENT) return ''
+  return label.length > CLIENT_NAME_MAX ? `${label.slice(0, CLIENT_NAME_MAX - 1)}…` : label
+})
 
 const timeOfDay = (ms: number | null) => (
   ms == null
@@ -45,45 +54,70 @@ const usedAgo = (ms: number | null) => (
   ms == null ? t('mcpConnection.justNow') : formatUsedAgo(ms, Date.now(), locale.value, t('mcpConnection.justNow'))
 )
 
-const title = computed(() => {
+const agentText = (part: 'title' | 'body') => {
+  const client = agentClient.value
+  const time = timeOfDay(lastUsedMs.value)
   switch (face.value) {
-    case 'waiting': return t('mcpConnection.waitingTitle', { client: clientName.value })
-    case 'connected': return t('mcpConnection.connectedTitle')
-    case 'seen': return t('mcpConnection.seenTitle')
-    case 'paused': return t('mcpConnection.pausedTitle')
-    case 'gone': return t('mcpConnection.goneTitle')
+    case 'waiting': return t(part === 'title' ? 'mcpConnection.agent.waitingTitle' : 'mcpConnection.agent.waitingBody')
+    case 'authorized':
+      if (part === 'body') return t('mcpConnection.agent.authorizedBody')
+      return client ? t('mcpConnection.agent.authorizedTitle', { client }) : t('mcpConnection.agent.authorizedTitleUnnamed')
+    case 'connected':
+      if (part === 'title') return t('mcpConnection.agent.connectedTitle')
+      return client ? t('mcpConnection.agent.connectedBody', { client, time }) : t('mcpConnection.agent.connectedBodyUnnamed', { time })
+    case 'paused': return t(part === 'title' ? 'mcpConnection.agent.pausedTitle' : 'mcpConnection.agent.pausedBody')
     default: return ''
   }
-})
+}
 
-const body = computed(() => {
+const tokenText = (part: 'title' | 'body') => {
   const dsh = props.variant === 'dsh'
+  const title = part === 'title'
   switch (face.value) {
-    case 'waiting': return dsh ? t('mcpConnection.waitingBodyDsh') : t('mcpConnection.waitingBody', { client: clientName.value })
-    case 'connected': return t('mcpConnection.connectedBody', { client: clientName.value, time: timeOfDay(lastUsedMs.value) })
-    case 'seen': return t('mcpConnection.seenBody', { time: usedAgo(lastUsedMs.value) })
-    case 'paused': return t('mcpConnection.pausedBody')
-    case 'gone': return dsh ? t('mcpConnection.goneBodyDsh') : t('mcpConnection.goneBody')
+    case 'waiting':
+      if (title) return dsh ? t('mcpConnection.waitingTitle', { client: 'dsh' }) : t('mcpConnection.manual.waitingTitle')
+      return dsh ? t('mcpConnection.waitingBodyDsh') : t('mcpConnection.manual.waitingBody')
+    case 'connected': {
+      const time = timeOfDay(lastUsedMs.value)
+      if (title) return t('mcpConnection.connectedTitle')
+      return dsh ? t('mcpConnection.connectedBody', { client: 'dsh', time }) : t('mcpConnection.manual.connectedBody', { time })
+    }
+    case 'seen': return title ? t('mcpConnection.seenTitle') : t('mcpConnection.seenBody', { time: usedAgo(lastUsedMs.value) })
+    case 'paused': return t(title ? 'mcpConnection.pausedTitle' : 'mcpConnection.pausedBody')
+    case 'gone': return title ? t('mcpConnection.goneTitle') : t(dsh ? 'mcpConnection.goneBodyDsh' : 'mcpConnection.goneBody')
     default: return ''
   }
-})
+}
 
-// 按最常见的原因排：没重启、没提问（dsh 插件第一次搜索才连）、命令没跑完、用的不是最新那条。
-const tips = computed(() => (props.variant === 'dsh'
-  ? [
+const title = computed(() => (props.variant === 'agent' ? agentText('title') : tokenText('title')))
+const body = computed(() => (props.variant === 'agent' ? agentText('body') : tokenText('body')))
+
+// 按最常见的原因排。Agent：授权页没打开、授权用错账号、没重启；dsh：没重启、没提问（插件第一次搜索才连）；
+// 手动配置：没重启、配置没合并好、用的不是最新那份。
+const tips = computed(() => {
+  switch (props.variant) {
+    case 'agent': return [
+      t('mcpConnection.tips.agentBrowser'),
+      t('mcpConnection.tips.agentAccount'),
+      t('mcpConnection.tips.restart'),
+      t('mcpConnection.tips.agentNetwork'),
+    ]
+    case 'dsh': return [
       t('mcpConnection.tips.dshRestart'),
       t('mcpConnection.tips.dshAsk'),
       t('mcpConnection.tips.dshConfig'),
       t('mcpConnection.tips.dshRotated', { rotate: t('dsh.wizard.tokenRotate') }),
     ]
-  : [
+    default: return [
       t('mcpConnection.tips.restart'),
-      t('mcpConnection.tips.shell'),
+      t('mcpConnection.tips.manualConfig'),
       t('mcpConnection.tips.latest'),
-      t('mcpConnection.tips.network', { verify: t('mcp.wizard.stepVerify') }),
-    ]))
+      t('mcpConnection.tips.network'),
+    ]
+  }
+})
 
-const canRetry = computed(() => face.value === 'waiting' || face.value === 'paused' || face.value === 'seen')
+const canRetry = computed(() => ['waiting', 'authorized', 'paused', 'seen'].includes(face.value))
 const tipsOpen = ref(false)
 let tipsTouched = false
 const tipsShown = computed(() => tipsOpen.value && canRetry.value)
@@ -106,6 +140,7 @@ watch(
       <p class="token-connection-title">{{ title }}</p>
       <p class="token-connection-body">{{ body }}</p>
     </div>
+    <div v-if="$slots.default" class="token-connection-extra"><slot :face="face" /></div>
     <div v-if="canRetry" class="token-connection-actions">
       <button type="button" class="token-connection-link" data-connection-action="check" :disabled="checking" @click="checkNow"><RollText :value="t(checking ? 'mcpConnection.checking' : 'mcpConnection.checkAgain')" /></button>
       <button type="button" class="token-connection-link" data-connection-action="tips" :aria-expanded="tipsShown" :aria-controls="tipsId" @click="toggleTips">{{ t('mcpConnection.tipsToggle') }}</button>
@@ -163,6 +198,19 @@ watch(
 
 .token-connection--paused .token-connection-dot { border-style: dashed; }
 
+/* 已授权、等客户端连上：半填的圆点，外圈接着往外扩。 */
+.token-connection--authorized .token-connection-dot { background: var(--acid-soft); }
+
+.token-connection--authorized .token-connection-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--rule-strong);
+  border-radius: 50%;
+  opacity: 0;
+  animation: token-connection-ping 1.8s cubic-bezier(.22, 1, .36, 1) infinite;
+}
+
 .token-connection--connected .token-connection-dot,
 .token-connection--seen .token-connection-dot {
   width: 18px;
@@ -186,8 +234,11 @@ watch(
 
 .token-connection-body { margin: 2px 0 0; }
 
+.token-connection-extra,
 .token-connection-actions,
 .token-connection-tips { grid-column: 2; }
+
+.token-connection-extra { min-width: 0; }
 
 .token-connection-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 
@@ -226,7 +277,8 @@ watch(
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .token-connection--waiting .token-connection-dot::after { animation: none; opacity: .35; transform: scale(1.5); }
+  .token-connection--waiting .token-connection-dot::after,
+  .token-connection--authorized .token-connection-dot::after { animation: none; opacity: .35; transform: scale(1.5); }
   .token-connection--connected .token-connection-dot { animation: none; }
 }
 </style>

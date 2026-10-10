@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { buildDshAgentPrompt } from './agentSetupPrompt'
 import { COMMAND_TOKEN_SLOT, splitCommandPreview, type CommandSegment } from './commandPreview'
-import { mcpClientOptions, mcpShellOptions } from './mcpClientCatalog'
-import { generateMcpClientCommand } from './mcpCommandGenerator'
+import { DSH_PLUGIN_INSTALL_METHODS, buildDshInstallLine } from './dshPlugin'
+import { buildManualMcpConfig } from './manualMcpConfig'
 
 const visibleText = (segments: CommandSegment[]) => segments.map((segment) => (segment.kind === 'text' ? segment.text : '')).join('')
 
@@ -15,27 +16,22 @@ describe('splitCommandPreview', () => {
     ])
   })
 
-  it('replaces the base64 payload of -EncodedCommand with one encoded segment', () => {
-    expect(splitCommandPreview('powershell -NoProfile -EncodedCommand QQBCAEMA= & echo done')).toEqual([
-      { kind: 'text', text: 'powershell -NoProfile -EncodedCommand ' },
-      { kind: 'encoded' },
-      { kind: 'text', text: ' & echo done' },
-    ])
-  })
-
   it('leaves a command without a slot as one text segment', () => {
     expect(splitCommandPreview('dsh plugin add dsh-aigc-radar')).toEqual([{ kind: 'text', text: 'dsh plugin add dsh-aigc-radar' }])
   })
 
-  // 每个客户端 × 每种终端：命令里总有 Token 占位或编码脚本占位，占位串和 base64 都不会漏成页面上的文字。
-  const combinations = mcpClientOptions.flatMap((client) => mcpShellOptions.map((shell) => [client.id, shell.id] as const))
+  // 页面上的三种预览：带 Token 的地方只剩占位，占位串本身不会漏成页面上的文字。
+  const previews = [
+    ...DSH_PLUGIN_INSTALL_METHODS.map((method) => [`dsh install (${method.id})`, buildDshInstallLine(method.command, COMMAND_TOKEN_SLOT)] as const),
+    ['manual MCP config', buildManualMcpConfig('https://aigcnews.cn/api/mcp', COMMAND_TOKEN_SLOT)] as const,
+    ['dsh agent prompt (zh)', buildDshAgentPrompt('zh-CN', COMMAND_TOKEN_SLOT)] as const,
+    ['dsh agent prompt (en)', buildDshAgentPrompt('en-US', COMMAND_TOKEN_SLOT)] as const,
+  ]
 
-  it.each(combinations)('%s in %s shows the token only as a slot', (clientId, shellId) => {
-    const client = mcpClientOptions.find((option) => option.id === clientId)!
-    const segments = splitCommandPreview(generateMcpClientCommand(client, 'https://aigcnews.cn/api/mcp', COMMAND_TOKEN_SLOT, shellId))
+  it.each(previews)('%s shows the token only as one slot', (_name, text) => {
+    const segments = splitCommandPreview(text)
 
-    expect(segments.some((segment) => segment.kind !== 'text')).toBe(true)
+    expect(segments.filter((segment) => segment.kind === 'token')).toHaveLength(1)
     expect(visibleText(segments)).not.toContain(COMMAND_TOKEN_SLOT)
-    expect(visibleText(segments)).not.toMatch(/-EncodedCommand\s+[A-Za-z0-9+/]/)
   })
 })
