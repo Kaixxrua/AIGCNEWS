@@ -73,6 +73,7 @@ describe('monitor presentation localization boundary', () => {
       ['errors', 'monitor.nav.errors', true],
       ['ai-ops', 'aiOpsTitle', true],
       ['visit-stats', 'monitor.nav.visitStats', true],
+      ['email-monitor', 'monitorActivity.email', true],
       ['collect', 'monitor.nav.collect', true],
       ['crawl', 'monitor.nav.crawl', true],
       ['enrichment', 'monitor.nav.enrichment', true],

@@ -90,7 +90,7 @@ const emit = defineEmits<{
     <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" :saves="saves" :peek="peek" />
     <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
-    <div v-if="isPreview" class="mt-5 space-y-3" role="note">
+    <div v-if="isPreview" class="auth-required-hint mt-5 space-y-3" role="note">
       <p class="text-sm text-stone-500">{{ t('memberContent.reportHint') }}</p>
       <button type="button" class="btn-primary" @click="emit('login')">{{ t('memberContent.loginContinue') }}</button>
     </div>

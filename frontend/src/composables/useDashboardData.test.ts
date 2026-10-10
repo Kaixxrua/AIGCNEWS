@@ -56,7 +56,7 @@ const mountDashboard = (overrides: DashboardOverrides = {}) => {
 describe('Dashboard request lifecycle contract', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 6, 27, 12))
+    vi.setSystemTime(new Date('2026-07-27T12:00:00+08:00'))
     Object.values(defaultDashboardApi).forEach(mock => mock.mockReset())
     liveStatsApi.fetchLiveStats.mockReset()
     defaultDashboardApi.fetchSummary.mockResolvedValue({ stats: { total_documents: 3 }, isFinalized: true, isEmbargoed: false })
@@ -283,7 +283,7 @@ describe('Dashboard request lifecycle contract', () => {
       rebuildXSnapshot: vi.fn(async () => ({ status: 'succeeded', message: 'ok', results: [], skipped_no_date: 0 })),
     }
     liveStatsApi.fetchLiveStats.mockResolvedValue({})
-    const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date(2026, 6, 27, 12).getTime() })
+    const mounted = mountDashboard({ dashboardApi: injectedApi, now: () => new Date('2026-07-27T12:00:00+08:00').getTime() })
     await flush()
     mounted.dashboard.activeTab.value = 'arxiv'
     await flush()

@@ -46,10 +46,23 @@ class PostgresIngestionTaskRepository:
                     """
                     UPDATE ingestion_tasks
                     SET status=%s, finished_at=%s, error_msg=%s, item_count=%s
-                    WHERE id=%s
+                    WHERE id=%s AND status='running'
                     """,
                     (status, _utcnow(), error_msg, item_count, task_id),
                 )
+
+    def interrupt_running_tasks(self, *, started_before: str) -> int:
+        """The singleton scheduler closes rows left by a previous process."""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """UPDATE ingestion_tasks
+                       SET status='failed', finished_at=%s,
+                           error_msg='interrupted: backend restarted before task completion'
+                       WHERE status='running' AND started_at::timestamptz < %s::timestamptz""",
+                    (_utcnow(), started_before),
+                )
+                return cursor.rowcount
 
     def get_task(self, task_id: int) -> dict[str, Any] | None:
         with self._database.transaction() as connection:

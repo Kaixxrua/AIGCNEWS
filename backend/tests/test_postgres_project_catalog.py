@@ -475,7 +475,7 @@ def test_representative_website_user_overrides_and_favorites_branch() -> None:
         source="website", user_id=7, favorites_only=True, enriched_only=True,
         category="other", subcategory="other_uncategorized", language="Python",
     )
-    sql, params = database.cursor.calls[1]
+    sql, params = database.cursor.calls[2]
     assert "user_tool_website_overrides uo" in sql
     assert "we.status = 'succeeded' OR uo.id IS NOT NULL OR utw.id IS NOT NULL" in sql
     assert "pf.id IS NOT NULL OR utw.id IS NOT NULL" in sql
@@ -760,7 +760,7 @@ def test_public_github_list_projects_retains_not_found_repos() -> None:
     for sql, _params in database.cursor.calls[1:]:
         rows_sql = sql.replace(image_column, "")
         assert "c.availability_status = 'active'" not in rows_sql
-        assert "c.availability_status" in rows_sql
+    assert "c.availability_status" in database.cursor.calls[-1][0]
 
 
 def test_lexical_candidate_repo_ids_retain_not_found_repos() -> None:

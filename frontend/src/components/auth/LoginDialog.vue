@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuthDialogTransition from '@/components/auth/AuthDialogTransition.vue'
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { useDialogFocus } from '@/composables/useDialogFocus'
 import { useDockSuppression } from '@/composables/useDockSuppression'
@@ -31,18 +32,13 @@ useDialogFocus(() => visible.value, dialogRef, close)
 
 <template>
   <Teleport to="body">
-    <Transition name="fade">
+    <AuthDialogTransition>
       <div v-if="visible" class="comic-auth fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" :aria-labelledby="titleId" @click.self="close">
         <!-- 卡片本体由 LoginForm 渲染（含右上角关闭与注册切换），这里只管遮罩与滚动容器。 -->
-        <div ref="dialogRef" class="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
+        <div ref="dialogRef" class="auth-dialog__panel relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto outline-none" tabindex="-1">
           <LoginForm :redirect="redirect" :title-id="titleId" @success="success" @close="close" @switch-to-register="emit('switch-to-register')" @switch-to-forgot-password="emit('switch-to-forgot-password')" />
         </div>
       </div>
-    </Transition>
+    </AuthDialogTransition>
   </Teleport>
 </template>
-
-<style scoped>
-.fade-enter-active, .fade-leave-active { transition: opacity .18s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
-</style>

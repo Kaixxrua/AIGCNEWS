@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from uuid import uuid4
 
+from backend.app.core.postgres_migrations import PostgresMigrationRunner, discover_migrations
 from backend.app.repositories.postgres_ai_ops_followup_repository import (
     PostgresAiOpsFollowupRepository,
     record_followup,
@@ -29,6 +31,36 @@ def translation(database, tag):
         return conn.execute("INSERT INTO x_translation_tasks (document_id,target_kind,source_tweet_id,source_text, "
                             "source_fingerprint,status,prompt_version) VALUES (%s,'outer',%s,'private',repeat('a',64), "
                             "'pending','v1') RETURNING id", (tag, tag)).fetchone()["id"]
+
+
+def test_followup_migration_preserves_existing_monitoring_data_and_migration_history(tmp_path, monkeypatch):
+    migrations = discover_migrations()
+    followup = next(item for item in migrations if item.filename.endswith("_ai_ops_followups.sql"))
+    for item in migrations:
+        if item.version < followup.version:
+            (tmp_path / item.filename).write_bytes(item.sql.encode("utf-8"))
+    # Bootstrap the guarded scratch database at the preceding schema version.
+    monkeypatch.setattr("backend.app.core.postgres_migrations.PostgresMigrationRunner",
+                        partial(PostgresMigrationRunner, migrations_dir=tmp_path))
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        runs = PostgresAiOpsRepository(db)
+        run = runs.create("manual")
+        with db.transaction() as conn:
+            history = conn.execute("SELECT * FROM app_schema_migrations ORDER BY version").fetchall()
+            event = conn.execute("INSERT INTO email_send_events (kind,outcome) VALUES ('otp','accepted') "
+                                 "RETURNING *").fetchone()
+        (tmp_path / followup.filename).write_bytes(followup.sql.encode("utf-8"))
+        runner = PostgresMigrationRunner(db, migrations_dir=tmp_path)
+        assert [item.filename for item in runner.apply()] == [followup.filename]
+        assert runner.apply() == []
+        with db.transaction() as conn:
+            assert conn.execute("SELECT * FROM app_schema_migrations WHERE version < %s ORDER BY version",
+                                (followup.version,)).fetchall() == history
+            assert conn.execute("SELECT * FROM email_send_events WHERE id=%s", (event["id"],)).fetchone() == event
+        assert runs.get(run)["status"] == "running"
+        record(db, run, "x_translation_retry", "queue", {})
+        assert PostgresAiOpsFollowupRepository(db).recent()[0]["status"] == "pending"
 
 
 def test_submitted_is_pending_then_verified_once_across_workers_after_cancellation():

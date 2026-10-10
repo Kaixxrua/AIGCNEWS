@@ -4,9 +4,11 @@ import unittest
 from datetime import time, timedelta
 from unittest.mock import MagicMock
 
+import pytest
+
 from backend.app.core import scheduler
 from backend.app.core.scheduler_triggers import DailyWindowIntervalTrigger
-from backend.app.services.scheduler_config_admin import SchedulerJobConfigProjection
+from backend.app.services.scheduler_config_admin import SchedulerConfigAdminService, SchedulerJobConfigProjection
 
 
 def _config(
@@ -39,6 +41,20 @@ def _runtime(*, running: bool = True, live_job: object | None = None):
 
 
 class ApplyConfigUpdateTests(unittest.TestCase):
+    def test_legacy_x_polling_interval_is_clamped_before_scheduling(self):
+        runtime, fake_scheduler = _runtime(live_job=MagicMock())
+        runtime.apply_config_update(_config("x_watchlist", interval=5))
+        trigger = fake_scheduler.reschedule_job.call_args.kwargs["trigger"]
+        assert trigger.interval == timedelta(minutes=15)
+
+    def test_admin_cannot_restore_x_polling_below_the_safe_minimum(self):
+        repository = MagicMock()
+        service = SchedulerConfigAdminService(repository)
+        with pytest.raises(ValueError, match="15"):
+            service.update_config("x_watchlist", start_time=time(0), end_time=time(23, 59),
+                                  interval_minutes=5, enabled=True)
+        repository.upsert_scheduler_job_config.assert_not_called()
+
     def test_reschedules_live_job_with_new_trigger(self) -> None:
         runtime, fake_scheduler = _runtime(live_job=MagicMock())
 

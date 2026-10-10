@@ -55,8 +55,8 @@ def test_oauth_password_setup_enables_login_preserves_identity_and_revokes_old_s
     response = account.client.post(SETUP, json=BODY)
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    account.otp.verify_otp.assert_awaited_once_with(EMAIL, "123456", consume=False, purpose="password_setup")
-    account.otp.consume_otp.assert_awaited_once_with(EMAIL, purpose="password_setup")
+    account.otp.verify_otp.assert_awaited_once_with(EMAIL, "123456", consume=True, purpose="password_setup")
+    account.otp.consume_otp.assert_not_awaited()
     updated = account.users.get_user_by_email(EMAIL)
     assert updated["password_login_enabled"] is True
     assert updated["hashed_password"] != BODY["new_password"]

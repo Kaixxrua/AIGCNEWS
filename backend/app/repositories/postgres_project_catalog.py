@@ -334,6 +334,7 @@ def _build_gh_branch(
     min_stars: int,
     enriched_only: bool,
     user_id: int | None,
+    count_only: bool = False,
 ) -> tuple[str, list[Any]]:
     """组装 github 分支 SELECT 与按 %s 占位顺序绑定的参数。"""
     date_params = _effective_metric_date_params()
@@ -389,6 +390,8 @@ def _build_gh_branch(
     select_columns = [*_GH_SELECT_COLUMNS, favorites, *_GH_SELECT_TAIL_COLUMNS]
     if strong_threshold:
         select_columns.insert(len(_GH_SELECT_COLUMNS), _strong_match_clause(strong_conditions))
+    if count_only:
+        select_columns = [_strong_match_clause(strong_conditions)] if strong_threshold else ["1"]
     select = (
         f"SELECT {','.join(select_columns)}"
         f"{_GH_SELECT_FROM} {hot_join} {user_join} WHERE {' AND '.join(filters)}"
@@ -403,6 +406,7 @@ def _build_web_branch(
     effective: dict[str, str],
     strong_threshold: int,
     user_id: int | None,
+    count_only: bool = False,
 ) -> tuple[str, list[Any]]:
     """组装 website 分支 SELECT 与按 %s 占位顺序绑定的参数。"""
     user_join = ""
@@ -426,6 +430,8 @@ def _build_web_branch(
     select_columns = [*web_columns, favorites, *_WEB_SELECT_TAIL_COLUMNS]
     if strong_threshold:
         select_columns.insert(len(web_columns), "TRUE::boolean has_strong_match")
+    if count_only:
+        select_columns = ["TRUE::boolean has_strong_match"] if strong_threshold else ["1"]
     select = (
         f"SELECT {','.join(select_columns)}"
         f"{_WEB_SELECT_FROM} {user_join} WHERE {' AND '.join(filters)}"
@@ -434,20 +440,24 @@ def _build_web_branch(
 
 
 def _build_union_queries(
-    parts: list[str], strong_threshold: int
+    parts: list[str], strong_threshold: int, count_parts: list[str] | None = None,
 ) -> tuple[str, str, list[Any]]:
     """把分支 SELECT 组装为 UNION ALL CTE，并生成 count/rows 两条查询。
 
     rows 查询保留 {order} 占位，由调用方替换为 ORDER BY 片段。
     """
     base = f"WITH project_rows AS ({' UNION ALL '.join(parts)})"
+    # Count only filter inputs: display subqueries (notably logo BLOB lookups)
+    # otherwise execute for every candidate before pagination.
+    count_base = f"WITH project_rows AS ({' UNION ALL '.join(count_parts or parts)})"
     if strong_threshold:
         base += ", counts AS (SELECT COUNT(*) AS total_all, COUNT(*) FILTER (WHERE has_strong_match) AS total_strong FROM project_rows)"
-        count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s"
+        count_base += ", counts AS (SELECT COUNT(*) FILTER (WHERE has_strong_match) AS total_strong FROM project_rows)"
+        count_sql = count_base + " SELECT COUNT(*) AS cnt FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s"
         rows_sql_prefix = base + " SELECT * FROM project_rows WHERE has_strong_match OR (SELECT total_strong FROM counts) < %s ORDER BY {order} LIMIT %s OFFSET %s"
         threshold_params: list[Any] = [strong_threshold]
     else:
-        count_sql = base + " SELECT COUNT(*) AS cnt FROM project_rows"
+        count_sql = count_base + " SELECT COUNT(*) AS cnt FROM project_rows"
         rows_sql_prefix = base + " SELECT * FROM project_rows ORDER BY {order} LIMIT %s OFFSET %s"
         threshold_params = []
     return count_sql, rows_sql_prefix, threshold_params
@@ -1157,7 +1167,7 @@ class PostgresProjectCatalogRepository:
             gh_filters.append("pf.id IS NOT NULL")
             web_filters.append("(pf.id IS NOT NULL OR utw.id IS NOT NULL)")
 
-        gh_select, gh_params = _build_gh_branch(
+        gh_args = dict(
             filters=gh_filters,
             filter_params=gh_filter_params,
             strong_conditions=gh_strong_conditions,
@@ -1168,22 +1178,29 @@ class PostgresProjectCatalogRepository:
             enriched_only=enriched_only,
             user_id=user_id,
         )
-        web_select, web_params = _build_web_branch(
+        gh_select, gh_params = _build_gh_branch(**gh_args)
+        gh_count, _ = _build_gh_branch(**gh_args, count_only=True)
+        web_args = dict(
             filters=web_filters,
             filter_params=web_filter_params,
             effective=effective,
             strong_threshold=strong_match_threshold,
             user_id=user_id,
         )
+        web_select, web_params = _build_web_branch(**web_args)
+        web_count, _ = _build_web_branch(**web_args, count_only=True)
         parts: list[str] = []
+        count_parts: list[str] = []
         params: list[Any] = []
         if source in {"all", "github"}:
             parts.append(gh_select)
+            count_parts.append(gh_count)
             params.extend(gh_params)
         if source in {"all", "website"}:
             parts.append(web_select)
+            count_parts.append(web_count)
             params.extend(web_params)
-        count_sql, rows_sql_prefix, threshold_params = _build_union_queries(parts, strong_match_threshold)
+        count_sql, rows_sql_prefix, threshold_params = _build_union_queries(parts, strong_match_threshold, count_parts)
         order, order_params = _resolve_order(sort=sort, scope=scope, q=q, candidates=candidates)
         with self._transaction() as connection:
             with connection.cursor() as cursor:
@@ -1317,25 +1334,32 @@ class PostgresProjectCatalogRepository:
         date_params = _effective_metric_date_params()
         start, end = _today_range()
         if source in {"all", "github"}:
-            today_sql = (
-                "SELECT COUNT(*) count FROM (SELECT c_top.repo_id"
-                " FROM github_repo_candidates c_top"
+            today_candidates = (
+                "SELECT c_top.repo_id FROM github_repo_candidates c_top"
                 " JOIN github_repo_enrichments ge_top ON ge_top.repo_id=c_top.repo_id"
                 " JOIN github_repo_daily_metrics gm_top ON gm_top.repo_id=c_top.repo_id"
                 f" AND gm_top.metric_date={_EFFECTIVE_METRIC_DATE_SQL}"
-                f" AND {_TOP_HEAT_GROWTH}>0"
-                " WHERE "
+                f" AND {_TOP_HEAT_GROWTH}>0 WHERE "
                 + (_GH_PUBLIC_SUCCEEDED_FILTER.replace("c.", "c_top.").replace("ge.", "ge_top.") if enriched_only else "COALESCE(c_top.stars,0)>=%s")
-                + f" ORDER BY gm_top.hot_score DESC NULLS LAST,{_TOP_HEAT_GROWTH} DESC NULLS LAST,"
-                + "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
-                f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
-                " JOIN github_repo_candidates c ON c.repo_id=top.repo_id"
-                " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
-                f" {gh_join}"
-                " WHERE TRUE"
-                f" {gh_filter}"
             )
-            today_params = date_params + ([] if enriched_only else [min_stars]) + gh_user
+            today_params = date_params + ([] if enriched_only else [min_stars])
+            if not favorites_only:
+                # Only the capped count is needed. Stop at 50 qualifying rows;
+                # ranking and rejoining the entire result cannot change this count.
+                today_sql = f"SELECT COUNT(*) count FROM ({today_candidates} LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
+            else:
+                # Favorites must intersect the globally ranked Top-N, so retain
+                # the ranking before applying the user's favorite filter.
+                today_sql = (
+                    f"SELECT COUNT(*) count FROM ({today_candidates}"
+                    f" ORDER BY gm_top.hot_score DESC NULLS LAST,{_TOP_HEAT_GROWTH} DESC NULLS LAST,"
+                    "gm_top.stars DESC NULLS LAST,c_top.full_name ASC"
+                    f" LIMIT {GITHUB_PROJECT_TODAY_LIMIT}) top"
+                    " JOIN github_repo_candidates c ON c.repo_id=top.repo_id"
+                    " JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id"
+                    f" {gh_join} WHERE TRUE {gh_filter}"
+                )
+                today_params += gh_user
         else:
             today_sql = (
                 "SELECT COUNT(*) count FROM tool_websites w"

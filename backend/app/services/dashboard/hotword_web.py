@@ -234,14 +234,26 @@ class PublicWebResearch:
 
     async def _search(self, query: str, recent: bool) -> list[str]:
         from ddgs import DDGS
+        from ddgs.exceptions import DDGSException
 
         def run() -> list[str]:
-            # These public engines were verified through the deployed outbound proxy.
             with DDGS(proxy=settings.outbound_proxy or None, timeout=10) as search:
                 region = "cn-zh" if re.search(r"[\u4e00-\u9fff]", query) else "us-en"
-                rows = search.text(query, backend="bing,yahoo", region=region,
-                                   timelimit="w" if recent else None, max_results=6)
-            return [str(row.get("href") or "") for row in rows[:6]]
+                last_error = None
+                # DDGS 9.16 can discard an unfinished provider after another
+                # fails. Query registered engines separately within our budget.
+                for backend in ("yahoo", "duckduckgo"):
+                    try:
+                        rows = search.text(query, backend=backend, region=region,
+                                           timelimit="w" if recent else None, max_results=6)
+                    except DDGSException as exc:
+                        last_error = exc
+                        continue
+                    if rows:
+                        return [str(row.get("href") or "") for row in rows[:6]]
+                if last_error:
+                    raise last_error
+                return []
 
         async with self._search_slots:
             async with asyncio.timeout(25):

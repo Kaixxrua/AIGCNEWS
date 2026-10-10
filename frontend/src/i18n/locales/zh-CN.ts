@@ -3,6 +3,20 @@ import { trackingZh } from './tracking'
 import { onboardingZh } from './onboarding'
 
 const overrides = {
+  loginContext: {
+    search: '登录后即可继续搜索，查找你需要的项目和资讯。',
+    projects: '登录后可收藏项目、搜索全库和继续翻页。',
+    moreProjects: '登录后即可继续浏览更多项目。',
+    favorites: '登录后可查看和同步你的项目收藏。',
+    websites: '登录后可管理你的网站收藏，换设备也能找到。',
+    report: '登录后可阅读完整简报，并订阅后续更新。',
+    subscriptions: '登录后可管理你的情报追踪和推送订阅。',
+    paper: '登录后可与 AI 讨论这篇论文。',
+    mcp: '登录后可配置专属凭证，连接你的工具和收藏。',
+    dsh: '登录后可创建专属连接，继续配置 DSH。',
+    checkout: '登录后可继续选择会员方案并完成订单。',
+    protected: '请先登录，再验证此页面所需的访问权限。',
+  },
   memberContent: {
     loginContinue: '免费登录后继续',
     searchLoginTitle: '搜索需要登录',

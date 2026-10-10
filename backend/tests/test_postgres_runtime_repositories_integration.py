@@ -137,6 +137,27 @@ def test_real_postgres_tasks_preserve_order_pagination_and_clear(repositories) -
     assert tasks.clear_all_tasks() == 2
 
 
+def test_restart_reconciles_only_previous_running_tasks_and_terminal_rows_are_stable(repositories):
+    _, tasks, _, _ = repositories
+    old = tasks.create_task("interrupted-old")
+    complete = tasks.create_task("already-complete")
+    tasks.finish_task(complete, item_count=4)
+    cutoff = datetime.now(timezone.utc).isoformat()
+    current = tasks.create_task("new-process")
+    try:
+        assert tasks.interrupt_running_tasks(started_before=cutoff) == 1
+        assert tasks.get_task(old)["status"] == "failed"
+        assert "restarted" in tasks.get_task(old)["error_msg"]
+        assert tasks.get_task(current)["status"] == "running"
+        tasks.finish_task(complete, status="failed", error_msg="late cancellation")
+        assert tasks.get_task(complete)["status"] == "success"
+        assert tasks.get_task(complete)["item_count"] == 4
+        assert tasks.interrupt_running_tasks(started_before=cutoff) == 0
+    finally:
+        with tasks._database.transaction() as connection:
+            connection.execute("DELETE FROM ingestion_tasks WHERE id=ANY(%s)", ([old, complete, current],))
+
+
 def test_real_postgres_snapshots_sync_filter_order_and_delete(repositories) -> None:
     documents, _, snapshots, _ = repositories
     documents.upsert_document(_document("github-one", source="github", rank_in_period=10))

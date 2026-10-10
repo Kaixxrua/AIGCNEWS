@@ -10,33 +10,7 @@ from backend.app.api import routes_auth
 from backend.app.api.dependencies import get_user_account_repository
 from backend.app.core.auth import verify_password
 from backend.app.services.email_service import EmailService, OtpDeliveryUnavailableError
-
-
-class FakeRedis:
-    def __init__(self) -> None:
-        self.values: dict[str, object] = {}
-        self.expirations: dict[str, int] = {}
-
-    async def get(self, key: str):
-        return self.values.get(key)
-
-    async def set(self, key: str, value: object, *, ex: int | None = None):
-        self.values[key] = value
-        if ex is not None:
-            self.expirations[key] = ex
-
-    async def delete(self, *keys: str):
-        for key in keys:
-            self.values.pop(key, None)
-            self.expirations.pop(key, None)
-
-    async def incr(self, key: str) -> int:
-        value = int(self.values.get(key, 0)) + 1
-        self.values[key] = value
-        return value
-
-    async def expire(self, key: str, seconds: int):
-        self.expirations[key] = seconds
+from backend.tests.otp_redis_fake import FakeRedis
 
 
 class EmailResetOtpTests(unittest.IsolatedAsyncioTestCase):
@@ -150,7 +124,7 @@ class PasswordResetRouteTests(unittest.TestCase):
         self.assertEqual(responses[0], responses[1])
         self.assertEqual(deliveries, [True, False])
 
-    def test_successful_reset_hashes_password_then_consumes_code(self) -> None:
+    def test_successful_reset_claims_code_then_hashes_password(self) -> None:
         repository = self.repository
         repository.get_user_by_email.return_value = {
             "id": 7,
@@ -179,9 +153,10 @@ class PasswordResetRouteTests(unittest.TestCase):
         self.assertEqual(kwargs["email"], "user@example.com")
         self.assertNotEqual(kwargs["hashed_password"], "Str0ng!Pass")
         self.assertTrue(verify_password("Str0ng!Pass", kwargs["hashed_password"]))
-        email_service.consume_otp.assert_awaited_once_with(
-            "user@example.com", purpose="password_reset"
+        email_service.verify_otp.assert_awaited_once_with(
+            "user@example.com", "123456", consume=True, purpose="password_reset"
         )
+        email_service.consume_otp.assert_not_awaited()
 
     def test_invalid_code_and_missing_account_share_response(self) -> None:
         results = []

@@ -5,8 +5,10 @@ import AuthPromptHost from '@/components/auth/AuthPromptHost.vue'
 import FallbackEntryNotice from '@/components/FallbackEntryNotice.vue'
 import RouteProgress from '@/components/RouteProgress.vue'
 import { useLocaleTransition } from './composables/useLocaleTransition'
+import { useAccountVisit } from './composables/useAccountVisit'
 
 const { isLocaleTransitioning } = useLocaleTransition()
+useAccountVisit()
 </script>
 
 <template>

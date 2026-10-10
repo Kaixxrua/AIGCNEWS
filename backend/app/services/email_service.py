@@ -8,6 +8,7 @@ import secrets
 import string
 
 from backend.app.core.config import settings
+from backend.app.monitoring.email_events import record_email_event
 from backend.app.services.email.message_renderer import EmailMessageRenderer
 from backend.app.services.email.otp_store import (
     OtpCooldownError,
@@ -141,6 +142,7 @@ class EmailService:
                 purpose,
                 email_lower,
             )
+            await record_email_event("otp", "failed", "NotConfigured")
             raise OtpDeliveryUnavailableError("邮件服务暂不可用，请稍后重试")
 
         use_tls, start_tls = self._transport.tls_options()
@@ -155,8 +157,10 @@ class EmailService:
         )
         try:
             await self._transport.send_plain(email_lower, subject, body)
+            await record_email_event("otp", "accepted")
             logger.info("[EMAIL] ✅ 验证码邮件已发送至 %s", email_lower)
         except SmtpDeliveryError as exc:
+            await record_email_event("otp", "failed", exc.error_type)
             cause = exc.__cause__ or exc
             logger.error(
                 "[EMAIL] ❌ 发送邮件失败 to=%s  error_type=%s  error=%s",
@@ -211,13 +215,16 @@ class EmailService:
                 to_email,
                 subject,
             )
+            await record_email_event("briefing", "failed", "NotConfigured")
             raise BriefingDeliveryError("SMTP 未配置，无法发送真实邮件")
 
         logger.info("[EMAIL] 正在发送简报邮件 to=%s subject=%s", to_email, subject)
         try:
             await self._transport.send_html(to_email, subject, html_body)
+            await record_email_event("briefing", "accepted")
             logger.info("[EMAIL] ✅ 简报邮件已发送至 %s", to_email)
         except SmtpDeliveryError as exc:
+            await record_email_event("briefing", "failed", exc.error_type)
             cause = exc.__cause__ or exc
             logger.error(
                 "[EMAIL] ❌ 简报邮件发送失败 to=%s  error_type=%s  error=%s",

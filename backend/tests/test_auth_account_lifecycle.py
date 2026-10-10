@@ -141,7 +141,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             issue_token=issue_token,
         )
 
-    async def test_registration_preserves_order_and_consumes_after_insert(self) -> None:
+    async def test_registration_preserves_order_and_claims_before_insert(self) -> None:
         result = await self.lifecycle.register(
             email="Reader@EXAMPLE.COM",
             email_code="123456",
@@ -153,7 +153,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "Reader@example.com", "123456", False, "registration"),
+                ("verify_otp", "Reader@example.com", "123456", True, "registration"),
                 ("get_user_by_email", "Reader@example.com"),
                 ("hash_password", "plain-secret"),
                 (
@@ -163,7 +163,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "user",
                     "读者甲",
                 ),
-                ("consume_otp", "Reader@example.com", "registration"),
+
             ],
         )
         self.assert_no_plaintext_secrets(result, "123456", "plain-secret", "stored-password-hash")
@@ -179,7 +179,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(
             self.events,
-            [("verify_otp", "reader@example.com", "123456", False, "registration")],
+            [("verify_otp", "reader@example.com", "123456", True, "registration")],
         )
 
         self.events.clear()
@@ -195,7 +195,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "reader@example.com", "123456", False, "registration"),
+                ("verify_otp", "reader@example.com", "123456", True, "registration"),
                 ("get_user_by_email", "reader@example.com"),
             ],
         )
@@ -349,11 +349,11 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.events,
             [
-                ("verify_otp", "reader@example.com", "654321", False, "password_reset"),
+                ("verify_otp", "reader@example.com", "654321", True, "password_reset"),
                 ("get_user_by_email", "reader@example.com"),
                 ("hash_password", "replacement-secret"),
                 ("update_user_password", 7, "reader@example.com", "stored-password-hash"),
-                ("consume_otp", "reader@example.com", "password_reset"),
+
             ],
         )
         self.assert_no_plaintext_secrets(
@@ -378,7 +378,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     self.events,
                     [
-                        ("verify_otp", "reader@example.com", "654321", False, "password_reset"),
+                        ("verify_otp", "reader@example.com", "654321", True, "password_reset"),
                         ("get_user_by_email", "reader@example.com"),
                     ],
                 )
@@ -444,7 +444,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.events,
             [
                 ("get_user_by_id", 7),
-                ("verify_otp", "reader@example.com", "654321", False, "password_change"),
+                ("verify_otp", "reader@example.com", "654321", True, "password_change"),
                 ("hash_password", "replacement-secret"),
                 ("update_user_password", 7, "reader@example.com", "stored-password-hash"),
                 ("get_user_by_id", 7),
@@ -454,7 +454,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     "email": "reader@example.com",
                     "pwd_ver": 4,
                 }),
-                ("consume_otp", "reader@example.com", "password_change"),
+
             ],
         )
         self.assert_no_plaintext_secrets(
@@ -480,7 +480,7 @@ class AccountLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.events,
             [
                 ("get_user_by_id", 7),
-                ("verify_otp", "reader@example.com", "000000", False, "password_change"),
+                ("verify_otp", "reader@example.com", "000000", True, "password_change"),
             ],
         )
 

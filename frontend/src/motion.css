@@ -64,6 +64,11 @@
   100% { opacity: 1; scale: 1; }
 }
 
+/* Login explanations arrive gently before the shared sign-in dialog opens. */
+:where(.projects-login-prompt, .website-tabs-login, .paper-read-shell .guest-cta, .auth-required-hint) {
+  animation: motion-rise 260ms var(--motion-ease-out) both;
+}
+
 /* 子项依次入场：延迟按序号递增，12 项之后不再累加，长列表也在半秒内铺满。 */
 .motion-stagger > * {
   animation: motion-rise 460ms var(--motion-ease-out) both;
@@ -100,4 +105,5 @@ html.theme-transitioning *::after { transition: none !important; }
   [data-indicator-mark]::before,
   [data-indicator-mark]::after { transition: none !important; }
   .motion-stagger > * { animation: none; }
+  :where(.projects-login-prompt, .website-tabs-login, .paper-read-shell .guest-cta, .auth-required-hint) { animation: none; }
 }

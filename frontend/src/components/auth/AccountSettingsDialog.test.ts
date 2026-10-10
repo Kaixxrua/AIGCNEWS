@@ -113,7 +113,9 @@ describe('AccountSettingsDialog', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true')
     expect(dialog.getAttribute('aria-labelledby')).toBe('account-settings-dialog-title')
     expect(dialog.textContent).toContain('reader@example.com')
-    expect(dialog.textContent).toContain('2026/01/02')
+    expect(dialog.textContent).toContain(new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(baseUser().created_at)))
     expect(dialog.textContent).toContain('邮箱验证')
     expect(dialog.textContent).toContain('已验证')
     expect(dialog.textContent).toContain('密码登录')

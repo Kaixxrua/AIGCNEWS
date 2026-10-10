@@ -20,7 +20,8 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
   const progressPhase = ref<PdfProgress['phase']>('idle')
   const pageEntries = ref<PdfPageEntry[]>([])
 
-  let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+  let loadingTask: pdfjsLib.PDFDocumentLoadingTask | null = null
+  let generation = 0
   let renderTask: pdfjsLib.RenderTask | null = null
   let resizeObserver: ResizeObserver | null = null
 
@@ -39,12 +40,22 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
     canvases.forEach(c => c.remove())
   }
 
-  const loadPdf = async (url: string) => {
+  const releaseDocument = () => {
+    resizeObserver?.disconnect()
+    resizeObserver = null
     renderTask?.cancel()
     renderTask = null
+    const previous = loadingTask
+    loadingTask = null
+    void previous?.destroy().catch((error) => console.warn('[PdfCanvasViewer] cleanup failed:', error))
+  }
+
+  const loadPdf = async (url: string) => {
+    const current = ++generation
+    releaseDocument()
 
     await nextTick()
-    if (!isMounted.value || !containerRef.value) {
+    if (current !== generation || !isMounted.value || !containerRef.value) {
       console.error('[PdfCanvasViewer] containerRef is null or unmounted after nextTick')
       return
     }
@@ -61,24 +72,25 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
     clearContainer()
 
     try {
-      const loadingTask = pdfjsLib.getDocument({
+      const task = pdfjsLib.getDocument({
         url: safeUrl,
         cMapUrl: new URL('pdfjs-dist/cmaps/', import.meta.url).toString(),
         cMapPacked: true,
       })
+      loadingTask = task
 
-      pdfDoc = await loadingTask.promise.catch((err) => {
+      const pdfDoc = await task.promise.catch((err) => {
         throw new Error(i18n.global.t('paper.pdfParseFailed', { detail: err?.message || String(err) }))
       })
 
-      if (!isMounted.value) return
+      if (current !== generation || !isMounted.value) return
 
       totalPages.value = pdfDoc.numPages
       progressPhase.value = 'rendering'
       emitProgress()
 
       for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-        if (!isMounted.value || !containerRef.value) break
+        if (current !== generation || !isMounted.value || !containerRef.value) break
 
         const page = await pdfDoc.getPage(pageNum).catch((err) => {
           throw new Error(i18n.global.t('paper.pdfPageFailed', { page: pageNum, detail: err?.message || String(err) }))
@@ -99,7 +111,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
         ].join(';')
         canvas.dataset.pageIndex = String(pageNum - 1)
 
-        if (!isMounted.value || !containerRef.value) break
+        if (current !== generation || !isMounted.value || !containerRef.value) break
         containerRef.value.appendChild(canvas)
 
         const ctx = canvas.getContext('2d')
@@ -112,7 +124,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
           }
         })
 
-        if (!isMounted.value) break
+        if (current !== generation || !isMounted.value) break
 
         pageEntries.value.push({
           canvas,
@@ -123,7 +135,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
         emitProgress()
       }
 
-      if (isMounted.value) {
+      if (current === generation && isMounted.value) {
         isLoading.value = false
         progressPhase.value = 'done'
         emitProgress()
@@ -131,7 +143,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[PdfCanvasViewer] Fatal error:', err)
-      if (isMounted.value) {
+      if (current === generation && isMounted.value) {
         errorMessage.value = msg
         isLoading.value = false
         progressPhase.value = 'error'
@@ -161,7 +173,8 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
 
     const targetEl = containerRef.value.parentElement?.parentElement ?? containerRef.value
     resizeObserver?.disconnect()
-    resizeObserver = new ResizeObserver(() => {
+    const observer = new ResizeObserver(() => {
+      if (resizeObserver !== observer || !isMounted.value) return
       const h = findAncestorWithHeight()
       if (h && (h as HTMLElement).offsetHeight > 10) {
         resizeObserver?.disconnect()
@@ -169,6 +182,7 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
         if (isMounted.value) loadPdf(url)
       }
     })
+    resizeObserver = observer
     resizeObserver.observe(targetEl)
     if (targetEl.parentElement) resizeObserver.observe(targetEl.parentElement)
   }
@@ -187,6 +201,8 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
   }
 
   const reset = () => {
+    ++generation
+    releaseDocument()
     isLoading.value = false
     errorMessage.value = ''
     pageEntries.value = []
@@ -198,11 +214,9 @@ export function usePdfDocumentRenderer(options: PdfDocumentRendererOptions) {
   }
 
   const unmount = () => {
+    ++generation
     isMounted.value = false
-    resizeObserver?.disconnect()
-    resizeObserver = null
-    renderTask?.cancel()
-    pdfDoc?.destroy()
+    releaseDocument()
   }
 
   return {

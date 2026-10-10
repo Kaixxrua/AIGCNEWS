@@ -126,11 +126,9 @@ class ChangePasswordRouteTests(unittest.TestCase):
         updated_hash = update[3]
         self.assertNotIn("replacement-secret", updated_hash)
         email_service.verify_otp.assert_awaited_once_with(
-            "reader@example.com", "123456", consume=False, purpose="password_change"
+            "reader@example.com", "123456", consume=True, purpose="password_change"
         )
-        email_service.consume_otp.assert_awaited_once_with(
-            "reader@example.com", purpose="password_change"
-        )
+        email_service.consume_otp.assert_not_awaited()
         serialized = response.content.decode()
         self.assertNotIn("replacement-secret", serialized)
         self.assertNotIn("123456", serialized)
@@ -225,7 +223,7 @@ class ChangePasswordRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         email_service.verify_otp.assert_awaited_once_with(
-            "reader@example.com", "123456", consume=False, purpose="password_change"
+            "reader@example.com", "123456", consume=True, purpose="password_change"
         )
 
     def test_change_password_ignores_stale_email_claim(self) -> None:
@@ -239,7 +237,7 @@ class ChangePasswordRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         email_service.verify_otp.assert_awaited_once_with(
-            "reader@example.com", "123456", consume=False, purpose="password_change"
+            "reader@example.com", "123456", consume=True, purpose="password_change"
         )
 
 

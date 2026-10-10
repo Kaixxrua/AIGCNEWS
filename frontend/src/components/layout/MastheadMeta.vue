@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useNow } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import RollingNumber from '@/components/dashboard/RollingNumber.vue'
 import { useTodayNewCount } from '@/composables/useTodayNewCount'
@@ -10,15 +11,16 @@ import { useTodayNewCount } from '@/composables/useTodayNewCount'
 const { t, locale } = useI18n()
 const { todayNewCount } = useTodayNewCount()
 
-/* 日期在挂载时定型，与仪表盘 todayStr 口径一致（跨零点不追切） */
-const mountedAt = new Date()
+/* 今日统计使用北京时间；定期刷新，长驻页面也能跨日。 */
+const now = useNow({ interval: 30_000 })
 const dateLine = computed(() =>
   new Intl.DateTimeFormat(locale.value, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     weekday: 'short',
-  }).format(mountedAt),
+    timeZone: 'Asia/Shanghai',
+  }).format(now.value),
 )
 </script>
 
