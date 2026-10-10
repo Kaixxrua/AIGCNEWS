@@ -340,6 +340,8 @@ export const useProjectCatalogController = (options: ProjectCatalogControllerOpt
       loading.value = false
       await replaceRoute(true)
       if (!activeGeneration(generation) || request !== projectRequestGeneration || !requiresCatalogLogin.value) return
+      // Typing a search shows the inline explanation; only its sign-in action opens the dialog.
+      if (debouncedQuery.value.trim()) return
       const target = options.currentRedirect?.() ?? '/projects'
       if (!loadOptions.preserveContent && target !== promptedLoginTarget) {
         promptedLoginTarget = target

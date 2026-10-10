@@ -4,6 +4,9 @@ import { onboardingEn } from './onboarding'
 const enUSCatalog = {
   memberContent: {
     loginContinue: 'Sign in for free to continue',
+    searchLoginTitle: 'Sign in to search',
+    searchLoginHint: 'Your search is saved. Sign in for free to see the results.',
+    searchLoginAction: 'Sign in and continue searching',
     projectsHint: 'Browse the first page freely. Sign in to search or view more pages, then continue where you left off.',
     reportHint: 'This is a briefing preview. Sign in for free to read the full issue.',
   },

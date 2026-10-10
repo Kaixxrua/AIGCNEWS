@@ -268,14 +268,44 @@ describe('public project member gates', () => {
     controller.page.value = page
     await controller.loadProjects()
     expect(api.fetchProjects).not.toHaveBeenCalled()
-    expect(login).toHaveBeenCalledWith(`/projects?q=${q}&page=${page}`)
+    expect(controller.requiresCatalogLogin.value).toBe(true)
+    if (q) expect(login).not.toHaveBeenCalled()
+    else expect(login).toHaveBeenCalledWith(`/projects?q=${q}&page=${page}`)
     await controller.loadProjects({ preserveContent: true })
-    expect(login).toHaveBeenCalledTimes(1)
+    expect(login).toHaveBeenCalledTimes(q ? 0 : 1)
     loggedIn.value = true
     vi.mocked(api.fetchProjects).mockResolvedValue(projectsResponse([githubItem()], 100))
     await controller.loadProjects()
     expect(api.fetchProjects).toHaveBeenCalledWith(expect.objectContaining({ q, page }))
     expect(controller.projects.value).toHaveLength(1)
+  })
+
+  it('keeps guest searches inline across edits and restores browsing when cleared', async () => {
+    const api = createApi()
+    const login = vi.fn()
+    const replaceRouteFromState = vi.fn()
+    const controller = useProjectCatalogController({ api, isLoggedIn: () => false,
+      navigateToLogin: login, replaceRouteFromState })
+
+    for (const query of ['android', 'android-use']) {
+      controller.searchQuery.value = query
+      controller.debouncedQuery.value = query
+      await controller.loadProjects()
+      expect(controller.searchQuery.value).toBe(query)
+      expect(controller.requiresCatalogLogin.value).toBe(true)
+    }
+    expect(login).not.toHaveBeenCalled()
+    expect(api.fetchProjects).not.toHaveBeenCalled()
+    expect(replaceRouteFromState).toHaveBeenCalledWith(true)
+
+    controller.searchQuery.value = ''
+    controller.debouncedQuery.value = ''
+    vi.mocked(api.fetchProjects).mockResolvedValue(projectsResponse([githubItem()]))
+    await controller.loadProjects()
+    expect(controller.requiresCatalogLogin.value).toBe(false)
+    expect(api.fetchProjects).toHaveBeenCalledWith(expect.objectContaining({ q: '', page: 1 }))
+    expect(controller.projects.value).toHaveLength(1)
+    expect(login).not.toHaveBeenCalled()
   })
 
   it('waits for session restoration before deciding whether to prompt', async () => {
