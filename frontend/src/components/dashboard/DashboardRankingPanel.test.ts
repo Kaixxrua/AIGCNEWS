@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardRankingPanel from './DashboardRankingPanel.vue'
 import i18n, { setAppLocale } from '@/i18n'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
+import { formatLocalTime } from '@/features/xboard/xBoardViewModel'
 
 const viewport = vi.hoisted(() => ({ mobile: true }))
 vi.mock('@vueuse/core', async (importOriginal) => {
@@ -158,6 +159,45 @@ describe('mobile ranking reading', () => {
     expect(panel.get('.ranking-link').attributes('href')).toBe(tweet.url)
     expect(panel.get('.ranking-title').text()).toBe(tweet.title)
     expect(panel.find('.ranking-summary').exists()).toBe(false)
+  })
+})
+
+describe('X ranking timestamps', () => {
+  const publishedAt = '2026-10-09T12:34:00Z'
+
+  it('replaces likes with local publish time on all desktop rows', async () => {
+    viewport.mobile = false
+    const panel = await render()
+    const docs = Array.from({ length: 10 }, (_, index) => ({
+      ...tweet, id: `tweet-${index}`, title: `Tweet ${index}`, likes: 4638,
+      published_at: publishedAt,
+    }))
+    await panel.setProps({ tabList: docs })
+
+    const times = panel.findAll('.ranking-time')
+    expect(times).toHaveLength(10)
+    expect(panel.findAll('.ranking-row--featured .ranking-time')).toHaveLength(3)
+    expect(panel.findAll('.ranking-row:not(.ranking-row--featured) .ranking-time')).toHaveLength(7)
+    expect(times.map(time => time.text())).toEqual(Array(10).fill(formatLocalTime(publishedAt)))
+    expect(times[0]!.attributes('datetime')).toBe(publishedAt)
+    expect(panel.find('.ranking-score').exists()).toBe(false)
+  })
+
+  it('shows time on mobile and hides missing or invalid X timestamps without showing likes', async () => {
+    const panel = await render({ ...tweet, likes: 4638, published_at: publishedAt })
+    expect(panel.get('.tweet-preview__time').text()).toBe(formatLocalTime(publishedAt))
+    expect(panel.get('.tweet-preview__time').attributes('datetime')).toBe(publishedAt)
+    await panel.setProps({ tabList: [{ ...tweet, likes: 4638, published_at: 'invalid' }] })
+    expect(panel.find('.tweet-preview__time').exists()).toBe(false)
+    expect(panel.find('.ranking-score').exists()).toBe(false)
+  })
+
+  it('retains the score for other sources', async () => {
+    viewport.mobile = false
+    const panel = await render()
+    await panel.setProps({ activeTab: 'github', tabList: [{ source: 'github', title: 'owner/repo', stars: 1200 }] })
+    expect(panel.find('.ranking-time').exists()).toBe(false)
+    expect(panel.get('.ranking-score').text()).toContain('1,200')
   })
 })
 
