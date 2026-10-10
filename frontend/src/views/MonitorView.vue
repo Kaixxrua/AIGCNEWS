@@ -30,6 +30,8 @@ import UiDiscoverySourcesPanel from '@/components/monitor/UiDiscoverySourcesPane
 import SiteContactPageConfigPanel from '@/components/monitor/SiteContactPageConfigPanel.vue'
 import SmtpConfigPanel from '@/components/monitor/SmtpConfigPanel.vue'
 import UserStatsPanel from '@/components/monitor/UserStatsPanel.vue'
+import AccountReturnVisitsPanel from '@/components/monitor/AccountReturnVisitsPanel.vue'
+import EmailMonitorPanel from '@/components/monitor/EmailMonitorPanel.vue'
 import VisitStatsPanel from '@/components/monitor/VisitStatsPanel.vue'
 import EmailPoolConfigPanel from '@/components/monitor/EmailPoolConfigPanel.vue'
 import XCredentialCard from '@/components/monitor/XCredentialCard.vue'
@@ -352,6 +354,9 @@ onUnmounted(dispose)
             @save="saveSchedulerConfig"
           />
         </template>
+        <template v-else-if="currentSection === 'email-monitor'">
+          <EmailMonitorPanel v-if="authStore.isAdmin" />
+        </template>
         <template v-else-if="currentSection === 'smtp'">
           <SmtpConfigPanel
             v-if="authStore.isAdmin"
@@ -482,6 +487,7 @@ onUnmounted(dispose)
         </template>
         <template v-else-if="currentSection === 'user-stats'">
           <UserStatsPanel v-if="authStore.isAdmin" />
+          <AccountReturnVisitsPanel v-if="authStore.isAdmin" />
         </template>
       </div>
     </div>

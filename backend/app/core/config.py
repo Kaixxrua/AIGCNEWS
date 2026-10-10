@@ -479,6 +479,7 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = "no-reply@example.com"
     SMTP_FROM_NAME: str = "AIGC_NEWS"
     SMTP_USE_TLS: bool = True
+    AIGCNEWS_OPS_ALERT_TO: str = ""
 
     # 邮件池（多服务商 failover + 本地配额护栏）：JSON 数组，非空时接管全部
     # 外发邮件；既有单 SMTP 配置（DB/env）自动并入为最低优先级兜底 entry。
