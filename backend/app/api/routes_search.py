@@ -16,6 +16,7 @@ from backend.app.api.dependencies import (
     get_document_repository,
     get_project_catalog_query_service,
 )
+from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
 from backend.app.domain.search_semantics import normalize_search_query
 from backend.app.repositories.briefing_repository import BriefingSearchReader
@@ -26,7 +27,7 @@ from backend.app.services.search.quick_search import quick_search
 router = APIRouter()
 
 
-@router.get("/search")
+@router.get("/search", dependencies=[Depends(RequireUser)])
 async def search_site(
     q: str = Query(..., min_length=1, max_length=120, description="搜索关键词"),
     limit: int = Query(default=5, ge=1, le=8),

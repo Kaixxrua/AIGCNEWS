@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, type Ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import { LATEST_LOOKBACK_DAYS, useReportController } from './useReportController'
 import type { ReportKey, ReportResponse } from '@/features/report/reportViewModel'
@@ -17,7 +17,9 @@ const withSetup = ({
   initialSource = null as ReportKey | null,
   now = () => EARLY_MORNING,
   load,
+  isLoggedIn,
 }: {
+  isLoggedIn?: Ref<boolean>
   issues?: Record<string, string>
   initialDate?: string | null
   initialSource?: ReportKey | null
@@ -34,6 +36,7 @@ const withSetup = ({
     setup() {
       controller = useReportController({
         operations: { loadCachedReport, connectReportStream: vi.fn() },
+        isLoggedIn,
         resetAutoScroll: vi.fn(),
         scrollToBottom: vi.fn(async () => {}),
         locale,
@@ -225,5 +228,28 @@ describe('useReportController failures', () => {
 
     expect(controller.reportContent.value).toBe('engineering')
     expect(controller.loadState.value).toBe('ready')
+  })
+})
+
+
+describe('briefing authentication transitions', () => {
+  it('reloads the same issue on login and removes full content synchronously on logout', async () => {
+    const loggedIn = ref(false)
+    const { controller, loadCachedReport, wrapper } = withSetup({
+      isLoggedIn: loggedIn, initialDate: '2026-10-02',
+      load: async ({ date }) => ({ ...issue(date, loggedIn.value ? 'FULL PRIVATE BODY' : 'Preview'), is_preview: !loggedIn.value }),
+    })
+    await flushPromises()
+    expect(controller.isPreview.value).toBe(true)
+    loggedIn.value = true
+    await flushPromises()
+    expect(controller.reportContent.value).toBe('FULL PRIVATE BODY')
+    expect(controller.isPreview.value).toBe(false)
+    expect(loadCachedReport.mock.lastCall?.[0].date).toBe('2026-10-02')
+    loggedIn.value = false
+    expect(controller.reportContent.value).toBe('')
+    await flushPromises()
+    expect(controller.reportContent.value).toBe('Preview')
+    wrapper.unmount()
   })
 })

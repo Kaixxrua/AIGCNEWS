@@ -103,6 +103,7 @@ vi.mock('@/composables/useProjectCatalogController', async () => {
     projects: ref([]),
     recommendBusyKey: ref(''),
     requiresPersonalLogin: ref(false),
+    requiresCatalogLogin: ref(false),
     savingEdit: ref(false),
     successMsg: ref(''),
     tagsLoading: ref(false),

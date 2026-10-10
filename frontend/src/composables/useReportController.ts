@@ -30,6 +30,7 @@ interface UseReportControllerOptions {
   resetAutoScroll: () => void
   scrollToBottom: () => Promise<void>
   locale: Ref<string>
+  isLoggedIn?: Readonly<Ref<boolean>>
   /** 初始选中日期（如 RSS 条目回链的 ?date=）；缺省时跟着最新一期走。 */
   initialDate?: string | null
   /** 初始选中的简报种类（如站内速查结果回链的 ?type=）；缺省为全部。 */
@@ -51,11 +52,13 @@ export const useReportController = ({
   resetAutoScroll,
   scrollToBottom,
   locale,
+  isLoggedIn,
   initialDate,
   initialSource,
   now = () => new Date(),
 }: UseReportControllerOptions) => {
   const reportContent = ref('')
+  const isPreview = ref(false)
   const isGenerating = ref(false)
   const isCached = ref(false)
   const errorMsg = ref('')
@@ -78,8 +81,9 @@ export const useReportController = ({
   let loadGeneration = 0
   let loadAbortController: AbortController | null = null
 
-  const settle = (state: ReportLoadState, date: string, content = '', from = '') => {
+  const settle = (state: ReportLoadState, date: string, content = '', from = '', preview = false) => {
     reportContent.value = content
+    isPreview.value = preview
     isCached.value = Boolean(content)
     issueDate.value = date
     fallbackFrom.value = from
@@ -110,7 +114,7 @@ export const useReportController = ({
         if (isStale()) return
         if (!data?.content) continue
         errorMsg.value = ''
-        settle('ready', date, data.content, latest && date !== today ? today : '')
+        settle('ready', date, data.content, latest && date !== today ? today : '', Boolean(data.is_preview))
         return
       }
       settle(first === today ? 'pending' : 'missing', first)
@@ -136,6 +140,8 @@ export const useReportController = ({
 
   const generate = async () => {
     if (isGenerating.value) return
+    const generation = ++loadGeneration
+    loadAbortController?.abort()
     isGenerating.value = true
     reportContent.value = ''
     errorMsg.value = ''
@@ -146,6 +152,7 @@ export const useReportController = ({
       date: selectedDate.value,
       locale: locale.value,
       onMessage: async (payload: unknown) => {
+        if (!isActive.value || generation !== loadGeneration) return
         const event = payload as ReportStreamEvent
         if (event.type === 'content' || event.type === 'chunk') {
           reportContent.value += coerceReportStreamText(event.data)
@@ -154,8 +161,9 @@ export const useReportController = ({
           errorMsg.value = String(event.data ?? 'Unknown error')
         }
       },
-      onDone: () => { isGenerating.value = false },
+      onDone: () => { if (generation === loadGeneration) isGenerating.value = false },
       onError: (error: unknown) => {
+        if (!isActive.value || generation !== loadGeneration) return
         errorMsg.value = String(error)
         isGenerating.value = false
       },
@@ -173,6 +181,13 @@ export const useReportController = ({
     loadAbortController = null
   })
 
+  if (isLoggedIn) watch(isLoggedIn, loggedIn => {
+    if (loadState.value === 'ready') followLatest = false
+    isGenerating.value = false
+    if (!loggedIn) reportContent.value = ''
+    void loadCachedReport()
+  }, { flush: 'sync' })
+
   watch([selectedSource, selectedDate, locale], ([source, date, nextLocale], [previousSource, previousDate, previousLocale]) => {
     const landed = landedDate
     landedDate = null
@@ -187,6 +202,7 @@ export const useReportController = ({
 
   return {
     reportContent,
+    isPreview,
     isGenerating,
     isCached,
     errorMsg,

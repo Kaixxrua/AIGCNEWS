@@ -87,6 +87,7 @@ export interface SubscriptionPlanApplyResponse {
 
 export interface ReportResponse {
   content: string
+  is_preview?: boolean
   content_zh?: string
   content_en?: string
   date: string

@@ -86,6 +86,7 @@ const { autoScroll, resetAutoScroll, scrollToBottom, resumeAutoScroll } = useFol
 const { connect } = useEventSource()
 const {
   reportContent,
+  isPreview,
   isGenerating,
   isCached,
   errorMsg,
@@ -102,7 +103,9 @@ const {
     // 那天没有这一期时接口回 404：交给控制器往前找或提示，不算读取失败
     loadCachedReport: async (params, signal) => {
       try {
-        const res = await api.get<ReportResponse>('/report/latest', { params, signal })
+        await authStore.ensureInitialized()
+        const endpoint = authStore.isLoggedIn ? '/report/latest' : '/report/preview'
+        const res = await api.get<ReportResponse>(endpoint, { params, signal })
         return res.data
       } catch (error) {
         if (isAxiosError(error) && error.response?.status === 404) return undefined
@@ -123,6 +126,7 @@ const {
   resetAutoScroll,
   scrollToBottom,
   locale,
+  isLoggedIn: computed(() => authStore.isLoggedIn),
   initialDate: parseReportDateQuery(route.query.date),
   initialSource: parseReportTypeQuery(route.query.type),
 })
@@ -141,6 +145,9 @@ watch(selectedType, type => {
 })
 
 const currentTypeInfo = computed(() => getReportTypeInfo(selectedType.value))
+const loginForFullReport = () => requestLogin(router.resolve({
+  path: '/report', query: { ...route.query, date: selectedDate.value, type: selectedType.value }, hash: route.hash,
+}).fullPath)
 
 // ── 订阅状态 ──────────────────────────────────────────────────────────
 
@@ -432,6 +439,7 @@ watch(readingMode, mode => {
         v-else
         :report-content="reportContent"
         :is-generating="isGenerating"
+        :is-preview="isPreview"
         :current-type-label="currentTypeInfo ? t(`report.type.${currentTypeInfo.labelKey}`) : ''"
         :auto-scroll="autoScroll"
         :render-markdown="renderMarkdown"
@@ -444,6 +452,7 @@ watch(readingMode, mode => {
         :fallback-from="fallbackFrom"
         @resume-auto-scroll="resumeAutoScroll"
         @retry="retryLoad"
+        @login="loginForFullReport"
       />
     </div>
 

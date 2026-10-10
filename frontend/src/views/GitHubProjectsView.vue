@@ -98,6 +98,7 @@ const controller = useProjectCatalogController({
   routeState: { source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page },
   t,
   isLoggedIn: () => authStore.isLoggedIn,
+  ensureAuth: () => authStore.ensureInitialized(),
   isAdmin: () => authStore.isAdmin,
   currentRedirect: currentProjectsRedirect,
   navigateToLogin: async (redirect) => { requestLogin(redirect) },
@@ -151,7 +152,10 @@ const ordinalOf = (repo: GitHubProjectItem) => projectOrdinal.value.get(projectK
 // 网页收藏卡片按全局名次轮换四种强调色（与站长推荐页同序、每 8 张一轮）；分列后 nth-child 只知列内名次，故由此下发。
 const WEBSITE_CARD_TONES = ['lime', 'cyan', 'purple', 'orange', 'purple', 'orange', 'lime', 'cyan'] as const
 const websiteCardToneClass = (repo: GitHubProjectItem) => `project-card--tone-${WEBSITE_CARD_TONES[ordinalOf(repo) % WEBSITE_CARD_TONES.length]}`
-const personalLoginCopy = computed(() => isWebsiteOnlyView.value
+const requiresCatalogLogin = controller.requiresCatalogLogin
+const personalLoginCopy = computed(() => requiresCatalogLogin.value
+  ? { kicker: t('projects.heroLibraryKicker'), title: t('memberContent.loginContinue'), description: t('memberContent.projectsHint') }
+  : isWebsiteOnlyView.value
   ? { kicker: t('projects.loginWebsiteKicker'), title: t('projects.loginWebsiteTitle'), description: t('projects.loginWebsiteDescription') }
   : { kicker: t('projects.loginFavoritesKicker'), title: t('projects.loginFavoritesTitle'), description: t('projects.loginFavoritesDescription') })
 const websiteQuotaExhausted = computed(() => websiteQuota.value?.unlimited === false && websiteQuota.value.remaining === 0)
@@ -585,10 +589,11 @@ watch(() => route.query, () => {
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (!loggedIn) {
     controller.handleLogout()
+    if (authStore.logoutInProgress) return
     if (isPersonalView.value) { addDialogOpen.value = false; editDialogOpen.value = false; editTarget.value = null; return }
   }
   void refreshReads()
-})
+}, { flush: 'sync' })
 const stopViewReads = () => {
   pauseSyncPoll()
   stopGridMeasure()
@@ -729,7 +734,7 @@ onBeforeUnmount(stopViewReads)
       {{ successMsg }}
     </section>
 
-    <section v-if="requiresPersonalLogin" class="projects-login-prompt glass-card" aria-labelledby="personal-login-title">
+    <section v-if="requiresPersonalLogin || requiresCatalogLogin" class="projects-login-prompt glass-card" aria-labelledby="personal-login-title">
       <div class="projects-login-prompt__mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <rect x="4" y="10" width="16" height="11" rx="3" />
@@ -741,14 +746,14 @@ onBeforeUnmount(stopViewReads)
         <p class="projects-kicker">{{ personalLoginCopy.kicker }}</p>
         <h2 id="personal-login-title">{{ personalLoginCopy.title }}</h2>
         <p>{{ personalLoginCopy.description }}</p>
-        <div class="projects-login-prompt__notes" :aria-label="t('projects.loginFeatures')">
+        <div v-if="!requiresCatalogLogin" class="projects-login-prompt__notes" :aria-label="t('projects.loginFeatures')">
           <span>{{ t(isWebsiteOnlyView ? 'projects.privateShelf' : 'projects.favoriteSync') }}</span>
           <span>{{ t('projects.tagOrganization') }}</span>
           <span>{{ t('projects.crossDevice') }}</span>
         </div>
       </div>
       <button type="button" class="projects-login-prompt__action" @click="goToPersonalLogin">
-        {{ t('projects.loginAction') }}
+        {{ t(requiresCatalogLogin ? 'memberContent.loginContinue' : 'projects.loginAction') }}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M5 12h14" />
           <path d="m14 7 5 5-5 5" />
