@@ -11,6 +11,7 @@ import {
   projectDisplayTags,
   projectGrowthLabel,
   projectGrowthTitle,
+  projectGrowthValue,
   projectHeatAvailable,
   projectLastPushTitle,
   projectRollingGrowth,
@@ -237,6 +238,19 @@ describe('rolling 24h growth (heat v8)', () => {
     expect(projectGrowthLabel(repo({ rolling_24h_star_growth: 1765 }), t, 'en-US'))
       .toBe('projects.rollingGrowth{"count":"1.8K"}')
     expect(projectGrowthLabel(repo({}), t, 'en-US')).toBe('projects.todayGrowth{"count":"40"}')
+  })
+
+  it('keeps unavailable growth pending while preserving an observed zero', () => {
+    for (const available of [false, 0, '0', 'false', undefined]) {
+      const item = repo({ daily_growth_available: available, daily_star_growth: 0 })
+      expect(projectGrowthValue(item)).toBeNull()
+      expect(projectGrowthLabel(item, t, 'en-US')).toBe('projects.growthPending')
+      expect(projectGrowthTitle(item, t, 'en-US')).toBe('projects.growthUnavailable')
+    }
+    expect(projectGrowthValue(repo({ daily_star_growth: 0 }))).toBe(0)
+    expect(projectGrowthValue(repo({ daily_star_growth: null }))).toBeNull()
+    expect(projectGrowthValue(repo({ daily_star_growth: 'invalid' }))).toBeNull()
+    expect(projectGrowthValue(repo({ daily_growth_available: false, rolling_24h_star_growth: 0 }))).toBe(0)
   })
 
   it('explains each rolling source and the creation baseline', () => {

@@ -164,6 +164,8 @@ describe('ProjectChartRow', () => {
     expect(row.get('.project-row__meta-heat').classes()).toContain('project-row__heat--flat')
 
     await row.setProps({ repo: repo({ rolling_24h_star_growth: null, daily_growth_available: false, hot_score: 0 }) })
+    expect(row.get('.project-row__gain').text()).toContain('Pending')
+    expect(row.get('.project-row__gain').classes()).toContain('project-row__gain--flat')
     expect(row.get('.project-row__heat').text()).toContain('—')
     expect(row.get('.project-row__heat').classes()).toContain('project-row__heat--flat')
   })

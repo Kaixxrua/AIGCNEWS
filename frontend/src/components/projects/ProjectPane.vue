@@ -15,7 +15,6 @@ import {
   favoriteButtonLabelKey,
   formatProjectCount,
   formatProjectLastPush,
-  projectDailyGrowth,
   projectDescription,
   projectDisplayTags,
   projectGrowthTitle,
@@ -23,7 +22,7 @@ import {
   projectHotScore,
   projectLastPushTitle,
   projectName,
-  projectRollingGrowth,
+  projectGrowthValue,
   projectUrl,
   recommendButtonLabelKey,
   type ProjectChip,
@@ -85,10 +84,10 @@ const chips = computed(() => projectDisplayTags(props.repo, false, appLocale.val
 const count = (value: GitHubProjectItem['stars']) => (value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value))
 const dateOf = (value: string | null | undefined) => (value ? formatLocaleDate(value, { year: 'numeric', month: 'short', day: 'numeric' }, appLocale.value) : '')
 
-// 与榜单同一口径：24 小时有滚动窗口用它，否则退回当日增量；热度没算出来写破折号
+// 与榜单同一口径：24 小时有滚动窗口用它，否则退回可用日增量；缺失时显示待更新；热度没算出来写破折号
 const facts = computed(() => {
   const repo = props.repo
-  const gain = projectRollingGrowth(repo) ?? projectDailyGrowth(repo)
+  const gain = projectGrowthValue(repo)
   const heat = projectHeatAvailable(repo) ? displayHotScore(projectHotScore(repo)) : null
   const forks = count(repo.forks)
   const issues = count(repo.open_issues)
@@ -96,7 +95,7 @@ const facts = computed(() => {
   const created = dateOf(repo.created_at)
   return [
     { key: 'stars', label: t('projectChart.stars'), value: formatProjectCount(repo.stars, appLocale.value), title: t('projectChart.starsTitle', { count: formatLocaleNumber(Number(repo.stars ?? 0), appLocale.value) }) },
-    { key: 'gain', label: t('projectChart.gain'), value: formatStarDelta(gain, appLocale.value), title: projectGrowthTitle(repo, t, appLocale.value), flat: gain === 0 },
+    { key: 'gain', label: t('projectChart.gain'), value: gain === null ? t('projects.growthPending') : formatStarDelta(gain, appLocale.value), title: projectGrowthTitle(repo, t, appLocale.value), flat: gain === null || gain === 0 },
     { key: 'heat', label: t('projectChart.heat'), value: heat === null ? '—' : heat.toFixed(1), title: t(projectHeatAvailable(repo) ? 'projects.hotScoreTitle' : 'projects.heatPending'), flat: heat === null || heat < 0.05 },
     forks === null ? null : { key: 'forks', label: t('projectPane.forks'), value: formatProjectCount(forks, appLocale.value), title: formatLocaleNumber(forks, appLocale.value) },
     issues === null ? null : { key: 'issues', label: t('projectPane.issues'), value: formatProjectCount(issues, appLocale.value), title: formatLocaleNumber(issues, appLocale.value) },

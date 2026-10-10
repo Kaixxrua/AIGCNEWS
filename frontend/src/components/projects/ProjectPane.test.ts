@@ -113,6 +113,12 @@ describe('ProjectPane', () => {
     expect(pane.get('.project-pane__fact--gain').classes()).toContain('is-flat')
   })
 
+  it('shows pending instead of zero when growth has not been counted', () => {
+    const pane = mountPane({ repo: repo({ rolling_24h_star_growth: null, daily_growth_available: false, daily_star_growth: 0 }) })
+    expect(pane.get('.project-pane__fact--gain dd').text()).toBe('Pending')
+    expect(pane.get('.project-pane__fact--gain').classes()).toContain('is-flat')
+  })
+
   it('steps, closes, favourites, recommends, filters by a tag and counts GitHub links as a visit', async () => {
     const pane = mountPane({ canRecommend: true })
     const [prev, next, close] = pane.findAll('.project-pane__btn')

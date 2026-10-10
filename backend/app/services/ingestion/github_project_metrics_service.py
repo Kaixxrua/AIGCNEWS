@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
@@ -35,6 +36,9 @@ logger = logging.getLogger(__name__)
 _METRIC_WRITE_LOCK = threading.RLock()
 
 DEFAULT_MIN_STARS = 500
+# 五个 GraphQL 批次即落盘；数据库快照和指标是跨重启的进度凭据。
+METRIC_CHECKPOINT_SIZE = 200
+METRIC_REFRESH_MAX_AGE = timedelta(hours=2)
 _FULL_BASELINE_SAMPLES = 3
 
 # 反作弊信号阈值：加和封顶 1.0，≥0.5 才降权（见 github_heat）——单仓信号需两个
@@ -356,6 +360,7 @@ def _record_github_metric_outcomes(
         else:
             updated_candidates += written
             snapshots += written
+            skipped += max(0, len(pending) - written)
             recovered += pending_recovered
     return {
         "fetched": fetched,
@@ -379,6 +384,7 @@ def refresh_github_project_metric_snapshots(
     closing: bool = False,
     _local_date: date | None = None,
     _now: datetime | None = None,
+    _on_batch: Callable[[List[str]], None] | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
     """Refresh today's lightweight GitHub metrics and write raw snapshots.
@@ -393,7 +399,14 @@ def refresh_github_project_metric_snapshots(
     else:
         snapshot_date = _live_metric_date(metric_date, local_today=_local_date)
     captured_at = _utcnow()
-    targets = db.list_github_project_metric_targets(min_stars=min_stars, limit=limit)
+    fresh_since = None if closing else (
+        datetime.fromisoformat(captured_at) - METRIC_REFRESH_MAX_AGE
+    ).isoformat()
+    targets = db.list_github_project_metric_targets(
+        min_stars=min_stars, limit=limit,
+        metric_date=snapshot_date, fresh_since=fresh_since,
+    )
+    targets = [item for item in targets if str(item.get("full_name") or "").strip()]
     full_names = [str(item.get("full_name") or "").strip() for item in targets if item.get("full_name")]
     if dry_run:
         return {
@@ -404,24 +417,49 @@ def refresh_github_project_metric_snapshots(
             "updated_candidates": 0,
         }
 
-    outcomes = fetch_github_repo_metrics_batch(full_names)
-    counts = record_github_metric_outcomes(
-        targets=targets,
-        outcomes=outcomes,
-        snapshot_date=snapshot_date,
-        captured_at=captured_at,
-        db=db,
-    )
-    counts["skipped"] += max(0, len(full_names) - len(outcomes))
+    counts = dict.fromkeys((
+        "fetched", "updated_candidates", "snapshots", "skipped",
+        "not_found_observations", "newly_not_found", "recovered", "unknown", "renamed",
+    ), 0)
+    processed = 0
+    for start in range(0, len(targets), METRIC_CHECKPOINT_SIZE):
+        batch = targets[start : start + METRIC_CHECKPOINT_SIZE]
+        outcomes = fetch_github_repo_metrics_batch([str(item["full_name"]).strip() for item in batch])
+        batch_counts = record_github_metric_outcomes(
+            targets=batch, outcomes=outcomes, snapshot_date=snapshot_date,
+            captured_at=captured_at, db=db,
+        )
+        batch_counts["skipped"] += max(0, len(batch) - len(outcomes))
+        for key in counts:
+            counts[key] += batch_counts[key]
+        if _on_batch is not None and batch_counts["snapshots"]:
+            # 改名结果必须按 API 返回的新 full_name 算分；写入层使用它作为 canonical repo_id。
+            repo_ids = [
+                str(outcome.metrics.get("full_name") or outcome.full_name)
+                for outcome in outcomes if outcome.status == "succeeded" and outcome.metrics
+            ]
+            if repo_ids:
+                _on_batch(repo_ids)
+        processed += len(batch)
+        logger.info(
+            "[GitHubProjectMetrics] 指标分批保存 date=%s progress=%d/%d snapshots=%d skipped=%d",
+            snapshot_date, processed, len(targets), counts["snapshots"], counts["skipped"],
+        )
+        # 限流、上游整批不可用或写入失败时保留已完成进度，避免剩余批次反复撞限流。
+        if (not outcomes or all(outcome.status == "unknown" for outcome in outcomes)
+                or any(outcome.rate_limited for outcome in outcomes)
+                or (batch_counts["fetched"] and not batch_counts["snapshots"])):
+            break
     try:
         pruned_observations = db.prune_github_star_observations()
     except Exception as exc:  # noqa: BLE001 - 观测清理失败不影响日刷结果
         pruned_observations = 0
         logger.warning("[GitHubProjectMetrics] 过期星数观测清理失败：%s", exc, exc_info=True)
     result = {
-        "status": "success",
+        "status": "partial" if processed < len(targets) or counts["skipped"] > counts["not_found_observations"] else "success",
         "metric_date": snapshot_date,
         "targets": len(full_names),
+        "processed": processed,
         **counts,
         "pruned_observations": pruned_observations,
     }
@@ -793,6 +831,12 @@ def refresh_and_compute_github_project_metrics(
     _now: datetime | None = None,
     db: GitHubProjectIngestionRepository,
 ) -> Dict[str, Any]:
+    def checkpoint(repo_ids: List[str]) -> None:
+        compute_github_daily_metrics(
+            metric_date=resolved_date, min_stars=min_stars, repo_ids=repo_ids,
+            corroborated_repo_ids=corroborated_repo_ids, db=db,
+        )
+
     if closing:
         local_now = _now or _local_now()
         resolved_date = _closing_metric_date(metric_date, local_now=local_now)
@@ -803,6 +847,7 @@ def refresh_and_compute_github_project_metrics(
             dry_run=dry_run,
             closing=True,
             _now=local_now,
+            _on_batch=checkpoint,
             db=db,
         )
     else:
@@ -814,6 +859,7 @@ def refresh_and_compute_github_project_metrics(
             metric_date=resolved_date,
             dry_run=dry_run,
             _local_date=local_today,
+            _on_batch=checkpoint,
             db=db,
         )
     metrics_result = None
@@ -825,7 +871,7 @@ def refresh_and_compute_github_project_metrics(
             db=db,
         )
     return {
-        "status": "success" if not dry_run else "dry_run",
+        "status": refresh_result.get("status", "success") if not dry_run else "dry_run",
         "metric_date": resolved_date,
         "refresh": refresh_result,
         "metrics": metrics_result,

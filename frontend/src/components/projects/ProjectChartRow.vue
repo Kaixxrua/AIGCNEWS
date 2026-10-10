@@ -12,7 +12,6 @@ import {
   favoriteButtonLabelKey,
   formatProjectCount,
   formatProjectLastPush,
-  projectDailyGrowth,
   projectDescription,
   projectDisplayTags,
   projectGrowthTitle,
@@ -20,7 +19,7 @@ import {
   projectHotScore,
   projectLastPushTitle,
   projectName,
-  projectRollingGrowth,
+  projectGrowthValue,
   projectUrl,
   recommendButtonLabelKey,
   type ProjectChip,
@@ -90,9 +89,9 @@ const tailChip = computed(() => visibleChips.value[visibleChips.value.length - 1
 
 const starsText = computed(() => formatProjectCount(props.repo.stars, appLocale.value))
 const starsTitle = computed(() => t('projectChart.starsTitle', { count: formatLocaleNumber(Number(props.repo.stars ?? 0), appLocale.value) }))
-// 24 小时新增与卡片同一口径：有滚动 24h 用它，否则退回当日增量；提示里写明是哪一种。
-const gain = computed(() => projectRollingGrowth(props.repo) ?? projectDailyGrowth(props.repo))
-const gainText = computed(() => formatStarDelta(gain.value, appLocale.value))
+// 24 小时新增与卡片同一口径：有滚动 24h 用它，否则退回可用日增量；缺失时显示待更新；提示里写明是哪一种。
+const gain = computed(() => projectGrowthValue(props.repo))
+const gainText = computed(() => gain.value === null ? t('projects.growthPending') : formatStarDelta(gain.value, appLocale.value))
 const gainTitle = computed(() => projectGrowthTitle(props.repo, t, appLocale.value))
 const heatScore = computed(() => (projectHeatAvailable(props.repo) ? displayHotScore(projectHotScore(props.repo)) : null))
 const heatText = computed(() => (heatScore.value === null ? '—' : heatScore.value.toFixed(1)))
@@ -202,7 +201,7 @@ const movementLabel = computed(() => {
     </p>
 
     <span class="project-row__num project-row__stars" :title="starsTitle"><span class="sr-only">{{ t('projectChart.stars') }}</span>{{ starsText }}</span>
-    <span class="project-row__num project-row__gain" :class="{ 'project-row__gain--flat': gain === 0 }" :title="gainTitle"><span class="sr-only">{{ t('projectChart.gain') }}</span>{{ gainText }}</span>
+    <span class="project-row__num project-row__gain" :class="{ 'project-row__gain--flat': gain === null || gain === 0 }" :title="gainTitle"><span class="sr-only">{{ t('projectChart.gain') }}</span>{{ gainText }}</span>
     <ProjectSparkline class="project-row__spark" :points="trend?.points" :metric-date="metricDate" :days="days" />
     <span class="project-row__num project-row__heat" :class="{ 'project-row__heat--flat': heatFlat }" :title="heatTitle"><span class="sr-only">{{ t('projectChart.heat') }}</span>{{ heatText }}</span>
 
