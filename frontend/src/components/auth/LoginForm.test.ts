@@ -12,7 +12,7 @@ vi.mock('@/composables/useFeatureFlags', () => ({ ensureFeatureFlags: async () =
 vi.mock('@/stores/authStore', () => ({ useAuthStore: () => ({ login }) }))
 
 const messages = { auth: {
-  oauthOr: '快捷登录', oauth: { qq: '使用 QQ 登录', linuxdo: '使用 Linux DO 登录' },
+  oauthOr: '快捷登录', oauth: { wechat: '使用微信登录', qq: '使用 QQ 登录', linuxdo: '使用 Linux DO 登录' },
   loginTitle: '登录', loginDescription: '欢迎回来', email: '邮箱', emailPlaceholder: '邮箱地址', password: '密码', passwordPlaceholder: '密码',
   fillEmailPassword: '请填写邮箱和密码', forgotPassword: '忘记密码', loggingIn: '登录中', login: '登录', noAccount: '没有账号', registerNow: '立即注册', loginFailed: '登录失败',
 }, loginContext: { search: '登录后继续搜索', projects: '登录后可收藏项目', subscriptions: '登录后可管理订阅' }, common: { close: '关闭' } }
@@ -37,12 +37,12 @@ describe('LoginForm', () => {
     wrapper.unmount()
   })
 
-  it.each(['qq', 'linuxdo'])('starts configured %s login with the internal return path', async provider => {
+  it.each(['wechat', 'qq', 'linuxdo'])('starts configured %s login with the internal return path', async provider => {
     flags.oauthProviders = [provider]
     const wrapper = mountForm({ redirect: '/projects?source=all' })
     await flushPromises()
     const button = wrapper.get('.auth-oauth button')
-    expect(button.text()).toBe(provider === 'qq' ? '使用 QQ 登录' : '使用 Linux DO 登录')
+    expect(button.text()).toBe(messages.auth.oauth[provider as keyof typeof messages.auth.oauth])
     await button.trigger('click')
     expect(startOAuth).toHaveBeenCalledWith(provider, '/projects?source=all')
     wrapper.unmount()

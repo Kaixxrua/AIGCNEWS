@@ -96,6 +96,8 @@ describe('resolvePageHead', () => {
     // MCP OAuth 同意页只给客户端跳转用，带着一次性的授权参数，不该被收录。
     expect(resolvePageHead(at('oauth-authorize', '/oauth/authorize'), null, t))
       .toMatchObject({ title: '授权 MCP 客户端 · AIGCNEWS', noindex: true, canonical: null })
+    expect(resolvePageHead(at('wechat-login', '/oauth/wechat', { redirect: '/membership' }), null, t))
+      .toMatchObject({ title: '微信扫码登录 · AIGCNEWS', noindex: true, canonical: null })
   })
 })
 

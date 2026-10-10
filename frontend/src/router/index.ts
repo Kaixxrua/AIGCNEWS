@@ -16,6 +16,7 @@ const ReportView = () => import('@/views/ReportView.vue')
 const XBoardView = () => import('@/views/XBoardView.vue')
 const MonitorView = () => import('@/views/MonitorView.vue')
 const RegisterView = () => import('@/views/RegisterView.vue')
+const WeChatLoginView = () => import('@/views/WeChatLoginView.vue')
 const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
 const OAuthActionCallbackView = () => import('@/views/OAuthActionCallbackView.vue')
 const McpOAuthAuthorizeView = () => import('@/views/McpOAuthAuthorizeView.vue')
@@ -38,6 +39,12 @@ const router = createRouter({
       path: '/register',
       name: 'register',
       component: RegisterView,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/oauth/wechat',
+      name: 'wechat-login',
+      component: WeChatLoginView,
       meta: { guestOnly: true },
     },
     {

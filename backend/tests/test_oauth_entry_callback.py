@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -25,7 +26,8 @@ from backend.app.core.config import Settings, settings
 from backend.app.models.schema_oauth import OAuthStatePayload
 from backend.app.repositories.oauth_identity_repository import OAuthBindResult
 from backend.app.services.auth.oauth import redirect
-from backend.app.services.auth.oauth.contracts import OAuthProfile
+from backend.app.services.auth.oauth.contracts import OAuthProfile, OAuthProviderConfig
+from backend.app.services.auth.oauth.providers.wechat import WeChatIdentity, WeChatOAuthProvider
 from backend.app.services.auth.oauth.runtime_config import EffectiveOAuthConfig
 from backend.app.services.auth.oauth.state import (
     OAUTH_BIND_STATE_PREFIX,
@@ -135,6 +137,78 @@ def rig(monkeypatch: pytest.MonkeyPatch):
 def _bearer() -> dict[str, str]:
     token = create_access_token({"user_id": 7, "role": "user", "pwd_ver": 1})
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def wechat_rig(rig, monkeypatch: pytest.MonkeyPatch):
+    client, redis, _ = rig
+    adapter = WeChatOAuthProvider(OAuthProviderConfig(
+        name="wechat", client_id="wx-website", client_secret="private-app-secret",
+    ))
+    monkeypatch.setattr(adapter, "exchange_code", AsyncMock(return_value=WeChatIdentity(
+        subject="wechat-user", name="WeChat user",
+    )))
+    monkeypatch.setattr(routes_oauth, "configured_oauth_providers", lambda **kwargs: ["wechat"])
+    monkeypatch.setattr(routes_oauth, "build_oauth_adapters", lambda config: {"wechat": adapter})
+    return client, redis, adapter
+
+
+@pytest.mark.parametrize("entry", [CANONICAL, MIRROR])
+def test_prepared_wechat_login_round_trip_is_browser_bound_and_one_time(wechat_rig, entry) -> None:
+    client, redis, adapter = wechat_rig
+    headers = {"X-Forwarded-Host": urlsplit(entry).netloc}
+    start = client.post(
+        "/api/auth/oauth/wechat/start", headers=headers,
+        params={"redirect_to": "/membership?plan=yearly"},
+    )
+    assert start.status_code == 200
+    assert start.headers["cache-control"] == "no-store"
+    assert set(start.json()) == {"authorization_url", "expires_in"}
+    assert start.json()["expires_in"] == 300
+    assert "private-app-secret" not in start.text
+    cookie = start.headers["set-cookie"].lower()
+    assert all(flag in cookie for flag in ("httponly", "secure", "samesite=lax"))
+    url = urlsplit(start.json()["authorization_url"])
+    assert url.netloc == "open.weixin.qq.com"
+    assert url.path == "/connect/qrconnect"
+    assert parse_qs(url.query)["scope"] == ["snsapi_login"]
+    assert parse_qs(url.query)["redirect_uri"] == [f"{entry}/api/auth/oauth/wechat/callback"]
+    payload = _stored_payload(redis, OAUTH_STATE_PREFIX)
+    assert payload["operation"] == "login"
+    assert payload["target_user_id"] is None
+    assert payload["browser_binding_hash"] == digest_secret(client.cookies["aigc_oauth_browser"])
+    params = {"code": "wechat-code", "state": _state_from(start.json()["authorization_url"])}
+    callback = client.get("/api/auth/oauth/wechat/callback", params=params, follow_redirects=False)
+    assert callback.status_code == 303
+    assert callback.headers["location"] == f"{entry}/oauth/callback"
+    assert adapter.exchange_code.await_args.kwargs["redirect_uri"] == f"{entry}/api/auth/oauth/wechat/callback"
+    consume = client.post("/api/auth/oauth/consume")
+    assert consume.status_code == 200
+    assert consume.json()["redirect_to"] == "/membership?plan=yearly"
+    assert client.get("/api/auth/oauth/wechat/callback", params=params).status_code == 400
+    assert client.post("/api/auth/oauth/consume").status_code == 400
+
+
+def test_prepared_wechat_login_cannot_be_used_by_another_browser(wechat_rig) -> None:
+    client, _, adapter = wechat_rig
+    start = client.post("/api/auth/oauth/wechat/start")
+    client.cookies.clear()
+    callback = client.get("/api/auth/oauth/wechat/callback", params={
+        "state": _state_from(start.json()["authorization_url"]), "code": "wechat-code",
+    })
+    assert callback.status_code == 400
+    assert callback.json()["detail"] == "oauth_state_invalid"
+    adapter.exchange_code.assert_not_awaited()
+
+
+@pytest.mark.parametrize("target", ["//evil.test", "https://evil.test", "/%5cevil.test"])
+def test_prepared_wechat_login_rejects_external_return_paths(wechat_rig, target) -> None:
+    client, redis, adapter = wechat_rig
+    start = client.post("/api/auth/oauth/wechat/start", params={"redirect_to": target})
+    assert start.status_code == 400
+    assert start.json()["detail"] == "oauth_redirect_invalid"
+    assert not redis.values
+    adapter.exchange_code.assert_not_awaited()
 
 
 def _state_from(location: str) -> str:
@@ -382,4 +456,3 @@ def test_payload_rejects_non_url_entry_lengths() -> None:
         OAuthStatePayload(**base, entry_base_url="")
     with pytest.raises(ValueError):
         OAuthStatePayload(**base, entry_base_url="https://" + "a" * 1100)
-

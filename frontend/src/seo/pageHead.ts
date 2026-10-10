@@ -45,6 +45,7 @@ const ROUTE_TITLE_KEYS: Readonly<Record<string, string>> = {
   'membership-checkout': 'checkout',
   contact: 'contact',
   register: 'register',
+  'wechat-login': 'wechatLogin',
   'oauth-callback': 'oauth',
   'oauth-action-callback': 'oauth',
   'oauth-authorize': 'mcpAuthorize',
@@ -54,8 +55,8 @@ const ROUTE_TITLE_KEYS: Readonly<Record<string, string>> = {
 /** 有专门描述的页面（seo.descriptions.*），其余用 default。 */
 const DESCRIBED_PAGES = new Set(['projects', 'websites', 'uiLibrary', 'report', 'xboard', 'mcp', 'dsh', 'membership', 'disclaimer', 'privacy'])
 
-/** 本身就是「没有这一页」的页面，以及只给 MCP 客户端跳转用的授权页，不论内容一律 noindex。 */
-const NOINDEX_PAGES = new Set(['notFound', 'mcpAuthorize'])
+/** 不存在的页面，以及微信扫码登录、MCP 客户端授权等流程页，不论内容一律 noindex。 */
+const NOINDEX_PAGES = new Set(['notFound', 'mcpAuthorize', 'wechatLogin'])
 
 export interface PageHeadOverride {
   /** 页面自己的标题（论文标题、素材名），会拼上品牌后缀。 */

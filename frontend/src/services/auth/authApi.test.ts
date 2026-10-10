@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
 import { api } from '@/services/http/apiClient'
 import { setRuntimeAuthToken } from '@/services/http/authTokenStorage'
-import { startOAuth, startOAuthBind } from './authApi'
+import { prepareWeChatLogin, startOAuth, startOAuthBind } from './authApi'
 
 const originalAdapter = api.defaults.adapter
 const assign = vi.fn()
@@ -22,6 +22,28 @@ afterEach(() => {
 })
 
 describe('OAuth browser navigation', () => {
+  it('opens the local WeChat page with the original return path', async () => {
+    await startOAuth('wechat', '/membership?plan=yearly&source=wechat')
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/oauth/wechat?redirect=%2Fmembership%3Fplan%3Dyearly%26source%3Dwechat')
+  })
+
+  it('prepares a QR login with a same-origin request instead of following an upstream redirect', async () => {
+    const adapter = vi.fn(async (config: InternalAxiosRequestConfig) => ({
+      config, status: 200, statusText: 'OK', headers: {},
+      data: { authorization_url: authorizationUrl, expires_in: 300 },
+    }))
+    api.defaults.adapter = adapter
+    const signal = new AbortController().signal
+    const prepared = await prepareWeChatLogin('/membership', signal)
+    const request = adapter.mock.calls[0]![0]
+    expect(request.url).toBe('/auth/oauth/wechat/start')
+    expect(request.method).toBe('post')
+    expect(request.params).toEqual({ redirect_to: '/membership' })
+    expect(request.signal).toBe(signal)
+    expect(prepared.expires_in).toBe(300)
+    expect(assign).not.toHaveBeenCalled()
+  })
+
   it.each(['github', 'google', 'wechat', 'qq', 'linuxdo'])('authenticates %s binding before navigating to its authorization page', async (provider) => {
     const adapter = vi.fn(async (config: InternalAxiosRequestConfig) => {
       expect(assign).not.toHaveBeenCalled()

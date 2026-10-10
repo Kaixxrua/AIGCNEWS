@@ -34,6 +34,7 @@ from backend.app.models.schema_oauth import (
     OAuthConsumeResponse,
     OAuthHandoffPayload,
     OAuthStartQuery,
+    OAuthStartResponse,
     OAuthStatePayload,
 )
 from backend.app.repositories.oauth_identity_repository import OAuthIdentityRepository
@@ -164,6 +165,11 @@ def _current_user_id(current_user: dict) -> int:
 
 
 @router.get("/auth/oauth/{provider}/start", summary="Start OAuth login")
+@router.post(
+    "/auth/oauth/{provider}/start",
+    summary="Prepare OAuth login",
+    response_model=OAuthStartResponse,
+)
 async def oauth_start(provider: str, request: Request, query: OAuthStartQuery = Depends()):
     provider = provider.strip().lower()
     config = _config(request)
@@ -192,7 +198,15 @@ async def oauth_start(provider: str, request: Request, query: OAuthStartQuery = 
         await states.put(material, state_payload)
     except (OAuthStateUnavailableError, OAuthAdapterUnavailable, OAuthRedirectError) as exc:
         raise HTTPException(status_code=503, detail="oauth_unavailable") from exc
-    result = RedirectResponse(url, status_code=307)
+    # A same-origin POST prepares the official QR frame without following an
+    # upstream redirect in XHR. Both methods retain the same browser-bound state.
+    result = (
+        JSONResponse(OAuthStartResponse(
+            authorization_url=url, expires_in=config.state_ttl_seconds,
+        ).model_dump())
+        if request.method == "POST" else RedirectResponse(url, status_code=307)
+    )
+    result.headers["Cache-Control"] = "no-store"
     if response.headers.get("set-cookie"):
         result.headers["set-cookie"] = response.headers["set-cookie"]
     return result

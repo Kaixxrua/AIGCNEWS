@@ -18,10 +18,11 @@
   }
   #app .app-shell .main-canvas > .app-content { padding-top: calc(60px + env(safe-area-inset-top)); }
   #app .app-shell .app-masthead__tools { width: 100%; gap: 4px; }
-  #app .app-shell .app-masthead .brand-wordmark { margin-right: auto; min-height: 44px; }
+  #app .app-shell .app-masthead .brand-wordmark { margin-right: auto; min-height: 44px; min-width: 0; flex-shrink: 1; }
+  #app .app-shell .app-masthead .brand-comic { max-width: 100%; }
   #app .app-shell .app-masthead__actions { gap: 2px; flex-shrink: 0; }
   #app .app-shell .theme-toggle, #app .app-shell .locale-toggle,
-  #app .app-shell .pwa-install-link { width: 44px; height: 44px; flex-basis: 44px; }
+  #app .app-shell .pwa-install-link, #app .app-shell .qq-group-link { width: 44px; height: 44px; flex-basis: 44px; }
 
   #app .app-shell .projects-page { padding: 16px 8px 24px; background: var(--paper); }
   #app .app-shell .projects-hero { margin-bottom: 16px; }
