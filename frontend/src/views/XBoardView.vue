@@ -20,6 +20,7 @@ import { showToast } from '@/composables/useToast'
 import { authorAvatarUrl, authorDisplayName, collapsedMedia, distributeColumns, emptyStateCopyKeys, estimateTweetCardHeight, extractXHandle, foldTweetsByAccount, formatLocalTime, hasCollapsedMedia, hasLinkCard, hasMedia, hasQuote, paginateFoldedTweets, paginateItems, retweetedByHandle, splitAtSeen, timelineTweets, TWEET_FOLD_BAR_PX, tweetLinkCard, tweetQuote, tweetReadId, tweetTextSegments, tweetTimestamp } from '@/features/xboard/xBoardViewModel'
 import { useTextOnly } from '@/features/xboard/useTextOnly'
 import { groupXAccounts } from '@/features/xboard/xAccountGroups'
+import { tourStep } from '@/features/onboarding/signals'
 import { isSavedTweet } from '@/features/saved/savedTweet'
 import { scoreDisplay } from '@/features/dashboard/dashboardViewModel'
 import { useAuthStore } from '@/stores/authStore'
@@ -159,6 +160,7 @@ const somePageSelected = computed(() => !allPageSelected.value && pageIds.value.
 
 // 关注账号收在侧栏里，默认收起：页头按钮展开/收起，推文墙优先占满版面。
 const followPanelOpen = ref(false)
+const showFollowPanel = computed(() => followPanelOpen.value || tourStep.value === 'x')
 
 // 宽屏多排几列，列宽保持在 340 到 400px 上下：配图限高后列太宽只会把图裁成细长条。舒适版面配图不限高，最多 4 列。
 const computeColumnCount = (width: number, packed: boolean) => {
@@ -171,7 +173,7 @@ const updateColumnCount = () => { viewportWidth.value = window.innerWidth }
 // 桌面端侧栏展开会占去一列的宽度：三列及以上时少排一列，列宽保持可读。
 // 窄屏侧栏叠在推文墙上方，不影响列数。
 const columnCount = computed(() =>
-  viewportColumnCount.value - (followPanelOpen.value && viewportColumnCount.value >= 3 ? 1 : 0))
+  viewportColumnCount.value - (showFollowPanel.value && viewportColumnCount.value >= 3 ? 1 : 0))
 
 // 估高分列需要真实列宽：量推文墙所在主栏的宽度（已扣除滚动区边距与侧栏）。
 // 主栏常驻（不受加载/空态 v-if 影响），ResizeObserver 直接挂它；侧栏开合、
@@ -450,9 +452,9 @@ onBeforeUnmount(() => {
               v-if="availableAccounts.length && !savedView"
               type="button"
               class="btn-secondary xboard-follow-toggle"
-              :class="{ 'xboard-mode-active': followPanelOpen }"
+              :class="{ 'xboard-mode-active': showFollowPanel }"
               :title="level === 'compact' || level === 'tight' ? t('xboard.followAccounts') : undefined"
-              :aria-expanded="followPanelOpen"
+              :aria-expanded="showFollowPanel"
               aria-controls="xboard-follow-panel"
               @click="followPanelOpen = !followPanelOpen"
             >
@@ -526,11 +528,11 @@ onBeforeUnmount(() => {
 
       <div class="xboard-body">
 
-        <!-- 账号关注筛选侧栏：默认全部关注；按账号即时过滤当前窗口推文。
+        <!-- 账号关注筛选侧栏：按订阅账号即时过滤当前窗口推文。
              DOM 上紧跟页头开关（键盘可直达），桌面端经 CSS order 排到推文墙右侧。 -->
         <Transition @enter="panelEnter" @leave="panelLeave">
           <aside
-            v-if="availableAccounts.length && followPanelOpen"
+            v-if="availableAccounts.length && showFollowPanel"
             id="xboard-follow-panel"
             class="xboard-follow-panel px-4 py-3"
             :aria-label="t('xboard.followAccounts')"

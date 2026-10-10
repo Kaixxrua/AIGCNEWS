@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useXBoardController, type XBoardApi } from './useXBoardController'
 import type { DashboardRecentX } from '@/services/dashboard/dashboardContracts'
 
@@ -19,9 +19,17 @@ const createApi = (overrides: Partial<XBoardApi> = {}): XBoardApi => ({
 
 describe('useXBoardController', () => {
   beforeEach(() => localStorage.clear())
+  afterEach(() => vi.restoreAllMocks())
 
-  it('keeps the backend watchlist on empty windows and remembers personal exclusions', async () => {
-    const accounts = [{ handle: 'thsottiaux', displayName: 'Tibo' }, { handle: 'quiet', displayName: 'Quiet Account' }]
+  const accounts = [
+    { handle: 'openai', displayName: 'OpenAI' },
+    { handle: 'thsottiaux', displayName: 'Tibo' },
+    { handle: 'anthropicai', displayName: 'Anthropic' },
+    { handle: 'chatgptapp', displayName: 'ChatGPT' },
+    { handle: 'quiet', displayName: 'Quiet Account' },
+  ]
+
+  it('defaults to the four requested accounts on empty windows and remembers changes', async () => {
     const api = createApi({ fetchRecentX: vi.fn(async () => ({
       items: [doc('x:1', 'https://x.com/outsider/status/1', 1)],
       accounts, total: 1, windowHours: 24, hasMore: false, nextCursor: null,
@@ -29,17 +37,85 @@ describe('useXBoardController', () => {
     const controller = useXBoardController({ api })
     await controller.load()
     expect(controller.availableAccountOptions.value).toEqual(accounts)
-    expect(controller.followedAccounts.value).toEqual(['thsottiaux', 'quiet'])
+    expect(controller.followedAccounts.value).toEqual(['openai', 'thsottiaux', 'anthropicai', 'chatgptapp'])
+    expect(controller.unfollowedAccounts.value).toEqual(new Set(['quiet']))
+    expect(controller.visibleDocs.value).toEqual([])
     controller.toggleFollowAccount('thsottiaux')
     vi.mocked(api.fetchRecentX).mockResolvedValue({ items: [], accounts, total: 0, windowHours: 24, hasMore: false, nextCursor: null })
     const restored = useXBoardController({ api })
     await restored.load()
     expect(restored.availableAccountOptions.value).toEqual(accounts)
-    expect(restored.followedAccounts.value).toEqual(['quiet'])
+    expect(restored.followedAccounts.value).toEqual(['openai', 'anthropicai', 'chatgptapp'])
     restored.followAllAccounts()
-    expect(JSON.parse(localStorage.getItem('aigcnews.x.unfollowedAccounts')!)).toEqual([])
+    expect(restored.followedAccounts.value).toEqual(accounts.map(account => account.handle))
+    const all = useXBoardController({ api })
+    await all.load()
+    expect(all.followedAccounts.value).toEqual(accounts.map(account => account.handle))
     controller.dispose()
     restored.dispose()
+    all.dispose()
+  })
+
+  it('keeps defaults across empty loads and later pages without following new accounts', async () => {
+    const api = createApi({ fetchRecentX: vi.fn()
+      .mockResolvedValueOnce({ items: [], total: 0, hasMore: false })
+      .mockResolvedValueOnce({ items: [doc('x:1', 'https://x.com/quiet/status/1', 1)], hasMore: true, nextCursor: 'next' })
+      .mockResolvedValueOnce({ items: accounts.slice(0, 4).map((account, i) => doc(`x:${i + 2}`, `https://x.com/${account.handle}/status/${i + 2}`, 1)), hasMore: false }),
+    })
+    const controller = useXBoardController({ api })
+    await controller.load()
+    expect(controller.followedAccounts.value).toEqual([])
+    await controller.refresh()
+    expect(controller.followedAccounts.value).toEqual(['anthropicai', 'chatgptapp', 'openai', 'thsottiaux'])
+    expect(controller.visibleDocs.value).toHaveLength(4)
+    controller.dispose()
+  })
+
+  it('remembers clearing subscriptions instead of restoring defaults on the next visit', async () => {
+    const api = createApi({ fetchRecentX: vi.fn(async () => ({ items: [], accounts, total: 0, windowHours: 24, hasMore: false, nextCursor: null })) })
+    const controller = useXBoardController({ api })
+    await controller.load()
+    controller.unfollowAllAccounts()
+    const restored = useXBoardController({ api })
+    await restored.load()
+    expect(restored.followedAccounts.value).toEqual([])
+    restored.toggleFollowAccount('@ChatGPTapp')
+    expect(restored.followedAccounts.value).toEqual(['chatgptapp'])
+    controller.dispose()
+    restored.dispose()
+  })
+
+  it.each([[], ['openai', 'thsottiaux'], accounts.map(account => account.handle)].map(excluded => ({ excluded })))('preserves legacy exclusions $excluded and subsequent choices', async ({ excluded }) => {
+    localStorage.setItem('aigcnews.x.unfollowedAccounts', JSON.stringify(excluded))
+    const api = createApi({ fetchRecentX: vi.fn(async () => ({ items: [], accounts, total: 0, windowHours: 24, hasMore: false, nextCursor: null })) })
+    const controller = useXBoardController({ api })
+    await controller.load()
+    expect(controller.followedAccounts.value).toEqual(accounts.map(account => account.handle).filter(handle => !excluded.includes(handle)))
+    controller.toggleFollowAccount('chatgptapp')
+    const restored = useXBoardController({ api })
+    await restored.load()
+    expect(restored.followedAccounts.value).toEqual(controller.followedAccounts.value)
+    controller.dispose()
+    restored.dispose()
+  })
+
+  it.each(['{bad', '{"mode":"include","handles":"invalid"}', '{"mode":"include","handles":[null]}'])('recovers from invalid subscription storage: %s', async (saved) => {
+    localStorage.setItem('aigcnews.x.accountSubscriptions', saved)
+    const controller = useXBoardController({ api: createApi() })
+    await controller.load()
+    expect(controller.followedAccounts.value).toEqual(['openai'])
+    controller.dispose()
+  })
+
+  it('keeps defaults and selection working when browser storage is unavailable', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    const controller = useXBoardController({ api: createApi() })
+    await controller.load()
+    expect(controller.followedAccounts.value).toEqual(['openai'])
+    controller.toggleFollowAccount('openai')
+    expect(controller.followedAccounts.value).toEqual([])
+    controller.dispose()
   })
 
   it('shows Tibo for thsottiaux even when a newer retweet carries a configured handle', async () => {
@@ -74,6 +150,7 @@ describe('useXBoardController', () => {
     expect(api.fetchRecentX).toHaveBeenCalledWith(expect.objectContaining({ hours: 24, daysBack: 0, limit: 500 }))
     expect(controller.selectedDate.value).toBe('2026-08-04')
     expect(controller.daysBack.value).toBe(0)
+    controller.followAllAccounts()
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
     expect(controller.loading.value).toBe(false)
   })
@@ -101,7 +178,7 @@ describe('useXBoardController', () => {
     expect(flattened.find((tweet) => tweet.url === 'https://x.com/openai/status/1')?.media).toEqual(media)
   })
 
-  it('follows every available account by default and filters by the watched account', async () => {
+  it('filters defaults and added subscriptions by the watched account, including retweets', async () => {
     const api = createApi({
       fetchRecentX: vi.fn(async (): Promise<DashboardRecentX> => ({
         items: [
@@ -126,9 +203,12 @@ describe('useXBoardController', () => {
       { handle: 'openai', displayName: '@openai' },
       { handle: 'karpathy', displayName: 'Andrej Karpathy' },
     ])
+    expect(controller.followedAccounts.value).toEqual(['openai'])
+    expect(controller.visibleDocs.value.map((item) => item.id)).toEqual(['x:1', 'x:3'])
+
+    controller.toggleFollowAccount('karpathy')
     expect(controller.followedAccounts.value).toEqual(['karpathy', 'openai'])
     expect(controller.visibleDocs.value).toHaveLength(3)
-
     controller.toggleFollowAccount('karpathy')
     expect(controller.followedAccounts.value).toEqual(['openai'])
     // 无法识别账号的旧数据保留，纯转贴则按转贴者 karpathy 被过滤。
