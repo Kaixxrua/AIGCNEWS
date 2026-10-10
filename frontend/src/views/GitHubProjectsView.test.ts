@@ -735,7 +735,7 @@ describe('GitHubProjectsView MCP guidance', () => {
   })
 })
 
-// 桌面榜单的页头只留搜索一行：大标题只给读屏，MCP 横幅收成搜索框右端的按钮，点开才在搜索框下面展开示例。
+// 桌面榜单的页头只留搜索一行：大标题只给读屏，MCP 按钮控制搜索框下的示例，首次进入时默认展开。
 describe('GitHubProjectsView chart header', () => {
   let view: VueWrapper | null = null
 
@@ -776,18 +776,25 @@ describe('GitHubProjectsView chart header', () => {
 
     expect(wrapper.get('.projects-hero').classes()).toContain('projects-hero--quiet')
     expect(wrapper.get('.projects-hero h1').text()).toBe('projects.pageTitle')
-    expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(true)
     expect(wrapper.get('.projects-search').classes()).toContain('projects-search--with-end')
     const ask = wrapper.get('.projects-search__end .projects-ask')
     expect(ask.text()).toContain('projects.mcpPromo.ask')
     expect(ask.attributes('title')).toBe('projects.mcpPromo.title')
-    expect(ask.attributes('aria-expanded')).toBe('false')
-    expect(ask.attributes('aria-controls')).toBeUndefined()
+    expect(ask.attributes('aria-expanded')).toBe('true')
+    expect(ask.attributes('aria-controls')).toBe('projects-ask-panel')
   })
 
-  it('opens the examples under the search row with focus in them, and Esc folds them back onto the button', async () => {
+  it('starts with the examples open, then reopens them with focus and closes them with Esc', async () => {
     const wrapper = await mountChart()
     const ask = wrapper.get('.projects-ask')
+
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(true)
+    expect(document.activeElement).not.toBe(wrapper.get('#projects-ask-panel').element)
+    await ask.trigger('click')
+    await flushPromises()
+    expect(ask.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('#projects-ask-panel').exists()).toBe(false)
 
     await ask.trigger('click')
     await flushPromises()
@@ -819,8 +826,6 @@ describe('GitHubProjectsView chart header', () => {
   it('folds the examples away with ×, and dismissing for the week takes the button too', async () => {
     const wrapper = await mountChart()
 
-    await wrapper.get('.projects-ask').trigger('click')
-    await flushPromises()
     await wrapper.get('.projects-mcp-promo__dismiss').trigger('click')
     await flushPromises()
     expect(wrapper.find('#projects-ask-panel').exists()).toBe(false)
@@ -839,8 +844,6 @@ describe('GitHubProjectsView chart header', () => {
 
   it('keeps the chart header and open examples when the global density changes', async () => {
     const wrapper = await mountChart()
-    await wrapper.get('.projects-ask').trigger('click')
-    await flushPromises()
 
     setAppDensity('comfortable')
     await flushPromises()

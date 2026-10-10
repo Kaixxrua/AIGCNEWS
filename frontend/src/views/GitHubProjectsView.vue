@@ -302,9 +302,9 @@ const mcpEmptyStateExamples = mcpExamplesByIds(MCP_EMPTY_STATE_EXAMPLE_IDS)
 const showEmptyStateMcp = computed(() => !requiresPersonalLogin.value && !loading.value && !errorMsg.value && projects.value.length === 0 && (!!searchQuery.value || hasActiveFilter.value))
 const showMcpPromo = computed(() => source.value === 'all' && !mcpPromoDismissed.value && !requiresPersonalLogin.value && !showEmptyStateMcp.value)
 // 榜单版面的页头只留搜索这一行：大标题收起（报眉已经写着「项目库」，读屏照样念得到），「想用自然语言找项目？」这条
-// 横幅收成搜索框右端的一个按钮，点开才在搜索框下面展开示例与接入方式；× 只收起这一块，「本周不再显示」连按钮一起收走。
+// 横幅收成搜索框右端的一个按钮，首次打开项目页时展开搜索框下的示例与接入方式；× 只收起这一块，「本周不再显示」连按钮一起收走。
 // 舒适版面、手机平板仍是原来的标题和可展开的横幅。
-const askOpen = ref(false)
+const askOpen = ref(true)
 const askButton = ref<HTMLButtonElement | null>(null)
 // 点开的那一块（ProjectMcpPromo）：放焦点、看焦点在不在里面，都对着它的根元素。
 const askPanel = ref<ComponentPublicInstance | null>(null)
