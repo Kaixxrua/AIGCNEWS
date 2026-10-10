@@ -723,6 +723,14 @@ class PostgresProjectCatalogRepository:
         )
         hit_parts: list[str] = []
         hit_params: list[Any] = []
+        # For full-catalog search, join eligibility once in scored, before the
+        # lane limits. Rejoining the whole catalog in every alias branch is
+        # expensive. Keep early joins for filtered/small membership sets.
+        join_eligible_early = bool(
+            scope == "recommended" or category or subcategory or language or tag or not enriched_only
+        )
+        candidate_join = "JOIN eligible e ON e.repo_id = c.repo_id" if join_eligible_early else ""
+        enrichment_join = "JOIN eligible e ON e.repo_id = ge.repo_id" if join_eligible_early else ""
         for group_id, pattern, is_concept in rows:
             predicate = "~* %s" if is_concept else "ILIKE %s ESCAPE '='"
             hit_parts.extend(
@@ -731,14 +739,14 @@ class PostgresProjectCatalogRepository:
                         SELECT c.repo_id, %s::text AS group_id,
                             CASE WHEN {candidate_profile} {predicate} THEN 1 ELSE 0 END AS profile_hit
                         FROM github_repo_candidates c
-                        JOIN eligible e ON e.repo_id = c.repo_id
+                        {candidate_join}
                         WHERE {candidate_document} {predicate}
                     """,
                     f"""
                         SELECT ge.repo_id, %s::text AS group_id,
                             CASE WHEN {enrichment_profile} {predicate} THEN 2 ELSE 0 END AS profile_hit
                         FROM github_repo_enrichments ge
-                        JOIN eligible e ON e.repo_id = ge.repo_id
+                        {enrichment_join}
                         WHERE {enrichment_document} {predicate}
                     """,
                 )
