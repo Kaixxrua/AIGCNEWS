@@ -219,11 +219,24 @@ export const projectRollingGrowth = (project: Pick<GitHubProjectItem, 'rolling_2
   return Number.isFinite(numeric) ? Math.max(numeric, 0) : null
 }
 
-/** 卡片「+N」：有滚动 24h 时显示它，否则退回日增量（与热度取数一致）。 */
+/** 缺少统计保留 null；只有可用的日增量才能作为滚动窗口的后备。 */
+export const projectGrowthValue = (project: GitHubProjectItem): number | null => {
+  const rolling = projectRollingGrowth(project)
+  if (rolling !== null) return rolling
+  if (![true, 1, '1', 'true'].includes(project.daily_growth_available ?? false)) return null
+  const value = project.daily_star_growth
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Math.max(numeric, 0) : null
+}
+
+/** 卡片「+N」：有滚动 24h 时显示它，否则退回可用日增量。 */
 export const projectGrowthLabel = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
+  const growth = projectGrowthValue(project)
+  if (growth === null) return t('projects.growthPending')
   const rolling = projectRollingGrowth(project)
   return rolling === null
-    ? t('projects.todayGrowth', { count: formatProjectCount(projectDailyGrowth(project), locale) })
+    ? t('projects.todayGrowth', { count: formatProjectCount(growth, locale) })
     : t('projects.rollingGrowth', { count: formatProjectCount(rolling, locale) })
 }
 
@@ -286,6 +299,7 @@ export const projectDailyGrowthTitle = (project: GitHubProjectItem, t: ProjectTr
 }
 
 export const projectGrowthTitle = (project: GitHubProjectItem, t: ProjectTranslate, locale?: AppLocale) => {
+  if (projectGrowthValue(project) === null) return t('projects.growthUnavailable')
   if (projectRollingGrowth(project) === null) return projectDailyGrowthTitle(project, t, locale)
   const observedAt = formatGrowthObservedAt(project.rolling_24h_observed_at, locale)
   const key = ROLLING_GROWTH_TITLE_KEYS[String(project.rolling_24h_growth_source)] || 'projects.growthRollingWindow'

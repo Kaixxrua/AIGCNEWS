@@ -562,7 +562,7 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
 
         repository.upsert_github_repo_metric_observations.assert_called_once()
         # 整批回滚：不写部分成功，fetched 的两仓全部计入 skipped， recovered 不计
-        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["status"], "partial")
         self.assertEqual(result["fetched"], 2)
         self.assertEqual(result["updated_candidates"], 0)
         self.assertEqual(result["snapshots"], 0)
@@ -707,6 +707,68 @@ class GitHubRepoAvailabilityRefreshTests(unittest.TestCase):
         observations = repository.upsert_github_repo_metric_observations.call_args.args[0]
         self.assertEqual(observations[0]["renamed_from"], "")
         self.assertEqual(result["renamed"], 0)
+
+
+class GitHubMetricCheckpointTests(unittest.TestCase):
+    def test_interrupted_refresh_saves_and_scores_before_fetching_next_batch(self):
+        repository = MagicMock()
+        names = [f"owner/repo{i}" for i in range(4)]
+        written, scored = set(), set()
+        repository.list_github_project_metric_targets.side_effect = lambda **kw: [
+            {"repo_id": name, "full_name": name} for name in names if name not in scored
+        ]
+
+        def write(observations, **kwargs):
+            written.update(row["candidate"]["full_name"] for row in observations)
+            return len(observations)
+
+        def compute(**kwargs):
+            scored.update(kwargs.get("repo_ids", []))
+            return {"status": "success"}
+
+        def fetch(batch):
+            if batch == names[2:]:
+                self.assertEqual(written, set(names[:2]))
+                self.assertEqual(scored, written)
+                raise RuntimeError("process interrupted")
+            return [GitHubRepoMetricsResult(name, "succeeded", metrics={"full_name": name, "stars": 600}) for name in batch]
+
+        repository.upsert_github_repo_metric_observations.side_effect = write
+        with (
+            patch.object(metrics, "METRIC_CHECKPOINT_SIZE", 2),
+            patch.object(metrics, "fetch_github_repo_metrics_batch", side_effect=fetch) as fetch_mock,
+            patch.object(metrics, "compute_github_daily_metrics", side_effect=compute),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "process interrupted"):
+                metrics.refresh_and_compute_github_project_metrics(db=repository)
+            # 模拟进程恢复：数据库中已完成的一批不再请求 GitHub。
+            fetch_mock.side_effect = lambda batch: [
+                GitHubRepoMetricsResult(name, "succeeded", metrics={"full_name": name, "stars": 600}) for name in batch
+            ]
+            result = metrics.refresh_and_compute_github_project_metrics(db=repository)
+        self.assertEqual(result["refresh"]["targets"], 2)
+        self.assertEqual(result["refresh"]["snapshots"], 2)
+        self.assertEqual(fetch_mock.call_args.args[0], names[2:])
+        self.assertEqual(scored, set(names))
+
+    def test_unavailable_batch_stops_without_marking_remaining_repos_complete(self):
+        repository = MagicMock()
+        repository.list_github_project_metric_targets.return_value = [
+            {"full_name": f"owner/repo{i}"} for i in range(4)
+        ]
+        with (
+            patch.object(metrics, "METRIC_CHECKPOINT_SIZE", 2),
+            patch.object(metrics, "fetch_github_repo_metrics_batch", return_value=[
+                GitHubRepoMetricsResult("owner/repo0", "unknown"),
+                GitHubRepoMetricsResult("owner/repo1", "unknown"),
+            ]) as fetch,
+        ):
+            result = metrics.refresh_github_project_metric_snapshots(db=repository)
+        fetch.assert_called_once()
+        repository.upsert_github_repo_metric_observations.assert_not_called()
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["processed"], 2)
+        self.assertEqual(result["snapshots"], 0)
 
 
 if __name__ == "__main__":

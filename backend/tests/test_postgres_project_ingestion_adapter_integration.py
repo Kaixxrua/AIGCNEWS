@@ -820,6 +820,37 @@ def test_trending_metric_inputs_upsert_status_and_hot_reads(
     assert stored["daily_growth_available"] is True
 
 
+def test_metric_resume_requires_fresh_snapshot_and_completed_metric() -> None:
+    with postgres_test_sandbox() as sandbox:
+        repository = PostgresGitHubProjectIngestionRepository(sandbox.database)
+        names = ["complete", "snapshot-only", "stale", "unscored", "yesterday", "candidate-only"]
+        for name in names:
+            repo_id = f"resume/{name}"
+            repository.upsert_github_repo_candidate({
+                "repo_id": repo_id, "full_name": repo_id, "stars": 600,
+                "last_snapshot_at": "2026-07-28T12:00:00+00:00",
+            })
+            if name == "candidate-only":
+                continue
+            day = "2026-07-27" if name == "yesterday" else "2026-07-28"
+            observed = f"{day}T{'08' if name == 'stale' else '12'}:00:00+00:00"
+            repository.insert_github_repo_snapshot({
+                "repo_id": repo_id, "snapshot_date": day, "captured_at": observed, "stars": 600,
+            })
+            if name != "snapshot-only":
+                repository.upsert_github_daily_metrics([{
+                    "repo_id": repo_id, "metric_date": day,
+                    "updated_at": f"{day}T11:00:00+00:00" if name == "unscored" else observed,
+                }])
+        pending = repository.list_github_project_metric_targets(
+            metric_date="2026-07-28", fresh_since="2026-07-28T10:00:00+00:00",
+        )
+        assert {row["repo_id"] for row in pending} == {f"resume/{name}" for name in names if name != "complete"}
+        # 关榜刷新和原有调用不应用断点过滤；不会因日内的新鲜快照而漏掉收盘。
+        assert len(repository.list_github_project_metric_targets()) == len(names)
+        assert len(repository.list_github_project_metric_targets(metric_date="2026-07-28")) == len(names)
+
+
 def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion) -> None:
     from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
     from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics

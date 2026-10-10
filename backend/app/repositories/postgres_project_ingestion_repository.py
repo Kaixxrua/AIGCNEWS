@@ -1265,9 +1265,26 @@ class PostgresGitHubProjectIngestionRepository:
                 return int(row["cnt"] if row else 0)
 
     def list_github_project_metric_targets(
-        self, *, min_stars: int = 500, limit: int = 0
+        self, *, min_stars: int = 500, limit: int = 0,
+        metric_date: str | None = None, fresh_since: str | None = None,
     ) -> list[dict[str, Any]]:
         params: list[Any] = [min_stars]
+        pending_sql = ""
+        if metric_date is not None and fresh_since is not None:
+            # 快照和指标共同作为持久进度；仅候选信息被更新、或快照写完但
+            # 算分前重启，都必须继续处理。失败和未知结果不能标记为完成。
+            pending_sql = """
+                AND NOT EXISTS (
+                    SELECT 1 FROM github_repo_snapshots s
+                    JOIN github_repo_daily_metrics m
+                      ON m.repo_id=s.repo_id AND m.metric_date=s.snapshot_date
+                    WHERE s.repo_id=c.repo_id AND s.snapshot_date=%s
+                      AND s.captured_at >= %s AND m.updated_at >= s.captured_at
+                )
+                AND NOT (c.availability_status='not_found'
+                         AND COALESCE(c.availability_checked_at,'') >= %s)
+            """
+            params.extend([metric_date, fresh_since, fresh_since])
         limit_sql = ""
         if limit and int(limit) > 0:
             limit_sql = " LIMIT %s"
@@ -1279,9 +1296,11 @@ class PostgresGitHubProjectIngestionRepository:
                               created_at,pushed_at,COALESCE(stars,0) stars,COALESCE(forks,0) forks,
                               COALESCE(watchers,0) watchers,source_channels,first_seen_at,last_seen_at,
                               last_snapshot_at,availability_status,not_found_count,availability_checked_at
-                       FROM github_repo_candidates
+                       FROM github_repo_candidates c
                        WHERE COALESCE(stars,0)>=%s AND COALESCE(full_name,'')!=''
-                       ORDER BY COALESCE(stars,0) DESC,full_name ASC"""
+                    """
+                    + pending_sql
+                    + " ORDER BY COALESCE(stars,0) DESC,full_name ASC"
                     + limit_sql,
                     tuple(params),
                 )

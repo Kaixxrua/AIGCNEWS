@@ -45,7 +45,8 @@ class GitHubProjectIngestionRepository(Protocol):
     def get_github_snapshot_count(self) -> int: ...
 
     def list_github_project_metric_targets(
-        self, *, min_stars: int = 500, limit: int = 0
+        self, *, min_stars: int = 500, limit: int = 0,
+        metric_date: str | None = None, fresh_since: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def list_github_identity_sweep_targets(
