@@ -1,0 +1,18 @@
+# Dedicated build proxy, reachable only on the Docker bridge.
+# Adjust this host's bridge/interface values before installation on another host.
+port: 17901
+allow-lan: true
+bind-address: 172.17.0.1
+mode: rule
+log-level: warning
+ipv6: false
+proxies:
+  - name: USTC-DIRECT
+    type: direct
+    interface-name: enp3s0
+    ip-version: ipv4
+rules:
+  - DOMAIN,mirrors.ustc.edu.cn,USTC-DIRECT
+  # USTC redirects cache misses to this upstream; keep its downloads direct too.
+  - DOMAIN,mirrors.tuna.tsinghua.edu.cn,USTC-DIRECT
+  - MATCH,REJECT

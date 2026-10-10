@@ -9,6 +9,32 @@ sys.path.insert(0,str(Path(__file__).parents[2]/'scripts/ci'))
 from local_release import deployment_environment, normalize_build_permissions
 
 
+def test_backend_download_route_is_explicit_and_build_only():
+    from local_release import backend_build_args
+
+    args = backend_build_args({'backend_build_proxy': 'http://172.17.0.1:17901'})
+    assert 'PIP_INDEX_URL=https://mirrors.ustc.edu.cn/pypi/simple' in args
+    assert 'HTTPS_PROXY=http://172.17.0.1:17901' in args
+    assert 'https_proxy=http://172.17.0.1:17901' in args
+    assert 'NO_PROXY=localhost,127.0.0.1,::1' in args
+    assert backend_build_args({'backend_pip_index_url': 'https://pypi.org/simple'}) == [
+        '--build-arg', 'PIP_INDEX_URL=https://pypi.org/simple']
+
+
+@pytest.mark.parametrize('config', [
+    {'backend_pip_index_url': 'http://mirror.example/simple'},
+    {'backend_pip_index_url': 'https://user:secret@mirror.example/simple'},
+    {'backend_build_proxy': 'file:///tmp/proxy'},
+    {'backend_build_proxy': 'http://user:secret@127.0.0.1:17901'},
+    {'backend_build_proxy': 'http://127.0.0.1:17901\n'},
+])
+def test_backend_download_route_rejects_unsafe_configuration(config):
+    from local_release import backend_build_args
+
+    with pytest.raises(ValueError, match='dependency route'):
+        backend_build_args(config)
+
+
 def test_restricted_systemd_umask_does_not_make_image_code_unreadable(tmp_path):
     source=tmp_path/'build';folder=source/'backend/migrations';folder.mkdir(parents=True)
     script=folder/'0075.sql';script.write_text('select 1;');script.chmod(0o600);folder.chmod(0o700)

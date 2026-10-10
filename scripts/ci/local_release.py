@@ -13,12 +13,35 @@ import sys
 import tempfile
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import urlsplit
 
 SHA = re.compile(r'[0-9a-f]{40}')
 IMAGE_REPOSITORY = 'ghcr.io/kaixxrua/aigcnews/'
 IMAGE_SERVICES = ('backend', 'mcp', 'frontend')
 DEFAULT_IMAGE_RETENTION = 5
 DEFAULT_BUILD_CACHE_KEEP_BYTES = 20 * 1024 ** 3
+DEFAULT_PIP_INDEX = 'https://mirrors.ustc.edu.cn/pypi/simple'
+
+
+def backend_build_args(config):
+    """Use the trusted build-only route; Docker does not persist proxy build args."""
+    index = config.get('backend_pip_index_url', DEFAULT_PIP_INDEX)
+    proxy = config.get('backend_build_proxy')
+    for value, schemes in [(index, {'https'}), (proxy, {'http', 'https'})]:
+        if value is None:
+            continue
+        parsed = urlsplit(value)
+        if (parsed.scheme not in schemes or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment
+                or any(char.isspace() for char in value)):
+            raise ValueError('invalid backend dependency route')
+    args = ['--build-arg', 'PIP_INDEX_URL=' + index]
+    if proxy:
+        for key in ('HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy'):
+            args += ['--build-arg', key + '=' + proxy]
+        args += ['--build-arg', 'NO_PROXY=localhost,127.0.0.1,::1',
+                 '--build-arg', 'no_proxy=localhost,127.0.0.1,::1']
+    return args
 
 
 def run(args, *, cwd=None, env=None):
@@ -231,6 +254,7 @@ def release(config,sha):
                     args=['docker','buildx','build','--builder','default','--load','--provenance=false',
                           '--metadata-file',metadata,'--tag',repository+':'+sha,'--file',dockerfile]
                     if service=='mcp':args+=['--build-arg','GOPROXY=https://proxy.golang.org|https://goproxy.cn|direct']
+                    if service=='backend':args+=backend_build_args(config)
                     run(args+[context],cwd=checkout)
                     digest=json.loads(metadata.read_text())['containerimage.digest']
                     ref=repository+'@'+digest
