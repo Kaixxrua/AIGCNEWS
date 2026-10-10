@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import OAuthProviderIcon from '@/components/auth/OAuthProviderIcon.vue'
 
 const { t } = useI18n()
 const groupUrl = 'https://qm.qq.com/q/4569CWg9hS'
@@ -15,7 +14,7 @@ const groupUrl = 'https://qm.qq.com/q/4569CWg9hS'
     :aria-label="t('common.joinQQGroup')"
     :title="t('common.joinQQGroup')"
   >
-    <OAuthProviderIcon provider="qq" />
+    <span class="qq-group-icon" aria-hidden="true"></span>
   </a>
 </template>
 
@@ -43,6 +42,13 @@ const groupUrl = 'https://qm.qq.com/q/4569CWg9hS'
 
 .qq-group-link:active { transform: rotate(-3deg) scale(0.92); }
 .qq-group-link:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.qq-group-icon {
+  width: 22px;
+  height: 22px;
+  background: currentColor;
+  mask: url('@/assets/brands/qq.svg') center / contain no-repeat;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .qq-group-link { transition: none; }
