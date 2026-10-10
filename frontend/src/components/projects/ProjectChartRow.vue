@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Clock, ExternalLink, GitFork, Sparkles, Star } from 'lucide-vue-next'
+import { Check, Clock, ExternalLink, GitFork, Sparkles, Star } from 'lucide-vue-next'
 import ProjectLogo from './ProjectLogo.vue'
 import ProjectSparkline from './ProjectSparkline.vue'
 import type { AppLocale } from '@/i18n'
@@ -164,6 +164,7 @@ const movementLabel = computed(() => {
           <a v-if="url" :href="url" target="_blank" rel="noopener noreferrer" :title="opensPane ? undefined : t('projects.openRepository')" @click="onNameClick" @auxclick.middle="emit('visit', repo)"><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></a>
           <template v-else><span class="project-row__owner">{{ nameParts.owner }}</span><wbr /><span class="project-row__repo">{{ nameParts.repo }}</span></template>
         </h2>
+        <span class="project-row__read"><Check :size="12" :stroke-width="2" aria-hidden="true" />{{ t('projectChart.read') }}</span>
         <span v-if="repo.is_recommended" class="project-row__pick" :title="t('projectChart.pick')"><span aria-hidden="true">✦</span><span class="sr-only">{{ t('projectChart.pick') }}</span></span>
         <span v-if="notFound" class="project-row__gone">{{ t('projects.unavailable') }}</span>
       </div>

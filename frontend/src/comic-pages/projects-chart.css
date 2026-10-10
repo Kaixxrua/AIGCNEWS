@@ -59,12 +59,14 @@
     translate: calc(var(--indicator-x, 0px) + 1.5px) calc(var(--indicator-y, 0px) + 8px);
     border: 1.5px solid var(--p-ink); border-radius: 3px; background: var(--p-lime);
   }
-  /* A repository opened before (useReadMarks), as on the briefing and the tweet wall: its name, tags, description and
-     figures drop to one slate ink, the logo washes out and the coloured figures, the move and the spark line lose their
-     colour; the tags keep their frames and the numbers stay in their columns, so the row still reads, only quieter. */
-  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read { --p-ink: var(--p-read); --p-copy: var(--p-read); --p-muted: var(--p-read); }
-  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read :is(.project-row__rank, .project-row__gain, .project-row__heat, .project-row__meta-heat, .project-row__spark) { filter: saturate(.3); }
-  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read .project-row__logo { filter: saturate(.3) opacity(.72); }
+  /* Read status has its own text and check mark beside the name; the row keeps its original contrast and colours. */
+  #app .app-shell--comic-page .projects-page--catalog .project-row__read {
+    display: none; flex: 0 0 auto; align-items: center; gap: 3px; padding: 0 6px;
+    border: 1px solid color-mix(in srgb, var(--p-today) 28%, transparent); border-radius: 999px;
+    background: color-mix(in srgb, var(--p-today) 8%, var(--p-paper)); color: var(--p-today);
+    font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap;
+  }
+  #app .app-shell--comic-page .projects-page--catalog .project-row.is-read .project-row__read { display: inline-flex; }
   /* Rank: an italic numeral that steps down a size per extra digit; the podium sits on the index's lime key. */
   #app .app-shell--comic-page .projects-page--catalog .project-row__rank { grid-area: rank; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
   #app .app-shell--comic-page .projects-page--catalog .project-row__position {

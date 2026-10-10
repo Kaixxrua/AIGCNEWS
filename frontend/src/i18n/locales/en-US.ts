@@ -49,7 +49,7 @@ const enUSCatalog = {
     label: 'Project chart', rank: 'Rank', project: 'Project', stars: 'Stars', gain: '24h', trend: '{days} days', heat: 'Heat', actions: 'Actions',
     starsTitle: '{count} GitHub stars', heatTitle: 'Heat {score}',
     movedUp: 'Up {count} since yesterday', movedDown: 'Down {count} since yesterday', unmoved: 'Same place as yesterday',
-    newEntry: 'NEW', newEntryTitle: "Not in yesterday's top 200", pick: "Editor's pick",
+    newEntry: 'NEW', newEntryTitle: "Not in yesterday's top 200", pick: "Editor's pick", read: 'Viewed',
     trendSummary: 'New stars per day over the last {days} days: {total} in all, most on {date} ({peak})',
     trendEmpty: 'No daily star counts for the last {days} days yet',
     trendDay: '{date}: {gain}', trendDayMissing: '{date}: not counted',
