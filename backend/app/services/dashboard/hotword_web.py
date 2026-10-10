@@ -236,10 +236,10 @@ class PublicWebResearch:
         from ddgs import DDGS
 
         def run() -> list[str]:
-            # These public engines were verified through the deployed outbound proxy.
+            # Use engine names registered by the pinned ddgs release.
             with DDGS(proxy=settings.outbound_proxy or None, timeout=10) as search:
                 region = "cn-zh" if re.search(r"[\u4e00-\u9fff]", query) else "us-en"
-                rows = search.text(query, backend="bing,yahoo", region=region,
+                rows = search.text(query, backend="duckduckgo,yahoo", region=region,
                                    timelimit="w" if recent else None, max_results=6)
             return [str(row.get("href") or "") for row in rows[:6]]
 
