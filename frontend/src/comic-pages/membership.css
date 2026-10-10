@@ -4,7 +4,9 @@
      names are tilted white slips, the billing switch and the savings slip are hand-inked too (all generated frames,
      see assets/comic/README.md). The call to action is a navy block with a tilted lime label between sparks.
      Sizes are the concept's (1536 × 1024) at four fifths, frames included, so the cards read at the density of the
-     other pages and fit a laptop's height. ── */
+     other pages and fit a laptop's height. The sheet sits in the middle of the window: across, and down between the
+     masthead and the dock when the window has height to spare (auto margins in a column, so a short window still
+     scrolls from the top). Each card centres its head (name, price, action) over its column. ── */
   #app .app-shell--comic-page .membership-page {
     --mem-card: url('/assets/comic/mem-card.webp'); --mem-card-b: url('/assets/comic/mem-card-b.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip.webp');
     --mem-tag: url('/assets/comic/mem-tag.webp'); --mem-badge: url('/assets/comic/mem-badge.webp'); --mem-toggle: url('/assets/comic/mem-toggle.webp');
@@ -12,8 +14,13 @@
     --mem-ink: #071633; --mem-copy: #0f2245; --mem-muted: #556277; --mem-off: #556277; --mem-check: #168c48; --mem-x: #b2b3b4;
     --mem-rule: #40516d; --mem-dash: #7997bc; --mem-hint: #50729a; --mem-cta: #071632; --mem-cta-ink: #d1f31e; --mem-halo: #fffef8;
     --mem-mark: #d9fb52; --mem-same: #5c6a7e; --mem-check-same: #4f9a6c;
-    display: block; padding: 11px 27px calc(var(--peel-clear) + 28px) 25px; background: transparent; text-wrap: pretty;
+    --mem-pad-end: calc(var(--peel-clear) + 28px);
+    display: flex; flex-direction: column; justify-content: flex-start; padding: 11px 27px var(--mem-pad-end) 25px; background: transparent; text-wrap: pretty;
   }
+  /* The paper kept clear under the sheet for the peel would tip a centred sheet upwards, so a strip as tall (less the
+     top padding) stands above it. The strip gives way first when the window is short, and a sheet that does not fit
+     still starts at the top. */
+  #app .app-shell--comic-page .membership-page::before { content: ''; flex: 0 1 calc(var(--mem-pad-end) - 11px); }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-page {
     --mem-card: url('/assets/comic/mem-card-night.webp'); --mem-card-b: url('/assets/comic/mem-card-b-night.webp'); --mem-card-vip: url('/assets/comic/mem-card-vip-night.webp');
     --mem-tag: url('/assets/comic/mem-tag-night.webp'); --mem-badge: url('/assets/comic/mem-badge-night.webp'); --mem-toggle: url('/assets/comic/mem-toggle-night.webp');
@@ -24,11 +31,15 @@
     --mem-mark: color-mix(in srgb, var(--acid) 30%, transparent); --mem-same: color-mix(in srgb, var(--ink) 62%, var(--paper));
     --mem-check-same: color-mix(in srgb, #4cc27a 62%, var(--paper));
   }
-  #app .app-shell--comic-page .membership-card { max-width: 1280px; margin: 0 auto; gap: 0; }
-  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; height: 80px; padding: 10px 0 0 3px; text-align: left; }
+  #app .app-shell--comic-page .membership-card { max-width: 1280px; margin: auto; gap: 0; }
+  /* The title tilts about the middle of its foot, so the spark at its raised end climbs about 30px over the title's
+     box and the brush dips under its lowered end. The hero keeps room above for the spark, and the paper under the
+     line below the title keeps the cards as far down as the comparison's masthead does (28px; 12px to the vip card,
+     which stands 16px higher). */
+  #app .app-shell--comic-page .membership-hero { position: relative; z-index: 1; padding: 20px 0 19px; text-align: center; }
   #app .app-shell--comic-page .membership-title.comic-title {
     margin: 0; padding: 0 1px; color: var(--mem-ink); font-size: 42px; font-style: normal; font-weight: 950; line-height: 1.12;
-    -webkit-text-stroke: .4px currentColor; transform: rotate(-4deg); transform-origin: 0 100%;
+    -webkit-text-stroke: .4px currentColor; transform: rotate(-4deg); transform-origin: 50% 100%;
     text-shadow: 1.5px 0 var(--mem-halo), -1.5px 0 var(--mem-halo), 0 1.5px var(--mem-halo), 0 -1.5px var(--mem-halo), 1.2px 1.2px var(--mem-halo), -1.2px -1.2px var(--mem-halo), 1.2px -1.2px var(--mem-halo), -1.2px 1.2px var(--mem-halo);
   }
   /* The brush is a flat lime block under the lower half; the spark is three wedges fanning up and out. */
@@ -39,10 +50,13 @@
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 31 42'%3E%3Cpath d='M6.5 0 12 1.2 6.2 19 3.8 18.6zM25.5 3.5 31 7.5 16.5 27 13.8 25zM29 23.5 31 29.5 12.5 41 10.5 38.2z'/%3E%3C/svg%3E") center / contain no-repeat;
   }
   :root[data-theme='dark'] #app .app-shell--comic-page .membership-title.comic-title::after { background: var(--acid); }
-  /* The title tilts; the line under it is body copy and runs level. */
+  /* The title tilts; the line under it is body copy and runs level, in even lines under the centred title. It starts
+     clear of the brush, which dips further under English's longer word. */
   #app .app-shell--comic-page .membership-subtitle {
-    max-width: none; margin: 5px 0 0; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5;
+    --mem-sub-gap: 12px;
+    max-width: 48em; margin: var(--mem-sub-gap) auto 0; color: var(--mem-ink); font-size: 15px; font-weight: 400; line-height: 1.5; text-wrap: balance;
   }
+  :root:lang(en) #app .app-shell--comic-page .membership-subtitle { --mem-sub-gap: 18px; }
   #app .app-shell--comic-page .tier-grid { grid-template-columns: 448fr 446fr 512fr; align-items: stretch; gap: 22px; padding-top: 11px; }
   #app .app-shell--comic-page .tier-card {
     position: relative; isolation: isolate; min-height: 450px; padding: 25px 19px 24px 24px;
@@ -66,21 +80,24 @@
     content: ''; position: absolute; z-index: -1; pointer-events: none; border: solid transparent;
   }
   #app .app-shell--comic-page .tier-name {
-    align-self: flex-start; min-height: 33px; margin: 0 0 18px -5px; padding: 2px 16px 3px 15px; color: var(--mem-ink);
+    align-self: center; min-height: 33px; margin: 0 0 18px; padding: 2px 16px 3px 15px; color: var(--mem-ink);
     font-size: 20px; font-style: italic; font-weight: 950; letter-spacing: .01em; line-height: 28px; text-align: center; -webkit-text-stroke: .7px currentColor; transform: skewY(-9.5deg) skewX(-4deg);
   }
   #app .app-shell--comic-page .tier-name::after { inset: -2px -2px -3px -2px; border-width: 10px 6px 7px 6px; border-image: var(--mem-tag) 30 18 21 18 fill / 10px 6px 7px 6px stretch; }
-  #app .app-shell--comic-page .tier-card--member .tier-name { margin-left: -10px; }
+  /* The flag stands far enough down the card that its raised corner stays on the page when the sheet starts right
+     under the masthead. */
   #app .app-shell--comic-page .tier-badge {
-    position: absolute; top: 7px; right: 14px; min-width: 76px; padding: 4px 13px 6px 16px; color: #071633;
+    position: absolute; top: 12px; right: 14px; min-width: 76px; padding: 4px 13px 6px 16px; color: #071633;
     font-size: 18px; font-style: italic; font-weight: 950; letter-spacing: .02em; line-height: 23px; text-align: center; transform: rotate(-10deg);
   }
   #app .app-shell--comic-page .tier-badge::after { inset: -2px -3px -5px -2px; border-width: 9px 11px 12px 10px; border-image: var(--mem-badge) 33 42 45 36 fill / 9px 11px 12px 10px stretch; }
-  #app .app-shell--comic-page .tier-price { align-items: baseline; row-gap: 8px; }
+  /* The price and the billing switch centre as one group; a switch that no longer fits beside the price takes the next
+     line, centred under it. */
+  #app .app-shell--comic-page .tier-price { justify-content: center; align-items: baseline; gap: 8px 16px; }
   #app .app-shell--comic-page .tier-price-amount { color: var(--mem-ink); font-size: 56px; font-weight: 700; line-height: .95; -webkit-text-stroke: 1px currentColor; }
   #app .app-shell--comic-page .tier-price-period { margin-left: 7px; color: var(--mem-ink); font-size: 17px; font-weight: 600; }
   #app .app-shell--comic-page .tier-billing-btn {
-    align-self: center; gap: 7px; min-height: 38px; margin: -11px 0 0 auto; padding: 6px 10px 7px 13px; color: var(--mem-ink);
+    align-self: center; gap: 7px; min-height: 38px; margin: -11px 0 0; padding: 6px 10px 7px 13px; color: var(--mem-ink);
     font-size: 16px; font-style: italic; font-weight: 900; -webkit-text-stroke: .3px currentColor; transform: rotate(-2.5deg);
   }
   #app .app-shell--comic-page .tier-billing-btn::after { inset: -2px -2px -3px -2px; border-width: 8px 6px 6px 6px; border-image: var(--mem-toggle) 30 21 24 21 fill / 8px 6px 6px 6px stretch; }
@@ -89,7 +106,7 @@
   #app .app-shell--comic-page .tier-billing-btn svg { width: 14px; height: 14px; stroke-width: 2.6; }
   #app .app-shell--comic-page .tier-billing-tag { margin-left: 3px; padding: 2px 7px 3px; color: #071633; font-size: 13px; font-style: italic; font-weight: 900; line-height: 18px; transform: rotate(-2deg); }
   #app .app-shell--comic-page .tier-billing-tag::after { inset: -2px -2px -3px -2px; border-width: 7px 5px 6px 5px; border-image: var(--mem-chip) 27 18 21 18 fill / 7px 5px 6px 5px stretch; }
-  #app .app-shell--comic-page .tier-price-yearly { display: flex; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 16px; font-weight: 800; }
+  #app .app-shell--comic-page .tier-price-yearly { display: flex; justify-content: center; align-items: center; margin: 3px 0 0; color: var(--mem-ink); font-size: 16px; font-weight: 800; }
   #app .app-shell--comic-page .tier-savings {
     margin: -5px 0 0 18px; padding: 5px 11px 7px; color: #071633; font-size: 14px; font-style: italic; font-weight: 900; line-height: 21px; transform: rotate(-5deg);
   }
@@ -141,6 +158,8 @@
     #app .app-shell--comic-page .tier-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
     #app .app-shell--comic-page .tier-card { padding-inline: 18px 16px; }
     #app .app-shell--comic-page .tier-card--member { padding-left: 28px; }
+    /* A narrower vip card leaves less room beside its centred name, so the flag shrinks and moves out to the corner. */
+    #app .app-shell--comic-page .tier-badge { right: 4px; min-width: 64px; padding: 3px 10px 5px 13px; font-size: 15px; line-height: 20px; }
     #app .app-shell--comic-page .tier-price-amount { font-size: 46px; }
     #app .app-shell--comic-page .tier-features { font-size: 14px; line-height: 22px; }
     #app .app-shell--comic-page .tier-cta { font-size: 22px; }
@@ -154,10 +173,11 @@
     display: grid; grid-template-columns: clamp(164px, 15%, 228px) 420fr 460fr 560fr; column-gap: 22px; max-width: 1320px; padding-top: 6px;
     grid-template-rows: auto auto auto minmax(58px, auto) repeat(var(--compare-rows), auto) minmax(54px, auto);
   }
-  #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { padding-bottom: calc(var(--peel-clear) + 14px); }
+  #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { --mem-pad-end: calc(var(--peel-clear) + 14px); }
   #app .app-shell--comic-page .membership-card--compare .tier-grid { display: contents; }
-  #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 1; grid-row: 1 / 5; height: auto; padding: 16px 0 0 3px; }
-  #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin-top: 14px; }
+  #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 1; grid-row: 1 / 5; padding: 16px 0 0 3px; text-align: left; }
+  #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { transform-origin: 0 100%; }
+  #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin-top: 14px; text-wrap: pretty; }
   #app .app-shell--comic-page .membership-card--compare .tier-rows {
     display: grid; grid-column: 1; grid-row: 5 / span var(--compare-rows); grid-template-rows: subgrid; animation: cardPopIn .7s cubic-bezier(.34, 1.56, .64, 1) .05s both;
   }
@@ -169,17 +189,17 @@
   #app .app-shell--comic-page .membership-card--compare .tier-card:nth-of-type(3) { grid-column: 4; animation-delay: .15s; }
   /* Everything in a card keeps to the card's one column; the button and the rows overlap on purpose. */
   #app .app-shell--comic-page .membership-card--compare .tier-card > :not(.tier-badge) { grid-column: 1; }
-  #app .app-shell--comic-page .membership-card--compare .tier-name { grid-row: 1; align-self: end; justify-self: start; margin-bottom: 6px; }
+  #app .app-shell--comic-page .membership-card--compare .tier-name { grid-row: 1; align-self: end; justify-self: center; margin-bottom: 6px; }
   #app .app-shell--comic-page .membership-card--compare .tier-price { grid-row: 2; }
   /* A slip that no longer fits beside the yearly price drops under it whole rather than breaking across two lines. */
   #app .app-shell--comic-page .membership-card--compare .tier-price-yearly { grid-row: 3; flex-wrap: wrap; row-gap: 6px; }
   #app .app-shell--comic-page .membership-card--compare .tier-savings { white-space: nowrap; }
   #app .app-shell--comic-page .membership-card--compare .tier-divider { display: none; }
-  /* Each plan's note keeps to the left edge its price and its rows start from, level with the buy button. */
+  /* Each plan's note centres in its column like the price above it, level with the buy button. */
   #app .app-shell--comic-page .membership-card--compare :is(.tier-plan-note, .tier-member-note) {
-    grid-row: 4; align-self: center; justify-self: start; margin: 0; padding: 0; background: none; text-align: left;
+    grid-row: 4; align-self: center; justify-self: center; margin: 0; padding: 0; background: none; text-align: center;
   }
-  #app .app-shell--comic-page .membership-card--compare .tier-register { grid-row: 4; align-self: center; justify-self: start; }
+  #app .app-shell--comic-page .membership-card--compare .tier-register { grid-row: 4; align-self: center; justify-self: center; }
   #app .app-shell--comic-page .membership-card--compare .tier-member-note { font-size: 16px; line-height: 24px; }
   /* Without the billing rows the plans' heads end higher than the title column's text; keep paper between that text
      and the first row's dashes. */
@@ -204,7 +224,10 @@
     padding: 5px 0 4px; background: linear-gradient(90deg, var(--mem-dash) 0 7px, transparent 7px 11px) 0 0 / 11px 1.5px repeat-x;
   }
   #app .app-shell--comic-page .membership-card--compare .tier-row-label { color: var(--mem-ink); font-size: 15px; font-weight: 800; line-height: 22px; }
-  #app .app-shell--comic-page .membership-card--compare .tier-features--compare li { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  /* A cell's mark and its words centre in the column as one group, the lines keeping to the edge the first one starts
+     from, like a short list; a cell that is only a ✓ or a ✗ drops the gap, so the mark sits on the column's middle. */
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare li { display: flex; justify-content: center; align-items: flex-start; gap: 10px; min-width: 0; }
+  #app .app-shell--comic-page .membership-card--compare .tier-features--compare li:not(:has(.tier-cell-line)) { gap: 0; }
   #app .app-shell--comic-page .membership-card--compare .tier-features--compare :is(.tier-check, .tier-x) { flex-shrink: 0; margin-top: 2px; }
   #app .app-shell--comic-page .membership-card--compare .tier-cell { display: flex; flex-direction: column; min-width: 0; }
   /* A plan that gives more of a benefit than the plan to its left has the words run under a lime highlighter, the
@@ -245,5 +268,42 @@
     #app .app-shell--comic-page .membership-card--compare .tier-cta { gap: 10px; }
     #app .app-shell--comic-page .membership-card--compare .tier-cta-hint { padding-left: 0; }
     :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 25px; }
+  }
+  /* From 1600px wide (1650px in English, whose row names run longer) the sheet can take one more column, as wide as
+     the row names, without narrowing the plans. Left empty on the right, it balances the names on the left, so the
+     plans sit on the window's middle, over the dock. */
+  @media (min-width: 1600px) {
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 198px 420fr 460fr 560fr 198px; max-width: 1540px; }
+  }
+  @media (min-width: 1650px) {
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare { grid-template-columns: 224px 420fr 460fr 560fr 224px; max-width: 1592px; }
+  }
+  /* A balanced sheet in a window tall enough for the title above the table (890px; 980px in English, whose table and
+     title run longer) takes the title and the line under it out of the corner to centre over the plans, and moves the
+     table down a row. The empty column keeps the cards clear of the peel, so the paper under the sheet only has to
+     hold the frames' extrusion and the vip card's lower edge (22px): the sheet centres between the masthead and the
+     dock and leaves the page nothing to scroll. Other windows keep the title in the corner, where it costs the table
+     no height. */
+  @media (min-width: 1600px) and (min-height: 890px) {
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { --mem-pad-end: 22px; }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare {
+      grid-template-rows: auto auto auto auto minmax(58px, auto) repeat(var(--compare-rows), auto) minmax(54px, auto);
+    }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 2 / 5; grid-row: 1; padding: 0 0 30px; text-align: center; }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { transform-origin: 50% 100%; }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin: var(--mem-sub-gap) auto 0; text-wrap: balance; }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare .tier-rows { grid-row: 6 / span var(--compare-rows); }
+    :root:not(:lang(en)) #app .app-shell--comic-page .membership-card--compare .tier-card { grid-row: 2 / -1; }
+  }
+  @media (min-width: 1650px) and (min-height: 980px) {
+    :root:lang(en) #app .app-shell--comic-page .membership-page:has(.membership-card--compare) { --mem-pad-end: 22px; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare {
+      grid-template-rows: auto auto auto auto minmax(58px, auto) repeat(var(--compare-rows), auto) minmax(54px, auto);
+    }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-hero { grid-column: 2 / 5; grid-row: 1; padding: 0 0 30px; text-align: center; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-title.comic-title { font-size: 42px; transform-origin: 50% 100%; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .membership-subtitle { margin: var(--mem-sub-gap) auto 0; text-wrap: balance; }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .tier-rows { grid-row: 6 / span var(--compare-rows); }
+    :root:lang(en) #app .app-shell--comic-page .membership-card--compare .tier-card { grid-row: 2 / -1; }
   }
 }
