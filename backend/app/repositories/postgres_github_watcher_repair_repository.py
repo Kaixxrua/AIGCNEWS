@@ -10,6 +10,9 @@ from backend.app.domain.github_heat import (
     SCORE_VERSION,
     SUSPICION_DEMOTION_STRENGTH,
     SUSPICION_DEMOTION_THRESHOLD,
+    TOP_STREAK_GRACE_DAYS,
+    TOP_STREAK_PENALTY_CAP,
+    TOP_STREAK_PENALTY_STEP,
 )
 
 # daily_hot_v6 display stretch, kept only to repair rows still labelled v6.
@@ -201,7 +204,10 @@ class PostgresGitHubWatcherRepairRepository:
                 "UPDATE github_repo_daily_metrics AS metrics SET "
                 "daily_fork_growth=0,daily_watcher_growth=0,"
                 "community_engagement_score=0.0,"
-                f"hot_score=ROUND((CASE WHEN score_version IN ('{SCORE_VERSION}','daily_hot_v7') THEN "
+                f"hot_score=ROUND((CASE WHEN score_version='{SCORE_VERSION}' THEN "
+                + v7_hot
+                + f"*GREATEST(1-{TOP_STREAK_PENALTY_STEP}*GREATEST(previous_top_streak_days+1-{TOP_STREAK_GRACE_DAYS},0),{1-TOP_STREAK_PENALTY_CAP})"
+                + " WHEN score_version IN ('daily_hot_v8','daily_hot_v7') THEN "
                 + v7_hot
                 + " WHEN score_version='daily_hot_v6' THEN "
                 + v6_display + " ELSE "

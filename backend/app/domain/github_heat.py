@@ -1,4 +1,4 @@
-"""GitHub heat v8: rolling 24-hour star growth on one scale for every row.
+"""GitHub heat v9: rolling 24-hour growth with gentle top-five rotation.
 
 Magnitude (scale-corrected plus absolute star velocity) decides the ranking;
 trend, community and maintenance only modulate it, so a saturated magnitude can
@@ -13,6 +13,9 @@ creation: newborns score the stars gathered since creation, and repositories
 under a week old interpolate from that origin until real observations cover the
 window. A fading virtual stock keeps a newborn's first hundred stars from
 reading like a breakout, and absolute growth keeps rising past 10k stars/day.
+
+v9 discounts repeated top-five exposure, starting on the third consecutive
+day at 2% per extra day, capped at 8%. Only prior daily boards count.
 """
 
 from __future__ import annotations
@@ -22,7 +25,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
-SCORE_VERSION = "daily_hot_v8"
+SCORE_VERSION = "daily_hot_v9"
+
+TOP_STREAK_RANK_LIMIT = 5
+TOP_STREAK_LOOKBACK_DAYS = 5  # five prior days already reach the penalty cap
+TOP_STREAK_GRACE_DAYS = 2
+TOP_STREAK_PENALTY_STEP = 0.02
+TOP_STREAK_PENALTY_CAP = 0.08
 
 MIN_SCALE_STARS = 500
 # Full marks sit near the historical daily peaks (top x≈15–110, top g≈2k–6.5k),
@@ -303,7 +312,14 @@ def heat_growth_sql(alias: str) -> str:
     )
 
 
-def score_heat(inputs: HeatInputs, *, suspicion: float = 0.0) -> dict[str, Any]:
+def top_streak_multiplier(previous_top_streak_days: int) -> float:
+    extra_days = max(previous_top_streak_days + 1 - TOP_STREAK_GRACE_DAYS, 0)
+    return 1 - min(extra_days * TOP_STREAK_PENALTY_STEP, TOP_STREAK_PENALTY_CAP)
+
+
+def score_heat(
+    inputs: HeatInputs, *, suspicion: float = 0.0, previous_top_streak_days: int = 0,
+) -> dict[str, Any]:
     growth = max(inputs.star_velocity, 0.0)
     scale = _normalize(
         math.log1p(growth / math.sqrt(max(inputs.base_stars, MIN_SCALE_STARS, launch_stars(inputs.age_days)))),
@@ -333,6 +349,8 @@ def score_heat(inputs: HeatInputs, *, suspicion: float = 0.0) -> dict[str, Any]:
         QUALITY_WEIGHTS[name] for name in known
     )
     hot = magnitude * (QUALITY_BASE + QUALITY_SPAN * quality / 100) * suspicion_multiplier(suspicion)
+    previous_top_streak_days = min(max(previous_top_streak_days, 0), TOP_STREAK_LOOKBACK_DAYS)
+    hot *= top_streak_multiplier(previous_top_streak_days)
     return {
         "scale_corrected_growth_score": round(scale, 4),
         "absolute_growth_score": round(absolute, 4),
@@ -340,5 +358,6 @@ def score_heat(inputs: HeatInputs, *, suspicion: float = 0.0) -> dict[str, Any]:
         "community_engagement_score": round(community or 0.0, 4),
         "maintenance_activity_score": round(maintenance or 0.0, 4),
         "hot_score": round(hot, 4),
+        "previous_top_streak_days": previous_top_streak_days,
         "score_version": SCORE_VERSION,
     }

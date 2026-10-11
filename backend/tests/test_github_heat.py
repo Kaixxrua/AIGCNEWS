@@ -15,6 +15,7 @@ from backend.app.domain.github_heat import (
     score_heat,
     snapshot_velocity,
     suspicion_multiplier,
+    top_streak_multiplier,
 )
 from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
 
@@ -143,6 +144,27 @@ def test_zero_growth_has_zero_heat():
     result = score_heat(HeatInputs(star_velocity=0, base_stars=5000, fork_velocity=20, watcher_velocity=5, days_since_push=0))
     assert result['hot_score'] == 0
     assert result['maintenance_activity_score'] == 100
+
+
+@pytest.mark.parametrize(('prior_days', 'factor'), [
+    (0, 1), (1, 1), (2, 0.98), (3, 0.96), (4, 0.94), (5, 0.92), (30, 0.92),
+])
+def test_top_streak_discount_has_grace_and_a_gentle_cap(prior_days, factor):
+    inputs = HeatInputs(star_velocity=500, base_stars=1000)
+    assert top_streak_multiplier(prior_days) == pytest.approx(factor)
+    for suspicion in (0.0, 0.6):
+        original = score_heat(inputs, suspicion=suspicion)
+        penalized = score_heat(inputs, suspicion=suspicion, previous_top_streak_days=prior_days)
+        assert penalized['hot_score'] == pytest.approx(original['hot_score'] * factor, abs=0.0001)
+        assert penalized['absolute_growth_score'] == original['absolute_growth_score']
+        assert penalized['previous_top_streak_days'] == min(prior_days, 5)
+
+
+def test_top_streak_preserves_a_clear_growth_leader_and_zero_heat():
+    leader = score_heat(HeatInputs(star_velocity=15000, base_stars=5000), previous_top_streak_days=5)
+    newcomer = score_heat(HeatInputs(star_velocity=1500, base_stars=5000))
+    assert leader['hot_score'] > newcomer['hot_score']
+    assert score_heat(HeatInputs(star_velocity=0, base_stars=5000), previous_top_streak_days=5)['hot_score'] == 0
 
 
 @pytest.mark.parametrize(('suspicion', 'expected'), [(0, 1), (0.4, 1), (0.5, 0.7), (0.9, 0.46), (1.5, 0.4)])

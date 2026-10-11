@@ -9,7 +9,14 @@ from backend.app.core.postgres_database import (
     PostgresDatabaseLifecycle,
     postgres_database,
 )
-from backend.app.domain.github_heat import MAX_GAP_DAYS, ROLLING_WINDOW_HOURS, SCORE_VERSION as HEAT_SCORE_VERSION
+from backend.app.domain.github_heat import (
+    MAX_GAP_DAYS,
+    ROLLING_WINDOW_HOURS,
+    SCORE_VERSION as HEAT_SCORE_VERSION,
+    TOP_STREAK_LOOKBACK_DAYS,
+    TOP_STREAK_RANK_LIMIT,
+    heat_growth_sql,
+)
 from backend.app.monitoring import live_stats_broadcaster
 
 logger = logging.getLogger(__name__)
@@ -1385,6 +1392,7 @@ class PostgresGitHubProjectIngestionRepository:
         ]
         repo_filter = " AND s.repo_id=ANY(%s)" if normalized else ""
         params: list[Any] = [
+            metric_date,
             baseline_start_date,
             metric_date,
             baseline_start_date,
@@ -1399,9 +1407,43 @@ class PostgresGitHubProjectIngestionRepository:
         ]
         if normalized:
             params.append(normalized)
+        # Reconstruct the public top five for each prior date, before applying
+        # this refresh's repo/min-stars filters. A missing day breaks the streak;
+        # today's writes never participate, so checkpoints cannot compound it.
         sql = (
+            f"""
+            WITH top_history AS (
+                SELECT leaders.repo_id, days.days_ago
+                FROM generate_series(1, {TOP_STREAK_LOOKBACK_DAYS}) AS days(days_ago)
+                CROSS JOIN LATERAL (
+                    SELECT m.repo_id
+                    FROM github_repo_daily_metrics m
+                    JOIN github_repo_candidates c ON c.repo_id=m.repo_id
+                    JOIN github_repo_enrichments e ON e.repo_id=c.repo_id
+                    WHERE m.metric_date=(%s::date-days.days_ago)::text
+                      AND {heat_growth_sql('m')}>0
+                      AND c.availability_status='active' AND e.status='succeeded'
+                      AND NOT EXISTS (SELECT 1 FROM github_repo_aliases a
+                          WHERE a.alias_repo_id=c.repo_id AND a.canonical_repo_id<>c.repo_id)
+                      AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine q WHERE q.repo_id=c.repo_id)
+                    ORDER BY m.hot_score DESC NULLS LAST, {heat_growth_sql('m')} DESC NULLS LAST,
+                             m.stars DESC NULLS LAST, c.full_name ASC
+                    LIMIT {TOP_STREAK_RANK_LIMIT}
+                ) leaders
+            ), top_streaks AS (
+                SELECT repo_id, COUNT(*)::integer AS previous_top_streak_days
+                FROM (
+                    SELECT repo_id, days_ago,
+                           ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY days_ago) AS streak_day
+                    FROM top_history
+                ) numbered
+                WHERE days_ago=streak_day
+                GROUP BY repo_id
+            )
+            """
             """
             SELECT s.repo_id,c.full_name,s.snapshot_date metric_date,COALESCE(s.stars,0) stars,
+                COALESCE(ts.previous_top_streak_days,0) AS previous_top_streak_days,
                 (SELECT jsonb_agg(jsonb_build_object(
                     'snapshot_date', h.snapshot_date, 'captured_at', h.captured_at,
                     'stars', h.stars, 'forks', h.forks, 'watchers', h.watchers,
@@ -1431,6 +1473,7 @@ class PostgresGitHubProjectIngestionRepository:
                     AND m.metric_date>=%s AND m.metric_date<%s
                     AND m.growth_suspicion_signals LIKE '%%"coordinated_creation"%%') prior_coordinated_creation
             FROM github_repo_snapshots s
+            LEFT JOIN top_streaks ts ON ts.repo_id=s.repo_id
             LEFT JOIN LATERAL (
                 SELECT p.snapshot_date, p.stars, p.forks, p.watchers,
                        p.community_metrics_complete
@@ -1509,6 +1552,7 @@ class PostgresGitHubProjectIngestionRepository:
             "maintenance_activity_score": 0.0,
             "community_engagement_score": 0.0,
             "hot_score": 0.0,
+            "previous_top_streak_days": 0,
             "growth_suspicion_score": 0.0,
             "growth_suspicion_signals": "[]",
             "growth_corroborated": False,
@@ -1533,7 +1577,7 @@ class PostgresGitHubProjectIngestionRepository:
                 previous_stars,daily_star_growth,daily_fork_growth,daily_watcher_growth,
                 daily_growth_available,daily_growth_source,daily_growth_observed_at,
                 scale_corrected_growth_score,growth_acceleration_score,absolute_growth_score,
-                maintenance_activity_score,community_engagement_score,hot_score,
+                maintenance_activity_score,community_engagement_score,hot_score,previous_top_streak_days,
                 growth_suspicion_score,growth_suspicion_signals,growth_corroborated,
                 score_version,updated_at,
                 rolling_24h_star_growth,rolling_24h_growth_source,rolling_24h_observed_at
@@ -1543,7 +1587,7 @@ class PostgresGitHubProjectIngestionRepository:
                 %(daily_fork_growth)s,%(daily_watcher_growth)s,%(daily_growth_available)s,
                 %(daily_growth_source)s,%(daily_growth_observed_at)s,%(scale_corrected_growth_score)s,
                 %(growth_acceleration_score)s,%(absolute_growth_score)s,%(maintenance_activity_score)s,
-                %(community_engagement_score)s,%(hot_score)s,
+                %(community_engagement_score)s,%(hot_score)s,%(previous_top_streak_days)s,
                 %(growth_suspicion_score)s,%(growth_suspicion_signals)s,%(growth_corroborated)s,
                 %(score_version)s,%(updated_at)s,
                 %(rolling_24h_star_growth)s,%(rolling_24h_growth_source)s,%(rolling_24h_observed_at)s
@@ -1560,6 +1604,7 @@ class PostgresGitHubProjectIngestionRepository:
                 maintenance_activity_score=EXCLUDED.maintenance_activity_score,
                 community_engagement_score=EXCLUDED.community_engagement_score,
                 hot_score=EXCLUDED.hot_score,
+                previous_top_streak_days=EXCLUDED.previous_top_streak_days,
                 growth_suspicion_score=EXCLUDED.growth_suspicion_score,
                 growth_suspicion_signals=EXCLUDED.growth_suspicion_signals,
                 growth_corroborated=EXCLUDED.growth_corroborated,

@@ -693,6 +693,7 @@ def _compute_github_daily_metrics(
     observed_velocity_count = 0
     rolling_sources: Dict[str, int] = {}
     for row, item, rolling in observed:
+        previous_top_streak_days = int(row.get("previous_top_streak_days") or 0)
         daily_growth = item["daily_star_growth"]
         has_complete_community_pair = item.pop("_has_complete_community_pair")
         base_stars = item.pop("_base_stars")
@@ -765,9 +766,14 @@ def _compute_github_daily_metrics(
             if growth <= 0:
                 # 窗口内星增为 0 的仓库不应凭前一区间速率或次要信号获得热度。
                 inputs = replace(inputs, star_velocity=0.0)
-            scores = score_heat(inputs, suspicion=suspicion_score)
+            scores = score_heat(
+                inputs, suspicion=suspicion_score, previous_top_streak_days=previous_top_streak_days,
+            )
         else:
-            scores = score_heat(HeatInputs(star_velocity=0.0, base_stars=float(base_stars)))
+            scores = score_heat(
+                HeatInputs(star_velocity=0.0, base_stars=float(base_stars)),
+                previous_top_streak_days=previous_top_streak_days,
+            )
             scores.update(maintenance_activity_score=0.0, community_engagement_score=0.0)
         metrics.append(
             {
