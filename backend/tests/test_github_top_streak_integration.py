@@ -14,7 +14,9 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
     appearances = {
         "leader": (100, range(1, 8)), "anchor": (95, range(1, 6)),
         "repeat": (90, [1, 2]), "second": (85, [1]), "gap": (80, [1, 3, 4, 5]),
-        "absent": (75, [2, 3, 4, 5]), "outsider": (70, range(1, 6)), "new": (0, []),
+        "sixth": (70, range(1, 6)), "seventh": (68, range(1, 6)),
+        "eighth": (66, range(1, 6)), "ninth": (64, range(1, 6)), "tenth": (62, range(1, 6)),
+        "absent": (75, [2, 3, 4, 5]), "outsider": (60, range(1, 6)), "new": (0, []),
         "pending": (200, range(1, 6)), "alias": (200, range(1, 6)),
         "quarantined": (200, range(1, 6)), "removed": (200, range(1, 6)),
         "zero": (200, range(1, 6)),
@@ -62,14 +64,22 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
             )
 
         all_rows = {row["repo_id"]: row["previous_top_streak_days"] for row in inputs()}
-        expected = {"leader": 5, "anchor": 5, "repeat": 2, "second": 1, "gap": 1}
+        expected = {
+            "leader": 5, "anchor": 5, "repeat": 2, "second": 1, "gap": 1,
+            "sixth": 5, "seventh": 5, "eighth": 5, "ninth": 5, "tenth": 5,
+        }
         for name in appearances:
             assert all_rows[f"streak/{name}"] == expected.get(name, 0)
         # Share the real public board's eligibility and tie-breaking contract.
-        yesterday = catalog.list_github_hot_for_date(metric_date="2026-10-10", limit=5)
+        yesterday = catalog.list_github_hot_for_date(metric_date="2026-10-10", limit=11)
+        assert yesterday[9]["repo_id"] == "streak/tenth"
+        assert yesterday[10]["repo_id"] == "streak/outsider"
+        yesterday = yesterday[:10]
         assert {row["repo_id"] for row in yesterday} == {f"streak/{name}" for name in expected}
         assert inputs(["streak/outsider"])[0]["previous_top_streak_days"] == 0
         assert inputs(["streak/repeat"])[0]["previous_top_streak_days"] == 2
+        for name in ("sixth", "seventh", "eighth", "ninth", "tenth"):
+            assert inputs([f"streak/{name}"])[0]["previous_top_streak_days"] == 5
 
         # Persistence and same-day reruns apply the multiplier once.
         repository.upsert_github_trending_hit({
@@ -85,7 +95,7 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
                     "SELECT * FROM github_repo_daily_metrics WHERE repo_id='streak/leader' AND metric_date=%s",
                     (str(today),),
                 ).fetchone()
-            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v9"
+            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v10"
             scores.append(row["hot_score"])
         assert scores[0] > 0 and scores[1] == scores[0]
 

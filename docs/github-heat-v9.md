@@ -1,5 +1,8 @@
 # GitHub heat v9: gentle consecutive top-five penalty
 
+Superseded by [v10](github-heat-v10.md): top ten, one grace day,
+3% per extra day, capped at 15%. This document preserves the v9 contract.
+
 The October 8–11, 2026 metric slices had the same three leading projects
 (rea, photocraft and AnyPS5), with changes in their order. v9 preserves the v8
 rolling 24-hour growth formula and adds a small exposure discount.

@@ -1,4 +1,4 @@
-"""GitHub heat v9: rolling 24-hour growth with gentle top-five rotation.
+"""GitHub heat v10: rolling 24-hour growth with bounded top-ten rotation.
 
 Magnitude (scale-corrected plus absolute star velocity) decides the ranking;
 trend, community and maintenance only modulate it, so a saturated magnitude can
@@ -14,8 +14,8 @@ under a week old interpolate from that origin until real observations cover the
 window. A fading virtual stock keeps a newborn's first hundred stars from
 reading like a breakout, and absolute growth keeps rising past 10k stars/day.
 
-v9 discounts repeated top-five exposure, starting on the third consecutive
-day at 2% per extra day, capped at 8%. Only prior daily boards count.
+v10 discounts repeated top-ten exposure, starting on the second consecutive
+day at 3% per extra day, capped at 15%. Only prior daily boards count.
 """
 
 from __future__ import annotations
@@ -25,13 +25,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
-SCORE_VERSION = "daily_hot_v9"
+SCORE_VERSION = "daily_hot_v10"
 
-TOP_STREAK_RANK_LIMIT = 5
+TOP_STREAK_RANK_LIMIT = 10
 TOP_STREAK_LOOKBACK_DAYS = 5  # five prior days already reach the penalty cap
-TOP_STREAK_GRACE_DAYS = 2
-TOP_STREAK_PENALTY_STEP = 0.02
-TOP_STREAK_PENALTY_CAP = 0.08
+TOP_STREAK_GRACE_DAYS = 1
+TOP_STREAK_PENALTY_STEP = 0.03
+TOP_STREAK_PENALTY_CAP = 0.15
 
 MIN_SCALE_STARS = 500
 # Full marks sit near the historical daily peaks (top x≈15–110, top g≈2k–6.5k),

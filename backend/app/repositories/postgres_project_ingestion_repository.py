@@ -1407,7 +1407,7 @@ class PostgresGitHubProjectIngestionRepository:
         ]
         if normalized:
             params.append(normalized)
-        # Reconstruct the public top five for each prior date, before applying
+        # Reconstruct the public top ten for each prior date, before applying
         # this refresh's repo/min-stars filters. A missing day breaks the streak;
         # today's writes never participate, so checkpoints cannot compound it.
         sql = (

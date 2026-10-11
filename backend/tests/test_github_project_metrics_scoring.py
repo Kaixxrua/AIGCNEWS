@@ -62,7 +62,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         original = self._compute()["payload"]
         penalized = self._compute(previous_top_streak_days=5)["payload"]
         rerun = self._compute(previous_top_streak_days=5)["payload"]
-        self.assertAlmostEqual(penalized["hot_score"], original["hot_score"] * 0.92, places=4)
+        self.assertAlmostEqual(penalized["hot_score"], original["hot_score"] * 0.85, places=4)
         self.assertEqual(penalized["hot_score"], rerun["hot_score"])
         self.assertEqual(penalized["previous_top_streak_days"], 5)
         for key in ("daily_star_growth", "daily_growth_source", "growth_suspicion_score",
@@ -127,7 +127,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(payload["daily_growth_source"], "github_trending_daily")
         self.assertEqual(payload["daily_star_growth"], 75)
         self.assertEqual(payload["community_engagement_score"], 0.0)
-        self.assertEqual(payload["score_version"], "daily_hot_v9")
+        self.assertEqual(payload["score_version"], "daily_hot_v10")
 
     def test_trending_fallback_shares_the_snapshot_scale(self) -> None:
         trending = self._compute(
@@ -196,8 +196,8 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
     def test_missing_rate_history_scores_observed_growth_on_current_scale(self) -> None:
         computed = self._compute()
         payload = computed["payload"]
-        self.assertEqual(payload["score_version"], "daily_hot_v9")
-        self.assertEqual(computed["result"]["score_version"], "daily_hot_v9")
+        self.assertEqual(payload["score_version"], "daily_hot_v10")
+        self.assertEqual(computed["result"]["score_version"], "daily_hot_v10")
         self.assertEqual(computed["result"]["observed_velocity"], 1)
         self.assertEqual(computed["result"]["snapshot_velocity"], 0)
         self.assertAlmostEqual(
@@ -210,7 +210,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         computed = self._compute(previous_snapshot_date=None, trending_daily_star_growth=None)
         payload = computed["payload"]
         self.assertEqual(payload["daily_growth_source"], "unavailable")
-        self.assertEqual(payload["score_version"], "daily_hot_v9")
+        self.assertEqual(payload["score_version"], "daily_hot_v10")
         for key in (
             "hot_score",
             "scale_corrected_growth_score",

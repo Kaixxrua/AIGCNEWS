@@ -147,7 +147,7 @@ def test_zero_growth_has_zero_heat():
 
 
 @pytest.mark.parametrize(('prior_days', 'factor'), [
-    (0, 1), (1, 1), (2, 0.98), (3, 0.96), (4, 0.94), (5, 0.92), (30, 0.92),
+    (0, 1), (1, 0.97), (2, 0.94), (3, 0.91), (4, 0.88), (5, 0.85), (30, 0.85),
 ])
 def test_top_streak_discount_has_grace_and_a_gentle_cap(prior_days, factor):
     inputs = HeatInputs(star_velocity=500, base_stars=1000)

@@ -207,6 +207,9 @@ class PostgresGitHubWatcherRepairRepository:
                 f"hot_score=ROUND((CASE WHEN score_version='{SCORE_VERSION}' THEN "
                 + v7_hot
                 + f"*GREATEST(1-{TOP_STREAK_PENALTY_STEP}*GREATEST(previous_top_streak_days+1-{TOP_STREAK_GRACE_DAYS},0),{1-TOP_STREAK_PENALTY_CAP})"
+                + " WHEN score_version='daily_hot_v9' THEN "
+                + v7_hot
+                + "*GREATEST(1-0.02*GREATEST(previous_top_streak_days-1,0),0.92)"
                 + " WHEN score_version IN ('daily_hot_v8','daily_hot_v7') THEN "
                 + v7_hot
                 + " WHEN score_version='daily_hot_v6' THEN "

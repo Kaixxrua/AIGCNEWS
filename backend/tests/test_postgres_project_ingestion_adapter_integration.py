@@ -851,8 +851,9 @@ def test_metric_resume_requires_fresh_snapshot_and_completed_metric() -> None:
         assert len(repository.list_github_project_metric_targets(metric_date="2026-07-28")) == len(names)
 
 
-@pytest.mark.parametrize("version", ["daily_hot_v7", "daily_hot_v8", "daily_hot_v9"])
-def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, version) -> None:
+@pytest.mark.parametrize("version", ["daily_hot_v7", "daily_hot_v8", "daily_hot_v9", "daily_hot_v10"])
+@pytest.mark.parametrize("prior_days", [0, 1, 2, 5])
+def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, version, prior_days) -> None:
     from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
     from backend.app.services.ingestion.github_project_metrics_service import compute_github_daily_metrics
 
@@ -871,8 +872,8 @@ def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, ver
     assert result["snapshot_velocity"] == 1 and result["observed_velocity"] == 0
     with database.transaction() as connection:
         connection.execute(
-            "UPDATE github_repo_daily_metrics SET score_version=%s,previous_top_streak_days=5 WHERE repo_id=%s",
-            (version, repo_id),
+            "UPDATE github_repo_daily_metrics SET score_version=%s,previous_top_streak_days=%s WHERE repo_id=%s",
+            (version, prior_days, repo_id),
         )
         with connection.cursor() as cursor:
             cursor.execute("SELECT * FROM github_repo_daily_metrics WHERE repo_id=%s", (repo_id,))
@@ -890,11 +891,13 @@ def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, ver
         quality = (0.5*before["growth_acceleration_score"] + 0.25*before["maintenance_activity_score"]) / 0.75
         expected = magnitude * (0.8 + 0.2*quality/100)
         if version == "daily_hot_v9":
-            expected *= 0.92
+            expected *= [1.0, 1.0, 0.98, 0.96, 0.94, 0.92][prior_days]
+        elif version == "daily_hot_v10":
+            expected *= [1.0, 0.97, 0.94, 0.91, 0.88, 0.85][prior_days]
         assert after["hot_score"] == pytest.approx(expected, abs=0.0001)
         assert after["hot_score"] != before["hot_score"]
         assert after["score_version"] == version
-        assert after["previous_top_streak_days"] == 5
+        assert after["previous_top_streak_days"] == prior_days
         assert after["community_engagement_score"] == 0
 
 
