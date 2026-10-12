@@ -187,6 +187,13 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     if (!steps.value.length) { manualScope.value = null; return }
     phase.value = 'welcome'
   }
+  function showFullTour() {
+    if (phase.value === 'idle' || busy.value) return
+    saveProgress(owner.value, null)
+    manualScope.value = null
+    index.value = 0
+    phase.value = 'welcome'
+  }
   async function retrySync() {
     if (auth.isLoggedIn) {
       if (await syncAccount()) {
@@ -226,7 +233,7 @@ export function useTour(blocked: Ref<boolean>, compact: Ref<boolean> = ref(false
     window.removeEventListener('storage', storageChanged)
   })
   return {
-    phase, index, step, steps, pageGuide, busy, navigationFailed,
+    phase, index, step, steps, pageGuide, busy, navigationFailed, showFullTour,
     start: () => go(0),
     previous: () => { if (!busy.value) go(index.value - 1) },
     next: () => {

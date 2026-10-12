@@ -10,7 +10,7 @@ import { placeCard, spotlightBox, type Box } from '@/features/onboarding/geometr
 const props = withDefaults(defineProps<{ blocked?: boolean }>(), { blocked: false })
 const { t } = useI18n()
 const compact = useMediaQuery('(max-width: 1023px)')
-const { phase, index, step, steps, pageGuide, busy, navigationFailed, start, previous, next, skip } = useTour(toRef(props, 'blocked'), compact)
+const { phase, index, step, steps, pageGuide, busy, navigationFailed, start, previous, next, skip, showFullTour } = useTour(toRef(props, 'blocked'), compact)
 const dialog = ref<HTMLDialogElement>()
 const card = ref<HTMLElement>()
 const title = ref<HTMLElement>()
@@ -21,6 +21,11 @@ const locating = ref(false)
 const welcome = computed(() => phase.value === 'welcome')
 const heading = computed(() => welcome.value ? t(pageGuide.value ? 'onboarding.pageWelcomeTitle' : 'onboarding.welcomeTitle') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.title`))
 const description = computed(() => welcome.value ? t(pageGuide.value ? 'onboarding.pageWelcomeBody' : 'onboarding.welcomeBody') : t(`onboarding.steps.${step.value?.copy ?? step.value?.id}.body`))
+const nextLabel = computed(() => {
+  if (welcome.value) return t('onboarding.start')
+  if (index.value < steps.value.length - 1) return t('onboarding.next')
+  return t(pageGuide.value ? 'onboarding.pageFinish' : 'onboarding.finish')
+})
 const holeStyle = computed(() => hole.value ? {
   left: `${hole.value.left}px`, top: `${hole.value.top}px`,
   width: `${hole.value.width}px`, height: `${hole.value.height}px`,
@@ -109,11 +114,11 @@ onBeforeUnmount(() => {
       <div v-else class="onboarding-shade" aria-hidden="true"></div>
       <section ref="card" class="onboarding-card" :class="{ 'onboarding-card--welcome': welcome }" :style="welcome ? undefined : position">
         <header class="onboarding-topline">
-          <span class="onboarding-edition">{{ t('onboarding.edition') }}</span>
+          <span class="onboarding-edition">{{ t(pageGuide ? 'onboarding.pageEdition' : 'onboarding.edition') }}</span>
           <button class="onboarding-close" type="button" :aria-label="t('onboarding.close')" @click="skip"><X :size="20" aria-hidden="true" /></button>
         </header>
         <div v-if="welcome" class="onboarding-emblem" aria-hidden="true"><Compass :size="46" :stroke-width="1.5" /><span>✦</span></div>
-        <div v-else class="onboarding-progress" :aria-label="t('onboarding.progress', { current: index + 1, total: steps.length })">
+        <div v-else-if="steps.length > 1" class="onboarding-progress" :aria-label="t('onboarding.progress', { current: index + 1, total: steps.length })">
           <span>{{ String(index + 1).padStart(2, '0') }}</span>
           <div class="onboarding-progress__track" aria-hidden="true"><div :style="{ width: `${(index + 1) / steps.length * 100}%` }"></div></div>
           <span>{{ String(steps.length).padStart(2, '0') }}</span>
@@ -126,11 +131,12 @@ onBeforeUnmount(() => {
         <p v-else-if="locating" class="onboarding-note" role="status">{{ t('onboarding.loading') }}</p>
         <p v-else-if="missing" class="onboarding-note" role="status">{{ t('onboarding.missing') }}</p>
         <footer class="onboarding-actions">
-          <button type="button" class="onboarding-skip" @click="skip">{{ t('onboarding.skip') }}</button>
+          <button v-if="pageGuide" type="button" class="onboarding-skip" :disabled="busy" @click="showFullTour">{{ t('onboarding.fullTour') }}</button>
+          <button v-else type="button" class="onboarding-skip" @click="skip">{{ t('onboarding.skip') }}</button>
           <div class="onboarding-actions__steps">
-            <button v-if="!welcome" type="button" class="onboarding-back" :disabled="index === 0 || busy || locating" @click="previous"><ArrowLeft :size="15" aria-hidden="true" />{{ t('onboarding.previous') }}</button>
+            <button v-if="!welcome && steps.length > 1" type="button" class="onboarding-back" :disabled="index === 0 || busy || locating" @click="previous"><ArrowLeft :size="15" aria-hidden="true" />{{ t('onboarding.previous') }}</button>
             <button type="button" class="onboarding-next" :disabled="busy || locating" @click="welcome ? start() : next()">
-              {{ t(welcome ? 'onboarding.start' : index === steps.length - 1 ? 'onboarding.finish' : 'onboarding.next') }}<ArrowRight :size="16" aria-hidden="true" />
+              {{ nextLabel }}<ArrowRight :size="16" aria-hidden="true" />
             </button>
           </div>
         </footer>
