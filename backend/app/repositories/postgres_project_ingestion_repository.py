@@ -14,7 +14,9 @@ from backend.app.domain.github_heat import (
     ROLLING_WINDOW_HOURS,
     SCORE_VERSION as HEAT_SCORE_VERSION,
     TOP_STREAK_LOOKBACK_DAYS,
+    TOP_STREAK_PRIOR_DAYS_CAP,
     TOP_STREAK_RANK_LIMIT,
+    TOP_STREAK_RESET_DAYS,
     heat_growth_sql,
 )
 from backend.app.monitoring import live_stats_broadcaster
@@ -1408,8 +1410,8 @@ class PostgresGitHubProjectIngestionRepository:
         if normalized:
             params.append(normalized)
         # Reconstruct the public top ten for each prior date, before applying
-        # this refresh's repo/min-stars filters. A missing day breaks the streak;
-        # today's writes never participate, so checkpoints cannot compound it.
+        # this refresh's repo/min-stars filters. Three absent calendar days
+        # reset exposure; shorter gaps pause it. Today's writes never count.
         sql = (
             f"""
             WITH top_history AS (
@@ -1430,14 +1432,20 @@ class PostgresGitHubProjectIngestionRepository:
                              m.stars DESC NULLS LAST, c.full_name ASC
                     LIMIT {TOP_STREAK_RANK_LIMIT}
                 ) leaders
+            ), top_gaps AS (
+                SELECT repo_id, days_ago,
+                       days_ago-COALESCE(LAG(days_ago) OVER (
+                           PARTITION BY repo_id ORDER BY days_ago),0) AS gap_days
+                FROM top_history
             ), top_streaks AS (
-                SELECT repo_id, COUNT(*)::integer AS previous_top_streak_days
+                SELECT repo_id, LEAST(COUNT(*),{TOP_STREAK_PRIOR_DAYS_CAP})::integer
+                    AS previous_top_streak_days
                 FROM (
-                    SELECT repo_id, days_ago,
-                           ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY days_ago) AS streak_day
-                    FROM top_history
-                ) numbered
-                WHERE days_ago=streak_day
+                    SELECT repo_id, MAX(gap_days) OVER (
+                        PARTITION BY repo_id ORDER BY days_ago) AS longest_gap
+                    FROM top_gaps
+                ) recent_run
+                WHERE longest_gap<={TOP_STREAK_RESET_DAYS}
                 GROUP BY repo_id
             )
             """
