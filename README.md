@@ -264,6 +264,10 @@ scripts/            Stack management, migration, backup, and data backfill scrip
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Contributor Covenant 2.1 (in Chinese)
 - Testing & quality checks (pytest, ruff, Vitest, typecheck, build, compose config): [docs/self-hosting.md#testing](docs/self-hosting.md#testing)
 
+## Community Acknowledgment
+
+AIGCNEWS recognizes and thanks the [LINUX DO community](https://linux.do/) for providing an open space for developers to share knowledge and ideas.
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua — free to use, modify, and self-host, including commercially; if you run a modified version as a public network service, you must offer its source under AGPL-3.0. Commercial licensing available on request.

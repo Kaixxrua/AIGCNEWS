@@ -261,6 +261,10 @@ scripts/            栈管理、迁移、备份与数据回填脚本
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) —— Contributor Covenant 2.1 行为准则
 - 测试与质量检查命令（pytest、ruff、Vitest、typecheck、构建、编排校验）：[docs/self-hosting.zh-CN.md#测试](docs/self-hosting.zh-CN.md#测试)
 
+## 社区致谢
+
+AIGCNEWS 认可并感谢 [LINUX DO 社区](https://linux.do/) 为开发者提供开放的技术交流与知识分享空间。
+
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE) © 2026 Kaixxrua —— 可自由使用、修改与自托管（含商用）；若将修改版以公网服务形式对外提供，须以 AGPL-3.0 公开其源码。商业授权请联系作者。
