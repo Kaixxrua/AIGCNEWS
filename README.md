@@ -39,11 +39,11 @@ The website supports Chinese and English, light and dark themes, mobile layouts,
 
 ## Interface preview
 
-These screenshots were captured from the live site in October 2026 as a guest, with the interface set to Chinese. Content, dates, and counters change as the site updates.
+These screenshots were captured from the live site in October 2026, with the interface set to Chinese. Content, dates, and counters change as the site updates.
 
-| Projects: categories, trends, and rankings | UI library: previews and filters |
+| Projects: rankings, details, and growth trends | UI library: previews and filters |
 | --- | --- |
-| ![Project categories, ranked rows, Star growth, and trend charts](docs/assets/readme/projects.png) | ![UI library with page previews and framework and use-case filters](docs/assets/readme/ui-library.png) |
+| ![Project categories, trending rankings, project details, and a Star growth chart](docs/assets/readme/projects.png) | ![UI library with page previews and framework and use-case filters](docs/assets/readme/ui-library.png) |
 
 | Briefings: summaries and topic sections | MCP: setup prompts and browser authorization |
 | --- | --- |
