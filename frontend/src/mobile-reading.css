@@ -30,6 +30,7 @@
   #app .app-shell .projects-search .input,
   #app .app-shell .projects-sort select { min-height: 44px; font-size: 16px; }
   #app .app-shell .projects-sort { flex-basis: 116px; width: 116px; }
+  #app .app-shell .projects-sort--today { flex-basis: 168px; width: 168px; }
   #app .app-shell .projects-category-panel {
     display: block; margin-bottom: 16px; padding: 0; overflow: visible;
     border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--paper-raised);

@@ -35,7 +35,7 @@ const categoryIcons = {
 
 const categoryIcon = (slug: string) => categoryIcons[slug as keyof typeof categoryIcons] || Code2
 
-defineProps<{
+const props = defineProps<{
   catalogLayout?: boolean
   sourceOptions: SourceOption[]
   source: ProjectViewSource
@@ -72,6 +72,15 @@ const emit = defineEmits<{
   selectPersonalTag: [tag: string]
   clearPersonalTag: []
 }>()
+const sortLabel = (key: string) => props.selectedScope === 'today'
+  ? t('projects.sortAllOption', { sort: t(key) })
+  : t(key)
+const changeSort = (event: Event) => {
+  const nextSort = (event.target as HTMLSelectElement).value as GitHubProjectSort
+  // 今日榜单固定为热度前 50；其他排序先切到全库，再更新排序，避免被今日口径覆盖。
+  if (props.selectedScope === 'today' && nextSort !== 'hot') emit('selectScope', 'all')
+  emit('update:sort', nextSort)
+}
 const isMobile = useMediaQuery('(max-width: 767px)')
 // 搜索框右端可以挂一个按钮（#search-end）：量出它有多宽，输入框的留白和清空、语言筛选按钮都往左让出这么多。
 const searchEnd = ref<HTMLElement | null>(null)
@@ -114,15 +123,15 @@ useResizeObserver(searchEnd, ([entry]) => { searchEndWidth.value = Math.ceil(ent
       <div v-if="$slots['search-end']" ref="searchEnd" class="projects-search__end"><slot name="search-end" /></div>
     </div>
 
-    <label v-if="!requiresPersonalLogin && !isPersonalView && (!isMobile || selectedScope !== 'today')" class="projects-sort">
+    <label v-if="!requiresPersonalLogin && !isPersonalView" class="projects-sort" :class="{ 'projects-sort--today': selectedScope === 'today' }">
       <span>{{ t('projects.sort') }}</span>
-      <select :aria-label="t('projects.sort')" :value="sort" :disabled="selectedScope === 'today'" @change="emit('update:sort', ($event.target as HTMLSelectElement).value as GitHubProjectSort)">
-        <option v-if="!isWebsiteOnlyView && !isPersonalView" value="relevance">{{ t('projects.sortRelevance') }}</option>
+      <select :aria-label="t('projects.sort')" :value="sort" @change="changeSort">
+        <option v-if="!isWebsiteOnlyView && !isPersonalView && searchQuery.trim()" value="relevance">{{ sortLabel('projects.sortRelevance') }}</option>
         <option v-if="!isWebsiteOnlyView" value="hot">{{ t(selectedScope === 'today' ? 'projects.sortHotTop' : 'projects.sortHot') }}</option>
-        <option value="stars">{{ t('projects.sortStars') }}</option>
-        <option value="updated">{{ t('projects.sortUpdated') }}</option>
-        <option value="recent">{{ t('projects.sortRecent') }}</option>
-        <option value="name">{{ t('projects.sortName') }}</option>
+        <option value="stars">{{ sortLabel('projects.sortStars') }}</option>
+        <option value="updated">{{ sortLabel('projects.sortUpdated') }}</option>
+        <option value="recent">{{ sortLabel('projects.sortRecent') }}</option>
+        <option value="name">{{ sortLabel('projects.sortName') }}</option>
       </select>
     </label>
   </section>

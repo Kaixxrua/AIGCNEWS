@@ -273,6 +273,27 @@ describe('GitHubProjectsView controller wiring', () => {
     expect(controller().loadProjects).toHaveBeenCalled()
   })
 
+  it('switches from today to the catalog before applying an explicit sort and reloads once', async () => {
+    const wrapper = await mountView()
+    const state = controllerSpy.mock.calls[0]![0].routeState
+    state.sort.value = 'hot'
+    await nextTick()
+    state.page.value = 3
+    controller().loadProjects.mockClear()
+    routeState().replaceRouteFromState.mockClear()
+
+    await wrapper.get('.projects-sort select').setValue('updated')
+
+    expect(state.selectedScope.value).toBe('all')
+    expect(state.sort.value).toBe('updated')
+    expect(state.page.value).toBe(1)
+    expect(controller().loadProjects).toHaveBeenCalledTimes(1)
+    expect(routeState().replaceRouteFromState).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('.projects-category--today').trigger('click')
+    expect(state.selectedScope.value).toBe('today')
+  })
+
   it('pages through results via the pagination contract', async () => {
     controller().total.value = 100
     controller().projects.value = [websiteRepo()]

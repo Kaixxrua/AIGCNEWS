@@ -261,19 +261,44 @@ describe('filters panel behavior', () => {
     expect(wrapper.emitted('update:searchQuery')?.[1]).toEqual([''])
   })
 
-  it('emits update:sort from the sort select and disables it for the today scope', async () => {
-    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps() })
-    const select = wrapper.find('.projects-sort select')
+  it.each(['all', 'recommended'] as const)('changes sorting within the %s scope', async (selectedScope) => {
+    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps({ selectedScope }) })
+    const select = wrapper.get('.projects-sort select')
     expect(select.attributes('disabled')).toBeUndefined()
 
     await select.setValue('stars')
     expect(wrapper.emitted('update:sort')).toEqual([['stars']])
+    expect(wrapper.emitted('selectScope')).toBeUndefined()
+  })
 
-    const today = mount(ProjectFiltersPanel, {
+  it.each(['stars', 'updated', 'recent', 'name'])('lets today readers switch to %s across all projects', async (sort) => {
+    const wrapper = mount(ProjectFiltersPanel, {
       ...mountOptions,
       props: filtersProps({ selectedScope: 'today' }),
     })
-    expect(today.find('.projects-sort select').attributes('disabled')).toBeDefined()
+    const select = wrapper.get('.projects-sort select')
+    expect(select.attributes('disabled')).toBeUndefined()
+
+    await select.setValue(sort)
+    expect(wrapper.emitted('selectScope')).toEqual([['all']])
+    expect(wrapper.emitted('update:sort')).toEqual([[sort]])
+  })
+
+  it('keeps the today scope when its heat sort is selected', async () => {
+    const wrapper = mount(ProjectFiltersPanel, {
+      ...mountOptions,
+      props: filtersProps({ selectedScope: 'today' }),
+    })
+    await wrapper.get('.projects-sort select').setValue('hot')
+    expect(wrapper.emitted('selectScope')).toBeUndefined()
+  })
+
+  it('offers relevance sorting only when there is a search query', async () => {
+    const wrapper = mount(ProjectFiltersPanel, { ...mountOptions, props: filtersProps() })
+    expect(wrapper.find('option[value="relevance"]').exists()).toBe(false)
+    await wrapper.setProps({ searchQuery: 'agent' })
+    await wrapper.get('.projects-sort select').setValue('relevance')
+    expect(wrapper.emitted('update:sort')).toEqual([['relevance']])
   })
 
   it('hides public sorting controls in personal views without emitting changes', async () => {
