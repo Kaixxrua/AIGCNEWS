@@ -33,7 +33,7 @@ AIGCNEWS organizes open-source projects, research papers, products, and industry
 | Paper reader | Open papers from the rankings to read abstracts, PDFs, and original sources. Sign in to use paper conversations. |
 | [AI briefings](https://aigcnews.cn/report) | Read general, research, engineering, industry, product, and community editions. Switch between the full text and reading guide; guests can preview a briefing and sign in for the complete content. |
 | [Personal tracking](https://aigcnews.cn/subscriptions) | Follow keywords or a project's Star growth. Receive a personal digest on the website, with optional delivery to verified email, Telegram, Discord, or webhook channels. |
-| [X updates](https://aigcnews.cn/x) | Browse account groups, Chinese translations, and historical posts. Self-hosted instances must enable and configure the source. |
+| [X updates](https://aigcnews.cn/x) | Choose accounts grouped by AI company and model ecosystem. Read Chinese translations, images, and videos from the last 24 hours or a selected date; desktop views support text-only reading and local bookmarks. Self-hosted instances must enable and configure the source. |
 
 The website supports Chinese and English, light and dark themes, mobile layouts, and PWA installation. Account features such as favorites, tracking, and copying follow the access rules shown on the current site.
 
@@ -48,6 +48,10 @@ These screenshots were captured from the live site in October 2026, with the int
 | Briefings: summaries and topic sections | MCP: setup prompts and browser authorization |
 | --- | --- |
 | ![Guest briefing preview with an overview, research highlights, and engineering updates](docs/assets/readme/report.png) | ![MCP setup page with a copyable agent prompt and browser authorization endpoint](docs/assets/readme/mcp.png) |
+
+**X updates: account groups, Chinese translations, and historical browsing**
+
+![X updates with text, image and video cards, date filters, and followed accounts grouped by AI company and model ecosystem](docs/assets/readme/x-updates.png)
 
 <details>
 <summary>View the mobile interface</summary>
