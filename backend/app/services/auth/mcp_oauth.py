@@ -4,7 +4,8 @@
 
 - 受保护资源元数据（RFC 9728）与授权服务器元数据（RFC 8414）是前端静态文件，
   其中的 issuer 与 resource 必须与本模块常量逐字一致；
-- 动态客户端注册（RFC 7591）；授权码 + PKCE S256（RFC 7636，所有客户端强制）；
+- 动态客户端注册（RFC 7591）；用 CIMD 文档地址当 client_id 的少数客户端按预注册处理
+  （PREREGISTERED_CLIENTS）；授权码 + PKCE S256（RFC 7636，所有客户端强制）；
 - resource 参数（RFC 8707）只能指向本站 MCP OAuth 端点；授权响应带 iss（RFC 9207）。
 
 签发的令牌就是 user_mcp_tokens 的普通行：Go 侧鉴权不变，用户在 /mcp 页面能看到并删除。
@@ -231,6 +232,38 @@ def client_secret_matches(client_secret: str | None, expected_hash: str | None) 
     if not client_secret or not expected_hash:
         return False
     return hmac.compare_digest(hash_client_secret(client_secret), expected_hash)
+
+
+# ---------------------------------------------------------------- pre-registered clients
+
+# 拿元数据文档地址当 client_id 的客户端（CIMD）。本站不抓取文档，元数据也不声明
+# client_id_metadata_document_supported，看这个声明的客户端照旧走动态注册；不看声明、
+# 一律用 CIMD 的客户端，按预注册处理（MCP 授权规范里优先级最高的方式）。
+# 条目抄自对方公开的文档，只收公开客户端（token_endpoint_auth_method=none，只靠 PKCE）；
+# 对方改了回调地址，这里要跟着改。
+PREREGISTERED_CLIENTS: dict[str, dict[str, Any]] = {
+    # Smithery（https://smithery.ai）网关替用户连远程 MCP 服务器时用的客户端
+    "https://connect.smithery.ai/.well-known/oauth-client": {
+        "client_name": "Smithery Connect",
+        "redirect_uris": ("https://connect.smithery.ai/oauth/callback",),
+    },
+}
+
+
+def preregistered_client(client_id: str) -> dict[str, Any] | None:
+    """按 client_id 精确查找预注册客户端，返回与库里客户端同形的新字典；查不到返回 None。"""
+    entry = PREREGISTERED_CLIENTS.get(client_id)
+    if entry is None:
+        return None
+    return {
+        "client_id": client_id,
+        "client_name": entry["client_name"],
+        "redirect_uris": list(entry["redirect_uris"]),
+        "token_endpoint_auth_method": "none",
+        "client_secret_hash": None,
+        "created_at": None,
+        "last_authorized_at": None,
+    }
 
 
 # ---------------------------------------------------------------- authorization codes

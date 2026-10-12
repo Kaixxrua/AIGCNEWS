@@ -50,6 +50,7 @@ from backend.app.services.auth.mcp_oauth import (
     new_client_id,
     new_client_secret,
     normalize_client_name,
+    preregistered_client,
     redirect_uri_registered,
     redirect_with_params,
     validate_redirect_uri,
@@ -176,6 +177,14 @@ def _granted_scopes(requested: str | None) -> list[str]:
     asked = set((requested or "").split())
     granted = [scope for scope in sorted(MCP_TOKEN_SCOPES) if scope in asked]
     return granted or list(DEFAULT_MCP_TOKEN_SCOPES)
+
+
+async def _find_client(repository: McpAccessTokenRepository, client_id: str) -> dict[str, Any] | None:
+    """先查预注册客户端（CIMD 文档地址），再查动态注册的客户端；超长的 client_id 不查库。"""
+    client = preregistered_client(client_id)
+    if client is None and len(client_id) <= _MAX_CLIENT_ID_LENGTH:
+        client = await asyncio.to_thread(repository.get_mcp_oauth_client, client_id)
+    return client
 
 
 # ---------------------------------------------------------------- registration
@@ -340,9 +349,7 @@ async def _resolve_authorization(
     client_id = body.client_id or ""
     if not client_id:
         raise _OAuthFailure(400, "invalid_request", "缺少 client_id")
-    client = None
-    if len(client_id) <= _MAX_CLIENT_ID_LENGTH:
-        client = await asyncio.to_thread(repository.get_mcp_oauth_client, client_id)
+    client = await _find_client(repository, client_id)
     if client is None:
         raise _OAuthFailure(400, "invalid_client", "客户端未注册或注册已失效，请在 MCP 客户端里重新连接")
     redirect_uri = body.redirect_uri
@@ -515,9 +522,7 @@ async def _authenticate_client(
     client_id = basic.client_id if basic else body_client_id
     if not client_id:
         raise _OAuthFailure(401, "invalid_client", "缺少 client_id", headers=challenge)
-    client = None
-    if len(client_id) <= _MAX_CLIENT_ID_LENGTH:
-        client = await asyncio.to_thread(repository.get_mcp_oauth_client, client_id)
+    client = await _find_client(repository, client_id)
     if client is None:
         raise _OAuthFailure(401, "invalid_client", "客户端未注册或注册已失效", headers=challenge)
     if client.get("token_endpoint_auth_method") != "none":

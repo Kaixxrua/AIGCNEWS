@@ -206,7 +206,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 
 1. 客户端不带令牌请求入口，得到 HTTP 401 和 `WWW-Authenticate: Bearer resource_metadata="https://aigcnews.cn/.well-known/oauth-protected-resource/api/mcp/oauth"`（RFC 9728 §5.1）；带了无效凭证时，头里另有 RFC 6750 的 `error`（令牌无效为 `invalid_token`，凭证格式不对为 `invalid_request`）。
 2. 客户端读受保护资源元数据，再读授权服务器元数据 `/.well-known/oauth-authorization-server`（RFC 8414）。两份 JSON 在 `frontend/public/.well-known/` 下，随前端发布包上两个边缘。只给 `/api/mcp/oauth` 发资源元数据：根路径若也有一份，连匿名 `/api/mcp` 的客户端也会去走登录。
-3. 动态客户端注册 `POST /api/oauth/register`（RFC 7591）。公开客户端（`token_endpoint_auth_method=none`）不发密钥，只靠 PKCE；声明 `client_secret_post` / `client_secret_basic` 时才发密钥，库里只存 SHA-256 摘要。回调地址最多 10 个、每个不超过 2,000 字符，危险 scheme 拒收；本机回环地址匹配时不比端口（RFC 8252 §7.3）。从未完成授权、注册超过 30 天的客户端由注册接口顺手清理。
+3. 动态客户端注册 `POST /api/oauth/register`（RFC 7591）；预注册的 CIMD 客户端跳过这一步，见下文「已知限制」。公开客户端（`token_endpoint_auth_method=none`）不发密钥，只靠 PKCE；声明 `client_secret_post` / `client_secret_basic` 时才发密钥，库里只存 SHA-256 摘要。回调地址最多 10 个、每个不超过 2,000 字符，危险 scheme 拒收；本机回环地址匹配时不比端口（RFC 8252 §7.3）。从未完成授权、注册超过 30 天的客户端由注册接口顺手清理。
 4. 浏览器打开授权页 `/oauth/authorize`（前端页面，未登录时页内弹出登录，不走路由守卫，以免丢掉客户端带来的授权参数）。只支持 `response_type=code` + PKCE `S256`；`resource` 可省略，给了就必须是 `https://aigcnews.cn/api/mcp/oauth`（末尾斜杠视为同一资源），否则 `invalid_target`（RFC 8707）。scope 取客户端请求与本站支持的交集，一个都不认识时按默认的两个只读 scope 授予。用户点「同意」后签发授权码：一次性（Redis `GETDEL` 原子消费），5 分钟过期。
 5. 客户端在 `POST /api/oauth/token` 用授权码与 code_verifier 换令牌。令牌就是 `user_mcp_tokens` 里的普通行，另记 `oauth_client_id`（迁移 `0088_mcp_oauth_clients.sql`），Go 侧鉴权查询与手动 Token 完全相同；不设过期，不发 refresh_token。同一用户在同一客户端再次授权时，旧令牌在同一事务里吊销；每用户 20 个活跃令牌的上限照常生效。
 
@@ -215,7 +215,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 已知限制：
 
 - 资源地址与签发方都绑定 `aigcnews.cn`。从备用域名 `aigcradar.online` 接入的客户端，改用一次性安装码或手动 Token。
-- 不支持 CIMD（Client ID Metadata Documents）。新版 MCP 授权规范推荐 CIMD、动态注册保留为兼容方式；授权服务器元数据不声明 `client_id_metadata_document_supported`，客户端据此回落到动态注册。
+- 不支持通用的 CIMD（Client ID Metadata Documents）。新版 MCP 授权规范推荐 CIMD、动态注册保留为兼容方式；授权服务器元数据不声明 `client_id_metadata_document_supported`，客户端据此回落到动态注册。少数不看这个声明、一律用 CIMD 的客户端，按预注册处理：登记表是 `mcp_oauth.py` 的 `PREREGISTERED_CLIENTS`，按文档地址精确匹配，不抓取文档，只收公开客户端（只靠 PKCE），也不写进 `mcp_oauth_clients` 表。目前只有 Smithery 网关：client_id `https://connect.smithery.ai/.well-known/oauth-client`，回调 `https://connect.smithery.ai/oauth/callback`。对方改了文档里的回调地址，登记表要跟着改。
 - 网站页面还没有令牌列表与吊销按钮。吊销走 `DELETE /api/auth/me/mcp-tokens/{token_id}`，或在同一客户端重新授权以替换旧令牌。
 
 npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` 时完全省略 `Authorization` header，因此可直接使用公开 runtime；只有明确配置 Token 时才进入账号渠道，个人收藏等私有能力需要有效 Token。

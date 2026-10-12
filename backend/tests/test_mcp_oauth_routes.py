@@ -14,10 +14,19 @@ from fastapi.testclient import TestClient
 from backend.app.api import routes_mcp_oauth
 from backend.app.api.dependencies import get_mcp_access_token_repository
 from backend.app.api.routes_auth import MCP_CLIENT_TYPES
-from backend.app.services.auth.mcp_oauth import MCP_OAUTH_RESOURCE, infer_client_type, pkce_s256_challenge
+from backend.app.services.auth.mcp_oauth import (
+    MCP_OAUTH_RESOURCE,
+    PREREGISTERED_CLIENTS,
+    infer_client_type,
+    pkce_s256_challenge,
+    preregistered_client,
+    validate_redirect_uri,
+)
 
 REDIRECT = "http://localhost:43123/callback"
 BOTH_SCOPES = ["projects:favorites:read", "tracking:read"]
+SMITHERY_CLIENT_ID = "https://connect.smithery.ai/.well-known/oauth-client"
+SMITHERY_REDIRECT = "https://connect.smithery.ai/oauth/callback"
 
 
 class FakeRedis:
@@ -521,6 +530,113 @@ def test_public_clients_ignore_presented_secrets() -> None:
     redirect_to = _approve(client, client_id, challenge)
     response = _exchange(client, {**_code_form(client_id, redirect_to, verifier), "client_secret": "anything"})
     assert response.status_code == 200
+
+
+def test_preregistered_metadata_document_client_completes_the_flow_without_registering() -> None:
+    client, repository, _ = _app()
+    verifier, challenge = _pkce()
+
+    preview = client.post(
+        "/api/oauth/authorize/preview",
+        json=_authorization(SMITHERY_CLIENT_ID, challenge, redirect_uri=SMITHERY_REDIRECT),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["client"] == {
+        "client_id": SMITHERY_CLIENT_ID,
+        "client_name": "Smithery Connect",
+        "registered_at": None,
+    }
+    # 同意页显示的回调去向，就是对方文档里登记的域名
+    assert preview.json()["redirect"] == {"kind": "web", "host": "connect.smithery.ai"}
+
+    redirect_to = _approve(client, SMITHERY_CLIENT_ID, challenge, redirect_uri=SMITHERY_REDIRECT)
+    assert redirect_to.startswith(SMITHERY_REDIRECT + "?code=")
+    token = _exchange(
+        client, _code_form(SMITHERY_CLIENT_ID, redirect_to, verifier, redirect_uri=SMITHERY_REDIRECT)
+    )
+    assert token.status_code == 200, token.text
+    assert token.json()["access_token"].startswith("aigc_mcp_")
+
+    (created,) = repository.created
+    assert created["oauth_client_id"] == SMITHERY_CLIENT_ID
+    assert created["client_label"] == "Smithery Connect"
+    assert created["client_type"] == "other"
+    assert created["expires_at"] is None
+    # 预注册客户端不写进动态注册的客户端表
+    assert repository.clients == {}
+
+
+@pytest.mark.parametrize("path", ["/api/oauth/authorize/preview", "/api/oauth/authorize"])
+def test_preregistered_clients_match_exactly_and_keep_their_redirects(path: str) -> None:
+    client, _, _ = _app()
+    _, challenge = _pkce()
+    cases = [
+        # 回调地址只认对方文档里登记的那一个
+        (SMITHERY_CLIENT_ID, "https://evil.example/oauth/callback", "invalid_redirect_uri"),
+        (SMITHERY_CLIENT_ID, REDIRECT, "invalid_redirect_uri"),
+        # 不抓取文档：没登记的文档地址，以及协议、大小写、末尾斜杠不同的写法，都是未知客户端
+        ("https://evil.example/.well-known/oauth-client", SMITHERY_REDIRECT, "invalid_client"),
+        (SMITHERY_CLIENT_ID.replace("https://", "http://"), SMITHERY_REDIRECT, "invalid_client"),
+        (SMITHERY_CLIENT_ID.replace("connect.", "CONNECT."), SMITHERY_REDIRECT, "invalid_client"),
+        (SMITHERY_CLIENT_ID + "/", SMITHERY_REDIRECT, "invalid_client"),
+    ]
+    for client_id, redirect_uri, error in cases:
+        body = _authorization(client_id, challenge, redirect_uri=redirect_uri)
+        response = client.post(path, json={**body, "decision": "approve"})
+        assert response.status_code == 400, body
+        assert response.json()["error"] == error
+        assert "redirect_to" not in response.json()
+
+
+def test_preregistered_clients_still_need_pkce_and_a_registered_client_id_at_the_token_endpoint() -> None:
+    client, repository, _ = _app()
+    verifier, challenge = _pkce()
+    plain = client.post(
+        "/api/oauth/authorize",
+        json={
+            **_authorization(
+                SMITHERY_CLIENT_ID, challenge, redirect_uri=SMITHERY_REDIRECT, code_challenge_method="plain"
+            ),
+            "decision": "approve",
+        },
+    )
+    assert plain.json()["error"] == "invalid_request"
+    assert plain.json()["redirect_to"].startswith(SMITHERY_REDIRECT + "?error=")
+
+    redirect_to = _approve(client, SMITHERY_CLIENT_ID, challenge, redirect_uri=SMITHERY_REDIRECT)
+    form = _code_form(SMITHERY_CLIENT_ID, redirect_to, verifier, redirect_uri=SMITHERY_REDIRECT)
+    unknown = _exchange(client, {**form, "client_id": "https://evil.example/.well-known/oauth-client"})
+    assert unknown.status_code == 401 and unknown.json()["error"] == "invalid_client"
+    wrong_verifier = _exchange(client, {**form, "code_verifier": secrets.token_urlsafe(48)})
+    assert wrong_verifier.status_code == 400 and wrong_verifier.json()["error"] == "invalid_grant"
+    assert repository.created == []
+
+
+def test_preregistered_client_entries_are_public_https_clients_that_fit_the_token_table() -> None:
+    assert SMITHERY_CLIENT_ID in PREREGISTERED_CLIENTS
+    for client_id, entry in PREREGISTERED_CLIENTS.items():
+        assert client_id.startswith("https://")
+        # 签发令牌时 client_id 写进 user_mcp_tokens.oauth_client_id VARCHAR(64)
+        assert len(client_id) <= 64
+        assert entry["redirect_uris"]
+        for uri in entry["redirect_uris"]:
+            validate_redirect_uri(uri)
+            assert uri.startswith("https://")
+
+    record = preregistered_client(SMITHERY_CLIENT_ID)
+    assert record == {
+        "client_id": SMITHERY_CLIENT_ID,
+        "client_name": "Smithery Connect",
+        "redirect_uris": [SMITHERY_REDIRECT],
+        "token_endpoint_auth_method": "none",
+        "client_secret_hash": None,
+        "created_at": None,
+        "last_authorized_at": None,
+    }
+    # 每次返回新字典，调用方改了也不影响登记表
+    record["redirect_uris"].append("https://evil.example/cb")
+    assert preregistered_client(SMITHERY_CLIENT_ID)["redirect_uris"] == [SMITHERY_REDIRECT]
+    assert preregistered_client("aigc_oc_unknown") is None
 
 
 def test_consent_endpoints_require_login_and_are_rate_limited_per_user() -> None:
