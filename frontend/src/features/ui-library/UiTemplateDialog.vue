@@ -8,14 +8,15 @@ import UiLikeButton from './UiLikeButton.vue'
 import { useUiLibraryAccount } from './useUiLibraryAccount'
 const account = useUiLibraryAccount()
 const copying = ref(false)
-import { integrationPrompt, loadSources, type UiLanguage, type UiSourceFile, type UiTemplate } from './catalog'
+import { integrationPrompt, loadSources, loadTemplate, type UiLanguage, type UiSourceFile, type UiTemplate, type UiTemplateSummary } from './catalog'
 import { uiLibraryMessages } from './messages'
 
-const props = defineProps<{ item: UiTemplate; lang: UiLanguage }>()
+const props = defineProps<{ item: UiTemplateSummary; lang: UiLanguage }>()
 const emit = defineEmits<{ close: [] }>()
 const text = computed(() => uiLibraryMessages[props.lang])
 const dialog = ref<HTMLDialogElement>()
 const frame = ref<HTMLIFrameElement>()
+const detail = ref<UiTemplate | null>(null)
 const sources = ref<UiSourceFile[]>([])
 const fileIndex = ref(0)
 const codeLoading = ref(true)
@@ -43,15 +44,19 @@ let feedbackTimer: ReturnType<typeof setTimeout> | undefined
 async function getSources() {
   codeLoading.value = true
   codeError.value = false
-  try { sources.value = await loadSources(props.item, controller.signal) }
+  try {
+    detail.value = await loadTemplate(props.item.id, controller.signal, account.isAdmin.value)
+    if (controller.signal.aborted) return
+    sources.value = await loadSources(detail.value, controller.signal)
+  }
   catch { if (!controller.signal.aborted) codeError.value = true }
   finally { codeLoading.value = false }
 }
 async function copy(kind: 'source' | 'prompt') {
-  if (copying.value || !await account.requireAccount()) return
+  if (copying.value || !detail.value || !await account.requireAccount()) return
   copying.value = true
   try {
-    const value = kind === 'source' ? code.value : integrationPrompt(props.item, sources.value, promptLang.value)
+    const value = kind === 'source' ? code.value : integrationPrompt(detail.value, sources.value, promptLang.value)
     if (!await account.copyValue(props.item.id, kind, value)) return
     feedback.value = text.value.copied
     copied.value = kind
@@ -121,7 +126,7 @@ onBeforeUnmount(() => {
           <div v-if="codeLoading" class="ui-detail__code-message" role="status">{{ text.loading }}</div>
           <div v-else-if="codeError" class="ui-detail__code-message" role="alert">{{ text.sourceError }}<button type="button" @click="getSources">{{ text.retry }}</button></div>
           <UiSourceViewer v-else :code="code" :filename="sources[fileIndex]?.name ?? ''" :lang="lang" />
-          <div class="ui-detail__dependencies"><strong>{{ text.dependencies }}</strong><code v-for="(version, name) in item.dependencies" :key="name">{{ name }}{{ '@' }}{{ version }}</code></div>
+          <div class="ui-detail__dependencies"><strong>{{ text.dependencies }}</strong><code v-for="(version, name) in detail?.dependencies" :key="name">{{ name }}{{ '@' }}{{ version }}</code></div>
         </section>
       </div>
     </dialog>

@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useDocumentVisibility, useMediaQuery, useNow } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, Grid3x3, Pause, Play, Search, SlidersHorizontal, X } from 'lucide-vue-next'
-import UiTemplateDialog from '@/features/ui-library/UiTemplateDialog.vue'
+const UiTemplateDialog = defineAsyncComponent(() => import('@/features/ui-library/UiTemplateDialog.vue'))
 import UiTemplateCard from '@/features/ui-library/UiTemplateCard.vue'
 import UiIconCard from '@/features/ui-library/UiIconCard.vue'
-import UiIconDialog from '@/features/ui-library/UiIconDialog.vue'
+const UiIconDialog = defineAsyncComponent(() => import('@/features/ui-library/UiIconDialog.vue'))
 import UiMcpRecommendation from '@/features/ui-library/UiMcpRecommendation.vue'
 import { useLibraryDensity } from '@/features/ui-library/useLibraryDensity'
-import { loadCatalogWithMeta, loadIconSets, recentlyAdded, searchIcons, searchTemplates, type UiIcon, type UiIconSet, type UiLanguage, type UiTemplate } from '@/features/ui-library/catalog'
+import { loadCatalogSummaries, loadIconSets, recentlyAdded, searchIcons, searchTemplates, type UiIcon, type UiIconSet, type UiLanguage, type UiTemplateSummary } from '@/features/ui-library/catalog'
 import { uiLibraryMessages } from '@/features/ui-library/messages'
 import '@/features/ui-library/library.css'
 import { provideUiLibraryAccount, type Ranking } from '@/features/ui-library/useUiLibraryAccount'
@@ -27,7 +27,7 @@ const router = useRouter()
 const { locale } = useI18n()
 const lang = computed<UiLanguage>(() => locale.value.startsWith('en') ? 'en' : 'zh')
 const text = computed(() => uiLibraryMessages[lang.value])
-const items = ref<UiTemplate[]>([])
+const items = shallowRef<UiTemplateSummary[]>([])
 const loading = ref(true)
 const failed = ref(false)
 const controller = new AbortController()
@@ -94,10 +94,10 @@ usePageHead(() => {
   if (selected.value) return { title: selected.value.name[lang.value], description: selected.value.description[lang.value] }
   return missingItem.value ? { noindex: true } : null
 })
-const visibleLimit = ref(96)
+const visibleLimit = ref(iconMode.value ? 96 : 32)
 const visibleItems = computed(() => filtered.value.slice(0, visibleLimit.value))
 const resultCount = computed(() => iconMode.value ? filteredIcons.value.length : filtered.value.length)
-watch([query, category, framework, ranking, kind, style, iconProvider], () => { visibleLimit.value = 96 })
+watch([query, category, framework, ranking, kind, style, iconProvider], () => { visibleLimit.value = iconMode.value ? 96 : 32 })
 const sourceCount = computed(() => new Set(items.value.map(item => item.provider)).size)
 const hasFilters = computed(() => Boolean(query.value || category.value || framework.value || style.value || iconProvider.value))
 const visibility = useDocumentVisibility()
@@ -111,7 +111,7 @@ async function refresh() {
   loading.value = true
   failed.value = false
   try {
-    const bundle = await loadCatalogWithMeta(controller.signal, account.isAdmin.value)
+    const bundle = await loadCatalogSummaries(controller.signal, account.isAdmin.value)
     if (generation !== catalogGeneration || controller.signal.aborted) return
     items.value = bundle.items
     iconCount.value = bundle.iconCount
@@ -150,7 +150,7 @@ function setFilter(key: string, value: string) {
 function setKind(value: LibraryKind) {
   void router.replace({ query: { ...route.query, kind: value, category: undefined, style: undefined, rank: undefined, set: undefined } })
 }
-function open(item: UiTemplate, event: Event) {
+function open(item: UiTemplateSummary, event: Event) {
   trigger = event.currentTarget as HTMLElement
   void router.push({ name: 'ui-library', params: { id: item.id }, query: route.query })
 }
@@ -225,9 +225,9 @@ onBeforeUnmount(() => controller.abort())
           <div v-else-if="failed" class="ui-library__empty" role="alert"><p>{{ text.loadError }}</p><button type="button" @click="refresh">{{ text.retry }}</button></div>
           <div v-else-if="!filtered.length" class="ui-library__empty"><Search :size="30" aria-hidden="true" /><h2>{{ ranking === 'new' ? text.emptyNew : text.empty }}</h2><p>{{ ranking === 'new' ? text.emptyNewHint : text.emptyHint }}</p><button type="button" @click="router.replace({ query: {} })">{{ text.clear }}</button></div>
           <div v-else v-swap="{ key: gridKey, stagger: true }" class="ui-library__grid" :data-density="density">
-            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" @visibility="item.deprecated = $event" />
+            <UiTemplateCard v-for="item in visibleItems" :key="item.id" :item="item" :lang="lang" :preview-enabled="previewsEnabled" @open="open(item, $event)" @visibility="items = items.map(row => row.id === item.id ? { ...row, deprecated: $event } : row)" />
           </div>
-          <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 96">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>
+          <div v-if="filtered.length > visibleLimit" class="ui-library__load-more"><button type="button" @click="visibleLimit += 32">{{ lang === 'zh' ? '加载更多' : 'Load more' }} · {{ visibleItems.length }} / {{ filtered.length }}</button></div>
         </template>
       </div>
     </div>

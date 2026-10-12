@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowUpRight, Check, Code2, LoaderCircle, Play, Sparkles } from 'lucide-vue-next'
-import { integrationPrompt, loadSources, sourceBundle, type UiLanguage, type UiTemplate } from './catalog'
+import { integrationPrompt, loadSources, loadTemplate, sourceBundle, type UiLanguage, type UiTemplateSummary } from './catalog'
 import { uiLibraryMessages } from './messages'
 import UiCardVideo from './UiCardVideo.vue'
 import UiLikeButton from './UiLikeButton.vue'
@@ -11,7 +11,7 @@ import { useUiLibraryAccount } from './useUiLibraryAccount'
 import { useViewportPreview } from './useViewportPreview'
 const account = useUiLibraryAccount()
 
-const props = defineProps<{ item: UiTemplate; lang: UiLanguage; previewEnabled: boolean }>()
+const props = defineProps<{ item: UiTemplateSummary; lang: UiLanguage; previewEnabled: boolean }>()
 const emit = defineEmits<{ open: [event: Event]; visibility: [deprecated: boolean] }>()
 const text = computed(() => uiLibraryMessages[props.lang])
 const poster = ref<HTMLElement>()
@@ -30,9 +30,11 @@ async function copy(kind: 'source' | 'prompt') {
   copied.value = ''
   feedback.value = ''
   try {
-    const files = await loadSources(props.item, controller.signal)
+    const item = await loadTemplate(props.item.id, controller.signal, account.isAdmin.value)
     if (controller.signal.aborted) return
-    const value = kind === 'source' ? sourceBundle(files) : integrationPrompt(props.item, files, props.lang)
+    const files = await loadSources(item, controller.signal)
+    if (controller.signal.aborted) return
+    const value = kind === 'source' ? sourceBundle(files) : integrationPrompt(item, files, props.lang)
     if (await account.copyValue(props.item.id, kind, value)) {
       copied.value = kind
       feedback.value = kind === 'prompt' ? text.value.promptReady : text.value.sourceReady

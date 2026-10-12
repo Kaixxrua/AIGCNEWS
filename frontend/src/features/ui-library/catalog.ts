@@ -40,6 +40,12 @@ export interface UiTemplate {
   poster_url: string
 }
 export interface UiSourceFile { name: string; content: string }
+/** Card metadata; its first source entry is for taxonomy, never for copying. */
+export type UiTemplateSummary = Pick<UiTemplate,
+  'id' | 'deprecated' | 'added_at' | 'kind' | 'subcategory' | 'styles' | 'editorial'
+  | 'name' | 'description' | 'provider' | 'provider_id' | 'author' | 'revision'
+  | 'source_url' | 'demo_url' | 'category' | 'frameworks' | 'aliases'
+  | 'preview_url' | 'clip_url' | 'poster_url' | 'files'>
 const normalize = (text: string) => text.normalize('NFKC').toLowerCase().trim()
 const stopWords = new Set(['a', 'an', 'the', 'for', 'with', 'and', 'in', 'make', 'build', 'please', 'show', 'me'])
 export function queryTerms(query: string, items: readonly Pick<UiTemplate, 'aliases'>[]): string[] {
@@ -56,7 +62,8 @@ export function queryTerms(query: string, items: readonly Pick<UiTemplate, 'alia
 /** 搜索只看名称、简介、出处、别名、框架与分类；站内速查只留这几样字段，不必握着整份目录。 */
 export type SearchableTemplate = Pick<UiTemplate, 'id' | 'name' | 'description' | 'provider' | 'aliases' | 'frameworks' | 'category'>
 export function searchTemplates<T extends SearchableTemplate>(items: readonly T[], query = '', category = '', framework = ''): T[] {
-  const terms = queryTerms(query, items)
+  const terms = query.trim() ? queryTerms(query, items) : []
+  if (!terms.length) return items.filter(item => (!category || item.category === category) && (!framework || item.frameworks.includes(framework)))
   return items.map((item, index) => {
     const title = normalize(`${item.name.zh} ${item.name.en} ${item.id}`)
     const core = normalize(`${title} ${item.provider} ${item.aliases.join(' ')} ${item.frameworks.join(' ')} ${item.category}`)
@@ -66,7 +73,7 @@ export function searchTemplates<T extends SearchableTemplate>(items: readonly T[
   }).filter(({ item, matches }) => matches && (!category || item.category === category) && (!framework || item.frameworks.includes(framework)))
     .sort((a, b) => b.score - a.score || a.index - b.index).map(({ item }) => item)
 }
-export function recentlyAdded(items: UiTemplate[], now = Date.now()): UiTemplate[] {
+export function recentlyAdded<T extends Pick<UiTemplate, 'added_at'>>(items: T[], now = Date.now()): T[] {
   return items.filter(item => {
     const added = Date.parse(item.added_at ?? '')
     return Number.isFinite(added) && added <= now && added > now - 24 * 60 * 60 * 1000
@@ -113,9 +120,10 @@ export interface UiIconSet {
   rights_evidence_url: string
   icons: UiIcon[]
 }
-async function loadVisibleCatalog(path: string, signal?: AbortSignal, includeDeprecated = false) {
-  if (includeDeprecated) return (await api.get(path, { signal, params: { include_deprecated: true } })).data
-  const response = await fetch(`/api${path}`, { signal, cache: 'no-store' })
+async function loadVisibleCatalog(path: string, signal?: AbortSignal, includeDeprecated = false, params: Record<string, string> = {}) {
+  if (includeDeprecated) return (await api.get(path, { signal, params: { ...params, include_deprecated: true } })).data
+  const query = new URLSearchParams(params).toString()
+  const response = await fetch(`/api${path}${query ? '?' + query : ''}`, { signal, cache: 'no-store' })
   if (!response.ok) throw new Error('Catalog unavailable')
   return response.json()
 }
@@ -172,6 +180,18 @@ export async function loadCatalogWithMeta(signal?: AbortSignal, includeDeprecate
 export async function loadCatalog(signal?: AbortSignal): Promise<UiTemplate[]> {
   const { items } = await loadCatalogWithMeta(signal)
   return items
+}
+export async function loadCatalogSummaries(signal?: AbortSignal, includeDeprecated = false): Promise<{ items: UiTemplateSummary[]; iconCount: number }> {
+  const data = await loadVisibleCatalog('/ui-library/catalog', signal, includeDeprecated, { summary: 'true' })
+  if (data.version !== 1 || !Array.isArray(data.items)) throw new Error('Invalid catalog')
+  return { items: data.items, iconCount: Number(data.icon_count) || 0 }
+}
+export async function loadTemplate(id: string, signal?: AbortSignal, includeDeprecated = false): Promise<UiTemplate> {
+  const data = await loadVisibleCatalog('/ui-library/catalog', signal, includeDeprecated, { template_id: id })
+  if (data.version !== 1 || !Array.isArray(data.items) || data.items.length !== 1 || data.items[0]?.id !== id) {
+    throw new Error('Source unavailable')
+  }
+  return data.items[0]
 }
 export async function loadSources(item: UiTemplate, signal?: AbortSignal): Promise<UiSourceFile[]> {
   return Promise.all([...item.files, ...(item.notices ?? [])].map(async file => {
