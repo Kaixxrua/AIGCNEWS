@@ -9,7 +9,7 @@ from backend.app.services.ingestion.github_project_metrics_service import comput
 from backend.tests.postgres_test_safety import postgres_test_sandbox
 
 
-def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
+def test_streak_uses_global_prior_public_boards_and_resets_after_three_absent_days():
     today = date(2026, 10, 11)
     appearances = {
         "leader": (100, range(1, 8)), "anchor": (95, range(1, 6)),
@@ -65,8 +65,9 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
 
         all_rows = {row["repo_id"]: row["previous_top_streak_days"] for row in inputs()}
         expected = {
-            "leader": 5, "anchor": 5, "repeat": 2, "second": 1, "gap": 1,
+            "leader": 5, "anchor": 5, "repeat": 2, "second": 1, "gap": 4,
             "sixth": 5, "seventh": 5, "eighth": 5, "ninth": 5, "tenth": 5,
+            "absent": 4, "outsider": 4,
         }
         for name in appearances:
             assert all_rows[f"streak/{name}"] == expected.get(name, 0)
@@ -75,8 +76,10 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
         assert yesterday[9]["repo_id"] == "streak/tenth"
         assert yesterday[10]["repo_id"] == "streak/outsider"
         yesterday = yesterday[:10]
-        assert {row["repo_id"] for row in yesterday} == {f"streak/{name}" for name in expected}
-        assert inputs(["streak/outsider"])[0]["previous_top_streak_days"] == 0
+        assert {row["repo_id"] for row in yesterday} == {
+            f"streak/{name}" for name in expected if name not in ("absent", "outsider")
+        }
+        assert inputs(["streak/outsider"])[0]["previous_top_streak_days"] == 4
         assert inputs(["streak/repeat"])[0]["previous_top_streak_days"] == 2
         for name in ("sixth", "seventh", "eighth", "ninth", "tenth"):
             assert inputs([f"streak/{name}"])[0]["previous_top_streak_days"] == 5
@@ -95,14 +98,65 @@ def test_streak_uses_global_prior_public_boards_and_breaks_at_gaps():
                     "SELECT * FROM github_repo_daily_metrics WHERE repo_id='streak/leader' AND metric_date=%s",
                     (str(today),),
                 ).fetchone()
-            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v10"
+            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v11"
             scores.append(row["hot_score"])
         assert scores[0] > 0 and scores[1] == scores[0]
 
-        # A missing calendar slice resets everyone, rather than bridging it.
-        with db.transaction() as connection:
-            connection.execute("DELETE FROM github_repo_daily_metrics WHERE metric_date='2026-10-10'")
-        assert all(row["previous_top_streak_days"] == 0 for row in inputs())
+        # Missing slices count as absent days; only three in a row reset.
+        for missing_days in (1, 2, 3):
+            with db.transaction() as connection:
+                connection.execute(
+                    "DELETE FROM github_repo_daily_metrics WHERE metric_date=%s",
+                    (str(today - timedelta(days=missing_days)),),
+                )
+            remaining = {row["repo_id"]: row["previous_top_streak_days"] for row in inputs()}
+            assert remaining["streak/leader"] == (5 if missing_days < 3 else 0)
+        assert all(count == 0 for count in remaining.values())
+
+
+@pytest.mark.parametrize(("appearance_days", "expected"), [
+    ([2, 3, 4], 3),             # One absent day preserves the count.
+    ([3, 4, 5], 3),             # Two absent days preserve it without incrementing.
+    ([4, 5, 6], 0),             # Three absent days reset it.
+    ([1, 3, 4], 3),             # Re-entry after one absent day continues the run.
+    ([1, 4, 5], 3),             # Re-entry after two absent days continues the run.
+    ([1, 5, 6], 1),             # Re-entry after three absent days starts fresh.
+    ([1, 2, 5, 9, 10], 3),     # An older reset excludes only the earlier run.
+    ([3, 6, 9, 12, 15], 5),    # Repeated two-day gaps still reach the cap.
+    ([3, 6, 9, 12], 4),        # Gaps themselves never count as appearances.
+])
+def test_cooldown_counts_public_top_ten_appearances_not_off_board_days(appearance_days, expected):
+    today = date(2026, 10, 20)
+    with postgres_test_sandbox() as sandbox:
+        db = sandbox.database
+        repository = PostgresGitHubProjectIngestionRepository(db)
+        # Ten fillers keep the target in eleventh place on each off-board day.
+        for index in range(11):
+            repo_id = f"cooldown/repo-{index}"
+            repository.upsert_github_repo_candidate({"repo_id": repo_id, "full_name": repo_id, "stars": 1200})
+            with db.transaction() as connection:
+                connection.execute(
+                    """INSERT INTO github_repo_enrichments
+                    (repo_id,category_slug,category_name,description_zh,source_fingerprint,prompt_version,status)
+                    VALUES (%s,'tools','Tools','','fingerprint','test','succeeded')""",
+                    (repo_id,),
+                )
+            repository.upsert_github_daily_metrics([
+                {"repo_id": repo_id, "metric_date": str(today - timedelta(days=ago)),
+                 "stars": 1200, "hot_score": (100 if ago in appearance_days else 1) if index == 0 else 90-index,
+                 "score_version": "daily_hot_v10", "daily_growth_available": True, "daily_star_growth": 100}
+                for ago in range(1, 17)
+            ])
+        repository.insert_github_repo_snapshot({
+            "repo_id": "cooldown/repo-0", "snapshot_date": str(today),
+            "captured_at": f"{today}T12:00:00+00:00", "stars": 1300,
+        })
+        rows = repository.get_github_daily_metric_inputs(
+            metric_date=str(today), previous_date=str(today - timedelta(days=1)),
+            baseline_start_date=str(today - timedelta(days=7)), repo_ids=["cooldown/repo-0"],
+        )
+        assert len(rows) == 1
+        assert rows[0]["previous_top_streak_days"] == expected
 
 
 def test_streak_column_default_keeps_legacy_rows_unpenalized():

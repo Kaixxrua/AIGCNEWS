@@ -1,5 +1,8 @@
 # GitHub heat v10: consecutive top-ten penalty
 
+Superseded by [v11](github-heat-v11.md): 4% per prior top-ten appearance,
+capped at 20%, with a three-day reset. This document preserves the v10 contract.
+
 v10 expands v9's exposure discount to the public daily **top ten**. Only
 the first day is exempt; each additional consecutive day adds 3 percentage
 points of discount, capped at 15%.
