@@ -624,8 +624,16 @@ export const estimateTweetCardHeight = (
       else for (const item of quoteMedia) height += estimateMediaHeight(item, quoteInnerWidth)
     }
   }
-  const card = layout?.textOnly ? null : tweetLinkCard(doc)
-  if (card && layout) {
+  const candidate = tweetLinkCard(doc)
+  const card = layout?.textOnly && !candidate?.poll ? null : candidate
+  if (card?.poll) {
+    // Poll text stays visible in every density, including text-only mode.
+    const labelWidth = bodyWidth - 12 - 22 - 56
+    height += 34 + Math.max(0, card.poll.choices.length - 1) * 4
+    for (const choice of card.poll.choices) {
+      height += Math.max(32, estimateTextLines(choice.label, labelWidth, 12) * 18 + 14)
+    }
+  } else if (card && layout) {
     // 横排：缩略图与文字并排，卡高取两边较高的一边
     const cardInnerWidth = bodyWidth - 12 // mx-1 + 卡边框
     const thumb = card.image_url ? Math.min(LINK_ROW_THUMB_MAX_PX, cardInnerWidth * LINK_ROW_THUMB_SHARE) : 0
@@ -659,10 +667,10 @@ export interface CollapsedMedia { photos: number; videos: number; link: boolean 
 export const collapsedMedia = (doc: TopDoc): CollapsedMedia => {
   const media = doc.media ?? []
   const videos = media.filter((item) => item.type === 'video' || item.type === 'animated_gif').length
-  return { photos: media.length - videos, videos, link: hasLinkCard(doc) }
+  return { photos: media.length - videos, videos, link: hasLinkCard(doc) && !doc.link_card?.poll }
 }
 
-export const hasCollapsedMedia = (doc: TopDoc): boolean => (doc.media?.length ?? 0) > 0 || hasLinkCard(doc)
+export const hasCollapsedMedia = (doc: TopDoc): boolean => (doc.media?.length ?? 0) > 0 || (hasLinkCard(doc) && !doc.link_card?.poll)
 
 /** 同一页里一个账号达到这么多条，就只留第一条，其余收进它底下的一行。 */
 export const TWEET_FOLD_THRESHOLD = 3

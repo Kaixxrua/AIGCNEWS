@@ -856,9 +856,9 @@ onBeforeUnmount(() => {
                       :text-only="textOnly"
                       @activate="openDetail(tweet)"
                     />
-                    <!-- 外链预览卡：整卡跳目标页（与 X 一致），不放大详情；纯文字时收起 -->
+                    <!-- 纯文字模式只收起外链预览，投票选项与结果始终可见。 -->
                     <TweetLinkCard
-                      v-if="hasLinkCard(tweet) && !textOnly"
+                      v-if="hasLinkCard(tweet) && (!textOnly || tweetLinkCard(tweet)?.poll)"
                       :card="tweetLinkCard(tweet)!"
                       context="wall"
                       :compact="dense"

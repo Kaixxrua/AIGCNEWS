@@ -953,6 +953,20 @@ describe('xBoardViewModel', () => {
       .toBe(estimate(tweet('openai', '4', { summary: 'x', quote })))
   })
 
+  it('reserves poll height in text-only mode without a hidden-link hint', () => {
+    const plain = tweet('openai', '1', { summary: 'Question' })
+    const poll = { choices: [{ label: 'Keep limits', votes: 1 }, { label: 'Remove limits', votes: 3 }], total_votes: 4, is_final: true }
+    const doc = { ...plain, link_card: { url: plain.url!, title: 'Question', poll } }
+    const layout: TweetCardLayout = {
+      textClamp: 7, mediaMax: 150, quoteSize: 13, quoteLine: 19, quoteClamp: 4, quoteMediaMax: 110, textOnly: true,
+    }
+    const height = estimateTweetCardHeight(doc, 340, 'en-US', undefined, layout)
+    expect(height).toBeGreaterThan(estimateTweetCardHeight(plain, 340, 'en-US', undefined, layout) + 64)
+    expect(height).toBe(estimateTweetCardHeight(doc, 340, 'en-US', undefined, { ...layout, textOnly: false }))
+    expect(hasCollapsedMedia(doc)).toBe(false)
+    expect(collapsedMedia(doc).link).toBe(false)
+  })
+
   it('pageCount floors at 1 page and handles empty, boundary and large totals', () => {
     expect(pageCount(0, 20)).toBe(1) // 空列表按 1 页算，避免 0 页状态
     expect(pageCount(20, 20)).toBe(1)

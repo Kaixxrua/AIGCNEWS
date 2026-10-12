@@ -20,9 +20,11 @@ from __future__ import annotations
 """
 
 import asyncio
+import html
 import logging
 import os
 import random
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Iterable, Mapping, MutableMapping
@@ -231,9 +233,11 @@ def _resolve_card_tweet_data(result: Any) -> Any:
 
 
 def _card_binding_values(card_legacy: Any) -> dict[str, Any]:
-    """binding_values 列表 → {key: string|image dict} 映射（后者保留宽高）。"""
+    """binding_values 列表 → 字符串、布尔值或图片映射（图片保留宽高）。"""
     values: dict[str, Any] = {}
-    for entry in (card_legacy or {}).get("binding_values") or []:
+    if not isinstance(card_legacy, dict):
+        return values
+    for entry in card_legacy.get("binding_values") or []:
         if not isinstance(entry, dict):
             continue
         key = entry.get("key")
@@ -242,6 +246,8 @@ def _card_binding_values(card_legacy: Any) -> dict[str, Any]:
             continue
         if "string_value" in value:
             values[key] = value.get("string_value")
+        elif isinstance(value.get("boolean_value"), bool):
+            values[key] = value["boolean_value"]
         elif isinstance(value.get("image_value"), dict):
             values[key] = value["image_value"]
     return values
@@ -262,12 +268,12 @@ def _resolve_card_url(card_url: str, tweet_data: Any) -> str:
 
 
 def _extract_link_card(tweet_data: Any) -> dict[str, Any] | None:
-    """card.legacy.binding_values → 链接预览卡 dict；无可渲染内容返回 None。
+    """card.legacy.binding_values → 链接预览或投票卡；无可渲染内容返回 None。
 
     title 与 card_url 是卡片的可渲染下限（无标题无可看内容、无 URL 无法
     跳转）；description/domain/缩略图任一缺失不阻断。缩略图按
     _CARD_IMAGE_KEYS 逐档回退，全部缺失时 image_url 置空由渲染层降级为
-    纯文本卡。
+    纯文本卡。投票使用 choice 标签和票数，不要求外链的 title/card_url。
     """
     if not isinstance(tweet_data, dict):
         return None
@@ -276,6 +282,9 @@ def _extract_link_card(tweet_data: Any) -> dict[str, Any] | None:
         return None
     card_legacy = card.get("legacy")
     values = _card_binding_values(card_legacy)
+    poll = _extract_poll_card(tweet_data, card_legacy, values)
+    if poll:
+        return poll
     title = str(values.get("title") or "").strip()
     card_url = str(values.get("card_url") or "").strip()
     if not title or not card_url:
@@ -299,6 +308,38 @@ def _extract_link_card(tweet_data: Any) -> dict[str, Any] | None:
         "image_width": image_width,
         "image_height": image_height,
         "card_type": str((card_legacy or {}).get("name") or "").strip(),
+    }
+
+
+def _extract_poll_card(tweet_data: dict, card_legacy: Any, values: dict) -> dict | None:
+    """Keep polls in the existing JSON card column; absent counts stay unknown."""
+    if not isinstance(card_legacy, dict):
+        return None
+    match = re.fullmatch(r"poll([2-4])choice(?:_.*)?", str(card_legacy.get("name") or ""))
+    tweet_id = str(tweet_data.get("rest_id") or "")
+    if not match or not tweet_id.isascii() or not tweet_id.isdigit():
+        return None
+    choices = []
+    for index in range(1, int(match[1]) + 1):
+        label = values.get(f"choice{index}_label")
+        if not isinstance(label, str) or not label.strip():
+            return None
+        count = str(values.get(f"choice{index}_count", ""))
+        choices.append({
+            "label": html.unescape(label.strip()),
+            "votes": int(count) if count.isascii() and count.isdigit() else None,
+        })
+    complete = all(choice["votes"] is not None for choice in choices)
+    return {
+        "url": f"https://x.com/i/status/{tweet_id}",
+        "title": html.unescape(str((tweet_data.get("legacy") or {}).get("full_text") or "Poll")),
+        "card_type": card_legacy["name"],
+        "poll": {
+            "choices": choices,
+            "total_votes": sum(choice["votes"] for choice in choices) if complete else None,
+            "is_final": values.get("counts_are_final") is True,
+            "ends_at": str(values.get("end_datetime_utc") or ""),
+        },
     }
 
 
