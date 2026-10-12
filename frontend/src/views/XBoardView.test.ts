@@ -207,6 +207,26 @@ describe('XBoardView video playback', () => {
 })
 
 describe('XBoardView 分页 × 分列 × 页级全选接线', () => {
+  it('shows polls in the wall, text-only mode and the detail dialog', async () => {
+    viewport.desktop = true
+    setAppDensity('compact')
+    localStorage.setItem('xboard_text_only', '1')
+    const docs = makeTweets(1)
+    docs[0]!.link_card = {
+      url: docs[0]!.url!, title: 'Pro users',
+      poll: { choices: [{ label: 'Keep limits', votes: 1 }, { label: 'Remove limits', votes: 3 }], total_votes: 4, is_final: true },
+    }
+    controller().docs.value = docs
+    const wrapper = await mountView()
+    expect(wrapper.get('.xboard-text-only').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.masonry-grid .tweet-poll-choice')).toHaveLength(2)
+    expect(wrapper.get('.masonry-grid .tweet-poll').text()).toContain('75%')
+    expect(wrapper.find('.tweet-media-hint').exists()).toBe(false)
+    await wrapper.get('.tweet-text').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.detail-backdrop .tweet-poll-choice')).toHaveLength(2)
+  })
+
   it('默认关注全部账号，并可按账号即时筛选推文', async () => {
     const tweets = makeTweets(3)
     tweets[0]!.author_name = 'Alice Zhang'

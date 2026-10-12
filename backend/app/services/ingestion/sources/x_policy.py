@@ -310,6 +310,7 @@ def _project_link_card(tweet: Any) -> dict | None:
         "image_width": card.get("image_width"),
         "image_height": card.get("image_height"),
         "card_type": str(card.get("card_type") or "").strip(),
+        **({"poll": card["poll"]} if isinstance(card.get("poll"), dict) else {}),
     }
 
 

@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import type { TopDoc } from '@/features/dashboard/dashboardViewModel'
 import { linkCardImageUrl } from '@/features/xboard/xBoardViewModel'
+import TweetPollCard from './TweetPollCard.vue'
 
 withDefaults(defineProps<{
   card: NonNullable<TopDoc['link_card']>
@@ -15,9 +16,11 @@ const { t } = useI18n()
 </script>
 
 <template>
+  <TweetPollCard v-if="card.poll" :poll="card.poll" :url="card.url" :context="context" />
   <!-- 链接预览卡：整卡跳目标页（与 X 点击卡片行为一致）；缩略图缺失或
        非 twimg 镜像时降级为纯文本卡（标题/描述/域名仍完整可点） -->
   <a
+    v-else
     class="tweet-linkcard block"
     :class="[context === 'detail' ? 'mx-4 my-2' : 'mx-1 mt-2', { 'tweet-linkcard--row': compact }]"
     :href="card.url"
