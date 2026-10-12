@@ -12,7 +12,7 @@ from __future__ import annotations
   - hot 量级跨端点不可比（知乎千万级 vs 少数派十几、虎嗅/爱范儿恒为 0），
     只用于端点内取 Top-N；score 与 raw_score 同为端点内名次分（榜首 100，
     逐名递减）——入库 Top-N、日榜快照与简报选稿都按 raw_score 优先排序；
-  - 端点级失败只跳过该端点，不影响其他端点（错误聚合进返回值日志字段）。
+  - 端点级失败只跳过该端点；全部端点失败时上抛，由爬虫记录采集失败。
 """
 
 import logging
@@ -27,6 +27,10 @@ _TZ_CST = timezone(timedelta(hours=8))
 
 SOURCE_NAME = "dailyhot"
 SOURCE_CHANNEL = "dailyhot_daily"
+
+
+class DailyHotUnavailable(RuntimeError):
+    """所有已配置端点均失败，不能当作正常空榜。"""
 
 
 def parse_endpoint_list(raw: str) -> list[str]:
@@ -143,25 +147,36 @@ async def fetch_dailyhot_items(
         timeout_seconds: 单端点请求超时
 
     Returns:
-        标准化 paper dict 列表（空列表表示全部端点失败或无数据）。
+        标准化 paper dict 列表（空列表表示未配置端点或成功但无数据）。
+
+    Raises:
+        DailyHotUnavailable: 所有已配置端点均失败。
     """
     if not endpoints:
         return []
 
     base = base_url.rstrip("/")
     merged: list[Dict[str, Any]] = []
+    failed_endpoints: list[str] = []
     async with httpx.AsyncClient(
         timeout=timeout_seconds,
         headers={"User-Agent": "AIGCNews-DailyHot/1.0"},
     ) as client:
         for endpoint in endpoints:
-            _, items, _ = await _fetch_endpoint(
+            _, items, error = await _fetch_endpoint(
                 client,
                 base_url=base,
                 endpoint=endpoint,
                 per_endpoint_limit=per_endpoint_limit,
             )
+            if error is not None:
+                failed_endpoints.append(endpoint)
             merged.extend(items)
+
+    if len(failed_endpoints) == len(endpoints):
+        raise DailyHotUnavailable(
+            "dailyhot_all_endpoints_failed:" + ",".join(failed_endpoints)
+        )
 
     # 跨端点交错排序：按端点内名次优先，让各榜头部条目均匀进入 Top-N。
     merged.sort(key=lambda item: (item["rank_in_period"], item["endpoint"]))

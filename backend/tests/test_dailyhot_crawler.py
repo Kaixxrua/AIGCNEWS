@@ -22,6 +22,7 @@ from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCra
 from backend.app.services.ingestion.document_projection import select_top_for_write
 from backend.app.services.ingestion.source_dailyhot import (
     SOURCE_CHANNEL,
+    DailyHotUnavailable,
     _normalise_item,
     fetch_dailyhot_items,
     parse_endpoint_list,
@@ -231,6 +232,35 @@ class FetchDailyHotItemsTests(unittest.TestCase):
             [],
         )
 
+    def test_all_endpoint_failures_raise_stable_error(self) -> None:
+        payloads = {
+            "ithome": ConnectionError(""),
+            "zhihu": _endpoint_payload([], code=500),
+        }
+        with patch(
+            "backend.app.services.ingestion.source_dailyhot.httpx.AsyncClient",
+            lambda *a, **kw: _FakeAsyncClient(payloads, *a, **kw),
+        ), self.assertRaisesRegex(
+            DailyHotUnavailable, "^dailyhot_all_endpoints_failed:ithome,zhihu$"
+        ):
+            asyncio.run(fetch_dailyhot_items(
+                base_url="http://dailyhot:6688", endpoints=list(payloads)
+            ))
+
+    def test_successful_empty_endpoint_is_not_an_outage(self) -> None:
+        payloads = {
+            "ithome": ConnectionError("connection reset"),
+            "zhihu": _endpoint_payload([]),
+        }
+        with patch(
+            "backend.app.services.ingestion.source_dailyhot.httpx.AsyncClient",
+            lambda *a, **kw: _FakeAsyncClient(payloads, *a, **kw),
+        ):
+            items = asyncio.run(fetch_dailyhot_items(
+                base_url="http://dailyhot:6688", endpoints=list(payloads)
+            ))
+        self.assertEqual(items, [])
+
 
 class DailyHotCrawlerWrapperTests(unittest.TestCase):
     def test_wrapper_contract(self) -> None:
@@ -260,7 +290,7 @@ class DailyHotCrawlerWrapperTests(unittest.TestCase):
         self.assertEqual(len(result.items), 1)
         self.assertRegex(result.snapshot_date, r"^\d{4}-\d{2}-\d{2}$")
 
-    def test_upstream_down_yields_empty_result_not_exception(self) -> None:
+    def test_upstream_down_yields_failed_result_not_exception(self) -> None:
         crawler = DailyHotCrawler(base_url="http://dailyhot:6688", endpoints=["ithome"])
         payloads = {"ithome": ConnectionError("connection refused")}
         with patch(
@@ -268,8 +298,8 @@ class DailyHotCrawlerWrapperTests(unittest.TestCase):
             lambda *a, **kw: _FakeAsyncClient(payloads, *a, **kw),
         ):
             result = asyncio.run(crawler.fetch(period="daily", limit=25))
-        # 端点级错误被隔离为空列表：整体 ok 但无数据，绝不抛出。
-        self.assertTrue(result.ok)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "dailyhot_all_endpoints_failed:ithome")
         self.assertEqual(result.items, [])
 
 
