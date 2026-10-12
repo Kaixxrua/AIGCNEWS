@@ -239,6 +239,12 @@ services:
       - ALLOWED_HOST=dailyhot
       - USE_LOG_FILE=false
       - FILTER_WEIBO_ADVERTISEMENT=true
+      # 独立于 backend 的出口：国内热榜可选经过专用路由的 HTTP 代理。
+      - HTTP_PROXY=${DAILYHOT_OUTBOUND_PROXY:-}
+      - HTTPS_PROXY=${DAILYHOT_OUTBOUND_PROXY:-}
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,host.docker.internal,api.siliconflow.cn,api.aigcnews.cn
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:6688/"]
       interval: 30s

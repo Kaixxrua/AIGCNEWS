@@ -15,7 +15,9 @@ scheduler(dailyhot_hotlists, 每小时 :07)
   → subscription_dispatch 派发（source='dailyhot' 订阅）
 ```
 
-- 端点级失败只跳过该端点；服务整体不可达时本次采集返回 error，
+- 端点级失败只跳过该端点；所有已配置端点均失败（包括 HTTP 500、
+  连接失败或业务错误）时，本次采集返回 `dailyhot_all_endpoints_failed`，
+  单源任务记为失败。上游成功但榜单为空仍视为正常零产出，
   不影响其他源；热榜条目的跨站 hot 量级不可比（知乎千万级、少数派十几、
   虎嗅/爱范儿恒为 0），hot 只用于端点内取 Top-N，`score` 与 `raw_score`
   同为端点内名次分（榜首 100 逐名递减）。入库 Top-N、日榜快照与简报选稿都按
@@ -47,6 +49,12 @@ backend 的 `NO_PROXY` 已含 `dailyhot` 服务名。
 | `DAILYHOT_ENDPOINTS` | `36kr,ithome,sspai,juejin,zhihu,huxiu,geekpark,ifanr` | 端点路由名，可选值见 DailyHotApi `src/routes/`（约 60 个） |
 | `DAILYHOT_PER_ENDPOINT_LIMIT` | `5` | 每端点按 hot 降序保留条数 |
 | `DAILYHOT_REQUEST_TIMEOUT_SECONDS` | `8.0` | 单端点请求超时 |
+| `DAILYHOT_OUTBOUND_PROXY` | 空（直连） | DailyHotApi 出站 HTTP 代理，如 `http://host.docker.internal:7897`；代理需为各热榜站点配置可用出口 |
+
+`DAILYHOT_OUTBOUND_PROXY` 注入 DailyHotApi 容器的 `HTTP_PROXY` 和
+`HTTPS_PROXY`，不改变 backend 到 `dailyhot:6688` 的内网请求。修改后需
+仅重建 DailyHot 容器（无需重建镜像）才能生效。健康检查只检测本地 HTTP
+服务，不能证明上游热榜可达；应逐端点确认 HTTP 200 和非空 `data`。
 
 ## 验证
 

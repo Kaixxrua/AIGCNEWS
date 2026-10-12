@@ -15,9 +15,11 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from backend.app.services.ingestion.base_crawler import CrawlResult
+from backend.app.services.ingestion.crawlers.dailyhot_crawler import DailyHotCrawler
 from backend.app.services.ingestion.persistence_adapter import IngestionPersistenceResult
 from backend.app.services.ingestion.source_orchestration import (
     MultiSourceIngestionRuntime,
@@ -361,6 +363,26 @@ class TestRunSingleSource(unittest.IsolatedAsyncioTestCase):
         assert "boom-monthly" in finished["error_msg"]
         assert host.cache_cleared == 0  # 零入库不触发缓存清理
         assert host.enriched == []
+
+    async def test_dailyhot_http_outage_finishes_failed(self) -> None:
+        crawler = DailyHotCrawler(endpoints=["ithome", "sspai"])
+        host = FakeHost({"dailyhot": crawler})
+        runtime = MultiSourceIngestionRuntime(host)
+        client_class = httpx.AsyncClient
+        transport = httpx.MockTransport(lambda request: httpx.Response(500))
+
+        with patch(
+            "backend.app.services.ingestion.source_dailyhot.httpx.AsyncClient",
+            lambda **kwargs: client_class(transport=transport, **kwargs),
+        ):
+            result = await runtime.run_single_source("dailyhot")
+
+        assert result["ingested_total"] == 0
+        assert len(host.finished) == 1
+        assert host.finished[0]["status"] == "failed"
+        assert "dailyhot_all_endpoints_failed:ithome,sspai" in host.finished[0]["error_msg"]
+        assert host.enriched == []
+        assert host.cache_cleared == 0
 
     async def test_error_plus_empty_periods_without_ingest_finishes_failed(self) -> None:
         """部分周期失败、其余周期空数据且零入库：同样记 failed。"""

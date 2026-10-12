@@ -188,4 +188,4 @@ def test_compose_routes_first_party_model_relay_and_internal_services_directly(m
                 assert client._transport_for_url(httpx.URL('https://arxiv.org/abs/2610.12345')) is not client._transport
                 assert client._transport_for_url(httpx.URL('https://api.aigcnews.cn.attacker.example')) is not client._transport
             checked += 1
-    assert checked == 4
+    assert checked == 5  # backend/MCP 双拼写各一份，加 DailyHot 的内网直连配置
