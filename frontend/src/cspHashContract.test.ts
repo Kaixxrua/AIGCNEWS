@@ -56,9 +56,9 @@ describe('CSP 安全响应头契约', () => {
     expect(csp).not.toContain('fonts.gstatic.com')
   })
 
-  it('only allows the official WeChat login frame alongside same-origin frames', () => {
+  it('only allows the official WeChat and Bilibili players alongside same-origin frames', () => {
     const csp = extractCspHeaderValue(nginxConf)
-    expect(csp.match(/(?:^|;\s*)frame-src\s+([^;]+)/)?.[1]).toBe("'self' https://open.weixin.qq.com")
+    expect(csp.match(/(?:^|;\s*)frame-src\s+([^;]+)/)?.[1]).toBe("'self' https://open.weixin.qq.com https://player.bilibili.com")
     expect(csp).toContain("frame-ancestors 'none'")
     expect(csp).toContain("connect-src 'self'")
   })
