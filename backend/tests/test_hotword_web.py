@@ -217,6 +217,38 @@ def test_query_fetch_cache_and_page_budget_cover_both_discovery_and_investigatio
     asyncio.run(run())
 
 
+def test_alias_queries_check_history_and_share_the_existing_page_budget(monkeypatch):
+    monkeypatch.setattr(web, 'MAX_PAGES', 2)
+    fetch = AsyncMock(side_effect=lambda url, now: web.parse_page(url, dated_page(), now))
+    monkeypatch.setattr(web, 'fetch_page', fetch)
+    research = web.PublicWebResearch()
+    research._search = AsyncMock(return_value=['https://research.example/one', 'https://research.example/two',
+                                               'https://research.example/over-budget'])
+    result = asyncio.run(research.investigate(['SynthSelf'], NOW, contexts={'SynthSelf': 'Continual learning'},
+                                             aliases={'SynthSelf': ['Synthetic Self-Distillation (SynthSelf)',
+                                                                   'Synthetic Self-Distillation', 'SynthSelf']}))
+    queries = [call.args[0] for call in research._search.await_args_list]
+    assert len(queries) == 6
+    for name in ['SynthSelf', 'Synthetic Self-Distillation', 'Synthetic Self-Distillation (SynthSelf)']:
+        assert f'"{name}" Continual learning' in queries
+        assert f'"{name}" Continual learning before:2026-10-01' in queries
+    assert fetch.await_count == len(result.documents) == 2
+
+
+def test_alias_query_expansion_is_bounded_and_interleaves_candidates():
+    research = web.PublicWebResearch()
+    research._scan = AsyncMock(return_value=web.WebEvidence(available=True))
+    terms = [f'Term {i}' for i in range(10)]
+    aliases = {term: [f'Long name {i}' for i in range(10)] for term in terms}
+    asyncio.run(research.investigate(terms, NOW, aliases=aliases))
+    queries = research._scan.call_args.args[0]
+    assert len(queries) <= 8 * 3 * 2
+    assert all(any(f'"{term}"' in q for q in queries) for term in terms[:8])
+    assert not any('Term 8' in q or 'Term 9' in q for q in queries)
+    assert len({q for q in queries}) == len(queries)
+    assert queries[:8] == [f'"{term}" AI' for term in terms[:8]]
+
+
 def test_search_errors_are_distinct_from_successful_empty_results():
     async def run():
         research = web.PublicWebResearch()
