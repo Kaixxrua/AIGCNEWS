@@ -11,7 +11,14 @@ from urllib.parse import urlsplit
 import feedparser
 from bs4 import BeautifulSoup
 
-AI_CONTEXT = re.compile(r"\b(AI|LLMs?|GPT[\w‑.-]*|ChatGPT|Claude|Gemini|Sonnet|Haiku|Qwen[\w.-]*|DeepSeek|Mistral|Llama|Grok|neural|machine learning|language models?|diffusion|transformers?)\b|人工智能|大模型|语言模型|神经网络|机器学习|生成式|智能体", re.I)
+AI_CONTEXT = re.compile(
+    r"\b(AI|LLMs?|GPT[\w‑.-]*|ChatGPT|Claude|Gemini|Sonnet|Haiku|Qwen[\w.-]*|DeepSeek|Mistral|Llama|Grok|"
+    r"neural|machine learning|language models?|diffusion|transformers?|reinforcement learning|"
+    r"(?:self|knowledge|model)[\s‑–-]+distillation|(?:continual|in[\s‑–-]context) learning|"
+    r"instruction[\s‑–-]following)\b|人工智能|大模型|语言模型|神经网络|机器学习|生成式|智能体|"
+    r"强化学习|自蒸馏|知识蒸馏|模型蒸馏|持续学习|上下文学习|指令微调",
+    re.I,
+)
 OFFICIAL_ACCOUNTS = {"openai": "openai.com", "chatgpt": "openai.com", "anthropicai": "anthropic.com",
                      "claudeai": "anthropic.com", "google": "google.com", "googleai": "google.com",
                      "googledeepmind": "google.com", "geminiapp": "google.com", "mistralai": "mistral.ai"}
