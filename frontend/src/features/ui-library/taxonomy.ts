@@ -1,4 +1,4 @@
-import type { UiTemplate, UiLanguage } from './catalog'
+import type { UiTemplateSummary, UiLanguage } from './catalog'
 import { detailedCategories, detailedStyles } from './taxonomyData'
 export const libraryKinds = [
   ['component', '组件', 'Components'], ['template', '模板', 'Templates'], ['theme', '主题', 'Themes'], ['icon', '图标', 'Icons'],
@@ -12,7 +12,7 @@ export function resolveLibraryKind(value: string): LibraryKind {
 export const categories = detailedCategories
 export const styleTags = detailedStyles
 const aliases: Record<string, string> = { button:'buttons', card:'cards', input:'inputs', forms:'inputs', textareas:'inputs', select:'inputs', selects:'inputs', checkbox:'checkboxes', 'radio-groups':'checkboxes', radio:'checkboxes', toggle:'toggles', loader:'loaders', 'progress-bars':'loaders', 'radio-buttons':'checkboxes', 'radio buttons':'checkboxes', 'toggle-switches':'toggles', 'toggle switches':'toggles', breadcrumb:'navigation', breadcrumbs:'navigation', pagination:'navigation', menus:'navigation', headers:'navigation', dropdowns:'navigation', 'side-menu':'navigation', 'vertical-menu':'navigation', announcements:'badges', alerts:'badges', toasts:'badges', tooltips:'badges', tooltip:'badges', faqs:'faq', footers:'footer', ctas:'hero', sections:'features', stats:'tables', patterns:'background' }
-export function subcategory(item: UiTemplate): string {
+export function subcategory(item: UiTemplateSummary): string {
   if (item.subcategory) return item.subcategory
   if (['shader', 'background', 'text'].includes(item.category)) return item.category
   const path = item.files[0]?.path ?? ''
@@ -20,19 +20,19 @@ export function subcategory(item: UiTemplate): string {
   const candidate = aliases[sourceCategory ?? ''] ?? sourceCategory
   return categories.some(([key]) => key === candidate) ? candidate! : 'other'
 }
-export function materialKind(item: UiTemplate): Exclude<LibraryKind, 'all'> {
+export function materialKind(item: UiTemplateSummary): Exclude<LibraryKind, 'all'> {
   if (item.kind) return item.kind
   if (item.provider_id === 'hyperui' && ['hero', 'pricing', 'features', 'testimonials', 'faq', 'footer'].includes(subcategory(item))) return 'block'
   return 'component'
 }
-export function isFeatured(item: UiTemplate): boolean {
+export function isFeatured(item: UiTemplateSummary): boolean {
   const review = item.editorial
   return review?.status === 'approved' && review.revision === item.revision && review.source_sha256 === item.files[0]?.sha256
 }
-export function browseMaterials(items: UiTemplate[], kind: LibraryKind, category = '', style = '') {
+export function browseMaterials<T extends UiTemplateSummary>(items: T[], kind: LibraryKind, category = '', style = '') {
   return items.filter(item => (kind === 'all' || materialKind(item) === kind || (kind === 'component' && materialKind(item) === 'block')) && (!category || subcategory(item) === category || item.category === category) && (!style || item.styles?.includes(style)))
 }
-export function categoryLabel(item: UiTemplate, lang: UiLanguage) {
+export function categoryLabel(item: UiTemplateSummary, lang: UiLanguage) {
   const row = categories.find(([key]) => key === subcategory(item))
   return row?.[lang === 'zh' ? 1 : 2] ?? ''
 }

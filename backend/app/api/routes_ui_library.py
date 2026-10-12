@@ -70,14 +70,15 @@ async def material_dashboard(response: Response, repo: Repo,
 @router.get('/ui-library/icons')
 async def material_catalog(request: Request, response: Response, repo: Repo,
                            user: Annotated[dict[str, Any] | None, Depends(OptionalUser)],
-                           include_deprecated: bool = False) -> dict[str, Any]:
+                           include_deprecated: bool = False, summary: bool = False,
+                           template_id: str | None = Query(None, max_length=200)) -> dict[str, Any]:
     if include_deprecated and (not user or user.get('role') != 'admin'):
         raise HTTPException(403, 'Admin required')
     response.headers['Cache-Control'] = 'private, no-store'
     response.headers['Vary'] = 'Authorization'
     deprecated = await asyncio.to_thread(repo.deprecated_ids)
     return await asyncio.to_thread(visible_catalog, deprecated, icons=request.url.path.endswith('/icons'),
-                                   include_deprecated=include_deprecated)
+                                   include_deprecated=include_deprecated, summary=summary, template_id=template_id)
 
 
 @router.put('/ops/ui-library/{template_id}/visibility')

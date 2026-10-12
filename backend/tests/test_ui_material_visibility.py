@@ -78,7 +78,7 @@ def test_deprecated_content_cannot_be_liked_or_copied_by_user(catalog, material)
     assert c.put(f'/api/ui-library/{material}/like', json={'liked': True}).status_code == 200
 
 
-@pytest.mark.parametrize('endpoint', ['catalog', 'dashboard'])
+@pytest.mark.parametrize('endpoint', ['catalog', 'catalog?summary=true', 'catalog?template_id=live', 'dashboard'])
 def test_database_failure_never_falls_back_to_unfiltered_catalog(catalog, endpoint):
     c, repo = client()
     repo.deprecated_ids.side_effect = RuntimeError('database unavailable')
@@ -126,3 +126,48 @@ def test_dashboard_summary_bounds_the_number_of_previews(catalog):
     c, repo = client()
     assert c.get('/api/ui-library/dashboard', params=[('ids', str(i)) for i in range(17)]).status_code == 422
     repo.deprecated_ids.assert_not_called()
+
+
+@pytest.mark.parametrize('user', [None, {'sub': '1', 'role': 'user'}, {'sub': '1', 'role': 'admin'}])
+def test_gallery_summary_preserves_browsing_and_fetches_complete_sources_on_demand(catalog, user):
+    item = {
+        'id': 'live', 'name': {'zh': '按钮', 'en': 'Button'}, 'aliases': ['glass', '玻璃'],
+        'category': 'component', 'frameworks': ['html'], 'provider_id': 'hyperui',
+        'files': [{'name': f'file-{i}', 'path': f'sources/{i}', 'sha256': 'a' * 64} for i in range(100)],
+        'notices': [{'name': 'LICENSE', 'path': 'licenses/LICENSE', 'sha256': 'b' * 64}],
+        'notes': {'zh': '许可说明', 'en': 'License notes'},
+        'dependencies': {'demo': '1.0.0'}, 'preview_files': {'demo.html': 'x' * 10_000},
+    }
+    catalog.write_text(json.dumps({'version': 1, 'items': [item, {'id': 'old'}]}))
+    c, repo = client(user)
+    repo.deprecated_ids.return_value = {'old'}
+    summary = c.get('/api/ui-library/catalog?summary=true')
+    assert summary.json()['items'] == [{
+        key: value for key, value in item.items()
+        if key not in {'files', 'notices', 'notes', 'dependencies', 'preview_files'}
+    } | {'files': item['files'][:1]}]
+    assert summary.headers['cache-control'] == 'private, no-store'
+    assert summary.headers['vary'] == 'Authorization'
+    # The opt-in projection must not truncate the cached source or the legacy API.
+    full = c.get('/api/ui-library/catalog')
+    assert full.json()['items'] == [item]
+    assert len(summary.content) < len(full.content) / 10
+    assert c.get('/api/ui-library/catalog?template_id=live').json()['items'] == [item]
+    assert c.get('/api/ui-library/catalog?template_id=missing').json()['items'] == []
+    assert c.get('/api/ui-library/catalog?template_id=old').json()['items'] == []
+
+
+@pytest.mark.parametrize('query', ['summary=true', 'template_id=old', 'summary=true&template_id=old'])
+def test_compact_and_single_item_queries_keep_admin_visibility_checks(catalog, query):
+    for user in (None, {'sub': '1', 'role': 'user'}):
+        c, repo = client(user)
+        assert c.get(f'/api/ui-library/catalog?{query}&include_deprecated=true').status_code == 403
+        repo.deprecated_ids.assert_not_called()
+    c, repo = client({'sub': '1', 'role': 'admin'})
+    repo.deprecated_ids.return_value = {'old'}
+    response = c.get(f'/api/ui-library/catalog?{query}&include_deprecated=true')
+    assert response.status_code == 200
+    assert any(item['id'] == 'old' and item['deprecated'] for item in response.json()['items'])
+    assert c.get('/api/ui-library/catalog?summary=true&template_id=old').json()['items'] == []
+    repo.deprecated_ids.return_value = set()
+    assert c.get('/api/ui-library/catalog?template_id=old').json()['items'] == [{'id': 'old'}]

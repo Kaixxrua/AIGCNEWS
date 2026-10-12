@@ -12,13 +12,31 @@ from backend.app.services.membership.tiers import resolve_effective_tier
 
 PERIOD_HOURS = {'daily': 24, 'weekly': 168, 'monthly': 720}
 
+# Listing/search/preview metadata only. Full source and licensing metadata stays
+# available through the unchanged catalog contract and a single-item query.
+SUMMARY_FIELDS = (
+    'id', 'deprecated', 'added_at', 'kind', 'subcategory', 'styles', 'editorial',
+    'name', 'description', 'provider', 'provider_id', 'author', 'revision',
+    'source_url', 'demo_url', 'category', 'frameworks', 'aliases',
+    'preview_url', 'clip_url', 'poster_url',
+)
+
+
+def summarize_template(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **{key: item[key] for key in SUMMARY_FIELDS if key in item},
+        # Legacy taxonomy and featured checks use only the first source path/hash.
+        'files': item.get('files', [])[:1],
+    }
+
 
 @lru_cache(maxsize=4)
 def _read_catalog(path: str, modified_ns: int, size: int) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding='utf-8'))
 
 
-def visible_catalog(deprecated: set[str], *, icons: bool = False, include_deprecated: bool = False) -> dict[str, Any]:
+def visible_catalog(deprecated: set[str], *, icons: bool = False, include_deprecated: bool = False,
+                    summary: bool = False, template_id: str | None = None) -> dict[str, Any]:
     path = Path(settings.ui_library_catalog_path)
     if icons:
         path = path.with_name('icons.json')
@@ -37,7 +55,12 @@ def visible_catalog(deprecated: set[str], *, icons: bool = False, include_deprec
     if icons:
         return {**data, 'sets': [{**group, 'icons': visible(group['icons'])} for group in data['sets']]}
     icon_catalog = visible_catalog(deprecated, icons=True, include_deprecated=include_deprecated)
-    return {**data, 'items': visible(data['items']),
+    items = visible(data['items'])
+    if template_id is not None:
+        items = [item for item in items if item['id'] == template_id]
+    if summary:
+        items = [summarize_template(item) for item in items]
+    return {**data, 'items': items,
             'icon_count': sum(len(group['icons']) for group in icon_catalog['sets'])}
 
 

@@ -79,12 +79,28 @@ afterEach(() => {
 })
 
 describe('UiLibraryView item address', () => {
+  it('renders cards in small batches while searching the complete catalog', async () => {
+    const rows = Array.from({ length: 80 }, (_, id) => ({
+      ...template, id: String(id), name: { zh: `按钮${id}`, en: `Button ${id}` },
+    }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: rows }) })))
+    const wrapper = await openLibraryAt('/ui-library')
+    expect(wrapper.findAll('ui-template-card-stub')).toHaveLength(32)
+    await wrapper.get('.ui-library__load-more button').trigger('click')
+    expect(wrapper.findAll('ui-template-card-stub')).toHaveLength(64)
+    await wrapper.get('input[type="search"]').setValue('按钮79')
+    await flushPromises()
+    expect(wrapper.findAll('ui-template-card-stub')).toHaveLength(1)
+    expect(wrapper.findComponent({ name: 'UiTemplateCard' }).props('item').id).toBe('79')
+    wrapper.unmount()
+  })
+
   it('lets admins restore deprecated items and closes their detail when admin access ends', async () => {
     mocks.isAdmin.value = true
     mocks.get.mockResolvedValue({ data: { version: 1, items: [{ ...template, deprecated: true }], icon_count: 0 } })
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ version: 1, items: [], icon_count: 0 }) })))
     const wrapper = await openLibraryAt('/ui-library/demo:glass-button')
-    expect(mocks.get).toHaveBeenCalledWith('/ui-library/catalog', expect.objectContaining({ params: { include_deprecated: true } }))
+    expect(mocks.get).toHaveBeenCalledWith('/ui-library/catalog', expect.objectContaining({ params: { summary: 'true', include_deprecated: true } }))
     expect(wrapper.find('ui-template-dialog-stub').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'UiTemplateCard' }).props('item').deprecated).toBe(true)
     mocks.isAdmin.value = false
@@ -93,7 +109,7 @@ describe('UiLibraryView item address', () => {
     expect(wrapper.find('ui-template-card-stub').exists()).toBe(false)
     expect(wrapper.find('.ui-library__not-found').exists()).toBe(true)
     expect(document.head.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('noindex')
-    expect(fetch).toHaveBeenCalledWith('/api/ui-library/catalog', expect.objectContaining({ cache: 'no-store' }))
+    expect(fetch).toHaveBeenCalledWith('/api/ui-library/catalog?summary=true', expect.objectContaining({ cache: 'no-store' }))
     wrapper.unmount()
   })
 
