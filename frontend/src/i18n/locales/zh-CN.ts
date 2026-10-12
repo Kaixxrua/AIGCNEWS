@@ -618,6 +618,7 @@ const explicitBusinessTranslations: Record<string, string> = {
   'projects.source.favoritesLabel': '我的收藏',
   'projects.source.favoritesHint': '收藏的 GitHub 项目',
   'projects.sortHotTop': '热度前 50',
+  'projects.sortAllOption': '全部项目 · {sort}',
   'projects.sortHot': '热度',
   'projects.sortRelevance': '相关度',
   'projects.sortStars': 'Stars',
