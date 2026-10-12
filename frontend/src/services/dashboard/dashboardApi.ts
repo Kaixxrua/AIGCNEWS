@@ -80,8 +80,13 @@ export const dashboardApi: DashboardApi = {
     }
   },
 
-  async fetchRecentX({ hours = 24, daysBack = 0, limit = 500, cursor, signal, cacheBuster }) {
+  async fetchRecentX({ hours = 24, daysBack = 0, limit = 500, minItems, accountMode, accountHandles, cursor, signal, cacheBuster }) {
     const params: Record<string, unknown> = { hours, days_back: daysBack, limit }
+    if (minItems !== undefined) params.min_items = minItems
+    if (accountHandles !== undefined) {
+      params.account_mode = accountMode ?? 'include'
+      params.account_handles = accountHandles.join(',')
+    }
     if (cursor) params.cursor = cursor
     if (cacheBuster) params._t = cacheBuster
     const response = await api.get<DashboardRecentXWireResponse>('/dashboard/x/recent', { params, signal })
@@ -93,6 +98,7 @@ export const dashboardApi: DashboardApi = {
       items,
       total: response.data?.total ?? items.length,
       windowHours: response.data?.window_hours ?? hours,
+      windowExtended: response.data?.window_extended ?? false,
       accounts: Array.isArray(response.data?.accounts) ? response.data.accounts : [],
       hasMore: (response.data?.has_more ?? false) && nextCursor !== null,
       nextCursor,

@@ -21,6 +21,32 @@ describe('useXBoardController', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.restoreAllMocks())
 
+  it('requests twenty followed tweets for today and recomputes when subscriptions change', async () => {
+    const api = createApi({ fetchRecentX: vi.fn(async () => ({
+      items: recentDocs(), total: 2, windowHours: 24, windowExtended: true, hasMore: false, nextCursor: null,
+    })) })
+    const controller = useXBoardController({ api, now: () => new Date('2026-08-04T08:00:00Z') })
+    await controller.load()
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({
+      minItems: 20, accountMode: 'include', accountHandles: ['openai', 'thsottiaux', 'anthropicai', 'chatgptapp'],
+    }))
+    expect(controller.windowExtended.value).toBe(true)
+    controller.toggleFollowAccount('karpathy')
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({
+      accountHandles: ['openai', 'thsottiaux', 'anthropicai', 'chatgptapp', 'karpathy'],
+    }))
+    controller.followAllAccounts()
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ accountMode: 'exclude', accountHandles: [] }))
+    controller.unfollowAllAccounts()
+    expect(api.fetchRecentX).toHaveBeenLastCalledWith(expect.objectContaining({ accountMode: 'include', accountHandles: [] }))
+    controller.onDateChange('2026-08-03')
+    const historical = vi.mocked(api.fetchRecentX).mock.lastCall![0]
+    expect(historical.daysBack).toBe(1)
+    expect(historical.minItems).toBeUndefined()
+    expect(historical.accountHandles).toBeUndefined()
+    controller.dispose()
+  })
+
   const accounts = [
     { handle: 'openai', displayName: 'OpenAI' },
     { handle: 'thsottiaux', displayName: 'Tibo' },
@@ -152,7 +178,7 @@ describe('useXBoardController', () => {
     expect(controller.daysBack.value).toBe(0)
     controller.followAllAccounts()
     expect(controller.sections.value.map((section) => section.handle)).toEqual(['karpathy', 'openai'])
-    expect(controller.loading.value).toBe(false)
+    await vi.waitFor(() => expect(controller.loading.value).toBe(false))
   })
 
   it('preserves media metadata from API response', async () => {

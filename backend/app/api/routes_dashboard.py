@@ -8,7 +8,7 @@ import logging
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -406,6 +406,9 @@ async def get_x_recent(
         default=None,
         description="keyset 续页游标（上一页响应的 next_cursor），不传返回第一页",
     ),
+    min_items: int = Query(default=0, ge=0, le=20),
+    account_mode: Literal["include", "exclude"] = Query(default="exclude"),
+    account_handles: Optional[str] = Query(default=None, max_length=8192),
     documents: DocumentRecentReader = Depends(get_document_repository),
     watch_accounts: XWatchAccountRepository | None = Depends(
         get_optional_x_watch_account_repository
@@ -422,29 +425,52 @@ async def get_x_recent(
 
     分页：单页上限 500。满页时响应携带 ``next_cursor``/``has_more``，前端
     以其续查下一页（keyset 严格递减，跨页去重）；默认请求（无 cursor）的
-    字段与首页语义完全不变，旧客户端无感知。
+    字段与首页语义完全不变，旧客户端无感知。显式传 min_items 时，仅当前窗口
+    的首页不足该数量才放宽下界，取最新 min_items 条（最多 20 条）。历史日期与
+    续页保持严格窗口。account_handles 为逗号分隔的关注偏好，按 account_mode
+    在公开账号清单内筛选；数量下限在筛选后计算。
     """
     end = datetime.now(timezone.utc) - timedelta(days=days_back)
     cutoff = end - timedelta(hours=hours)
     keyset_after = _parse_x_recent_cursor(cursor) if cursor else None
-    docs_task = asyncio.to_thread(
-        lambda: documents.list_recent_by_source(
-            "x",
-            since_iso=cutoff.isoformat(),
-            until_iso=end.isoformat(),
-            limit=limit,
-            keyset_after=keyset_after,
-        )
+    account_rows = (
+        await asyncio.to_thread(watch_accounts.list_public_x_watch_accounts)
+        if watch_accounts is not None else []
     )
-    accounts_task = (
-        asyncio.to_thread(watch_accounts.list_public_x_watch_accounts)
-        if watch_accounts is not None
-        else asyncio.sleep(0, result=[])
+    filters: dict[str, Any] = {}
+    if account_handles is not None:
+        handles = {handle.strip().lstrip("@").lower() for handle in account_handles.split(",")}
+        filters["x_handles"] = [
+            row["screen_name"].strip().lstrip("@").lower() for row in account_rows
+            if (row["screen_name"].strip().lstrip("@").lower() in handles)
+            == (account_mode == "include")
+        ]
+    docs = await asyncio.to_thread(
+        documents.list_recent_by_source,
+        "x",
+        since_iso=cutoff.isoformat(),
+        until_iso=end.isoformat(),
+        limit=limit,
+        keyset_after=keyset_after,
+        **filters,
     )
-    docs, account_rows = await asyncio.gather(docs_task, accounts_task)
     items = [doc for doc in docs if _published_at_within(doc.get("published_at"), cutoff, end)]
-    items = _with_x_followed_account_names(items, account_rows)
     has_more = len(items) >= limit
+    window_extended = False
+    minimum = min(min_items, limit)
+    if days_back == 0 and keyset_after is None and len(items) < minimum:
+        # Re-read the latest N with the same upper bound and account filter: no
+        # fixed lookback cap, duplicate boundary rows, or unlimited history page.
+        earliest = datetime.min.replace(tzinfo=timezone.utc)
+        older = await asyncio.to_thread(
+            documents.list_recent_by_source, "x", since_iso=earliest.isoformat(),
+            until_iso=end.isoformat(), limit=minimum, **filters,
+        )
+        items = [doc for doc in older if _published_at_within(doc.get("published_at"), earliest, end)]
+        window_extended = any(
+            not _published_at_within(doc.get("published_at"), cutoff, end) for doc in items
+        )
+    items = _with_x_followed_account_names(items, account_rows)
     next_cursor = _x_recent_cursor_from_doc(items[-1]) if has_more and items else None
     return {
         "items": items,
@@ -455,6 +481,7 @@ async def get_x_recent(
         "total": len(items),
         "period": "daily",
         "window_hours": hours,
+        "window_extended": window_extended,
         "days_back": days_back,
         "has_more": has_more and next_cursor is not None,
         "next_cursor": next_cursor,

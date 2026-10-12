@@ -119,6 +119,58 @@ def _insert_rank_snapshot(database: Any, doc_id: str) -> None:
         )
 
 
+def test_x_recent_minimum_filters_accounts_before_limit_and_includes_old_reposts(postgres_documents):
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from backend.app.api.dependencies import get_document_repository, get_optional_x_watch_account_repository
+    from backend.app.api.routes_dashboard import router
+
+    repository, database = postgres_documents
+    now = datetime.now(timezone.utc)
+    ids = []
+    try:
+        for index in range(61):
+            recent = index < 36
+            followed = index >= 35
+            doc_id = f"it:x-minimum-{index}"
+            ids.append(doc_id)
+            repository.upsert_document({
+                "id": doc_id, "source": "x", "title": doc_id, "summary": "test", "tags": [],
+                "published_date": now.date().isoformat(),
+                "url": f"https://twitter.com/{'original' if followed else 'quiet'}/status/{index}",
+                "retweeted_by": " @OpenAI " if followed else None,
+                "published_at": (now - timedelta(hours=1 if recent else 2400, minutes=index)).isoformat(),
+            })
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        app.dependency_overrides[get_document_repository] = lambda: repository
+        app.dependency_overrides[get_optional_x_watch_account_repository] = lambda: SimpleNamespace(
+            list_public_x_watch_accounts=lambda: [
+                {"screen_name": "openai", "display_name": "OpenAI"},
+                {"screen_name": "quiet", "display_name": "Quiet"},
+            ],
+        )
+        with TestClient(app) as client:
+            response = client.get("/api/dashboard/x/recent", params={
+                "min_items": 20, "account_mode": "include", "account_handles": "openai",
+            })
+            assert response.status_code == 200
+            data = response.json()
+            assert [item["id"] for item in data["items"]] == ids[35:55]
+            assert data["window_extended"] is True
+            assert data["has_more"] is False
+            empty = client.get("/api/dashboard/x/recent", params={
+                "min_items": 20, "account_mode": "include", "account_handles": "",
+            }).json()
+            assert empty["items"] == []
+    finally:
+        repository.delete_documents(ids)
+
+
 def test_upsert_round_trips_authors_and_arxiv_id_with_conflict_merge(
     postgres_documents: tuple[Any, Any],
 ) -> None:

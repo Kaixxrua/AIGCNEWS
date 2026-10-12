@@ -42,6 +42,10 @@ export function useXAccountSubscriptions() {
 
   return {
     follows,
+    requestFilter: computed(() => ({
+      accountMode: preference.value.mode,
+      accountHandles: [...preference.value.handles],
+    })),
     toggle(handle: string) {
       const next = new Set(handles.value)
       const normalized = normalize(handle)

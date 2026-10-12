@@ -6,6 +6,16 @@ vi.mock('../http/apiClient', () => ({ api: transport }))
 import { dashboardApi } from './dashboardApi'
 
 describe('Dashboard API contract', () => {
+  it('sends the minimum and preserves an explicitly empty account selection', async () => {
+    transport.get.mockResolvedValue({ data: { items: [], window_extended: true } })
+    expect((await dashboardApi.fetchRecentX({ minItems: 20, accountMode: 'include', accountHandles: [] })).windowExtended).toBe(true)
+    expect(transport.get).toHaveBeenLastCalledWith('/dashboard/x/recent', {
+      params: { hours: 24, days_back: 0, limit: 500, min_items: 20, account_mode: 'include', account_handles: '' },
+      signal: undefined,
+    })
+    transport.get.mockResolvedValue({ data: {} })
+    expect((await dashboardApi.fetchRecentX({})).windowExtended).toBe(false)
+  })
   it('keeps the persistent watchlist when the recent window has no tweets', async () => {
     const accounts = [{ handle: 'thsottiaux', displayName: 'Tibo' }]
     transport.get.mockResolvedValueOnce({ data: { items: [], accounts } })

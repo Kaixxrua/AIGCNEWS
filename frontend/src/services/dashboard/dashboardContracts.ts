@@ -55,6 +55,7 @@ export interface DashboardRecentXWireResponse {
   items?: TopDoc[] | null
   total?: number | null
   window_hours?: number | null
+  window_extended?: boolean | null
   days_back?: number | null
   /** 满页时为 true，配合 next_cursor 续查（旧后端缺省视为无下一页） */
   has_more?: boolean | null
@@ -104,6 +105,7 @@ export interface DashboardRecentX {
   items: TopDoc[]
   total: number
   windowHours: number
+  windowExtended?: boolean
   /** 满页且有可续查游标时为 true（旧后端缺省为 false，即单页语义） */
   hasMore: boolean
   /** 续页游标；hasMore=false 或无下一页时为 null */
@@ -142,6 +144,10 @@ export interface DashboardSnapshotDatesParams {
 
 export interface DashboardRecentXParams {
   hours?: number
+  /** 当前窗口不足时按关注账号补入更早推文；历史日期与续页不补。 */
+  minItems?: number
+  accountMode?: 'include' | 'exclude'
+  accountHandles?: string[]
   /** 整数天位移：0 = 最近 hours 小时；1 = 昨天此刻往前 hours 小时（滑窗按天回移） */
   daysBack?: number
   limit?: number

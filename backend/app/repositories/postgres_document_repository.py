@@ -813,6 +813,7 @@ class PostgresDocumentRepository:
         until_iso: str | None = None,
         limit: int = 500,
         keyset_after: tuple[str, float, str] | None = None,
+        x_handles: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """滚动窗口读取近期文档，新到旧。
 
@@ -842,6 +843,14 @@ class PostgresDocumentRepository:
             if until_iso:
                 clause += " AND d.published_at < %s"
                 params.append(until_iso)
+            if x_handles is not None:
+                # Match the followed account, including reposts from other authors.
+                clause += (
+                    " AND LOWER(COALESCE(NULLIF(LTRIM(BTRIM(d.retweeted_by), '@'), ''),"
+                    " SUBSTRING(d.url FROM '^(?:https?://)?(?:www[.])?"
+                    "(?:x|twitter)[.]com/([^/?[:space:]]+)/status/'), '')) = ANY(%s)"
+                )
+                params.append(x_handles)
             if keyset_after is not None:
                 last_published, last_score, last_id = keyset_after
                 clause += (

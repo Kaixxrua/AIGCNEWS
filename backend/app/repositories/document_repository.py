@@ -128,6 +128,7 @@ class DocumentRecentReader(Protocol):
     until_iso 仅约束主键（X 看板 days_back 依赖其对 published_at 精确）。
     keyset_after 只对 X 分支生效：上一页末行的排序位置
     ``(published_at, score, id)``，实现按严格递减续查，不传时返回第一页。
+    x_handles 只对 X 分支生效，按采集归属账号（优先转发者）在 LIMIT 前筛选。
     """
 
     def list_recent_by_source(
@@ -138,6 +139,7 @@ class DocumentRecentReader(Protocol):
         until_iso: str | None = None,
         limit: int = 500,
         keyset_after: tuple[str, float, str] | None = None,
+        x_handles: list[str] | None = None,
     ) -> list[dict[str, Any]]: ...
 
 

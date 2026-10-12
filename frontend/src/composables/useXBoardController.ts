@@ -26,7 +26,7 @@ const SNAPSHOT_DATE_LIMIT = 60
 const TOP_LIMIT = 500
 // 单次刷新最多自动续页数：硬顶 4000 条/窗口，防止异常窗口无限请求
 const MAX_PAGES_PER_LOAD = 8
-// 窗口长度固定 24 小时：日期选择器只做整数天位移（days_back），
+// 默认窗口 24 小时；当前窗口按关注账号补足一页，历史日期只做整数天位移（days_back），
 // 窗口 = [所选日期的当前钟点 - 24h, 所选日期的当前钟点]，随访问时刻滑动
 export const XBOARD_RECENT_WINDOW_HOURS = 24
 export const XBOARD_PAGE_SIZE = 20
@@ -43,7 +43,8 @@ const localDateString = (value: Date): string => {
 const dayDiff = (base: string, date: string): number =>
   Math.round((Date.parse(base) - Date.parse(date)) / 86_400_000)
 
-// XBoardView 自包含控制器：单一滑动窗口语义——所有查询都走 /dashboard/x/recent，
+// XBoardView 自包含控制器：24 小时滑动窗口，当前窗口不足一页时补入更早推文。
+// 所有查询都走 /dashboard/x/recent，
 // 日期选择器换算为 days_back 整数天位移；首次进入与点选同一天是同一条查询。
 export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const api = options.api ?? dashboardApi
@@ -56,6 +57,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
   const docs = ref<TopDoc[]>([])
   const watchAccounts = ref<{ handle: string; displayName: string }[] | null>(null)
   const loading = ref(false)
+  const windowExtended = ref(false)
   const deleting = ref(false)
   const errorMsg = ref('')
   const isActive = ref(true)
@@ -126,17 +128,23 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     errorMsg.value = ''
     try {
       const pages: TopDoc[][] = []
+      const requestDaysBack = daysBack.value
+      const recentOptions = requestDaysBack === 0
+        ? { minItems: XBOARD_PAGE_SIZE, ...subscriptions.requestFilter.value }
+        : {}
       let cursor: string | undefined
       for (let depth = 0; depth < MAX_PAGES_PER_LOAD; depth += 1) {
         const result = await api.fetchRecentX({
           hours: XBOARD_RECENT_WINDOW_HOURS,
-          daysBack: daysBack.value,
+          daysBack: requestDaysBack,
+          ...recentOptions,
           limit: TOP_LIMIT,
           cursor,
           signal: controller.signal,
           cacheBuster: Date.now(),
         })
         if (!isActive.value || request !== generation) return
+        if (depth === 0) windowExtended.value = result.windowExtended ?? false
         if (result.accounts !== undefined) watchAccounts.value = result.accounts
         pages.push(result.items)
         // 首批到达即渲染；后续 keyset 页在后台渐进合并，避免大窗口一直空转。
@@ -234,17 +242,20 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     subscriptions.toggle(handle)
     page.value = 1
     removeHiddenTweetSelections()
+    if (daysBack.value === 0 && isActive.value) void loadTweets()
   }
 
   const followAllAccounts = () => {
     subscriptions.followAll()
     page.value = 1
+    if (daysBack.value === 0 && isActive.value) void loadTweets()
   }
 
   const unfollowAllAccounts = () => {
     subscriptions.unfollowAll()
     page.value = 1
     removeHiddenTweetSelections()
+    if (daysBack.value === 0 && isActive.value) void loadTweets()
   }
 
   const deleteSelected = async (): Promise<{ deleted: number; notFound: number }> => {
@@ -306,6 +317,7 @@ export const useXBoardController = (options: XBoardControllerOptions = {}) => {
     unfollowAllAccounts,
     unfollowedAccounts,
     visibleDocs,
+    windowExtended,
   }
 }
 

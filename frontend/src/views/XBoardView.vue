@@ -42,7 +42,7 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 
 const {
-  docs, visibleDocs, selectedDate, today, loading, deleting, errorMsg,
+  docs, visibleDocs, selectedDate, today, loading, deleting, errorMsg, windowExtended,
   selectedIds, currentPage, totalPages, pageSize,
   availableDates, availableAccounts, availableAccountOptions, followedAccounts, unfollowedAccounts,
   load, onDateChange, showRecent, refresh, dispose, toggleSelection, toggleSelectAll, clearSelection, deleteSelected, goPage,
@@ -510,10 +510,11 @@ onBeforeUnmount(() => {
                 class="btn-secondary xboard-recent text-xs"
                 :class="{ 'xboard-mode-active xboard-window-active': isToday && !savedView }"
                 :aria-pressed="isToday && !savedView"
+                :title="windowExtended ? t('xboard.extendedHint') : undefined"
                 @click="pickRecent"
               >
-                <span class="xboard-recent-long">{{ t('xboard.recent24h') }}</span>
-                <span class="xboard-recent-short" aria-hidden="true">{{ t('xboard.recent24hShort') }}</span>
+                <span class="xboard-recent-long">{{ t(windowExtended ? 'xboard.recentExtended' : 'xboard.recent24h') }}</span>
+                <span class="xboard-recent-short" aria-hidden="true">{{ t(windowExtended ? 'xboard.recentExtended' : 'xboard.recent24hShort') }}</span>
               </button>
               <label v-morph="dateShown" class="xboard-date flex items-center gap-2 text-xs text-stone-400" :class="{ 'xboard-window-active': dateShown }">
                 <span class="xboard-date-text"><span class="xboard-date-long">{{ t('xboard.dateLabel') }}</span><span class="xboard-date-short" aria-hidden="true">{{ t('xboard.dateLabelShort') }}</span></span>

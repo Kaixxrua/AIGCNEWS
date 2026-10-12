@@ -67,6 +67,7 @@ vi.mock('@/composables/useXBoardController', async () => {
     hasPrev: computed(() => box.currentPage.value > 1),
     load: vi.fn(),
     loading: ref(false),
+    windowExtended: ref(false),
     onDateChange: vi.fn(),
     pageSize,
     refresh: vi.fn(),
@@ -166,6 +167,7 @@ beforeEach(() => {
   ctl.selectedIds.value = new Set()
   ctl.errorMsg.value = ''
   ctl.loading.value = false
+  ctl.windowExtended.value = false
   ctl.deleting.value = false
   ctl.availableDates.value = []
   ctl.unfollowedAccounts.value = new Set()
@@ -531,6 +533,15 @@ describe('XBoardView 浮层期间 dock 抑制', () => {
 })
 
 describe('XBoardView 切换动效接线', () => {
+  it('扩展窗口后展示最近推文与补足说明，恢复严格窗口后显示 24 小时', async () => {
+    controller().windowExtended.value = true
+    const wrapper = await mountView()
+    expect(wrapper.get('.xboard-recent-long').text()).toBe('xboard.recentExtended')
+    expect(wrapper.get('.xboard-recent').attributes('title')).toBe('xboard.extendedHint')
+    controller().windowExtended.value = false
+    await nextTick()
+    expect(wrapper.get('.xboard-recent-long').text()).toBe('xboard.recent24h')
+  })
   it('推文卡按链接带 data-reflow-key；换窗口加载期间墙变淡，首批推文一到即恢复', async () => {
     controller().docs.value = makeTweets(3)
     const wrapper = await mountView()
