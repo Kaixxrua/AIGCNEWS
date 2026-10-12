@@ -355,13 +355,25 @@ class PublicWebResearch:
         logger.info("Hotword feed coverage: %s", json.dumps(result.channels, ensure_ascii=False))
         return result
 
-    async def investigate(self, terms: list[str], now: datetime, *, contexts: dict[str, str] | None = None) -> WebEvidence:
+    async def investigate(self, terms: list[str], now: datetime, *, contexts: dict[str, str] | None = None,
+                          aliases: dict[str, list[str]] | None = None) -> WebEvidence:
         cutoff = (now - timedelta(days=7)).date().isoformat()
-        queries = []
+        buckets = []
         for term in terms[:8]:
-            quoted = '"' + term.replace('"', ' ').strip()[:80] + '"'
+            names = {}
+            for name in [term, *sorted((aliases or {}).get(term, []), key=len, reverse=True)]:
+                name = " ".join(name.replace('"', ' ').split())[:80]
+                if name:
+                    names.setdefault(name.casefold(), name)
+            queries = []
             # Preserve the primary title's subject: a short method acronym may
             # also name an airline route or an unrelated, much older project.
             context = re.sub(r"[^\w\s-]", " ", (contexts or {}).get(term, "AI"))[:180]
-            queries.extend([quoted + " " + context, quoted + " " + context + " before:" + cutoff])
+            for name in list(names.values())[:3]:
+                query = '"' + name + '" ' + context
+                queries.extend([query, query + " before:" + cutoff])
+            buckets.append(queries)
+        # Give every candidate a turn before its aliases consume the shared
+        # search timeout and page budget. Check history for every searched form.
+        queries = list(dict.fromkeys(bucket[i] for i in range(6) for bucket in buckets if i < len(bucket)))
         return await self._scan(queries, now, recent=False) if queries else WebEvidence(available=True)

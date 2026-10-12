@@ -344,10 +344,62 @@ def test_targeted_search_can_complete_evidence_for_one_indexed_primary():
         "candidates": [candidate().model_dump()],
     }), web=web))
     assert service.public_snapshot(repo, service.today(NOW))["status"] == "ready"
-    web.investigate.assert_awaited_once_with(["Prism Routing"], NOW, contexts={"Prism Routing": repo.docs[0]["title"]})
+    web.investigate.assert_awaited_once_with(["Prism Routing"], NOW, contexts={"Prism Routing": repo.docs[0]["title"]},
+                                           aliases={"Prism Routing": ["Prism Routing"]})
     # Removing the indexed primary still hides the mixed local/web snapshot.
     repo.docs = []
     assert service.public_snapshot(repo, service.today(NOW))["items"] == []
+
+
+def test_short_candidate_name_still_discovers_discussion_under_its_original_full_name(monkeypatch):
+    from backend.app.services.dashboard import hotword_web
+
+    repo = Repository()
+    quote = "We introduce Synthetic Self-Distillation (SynthSelf) for continual learning in small models."
+    repo.docs = [document(title="Continual learning via Synthetic Self-Distillation", summary=quote)]
+    proposal = candidate("SynthSelf").model_copy(update={"primary_quote": quote, "aliases": ["Invented Alias"]})
+    discussion = web_document("https://discussion.example/synthself", title="Testing SynthSelf",
+                              summary="SynthSelf helps small models keep previously learned capabilities.")
+    coverage = web_document("https://coverage.example/synthself", title="A closer look at Synthetic Self-Distillation",
+                            summary="Synthetic Self-Distillation helps small models learn continually.")
+    research = hotword_web.PublicWebResearch()
+    research.discover = AsyncMock(return_value=WebEvidence())
+    research._search = AsyncMock(side_effect=lambda query, recent: [discussion["url"], coverage["url"]]
+                                if '"Synthetic Self-Distillation (SynthSelf)"' in query else [])
+    monkeypatch.setattr(hotword_web, "fetch_page", AsyncMock(side_effect=lambda url, now:
+                        discussion if url == discussion["url"] else coverage))
+    assert asyncio.run(service.refresh_new_words(repo, now=NOW, model=model_response({
+        "candidates": [proposal.model_dump()],
+    }), web=research))
+    snapshot = service.public_snapshot(repo, service.today(NOW))
+    assert snapshot["status"] == "ready"
+    assert snapshot["items"][0]["support"]["publishers"] == 3
+    assert all("Invented Alias" not in call.args[0] for call in research._search.await_args_list)
+
+
+def test_history_under_the_original_full_name_rejects_a_new_short_form():
+    repo = Repository()
+    quote = "We introduce Synthetic Self-Distillation (SynthSelf) for continual learning in small models."
+    repo.docs[0].update(summary=quote)
+    proposal = candidate("SynthSelf").model_copy(update={"primary_quote": quote})
+    for doc in repo.docs[1:]:
+        doc["summary"] = "SynthSelf helps small models keep previously learned capabilities."
+    assert select(repo, [proposal])
+    repo.history = [document("old", title="Synthetic Self-Distillation",
+                             summary="Synthetic Self-Distillation improves continual learning.",
+                             published_at="2025-10-01T00:00:00+00:00")]
+    assert select(repo, [proposal]) == []
+    assert "Synthetic Self-Distillation" in repo.history_calls[-1][0]
+
+
+def test_unrelated_parenthesized_methods_are_not_treated_as_aliases():
+    repo = Repository()
+    quote = "We introduce Synthetic Self-Distillation (SynthSelf) for continual learning in small models."
+    repo.docs[0].update(summary=quote + " It builds on Self-Distillation Fine-Tuning (SDFT).")
+    proposal = candidate("SynthSelf").model_copy(update={"primary_quote": quote})
+    for doc in repo.docs[1:]:
+        doc.update(title="Self-Distillation Fine-Tuning", summary="Self-Distillation Fine-Tuning (SDFT) training.")
+    assert select(repo, [proposal]) == []
 
 
 def test_verified_older_web_mentions_reject_apparently_new_local_terms():

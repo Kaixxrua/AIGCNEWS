@@ -114,6 +114,23 @@ def matches(value: str, aliases: list[str]) -> bool:
     return False
 
 
+def candidate_names(candidate: Candidate, primary: dict[str, Any]) -> list[str]:
+    """Recover full names and short forms from the source, never from guesses."""
+    value = text(primary)
+    names = list(dict.fromkeys(name.strip() for name in [candidate.term, *candidate.aliases]
+                              if 2 <= len(name.strip()) <= 80 and matches(value, [name.strip()])))
+    known = {normalized(name) for name in names}
+    # Papers often introduce "Full Method Name (ShortName)" while the model
+    # nominates only one form. Other parenthesized methods are not its aliases.
+    pattern = r"(?<![\w-])([A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,7})\s*\(([\w][\w .+-]{1,47})\)"
+    for match in re.finditer(pattern, value):
+        full, short = match.groups()
+        forms = [match[0], full, short]
+        if known.intersection(normalized(name) for name in forms):
+            names.extend(name for name in forms if len(name) <= 80)
+    return list(dict.fromkeys(names))
+
+
 def context_words(value: str) -> set[str]:
     words = set()
     for word in re.findall(r"[a-z]{4,}", normalized(value)):
@@ -217,12 +234,14 @@ def select_words(
     cutoff = now - timedelta(days=7)
     prior_order = {item["id"]: i for i, item in enumerate(previous)}
     for candidate in candidates:
-        aliases = list(dict.fromkeys([candidate.term.strip(), *[a.strip() for a in candidate.aliases if 2 <= len(a.strip()) <= 60]]))
+        primary = by_id.get(candidate.primary_id)
+        aliases = list(dict.fromkeys([candidate.term.strip(),
+                                     *[a.strip() for a in candidate.aliases if 2 <= len(a.strip()) <= 60],
+                                     *candidate_names(candidate, primary or {})]))
         keys = {re.sub(r"[\W_]+", "", normalized(alias)) for alias in aliases}
         if not all(keys) or keys & (_GENERIC | used):
             rejected[candidate.term] = "generic_or_duplicate"
             continue
-        primary = by_id.get(candidate.primary_id)
         if not primary or not can_be_primary(primary):
             rejected[candidate.term] = "missing_primary"
             continue
@@ -401,7 +420,8 @@ async def refresh_new_words(repository: PostgresNewWordsRepository, *, now: date
         raise ValueError("New-word generation returned only malformed candidates")
     by_id = {doc["id"]: doc for doc in docs}
     contexts = {c.term: str(by_id.get(c.primary_id, {}).get("title") or "AI") for c in candidates}
-    investigation = await web.investigate([candidate.term for candidate in candidates], now, contexts=contexts)
+    aliases = {c.term: candidate_names(c, by_id.get(c.primary_id, {})) for c in candidates}
+    investigation = await web.investigate([candidate.term for candidate in candidates], now, contexts=contexts, aliases=aliases)
     docs = eligible_documents([*docs, *investigation.documents], now)
     prior = previous if (previous or {}).get("items") else await asyncio.to_thread(repository.get_snapshot, day - timedelta(days=1))
     words = await asyncio.to_thread(select_words, candidates, docs, repository, now,
