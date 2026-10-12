@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import pytest
+
 from backend.app.services.dashboard import hotword_sources as sources, hotword_web as web
 from backend.app.services.dashboard.new_words import can_be_primary, eligible_documents, publisher
 
@@ -25,6 +27,30 @@ def test_first_party_feed_preserves_publication_date_and_cannot_be_primary():
     assert web.verified_citation(doc, NOW)
     assert not can_be_primary(doc)
     assert not web.verified_citation({**doc, "feed_url": "https://fake.example/rss"}, NOW)
+
+
+@pytest.mark.parametrize("summary", [
+    "Synthetic self-distillation enables continual post-training of small models.",
+    "Reinforcement learning enables visually grounded humanoid control.",
+    "通过自蒸馏和强化学习改进模型训练。",
+])
+def test_learning_methods_reach_discovery_without_brand_names(monkeypatch, summary):
+    monkeypatch.setattr(web, "FEEDS", (FEED,))
+    raw = rss().replace(b"AI Canvas Actions launched", b"Research update").replace(
+        b"We launch Canvas Actions, a new feature for our AI assistant.", summary.encode(),
+    )
+    monkeypatch.setattr(web, "fetch_resource", AsyncMock(return_value=(FEED.url, raw)))
+    result = asyncio.run(web.PublicWebResearch().read_feeds(NOW))
+    assert len(result.documents) == 1
+
+
+@pytest.mark.parametrize("text", [
+    "A new training plan for marathon runners.",
+    "Reinforcement of concrete bridges using steel bars.",
+    "Distillation of essential oils with a new industrial model.",
+])
+def test_non_ai_training_reinforcement_and_distillation_stay_excluded(text):
+    assert not sources.AI_CONTEXT.search(text)
 
 
 def test_aggregated_foreign_links_future_items_and_old_posts_are_not_votes():

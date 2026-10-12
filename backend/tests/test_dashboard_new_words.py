@@ -413,6 +413,75 @@ def test_non_ai_topic_cannot_publish_despite_novelty_and_multiple_sources():
     assert select(repo, [candidate().model_copy(update={"primary_quote": quote})]) == []
 
 
+@pytest.mark.parametrize("term,title,quote", [
+    ("SynthSelf", "Continually Post-training Small Models via Synthetic Self-distillation",
+     "We introduce Synthetic Self-Distillation (SynthSelf) for continual post-training of small models."),
+    ("Reflex", "Reflex: Visually Grounded Reactive Humanoid Control",
+     "We present Reflex, a framework for humanoid control that uses reinforcement learning."),
+])
+def test_training_and_reinforcement_methods_do_not_need_a_literal_ai_keyword(term, title, quote):
+    repo = Repository()
+    repo.docs = [{**d, "title": f"{title} {i}", "summary": quote} for i, d in enumerate(repo.docs)]
+    proposal = candidate(term).model_copy(update={"primary_quote": quote})
+    assert select(repo, [proposal])[0]["term"] == term
+
+
+def reflex_case():
+    repo = Repository()
+    quote = "We present Reflex, a neural framework for visually grounded humanoid control."
+    repo.docs[0].update(title="Reflex: Visually Grounded Reactive Humanoid Control", summary=quote)
+    repo.docs[1].update(title="Reflex catches boxes", summary="Reflex brings visual control to humanoids.")
+    repo.docs[2].update(title="Trying Reflex", summary="A closer look at Reflex and reactive humanoid control.")
+    return repo, candidate("Reflex").model_copy(update={"primary_quote": quote})
+
+
+@pytest.mark.parametrize("web_history", [False, True])
+def test_same_word_in_an_unrelated_old_paper_does_not_date_a_new_method(web_history):
+    repo, proposal = reflex_case()
+    old = document("old", title="Light-Omni: Reflex over Reasoning in Agentic Video Understanding",
+                   summary="A language model uses reflex over reasoning for long-term video memory.",
+                   published_at="2026-07-08T01:53:54+00:00")
+    repo.history = [] if web_history else [old]
+    words = service.select_words([proposal], repo.docs, repo, NOW, [], [old] if web_history else [])
+    assert words[0]["term"] == "Reflex"
+
+
+def test_related_old_single_word_method_still_blocks_republication():
+    repo, proposal = reflex_case()
+    repo.history = [document("old", title="An earlier Reflex experiment",
+                             summary="Reflex already used reactive humanoid control last year.",
+                             published_at="2025-10-01T00:00:00Z")]
+    assert select(repo, [proposal]) == []
+
+
+@pytest.mark.parametrize("summary", [
+    "NVIDIA Reflex reduces latency in PC games.",
+    "Humanoid control is another topic. " + "Unrelated news. " * 60 + "NVIDIA Reflex reduces latency.",
+])
+def test_unrelated_namesake_cannot_supply_the_third_publisher(summary):
+    repo, proposal = reflex_case()
+    repo.docs[2].update(title="NVIDIA gaming update", summary=summary)
+    assert select(repo, [proposal]) == []
+
+
+def test_a_full_alias_identifies_the_same_method_without_english_context():
+    repo, proposal = reflex_case()
+    proposal = proposal.model_copy(update={"aliases": ["Visually Grounded Reactive Humanoid Control"]})
+    repo.docs[2].update(title="新方法详解", summary="Visually Grounded Reactive Humanoid Control 的实际效果。")
+    assert select(repo, [proposal])[0]["term"] == "Reflex"
+
+
+def test_empty_selection_reports_why_candidates_were_rejected(caplog):
+    repo, proposal = reflex_case()
+    repo.docs.pop()
+    with caplog.at_level("INFO", logger=service.__name__):
+        assert select(repo, [proposal]) == []
+    report = json.loads(next(r.message.removeprefix("Hotword selection: ") for r in caplog.records
+                             if r.message.startswith("Hotword selection: ")))
+    assert report["selected"] == []
+    assert report["rejected"] == {"Reflex": "insufficient_independent_sources"}
+
+
 def test_html_link_spacing_does_not_reject_a_real_quote():
     repo = Repository()
     repo.docs[0]["summary"] = repo.docs[0]["summary"].replace("Routing,", "Routing ,")

@@ -4,9 +4,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -22,6 +24,10 @@ from backend.app.repositories.postgres_new_words_repository import PostgresNewWo
 from backend.app.services.dashboard.hotword_sources import AI_CONTEXT, FEEDS, OFFICIAL_ACCOUNTS, on_domain, source_group
 from backend.app.services.dashboard.hotword_web import PublicWebResearch, canonical_url, verified_citation
 
+logger = logging.getLogger(__name__)
+_CONTEXT_STOPWORDS = set("""this that with from into have been using used based new novel introduce introducing
+present propose method model learning training system framework approach neural network large language
+artificial intelligence feature release generation efficient scalable stable toward""".split())
 _GENERIC = {
     "ai", "artificialintelligence", "人工智能", "llm", "大模型", "largelanguagemodel",
     "agent", "agents", "aiagent", "智能体", "多模态", "multimodal", "rag",
@@ -108,6 +114,43 @@ def matches(value: str, aliases: list[str]) -> bool:
     return False
 
 
+def context_words(value: str) -> set[str]:
+    words = set()
+    for word in re.findall(r"[a-z]{4,}", normalized(value)):
+        if len(word) > 4 and not word.endswith("ss"):
+            word = word.removesuffix("s")
+        words.add(word.removesuffix("ly"))
+    return words - _CONTEXT_STOPWORDS
+
+
+def concept_matcher(primary: dict[str, Any], aliases: list[str], quote: str) -> Callable[[dict[str, Any]], bool]:
+    """Ordinary single-word names need nearby subject evidence, not just spelling."""
+    # Only aliases actually present in the primary can identify its concept.
+    aliases = [alias for alias in aliases if matches(text(primary), [alias])]
+    ambiguous = [alias for alias in aliases if re.fullmatch(r"[A-Z]?[a-z]{2,}", alias)]
+    distinct = [alias for alias in aliases if alias not in ambiguous]
+    context = context_words(str(primary.get("title") or "")) - context_words(" ".join(ambiguous))
+    if len(context) < 2:
+        context |= context_words(quote) - context_words(" ".join(ambiguous))
+
+    def mentions(doc: dict[str, Any]) -> bool:
+        value = text(doc)
+        if doc["id"] == primary["id"] or matches(value, distinct):
+            return True
+        # Uppercase acronyms retain matches()' case-sensitive treatment; names
+        # such as Reflex/Motion must share two subject words near the mention.
+        value = normalized(value)
+        for alias in ambiguous:
+            pattern = r"(?<![a-z0-9])" + re.escape(normalized(alias)) + r"(?![a-z0-9])"
+            for match in re.finditer(pattern, value):
+                nearby = value[max(0, match.start() - 160):match.end() + 160]
+                if len(context & context_words(nearby)) >= 2:
+                    return True
+        return False
+
+    return mentions
+
+
 def publisher(doc: dict[str, Any]) -> str:
     url = urlsplit(str(doc["url"]))
     host = (url.hostname or "").removeprefix("www.")
@@ -169,6 +212,7 @@ def select_words(
 ) -> list[dict[str, Any]]:
     by_id = {doc["id"]: doc for doc in docs}
     selected: list[dict[str, Any]] = []
+    rejected: dict[str, str] = {}
     used: set[str] = set()
     cutoff = now - timedelta(days=7)
     prior_order = {item["id"]: i for i, item in enumerate(previous)}
@@ -176,34 +220,45 @@ def select_words(
         aliases = list(dict.fromkeys([candidate.term.strip(), *[a.strip() for a in candidate.aliases if 2 <= len(a.strip()) <= 60]]))
         keys = {re.sub(r"[\W_]+", "", normalized(alias)) for alias in aliases}
         if not all(keys) or keys & (_GENERIC | used):
+            rejected[candidate.term] = "generic_or_duplicate"
             continue
         primary = by_id.get(candidate.primary_id)
         if not primary or not can_be_primary(primary):
+            rejected[candidate.term] = "missing_primary"
             continue
         primary_host = (urlsplit(primary["url"]).hostname or "").removeprefix("www.")
         if primary_host in {"news.ycombinator.com", "techmeme.com"}:
+            rejected[candidate.term] = "aggregator_primary"
             continue
         if primary_host in {"x.com", "twitter.com"} and (candidate.kind == "method" or not official_social(primary)):
+            rejected[candidate.term] = "unsupported_social_primary"
             continue
         if not _AI_CONTEXT.search(text(primary)):
+            rejected[candidate.term] = "missing_ai_context"
             continue
         quote = " ".join(candidate.primary_quote.split())
         if quote_text(quote) not in quote_text(text(primary)):
+            rejected[candidate.term] = "unverified_quote"
             continue
         introduction = _INTRODUCTION.search(quote) or (candidate.kind != "method" and _RELEASE.search(quote))
         if not introduction or not matches(quote, aliases):
+            rejected[candidate.term] = "missing_introduction"
             continue
+        mentions = concept_matcher(primary, aliases, quote)
         historical = repository.historical_mentions(aliases, cutoff.date() + timedelta(days=1), sources())
-        if candidate.kind == "method" and any(matches(text(row), aliases) and published(row) and published(row) < cutoff
+        if candidate.kind == "method" and any(mentions(row) and published(row) and published(row) < cutoff
                for row in [*historical, *(web_history or [])]):
+            rejected[candidate.term] = "historical_concept"
             continue
-        evidence = [doc for doc in docs if matches(text(doc), aliases)]
+        evidence = [doc for doc in docs if mentions(doc)]
         publishers = {publisher(doc) for doc in evidence}
         groups = {source_group(doc) for doc in evidence}
         if len(publishers) < 3 or len(groups) < 2:
+            rejected[candidate.term] = "insufficient_independent_sources"
             continue
         stamps = [published(doc) for doc in evidence]
         if not any(stamp and stamp >= now - timedelta(hours=48) for stamp in stamps):
+            rejected[candidate.term] = "no_recent_mentions"
             continue
         # Compare mention share per source, then average. High-volume platforms do
         # not outweigh quieter ones merely by contributing more articles.
@@ -261,6 +316,10 @@ def select_words(
                for prior in distinct):
             continue
         distinct.append(item)
+    logger.info("Hotword selection: %s", json.dumps({
+        "candidates": len(candidates), "documents": len(docs),
+        "selected": [item["term"] for item in distinct[:2]], "rejected": rejected,
+    }, ensure_ascii=False))
     return distinct[:2]
 
 
