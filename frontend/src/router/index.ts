@@ -25,7 +25,7 @@ const DisclaimerView = () => import('@/views/DisclaimerView.vue')
 const PrivacyView = () => import('@/views/PrivacyView.vue')
 const McpConnectView = () => import('@/views/McpConnectView.vue')
 const DshView = () => import('@/views/DshView.vue')
-const ContactPresentationView = () => import('@/views/ContactPresentationView.vue')
+const ContactPageView = () => import('@/views/ContactPageView.vue')
 const MembershipView = () => import('@/views/MembershipView.vue')
 const MembershipCheckoutView = () => import('@/views/MembershipCheckoutView.vue')
 const SubscriptionsView = () => import('@/views/SubscriptionsView.vue')
@@ -165,7 +165,7 @@ const router = createRouter({
         {
           path: 'contact',
           name: 'contact',
-          component: ContactPresentationView,
+          component: ContactPageView,
           meta: { sitePage: 'contactPage' },
         },
         // ── 兜底：未知路径（含已下线的 /wechat、/chat 旧书签）显示「页面不存在」，地址原样保留 ──
