@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
  * nginx 限流分桶契约：
  * - 项目 logo 走独立的 api_logo 桶。一屏榜单/项目库会同时发几十个 logo 请求，
  *   与数据接口共用 api_general 时 logo 先把桶耗尽，随后的数据请求被 429；
- * - 数据接口（/api/、/api/mcp）仍走 api_general，认证端点仍走 api_auth；
+ * - 数据接口（/api/、/api/mcp）仍走 api_general；认证端点临时取消 Nginx 限流；
  * - MCP OAuth 入口（/api/mcp/oauth）与 /api/mcp 是同一个 Go 网关，块内指令逐条一致；
  * - logo 块的转发口径与 /api/ 块一致（后端按 X-Forwarded-For 首跳取客户端）；
  * - 不能有正则 location 抢先匹配 logo 路径（nginx 中正则优先于普通前缀）。
@@ -47,10 +47,19 @@ describe('nginx 限流分桶契约', () => {
     expect(limitZones(extractLocationBody(nginxConf, LOGO_PATH))).toEqual(['api_logo'])
   })
 
-  it('数据接口与认证端点的桶不变', () => {
+  it('数据接口的桶不变', () => {
     expect(limitZones(extractLocationBody(nginxConf, '/api/'))).toEqual(['api_general'])
     expect(limitZones(extractLocationBody(nginxConf, '= /api/mcp'))).toEqual(['api_general'])
-    expect(limitZones(extractLocationBody(nginxConf, '/api/auth/'))).toEqual(['api_auth'])
+  })
+
+  it('认证端点临时取消 Nginx 限流，继续转发登录入口、回调与凭据接收请求', () => {
+    const auth = extractLocationBody(nginxConf, '/api/auth/')
+    expect(limitZones(auth)).toEqual([])
+    expect(nginxConf).not.toMatch(/^\s*limit_req_zone\s+.*\bzone=api_auth:/m)
+    expect(auth).toContain('proxy_pass $backend_upstream$request_uri;')
+    expect(auth).toContain('proxy_set_header Host $host;')
+    expect(auth).toContain('proxy_set_header X-Forwarded-For $remote_addr;')
+    expect(auth).toContain('proxy_set_header X-Forwarded-Proto $scheme;')
   })
 
   it('MCP OAuth 入口与 /api/mcp 块指令逐条一致（同桶、同上游、同 SSE 设置）', () => {
