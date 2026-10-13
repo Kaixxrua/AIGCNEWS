@@ -53,59 +53,29 @@ def _rate_limited_response() -> JSONResponse:
 
 
 def _quota_exceeded_response(exc: ApiQuotaExceededError) -> JSONResponse:
-    """分层配额 429 投影：quota_scope/tier/limit/retry_after + 分档升级引导。
-
-    匿名→aigcnews.cn/mcp 登录建 token 或开通 VIP，免费→开通 VIP，
-    会员→告知窗口重置时间；登录档日配额（pacing 层）与匿名日配额同
-    scope 不同文案，按 exc.identity_kind 区分。与 MCP quota 投影保持
-    中英双语和同一商业口径。额度数字走 exc.limit 插值，不随档位调整
-    发生文案漂移。升级链接带 ref=api-429-{anon,daily,monthly} 来源标记
-    （MCP 侧是 mcp-429-*），网站据此记录落地来源。
-    """
-
+    """Quota errors describe account limits and reset times without purchase links."""
     if exc.quota_scope == "daily" and exc.identity_kind == "ip":
         message = (
             f"已达匿名调用上限（每 24 小时 {exc.limit} 次，按 IP 计）。"
             "请前往 https://aigcnews.cn/mcp?ref=api-429-anon 登录并创建 MCP token，"
-            "获得每 24 小时与滚动 30 天配额；或前往 "
-            "https://aigcnews.cn/membership?ref=api-429-anon 开通 VIP 享更高额度。"
+            "免费使用账号配额。"
             f"Anonymous quota exhausted ({exc.limit} calls per 24 hours per IP): "
-            "sign in at https://aigcnews.cn/mcp?ref=api-429-anon to create an MCP token for "
-            "per-24-hour and rolling-30-day quotas, or upgrade to VIP at "
-            "https://aigcnews.cn/membership?ref=api-429-anon."
-        )
-    elif exc.quota_scope == "daily" and exc.tier == "member":
-        message = (
-            f"VIP 每 24 小时额度已用完（{exc.limit} 次），"
-            f"配额窗口将于约 {exc.retry_after} 秒后重置。"
-            f"VIP per-24-hour quota exhausted ({exc.limit} calls); "
-            f"the window resets in about {exc.retry_after} seconds."
+            "sign in at https://aigcnews.cn/mcp?ref=api-429-anon to create an MCP token "
+            "and use the free account quotas."
         )
     elif exc.quota_scope == "daily":
         message = (
-            f"免费档每 24 小时额度已用完（{exc.limit} 次）。"
-            "请前往 https://aigcnews.cn/membership?ref=api-429-daily 开通 VIP，"
-            "享更高的每 24 小时与滚动 30 天额度；"
-            f"或等待配额窗口重置（约 {exc.retry_after} 秒后）。"
-            f"Free per-24-hour quota exhausted ({exc.limit} calls): "
-            "upgrade to VIP at https://aigcnews.cn/membership?ref=api-429-daily for higher "
-            "per-24-hour and rolling-30-day quotas, or wait for the window to reset."
-        )
-    elif exc.tier == "member":
-        message = (
-            f"VIP 滚动 30 天额度已用完（{exc.limit} 次），"
+            f"账号每 24 小时额度已用完（{exc.limit} 次），"
             f"配额窗口将于约 {exc.retry_after} 秒后重置。"
-            f"VIP rolling-30-day quota exhausted ({exc.limit} calls); "
+            f"Account per-24-hour quota exhausted ({exc.limit} calls); "
             f"the window resets in about {exc.retry_after} seconds."
         )
     else:
         message = (
-            f"免费档滚动 30 天额度已用完（{exc.limit} 次）。"
-            "请前往 https://aigcnews.cn/membership?ref=api-429-monthly 开通 VIP 享更高额度，"
-            f"或等待配额窗口重置（约 {exc.retry_after} 秒后）。"
-            f"Free rolling-30-day quota exhausted ({exc.limit} calls): "
-            "upgrade to VIP at https://aigcnews.cn/membership?ref=api-429-monthly for a higher "
-            "quota, or wait for the window to reset."
+            f"账号滚动 30 天额度已用完（{exc.limit} 次），"
+            f"配额窗口将于约 {exc.retry_after} 秒后重置。"
+            f"Account rolling-30-day quota exhausted ({exc.limit} calls); "
+            f"the window resets in about {exc.retry_after} seconds."
         )
     return JSONResponse(
         {

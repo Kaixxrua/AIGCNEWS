@@ -85,9 +85,8 @@ func TestQuotaProjection(t *testing.T) {
 			want: `{"plan":"free","membership_expires_at":null,"quota_applies":true,"windows":[` +
 				`{"window":"24h","limit":10,"used":3,"remaining":7,"resets_in_seconds":18120},` +
 				`{"window":"30d","limit":200,"used":12,"remaining":188,"resets_in_seconds":2001605}],` +
-				`"counts_toward_quota":false,"summary":"Free plan. 24-hour window: 7 of 10 tool calls left, resets in 5h 2m. ` +
-				`30-day window: 188 of 200 left, resets in 23d 4h. VIP raises the limits to 200 per 24 hours and 4,000 per 30 days: ` +
-				`https://aigcnews.cn/membership. Checking quota does not use any.","manage_url":"https://aigcnews.cn/membership"}`,
+				`"counts_toward_quota":false,"summary":"Free account access. 24-hour window: 7 of 10 tool calls left, resets in 5h 2m. ` +
+				`30-day window: 188 of 200 left, resets in 23d 4h. Checking quota does not use any.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 		{
 			// 被拒的尝试也计数：used 封顶为 limit。
@@ -95,12 +94,12 @@ func TestQuotaProjection(t *testing.T) {
 			identity: vip,
 			status: ratelimit.QuotaStatus{Tier: authn.TierMember, UsageKnown: true,
 				Windows: quotaWindows(200, 205, 59, 4000, 1200, 2*86400)},
-			want: `{"plan":"vip","membership_expires_at":"2026-11-01T00:00:00Z","quota_applies":true,"windows":[` +
+			want: `{"plan":"free","membership_expires_at":null,"quota_applies":true,"windows":[` +
 				`{"window":"24h","limit":200,"used":200,"remaining":0,"resets_in_seconds":59},` +
 				`{"window":"30d","limit":4000,"used":1200,"remaining":2800,"resets_in_seconds":172800}],` +
-				`"counts_toward_quota":false,"summary":"VIP plan. 24-hour window: 0 of 200 tool calls left, resets in under a minute. ` +
+				`"counts_toward_quota":false,"summary":"Free account access. 24-hour window: 0 of 200 tool calls left, resets in under a minute. ` +
 				`30-day window: 2,800 of 4,000 left, resets in 2d. Tool calls are paused until the 24-hour window resets. ` +
-				`Checking quota does not use any.","manage_url":"https://aigcnews.cn/membership"}`,
+				`Checking quota does not use any.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 		{
 			name:     "free-monthly-exhausted",
@@ -110,10 +109,9 @@ func TestQuotaProjection(t *testing.T) {
 			want: `{"plan":"free","membership_expires_at":null,"quota_applies":true,"windows":[` +
 				`{"window":"24h","limit":10,"used":10,"remaining":0,"resets_in_seconds":3600},` +
 				`{"window":"30d","limit":200,"used":200,"remaining":0,"resets_in_seconds":259260}],` +
-				`"counts_toward_quota":false,"summary":"Free plan. 24-hour window: 0 of 10 tool calls left, resets in 1h. ` +
+				`"counts_toward_quota":false,"summary":"Free account access. 24-hour window: 0 of 10 tool calls left, resets in 1h. ` +
 				`30-day window: 0 of 200 left, resets in 3d. Tool calls are paused until the 30-day window resets. ` +
-				`VIP raises the limits to 200 per 24 hours and 4,000 per 30 days: https://aigcnews.cn/membership. ` +
-				`Checking quota does not use any.","manage_url":"https://aigcnews.cn/membership"}`,
+				`Checking quota does not use any.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 		{
 			name:     "windows-not-started",
@@ -122,9 +120,8 @@ func TestQuotaProjection(t *testing.T) {
 			want: `{"plan":"free","membership_expires_at":null,"quota_applies":true,"windows":[` +
 				`{"window":"24h","limit":10,"used":0,"remaining":10,"resets_in_seconds":null},` +
 				`{"window":"30d","limit":200,"used":0,"remaining":200,"resets_in_seconds":null}],` +
-				`"counts_toward_quota":false,"summary":"Free plan. 24-hour window: 10 of 10 tool calls left; it starts with your next tool call. ` +
-				`30-day window: 200 of 200 left; it starts with your next tool call. VIP raises the limits to 200 per 24 hours and ` +
-				`4,000 per 30 days: https://aigcnews.cn/membership. Checking quota does not use any.","manage_url":"https://aigcnews.cn/membership"}`,
+				`"counts_toward_quota":false,"summary":"Free account access. 24-hour window: 10 of 10 tool calls left; it starts with your next tool call. ` +
+				`30-day window: 200 of 200 left; it starts with your next tool call. Checking quota does not use any.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 		{
 			name:     "usage-unavailable",
@@ -133,17 +130,16 @@ func TestQuotaProjection(t *testing.T) {
 			want: `{"plan":"free","membership_expires_at":null,"quota_applies":true,"windows":[` +
 				`{"window":"24h","limit":10,"used":null,"remaining":null,"resets_in_seconds":null},` +
 				`{"window":"30d","limit":200,"used":null,"remaining":null,"resets_in_seconds":null}],` +
-				`"counts_toward_quota":false,"summary":"Free plan: up to 10 tool calls per 24 hours and 200 per 30 days. ` +
-				`Live usage is temporarily unavailable; try again shortly. VIP raises the limits to 200 per 24 hours and ` +
-				`4,000 per 30 days: https://aigcnews.cn/membership. Checking quota does not use any.","manage_url":"https://aigcnews.cn/membership"}`,
+				`"counts_toward_quota":false,"summary":"Free account access: up to 10 tool calls per 24 hours and 200 per 30 days. ` +
+				`Live usage is temporarily unavailable; try again shortly. Checking quota does not use any.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 		{
 			name:     "admin-exempt",
 			identity: authn.Identity{UserID: 1, Role: "admin", MembershipTier: authn.TierMember},
 			status:   ratelimit.QuotaStatus{Tier: authn.TierMember, Exempt: true, Windows: quotaWindows(200, 0, 0, 4000, 0, 0)},
-			want: `{"plan":"vip","membership_expires_at":null,"quota_applies":false,"windows":[],"counts_toward_quota":false,` +
-				`"summary":"VIP plan; this admin account is exempt from the 24-hour and 30-day tool-call quotas. ` +
-				`Only the per-minute burst limit applies.","manage_url":"https://aigcnews.cn/membership"}`,
+			want: `{"plan":"free","membership_expires_at":null,"quota_applies":false,"windows":[],"counts_toward_quota":false,` +
+				`"summary":"Free account access; this admin account is exempt from the 24-hour and 30-day tool-call quotas. ` +
+				`Only the per-minute burst limit applies.","manage_url":"https://aigcnews.cn/mcp"}`,
 		},
 	}
 	for _, tc := range cases {
@@ -166,7 +162,7 @@ func TestQuotaProjection(t *testing.T) {
 func TestQuotaManageURLFollowsPublicBase(t *testing.T) {
 	reader := &quotaReaderStub{status: ratelimit.QuotaStatus{Tier: authn.TierMember, UsageKnown: true,
 		Windows: quotaWindows(200, 1, 60, 4000, 1, 60)}}
-	for base, want := range map[string]string{"": "https://aigcnews.cn/membership", "https://aigcradar.online": "https://aigcradar.online/membership"} {
+	for base, want := range map[string]string{"": "https://aigcnews.cn/mcp", "https://aigcradar.online": "https://aigcradar.online/mcp"} {
 		result, err := NewQuotaService(reader, base).Get(authn.Identity{UserID: 7}, map[string]any{})
 		if err != nil {
 			t.Fatal(err)
@@ -230,7 +226,7 @@ const (
 	quotaMonthKey  = "ratelimit:mcp.quota.monthly:user:42"
 	quotaBurstKey  = "ratelimit:mcp.tool_call:user:42"
 	quotaTestUser  = 42
-	quotaTestLimit = "10"
+	quotaTestLimit = "200"
 )
 
 func newQuotaHandler(t *testing.T, register bool, identity authn.Identity, authenticated bool) (*Handler, *miniredis.Miniredis) {
@@ -288,8 +284,8 @@ func TestHandlerQuotaToolBypassesExhaustedQuota(t *testing.T) {
 		daily.ResetsInSeconds == nil || *daily.ResetsInSeconds != 7200 {
 		t.Fatalf("daily window = %s", rec.Body)
 	}
-	if got, _ := mr.Get(quotaDailyKey); got != "11" {
-		t.Fatalf("daily = %q, want 11 (only the rejected counted call increments it)", got)
+	if got, _ := mr.Get(quotaDailyKey); got != "201" {
+		t.Fatalf("daily = %q, want 201 (only the rejected counted call increments it)", got)
 	}
 	if mr.Exists(quotaMonthKey) {
 		t.Fatal("quota call must not open the 30-day window")

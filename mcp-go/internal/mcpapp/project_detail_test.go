@@ -203,7 +203,7 @@ func TestProjectDetailUsesExistingQuotaAndUsageCounters(t *testing.T) {
 	if response := postFrom(t, handler, body, "", ""); response.Code != 429 {
 		t.Fatal("detail bypassed existing quota")
 	}
-	if reader.calls != 1 || mr.HGet("mcpmetrics:tool_calls", "get_github_project_detail") != "1" || mr.HGet(usageKey(t, mr, "calls"), "free|get_github_project_detail") != "1" {
+	if reader.calls != 1 || mr.HGet("mcpmetrics:tool_calls", "get_github_project_detail") != "1" || mr.HGet(usageKey(t, mr, "calls"), "member|get_github_project_detail") != "1" {
 		t.Fatal("detail was not counted under its own name")
 	}
 }

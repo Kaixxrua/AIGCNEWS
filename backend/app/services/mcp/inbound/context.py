@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from backend.app.services.membership.tiers import resolve_effective_tier
+from backend.app.domain.membership import resolve_access_tier
 
 
 @dataclass(frozen=True)
@@ -35,13 +35,8 @@ class McpAuthorizationContext:
 
     @property
     def membership_tier(self) -> str:
-        """库内生效会员档位（0045/0048）；匿名或缺列按 free，过期 member 回落 free。"""
-
-        user = self.user or {}
-        return resolve_effective_tier(
-            user.get("membership_tier"),
-            user.get("membership_expires_at"),
-        )
+        """Every authenticated account has the same access; anonymous stays free."""
+        return resolve_access_tier(self.user)
 
     def has_scope(self, scope: str) -> bool:
         return scope in (self.user or {}).get("scopes", frozenset())

@@ -27,10 +27,9 @@ export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'mcpExamples', route: '/mcp', targets: ['.agent-examples', '.mcp-hero'], desktopOnly: true },
   { id: 'dsh', route: '/dsh', targets: ['.dsh-hero .agent-setup-cta', '.dsh-hero'], desktopOnly: true },
   { id: 'tracking', route: '/dsh', targets: ['[data-tour-nav="/subscriptions"]', '.dock'], compact: { route: '/' } },
-  { id: 'membership', route: '/membership', targets: ['.tier-grid', '.membership-hero'], compact: { targets: ['.membership-title'] } },
-  { id: 'account', route: '/membership', targets: ['.dock-item--account'], compact: { targets: ['[data-tour="more"]', '.dock-item--account'], copy: 'mobileAccount' } },
-  { id: 'search', route: '/membership', targets: ['.quick-search-button'], desktopOnly: true },
-  { id: 'tools', route: '/membership', targets: ['.app-masthead__actions'], compact: { copy: 'mobileTools' } },
+  { id: 'account', route: '/', targets: ['.dock-item--account'], compact: { targets: ['[data-tour="more"]', '.dock-item--account'], copy: 'mobileAccount' } },
+  { id: 'search', route: '/', targets: ['.quick-search-button'], desktopOnly: true },
+  { id: 'tools', route: '/', targets: ['.app-masthead__actions'], compact: { copy: 'mobileTools' } },
   { id: 'contact', route: '/contact', targets: ['.app-content .view-container'], feature: 'contact', compact: { targets: ['.app-content h1', '[data-tour="more"]'] } },
   { id: 'footer', route: '/', targets: ['.footer-right', '.dock-footer'], compact: { targets: ['[data-tour="more"]'], copy: 'mobileFooter' } },
   { id: 'bookmark', route: '/', targets: ['[data-tour="bookmark"]'], compact: { targets: ['[data-tour="bookmark"]', '[data-tour="more"]'], copy: 'mobileBookmark' } },
@@ -45,7 +44,6 @@ export function availableSteps(flags: { x: boolean; contact: boolean }, compact 
 const PAGE_ONLY_STEPS: Record<string, TourStep> = {
   '/subscriptions': { id: 'subscriptionsPage', route: '/subscriptions', targets: ['.subs-heading', '.subs-page'] },
   '/monitor': { id: 'monitorPage', route: '/monitor', targets: ['.monitor-heading', '.monitor-page'] },
-  '/membership/checkout': { id: 'checkoutPage', route: '/membership/checkout', targets: ['.checkout-hero', '.checkout-card'] },
   '/privacy': { id: 'privacyPage', route: '/privacy', targets: ['.legal-page .legal-head', '.legal-page'] },
   '/disclaimer': { id: 'disclaimerPage', route: '/disclaimer', targets: ['.legal-page .legal-head', '.legal-page'] },
 }
@@ -67,7 +65,6 @@ export function pageSteps(steps: readonly TourStep[], path: string, source?: unk
     '/x': ['x'],
     '/mcp': compact ? ['mcp'] : ['mcp', 'mcpExamples'],
     '/dsh': ['dsh'],
-    '/membership': ['membership'],
     '/contact': ['contact'],
   }
   const selected = ids[path.startsWith('/ui-library/') ? '/ui-library' : path] ?? []

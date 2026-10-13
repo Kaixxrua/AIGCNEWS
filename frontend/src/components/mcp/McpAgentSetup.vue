@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
 import { useMcpAgentSetup } from '@/composables/useMcpAgentSetup'
 import { showToast } from '@/composables/useToast'
-import { MCP_FREE_QUOTA, MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
+import { MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
 import { installAgentSetupMessages } from '@/i18n/locales/agentSetup'
 import { fold, unfold } from '@/motion/fold'
 import RollText from '@/motion/RollText.vue'
@@ -47,9 +47,9 @@ const steps = computed(() => [
 
 const count = (value: number) => value.toLocaleString(locale.value)
 const tier = computed(() => {
-  const quota = auth.isMember ? MCP_MEMBER_QUOTA : MCP_FREE_QUOTA
+  const quota = MCP_MEMBER_QUOTA
   const values = { daily: count(quota.rolling24h), monthly: count(quota.rolling30d) }
-  return auth.isMember ? t('agentSetup.mcp.tier.member', values) : t('agentSetup.mcp.tier.free', values)
+  return t('agentSetup.mcp.tier.member', values)
 })
 
 onBeforeUnmount(setup.dispose)

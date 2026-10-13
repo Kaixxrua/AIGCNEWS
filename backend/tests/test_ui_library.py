@@ -48,14 +48,16 @@ def test_catalog_ids_include_pinned_icon_sets(tmp_path):
     assert 'fix:menu' in catalog_ids(str(catalog))
 
 
-def test_calendar_quota_and_expired_vip():
+def test_calendar_quota_is_unlimited_for_every_active_account():
     now = datetime(2026, 9, 10, 16, 0, tzinfo=timezone.utc)
-    policy = quota_policy({'membership_tier': 'free'}, now)
+    policy = quota_policy({'user_id': 1, 'membership_tier': 'free'}, now)
     assert str(policy['usage_date']) == '2026-09-11'
     assert policy['resets_at'] == '2026-09-12T00:00:00+08:00'
-    assert quota_policy({'membership_tier': 'member', 'membership_expires_at': now}, now)['limit'] == 5
-    assert quota_policy({'membership_tier': 'member'}, now)['limit'] is None
-    assert quota_policy({'membership_tier': 'vip'}, now)['limit'] == 5
+    assert policy['limit'] is None
+    assert quota_policy({'id': 1, 'membership_tier': 'member', 'membership_expires_at': now}, now)['limit'] is None
+    assert quota_policy({'sub': '1'}, now)['limit'] is None
+    assert quota_policy(None, now)['limit'] == 5
+    assert quota_policy({'id': 1, 'disabled': True}, now)['limit'] == 5
 
 
 def client(user=None):
@@ -98,14 +100,14 @@ def test_rankings_use_rolling_windows(period, hours):
     assert (end-start).total_seconds() == hours * 3600
 
 
-def test_copy_validates_template_and_enforces_one_combined_allowance(monkeypatch):
+def test_free_account_copy_is_unlimited_and_still_validates_requests(monkeypatch):
     monkeypatch.setattr('backend.app.api.routes_ui_library.known_template', lambda value: value == 'test')
     c, repo = client({'sub': '1', 'membership_tier': 'free'})
     for kind in ['source', 'prompt']:
         response = c.post('/api/ui-library/test/copy', json={'kind': kind, 'request_id': str(uuid4())})
         assert response.status_code == 200
-        assert response.json()['remaining'] == 0
-        assert repo.consume_copy.call_args.args[-1] == 5
+        assert response.json()['remaining'] is None
+        assert repo.consume_copy.call_args.args[-1] is None
     repo.consume_copy.side_effect = CopyLimitExceeded()
     assert c.post('/api/ui-library/test/copy', json={'kind': 'source', 'request_id': str(uuid4())}).status_code == 429
     repo.consume_copy.side_effect = CopyRequestConflict()

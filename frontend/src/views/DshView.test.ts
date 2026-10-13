@@ -151,23 +151,24 @@ describe('DshView', () => {
     expect(initFromStorage).toHaveBeenCalledOnce()
   })
 
-  it('fetches the token once for a signed-in reader, points a free reader at VIP, and keeps the token off the page', async () => {
+  it('fetches a signed-in reader token without a purchase link and keeps it off the page', async () => {
     signIn()
     const wrapper = await mountView()
 
     expect(ensureDshMcpToken).toHaveBeenCalledOnce()
-    expect(wrapper.get('a[href="/membership"]').text()).toBe('升级 VIP')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('VIP')
     expect(wrapper.findAll('.command-slot--filled').length).toBeGreaterThan(0)
     expect(wrapper.html()).not.toContain(TOKEN)
     expect(wrapper.html()).not.toContain('aigc_ic_view')
   })
 
-  it('tells a member their quota is already the highest', async () => {
+  it('shows the same free account hint to a historical member', async () => {
     signIn(memberUser)
     const wrapper = await mountView()
 
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-    expect(wrapper.get('.dsh-quota-hint--member').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
+    expect(wrapper.get('.dsh-quota-hint').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
   })
 
   it('drops the token as soon as the reader signs out', async () => {

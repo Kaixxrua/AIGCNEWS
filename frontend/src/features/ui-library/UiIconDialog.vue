@@ -78,7 +78,7 @@ onBeforeUnmount(() => {
         </section>
         <section class="ui-detail__code" :aria-label="text.source">
           <div class="ui-detail__actions"><button type="button" class="ui-detail__copy-source" :disabled="copying || loading || loadError" @click="copy('source')"><Check v-if="copied === 'source'" :size="18" /><Code2 v-else :size="18" />{{ copied === 'source' ? text.copied : text.copySvg }}</button><button type="button" class="ui-detail__copy-prompt" :disabled="copying || loading || loadError" @click="copy('prompt')"><Check v-if="copied === 'prompt'" :size="18" /><Sparkles v-else :size="18" />{{ copied === 'prompt' ? text.copied : text.copyPrompt }}</button></div>
-          <p class="ui-library__quota">{{ account.quotaText.value }} · <RouterLink to="/membership" @click="emit('close')">VIP</RouterLink></p>
+          <p class="ui-library__quota">{{ account.quotaText.value }}</p>
           <div class="ui-detail__prompt-options"><p>{{ text.iconPromptHint }}</p><label><span class="sr-only">{{ text.promptLanguage }}</span><select v-model="promptLang"><option value="zh">中文</option><option value="en">English</option></select></label></div>
           <p v-if="feedback" class="ui-detail__feedback" role="status">{{ feedback }}</p>
           <div v-if="loading" class="ui-detail__code-message" role="status">{{ text.loading }}</div>

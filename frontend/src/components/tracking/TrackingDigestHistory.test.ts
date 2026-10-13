@@ -102,7 +102,7 @@ describe('viewing tracking results', () => {
 })
 
 describe('exporting digest history', () => {
-  it('offers vip members CSV and JSON next to the issue picker', async () => {
+  it('offers signed-in accounts CSV and JSON next to the issue picker', async () => {
     await render([issue(10)], { member: true })
     const group = wrapper.get('.tracking-digest-tools [role="group"]')
     expect(group.attributes('aria-label')).toBe('导出最近 90 天简报')
@@ -121,16 +121,13 @@ describe('exporting digest history', () => {
     expect(buttons.map((button) => button.attributes('aria-busy'))).toEqual(['true', 'false'])
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.setProps({ exporting: '', exportError: 'membership_required' })
-    expect(wrapper.get('[role="alert"]').text()).toBe('导出是 VIP 权益，开通后即可使用。')
+    expect(wrapper.get('[role="alert"]').text()).toBe('无法导出简报，请确认登录状态后重试。')
   })
-  it('points free accounts to vip instead, and shows nothing without digests', async () => {
+  it('offers free accounts the same exports and hides controls without digests', async () => {
     await render()
-    expect(wrapper.find('.tracking-export').exists()).toBe(false)
-    const link = wrapper.getComponent(RouterLinkStub)
-    expect(link.props('to')).toBe('/membership')
-    expect(link.text()).toBe('VIP 可导出')
-    expect(link.attributes('title')).toBe('开通 VIP 后可导出最近 90 天简报（CSV / JSON）')
-    await wrapper.setProps({ digests: [], member: true })
+    expect(wrapper.findAll('.tracking-export button').map(button => button.text())).toEqual(['CSV', 'JSON'])
+    expect(wrapper.findComponent(RouterLinkStub).exists()).toBe(false)
+    await wrapper.setProps({ digests: [] })
     expect(wrapper.find('.tracking-digest-tools').exists()).toBe(false)
   })
 })

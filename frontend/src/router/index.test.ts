@@ -158,25 +158,14 @@ describe('contact site page contract', () => {
   })
 })
 
-// 契约：会员结算页要求登录 —— 匿名深链触发登录弹窗，
-// 保留完整路径用于登录后返回（会员页本身公开获客）。
-describe('membership checkout auth contract', () => {
-  it('checkout route requires auth', () => {
-    const record = router.getRoutes().find((r) => r.path === '/membership/checkout')
-    expect(record, 'missing route /membership/checkout').toBeDefined()
-    expect(record?.name).toBe('membership-checkout')
-    expect(record?.meta.requiresAuth).toBe(true)
-  })
-
-  it('anonymous deep link to checkout preserves the full redirect', () => {
-    const resolved = router.resolve('/membership/checkout?plan=yearly')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'anonymous', isAdmin: false }))
-      .toEqual({ kind: 'login', target: '/membership/checkout?plan=yearly' })
-  })
-
-  it('authenticated visitor is permitted to open checkout', () => {
-    const resolved = router.resolve('/membership/checkout')
-    expect(getRoutePolicyDecision(resolved as RouteLocationNormalized, { status: 'authenticated', isAdmin: false })).toBeNull()
+// Legacy purchase links keep working, but always redirect to free MCP access.
+describe('retired membership routes', () => {
+  it.each(['/membership', '/membership/checkout'])('%s redirects to MCP without checkout or an auth gate', (path) => {
+    const record = router.getRoutes().find((r) => r.path === path)
+    expect(record).toBeDefined()
+    expect(record?.redirect).toBe('/mcp')
+    expect(record?.meta.requiresAuth).toBeUndefined()
+    expect(record?.components).toBeUndefined()
   })
 })
 

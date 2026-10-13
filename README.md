@@ -35,7 +35,7 @@ AIGCNEWS organizes open-source projects, research papers, products, and industry
 | [Personal tracking](https://aigcnews.cn/subscriptions) | Follow keywords or a project's Star growth. Receive a personal digest on the website, with optional delivery to verified email, Telegram, Discord, or webhook channels. |
 | [X updates](https://aigcnews.cn/x) | Choose accounts grouped by AI company and model ecosystem. Read Chinese translations, images, and videos from the last 24 hours or a selected date; desktop views support text-only reading and local bookmarks. Self-hosted instances must enable and configure the source. |
 
-The website supports Chinese and English, light and dark themes, mobile layouts, and PWA installation. Account features such as favorites, tracking, and copying follow the access rules shown on the current site.
+The website supports Chinese and English, light and dark themes, mobile layouts, and PWA installation. All active registered accounts can use the former member features for free, including 10 tracking rules and unlimited UI copying; login, token permissions, and call quotas still apply. New membership purchases are closed.
 
 ## Interface preview
 
@@ -92,7 +92,7 @@ Once connected, try:
 | Read personal favorites and tracking | `search_my_project_favorites`, `get_my_tracking` |
 | Check remaining quota and reset times | `get_my_quota` |
 
-Public tools accept anonymous calls. Personal tools require account authorization and the relevant permissions; tracking through MCP is a member feature. MCP and `/api/v1` share a quota pool. See the [membership page](https://aigcnews.cn/membership) for current entitlements, or call `get_my_quota` after signing in to inspect your actual balance. Tool parameters, resources, prompts, and authentication details are in the [MCP documentation](docs/mcp-server.md).
+Public tools accept anonymous calls. Personal tools, including tracking, are free for all active accounts with authorization and the relevant token scopes. MCP and `/api/v1` share a quota pool: 200 calls per 24 hours and 4,000 per rolling 30 days for registered accounts. See the [MCP page](https://aigcnews.cn/mcp), or call `get_my_quota` after signing in to inspect your actual balance. Tool parameters, resources, prompts, and authentication details are in the [MCP documentation](docs/mcp-server.md).
 
 ### Native dsh plugin
 

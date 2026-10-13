@@ -67,20 +67,13 @@ func (i Identity) HasScope(scope string) bool {
 	return false
 }
 
-// EffectiveTier 对齐 tiers.resolve_effective_tier：未知/空档位一律 free；
-// member 已过期（expiry <= now）回落 free。
-func (i Identity) EffectiveTier(now time.Time) string {
-	tier := i.MembershipTier
-	if tier != TierFree && tier != TierMember {
-		tier = TierFree
+// EffectiveTier matches Python resolve_access_tier. Every authenticated account
+// has member-level access; stored billing history does not limit access.
+func (i Identity) EffectiveTier(_ time.Time) string {
+	if i.UserID > 0 {
+		return TierMember
 	}
-	if tier != TierMember || i.MembershipExpiresAt == nil {
-		return tier
-	}
-	if !i.MembershipExpiresAt.After(now) {
-		return TierFree
-	}
-	return tier
+	return TierFree
 }
 
 // Response 是认证失败的 HTTP 投射（独立于 wire 层，避免环依赖）。

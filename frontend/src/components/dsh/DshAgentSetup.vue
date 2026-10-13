@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
 import { Bot, Check, ChevronDown, ClipboardCopy, Copy, MessageSquareText } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useLoginPrompt } from '@/composables/useLoginPrompt'
@@ -125,7 +124,6 @@ onBeforeUnmount(() => {
       <McpConnectionStatus class="agent-setup-status" :connection="connection" variant="dsh" />
       <button type="button" class="agent-setup-link" @click="rotate">{{ t('dsh.wizard.tokenRotate') }}</button>
     </template>
-    <p v-if="auth.isMember" class="dsh-quota-hint dsh-quota-hint--member">{{ t('dsh.wizard.memberStatus') }}</p>
-    <p v-else class="dsh-quota-hint">{{ t('dsh.wizard.vipHint') }} <RouterLink to="/membership">{{ t('dsh.wizard.vipCta') }}</RouterLink></p>
+    <p class="dsh-quota-hint">{{ t('dsh.wizard.memberStatus') }}</p>
   </section>
 </template>

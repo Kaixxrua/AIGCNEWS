@@ -223,7 +223,7 @@ def test_atomic_quota_and_owner_isolation(setup):
         except TrackingError as exc:
             return exc.code
     with ThreadPoolExecutor(max_workers=2) as pool:
-        assert sorted(pool.map(add, range(2))) == ["created", "rule_limit"]
+        assert sorted(pool.map(add, range(11))) == ["created"] * 10 + ["rule_limit"]
     saved = repository.overview(user_id)["rules"][0]
     with pytest.raises(TrackingError, match="rule_not_found"):
         repository.delete_rule(user_id, saved["id"] + 100000)
@@ -247,10 +247,9 @@ def test_member_expiry_preserves_rules_and_rechecks_live_tier(setup):
     with database.transaction() as connection:
         connection.execute("UPDATE users SET membership_expires_at = %s WHERE id = %s", (now() - timedelta(seconds=1), user_id))
     result = repository.overview(user_id)
-    assert result["limit"] == 1 and len(result["rules"]) == 10
-    assert sum(item["active"] for item in result["rules"]) == 1
-    with pytest.raises(TrackingError, match="rule_inactive"):
-        repository.preview(user_id, result["rules"][-1]["id"])
+    assert result["limit"] == 10 and len(result["rules"]) == 10
+    assert sum(item["active"] for item in result["rules"]) == 10
+    assert repository.preview(user_id, result["rules"][-1]["id"])["total"] == 0
     repository.save_rule(user_id, rule("topic0", enabled=False), result["rules"][0]["id"])
     assert repository.overview(user_id)["rules"][1]["active"]
 
@@ -549,13 +548,15 @@ def test_api_contract_and_ownership(setup):
     app.dependency_overrides[get_tracking_repository] = lambda: repository
     app.dependency_overrides[RequireUser] = lambda: {"user_id": user_id, "membership_tier": "member"}
     client = TestClient(app)
-    assert client.get("/api/tracking").json()["limit"] == 1  # DB tier wins over token/client claims
+    assert client.get("/api/tracking").json()["limit"] == 10  # Account access ignores billing claims
     assert client.post("/api/tracking/rules", json={"query": "RAG", "user_id": user_id + 1}).status_code == 422
     created = client.post("/api/tracking/rules", json={"query": "RAG"})
     assert created.status_code == 201
     rule_id = created.json()["rules"][0]["id"]
     assert "user_id" not in created.json()["rules"][0]
-    assert client.post("/api/tracking/rules", json={"query": "agents"}).status_code == 409
+    for i in range(9):
+        assert client.post("/api/tracking/rules", json={"query": f"agents{i}"}).status_code == 201
+    assert client.post("/api/tracking/rules", json={"query": "eleventh"}).status_code == 409
     assert client.put("/api/tracking/settings", json={"delivery_hour": 24}).status_code == 422
     assert client.get("/api/tracking/rules/0/preview").status_code == 422
     preview = client.get(f"/api/tracking/rules/{rule_id}/preview").json()
@@ -583,7 +584,7 @@ def test_standard_bearer_authentication_uses_the_real_owner(setup):
     token = create_access_token({"user_id": user_id, "pwd_ver": record["pwd_ver"], "membership_tier": "member"})
     headers = {"Authorization": "Bearer " + token}
     response = client.get("/api/tracking", headers=headers)
-    assert response.status_code == 200 and response.json()["limit"] == 1
+    assert response.status_code == 200 and response.json()["limit"] == 10
     with database.transaction() as connection:
         connection.execute("UPDATE users SET disabled = TRUE WHERE id = %s", (user_id,))
     assert client.get("/api/tracking", headers=headers).status_code == 401
@@ -736,7 +737,7 @@ def test_vip_digest_flags_a_keyword_surging_against_its_daily_average(setup):
     assert f"> 热度飙升：「{marker}」近 24 小时 6 条，前 7 天日均 1 条" in render_digest(claim)
 
 
-def test_surge_alerts_are_vip_only_and_need_three_times_the_usual_volume(setup):
+def test_free_account_surge_alerts_need_three_times_the_usual_volume(setup):
     database, repository, user_id = setup
     marker, busy = uuid.uuid4().hex, uuid.uuid4().hex
     moment = now()
@@ -745,9 +746,9 @@ def test_surge_alerts_are_vip_only_and_need_three_times_the_usual_volume(setup):
     surge_history(database, marker, moment, daily=1)
     for hour in range(1, 7):
         hacker_news(database, f"{marker} launch {hour}", moment - timedelta(hours=hour))
-    # 免费账号：同样的数据不报飙升
-    assert repository.generate_digest(user_id, moment)["surges"] == []
-    assert repository.overview(user_id)["digests"][0]["surges"] == []
+    # Free accounts also receive surge alerts.
+    assert repository.generate_digest(user_id, moment)["surges"] == [{"query": marker, "count": 6, "baseline": 1.0}]
+    assert repository.overview(user_id)["digests"][0]["surges"] == [{"query": marker, "count": 6, "baseline": 1.0}]
 
     vip(database, user_id)
     rule_id = repository.overview(user_id)["rules"][0]["id"]
@@ -763,7 +764,7 @@ def test_surge_alerts_are_vip_only_and_need_three_times_the_usual_volume(setup):
 
 
 
-def test_vip_export_has_only_the_owners_last_90_days(setup):
+def test_free_account_export_has_only_the_owners_last_90_days(setup):
     database, repository, user_id = setup
     marker = uuid.uuid4().hex
     moment = now()
@@ -785,13 +786,12 @@ def test_vip_export_has_only_the_owners_last_90_days(setup):
     app = FastAPI()
     app.include_router(router, prefix="/api")
     app.dependency_overrides[get_tracking_repository] = lambda: repository
-    # 免费账号：令牌里写着会员也不行
+    # Export is available to every active account, still scoped to its own rows.
     app.dependency_overrides[RequireUser] = lambda: {"user_id": user_id, "membership_tier": "member"}
     client = TestClient(app)
     response = client.get("/api/tracking/export")
-    assert response.status_code == 403 and response.json() == {"detail": "membership_required"}
+    assert response.status_code == 200
 
-    vip(database, user_id)
     exported = repository.export(user_id, moment)
     assert exported["since"] == moment - timedelta(days=90)
     assert [row["id"] for row in exported["digests"]] == [digest["id"]]
@@ -803,12 +803,12 @@ def test_vip_export_has_only_the_owners_last_90_days(setup):
     assert [row["id"] for row in body["digests"]] == [digest["id"]]
     assert body["digests"][0]["items"][0]["title"] == f"={marker} launch"
 
-    # 会员到期后不能再导出，数据仍在
+    # 历史付费到期不影响免费导出，数据仍在
     with database.transaction() as connection:
         connection.execute(
             "UPDATE users SET membership_expires_at = %s WHERE id = %s", (moment - timedelta(days=1), user_id),
         )
-    assert client.get("/api/tracking/export").status_code == 403
+    assert client.get("/api/tracking/export").status_code == 200
     assert repository.overview(user_id)["digests"][0]["id"] == digest["id"]
 
 

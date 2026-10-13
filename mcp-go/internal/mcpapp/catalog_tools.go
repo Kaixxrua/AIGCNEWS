@@ -620,7 +620,7 @@ var privateTools = []any{
 	// get_my_tracking 是 Go 独有的会员工具（无 Python 冻结源），实现见 tracking.go。
 	jsonx.Object{
 		{Key: "name", Value: "get_my_tracking"},
-		{Key: "description", Value: "Read the authenticated user's own tracking on AIGC Radar: their keyword and GitHub project tracking rules, plus the items those rules matched in their recent daily tracking issues, newest first. Call this only when the user asks what their tracked topics or projects turned up, or asks about their tracking rules. A vip membership benefit: free accounts get an upgrade message instead of results."},
+		{Key: "description", Value: "Read the authenticated user's own tracking on AIGC Radar: their keyword and GitHub project tracking rules, plus the items those rules matched in their recent daily tracking issues, newest first. Call this only when the user asks what their tracked topics or projects turned up, or asks about their tracking rules. Available free to every signed-in account with the tracking:read scope."},
 		{Key: "annotations", Value: jsonx.Object{{Key: "readOnlyHint", Value: true}, {Key: "destructiveHint", Value: false}, {Key: "idempotentHint", Value: true}, {Key: "openWorldHint", Value: false}}},
 		{Key: "inputSchema", Value: jsonx.Object{
 			{Key: "additionalProperties", Value: false},
@@ -655,7 +655,7 @@ var privateTools = []any{
 	// get_my_quota 是 Go 独有的账户工具，实现见 quota.go；调用不计配额。
 	jsonx.Object{
 		{Key: "name", Value: "get_my_quota"},
-		{Key: "description", Value: "Show the authenticated user's AIGC Radar plan (free or vip) and how many MCP tool calls are left in the current 24-hour and 30-day windows, with when each window resets. Call this to confirm a new connection works, when the user asks about their plan, quota, or limits, or after a quota-exceeded error. Calling it does not count toward the quota."},
+		{Key: "description", Value: "Show the authenticated user's free AIGC Radar account quota and how many MCP tool calls are left in the current 24-hour and 30-day windows, with when each window resets. Call this to confirm a new connection works, when the user asks about their plan, quota, or limits, or after a quota-exceeded error. Calling it does not count toward the quota."},
 		{Key: "annotations", Value: jsonx.Object{{Key: "readOnlyHint", Value: true}, {Key: "destructiveHint", Value: false}, {Key: "idempotentHint", Value: true}, {Key: "openWorldHint", Value: false}}},
 		{Key: "inputSchema", Value: jsonx.Object{
 			{Key: "additionalProperties", Value: false},

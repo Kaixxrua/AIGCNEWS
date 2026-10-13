@@ -111,16 +111,14 @@ describe('personal tracking', () => {
     expect(trackingApi.settings).toHaveBeenCalledWith({ enabled: true, delivery_hour: 8, channel_id: null })
     expect(wrapper.text()).toContain('仅在本站查看')
     expect(wrapper.text()).toContain('还没有简报')
-    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/membership')
-    expect(wrapper.text()).toContain('FREE 方案')
-    expect(wrapper.text()).toContain('让雷达覆盖更多方向')
+    expect(wrapper.findAllComponents(RouterLinkStub).some(link => link.props('to') === '/membership')).toBe(false)
+    expect(wrapper.text()).not.toContain('VIP')
   })
 
-  it('shows the active VIP experience from the server-authoritative limit', async () => {
+  it('shows full account access without VIP labels', async () => {
     const wrapper = await render({ ...snapshot(), limit: 10, rules: [saved()] })
-    expect(wrapper.text()).toContain('VIP 方案')
-    expect(wrapper.text()).toContain('VIP 情报雷达已启动')
-    expect(wrapper.text()).toContain('VIP 情报能力已解锁')
+    expect(wrapper.text()).not.toContain('VIP')
+    expect(wrapper.text()).toContain('个人情报雷达')
     expect(wrapper.text()).toContain('已保存 1 / 10 条规则')
     expect(wrapper.text()).not.toContain('解锁 VIP 情报能力')
   })
@@ -341,7 +339,7 @@ describe('personal tracking', () => {
     await wrapper.findAll('.tracking-export button')[1]!.trigger('click')
     await flushPromises()
     expect(trackingApi.exportHistory).toHaveBeenCalledWith('json')
-    expect(wrapper.get('.tracking-export-error').text()).toBe('导出是 VIP 权益，开通后即可使用。')
+    expect(wrapper.get('.tracking-export-error').text()).toBe('无法导出简报，请确认登录状态后重试。')
     // 其他失败不借用「保存或加载失败」那句规则填写提示
     vi.mocked(trackingApi.exportHistory).mockRejectedValue(new Error('offline'))
     await wrapper.findAll('.tracking-export button')[0]!.trigger('click')
@@ -350,12 +348,11 @@ describe('personal tracking', () => {
     expect(wrapper.find('.tracking-section > [role="alert"]').exists()).toBe(false)
   })
 
-  it('shows free accounts where export unlocks instead of the buttons', async () => {
+  it('offers exports to accounts without any membership upsell', async () => {
     const wrapper = await render({ ...snapshot(), digests: [issue()] })
-    expect(wrapper.find('.tracking-export').exists()).toBe(false)
-    const link = wrapper.findAllComponents(RouterLinkStub).find((stub) => stub.classes('tracking-export-vip'))!
-    expect(link.props('to')).toBe('/membership')
-    expect(link.text()).toBe('VIP 可导出')
+    expect(wrapper.findAll('.tracking-export button').map(button => button.text())).toEqual(['CSV', 'JSON'])
+    expect(wrapper.findAllComponents(RouterLinkStub).some(link => link.props('to') === '/membership')).toBe(false)
+    expect(wrapper.text()).not.toContain('VIP')
     expect(trackingApi.exportHistory).not.toHaveBeenCalled()
   })
 })

@@ -485,20 +485,18 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(
             payload["detail"].count("https://aigcnews.cn/mcp?ref=api-429-anon "), 2
         )
-        self.assertEqual(
-            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-anon"), 2
-        )
+        self.assertNotIn("/membership", payload["detail"])
         self.assertNotIn("mcp-429", payload["detail"])
 
-    def test_free_user_daily_quota_exceeded_guides_to_membership(self) -> None:
-        """登录免费档日 pacing 429：identity_kind=user，文案指向 membership。"""
+    def test_free_user_gets_full_daily_quota_without_purchase_prompt(self) -> None:
+        """历史免费账号按统一账号配额计费；429 仅提示重试。"""
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
             "user_id": 42,
             "scopes": frozenset(),
             "role": "user",
             "membership_tier": "free",
         }
-        with patch.object(api_quota, "API_FREE_DAILY_SEARCH_QUOTA", 1):
+        with patch.object(api_quota, "API_MEMBER_DAILY_SEARCH_QUOTA", 1):
             first = self.client.get("/api/v1/projects/search")
             self.assertEqual(first.status_code, 200)
             throttled = self.client.get("/api/v1/projects/search")
@@ -509,12 +507,10 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["error"], "quota_exceeded")
         self.assertEqual(payload["quota_scope"], "daily")
-        self.assertEqual(payload["tier"], "free")
+        self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["identity_kind"], "user")
-        self.assertEqual(
-            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-daily "), 2
-        )
-        self.assertIn("Free per-24-hour quota exhausted", payload["detail"])
+        self.assertNotIn("/membership", payload["detail"])
+        self.assertIn("Account per-24-hour quota exhausted", payload["detail"])
         # 被日桶拒绝的请求不消耗月配额：月度键只有第 1 发
         self.assertEqual(
             self.redis.values["ratelimit:mcp.quota.monthly:user:42"], 1
@@ -536,27 +532,25 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         self.assertEqual(payload["quota_scope"], "daily")
         self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["identity_kind"], "user")
-        self.assertIn("VIP per-24-hour quota", payload["detail"])
+        self.assertIn("Account per-24-hour quota", payload["detail"])
         self.assertIn("window resets", payload["detail"])
 
-    def test_free_user_monthly_quota_exceeded_guides_to_membership(self) -> None:
+    def test_free_user_gets_full_monthly_quota_without_purchase_prompt(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
             "user_id": 42,
             "scopes": frozenset(),
             "role": "user",
             "membership_tier": "free",
         }
-        with patch.object(api_quota, "API_FREE_MONTHLY_SEARCH_QUOTA", 1):
+        with patch.object(api_quota, "API_MEMBER_MONTHLY_SEARCH_QUOTA", 1):
             self.client.get("/api/v1/projects/search")
             throttled = self.client.get("/api/v1/projects/search")
         self.assertEqual(throttled.status_code, 429)
         payload = throttled.json()
         self.assertEqual(payload["quota_scope"], "monthly")
-        self.assertEqual(payload["tier"], "free")
-        self.assertEqual(
-            payload["detail"].count("https://aigcnews.cn/membership?ref=api-429-monthly "), 2
-        )
-        self.assertIn("VIP", payload["detail"])
+        self.assertEqual(payload["tier"], "member")
+        self.assertNotIn("/membership", payload["detail"])
+        self.assertNotIn("VIP", payload["detail"])
 
     def test_member_user_gets_member_quota(self) -> None:
         self.app.dependency_overrides[OptionalMcpUser] = lambda: {
@@ -576,7 +570,7 @@ class ProjectsApiRouteContracts(unittest.TestCase):
         payload = throttled.json()
         self.assertEqual(payload["tier"], "member")
         self.assertEqual(payload["limit"], 3)
-        self.assertIn("VIP rolling-30-day quota", payload["detail"])
+        self.assertIn("Account rolling-30-day quota", payload["detail"])
         self.assertIn("window resets", payload["detail"])
 
     def test_admin_user_skips_quota_entirely(self) -> None:

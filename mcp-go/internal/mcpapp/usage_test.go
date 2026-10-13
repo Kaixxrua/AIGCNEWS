@@ -67,14 +67,14 @@ func TestHandlerRecordsUsageForAuthenticatedUser(t *testing.T) {
 			t.Fatalf("status %d body %s", rec.Code, rec.Body)
 		}
 	}
-	if got := mr.HGet(usageKey(t, mr, "calls"), "free|search_papers"); got != "2" {
-		t.Errorf("calls[free|search_papers] = %q", got)
+	if got := mr.HGet(usageKey(t, mr, "calls"), "member|search_papers"); got != "2" {
+		t.Errorf("calls[member|search_papers] = %q", got)
 	}
-	if got := mr.HGet(usageKey(t, mr, "client_names"), "free|cursor"); got != "1" {
-		t.Errorf("client_names[free|cursor] = %q", got)
+	if got := mr.HGet(usageKey(t, mr, "client_names"), "member|cursor"); got != "1" {
+		t.Errorf("client_names[member|cursor] = %q", got)
 	}
-	if n, _ := client.PFCount(context.Background(), usageKey(t, mr, "clients:free")).Result(); n != 1 {
-		t.Errorf("clients:free = %d", n)
+	if n, _ := client.PFCount(context.Background(), usageKey(t, mr, "clients:member")).Result(); n != 1 {
+		t.Errorf("clients:member = %d", n)
 	}
 }
 
@@ -91,10 +91,10 @@ func TestHandlerRecordsRateLimitedRequests(t *testing.T) {
 	if rec := postFrom(t, handler, toolCallBody, "", ""); rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("second call status %d", rec.Code)
 	}
-	if got := mr.HGet(usageKey(t, mr, "limited"), "free|burst"); got != "1" {
-		t.Errorf("limited[free|burst] = %q", got)
+	if got := mr.HGet(usageKey(t, mr, "limited"), "member|burst"); got != "1" {
+		t.Errorf("limited[member|burst] = %q", got)
 	}
-	if got := mr.HGet(usageKey(t, mr, "calls"), "free|search_papers"); got != "1" {
+	if got := mr.HGet(usageKey(t, mr, "calls"), "member|search_papers"); got != "1" {
 		t.Errorf("only the dispatched call counts, calls = %q", got)
 	}
 }

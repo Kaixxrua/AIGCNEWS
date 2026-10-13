@@ -198,15 +198,16 @@ describe('DshAgentSetup', () => {
     expect(ensureDshMcpToken).toHaveBeenCalledTimes(2)
   })
 
-  it('points a free reader at VIP and tells a member their quota is the highest', async () => {
+  it('gives all accounts the same quota hint without VIP labels', async () => {
     signIn()
     const wrapper = await mountSetup()
-    expect(wrapper.get('.dsh-quota-hint a[href="/membership"]').text()).toBe('升级 VIP')
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.get('.dsh-quota-hint').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
 
     auth().isMember = true
     await nextTick()
     expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
-    expect(wrapper.get('.dsh-quota-hint--member').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
+    expect(wrapper.get('.dsh-quota-hint').text()).toBe(i18n.global.t('dsh.wizard.memberStatus'))
   })
 
   it('tells the reader when the clipboard refuses', async () => {

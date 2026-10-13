@@ -281,7 +281,7 @@ class OptionalTokenRevocationTests(unittest.TestCase):
         response = self.client.get("/optional", headers=self.headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["role"], "user")
-        self.assertEqual(response.json()["membership_tier"], "free")
+        self.assertEqual(response.json()["membership_tier"], "member")
         response = self.client.get("/api/ui-library/engagement", headers=self.headers)
         self.assertTrue(response.json()["items"][0]["liked"])
 

@@ -58,6 +58,7 @@ it('covers every public section in both languages and removes disabled sections'
     expect(onboardingZh.steps).toHaveProperty(`${step.id}.body`)
     expect(onboardingEn.steps).toHaveProperty(`${step.id}.title`)
     expect(step.route).not.toContain('/monitor')
+    expect(step.route).not.toContain('/membership')
     expect(step.route).not.toContain('/subscriptions')
     expect(step.targets.length).toBeGreaterThan(0)
   }

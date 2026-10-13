@@ -214,12 +214,12 @@ func TestEnforceDailyPacingQuotaByTier(t *testing.T) {
 		wantLimit int64
 		wantTier  string
 	}{
-		{"free", authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}, 2, authn.TierFree},
+		{"free", authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}, 4, authn.TierMember},
 		{"member", authn.Identity{UserID: 8, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &future}, 4, authn.TierMember},
-		// member 已过期回落 free 档（resolve_effective_tier 语义）。
-		{"member-expired", authn.Identity{UserID: 10, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, 2, authn.TierFree},
-		// 未知档 fail-closed 按 free。
-		{"tier-unknown", authn.Identity{UserID: 11, Role: "user", MembershipTier: "gold"}, 2, authn.TierFree},
+		// Historical expiry does not reduce account quotas.
+		{"member-expired", authn.Identity{UserID: 10, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, 4, authn.TierMember},
+		// Authenticated accounts do not depend on billing metadata.
+		{"tier-unknown", authn.Identity{UserID: 11, Role: "user", MembershipTier: "gold"}, 4, authn.TierMember},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -272,12 +272,12 @@ func TestEnforceMonthlyQuotaByTier(t *testing.T) {
 		wantLimit int64
 		wantTier  string
 	}{
-		{"free", authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}, 3, authn.TierFree},
+		{"free", authn.Identity{UserID: 7, Role: "user", MembershipTier: authn.TierFree}, 5, authn.TierMember},
 		{"member", authn.Identity{UserID: 8, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &future}, 5, authn.TierMember},
-		// member 已过期回落 free 档（resolve_effective_tier 语义）。
-		{"member-expired", authn.Identity{UserID: 10, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, 3, authn.TierFree},
-		// 未知档 fail-closed 按 free。
-		{"tier-unknown", authn.Identity{UserID: 11, Role: "user", MembershipTier: "gold"}, 3, authn.TierFree},
+		// Historical expiry does not reduce account quotas.
+		{"member-expired", authn.Identity{UserID: 10, Role: "user", MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, 5, authn.TierMember},
+		// Authenticated accounts do not depend on billing metadata.
+		{"tier-unknown", authn.Identity{UserID: 11, Role: "user", MembershipTier: "gold"}, 5, authn.TierMember},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

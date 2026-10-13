@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { CalendarDays, Crown, Library, MessageSquareText } from 'lucide-vue-next'
+import { CalendarDays, Library, MessageSquareText } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useLiveCallCount } from '@/composables/useLiveCallCount'
 import { MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
@@ -48,7 +47,7 @@ const mcpCalls = useLiveCallCount('mcp_total_calls', desktop)
         <p class="agent-page-description">{{ t('agentSetup.mcp.description') }}</p>
         <section v-if="desktop" class="mcp-stats agent-page-stats" :aria-label="t('mcp.stats.label')">
           <div class="mcp-stat"><Library aria-hidden="true" /><span>{{ t('mcp.stats.calls') }}</span><strong><RollingNumber v-if="mcpCalls !== null" :value="mcpCalls" grouping /><template v-else>—</template></strong></div>
-          <div class="mcp-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
+          <div class="mcp-stat"><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
           <div class="mcp-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling30d) }}</strong></div>
         </section>
       </header>
@@ -59,13 +58,6 @@ const mcpCalls = useLiveCallCount('mcp_total_calls', desktop)
         <div class="agent-page-side">
           <McpEndpointCard />
           <McpManualSetup />
-          <!-- 额度卡只给已登录的 Free：网站不向游客推介匿名额度（按 IP 的匿名桶只是插件开箱即用的默认体验）。 -->
-          <section v-if="auth.isLoggedIn && !auth.isMember" class="agent-card agent-quota">
-            <p class="agent-card-text">{{ t('mcp.quota.free') }}</p>
-            <div class="agent-card-actions">
-              <RouterLink to="/membership" class="agent-btn agent-btn--acid">{{ t('mcp.quota.vipCta') }}</RouterLink>
-            </div>
-          </section>
         </div>
         <section class="agent-card agent-examples" :aria-labelledby="examplesTitleId">
           <h2 :id="examplesTitleId" class="agent-card-title"><MessageSquareText class="agent-card-icon" aria-hidden="true" />{{ t('agentSetup.mcp.examples.title') }}</h2>

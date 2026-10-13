@@ -133,12 +133,13 @@ describe('McpConnectView', () => {
     expect(auth().initFromStorage).toHaveBeenCalledOnce()
   })
 
-  it('prompts a free reader to open VIP for a higher quota', async () => {
+  it('keeps the free reader setup free of purchase prompts', async () => {
     setAuth('authenticated')
     const wrapper = await mountView()
 
-    expect(wrapper.get('.agent-quota').text()).toContain('当前 Free 的 MCP/API 共用额度：每 24 小时最多 10 次')
-    expect(wrapper.get('.agent-quota a[href="/membership"]').text()).toBe('开通 vip')
+    expect(wrapper.find('.agent-quota').exists()).toBe(false)
+    expect(wrapper.find('a[href="/membership"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/VIP|vip/)
   })
 
   it('hides the quota prompt from members', async () => {
@@ -160,7 +161,7 @@ describe('McpConnectView on desktop', () => {
   beforeEach(() => { viewport.desktop = true })
   afterEach(() => { viewport.desktop = false })
 
-  it('heads the page with the live call count and the VIP quota', async () => {
+  it('heads the page with the live call count and the free account quota', async () => {
     const wrapper = await mountView()
     const stats = wrapper.findAll('.mcp-stats .mcp-stat')
 

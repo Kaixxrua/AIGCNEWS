@@ -202,7 +202,6 @@ watch(() => props.modelValue, async open => {
                   <div><dt class="text-xs text-stone-500">{{ t('auth.emailVerified') }}</dt><dd class="mt-1">{{ currentUser?.email_verified === true ? t('auth.verified') : t('auth.unverified') }}</dd></div>
                   <div><dt class="text-xs text-stone-500">{{ t('auth.registeredAt') }}</dt><dd class="mt-1">{{ registeredAt }}</dd></div>
                   <div><dt class="text-xs text-stone-500">{{ t('auth.role') }}</dt><dd class="mt-1">{{ currentUser?.role || t('auth.notAvailable') }}</dd></div>
-                  <div><dt class="text-xs text-stone-500">{{ t('auth.membership') }}</dt><dd class="mt-1">{{ currentUser?.membership_tier === 'member' ? t('auth.memberMembership') : t('auth.freeMembership') }}</dd></div>
                 </dl>
               </section>
 

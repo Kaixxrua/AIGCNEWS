@@ -73,7 +73,7 @@ const zhCN: AgentSetupMessages = {
       kicker: '一键接入',
       oauth: '浏览器授权',
       noToken: '不用复制 Token',
-      description: '接好后，你的 Agent 可以直接检索本站收录的 AI 项目、开源软件、论文和 UI 模板，还能读你的个人收藏（vip 还能读追踪结果）。',
+      description: '接好后，你的 Agent 可以直接检索本站收录的 AI 项目、开源软件、论文和 UI 模板，还能读你的个人收藏和个人追踪结果。',
       lede: '点一下复制配置提示词，粘给你正在用的 AI 编程 Agent（Claude Code、Codex、Cursor、VS Code 等）。它会自己把 AIGC Radar 加进客户端；浏览器弹出授权页时，你点「同意」就好。',
       steps: {
         copy: { title: '复制提示词', body: '不含 Token，游客也能复制' },
@@ -99,7 +99,7 @@ const zhCN: AgentSetupMessages = {
         note: 'Token 只写进你复制的配置，页面上不显示；每次生成都是新的一枚，可以和已有的同时使用。',
       },
       tier: {
-        member: '当前档位 vip：每 24 小时 {daily} 次、每 30 天 {monthly} 次。',
+        member: '账号免费额度：每 24 小时 {daily} 次、每 30 天 {monthly} 次。',
         free: '当前档位 Free：每 24 小时 {daily} 次、每 30 天 {monthly} 次。',
       },
       examples: {
@@ -143,7 +143,7 @@ const enUS: AgentSetupMessages = {
       kicker: 'One-click setup',
       oauth: 'Browser sign-in',
       noToken: 'No token to copy',
-      description: 'Once connected, your Agent can search the AI projects, open-source software, papers and UI templates collected here, and read your saved items (vip members also get their tracking results).',
+      description: 'Once connected, your Agent can search the AI projects, open-source software, papers and UI templates collected here, and read your saved items and personal tracking results.',
       lede: 'Copy the setup prompt and paste it to the AI coding agent you already use (Claude Code, Codex, Cursor, VS Code and others). It adds AIGC Radar to its client by itself; when the authorization page opens in your browser, click Allow.',
       steps: {
         copy: { title: 'Copy the prompt', body: 'It holds no token, so anyone can copy it' },
@@ -169,7 +169,7 @@ const enUS: AgentSetupMessages = {
         note: 'The token only goes into the configuration you copy and never shows on the page. Each one you generate is new and works alongside the others.',
       },
       tier: {
-        member: 'Your tier: vip, {daily} calls per 24 hours and {monthly} per 30 days.',
+        member: 'Free account quota: {daily} calls per 24 hours and {monthly} per 30 days.',
         free: 'Your tier: Free, {daily} calls per 24 hours and {monthly} per 30 days.',
       },
       examples: {

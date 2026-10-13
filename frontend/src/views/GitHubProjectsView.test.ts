@@ -536,17 +536,15 @@ describe('GitHubProjectsView dialog orchestration', () => {
     expect(wrapper.find('.projects-home-btn').exists()).toBe(false)
   })
 
-  it('shows free users the upsell copy with a VIP link to the membership page', async () => {
+  it('keeps cached limited quota visible without a purchase link', async () => {
     controller().websiteQuota.value = { unlimited: false, limit: 3, used: 1, remaining: 2, window_seconds: 86400, reset_at: null }
     const wrapper = await mountView()
     await switchToWebsiteSource(wrapper)
 
     const quota = wrapper.find('.projects-website-add__quota')
-    expect(quota.text()).toContain('projects.websiteQuotaFreeUpsell')
-    const vipLink = quota.find('a.projects-website-add__vip')
-    expect(vipLink.exists()).toBe(true)
-    expect(vipLink.text()).toBe('VIP')
-    expect(vipLink.attributes('href')).toBe('/membership')
+    expect(quota.text()).toContain('projects.websiteQuotaRemaining')
+    expect(quota.find('a.projects-website-add__vip').exists()).toBe(false)
+    expect(quota.text()).not.toContain('VIP')
   })
 
   it('shows members the unlimited copy without the VIP upsell link', async () => {

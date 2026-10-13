@@ -8,7 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from backend.app.core.config import settings
-from backend.app.services.membership.tiers import resolve_effective_tier
+from backend.app.domain.membership import resolve_access_tier
 
 PERIOD_HOURS = {'daily': 24, 'weekly': 168, 'monthly': 720}
 
@@ -111,6 +111,6 @@ def quota_policy(user: dict[str, Any] | None, now: datetime | None = None) -> di
     current = now or datetime.now(timezone.utc)
     local = current.astimezone(ZoneInfo('Asia/Shanghai'))
     midnight = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    member = bool(user and resolve_effective_tier(user.get('membership_tier'), user.get('membership_expires_at'), now=current) == 'member')
+    member = resolve_access_tier(user) == 'member'
     return {'limit': None if member else 5, 'usage_date': local.date(),
             'resets_at': midnight.isoformat(), 'login_required': user is None}

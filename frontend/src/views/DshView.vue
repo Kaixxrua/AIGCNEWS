@@ -3,7 +3,7 @@ import { onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
-import { Box, CalendarDays, Crown, Github, Wrench } from 'lucide-vue-next'
+import { Box, CalendarDays, Github, Wrench } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useDshPluginCalls } from '@/composables/useDshPluginCalls'
 import { useDshSetupController } from '@/composables/useDshSetupController'
@@ -53,7 +53,7 @@ onBeforeUnmount(controller.dispose)
         <section v-if="desktop" class="dsh-stats agent-page-stats" :aria-label="t('dsh.stats.label')">
           <div class="dsh-stat"><Box aria-hidden="true" /><span>{{ t('dsh.stats.calls') }}</span><strong><RollingNumber v-if="dshCalls !== null" :value="dshCalls" grouping /><template v-else>—</template></strong></div>
           <div class="dsh-stat"><Wrench aria-hidden="true" /><span>{{ t('dsh.stats.methods') }}</span><strong>{{ DSH_PLUGIN_INSTALL_METHODS.length }}</strong></div>
-          <div class="dsh-stat"><Crown aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
+          <div class="dsh-stat"><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
           <div class="dsh-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling30d) }}</strong></div>
         </section>
       </header>

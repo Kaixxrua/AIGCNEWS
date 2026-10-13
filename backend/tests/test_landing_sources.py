@@ -77,7 +77,7 @@ class BuildLandingRowsTests(unittest.TestCase):
 
 
 class CrossLanguageLiteralTests(unittest.TestCase):
-    """429 文案里出现的 (落地页, ref) 必须全在白名单内，且两侧各用满三种变体。"""
+    """匿名限额引导登录；账号限额不再引导购买，历史来源仍可统计。"""
 
     def _assert_links(self, relative_path: str, prefix: str) -> None:
         links = _tagged_links(relative_path)
@@ -85,9 +85,6 @@ class CrossLanguageLiteralTests(unittest.TestCase):
             links,
             {
                 ("/mcp", f"{prefix}-429-anon"),
-                ("/membership", f"{prefix}-429-anon"),
-                ("/membership", f"{prefix}-429-daily"),
-                ("/membership", f"{prefix}-429-monthly"),
             },
         )
         for path, ref in links:

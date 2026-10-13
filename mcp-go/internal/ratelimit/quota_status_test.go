@@ -48,12 +48,12 @@ func TestQuotaStatusReadsWithoutConsuming(t *testing.T) {
 		t.Fatal("QuotaStatus must not refresh window TTLs")
 	}
 
-	if status.Tier != authn.TierFree || status.Exempt || !status.UsageKnown {
+	if status.Tier != authn.TierMember || status.Exempt || !status.UsageKnown {
 		t.Fatalf("status = %+v", status)
 	}
 	want := []QuotaWindow{
-		{Scope: "daily", WindowSeconds: QuotaDailyWindowSeconds, Limit: 10, Used: 3, ResetsIn: QuotaDailyWindowSeconds - 3600},
-		{Scope: "monthly", WindowSeconds: QuotaMonthlyWindowSeconds, Limit: 200, Used: 3, ResetsIn: QuotaMonthlyWindowSeconds - 3600},
+		{Scope: "daily", WindowSeconds: QuotaDailyWindowSeconds, Limit: 200, Used: 3, ResetsIn: QuotaDailyWindowSeconds - 3600},
+		{Scope: "monthly", WindowSeconds: QuotaMonthlyWindowSeconds, Limit: 4000, Used: 3, ResetsIn: QuotaMonthlyWindowSeconds - 3600},
 	}
 	if !slices.Equal(status.Windows, want) {
 		t.Fatalf("windows = %+v, want %+v", status.Windows, want)
@@ -73,8 +73,8 @@ func TestQuotaStatusUsesEffectiveTier(t *testing.T) {
 	}{
 		{"member", authn.Identity{UserID: 7, MembershipTier: authn.TierMember, MembershipExpiresAt: &future}, authn.TierMember, 200, 4000},
 		{"lifetime-member", authn.Identity{UserID: 7, MembershipTier: authn.TierMember}, authn.TierMember, 200, 4000},
-		{"expired-member", authn.Identity{UserID: 7, MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, authn.TierFree, 10, 200},
-		{"unknown-tier", authn.Identity{UserID: 7, MembershipTier: "gold"}, authn.TierFree, 10, 200},
+		{"expired-member", authn.Identity{UserID: 7, MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, authn.TierMember, 200, 4000},
+		{"unknown-tier", authn.Identity{UserID: 7, MembershipTier: "gold"}, authn.TierMember, 200, 4000},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -152,10 +152,10 @@ func TestQuotaStatusReportsLimitsWhenUsageUnavailable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			status := tc.limiter.QuotaStatus(context.Background(), freeUser, time.Now())
-			if status.UsageKnown || status.Tier != authn.TierFree {
+			if status.UsageKnown || status.Tier != authn.TierMember {
 				t.Fatalf("status = %+v, want limits only", status)
 			}
-			if status.Windows[0].Limit != 10 || status.Windows[1].Limit != 200 ||
+			if status.Windows[0].Limit != 200 || status.Windows[1].Limit != 4000 ||
 				status.Windows[0].Used != 0 || status.Windows[1].Used != 0 {
 				t.Fatalf("windows = %+v", status.Windows)
 			}
@@ -188,7 +188,7 @@ func TestEnforceBurstSkipsQuotaBuckets(t *testing.T) {
 	mr, rdb := newRedisPair(t)
 	limiter := NewLimiter(rdb, "", func(l *Limits) { l.AuthenticatedToolCallPerMinute = 2 })
 	ctx := context.Background()
-	if err := mr.Set(freeDailyKey, "10"); err != nil {
+	if err := mr.Set(freeDailyKey, "200"); err != nil {
 		t.Fatal(err)
 	}
 	mr.SetTTL(freeDailyKey, time.Hour)
@@ -198,8 +198,8 @@ func TestEnforceBurstSkipsQuotaBuckets(t *testing.T) {
 	if exceeded := limiter.EnforceBurst(ctx, "tools/call", freeUser, anonymousRequest()); exceeded != nil {
 		t.Fatalf("burst-only call must pass an exhausted quota, got %+v", exceeded)
 	}
-	if got, _ := mr.Get(freeDailyKey); got != "11" {
-		t.Fatalf("daily = %q, want 11 (only the counted call increments it)", got)
+	if got, _ := mr.Get(freeDailyKey); got != "201" {
+		t.Fatalf("daily = %q, want 201 (only the counted call increments it)", got)
 	}
 	if mr.Exists(freeMonthlyKey) {
 		t.Fatal("burst-only call must not touch the 30-day bucket")

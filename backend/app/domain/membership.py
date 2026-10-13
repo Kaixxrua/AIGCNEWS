@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from typing import Any
 
 MEMBERSHIP_TIER_FREE = "free"
 MEMBERSHIP_TIER_MEMBER = "member"
@@ -10,6 +12,24 @@ DEFAULT_MEMBERSHIP_TIER = MEMBERSHIP_TIER_FREE
 MEMBERSHIP_TIERS: frozenset[str] = frozenset(
     {MEMBERSHIP_TIER_FREE, MEMBERSHIP_TIER_MEMBER}
 )
+
+
+def resolve_access_tier(user: Mapping[str, Any] | None) -> str:
+    """Give every active account member-level access without changing billing history.
+
+    Callers must authenticate the account first. Anonymous and disabled identities
+    retain the public tier; this policy never changes roles, token scopes or quotas.
+    """
+    if not user or user.get("disabled"):
+        return MEMBERSHIP_TIER_FREE
+    raw_id = user.get("user_id") or user.get("id") or user.get("sub")
+    if isinstance(raw_id, bool):
+        return MEMBERSHIP_TIER_FREE
+    try:
+        account_id = int(raw_id)
+    except (TypeError, ValueError):
+        return MEMBERSHIP_TIER_FREE
+    return MEMBERSHIP_TIER_MEMBER if account_id > 0 else MEMBERSHIP_TIER_FREE
 
 
 def normalize_membership_tier(value: object) -> str:

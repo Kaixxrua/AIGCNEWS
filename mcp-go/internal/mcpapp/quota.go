@@ -64,12 +64,6 @@ func (s *QuotaService) Get(identity authn.Identity, arguments map[string]any) (a
 
 	plan := "free"
 	var expiresAt any
-	if status.Tier == authn.TierMember {
-		plan = "vip"
-		if identity.MembershipExpiresAt != nil {
-			expiresAt = identity.MembershipExpiresAt.UTC().Format(time.RFC3339)
-		}
-	}
 	windows := make([]any, 0, len(status.Windows))
 	if !status.Exempt {
 		for _, window := range status.Windows {
@@ -83,7 +77,7 @@ func (s *QuotaService) Get(identity authn.Identity, arguments map[string]any) (a
 		{Key: "windows", Value: windows},
 		{Key: "counts_toward_quota", Value: false},
 		{Key: "summary", Value: s.quotaSummary(status)},
-		{Key: "manage_url", Value: s.attributionBase() + "/membership"},
+		{Key: "manage_url", Value: s.attributionBase() + "/mcp"},
 	}, nil
 }
 
@@ -133,10 +127,7 @@ func quotaRemaining(window ratelimit.QuotaWindow) int64 {
 
 // quotaSummary 给模型一段可以直接转述的英文说明。
 func (s *QuotaService) quotaSummary(status ratelimit.QuotaStatus) string {
-	plan := "Free plan"
-	if status.Tier == authn.TierMember {
-		plan = "VIP plan"
-	}
+	plan := "Free account access"
 	if status.Exempt {
 		return plan + "; this admin account is exempt from the 24-hour and 30-day tool-call quotas. " +
 			"Only the per-minute burst limit applies."
@@ -159,11 +150,6 @@ func (s *QuotaService) quotaSummary(status ratelimit.QuotaStatus) string {
 		case quotaRemaining(daily) == 0:
 			b.WriteString(" Tool calls are paused until the 24-hour window resets.")
 		}
-	}
-	if status.Tier != authn.TierMember {
-		memberDaily, memberMonthly := s.reader.TierQuotaLimits(authn.TierMember)
-		fmt.Fprintf(&b, " VIP raises the limits to %s per 24 hours and %s per 30 days: %s/membership.",
-			groupDigits(memberDaily), groupDigits(memberMonthly), s.attributionBase())
 	}
 	b.WriteString(" Checking quota does not use any.")
 	return b.String()

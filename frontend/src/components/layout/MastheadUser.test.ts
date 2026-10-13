@@ -49,13 +49,13 @@ describe('MastheadUser', () => {
     expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('guest')
   })
 
-  it('shows the account email and free group once a free-tier user logs in', () => {
+  it('shows only the account email once a free-tier user logs in', () => {
     authBox.isLoggedIn = true
     authBox.user = { email: 'reader@example.com', membership_tier: 'free' }
     const host = mountMastheadUser()
 
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader@example.com')
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
+    expect(host.querySelector('.masthead-user__identity')).toBeNull()
   })
 
   it('prefers a non-empty username over the account email', () => {
@@ -81,7 +81,7 @@ describe('MastheadUser', () => {
     await nextTick()
     expect(host.querySelector('.user-avatar img.user-avatar__default')?.getAttribute('src')).toBe(fallback)
     expect(host.querySelector('.masthead-user__status')?.textContent).toBe('reader')
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
+    expect(host.querySelector('.masthead-user__identity')).toBeNull()
   })
 
   it('falls back to the email when the username is null, empty, or blank', () => {
@@ -96,78 +96,23 @@ describe('MastheadUser', () => {
     }
   })
 
-  it('labels member-tier accounts as vip with the lifetime suffix on the same line', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip  长期有效')
-  })
-
-  it('falls back to free when the tier field is missing', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'legacy@example.com' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
-  })
-
-  it('follows the active locale for the logged-in group label', () => {
-    setAppLocale('en-US')
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip  lifetime')
-  })
-
-  /* 到期后缀期望值用 Intl 现算，与组件同一格式化器口径，免受宿主 ICU 差异影响 */
-  const formatExpiry = (raw: string, locale: string) =>
-    new Intl.DateTimeFormat(locale, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(Date.parse(raw))
-
-  it('appends the expiry date after the vip tier on the same line', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe(`用户组：vip  ${formatExpiry('2027-01-01T15:59:59+00:00', 'zh-CN')}到期`)
-  })
-
-  it('shows the lifetime suffix for member accounts without an expiry', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip  长期有效')
-  })
-
-  it('omits the expiry suffix for free-tier accounts even if an expiry leaks through', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'reader@example.com', membership_tier: 'free', membership_expires_at: '2027-01-01T15:59:59+00:00' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：free')
-  })
-
-  it('hides the expiry suffix when the timestamp cannot be parsed', () => {
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: 'not-a-date' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe('用户组：vip')
-  })
-
-  it('renders the inline expiry in English under the en-US locale', () => {
-    setAppLocale('en-US')
-    authBox.isLoggedIn = true
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: '2027-01-01T15:59:59+00:00' }
-    const host = mountMastheadUser()
-
-    expect(host.querySelector('.masthead-user__identity')?.textContent).toBe(`Group: vip  until ${formatExpiry('2027-01-01T15:59:59+00:00', 'en-US')}`)
-
-    unmount?.()
-    authBox.user = { email: 'vip@example.com', membership_tier: 'member', membership_expires_at: null }
-    const lifetimeHost = mountMastheadUser()
-    expect(lifetimeHost.querySelector('.masthead-user__identity')?.textContent).toBe('Group: vip  lifetime')
+  it.each(['zh-CN', 'en-US'] as const)('hides billing tier and expiry for all signed-in accounts in %s', (locale) => {
+    setAppLocale(locale)
+    for (const billing of [
+      {},
+      { membership_tier: 'free' as const },
+      { membership_tier: 'member' as const, membership_expires_at: null },
+      { membership_tier: 'member' as const, membership_expires_at: '2020-01-01T00:00:00Z' },
+      { membership_tier: 'member' as const, membership_expires_at: '2030-01-01T00:00:00Z' },
+    ]) {
+      authBox.isLoggedIn = true
+      authBox.user = { email: 'reader@example.com', username: '读者', ...billing }
+      const host = mountMastheadUser()
+      expect(host.querySelector('.masthead-user__status')?.textContent).toBe('读者')
+      expect(host.querySelector('.masthead-user__identity')).toBeNull()
+      expect(host.textContent).not.toMatch(/VIP|vip|Group:|用户组|到期|expiry|lifetime/)
+      unmount?.()
+      unmount = undefined
+    }
   })
 })

@@ -67,11 +67,11 @@ func TestAudienceFollowsEffectiveTier(t *testing.T) {
 		want     string
 	}{
 		{"anonymous", anonymous, AudienceAnonymous},
-		{"free", freeUser, AudienceFree},
+		{"free", freeUser, AudienceMember},
 		{"member without expiry", member, AudienceMember},
 		{"member active", authn.Identity{UserID: 3, MembershipTier: authn.TierMember, MembershipExpiresAt: &future}, AudienceMember},
-		{"member expired", authn.Identity{UserID: 3, MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, AudienceFree},
-		{"unknown tier", authn.Identity{UserID: 3, MembershipTier: "gold"}, AudienceFree},
+		{"member expired", authn.Identity{UserID: 3, MembershipTier: authn.TierMember, MembershipExpiresAt: &past}, AudienceMember},
+		{"unknown tier", authn.Identity{UserID: 3, MembershipTier: "gold"}, AudienceMember},
 	}
 	for _, tc := range cases {
 		if got := Audience(tc.identity, fixedNow); got != tc.want {
@@ -130,8 +130,7 @@ func TestRecordSplitsToolCallsByAudience(t *testing.T) {
 	want := map[string]string{
 		"anonymous|search_papers": "2",
 		"anonymous|get_top_items": "1",
-		"free|search_papers":      "1",
-		"member|search_papers":    "1",
+		"member|search_papers":    "2",
 		"member|__unknown__":      "1",
 	}
 	fields, _ := mr.HKeys(calls)
@@ -144,7 +143,7 @@ func TestRecordSplitsToolCallsByAudience(t *testing.T) {
 		}
 	}
 	// 匿名按 IP 去重（两个 IP），登录按用户去重（同一会员换 IP 仍是 1）。
-	for audience, want := range map[string]int64{AudienceAnonymous: 2, AudienceFree: 1, AudienceMember: 1} {
+	for audience, want := range map[string]int64{AudienceAnonymous: 2, AudienceFree: 0, AudienceMember: 2} {
 		if got := pfcount(t, client, "mcpusage:"+fixedDay+":clients:"+audience); got != want {
 			t.Errorf("clients:%s = %d, want %d", audience, got, want)
 		}
@@ -158,8 +157,8 @@ func TestRecordOtherMethodsOnlyCountDistinctClients(t *testing.T) {
 	recorder, mr, client := newTestRecorder(t)
 	recorder.Record(context.Background(), Event{Identity: freeUser, Method: "tools/list"})
 	recorder.Record(context.Background(), Event{Identity: freeUser, Method: "notifications/initialized"})
-	if got := pfcount(t, client, "mcpusage:"+fixedDay+":clients:free"); got != 1 {
-		t.Errorf("clients:free = %d", got)
+	if got := pfcount(t, client, "mcpusage:"+fixedDay+":clients:member"); got != 1 {
+		t.Errorf("clients:member = %d", got)
 	}
 	for _, suffix := range []string{"calls", "limited", "client_names"} {
 		if mr.Exists("mcpusage:" + fixedDay + ":" + suffix) {
@@ -193,7 +192,7 @@ func TestRecordLimitedByKindAndNotAsCall(t *testing.T) {
 	for field, count := range map[string]string{
 		"anonymous|daily": "1",
 		"anonymous|burst": "1",
-		"free|monthly":    "1",
+		"member|monthly":  "1",
 		"member|daily":    "1",
 	} {
 		if got := mr.HGet(limited, field); got != count {
@@ -219,17 +218,16 @@ func TestRecordClientNamesWithDistinctClients(t *testing.T) {
 
 	names := "mcpusage:" + fixedDay + ":client_names"
 	for field, count := range map[string]string{
-		"free|claude code":      "2",
-		"member|claude code":    "1",
+		"member|claude code":    "3",
 		"anonymous|__unknown__": "1",
 	} {
 		if got := mr.HGet(names, field); got != count {
 			t.Errorf("client_names[%s] = %q, want %s", field, got, count)
 		}
 	}
-	// 同一用户连了两次，名字下的去重客户端仍是 1。
-	if got := pfcount(t, client, "mcpusage:"+fixedDay+":name_clients:free|claude code"); got != 1 {
-		t.Errorf("name_clients free|claude code = %d", got)
+	// 三次连接来自两个账号，统一账号档位下仍按用户去重。
+	if got := pfcount(t, client, "mcpusage:"+fixedDay+":name_clients:member|claude code"); got != 2 {
+		t.Errorf("name_clients member|claude code = %d", got)
 	}
 }
 
@@ -247,20 +245,18 @@ func TestClientNameCapFoldsNewNamesIntoOther(t *testing.T) {
 	if got := mr.HGet(names, "member|late-comer"); got != "" {
 		t.Errorf("name past the cap must not get its own field, got %q", got)
 	}
-	if got := mr.HGet(names, "member|__other__"); got != "1" {
+	if got := mr.HGet(names, "member|__other__"); got != "2" {
 		t.Errorf("member|__other__ = %q", got)
 	}
-	if got := mr.HGet(names, "free|__other__"); got != "1" {
-		t.Errorf("free|__other__ = %q", got)
-	}
+
 	// 上限前已有的名字照常累加。
-	if got := mr.HGet(names, "free|client-00"); got != "2" {
-		t.Errorf("free|client-00 = %q", got)
+	if got := mr.HGet(names, "member|client-00"); got != "2" {
+		t.Errorf("member|client-00 = %q", got)
 	}
-	if fields, _ := mr.HKeys(names); len(fields) != MaxClientNames+2 {
+	if fields, _ := mr.HKeys(names); len(fields) != MaxClientNames+1 {
 		t.Errorf("client_names has %d fields", len(fields))
 	}
-	if got := pfcount(t, client, "mcpusage:"+fixedDay+":name_clients:member|__other__"); got != 1 {
+	if got := pfcount(t, client, "mcpusage:"+fixedDay+":name_clients:member|__other__"); got != 2 {
 		t.Errorf("name_clients member|__other__ = %d", got)
 	}
 	if mr.Exists("mcpusage:" + fixedDay + ":name_clients:member|late-comer") {
@@ -329,7 +325,7 @@ func TestSinceKeepsFirstDay(t *testing.T) {
 	if got, _ := mr.Get("mcpusage:since"); got != fixedDay {
 		t.Errorf("since = %q, want %s", got, fixedDay)
 	}
-	if !mr.Exists("mcpusage:2026-10-07:clients:free") {
+	if !mr.Exists("mcpusage:2026-10-07:clients:member") {
 		t.Error("second day key missing")
 	}
 }

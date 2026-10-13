@@ -376,8 +376,7 @@ func TestResponseWrite(t *testing.T) {
 	}
 }
 
-// EffectiveTier 对齐 tiers.resolve_effective_tier：未知档 fail-closed 归 free，
-// member 到期（含恰在边界）回落 free。
+// Active authenticated accounts keep full access regardless of historical billing tier.
 func TestEffectiveTier(t *testing.T) {
 	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
 	past := now.Add(-time.Second)
@@ -386,14 +385,15 @@ func TestEffectiveTier(t *testing.T) {
 		identity Identity
 		want     string
 	}{
-		"anonymous":          {Identity{}, TierFree},
-		"unknown-tier":       {Identity{MembershipTier: "pro"}, TierFree},
-		"empty-tier":         {Identity{MembershipTier: ""}, TierFree},
-		"free":               {Identity{MembershipTier: "free"}, TierFree},
-		"member-no-expiry":   {Identity{MembershipTier: "member"}, TierMember},
-		"member-future":      {Identity{MembershipTier: "member", MembershipExpiresAt: &future}, TierMember},
-		"member-expired":     {Identity{MembershipTier: "member", MembershipExpiresAt: &past}, TierFree},
-		"member-at-boundary": {Identity{MembershipTier: "member", MembershipExpiresAt: &now}, TierFree},
+		"anonymous":               {Identity{}, TierFree},
+		"anonymous-claims-member": {Identity{MembershipTier: TierMember}, TierFree},
+		"unknown-tier":            {Identity{UserID: 7, MembershipTier: "pro"}, TierMember},
+		"empty-tier":              {Identity{UserID: 7, MembershipTier: ""}, TierMember},
+		"free":                    {Identity{UserID: 7, MembershipTier: "free"}, TierMember},
+		"member-no-expiry":        {Identity{UserID: 7, MembershipTier: "member"}, TierMember},
+		"member-future":           {Identity{UserID: 7, MembershipTier: "member", MembershipExpiresAt: &future}, TierMember},
+		"member-expired":          {Identity{UserID: 7, MembershipTier: "member", MembershipExpiresAt: &past}, TierMember},
+		"member-at-boundary":      {Identity{UserID: 7, MembershipTier: "member", MembershipExpiresAt: &now}, TierMember},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := tc.identity.EffectiveTier(now); got != tc.want {

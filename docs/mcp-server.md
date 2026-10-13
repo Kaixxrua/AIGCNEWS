@@ -54,8 +54,8 @@ AIGC Radar 是 AIGCNEWS 面向 Agent 的旗舰数据接口（MCP `serverInfo.nam
 | 工具 | 用途 |
 | --- | --- |
 | `search_my_project_favorites` | 检索当前认证用户的个人项目收藏（需 Bearer Token） |
-| `get_my_tracking` | 读当前认证用户的追踪规则与近 N 天追踪简报里命中的条目（需 Bearer Token 与 `tracking:read` scope；VIP 会员权益，免费账号得到升级提示） |
-| `get_my_quota` | 查当前认证用户的档位（`free` / `vip`）与 24 小时、30 天窗口里剩余的工具调用次数和重置时间（需 Bearer Token，不要求 scope）；不计配额，额度用尽时也能查。接入提示词让 Agent 接好后先调它确认接通 |
+| `get_my_tracking` | 读当前认证用户的追踪规则与近 N 天追踪简报里命中的条目（需 Bearer Token 与 `tracking:read` scope；所有有效登录账号免费使用） |
+| `get_my_quota` | 查当前认证用户的免费账号额度与 24 小时、30 天窗口里剩余的工具调用次数和重置时间（需 Bearer Token，不要求 scope）；不计配额，额度用尽时也能查。接入提示词让 Agent 接好后先调它确认接通 |
 
 输入按发布的 JSON Schema 严格校验；日期参数必须是真实的 `YYYY-MM-DD` 日历日期。
 项目搜索使用一致的关键词、排序和分页语义；结果通过 `result_origin` 标记来源（本地目录或
@@ -196,7 +196,7 @@ MCP 有两个相互独立的平面：网站配置与站外运行时。
 ### MCP 运行平面
 
 - 没有 `Authorization` 头：请求按 anonymous/guest 处理，公开工具、resources 与 prompts 继续可用，使用游客/IP 配额；不会投影为某个 Free 账号。
-- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、实时会员档位与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）、`get_my_tracking`（scope `tracking:read`，调用时再按实时会员档位放行）与 `get_my_quota`（不要求 scope）。网站 `/mcp`、DSH 向导与一次性安装码签发的 Token 默认带这两个只读 scope。
+- 携带有效 `Authorization: Bearer <MCP access token>`：按 Token 所属用户、有效账号状态与 scope 鉴权，使用账号配额并解锁私有工具 `search_my_project_favorites`（scope `projects:favorites:read`）、`get_my_tracking`（scope `tracking:read`）与 `get_my_quota`（不要求 scope）。网站 `/mcp`、DSH 向导与一次性安装码签发的 Token 默认带这两个只读 scope。
 - 只要显式提供了凭证但凭证为非 Bearer、格式错误、未知、过期、已撤销、已删除、所属用户已禁用或 scopes JSON 无效，均在 JSON-RPC 解析前返回 HTTP 401，并带 `WWW-Authenticate: Bearer`；绝不降级为游客，也不消耗游客配额。
 - 认证顺序固定为：方法校验 → Bearer 认证 → JSON-RPC 解析 → 限流 → 分派。MCP access token 由站内账号体系签发与管理，与登录 JWT 相互独立。
 
@@ -244,19 +244,17 @@ npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` �
 | 匿名（按客户端 IP，取可信代理 X-Forwarded-For 首跳） | 60 次/分 | 30 次/分 |
 | 认证（按用户 id） | 240 次/分 | 120 次/分 |
 
-只有 `tools/call` 继续进入商业调用额度。额度窗口从该身份首次调用起计时，不按自然日或自然月重置：
+只有 `tools/call` 继续进入账号调用额度。额度窗口从该身份首次调用起计时，不按自然日或自然月重置：
 
 | 档位 | 身份分桶 | 固定 24 小时窗口 | 滚动 30 天窗口 |
 | --- | --- | ---: | ---: |
 | 匿名 | 客户端 IP | 5 次 | — |
-| Free | 用户 id | 10 次 | 200 次 |
-| VIP | 用户 id | 200 次 | 4,000 次 |
+| 注册账号（免费） | 用户 id | 200 次 | 4,000 次 |
 | 管理员 | 用户 id | 豁免 | 豁免 |
 
-- 2026-10-10 起滚动 30 天额度减半（此前 Free 400 次、VIP 8,000 次），24 小时额度不变；匿名每 24 小时用满、连用 30 天（150 次）仍低于 Free 的 30 天额度（200 次）。Free 与 VIP 每个 24 小时窗口都用满时，30 天内约 300 次与 6,000 次，会先碰到滚动 30 天上限，这一层重新起约束作用。
-- 2026-10-09 起三档的 24 小时额度减半（此前匿名 10 次、Free 20 次、VIP 400 次），滚动 30 天额度不变；匿名每 24 小时用满、连用 30 天（150 次）仍低于 Free 的 30 天额度（400 次）。
-- 10-09 减半后至 10-10 前，Free 与 VIP 即使每个 24 小时窗口都用满，30 天内也用不到当时的滚动 30 天上限（约 300 次与 6,000 次），那一层只起兜底作用。
-- 2026-10-08 匿名与 Free 曾降为原来的三分之一（此前匿名 30 次；Free 60 次 + 1,200 次），VIP 不变。
+- 所有有效登录账号（含新注册、历史免费与已过期会员）统一使用原会员额度。数据库中的付费档位与到期时间保留为历史记录，不再限制访问；匿名额度不变。
+- 为兼容现有客户端与 Redis 计数键，内部 `tier` 仍使用 `member` 表示统一账号额度。`get_my_quota` 的响应字段保持不变，`plan` 固定为 `free`、`membership_expires_at` 为 `null`，`manage_url` 指向 `/mcp`；不显示 VIP 或购买提示。
+- `/membership` 和 `/membership/checkout` 转到 `/mcp`；新套餐查询和新订单创建返回 410 `membership_purchase_retired`。历史订单查询和支付回调仍走原来的认证、验签与幂等处理，不改写旧订单。
 - MCP 与程序化 REST `/api/v1/projects/search`、`/api/v1/projects/categories` 使用相同 Redis key，调用会消耗同一个共享池；网站浏览端点 `/api/projects` 不参与该额度。
 - 登录档先检查 24 小时 pacing 桶，通过后才消耗滚动 30 天桶；被短窗口拒绝的请求不会消耗长窗口额度。
 - 超限返回 HTTP 429，响应体为 JSON-RPC error（code `-32000`），并带与实际剩余窗口相符的 `Retry-After` 头；`error.data.quota_scope` 为兼容保留 `daily` / `monthly` 字面量，但用户文案使用“每 24 小时”与“滚动 30 天”。
@@ -268,7 +266,7 @@ npm/GitHub 安装的 DSH 插件不要求网站登录。插件省略 `mcpToken` �
 
 实现见 [`mcp-go/internal/usage/usage.go`](../mcp-go/internal/usage/usage.go)，读取见 [`backend/app/monitoring/mcp_daily_usage.py`](../backend/app/monitoring/mcp_daily_usage.py)。管理员在监控页「MCP 调用」分区查看，接口为 `GET /api/monitor/mcp-usage?days=1..31`（默认 14，仅管理员）。
 
-- 按北京时间计日，分匿名（未带令牌）/ 免费 / 会员（实时生效档位）三类；管理员请求与压测 UA 整体不记。
+- 按北京时间计日，保留 anonymous / free / member 三种统计键以读取历史数据；新的有效账号调用统一记入 member（账号权益），未带令牌记入 anonymous；管理员请求与压测 UA 整体不记。
 - 指标：去重客户端（HyperLogLog；登录用户按账号，匿名按「当天日期 + IP」的 SHA-256 摘要前 16 位，Redis 里不出现原始 IP；多天合计取并集，不是逐日相加）、连接次数（`initialize`）、放行的 `tools/call` 次数（按工具名，不在注册表的名字记 `__unknown__`）、429 次数（按分钟突发 / 24 小时 / 30 天分类，被拒请求不算调用）。
 - 客户端名取 `initialize` 的 `params.clientInfo.name` 并小写；空名记 `__unknown__`，含非法字符或超过 48 个字符记 `__other__`；每天最多收 64 个名字（三类合计），之后的新名字并入 `__other__`。
 - 键为 `mcpusage:{day}:*`，保留 400 天；`mcpusage:since` 记首次记录日，监控页据此不把开始统计前的日子显示成 0。写入是单次 Lua 原子执行、250 ms 超时且失败只记日志，不影响 MCP 响应；读取时 Redis 不可用返回 `available=false` 的同形零值。

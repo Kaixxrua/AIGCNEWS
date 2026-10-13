@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from backend.app.api.feature_gates import require_membership_purchase_enabled
 from backend.app.services.payments.plans import MEMBER_MONTHLY
 from backend.app.services.payments.providers.base import (
     CallbackVerificationError,
@@ -43,6 +44,21 @@ def _callback(client: TestClient, channel: str = "wechat_native"):
         content=b'{"channel":"raw"}',
         headers={"Content-Type": "application/json"},
     )
+
+
+def test_purchase_retirement_preserves_existing_orders_and_verified_callbacks(harness) -> None:  # noqa: F811
+    # Seed an order created before retirement, then restore the production gate.
+    order = _create(harness)
+    harness.app.dependency_overrides.pop(require_membership_purchase_enabled)
+    assert harness.client.get("/api/payments/orders").status_code == 200
+    assert harness.client.get(f"/api/payments/orders/{order['order_no']}").status_code == 200
+    harness.provider._verified = _verified(order)
+    assert _callback(harness.client).status_code == 200
+    expiry = harness.users.get_user_by_id(7)["membership_expires_at"]
+    assert harness.orders.rows[order["order_no"]]["status"] == "paid"
+    assert _callback(harness.client).status_code == 200
+    assert harness.users.get_user_by_id(7)["membership_expires_at"] == expiry
+    assert harness.client.post("/api/payments/orders", json={}).status_code == 410
 
 
 # ── 验签与查单 ───────────────────────────────────────────────────────────

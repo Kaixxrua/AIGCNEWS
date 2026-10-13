@@ -69,7 +69,7 @@ function createAccount(lang: Ref<UiLanguage>, ranking: Ref<Ranking>, beforeLogin
       if (status === 429) {
         pending.delete(action)
         await refresh()
-        throw new Error(zh.value ? '今日 5 次复制额度已用完，明日恢复；VIP 不限次数。' : 'Your 5 daily copies are used. Resets tomorrow; VIP has unlimited copies.')
+        throw new Error(zh.value ? '复制请求过于频繁，请稍后重试。' : 'Too many copy requests. Please retry later.')
       }
       throw new Error(zh.value ? '暂时无法确认复制额度，请重试。' : 'Could not verify your copy allowance. Please retry.')
     }
@@ -79,10 +79,10 @@ function createAccount(lang: Ref<UiLanguage>, ranking: Ref<Ranking>, beforeLogin
     return true
   }
   const quotaText = computed(() => {
-    if (!auth.isLoggedIn) return zh.value ? '登录后每天免费复制 5 次' : 'Sign in for 5 free copies per day'
+    if (!auth.isLoggedIn) return zh.value ? '登录后免费复制源码和提示词' : 'Sign in to copy source and prompts for free'
     if (quotaError.value) return zh.value ? '复制额度暂不可用，请稍后重试' : 'Copy allowance unavailable. Please retry later.'
     if (!quota.value) return zh.value ? '正在确认复制额度' : 'Checking copy allowance'
-    if (quota.value.limit === null) return zh.value ? 'VIP · 复制不限次数' : 'VIP · Unlimited copies'
+    if (quota.value.limit === null) return zh.value ? '复制不限次数' : 'Unlimited copies'
     return zh.value ? `今日剩余 ${quota.value.remaining} / 5 次 · 源码与提示词共用` : `${quota.value.remaining} / 5 copies left today · Source + prompt`
   })
   watch(() => [ranking.value, auth.userId, auth.status, auth.user?.membership_tier], () => {

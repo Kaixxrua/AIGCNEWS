@@ -1,13 +1,12 @@
 package mcpapp
 
-// tracking.go 实现 get_my_tracking（Go 独有，无 Python 参照）：vip 会员在 AI
+// tracking.go 实现 get_my_tracking（Go 独有，无 Python 参照）：登录用户在 AI
 // 客户端里读自己的「情报追踪」——追踪规则，以及最近几期每日追踪简报里的
 // 命中条目。
 //
-//   - 执行序：匿名 → 参数校验 → scope（tracking:read）→ 会员档位 → 读库 →
+//   - 执行序：匿名 → 参数校验 → scope（tracking:read）→ 读库 →
 //     投影；任何一步不通过都不读追踪数据；
-//   - 会员档位用 token 属主的实时生效档位（authn 每次请求从 users 读），
-//     试用、付费与到期回落和网站同一口径；
+//   - 所有有效登录账号免费使用；authn 每次请求仍验证账号状态与 scope；
 //   - 只读后端已生成的追踪简报（tracking_digests：每天到投递整点按启用的
 //     规则生成，条目链接与文本在生成时已清洗），不在 MCP 里重跑匹配；
 //   - 条目按期号新到旧、期内保持生成时的顺序（新到旧）；rule 过滤按规则
@@ -102,11 +101,6 @@ func (s *TrackingService) Get(identity authn.Identity, arguments map[string]any)
 			" scope. Create a new token at " + base + "/mcp."}
 	}
 	now := s.now()
-	if identity.EffectiveTier(now) != authn.TierMember {
-		return nil, ToolInputError{Message: "get_my_tracking is a vip membership benefit. Tracking results stay " +
-			"available on the website at " + base + "/subscriptions; upgrade at " + base + "/membership."}
-	}
-
 	local := now.In(trackingZone)
 	since := time.Date(local.Year(), local.Month(), local.Day()-(input.days-1), 0, 0, 0, 0, trackingZone).
 		Format(time.DateOnly)

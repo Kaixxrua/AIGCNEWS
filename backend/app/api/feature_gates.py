@@ -9,6 +9,14 @@ from __future__ import annotations
 from fastapi import HTTPException, status
 
 
+def require_membership_purchase_enabled() -> None:
+    """New purchases are retired; historical orders and callbacks stay available."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="membership_purchase_retired",
+    )
+
+
 def require_x_source_enabled() -> None:
     """X 源关闭时 404（对外与未部署该源一致）。"""
     from backend.app.core.config import settings

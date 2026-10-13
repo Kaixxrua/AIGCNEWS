@@ -85,17 +85,10 @@ describe('subscriptions navigation item', () => {
   })
 })
 
-describe('membership navigation item', () => {
-  it('exposes an ungated membership entry right before the contact item', () => {
-    const index = NAV_ITEMS.findIndex((item) => item.to === '/membership')
-    expect(index).toBeGreaterThan(-1)
-    const item = NAV_ITEMS[index]!
-    expect(item.labelKey).toBe('navigation.membership')
-    // 获客入口：匿名可见，不受特性开关 / 站点页面 / 登录 / 管理员门控
-    expect(item.featureKey).toBeUndefined()
-    expect(item.sitePageKey).toBeUndefined()
-    expect(item.requiresAuth).toBeUndefined()
-    expect(item.requiresAdmin).toBeUndefined()
-    expect(NAV_ITEMS.findIndex((entry) => entry.to === '/contact')).toBe(index + 1)
+describe('retired membership navigation', () => {
+  it('has no purchase entry while retaining MCP and contact navigation', () => {
+    expect(NAV_ITEMS.some((item) => item.to.startsWith('/membership'))).toBe(false)
+    expect(NAV_ITEMS.some((item) => item.to === '/mcp')).toBe(true)
+    expect(NAV_ITEMS.some((item) => item.to === '/contact')).toBe(true)
   })
 })

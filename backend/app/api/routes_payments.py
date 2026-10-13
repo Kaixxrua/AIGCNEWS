@@ -24,7 +24,10 @@ from backend.app.api.dependencies import (
     get_payment_providers,
     get_user_account_repository,
 )
-from backend.app.api.feature_gates import require_payments_enabled
+from backend.app.api.feature_gates import (
+    require_membership_purchase_enabled,
+    require_payments_enabled,
+)
 from backend.app.core.auth import RequireUser, extract_user_id
 from backend.app.core.client_ip import client_ip_from_request
 from backend.app.models.schema_payments import (
@@ -131,7 +134,11 @@ def _generate_order_no() -> str:
     return f"P{stamp}{secrets.token_hex(3).upper()}"
 
 
-@router.get("/payments/plans", response_model=PaymentPlansResponse)
+@router.get(
+    "/payments/plans",
+    response_model=PaymentPlansResponse,
+    dependencies=[Depends(require_membership_purchase_enabled)],
+)
 async def list_payment_plans(
     request: Request,
     providers: dict[str, PaymentProvider] = Depends(get_payment_providers),
@@ -161,7 +168,11 @@ async def list_payment_plans(
     )
 
 
-@router.post("/payments/orders", response_model=CreatePaymentOrderResponse)
+@router.post(
+    "/payments/orders",
+    response_model=CreatePaymentOrderResponse,
+    dependencies=[Depends(require_membership_purchase_enabled)],
+)
 async def create_payment_order(
     payload: CreatePaymentOrderRequest,
     request: Request,

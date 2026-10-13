@@ -70,7 +70,6 @@ func trackingResult(t *testing.T, value any) map[string]any {
 }
 
 func TestTrackingGatesRunBeforeAnyRead(t *testing.T) {
-	expired := trackingNow.Add(-time.Minute)
 	cases := []struct {
 		name     string
 		identity authn.Identity
@@ -95,20 +94,6 @@ func TestTrackingGatesRunBeforeAnyRead(t *testing.T) {
 			args:     map[string]any{},
 			want:     "This token requires the tracking:read scope. Create a new token at https://aigcnews.cn/mcp.",
 		},
-		{
-			name:     "free-account",
-			identity: authn.Identity{UserID: 7, MembershipTier: authn.TierFree, Scopes: []string{TrackingReadScope}},
-			args:     map[string]any{},
-			want: "get_my_tracking is a vip membership benefit. Tracking results stay available on the website at " +
-				"https://aigcnews.cn/subscriptions; upgrade at https://aigcnews.cn/membership.",
-		},
-		{
-			name:     "lapsed-member",
-			identity: authn.Identity{UserID: 7, MembershipTier: authn.TierMember, MembershipExpiresAt: &expired, Scopes: []string{TrackingReadScope}},
-			args:     map[string]any{},
-			want: "get_my_tracking is a vip membership benefit. Tracking results stay available on the website at " +
-				"https://aigcnews.cn/subscriptions; upgrade at https://aigcnews.cn/membership.",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,6 +107,22 @@ func TestTrackingGatesRunBeforeAnyRead(t *testing.T) {
 				t.Fatalf("gate failure read tracking %d times", reader.calls)
 			}
 		})
+	}
+}
+
+func TestTrackingFreeAndExpiredAccountsReadOnlyTheirOwnRows(t *testing.T) {
+	past := trackingNow.Add(-time.Hour)
+	for _, identity := range []authn.Identity{
+		{UserID: 7, MembershipTier: authn.TierFree, Scopes: []string{TrackingReadScope}},
+		{UserID: 7, MembershipTier: authn.TierMember, MembershipExpiresAt: &past, Scopes: []string{TrackingReadScope}},
+	} {
+		reader := &trackingReaderStub{snapshot: trackingFixture()}
+		if _, err := newTrackingTestService(reader).Get(identity, map[string]any{}); err != nil {
+			t.Fatal(err)
+		}
+		if reader.calls != 1 || reader.userID != 7 {
+			t.Fatalf("reader state=%+v", reader)
+		}
 	}
 }
 
@@ -369,7 +370,7 @@ func TestTrackingToolCallWireShape(t *testing.T) {
 
 	free := authn.Identity{UserID: 7, MembershipTier: authn.TierFree, Scopes: []string{TrackingReadScope}}
 	r = app.DispatchWithIdentity(rpc(2, "tools/call", `{"name":"get_my_tracking","arguments":{}}`), free, true)
-	if !strings.Contains(string(r.Body), `get_my_tracking is a vip membership benefit.`) || !strings.Contains(string(r.Body), `"isError":true`) {
+	if !strings.Contains(string(r.Body), `"structuredContent":{"rules":[`) || !strings.Contains(string(r.Body), `"isError":false`) {
 		t.Fatalf("free account: %s", r.Body)
 	}
 
@@ -379,7 +380,7 @@ func TestTrackingToolCallWireShape(t *testing.T) {
 		!strings.Contains(body, `"total":3`) {
 		t.Fatalf("member call: %s", body)
 	}
-	if reader.calls != 1 || reader.userID != 7 {
+	if reader.calls != 2 || reader.userID != 7 {
 		t.Fatalf("reader state=%+v", reader)
 	}
 }

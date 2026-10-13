@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BellRing, CalendarClock, Check, Crown, Plus, Radar, RefreshCw, Zap } from 'lucide-vue-next'
+import { BellRing, CalendarClock, Check, Plus, Radar, RefreshCw } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useTrackingUnreadStore } from '@/stores/trackingUnreadStore'
 import { usePersonalTracking } from '@/composables/usePersonalTracking'
@@ -84,11 +84,6 @@ async function closeDelete() {
         <div class="tracking-radar" aria-hidden="true"><span></span><span></span><span></span><i></i></div>
         <div class="tracking-hero__content">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="tracking-plan"
-              ><Crown v-if="isMember" class="h-3.5 w-3.5" />{{
-                t(isMember ? 'tracking.vipPlan' : 'tracking.freePlan')
-              }}</span
-            >
             <span class="tracking-live"
               ><i></i>{{ t(data.settings.enabled ? 'tracking.running' : 'tracking.statusPaused') }}</span
             >
@@ -109,9 +104,6 @@ async function closeDelete() {
             >
               <Plus class="h-4 w-4" aria-hidden="true" />{{ t('tracking.addRule') }}
             </button>
-            <RouterLink v-if="!isMember" to="/membership" class="tracking-button tracking-upgrade">
-              <Zap class="h-4 w-4" />{{ t('tracking.upgradeAction') }}
-            </RouterLink>
           </div>
         </div>
         <div class="tracking-stats">
@@ -156,7 +148,7 @@ async function closeDelete() {
           </div>
           <p v-if="atLimit" class="tracking-limit">
             {{ t('tracking.limitHint')
-            }}<RouterLink v-if="!isMember" to="/membership">{{ t('tracking.upgrade') }}</RouterLink>
+            }}
           </p>
           <div v-if="!data.rules.length" class="tracking-empty">
             <Radar class="h-7 w-7" /><strong>{{ t('tracking.emptyTitle') }}</strong
@@ -230,10 +222,6 @@ async function closeDelete() {
               >
             </li>
           </ul>
-          <RouterLink v-if="!isMember" to="/membership" class="tracking-button tracking-button-primary w-full"
-            ><Crown class="h-4 w-4" />{{ t('tracking.viewVip') }}</RouterLink
-          >
-          <div v-else class="tracking-member-active"><Check class="h-4 w-4" />{{ t('tracking.vipActive') }}</div>
         </aside>
       </div>
 

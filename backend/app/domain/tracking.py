@@ -11,7 +11,7 @@ from html import escape, unescape
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-from backend.app.domain.membership import resolve_effective_tier
+from backend.app.domain.membership import resolve_access_tier
 from backend.app.domain.public_content import (
     sanitize_public_resource_url,
     sanitize_public_text,
@@ -38,10 +38,7 @@ class TrackingError(Exception):
 
 
 def is_member(user: dict[str, Any], now: datetime | None = None) -> bool:
-    tier = resolve_effective_tier(
-        user.get("membership_tier"), user.get("membership_expires_at"), now=now
-    )
-    return tier == "member"
+    return resolve_access_tier(user) == "member"
 
 
 def rule_limit(user: dict[str, Any], now: datetime | None = None) -> int:

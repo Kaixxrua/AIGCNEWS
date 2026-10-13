@@ -3,7 +3,7 @@
 覆盖三处行为：
 
 - ``normalize_membership_tier`` 的 fail-closed 归一化（未知值一律 free）；
-- ``RequireUser`` 以库内 ``membership_tier`` 为准的身份透传（缺列/脏值回退 free）；
+- ``RequireUser`` 为所有有效账号授予统一访问权益，保留历史付费档位；
 - ``POST /ops/membership/grant`` 运营授予端点的权限与响应契约；
 - ``GET /auth/me`` 响应携带 ``membership_tier``。
 """
@@ -142,7 +142,7 @@ class EffectiveTierResolutionTests(unittest.TestCase):
 
 
 class RequireUserMembershipTierTests(unittest.TestCase):
-    """身份透传：membership_tier 以库内为准，缺列/脏值 fail-closed 回退 free。"""
+    """身份透传：有效登录账号统一使用 member 权益，历史付费数据不变。"""
 
     def setUp(self) -> None:
         self.repository = FakeUserAccountRepository()
@@ -168,19 +168,19 @@ class RequireUserMembershipTierTests(unittest.TestCase):
 
         self.assertEqual(self._get_tier(1), "member")
 
-    def test_missing_column_falls_back_to_free(self) -> None:
-        # 迁移未应用的热重启窗口：记录缺列（.get → None）按 free 处理
+    def test_legacy_account_without_billing_column_gets_full_access(self) -> None:
+        # 历史字段缺失不限制有效账号访问。
         self.repository.add_user({"id": 2, "role": "user"})
 
-        self.assertEqual(self._get_tier(2), "free")
+        self.assertEqual(self._get_tier(2), "member")
 
-    def test_dirty_value_falls_back_to_free(self) -> None:
+    def test_unknown_billing_tier_does_not_limit_authenticated_account(self) -> None:
         self.repository.add_user({"id": 3, "role": "user", "membership_tier": "vip"})
 
-        self.assertEqual(self._get_tier(3), "free")
+        self.assertEqual(self._get_tier(3), "member")
 
-    def test_expired_member_falls_back_to_free(self) -> None:
-        # 0048：库内 member 但到期时间已过，生效档位 fail-closed 按 free
+    def test_expired_member_retains_full_access(self) -> None:
+        # 付费记录过期不会收回现在免费开放的权益。
         past = datetime.now(timezone.utc) - timedelta(hours=1)
         self.repository.add_user(
             {
@@ -191,7 +191,7 @@ class RequireUserMembershipTierTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(self._get_tier(4), "free")
+        self.assertEqual(self._get_tier(4), "member")
 
     def test_unexpired_member_stays_member(self) -> None:
         future = datetime.now(timezone.utc) + timedelta(days=30)
@@ -551,7 +551,7 @@ class AuthMeMembershipTierTests(unittest.TestCase):
             response.json()["membership_expires_at"], future.isoformat()
         )
 
-    def test_auth_me_expired_member_reports_free(self) -> None:
+    def test_auth_me_expired_member_has_full_access(self) -> None:
         past = datetime.now(timezone.utc) - timedelta(hours=1)
         self.repository.add_user(
             {
@@ -571,9 +571,9 @@ class AuthMeMembershipTierTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["membership_tier"], "free")
+        self.assertEqual(response.json()["membership_tier"], "member")
 
-    def test_auth_me_defaults_to_free_when_column_missing(self) -> None:
+    def test_auth_me_legacy_account_has_full_access(self) -> None:
         self.repository.add_user(
             {"id": 22, "email": "plain@example.com", "role": "user"}
         )
@@ -586,7 +586,7 @@ class AuthMeMembershipTierTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["membership_tier"], "free")
+        self.assertEqual(response.json()["membership_tier"], "member")
 
 
 if __name__ == "__main__":

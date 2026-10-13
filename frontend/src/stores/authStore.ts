@@ -65,14 +65,8 @@ export const useAuthStore = defineStore('auth', () => {
   const authRevision = ref(0)
   const isLoggedIn = computed(() => status.value === 'authenticated')
   const isAdmin = computed(() => status.value === 'authenticated' && user.value?.role === 'admin')
-  const isMember = computed(() => {
-    if (status.value !== 'authenticated' || user.value?.membership_tier !== 'member') return false
-    const expiry = user.value.membership_expires_at
-    if (expiry == null || expiry.trim() === '') return true
-    const timestamp = Date.parse(expiry)
-    // 与后端 resolve_effective_tier 保持 fail-open：无法解析的历史值不误伤会员。
-    return Number.isNaN(timestamp) || timestamp > Date.now()
-  })
+  // All authenticated accounts share the same free feature access.
+  const isMember = computed(() => isLoggedIn.value)
   const userId = computed(() => user.value?.user_id ?? null)
 
   const nextRevision = (): number => {

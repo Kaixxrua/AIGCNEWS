@@ -1,5 +1,5 @@
 // 限流 429 的 HTTP 投影，逐字节对齐 Python /api/v1 的限流与配额投影
-// （唯一差异是升级链接的来源标记：这里是 ref=mcp-429-*，/api/v1 是 ref=api-429-*）。
+// （唯一差异是登录链接的来源标记：这里是 ref=mcp-429-*，/api/v1 是 ref=api-429-*）。
 package ratelimit
 
 import (
@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"aigcnews/mcp-go/internal/authn"
 	"aigcnews/mcp-go/internal/jsonx"
 	"aigcnews/mcp-go/internal/wire"
 )
@@ -49,28 +48,18 @@ func (e *Exceeded) Projection(requestID any) wire.Response {
 	switch {
 	case e.QuotaScope == "daily" && e.IdentityKind == "ip":
 		message = fmt.Sprintf(
-			"已达匿名调用上限（每 24 小时 %d 次，按 IP 计）。请前往 https://aigcnews.cn/mcp?ref=mcp-429-anon 登录并创建 MCP token，获得每 24 小时与滚动 30 天配额；或前往 https://aigcnews.cn/membership?ref=mcp-429-anon 开通 VIP 享更高额度。Anonymous quota exhausted (%d calls per 24 hours per IP): sign in at https://aigcnews.cn/mcp?ref=mcp-429-anon to create an MCP token for per-24-hour and rolling-30-day quotas, or upgrade to VIP at https://aigcnews.cn/membership?ref=mcp-429-anon.",
+			"已达匿名调用上限（每 24 小时 %d 次，按 IP 计）。请前往 https://aigcnews.cn/mcp?ref=mcp-429-anon 登录并创建 MCP token，免费使用账号配额。Anonymous quota exhausted (%d calls per 24 hours per IP): sign in at https://aigcnews.cn/mcp?ref=mcp-429-anon to create an MCP token and use the free account quotas.",
 			e.Limit, e.Limit,
-		)
-	case e.QuotaScope == "daily" && e.Tier == authn.TierMember:
-		message = fmt.Sprintf(
-			"VIP 每 24 小时额度已用完（%d 次），配额窗口将于约 %d 秒后重置。VIP per-24-hour quota exhausted (%d calls); the window resets in about %d seconds.",
-			e.Limit, e.RetryAfter, e.Limit, e.RetryAfter,
 		)
 	case e.QuotaScope == "daily":
 		message = fmt.Sprintf(
-			"免费档每 24 小时额度已用完（%d 次）。请前往 https://aigcnews.cn/membership?ref=mcp-429-daily 开通 VIP，享更高的每 24 小时与滚动 30 天额度；或等待配额窗口重置（约 %d 秒后）。Free per-24-hour quota exhausted (%d calls): upgrade to VIP at https://aigcnews.cn/membership?ref=mcp-429-daily for higher per-24-hour and rolling-30-day quotas, or wait for the window to reset.",
-			e.Limit, e.RetryAfter, e.Limit,
-		)
-	case e.Tier == authn.TierMember:
-		message = fmt.Sprintf(
-			"VIP 滚动 30 天额度已用完（%d 次），配额窗口将于约 %d 秒后重置。VIP rolling-30-day quota exhausted (%d calls); the window resets in about %d seconds.",
+			"账号每 24 小时额度已用完（%d 次），配额窗口将于约 %d 秒后重置。Account per-24-hour quota exhausted (%d calls); the window resets in about %d seconds.",
 			e.Limit, e.RetryAfter, e.Limit, e.RetryAfter,
 		)
 	default:
 		message = fmt.Sprintf(
-			"免费档滚动 30 天额度已用完（%d 次）。请前往 https://aigcnews.cn/membership?ref=mcp-429-monthly 开通 VIP 享更高额度，或等待配额窗口重置（约 %d 秒后）。Free rolling-30-day quota exhausted (%d calls): upgrade to VIP at https://aigcnews.cn/membership?ref=mcp-429-monthly for a higher quota, or wait for the window to reset.",
-			e.Limit, e.RetryAfter, e.Limit,
+			"账号滚动 30 天额度已用完（%d 次），配额窗口将于约 %d 秒后重置。Account rolling-30-day quota exhausted (%d calls); the window resets in about %d seconds.",
+			e.Limit, e.RetryAfter, e.Limit, e.RetryAfter,
 		)
 	}
 	data := jsonx.Object{

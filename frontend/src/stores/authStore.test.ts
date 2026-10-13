@@ -39,6 +39,22 @@ describe('auth store bootstrap', () => {
     expect(store.user).toBeNull()
   })
 
+  it.each([
+    { membership_tier: 'free' as const },
+    { membership_tier: 'member' as const, membership_expires_at: '2020-01-01T00:00:00Z' },
+    {},
+  ])('opens former member features for every authenticated account: %j', async (billing) => {
+    localStorage.setItem('auth_token', 'saved-token')
+    mockedFetchCurrentUser.mockResolvedValue({ ...user, ...billing })
+    const store = useAuthStore()
+    expect(store.isMember).toBe(false)
+    await store.ensureInitialized()
+    expect(store.isMember).toBe(true)
+    expect(store.isAdmin).toBe(false)
+    store.invalidateSession()
+    expect(store.isMember).toBe(false)
+  })
+
   it('becomes anonymous without a stored token', async () => {
     const store = useAuthStore()
 

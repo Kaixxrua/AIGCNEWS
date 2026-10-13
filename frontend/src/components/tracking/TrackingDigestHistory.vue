@@ -2,13 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { Crown, Download, TrendingUp } from 'lucide-vue-next'
+import { Download, TrendingUp } from 'lucide-vue-next'
 import type { TrackingDigest, TrackingExportFormat } from '@/features/tracking/trackingModel'
 import TrackingResults from './TrackingResults.vue'
 
 const props = defineProps<{
   digests: TrackingDigest[]
-  // vip 可导出最近 90 天简报；免费账号在同一位置看到开通入口
+  // Retained for callers using the previous component contract.
   member?: boolean
   exporting?: TrackingExportFormat | ''
   exportError?: string
@@ -70,7 +70,7 @@ watch(
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="font-bold">{{ t('tracking.digestTitle') }}</h3>
       <div v-if="digests.length" class="tracking-digest-tools">
-        <div v-if="member" class="tracking-export" role="group" :aria-label="t('tracking.exportLabel')">
+        <div class="tracking-export" role="group" :aria-label="t('tracking.exportLabel')">
           <span class="tracking-export-label" aria-hidden="true"><Download />{{ t('tracking.exportShort') }}</span>
           <button
             v-for="format in exportFormats"
@@ -85,13 +85,6 @@ watch(
             {{ format.toUpperCase() }}
           </button>
         </div>
-        <RouterLink
-          v-else
-          to="/membership"
-          class="tracking-button tracking-export-button tracking-export-vip"
-          :title="t('tracking.exportVipHint')"
-          ><Crown aria-hidden="true" />{{ t('tracking.exportVip') }}</RouterLink
-        >
         <select v-model="issueId" class="tracking-input w-auto" :aria-label="t('tracking.selectIssue')">
           <option v-for="issue in digests" :key="issue.id" :value="issue.id">{{ issue.issue_date }}</option>
         </select>

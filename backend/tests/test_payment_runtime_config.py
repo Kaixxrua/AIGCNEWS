@@ -123,7 +123,7 @@ def harness(monkeypatch: pytest.MonkeyPatch):
     reset_payment_config_provider()
 
 
-def test_gate_hot_flips_on_panel_save_without_restart(harness) -> None:
+def test_gate_hot_flips_without_reopening_retired_purchases(harness) -> None:
     client, repo = harness
     assert client.get("/api/payments/plans").status_code == 404
 
@@ -131,14 +131,16 @@ def test_gate_hot_flips_on_panel_save_without_restart(harness) -> None:
     import asyncio
 
     asyncio.run(service.update_config({"enabled": True, "order_ttl_minutes": 30}))
-    assert client.get("/api/payments/plans").status_code == 200
+    response = client.get("/api/payments/plans")
+    assert response.status_code == 410
+    assert response.json()["detail"] == "membership_purchase_retired"
 
     asyncio.run(service.update_config({"enabled": False, "order_ttl_minutes": 30}))
     assert client.get("/api/payments/plans").status_code == 404
 
     # 删除覆盖行回落 env（本用例 env 为关）→ 立即回 404
     asyncio.run(service.update_config({"enabled": True, "order_ttl_minutes": 30}))
-    assert client.get("/api/payments/plans").status_code == 200
+    assert client.get("/api/payments/plans").status_code == 410
     asyncio.run(service.reset_config())
     assert client.get("/api/payments/plans").status_code == 404
 

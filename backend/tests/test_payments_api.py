@@ -23,6 +23,7 @@ from backend.app.api.dependencies import (
     get_payment_providers,
     get_user_account_repository,
 )
+from backend.app.api.feature_gates import require_membership_purchase_enabled
 from backend.app.api.routes_payments import router
 from backend.app.core.auth import RequireUser
 from backend.app.core.config import settings
@@ -253,6 +254,9 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Any:
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
+    # Legacy order/callback tests still exercise historical processing below.
+    # Production rejects new purchases; dedicated tests restore the real gate.
+    app.dependency_overrides[require_membership_purchase_enabled] = lambda: None
     app.dependency_overrides[RequireUser] = lambda: {"user_id": 7, "role": "user"}
     app.dependency_overrides[get_payment_order_repository] = lambda: orders
     app.dependency_overrides[get_user_account_repository] = lambda: users
@@ -285,6 +289,23 @@ def test_all_routes_404_when_payments_disabled(
         .status_code
         == 404
     )
+
+
+@pytest.mark.parametrize("signed_in", [False, True])
+def test_new_membership_purchases_are_retired(harness: Any, signed_in: bool) -> None:
+    harness.app.dependency_overrides.pop(require_membership_purchase_enabled)
+    if not signed_in:
+        harness.app.dependency_overrides.pop(RequireUser)
+    for response in (
+        harness.client.get("/api/payments/plans"),
+        harness.client.post("/api/payments/orders", json={
+            "plan_code": "member_monthly", "channel": "wechat_native",
+        }),
+    ):
+        assert response.status_code == 410
+        assert response.json() == {"detail": "membership_purchase_retired"}
+    assert harness.orders.rows == {}
+    assert harness.provider.create_calls == []
 
 
 # ── plans ────────────────────────────────────────────────────────────────
