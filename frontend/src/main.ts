@@ -1,3 +1,5 @@
+// 必须是第一条 import：分享链接的 ?style= 要赶在路由模块创建 history 之前读走（见 theme/styleLink.ts）。
+import { styleFromLink } from './theme/styleLink'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import './fonts.css'
@@ -20,8 +22,8 @@ const landingLocation = { pathname: window.location.pathname, search: window.loc
 // 漫画版内页样式只在桌面宽度下载（comic-pages.css，见 theme/desktopStyles.ts）。要赶在路由加载各页样式表之前挂上，
 // 层叠先后才不变；桌面上等它到位再挂载应用。
 const desktopStylesReady = installDesktopStyles()
-// 页面风格（漫画版/简洁版）：分享链接里的 ?style= 要在路由接管地址之前读走；简洁版等它的样式表到位再挂载。
-const appStyleReady = installAppStyle()
+// 页面风格（漫画版/简洁版）：分享链接里的 ?style= 已由第一条 import 读走；简洁版等它的样式表到位再挂载。
+const appStyleReady = installAppStyle(styleFromLink)
 const app = createApp(App)
 installI18n()
 installAppTheme()

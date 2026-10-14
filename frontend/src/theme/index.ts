@@ -54,10 +54,12 @@ export function useAppTheme() {
 
 /**
  * 启动时决定以哪一版打开：分享链接的 ?style= 优先（记下并从地址里拿掉），其次是本机记下的选择，默认漫画版。
- * 返回的 Promise 在可以挂载应用时兑现：简洁版等样式表加载完，漫画版立即兑现。须在路由接管地址之前调用。
+ * 返回的 Promise 在可以挂载应用时兑现：简洁版等样式表加载完，漫画版立即兑现。参数得在路由模块创建 history
+ * 之前读走，所以 main.ts 传入 styleLink.ts 先读到的值；不传就在这里读。
  */
-export function installAppStyle(): Promise<void> {
-  const fromLink = typeof window === 'undefined' ? null : consumeStyleParam()
+export function installAppStyle(
+  fromLink: AppStyle | null = typeof window === 'undefined' ? null : consumeStyleParam(),
+): Promise<void> {
   if (fromLink) persistAppStyle(fromLink)
   const style = fromLink ?? resolveAppStyle({ search: '' })
   currentStyle.value = style
