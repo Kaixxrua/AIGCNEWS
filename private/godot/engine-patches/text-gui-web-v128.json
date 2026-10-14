@@ -1,0 +1,6 @@
+{
+  "disabled_classes": [
+    "ImporterMesh",
+    "ImporterMeshInstance3D"
+  ]
+}

@@ -1,0 +1,26 @@
+pylibs/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local production snapshots and deployment diagnostics.
+/cn-current-*/
+/cn-current-*.json
+/cn-current-*.txt
+/cn-latest-inspect/
+/frontend-current-*/
+/frontend-release-*/
+/production-baselines/
+/release-ui-sources-*/
+/tokyo-live-check/
+/versioned-attempt-backup/
+/original-index.html
+/original-sw.js
+/*-current-manifest.json
+/deploy-inventory.json
+/mcp-go/
+
+# One-off compiled-asset patch experiments; canonical sources live in Godot.
+/scripts/patch-contact-interaction.mjs
+/scripts/patch-production-contact.mjs
+/scripts/version-contact-assets.mjs

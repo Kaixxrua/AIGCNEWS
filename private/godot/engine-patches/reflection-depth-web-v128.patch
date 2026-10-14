@@ -1,0 +1,12 @@
+diff --git a/drivers/gles3/rasterizer_scene_gles3.cpp b/drivers/gles3/rasterizer_scene_gles3.cpp
+--- a/drivers/gles3/rasterizer_scene_gles3.cpp
++++ b/drivers/gles3/rasterizer_scene_gles3.cpp
+@@ -2702,7 +2702,7 @@
+ 	glViewport(0, 0, rb->internal_size.x, rb->internal_size.y);
+ 
+ 	// If SSAO is enabled, we definitely need the depth buffer.
+-	if (ssao_enabled) {
++	if (ssao_enabled && !is_reflection_probe) {
+ 		scene_state.used_depth_texture = true;
+ 	}
+ 

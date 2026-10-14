@@ -1,0 +1,43 @@
+--- a/src/lib/libwebgl.js
++++ b/src/lib/libwebgl.js
+@@ -973,10 +973,13 @@
+     blitOffscreenFramebuffer: (context) => {
+       var gl = context.GLctx;
+ 
+-      var prevScissorTest = gl.getParameter(0xC11 /*GL_SCISSOR_TEST*/);
++      var meadowState = globalThis["MeadowFramebufferState"];
++      var prevScissorTest = meadowState && typeof meadowState["readScissor"] == "function"
++        ? meadowState["readScissor"](context) : gl.getParameter(0xC11 /*GL_SCISSOR_TEST*/);
+       if (prevScissorTest) gl.disable(0xC11 /*GL_SCISSOR_TEST*/);
+ 
+-      var prevFbo = gl.getParameter(0x8CA6 /*GL_FRAMEBUFFER_BINDING*/);
++      var prevFbo = meadowState && typeof meadowState["readFramebufferBinding"] == "function"
++        ? meadowState["readFramebufferBinding"](context) : gl.getParameter(0x8CA6 /*GL_FRAMEBUFFER_BINDING*/);
+ 
+ #if MAX_WEBGL_VERSION >= 2
+       if (gl.blitFramebuffer && !context.defaultFboForbidBlitFramebuffer) {
+@@ -1114,6 +1117,13 @@
+         GLctx: ctx
+       };
+ 
++#if OFFSCREEN_FRAMEBUFFER
++      var meadowState = globalThis["MeadowFramebufferState"];
++      if (webGLContextAttributes.renderViaOffscreenBackBuffer && meadowState && typeof meadowState["register"] == "function") {
++        meadowState["register"](context);
++      }
++#endif
++
+       // Store the created context object so that we can access the context
+       // given a canvas without having to pass the parameters again.
+       if (ctx.canvas) ctx.canvas.GLctxObject = context;
+@@ -1180,6 +1190,10 @@
+     },
+ 
+     deleteContext: (contextHandle) => {
++#if OFFSCREEN_FRAMEBUFFER
++      var meadowState = globalThis["MeadowFramebufferState"];
++      if (meadowState && typeof meadowState["release"] == "function") meadowState["release"](GL.contexts[contextHandle]);
++#endif
+       if (GL.currentContext === GL.contexts[contextHandle]) {
+         GL.currentContext = null;
+       }

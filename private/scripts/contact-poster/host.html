@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#17201b;overflow:hidden}iframe{display:block;border:0;width:100vw;height:100vh}</style></head>
+<body><iframe id="f" allow="fullscreen"></iframe><script>
+window.__statuses=[];let session='',seq=0;const f=document.getElementById('f');
+addEventListener('message',e=>{const d=e.data;if(!d||d.protocol!=='meadow-camp-presentation')return;
+ if(d.type==='bridge_ready'){session=d.session;seq=0;f.contentWindow.postMessage({protocol:'meadow-camp-presentation',version:1,type:'snapshot',session,sequence:++seq,snapshot:{mode:'demo',heroAssetId:'hero_ranger',petAssetId:'pet_deer',bossAssetId:'boss_ancient_guardian',elapsed:0,duration:0,roundId:''}},location.origin)}
+ else if(d.type==='presentation_status'){__statuses.push([Math.round(performance.now()),d.status])}});
+const q=new URLSearchParams(location.search).get('quality')||'original';
+f.src='/camp-scene/index.html?camp=1&quality='+q;
+</script></body></html>

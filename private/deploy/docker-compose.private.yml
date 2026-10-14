@@ -1,0 +1,88 @@
+# 私有部署 overlay（不随开源仓库发布）
+#
+# 由 AIGCNEWS/scripts/manage_main_stack.sh 自动探测并入：
+#   默认路径 <仓库根>/../aigcnews_private/deploy/docker-compose.private.yml
+#   可用环境变量 AIGCNEWS_PRIVATE_COMPOSE 覆盖。
+#
+# 承载开源版剥离的私有面：sub2api 外部编排网挂接、PriceAI 姊妹服务、
+# 私有 nginx server 块与主 server 私有指令的 bind-mount。
+# 本文件为宿主机专用，路径一律使用绝对路径，不做跨主机移植假设。
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+
+  backend-api:
+    networks:
+      # 附加 sub2api 编排网：模型服务直连 http://sub2api-new:8080
+      # （Anthropic SDK 自动追加 /v1/messages，base_url 不带 /v1），
+      # 避免走公网回环（gptsakura.com）三穿隧道；NO_PROXY 已同步放行该主机名
+      - sub2api
+    volumes:
+      # 生产后端固定从干净发布检出读取，避免主工作树并行 WIP 经核心 bind mount
+      # 被热重启带入运行时。发布检出当前钉在已验证的 dashboard-radar release commit
+      # （dfe7ce5，含 monitor 富化分页链路 3d83f78 与 briefing 失败补跑 517acf5）。
+      - /home/kaixxrua/aigcnews-deploy/dashboard-radar-dfe7ce5/backend:/src/backend:ro
+      # 私有源插件包（X 传输层实现）+ pylibs 依赖供给
+      # （twitter-cli 及其独占依赖，供给方式见本仓 README.md）；
+      # 只读挂载，容器内路径 /opt/aigcnews_private
+      - /home/kaixxrua/aigcnews_private:/opt/aigcnews_private:ro
+    environment:
+      # 在核心 NO_PROXY 基础上追加 sub2api-new（compose 对 environment 按键覆盖，
+      # 此处给出完整值覆盖核心文件中的同名变量）
+      - NO_PROXY=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
+      - no_proxy=127.0.0.1,localhost,::1,backend-api,aigc-backend,project-catalog-postgres,redis,redis-aigc,milvus,milvus-standalone,etcd,minio,neo4j,attu,dailyhot,sub2api-new,host.docker.internal
+      # 源插件解析路径：pylibs（twitter-cli 依赖树）> 插件包 > 镜像代码。
+      # 镜像 Dockerfile 的 ENV PYTHONPATH=/src 被此处整体覆盖，/src 必须保留
+      - PYTHONPATH=/opt/aigcnews_private/pylibs:/opt/aigcnews_private:/src
+
+  frontend-web:
+    depends_on:
+      priceai:
+        condition: service_healthy
+    volumes:
+      # 私有 nginx server 块（price.gptsakura.com / sub2api.aigcnews.cn vhost）
+      - /home/kaixxrua/aigcnews_private/deploy/nginx-private-servers.inc:/etc/nginx/conf.d/private-servers.inc:ro
+      # 主 server 内私有指令（真实客户端 IP 还原：WireGuard 回源地址白名单）
+      - /home/kaixxrua/aigcnews_private/deploy/nginx-private-server-directives.inc:/etc/nginx/conf.d/private-server-directives.inc:ro
+
+  # PriceAI 姊妹服务（独立产品，非 AIGCNEWS 核心）：仅限编排内网，
+  # 需与仓库同级检出 PriceAI 并预构建镜像（manage_main_stack.sh 为 --no-build）。
+  priceai:
+    build:
+      context: /home/kaixxrua/PriceAI
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_UMAMI_ALLOWED_DOMAINS: price.gptsakura.com
+    image: priceai-node-standalone:local
+    container_name: priceai
+    restart: unless-stopped
+    logging: *default-logging
+    init: true
+    env_file:
+      - path: /home/kaixxrua/.priceai-node.env
+        required: false
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "--header=User-Agent: PriceAI-Docker-Healthcheck", "http://127.0.0.1:3000/api/deployment"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  sub2api:
+    external: true
+    name: deploy_sub2api-network
