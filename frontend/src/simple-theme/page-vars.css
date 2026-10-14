@@ -1,0 +1,343 @@
+/* 各内页在自己的根节点上定义了一套局部变量：深蓝墨色、荧光绿、纸面色，以及一张张九宫格手绘框贴图
+   （comic-pages/*.css，浅色、深色各一份）。这里在同样的节点上把它们改指简洁版的配色和素框，版面尺寸一点不动。
+   选择器前缀用 html:root 而不是 :root：多出的一个元素选择器正好压过漫画版深色那份同名规则
+   （:root[data-theme='dark'] 开头，属性数相同）。取值都是随明暗切换的简洁版变量，所以深色不必再写一遍。
+   贴图里只有勾选标记、放大镜、下拉箭头这类图标（data: SVG）不在其列，照常显示。 */
+
+html:root[data-style='simple'] #app .app-shell--comic-page .agent-page {
+  --agent-cta: var(--simple-frame-accent);
+  --agent-tag: var(--simple-frame);
+  --agent-pill: var(--simple-frame);
+  --agent-term: var(--simple-frame);
+  --agent-disc-1: none;
+  --agent-disc-2: none;
+  --agent-disc-3: none;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .dsh-page {
+  --dsh-amber: var(--paper-muted);
+  --dsh-panel: var(--simple-frame);
+  --dsh-stats: var(--simple-frame);
+  --dsh-quota: var(--simple-frame);
+  --dsh-method: var(--simple-frame);
+  --dsh-button: var(--simple-frame);
+  --dsh-button-ink: var(--simple-frame-accent);
+  --dsh-disc: none;
+  --dsh-disc-mint: none;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .legal-page {
+  --legal-line: var(--rule-strong);
+  --legal-line-strong: var(--rule-strong);
+  --legal-ink: var(--ink);
+  --legal-muted: var(--ink-muted);
+  --legal-copy: var(--ink-secondary);
+  --legal-underline: var(--rule-strong);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .legal-fact,
+html:root[data-style='simple'] #app .app-shell--comic-page .legal-fact:nth-child(2),
+html:root[data-style='simple'] #app .app-shell--comic-page .legal-fact:nth-child(3) {
+  --legal-tint: var(--paper-muted);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .mcp-connect-page {
+  --mcp-amber: var(--paper-muted);
+  --mcp-f-card: var(--simple-frame);
+  --mcp-f-slip: var(--simple-frame);
+  --mcp-f-next: var(--simple-frame);
+  --mcp-disc-teal: none;
+  --mcp-disc-lavender: none;
+  --mcp-disc-sky: none;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .membership-page {
+  --mem-card: var(--simple-frame);
+  --mem-card-b: var(--simple-frame);
+  --mem-card-vip: var(--simple-frame);
+  --mem-tag: var(--simple-frame);
+  --mem-badge: var(--simple-frame);
+  --mem-toggle: var(--simple-frame);
+  --mem-chip: var(--simple-frame);
+  --mem-savings: var(--simple-frame);
+  --mem-ink: var(--ink);
+  --mem-copy: var(--ink);
+  --mem-muted: var(--ink-muted);
+  --mem-off: var(--ink-muted);
+  --mem-x: var(--ink-muted);
+  --mem-rule: var(--rule-strong);
+  --mem-dash: var(--rule-strong);
+  --mem-hint: var(--ink-secondary);
+  --mem-cta: var(--simple-accent);
+  --mem-cta-ink: var(--simple-accent-ink);
+  --mem-halo: var(--paper-raised);
+  --mem-mark: var(--simple-select);
+  --mem-same: var(--ink-muted);
+  --mem-check-same: var(--ink-muted);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .monitor-page {
+  --mon-side: var(--simple-frame);
+  --mon-sch: var(--simple-frame);
+  --mon-tsk: var(--simple-frame);
+  --mon-tag: var(--simple-frame);
+  --mon-count: var(--simple-frame);
+  --mon-job: var(--simple-frame);
+  --mon-row: var(--simple-frame);
+  --mon-btn: var(--simple-frame);
+  --mon-btn-navy: var(--simple-frame-accent);
+  --mon-btn-red: var(--simple-frame);
+  --mon-pg: var(--simple-frame);
+  --mon-pg-num: var(--simple-frame);
+  --mon-pg-on: var(--simple-frame-select);
+  --mon-pg-off: var(--simple-frame);
+  --mon-badge-run: var(--simple-frame);
+  --mon-badge-ok: var(--simple-frame);
+  --mon-badge-fail: var(--simple-frame);
+  --mon-ink: var(--ink);
+  --mon-copy: var(--ink-secondary);
+  --mon-meta: var(--ink-muted);
+  --mon-sep: var(--rule);
+  --mon-band: var(--simple-select);
+  --mon-band-soft: var(--simple-select);
+  --mon-head: var(--paper-muted);
+  --mon-strip: var(--paper-muted);
+  --mon-strip-rule: var(--rule);
+  --mon-tile: var(--paper-muted);
+  --mon-on-navy: var(--simple-accent-ink);
+  --mon-on-chip: var(--ink);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .paper-read-shell {
+  --rule: var(--simple-line);
+  --pr-f-head: var(--simple-frame);
+  --pr-f-sum: var(--simple-frame);
+  --pr-f-cta: var(--simple-frame);
+  --pr-f-btn: var(--simple-frame);
+  --pr-f-slip: var(--simple-frame);
+  --pr-f-label: var(--simple-frame);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--catalog > .project-pane,
+html:root[data-style='simple'] #app .app-shell--comic-page .project-card--catalog:nth-child(3n + 2),
+html:root[data-style='simple'] #app .app-shell--comic-page .project-card--catalog:nth-child(3n) {
+  --p-card: var(--simple-frame);
+  --p-wash: var(--paper-muted);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--catalog {
+  --p-ink: var(--ink);
+  --p-copy: var(--ink);
+  --p-muted: var(--ink-secondary);
+  --p-hint: var(--ink-secondary);
+  --p-paper: var(--paper-raised);
+  --p-face: var(--paper-raised);
+  --p-lime: var(--simple-select);
+  --p-lime-hover: var(--simple-hover);
+  --p-focus: var(--simple-accent);
+  --p-strip: var(--simple-select);
+  --p-key: var(--simple-select);
+  --p-heat: var(--heat-ink);
+  --p-rule: var(--rule-strong);
+  --p-wash: var(--paper-muted);
+  --p-read: var(--ink-muted);
+  --p-card: var(--simple-frame);
+  --p-side: var(--simple-frame);
+  --p-active: var(--simple-frame-select);
+  --p-field: var(--simple-frame);
+  --p-banner: var(--simple-frame);
+  --p-chev: var(--simple-frame);
+  --p-tag: var(--simple-frame);
+  --p-pg: var(--simple-frame);
+}
+
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) {
+  --reg-card: var(--simple-frame-paper);
+  --reg-label: var(--simple-frame);
+  --reg-otp: var(--simple-frame);
+  --reg-submit: var(--simple-frame-accent);
+  --reg-login: var(--simple-frame);
+  --reg-ink: var(--ink);
+  --reg-copy: var(--ink);
+  --reg-rule: var(--rule-strong);
+  --reg-field: var(--paper-raised);
+  --reg-hint: var(--ink-muted);
+  --reg-icon: var(--paper-muted);
+  --reg-wen: var(--simple-accent);
+  --reg-lime: var(--simple-select);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .report-shell {
+  --rep-head: var(--simple-frame);
+  --rep-sec: var(--simple-frame-paper);
+  --rep-bar: var(--simple-frame);
+  --rep-tag: var(--simple-frame);
+  --rep-tab: var(--simple-frame);
+  --rep-tab-on: var(--simple-frame-select);
+  --rep-btn: var(--simple-frame);
+  --rep-bubble: var(--simple-frame);
+  --rep-ink: var(--ink);
+  --rep-pill: var(--simple-select);
+  --rep-pill-edge: var(--paper-muted);
+  --rep-mark: var(--simple-select);
+  --rep-meta: var(--ink-muted);
+  --rep-read: var(--ink-muted);
+  --rep-read-rule: var(--rule-strong);
+  --rep-link-line: var(--rule);
+  --rep-link-tint: transparent;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .report-broadsheet .report-broadsheet__item.is-read {
+  --rep-ink: var(--ink-muted);
+  --rep-meta: var(--ink-muted);
+  --rep-link-line: var(--rule);
+  --rep-link-tint: transparent;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .subs-page {
+  --sub-hero: var(--simple-frame);
+  --sub-watch: var(--simple-frame);
+  --sub-plan: var(--simple-frame);
+  --sub-digest: var(--simple-frame);
+  --sub-auto: var(--simple-frame);
+  --sub-tag: var(--simple-frame);
+  --sub-tag-tab: var(--simple-frame);
+  --sub-live: var(--simple-frame);
+  --sub-act: var(--simple-frame);
+  --sub-chip-kind: var(--simple-frame);
+  --sub-chip: var(--simple-frame);
+  --sub-pill: var(--simple-frame);
+  --sub-unlock: var(--simple-frame);
+  --sub-ink: var(--ink);
+  --sub-copy: var(--ink-secondary);
+  --sub-meta: var(--ink-muted);
+  --sub-soft: var(--ink-muted);
+  --sub-rule: var(--rule);
+  --sub-stat-rule: var(--rule-strong);
+  --sub-tint: var(--paper-muted);
+  --sub-bar: var(--simple-select);
+  --sub-lime: var(--simple-select);
+  --sub-track: var(--paper-muted);
+  --sub-radar: var(--rule-strong);
+  --sub-navy: var(--simple-accent);
+  --sub-navy-ink: var(--simple-accent-ink);
+  --sub-field: var(--rule-strong);
+  --sub-field-ink: var(--ink-secondary);
+  --sub-field-bg: var(--paper-raised);
+  --sub-chip-ink: var(--ink);
+  --sub-chip-soft: var(--ink-muted);
+  --sub-sep: var(--rule-strong);
+  --sub-on-lime: var(--simple-select-ink);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library {
+  --ul-ink: var(--ink);
+  --ul-black: var(--ink);
+  --ul-strong: var(--ink);
+  --ul-text: var(--ink);
+  --ul-soft: var(--ink-secondary);
+  --ul-muted: var(--ink-secondary);
+  --ul-count: var(--ink-secondary);
+  --ul-rule: var(--rule-strong);
+  --ul-side-rule: var(--rule-strong);
+  --ul-paper: var(--paper-raised);
+  --ul-white: var(--paper-raised);
+  --ul-lime: var(--simple-select);
+  --ul-lime-deep: var(--simple-select);
+  --ul-navy: var(--simple-accent);
+  --ul-on-navy: var(--simple-accent-ink);
+  --ul-active: var(--simple-select);
+  --ul-dots: transparent;
+  --ul-drop: transparent;
+  --ul-f-search: var(--simple-frame);
+  --ul-f-fw: var(--simple-frame);
+  --ul-f-btn: var(--simple-frame);
+  /* 选中的素材类型是白字，压在漫画版的深蓝块上；素框中间是空的会看不见字，换成蓝底 */
+  --ul-f-kind: var(--simple-frame-accent);
+  --ul-f-side: var(--simple-frame);
+  /* 框架角标叠在缩略图上，底下深浅都有，要铺纸色 */
+  --ul-f-badge: var(--simple-frame-paper);
+  --ul-f-rank-on: var(--simple-frame-select);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__card,
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__card:nth-child(even) {
+  --ul-card-frame: var(--simple-frame);
+  --ul-card-shadow: none;
+}
+
+/* 卡片悬停时浮在缩略图上的两个复制按钮：源码铺纸色，提示词和漫画版的深蓝钮一样是白字，用蓝底 */
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__copy-source {
+  --ul-button: var(--simple-frame-paper);
+}
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__copy-prompt {
+  --ul-button: var(--simple-frame-accent);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--websites {
+  --wc-quota: var(--ink-secondary);
+  --wc-rule: var(--rule);
+  --wc-add: var(--simple-frame);
+  --wc-act-go: var(--simple-frame);
+  --wc-act-edit: var(--simple-frame);
+  --wc-act-del: var(--simple-frame);
+  --p-field: var(--simple-frame);
+  --p-active: var(--simple-frame-select);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--websites .project-card,
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--websites .project-card--tone-cyan,
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--websites .project-card--tone-purple,
+html:root[data-style='simple'] #app .app-shell--comic-page .projects-page--websites .project-card--tone-orange {
+  --wc-tag: var(--simple-frame);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) {
+  --web-ink: var(--ink);
+  --web-muted: var(--ink-secondary);
+  --web-copy: var(--ink);
+  --web-field: var(--paper-raised);
+  --web-card-lime: var(--simple-frame);
+  --web-card-cyan: var(--simple-frame);
+  --web-card-purple: var(--simple-frame);
+  --web-card-orange: var(--simple-frame);
+  --web-tag-lime: var(--simple-frame);
+  --web-tag-cyan: var(--simple-frame);
+  --web-tag-purple: var(--simple-frame);
+  --web-tag-orange: var(--simple-frame);
+  --web-tile-lime: var(--paper-muted);
+  --web-tile-cyan: var(--paper-muted);
+  --web-tile-purple: var(--paper-muted);
+  --web-tile-orange: var(--paper-muted);
+  --web-tile: var(--simple-frame);
+  --web-tab: var(--simple-frame);
+  --web-tab-on: var(--simple-frame-select);
+  --web-search: var(--simple-frame);
+  --web-select: var(--simple-frame);
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page :is(.xboard-page, .xboard-header-actions) {
+  --x-ink: var(--ink);
+  --x-navy: var(--ink);
+  --x-copy: var(--ink);
+  --x-muted: var(--ink-secondary);
+  --x-hint: var(--ink-secondary);
+  --x-face: var(--paper-raised);
+  --x-face-hover: var(--simple-hover);
+  --x-lime: var(--simple-select);
+  --x-lime-ink: var(--simple-select-ink);
+  --x-chip-on: var(--simple-select);
+  --x-check: var(--simple-select);
+  --x-card: var(--simple-frame);
+  --x-panel: var(--simple-frame-paper);
+  --x-pager: var(--simple-frame);
+  --x-ib: var(--simple-frame);
+  --x-score: var(--simple-frame);
+  --x-seg: var(--simple-frame);
+  --x-btn: var(--simple-frame);
+  --x-btn-off: var(--simple-frame);
+  --x-pg: var(--simple-frame);
+  --x-pg-off: var(--simple-frame);
+  --x-chip: var(--simple-frame);
+  --x-badge: none;
+}

@@ -1,0 +1,248 @@
+/* 简洁版配色：白纸、灰色细线、黑灰两级文字，强调色只留一种克制的蓝（选中、链接、主按钮）。漫画版的荧光绿、
+   青色网点和硬投影一律收成中性色或透明。浅色与深色各一套，选择器比 style.css、comic-theme.css 里同名的
+   :root 变量多一级属性（浅色这份再加一个 html，压过它们深色那份；简洁版深色那份又比它多一级属性）。 */
+html:root[data-style='simple'] {
+  --simple-accent: #1f62c9;
+  --simple-accent-hover: #1a52a8;
+  --simple-accent-ink: #ffffff;
+  --simple-select: #e8f0fe;
+  --simple-select-edge: #a9c3f0;
+  --simple-select-ink: #174ea6;
+  --simple-hover: #f3f4f6;
+  --simple-pop-shadow: 0 8px 28px rgba(31, 35, 40, 0.12), 0 1px 3px rgba(31, 35, 40, 0.08);
+  --simple-title-size: 22px;
+  /* 漫画版的手绘框都是九宫格贴图（border-image），这里给出同样能九宫格切的素框：1px 细线圆角框（中间透明）、
+     选中态的浅蓝底框、主按钮的蓝底框。切片宽度各页不同，图按 3 倍画、留足 1200px，任何切法都切得开。 */
+  --simple-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='none' stroke='%23d0d7de' stroke-width='3'/%3E%3C/svg%3E");
+  --simple-frame-select: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%23e8f0fe' stroke='%23a9c3f0' stroke-width='3'/%3E%3C/svg%3E");
+  --simple-frame-accent: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%231f62c9' stroke='%231f62c9' stroke-width='3'/%3E%3C/svg%3E");
+  /* 漫画版有几块浮在别的内容上的面板（登录弹窗的卡片、简报侧栏的预览、X 页的关注面板）连底色也是框图铺的，
+     素框中间是空的会透出底下的内容，这几处用铺纸色的素框 */
+  --simple-frame-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%23ffffff' stroke='%23d0d7de' stroke-width='3'/%3E%3C/svg%3E");
+
+  --paper: #ffffff;
+  --paper-raised: #ffffff;
+  --paper-muted: #f6f7f9;
+  --paper-warm: #ffffff;
+  --ink: #1f2328;
+  --ink-secondary: #4b535d;
+  --ink-muted: #656d76;
+  --ink-faint: #9198a1;
+  --muted: var(--ink-muted);
+  --simple-line: #e4e7eb;
+  --simple-line-strong: #d0d7de;
+  --rule: var(--simple-line);
+  --rule-strong: var(--simple-line-strong);
+  --acid: var(--simple-select);
+  --acid-soft: var(--simple-hover);
+  --acid-strong: #c5d8fa;
+  --acid-ink: var(--simple-select-ink);
+  --acid-bright: var(--simple-select);
+  --acid-mist: var(--simple-hover);
+  --on-acid: var(--simple-select-ink);
+  --btn-primary-label: var(--simple-accent-ink);
+  --module-radius: 8px;
+  --control-radius: 6px;
+  --surface-shadow: none;
+  --surface-shadow-raised: var(--simple-pop-shadow);
+
+  --hard-ink: #d0d7de;
+  --shadow-hard: transparent;
+  --shadow-ink-soft: rgba(31, 35, 40, 0.08);
+  --shadow-low: none;
+  --scrollbar: rgba(31, 35, 40, 0.22);
+  --scrollbar-hover: rgba(31, 35, 40, 0.40);
+
+  --dock-surface: #ffffff;
+  --dock-edge: #d0d7de;
+  --dock-text: #4b535d;
+  --dock-hover: #f3f4f6;
+  --dock-shadow: transparent;
+  --dock-on-ink-label: #ffffff;
+  --dock-account-ink: #1a7f37;
+
+  --comic-cyan: #f3f4f6;
+  --comic-dots: transparent;
+  --comic-shadow: transparent;
+  --comic-cyan-line: transparent;
+  --comic-cyan-dot: transparent;
+  --sticker-ink: #1f2328;
+  --sticker-peel: #f6f7f9;
+  --sticker-tape: transparent;
+  --sticker-accent: #1f2328;
+
+  --integration-mcp: #e8f0fe;
+  --integration-dsh: #efeafb;
+  --integration-dsh-ink: #5b3fa8;
+  --live-dot: #2f9e57;
+  --live-dot-halo: transparent;
+
+  /* 首页六格数字用同一种墨色，图标底统一浅灰 */
+  --metric-github: #f1f3f5;
+  --metric-ui: #f1f3f5;
+  --metric-new: #f1f3f5;
+  --metric-visitors: #f1f3f5;
+  --metric-total-ink: var(--ink);
+  --metric-github-ink: var(--ink);
+  --metric-ui-ink: var(--ink);
+  --metric-new-ink: var(--ink);
+  --metric-visitors-ink: var(--ink);
+  --metric-total-visitors-ink: var(--ink);
+
+  /* 榜单：热度、增长保留语义色但压暗，领奖台的金银铜收成中性 */
+  --heat-ink: #b0530f;
+  --growth-ink: #1a7f37;
+  --podium-gold: #d0d7de;
+  --podium-gold-ink: var(--ink-secondary);
+  --podium-gold-soft: #f6f7f9;
+  --podium-silver: #d0d7de;
+  --podium-silver-ink: var(--ink-secondary);
+  --podium-bronze: #d0d7de;
+  --podium-bronze-ink: var(--ink-secondary);
+
+  /* 来源色签只留很淡的底色 */
+  --tone-blue: #3a5a9b;
+  --tone-violet: #5d4a91;
+  --tone-blue-soft: #edf1f8;
+  --tone-mint: #2c6e55;
+  --tone-mint-soft: #ebf4f0;
+  --tone-amber: #7a5a1c;
+  --tone-amber-soft: #f6f1e4;
+  --tone-coral: #8e4456;
+  --tone-coral-soft: #f7eef0;
+  --tone-orange: #8a4d22;
+  --tone-orange-soft: #f6efe8;
+  --tone-lime: #4d5f2a;
+  --tone-lime-soft: #f0f3e8;
+  --tone-slate: #45525e;
+  --tone-slate-soft: #eef1f4;
+
+  --projects-accent: #1f2328;
+  --projects-accent-soft: var(--simple-select);
+  --projects-accent-border: #d0d7de;
+  --projects-warm: #1f2328;
+  --projects-warm-soft: var(--simple-hover);
+  --projects-paper: #ffffff;
+  --projects-paper-light: #ffffff;
+  --projects-acid: var(--simple-select);
+  --projects-acid-soft: var(--simple-hover);
+  --projects-on-acid: var(--simple-select-ink);
+  --projects-paper-light-rgb: 255 255 255;
+
+  --chat-paper: #ffffff;
+  --chat-paper-rgb: 255 255 255;
+  --chat-ink: #1f2328;
+  --chat-ink-rgb: 31 35 40;
+  --chat-on-acid: var(--simple-select-ink);
+  --chat-input-bg: #ffffff;
+  --cream-rgb: 255 255 255;
+  --cream-deep-rgb: 246 247 249;
+  --glow-warm-rgb: 120 130 145;
+  --logo-tile: #f1f3f5;
+  --mcp-btn-label: #ffffff;
+  --quick-search-mark: var(--simple-select);
+
+  --veil-from: rgba(255, 255, 255, 0.72);
+  --veil-to: rgba(255, 255, 255, 0.5);
+  --veil-line: rgba(31, 35, 40, 0.2);
+  --veil-grain: transparent;
+}
+
+:root[data-style='simple'][data-theme='dark'] {
+  --simple-accent: #4f7fd9;
+  --simple-accent-hover: #6590e0;
+  --simple-accent-ink: #ffffff;
+  --simple-select: #233150;
+  --simple-select-edge: #3a5486;
+  --simple-select-ink: #c2d5ff;
+  --simple-hover: #26282c;
+  --simple-pop-shadow: 0 10px 32px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --simple-frame: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='none' stroke='%233d4148' stroke-width='3'/%3E%3C/svg%3E");
+  --simple-frame-select: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%23233150' stroke='%233a5486' stroke-width='3'/%3E%3C/svg%3E");
+  --simple-frame-accent: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%234f7fd9' stroke='%234f7fd9' stroke-width='3'/%3E%3C/svg%3E");
+  --simple-frame-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'%3E%3Crect x='1.5' y='1.5' width='1197' height='1197' rx='16.5' fill='%231c1d20' stroke='%233d4148' stroke-width='3'/%3E%3C/svg%3E");
+
+  --paper: #1c1d20;
+  --paper-raised: #1c1d20;
+  --paper-muted: #25272b;
+  --paper-warm: #1c1d20;
+  --ink: #e2e4e8;
+  --ink-secondary: #b4bac2;
+  --ink-muted: #8b929b;
+  --ink-faint: #5f656e;
+  --simple-line: #2e3136;
+  --simple-line-strong: #3d4148;
+  --acid-strong: #33466e;
+  --surface-shadow: none;
+
+  --hard-ink: #3d4148;
+  --shadow-ink-soft: rgba(0, 0, 0, 0.4);
+  --scrollbar: rgba(226, 228, 232, 0.22);
+  --scrollbar-hover: rgba(226, 228, 232, 0.40);
+
+  --dock-surface: #1c1d20;
+  --dock-edge: #3d4148;
+  --dock-text: #b4bac2;
+  --dock-hover: #26282c;
+  --dock-account-ink: #7cc595;
+
+  --comic-cyan: #26282c;
+  --sticker-ink: #e2e4e8;
+  --sticker-peel: #25272b;
+  --sticker-accent: #e2e4e8;
+
+  --integration-mcp: #233150;
+  --integration-dsh: #2f2944;
+  --integration-dsh-ink: #c2b4f2;
+  --live-dot: #58b77a;
+
+  --metric-github: #26282c;
+  --metric-ui: #26282c;
+  --metric-new: #26282c;
+  --metric-visitors: #26282c;
+
+  --heat-ink: #e3a46e;
+  --growth-ink: #7cc595;
+  --podium-gold: #3d4148;
+  --podium-gold-soft: #25272b;
+  --podium-silver: #3d4148;
+  --podium-bronze: #3d4148;
+
+  --tone-blue: #a9bde6;
+  --tone-violet: #c1b5e6;
+  --tone-blue-soft: #242c3b;
+  --tone-mint: #9fcfba;
+  --tone-mint-soft: #212e29;
+  --tone-amber: #dcc597;
+  --tone-amber-soft: #2e2a20;
+  --tone-coral: #e2b0bc;
+  --tone-coral-soft: #312529;
+  --tone-orange: #e2b996;
+  --tone-orange-soft: #302922;
+  --tone-lime: #c4d1a3;
+  --tone-lime-soft: #282c22;
+  --tone-slate: #c6d0d9;
+  --tone-slate-soft: #272b31;
+
+  --projects-accent: #e2e4e8;
+  --projects-accent-border: #3d4148;
+  --projects-warm: #e2e4e8;
+  --projects-paper: #1c1d20;
+  --projects-paper-light: #1c1d20;
+  --projects-paper-light-rgb: 28 29 32;
+
+  --chat-paper: #1c1d20;
+  --chat-paper-rgb: 28 29 32;
+  --chat-ink: #e2e4e8;
+  --chat-ink-rgb: 226 228 232;
+  --chat-input-bg: #1c1d20;
+  --cream-rgb: 28 29 32;
+  --cream-deep-rgb: 37 39 43;
+  --glow-warm-rgb: 0 0 0;
+  --logo-tile: #e4e6ea;
+  --mcp-btn-label: #ffffff;
+
+  --veil-from: rgba(28, 29, 32, 0.74);
+  --veil-to: rgba(28, 29, 32, 0.5);
+  --veil-line: rgba(226, 228, 232, 0.18);
+}

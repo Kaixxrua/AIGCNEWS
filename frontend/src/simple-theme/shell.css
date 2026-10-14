@@ -1,0 +1,77 @@
+/* 外壳（LayoutView、comic-theme.css）：贴纸、网点、报头与页脚的手绘墨线都不画；首页报头和内页一样收成一行
+   52px 的细条（字标、日期行、工具、账户），省下的高度让给内容；页脚、dock 和报头按钮去掉荧光笔和歪斜。 */
+:root[data-style='simple'] :is(.comic-masthead-rule, .comic-footer-rule, .comic-speech-outline, .comic-masthead-creation, .comic-masthead-corner, .comic-footer-sticker) {
+  display: none !important;
+}
+:root[data-style='simple'] #app .app-shell { --peel: 0px !important; }
+:root[data-style='simple'] #app .app-shell--editorial::before,
+:root[data-style='simple'] #app .app-shell--editorial .app-masthead::before,
+:root[data-style='simple'] #app .app-shell--editorial .app-masthead::after {
+  content: none;
+}
+:root[data-style='simple'] .app-noise { display: none; }
+
+/* 报头：底部一条 1px 细线，日期行旁的“采集中”圆点不带光晕 */
+:root[data-style='simple'] #app .app-shell .app-masthead {
+  border-bottom: 1px solid var(--rule) !important;
+  background: var(--paper) !important;
+}
+:root[data-style='simple'] #app .masthead-meta__count,
+:root[data-style='simple'] #app .masthead-user__status { font-weight: 600; }
+:root[data-style='simple'] #app .masthead-user .user-avatar { box-shadow: none; background: var(--paper-muted); border-color: var(--rule-strong); }
+
+@media (min-width: 1024px) {
+  /* 首页报头照内页的一行式排：字标、日期行、空位、工具、账户 */
+  :root[data-style='simple'] #app .app-shell--editorial { --masthead-h: 52px; }
+  :root[data-style='simple'] #app .app-shell--editorial .main-canvas--editorial > .app-content { padding-top: var(--masthead-h); }
+  :root[data-style='simple'] #app .app-shell--editorial .main-canvas--editorial .app-masthead {
+    height: var(--masthead-h); padding: 0 18px 0 22px; column-gap: 0;
+    grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+  }
+  :root[data-style='simple'] #app .app-shell--editorial .app-masthead__tools { display: contents; }
+  :root[data-style='simple'] #app .app-shell--editorial .app-masthead .brand-wordmark { grid-column: 1; grid-row: 1; }
+  :root[data-style='simple'] #app .app-shell--editorial :is(.masthead-tagline, .topbar-divider) { display: none; }
+  :root[data-style='simple'] #app .app-shell--editorial .app-masthead .masthead-meta {
+    grid-column: 3; grid-row: 1; flex-direction: row; align-items: baseline; gap: 14px; margin: 0 0 0 22px; font-size: 13px; line-height: 1.2;
+  }
+  :root[data-style='simple'] #app .app-shell--editorial .masthead-page-tools { grid-column: 4; grid-row: 1; }
+  :root[data-style='simple'] #app .app-shell--editorial .app-masthead__actions { grid-column: 5; grid-row: 1; justify-content: flex-end; gap: 0; margin-left: 6px; }
+  :root[data-style='simple'] #app .app-shell--editorial .app-masthead .masthead-user {
+    grid-column: 6; grid-row: 1; justify-self: auto; width: auto; max-width: 180px; gap: 8px; margin-left: 14px; padding: 4px 0 4px 14px;
+  }
+  :root[data-style='simple'] #app .app-shell--editorial .masthead-user .user-avatar { width: 30px; height: 30px; }
+  :root[data-style='simple'] #app .app-shell--editorial .masthead-user__identity { display: none; }
+  /* 内页报眉上的栏目名：正体、细竖线 */
+  :root[data-style='simple'] #app .app-shell--folio .masthead-folio {
+    border-left: 1px solid var(--rule-strong); font-size: 16px; font-weight: 600;
+  }
+}
+
+/* 报头的圆形按钮：悬停只换底色，不歪；图标里的点睛笔画用强调蓝（荧光绿在这里是浅蓝底色，画在白底上看不见） */
+:root[data-style='simple'] :is(.theme-toggle, .locale-toggle, .style-toggle, .github-link, .qq-group-link, .favorites-link, .density-toggle, .quick-search-button, .tour-help, .pwa-install-link):is(:hover, :active) {
+  transform: none;
+}
+:root[data-style='simple'] :is(.theme-icon__accent, .locale-icon__tick, .style-icon__accent) { stroke: var(--simple-accent); }
+:root[data-style='simple'] .density-toggle__glyph path:nth-of-type(n + 4) { stroke: var(--simple-accent); }
+:root[data-style='simple'] .pwa-install-link:hover { color: var(--ink); background: var(--simple-hover); }
+
+/* dock：白底细边，选中项浅蓝底；桌面上的说明文字不带荧光投影 */
+:root[data-style='simple'] .dock { box-shadow: var(--simple-pop-shadow); }
+:root[data-style='simple'] #app .app-shell--editorial .dock { box-shadow: none; }
+:root[data-style='simple'] .dock-label { box-shadow: none; color: inherit; }
+:root[data-style='simple'] .dock-item:hover { transform: none; }
+
+/* 页脚：字标去掉荧光斜条，关于我们弹窗用柔和投影 */
+:root[data-style='simple'] .footer-wordmark { font-weight: 650; letter-spacing: 0; }
+:root[data-style='simple'] .footer-wordmark::before { content: none; }
+:root[data-style='simple'] .footer-about { border-color: var(--rule-strong); border-radius: var(--module-radius); box-shadow: var(--simple-pop-shadow); }
+:root[data-style='simple'] .footer-about h2 { font-weight: 650; }
+
+/* 读报态的拉手：灰色细条，悬停加深 */
+:root[data-style='simple'] #app .app-shell--folio .reading-handle::before { background: var(--rule-strong); box-shadow: none; }
+:root[data-style='simple'] #app .app-shell--folio .reading-handle:hover::before { background: var(--ink-muted); }
+:root[data-style='simple'] #app .app-shell--folio .reading-handle:focus-visible::before { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--simple-accent); }
+
+/* 手机底栏与“更多”菜单 */
+:root[data-style='simple'] .mobile-menu__header h2 { font-weight: 650; }
+:root[data-style='simple'] .mobile-menu__link.is-active { border-color: var(--simple-select-edge); }

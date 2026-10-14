@@ -1,0 +1,203 @@
+/* 各内页里贴图变量以外的漫画手法（comic-pages/*.css）：歪着贴的标题、标签、按钮摆正，悬停不再往左上“抬起”，
+   标题下的荧光笔刷和斜杠点缀不画。选择器照抄漫画版那条再加前缀，权重总是更高。 */
+:root[data-style='simple'] #app .app-shell--comic-page :is(
+  .agent-page-pills > li, .agent-setup-kicker,
+  .mcp-connect-page .agent-btn, .mcp-connect-page .agent-btn:hover:not(:disabled), .mcp-connect-page .agent-btn:active:not(:disabled),
+  .tier-name, .tier-badge, .tier-billing-btn, .tier-billing-btn:hover, .tier-billing-tag, .tier-savings, .tier-cta-label,
+  .paper-document-panel article > h2, .paper-same-day-title,
+  .tracking-kicker, .tracking-plan, .tracking-live,
+  .projects-page--websites .projects-hero h1.comic-title, .projects-page--websites .project-chip, .projects-page--websites .project-chip:hover,
+  .website-header h1.comic-title, .website-header p, .website-category
+) {
+  transform: none;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .website-header p { margin-top: 2px; color: var(--ink-secondary); font-size: 14px; font-weight: 400; letter-spacing: 0; }
+:root[data-style='simple'] #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a { font-size: 16px; font-weight: 500; }
+:root[data-style='simple'] #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a[aria-current] { font-weight: 600; color: var(--simple-select-ink); }
+:root[data-style='simple'] #app .app-shell--comic-page .website-category { font-size: 14px; font-weight: 600; }
+:root[data-style='simple'] #app .app-shell--comic-page .website-state { border-width: 1px; border-radius: var(--module-radius); }
+:root[data-style='simple'] #app .app-shell--comic-page .website-state h2 { font-size: 18px; font-weight: 600; }
+:root[data-style='simple'] #app .app-shell--comic-page .recommended-websites-page .website-tabs-login button { font-weight: 600; }
+html:root[data-style='simple'] #app .app-shell--comic-page .membership-title.comic-title { transform: none; }
+:root[data-style='simple'] #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a,
+:root[data-style='simple'] #app .app-shell--comic-page :is(.recommended-websites-page, .projects-page--websites) .website-tabs a:not([aria-current]):hover {
+  transform: none;
+}
+
+html:root[data-style='simple'] #app .app-shell--comic-page :is(
+  .legal-title.comic-title, .legal-body h2, .legal-toc__title,
+  .membership-title.comic-title, .monitor-heading .monitor-title.comic-title, .subs-title.comic-title,
+  .projects-page--catalog .projects-hero h1, .projects-page--catalog .projects-hero__lead, .paper-document-panel article
+)::before,
+html:root[data-style='simple'] #app .app-shell--comic-page :is(.membership-title.comic-title, .paper-document-panel article)::after,
+html:root[data-style='simple'] :is(#app .register-page, #app ~ .comic-auth) .auth-page-header h1.comic-title::after {
+  content: none;
+}
+
+/* 手绘框多半画在 ::after 上，并往右下多伸出几像素给硬投影留地方；换成素框以后就贴着元素画，免得框线错开、
+   相邻两个框叠在一起。 */
+html:root[data-style='simple'] #app .app-shell--comic-page :is(
+  .agent-setup-kicker, .agent-setup-cta,
+  .dsh-page :is(.agent-setup, .agent-card, .dsh-stats, .dsh-quota-hint, .agent-btn),
+  .tier-card, .tier-name, .tier-badge, .tier-billing-btn, .tier-billing-tag, .tier-savings,
+  .monitor-page :is(.monitor-btn, .monitor-btn-primary, .monitor-btn-secondary, .monitor-btn-danger, .monitor-btn-ghost),
+  .monitor-page :is(.visit-window-tab, .mcp-usage-tab)[aria-pressed='true'],
+  .monitor-page .monitor-pagination-btn,
+  :is(.monitor-scheduler, .monitor-tasks-header) > .monitor-section-title,
+  .monitor-page :is(.monitor-scheduler-count, .monitor-tasks-header .monitor-badge),
+  .monitor-job, .monitor-tasks .monitor-table td, .monitor-tasks .badge,
+  .projects-page--catalog :is(.project-chart, .project-pane__box, .project-peek),
+  .projects-page--catalog > .projects-category-panel,
+  .project-card--catalog .project-card__body,
+  .report-controls__tabs .comic-chip, .report-controls__actions > button,
+  .prose-report .report-section, .prose-report h2 code,
+  .report-peek, .report-peek__kicker, .report-peek__action,
+  .tracking-kicker, .tracking-plan, .tracking-live,
+  .tracking-rule-meta > span, .tracking-rule-actions .tracking-button,
+  .ui-library__card,
+  .projects-page--websites .project-card__body,
+  :is(.recommended-websites-page, .projects-page--websites) .website-tabs a,
+  .website-card, .website-category,
+  :is(.xboard-toolbar, .xboard-pagination, .xboard-main > .glass-card),
+  .tweet-card, .xboard-follow-panel
+)::after,
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__card::before,
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) :is(
+  .auth-card, .auth-card label:not(.auth-terms label), .auth-card .auth-otp-btn, .auth-card .btn-primary, .auth-switch,
+  .auth-card .btn-secondary, .auth-card h4, .auth-card .oauth-provider-btn
+)::after {
+  inset: 0;
+}
+
+/* DSH：深色仓库按钮换成蓝底白字（它的框不铺满，按钮自己的底色会从中间露出来），按钮悬停不抬起 */
+html:root[data-style='simple'] #app .app-shell--comic-page .dsh-page .agent-btn--ink,
+html:root[data-style='simple'] #app .app-shell--comic-page .dsh-page .agent-btn--ink:hover:not(:disabled) {
+  background: var(--simple-accent); color: var(--simple-accent-ink);
+}
+:root[data-style='simple'] #app .app-shell--comic-page .dsh-page .agent-btn { font-weight: 600; }
+:root[data-style='simple'] #app .app-shell--comic-page .dsh-page .agent-btn:is(:hover, :active):not(:disabled) { transform: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .dsh-page .dsh-quota-hint--member { background: var(--paper-muted); }
+
+/* 会员：价格用正文字体，不描边；“立即开通”去掉两侧的放射线、下划线和粗斜体；权益文字下不划荧光笔 */
+html:root[data-style='simple'] #app .app-shell--comic-page .membership-page { --mem-mark: transparent; }
+:root[data-style='simple'] #app .app-shell--comic-page .tier-price-amount { font-family: inherit; font-weight: 650; letter-spacing: -.02em; }
+:root[data-style='simple'] #app .app-shell--comic-page :is(.tier-price-yearly, .tier-member-note, .tier-member-term) { font-weight: 600; }
+:root[data-style='simple'] .tier-card--member { box-shadow: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .tier-cta {
+  border-color: var(--simple-accent); background: var(--simple-accent); color: var(--simple-accent-ink); font-weight: 600; letter-spacing: 0;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .tier-cta:hover {
+  border-color: var(--simple-accent-hover); background: var(--simple-accent-hover); color: var(--simple-accent-ink); filter: none;
+}
+@media (min-width: 1024px) {
+  :root[data-style='simple'] #app .app-shell--comic-page .tier-price-amount { font-size: 44px; }
+  :root[data-style='simple'] #app .app-shell--comic-page .tier-cta { gap: 8px; font-size: 18px; }
+}
+:root[data-style='simple'] #app .app-shell--comic-page .tier-cta::before,
+:root[data-style='simple'] #app .app-shell--comic-page .tier-cta::after { content: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .tier-cta-label { text-decoration: none; }
+html:root[data-style='simple'][data-theme='dark'] #app .app-shell--comic-page .tier-cta { box-shadow: none; }
+
+/* 登录、注册：输入框上方的字段名不套框 */
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) { --reg-label: none; }
+
+/* 隐私、免责声明：三格要点的图标底是同一种浅灰，数字半粗 */
+:root[data-style='simple'] #app .app-shell--comic-page .legal-fact svg,
+:root[data-style='simple'] #app .app-shell--comic-page .legal-fact:nth-child(3) svg,
+html:root[data-style='simple'][data-theme='dark'] #app .app-shell--comic-page .legal-fact svg {
+  background: var(--paper-muted); color: var(--ink-muted);
+}
+html:root[data-style='simple'][data-theme='dark'] #app .app-shell--comic-page .legal-fact { background: var(--paper-raised); }
+:root[data-style='simple'] #app .app-shell--comic-page .legal-fact strong { font-weight: 600; }
+
+/* 项目库在手机上是卡片流（components/projects/projectCatalog.css）：标题旁的荧光斜纹、卡角网点和硬投影都不要 */
+:root[data-style='simple'] #app .projects-page--catalog .projects-hero h1 { font-weight: 650; }
+:root[data-style='simple'] #app .projects-page--catalog .projects-hero__text::after { content: none; }
+:root[data-style='simple'] #app .projects-page--catalog .projects-category.tab-active,
+:root[data-style='simple'] #app .projects-page--catalog :is(.projects-categories, .projects-subcategories)[data-indicator-mark]::before {
+  border-color: var(--simple-select-edge); box-shadow: none;
+}
+:root[data-style='simple'] #app .project-card--catalog:nth-child(n) { --card-tint: var(--paper-raised); }
+@media (max-width: 1023px) {
+  :root[data-style='simple'] #app .project-card--catalog .project-card__body,
+  :root[data-style='simple'] #app .project-card--catalog:hover .project-card__body { border-color: var(--rule-strong); box-shadow: none; }
+  :root[data-style='simple'] #app .project-card--catalog .project-card__body::after { content: none; }
+}
+
+/* 新手引导卡：细线框、柔和投影，标签和徽记摆正 */
+:root[data-style='simple'] .onboarding-spotlight { border-color: var(--simple-accent); }
+:root[data-style='simple'] .onboarding-card {
+  border: 1px solid var(--rule-strong); border-radius: var(--module-radius); box-shadow: var(--simple-pop-shadow);
+}
+:root[data-style='simple'] .onboarding-card--welcome { background-image: none; }
+:root[data-style='simple'] .onboarding-edition { border-width: 1px; border-color: var(--simple-select-edge); font-weight: 600; transform: none; }
+:root[data-style='simple'] .onboarding-emblem { border-width: 1px; border-color: var(--rule-strong); box-shadow: none; transform: none; }
+:root[data-style='simple'] .onboarding-card h2 { font-weight: 650; letter-spacing: 0; }
+:root[data-style='simple'] :is(.onboarding-next, .onboarding-back) { border-width: 1px; border-color: var(--rule-strong); border-radius: var(--control-radius); font-weight: 600; }
+:root[data-style='simple'] .onboarding-next { border-color: var(--simple-accent); background: var(--simple-accent); color: var(--simple-accent-ink); box-shadow: none; }
+:root[data-style='simple'] .onboarding-progress__track > div { background: var(--simple-accent); }
+
+/* 网页收藏（手机版式）：页标题左边那道 8px 色条不画 */
+:root[data-style='simple'] .website-header h1 { padding-left: 0; border-left: 0; }
+
+/* 注册页与登录、注册弹窗（comic-pages/register.css、auth-dialogs.css）：角落贴纸、喊话框和卷角不贴，刊头字标换成
+   一行字（仍是回首页的链接）；字段名、验证码按钮、提交按钮的粗斜体大字收成正体，输入框和勾选框 1px 细框 */
+html:root[data-style='simple'] #app .register-page :is(.register-corner, .register-shout, .register-peel) { display: none; }
+html:root[data-style='simple'] #app .register-page .register-wordmark { width: fit-content; color: var(--ink); text-decoration: none; }
+html:root[data-style='simple'] #app .register-page .register-wordmark img { display: none; }
+html:root[data-style='simple'] #app .register-page .register-wordmark::before {
+  content: 'AIGC NEWS'; font-size: 22px; font-weight: 700; letter-spacing: .01em; line-height: 1;
+}
+html:root[data-style='simple'] #app .register-page .auth-page-header__icon { border-width: 1px; }
+html:root[data-style='simple'] #app .register-page .auth-page-header p { color: var(--ink-muted); font-size: 14px; font-weight: 400; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card label:not(.auth-terms label) {
+  height: auto; margin: 0; padding: 0; color: var(--ink-secondary); font-size: 14px; font-weight: 600; line-height: 22px; letter-spacing: 0;
+}
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .input { border-width: 1px; border-color: var(--rule-strong); }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .input:focus { border-color: var(--simple-accent); box-shadow: 0 0 0 3px var(--simple-select); }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn { padding: 0 14px; font-size: 14px; font-weight: 500; letter-spacing: 0; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .auth-otp-btn:hover:not(:disabled) { transform: none; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .rounded-2xl.border { border-width: 1px; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-terms > button { border-width: 1px; border-color: var(--rule-strong); }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-terms > button[aria-pressed='true'] {
+  border-color: var(--simple-accent); background: var(--simple-accent); color: var(--simple-accent-ink);
+}
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .btn-primary,
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .btn-primary:hover:not(:disabled) {
+  height: 46px; min-height: 46px; gap: 8px; color: var(--simple-accent-ink); font-size: 16px; font-weight: 600; letter-spacing: 0; transform: none;
+}
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-card .btn-primary svg { width: 18px; height: 18px; stroke-width: 2; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-switch { font-size: 15px; font-weight: 500; }
+html:root[data-style='simple'] :is(#app .register-page, .comic-auth) .auth-switch button { font-weight: 600; text-decoration-thickness: 1px; }
+/* 登录、账号设置等弹窗（comic-pages/auth-dialogs.css）：副标题、第三方登录按钮、分隔说明和“忘记密码”不用粗体 */
+html:root[data-style='simple'] #app ~ .comic-auth .auth-page-header p { color: var(--ink-muted); font-size: 14px; font-weight: 400; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-page-header > .absolute { border-width: 1px; border-color: var(--rule-strong); }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-page-header__icon { border-width: 1px; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card .btn-secondary { font-size: 15px; font-weight: 500; letter-spacing: 0; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card .auth-oauth { border-top-width: 1px; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card .auth-oauth > p { color: var(--ink-muted); font-size: 13px; font-weight: 400; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card .auth-forgot button { font-weight: 500; text-decoration-thickness: 1px; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card dd,
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card section .flex.items-center.justify-between > .text-xs { font-weight: 600; }
+html:root[data-style='simple'] #app ~ .comic-auth .auth-card .oauth-provider-btn .oauth-provider-status { border-width: 1px; font-weight: 600; }
+
+/* 简报正文（comic-pages/report.css）：分节左边那道荧光竖线不画，左侧留白跟着收窄；节标题、小标题、正文收成常规字重 */
+html:root[data-style='simple'] #app .app-shell--comic-page .prose-report .report-section::before { content: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .prose-report .report-section { padding: 14px 28px 16px; }
+:root[data-style='simple'] #app .app-shell--comic-page .prose-report .report-section > h2 { font-size: 20px; font-weight: 650; line-height: 30px; }
+:root[data-style='simple'] #app .app-shell--comfortable .prose-report:not(.report-broadsheet) .report-section { padding: 16px 32px 18px; }
+:root[data-style='simple'] #app .app-shell--comfortable .prose-report:not(.report-broadsheet) .report-section > h2 { font-size: 22px; line-height: 32px; }
+:root[data-style='simple'] #app .app-shell--comic-page .prose-report :is(h3, h4) { font-weight: 600; }
+:root[data-style='simple'] #app .app-shell--comic-page .prose-report :is(p, li, ul, ol, blockquote) { font-weight: 400; }
+
+/* 选中项的字色：漫画版的选中底是荧光块，深浅两种主题都是亮的，字色就写死成近黑；简洁版的选中底在深色主题里是深蓝，
+   这几处跟着换成选中字色，否则深色下是深蓝底上的黑字。 */
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__rankbar button[aria-pressed=true],
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__results .ui-library__density[aria-pressed=true],
+html:root[data-style='simple'] #app .app-shell--comic-page .ui-library__results .ui-library__density[aria-pressed=true]:hover,
+html:root[data-style='simple'] #app .app-shell--comic-page .monitor-nav-item.active {
+  color: var(--simple-select-ink);
+}
+html:root[data-style='simple'] #app .app-shell--comic-page .report-controls__tabs .comic-chip.is-active { color: var(--simple-select-ink) !important; }
+/* 会员卡的「推荐」和年付折扣是素框里的字，漫画版深色主题下仍是压在荧光块上的黑字 */
+html:root[data-style='simple'] #app .app-shell--comic-page :is(.tier-badge, .tier-billing-tag) { color: var(--ink); }

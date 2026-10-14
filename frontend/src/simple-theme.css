@@ -1,0 +1,10 @@
+/* 简洁版（html[data-style='simple']，theme/appStyle.ts）：给上班时看的一版。漫画版的贴纸、网点、荧光笔刷、
+   斜体粗标题、手绘框和硬投影都去掉，换成白纸、灰色细线和一种蓝；内容、版面和功能与漫画版一致。
+   只有选了简洁版才下载（theme/simpleStyles.ts），规则全部挂在 :root[data-style='simple'] 下，
+   选择器都比漫画版的同名规则多一两级，所以不论排在哪张样式表前后都压得住。 */
+@import './simple-theme/tokens.css';
+@import './simple-theme/base.css';
+@import './simple-theme/shell.css';
+@import './simple-theme/page-vars.css';
+@import './simple-theme/home.css';
+@import './simple-theme/pages.css';

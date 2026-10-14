@@ -1,0 +1,113 @@
+/* 全站通用：漫画版散在各处的装饰手法在这里一次收掉——斜体、描边字、字影、贴图框的外扩。它们只是装饰，
+   所以用 !important 一并压住；排版要用的斜体（em、引文等）保留。 */
+:root[data-style='simple'] *:not(em, i, cite, var, dfn, address),
+:root[data-style='simple'] ::before,
+:root[data-style='simple'] ::after {
+  font-style: normal !important;
+}
+:root[data-style='simple'] *,
+:root[data-style='simple'] ::before,
+:root[data-style='simple'] ::after {
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+  /* 手绘框画到盒子外面一两像素（压出硬投影）；素框贴着盒子边画 */
+  border-image-outset: 0 !important;
+}
+
+/* style.css 的基础层用 --acid 画焦点框和勾选框，在简洁版里那是浅蓝底色，看不清；改用强调蓝。零权重，
+   只顶替基础层，各组件自己写的焦点框不受影响。 */
+:where(:root[data-style='simple']) :where(:focus-visible) { outline: 2px solid var(--simple-accent); outline-offset: 2px; }
+:where(:root[data-style='simple']) :where(input[type='checkbox'], input[type='radio']) { accent-color: var(--simple-accent); }
+:where(:root[data-style='simple']) ::selection { background: var(--simple-select); color: var(--ink); }
+
+/* 通用按钮（style.css）：主按钮是蓝底白字，悬停加深，不再翻成荧光绿 */
+:root[data-style='simple'] .btn-primary {
+  color: var(--simple-accent-ink);
+  background: var(--simple-accent);
+  border-color: var(--simple-accent);
+}
+:root[data-style='simple'] .btn-primary:hover:not(:disabled) {
+  color: var(--simple-accent-ink);
+  background: var(--simple-accent-hover);
+  border-color: var(--simple-accent-hover);
+}
+:root[data-style='simple'] .btn-secondary { border-color: var(--rule-strong); }
+:root[data-style='simple'] .btn-secondary:hover:not(:disabled) { background: var(--simple-hover); }
+:root[data-style='simple'] .tab-active { border-color: var(--simple-select-edge); }
+:root[data-style='simple'] .stream-indicator { border-color: var(--simple-select-edge); }
+:root[data-style='simple'] .input:focus { border-color: var(--simple-accent); box-shadow: 0 0 0 3px var(--simple-select); }
+:root[data-style='simple'] .pdf-progress-fill,
+:root[data-style='simple'] .pdf-progress-fill--indeterminate { background: var(--simple-accent); }
+
+/* 漫画内页的五种通用件（comic-pages/base.css）：标题、画框、标签、筛选片、按钮。标题去掉荧光笔刷和闪光，
+   粗斜体收成正体半粗；画框、标签、按钮一律 1px 细线、规整圆角、不带硬投影和网点角。 */
+:root[data-style='simple'] :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title {
+  margin-right: 0;
+  font-size: var(--simple-title-size);
+  font-weight: 650;
+  line-height: 1.3;
+}
+:root[data-style='simple'] :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::before,
+:root[data-style='simple'] :is(#app .app-shell--comic-page, #app .register-page, .comic-auth) .comic-title::after {
+  content: none;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-panel {
+  border-width: 1px;
+  border-color: var(--rule-strong);
+  border-radius: var(--module-radius);
+  box-shadow: none;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-panel::after { content: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .comic-tag {
+  border-width: 1px;
+  border-color: var(--rule-strong);
+  border-radius: 4px;
+  box-shadow: none;
+  color: var(--ink-secondary);
+  font-weight: 600;
+  transform: none;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-chip {
+  border-width: 1px;
+  border-color: var(--rule-strong);
+  border-radius: var(--control-radius);
+  box-shadow: none;
+  font-weight: 500;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-chip:hover:not(:disabled) { background: var(--simple-hover); transform: none; box-shadow: none; }
+:root[data-style='simple'] #app .app-shell--comic-page .comic-chip.is-active {
+  border-color: var(--simple-select-edge);
+  background: var(--simple-select);
+  color: var(--simple-select-ink);
+  font-weight: 600;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-btn {
+  border-width: 1px;
+  border-color: var(--rule-strong);
+  border-radius: var(--control-radius);
+  box-shadow: none;
+  font-weight: 600;
+}
+:root[data-style='simple'] #app .app-shell--comic-page .comic-btn:hover:not(:disabled) { background: var(--simple-hover); }
+:root[data-style='simple'] #app .app-shell--comic-page :is(.comic-btn--ink, .comic-btn--acid) {
+  border-color: var(--simple-accent);
+  background: var(--simple-accent);
+  color: var(--simple-accent-ink);
+}
+:root[data-style='simple'] #app .app-shell--comic-page :is(.comic-btn--ink, .comic-btn--acid):hover:not(:disabled) {
+  border-color: var(--simple-accent-hover);
+  background: var(--simple-accent-hover);
+  color: var(--simple-accent-ink);
+}
+
+/* 衬线标题（Playfair：登录注册页头、会员与结账页、隐私与免责声明、手机上的报告标题）和网页收藏卡上的漫画手写体，
+   都换回周围正文的无衬线字体 */
+:root[data-style='simple'] :is(
+  .font-serif, .prose-content h1, .prose-content h2, .prose-content .report-masthead,
+  .membership-title, .legal-title, .checkout-title, .checkout-amount
+) {
+  font-family: inherit;
+}
+html:root[data-style='simple'] #app .app-shell--comic-page .website-card h2 {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 20px; font-weight: 600;
+}

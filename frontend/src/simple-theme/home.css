@@ -1,0 +1,109 @@
+/* 首页（DashboardContent 与 components/dashboard/*）：标题去掉荧光笔刷和闪光，前三名的领奖台卡去掉金银铜渐变、
+   网点、斜线和墨框描边，名次、热度等数字收成正体半粗；统计格、日历、热词、简报卡都是 1px 细线框。
+   这些规则写在各组件的 scoped 样式里，按需加载的页面样式排在简洁版样式表之后，所以选择器都要更重一级；
+   漫画版单为深色写的几条，这里同样加上 [data-theme='dark'] 再压一级。 */
+:root[data-style='simple'] .dashboard-heading h1 { font-size: 28px; font-weight: 650; }
+html:root[data-style='simple'][data-theme='dark'] .dashboard-heading h1 { color: var(--ink); }
+:root[data-style='simple'] .dashboard-heading h1::before,
+:root[data-style='simple'] .dashboard-heading h1::after { content: none; }
+:root[data-style='simple'] .dashboard-heading p { color: var(--ink-secondary); font-size: 14px; font-weight: 500; }
+
+/* 六格统计：白底细框，数字统一墨色；手绘框的 SVG 不画 */
+:root[data-style='simple'] .stat-cell { border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised); }
+:root[data-style='simple'] .stat-ink-frame { display: none; }
+:root[data-style='simple'] .stat-cell-icon,
+html:root[data-style='simple'][data-theme='dark'] .stat-cell-icon { background: var(--paper-muted); color: var(--ink-muted); }
+:root[data-style='simple'] .stat-cell-num { font-weight: 600; letter-spacing: -.02em; }
+:root[data-style='simple'] :is(.stat-cell--github, .stat-cell--ui):hover { background: var(--simple-hover); }
+
+/* 榜单的来源页签：正的圆角块，选中浅蓝底，不斜切；选中项字号不放大 */
+:root[data-style='simple'] .ranking-tab { font-weight: 500; }
+:root[data-style='simple'] .ranking-tab[aria-selected='true'] { margin-right: 0; padding-inline: 20px; font-size: 18px; font-weight: 600; }
+@media (max-width: 1499px) {
+  :root[data-style='simple'] .ranking-tab[aria-selected='true'] { padding-inline: 12px; font-size: 15px; }
+}
+:root[data-style='simple'] .ranking-tab:not([aria-selected='true']) + .ranking-tab:not([aria-selected='true'])::before { transform: none; }
+:root[data-style='simple'] .ranking-tab:not([aria-selected='true'])::after,
+:root[data-style='simple'] .ranking-tab[aria-selected='true']::after,
+:root[data-style='simple'] .ranking-tabs::before { transform: none; border-radius: var(--control-radius); }
+:root[data-style='simple'] .ranking-tab[aria-selected='true']::after,
+:root[data-style='simple'] .ranking-tabs::before { border: 1px solid var(--simple-select-edge); }
+
+/* 第 4–10 名 */
+:root[data-style='simple'] .ranking-row { border-color: var(--rule); }
+:root[data-style='simple'] .ranking-link:hover { background: var(--simple-hover); }
+:root[data-style='simple'] .ranking-number { color: var(--ink-muted); font-size: 18px; font-weight: 600; }
+:root[data-style='simple'] .ranking-title { font-weight: 600; }
+:root[data-style='simple'] .ranking-row .ranking-heat { font-weight: 600; }
+
+/* 前三名：和其余各行一样的白底细框；名次是灰色正体数字，皇冠不戴 */
+:root[data-style='simple'] .ranking-row--featured,
+html:root[data-style='simple'][data-theme='dark'] .ranking-row--featured {
+  border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised);
+}
+:root[data-style='simple'] .ranking-row--featured::before,
+:root[data-style='simple'] .ranking-row--featured::after { content: none; }
+:root[data-style='simple'] .ranking-ink-frame { display: none; }
+:root[data-style='simple'] .ranking-row--featured .ranking-number { color: var(--ink-muted); font-size: 26px; font-weight: 600; transform: none; }
+:root[data-style='simple'] .ranking-row--featured .ranking-arrow { color: var(--ink-muted); }
+:root[data-style='simple'] .ranking-crown { display: none; }
+
+/* 右栏：日历、今日热词、简报卡、MCP/dsh 两格 */
+:root[data-style='simple'] .dashboard-sidebar .dash-calendar,
+html:root[data-style='simple'][data-theme='dark'] .dashboard-sidebar .dash-calendar {
+  border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised); box-shadow: none;
+}
+:root[data-style='simple'] .dashboard-sidebar .dash-calendar h3 { font-size: 20px; font-weight: 600; }
+:root[data-style='simple'] .dashboard-sidebar .calendar-day--active { font-size: 16px !important; font-weight: 600; border-width: 1px; border-color: var(--simple-select-edge); }
+:root[data-style='simple'] .dashboard-sidebar .calendar-day--active::before { content: none; }
+:root[data-style='simple'] .dashboard-sidebar .calendar-days::before { border-width: 1px; border-color: var(--simple-select-edge); }
+
+:root[data-style='simple'] .new-words-card { border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised); }
+:root[data-style='simple'] .new-words-card::before,
+:root[data-style='simple'] .new-words-card h2::before { content: none; }
+:root[data-style='simple'] .new-words-card h2 { font-size: 18px; font-weight: 600; }
+:root[data-style='simple'] .new-word,
+:root[data-style='simple'] .new-word:nth-child(2) {
+  border: 1px solid var(--rule-strong); border-radius: var(--control-radius); background: var(--paper-raised); color: var(--ink); box-shadow: none; transform: none;
+}
+:root[data-style='simple'] .new-word:hover,
+:root[data-style='simple'] .new-word:nth-child(2):hover { background: var(--simple-hover); transform: none; }
+:root[data-style='simple'] .new-word strong { font-weight: 600; }
+:root[data-style='simple'] .new-words-tools button { font-weight: 500; }
+:root[data-style='simple'] .new-word-dialog { border: 1px solid var(--rule-strong); border-radius: var(--module-radius); box-shadow: var(--simple-pop-shadow); }
+:root[data-style='simple'] .new-word-dialog h2 { font-size: 22px; font-weight: 650; }
+:root[data-style='simple'] .new-word-dialog h3 { font-weight: 600; }
+:root[data-style='simple'] .new-word-history-day h3 { transform: none; border-radius: 4px; }
+:root[data-style='simple'] .new-word-history-item { border: 1px solid var(--rule-strong); border-radius: var(--control-radius); box-shadow: none; }
+:root[data-style='simple'] .new-word-history-item strong { font-weight: 600; }
+
+:root[data-style='simple'] .digest-card,
+html:root[data-style='simple'][data-theme='dark'] .digest-card {
+  border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised);
+}
+:root[data-style='simple'] .digest-heading h2 { font-size: 17px; font-weight: 600; }
+:root[data-style='simple'] .digest-heading h2 svg,
+:root[data-style='simple'] .digest-time { transform: none; }
+:root[data-style='simple'] .digest-time { background: var(--paper-muted); border-color: var(--rule); font-weight: 600; }
+:root[data-style='simple'] .digest-body p { font-weight: 500; }
+:root[data-style='simple'] .digest-cta {
+  border: 1px solid var(--simple-accent); border-radius: var(--control-radius); background: var(--simple-accent); color: var(--simple-accent-ink);
+  font-weight: 600; box-shadow: none;
+}
+:root[data-style='simple'] .digest-cta:hover { border-color: var(--simple-accent-hover); background: var(--simple-accent-hover); }
+
+:root[data-style='simple'] .integration-card,
+html:root[data-style='simple'][data-theme='dark'] .integration-card {
+  border: 1px solid var(--rule-strong); border-radius: var(--module-radius); background: var(--paper-raised);
+}
+:root[data-style='simple'] .integration-card > svg,
+:root[data-style='simple'] .integration-card--dsh > svg { background: var(--paper-muted); color: var(--ink-muted); }
+:root[data-style='simple'] .integration-card number-flow-vue,
+:root[data-style='simple'] .integration-card span > span { font-weight: 600; }
+
+/* UI 灵感卡：图片和文字照旧，只把说明里的荧光绿小字换成白色 */
+:root[data-style='simple'] .ui-inspiration__heading,
+:root[data-style='simple'] .ui-inspiration__caption strong { font-weight: 600; }
+:root[data-style='simple'] .ui-inspiration__caption > span { color: #ffffffcc; }
+
+:root[data-style='simple'] .dashboard-empty-state .bg-gradient-to-br { background-color: var(--paper-muted); }
