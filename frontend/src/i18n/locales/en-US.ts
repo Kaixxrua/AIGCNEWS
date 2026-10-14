@@ -46,6 +46,8 @@ const enUSCatalog = {
   theme: { toggle: 'Theme', light: 'Light mode', dark: 'Dark mode' },
   appStyle: {
     toggle: 'Page style', toSimple: 'Switch to the plain style (quiet, no stickers or highlighter)', toComic: 'Switch to the comic style',
+    hintTitle: 'Too busy for you?', hintBody: 'Try the plain style: no stickers or highlighter, just a calm page that suits the office. Switch back here anytime.',
+    hintSwitch: 'Switch to plain', hintDismiss: 'Got it',
   },
   density: { toCompact: 'Switch to the compact layout (more on screen)', toComfortable: 'Switch to the comfortable layout (roomier cards)' },
   projectChart: {

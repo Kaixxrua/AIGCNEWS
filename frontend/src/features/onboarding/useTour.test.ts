@@ -126,6 +126,7 @@ describe('desktop tour lifecycle', () => {
     tour.start(); await flushPromises()
     tour.next(); await flushPromises()
     tour.next(); await flushPromises()
+    tour.next(); await flushPromises()
     expect(router.currentRoute.value.path).toBe('/projects')
     expect(readProgress('guest')).toMatchObject({ step: 'projects', manual: true, scope: undefined })
     wrapper?.unmount()
@@ -261,7 +262,7 @@ describe('desktop tour lifecycle', () => {
     expect(readTerminal('user:8')).toBeUndefined()
   })
   it('serializes skip behind a pending navigation so a late route cannot pull the user away', async () => {
-    saveProgress('guest', { step: 'navigation', returnTo: '/report?date=2026-10-01#saved', manual: false })
+    saveProgress('guest', { step: 'style', returnTo: '/report?date=2026-10-01#saved', manual: false })
     await setup()
     tour.next(); await flushPromises()
     let release!: () => void

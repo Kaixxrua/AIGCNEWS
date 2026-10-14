@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import StyleHint from '@/components/StyleHint.vue'
+import { tourActive, tourStep } from '@/features/onboarding/signals'
 import { applyAppStyle, ensureSimpleStyles, useAppStyle, type AppStyle } from '@/theme'
+import { STYLE_HINT_DELAY_MS, markStyleHintSeen, styleHintPending } from '@/theme/styleHint'
 import { revealTheme } from '@/motion/themeReveal'
+import { popIn, popOut } from '@/motion/presence'
 
 /** 报头的页面风格开关：漫画版与简洁版。和主题开关一样，图标与提示说的是按下去换成哪一版。 */
 const { t } = useI18n()
@@ -29,8 +33,56 @@ async function switchTo(next: AppStyle) {
 }
 
 function toggle() {
+  closeHint()
   void switchTo(target.value)
 }
+
+// 一次性提示：漫画版下、本机没选过风格的人，页面安静下来以后在开关下方冒一个气泡，说可以换成简洁版。
+// 引导正在进行、有弹窗开着、开关不在视野里时先不出，过一会儿再看，最多再等半分钟。
+const hintOpen = ref(false)
+const HINT_RETRIES = 20
+let hintTimer: ReturnType<typeof setTimeout> | undefined
+let hintTries = 0
+
+function hintBlocked(): boolean {
+  const el = button.value
+  if (tourActive.value || !el?.isConnected) return true
+  const rect = el.getBoundingClientRect()
+  if (rect.width === 0 || rect.top < 0 || rect.bottom > window.innerHeight) return true
+  return document.querySelector('dialog[open], [aria-modal="true"]') !== null
+}
+
+function scheduleHint() {
+  clearTimeout(hintTimer)
+  if (hintOpen.value || style.value !== 'comic' || !styleHintPending()) return
+  hintTimer = setTimeout(() => {
+    if (hintOpen.value || style.value !== 'comic' || !styleHintPending()) return
+    if (!hintBlocked()) hintOpen.value = true
+    else if (++hintTries < HINT_RETRIES) scheduleHint()
+  }, STYLE_HINT_DELAY_MS)
+}
+
+function closeHint() {
+  clearTimeout(hintTimer)
+  if (!hintOpen.value) return
+  hintOpen.value = false
+  markStyleHintSeen()
+}
+
+function switchFromHint() {
+  closeHint()
+  void switchTo('simple')
+}
+
+onMounted(scheduleHint)
+onBeforeUnmount(() => clearTimeout(hintTimer))
+watch(style, (value) => { if (value !== 'comic') closeHint() })
+watch(tourActive, (active) => {
+  if (active) closeHint()
+  else scheduleHint()
+})
+// 引导里讲到这个开关，就等于看过提示了。
+watch(tourStep, (id) => { if (id === 'style') markStyleHintSeen() })
 </script>
 
 <template>
@@ -38,6 +90,7 @@ function toggle() {
     ref="button"
     type="button"
     class="style-toggle"
+    data-tour="style"
     :aria-label="`${t('appStyle.toggle')}：${targetLabel}`"
     :title="targetLabel"
     :aria-busy="busy ? 'true' : undefined"
@@ -54,6 +107,11 @@ function toggle() {
       <path class="style-icon__accent" d="M14 8.6v4.4M14 15.6v.1" />
     </svg>
   </button>
+  <Teleport to="body">
+    <Transition :css="false" @enter="popIn" @leave="popOut">
+      <StyleHint v-if="hintOpen" :anchor="button" @switch="switchFromHint" @dismiss="closeHint" />
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>

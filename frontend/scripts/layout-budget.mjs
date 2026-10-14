@@ -317,6 +317,8 @@ async function measure(profile, spec, [width, height], locale) {
       localStorage.setItem('app_locale', locale)
       localStorage.setItem('app_density', 'compact')
       localStorage.setItem('list_keys_hint', '1')
+      // 换简洁版的一次性气泡浮在报头下方，不属于页面版面。
+      localStorage.setItem('aigcnews:style-hint:v1', '1')
       // 和新手引导一样，项目 MCP 推广不占主列表的阅读预算。
       localStorage.setItem('aigcnews:mcp-promo-dismissed', String(Date.now() + 86400000))
       // Measure normal page layouts; the onboarding overlay has its own flow checks.

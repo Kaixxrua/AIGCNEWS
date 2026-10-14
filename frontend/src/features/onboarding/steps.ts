@@ -12,6 +12,7 @@ export interface TourStep {
 // must not turn a tour into a wait for a particular project or paper to exist.
 export const TOUR_STEPS: readonly TourStep[] = [
   { id: 'navigation', route: '/', targets: ['.dock'], compact: { targets: ['.mobile-nav', '.dock'], copy: 'mobileNavigation' } },
+  { id: 'style', route: '/', targets: ['[data-tour="style"]', '.app-masthead__actions'] },
   { id: 'home', route: '/', targets: ['.ranking-toolbar', '.dashboard-heading'], compact: { targets: ['.ranking-tabs', '.dashboard-heading'] } },
   { id: 'projects', route: '/projects', targets: ['.projects-search', '.projects-toolbar'] },
   { id: 'projectDetails', route: '/projects', targets: ['.project-chart__rows > :first-child', '.projects-grid > :first-child', '.projects-hero'], compact: { targets: ['.project-card__header', '.project-chart__rows > :first-child', '.projects-hero'] } },

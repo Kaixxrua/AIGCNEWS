@@ -47,6 +47,8 @@ const overrides = {
   theme: { toggle: '主题', light: '浅色模式', dark: '深色模式' },
   appStyle: {
     toggle: '页面风格', toSimple: '换成简洁版（素净低调，没有贴纸和荧光笔）', toComic: '换成漫画版',
+    hintTitle: '嫌页面太花？', hintBody: '可以换成简洁版：没有贴纸和荧光笔，页面更素净，上班时看也合适。随时能在这里换回来。',
+    hintSwitch: '换成简洁版', hintDismiss: '知道了',
   },
   density: { toCompact: '换成紧凑版面（一屏看更多）', toComfortable: '换成舒适版面（宽松的卡片）' },
   projectChart: {
