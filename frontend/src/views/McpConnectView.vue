@@ -2,7 +2,7 @@
 import { useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMediaQuery } from '@vueuse/core'
-import { CalendarDays, Library, MessageSquareText } from 'lucide-vue-next'
+import { CalendarDays, Clock3, Library, MessageSquareText } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/authStore'
 import { useLiveCallCount } from '@/composables/useLiveCallCount'
 import { MCP_MEMBER_QUOTA } from '@/features/mcp/dshPlugin'
@@ -47,7 +47,7 @@ const mcpCalls = useLiveCallCount('mcp_total_calls', desktop)
         <p class="agent-page-description">{{ t('agentSetup.mcp.description') }}</p>
         <section v-if="desktop" class="mcp-stats agent-page-stats" :aria-label="t('mcp.stats.label')">
           <div class="mcp-stat"><Library aria-hidden="true" /><span>{{ t('mcp.stats.calls') }}</span><strong><RollingNumber v-if="mcpCalls !== null" :value="mcpCalls" grouping /><template v-else>—</template></strong></div>
-          <div class="mcp-stat"><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
+          <div class="mcp-stat"><Clock3 aria-hidden="true" /><span>{{ t('dsh.stats.vipDaily') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling24h) }}</strong></div>
           <div class="mcp-stat"><CalendarDays aria-hidden="true" /><span>{{ t('dsh.stats.vipMonthly') }}</span><strong>{{ count(MCP_MEMBER_QUOTA.rolling30d) }}</strong></div>
         </section>
       </header>
