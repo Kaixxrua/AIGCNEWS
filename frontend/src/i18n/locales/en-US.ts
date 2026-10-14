@@ -44,6 +44,9 @@ const enUSCatalog = {
   common: { confirm: 'Confirm', cancel: 'Cancel', save: 'Save', close: 'Close', retry: 'Retry', search: 'Search', clear: 'Clear', noData: 'No data', language: 'Language', chinese: '中文', english: 'English', back: 'Back', edit: 'Edit', delete: 'Delete', refresh: 'Refresh', refreshing: 'Refreshing…', loading: 'Loading…', processing: 'Processing…', send: 'Send', previous: 'Previous', next: 'Next', page: 'Page', unknown: 'Unknown', never: 'Never', githubRepo: 'GitHub repository', joinQQGroup: 'Join QQ group', myFavorites: 'My favorites', noFormulas: 'No formulas detected.', formulasCopied: 'Copied {count} formulas.' },
   mcpAutoCommand: { label: 'Account setup command · Token included automatically', description: 'Step 2: create your token automatically, then copy the command or a natural-language prompt for your Agent.', creating: 'Creating your MCP Token and setup command…', ready: 'Your MCP Token is already included in the setup command', copy: 'Copy setup command', copyAgentPrompt: 'Copy Agent setup prompt', agentPromptHint: 'Paste the prompt into your coding Agent so it can configure and verify the connection. The prompt also contains your Token; treat it like a password.' },
   theme: { toggle: 'Theme', light: 'Light mode', dark: 'Dark mode' },
+  appStyle: {
+    toggle: 'Page style', toSimple: 'Switch to the plain style (quiet, no stickers or highlighter)', toComic: 'Switch to the comic style',
+  },
   density: { toCompact: 'Switch to the compact layout (more on screen)', toComfortable: 'Switch to the comfortable layout (roomier cards)' },
   projectChart: {
     label: 'Project chart', rank: 'Rank', project: 'Project', stars: 'Stars', gain: '24h', trend: '{days} days', heat: 'Heat', actions: 'Actions',

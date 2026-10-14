@@ -16,8 +16,12 @@
  * prefers-reduced-motion / 页面不可见时扰动暂停。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useAppStyle } from '@/theme'
 
 const props = defineProps<{ text: string; compact?: boolean }>()
+// 简洁版：字标换成一行素字，不画漫画字标、不跑故障动效。
+const { style } = useAppStyle()
+const plain = computed(() => style.value === 'simple')
 
 /** 字形池：块元素重复加权（数字衰变感），符号少量点缀 */
 const GLYPHS = '▓▒░█▄▀▓▒░█#%&*+=@<>/\\'
@@ -89,7 +93,7 @@ const tick = () => {
 }
 
 const start = () => {
-  if (disposed || reducedMotion || document.hidden) return
+  if (disposed || reducedMotion || document.hidden || plain.value) return
   if (tickTimer === null) tickTimer = setInterval(tick, TICK_MS)
 }
 const stop = () => {
@@ -121,6 +125,15 @@ watch(
     start()
   },
 )
+// 换版：去简洁版停掉动效、字形复原；回漫画版等字标重新挂上、量过宽再开。
+watch(plain, async (isPlain) => {
+  stop()
+  active.clear()
+  displayChars.value = props.text.split('')
+  if (isPlain) return
+  await lockCharWidths()
+  start()
+})
 
 onMounted(async () => {
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -154,16 +167,16 @@ onUnmounted(() => {
     to="/"
     class="brand-wordmark"
     :aria-label="text"
-    :class="{ 'brand-wordmark--comic': text === 'AIGC NEWS' }"
+    :class="{ 'brand-wordmark--comic': text === 'AIGC NEWS' && !plain, 'brand-wordmark--plain': plain }"
     @mouseenter="hovered = true"
     @mouseleave="hovered = false"
   >
-    <span v-if="text === 'AIGC NEWS'" class="brand-comic" :style="comicFrame" aria-hidden="true">
+    <span v-if="text === 'AIGC NEWS' && !plain" class="brand-comic" :style="comicFrame" aria-hidden="true">
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__base" />
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--upper" />
       <img src="/assets/comic/aigc-news-wordmark.webp" alt="" class="brand-comic__slice brand-comic__slice--lower" />
     </span>
-    <svg v-if="compact" class="brand-wordmark__logo" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
+    <svg v-if="compact && !plain" class="brand-wordmark__logo" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
       <rect width="128" height="128" rx="24" fill="var(--acid)" />
       <g transform="translate(4 4) scale(0.9375)" fill="var(--acid-ink)">
         <path d="M64 10A54 54 0 1 0 118 64H100A36 36 0 1 1 64 28Z" />
@@ -171,7 +184,8 @@ onUnmounted(() => {
         <circle cx="109" cy="19" r="9" />
       </g>
     </svg>
-    <span ref="textEl" class="brand-wordmark__text" aria-hidden="true"><span class="bw-fringe bw-fringe--cyan">{{ text }}</span><span class="bw-fringe bw-fringe--magenta">{{ text }}</span><span class="bw-slice bw-slice--cyan">{{ text }}</span><span class="bw-slice bw-slice--magenta">{{ text }}</span><span
+    <span v-if="plain" class="brand-plain" aria-hidden="true">{{ text }}</span>
+    <span v-else ref="textEl" class="brand-wordmark__text" aria-hidden="true"><span class="bw-fringe bw-fringe--cyan">{{ text }}</span><span class="bw-fringe bw-fringe--magenta">{{ text }}</span><span class="bw-slice bw-slice--cyan">{{ text }}</span><span class="bw-slice bw-slice--magenta">{{ text }}</span><span
       v-for="(_, i) in chars"
       :key="i"
       class="brand-wordmark__char"
@@ -457,4 +471,6 @@ onUnmounted(() => {
 @media (min-width:1024px) and (max-width:1499px) { .brand-comic { width:330px;height:90px; } }
 @media (min-width:1024px) and (max-width:1199px) { .brand-comic { width:280px;height:78px; } }
 @media (prefers-reduced-motion:reduce) { .brand-comic__base { transform:none;mask-image:none; }.brand-comic__slice,.brand-wordmark:hover .brand-comic__slice { display:none;animation:none; } }
+/* Plain style: the name set in one line of the page's ink, sized by the shell (simple-theme.css). */
+.brand-plain { display:block;color:var(--ink);font-size:var(--brand-plain-size, 17px);font-weight:700;line-height:1;letter-spacing:.01em;white-space:nowrap; }
 </style>

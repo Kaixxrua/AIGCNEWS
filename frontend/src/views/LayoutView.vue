@@ -18,6 +18,7 @@ import QQGroupLink from '@/components/QQGroupLink.vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
 import DensityToggle from '@/components/DensityToggle.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import StyleToggle from '@/components/StyleToggle.vue'
 import AppDock from '@/components/layout/AppDock.vue'
 import LayoutFooter from '@/components/layout/LayoutFooter.vue'
 import AccountSettingsDialog from '@/components/auth/AccountSettingsDialog.vue'
@@ -192,6 +193,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
             <GitHubLink v-if="!isMobile" />
             <QQGroupLink />
             <DensityToggle v-if="densityToggleShown" />
+            <StyleToggle />
             <ThemeToggle />
             <LocaleToggle />
             <TourHelpButton />

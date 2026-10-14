@@ -2,6 +2,7 @@ import { createApp, nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BrandWordmark from './BrandWordmark.vue'
+import { applyAppStyle } from '@/theme'
 
 let unmount: (() => void) | undefined
 const originalMatchMedia = window.matchMedia
@@ -47,6 +48,7 @@ describe('BrandWordmark', () => {
     window.matchMedia = originalMatchMedia
     vi.restoreAllMocks()
     vi.useRealTimers()
+    applyAppStyle('comic')
   })
 
   it('renders the brand text as per-character spans inside a home link', async () => {
@@ -120,5 +122,41 @@ describe('BrandWordmark', () => {
     const chars = [...host.querySelectorAll('.brand-wordmark__char')].map(el => el.textContent)
     expect(chars.filter(char => char === '▓')).toHaveLength(1)
     expect(chars.join('')).toContain('IGC NEWS')
+  })
+
+  it('sets the name as one line of plain text in the simple style and picks the comic mark back up live', async () => {
+    vi.useFakeTimers()
+    applyAppStyle('simple')
+    const host = mountWordmark('AIGC NEWS', true)
+    await nextTick()
+    await nextTick()
+
+    const link = host.querySelector('a.brand-wordmark') as HTMLAnchorElement
+    expect(link.getAttribute('aria-label')).toBe('AIGC NEWS')
+    expect(link.classList.contains('brand-wordmark--plain')).toBe(true)
+    expect(link.classList.contains('brand-wordmark--comic')).toBe(false)
+    expect(host.querySelector('.brand-plain')?.textContent).toBe('AIGC NEWS')
+    expect(host.querySelector('.brand-comic')).toBeNull()
+    expect(host.querySelector('.brand-wordmark__logo')).toBeNull()
+    expect(host.querySelector('.brand-wordmark__text')).toBeNull()
+
+    // 简洁版不跑字形扰动
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    vi.advanceTimersByTime(1000)
+    await nextTick()
+    expect(host.querySelector('.brand-plain')?.textContent).toBe('AIGC NEWS')
+
+    applyAppStyle('comic')
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(link.classList.contains('brand-wordmark--comic')).toBe(true)
+    expect(host.querySelector('.brand-plain')).toBeNull()
+    expect(host.querySelector('.brand-wordmark__logo')).not.toBeNull()
+    vi.advanceTimersByTime(250)
+    await nextTick()
+    const chars = [...host.querySelectorAll('.brand-wordmark__char')].map(el => el.textContent)
+    expect(chars).toHaveLength('AIGC NEWS'.length)
+    expect(chars.filter(char => char === '▓')).toHaveLength(1)
   })
 })

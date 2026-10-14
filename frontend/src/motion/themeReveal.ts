@@ -10,6 +10,8 @@ type ViewTransitionDocument = Document & {
 }
 
 const REVEAL_MS = 580
+// 圆形铺开没有爆炸框的尖角要走，短一点就够。
+const CIRCLE_MS = 420
 // 起始即是一枚按钮大小的爆炸框，点下去当帧就看得见。
 const START_RADIUS = 18
 const SPIKES = 16
@@ -27,10 +29,12 @@ export function burstPolygon(cx: number, cy: number, radius: number, rotation = 
 }
 
 /**
- * 切换主题：新主题的整页快照以按钮为中心炸开一枚爆炸框覆盖旧页面。
+ * 切换主题：新主题的整页快照以按钮为中心炸开一枚爆炸框覆盖旧页面；简洁版不用漫画爆炸框，换成一个圆平稳地铺开。
  * 浏览器不支持 View Transitions、用户偏好减少动态或拿不到按钮位置时直接切换。
  */
-export function revealTheme(origin: { x: number; y: number } | null, apply: () => void): void {
+export type RevealShape = 'burst' | 'circle'
+
+export function revealTheme(origin: { x: number; y: number } | null, apply: () => void, shape: RevealShape = 'burst'): void {
   const doc = document as ViewTransitionDocument
   if (!origin || typeof doc.startViewTransition !== 'function' || prefersReducedMotion()) {
     apply()
@@ -46,6 +50,13 @@ export function revealTheme(origin: { x: number; y: number } | null, apply: () =
   // 内圈也要盖住离按钮最远的视口角。
   const far = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y)) / INNER + 24
   transition.ready.then(() => {
+    if (shape === 'circle') {
+      root.animate(
+        { clipPath: [`circle(${START_RADIUS}px at ${x}px ${y}px)`, `circle(${(far * INNER).toFixed(1)}px at ${x}px ${y}px)`] },
+        { duration: CIRCLE_MS, easing: 'cubic-bezier(.22, 1, .36, 1)', pseudoElement: '::view-transition-new(root)' },
+      )
+      return
+    }
     root.animate(
       { clipPath: [burstPolygon(x, y, START_RADIUS), burstPolygon(x, y, far * 0.3, 0.08), burstPolygon(x, y, far, 0.22)] },
       { duration: REVEAL_MS, easing: 'cubic-bezier(.3, .1, .25, 1)', pseudoElement: '::view-transition-new(root)' },

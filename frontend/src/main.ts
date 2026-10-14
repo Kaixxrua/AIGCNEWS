@@ -8,7 +8,7 @@ import './motion.css'
 import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
-import { installAppTheme } from './theme'
+import { installAppStyle, installAppTheme } from './theme'
 import { installDesktopStyles } from './theme/desktopStyles'
 import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
 import { installPressFeedback } from './motion/press'
@@ -20,6 +20,8 @@ const landingLocation = { pathname: window.location.pathname, search: window.loc
 // 漫画版内页样式只在桌面宽度下载（comic-pages.css，见 theme/desktopStyles.ts）。要赶在路由加载各页样式表之前挂上，
 // 层叠先后才不变；桌面上等它到位再挂载应用。
 const desktopStylesReady = installDesktopStyles()
+// 页面风格（漫画版/简洁版）：分享链接里的 ?style= 要在路由接管地址之前读走；简洁版等它的样式表到位再挂载。
+const appStyleReady = installAppStyle()
 const app = createApp(App)
 installI18n()
 installAppTheme()
@@ -33,7 +35,7 @@ app.use(router)
 // 每页的标题、描述、canonical 与 noindex（各路径拿到的是同一份 index.html，见 seo/pageHead.ts）。
 installPageHead(router)
 
-void desktopStylesReady.then(() => {
+void Promise.all([desktopStylesReady, appStyleReady]).then(() => {
   app.mount('#app')
   installPressFeedback()
 })

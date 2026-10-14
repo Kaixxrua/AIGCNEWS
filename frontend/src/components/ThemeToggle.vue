@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAppTheme } from '@/theme'
+import { useAppStyle, useAppTheme } from '@/theme'
 import { revealTheme } from '@/motion/themeReveal'
 
 const { t } = useI18n()
 const { theme, toggleAppTheme } = useAppTheme()
+const { style } = useAppStyle()
 
 const targetThemeKey = computed(() => (theme.value === 'dark' ? 'theme.light' : 'theme.dark'))
 
-// 新主题从按钮处炸开一枚漫画爆炸框铺满全屏（键盘触发同样以按钮为圆心）。
+// 新主题从按钮处炸开一枚漫画爆炸框铺满全屏（键盘触发同样以按钮为圆心）；简洁版换成圆形铺开。
 function toggle(event: MouseEvent) {
   const button = event.currentTarget as HTMLElement | null
   const rect = button?.getBoundingClientRect()
-  revealTheme(rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null, toggleAppTheme)
+  const origin = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+  revealTheme(origin, toggleAppTheme, style.value === 'simple' ? 'circle' : 'burst')
 }
 </script>
 
