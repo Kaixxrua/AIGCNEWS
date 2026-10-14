@@ -124,6 +124,7 @@ const sceneOverlay = ref(false)
   --cs-5: 1.5rem;
   --cs-6: 2rem;
   --cs-dock-clear: 112px; /* 与 LayoutView/AppDock 的底部安全区契约，勿随排版节奏改动 */
+  --contact-gutter: clamp(1rem, 3vw, 2rem);
   /* 场景最外层与卡片外的严格同色契约：边缘融合/清屏/页面背景都读这一个 token */
   --contact-scene-bg: var(--paper-raised);
   --contact-hero-ink: var(--ink);
@@ -204,7 +205,7 @@ const sceneOverlay = ref(false)
   height: 100%;
   box-sizing: border-box;
   grid-template-rows: auto 1fr auto;
-  padding: clamp(1rem, 3vw, 2rem) clamp(1rem, 3vw, 2rem) 0;
+  padding: var(--contact-gutter) var(--contact-gutter) 0;
   pointer-events: none; /* 镂空区域把指针让给场景交互 */
 }
 
@@ -454,15 +455,46 @@ const sceneOverlay = ref(false)
 }
 .entry-qr-hint::before { content: '› '; color: var(--acid-strong); }
 
+/* 手机与平板：标题和副标题放在场景上方的纸面上，不压在截图上（深色主题下浅色大标题会和亮天空糊成一片，
+ * 副标题压在村庄上也读不清）。场景占下面剩下的高度，联系方式照旧浮在场景底部。 */
+@media (max-width: 63.99rem) {
+  .contact-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .hero-field {
+    position: relative;
+    inset: auto;
+    grid-row: 2;
+    grid-column: 1;
+  }
+  /* 标题不在场景上了，上缘那道遮罩也就不要了；下缘的留给联系方式 */
+  .hero-overlay { background: linear-gradient(0deg, color-mix(in srgb, var(--contact-scene-bg) 34%, transparent) 0%, transparent 30%); }
+  .hero-inner { display: contents; }
+  .hero-heading {
+    grid-row: 1;
+    grid-column: 1;
+    max-width: none;
+    padding: var(--contact-gutter) var(--contact-gutter) var(--cs-4);
+  }
+  .hero-dock {
+    position: relative;
+    z-index: 1;
+    grid-row: 2;
+    grid-column: 1;
+    align-self: end;
+    margin-inline: var(--contact-gutter);
+  }
+}
 @media (min-width: 48rem) {
   .hero-dock { width: min(22rem, 42%); }
   .entry-qr-frame { width: clamp(84px, 13vh, 116px); }
   .entry-body { padding: var(--cs-4); }
 }
 @media (max-width: 47.99rem) {
-  .hero-inner { padding: var(--cs-4) var(--cs-4) 0; }
-  .hero-heading { max-width: 100%; }
-  .hero-dock { width: 100%; justify-self: stretch; }
+  .contact-page { --contact-gutter: var(--cs-4); }
+  .hero-dock { width: auto; justify-self: stretch; }
   .contact-hero-note { text-align: left; }
   .entry-qr-frame,
   .entry-qr-hint { display: none; }
@@ -475,7 +507,7 @@ const sceneOverlay = ref(false)
   .contact-hero-note,
   .entry-label,
   .entry-badge { display: none; }
-  .hero-dock { width: auto; max-width: calc(100% - 1rem); justify-self: end; }
+  .hero-dock { width: auto; max-width: calc(100% - 2 * var(--contact-gutter) - 1rem); justify-self: end; }
   .entry-action--primary { min-height: 2.75rem; }
 }
 /* 矮屏（横持手机等）：dock 压缩间距，QR 已被 vh 钳制自动缩小 */
@@ -1036,6 +1068,324 @@ const sceneOverlay = ref(false)
   #app .app-shell--comic-page .entry-item--qr .entry-body { padding-top: 22px; padding-bottom: 14px; }
   #app .app-shell--comic-page .entry-badge { margin-top: 12px; }
   #app .app-shell--comic-page .entry-qr-hint { margin-top: 10px; }
+}
+
+/* ── 简洁版（html[data-style='simple']，样式表在公开仓的 simple-theme.css）：和站点其余页面一样用细线、规整圆角、
+ * 正体半粗，强调色只留一种蓝。画框不斜切、不压网点，联系卡、场景按钮、画质面板都换成纸面卡片，漫画版的生成素材
+ * 一张都不用。联系页只在桌面接入漫画外壳，窄屏在旧外壳里，所以这些规则挂在两边都有的 .app-shell 下；选择器比上面
+ * 漫画版的同名规则多一级 html:root[data-style='simple']，任何宽度都压得住。只有最后的桌面版式跟着漫画外壳走。 */
+html:root[data-style='simple'] #app .app-shell .contact-page { --contact-acid-ink: var(--simple-accent); }
+html:root[data-style='simple'] #app .app-shell .hero-overlay { display: none; }
+html:root[data-style='simple'] #app .app-shell .contact-kicker { letter-spacing: 0.08em; }
+html:root[data-style='simple'] #app .app-shell .contact-title.comic-title {
+  font-size: var(--simple-title-size);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+html:root[data-style='simple'] #app .app-shell .contact-subtitle {
+  color: var(--ink-secondary);
+  font-family: inherit;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.6;
+  text-shadow: none;
+}
+
+/* 场景上的「静态预览」和「选择画质」 */
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-actions) { gap: 8px; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-actions button) {
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--control-radius);
+  box-shadow: var(--simple-pop-shadow);
+  backdrop-filter: none;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-actions button::after) { content: none; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-actions button:hover) {
+  color: var(--ink);
+  background: var(--simple-hover);
+  border-color: var(--rule-strong);
+  transform: none;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-actions .scene-launch) {
+  height: 40px;
+  padding: 0 14px 0 12px;
+  font-family: inherit;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-poster-badge) {
+  padding: 4px 8px;
+  color: var(--ink-secondary);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-poster-badge::after) { content: none; }
+
+/* 加载状态与画质面板 */
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-status--visible) {
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--rule-strong);
+  border-radius: var(--control-radius);
+  box-shadow: var(--simple-pop-shadow);
+  font-family: inherit;
+  font-weight: 500;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-status--busy::after) { background: var(--simple-accent); }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-status-retry) {
+  color: var(--simple-accent-ink);
+  background: var(--simple-accent);
+  border-color: var(--simple-accent);
+  border-radius: var(--control-radius);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser) { background: rgb(15 18 22 / 0.4); }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-panel) {
+  padding: 20px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--module-radius);
+  box-shadow: var(--simple-pop-shadow);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-panel::after) { content: none; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-title) {
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(:is(.scene-chooser-note, .scene-chooser-hint)) { color: var(--ink-secondary); }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option) {
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--control-radius);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option::after) { content: none; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option:hover) {
+  background: var(--simple-hover);
+  border-color: var(--rule-strong);
+  transform: none;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option:has(input:checked)) {
+  background: var(--simple-select);
+  border-color: var(--simple-select-edge);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option input) { accent-color: var(--simple-accent); }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option-body strong) { color: var(--ink); font-size: 15px; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-option-body em) {
+  color: var(--simple-select-ink);
+  background: var(--simple-select);
+  border: 1px solid var(--simple-select-edge);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(:is(.scene-option-body small, .scene-option-size)) {
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-style: normal;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions button) {
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--control-radius);
+  font-family: inherit;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 600;
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions button::after) { content: none; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions button:hover) { transform: none; }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-cancel),
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-cancel:hover) {
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-cancel:hover) { background: var(--simple-hover); }
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions .scene-chooser-enter),
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions .scene-chooser-enter:hover) {
+  color: var(--simple-accent-ink);
+  background: var(--simple-accent);
+  border: 1px solid var(--simple-accent);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(.scene-chooser-actions .scene-chooser-enter:hover) {
+  background: var(--simple-accent-hover);
+  border-color: var(--simple-accent-hover);
+}
+html:root[data-style='simple'] #app .app-shell .hero-field :deep(:is(.scene-actions button, .scene-chooser button, .scene-status-retry):focus-visible) {
+  outline: 2px solid var(--simple-accent);
+  outline-offset: 2px;
+}
+
+/* 联系方式：纸面卡片，主按钮是蓝底，二维码保持白底好扫 */
+html:root[data-style='simple'] #app .app-shell .contact-hero-note {
+  color: var(--ink-secondary);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--control-radius);
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 500;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}
+html:root[data-style='simple'] #app .app-shell .contact-hero-note::before,
+html:root[data-style='simple'] #app .app-shell .contact-hero-note::after { content: none; }
+html:root[data-style='simple'] #app .app-shell .entry-item {
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--module-radius);
+  box-shadow: var(--simple-pop-shadow);
+  backdrop-filter: none;
+}
+html:root[data-style='simple'] #app .app-shell .entry-item::after { content: none; }
+html:root[data-style='simple'] #app .app-shell .entry-label {
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.4;
+  -webkit-text-stroke: 0;
+}
+html:root[data-style='simple'] #app .app-shell .entry-badge {
+  min-width: 0;
+  height: auto;
+  padding: 2px 8px;
+  color: var(--simple-select-ink);
+  background: var(--simple-select);
+  border: 1px solid var(--simple-select-edge);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  transform: none;
+}
+html:root[data-style='simple'] #app .app-shell .entry-badge::after { content: none; }
+html:root[data-style='simple'] #app .app-shell .entry-value { color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 500; }
+html:root[data-style='simple'] #app .app-shell .entry-value--link {
+  text-decoration-color: var(--simple-select-edge);
+  text-decoration-thickness: 1px;
+}
+html:root[data-style='simple'] #app .app-shell .entry-value--link:hover {
+  color: var(--simple-accent);
+  background: transparent;
+  text-decoration-color: currentColor;
+}
+html:root[data-style='simple'] #app .app-shell .entry-action--primary,
+html:root[data-style='simple'] #app .app-shell .entry-action--primary:is(:hover, :active) {
+  min-width: 0;
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 16px;
+  color: var(--simple-accent-ink);
+  background: var(--simple-accent);
+  border: 1px solid var(--simple-accent);
+  border-radius: var(--control-radius);
+  box-shadow: none;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 600;
+  text-decoration: none;
+  transform: none;
+}
+html:root[data-style='simple'] #app .app-shell .entry-action--primary:is(:hover, :active) {
+  background: var(--simple-accent-hover);
+  border-color: var(--simple-accent-hover);
+}
+html:root[data-style='simple'] #app .app-shell .entry-action--primary::after { content: none; }
+html:root[data-style='simple'] #app .app-shell .entry-value--link:focus-visible { outline: 2px solid var(--simple-accent); outline-offset: 2px; }
+html:root[data-style='simple'] #app .app-shell .entry-arrow { font-size: 15px; }
+html:root[data-style='simple'] #app .app-shell .entry-qr-frame {
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--control-radius);
+  box-shadow: none;
+  transform: none;
+}
+html:root[data-style='simple'] #app .app-shell .entry-qr-frame::after { content: none; }
+html:root[data-style='simple'] #app .app-shell .entry-qr-fallback { color: #4b535d; font-family: inherit; }
+html:root[data-style='simple'] #app .app-shell .entry-qr-hint {
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 500;
+  -webkit-text-stroke: 0;
+}
+html:root[data-style='simple'] #app .app-shell .entry-qr-hint::before { color: var(--ink-faint); font-weight: 500; }
+
+/* 桌面：标题行在纸面上，画框是一个规整的圆角矩形，联系卡收在画框右下角 */
+@media (min-width: 64rem) {
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-page { padding: 0 0 16px; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-hero {
+    grid-template-rows: auto minmax(0, 1fr);
+    row-gap: 16px;
+  }
+  html:root[data-style='simple'] #app .app-shell--comic-page .hero-heading { padding: 4px 0 0 2px; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-title.comic-title { margin: 0; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-subtitle { margin: 4px 0 0; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .hero-field {
+    --scene-safe-top: 12px;
+    clip-path: none;
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--module-radius);
+  }
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-hero::after,
+  html:root[data-style='simple'] #app .app-shell--comic-page .hero-field:has(.godot-contact-scene--poster)::after { content: none; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .hero-field :deep(.scene-actions) { right: 12px; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .hero-dock {
+    width: 400px;
+    max-width: calc(100% - 32px);
+    margin: 0 16px 16px 0;
+  }
+  html:root[data-style='simple'] #app .app-shell--comic-page .contact-hero-note {
+    align-self: flex-end;
+    min-width: 0;
+    min-height: 0;
+    margin: 0 0 8px;
+  }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-list { gap: 12px; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-body { gap: 8px; padding: 16px; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-item--qr .entry-body {
+    grid-template-areas: 'label qr' 'badge qr' 'value qr' 'hint qr';
+    grid-template-columns: minmax(0, 1fr) 112px;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    column-gap: 16px;
+    row-gap: 8px;
+    padding: 16px;
+  }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-label { margin: 0; font-size: 16px; line-height: 1.4; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-badge { margin: 0; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-action--primary { margin: 4px 0 0; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-qr-frame { width: 112px; height: 112px; margin: 0; }
+  html:root[data-style='simple'] #app .app-shell--comic-page .entry-qr-hint { margin: 0; line-height: 1.5; }
 }
 @media (prefers-reduced-motion: reduce) {
   .entry-item,
