@@ -1,0 +1,81 @@
+--- a/drivers/gles3/shader_gles3.cpp
++++ b/drivers/gles3/shader_gles3.cpp
+@@ -308,6 +308,10 @@
+ 	spec.id = glCreateProgram();
+ 	spec.ok = false;
+ 	GLint status;
++#ifdef WEB_ENABLED
++	// Successful real LINK_STATUS validates both attached compiled stages.
++	status = GL_FALSE;
++#endif
+ 
+ 	//vertex stage
+ 	{
+@@ -322,6 +326,7 @@
+ 		glShaderSource(spec.vert_id, 1, &cstr, &cstr_len);
+ 		glCompileShader(spec.vert_id);
+ 
++#ifndef WEB_ENABLED
+ 		glGetShaderiv(spec.vert_id, GL_COMPILE_STATUS, &status);
+ 		if (status == GL_FALSE) {
+ 			GLsizei iloglen;
+@@ -355,6 +360,7 @@
+ 
+ 			ERR_FAIL();
+ 		}
++#endif
+ 	}
+ 
+ 	//fragment stage
+@@ -370,6 +376,7 @@
+ 		glShaderSource(spec.frag_id, 1, &cstr, &cstr_len);
+ 		glCompileShader(spec.frag_id);
+ 
++#ifndef WEB_ENABLED
+ 		glGetShaderiv(spec.frag_id, GL_COMPILE_STATUS, &status);
+ 		if (status == GL_FALSE) {
+ 			GLsizei iloglen;
+@@ -403,6 +410,7 @@
+ 
+ 			ERR_FAIL();
+ 		}
++#endif
+ 	}
+ 
+ 	glAttachShader(spec.id, spec.frag_id);
+@@ -428,6 +436,35 @@
+ 
+ 	glGetProgramiv(spec.id, GL_LINK_STATUS, &status);
+ 	if (status == GL_FALSE) {
++#ifdef WEB_ENABLED
++		// A failed link can include either/both failed stages. Diagnose both
++		// before the unchanged program-log and cleanup path below.
++		const GLuint shader_ids[] = { spec.vert_id, spec.frag_id };
++		const StageType shader_stages[] = { STAGE_TYPE_VERTEX, STAGE_TYPE_FRAGMENT };
++		const char *shader_stage_names[] = { "Vertex", "Fragment" };
++		for (int i = 0; i < 2; i++) {
++			GLint compile_status = GL_FALSE;
++			glGetShaderiv(shader_ids[i], GL_COMPILE_STATUS, &compile_status);
++			if (compile_status != GL_FALSE) {
++				continue;
++			}
++			GLsizei stage_log_length = 0;
++			glGetShaderiv(shader_ids[i], GL_INFO_LOG_LENGTH, &stage_log_length);
++			if (stage_log_length < 0) {
++				ERR_PRINT(name + ": No OpenGL " + shader_stage_names[i] + " shader compiler log.");
++				continue; // Still diagnose the other stage, then clean up both.
++			}
++			if (stage_log_length == 0) {
++				stage_log_length = 4096; // Preserve the existing buggy-driver fallback.
++			}
++			char *stage_log = (char *)Memory::alloc_static_zeroed(stage_log_length + 1);
++			glGetShaderInfoLog(shader_ids[i], stage_log_length, &stage_log_length, stage_log);
++			StringBuilder builder;
++			_build_variant_code(builder, p_variant, p_version, shader_stages[i], p_specialization);
++			_display_error_with_code(name + ": " + shader_stage_names[i] + " shader compilation failed:\n" + stage_log, builder.as_string());
++			Memory::free_static(stage_log);
++		}
++#endif
+ 		GLsizei iloglen;
+ 		glGetProgramiv(spec.id, GL_INFO_LOG_LENGTH, &iloglen);
+ 

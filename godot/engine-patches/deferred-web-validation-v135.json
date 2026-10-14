@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "path": "drivers/gles3/shader_gles3.cpp",
+  "beforeSha256": "bef3d081a1e8ef8769f11148821edea70ca0830fc29bab7660a252862c97c9d8",
+  "afterSha256": "b73d6aa83d5c235693fe64504eca5eb943964d8ac2350e65627bdc7301af6ab9",
+  "patchSha256": "8c332fee68cadb9fbc8aedd47d7f774c9383c3131453d38029d737ec83df7f0d",
+  "onlyFunction": "ShaderGLES3::_compile_specialization",
+  "webOnly": true,
+  "nonWebPreprocessedFunctionByteExact": true,
+  "sdkPatchApplied": false,
+  "engineBuildRun": false
+}

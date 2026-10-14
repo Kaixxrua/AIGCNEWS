@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101612">
+  <title>$GODOT_PROJECT_NAME</title>
+  <script data-meadow-engine-preload>
+    // An explicit quality URL already expresses entry intent. Start only the
+    // shared engine transfer while UI scripts arrive; never preload any PCK,
+    // create an Engine, or bypass the unchanged real scene-ready boundary.
+    // No explicit selection means no eager engine download on the chooser.
+    (() => {
+      try {
+        const quality = new URLSearchParams(location.search).get("quality");
+        if (!["lite", "balanced", "original"].includes(quality)) return;
+        const source = "$GODOT_URL";
+        if (!/^[\w.-]+\.js$/.test(source)) return;
+        const hint = document.createElement("link");
+        hint.rel = "preload";
+        hint.as = "fetch";
+        hint.type = "application/wasm";
+        hint.crossOrigin = "anonymous";
+        hint.href = source.replace(/\.js$/, ".wasm");
+        document.head.appendChild(hint);
+      } catch (_) { /* Optional hint never prevents the normal loader. */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="meadow-controls.css">
+  <link rel="stylesheet" href="meadow-progressive.css">
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <h1 class="sr-only">风起原野 · 动态草原</h1>
+  <span id="scene-fps" aria-live="off" hidden></span>
+  <div id="scene-controls" role="group" aria-label="场景控制">
+    <button id="quality-control" type="button" aria-haspopup="dialog" aria-controls="quality-dialog">画质</button>
+    <button id="time-control" type="button" disabled aria-label="入夜，切换到夜晚" aria-keyshortcuts="N" title="昼夜切换 · N">
+      <svg class="time-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <g class="sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4L19 5"/></g>
+        <path class="moon" d="M19.6 15.3A8.6 8.6 0 0 1 8.7 4.4 8.6 8.6 0 1 0 19.6 15.3Z"/>
+      </svg>
+      <span id="time-label">入夜</span>
+      <span class="key-hint" aria-hidden="true">N</span>
+    </button>
+    <button id="motion-control" type="button" disabled aria-label="暂停环境动画" aria-keyshortcuts="P" title="暂停环境动画 · P">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path id="motion-icon" d="M8 5v14M16 5v14"/></svg>
+    </button>
+  </div>
+  <p id="time-state" class="sr-only" role="status" aria-live="polite">正在载入白天场景。</p>
+  <p id="scene-help" class="sr-only">N 切换昼夜，P 暂停或恢复环境动画。聚焦场景后，D 切换景深，C 查看人物行走比例，G 查看深度。中央保留未来行走和 Boss 战区域。</p>
+  <canvas id="canvas" tabindex="0" role="img" aria-label="风起原野，晴天草原场景" aria-describedby="scene-help">浏览器需要支持 WebGL 2 才能显示此场景。</canvas>
+  <section id="loading" aria-label="载入场景" aria-busy="true">
+    <p class="loading-title">风起原野</p>
+    <p id="loading-message" role="status">正在载入草原…</p>
+    <progress id="loading-progress" aria-label="场景下载进度"></progress>
+    <button id="retry" type="button" hidden>重新载入</button>
+  </section>
+  <noscript>请启用 JavaScript，才能运行 Godot 草原场景和昼夜切换。</noscript>
+  <dialog id="quality-dialog" aria-labelledby="quality-title" aria-describedby="quality-description" tabindex="-1">
+    <h2 id="quality-title">选择画质</h2>
+    <p id="quality-description">三档均为完整原野场景，保留昼夜与环境动画。选择画质后，只下载对应的素材包。</p>
+    <fieldset id="quality-options">
+      <legend class="sr-only">场景画质</legend>
+      <label class="quality-option">
+        <input type="radio" name="quality" value="lite" checked aria-describedby="quality-lite-description quality-lite-size">
+        <span><strong>极速 <span id="quality-recommended">推荐</span></strong><small id="quality-lite-description">完整场景，降低渲染分辨率与素材细节，减少下载量</small><small id="quality-lite-size"></small></span>
+      </label>
+      <label class="quality-option">
+        <input type="radio" name="quality" value="balanced" aria-describedby="quality-balanced-description quality-balanced-size">
+        <span><strong>均衡</strong><small id="quality-balanced-description">部分地表材质轻度压缩，透明边缘与动物保持原样</small><small id="quality-balanced-size"></small></span>
+      </label>
+      <label class="quality-option">
+        <input type="radio" name="quality" value="original" aria-describedby="quality-original-description quality-original-size">
+        <span><strong>原画</strong><small id="quality-original-description">无损纹理，保留全部细节</small><small id="quality-original-size"></small></span>
+      </label>
+    </fieldset>
+    <div class="quality-download">
+      <p id="quality-total-size" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="quality-shared-size"></p>
+      <p id="quality-transfer-note">合计包含所选素材包、共享引擎与界面文件，不含 HTML 和响应头。gzip 大小仅适用于服务器启用 gzip 时；实际下载量随压缩方式与缓存而变。</p>
+    </div>
+    <p id="quality-notice">首次选择后会记住偏好；也可以随时从右上角“画质”更改。</p>
+    <div class="quality-actions">
+      <button id="quality-cancel" type="button" hidden>取消</button>
+      <button id="quality-enter" type="button">进入原野</button>
+    </div>
+  </dialog>
+  <script src="meadow-webgl-compile.js"></script>
+  <script src="meadow-startup-trace.js"></script>
+  <script src="meadow-loader.js"></script>
+  <script src="meadow-progressive.js"></script>
+  <script src="meadow-stream.js"></script>
+  <script src="meadow-boot.js"></script>
+  <script src="meadow-controls.js"></script>
+  <script src="meadow-quality.js"></script>
+  <script src="$GODOT_URL"></script>
+  <script>
+    window.meadowQuality.mount($GODOT_CONFIG);
+  </script>
+</body>
+</html>

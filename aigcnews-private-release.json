@@ -1,0 +1,11 @@
+{
+  "manifest_sha256": "6ece31cfa9e9f965dfcb187d184f79d08de99bef671cfc6bc7a0fbe7f0503fe9",
+  "release_id": "20261012-contact-simple",
+  "schema": "aigcnews.private-frontend-release.v1",
+  "source_files": {
+    "components/contact/GodotContactScene.test.ts": "818d481854ee84567a671976acc52371cc545a74268b2ef8a2fdfb474b44694c",
+    "components/contact/GodotContactScene.vue": "dfffa143b49aa9d5284ca68b078766619889f7bb4adef4e7e416045cdd2271a1",
+    "views/ContactPageView.test.ts": "c39ef0830b846e79caa0355946cf285eade273840a7b53f9657e5a83399538e2",
+    "views/ContactPageView.vue": "78d49263f0f57c864caab3a59e351104ec05baa9cb03f6c2a0f0dc782cd0b780"
+  }
+}

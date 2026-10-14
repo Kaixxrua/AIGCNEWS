@@ -1,0 +1,1283 @@
+{
+  "version": 1,
+  "date": "2026-09-13",
+  "scope": "Original public modular actors only. No private application or account data.",
+  "generationPolicy": "Four concurrent ImageGen candidates per chosen batch. Every prompt explicitly included 八方旅人2. All original candidate PNGs retained. Selected PNG bytes copied unchanged, no programmatic retouching.",
+  "validation": "Native RGBA; visible alpha>=32; four-pixel guard; explicit UV/anchor registration. 32 time slots, not necessarily 32 unique poses; held poses are documented.",
+  "assets": [
+    {
+      "id": "hero_ranger",
+      "selectedCandidate": 3,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-220c002d-87ef-4b4d-92ea-912b31f6e678.png",
+      "sha256": "651326d723ec0e8eb08444df7ddc756f63fc8ba75eca5d41db99e9f10a635c93",
+      "alphaZeroFraction": 0.7457,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-a28b258d-7cdb-4d97-8386-cc95a89cd958.png",
+          "sha256": "b0d2b6a9f9440896fc2cfb7ca2e428d72b7f1d5623a27db3a2562616b8f3ac91",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.765,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 2,
+          "source": "exec-2c5a3abc-a991-4b66-bcb8-31b807bcdada.png",
+          "sha256": "3daba9fdd0ddfa923c8e358306f41829061fef2cc28dea9d74e02f0af67f2780",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7978,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 3,
+          "source": "exec-220c002d-87ef-4b4d-92ea-912b31f6e678.png",
+          "sha256": "651326d723ec0e8eb08444df7ddc756f63fc8ba75eca5d41db99e9f10a635c93",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7457,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 4,
+          "source": "exec-70a3d188-1d1c-4ea3-bd35-cf232e80edc7.png",
+          "sha256": "0224e2f6a1402f6c3d974060400c667ec289fd7b5f3485d382d187f086b8c28c",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7484,
+          "automaticRegistration": "not recorded in initial audit"
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "pet_deer",
+      "selectedCandidate": 4,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-9f93ef29-a709-4a02-a2ae-bd09e0d11994.png",
+      "sha256": "7f599bab78ca69ee126f87635f3f7b68a0be31f3f130d516cb0aec2e0160ec22",
+      "alphaZeroFraction": 0.6915,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-f86c06a8-2e3b-4c35-a505-554eb5c041bc.png",
+          "sha256": "2d74671b41ee5a73338444c4c8699972571dc4cca176cd198f4f17d29068d92c",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6611,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 2,
+          "source": "exec-3baddefa-cfd4-440f-9972-3b95428e8edd.png",
+          "sha256": "79db1b70acdb2fd8daa28c7f5aac688dc49c218c67ad4d15b93f5a9978451e53",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7219,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 3,
+          "source": "exec-bc9b5f4c-27e6-43be-bf55-2d3a560f7aa8.png",
+          "sha256": "7ab96b4d4b4e1896430979df5100c472a703bfe3277667c811f2f7d9b10793e0",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7342,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 4,
+          "source": "exec-9f93ef29-a709-4a02-a2ae-bd09e0d11994.png",
+          "sha256": "7f599bab78ca69ee126f87635f3f7b68a0be31f3f130d516cb0aec2e0160ec22",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6915,
+          "automaticRegistration": "not recorded in initial audit"
+        }
+      ],
+      "notes": "One +2px UV correction; all actions retained."
+    },
+    {
+      "id": "boss_ancient_guardian",
+      "selectedCandidate": 2,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-ec6b6ec7-a133-4151-99af-840f92327af9.png",
+      "sha256": "5b5a6c6fac7167b215e24d5da3332dc1151c67c07f09ed305dfb377db9d9e2a9",
+      "alphaZeroFraction": 0.6338,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-71ceca53-2969-44da-89ce-5fc7820eba9c.png",
+          "sha256": "6a4e5633054528ed0b807489fcbd5f974a20baae55e343568d08fe67d1643af2",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.5937,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 2,
+          "source": "exec-ec6b6ec7-a133-4151-99af-840f92327af9.png",
+          "sha256": "5b5a6c6fac7167b215e24d5da3332dc1151c67c07f09ed305dfb377db9d9e2a9",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6338,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 3,
+          "source": "exec-c33408b5-4c39-4799-99e3-dad3dc45bf48.png",
+          "sha256": "262adae515d353639484354e53947aa4e97e133e537b603bb3d66455e934e60d",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6721,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 4,
+          "source": "exec-80977f1f-ce86-47bb-bf02-7a38fa48c1a2.png",
+          "sha256": "79c450aad82372b88b6d1305aab593fb24764499bc5f13c33621ecfdb124c65a",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6028,
+          "automaticRegistration": "not recorded in initial audit"
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "hero_knight",
+      "selectedCandidate": 1,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-87c1e9e6-e16d-4bc0-84da-b2cf62fc7eaa.png",
+      "sha256": "1fe6a1479d13aa612758d6fcdc2d5d01c196b9c6be39cde7f0be359dda302f80",
+      "alphaZeroFraction": 0.7657,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        18,
+        21,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-87c1e9e6-e16d-4bc0-84da-b2cf62fc7eaa.png",
+          "sha256": "1fe6a1479d13aa612758d6fcdc2d5d01c196b9c6be39cde7f0be359dda302f80",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7657,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 2,
+          "source": "exec-492dc2e8-8422-4575-baec-591e2cec3182.png",
+          "sha256": "b38b13848c3e9d5f0fe499cf2c3aeed5c2d772b54a081083f80eb69f0d457834",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7191,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 3,
+          "source": "exec-19700df3-6d62-499b-96c6-7b9eb8d3a1af.png",
+          "sha256": "9aa3c194e5fe322a3c498c8cd01d3c534d8a1a2ab1bb59f2b7f1393d5cb7f659",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7554,
+          "automaticRegistration": "not recorded in initial audit"
+        },
+        {
+          "candidate": 4,
+          "source": "exec-0521fd84-63d9-4135-9ee0-92a0a495cde0.png",
+          "sha256": "90039181cd08195ca17830d8d276506add13f9ac663f6dc178d358134292c7ef",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7403,
+          "automaticRegistration": "not recorded in initial audit"
+        }
+      ],
+      "notes": "Eight walk poses retained; six attack poses held across eight slots to exclude cross-cell weapons."
+    },
+    {
+      "id": "hero_mage",
+      "selectedCandidate": 1,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-9eb81843-87f2-45a8-a8bc-d4813b24d81d.png",
+      "sha256": "7148dd1da407c6b4eb4667516dc7c57a4b1c94c3d87c290b8cb20ba9ca690669",
+      "alphaZeroFraction": 0.7527,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        18,
+        21,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-9eb81843-87f2-45a8-a8bc-d4813b24d81d.png",
+          "sha256": "7148dd1da407c6b4eb4667516dc7c57a4b1c94c3d87c290b8cb20ba9ca690669",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7527,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-166c34f4-5808-42d4-8ff9-88a78d37a39e.png",
+          "sha256": "bd597ccab844ed90313746ea0f263eb5f91fc4d0a2aee33cc86ce1e523749fe5",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6732,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-420202e0-03d2-45dc-bc66-200a84892187.png",
+          "sha256": "73b325acb66976902de38e21f34359472d0a8c27999ced0e7134358576114224",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7125,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 4,
+          "source": "exec-07965a4b-d269-45e0-a80c-61b6eb5c4324.png",
+          "sha256": "89408271298cfc4fbc9029c76bfe3b19d7f7fb9857732568822db539a50bda2b",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.693,
+          "automaticRegistration": false
+        }
+      ],
+      "notes": "Eight walk poses retained; six attack poses held across eight slots to exclude cross-cell weapons."
+    },
+    {
+      "id": "hero_bard",
+      "selectedCandidate": 4,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-b74bf372-fe57-487a-b030-70d5a0207f23.png",
+      "sha256": "723d2ff62164ee38597bd232b5a461c01e4899b263b2bb57f151547f906e3ed6",
+      "alphaZeroFraction": 0.7425,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-310dde27-5c20-4d1d-9a86-e24f2032d4a5.png",
+          "sha256": "94ef76a38e09f5e9128a611d2856653401152d042f36ce4db4d617f8a0369093",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7312,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-79426bb4-5584-48e5-8186-835c03f237d0.png",
+          "sha256": "1babdfc8ca8d506df238b399f3db05dda79ecaa3158850b24ce71a0b93e34daf",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7796,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-a7f9ac1d-0761-40f2-8b0c-b5974796e7c2.png",
+          "sha256": "08f2f1fb6a04b566edbfb241c4969d7163ed2ab8fb6fd9d1a5944d70d49c8167",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.741,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 4,
+          "source": "exec-b74bf372-fe57-487a-b030-70d5a0207f23.png",
+          "sha256": "723d2ff62164ee38597bd232b5a461c01e4899b263b2bb57f151547f906e3ed6",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7425,
+          "automaticRegistration": true
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "hero_alchemist",
+      "selectedCandidate": 3,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-118c09d0-8b62-4beb-a513-ec653e591d0d.png",
+      "sha256": "13890b85b07865eed4d68224a7d1ef6b8e2545c525f7affaef929b369dacc8f4",
+      "alphaZeroFraction": 0.6913,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-4f3bcfca-1ffc-4efe-8778-4b6c4d3c59e3.png",
+          "sha256": "a8d786c418eaa14d75b98b429523072b34e4ecd9d3e44d884b1bc6acb77edec6",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.657,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-b7c2ff9d-34d1-4a82-8f03-2490dea7323c.png",
+          "sha256": "1a7432d20aad8f0df7ce9cee5f93c6ad6ccfac8a44eb3e30db1f06f83e88b7f9",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6081,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-118c09d0-8b62-4beb-a513-ec653e591d0d.png",
+          "sha256": "13890b85b07865eed4d68224a7d1ef6b8e2545c525f7affaef929b369dacc8f4",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6913,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 4,
+          "source": "exec-f900a100-e842-4c21-9bc2-76f069f01356.png",
+          "sha256": "36286d89f9ca505e7072ea4cdcb2979462b4bfc5a4139d407b395e95705190e8",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.652,
+          "automaticRegistration": true
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "hero_astrologer",
+      "selectedCandidate": 2,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-5b4f7d86-b0db-46dd-91d0-f7d0e75d8dad.png",
+      "sha256": "a1645e66eedf42b33294c8b1646c66eee17cba22ca2f1535c0e86bdd46931cd1",
+      "alphaZeroFraction": 0.6737,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-c42fad16-4d02-4b45-8978-b993580d6e56.png",
+          "sha256": "18ba41eeb85599b1b28db67cee81a4201fd43381ab5db31560991682f936ab40",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6418,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-5b4f7d86-b0db-46dd-91d0-f7d0e75d8dad.png",
+          "sha256": "a1645e66eedf42b33294c8b1646c66eee17cba22ca2f1535c0e86bdd46931cd1",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6737,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 3,
+          "source": "exec-decdf65b-b9d0-4a92-b7dd-f39864f1ad0f.png",
+          "sha256": "476b34a74d51440c37579e3577c213b3d2942aa26e2274af89afa8443b665c77",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6279,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 4,
+          "source": "exec-72934d75-e202-45f8-ae3b-51f527651202.png",
+          "sha256": "94a0f58bd02dd1730ff0560fc1fce930a2a0336a0f2f68ad1dea9cc7c015249a",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6615,
+          "automaticRegistration": true
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "pet_fox",
+      "selectedCandidate": 2,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-21b58be3-05be-444c-a065-5ba64f7bba7c.png",
+      "sha256": "1ffc6436463ae560bcca4ba96e461410aa2fab976f61ba0aaf80ff5675735060",
+      "alphaZeroFraction": 0.691,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-3f8efa6f-1a5b-4d86-bfa1-4e776414d940.png",
+          "sha256": "4234d30c3e8d21d0e7ed666fdf61ab7ae59b6b744a4666b1bac12b8f37989300",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6684,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-21b58be3-05be-444c-a065-5ba64f7bba7c.png",
+          "sha256": "1ffc6436463ae560bcca4ba96e461410aa2fab976f61ba0aaf80ff5675735060",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.691,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 3,
+          "source": "exec-6db37f14-cbe9-4360-a40a-0322c1ce0e96.png",
+          "sha256": "529b7706ffaf03a5c36b4803a411f95e32749c71e1d64d10baedcd3b3aea3aa3",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6536,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 4,
+          "source": "exec-1b174b70-3f3f-45ce-8bfe-2a6171dc7f6b.png",
+          "sha256": "ad04184ddf1efca16e5690f2b8eec2ecb1c0c752c8de13c16817bd9d5177e572",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6308,
+          "automaticRegistration": false
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "pet_rabbit",
+      "selectedCandidate": 4,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-79e7a398-4d74-43a2-a121-800cb59a2013.png",
+      "sha256": "26f52e6f504c1435c14f8fd5d440ec1bfc3bbae8636a37a83a250dd0bb5edc2b",
+      "alphaZeroFraction": 0.6032,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        18,
+        18,
+        23,
+        23,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-a52d3525-b8ce-4b10-b79d-4d1f844fd761.png",
+          "sha256": "c418c182faba1b8c5fe235df1021f084ae8b5828fda9ba9e4e841362c1e44f53",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6295,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-a0709100-9c17-44d3-aea1-10a140939724.png",
+          "sha256": "3ee3cabf531830b188cb5531a7d62c2bf994880f8099afeab2fbeb50f3ea4db1",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6478,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-3a9e2054-0648-4765-85a8-4f6c441c9c12.png",
+          "sha256": "cd18ff7170b1a5626e8b6286d9fadb6d138d31e0a89cf1300d48e1353a8c578a",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6373,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 4,
+          "source": "exec-79e7a398-4d74-43a2-a121-800cb59a2013.png",
+          "sha256": "26f52e6f504c1435c14f8fd5d440ec1bfc3bbae8636a37a83a250dd0bb5edc2b",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6032,
+          "automaticRegistration": false
+        }
+      ],
+      "notes": "Eight walk poses retained. Four attack poses held across eight slots; cross-cell stretched poses excluded. Two +2px UV corrections, PNG untouched."
+    },
+    {
+      "id": "pet_owl",
+      "selectedCandidate": 4,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-66e2aac7-d5f3-422c-990e-9d767a72b6e2.png",
+      "sha256": "f75432551f1089c22a511e0ca290a58708d58cd65e46daf408b16150e4c2d6c7",
+      "alphaZeroFraction": 0.566,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        25,
+        28,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-d115d10a-1eb0-4803-b8b1-daf0ce2199db.png",
+          "sha256": "b61e1a847d3ea4989d011a0221516d330dac452e352773f8c30936ade679dd0d",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.569,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-0667e082-b350-40a0-b96f-a24c152ad33e.png",
+          "sha256": "2d567b02550fcbd464aab25047ba39eb3fe63f040230540b33a59c2313c5c79d",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.5725,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-44ad7e81-fc06-4077-8f8d-1860ac3d60ec.png",
+          "sha256": "a5f2559bf011f2b8dd4d7a36ee0edbbd817b235c82c6c10db144f0cca810e9c0",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.6225,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 4,
+          "source": "exec-66e2aac7-d5f3-422c-990e-9d767a72b6e2.png",
+          "sha256": "f75432551f1089c22a511e0ca290a58708d58cd65e46daf408b16150e4c2d6c7",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.566,
+          "automaticRegistration": false
+        }
+      ],
+      "notes": "Eight travel and attack poses retained; six hit poses held across eight slots to avoid cross-cell feathers. One -3px UV correction."
+    },
+    {
+      "id": "pet_finch",
+      "selectedCandidate": 3,
+      "selectedBatch": "final",
+      "nativeSize": [
+        1536,
+        1024
+      ],
+      "frameGrid": [
+        8,
+        4
+      ],
+      "source": "exec-c4063575-7f3f-4275-85f1-3e9b3a4c8c1e.png",
+      "sha256": "0b8b385719f70ac740f9ba2ecffe5859c3d5ea6ea345583b45f63bf6edbc63d8",
+      "alphaZeroFraction": 0.7622,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-1048a61c-7954-426c-bdba-7fc3a314b139.png",
+          "sha256": "43a7d979b4b8c17fc7eb3771512c3649f73d40c7639cf5e6bbb27233c86deff4",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7356,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 2,
+          "source": "exec-9c0e3e16-3d9e-4779-9610-811a2e04e413.png",
+          "sha256": "44d3f49ad25e7407f5a2c186456ccb961ebc33e51add16bc8224416f902d6a60",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7113,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 3,
+          "source": "exec-c4063575-7f3f-4275-85f1-3e9b3a4c8c1e.png",
+          "sha256": "0b8b385719f70ac740f9ba2ecffe5859c3d5ea6ea345583b45f63bf6edbc63d8",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7622,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 4,
+          "source": "exec-b32d88c6-3792-44a8-953e-dae6897dba6f.png",
+          "sha256": "dfceb81e7b802bd19dd82280b2cf40a8eba7ac708abf2118585c03de0a147879",
+          "nativeSize": [
+            1536,
+            1024
+          ],
+          "alphaZeroFraction": 0.7471,
+          "automaticRegistration": true
+        }
+      ],
+      "notes": "Selected for silhouette consistency, motion, alpha edges and scene-compatible palette."
+    },
+    {
+      "id": "pet_dragon",
+      "selectedCandidate": 4,
+      "selectedBatch": "wide",
+      "nativeSize": [
+        1024,
+        1536
+      ],
+      "frameGrid": [
+        4,
+        8
+      ],
+      "source": "exec-494b448b-9876-4033-956b-128c0fa51b83.png",
+      "sha256": "583f2952f1022acba5e696ca50e0c4c8400220fd77f42534763027fe22016d29",
+      "alphaZeroFraction": 0.6926,
+      "frameSlotCount": 32,
+      "sourceFrameIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "candidates": [
+        {
+          "candidate": 1,
+          "source": "exec-449ad6d8-0087-4bb0-bda2-7792d91ece14.png",
+          "sha256": "2f52dcd3bfc71cbe5121a9a84464497369b3d09076257d832fab227519d911ed",
+          "nativeSize": [
+            1024,
+            1536
+          ],
+          "alphaZeroFraction": 0.6346,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 2,
+          "source": "exec-64e5b29b-8d2b-4c43-886d-2949102cd16b.png",
+          "sha256": "e16a468604ce8ed21ec3a6f7037544a76e43577aa704cd1956cb5ad3165d29c9",
+          "nativeSize": [
+            1024,
+            1536
+          ],
+          "alphaZeroFraction": 0.6337,
+          "automaticRegistration": false
+        },
+        {
+          "candidate": 3,
+          "source": "exec-f5b87dc9-9063-47f4-b803-be5acd9b6520.png",
+          "sha256": "63de12c1a3efca23800a29367975819faeebc893376153bad94f237fe09c2dd3",
+          "nativeSize": [
+            1024,
+            1536
+          ],
+          "alphaZeroFraction": 0.6785,
+          "automaticRegistration": true
+        },
+        {
+          "candidate": 4,
+          "source": "exec-494b448b-9876-4033-956b-128c0fa51b83.png",
+          "sha256": "583f2952f1022acba5e696ca50e0c4c8400220fd77f42534763027fe22016d29",
+          "nativeSize": [
+            1024,
+            1536
+          ],
+          "alphaZeroFraction": 0.6926,
+          "automaticRegistration": true
+        }
+      ],
+      "notes": "Earlier 8x4 batch rejected for cross-cell wings. Chosen 4x8 batch retains all 32 poses; runtime hover, terrain shadow."
+    }
+  ]
+}

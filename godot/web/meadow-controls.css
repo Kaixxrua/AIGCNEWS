@@ -1,0 +1,122 @@
+:root {
+  color-scheme: dark;
+  --surface: #19231ef2;
+  --surface-hover: #29382e;
+  --text: #f0e4c4;
+  --muted: #c4c5b8;
+  --border: #7b795d;
+  --focus: #f8d48a;
+  font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  font-size: 16px;
+  background: #070b0e;
+  color: var(--text);
+}
+* { box-sizing: border-box; }
+body { margin: 0; overflow: hidden; }
+[hidden] { display: none !important; }
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+#canvas { display: block; width: 100vw; height: 100dvh; }
+#canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+#scene-fps {
+  position: fixed;
+  right: max(0.5rem, env(safe-area-inset-right));
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 2;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  background: var(--surface);
+  color: var(--muted);
+  font: 0.6875rem/1.4 ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  min-width: 8ch;
+  text-align: right;
+  pointer-events: none;
+  user-select: none;
+}
+#scene-controls {
+  position: fixed;
+  top: 1rem;
+  /* The parent contact page owns two actions at the far right. */
+  right: 7rem;
+  display: flex; gap: 0.5rem; z-index: 2;
+}
+button {
+  min-width: 2.75rem; min-height: 2.75rem;
+  border: 1px solid var(--border); border-radius: 0.25rem;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: 0.8125rem; line-height: 1.25;
+  cursor: pointer; touch-action: manipulation;
+}
+#scene-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
+#time-control { padding: 0.5rem 0.75rem; }
+#motion-control { padding: 0.5rem; }
+button:hover:not(:disabled) { background: var(--surface-hover); }
+button:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+button:active:not(:disabled) { border-color: var(--text); }
+button:disabled { cursor: wait; opacity: 0.55; }
+svg { width: 1.125rem; height: 1.125rem; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.key-hint { font: 0.6875rem ui-monospace, monospace; color: var(--muted); border-left: 1px solid var(--border); padding-left: 0.5rem; }
+.moon, [data-night="true"] .sun { display: none; }
+[data-night="true"] .moon { display: inline; }
+#loading {
+  position: fixed; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1rem; padding: 1.5rem; text-align: center;
+  background: #101612;
+}
+#loading p { margin: 0; max-width: 32rem; }
+.loading-title { font-size: 1.25rem; letter-spacing: 0.2em; }
+#loading-message { color: var(--muted); font-size: 0.875rem; line-height: 1.6; }
+progress { width: min(16rem, 85vw); height: 0.375rem; accent-color: var(--focus); }
+#retry { padding: 0.5rem 1rem; }
+#quality-control { padding: 0.5rem 0.75rem; }
+#quality-dialog {
+  width: min(30rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem);
+  overflow: auto; padding: 1.5rem; border: 1px solid var(--border);
+  border-radius: 0.25rem; background: #19231e; color: var(--text);
+}
+#quality-dialog::backdrop { background: #070b0edb; }
+#quality-title { margin: 0 0 0.75rem; font-size: 1.25rem; font-weight: 600; }
+#quality-description, #quality-notice { font-size: 0.8125rem; line-height: 1.6; color: var(--muted); }
+#quality-options { display: grid; gap: 0.75rem; margin: 1.25rem 0; padding: 0; border: 0; }
+.quality-option { display: flex; align-items: center; gap: 0.75rem; padding: 1rem; border: 1px solid var(--border); cursor: pointer; }
+.quality-option:has(:checked) { border-color: var(--focus); background: var(--surface-hover); }
+.quality-option:has(:disabled) { border-style: dashed; cursor: not-allowed; }
+.quality-option input { accent-color: var(--focus); flex-shrink: 0; }
+.quality-option > span { min-width: 0; overflow-wrap: anywhere; }
+.quality-option input:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.quality-option strong { display: block; font-size: 0.875rem; }
+#quality-recommended { margin-left: 0.5rem; color: var(--focus); font-size: 0.75rem; font-weight: 400; }
+.quality-option small { display: block; margin-top: 0.375rem; font-size: 0.75rem; line-height: 1.5; color: var(--muted); }
+.quality-download { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.quality-download p { margin: 0 0 0.5rem; line-height: 1.6; overflow-wrap: anywhere; }
+#quality-total-size { font-size: 0.875rem; }
+#quality-shared-size, #quality-transfer-note { color: var(--muted); font-size: 0.75rem; }
+.quality-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem; }
+.quality-actions button { padding: 0.625rem 1rem; }
+#quality-enter { border-color: var(--focus); }
+noscript { position: fixed; inset: 40% 1rem auto; z-index: 4; text-align: center; }
+@media (max-width: 480px) {
+  #scene-controls {
+    gap: 0.25rem;
+    top: 0.5rem;
+    right: 6.25rem;
+  }
+  .key-hint { display: none; }
+  #time-control { padding: 0.5rem; }
+  #quality-control { padding: 0.5rem; }
+  #quality-dialog { padding: 1rem; }
+}
+@media (forced-colors: active) {
+  button { border: 1px solid ButtonText; }
+  button:focus-visible, #canvas:focus-visible { outline-color: Highlight; }
+  .quality-option:has(:checked) { border-color: Highlight; }
+  .quality-option:has(:disabled) { border-color: GrayText; }
+  .quality-option input:focus-visible { outline-color: Highlight; }
+}
