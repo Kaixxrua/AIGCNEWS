@@ -57,8 +57,18 @@ repository and is disabled by default behind a feature flag. Operators
 who enable it are responsible for complying with the source platforms'
 Terms of Service, robots policies, and applicable law, and for
 safeguarding the credentials they configure. Real cookies/tokens,
-credential database rows, private deployment overlays, proxy topology,
-collected snapshots, and media caches are not distributed here.
+credential database rows, collected snapshots, and media caches are not
+distributed here.
+
+The private/ directory is the maintainer's former private companion
+repository, merged with its history on 2026-10-13: the reference
+deployment's overlay (Compose file and nginx includes), an earlier copy
+of the X transport layer, and the Godot contact-page project. It is
+licensed like the rest of this repository; the brand names and logos
+listed above stay reserved wherever they appear. Hostnames, addresses,
+and service names in it describe the maintainer's own hosts and grant
+no access to them. The WeChat collection code retired on 2026-09-29 was
+removed from that history before the merge.
 
 Product names and marks referenced by this project — including X,
 Twitter, WeChat, Product Hunt, Hacker News, arXiv, GitHub, and Hugging
@@ -84,6 +94,9 @@ frontend/package.json.
 The web fonts in frontend/public/fonts/ (Bangers, DM Sans, Inter,
 Playfair Display, and ZCOOL QingKe HuangYou) are licensed under the SIL
 Open Font License, Version 1.1, by their respective authors.
+private/godot/assets/camp/ui/camp_ui_zh.ttf ("Camp UI Zh") is a renamed
+subset of Source Han Sans by Adobe, licensed under the SIL Open Font
+License, Version 1.1 (see OFL.txt in the same directory).
 frontend/src/components/dashboard/orbitalSphereRenderer.ts is adapted
 from ThreeUI by Meng To under the MIT License (see THREEUI-LICENSE in
 the same directory).

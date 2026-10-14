@@ -1,6 +1,15 @@
 # aigcnews_private
 
-AIGCNEWS 私有配套仓（不随开源仓库发布）。承载三类内容：
+> **2026-10-13 起随公开仓发布。** 本目录是原私有配套仓 `aigcnews_private`
+> 带历史并入 AIGCNEWS 公开仓的副本，与仓库其余部分同样按 AGPL-3.0 授权
+> （品牌名称与标识的保留、`camp_ui_zh.ttf` 的 OFL 许可见根目录 NOTICE）。
+> 09-29 已下线的微信公众号/搜狗实现在并入前已从全部历史中滤除。下文和
+> 各文件中「不随开源仓库发布」「只放私有仓」「不开源」一类说法写于并入之前，
+> 现已失效。运行时仍以独立检出 `~/aigcnews_private` 为准：生产容器只读挂载
+> 它，联系页发布包也从那边构建；本目录不参与公开仓的 CI 与镜像构建，两边的
+> 改动不会自动同步。
+
+AIGCNEWS 配套仓，原为私有仓。承载三类内容：
 
 1. **源插件包 `aigcnews_private/`** —— 开源版剥离的敏感采集实现：
    - `sources/x_transport.py`：X/Twitter 传输层（twitter-cli 内部
@@ -18,10 +27,10 @@ AIGCNEWS 私有配套仓（不随开源仓库发布）。承载三类内容：
    （sub2api 网络、PriceAI 姊妹服务、插件包 bind-mount）。
 
 3. **Godot 联系页 `godot/` + `GodotContactScene.vue`** —— 线上联系页的
-   Godot 工程、网页桥接组件和私有发布验证工具。该实现及其导出物只允许
-   存放在本私有仓库；AIGCNEWS 公共仓不得提交 Godot 源码、PCK/WASM、场景
-   资源或专用构建脚本。发布必须以线上 Godot 版本为基线，并保留黑边修复，
-   不得回退到 `ContactFieldScene` 或其他 Three.js/CSS 旧实现。
+   Godot 工程、网页桥接组件和私有发布验证工具。源码与场景资源随本目录
+   公开；导出物（PCK/WASM）不入库，只经发布包交付。发布必须以线上 Godot
+   版本为基线，并保留黑边修复，不得回退到 `ContactFieldScene` 或其他
+   Three.js/CSS 旧实现。
 
 ## 目录
 
