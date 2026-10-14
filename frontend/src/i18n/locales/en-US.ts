@@ -1,7 +1,10 @@
 import { trackingEn } from './tracking'
 import { onboardingEn } from './onboarding'
 
+import { projectAssessmentEn } from './projectAssessment'
+
 const enUSCatalog = {
+  projectAssessment: projectAssessmentEn,
   loginContext: {
     search: 'Sign in to continue searching for projects and news.',
     projects: 'Sign in to save projects, search the catalog, and browse more pages.',

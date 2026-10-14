@@ -22,7 +22,7 @@ type ProjectRouteState = {
 }
 
 const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
-const validScopes: ProjectScope[] = ['all', 'today', 'recommended']
+const validScopes: ProjectScope[] = ['all', 'today', 'recommended', 'screened']
 const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name', 'relevance']
 
 const queryValue = (value: unknown) => {

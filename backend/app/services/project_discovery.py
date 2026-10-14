@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_FALLBACK_POLICY = "local_first_github_only_when_semantics_preserved"
 PROJECT_SORT_CHOICES = {"relevance", "hot", "stars", "updated", "recent", "name"}
-PROJECT_SCOPE_CHOICES = {"all", "today", "recommended"}
+PROJECT_SCOPE_CHOICES = {"all", "today", "recommended", "screened"}
 _FALLBACK_SORTS = {"relevance", "stars", "updated"}
 _EXACT_REPO_QUERY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _EXACT_REPO_NAME_QUERY = re.compile(r"^[A-Za-z0-9_.-]+$")

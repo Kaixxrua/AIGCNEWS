@@ -366,11 +366,12 @@ describe('filters panel behavior', () => {
       }),
     })
 
-    await wrapper.find('button.projects-category--scope').trigger('click')
+    await wrapper.find('button.projects-category--screened').trigger('click')
+    await wrapper.find('button.projects-category--scope:not(.projects-category--screened)').trigger('click')
     await wrapper.find('button.projects-category--recommend').trigger('click')
     await wrapper.find('button.projects-category:not(.projects-category--scope):not(.projects-category--recommend):not(.projects-category--today):not(.projects-category--sub):not(.projects-category--tag)').trigger('click')
 
-    expect(wrapper.emitted('selectScope')).toEqual([['all'], ['recommended']])
+    expect(wrapper.emitted('selectScope')).toEqual([['screened'], ['all'], ['recommended']])
     expect(wrapper.emitted('selectCategory')).toEqual([['agents']])
   })
 
@@ -388,7 +389,7 @@ describe('filters panel behavior', () => {
     })
 
     const categories = wrapper.get('.projects-categories')
-    expect(categories.findAll('button.projects-category')).toHaveLength(15)
+    expect(categories.findAll('button.projects-category')).toHaveLength(16)
     expect(projectFiltersSource).toMatch(/\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/)
     expect(projectFiltersSource).toMatch(/@media \(max-width: 767px\)[\s\S]*\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/)
   })

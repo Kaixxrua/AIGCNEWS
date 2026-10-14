@@ -2,13 +2,14 @@
    响应载荷先按 any 归一化再收窄到导出类型，随后端契约类型化逐步移除。 */
 import { api } from '@/services/http/apiClient'
 import { i18n } from '@/i18n'
+import type { ProjectAssessment } from '@/features/projects/projectAssessment'
 
 const TOOL_WEBSITE_ADD_TIMEOUT = 120_000
 
 export type GitHubProjectSort = 'hot' | 'stars' | 'updated' | 'recent' | 'name' | 'relevance'
 export type ProjectSource = 'all' | 'github' | 'website'
 export type ProjectViewSource = ProjectSource | 'favorites'
-export type ProjectScope = 'all' | 'today' | 'recommended'
+export type ProjectScope = 'all' | 'today' | 'recommended' | 'screened'
 
 export interface GitHubProjectSubcategory {
   slug: string
@@ -42,6 +43,7 @@ export interface GitHubProjectItem {
   description?: string | null
   description_zh?: string | null
   description_en?: string | null
+  assessment?: ProjectAssessment | null
   category_slug?: string | null
   category_name?: string | null
   category_name_zh?: string | null

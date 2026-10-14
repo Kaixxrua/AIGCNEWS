@@ -461,6 +461,7 @@ class EnrichmentResult:
     confidence: float
     description_en: str = ""
     tags_en: List[str] = field(default_factory=list)
+    assessment: Dict[str, Any] | None = None
 
 
 def clean_text(value: Any, *, max_len: int = 512) -> str:

@@ -2,7 +2,10 @@ import { enUS } from './en-US'
 import { trackingZh } from './tracking'
 import { onboardingZh } from './onboarding'
 
+import { projectAssessmentZh } from './projectAssessment'
+
 const overrides = {
+  projectAssessment: projectAssessmentZh,
   loginContext: {
     search: '登录后即可继续搜索，查找你需要的项目和资讯。',
     projects: '登录后可收藏项目、搜索全库和继续翻页。',

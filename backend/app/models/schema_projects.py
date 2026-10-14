@@ -4,10 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from backend.app.domain.project_assessment import ProjectAssessment
+
 GitHubProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
 PublicProjectSort = Literal["hot", "stars", "updated", "recent", "name", "relevance"]
 ProjectSource = Literal["all", "github", "website"]
-ProjectScope = Literal["all", "today", "recommended"]
+ProjectScope = Literal["all", "today", "recommended", "screened"]
 
 
 class GitHubProjectItem(BaseModel):
@@ -23,6 +25,7 @@ class GitHubProjectItem(BaseModel):
     description: str | None = None
     description_zh: str | None = None
     description_en: str | None = None
+    assessment: ProjectAssessment | None = None
     category_slug: str | None = None
     category_name: str | None = None
     category_name_zh: str | None = None

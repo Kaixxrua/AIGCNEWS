@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectAssessment from './ProjectAssessment.vue'
 import { computed, ref } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -135,6 +136,10 @@ const description = computed(() => projectDescription(
         {{ description }}
       </p>
 
+      <details v-if="!isWebsite(repo) && repo.assessment" class="project-card__assessment">
+        <summary>{{ t('projectAssessment.title') }} · {{ t(`projectAssessment.${repo.assessment.decision}`) }}</summary>
+        <ProjectAssessment :assessment="repo.assessment" :repo-id="projectName(repo)" />
+      </details>
       <details class="project-card__details" :open="catalogLayout || !isMobile">
         <summary>{{ t('projects.mobileDetails') }}</summary>
         <div class="project-card__metadata">

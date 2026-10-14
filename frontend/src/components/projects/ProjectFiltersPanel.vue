@@ -137,13 +137,15 @@ useResizeObserver(searchEnd, ([entry]) => { searchEndWidth.value = Math.ceil(ent
   </section>
 
   <details v-if="!requiresPersonalLogin && !isPersonalView" class="projects-category-panel glass-card" :open="!isMobile" :aria-label="t('projects.categoryFilter')">
-    <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'today' ? t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
+    <summary>{{ t('projects.mobileFilters') }}<span>{{ selectedScope === 'screened' ? t('projectAssessment.screened') : selectedScope === 'today' ? t('projects.today') : selectedScope === 'recommended' ? t('projects.recommended') : label(activeCategory) || t('projects.all') }}</span></summary>
     <div v-indicator="'.tab-active'" class="projects-categories" :aria-label="t('projects.primaryCategoryFilter')">
       <button type="button" class="projects-category projects-category--today" :class="selectedScope === 'today' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'today')"><Flame v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ t('projects.today') }}</span><small>{{ todayScope?.count ?? 0 }}</small></button>
+      <button type="button" class="projects-category projects-category--scope projects-category--screened" :class="selectedScope === 'screened' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'screened')"><span>{{ t('projectAssessment.screened') }}</span></button>
       <button type="button" class="projects-category projects-category--scope" :class="selectedScope === 'all' && selectedCategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'all')"><Blocks v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(allScope) || t('projects.all') }}</span><small>{{ allScope?.count ?? 0 }}</small></button>
       <button type="button" class="projects-category projects-category--recommend" :class="selectedScope === 'recommended' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectScope', 'recommended')"><Sparkles v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(recommendedScope) || t('projects.recommended') }}</span><small>{{ recommendedScope?.count ?? 0 }}</small></button>
       <button v-for="category in semanticCategories" :key="category.slug" type="button" class="projects-category" :class="selectedScope === 'all' && selectedCategory === category.slug ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectCategory', category.slug)"><component :is="categoryIcon(category.slug)" v-if="catalogLayout" :size="16" aria-hidden="true" /><span>{{ label(category) }}</span><small>{{ category.count }}</small></button>
     </div>
+    <p v-if="selectedScope === 'screened'" class="projects-screened-note">{{ t('projectAssessment.criteria') }}</p>
     <div v-if="visibleSubcategories.length" v-indicator="'.tab-active'" class="projects-subcategories" :aria-label="t('projects.subcategoryFilter')">
       <span class="projects-subcategories__label">{{ t('projects.subcategory', { category: label(activeCategory) || '' }) }}</span>
       <button type="button" class="projects-category projects-category--sub" :class="selectedSubcategory === 'all' ? 'tab-active' : 'tab-inactive'" :disabled="categoriesLoading" @click="emit('selectSubcategory', 'all')"><span>{{ t('projects.all') }}</span><small>{{ activeCategory?.count ?? 0 }}</small></button>
@@ -161,6 +163,7 @@ useResizeObserver(searchEnd, ([entry]) => { searchEndWidth.value = Math.ceil(ent
 </template>
 
 <style scoped>
+.projects-screened-note { margin: 10px 4px; color: var(--ink-secondary); font-size: 12px; line-height: 1.6; }
 .projects-category-panel > summary { display: none; }
 
 .projects-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 12px; padding: 0; border: 0 !important; background: transparent !important; }

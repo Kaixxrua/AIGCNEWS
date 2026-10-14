@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ProjectAssessment from './ProjectAssessment.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Star } from 'lucide-vue-next'
@@ -57,6 +58,7 @@ const style = computed(() => ({ top: `${props.placement.top}px`, '--peek-max': `
         <span class="project-peek__stars" :title="starsTitle"><Star :size="12" :stroke-width="2" aria-hidden="true" />{{ starsText }}</span>
       </header>
 
+      <ProjectAssessment v-if="repo.assessment" :assessment="repo.assessment" :repo-id="repoId" />
       <ProjectPeekParts :repo="repo" :repo-id="repoId" :content="content" :curve="curve" @visit="emit('visit', $event)" />
     </div>
   </aside>
