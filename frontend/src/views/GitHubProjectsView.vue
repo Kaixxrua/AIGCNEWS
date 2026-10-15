@@ -34,6 +34,8 @@ import { useProjectTrends } from '@/composables/useProjectTrends'
 import { useListKeys } from '@/composables/useListKeys'
 import { useProjectPeek, useProjectPeekData } from '@/composables/useProjectPeek'
 import { useProjectPane } from '@/composables/useProjectPane'
+import { pageViewKey } from '@/composables/useProjectNavigationMemory'
+import { useKeepAliveScroll } from '@/composables/useKeepAliveScroll'
 import { READ_MARKS, useReadMarks } from '@/composables/useReadMarks'
 import { MCP_EMPTY_STATE_EXAMPLE_IDS, mcpExamplesByIds } from '@/features/mcp/mcpExamplePrompts'
 import {
@@ -64,6 +66,8 @@ const { locale, t } = useI18n()
 const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const route = useRoute()
+const ownViewKey = pageViewKey(route)
+const isCurrentView = () => pageViewKey(route) === ownViewKey
 const source = ref<ProjectViewSource>('all')
 const selectedScope = ref<ProjectScope>(defaultProjectScopeForQuery('all', ''))
 const selectedCategory = ref('all')
@@ -90,7 +94,7 @@ let searchTimer: number | undefined
 
 type SourceOption = { value: ProjectViewSource; label: string; hint: string; authOnly?: boolean; scope?: ProjectScope }
 
-const { applyRouteState, currentProjectsRedirect, endStateBatch, isApplyingRouteState, isReplacingRoute, replaceRouteFromState, routeStateMatchesRoute } = useProjectRouteState(route, router, {
+const { applyRouteState, currentProjectsRedirect, isApplyingRouteState, isReplacingRoute, replaceRouteFromState, routeStateMatchesRoute } = useProjectRouteState(route, router, {
   source, selectedScope, selectedCategory, selectedSubcategory, searchQuery, debouncedQuery, selectedLanguage, selectedTag, sort, page,
 })
 
@@ -117,7 +121,7 @@ const websiteQuotaLoading = controller.websiteQuotaLoading ?? ref(false)
 // 轮询刷新由 onMounted/onActivated 恢复、stopViewReads 暂停；跳过加载中
 // 与后台标签页，避免与用户操作触发的请求叠加。
 const { pause: pauseSyncPoll, resume: resumeSyncPoll } = useIntervalFn(() => {
-  if (!isViewActive.value || route.name !== 'github-projects' || loading.value) return
+  if (!isViewActive.value || !isCurrentView() || loading.value) return
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
   void refreshReads({ clearSuccess: false, preserveContent: true })
 }, SYNC_POLL_INTERVAL, { immediate: false })
@@ -142,6 +146,7 @@ const projectsHeroKicker = computed(() => {
   return t('projects.heroLibraryKicker')
 })
 const pageEl = ref<HTMLElement | null>(null)
+useKeepAliveScroll(pageEl)
 const { masonryColumns, masonryGridTemplate, measureGridContentWidth, startGridMeasure, stopGridMeasure } = useProjectMasonry({
   pageEl, projects, locale, isPersonalView, sort, selectedScope, t,
 })
@@ -223,7 +228,7 @@ const chartMovementFor = (repo: GitHubProjectItem, position: number | null): Pro
 const chartReflowKey = computed(() => projects.value.map(projectKey).join('|'))
 
 const resetAndLoad = () => {
-  if (isApplyingRouteState.value) return
+  if (isApplyingRouteState.value || !isCurrentView() || !isViewActive.value) return
   page.value = 1
   void replaceRouteFromState()
   void loadProjects()
@@ -235,19 +240,11 @@ const changeSource = (nextSource: ProjectViewSource) => {
     return
   }
   if (source.value === nextSource) return
-  isApplyingRouteState.value = true
-  source.value = nextSource
-  selectedScope.value = defaultProjectScopeForQuery(nextSource, debouncedQuery.value)
-  selectedCategory.value = 'all'
-  selectedSubcategory.value = 'all'
-  selectedLanguage.value = ''
-  selectedTag.value = ''
-  page.value = 1
-  sortIsExplicit.value = false
-  sort.value = defaultProjectSortForQuery(selectedScope.value, nextSource, debouncedQuery.value)
-  endStateBatch()
-  void replaceRouteFromState(true)
-  void refreshReads()
+  // Switching collection activates its own cached instance; leave this one's filters intact.
+  void router.push({ path: '/projects', query: {
+    ...(nextSource !== 'all' ? { source: nextSource } : {}),
+    ...(debouncedQuery.value.trim() ? { q: debouncedQuery.value.trim() } : {}),
+  } })
 }
 const selectScope = (scopeValue: ProjectScope) => {
   if (selectedScope.value === scopeValue && selectedCategory.value === 'all' && selectedSubcategory.value === 'all' && !selectedLanguage.value) return
@@ -588,7 +585,7 @@ watch([selectedScope, selectedCategory, selectedSubcategory, selectedLanguage, s
 // 网页收藏与其余视图的漫画皮肤列宽不同，而切换来源不改页面宽度、ResizeObserver 不会触发：挂上类名后重量一次。
 watch(isWebsiteOnlyView, () => { void nextTick(measureGridContentWidth) })
 watch(() => route.query, () => {
-  if (!isViewActive.value || route.name !== 'github-projects' || isReplacingRoute.value) return
+  if (!isViewActive.value || !isCurrentView() || isReplacingRoute.value || routeStateMatchesRoute()) return
   const hadSort = Boolean(String(route.query.sort ?? '').trim())
   if (applyRouteState()) {
     sortIsExplicit.value = hadSort
@@ -623,11 +620,9 @@ onActivated(() => {
   startGridMeasure()
   controller.activate()
   if (!hasActivatedOnce) { hasActivatedOnce = true; return }
-  // KeepAlive 以 route.path 为 key 复用本实例：挂起期间路由被切走
-  // （如 报告页 → 我的网页 /projects?source=website），route.query
-  // watcher 在激活前触发被 isViewActive 拦截，须在这里补应用路由状态，
-  // 否则 URL 已是新查询而列表仍停留在旧 source 的内容。
-  if (route.name === 'github-projects' && !isReplacingRoute.value && !routeStateMatchesRoute()) {
+  // 导航恢复本栏目的上次地址；显式链接带来新筛选时，挂起期间的 watcher
+  // 不处理它，在激活后补应用。项目库、网页收藏、项目收藏分别缓存。
+  if (isCurrentView() && !isReplacingRoute.value && !routeStateMatchesRoute()) {
     const hadSort = Boolean(String(route.query.sort ?? '').trim())
     if (applyRouteState()) {
       sortIsExplicit.value = hadSort

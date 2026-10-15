@@ -168,6 +168,16 @@ const controller = () => ctlBox.current as Record<string, any>
 const routeState = () => routeStateBox.current as Record<string, any>
 const auth = () => authBox.current as { isLoggedIn: boolean; isAdmin: boolean }
 
+// These unit fixtures mount a view directly, without the keyed RouterView that
+// mounts a website instance in the app. Arrange its source independently of navigation.
+const setCollectionSource = async (source = 'website') => {
+  const state = controllerSpy.mock.calls[controllerSpy.mock.calls.length - 1]![0].routeState
+  state.source.value = source
+  state.selectedScope.value = 'all'
+  state.sort.value = 'recent'
+  await nextTick()
+}
+
 const refDefaults: Record<string, unknown> = {
   addToolError: '',
   addingTool: false,
@@ -508,7 +518,8 @@ describe('GitHubProjectsView controller wiring', () => {
 
 describe('GitHubProjectsView dialog orchestration', () => {
   const switchToWebsiteSource = async (wrapper: Awaited<ReturnType<typeof mountView>>) => {
-    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
+    expect(wrapper.findComponent(ProjectFiltersPanel).exists()).toBe(true)
+    await setCollectionSource()
     await nextTick()
   }
 
@@ -713,13 +724,13 @@ describe('GitHubProjectsView MCP guidance', () => {
     expect(wrapper.find('.projects-hero h1').text()).toBe('projects.pageTitle')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(true)
 
-    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
+    await setCollectionSource()
     await nextTick()
     expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroWebsiteKicker')
     expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
     expect(wrapper.find('.projects-mcp-promo').exists()).toBe(false)
 
-    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'favorites')
+    await setCollectionSource('favorites')
     await nextTick()
     expect(wrapper.find('.projects-hero .projects-kicker').text()).toBe('projects.heroFavoritesKicker')
     expect(wrapper.find('.projects-hero h1').text()).toBe('projects.pageTitle')
@@ -917,6 +928,9 @@ describe('GitHubProjectsView collection navigation', () => {
     expect(filters.props('sourceOptions').map((option) => option.value)).toEqual(['all', 'website'])
     filters.vm.$emit('changeSource', 'website')
     await nextTick()
+    expect(routerPush).toHaveBeenCalledWith({ path: '/projects', query: { source: 'website' } })
+    expect(filters.props('source')).toBe('all')
+    await setCollectionSource()
     expect(filters.props('source')).toBe('website')
     expect(wrapper.find('.projects-hero h1').text()).toBe('projects.heroWebsiteKicker')
     expect(wrapper.find('.website-tabs a[href="/websites"]').exists()).toBe(true)
@@ -933,7 +947,7 @@ describe('GitHubProjectsView collection navigation', () => {
     const wrapper = await mountView()
     expect(wrapper.classes()).not.toContain('projects-page--websites')
     expect(wrapper.find('.projects-hero__lead').text()).toBe('projects.heroLibraryLead')
-    wrapper.findComponent(ProjectFiltersPanel).vm.$emit('changeSource', 'website')
+    await setCollectionSource()
     // 测试控制器的个人视图是桩，不随来源切换；真实控制器里网页收藏必是个人视图。
     controller().isPersonalView.value = true
     await nextTick()

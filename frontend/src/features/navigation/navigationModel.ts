@@ -111,7 +111,8 @@ export const NAV_ITEMS: readonly NavigationItem[] = [
 ]
 
 export const KEEP_ALIVE_VIEW_NAMES: string[] = ['DashboardView', 'GitHubProjectsView']
-export const KEEP_ALIVE_MAX = 2
+// Dashboard plus the public, website and favorite project collections.
+export const KEEP_ALIVE_MAX = 4
 
 export const isNavigationItemActive = (
   item: Pick<NavigationItem, 'to' | 'exact' | 'excludeActiveQuery' | 'activePaths'>,
