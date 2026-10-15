@@ -98,7 +98,7 @@ def test_streak_uses_global_prior_public_boards_and_resets_after_three_absent_da
                     "SELECT * FROM github_repo_daily_metrics WHERE repo_id='streak/leader' AND metric_date=%s",
                     (str(today),),
                 ).fetchone()
-            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v11"
+            assert row["previous_top_streak_days"] == 5 and row["score_version"] == "daily_hot_v12"
             scores.append(row["hot_score"])
         assert scores[0] > 0 and scores[1] == scores[0]
 

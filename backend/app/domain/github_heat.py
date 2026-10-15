@@ -1,4 +1,4 @@
-"""GitHub heat v11: rolling 24-hour growth with bounded top-ten rotation.
+"""GitHub heat v12: stronger scale correction with room for large breakouts.
 
 Magnitude (scale-corrected plus absolute star velocity) decides the ranking;
 trend, community and maintenance only modulate it, so a saturated magnitude can
@@ -17,6 +17,10 @@ reading like a breakout, and absolute growth keeps rising past 10k stars/day.
 v11 discounts repeated top-ten exposure by 4% per prior appearance, capped at
 20%. Three consecutive days outside the top ten reset the count; shorter gaps
 pause it. Only prior daily boards count.
+
+v12 raises the scale exponent from 0.5 to 0.65, anchored at 500 stars. Small
+repositories gain room relative to established ones, while the unchanged
+absolute-growth term still rewards exceptional growth at any size.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
-SCORE_VERSION = "daily_hot_v11"
+SCORE_VERSION = "daily_hot_v12"
 
 TOP_STREAK_RANK_LIMIT = 10
 TOP_STREAK_PRIOR_DAYS_CAP = 5
@@ -38,9 +42,10 @@ TOP_STREAK_PENALTY_STEP = 0.04
 TOP_STREAK_PENALTY_CAP = 0.20
 
 MIN_SCALE_STARS = 500
-# Full marks sit near the historical daily peaks (top x≈15–110, top g≈2k–6.5k),
-# far above p99.9 (x≈10.6, g≈913), so ordinary top days no longer saturate.
-SCALE_REFERENCE = 100.0  # stars/day ÷ √stars
+SCALE_EXPONENT = 0.65
+# Keep the original 500-star anchor and growth references; only the slope
+# above that anchor changes. The floor prevents tiny stocks inflating heat.
+SCALE_REFERENCE = 100.0  # stars/day ÷ (√500 × (effective stars / 500)^0.65)
 ABSOLUTE_REFERENCE = 10000.0  # stars/day
 # Below the reference the absolute term is unchanged; beyond it keeps rising
 # (unclamped) until the ceiling, and magnitude itself is capped at 100.
@@ -325,8 +330,10 @@ def score_heat(
     inputs: HeatInputs, *, suspicion: float = 0.0, previous_top_streak_days: int = 0,
 ) -> dict[str, Any]:
     growth = max(inputs.star_velocity, 0.0)
+    scale_stars = max(inputs.base_stars, MIN_SCALE_STARS, launch_stars(inputs.age_days))
+    scale_denominator = math.sqrt(MIN_SCALE_STARS) * (scale_stars / MIN_SCALE_STARS) ** SCALE_EXPONENT
     scale = _normalize(
-        math.log1p(growth / math.sqrt(max(inputs.base_stars, MIN_SCALE_STARS, launch_stars(inputs.age_days)))),
+        math.log1p(growth / scale_denominator),
         math.log1p(SCALE_REFERENCE),
     )
     absolute = 100 * min(math.log1p(growth), math.log1p(ABSOLUTE_CEILING)) / math.log1p(ABSOLUTE_REFERENCE)

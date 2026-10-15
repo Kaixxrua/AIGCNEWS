@@ -181,7 +181,9 @@ class PostgresGitHubWatcherRepairRepository:
         ) + " ELSE 100 END"
         # v7/v8: community becomes unknown and drops out of the quality average.
         # v8 lets the absolute term run past 100 and caps magnitude instead; v7
-        # magnitude never exceeds 100, so one expression repairs both.
+        # magnitude never exceeds 100, so one expression repairs both. v12
+        # stores its stronger correction in scale_corrected_growth_score;
+        # repairing community data must keep that version's saved scale.
         maintenance_known = "(maintenance_activity_score>0)"
         v7_hot = (
             f"LEAST({MAGNITUDE_WEIGHTS['scale']}*scale_corrected_growth_score+"
@@ -207,6 +209,9 @@ class PostgresGitHubWatcherRepairRepository:
                 f"hot_score=ROUND((CASE WHEN score_version='{SCORE_VERSION}' THEN "
                 + v7_hot
                 + f"*GREATEST(1-{TOP_STREAK_PENALTY_STEP}*GREATEST(previous_top_streak_days+1-{TOP_STREAK_GRACE_DAYS},0),{1-TOP_STREAK_PENALTY_CAP})"
+                + " WHEN score_version='daily_hot_v11' THEN "
+                + v7_hot
+                + "*GREATEST(1-0.04*previous_top_streak_days,0.8)"
                 + " WHEN score_version='daily_hot_v10' THEN "
                 + v7_hot
                 + "*GREATEST(1-0.03*previous_top_streak_days,0.85)"
