@@ -1,6 +1,12 @@
 <div align="center">
-  <img src="frontend/public/assets/comic/aigc-news-wordmark.webp" alt="AIGCNEWS" width="440">
+  <a href="https://aigcnews.cn/">
+    <img src="frontend/public/assets/comic/aigc-news-wordmark.webp" alt="AIGCNEWS" width="440">
+  </a>
 </div>
+
+<h2 align="center">
+  🌐 官网 · 在线体验：<a href="https://aigcnews.cn/">aigcnews.cn</a>
+</h2>
 
 <p align="center">
   <strong>简体中文</strong> · <a href="README.md">English</a>
