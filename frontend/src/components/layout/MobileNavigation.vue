@@ -10,6 +10,7 @@ import { vIndicator } from '@/motion/indicator'
 
 const props = defineProps<{
   items: readonly NavigationItem[]
+  targets?: Readonly<Record<string, string>>
   currentPath: string
   currentQuery?: Readonly<Record<string, unknown>>
   isAdmin: boolean
@@ -58,7 +59,7 @@ onBeforeUnmount(closeMenu)
 <template>
   <nav v-indicator="{ active: '.mobile-nav__item.is-active', follow: 'a.mobile-nav__item' }" class="mobile-nav" :aria-label="t('navigation.mainNavigation')">
     <RouterLink
-      v-for="item in primaryItems" :key="item.to" :to="item.to" :data-tour-nav="item.to"
+      v-for="item in primaryItems" :key="item.to" :to="targets?.[item.to] ?? item.to" :data-tour-nav="item.to"
       class="mobile-nav__item" :class="{ 'is-active': isActive(item) }"
       :aria-current="isActive(item) ? 'page' : undefined"
     >
@@ -85,7 +86,7 @@ onBeforeUnmount(closeMenu)
           </header>
           <div class="mobile-menu__links">
             <RouterLink
-              v-for="item in secondaryItems" :key="item.to" :to="item.to"
+              v-for="item in secondaryItems" :key="item.to" :to="targets?.[item.to] ?? item.to"
               class="mobile-menu__link" :class="{ 'is-active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined" @click="closeMenu"
             >

@@ -10,6 +10,7 @@ import { vIndicator } from '@/motion/indicator'
 
 const props = withDefaults(defineProps<{
   items: readonly NavigationItem[]
+  targets?: Readonly<Record<string, string>>
   currentPath: string
   currentQuery?: Readonly<Record<string, unknown>>
   isAdmin: boolean
@@ -77,7 +78,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
     <template v-else>
   <nav v-indicator="{ active: '.dock-item--active', follow: 'a.dock-item' }" class="dock" :aria-label="t('navigation.primary')">
     <RouterLink
-      v-for="item in visibleItems" :key="item.to" :to="item.to" :data-tour-nav="item.to"
+      v-for="item in visibleItems" :key="item.to" :to="targets?.[item.to] ?? item.to" :data-tour-nav="item.to"
       :aria-label="props.alertItems?.includes(item.to) ? label(item) + '，' + alertLabel(item.to) : label(item)" :title="label(item)"
       :aria-current="isActive(item) ? 'page' : undefined"
       class="dock-item"
@@ -110,7 +111,7 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
       <button class="dock-more__close" :aria-label="t('common.close')" autofocus @click="closeMore"><X :size="20" aria-hidden="true" /></button>
     </header>
     <nav class="dock-more__links" :aria-label="t('navigation.more')">
-      <RouterLink v-for="item in moreItems" :key="item.to" :to="item.to" :aria-current="isActive(item) ? 'page' : undefined" class="dock-more__link" @click="closeMore">
+      <RouterLink v-for="item in moreItems" :key="item.to" :to="targets?.[item.to] ?? item.to" :aria-current="isActive(item) ? 'page' : undefined" class="dock-more__link" @click="closeMore">
         <span class="dock-icon" aria-hidden="true" v-html="item.icon" />
         <span>{{ label(item) }}</span>
         <span v-if="props.alertItems?.includes(item.to)" class="dock-alert-dot" :aria-label="alertLabel(item.to)" />

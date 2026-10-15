@@ -130,8 +130,8 @@ export const useProjectRouteState = (
   }
 
   /**
-   * 当前路由查询是否与内存状态互为规范序列化。KeepAlive 以 route.path 为 key
-   * 复用实例：视图挂起期间路由被切走（如 报告页 → /projects?source=website），
+   * 当前路由查询是否与内存状态互为规范序列化。KeepAlive 按项目来源
+   * 复用实例：视图挂起期间路由被切走（如 报告页 → 带筛选条件的项目页），
    * route.query watcher 在激活前触发会被 isViewActive 拦截，onActivated 须靠
    * 此检测补做 applyRouteState；查询未变时返回 true，走原有的过期刷新路径。
    */

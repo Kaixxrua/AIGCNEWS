@@ -36,6 +36,7 @@ import { FOLIO_TOOLS_AVAILABLE, FOLIO_TOOLS_TARGET_ID } from '@/features/navigat
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useContactPageConfig } from '@/composables/useContactPageConfig'
 import { dockSuppressed } from '@/composables/useDockSuppression'
+import { pageViewKey, useProjectNavigationMemory } from '@/composables/useProjectNavigationMemory'
 import { useReadingMode } from '@/composables/useReadingMode'
 import { routeHasDensityChoice, useAppDensity } from '@/composables/useAppDensity'
 import { createRouteTransition, playEnter, routeAxis, type RouteAxis } from '@/motion/routeMotion'
@@ -50,6 +51,7 @@ const { component: QuickSearch } = lazyComponent(() => import('@/components/sear
 const quickSearchMounted = ref(false)
 watch(isDesktop, (desktop) => { if (desktop) quickSearchMounted.value = true }, { immediate: true })
 const route = useRoute()
+const navigationTargets = useProjectNavigationMemory(route)
 // 漫画刊头（撕纸贴纸 + 页脚卷角）覆盖首页与已按漫画概念图复刻的内容页；其余页面复刻完成后再逐个加入。
 // 收银台跟着会员页走：留在旧外壳里，首页那条大字标报头比旧外壳给内容留的 56px 高，会盖住卡片顶部。
 const COMIC_CONTENT_ROUTES = new Set(['disclaimer', 'dsh', 'mcp-connect', 'membership', 'membership-checkout', 'monitor', 'not-found', 'paper-read', 'privacy', 'recommended-websites', 'report', 'subscriptions', 'ui-library', 'x-board'])
@@ -127,8 +129,8 @@ const visibleNavItems = computed(() =>
 )
 
 // 页面切换动效：按 dock 顺序决定滑入方向（往右的入口从右边滑进来），dock 之外的页面从下方浮起。
-// 项目库与「我的网页收藏」共用一个页面实例、只换查询参数，没有新旧页面交接，单独补一段进入动画。
-const viewKey = computed(() => (route.name === 'ui-library' ? 'ui-library' : route.path))
+// 同一栏目内只换查询参数时复用实例，单独补一段进入动画；项目库与网页收藏分别保留实例。
+const viewKey = computed(() => pageViewKey(route))
 const appContent = ref<HTMLElement | null>(null)
 let pageAxis: RouteAxis = 'rise'
 let dockIndex = -1
@@ -225,6 +227,7 @@ const brandName = import.meta.env.VITE_APP_BRAND_NAME || 'AIGC NEWS'
     <AppDock
       v-show="!dockSuppressed"
       :items="visibleNavItems"
+      :targets="navigationTargets"
       :brand-name="brandName"
       :current-path="navPath"
       :current-query="route.query"
