@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import ProjectAssessment from './ProjectAssessment.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, Clock, ExternalLink, GitFork, Sparkles, Star } from 'lucide-vue-next'
@@ -200,10 +199,6 @@ const movementLabel = computed(() => {
         <span><GitFork :size="12" :stroke-width="2" aria-hidden="true" />{{ forksText }}</span>
         <span v-if="lastPush" :title="projectLastPushTitle(repo, t, appLocale)"><Clock :size="12" :stroke-width="2" aria-hidden="true" />{{ lastPush }}</span>
       </span>
-      <details v-if="repo.assessment" class="project-row__assessment" @click.stop>
-        <summary>{{ t('projectAssessment.title') }} · {{ t(`projectAssessment.${repo.assessment.decision}`) }}</summary>
-        <ProjectAssessment :assessment="repo.assessment" :repo-id="projectName(repo)" />
-      </details>
     </div>
 
     <span class="project-row__num project-row__stars" :title="starsTitle"><span class="sr-only">{{ t('projectChart.stars') }}</span>{{ starsText }}</span>
@@ -247,9 +242,3 @@ const movementLabel = computed(() => {
     </div>
   </li>
 </template>
-
-<style scoped>
-.project-row__assessment { clear: both; margin-top: 6px; }
-.project-row__assessment > summary { cursor: pointer; font-size: 12px; font-weight: 650; }
-.project-row__assessment[open] > summary { margin-bottom: 8px; }
-</style>

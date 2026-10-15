@@ -289,6 +289,8 @@ class TestDailyPipelineGrowthObserve:
         assert calls["enrich"]["concurrency"] == 5
         assert result["growth_observe"] == {"upserted": 42, "new_candidates": 7}
         assert result["enrichment"] == {"status": "success", "succeeded": 9}
+        assert result["assessment"] == {"status": "disabled"}
+        assert enrichment.mock_calls == []  # No second model worker for legacy assessments.
         assert result["growth_observe_min_stars"] == 300
 
     def test_dry_run_skips_crawl_and_enriches_nothing(self, monkeypatch) -> None:
@@ -314,6 +316,8 @@ class TestDailyPipelineGrowthObserve:
         )
 
         assert result["status"] == "dry_run"
+        assert result["assessment"] == {"status": "disabled"}
+        assert enrichment.mock_calls == []
         assert result["growth_observe"] is None
         assert dry_calls["dry_run"] is True
 

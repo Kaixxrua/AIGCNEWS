@@ -22,7 +22,7 @@ type ProjectRouteState = {
 }
 
 const validSources: ProjectViewSource[] = ['all', 'website', 'favorites']
-const validScopes: ProjectScope[] = ['all', 'today', 'recommended', 'screened']
+const validScopes: ProjectScope[] = ['all', 'today', 'recommended']
 const validSorts: GitHubProjectSort[] = ['hot', 'stars', 'updated', 'recent', 'name', 'relevance']
 
 const queryValue = (value: unknown) => {
@@ -144,7 +144,8 @@ export const useProjectRouteState = (
     const nextSource = validSources.includes(routeSource as ProjectViewSource)
       ? routeSource as ProjectViewSource
       : 'all'
-    const routeScope = queryValue(route.query.scope)
+    const requestedScope = queryValue(route.query.scope)
+    const routeScope = requestedScope === 'screened' ? 'all' : requestedScope
     const nextQuery = queryValue(route.query.q)
     const nextScope = validScopes.includes(routeScope as ProjectScope)
       ? routeScope as ProjectScope

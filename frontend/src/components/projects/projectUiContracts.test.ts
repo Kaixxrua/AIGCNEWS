@@ -46,6 +46,20 @@ const githubRepo = (patch: Partial<GitHubProjectItem> = {}): GitHubProjectItem =
 })
 
 describe('catalog reading and filtering', () => {
+  it('ignores trial assessments in a cached project response', () => {
+    const repo = {
+      ...githubRepo(),
+      assessment: {
+        decision: 'evaluate', relevance: 'core', value: [], audience: [], setup: [], limitations: [],
+        assessed_at: '2026-10-14T00:00:00Z',
+      },
+    }
+    const wrapper = mount(ProjectResultCard, { ...mountOptions, props: cardProps({ repo }) })
+    expect(wrapper.find('.project-card__assessment').exists()).toBe(false)
+    expect(wrapper.find('.project-assessment').exists()).toBe(false)
+    expect(wrapper.get('.project-card__description').text()).toBe(repo.description)
+  })
+
   it('preserves the full long summary and exposes project metadata', () => {
     const description = 'Long project description with complete details. '.repeat(25)
     const wrapper = mount(ProjectResultCard, { ...mountOptions, props: cardProps({
@@ -366,12 +380,12 @@ describe('filters panel behavior', () => {
       }),
     })
 
-    await wrapper.find('button.projects-category--screened').trigger('click')
-    await wrapper.find('button.projects-category--scope:not(.projects-category--screened)').trigger('click')
+    expect(wrapper.find('button.projects-category--screened').exists()).toBe(false)
+    await wrapper.find('button.projects-category--scope').trigger('click')
     await wrapper.find('button.projects-category--recommend').trigger('click')
     await wrapper.find('button.projects-category:not(.projects-category--scope):not(.projects-category--recommend):not(.projects-category--today):not(.projects-category--sub):not(.projects-category--tag)').trigger('click')
 
-    expect(wrapper.emitted('selectScope')).toEqual([['screened'], ['all'], ['recommended']])
+    expect(wrapper.emitted('selectScope')).toEqual([['all'], ['recommended']])
     expect(wrapper.emitted('selectCategory')).toEqual([['agents']])
   })
 
@@ -389,7 +403,7 @@ describe('filters panel behavior', () => {
     })
 
     const categories = wrapper.get('.projects-categories')
-    expect(categories.findAll('button.projects-category')).toHaveLength(16)
+    expect(categories.findAll('button.projects-category')).toHaveLength(15)
     expect(projectFiltersSource).toMatch(/\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/)
     expect(projectFiltersSource).toMatch(/@media \(max-width: 767px\)[\s\S]*\.projects-categories, \.projects-subcategories\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/)
   })

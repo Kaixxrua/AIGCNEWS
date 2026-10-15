@@ -251,7 +251,7 @@ def _projects_response(
         page_size=int(result["page_size"]),
         has_next=int(result["page"]) * int(result["page_size"]) < int(result["total"]),
         min_stars=min_stars,
-        scope=scope,
+        scope="all" if scope == "screened" else scope,
         category=category,
         subcategory=subcategory,
         q=q,

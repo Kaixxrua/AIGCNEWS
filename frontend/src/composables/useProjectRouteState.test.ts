@@ -40,11 +40,15 @@ describe('project route state contract', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('preserves the trial shortlist in a shared URL', () => {
+  it('opens retired trial shortlist URLs in the full catalog', async () => {
     const harness = createHarness({ scope: 'screened', sort: 'updated' })
     harness.routeState.applyRouteState()
-    expect(harness.state.selectedScope.value).toBe('screened')
+    expect(harness.state.selectedScope.value).toBe('all')
     expect(harness.state.sort.value).toBe('updated')
+    await harness.routeState.replaceRouteFromState(true)
+    expect(harness.replace).toHaveBeenCalledWith(expect.objectContaining({
+      query: { scope: 'all', sort: 'updated' },
+    }))
   })
 
   it('applies a complete personal route and normalizes array and page values', () => {
