@@ -32,7 +32,14 @@ const props = defineProps<{
   sourceStatus: SourceStatusMap
 }>()
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
+const dataQuality = computed(() => props.activeTab === 'github' && !props.tabLoading
+  ? props.sourceStatus.github?.data_quality : null)
+const qualityNotice = computed(() => dataQuality.value && dataQuality.value.status !== 'available' ? dataQuality.value : null)
+const qualityReason = computed(() => {
+  const key = `dashboard.quality.reasons.${qualityNotice.value?.reason || 'unknown'}`
+  return t(te(key) ? key : 'dashboard.quality.reasons.unknown')
+})
 const displayDocs = computed(() => props.tabList.map(doc => {
   // 论文标题、摘要里的 LaTeX 写法（\emph{…}、2\%、---）只留文字。
   if (doc.source === 'arxiv') return { ...doc, title: paperPlainText(doc.title), summary: paperPlainText(doc.summary) }
@@ -110,8 +117,9 @@ const boardDateHint = computed(() => {
       </div>
       <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>
-        <span v-if="activeTab === 'github' && tabList.length" class="ranking-sort" :title="t('projects.hotScoreTitle')"><ArrowDownWideNarrow :size="15" aria-hidden="true" /><span class="ranking-sort-label">{{ t('dashboard.sortedByHeat') }}</span></span>
-        <span class="ranking-live-status" role="status" :title="tabStatus?.isEmbargoed ? tabStatusHint || undefined : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft')">
+        <span v-if="activeTab === 'github' && tabList.length && dataQuality?.status !== 'unavailable'" class="ranking-sort" :title="t('projects.hotScoreTitle')"><ArrowDownWideNarrow :size="15" aria-hidden="true" /><span class="ranking-sort-label">{{ t('dashboard.sortedByHeat') }}</span></span>
+        <span v-if="qualityNotice" class="ranking-live-status ranking-quality-status" role="status">{{ t(`dashboard.quality.${qualityNotice.status}`) }}</span>
+        <span v-else class="ranking-live-status" role="status" :title="tabStatus?.isEmbargoed ? tabStatusHint || undefined : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.finalized' : 'dashboard.liveDraft')">
           <CheckCircle2 v-if="tabStatus?.isFinalized ?? isFinalized" :size="12" /><span v-else class="live-dot" />
           {{ tabStatus?.isEmbargoed ? tabStatusHint : t((tabStatus?.isFinalized ?? isFinalized) ? 'dashboard.tabFinalized' : 'dashboard.liveDraftShort') }}
         </span>
@@ -119,8 +127,14 @@ const boardDateHint = computed(() => {
       <div v-else class="ranking-source-status ranking-pending" aria-hidden="true"><span class="inline-block h-4 w-4 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
     </div>
 
+    <p v-if="qualityNotice?.status === 'partial'" class="ranking-quality-notice">{{ qualityReason }}</p>
     <div id="ranking-content" class="ranking-list flex-1 overflow-y-auto" role="tabpanel" :aria-labelledby="`ranking-tab-${activeTab}`" :aria-busy="tabLoading">
       <div v-if="tabLoading && !listing.docs.length" class="flex items-center justify-center py-8"><span class="inline-block h-5 w-5 rounded-full border-2 border-stone-200 border-t-stone-500 animate-spin" /></div>
+      <div v-else-if="qualityNotice?.status === 'unavailable'" class="ranking-quality-empty">
+        <p class="font-semibold">{{ t('dashboard.quality.unavailableTitle') }}</p>
+        <p>{{ qualityReason }}</p>
+        <p>{{ t('dashboard.quality.chooseDateOrSource') }}</p>
+      </div>
       <div v-else-if="!listing.docs.length" class="flex flex-col items-center justify-center py-12 text-stone-400">
         <div class="w-12 h-12 mb-3 rounded-full bg-stone-100 flex items-center justify-center"><svg class="h-6 w-6 text-stone-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
         <p v-if="!isViewingHistory" class="text-sm font-medium text-stone-500">{{ t('dashboard.collecting') }}</p><p v-if="!isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.collectingHint') }}</p><p v-else class="text-sm font-medium text-stone-500">{{ t('dashboard.historyEmpty') }}</p><p v-if="isViewingHistory" class="mt-1 text-2xs text-stone-400">{{ t('dashboard.historyEmptyHint') }}</p>
@@ -179,6 +193,10 @@ const boardDateHint = computed(() => {
 .ranking-live-status { display:flex;align-items:center;gap:7px;border:1px solid var(--rule-strong);border-radius:30px;padding:6px 10px;font-size:13px;font-weight:650;color:var(--ink);white-space:nowrap; }
 .live-dot { flex-shrink:0;width:8px;height:8px;margin:3px;background:var(--live-dot);border-radius:50%;box-shadow:0 0 0 3px var(--live-dot-halo); }
 .ranking-list { flex:1;min-height:0;overflow:auto; }
+.ranking-quality-status { border-color:var(--tone-coral);background:var(--paper-raised); }
+.ranking-quality-notice { flex:0 0 auto;margin:0 0 10px;padding:10px 12px;border:1px solid var(--rule);border-left:3px solid var(--tone-coral);border-radius:5px;background:var(--paper-raised);font-size:14px;line-height:1.6; }
+.ranking-quality-empty { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;min-height:240px;height:100%;padding:24px;text-align:center;color:var(--ink-secondary);font-size:14px;line-height:1.7; }
+.ranking-quality-empty .font-semibold { color:var(--ink);font-size:18px; }
 .editorial-list { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:172px repeat(7,minmax(0,1fr));gap:6px 10px;height:100%; }
 .ranking-row { min-width:0;border:1px solid var(--rule);border-radius:7px;background:var(--paper-raised);overflow:hidden; }
 .ranking-link { position:relative;display:flex;align-items:center;gap:14px;height:100%;min-height:0;padding:3px 12px;color:var(--ink); }

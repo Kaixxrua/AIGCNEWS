@@ -3,11 +3,12 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadUiShowcaseCatalog } from '@/features/dashboard/uiShowcase'
+import type { SourceStatusMap } from '@/services/dashboard/dashboardContracts'
 
 enableAutoUnmount(afterEach)
 
 const layout = vi.hoisted(() => ({ desktop: false }))
-const dashboardState = vi.hoisted(() => ({ loadError: null as 'network' | 'server' | null, tabList: [] as unknown[], retry: vi.fn() }))
+const dashboardState = vi.hoisted(() => ({ loadError: null as 'network' | 'server' | null, tabList: [] as unknown[], retry: vi.fn(), hasData: true, sourceStatus: {} as SourceStatusMap }))
 vi.mock('@vueuse/core', async (original) => {
   const actual = await original<typeof import('@vueuse/core')>()
   const { ref } = await import('vue')
@@ -41,10 +42,10 @@ vi.mock('@/composables/useDashboardData', async () => {
       isViewingHistory: ref(false),
       isFinalized: ref(false),
       isEmbargoed: ref(false),
-      sourceStatus: ref({}),
+      sourceStatus: ref(dashboardState.sourceStatus),
       selectSourceTab: vi.fn(),
       onDateChange: vi.fn(),
-      hasData: ref(true),
+      hasData: ref(dashboardState.hasData),
       refreshLiveStats: vi.fn(),
       applyLiveStats: vi.fn(),
     }),
@@ -101,10 +102,10 @@ const mountView = async () => {
         },
       },
       stubs: {
-        GlassCalendar: { template: '<div />' },
+        GlassCalendar: { template: '<div class="calendar-stub" />' },
         DashboardNewWords: { template: '<section class="new-words-stub" />' },
         DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
-        DashboardRankingPanel: { template: '<div />' },
+        DashboardRankingPanel: { template: '<div class="ranking-panel-stub" />' },
         DashboardEmptyState: { props: ['variant', 'error'], emits: ['retry'], template: '<button class="empty-stub" :data-variant="variant" :data-error="error" @click="$emit(\'retry\')" />' },
         RollingNumber: { template: '<span />' },
       },
@@ -119,6 +120,8 @@ describe('DashboardView', () => {
     layout.desktop = false
     dashboardState.loadError = null
     dashboardState.tabList = []
+    dashboardState.hasData = true
+    dashboardState.sourceStatus = {}
     dashboardState.retry.mockClear()
   })
 
@@ -212,4 +215,16 @@ describe('DashboardView', () => {
     expect(dashboardState.retry).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
+})
+
+
+it('keeps the ranking explanation and calendar visible when an unavailable GitHub date has no data', async () => {
+  dashboardState.hasData = false
+  dashboardState.sourceStatus = { github: { data_quality: { status: 'unavailable', reason: 'missing' } } }
+  const wrapper = await mountView()
+  expect(wrapper.find('.ranking-panel-stub').exists()).toBe(true)
+  expect(wrapper.find('.calendar-stub').exists()).toBe(true)
+  expect(wrapper.find('.empty-stub').exists()).toBe(false)
+  dashboardState.hasData = true
+  dashboardState.sourceStatus = {}
 })

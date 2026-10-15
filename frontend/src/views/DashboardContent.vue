@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -58,6 +58,10 @@ const {
   updateVisitorSources,
 })
 currentStats = () => stats.value
+const hasQualityNotice = computed(() => {
+  const quality = activeTab.value === 'github' ? sourceStatus.value.github?.data_quality : null
+  return quality?.status === 'partial' || quality?.status === 'unavailable'
+})
 
 // 与顶栏共用 SSE；断流后的轮询由共享订阅统一管理。
 subscribeLiveStats(applyLiveStats)
@@ -98,7 +102,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
       <SpinnerLoader v-if="loading" class="min-h-[360px]" />
       <DashboardEmptyState v-else-if="loadError && !tabList.length && !tabLoading" variant="error" :error="loadError" :retrying="retrying" @retry="retry" />
       <DashboardEmptyState v-else-if="isEmbargoed" variant="embargoed" />
-      <DashboardEmptyState v-else-if="!hasData && !tabLoading" variant="no-data" />
+      <DashboardEmptyState v-else-if="!hasData && !tabLoading && !hasQualityNotice" variant="no-data" />
       <DashboardRankingPanel v-else :active-tab="activeTab" :tab-list="tabList" :tab-loading="tabLoading"
         :is-viewing-history="isViewingHistory" :is-finalized="isFinalized" :source-status="sourceStatus"
         @select-source="selectSourceTab" />

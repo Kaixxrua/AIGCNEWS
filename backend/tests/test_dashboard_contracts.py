@@ -173,7 +173,7 @@ def test_cache_key_preserves_namespace_function_path_and_sorted_query(monkeypatc
     payload = {
         "path": "/api/dashboard/top",
         "namespace": "dashboard",
-        "schema": "visible-drafts-v1",
+        "schema": "github-board-quality-v1",
         "board_clock": ("2026-09-20", [1]),
         "query": {
             "source": "github",
@@ -1427,15 +1427,15 @@ def test_top_route_github_default_view_uses_yesterday(monkeypatch) -> None:
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):  # type: ignore[no-untyped-def]
-            value = cls(2026, 8, 10, 10, 0, 0)  # 10:00 < FINALIZE_HOUR(15)
+            value = cls(2026, 8, 12, 10, 0, 0)  # 10:00 < FINALIZE_HOUR(15)
             return value.replace(tzinfo=tz) if tz else value
 
     monkeypatch.setattr(policy, "datetime", _FrozenDateTime)
     # 今日无指标时优先展示昨天。
     reader = FakeRankSnapshotReader()
     github_hot = FakeGitHubHotReader(
-        {"2026-08-09": [_github_metric_row(metric_date="2026-08-09")]},
-        dates=["2026-08-09", "2026-08-08"],
+        {"2026-08-11": [_github_metric_row(metric_date="2026-08-11")]},
+        dates=["2026-08-11", "2026-08-10"],
     )
 
     FastAPICache.init(InMemoryBackend(), prefix="dashboard-contract-top-v5embargo")
@@ -1449,11 +1449,11 @@ def test_top_route_github_default_view_uses_yesterday(monkeypatch) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert [item["id"] for item in payload["items"]] == ["owner/repo"]
-    assert payload["requested_date"] == "2026-08-10"
-    assert payload["resolved_date"] == "2026-08-09"
+    assert payload["requested_date"] == "2026-08-12"
+    assert payload["resolved_date"] == "2026-08-11"
     assert payload["stale"] is True
     assert payload["is_embargoed"] is False
-    assert github_hot.hot_calls == [("2026-08-09", 500)]
+    assert github_hot.hot_calls == [("2026-08-11", 500)]
 
 
 def test_github_service_without_reader_keeps_trending_snapshot_reads() -> None:
@@ -1587,7 +1587,7 @@ def test_github_service_weekly_keeps_snapshot_channel_even_with_reader() -> None
 
 
 def test_summary_mix_view_github_items_come_from_metrics(monkeypatch) -> None:
-    date = "2020-01-02"
+    date = "2026-08-01"
     reader = FakeRankSnapshotReader(
         {
             (date, "huggingface_daily_html", "arxiv"): [

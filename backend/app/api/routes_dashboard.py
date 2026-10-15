@@ -210,7 +210,7 @@ def _dashboard_cache_key_builder(
     }
     if payload["path"].rsplit("/", 1)[-1] in {"top", "radar", "summary-static"}:
         now_cst = datetime.now(timezone(timedelta(hours=8)))
-        payload["schema"] = "visible-drafts-v1"
+        payload["schema"] = "github-board-quality-v1"
         # Explicit historical requests also change state at midnight / source close.
         payload["board_clock"] = (
             now_cst.date().isoformat(),

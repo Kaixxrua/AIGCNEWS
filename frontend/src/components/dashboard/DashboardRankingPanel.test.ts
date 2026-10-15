@@ -300,3 +300,42 @@ describe('enriched GitHub ranking', () => {
     expect(panel.find('.ranking-growth').exists()).toBe(false)
   })
 })
+
+
+describe('historical GitHub board quality', () => {
+  const project: TopDoc = { id: 'repo', source: 'github', title: 'owner/repo', url: 'https://github.com/owner/repo', stars: 1000 }
+
+  it('hides unavailable rankings, explains why, and keeps the other sources accessible', async () => {
+    const panel = await render(project)
+    await panel.setProps({ activeTab: 'github', isViewingHistory: true, isFinalized: true,
+      sourceStatus: { github: { is_finalized: true, data_quality: { status: 'unavailable', reason: 'backfill_unverified' } } } })
+    expect(panel.findAll('.ranking-row')).toHaveLength(0)
+    expect(panel.get('.ranking-quality-empty').text()).toContain('补录记录尚不能确认当天的真实增长')
+    expect(panel.get('.ranking-toolbar [role="status"]').text()).toBe('暂不可用')
+    expect(panel.find('.ranking-sort').exists()).toBe(false)
+    await panel.get('#ranking-tab-arxiv').trigger('click')
+    expect(panel.emitted('selectSource')).toEqual([['arxiv']])
+    await panel.setProps({ activeTab: 'arxiv', tabList: [{ id: 'paper', source: 'arxiv', title: 'Paper', url: 'https://example.org/paper' }] })
+    expect(panel.find('.ranking-quality-empty').exists()).toBe(false)
+    expect(panel.get('.ranking-title').text()).toBe('Paper')
+    expect(panel.get('.ranking-toolbar [role="status"]').text()).toBe('已定稿')
+  })
+
+  it('retains partial rankings with a translated notice and clears it after switching dates', async () => {
+    const panel = await render(project)
+    await panel.setProps({ activeTab: 'github', isFinalized: true,
+      sourceStatus: { github: { is_finalized: true, data_quality: { status: 'partial', reason: 'coverage_partial' } } } })
+    expect(panel.get('.ranking-title').text()).toBe('owner/repo')
+    expect(panel.get('.ranking-quality-notice').text()).toContain('部分项目未采集到')
+    expect(panel.get('.ranking-toolbar [role="status"]').text()).toBe('数据不完整')
+    setAppLocale('en-US')
+    await nextTick()
+    expect(panel.get('.ranking-quality-notice').text()).toContain('only the available sample')
+    await panel.setProps({ tabLoading: true })
+    expect(panel.find('.ranking-quality-notice').exists()).toBe(false)
+    await panel.setProps({ tabLoading: false, sourceStatus: { github: { is_finalized: true, data_quality: { status: 'available', reason: null } } } })
+    expect(panel.find('.ranking-quality-notice').exists()).toBe(false)
+    expect(panel.findAll('.ranking-row')).toHaveLength(1)
+    expect(panel.get('.ranking-toolbar [role="status"]').text()).toBe('Finalized')
+  })
+})

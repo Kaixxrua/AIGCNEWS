@@ -33,6 +33,11 @@ export interface SourceBoardStatus {
   finalize_hour?: number | null
   /** 可插拔源被特性开关关闭（wire 只增字段；缺省视为启用） */
   is_disabled?: boolean | null
+  /** Historical GitHub daily-board review; independent of finalization. */
+  data_quality?: {
+    status: 'available' | 'partial' | 'unavailable'
+    reason: string | null
+  } | null
 }
 
 export type SourceStatusMap = Partial<Record<TabKey, SourceBoardStatus>>
