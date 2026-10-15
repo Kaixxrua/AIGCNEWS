@@ -33,13 +33,16 @@ const moreDialog = ref<HTMLDialogElement | null>(null)
 const moreOpen = ref(false)
 const isActive = (item: NavigationItem) => isNavigationItemActive(item, props.currentPath, props.currentQuery)
 const label = (item: NavigationItem) => item.labelText || t(item.labelKey)
-// Compact Chinese captions are intentionally visible in either interface locale.
-const captions: Record<string, string> = {
-  '/': '首页', '/projects': '项目库', '/ui-library': 'UI库', '/projects?source=website': '网页',
-  '/report': '简报', '/x': 'X动态', '/mcp': 'MCP', '/dsh': 'DSH',
-  '/subscriptions': '情报追踪', '/membership': '会员', '/contact': '联系我们', '/monitor': '监控',
+// Short captions follow the active locale; titles retain the full navigation labels.
+const captionKeys: Record<string, string> = {
+  '/': 'dock.home', '/projects': 'dock.projects', '/ui-library': 'dock.uiLibrary', '/projects?source=website': 'dock.websites',
+  '/report': 'dock.report', '/x': 'dock.xboard', '/mcp': 'dock.mcp', '/dsh': 'dock.dsh',
+  '/subscriptions': 'dock.tracking', '/membership': 'dock.membership', '/contact': 'dock.contact', '/monitor': 'dock.monitor',
 }
-const caption = (item: NavigationItem) => captions[item.to] || label(item)
+const caption = (item: NavigationItem) => {
+  const key = captionKeys[item.to]
+  return key ? t(key) : label(item)
+}
 
 
 
@@ -88,16 +91,16 @@ watch(() => [props.currentPath, props.currentQuery], closeMore)
     <button class="dock-item dock-item--account" :aria-label="t(isLoggedIn ? 'navigation.accountSettings' : 'navigation.loginAccount')" :title="t(isLoggedIn ? 'navigation.accountSettings' : 'navigation.loginAccount')" @click="account">
       <UserRound v-if="isLoggedIn" class="dock-icon" aria-hidden="true" />
       <LogIn v-else class="dock-icon" aria-hidden="true" />
-      <span class="dock-label">{{ isLoggedIn ? '账户' : '登录' }}</span>
+      <span class="dock-label">{{ t(isLoggedIn ? 'dock.account' : 'dock.login') }}</span>
     </button>
     <button v-if="isLoggedIn" class="dock-item dock-item--secondary dock-item--logout" :aria-label="t('navigation.logout')" @click="logout">
       <LogOut class="dock-icon" aria-hidden="true" />
-      <span class="dock-label">退出</span>
+      <span class="dock-label">{{ t('dock.logout') }}</span>
     </button>
     <button class="dock-item dock-item--more" data-tour="more" :class="{ 'dock-item--active': moreActive }" :aria-label="t('navigation.more')" aria-haspopup="dialog" aria-controls="dock-more-menu" :aria-expanded="moreOpen" @click="openMore">
       <MoreHorizontal class="dock-icon" aria-hidden="true" />
       <span v-if="moreAlert" class="dock-alert-dot" :aria-label="t('navigation.monitorAlert')" />
-      <span class="dock-label">更多</span>
+      <span class="dock-label">{{ t('navigation.more') }}</span>
     </button>
   </nav>
 

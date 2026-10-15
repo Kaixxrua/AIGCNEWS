@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import AppDock from './AppDock.vue'
@@ -111,16 +111,49 @@ describe('AppDock account settings entry', () => {
     expect(events).toEqual(['accountSettings'])
   })
 
-  it('keeps short Chinese dock captions visible in English while preserving full accessible names', () => {
-    setAppLocale('en-US')
+  it('updates visible captions and accessible names when switching languages without remounting', async () => {
+    setAppLocale('zh-CN')
     const host = mountDock()
+    const captions = () => [...host.querySelectorAll('.dock-label')].map(label => label.textContent)
+    const chineseCaptions = captions()
+    expect(chineseCaptions).toEqual([
+      '首页', '项目库', 'UI库', '网页', '简报', 'X动态', 'MCP', 'DSH', '情报追踪', '联系我们', '监控', '账户', '退出', '更多',
+    ])
+
+    setAppLocale('en-US')
+    await nextTick()
+    expect(captions()).toEqual([
+      'Home', 'Projects', 'UI Library', 'Websites', 'Briefing', 'X Feed', 'MCP', 'DSH', 'Tracking', 'Contact', 'Monitor', 'Account', 'Log out', 'More',
+    ])
     const projects = host.querySelector('a[href="/projects"]')!
-    expect(projects.querySelector('.dock-label')?.textContent).toBe('项目库')
     expect(projects.getAttribute('title')).toBe('Projects')
     expect(projects.getAttribute('aria-label')).toBe('Projects')
-    expect(host.querySelector('a[href="/ui-library"] .dock-label')?.textContent).toBe('UI库')
-    expect(host.querySelector('.dock-item--account .dock-label')?.textContent).toBe('账户')
-    expect(host.querySelector('.dock-item--logout .dock-label')?.textContent).toBe('退出')
+    expect(host.querySelector('.dock-item--account')?.getAttribute('aria-label')).toBe('Account settings')
+
+    setAppLocale('zh-CN')
+    await nextTick()
+    expect(captions()).toEqual(chineseCaptions)
+    expect(projects.getAttribute('aria-label')).toBe('项目')
+  })
+
+  it('translates the guest login caption and switches to account and logout after sign-in', async () => {
+    setAppLocale('en-US')
+    const wrapper = mount(AppDock, {
+      props: { items: [], currentPath: '/', isAdmin: false, isLoggedIn: false },
+      global: { plugins: [i18n] },
+    })
+    unmount = () => wrapper.unmount()
+    expect(wrapper.get('.dock-item--account .dock-label').text()).toBe('Log in')
+    expect(wrapper.find('.dock-item--logout').exists()).toBe(false)
+
+    setAppLocale('zh-CN')
+    await nextTick()
+    expect(wrapper.get('.dock-item--account .dock-label').text()).toBe('登录')
+
+    setAppLocale('en-US')
+    await wrapper.setProps({ isLoggedIn: true })
+    expect(wrapper.get('.dock-item--account .dock-label').text()).toBe('Account')
+    expect(wrapper.get('.dock-item--logout .dock-label').text()).toBe('Log out')
   })
 
   it('labels the entry in English under the en-US locale', () => {
