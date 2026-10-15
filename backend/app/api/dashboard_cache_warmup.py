@@ -11,6 +11,7 @@ from starlette.requests import Request
 from backend.app.api.dependencies import get_github_hot_board_reader
 from backend.app.api.routes_dashboard import (
     get_dashboard_summary_static,
+    get_snapshot_dates,
     get_top_list,
 )
 from backend.app.repositories.application_repository_factory import (
@@ -21,11 +22,13 @@ logger = logging.getLogger(__name__)
 
 # 与前端首屏请求逐字节对齐的预热组合（cache key 只含
 # limit/source/date/hours/days_back 白名单参数，period 不进 key）：
-# - useDashboardData: summary-static + top(6 个源 tab, limit=10)，均不传 date。
+# - useDashboardData: summary-static + top(普通源 limit=10，X limit=500)。
+# - snapshot-dates(limit=90) 与最近 7 个有数据的历史榜日，显式传 date。
 # 默认请求允许回溯最近快照，不能与显式日期请求共用缓存。
 # key 不一致 = 预热写入的缓存无人命中，因此参数必须与前端保持同源维护。
 _DASHBOARD_TAB_SOURCES = ("github", "arxiv", "news", "producthunt", "hackernews", "x")
-_TOP_LIMIT = 10
+_HISTORY_DATES = 7
+_AVAILABILITY_LIMIT = 90
 
 _CST = timezone(timedelta(hours=8))
 
@@ -72,6 +75,28 @@ async def warm_dashboard_cache(
     （orchestrator）本就将缓存维护视为非致命路径。
     """
     github_hot = get_github_hot_board_reader()
+    semaphore = asyncio.Semaphore(2)
+
+    async def warm(name: str, endpoint: Any, kwargs: dict[str, Any]) -> Any:
+        async with semaphore:
+            try:
+                result = await endpoint(**kwargs)
+                logger.info("[Warmup] dashboard %s 缓存已预热。", name)
+                return result
+            except Exception as exc:  # noqa: BLE001 - 预热失败不应中断采集主流程
+                logger.warning("[Warmup] dashboard %s 预热失败（非致命）: %s", name, exc)
+                return None
+
+    def top_kwargs(source: str, date: str | None = None) -> dict[str, Any]:
+        limit = 500 if source == "x" else 10
+        query = f"limit={limit}&source={source}&period=daily"
+        if date:
+            query += f"&date={date}"
+        return {
+            "request": _stub_request("/api/dashboard/top", query, refresh=refresh),
+            "limit": limit, "source": source, "date": date,
+            "rank_snapshots": repositories.rank_snapshots, "github_hot": github_hot,
+        }
 
     warmups: list[tuple[str, Any, dict[str, Any]]] = [
         (
@@ -92,28 +117,27 @@ async def warm_dashboard_cache(
             (
                 f"top[{source}]",
                 get_top_list,
-                {
-                    "request": _stub_request(
-                        "/api/dashboard/top",
-                        f"limit={_TOP_LIMIT}&source={source}&period=daily",
-                        refresh=refresh,
-                    ),
-                    "limit": _TOP_LIMIT,
-                    "source": source,
-                    "date": None,
-                    "rank_snapshots": repositories.rank_snapshots,
-                    "github_hot": github_hot,
-                },
+                top_kwargs(source),
             )
         )
-    for name, endpoint, kwargs in warmups:
-        try:
-            await endpoint(**kwargs)
-            logger.info("[Warmup] dashboard %s 缓存已预热。", name)
-        except Exception as exc:  # noqa: BLE001 - 预热失败不应中断采集主流程
-            logger.warning(
-                "[Warmup] dashboard %s 预热失败（非致命）: %s", name, exc
-            )
+    # 首屏优先；历史预热共用并发上限，避免重启或采集后集中压数据库。
+    await asyncio.gather(*(warm(*entry) for entry in warmups))
+
+    async def warm_history(source: str) -> None:
+        availability = await warm(f"snapshot-dates[{source}]", get_snapshot_dates, {
+            "limit": _AVAILABILITY_LIMIT, "source": source,
+            "rank_snapshots": repositories.rank_snapshots, "github_hot": github_hot,
+            "__fastapi_cache_request": _stub_request(
+                "/api/dashboard/snapshot-dates",
+                f"limit={_AVAILABILITY_LIMIT}&source={source}&period=daily", refresh=refresh,
+            ),
+        })
+        today = datetime.now(_CST).date().isoformat()
+        dates = sorted({date for date in (availability or {}).get("dates", []) if date < today}, reverse=True)
+        for date in dates[:_HISTORY_DATES]:
+            await warm(f"top[{source},{date}]", get_top_list, top_kwargs(source, date))
+
+    await asyncio.gather(*(warm_history(source) for source in _DASHBOARD_TAB_SOURCES))
 
 
 def _next_warmup_delay(now: datetime) -> float:
@@ -125,8 +149,10 @@ def _next_warmup_delay(now: datetime) -> float:
 async def maintain_dashboard_cache(repositories: ApplicationRepositories) -> None:
     """启动即预热，此后提前重建并替换缓存；重算期间保留现有可用值。"""
     while True:
+        started = asyncio.get_running_loop().time()
         try:
             await warm_dashboard_cache(repositories, refresh=True)
         except Exception as exc:  # noqa: BLE001 - 预热维护不能中断服务
             logger.warning("[Warmup] dashboard 维护失败（非致命）: %s", exc)
-        await asyncio.sleep(_next_warmup_delay(datetime.now(_CST)))
+        elapsed = asyncio.get_running_loop().time() - started
+        await asyncio.sleep(max(1.0, min(45.0 - elapsed, _next_warmup_delay(datetime.now(_CST)))))
