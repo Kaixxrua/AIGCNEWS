@@ -1,4 +1,4 @@
-"""Exercise migration, persisted assessments and real catalog selection together."""
+"""Retired assessments remain stored but cannot filter or populate the catalog."""
 
 from __future__ import annotations
 
@@ -9,15 +9,14 @@ from fastapi.testclient import TestClient
 
 from backend.app.api import routes_github_projects
 from backend.app.api.dependencies import get_project_catalog_query_service
-from backend.app.domain.project_assessment import normalize_assessment
 from backend.app.repositories.postgres_project_catalog import PostgresProjectCatalogRepository
 from backend.app.repositories.postgres_project_enrichment_repository import PostgresGitHubProjectEnrichmentRepository
 from backend.app.services.project_catalog.query_service import ProjectCatalogQueryService
 from backend.tests.postgres_test_safety import postgres_test_sandbox
-from backend.tests.test_project_assessment import README, REPO, assessment_input
+from backend.tests.test_project_assessment import LEGACY_ASSESSMENT, README, REPO
 
 
-def test_assessment_roundtrip_screening_freshness_and_compare_and_swap() -> None:
+def test_retired_assessments_preserve_catalog_search_and_stored_history() -> None:
     with postgres_test_sandbox() as sandbox:
         database = sandbox.database
         catalog = PostgresProjectCatalogRepository(database)
@@ -36,63 +35,52 @@ def test_assessment_roundtrip_screening_freshness_and_compare_and_swap() -> None
                     " VALUES (%s,%s,%s,'succeeded','now')",
                     (repo_id, README, REPO["readme_sha256"]),
                 )
+        payload = {
+            "category_slug": "rag_knowledge", "category_name": "知识库",
+            "description_zh": "文档问答", "description_en": "Document search with an LLM",
+            "source_fingerprint": "input", "prompt_version": "test",
+            "assessment": LEGACY_ASSESSMENT,
+        }
         for name in ("ready", "legacy", "other", "gone"):
-            data = assessment_input()
-            if name == "other":
-                data["relevance"] = "unrelated"
-            writer.upsert_github_repo_enrichment({
-                "repo_id": f"acme/{name}", "category_slug": "rag_knowledge", "category_name": "知识库",
-                "description_zh": "文档问答", "description_en": "Document search with an LLM",
-                "source_fingerprint": "input", "prompt_version": "test",
-                "assessment": normalize_assessment(data, REPO) if name != "legacy" else None,
-            })
+            writer.upsert_github_repo_enrichment({**payload, "repo_id": f"acme/{name}"})
         with database.transaction() as connection:
+            # Even an old caller supplying assessment data must not populate it.
+            assert connection.execute(
+                "SELECT count(*) AS count FROM github_repo_enrichments WHERE assessment_json IS NOT NULL"
+            ).fetchone()["count"] == 0
+            connection.execute(
+                "UPDATE github_repo_enrichments SET assessment_json=%s::jsonb WHERE repo_id='acme/ready'",
+                (json.dumps(LEGACY_ASSESSMENT),),
+            )
             connection.execute("UPDATE github_repo_candidates SET availability_status='not_found' WHERE repo_id='acme/gone'")
+
         page = catalog.list_projects(source="github", scope="screened")
-        assert page["total"] == 1
-        assert page["items"][0]["repo_id"] == "acme/ready"
-        assert page["items"][0]["assessment"]["limitations"]
-        assert "source_description" not in page["items"][0]["assessment"]
-        assert catalog.list_projects(source="github", scope="all")["total"] == 4
-        assert catalog.list_projects(source="website", scope="screened")["total"] == 0
-        assert catalog.find_lexical_candidate_repo_ids(q="document", scope="screened") == ["acme/ready"]
-        lanes = catalog.find_lexical_candidate_lanes(q="document", scope="screened")
-        assert [item.repo_id for item in lanes.strict] == ["acme/ready"]
+        assert page == catalog.list_projects(source="github", scope="all")
+        assert page["total"] == 4
+        assert all(item["assessment"] is None for item in page["items"])
+        for query in ("find_lexical_candidate_repo_ids", "find_lexical_candidate_lanes"):
+            search = getattr(catalog, query)
+            assert search(q="document", scope="screened") == search(q="document", scope="all")
+        assert len(catalog.find_lexical_candidate_repo_ids(q="document", scope="screened")) == 4
+
         app = FastAPI()
         app.include_router(routes_github_projects.router, prefix="/api")
         app.dependency_overrides[get_project_catalog_query_service] = lambda: ProjectCatalogQueryService(
             repository_factory=lambda: catalog,
         )
-        response = TestClient(app).get("/api/projects?scope=screened")
+        client = TestClient(app)
+        response = client.get("/api/projects?scope=screened&sort=name")
         assert response.status_code == 200
-        assert response.json()["scope"] == "screened"
-        assert response.json()["items"][0]["assessment"]["decision"] == "evaluate"
+        assert response.json() == client.get("/api/projects?scope=all&sort=name").json()
+        assert response.json()["scope"] == "all"
+        assert response.json()["total"] == 4
+        assert all(item["assessment"] is None for item in response.json()["items"])
+
+        # Ordinary enrichment must preserve history without reviving it.
+        writer.upsert_github_repo_enrichment({**payload, "repo_id": "acme/ready", "assessment": None})
         with database.transaction() as connection:
-            connection.execute("UPDATE github_repo_candidates SET license_spdx_id='NOASSERTION' WHERE repo_id='acme/ready'")
-        assert catalog.list_projects(source="github", scope="screened")["total"] == 0
-        with database.transaction() as connection:
-            connection.execute("UPDATE github_repo_candidates SET license_spdx_id='MIT' WHERE repo_id='acme/ready'")
-        candidates = writer.list_github_projects_needing_assessment()
-        assert [row["repo_id"] for row in candidates] == ["acme/legacy"]
-        row = candidates[0]
-        assessment = normalize_assessment(assessment_input(), row)
-        assert not writer.save_github_project_assessment(
-            repo_id=row["repo_id"], assessment=assessment, expected_updated_at="outdated",
-        )
-        assert writer.save_github_project_assessment(
-            repo_id=row["repo_id"], assessment=assessment, expected_updated_at=row["enrichment_updated_at"],
-        )
-        assert catalog.list_projects(source="github", scope="screened")["total"] == 2
-        # A new source invalidates both presentation and selection immediately.
-        with database.transaction() as connection:
-            connection.execute("UPDATE github_repo_candidates SET description='Changed purpose' WHERE repo_id='acme/ready'")
-            connection.execute("UPDATE github_project_semantic_sources SET readme_sha256='new-hash' WHERE repo_id='acme/legacy'")
-        assert catalog.list_projects(source="github", scope="screened")["total"] == 0
-        items = catalog.list_projects(source="github", scope="all")["items"]
-        assert all(item["assessment"] is None for item in items if item["repo_id"] in {"acme/ready", "acme/legacy"})
-        # Old/future-format data fails closed, without hiding the project itself.
-        with database.transaction() as connection:
-            expired = normalize_assessment(assessment_input(), REPO)
-            expired["assessed_at"] = "2000-01-01T00:00:00+00:00"
-            connection.execute("UPDATE github_repo_enrichments SET assessment_json=%s::jsonb WHERE repo_id='acme/other'", (json.dumps(expired),))
-        assert len(writer.list_github_projects_needing_assessment()) == 3
+            stored = connection.execute(
+                "SELECT assessment_json FROM github_repo_enrichments WHERE repo_id='acme/ready'"
+            ).fetchone()["assessment_json"]
+        assert stored == LEGACY_ASSESSMENT
+        assert all(item["assessment"] is None for item in catalog.list_projects()["items"])

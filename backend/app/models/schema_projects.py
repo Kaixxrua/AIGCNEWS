@@ -9,6 +9,7 @@ from backend.app.domain.project_assessment import ProjectAssessment
 GitHubProjectSort = Literal["hot", "stars", "updated", "recent", "name"]
 PublicProjectSort = Literal["hot", "stars", "updated", "recent", "name", "relevance"]
 ProjectSource = Literal["all", "github", "website"]
+# Legacy screened requests remain accepted and resolve to the full catalog.
 ProjectScope = Literal["all", "today", "recommended", "screened"]
 
 

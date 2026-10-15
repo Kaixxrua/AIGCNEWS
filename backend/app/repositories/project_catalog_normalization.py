@@ -4,7 +4,6 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.domain.project_assessment import public_assessment
 from backend.app.domain.project_taxonomy import (
     CATEGORY_BY_SLUG,
     DEFAULT_SUBCATEGORY_BY_CATEGORY,
@@ -60,7 +59,9 @@ def _iso(value: Any) -> str | None:
 def normalize_project_row(row: dict[str, Any]) -> dict[str, Any]:
     """Reproduce the public project catalog row shape without coupling adapters."""
     item = dict(row)
-    item["assessment"] = public_assessment(item.pop("assessment_json", item.get("assessment")))
+    # Keep the nullable response field for clients, but never expose retired data.
+    item.pop("assessment_json", None)
+    item["assessment"] = None
     item["topics"] = _json_list(item.pop("topics_json", None))
     tags = _json_list(item.pop("tags_json", None))
     tags_zh = _json_list(item.pop("tags_zh_json", None))

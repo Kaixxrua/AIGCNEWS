@@ -18,7 +18,6 @@ from backend.app.monitoring import live_stats_broadcaster
 from backend.app.repositories.postgres_runtime_provider_repository import (
     PostgresRuntimeProviderSettingRepository,
 )
-from backend.app.repositories.project_assessment_sql import CURRENT_ASSESSMENT_SQL
 from backend.app.repositories.project_catalog_normalization import normalize_project_row
 
 
@@ -170,43 +169,6 @@ class _PostgresEnrichmentRepositoryBase:
 class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBase):
     """PostgreSQL writes and worker reads for GitHub project enrichment."""
 
-    def list_github_projects_needing_assessment(self, *, limit: int = 20) -> list[dict[str, Any]]:
-        with self._database.transaction() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                f"""
-                SELECT c.*, ss.readme_text, ss.readme_sha256, ss.readme_status,
-                       ge.updated_at AS enrichment_updated_at
-                FROM github_repo_candidates c
-                JOIN github_repo_enrichments ge ON ge.repo_id=c.repo_id AND ge.status='succeeded'
-                JOIN github_project_semantic_sources ss
-                  ON ss.repo_id=c.repo_id AND ss.readme_status='succeeded'
-                LEFT JOIN github_repo_daily_metrics gm ON gm.repo_id=c.repo_id
-                  AND gm.metric_date=(SELECT metric_date FROM github_repo_daily_metrics
-                                      ORDER BY metric_date DESC LIMIT 1)
-                WHERE c.availability_status='active' AND BTRIM(ss.readme_text) <> ''
-                  AND ({CURRENT_ASSESSMENT_SQL}) IS NOT TRUE
-                  AND {_ALIAS_TOMBSTONE_EXCLUSION_SQL}
-                  AND NOT EXISTS (SELECT 1 FROM github_repo_quarantine q WHERE q.repo_id=c.repo_id)
-                ORDER BY gm.hot_score DESC NULLS LAST, c.stars DESC, c.repo_id
-                LIMIT %s
-                """,
-                (max(1, min(int(limit), 50)),),
-            )
-            rows = cursor.fetchall()
-        return [normalize_project_row(dict(row)) for row in rows]
-
-    def save_github_project_assessment(
-        self, *, repo_id: str, assessment: dict[str, Any], expected_updated_at: str,
-    ) -> bool:
-        # CAS prevents a slow model call from overwriting a newer enrichment.
-        with self._database.transaction() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE github_repo_enrichments SET assessment_json=%s::jsonb, updated_at=%s"
-                " WHERE repo_id=%s AND status='succeeded' AND updated_at=%s",
-                (json.dumps(assessment, ensure_ascii=False), _utcnow(), repo_id, expected_updated_at),
-            )
-            return cursor.rowcount == 1
-
     def get_github_projects_needing_enrichment(
         self,
         *,
@@ -342,7 +304,6 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
         data.setdefault("tags_zh_json", data["tags_json"])
         data.setdefault("tags_en_json", None)
         data.setdefault("description_en", "")
-        data["assessment_json"] = json.dumps(data["assessment"], ensure_ascii=False) if data.get("assessment") else None
         data["subcategory_slug"] = data.get("subcategory_slug") or ""
         data["subcategory_name"] = data.get("subcategory_name_zh") or data.get("subcategory_name") or ""
         data["category_name_zh"] = data.get("category_name_zh") or data.get("category_name") or ""
@@ -367,7 +328,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                         subcategory_slug, subcategory_name, subcategory_name_zh, subcategory_name_en,
                         description_zh, description_en, tags_json, tags_zh_json, tags_en_json, confidence,
                         source_fingerprint, prompt_version, model_provider, model_name,
-                        status, error_msg, enriched_at, updated_at, assessment_json
+                        status, error_msg, enriched_at, updated_at
                     ) VALUES (
                         %(repo_id)s, %(category_slug)s, %(category_name)s,
                         %(category_name_zh)s, %(category_name_en)s, %(subcategory_slug)s,
@@ -375,7 +336,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                         %(description_en)s,
                         %(tags_json)s, %(tags_zh_json)s, %(tags_en_json)s, %(confidence)s, %(source_fingerprint)s,
                         %(prompt_version)s, %(model_provider)s, %(model_name)s,
-                        %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s, %(assessment_json)s::jsonb
+                        %(status)s, %(error_msg)s, %(enriched_at)s, %(updated_at)s
                     )
                     ON CONFLICT (repo_id) DO UPDATE SET
                         category_slug=EXCLUDED.category_slug,
@@ -399,8 +360,7 @@ class PostgresGitHubProjectEnrichmentRepository(_PostgresEnrichmentRepositoryBas
                         status=EXCLUDED.status,
                         error_msg=EXCLUDED.error_msg,
                         enriched_at=EXCLUDED.enriched_at,
-                        updated_at=EXCLUDED.updated_at,
-                        assessment_json=EXCLUDED.assessment_json
+                        updated_at=EXCLUDED.updated_at
                     """,
                     data,
                 )

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import ProjectAssessment from './ProjectAssessment.vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowUpRight, ChevronDown, ChevronUp, Sparkles, Star, X } from 'lucide-vue-next'
@@ -150,7 +149,6 @@ watch(() => props.target.key, () => {
             <span v-if="notFound" class="project-pane__gone">{{ t('projects.unavailable') }}</span>
           </p>
           <p class="project-pane__desc">{{ description }}</p>
-          <ProjectAssessment :assessment="repo.assessment" :repo-id="target.repoId" />
 
           <dl class="project-pane__facts">
             <div v-for="fact in facts" :key="fact.key" class="project-pane__fact" :class="[`project-pane__fact--${fact.key}`, { 'is-flat': fact.flat }]">

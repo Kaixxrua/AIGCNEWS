@@ -21,10 +21,6 @@ from backend.app.domain.search_semantics import (
     escape_like_literal,
     project_search_terms,
 )
-from backend.app.repositories.project_assessment_sql import (
-    CURRENT_ASSESSMENT_SQL,
-    SCREENED_ASSESSMENT_SQL,
-)
 from backend.app.repositories.project_catalog import (
     ProjectLexicalCandidate,
     ProjectLexicalCandidateLanes,
@@ -93,7 +89,6 @@ _LIST_PROJECT_COLUMN_PAIRS = (
     ("c.description", "{description} description"),
     ("ge.description_zh", "{description_zh} description_zh"),
     ("ge.description_en", "{description_en} description_en"),
-    (f"CASE WHEN ({CURRENT_ASSESSMENT_SQL}) THEN ge.assessment_json END assessment_json", "NULL::jsonb assessment_json"),
     ("ge.category_slug", "{category_slug} category_slug"),
     (
         "COALESCE(NULLIF(ge.category_name_zh,''),ge.category_name) category_name",
@@ -578,8 +573,6 @@ class PostgresProjectCatalogRepository:
         # Filter membership before either bounded candidate lane is truncated.
         if scope == "recommended":
             filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
-        elif scope == "screened":
-            filters.append(SCREENED_ASSESSMENT_SQL)
         if category:
             filters.append("ge.category_slug = %s"); params.append(category)
         if subcategory:
@@ -691,8 +684,6 @@ class PostgresProjectCatalogRepository:
         # Filter membership before either bounded candidate lane is truncated.
         if scope == "recommended":
             filters.append("EXISTS (SELECT 1 FROM github_repo_recommendations gr WHERE gr.repo_id = c.repo_id AND gr.active = TRUE)")
-        elif scope == "screened":
-            filters.append(SCREENED_ASSESSMENT_SQL)
         if category:
             filters.append("ge.category_slug = %s")
             filter_params.append(category)
@@ -1087,7 +1078,7 @@ class PostgresProjectCatalogRepository:
         source = (source or "all").strip().lower()
         source = source if source in {"all", "github", "website"} else "all"
         scope = (scope or "all").strip().lower()
-        scope = scope if scope in {"all", "today", "recommended", "screened"} else "all"
+        scope = scope if scope in {"all", "today", "recommended"} else "all"
         user_id = int(user_id) if user_id else None
         favorites_only = bool(favorites_only and user_id)
         candidates: list[str] | None = None
@@ -1121,9 +1112,6 @@ class PostgresProjectCatalogRepository:
             web_filters.append("FALSE")
         elif scope == "recommended":
             gh_filters.append("gr.repo_id IS NOT NULL")
-            web_filters.append("FALSE")
-        elif scope == "screened":
-            gh_filters.append(SCREENED_ASSESSMENT_SQL)
             web_filters.append("FALSE")
 
         user_web = user_id is not None
