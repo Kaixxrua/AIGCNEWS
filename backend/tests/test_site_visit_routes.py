@@ -48,6 +48,7 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         # TestClient 默认不带浏览器 UA 特征，落入 other 桶
         self.assertEqual(platform_arg, "other")
         redis.sadd.assert_awaited_once()
+        visits.record_browser_visit.assert_called_once_with(day_arg, "visitor-1234567890")
 
     def test_duplicate_visitor_does_not_record_again(self) -> None:
         app = FastAPI()
@@ -67,6 +68,7 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
         visits.record_visit.assert_not_called()
+        visits.record_browser_visit.assert_called_once()
 
     def test_record_visit_classifies_user_agent_into_platform_bucket(self) -> None:
         app = FastAPI()
@@ -121,9 +123,38 @@ class SiteVisitBeaconRouteTests(unittest.TestCase):
         # 响应仍是未变动的真人计数，访问量总表不写、不推实时统计
         self.assertEqual(response.json(), {"today_visits": 8, "total_visits": 701})
         visits.record_visit.assert_not_called()
+        visits.record_browser_visit.assert_not_called()
         (day_arg,), _ = visits.record_automated_visit.call_args
         self.assertIsInstance(day_arg, date)
         notify.assert_not_called()
+
+    def test_browser_history_failure_can_retry_without_consuming_redis_dedup(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        visits.record_browser_visit.side_effect = [psycopg.OperationalError("unavailable"), None]
+        visits.record_visit.return_value = SiteVisitStats(today_visits=1, total_visits=1)
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        redis = MagicMock()
+        redis.sadd = AsyncMock(return_value=1)
+        redis.ttl = AsyncMock(return_value=60)
+        app.state.redis = redis
+        http = TestClient(app)
+        body = {"visitor_id": "visitor-1234567890", "day": "2000-01-01", "is_returning": True}
+        with patch.object(routes_dashboard, "cst_today", return_value=date(2026, 10, 12)):
+            assert http.post("/api/dashboard/visit", json=body).status_code == 503
+            redis.sadd.assert_not_awaited()
+            assert http.post("/api/dashboard/visit", json=body).status_code == 200
+        visits.record_browser_visit.assert_called_with(date(2026, 10, 12), body["visitor_id"])
+        visits.record_visit.assert_called_once_with(date(2026, 10, 12), "other")
+
+    def test_invalid_browser_id_cannot_write_history(self) -> None:
+        app = FastAPI()
+        app.include_router(routes_dashboard.router, prefix="/api")
+        visits = MagicMock()
+        app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+        assert TestClient(app).post("/api/dashboard/visit", json={"visitor_id": "bad"}).status_code == 422
+        visits.record_browser_visit.assert_not_called()
 
     def test_linux_desktop_visit_counts_into_linux_bucket(self) -> None:
         app = FastAPI()

@@ -63,6 +63,12 @@ def test_admin_reads_are_not_cached_and_cannot_trigger_sends(client):
         "active_users": 105, "returning_users": 9, "new_users": 96,
         "return_rate": 9 / 357, "registration_rate": 96 / 444,
     }]}
+    repo.stats.return_value["visitor_returns"] = {
+        "timezone": "Asia/Shanghai", "tracking_started_at": "2026-10-10T00:00:00+08:00",
+        "as_of": "2026-10-12T10:00:00+08:00",
+        "days": [{"day": "2026-10-12", "coverage": "partial", "total_visitors": 453,
+                  "returning_visitors": 100, "return_rate": 100 / 453}],
+    }
     assert http.get("/api/monitor/email").headers["cache-control"] == "no-store"
     response = http.get("/api/monitor/user-return-visits?days=7")
     assert response.status_code == 200

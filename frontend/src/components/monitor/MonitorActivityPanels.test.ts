@@ -14,6 +14,46 @@ describe('monitoring activity panels', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); i18n.global.locale.value = 'zh-CN' })
   afterEach(() => { vi.useRealTimers() })
 
+  it('defaults to seven days and shows browser returns independently of same-day registrations', async () => {
+    const data: ReturnVisits = {
+      timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-12T08:00:00Z',
+      days: [
+        { day: '2026-10-12', coverage: 'partial', total_visitors: 10, active_users: 4, returning_users: 1, new_users: 3, return_rate: 1 / 7, registration_rate: 3 / 9 },
+      ],
+      visitor_returns: {
+        timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-12T08:00:00Z',
+        days: [
+          { day: '2026-10-12', coverage: 'partial', total_visitors: 10, returning_visitors: 5, return_rate: .5 },
+          { day: '2026-10-11', coverage: 'complete', total_visitors: 2, returning_visitors: 0, return_rate: 0 },
+          { day: '2026-10-10', coverage: 'partial', total_visitors: 4, returning_visitors: null, return_rate: null },
+          { day: '2026-10-09', coverage: 'unavailable', total_visitors: null, returning_visitors: null, return_rate: null },
+        ],
+      },
+    }
+    vi.mocked(activityApi.returnVisits).mockResolvedValue(data)
+    const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(activityApi.returnVisits).toHaveBeenCalledWith(7)
+    expect(wrapper.find('select').element.value).toBe('7')
+    const browser = wrapper.find('.visitor-return-stats')
+    expect(browser.text()).toContain('包括未注册访客和当日新注册用户')
+    expect(browser.text()).toContain('此前任一日期来过')
+    expect(browser.text()).toContain('当天首次到访后注册不算回访')
+    expect(browser.text()).toContain('此前历史无法补算')
+    expect(browser.text()).toContain('5 / 10')
+    expect(browser.findAll('tbody tr').map(row => row.findAll('td').slice(0, 3).map(cell => cell.text())))
+      .toEqual([['10', '5', '50.00%'], ['2', '0', '0.00%'], ['4', '—', '—'], ['—', '—', '—']])
+    expect(wrapper.find('summary').text()).toBe('账号统计与注册率（原口径）')
+    expect(wrapper.find('details').attributes('open')).toBeUndefined()
+    await wrapper.find('select').setValue('30')
+    await flushPromises()
+    expect(activityApi.returnVisits).toHaveBeenLastCalledWith(30)
+    wrapper.unmount()
+    const calls = vi.mocked(activityApi.returnVisits).mock.calls.length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(activityApi.returnVisits).toHaveBeenCalledTimes(calls)
+  })
+
   it('shows both adjusted daily rates and their formulas without inventing historical zeroes', async () => {
     const data: ReturnVisits = {
       timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-12T08:00:00Z',
@@ -26,6 +66,7 @@ describe('monitoring activity panels', () => {
     const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
     await flushPromises()
     expect(wrapper.text()).toContain('今日注册率')
+    expect(wrapper.text()).toContain('全站访客回访数据暂不可用')
     expect(wrapper.text()).toContain('9 / (453 − 96)')
     expect(wrapper.text()).toContain('96 / (453 − 9)')
     expect(wrapper.text()).toContain('两个比例均为估算')

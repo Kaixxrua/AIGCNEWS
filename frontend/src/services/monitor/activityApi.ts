@@ -16,6 +16,22 @@ export interface ReturnVisits {
   tracking_started_at: string
   as_of: string
   days: ReturnVisitDay[]
+  visitor_returns?: VisitorReturns
+}
+
+export interface VisitorReturnDay {
+  day: string
+  coverage: 'unavailable' | 'partial' | 'complete'
+  total_visitors: number | null
+  returning_visitors: number | null
+  return_rate: number | null
+}
+
+export interface VisitorReturns {
+  timezone: string
+  tracking_started_at: string
+  as_of: string
+  days: VisitorReturnDay[]
 }
 
 export interface EmailQuota {
@@ -58,7 +74,7 @@ export interface EmailMonitoring {
 }
 
 export const activityApi = {
-  async returnVisits(days = 30): Promise<ReturnVisits> {
+  async returnVisits(days = 7): Promise<ReturnVisits> {
     return (await api.get('/monitor/user-return-visits', { params: { days } })).data
   },
   async email(): Promise<EmailMonitoring> {

@@ -887,7 +887,8 @@ async def record_site_visit(
 ):
     """站点访问 beacon：同一匿名访客每天（CST）只计一次。
 
-    Redis set 负责原子日内去重；只有首次出现的 ID 才会写入 PostgreSQL，
+    浏览器首次日期及每日记录持久化，用于跨日回访。Redis set 仍负责原有计数的
+    日内去重；只有首次出现的 ID 才累加站点总数，
     并按 User-Agent 归类平台桶。爬虫、无头浏览器等自动化访问只记平台维度的
     bot 桶，不计入访问量，也不触发实时统计推送。Redis 不可用时 fail closed，
     避免故障期间把重复请求膨胀成访客数。
@@ -896,10 +897,20 @@ async def record_site_visit(
     同一访客同一天同一来源与落地页只记一次，与这次访问是否首次无关；
     自动化访问不记；落地记录失败只写日志，不影响访问计数与响应。
     """
+    day = cst_today()
+    platform = classify_platform(request.headers.get("user-agent"))
+    # Record even a Redis duplicate: this allows retries and an existing
+    # browser's first report after rollout to establish durable history.
+    if platform != AUTOMATED_PLATFORM:
+        try:
+            await asyncio.to_thread(visits.record_browser_visit, day, payload.visitor_id)
+        except Exception:
+            logger.warning("[Dashboard] browser visit recording unavailable", exc_info=True)
+            raise HTTPException(status_code=503, detail="visitor counting unavailable") from None
     try:
         is_new = await mark_new_daily_visitor(
             getattr(request.app.state, "redis", None),
-            day=cst_today(),
+            day=day,
             visitor_id=payload.visitor_id,
         )
     except InvalidVisitorId:
@@ -908,13 +919,12 @@ async def record_site_visit(
         logger.warning("[Dashboard] visitor deduplication unavailable", exc_info=True)
         raise HTTPException(status_code=503, detail="visitor counting unavailable") from None
 
-    platform = classify_platform(request.headers.get("user-agent"))
     if is_new:
         if platform == AUTOMATED_PLATFORM:
-            await asyncio.to_thread(visits.record_automated_visit, cst_today())
+            await asyncio.to_thread(visits.record_automated_visit, day)
             stats = await _get_site_visit_stats(visits)
         else:
-            stats = await asyncio.to_thread(visits.record_visit, cst_today(), platform)
+            stats = await asyncio.to_thread(visits.record_visit, day, platform)
             live_stats_broadcaster.notify_live_stats_changed("site-visit")
     else:
         stats = await _get_site_visit_stats(visits)

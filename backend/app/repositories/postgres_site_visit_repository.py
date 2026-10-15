@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.repositories.postgres_visitor_return_repository import PostgresVisitorReturnRepository
 from backend.app.repositories.site_visit_repository import (
     AUTOMATED_PLATFORM,
     DEFAULT_PLATFORM,
@@ -17,6 +18,9 @@ class PostgresSiteVisitRepository:
 
     def __init__(self, database: PostgresDatabaseLifecycle) -> None:
         self._database = database
+
+    def record_browser_visit(self, day: date, visitor_id: str) -> None:
+        PostgresVisitorReturnRepository(self._database).record(day, visitor_id)
 
     def record_visit(self, day: date, platform: str = DEFAULT_PLATFORM) -> SiteVisitStats:
         """计数一次访问：总量表与平台维度表同事务双写，口径天然一致。"""

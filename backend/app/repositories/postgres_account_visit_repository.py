@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
+from backend.app.repositories.postgres_visitor_return_repository import PostgresVisitorReturnRepository
 
 CST = ZoneInfo("Asia/Shanghai")
 
@@ -95,4 +96,5 @@ class PostgresAccountVisitRepository:
         return {
             "timezone": "Asia/Shanghai", "tracking_started_at": started_at.isoformat(),
             "as_of": now.isoformat(), "days": series,
+            "visitor_returns": PostgresVisitorReturnRepository(self._database).stats(days, now=now),
         }
