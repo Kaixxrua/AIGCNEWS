@@ -79,13 +79,18 @@ class PostgresAccountVisitRepository:
             # Same browser-deduplicated UV as the site's visitor counter,
             # including anonymous visitors. Read both counts in one snapshot.
             visitors = int(row.get("total_visitors", 0)) if row or coverage != "unavailable" else None
+            new = active - returning
+            return_denominator = visitors - new if visitors is not None else 0
+            registration_denominator = visitors - returning if visitors is not None else 0
+            tracked = coverage != "unavailable"
             series.append({
                 "day": day.isoformat(), "coverage": coverage,
                 "total_visitors": visitors,
                 "active_users": active if coverage != "unavailable" else None,
                 "returning_users": returning if coverage != "unavailable" else None,
-                "new_users": active - returning if coverage != "unavailable" else None,
-                "return_rate": returning / visitors if visitors and coverage != "unavailable" else None,
+                "new_users": new if tracked else None,
+                "return_rate": returning / return_denominator if tracked and return_denominator > 0 else None,
+                "registration_rate": new / registration_denominator if tracked and registration_denominator > 0 else None,
             })
         return {
             "timezone": "Asia/Shanghai", "tracking_started_at": started_at.isoformat(),

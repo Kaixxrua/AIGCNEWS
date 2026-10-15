@@ -58,9 +58,16 @@ def test_recognized_automation_does_not_count_as_web_visitor(client):
 def test_admin_reads_are_not_cached_and_cannot_trigger_sends(client):
     http, repo = client
     login(http, "admin")
+    repo.stats.return_value = {"days": [{
+        "day": "2026-10-12", "coverage": "complete", "total_visitors": 453,
+        "active_users": 105, "returning_users": 9, "new_users": 96,
+        "return_rate": 9 / 357, "registration_rate": 96 / 444,
+    }]}
     assert http.get("/api/monitor/email").headers["cache-control"] == "no-store"
     response = http.get("/api/monitor/user-return-visits?days=7")
     assert response.status_code == 200
+    assert response.json() == repo.stats.return_value
+    assert response.headers["cache-control"] == "no-store"
     repo.stats.assert_called_once_with(7)
     assert http.get("/api/monitor/user-return-visits?days=1000").status_code == 422
     repo.claim.assert_not_called()

@@ -14,25 +14,54 @@ describe('monitoring activity panels', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); i18n.global.locale.value = 'zh-CN' })
   afterEach(() => { vi.useRealTimers() })
 
-  it('shows the precise numerator and denominator, not invented historical zeroes', async () => {
+  it('shows both adjusted daily rates and their formulas without inventing historical zeroes', async () => {
     const data: ReturnVisits = {
-      timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-10T08:00:00Z',
+      timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-12T08:00:00Z',
       days: [
-        { day: '2026-10-10', coverage: 'partial', total_visitors: 10, active_users: 3, returning_users: 2, new_users: 1, return_rate: 2 / 10 },
-        { day: '2026-10-09', coverage: 'unavailable', total_visitors: null, active_users: null, returning_users: null, new_users: null, return_rate: null },
+        { day: '2026-10-12', coverage: 'partial', total_visitors: 453, active_users: 105, returning_users: 9, new_users: 96, return_rate: 9 / 357, registration_rate: 96 / 444 },
+        { day: '2026-10-09', coverage: 'unavailable', total_visitors: null, active_users: null, returning_users: null, new_users: null, return_rate: null, registration_rate: null },
       ],
     }
     vi.mocked(activityApi.returnVisits).mockResolvedValue(data)
     const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('20.00%')
-    expect(wrapper.text()).toContain('2 个老账号 / 10 位访客')
-    expect(wrapper.text()).toContain('当天全部访客（含未登录访客）')
-    expect(wrapper.findAll('tbody tr')[0]!.findAll('td').slice(0, 5).map(cell => cell.text())).toEqual(['10', '3', '2', '1', '20.00%'])
+    expect(wrapper.text()).toContain('今日注册率')
+    expect(wrapper.text()).toContain('9 / (453 − 96)')
+    expect(wrapper.text()).toContain('96 / (453 − 9)')
+    expect(wrapper.text()).toContain('两个比例均为估算')
+    expect(wrapper.text()).toContain('不等于全部注册数')
+    expect(wrapper.findAll('thead th').map(cell => cell.text())).toContain('每日注册率')
+    const cells = wrapper.findAll('tbody tr')[0]!.findAll('td')
+    expect(cells.slice(0, 6).map(cell => cell.text())).toEqual(['453', '105', '9', '96', '2.52%', '21.62%'])
+    expect(cells[4]!.attributes('title')).toBe('9 / (453 − 96)')
+    expect(cells[5]!.attributes('title')).toBe('96 / (453 − 9)')
     expect(wrapper.findAll('tbody tr')[0]!.text()).toContain('部分时段')
     const history = wrapper.findAll('tbody tr')[1]!
     expect(history.text()).toContain('未开始采集')
-    expect(history.findAll('td').slice(0, 5).map(cell => cell.text())).toEqual(['—', '—', '—', '—', '—'])
+    expect(history.findAll('td').slice(0, 6).map(cell => cell.text())).toEqual(['—', '—', '—', '—', '—', '—'])
+    wrapper.unmount()
+  })
+
+  it('shows unavailable rates as dashes, keeps valid zeroes, and tolerates an older API response', async () => {
+    vi.mocked(activityApi.returnVisits).mockResolvedValue({
+      timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-12T08:00:00Z',
+      days: [
+        { day: '2026-10-12', coverage: 'partial', total_visitors: 3, active_users: 3, returning_users: 0, new_users: 3, return_rate: null, registration_rate: 1 },
+        { day: '2026-10-11', coverage: 'complete', total_visitors: 10, active_users: 0, returning_users: 0, new_users: 0, return_rate: 0, registration_rate: 0 },
+        { day: '2026-10-10', coverage: 'partial', total_visitors: 3, active_users: 3, returning_users: 3, new_users: 0, return_rate: 1, registration_rate: null },
+      ],
+    })
+    const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.findAll('tbody tr').map(row => row.findAll('td').slice(4, 6).map(cell => cell.text())))
+      .toEqual([['—', '100.00%'], ['0.00%', '0.00%'], ['100.00%', '—']])
+    const older = await activityApi.returnVisits()
+    const { registration_rate: _rate, ...day } = older.days[0]!
+    vi.mocked(activityApi.returnVisits).mockResolvedValue({ ...older, days: [day] } as ReturnVisits)
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('tbody tr')[0]!.findAll('td')[5]!.text()).toBe('—')
+    expect(wrapper.text()).not.toContain('NaN')
     wrapper.unmount()
   })
 

@@ -8,6 +8,7 @@ export interface ReturnVisitDay {
   returning_users: number | null
   new_users: number | null
   return_rate: number | null
+  registration_rate: number | null
 }
 
 export interface ReturnVisits {
@@ -65,6 +66,6 @@ export const activityApi = {
   },
 }
 
-export function formatReturnRate(rate: number | null): string {
-  return rate === null ? '—' : `${(rate * 100).toFixed(2)}%`
+export function formatReturnRate(rate: number | null | undefined): string {
+  return rate == null ? '—' : `${(rate * 100).toFixed(2)}%`
 }
