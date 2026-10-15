@@ -76,6 +76,11 @@ const enUSCatalog = {
     forks: 'Forks', issues: 'Open issues', language: 'Language', created: 'Created', pushed: 'Last push',
     openGitHub: 'Open on GitHub', keysMove: 'next / previous', keysOpen: 'GitHub', keysSave: 'favorite', keysClose: 'close',
   },
+  dock: {
+    home: 'Home', projects: 'Projects', uiLibrary: 'UI Library', websites: 'Websites',
+    report: 'Briefing', xboard: 'X Feed', mcp: 'MCP', dsh: 'DSH', tracking: 'Tracking',
+    membership: 'Member', contact: 'Contact', monitor: 'Monitor', account: 'Account', login: 'Log in', logout: 'Log out',
+  },
   navigation: { uiLibrary: 'UI Library', mainNavigation: 'Main navigation', primary: 'Main navigation', more: 'More', accountShort: 'Account', home: 'Home', dashboard: 'Dashboard', papers: 'Papers', projects: 'Projects', websiteCollection: 'My Websites', report: 'Report', xboard: 'X Board', subscriptions: 'My Subscriptions', tracking: 'Tracking', mcp: 'MCP', dsh: 'dsh', membership: 'Membership', contact: 'Contact', monitor: 'Monitor', loginAccount: 'Log in', logout: 'Log out', accountSettings: 'Account settings', showDock: 'Show navigation', monitorAlert: 'GitHub project enrichment failures need attention on the Monitor page' },
   contact: { kicker: 'CONTACT & PARTNERSHIPS', heroNote: 'Choose the route that fits your request.', servicesKicker: 'WHAT WE WORK ON', servicesTitle: 'Ways to work together', entryKicker: 'START HERE', entryTitle: 'Choose a contact route', primaryBadge: 'Recommended', qrHint: 'Scan to continue', qrUnavailable: 'QR image unavailable', notesKicker: 'DETAILS', notesTitle: 'A few more details' },
   membership: {

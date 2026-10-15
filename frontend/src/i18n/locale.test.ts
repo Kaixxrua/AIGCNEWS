@@ -100,8 +100,10 @@ describe('application locale contract', () => {
     const intentionallyShared = /(?:appName|chinese|english|github|hn|hackernews|producthunt|emailPlaceholder|discordPlaceholder|recommendedBadge|stars|sortStars|forks|rag|arxivDesc|head\.arxiv|githubDesc|producthuntDesc|hackernewsDesc|\.x|authToken|ct0|yearlyDiscount|saved\.issue|guest\.name|free\.name|member\.name|identityGuest|identityUser|identityVip|platform\.(?:ios|android|windows|macos|linux|discord|telegram)|oauthConfig\.(?:providerGithub|providerGoogle|clientId|clientSecret|appId|appSecret))$/
     // Brand and model names are intentionally identical in both account-group catalogs.
     const sharedAccountBrands = /^xAccountGroups\.(?:openai|anthropic|google|xai|deepseek|meta|minimax|mistral|suno|perplexity)$/
+    // Protocol and product acronyms stay unchanged in compact navigation.
+    const sharedDockAcronyms = /^dock\.(?:mcp|dsh)$/
     const inherited = Object.keys(zhLeaves).filter(
-      key => zhLeaves[key] === enLeaves[key] && !intentionallyShared.test(key) && !sharedAccountBrands.test(key),
+      key => zhLeaves[key] === enLeaves[key] && !intentionallyShared.test(key) && !sharedAccountBrands.test(key) && !sharedDockAcronyms.test(key),
     )
     expect(inherited).toEqual([])
   })
