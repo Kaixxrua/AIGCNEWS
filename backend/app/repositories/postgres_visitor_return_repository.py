@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from backend.app.core.postgres_database import PostgresDatabaseLifecycle
-from backend.app.services.dashboard.visitor_deduplication import validate_visitor_id
+from backend.app.domain.visitor_identity import validate_visitor_id
 
 CST = ZoneInfo("Asia/Shanghai")
 
