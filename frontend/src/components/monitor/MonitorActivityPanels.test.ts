@@ -42,9 +42,12 @@ describe('monitoring activity panels', () => {
     expect(browser.text()).toContain('此前历史无法补算')
     expect(browser.text()).toContain('5 / 10')
     expect(browser.findAll('tbody tr').map(row => row.findAll('td').slice(0, 3).map(cell => cell.text())))
-      .toEqual([['10', '5', '50.00%'], ['2', '0', '0.00%'], ['4', '—', '—'], ['—', '—', '—']])
-    expect(wrapper.find('summary').text()).toBe('账号统计与注册率（原口径）')
-    expect(wrapper.find('details').attributes('open')).toBeUndefined()
+      .toEqual([['10', '5', '50.00%'], ['2', '0', '0.00%'], ['4', '—', '—']])
+    const daily = wrapper.find('.account-return-stats')
+    expect(daily.find('h4').text()).toBe('每日访客与账号统计')
+    expect(daily.find('table').element.closest('details')).toBeNull()
+    expect(daily.find('.metric-card').element.closest('details')).toBeNull()
+    expect(daily.find('.metric-card').text()).toContain('今日全部访客')
     await wrapper.find('select').setValue('30')
     await flushPromises()
     expect(activityApi.returnVisits).toHaveBeenLastCalledWith(30)
@@ -52,6 +55,36 @@ describe('monitoring activity panels', () => {
     const calls = vi.mocked(activityApi.returnVisits).mock.calls.length
     await vi.advanceTimersByTimeAsync(120_000)
     expect(activityApi.returnVisits).toHaveBeenCalledTimes(calls)
+  })
+
+  it('keeps full daily visitors and historical registrations visible while new return history is collecting', async () => {
+    vi.mocked(activityApi.returnVisits).mockResolvedValue({
+      timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-10T01:00:00Z', as_of: '2026-10-15T09:15:00Z',
+      days: [
+        { day: '2026-10-15', coverage: 'partial', total_visitors: 153, active_users: 44, returning_users: 27, new_users: 17, return_rate: 27 / 136, registration_rate: 17 / 126 },
+        { day: '2026-10-12', coverage: 'complete', total_visitors: 453, active_users: 105, returning_users: 9, new_users: 96, return_rate: 9 / 357, registration_rate: 96 / 444 },
+      ],
+      visitor_returns: {
+        timezone: 'Asia/Shanghai', tracking_started_at: '2026-10-15T08:59:31Z', as_of: '2026-10-15T09:15:00Z',
+        days: [
+          { day: '2026-10-15', coverage: 'partial', total_visitors: 4, returning_visitors: null, return_rate: null },
+          { day: '2026-10-12', coverage: 'unavailable', total_visitors: null, returning_visitors: null, return_rate: null },
+        ],
+      },
+    })
+    const wrapper = mount(AccountReturnVisitsPanel, { global: { plugins: [i18n] } })
+    await flushPromises()
+    const daily = wrapper.find('.account-return-stats')
+    expect(daily.find('.metric-card').text()).toContain('153')
+    expect(daily.findAll('tbody tr').map(row => row.findAll('td').slice(0, 4).map(cell => cell.text())))
+      .toEqual([['153', '44', '27', '17'], ['453', '105', '9', '96']])
+    expect(daily.find('table').element.closest('details')).toBeNull()
+    const browser = wrapper.find('.visitor-return-stats')
+    expect(browser.find('[role="status"]').text()).toContain('首日已采集 4 位访客')
+    expect(browser.text()).toContain('今日全部访客见上方')
+    expect(browser.find('table').exists()).toBe(false)
+    expect(browser.find('.metric-card').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('shows both adjusted daily rates and their formulas without inventing historical zeroes', async () => {

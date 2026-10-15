@@ -50,22 +50,23 @@ onBeforeUnmount(() => { active = false; clearInterval(poll) })
     <p v-if="failed" role="alert" class="monitor-status-error mt-3 text-sm">{{ t('monitorActivity.loadFailed') }}</p>
     <p v-if="loading && !data" class="monitor-caption mt-4">{{ t('common.loading') }}</p>
     <template v-if="data && today">
-      <VisitorReturnStats v-if="data.visitor_returns" :data="data.visitor_returns" />
-      <p v-else class="monitor-caption mt-3 text-xs">{{ t('monitorActivity.browserUnavailable') }}</p>
-      <details class="mt-4">
-        <summary class="monitor-section-title cursor-pointer text-sm font-semibold">{{ t('monitorActivity.accountDetails') }}</summary>
-        <p class="monitor-caption mt-2 text-xs leading-5">{{ t('monitorActivity.definition') }}</p>
-        <p class="monitor-caption mt-1 text-xs leading-5">{{ t('monitorActivity.registrationDefinition') }}</p>
-        <p class="monitor-caption mt-1 text-xs leading-5">{{ t('monitorActivity.visitorScope') }}</p>
+      <div class="account-return-stats mt-4">
+        <h4 class="monitor-section-title text-sm font-semibold">{{ t('monitorActivity.accountDetails') }}</h4>
         <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <MonitorMetricCard :label="t('monitorActivity.rateToday')" :value="formatReturnRate(today.return_rate)" :note="fraction(today, 'return')" />
-          <MonitorMetricCard :label="t('monitorActivity.registrationToday')" :value="formatReturnRate(today.registration_rate)" :note="fraction(today, 'registration')" />
-          <MonitorMetricCard :label="t('monitorActivity.newToday')" :value="today.new_users ?? '—'" :note="t('monitorActivity.newAccounts')" />
-          <MonitorMetricCard :label="t('monitorActivity.returningToday')" :value="today.returning_users ?? '—'" :note="t('monitorActivity.oldAccount')" />
           <MonitorMetricCard :label="t('monitorActivity.visitorsToday')" :value="today.total_visitors ?? '—'" :note="t('monitorActivity.allVisitors')" />
+          <MonitorMetricCard :label="t('monitorActivity.newToday')" :value="today.new_users ?? '—'" :note="t('monitorActivity.newAccounts')" />
+          <MonitorMetricCard :label="t('monitorActivity.registrationToday')" :value="formatReturnRate(today.registration_rate)" :note="fraction(today, 'registration')" />
           <MonitorMetricCard :label="t('monitorActivity.activeToday')" :value="today.active_users ?? '—'" :note="t('monitorActivity.uniqueAccounts')" />
+          <MonitorMetricCard :label="t('monitorActivity.returningToday')" :value="today.returning_users ?? '—'" :note="t('monitorActivity.oldAccount')" />
+          <MonitorMetricCard :label="t('monitorActivity.rateToday')" :value="formatReturnRate(today.return_rate)" :note="fraction(today, 'return')" />
         </div>
-        <p class="monitor-caption mt-4 text-xs leading-5">{{ t('monitorActivity.since', { time: cstTime(data.tracking_started_at) }) }}</p>
+        <details class="mt-3 text-xs">
+          <summary class="monitor-caption cursor-pointer">{{ t('monitorActivity.metricDefinitions') }}</summary>
+          <p class="monitor-caption mt-2 leading-5">{{ t('monitorActivity.definition') }}</p>
+          <p class="monitor-caption mt-1 leading-5">{{ t('monitorActivity.registrationDefinition') }}</p>
+          <p class="monitor-caption mt-1 leading-5">{{ t('monitorActivity.visitorScope') }}</p>
+          <p class="monitor-caption mt-1 leading-5">{{ t('monitorActivity.since', { time: cstTime(data.tracking_started_at) }) }}</p>
+        </details>
         <div class="mt-3 overflow-x-auto" role="region" :aria-label="t('monitorActivity.returns')" tabindex="0">
           <table class="w-full min-w-[760px] text-left text-xs tabular-nums">
             <caption class="sr-only">{{ t('monitorActivity.returns') }}</caption>
@@ -78,7 +79,9 @@ onBeforeUnmount(() => { active = false; clearInterval(poll) })
             </tr></tbody>
           </table>
         </div>
-      </details>
+      </div>
+      <VisitorReturnStats v-if="data.visitor_returns" :data="data.visitor_returns" />
+      <p v-else class="monitor-caption mt-3 text-xs">{{ t('monitorActivity.browserUnavailable') }}</p>
       <p class="monitor-caption mt-3 text-xs">{{ t('monitorActivity.asOf', { time: cstTime(data.as_of) }) }}</p>
     </template>
   </section>
