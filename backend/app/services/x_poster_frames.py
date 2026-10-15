@@ -74,7 +74,14 @@ def get_upstream_client() -> httpx.AsyncClient:
             proxy=outbound_proxy(),
             timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=15.0),
             follow_redirects=False,
-            limits=httpx.Limits(max_connections=64, max_keepalive_connections=32),
+            limits=httpx.Limits(
+                max_connections=64,
+                max_keepalive_connections=32,
+                # The media egress can silently stop answering sockets after
+                # ~2s idle. Expire them before HTTPX's default 5s reuse window;
+                # otherwise the next Range waits for the full read timeout.
+                keepalive_expiry=1.0,
+            ),
         )
     return _shared_client
 
