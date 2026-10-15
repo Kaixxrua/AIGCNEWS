@@ -7,6 +7,7 @@ import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/Rep
 import type { ReportLoadState } from '@/composables/useReportController'
 import type { BroadsheetPeek } from '@/composables/useReportPeek'
 import { parseBroadsheet } from '@/features/report/reportBroadsheet'
+import { localizeReportHeadingTags } from '@/features/report/reportHeadingTags'
 import { formatReportIssueDate, groupReportSections } from '@/features/report/reportViewModel'
 import { preloadWhen } from '@/utils/lazyComponent'
 const { t, locale } = useI18n()
@@ -33,8 +34,9 @@ const props = defineProps<{
   fallbackFrom?: string
 }>()
 
+const renderedContent = computed(() => localizeReportHeadingTags(props.renderMarkdown(props.reportContent), locale.value))
 const broadsheet = computed(() => props.readingMode && props.reportContent
-  ? parseBroadsheet(props.renderMarkdown(props.reportContent))
+  ? parseBroadsheet(renderedContent.value)
   : null)
 
 // 大报版式只在桌面出现，单独成包（components/report/desktopParts.ts），手机不下载；排成大报时先取回来，正文到了不用再等。
@@ -88,7 +90,7 @@ const emit = defineEmits<{
     <p v-if="fallbackFrom" class="report-fallback-notice mb-3 rounded-xl bg-stone-100 px-3 py-2 text-xs font-medium text-stone-600">{{ t('report.state.fallback', { type: currentTypeLabel, date: formatReportIssueDate(issueDate ?? '', locale) }) }}</p>
     <p class="report-ai-notice mb-3 inline-block rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">{{ t('report.aiGeneratedNotice') }}</p>
     <ReportBroadsheet v-if="broadsheet" :key="contentKey" :sheet="broadsheet" :mode="readingMode ?? 'full'" :generating="isGenerating" :saves="saves" :peek="peek" />
-    <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderMarkdown(reportContent))" />
+    <article v-else class="prose-content prose-report max-w-none" v-html="groupReportSections(renderedContent)" />
     <span v-if="isGenerating" class="inline-block h-4 w-0.5 animate-pulse bg-cyan-500 align-middle ml-0.5" />
     <div v-if="isPreview" class="auth-required-hint mt-5 space-y-3" role="note">
       <p class="text-sm text-stone-500">{{ t('memberContent.reportHint') }}</p>

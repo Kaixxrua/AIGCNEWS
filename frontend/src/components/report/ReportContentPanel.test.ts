@@ -1,7 +1,8 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ReportContentPanel from './ReportContentPanel.vue'
 import { i18n } from '@/i18n'
+import { renderMarkdown } from '@/composables/useLatexRenderer'
 
 const mountPanel = (props: Record<string, unknown> = {}) => mount(ReportContentPanel, {
   props: {
@@ -16,12 +17,44 @@ const mountPanel = (props: Record<string, unknown> = {}) => mount(ReportContentP
 })
 
 beforeEach(() => {
+  i18n.global.locale.value = 'zh-CN'
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-04T00:30:00Z'))
 })
 
 afterEach(() => {
+  i18n.global.locale.value = 'zh-CN'
   vi.useRealTimers()
+})
+
+it.each([undefined, 'full', 'lead'] as const)('localizes cached heading tags in %s mode when the language changes', async (readingMode) => {
+  const wrapper = mountPanel({
+    readingMode,
+    renderMarkdown,
+    reportContent: [
+      '## Industry News `#news` `#商业化` `#AI基础设施`',
+      '',
+      'Body code stays literal: `商业化` and `#AI基础设施`.',
+      '',
+      '## Worth Watching `#Agent` `#具身智能` `#安全对齐` `#CustomTag`',
+      '',
+      'A report paragraph.',
+    ].join('\n'),
+  })
+  await vi.dynamicImportSettled()
+  await flushPromises()
+  const tags = () => wrapper.findAll('h2 code').map(tag => tag.text())
+  expect(tags()).toEqual(['news', '商业化', 'AI基础设施', 'Agent', '具身智能', '安全对齐', 'CustomTag'])
+
+  i18n.global.locale.value = 'en-US'
+  await flushPromises()
+  expect(tags()).toEqual(['news', 'Commercialization', 'AI Infrastructure', 'Agent', 'Embodied AI', 'Safety & Alignment', 'CustomTag'])
+  expect(wrapper.text()).toContain('Body code stays literal: 商业化 and #AI基础设施.')
+
+  i18n.global.locale.value = 'zh-CN'
+  await flushPromises()
+  expect(tags()).toContain('商业化')
+  wrapper.unmount()
 })
 
 describe('ReportContentPanel without a briefing', () => {

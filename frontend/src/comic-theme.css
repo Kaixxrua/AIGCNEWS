@@ -289,6 +289,12 @@
   #app .app-shell--editorial .dock-label { font-size: 10px; }
   #app .app-shell--editorial .dock-auth-sep { margin: 0 4px; }
 }
+/* The English tagline needs two balanced lines inside the speech outline. */
+@media (min-width: 1024px) {
+  :root:lang(en) #app .app-shell--editorial .masthead-tagline {
+    padding-inline: 22px; font-size: 16px; line-height: 1.1; white-space: normal; text-wrap: balance;
+  }
+}
 @media (max-width: 1023px) {
   #app .app-shell--editorial .brand-wordmark__text { font-size: 29px; }
 }
