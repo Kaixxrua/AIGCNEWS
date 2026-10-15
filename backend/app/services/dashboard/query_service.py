@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Any, Protocol
 
 from backend.app.repositories.rank_snapshot_repository import RankSnapshotReader
+from backend.app.services.dashboard.github_board_quality import github_board_quality
 from backend.app.services.dashboard.policy import (
     DEFAULT_SNAPSHOT_LOOKBACK_DAYS,
     SnapshotDateResolution,
@@ -161,6 +162,8 @@ class DashboardQueryService:
         混排会让名次含义漂移。
         """
         assert self._github_hot is not None  # 仅经 _use_github_hot 守门后调用
+        if github_board_quality(date_str)["status"] == "unavailable":
+            return []
         rows = self._github_hot.list_github_hot_for_date(
             metric_date=date_str, limit=limit
         )

@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Sequence, TypedDict
+from typing import Any, NotRequired, Sequence, TypedDict
 
 from starlette.requests import Request
+
+from backend.app.services.dashboard.github_board_quality import (
+    BoardDataQuality,
+    github_board_quality,
+)
 
 RADAR_CATEGORIES = {
     "大模型": [
@@ -120,6 +125,7 @@ class SourceBoardStatus(TypedDict):
     day_boundary: str
     finalize_hour: int
     is_disabled: bool
+    data_quality: NotRequired[BoardDataQuality]
 
 # 看板 github 榜自日度热度指标表读取后，条目的来源渠道标记。
 # 与 rank_snapshots 的 github_trending_daily/github_hot_daily 区分开，
@@ -305,6 +311,8 @@ def compute_source_status_map(
     for source in SOURCE_FINALIZE_HOUR:
         status = compute_source_board_status(snapshot_date_str, source)
         status["is_disabled"] = source in disabled_sources
+        if source == "github":
+            status["data_quality"] = github_board_quality(snapshot_date_str)
         status_map[source] = status
     return status_map
 

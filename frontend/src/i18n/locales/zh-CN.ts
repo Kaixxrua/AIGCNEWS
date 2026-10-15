@@ -308,6 +308,20 @@ const overrides = {
 } as const
 
 const explicitBusinessTranslations: Record<string, string> = {
+  "dashboard.quality.partial": "数据不完整",
+  "dashboard.quality.unavailable": "暂不可用",
+  "dashboard.quality.unavailableTitle": "该日 GitHub 排名暂不可用",
+  "dashboard.quality.chooseDateOrSource": "可以选择其他日期，或查看当天的其他栏目。",
+  "dashboard.quality.reasons.missing": "当天缺少可靠的采集记录，暂不展示排名。",
+  "dashboard.quality.reasons.sparse": "当天采集的项目过少，暂不足以形成有代表性的日榜。",
+  "dashboard.quality.reasons.baseline_missing": "缺少足够的历史星数记录，暂无法可靠计算当天增长。",
+  "dashboard.quality.reasons.backfill_unverified": "补录记录尚不能确认当天的真实增长，暂不展示排名。",
+  "dashboard.quality.reasons.observation_window": "当天增长统计的观测时段明显不足或超过一天，暂不作为完整日榜展示。",
+  "dashboard.quality.reasons.coverage_partial": "当天部分项目未采集到，以下排名仅反映已采集的样本。",
+  "dashboard.quality.reasons.cross_day_growth": "部分增长数据使用跨日观测估算，该日排名仅供参考。",
+  "dashboard.quality.reasons.window_partial": "部分项目的增长统计不足或超过一天，该日排名仅供参考。",
+  "dashboard.quality.reasons.historical_unavailable": "该日期尚无 GitHub 日增长榜数据。",
+  "dashboard.quality.reasons.unknown": "该日期的数据存在质量限制。",
   'mcp.dshPlugin.crossLinkTitle': '在 dsh 中原生使用 AIGC Radar',
   'mcp.dshPlugin.crossLinkDescription': 'dsh 现在有独立的 npm 优先安装页，不再混入 MCP 客户端配置流程。',
   'mcp.dshPlugin.openPage': '打开 dsh 安装页',

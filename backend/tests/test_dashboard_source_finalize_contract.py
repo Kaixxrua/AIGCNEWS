@@ -224,14 +224,14 @@ def test_top_route_response_adds_source_status_and_keeps_legacy_fields(
 
     status_map = payload["source_status"]
     assert list(status_map.keys()) == EXPECTED_SOURCE_ORDER
-    for status in status_map.values():
+    for source, status in status_map.items():
         assert set(status.keys()) == {
             "is_finalized",
             "is_embargoed",
             "day_boundary",
             "finalize_hour",
             "is_disabled",
-        }
+        } | ({"data_quality"} if source == "github" else set())
         assert status["is_finalized"] is True
         assert status["is_embargoed"] is False
         assert status["is_disabled"] is False
