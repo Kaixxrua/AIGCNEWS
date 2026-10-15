@@ -33,7 +33,8 @@ def history(hours=2, growth=20):
 
 
 def magnitude(growth, base):
-    scale = 100 * min(math.log1p(growth / math.sqrt(max(base, 500))) / math.log1p(100), 1)
+    denominator = math.sqrt(500) * (max(base, 500) / 500) ** 0.65
+    scale = 100 * min(math.log1p(growth / denominator) / math.log1p(100), 1)
     absolute = 100 * min(math.log1p(growth) / math.log1p(10000), 1)
     return 0.625 * scale + 0.375 * absolute
 
@@ -144,6 +145,45 @@ def test_zero_growth_has_zero_heat():
     result = score_heat(HeatInputs(star_velocity=0, base_stars=5000, fork_velocity=20, watcher_velocity=5, days_since_push=0))
     assert result['hot_score'] == 0
     assert result['maintenance_activity_score'] == 100
+
+
+@pytest.mark.parametrize(('base', 'expected'), [
+    (500, 62.5450), (1000, 57.2315), (10000, 41.1365), (100000, 30.0006),
+])
+def test_v12_scale_calibration_at_equal_growth(base, expected):
+    result = score_heat(HeatInputs(star_velocity=500, base_stars=base))
+    assert result['score_version'] == 'daily_hot_v12'
+    assert result['hot_score'] == pytest.approx(expected, abs=0.0001)
+
+
+def test_small_breakout_beats_routine_large_growth_but_not_a_large_breakout():
+    small = score_heat(HeatInputs(star_velocity=500, base_stars=1000))
+    routine = score_heat(HeatInputs(star_velocity=3000, base_stars=100000))
+    breakout = score_heat(HeatInputs(star_velocity=10000, base_stars=100000))
+    assert routine['hot_score'] < small['hot_score'] < breakout['hot_score']
+    # An exceptional large-repo surge still wins with the full exposure discount.
+    repeated_breakout = score_heat(
+        HeatInputs(star_velocity=20000, base_stars=100000), previous_top_streak_days=5,
+    )
+    assert repeated_breakout['hot_score'] > small['hot_score']
+
+
+def test_scale_floor_does_not_reward_tiny_stocks_or_trivial_growth():
+    anchored = score_heat(HeatInputs(star_velocity=500, base_stars=500))
+    for base in (0, 1, 100, 499):
+        assert score_heat(HeatInputs(star_velocity=500, base_stars=base)) == anchored
+    near_anchor = score_heat(HeatInputs(star_velocity=500, base_stars=500.01))
+    assert near_anchor['hot_score'] == pytest.approx(anchored['hot_score'], abs=0.001)
+    tiny_growth = score_heat(HeatInputs(star_velocity=20, base_stars=500))
+    established = score_heat(HeatInputs(star_velocity=1000, base_stars=100000))
+    assert tiny_growth['hot_score'] < 20 < established['hot_score']
+
+
+@pytest.mark.parametrize('base', [500, 1000, 100000, 1000000])
+def test_v12_heat_increases_with_growth_and_stays_bounded(base):
+    scores = [score_heat(HeatInputs(star_velocity=g, base_stars=base))['hot_score']
+              for g in (0, 20, 100, 500, 3000, 10000, 30000, 100000, 10**7)]
+    assert scores[0] == 0 and scores == sorted(scores) and scores[-1] <= 100
 
 
 @pytest.mark.parametrize(('prior_days', 'factor'), [

@@ -1,5 +1,8 @@
 # GitHub heat v11: top-ten exposure with a three-day reset
 
+Superseded by [v12](github-heat-v12.md), which strengthens scale correction
+while retaining this exposure policy. This document preserves the v11 contract.
+
 v11 raises the top-ten exposure discount to **4 percentage points per prior
 top-ten day, capped at 20%**. A new run starts without a discount; uninterrupted
 appearances therefore receive 0%, 4%, 8%, 12%, 16%, then 20% from day six.

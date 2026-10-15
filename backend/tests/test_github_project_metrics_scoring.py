@@ -127,7 +127,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         self.assertEqual(payload["daily_growth_source"], "github_trending_daily")
         self.assertEqual(payload["daily_star_growth"], 75)
         self.assertEqual(payload["community_engagement_score"], 0.0)
-        self.assertEqual(payload["score_version"], "daily_hot_v11")
+        self.assertEqual(payload["score_version"], "daily_hot_v12")
 
     def test_trending_fallback_shares_the_snapshot_scale(self) -> None:
         trending = self._compute(
@@ -196,13 +196,13 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
     def test_missing_rate_history_scores_observed_growth_on_current_scale(self) -> None:
         computed = self._compute()
         payload = computed["payload"]
-        self.assertEqual(payload["score_version"], "daily_hot_v11")
-        self.assertEqual(computed["result"]["score_version"], "daily_hot_v11")
+        self.assertEqual(payload["score_version"], "daily_hot_v12")
+        self.assertEqual(computed["result"]["score_version"], "daily_hot_v12")
         self.assertEqual(computed["result"]["observed_velocity"], 1)
         self.assertEqual(computed["result"]["snapshot_velocity"], 0)
         self.assertAlmostEqual(
             payload["scale_corrected_growth_score"],
-            100 * math.log1p(200 / math.sqrt(1000)) / math.log1p(100),
+            100 * math.log1p(200 / (math.sqrt(500) * 2 ** 0.65)) / math.log1p(100),
             places=3,
         )
 
@@ -210,7 +210,7 @@ class GitHubProjectMetricScoringTests(unittest.TestCase):
         computed = self._compute(previous_snapshot_date=None, trending_daily_star_growth=None)
         payload = computed["payload"]
         self.assertEqual(payload["daily_growth_source"], "unavailable")
-        self.assertEqual(payload["score_version"], "daily_hot_v11")
+        self.assertEqual(payload["score_version"], "daily_hot_v12")
         for key in (
             "hot_score",
             "scale_corrected_growth_score",

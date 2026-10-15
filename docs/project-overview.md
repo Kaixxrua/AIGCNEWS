@@ -49,7 +49,7 @@ AIGCNEWS 是面向 AI 工程师、研究者与 AI Agent 的垂直情报平台：
 
 - **规模与门槛**：18,000+ 精选项目与工具站；公共 GitHub 项目执行 **≥500 Stars 准入**（`PUBLIC_PROJECT_MIN_STARS`），低信号仓库不进库
 - **检索**：PostgreSQL 关键词候选 × Milvus 语义候选（独立 collection，README 分块索引）融合，回库水合后按分类/语言/门槛过滤；本地零结果且满足严格条件时才走限量只读 GitHub fallback
-- **排序**：相关性 / 热度 / Stars / 更新时间 / 收录时间 / 名称；`sort=hot` 走每日 `daily_hot_v7` 热度分（规模校正增长 + 绝对增量定量级，趋势/维护/社区仅 ±20% 调节，多信号刷星降权；见 `docs/github-heat-v7.md`）
+- **排序**：相关性 / 热度 / Stars / 更新时间 / 收录时间 / 名称；`sort=hot` 走每日 `daily_hot_v12` 热度分（滚动 24 小时增长，规模指数 0.65 给中小项目更多空间，绝对增量保留大项目爆发机会，趋势/维护/社区小幅调节，多信号刷星及重复上榜降权；见 `docs/github-heat-v12.md`）
 - **增长展示**：卡片展示今日 +N Stars（连续自然日快照差值；缺昨日快照时仅对同日 Trending 日榜项目采用页面 `stars today`，来源可区分）
 - **筛选即 URL**：分类 / 子分类 / 语言 / 标签 / 排序 / 分页全部同步 query string，刷新可恢复、可复制分享
 - **站长推荐**：管理员可将项目加入推荐位（`github_repo_recommendations`）

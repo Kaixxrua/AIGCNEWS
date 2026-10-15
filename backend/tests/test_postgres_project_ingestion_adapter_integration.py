@@ -851,7 +851,7 @@ def test_metric_resume_requires_fresh_snapshot_and_completed_metric() -> None:
         assert len(repository.list_github_project_metric_targets(metric_date="2026-07-28")) == len(names)
 
 
-@pytest.mark.parametrize("version", ["daily_hot_v7", "daily_hot_v8", "daily_hot_v9", "daily_hot_v10", "daily_hot_v11"])
+@pytest.mark.parametrize("version", ["daily_hot_v7", "daily_hot_v8", "daily_hot_v9", "daily_hot_v10", "daily_hot_v11", "daily_hot_v12"])
 @pytest.mark.parametrize("prior_days", [0, 1, 2, 5])
 def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, version, prior_days) -> None:
     from backend.app.repositories.postgres_github_watcher_repair_repository import PostgresGitHubWatcherRepairRepository
@@ -894,11 +894,13 @@ def test_rate_scoring_and_version_aware_community_repair(postgres_ingestion, ver
             expected *= [1.0, 1.0, 0.98, 0.96, 0.94, 0.92][prior_days]
         elif version == "daily_hot_v10":
             expected *= [1.0, 0.97, 0.94, 0.91, 0.88, 0.85][prior_days]
-        elif version == "daily_hot_v11":
+        elif version in {"daily_hot_v11", "daily_hot_v12"}:
             expected *= [1.0, 0.96, 0.92, 0.88, 0.84, 0.80][prior_days]
         assert after["hot_score"] == pytest.approx(expected, abs=0.0001)
         assert after["hot_score"] != before["hot_score"]
         assert after["score_version"] == version
+        assert after["scale_corrected_growth_score"] == before["scale_corrected_growth_score"]
+        assert after["absolute_growth_score"] == before["absolute_growth_score"]
         assert after["previous_top_streak_days"] == prior_days
         assert after["community_engagement_score"] == 0
 
