@@ -149,10 +149,83 @@ describe('Dashboard request lifecycle contract', () => {
     expect(mounted.dashboard.tabList.value).toEqual([])
     await pending
 
-    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledWith({ period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
+    expect(defaultDashboardApi.fetchSummaryStatic).toHaveBeenCalledTimes(1)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith({ limit: 10, source: 'github', period: 'daily', date: '2026-07-20', signal: expect.any(AbortSignal) })
     expect(mounted.updateStatSources).toHaveBeenCalled()
     expect(mounted.dashboard.isViewingHistory.value).toBe(true)
     mounted.app.unmount()
+  })
+
+  it('prefetches three nearby history dates and reuses them without summary or live-stat requests', async () => {
+    defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-27', '2026-07-26', '2026-07-25', '2026-07-24', '2026-07-23'])
+    defaultDashboardApi.fetchTop.mockImplementation(async ({ date }) => ({ items: [{ id: date || 'today' }], sourceStatus: {} }))
+    const mounted = mountDashboard()
+    await flush()
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(4)
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: 'today' }])
+
+    defaultDashboardApi.fetchTop.mockClear()
+    defaultDashboardApi.fetchSummaryStatic.mockClear()
+    liveStatsApi.fetchLiveStats.mockClear()
+    await mounted.dashboard.onDateChange('2026-07-26')
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: '2026-07-26' }])
+    expect(defaultDashboardApi.fetchTop).not.toHaveBeenCalled()
+    expect(defaultDashboardApi.fetchSummaryStatic).not.toHaveBeenCalled()
+    expect(liveStatsApi.fetchLiveStats).not.toHaveBeenCalled()
+    mounted.app.unmount()
+  })
+
+  it('shares an in-flight prefetch with a click and ignores it after another date is selected', async () => {
+    let finish!: (top: { items: { id: string }[]; sourceStatus: object }) => void
+    defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-26'])
+    defaultDashboardApi.fetchTop.mockImplementation(({ date }) => date === '2026-07-26'
+      ? new Promise(resolve => { finish = resolve })
+      : Promise.resolve({ items: [{ id: date || 'today' }], sourceStatus: {} }))
+    const mounted = mountDashboard()
+    await flush()
+    await vi.advanceTimersByTimeAsync(200)
+    const pending = mounted.dashboard.onDateChange('2026-07-26')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(2)
+    await mounted.dashboard.onDateChange('2026-07-20')
+    finish({ items: [{ id: 'late' }], sourceStatus: {} })
+    await pending
+    expect(mounted.dashboard.tabList.value).toEqual([{ id: '2026-07-20' }])
+    expect(mounted.dashboard.currentDate.value).toBe('2026-07-20')
+    mounted.app.unmount()
+  })
+
+  it('keeps prefetch failure silent and retries the date on demand', async () => {
+    defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-26'])
+    const mounted = mountDashboard()
+    await flush()
+    defaultDashboardApi.fetchTop.mockRejectedValueOnce(new Error('prefetch unavailable'))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(mounted.dashboard.loadError.value).toBeNull()
+    expect(mounted.dashboard.tabList.value).toHaveLength(1)
+    await mounted.dashboard.onDateChange('2026-07-26')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(3)
+    expect(mounted.dashboard.loadError.value).toBeNull()
+    mounted.app.unmount()
+  })
+
+  it('aborts prefetch on deactivation and starts no more requests after unmount', async () => {
+    let signal!: AbortSignal
+    defaultDashboardApi.fetchSnapshotDates.mockResolvedValue(['2026-07-26', '2026-07-25'])
+    const mounted = mountDashboard()
+    await flush()
+    defaultDashboardApi.fetchTop.mockImplementation(({ signal: requestSignal }) => {
+      signal = requestSignal
+      return new Promise(() => {})
+    })
+    await vi.advanceTimersByTimeAsync(200)
+    mounted.visible.value = false
+    await nextTick()
+    expect(signal.aborted).toBe(true)
+    mounted.app.unmount()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledTimes(2)
   })
 
   it('merges live counters on refreshLiveStats and skips while viewing history', async () => {

@@ -10,6 +10,7 @@ import {
 import { dashboardApi as defaultDashboardApi } from '@/services/dashboard/dashboardApi'
 import { fetchLiveStats } from '@/services/dashboard/dashboardLiveApi'
 import { timelineTweets } from '@/features/xboard/xBoardViewModel'
+import { createDashboardHistoryCache } from '@/features/dashboard/dashboardHistoryCache'
 import type {
   DashboardApi,
   SourceStatusMap,
@@ -77,6 +78,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const dashboardApi = options.dashboardApi ?? defaultDashboardApi
   const now = options.now ?? Date.now
   const createAbortController = options.createAbortController ?? (() => new AbortController())
+  const historyCache = createDashboardHistoryCache(dashboardApi, now)
   const activeTab = ref<TabKey>('github')
   /* 周期切换已下线，榜单只剩日榜；wire 仍显式传 daily，查询行为不变 */
   const PERIOD: PeriodKey = 'daily'
@@ -93,6 +95,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   let dashboardGeneration = 0
   let liveStatsRevision = 0
   let refreshTimer: ReturnType<typeof setTimeout> | undefined
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined
+  let prefetchController: AbortController | null = null
+  let availableDatesSource: TabKey | null = null
 
   const beginDashboardRequest = () => {
     clearTimeout(refreshTimer)
@@ -123,6 +128,32 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     return { controller: availabilityController, generation: availabilityGeneration }
   }
 
+  const scheduleHistoryPrefetch = () => {
+    clearTimeout(prefetchTimer)
+    prefetchTimer = setTimeout(async () => {
+      if (!dashboardController || loading.value || tabLoading.value
+        || document.visibilityState === 'hidden' || availableDatesSource !== activeTab.value) return
+      prefetchController?.abort()
+      const controller = createAbortController()
+      prefetchController = controller
+      const tab = activeTab.value
+      const selectedDate = currentDate.value
+      const dates = [...new Set(availableDates.value)]
+        .filter(date => date < todayStr.value && date !== selectedDate)
+        .sort((a, b) => Math.abs(Date.parse(a) - Date.parse(selectedDate)) - Math.abs(Date.parse(b) - Date.parse(selectedDate)))
+        .slice(0, 3)
+      // 串行预取相邻日期；与点击请求合并，离开页面后取消。
+      for (const date of dates) {
+        if (controller.signal.aborted || tab !== activeTab.value || selectedDate !== currentDate.value) break
+        try {
+          await historyCache.fetchTop({ limit: tab === 'x' ? 500 : 10, source: tab, period: PERIOD, date, signal: controller.signal })
+        } catch {
+          // 预取失败不影响当前榜单，真正点击时仍可重试。
+        }
+      }
+    }, 200)
+  }
+
   const fetchDashboardData = async (
     tab: TabKey,
     selectedDate: string,
@@ -132,13 +163,14 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   ) => {
     // 今天不显式传 date，让后端回溯到最近一个可展示快照；历史日期仍精确查询。
     const requestDate = selectedDate === todayStr.value ? undefined : selectedDate
-    void loadLiveStats(controller, generation)
-    const staticSummaryRequest = dashboardApi.fetchSummaryStatic
+    if (!requestDate) void loadLiveStats(controller, generation)
+    // 历史榜单的状态已由 top 返回，无需等待扫描全部来源的 summary。
+    const staticSummaryRequest = requestDate ? Promise.resolve(null) : dashboardApi.fetchSummaryStatic
       ? dashboardApi.fetchSummaryStatic({ period: PERIOD, date: requestDate, signal: controller.signal })
       : dashboardApi.fetchSummary({ period: PERIOD, date: requestDate, signal: controller.signal })
     const [summary, top] = await Promise.all([
       staticSummaryRequest.catch(() => null),
-      dashboardApi.fetchTop({
+      historyCache.fetchTop({
         limit: tab === 'x' ? 500 : 10, source: tab, period: PERIOD, date: requestDate, signal: controller.signal,
         ...(refresh ? { cacheBuster: now() } : {}),
       }),
@@ -157,6 +189,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     loadError.value = null
     lastSuccessfulFetchAt = now()
     scheduleRefresh()
+    scheduleHistoryPrefetch()
     return true
   }
 
@@ -169,7 +202,11 @@ export const useDashboardData = (options: DashboardDataOptions) => {
         && availabilityGeneration === generation
         && !controller.signal.aborted
         && tab === activeTab.value
-      ) availableDates.value = dates
+      ) {
+        availableDates.value = dates
+        availableDatesSource = tab
+        scheduleHistoryPrefetch()
+      }
     } catch (error: unknown) {
       if (isCanceledError(error)) return
       console.warn('[Dashboard] 获取快照日期失败', error)
@@ -179,6 +216,9 @@ export const useDashboardData = (options: DashboardDataOptions) => {
 
   const stopDashboardRequests = () => {
     clearTimeout(refreshTimer)
+    clearTimeout(prefetchTimer)
+    prefetchController?.abort()
+    prefetchController = null
     document.removeEventListener('visibilitychange', onVisibilityChange)
     dashboardController?.abort()
     dashboardController = null
@@ -286,6 +326,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
     }
     if (!dashboardController) beginDashboardRequest()
     scheduleRefresh()
+    scheduleHistoryPrefetch()
     if (cstDate(now()) !== todayStr.value || loading.value || tabLoading.value || now() - lastSuccessfulFetchAt >= viewRefreshInterval) void refreshDashboardInBackground()
     else void refreshLiveStats()
   })

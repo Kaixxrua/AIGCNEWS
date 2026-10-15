@@ -52,7 +52,7 @@ class _FakeQueryService:
         return []
 
 
-def _make_repositories(*, recent_docs_raiser: bool = False) -> SimpleNamespace:
+def _make_repositories(*, recent_docs_raiser: bool = False, dates: list[str] | None = None) -> SimpleNamespace:
     def _list_recent(source, since_iso, limit, until_iso=None, keyset_after=None):
         if recent_docs_raiser:
             raise RuntimeError("documents 查询故障")
@@ -70,7 +70,7 @@ def _make_repositories(*, recent_docs_raiser: bool = False) -> SimpleNamespace:
     return SimpleNamespace(
         users=users,
         documents=documents,
-        rank_snapshots=object(),
+        rank_snapshots=SimpleNamespace(get_snapshot_dates=lambda *args: dates or []),
     )
 
 
@@ -89,9 +89,10 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         )
         self._qs_patch.start()
         self.addCleanup(self._qs_patch.stop)
+        self.github_hot = SimpleNamespace(list_github_hot_dates=MagicMock(return_value=[]))
         self._reader_patch = patch(
             "backend.app.api.dashboard_cache_warmup.get_github_hot_board_reader",
-            lambda: None,
+            lambda: self.github_hot,
         )
         self._reader_patch.start()
         self.addCleanup(self._reader_patch.stop)
@@ -100,8 +101,69 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
     async def test_warm_populates_frontend_initial_load_keys(self) -> None:
         await warm_dashboard_cache(_make_repositories())
 
-        # static summary + 6 个源 tab 的 top；X recent 是动态无缓存查询
-        self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES))
+        # static summary + 6 个源的 top 和日期清单；X recent 不参与缓存。
+        self.assertEqual(len(_dashboard_keys()), 1 + 2 * len(_DASHBOARD_TAB_SOURCES))
+
+    async def test_recent_history_and_x_request_shapes_hit_warmed_entries(self) -> None:
+        today = datetime.now(_CST).date()
+        history = [(today - timedelta(days=day)).isoformat() for day in range(1, 10)]
+        dates = [today.isoformat(), *reversed(history), history[0]]
+        repositories = _make_repositories(dates=dates)
+        self.github_hot.list_github_hot_dates.return_value = dates
+        await warm_dashboard_cache(repositories)
+        before = _FakeQueryService.instances
+        for source in _DASHBOARD_TAB_SOURCES:
+            limit = 500 if source == "x" else 10
+            for date in [None, *history[:7]]:
+                query = f"limit={limit}&source={source}&period=daily&_board=visible-v1"
+                if date:
+                    query += f"&date={date}"
+                await routes_dashboard.get_top_list(
+                    request=_stub_request("/api/dashboard/top", query),
+                    limit=limit, source=source, date=date,
+                    rank_snapshots=repositories.rank_snapshots, github_hot=self.github_hot,
+                )
+        self.assertEqual(_FakeQueryService.instances, before)
+        # 预热有界：更老日期仍按需读取，不把 90 天全量重新计算。
+        await routes_dashboard.get_top_list(
+            request=_stub_request("/api/dashboard/top", f"limit=10&source=github&date={history[7]}"),
+            limit=10, source="github", date=history[7],
+            rank_snapshots=repositories.rank_snapshots, github_hot=self.github_hot,
+        )
+        self.assertEqual(_FakeQueryService.instances, before + 1)
+        self.github_hot.list_github_hot_dates.assert_called_once_with(limit=90)
+
+    async def test_history_failure_does_not_prevent_other_sources_from_warming(self) -> None:
+        dates = ["2020-01-02"]
+        repositories = _make_repositories(dates=dates)
+        self.github_hot.list_github_hot_dates.side_effect = RuntimeError("date lookup failed")
+        await warm_dashboard_cache(repositories)
+        before = _FakeQueryService.instances
+        await routes_dashboard.get_top_list(
+            request=_stub_request("/api/dashboard/top", "limit=10&source=news&date=2020-01-02"),
+            limit=10, source="news", date=dates[0],
+            rank_snapshots=repositories.rank_snapshots, github_hot=self.github_hot,
+        )
+        self.assertEqual(_FakeQueryService.instances, before)
+
+    async def test_warmup_limits_concurrency_and_refreshes_history(self) -> None:
+        active = peak = 0
+        calls = []
+
+        async def top(**kwargs):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            calls.append((kwargs["source"], kwargs["date"], kwargs["request"].headers.get("cache-control")))
+            await asyncio.sleep(0)
+            active -= 1
+            return {}
+
+        with patch("backend.app.api.dashboard_cache_warmup.get_top_list", side_effect=top):
+            await warm_dashboard_cache(_make_repositories(dates=["2020-01-02"]), refresh=True)
+        self.assertEqual(peak, 2)
+        self.assertTrue(all(date is None for _, date, _ in calls[:6]))
+        self.assertIn(("news", "2020-01-02", "no-cache"), calls)
 
     async def test_frontend_request_shape_hits_warmed_cache(self) -> None:
         repositories = _make_repositories()
@@ -188,7 +250,7 @@ class WarmDashboardCacheTests(unittest.IsolatedAsyncioTestCase):
         # summary 与 6 个 top 的静态首屏缓存。
         await warm_dashboard_cache(_make_repositories(recent_docs_raiser=True))
 
-        self.assertEqual(len(_dashboard_keys()), 1 + len(_DASHBOARD_TAB_SOURCES))
+        self.assertEqual(len(_dashboard_keys()), 1 + 2 * len(_DASHBOARD_TAB_SOURCES))
 
     async def test_invalidator_composition_clears_then_warms(self) -> None:
         from backend.app.services.ingestion.composition import (
