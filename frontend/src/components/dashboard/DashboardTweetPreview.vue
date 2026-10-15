@@ -52,17 +52,17 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.tweet-preview { padding: 16px 0; }
-.tweet-preview__author { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; font-size: 15px; line-height: 1.5; }
-.tweet-preview__author strong { font-weight: 650; color: var(--ink); }
-.tweet-preview__rank { color: var(--ink-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.tweet-preview__text { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; overflow-wrap: anywhere; white-space: pre-line; font-size: 16px; font-weight: 400; line-height: 1.65; color: var(--ink); }
+.tweet-preview { min-width: 0; padding: 14px 14px 8px; }
+.tweet-preview__author { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 14px; line-height: 1.5; }
+.tweet-preview__author strong { min-width: 0; overflow-wrap: anywhere; font-weight: 650; color: var(--ink); }
+.tweet-preview__rank { flex-shrink: 0; color: var(--ink-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.tweet-preview__text { margin: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; overflow-wrap: anywhere; white-space: pre-line; font-size: 15px; font-weight: 400; line-height: 1.65; color: var(--ink); }
 .tweet-preview__text--expanded { display: block; -webkit-line-clamp: unset; overflow: visible; }
-.tweet-preview__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 4px; }
-.tweet-preview__time { color: var(--ink-secondary); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tweet-preview__actions button, .tweet-preview__actions a { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-secondary); font-size: 14px; line-height: 1.5; text-decoration: none; cursor: pointer; }
-.tweet-preview__actions button { color: var(--ink); font-weight: 600; }
-.tweet-preview__actions a { gap: 4px; margin-left: auto; }
+.tweet-preview__actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 12px; margin-top: 10px; padding-top: 4px; border-top: 1px solid var(--rule); }
+.tweet-preview__time { grid-column: 1; min-width: 0; overflow-wrap: anywhere; color: var(--ink-secondary); font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.tweet-preview__actions button, .tweet-preview__actions a { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-secondary); font-size: 12px; line-height: 1.5; text-decoration: none; cursor: pointer; }
+.tweet-preview__actions button { grid-column: 1 / -1; justify-self: start; color: var(--ink); font-size: 13px; font-weight: 600; }
+.tweet-preview__actions a { grid-column: 2; justify-self: end; gap: 4px; white-space: nowrap; }
 .tweet-preview__actions :is(button, a):hover { color: var(--ink); text-decoration: underline; }
 .tweet-preview__actions :is(button, a):focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 </style>

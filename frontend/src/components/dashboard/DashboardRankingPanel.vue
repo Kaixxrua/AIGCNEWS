@@ -323,6 +323,18 @@ const boardDateHint = computed(() => {
   .ranking-row:not(.ranking-row--featured) .ranking-meta { display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px; }
   .ranking-list > ol:not(.editorial-list) { display:grid;gap:12px; }
 }
+/* Keep all six sources visible on phones; selecting a tab must not enlarge the strip. */
+@media (max-width:767px) {
+  .ranking-toolbar { gap:8px;margin-bottom:12px;padding-bottom:0; }
+  .ranking-tabs { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:3px;overflow:visible; }
+  .ranking-tab,.ranking-tab[aria-selected='true'],
+  :root:lang(en) .ranking-tab,:root:lang(en) .ranking-tab[aria-selected='true'] { min-width:0;min-height:44px;margin:0;padding:6px;gap:5px;font-size:13px;line-height:1.4;white-space:normal; }
+  .ranking-tab span { min-width:0;overflow-wrap:anywhere; }
+  .ranking-tab-icon,:root:lang(en) .ranking-tab-icon { width:18px;height:18px; }
+  .ranking-tab:not([aria-selected='true']) + .ranking-tab:not([aria-selected='true'])::before { content:none; }
+  .ranking-source-status { gap:8px;padding:0; }
+  .ranking-live-status { padding:4px 8px;line-height:1.5; }
+}
 @media (max-width:599px) {
   .editorial-list { grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-auto-rows:auto; }
   .ranking-link { gap:10px;align-items:flex-start; }

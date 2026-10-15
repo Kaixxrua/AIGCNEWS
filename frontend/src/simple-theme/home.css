@@ -22,6 +22,9 @@ html:root[data-style='simple'][data-theme='dark'] .stat-cell-icon { background: 
 @media (max-width: 1499px) {
   :root[data-style='simple'] .ranking-tab[aria-selected='true'] { padding-inline: 12px; font-size: 15px; }
 }
+@media (max-width: 767px) {
+  :root[data-style='simple'] .ranking-tab[aria-selected='true'] { padding-inline: 6px; font-size: 13px; }
+}
 :root[data-style='simple'] .ranking-tab:not([aria-selected='true']) + .ranking-tab:not([aria-selected='true'])::before { transform: none; }
 :root[data-style='simple'] .ranking-tab:not([aria-selected='true'])::after,
 :root[data-style='simple'] .ranking-tab[aria-selected='true']::after,

@@ -119,6 +119,7 @@ onBeforeUnmount(closeMenu)
 /* The opaque bottom bar covers the safe area so scrolling content cannot show around the dock. */
 .mobile-nav { position: fixed; z-index: 100; inset: auto 0 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; padding: 6px max(8px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: var(--dock-surface); border: 0; border-top: 1.5px solid var(--dock-edge); }
 .mobile-nav__item { position: relative; display: flex; min-width: 0; min-height: 50px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; color: var(--dock-text); font-size: 11px; font-weight: 600; line-height: 1.3; text-decoration: none; }
+.mobile-nav__item > span { max-width: 100%; overflow-wrap: anywhere; text-align: center; }
 .mobile-nav__item.is-active { color: var(--acid-ink); background: var(--acid); }
 /* 选中底色由 v-indicator 画在导航条的 ::before 上滑动；打开「更多」时滑到菜单键，关上再滑回来。 */
 .mobile-nav::before { z-index: -1; border-radius: 6px; background: var(--acid); }
