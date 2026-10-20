@@ -161,6 +161,7 @@ const enUSCatalog = {
   chat: {
     analyzeAttachments: 'Analyze the attached content.', copyFormulaTitle: 'Copy formula LaTeX source', requestFailed: 'Request failed: {detail}', streamFailed: 'Streaming request failed: {detail}', emptyResponseContent: 'The request returned no content. Check the backend logs.', paperConversationTitle: 'Paper conversation', defaultConversationTitle: 'New conversation' },
   report: {
+    archiveTitle: 'Earlier briefings',
     aiGeneratedNotice: 'This briefing is AI-generated and provided for reference only.',
     expand: 'Read more',
     collapse: 'Show less',

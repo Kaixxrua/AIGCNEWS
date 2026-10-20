@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { isAxiosError } from 'axios'
 import type { BroadsheetSaves, ReportReadingMode } from '@/components/report/ReportBroadsheet.vue'
 import ReportContentPanel from '@/components/report/ReportContentPanel.vue'
+import ReportArchiveLinks from '@/components/report/ReportArchiveLinks.vue'
 import ReportControlsPanel from '@/components/report/ReportControlsPanel.vue'
 import { reportPaperPeek, reportSavedPanel } from '@/components/report/desktopParts'
 import ReportSubscriptionPanel from '@/components/report/ReportSubscriptionPanel.vue'
@@ -32,6 +33,7 @@ import {
   getReportTypeInfo,
   parseReportDateQuery,
   parseReportTypeQuery,
+  reportReadEndpoint,
   type ReportKey,
   type ReportResponse,
   type SubscriptionListResponse,
@@ -96,7 +98,7 @@ const {
     loadCachedReport: async (params, signal) => {
       try {
         await authStore.ensureInitialized()
-        const endpoint = authStore.isLoggedIn ? '/report/latest' : '/report/preview'
+        const endpoint = reportReadEndpoint(params.source, authStore.isLoggedIn)
         const res = await api.get<ReportResponse>(endpoint, { params, signal })
         return res.data
       } catch (error) {
@@ -124,7 +126,12 @@ const {
 })
 
 // RSS / 速查回链保留期号和种类；确认不存在的期号标 noindex，临时读取失败不误删收录。
-usePageHead(() => reportPageHead(route.query, loadState.value, t('seo.titles.report')))
+usePageHead(() => reportPageHead(
+  route.query, loadState.value,
+  selectedType.value === 'news' ? t('seo.titles.news')
+    : `${t('seo.titles.report')} · ${t(`report.type.${getReportTypeInfo(selectedType.value)!.labelKey}`)}`,
+  reportContent.value,
+))
 
 // RSS 简报条目按期号回链（?date=）：页内改选日期后同步地址栏，刷新或分享不回跳旧一期。
 watch(selectedDate, date => {
@@ -449,6 +456,7 @@ watch(readingMode, mode => {
         @retry="retryLoad"
         @login="loginForFullReport"
       />
+      <ReportArchiveLinks v-if="!savedView && !isGenerating" :source="selectedType" :date="selectedDate" />
     </div>
 
     <!-- 宽屏：简报讲到的论文在右侧看详情 -->

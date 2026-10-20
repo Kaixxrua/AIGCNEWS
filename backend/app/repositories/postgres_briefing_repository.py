@@ -112,6 +112,26 @@ class PostgresBriefingRepository:
                 )
                 return [dict(row) for row in cursor.fetchall()]
 
+    def list_briefing_index(
+        self, *, since: str, until: str, limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Published issue metadata only: never select full or preview bodies."""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT date, created_at,
+                           btrim(COALESCE(NULLIF(btrim(content_zh), ''), content, '')) <> '' AS has_zh,
+                           btrim(COALESCE(content_en, '')) <> '' AS has_en
+                    FROM briefings
+                    WHERE LEFT(date, 10) BETWEEN %s AND %s
+                    ORDER BY date DESC
+                    LIMIT %s
+                    """,
+                    (since, until, max(1, min(limit, 1000))),
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def search_briefings(
         self,
         terms: list[str],

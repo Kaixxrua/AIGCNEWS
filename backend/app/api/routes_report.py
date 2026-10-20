@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncGenerator, Optional
+from datetime import date as calendar_date
+from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -222,6 +223,35 @@ async def get_briefing_preview(
     if isinstance(result, JSONResponse):
         return result
     return {**result, "content": briefing_preview(result["content"]), "is_preview": True}
+
+
+@router.get("/report/public")
+async def get_public_briefing(
+    response: Response,
+    source: Literal["all", "news"] = Query(default="all"),
+    date: calendar_date | None = Query(default=None, description="YYYY-MM-DD"),
+    locale: str = Query(default="zh-CN"),
+    repository: BriefingReader = Depends(get_briefing_repository),
+):
+    """Published comprehensive and industry briefings, readable without signing in.
+
+    A calendar date (not a raw cache key) keeps this endpoint within the two
+    public sources. Reading never generates an issue or exposes other fields.
+    """
+    today = calendar_date.fromisoformat(today_cst())
+    target = date or today
+    if target > today:
+        raise HTTPException(status_code=404, detail="对应简报尚未生成")
+    result = await get_latest_briefing(
+        source=source, date=target.isoformat(), locale=locale, repository=repository
+    )
+    if isinstance(result, JSONResponse):
+        return result
+    if not result["content"].strip():
+        raise HTTPException(status_code=404, detail="对应简报尚未生成")
+    response.headers["Cache-Control"] = "public, max-age=300"
+    response.headers["X-Robots-Tag"] = "noindex"
+    return {**result, "is_preview": False}
 
 
 # -----------------------------------------------------------------------

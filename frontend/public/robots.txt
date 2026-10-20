@@ -31,6 +31,10 @@ Allow: /api/papers/
 Disallow: /api/papers/search
 Allow: /api/report/preview$
 Allow: /api/report/preview?
+Allow: /api/report/public$
+Allow: /api/report/public?
+Allow: /api/report/archive$
+Allow: /api/report/archive?
 Allow: /api/site/contact-page$
 Allow: /api/site/recommended-websites$
 Allow: /api/media/site/

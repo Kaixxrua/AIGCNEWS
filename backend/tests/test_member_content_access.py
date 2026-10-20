@@ -156,3 +156,63 @@ def test_missing_preview_preserves_not_found(client_and_data):
     client, _, briefings = client_and_data
     briefings.get_briefing_by_date.return_value = None
     assert client.get("/api/report/preview").status_code == 404
+
+
+@pytest.mark.parametrize("source", ["all", "news"])
+@pytest.mark.parametrize("locale", ["zh-CN", "en", "en-US"])
+def test_published_public_sources_send_the_same_full_body_to_guests_bots_and_members(
+    client_and_data, source, locale, monkeypatch
+):
+    client, _, briefings = client_and_data
+    monkeypatch.setattr(routes_report, "today_cst", lambda: "2026-10-20")
+    record = briefings.get_briefing_by_date.return_value
+    record["subscriber_email"] = "private@example.com"
+    params = {"source": source, "date": "2026-10-09", "locale": locale}
+    guest = client.get("/api/report/public", params=params)
+    bot = client.get("/api/report/public", params=params, headers={"User-Agent": "Googlebot"})
+    sign_in(client)
+    member = client.get("/api/report/public", params=params)
+
+    assert guest.status_code == bot.status_code == member.status_code == 200
+    body = guest.json()
+    assert body == bot.json() == member.json()
+    assert body["content"] == record["content_en" if locale.startswith("en") else "content_zh"]
+    assert len(body["content"]) > 1200
+    assert body["is_preview"] is False
+    assert body["source"] == source
+    assert set(body) == {"id", "date", "content", "source", "cache_key", "is_preview"}
+    assert guest.headers["cache-control"] == "public, max-age=300"
+    assert guest.headers["x-robots-tag"] == "noindex"
+    key = "2026-10-09_news" if source == "news" else "2026-10-09"
+    assert all(call.args == (key,) for call in briefings.get_briefing_by_date.call_args_list)
+
+
+@pytest.mark.parametrize("source", ["arxiv", "github", "producthunt", "hackernews", "x", "dailyhot", "", "unknown"])
+def test_other_sources_cannot_use_public_full_text_endpoint(client_and_data, source):
+    client, _, briefings = client_and_data
+    assert client.get("/api/report/public", params={"source": source}).status_code == 422
+    briefings.get_briefing_by_date.assert_not_called()
+
+
+@pytest.mark.parametrize("date", ["2026-10-09_arxiv", "2026-10-09_0800_x", "2026-10-09_news", "2026-02-30", "invalid"])
+def test_public_date_cannot_address_private_cache_keys(client_and_data, date):
+    client, _, briefings = client_and_data
+    assert client.get("/api/report/public", params={"date": date}).status_code == 422
+    briefings.get_briefing_by_date.assert_not_called()
+
+
+def test_public_default_is_current_cst_day_and_future_issues_are_not_published(client_and_data, monkeypatch):
+    client, _, briefings = client_and_data
+    monkeypatch.setattr(routes_report, "today_cst", lambda: "2026-10-20")
+    assert client.get("/api/report/public", params={"source": "news"}).status_code == 200
+    briefings.get_briefing_by_date.assert_called_once_with("2026-10-20_news")
+    briefings.reset_mock()
+    assert client.get("/api/report/public", params={"date": "2026-10-21"}).status_code == 404
+    briefings.get_briefing_by_date.assert_not_called()
+
+
+@pytest.mark.parametrize("record", [None, {"content": "", "content_zh": " ", "content_en": ""}])
+def test_unpublished_public_issue_returns_not_found(client_and_data, record):
+    client, _, briefings = client_and_data
+    briefings.get_briefing_by_date.return_value = record
+    assert client.get("/api/report/public", params={"date": "2026-10-09"}).status_code == 404

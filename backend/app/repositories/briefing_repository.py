@@ -29,6 +29,10 @@ class BriefingReader(Protocol):
 
     def list_recent_daily_briefings(self, limit: int = 7) -> list[dict[str, Any]]: ...
 
+    def list_briefing_index(
+        self, *, since: str, until: str, limit: int = 1000,
+    ) -> list[dict[str, Any]]: ...
+
 
 class BriefingSearchReader(Protocol):
     """Keyword search boundary used by the site-wide quick search."""
