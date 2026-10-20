@@ -128,6 +128,7 @@ def reconcile_alerts(previous: list[dict], observations: dict, now: datetime) ->
                 "opened_at": now.isoformat(), "notified_at": None,
                 "last_attempt_at": None, "notification_error": None,
             }
+        states[key]["current_detail"] = condition["detail"]
         # Keep the initial detail stable: an idempotent retry must have the
         # identical request body, even when the live quota/count has changed.
     return list(states.values())[-100:]
@@ -225,7 +226,15 @@ class EmailMonitor:
                         }
                     await asyncio.sleep(0.6)
                 providers.append(row)
-        return {"providers": providers, "local": local, "recipient": mask_address(ops_recipient())}, observations
+        recipient = ops_recipient()
+        recipient_source = (
+            "explicit" if settings.AIGCNEWS_OPS_ALERT_TO.strip()
+            else "sender" if recipient else "missing"
+        )
+        return {
+            "providers": providers, "local": local, "recipient": mask_address(recipient),
+            "recipient_source": recipient_source,
+        }, observations
 
     @staticmethod
     def safe_error(exc: Exception) -> str:

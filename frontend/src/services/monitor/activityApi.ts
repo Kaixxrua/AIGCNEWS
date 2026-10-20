@@ -56,6 +56,7 @@ export interface EmailAlert {
   key: string
   active: boolean
   detail: string
+  current_detail?: string
   level: number
   opened_at: string
   resolved_at?: string
@@ -68,6 +69,7 @@ export interface EmailMonitoring {
   tracking_started_at: string
   checked_at?: string
   recipient?: string
+  recipient_source?: 'explicit' | 'sender' | 'missing'
   providers?: EmailProvider[]
   local?: { accepted_24h: number; failed_24h: number; failed_15m: number }
   alerts?: EmailAlert[]

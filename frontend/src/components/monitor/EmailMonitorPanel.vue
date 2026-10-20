@@ -43,6 +43,8 @@ onBeforeUnmount(() => { active = false; clearInterval(poll) })
     <p v-if="loading && !data" class="monitor-caption mt-4">{{ t('common.loading') }}</p>
     <template v-if="data">
       <p v-if="data.stale" role="status" class="monitor-status-error mt-3 rounded-md p-3 text-xs">{{ t(data.checked_at ? 'monitorActivity.stale' : 'monitorActivity.pendingCheck') }}</p>
+      <p v-if="data.recipient_source === 'sender'" role="status" class="monitor-status-error mt-3 rounded-md p-3 text-xs">{{ t('monitorActivity.recipientFallback', { address: data.recipient }) }}</p>
+      <p v-else-if="data.recipient_source === 'missing'" role="status" class="monitor-status-error mt-3 rounded-md p-3 text-xs">{{ t('monitorActivity.recipientMissing') }}</p>
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <MonitorMetricCard :label="t('monitorActivity.accepted')" :value="data.local?.accepted_24h ?? '—'" :note="t('monitorActivity.acceptedNote')" />
         <MonitorMetricCard :label="t('monitorActivity.failed')" :value="data.local?.failed_24h ?? '—'" :note="t('monitorActivity.localNote')" />
@@ -82,7 +84,7 @@ onBeforeUnmount(() => { active = false; clearInterval(poll) })
           <li v-for="alert in alerts" :key="alert.id" class="rounded-lg border p-3 text-xs">
             <span class="monitor-badge" :class="alert.active ? 'monitor-status-error' : 'monitor-status-success'">{{ t(alert.active ? 'monitorActivity.activeAlert' : 'monitorActivity.resolved') }}</span>
             <span class="ml-2 monitor-caption">{{ cstTime(alert.opened_at) }} CST</span>
-            <p class="mt-2 leading-5">{{ alert.detail }}</p>
+            <p class="mt-2 leading-5">{{ alert.current_detail ?? alert.detail }}</p>
             <p class="monitor-caption mt-1">{{ t(alert.notified_at ? 'monitorActivity.notificationAccepted' : 'monitorActivity.notificationPending') }}<span v-if="alert.notification_error"> · {{ alert.notification_error }}</span></p>
           </li>
         </ul>

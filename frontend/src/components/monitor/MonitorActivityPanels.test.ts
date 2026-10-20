@@ -174,4 +174,43 @@ describe('monitoring activity panels', () => {
     await vi.advanceTimersByTimeAsync(120_000)
     expect(activityApi.email).toHaveBeenCalledTimes(1)
   })
+
+  it('refreshes incident details, warns about sender fallback, and distinguishes submission from delivery', async () => {
+    const data: EmailMonitoring = {
+      stale: false, tracking_started_at: '2026-10-10T01:00:00Z', checked_at: '2026-10-10T01:10:00Z',
+      recipient: 'o***@example.test',
+      alerts: [{ id: 'incident', key: 'smtp/delivery', level: 100, active: true, detail: '1 bounced',
+        opened_at: '2026-10-10T01:10:00Z', notified_at: '2026-10-10T01:10:01Z', notification_error: null }],
+    }
+    vi.mocked(activityApi.email).mockResolvedValue(data)
+    const wrapper = mount(EmailMonitorPanel, { global: { plugins: [i18n] } })
+    await flushPromises()
+    expect(wrapper.find('li').text()).toContain('1 bounced')
+    expect(wrapper.text()).not.toContain('运维收件人未单独配置')
+    vi.mocked(activityApi.email).mockResolvedValue({
+      ...data, recipient_source: 'sender', alerts: [{ ...data.alerts![0]!, current_detail: '3 bounced' }],
+    })
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('li').text()).toContain('3 bounced')
+    expect(wrapper.find('li').text()).not.toContain('1 bounced')
+    expect(wrapper.find('li').text()).toContain('尚未核验最终送达')
+    expect(wrapper.find('[role="status"]').text()).toContain('目前使用发件地址 o***@example.test')
+    expect(wrapper.text()).toContain('不代表该地址能收信')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['explicit', null],
+    ['missing', '尚未配置运维收件人，告警无法发送'],
+  ] as const)('reports the %s recipient configuration accurately', async (source, warning) => {
+    vi.mocked(activityApi.email).mockResolvedValue({
+      stale: false, tracking_started_at: '2026-10-10T01:00:00Z', recipient_source: source,
+    })
+    const wrapper = mount(EmailMonitorPanel, { global: { plugins: [i18n] } })
+    await flushPromises()
+    if (warning) expect(wrapper.find('[role="status"]').text()).toContain(warning)
+    else expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

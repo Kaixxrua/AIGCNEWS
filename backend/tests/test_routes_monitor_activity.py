@@ -69,7 +69,13 @@ def test_admin_reads_are_not_cached_and_cannot_trigger_sends(client):
         "days": [{"day": "2026-10-12", "coverage": "partial", "total_visitors": 453,
                   "returning_visitors": 100, "return_rate": 100 / 453}],
     }
-    assert http.get("/api/monitor/email").headers["cache-control"] == "no-store"
+    repo.read.return_value = {
+        "stale": False, "recipient": "o***@example.test", "recipient_source": "explicit",
+        "alerts": [{"id": "incident", "detail": "1 bounced", "current_detail": "3 bounced"}],
+    }
+    email = http.get("/api/monitor/email")
+    assert email.headers["cache-control"] == "no-store"
+    assert email.json() == repo.read.return_value
     response = http.get("/api/monitor/user-return-visits?days=7")
     assert response.status_code == 200
     assert response.json() == repo.stats.return_value

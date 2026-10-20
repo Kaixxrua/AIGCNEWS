@@ -37,12 +37,14 @@ def test_incident_survives_restart_and_escalates_only_once():
     next_check = reconcile_alerts(copy.deepcopy(first), {
         "smtp/daily": {**observations["smtp/daily"], "detail": "82 / 100"},
     }, NOW + timedelta(minutes=5))
-    assert next_check == first  # stable body as well as key across retries
+    assert next_check == [{**first[0], "current_detail": "82 / 100"}]
+    assert first[0]["current_detail"] == "80 / 100"
     assert not notification_due(next_check[0], NOW + timedelta(hours=1))
     next_check = reconcile_alerts(next_check, {"smtp/daily": {
         "level": 95, "fingerprint": "period1", "detail": "95 / 100",
     }}, NOW)
     assert next_check[0]["id"] != first[0]["id"]
+    assert next_check[0]["current_detail"] == "95 / 100"
     assert notification_due(next_check[0], NOW)
 
 
@@ -53,6 +55,21 @@ def test_failed_read_cannot_resolve_old_alert_and_recovery_rearms():
     assert not cleared[0]["active"]
     reopened = reconcile_alerts(cleared, {"smtp": {"level": 100, "detail": "failed"}}, NOW)
     assert reopened[0]["id"] != first[0]["id"]
+
+
+def test_legacy_alert_updates_live_count_without_changing_notification():
+    first = reconcile_alerts([], {"smtp/delivery": {"level": 100, "detail": "1 bounced"}}, NOW)
+    first[0].pop("current_detail")
+    first[0]["notified_at"] = NOW.isoformat()
+    updated = reconcile_alerts(first, {
+        "smtp/delivery": {"level": 100, "detail": "3 bounced"},
+    }, NOW + timedelta(minutes=5))
+    assert updated == [{**first[0], "current_detail": "3 bounced"}]
+    assert not notification_due(updated[0], NOW + timedelta(hours=1))
+    assert reconcile_alerts(updated, {}, NOW) == updated
+    resolved = reconcile_alerts(updated, {"smtp/delivery": None}, NOW)
+    assert resolved[0]["current_detail"] == "3 bounced"
+    assert not resolved[0]["active"]
 
 
 def test_resend_retries_stop_before_idempotency_expires():
@@ -90,6 +107,25 @@ async def test_provider_failure_is_visible_and_never_leaks_credentials():
     assert "secret-credential" not in str(snapshot) + str(conditions)
     assert snapshot["recipient"] == "o***@example.test"
     assert all(request.url.host == "api.resend.com" for request in requests)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit, sender, source, masked", [
+    (" ops@example.test ", "sender@example.test", "explicit", "o***@example.test"),
+    (" ", "sender@example.test", "sender", "s***@example.test"),
+    ("", "", "missing", "—"),
+])
+async def test_recipient_source_uses_actual_resolution_without_exposing_address(explicit, sender, source, masked):
+    repository = MagicMock()
+    repository.delivery_stats.return_value = {"accepted_24h": 0, "failed_24h": 0, "failed_15m": 0}
+    with patch.object(module.settings, "AIGCNEWS_OPS_ALERT_TO", explicit), patch.object(
+        module, "resolve_smtp_config", return_value=MagicMock(from_email=sender)
+    ):
+        snapshot, _observations = await EmailMonitor(repository).collect([])
+    assert snapshot["recipient_source"] == source
+    assert snapshot["recipient"] == masked
+    assert "ops@example.test" not in str(snapshot)
+    assert "sender@example.test" not in str(snapshot)
 
 
 @pytest.mark.asyncio
@@ -155,14 +191,22 @@ async def test_notification_uses_https_and_stable_idempotency_key():
     def handle(request):
         seen.append(request)
         return httpx.Response(200, json={"id": "provider-receipt"})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    clients = [httpx.AsyncClient(transport=httpx.MockTransport(handle)) for _ in range(2)]
     entry = EmailPoolEntry(name="resend", host="smtp.resend.com", password="secret", from_email="sender@example.test")
     alert = reconcile_alerts([], {"smtp": {"level": 100, "detail": "SMTP failed"}}, NOW)[0]
-    with patch.object(module.httpx, "AsyncClient", return_value=client), patch.object(
+    alert.pop("current_detail")
+    with patch.object(module.httpx, "AsyncClient", side_effect=clients), patch.object(
         module, "ops_recipient", return_value="ops@example.test"
     ), patch.object(module, "transport") as smtp:
         await EmailMonitor(MagicMock()).notify(alert, [entry])
+        updated = reconcile_alerts([alert], {
+            "smtp": {"level": 100, "detail": "SMTP still failing"},
+        }, NOW + timedelta(hours=1))[0]
+        await EmailMonitor(MagicMock()).notify(updated, [entry])
     assert seen[0].url == "https://api.resend.com/emails"
     assert seen[0].headers["Idempotency-Key"] == "email-monitor/" + alert["id"]
     assert b"ops@example.test" in seen[0].content
+    assert updated["current_detail"] == "SMTP still failing"
+    assert seen[1].headers["Idempotency-Key"] == seen[0].headers["Idempotency-Key"]
+    assert seen[1].content == seen[0].content
     smtp.assert_not_called()
