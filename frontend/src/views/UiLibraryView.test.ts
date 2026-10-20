@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { i18n } from '@/i18n'
 import type { UiTemplate } from '@/features/ui-library/catalog'
 import { __resetPageHeadForTest, installPageHead } from '@/seo/pageHead'
@@ -47,6 +47,15 @@ const template: UiTemplate = {
 
 const stubs = { UiTemplateDialog: true, UiTemplateCard: true, UiIconCard: true, UiIconDialog: true, UiMcpRecommendation: true }
 let stopHead: (() => void) | null = null
+
+// Async component stubs may still start their loaders to resolve names. Finish
+// those imports while the test environment is alive, including syntax highlighting.
+beforeAll(async () => {
+  await Promise.all([
+    import('@/features/ui-library/UiTemplateDialog.vue'),
+    import('@/features/ui-library/UiIconDialog.vue'),
+  ])
+})
 
 async function openLibraryAt(path: string) {
   const router = createRouter({

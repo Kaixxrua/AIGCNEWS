@@ -5,6 +5,7 @@ import vue from '@vitejs/plugin-vue'
 import { uiLibraryAssets } from './build/uiLibraryAssets'
 import { desktopStylesPreload } from './build/desktopStylesPreload'
 import { VitePWA } from 'vite-plugin-pwa'
+import { serverDocumentNavigationDenylist } from './src/pwa/serverDocuments'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -30,6 +31,7 @@ export default defineConfig({
         navigateFallback: '/index.html',
         globIgnores: ['**/ui-library/**', '**/camp-scene/**'],
         navigateFallbackDenylist: [
+          ...serverDocumentNavigationDenylist,
           /^\/api\//,
           /^\/camp-scene(?:\/|$)/,
           /^\/ui-library\/(?:previews|sources|licenses|posters|clips|assets)\//,
