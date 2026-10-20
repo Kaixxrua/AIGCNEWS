@@ -26,6 +26,16 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://aigcnews.cn/ui-library</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://aigcnews.cn/dsh</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://aigcnews.cn/disclaimer</loc>
     <changefreq>yearly</changefreq>
     <priority>0.2</priority>

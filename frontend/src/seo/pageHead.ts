@@ -55,8 +55,11 @@ const ROUTE_TITLE_KEYS: Readonly<Record<string, string>> = {
 /** 有专门描述的页面（seo.descriptions.*），其余用 default。 */
 const DESCRIBED_PAGES = new Set(['projects', 'websites', 'uiLibrary', 'report', 'xboard', 'mcp', 'dsh', 'membership', 'disclaimer', 'privacy'])
 
-/** 不存在的页面，以及微信扫码登录、MCP 客户端授权等流程页，不论内容一律 noindex。 */
-const NOINDEX_PAGES = new Set(['notFound', 'mcpAuthorize', 'wechatLogin'])
+/** 账号流程和私人页面不参与搜索收录；允许抓取页面以便爬虫读到 noindex。 */
+const NOINDEX_PAGES = new Set([
+  'notFound', 'mcpAuthorize', 'wechatLogin', 'oauth', 'register',
+  'subscriptions', 'monitor', 'checkout', 'websiteCollection',
+])
 
 export interface PageHeadOverride {
   /** 页面自己的标题（论文标题、素材名），会拼上品牌后缀。 */
@@ -117,7 +120,8 @@ export function resolvePageHead(
   const description = ownDescription
     ? clip(ownDescription, DESCRIPTION_LIMIT)
     : t(`seo.descriptions.${key && DESCRIBED_PAGES.has(key) ? key : 'default'}`)
-  const noindex = override?.noindex === true || (key !== null && NOINDEX_PAGES.has(key))
+  const noindex = override?.noindex === true || route.meta?.requiresAuth === true
+    || route.meta?.requiresAdmin === true || (key !== null && NOINDEX_PAGES.has(key))
   return { title, description, canonical: noindex ? null : canonicalUrl(route, override?.canonicalQuery), noindex }
 }
 

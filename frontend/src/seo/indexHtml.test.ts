@@ -26,6 +26,18 @@ function siteReferences(html: string): string[] {
 }
 
 describe('index.html', () => {
+  it('provides consistent search snippets and the AIGC Radar site name before JavaScript', () => {
+    const html = new DOMParser().parseFromString(readFileSync(`${frontendRoot}/index.html`, 'utf-8'), 'text/html')
+    expect(html.title).toContain('AI 资讯')
+    expect(html.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe(html.title)
+    expect(html.querySelector('meta[property="og:description"]')?.getAttribute('content'))
+      .toBe(html.querySelector('meta[name="description"]')?.getAttribute('content'))
+    const graph = JSON.parse(html.querySelector('script[type="application/ld+json"]')!.textContent!)['@graph']
+    expect(graph.find((node: { '@type': string }) => node['@type'] === 'WebSite').alternateName).toContain('AIGC Radar')
+    // 同一 HTML 供所有路由使用，不能把每页的 canonical 预先写成首页。
+    expect(html.querySelector('link[rel="canonical"]')).toBeNull()
+  })
+
   it('references only files the build ships, so the edge publish accepts it', () => {
     const references = siteReferences(readFileSync(`${frontendRoot}/index.html`, 'utf-8'))
     expect(references).toContain('/favicon.ico')

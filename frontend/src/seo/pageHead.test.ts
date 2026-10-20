@@ -64,7 +64,7 @@ describe('resolvePageHead', () => {
       .toBe('https://aigcnews.cn/projects')
     const websites = resolvePageHead(at('github-projects', '/projects', { source: 'website', q: 'ai' }), null, t)
     expect(websites.title).toBe('我的网页收藏 · AIGCNEWS')
-    expect(websites.canonical).toBe('https://aigcnews.cn/projects?source=website')
+    expect(websites).toMatchObject({ noindex: true, canonical: null })
     const briefing = resolvePageHead(
       at('report', '/report', { date: '2026-10-03', subscribe: '1' }),
       { canonicalQuery: { date: '2026-10-03', type: null } },
@@ -98,6 +98,21 @@ describe('resolvePageHead', () => {
       .toMatchObject({ title: '授权 MCP 客户端 · AIGCNEWS', noindex: true, canonical: null })
     expect(resolvePageHead(at('wechat-login', '/oauth/wechat', { redirect: '/membership' }), null, t))
       .toMatchObject({ title: '微信扫码登录 · AIGCNEWS', noindex: true, canonical: null })
+  })
+
+  it('excludes account flows and private pages, including future protected routes', () => {
+    for (const name of ['register', 'oauth-callback', 'oauth-action-callback', 'subscriptions', 'monitor', 'membership-checkout']) {
+      expect(resolvePageHead(at(name, '/private'), { noindex: false }, t))
+        .toMatchObject({ noindex: true, canonical: null })
+    }
+    for (const permission of ['requiresAuth', 'requiresAdmin']) {
+      const route = at('new-private-page', '/private')
+      route.meta[permission] = true
+      expect(resolvePageHead(route, null, t)).toMatchObject({ noindex: true, canonical: null })
+    }
+    for (const name of ['dashboard', 'github-projects', 'recommended-websites', 'ui-library', 'report', 'paper-read', 'mcp-connect', 'dsh']) {
+      expect(resolvePageHead(at(name, '/public'), null, t).noindex).toBe(false)
+    }
   })
 })
 
