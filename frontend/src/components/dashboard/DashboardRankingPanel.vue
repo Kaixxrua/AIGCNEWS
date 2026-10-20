@@ -86,6 +86,15 @@ const emit = defineEmits<{
   selectSource: [key: TabKey]
 }>()
 
+const tabHref = (tab: TabKey) => '/?' + new URLSearchParams({
+  ...(tab === 'github' ? {} : { tab }), lang: locale.value,
+}).toString()
+const selectTab = (event: MouseEvent, tab: TabKey) => {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+  event.preventDefault()
+  emit('selectSource', tab)
+}
+
 // 分源定稿状态（PR6）：当前 tab 按自己的源日界/定稿时刻揭榜，
 // 取代整榜一刀切标签；wire 缺省（旧后端）时不渲染徽章。
 const tabStatus = computed(() => getTabBoardStatus(props.sourceStatus, props.activeTab))
@@ -106,14 +115,15 @@ const boardDateHint = computed(() => {
   <div class="dashboard-ranking-panel stagger-enter glass-card flex-1 min-h-0 flex flex-col overflow-hidden" style="animation-delay: 0.6s">
     <div class="ranking-toolbar">
       <div ref="sourceTabs" v-indicator="{ active: '[aria-selected=true]', flip: true }" class="ranking-tabs" role="tablist" :aria-label="t('dashboard.rankingSources')">
-        <button v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
-          type="button" class="ranking-tab" role="tab" aria-controls="ranking-content"
+        <a v-for="tab in TABS" :id="`ranking-tab-${tab.key}`" :key="tab.key"
+          :href="tabHref(tab.key)" class="ranking-tab" role="tab" aria-controls="ranking-content"
           :aria-selected="activeTab === tab.key" :aria-label="t(`dashboard.sources.${tab.labelKey}`)"
           :title="tab.key === 'hackernews' ? 'Hacker News' : undefined"
-          @click="emit('selectSource', tab.key)">
+          @keydown.space.prevent="emit('selectSource', tab.key)"
+          @click="selectTab($event, tab.key)">
           <component :is="tab.icon" class="ranking-tab-icon" :size="18" :stroke-width="1.75" aria-hidden="true" />
           <span>{{ t(`dashboard.sources.${tab.key === 'x' ? 'xCaption' : tab.labelKey}`) }}</span>
-        </button>
+        </a>
       </div>
       <div v-if="!tabLoading" class="ranking-source-status flex items-center gap-2">
         <span v-if="boardDateHint" class="badge bg-card text-stone-500 border border-stone-200">{{ boardDateHint }}</span>

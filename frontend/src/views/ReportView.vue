@@ -26,6 +26,7 @@ import { slideIn, slideOut } from '@/motion/presence'
 import { vSwap } from '@/motion/swap'
 import { preloadWhen } from '@/utils/lazyComponent'
 import { usePageHead } from '@/seo/pageHead'
+import { reportPageHead } from '@/seo/reportPageHead'
 import { briefingSaveId, isSavedBriefingItem } from '@/features/saved/savedBriefing'
 import {
   getReportTypeInfo,
@@ -43,15 +44,6 @@ const authStore = useAuthStore()
 const { requestLogin } = useLoginPrompt()
 const route = useRoute()
 const router = useRouter()
-
-// 某一期简报（RSS 与站内速查按 ?date= 回链）单独收录：标题带上日期，canonical 保留期号和种类。
-// 不带期号的 /report 是「今天这一期」，用路由级的默认标题。
-usePageHead(() => {
-  const date = parseReportDateQuery(route.query.date)
-  if (!date) return null
-  const type = parseReportTypeQuery(route.query.type)
-  return { title: `${t('seo.titles.report')} ${date}`, canonicalQuery: { date, type: type === 'all' ? null : type } }
-})
 
 // 从 Dashboard 一键订阅入口进入时，自动打开订阅向导；已登录则清理 query 避免重复触发。
 onMounted(() => {
@@ -130,6 +122,9 @@ const {
   initialDate: parseReportDateQuery(route.query.date),
   initialSource: parseReportTypeQuery(route.query.type),
 })
+
+// RSS / 速查回链保留期号和种类；确认不存在的期号标 noindex，临时读取失败不误删收录。
+usePageHead(() => reportPageHead(route.query, loadState.value, t('seo.titles.report')))
 
 // RSS 简报条目按期号回链（?date=）：页内改选日期后同步地址栏，刷新或分享不回跳旧一期。
 watch(selectedDate, date => {

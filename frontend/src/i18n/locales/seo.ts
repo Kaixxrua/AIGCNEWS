@@ -11,6 +11,7 @@ type SeoMessages = {
   seo: {
     titles: {
       home: string
+      news: string
       projects: string
       websiteCollection: string
       websites: string
@@ -35,6 +36,7 @@ type SeoMessages = {
     }
     descriptions: {
       default: string
+      news: string
       projects: string
       websites: string
       uiLibrary: string
@@ -52,8 +54,9 @@ type SeoMessages = {
 const zhCN: SeoMessages = {
   seo: {
     titles: {
-      home: 'AIGCNEWS · AIGC Radar — arXiv 论文、GitHub AI 项目、榜单与每日简报',
-      projects: 'GitHub AI 项目库',
+      home: 'AIGCNEWS · AIGC Radar — AI 资讯、GitHub 开源项目与 arXiv 论文',
+      news: 'AI 新闻与人工智能资讯',
+      projects: 'GitHub AI 开源项目与热门榜',
       websiteCollection: '我的网页收藏',
       websites: '站长推荐网页',
       uiLibrary: 'UI 灵感库',
@@ -76,8 +79,9 @@ const zhCN: SeoMessages = {
       notFound: '页面不存在',
     },
     descriptions: {
-      default: 'AIGCNEWS（AIGC Radar）：AI 垂直资讯索引——arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。',
-      projects: 'GitHub 上的 AI 开源项目：按星标增长排出日榜、周榜、月榜，附项目简介与分类。',
+      default: 'AIGCNEWS（AIGC Radar）每日聚合 AI 资讯、GitHub AI 开源项目与 arXiv 论文，提供热门项目榜单、AI 每日简报、开源 UI 组件模板及 MCP 搜索接入。',
+      news: '浏览每日 AI 新闻与人工智能资讯，查看新闻标题、摘要并直达原始来源。AIGCNEWS 聚合模型、产品与行业动态，保留来源原文。',
+      projects: '发现 GitHub 上的 AI 开源项目：浏览日榜、周榜、月榜和项目简介，按分类、语言、星标与更新时间筛选，追踪热门 AI 工具与开发框架。',
       websites: '站长挑选的 AI 工具与资讯网站。',
       uiLibrary: '宽松许可的开源 UI 组件、区块与模板：在线预览，按类型、风格与框架筛选，也可以经 MCP 取用源码。',
       report: '每天汇总 arXiv 论文、GitHub 项目与 AI 圈动态的每日简报（AI 生成，仅供参考）。',
@@ -94,8 +98,9 @@ const zhCN: SeoMessages = {
 const enUS: SeoMessages = {
   seo: {
     titles: {
-      home: 'AIGCNEWS · AIGC Radar — arXiv papers, GitHub AI projects, rankings and daily briefings',
-      projects: 'GitHub AI Projects',
+      home: 'AIGCNEWS · AIGC Radar — AI News, GitHub Open Source and arXiv Papers',
+      news: 'AI News & Artificial Intelligence Updates',
+      projects: 'GitHub AI Open Source Projects and Trending Repositories',
       websiteCollection: 'My Websites',
       websites: 'Recommended Websites',
       uiLibrary: 'UI Library',
@@ -118,8 +123,9 @@ const enUS: SeoMessages = {
       notFound: 'Page not found',
     },
     descriptions: {
-      default: 'AIGCNEWS (AIGC Radar): an AI news index — arXiv papers, a GitHub AI project library, daily/weekly/monthly rankings and daily briefings.',
-      projects: 'Open-source AI projects on GitHub, ranked daily, weekly and monthly by star growth, with summaries and categories.',
+      default: 'Discover AI news, GitHub open-source projects and arXiv papers with AIGC Radar: trending rankings, daily briefings, UI templates and MCP search.',
+      news: 'Browse daily AI news and artificial intelligence updates on models, products and the industry. Read headlines and summaries, with links to the original sources.',
+      projects: 'Explore trending AI open-source projects on GitHub, with daily, weekly and monthly rankings. Filter by category, language, stars and recent updates.',
       websites: 'AI tools and news sites picked by the editor.',
       uiLibrary: 'Permissively licensed open-source UI components, blocks and templates: live previews, filters by type, style and framework, and source access over MCP.',
       report: 'A daily briefing on arXiv papers, GitHub projects and what is happening in AI (AI-generated, for reference only).',

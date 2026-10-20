@@ -33,6 +33,17 @@ describe('application locale contract', () => {
     expect(resolveAppLocale({ storage: localStorage, browserLanguages: ['zh-CN'] })).toBe('en-US')
   })
 
+  it('uses explicit URL languages before saved or browser preferences, rejecting ambiguous values', () => {
+    for (const locale of ['en-US', 'zh-CN'] as const) {
+      const other = locale === 'en-US' ? 'zh-CN' : 'en-US'
+      localStorage.setItem(LOCALE_STORAGE_KEY, other)
+      expect(resolveAppLocale({ urlLocale: locale, storage: localStorage, browserLanguages: [other] })).toBe(locale)
+    }
+    for (const invalid of ['de', '', ['en-US', 'zh-CN'], null]) {
+      expect(resolveAppLocale({ urlLocale: invalid, storage: null, browserLanguages: ['zh-CN'] })).toBe('zh-CN')
+    }
+  })
+
   it('uses browser Chinese versus non-Chinese preference', () => {
     expect(resolveAppLocale({ storage: localStorage, browserLanguages: ['zh-TW'] })).toBe('zh-CN')
     expect(resolveAppLocale({ storage: localStorage, browserLanguages: ['fr-FR'] })).toBe('en-US')

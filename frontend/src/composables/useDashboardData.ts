@@ -24,6 +24,7 @@ import {
 } from '@/features/dashboard/dashboardViewModel'
 
 interface DashboardDataOptions {
+  initialTab?: TabKey
   updateStatSources: (stats: Stats) => void
   updateVisitorSources: (stats: Stats) => void
   dashboardApi?: DashboardApi
@@ -79,7 +80,7 @@ export const useDashboardData = (options: DashboardDataOptions) => {
   const now = options.now ?? Date.now
   const createAbortController = options.createAbortController ?? (() => new AbortController())
   const historyCache = createDashboardHistoryCache(dashboardApi, now)
-  const activeTab = ref<TabKey>('github')
+  const activeTab = ref<TabKey>(options.initialTab ?? 'github')
   /* 周期切换已下线，榜单只剩日榜；wire 仍显式传 daily，查询行为不变 */
   const PERIOD: PeriodKey = 'daily'
   const tabList = ref<TopDoc[]>([])

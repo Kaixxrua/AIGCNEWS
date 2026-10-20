@@ -1,5 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DashboardView from './DashboardView.vue'
 import { loadUiShowcaseCatalog } from '@/features/dashboard/uiShowcase'
@@ -28,27 +29,30 @@ vi.mock('@/composables/useLiveStatsStream', () => ({ subscribeLiveStats: vi.fn()
 vi.mock('@/composables/useDashboardData', async () => {
   const { ref } = await import('vue')
   return {
-    useDashboardData: () => ({
-      activeTab: ref('github'),
-      tabList: ref(dashboardState.tabList),
-      stats: ref({}),
-      loading: ref(false),
-      tabLoading: ref(false),
-      loadError: ref(dashboardState.loadError),
-      retrying: ref(false),
-      retry: dashboardState.retry,
-      currentDate: ref('2026-08-19'),
-      availableDates: ref([]),
-      isViewingHistory: ref(false),
-      isFinalized: ref(false),
-      isEmbargoed: ref(false),
-      sourceStatus: ref(dashboardState.sourceStatus),
-      selectSourceTab: vi.fn(),
-      onDateChange: vi.fn(),
-      hasData: ref(dashboardState.hasData),
-      refreshLiveStats: vi.fn(),
-      applyLiveStats: vi.fn(),
-    }),
+    useDashboardData: ({ initialTab }: { initialTab?: string }) => {
+      const activeTab = ref(initialTab ?? 'github')
+      return {
+        activeTab,
+        tabList: ref(dashboardState.tabList),
+        stats: ref({}),
+        loading: ref(false),
+        tabLoading: ref(false),
+        loadError: ref(dashboardState.loadError),
+        retrying: ref(false),
+        retry: dashboardState.retry,
+        currentDate: ref('2026-08-19'),
+        availableDates: ref([]),
+        isViewingHistory: ref(false),
+        isFinalized: ref(false),
+        isEmbargoed: ref(false),
+        sourceStatus: ref(dashboardState.sourceStatus),
+        selectSourceTab: (key: string) => { activeTab.value = key },
+        onDateChange: vi.fn(),
+        hasData: ref(dashboardState.hasData),
+        refreshLiveStats: vi.fn(),
+        applyLiveStats: vi.fn(),
+      }
+    },
   }
 })
 
@@ -87,10 +91,18 @@ const buildQuery = (query?: Record<string, string>): string => {
   return qs ? `?${qs}` : ''
 }
 
-const mountView = async () => {
+const mountView = async (url = '/') => {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'dashboard', component: { template: '<div />' } },
+      { path: '/report', name: 'report', component: { template: '<div />' } },
+    ],
+  })
+  await router.push(url)
   const wrapper = mount(DashboardView, {
     global: {
-      plugins: [i18n],
+      plugins: [i18n, router],
       components: {
         RouterLink: {
           props: ['to'],
@@ -105,7 +117,7 @@ const mountView = async () => {
         GlassCalendar: { template: '<div class="calendar-stub" />' },
         DashboardNewWords: { template: '<section class="new-words-stub" />' },
         DashboardOverviewPanel: { props: ['uiCount', 'uiLoading'], template: '<div class="overview-stub" :data-count="uiCount" :data-loading="uiLoading" />' },
-        DashboardRankingPanel: { template: '<div class="ranking-panel-stub" />' },
+        DashboardRankingPanel: { props: ['activeTab'], emits: ['select-source'], template: '<button class="ranking-panel-stub" :data-source="activeTab" @click="$emit(\'select-source\', \'arxiv\')" />' },
         DashboardEmptyState: { props: ['variant', 'error'], emits: ['retry'], template: '<button class="empty-stub" :data-variant="variant" :data-error="error" @click="$emit(\'retry\')" />' },
         RollingNumber: { template: '<span />' },
       },
@@ -135,6 +147,27 @@ describe('DashboardView', () => {
     expect(wrapper.find('.ui-inspiration img').exists()).toBe(false)
     expect(wrapper.find('.ui-inspiration__fallback').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('opens a news link and synchronizes source selection and browser history', async () => {
+    const wrapper = await mountView('/?tab=news&lang=en-US')
+    expect(wrapper.get('.ranking-panel-stub').attributes('data-source')).toBe('news')
+    await wrapper.get('.ranking-panel-stub').trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$router.currentRoute.value.query).toEqual({ tab: 'arxiv', lang: 'en-US' })
+    expect(wrapper.get('.ranking-panel-stub').attributes('data-source')).toBe('arxiv')
+    wrapper.vm.$router.back()
+    await flushPromises()
+    expect(wrapper.get('.ranking-panel-stub').attributes('data-source')).toBe('news')
+    await wrapper.vm.$router.push('/report')
+    await wrapper.vm.$router.push('/')
+    await flushPromises()
+    expect(wrapper.get('.ranking-panel-stub').attributes('data-source')).toBe('github')
+  })
+
+  it.each(['/?tab=unknown', '/?tab=news&tab=github'])('rejects an invalid or ambiguous source: %s', async url => {
+    const wrapper = await mountView(url)
+    expect(wrapper.get('.ranking-panel-stub').attributes('data-source')).toBe('github')
   })
 
   it('keeps the dashboard usable when the UI catalog is unavailable', async () => {

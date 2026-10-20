@@ -25,11 +25,13 @@ function resolveBrowserLocale(languages?: readonly string[] | null): AppLocale |
 }
 
 export interface LocaleResolutionOptions {
+  urlLocale?: unknown
   storage?: Pick<Storage, 'getItem'> | null
   browserLanguages?: readonly string[] | null
 }
 
 export function resolveAppLocale(options: LocaleResolutionOptions = {}): AppLocale {
+  if (isAppLocale(options.urlLocale)) return options.urlLocale
   const storage = options.storage === undefined
     ? (typeof window === 'undefined' ? null : window.localStorage)
     : options.storage

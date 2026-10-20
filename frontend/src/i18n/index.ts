@@ -22,7 +22,8 @@ export const i18n = createI18n({
 })
 
 export function installI18n(): AppLocale {
-  const locale = resolveAppLocale()
+  const languageParams = typeof window === 'undefined' ? [] : new URLSearchParams(window.location.search).getAll('lang')
+  const locale = resolveAppLocale({ urlLocale: languageParams.length === 1 ? languageParams[0] : undefined })
   i18n.global.locale.value = locale
   updateDocumentLocale(locale)
   return locale

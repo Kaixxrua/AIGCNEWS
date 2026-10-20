@@ -1,8 +1,48 @@
 User-agent: *
 Allow: /
-# 动态 sitemap 由后端 /api 提供，需显式放行（最长匹配优先于下方 /api/ 整段 Disallow）
-Allow: /api/sitemap.xml
+# SPA 正文由公开只读 API 加载；屏蔽它们会让 Google 渲染出空榜单、空论文和空简报。
+# 精确路径与带查询参数的请求分别放行，避免 /projects 连带放行 /projects/me。
+# robots 只管理抓取，不代替服务端认证；后台、个人数据、生成接口与 SSE 保持默认禁止抓取。
 Disallow: /api/
+Allow: /api/sitemap.xml$
+Allow: /api/feed.xml$
+Allow: /api/feed.xml?
+Allow: /api/feeds/briefing.xml$
+Allow: /api/feeds/briefing.xml?
+Allow: /api/features$
+Allow: /api/dashboard/summary-static$
+Allow: /api/dashboard/summary-static?
+Allow: /api/dashboard/top$
+Allow: /api/dashboard/top?
+Allow: /api/dashboard/snapshot-dates$
+Allow: /api/dashboard/snapshot-dates?
+Allow: /api/dashboard/new-words$
+Allow: /api/dashboard/new-words?
+Allow: /api/dashboard/live-stats$
+Allow: /api/dashboard/x/recent$
+Allow: /api/dashboard/x/recent?
+Allow: /api/projects$
+Allow: /api/projects?
+Allow: /api/projects/categories$
+Allow: /api/projects/categories?
+Allow: /api/projects/taxonomy$
+Allow: /api/projects/github/logo/
+Allow: /api/papers/
+Disallow: /api/papers/search
+Allow: /api/report/preview$
+Allow: /api/report/preview?
+Allow: /api/site/contact-page$
+Allow: /api/site/recommended-websites$
+Allow: /api/media/site/
+Allow: /api/media/x/img/
+Allow: /api/ui-library/catalog$
+Allow: /api/ui-library/catalog?
+Allow: /api/ui-library/dashboard$
+Allow: /api/ui-library/dashboard?
+Allow: /api/ui-library/engagement$
+Allow: /api/ui-library/engagement?
+Allow: /api/ui-library/icons$
+Allow: /api/ui-library/icons?
 
 Sitemap: https://aigcnews.cn/sitemap.xml
 Sitemap: https://aigcnews.cn/api/sitemap.xml

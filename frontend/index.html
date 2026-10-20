@@ -15,11 +15,11 @@
     <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-regular.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
     <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-700.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
     <link rel="preload" href="/fonts/dm-sans-v17-latin_latin-ext-800.woff2" as="font" type="font/woff2" media="(min-width: 768px)" crossorigin />
-    <meta name="description" content="AIGCNEWS（AIGC Radar）：AI 垂直资讯索引——arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。" />
+    <meta name="description" content="AIGCNEWS（AIGC Radar）每日聚合 AI 资讯、GitHub AI 开源项目与 arXiv 论文，提供热门项目榜单、AI 每日简报、开源 UI 组件模板及 MCP 搜索接入。" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="AIGCNEWS · AIGC Radar" />
-    <meta property="og:description" content="AI 垂直资讯索引：arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。" />
-    <meta property="og:url" content="https://aigcnews.cn" />
+    <meta property="og:title" content="AIGCNEWS · AIGC Radar — AI 资讯、GitHub 开源项目与 arXiv 论文" />
+    <meta property="og:description" content="AIGCNEWS（AIGC Radar）每日聚合 AI 资讯、GitHub AI 开源项目与 arXiv 论文，提供热门项目榜单、AI 每日简报、开源 UI 组件模板及 MCP 搜索接入。" />
+    <meta property="og:url" content="https://aigcnews.cn/" />
     <meta property="og:image" content="https://aigcnews.cn/logo.png" />
     <meta name="twitter:card" content="summary" />
     <script type="application/ld+json">
@@ -40,7 +40,7 @@
             "@id": "https://aigcnews.cn/#site",
             "url": "https://aigcnews.cn/",
             "name": "AIGCNEWS",
-            "alternateName": ["AIGC News", "AIGC 资讯"],
+            "alternateName": ["AIGC News", "AIGC Radar", "AIGC 资讯"],
             "publisher": { "@id": "https://aigcnews.cn/#org" },
             "inLanguage": "zh-CN"
           }
@@ -60,7 +60,7 @@
         } catch (e) { /* 存储被禁用时默认浅色 */ }
       })();
     </script>
-    <title>AIGCNEWS · AIGC Radar — arXiv 论文、GitHub AI 项目、榜单与每日简报</title>
+    <title>AIGCNEWS · AIGC Radar — AI 资讯、GitHub 开源项目与 arXiv 论文</title>
   </head>
   <body>
     <div id="app"></div>
@@ -69,15 +69,19 @@
     <noscript>
       <main>
         <h1>AIGCNEWS · AIGC Radar</h1>
-        <p>AI 垂直资讯索引：arXiv 论文、GitHub AI 项目库、日/周/月榜单与每日简报。浏览本站需要启用 JavaScript。</p>
+        <p>每日聚合 AI 资讯、GitHub AI 开源项目与 arXiv 论文，提供热门项目榜单、AI 每日简报、开源 UI 组件模板及 MCP 搜索接入。查看实时榜单和正文需要启用 JavaScript，也可通过 RSS 阅读资讯。</p>
         <ul>
+          <li><a href="https://aigcnews.cn/?tab=news">AI 新闻 · AI News</a></li>
+          <li><a href="https://aigcnews.cn/?tab=news&amp;lang=zh-CN">AI 新闻与资讯（中文界面）</a> · <a href="https://aigcnews.cn/?tab=news&amp;lang=en-US">AI News (English)</a></li>
+          <li><a href="https://aigcnews.cn/?lang=zh-CN">中文首页</a> · <a href="https://aigcnews.cn/?lang=en-US">English home</a></li>
           <li><a href="https://aigcnews.cn/report">每日 AIGC 简报</a></li>
+          <li><a href="https://aigcnews.cn/report?lang=zh-CN">中文 AI 日报</a> · <a href="https://aigcnews.cn/report?lang=en-US">Daily AI briefing in English</a></li>
           <li><a href="https://aigcnews.cn/projects">GitHub AI 项目库</a></li>
+          <li><a href="https://aigcnews.cn/websites">AI 工具与资讯网站推荐</a></li>
           <li><a href="https://aigcnews.cn/x">X 动态</a></li>
           <li><a href="https://aigcnews.cn/ui-library">UI 灵感库</a></li>
           <li><a href="https://aigcnews.cn/mcp">AIGC Radar MCP 接入</a></li>
           <li><a href="https://aigcnews.cn/dsh">DSH 插件</a></li>
-          <li><a href="https://aigcnews.cn/membership">会员</a></li>
           <li><a href="https://aigcnews.cn/api/feed.xml">RSS 订阅</a></li>
           <li><a href="https://aigcnews.cn/disclaimer">用户协议与免责声明</a></li>
           <li><a href="https://aigcnews.cn/privacy">隐私政策</a></li>
