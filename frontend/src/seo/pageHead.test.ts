@@ -31,6 +31,27 @@ afterEach(() => {
 })
 
 describe('resolvePageHead', () => {
+  it('gives news its own keyword title and reciprocal language URLs without tracking parameters', () => {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      i18n.global.locale.value = locale
+      const head = resolvePageHead(at('dashboard', '/', { tab: 'news', lang: locale, utm_source: 'test' }), null, t)
+      expect(head.title).toContain(locale === 'zh-CN' ? 'AI 新闻' : 'AI News')
+      expect(head.description).toContain(locale === 'zh-CN' ? '原始来源' : 'original sources')
+      expect(head.canonical).toBe(`https://aigcnews.cn/?tab=news&lang=${locale}`)
+      expect(head.alternates).toEqual([
+        { language: 'zh-Hans', href: 'https://aigcnews.cn/?tab=news&lang=zh-CN' },
+        { language: 'en', href: 'https://aigcnews.cn/?tab=news&lang=en-US' },
+        { language: 'x-default', href: 'https://aigcnews.cn/?tab=news' },
+      ])
+    }
+    expect(resolvePageHead(at('dashboard', '/', { tab: 'invalid', lang: 'invalid' }), null, t).canonical)
+      .toBe('https://aigcnews.cn/')
+    const report = resolvePageHead(at('report', '/report', { lang: 'en-US' }), {
+      canonicalQuery: { date: '2026-10-20', type: 'news' },
+    }, t)
+    expect(report.canonical).toBe('https://aigcnews.cn/report?date=2026-10-20&type=news&lang=en-US')
+    expect(report.alternates[0]?.href).toBe('https://aigcnews.cn/report?date=2026-10-20&type=news&lang=zh-CN')
+  })
   it('gives every named route its own title in both languages, and the home title matches index.html', () => {
     const routerSource = readFileSync(`${frontendRoot}/src/router/index.ts`, 'utf-8')
     const names = [...routerSource.matchAll(/name: '([^']+)'/g)].map((match) => match[1]!)
@@ -117,6 +138,17 @@ describe('resolvePageHead', () => {
 })
 
 describe('applyPageHead', () => {
+  it('removes alternate languages when leaving a localized public page, including missing issues', () => {
+    const news = resolvePageHead(at('dashboard', '/', { tab: 'news', lang: 'en-US' }), null, t)
+    applyPageHead(document, news)
+    applyPageHead(document, news)
+    expect(document.head.querySelectorAll('link[hreflang]')).toHaveLength(3)
+    applyPageHead(document, resolvePageHead(at('report', '/report'), { noindex: true }, t))
+    expect(headTag('link[hreflang]')).toBeNull()
+    expect(headTag('link[rel="canonical"]')).toBeNull()
+    applyPageHead(document, resolvePageHead(at('register', '/register', { lang: 'en-US' }), null, t))
+    expect(headTag('link[hreflang]')).toBeNull()
+  })
   it('updates the static tags in place and adds or removes robots and canonical', () => {
     applyPageHead(document, resolvePageHead(at('paper-read', '/papers/404/read'), { noindex: true }, t))
     expect(document.title).toBe('论文 · AIGCNEWS')

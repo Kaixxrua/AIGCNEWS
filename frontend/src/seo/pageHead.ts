@@ -8,7 +8,7 @@ import {
   watchEffect,
 } from 'vue'
 import { useRoute, type RouteLocationNormalizedLoaded, type RouteRecordNameGeneric, type Router } from 'vue-router'
-import i18n from '@/i18n'
+import i18n, { isAppLocale } from '@/i18n'
 import { installSeoMessages } from '@/i18n/locales/seo'
 
 /**
@@ -53,7 +53,7 @@ const ROUTE_TITLE_KEYS: Readonly<Record<string, string>> = {
 }
 
 /** 有专门描述的页面（seo.descriptions.*），其余用 default。 */
-const DESCRIBED_PAGES = new Set(['projects', 'websites', 'uiLibrary', 'report', 'xboard', 'mcp', 'dsh', 'membership', 'disclaimer', 'privacy'])
+const DESCRIBED_PAGES = new Set(['news', 'projects', 'websites', 'uiLibrary', 'report', 'xboard', 'mcp', 'dsh', 'membership', 'disclaimer', 'privacy'])
 
 /** 账号流程和私人页面不参与搜索收录；允许抓取页面以便爬虫读到 noindex。 */
 const NOINDEX_PAGES = new Set([
@@ -77,6 +77,7 @@ export interface PageHead {
   /** noindex 的页面没有 canonical。 */
   canonical: string | null
   noindex: boolean
+  alternates: { language: string; href: string }[]
 }
 
 type Translate = (key: string) => string
@@ -85,6 +86,7 @@ function pageKey(route: RouteLocationNormalizedLoaded): string | null {
   const key = ROUTE_TITLE_KEYS[String(route.name ?? '')] ?? null
   // 「我的网页收藏」与项目库共用 /projects，只差 source=website。
   if (key === 'projects' && route.query.source === 'website') return 'websiteCollection'
+  if (key === 'home' && route.query.tab === 'news') return 'news'
   return key
 }
 
@@ -101,7 +103,9 @@ export function canonicalUrl(route: RouteLocationNormalizedLoaded, keep?: PageHe
   const path = route.path.length > 1 ? route.path.replace(/\/+$/, '') : '/'
   const params = new URLSearchParams()
   if (pageKey(route) === 'websiteCollection') params.set('source', 'website')
+  if (pageKey(route) === 'news') params.set('tab', 'news')
   for (const [name, value] of Object.entries(keep ?? {})) if (value) params.set(name, value)
+  if (isAppLocale(route.query.lang)) params.set('lang', route.query.lang)
   const query = params.toString()
   return `${SITE_ORIGIN}${path}${query ? `?${query}` : ''}`
 }
@@ -122,7 +126,15 @@ export function resolvePageHead(
     : t(`seo.descriptions.${key && DESCRIBED_PAGES.has(key) ? key : 'default'}`)
   const noindex = override?.noindex === true || route.meta?.requiresAuth === true
     || route.meta?.requiresAdmin === true || (key !== null && NOINDEX_PAGES.has(key))
-  return { title, description, canonical: noindex ? null : canonicalUrl(route, override?.canonicalQuery), noindex }
+  const canonical = noindex ? null : canonicalUrl(route, override?.canonicalQuery)
+  const alternates = canonical && ['home', 'news', 'report'].includes(key ?? '')
+    ? [['zh-Hans', 'zh-CN'], ['en', 'en-US'], ['x-default', '']].map(([language, locale]) => {
+      const url = new URL(canonical)
+      if (locale) url.searchParams.set('lang', locale)
+      else url.searchParams.delete('lang')
+      return { language: language!, href: url.href }
+    }) : []
+  return { title, description, canonical, noindex, alternates }
 }
 
 function upsertMeta(doc: Document, attribute: 'name' | 'property', key: string, content: string | null): void {
@@ -161,6 +173,15 @@ export function applyPageHead(doc: Document, head: PageHead): void {
   upsertMeta(doc, 'property', 'og:url', head.canonical ?? `${SITE_ORIGIN}/`)
   upsertMeta(doc, 'name', 'robots', head.noindex ? 'noindex' : null)
   upsertCanonical(doc, head.canonical)
+  doc.head.querySelectorAll('link[data-seo-language]').forEach(link => link.remove())
+  for (const alternate of head.alternates) {
+    const link = doc.createElement('link')
+    link.rel = 'alternate'
+    link.hreflang = alternate.language
+    link.href = alternate.href
+    link.dataset.seoLanguage = ''
+    doc.head.appendChild(link)
+  }
 }
 
 // ── 视图覆盖 ─────────────────────────────────────────────────────────────────

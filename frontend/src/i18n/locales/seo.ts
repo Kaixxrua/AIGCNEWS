@@ -11,6 +11,7 @@ type SeoMessages = {
   seo: {
     titles: {
       home: string
+      news: string
       projects: string
       websiteCollection: string
       websites: string
@@ -35,6 +36,7 @@ type SeoMessages = {
     }
     descriptions: {
       default: string
+      news: string
       projects: string
       websites: string
       uiLibrary: string
@@ -53,6 +55,7 @@ const zhCN: SeoMessages = {
   seo: {
     titles: {
       home: 'AIGCNEWS · AIGC Radar — AI 资讯、GitHub 开源项目与 arXiv 论文',
+      news: 'AI 新闻与人工智能资讯',
       projects: 'GitHub AI 开源项目与热门榜',
       websiteCollection: '我的网页收藏',
       websites: '站长推荐网页',
@@ -77,6 +80,7 @@ const zhCN: SeoMessages = {
     },
     descriptions: {
       default: 'AIGCNEWS（AIGC Radar）每日聚合 AI 资讯、GitHub AI 开源项目与 arXiv 论文，提供热门项目榜单、AI 每日简报、开源 UI 组件模板及 MCP 搜索接入。',
+      news: '浏览每日 AI 新闻与人工智能资讯，查看新闻标题、摘要并直达原始来源。AIGCNEWS 聚合模型、产品与行业动态，保留来源原文。',
       projects: '发现 GitHub 上的 AI 开源项目：浏览日榜、周榜、月榜和项目简介，按分类、语言、星标与更新时间筛选，追踪热门 AI 工具与开发框架。',
       websites: '站长挑选的 AI 工具与资讯网站。',
       uiLibrary: '宽松许可的开源 UI 组件、区块与模板：在线预览，按类型、风格与框架筛选，也可以经 MCP 取用源码。',
@@ -95,6 +99,7 @@ const enUS: SeoMessages = {
   seo: {
     titles: {
       home: 'AIGCNEWS · AIGC Radar — AI News, GitHub Open Source and arXiv Papers',
+      news: 'AI News & Artificial Intelligence Updates',
       projects: 'GitHub AI Open Source Projects and Trending Repositories',
       websiteCollection: 'My Websites',
       websites: 'Recommended Websites',
@@ -119,6 +124,7 @@ const enUS: SeoMessages = {
     },
     descriptions: {
       default: 'Discover AI news, GitHub open-source projects and arXiv papers with AIGC Radar: trending rankings, daily briefings, UI templates and MCP search.',
+      news: 'Browse daily AI news and artificial intelligence updates on models, products and the industry. Read headlines and summaries, with links to the original sources.',
       projects: 'Explore trending AI open-source projects on GitHub, with daily, weekly and monthly rankings. Filter by category, language, stars and recent updates.',
       websites: 'AI tools and news sites picked by the editor.',
       uiLibrary: 'Permissively licensed open-source UI components, blocks and templates: live previews, filters by type, style and framework, and source access over MCP.',

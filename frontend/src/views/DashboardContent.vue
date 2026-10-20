@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useDashboardData } from '@/composables/useDashboardData'
 import { useDashboardStats } from '@/composables/useDashboardStats'
@@ -14,11 +15,14 @@ import DashboardNewWords from '@/components/dashboard/DashboardNewWords.vue'
 import DashboardDigestCard from '@/components/dashboard/DashboardDigestCard.vue'
 import DashboardUiShowcase from '@/components/dashboard/DashboardUiShowcase.vue'
 import { Plug, Terminal } from 'lucide-vue-next'
-import type { Stats } from '@/features/dashboard/dashboardViewModel'
+import { isSourceStatCard, type Stats } from '@/features/dashboard/dashboardViewModel'
 import { loadUiShowcaseCatalog, type UiShowcaseItem } from '@/features/dashboard/uiShowcase'
 
 defineOptions({ name: 'DashboardContent' })
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const tabFromUrl = () => typeof route.query.tab === 'string' && isSourceStatCard(route.query.tab) ? route.query.tab : 'github'
 const uiCount = ref<number | null>(null)
 const uiLoading = ref(true)
 const uiItems = ref<UiShowcaseItem[]>([])
@@ -54,10 +58,17 @@ const {
   hasData,
   applyLiveStats,
 } = useDashboardData({
+  initialTab: tabFromUrl(),
   updateStatSources,
   updateVisitorSources,
 })
 currentStats = () => stats.value
+watch(() => [route.name, route.query.tab], () => {
+  if (route.name === 'dashboard') selectSourceTab(tabFromUrl())
+})
+const navigateSource = (key: string) => {
+  if (isSourceStatCard(key)) void router.push({ query: { ...route.query, tab: key === 'github' ? undefined : key } })
+}
 const hasQualityNotice = computed(() => {
   const quality = activeTab.value === 'github' ? sourceStatus.value.github?.data_quality : null
   return quality?.status === 'partial' || quality?.status === 'unavailable'
@@ -86,12 +97,12 @@ onBeforeUnmount(() => uiCatalogController.abort())
   <div class="dashboard-page" :class="{ 'dashboard-page--notice': loadError && tabList.length }">
     <header class="dashboard-heading">
       <div class="dashboard-heading__copy">
-        <h1>{{ t('dashboard.editorial.title') }}</h1>
-        <p>{{ t('dashboard.editorial.subtitle') }}</p>
+        <h1>{{ t(activeTab === 'news' ? 'dashboard.editorial.newsTitle' : 'dashboard.editorial.title') }}</h1>
+        <p>{{ t(activeTab === 'news' ? 'dashboard.editorial.newsSubtitle' : 'dashboard.editorial.subtitle') }}</p>
       </div>
       <DashboardOverviewPanel :loading="loading" :active-tab="activeTab"
         :stat-values="statValues" :visitor-values="visitorValues" :ui-count="uiCount" :ui-loading="uiLoading"
-        @select-source="selectSourceTab" />
+        @select-source="navigateSource" />
     </header>
     <!-- 后台刷新失败但还有上次的榜单：保留榜单，顶部说明并给重试；一条都没有时见下方失败状态 -->
     <div v-if="loadError && tabList.length" class="dashboard-error" role="alert">
@@ -105,7 +116,7 @@ onBeforeUnmount(() => uiCatalogController.abort())
       <DashboardEmptyState v-else-if="!hasData && !tabLoading && !hasQualityNotice" variant="no-data" />
       <DashboardRankingPanel v-else :active-tab="activeTab" :tab-list="tabList" :tab-loading="tabLoading"
         :is-viewing-history="isViewingHistory" :is-finalized="isFinalized" :source-status="sourceStatus"
-        @select-source="selectSourceTab" />
+        @select-source="navigateSource" />
 
       <aside v-if="!loading" class="dashboard-sidebar min-h-0">
         <GlassCalendar :model-value="currentDate" :today-date="todayStr" :available-dates="availableDates" @update:model-value="onDateChange" />

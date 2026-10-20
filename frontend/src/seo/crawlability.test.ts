@@ -22,7 +22,7 @@ describe('public crawler access', () => {
   })
 
   it.each([
-    '/', '/projects', '/report?date=2026-10-19', '/papers/example/read',
+    '/', '/?tab=news&lang=en-US', '/?tab=news&lang=zh-CN', '/projects', '/report?date=2026-10-19', '/papers/example/read',
     '/assets/app.js', '/assets/app.css', '/fonts/font.woff2',
     '/api/features', '/api/dashboard/summary-static?period=daily',
     '/api/dashboard/top?tab=arxiv&period=daily&locale=zh',
@@ -64,12 +64,15 @@ describe('public crawler access', () => {
     const xml = new DOMParser().parseFromString(readFileSync('public/sitemap.xml', 'utf8'), 'application/xml')
     expect(xml.querySelector('parsererror')).toBeNull()
     const locations = [...xml.querySelectorAll('loc')].map(loc => loc.textContent!)
-    const paths = ['/', '/projects', '/ui-library', '/report', '/mcp', '/dsh', '/x', '/disclaimer', '/privacy']
+    const paths = ['/', '/projects', '/ui-library', '/report', '/mcp', '/dsh', '/x', '/disclaimer', '/privacy',
+      '/?lang=zh-CN', '/?lang=en-US', '/?tab=news', '/?tab=news&lang=zh-CN', '/?tab=news&lang=en-US',
+      '/report?lang=zh-CN', '/report?lang=en-US']
     expect(locations.sort()).toEqual(paths.map(path => 'https://aigcnews.cn' + path).sort())
     const html = new DOMParser().parseFromString(readFileSync('index.html', 'utf8'), 'text/html')
+    const discoveryLinks = [...html.querySelectorAll('noscript a')].map(link => link.getAttribute('href'))
     for (const url of locations) {
-      expect(canFetch(new URL(url).pathname)).toBe(true)
-      if (new URL(url).pathname !== '/') expect(html.querySelector(`noscript a[href="${url}"]`)).not.toBeNull()
+      expect(canFetch(new URL(url).pathname + new URL(url).search)).toBe(true)
+      if (url !== 'https://aigcnews.cn/') expect(discoveryLinks).toContain(url)
     }
   })
 })

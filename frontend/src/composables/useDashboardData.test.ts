@@ -20,7 +20,7 @@ import type { DashboardApi } from '@/services/dashboard/dashboardApi'
 import { useDashboardData } from './useDashboardData'
 
 type DashboardData = ReturnType<typeof useDashboardData>
-type DashboardOverrides = Partial<Pick<Parameters<typeof useDashboardData>[0], 'dashboardApi' | 'now' | 'createAbortController'>>
+type DashboardOverrides = Partial<Pick<Parameters<typeof useDashboardData>[0], 'dashboardApi' | 'now' | 'createAbortController' | 'initialTab'>>
 
 const flush = async () => {
   await Promise.resolve()
@@ -73,6 +73,15 @@ describe('Dashboard request lifecycle contract', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it('requests the linked news source on first load without fetching the GitHub board', async () => {
+    const { app, dashboard } = mountDashboard({ initialTab: 'news' })
+    await flush()
+    expect(dashboard.activeTab.value).toBe('news')
+    expect(defaultDashboardApi.fetchTop).toHaveBeenCalledWith(expect.objectContaining({ source: 'news' }))
+    expect(defaultDashboardApi.fetchTop).not.toHaveBeenCalledWith(expect.objectContaining({ source: 'github' }))
+    app.unmount()
   })
 
   it('loads static summary, live counters, top ten, and snapshot availability with shared date defaults', async () => {

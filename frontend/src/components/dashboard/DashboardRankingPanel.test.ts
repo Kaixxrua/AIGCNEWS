@@ -305,6 +305,25 @@ describe('enriched GitHub ranking', () => {
 describe('historical GitHub board quality', () => {
   const project: TopDoc = { id: 'repo', source: 'github', title: 'owner/repo', url: 'https://github.com/owner/repo', stars: 1000 }
 
+  it('exposes crawlable news links and preserves opening a tab in another window', async () => {
+    const panel = await render(project)
+    const news = panel.get('#ranking-tab-news')
+    expect(news.element.tagName).toBe('A')
+    expect(news.attributes('href')).toBe('/?tab=news&lang=zh-CN')
+    let prevented = true
+    news.element.addEventListener('click', event => {
+      prevented = event.defaultPrevented
+      event.preventDefault() // jsdom cannot open the new document.
+    }, { once: true })
+    await news.trigger('click', { ctrlKey: true })
+    expect(prevented).toBe(false)
+    expect(panel.emitted('selectSource')).toBeUndefined()
+    await news.trigger('click')
+    expect(panel.emitted('selectSource')).toEqual([['news']])
+    await news.trigger('keydown', { key: ' ' })
+    expect(panel.emitted('selectSource')).toEqual([['news'], ['news']])
+  })
+
   it('hides unavailable rankings, explains why, and keeps the other sources accessible', async () => {
     const panel = await render(project)
     await panel.setProps({ activeTab: 'github', isViewingHistory: true, isFinalized: true,
