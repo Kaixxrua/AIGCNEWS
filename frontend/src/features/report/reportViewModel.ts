@@ -14,6 +14,11 @@ export const REPORT_TYPES = [
 
 export type ReportKey = (typeof REPORT_TYPES)[number]['key']
 
+// 综合简报与 AI 行业日报全文公开；其余栏目保留访客预览。
+export const reportReadEndpoint = (source: ReportKey, loggedIn: boolean): string =>
+  source === 'all' || source === 'news' ? '/report/public'
+    : loggedIn ? '/report/latest' : '/report/preview'
+
 export interface Subscription {
   source: string
   is_active?: number | boolean | string

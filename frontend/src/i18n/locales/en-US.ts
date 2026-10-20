@@ -161,6 +161,7 @@ const enUSCatalog = {
   chat: {
     analyzeAttachments: 'Analyze the attached content.', copyFormulaTitle: 'Copy formula LaTeX source', requestFailed: 'Request failed: {detail}', streamFailed: 'Streaming request failed: {detail}', emptyResponseContent: 'The request returned no content. Check the backend logs.', paperConversationTitle: 'Paper conversation', defaultConversationTitle: 'New conversation' },
   report: {
+    archiveTitle: 'Earlier briefings',
     aiGeneratedNotice: 'This briefing is AI-generated and provided for reference only.',
     expand: 'Read more',
     collapse: 'Show less',
@@ -360,6 +361,8 @@ const enUSCatalog = {
   'dashboard.digest.featureChat': 'Telegram · Discord',
   'dashboard.digest.featureWebhook': 'Webhook delivery',
   'dashboard.editorial.title': 'Today in AI',
+  'dashboard.editorial.newsTitle': 'AI News',
+  'dashboard.editorial.newsSubtitle': 'Daily headlines · Original sources',
   'dashboard.editorial.creationMark': 'Create freely!',
   'dashboard.editorial.digestDescription': 'The AI developments worth your attention, delivered daily.',
   'dashboard.editorial.digestTitle': 'Daily AI Brief',

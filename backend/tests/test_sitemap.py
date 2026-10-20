@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api.dependencies import get_document_repository
+from backend.app.api.dependencies import get_briefing_repository, get_document_repository
 from backend.app.api.routes_sitemap import _iso_date, build_sitemap_xml, router
 from backend.app.core.config import settings
+from backend.app.repositories.briefing_repository import BriefingReader
 
 TEST_BASE_URL = "https://sitemap.test"
 
@@ -40,6 +42,9 @@ class SitemapRouteTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(router, prefix="/api")
         app.dependency_overrides[get_document_repository] = lambda: self.repo
+        briefings = MagicMock(spec=BriefingReader)
+        briefings.list_briefing_index.return_value = []
+        app.dependency_overrides[get_briefing_repository] = lambda: briefings
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

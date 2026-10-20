@@ -4,9 +4,23 @@ import {
   groupReportSections,
   parseReportDateQuery,
   parseReportTypeQuery,
+  REPORT_TYPES,
+  reportReadEndpoint,
   shiftReportDate,
   todayInReportTimeZone,
 } from './reportViewModel'
+
+describe('reportReadEndpoint', () => {
+  it.each(REPORT_TYPES.map(report => report.key))('keeps the publication policy for %s', source => {
+    if (source === 'all' || source === 'news') {
+      expect(reportReadEndpoint(source, false)).toBe('/report/public')
+      expect(reportReadEndpoint(source, true)).toBe('/report/public')
+    } else {
+      expect(reportReadEndpoint(source, false)).toBe('/report/preview')
+      expect(reportReadEndpoint(source, true)).toBe('/report/latest')
+    }
+  })
+})
 
 describe('parseReportDateQuery', () => {
   it('accepts a past or current calendar date from the RSS briefing link', () => {

@@ -10,6 +10,7 @@ import './motion.css'
 import App from './App.vue'
 import router from './router/index'
 import i18n, { installI18n } from './i18n'
+import { installLocaleRouting } from './i18n/localeRouting'
 import { installAppStyle, installAppTheme } from './theme'
 import { installDesktopStyles } from './theme/desktopStyles'
 import { installXMediaCdnFallback } from './features/xboard/xMediaCdn'
@@ -33,6 +34,7 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(i18n)
+installLocaleRouting(router)
 app.use(router)
 // 每页的标题、描述、canonical 与 noindex（各路径拿到的是同一份 index.html，见 seo/pageHead.ts）。
 installPageHead(router)

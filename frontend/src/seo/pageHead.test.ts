@@ -31,6 +31,27 @@ afterEach(() => {
 })
 
 describe('resolvePageHead', () => {
+  it('gives news its own keyword title and reciprocal language URLs without tracking parameters', () => {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      i18n.global.locale.value = locale
+      const head = resolvePageHead(at('dashboard', '/', { tab: 'news', lang: locale, utm_source: 'test' }), null, t)
+      expect(head.title).toContain(locale === 'zh-CN' ? 'AI 新闻' : 'AI News')
+      expect(head.description).toContain(locale === 'zh-CN' ? '原始来源' : 'original sources')
+      expect(head.canonical).toBe(`https://aigcnews.cn/?tab=news&lang=${locale}`)
+      expect(head.alternates).toEqual([
+        { language: 'zh-Hans', href: 'https://aigcnews.cn/?tab=news&lang=zh-CN' },
+        { language: 'en', href: 'https://aigcnews.cn/?tab=news&lang=en-US' },
+        { language: 'x-default', href: 'https://aigcnews.cn/?tab=news' },
+      ])
+    }
+    expect(resolvePageHead(at('dashboard', '/', { tab: 'invalid', lang: 'invalid' }), null, t).canonical)
+      .toBe('https://aigcnews.cn/')
+    const report = resolvePageHead(at('report', '/report', { lang: 'en-US' }), {
+      canonicalQuery: { date: '2026-10-20', type: 'news' },
+    }, t)
+    expect(report.canonical).toBe('https://aigcnews.cn/report?date=2026-10-20&type=news&lang=en-US')
+    expect(report.alternates[0]?.href).toBe('https://aigcnews.cn/report?date=2026-10-20&type=news&lang=zh-CN')
+  })
   it('gives every named route its own title in both languages, and the home title matches index.html', () => {
     const routerSource = readFileSync(`${frontendRoot}/src/router/index.ts`, 'utf-8')
     const names = [...routerSource.matchAll(/name: '([^']+)'/g)].map((match) => match[1]!)
@@ -64,7 +85,7 @@ describe('resolvePageHead', () => {
       .toBe('https://aigcnews.cn/projects')
     const websites = resolvePageHead(at('github-projects', '/projects', { source: 'website', q: 'ai' }), null, t)
     expect(websites.title).toBe('我的网页收藏 · AIGCNEWS')
-    expect(websites.canonical).toBe('https://aigcnews.cn/projects?source=website')
+    expect(websites).toMatchObject({ noindex: true, canonical: null })
     const briefing = resolvePageHead(
       at('report', '/report', { date: '2026-10-03', subscribe: '1' }),
       { canonicalQuery: { date: '2026-10-03', type: null } },
@@ -99,9 +120,35 @@ describe('resolvePageHead', () => {
     expect(resolvePageHead(at('wechat-login', '/oauth/wechat', { redirect: '/membership' }), null, t))
       .toMatchObject({ title: '微信扫码登录 · AIGCNEWS', noindex: true, canonical: null })
   })
+
+  it('excludes account flows and private pages, including future protected routes', () => {
+    for (const name of ['register', 'oauth-callback', 'oauth-action-callback', 'subscriptions', 'monitor', 'membership-checkout']) {
+      expect(resolvePageHead(at(name, '/private'), { noindex: false }, t))
+        .toMatchObject({ noindex: true, canonical: null })
+    }
+    for (const permission of ['requiresAuth', 'requiresAdmin']) {
+      const route = at('new-private-page', '/private')
+      route.meta[permission] = true
+      expect(resolvePageHead(route, null, t)).toMatchObject({ noindex: true, canonical: null })
+    }
+    for (const name of ['dashboard', 'github-projects', 'recommended-websites', 'ui-library', 'report', 'paper-read', 'mcp-connect', 'dsh']) {
+      expect(resolvePageHead(at(name, '/public'), null, t).noindex).toBe(false)
+    }
+  })
 })
 
 describe('applyPageHead', () => {
+  it('removes alternate languages when leaving a localized public page, including missing issues', () => {
+    const news = resolvePageHead(at('dashboard', '/', { tab: 'news', lang: 'en-US' }), null, t)
+    applyPageHead(document, news)
+    applyPageHead(document, news)
+    expect(document.head.querySelectorAll('link[hreflang]')).toHaveLength(3)
+    applyPageHead(document, resolvePageHead(at('report', '/report'), { noindex: true }, t))
+    expect(headTag('link[hreflang]')).toBeNull()
+    expect(headTag('link[rel="canonical"]')).toBeNull()
+    applyPageHead(document, resolvePageHead(at('register', '/register', { lang: 'en-US' }), null, t))
+    expect(headTag('link[hreflang]')).toBeNull()
+  })
   it('updates the static tags in place and adds or removes robots and canonical', () => {
     applyPageHead(document, resolvePageHead(at('paper-read', '/papers/404/read'), { noindex: true }, t))
     expect(document.title).toBe('论文 · AIGCNEWS')
