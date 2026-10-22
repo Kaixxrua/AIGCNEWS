@@ -5,6 +5,7 @@ import type { GitHubProjectPeek, GitHubProjectTrendsResponse } from '@/services/
 import {
   PEEK_CLOSE_GRACE,
   PEEK_OPEN_DELAY,
+  PEEK_PREFETCH_DELAY,
   PEEK_SWITCH_DELAY,
   PEEK_WARM_MS,
   useProjectPeek,
@@ -34,6 +35,7 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   vi.useRealTimers()
   document.body.innerHTML = ''
 })
@@ -111,14 +113,34 @@ const openOn = async (list: Awaited<ReturnType<typeof mountPeek>>, key: string, 
 }
 
 describe('useProjectPeek', () => {
-  it('opens under a row the pointer rests on for half a second and fetches its peek and the page’s curves at once', async () => {
+  it('shows viewport-warmed content on the first hover without another request', async () => {
+    let observed!: IntersectionObserverCallback
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { observed = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const list = await mountPeek()
+    observed([{ target: list.row('b'), isIntersecting: true } as unknown as IntersectionObserverEntry], {} as IntersectionObserver)
+    await wait(0)
+    expect(list.peek.target.value).toBeNull()
+    expect(list.load.mock.calls).toEqual([['acme/b']])
+    await openOn(list, 'b', 40, 120)
+    expect(list.peek.content.value).toEqual({ status: 'ready', peek: peekOf('acme/b') })
+    expect(list.load).toHaveBeenCalledTimes(1)
+    expect(list.loadTrends).toHaveBeenCalledTimes(1)
+  })
+
+  it('prefetches on hover intent so content is ready when the card opens after half a second', async () => {
     const list = await mountPeek()
     hover(list.row('b').querySelector('.name')!, 40, 120)
-    await wait(PEEK_OPEN_DELAY - 1)
+    await wait(PEEK_PREFETCH_DELAY - 1)
     expect(list.peek.target.value).toBeNull()
     expect(list.load).not.toHaveBeenCalled()
-
     await wait(1)
+    expect(list.load.mock.calls).toEqual([['acme/b']])
+    expect(list.peek.target.value).toBeNull()
+    await wait(PEEK_OPEN_DELAY - PEEK_PREFETCH_DELAY)
     expect(list.peek.target.value).toEqual({ key: 'b', repoId: 'acme/b' })
     // b 的下边 180、留 6px 缝；视口里下面还剩 768 − 180 − 6
     expect(list.peek.placement.value).toEqual({ top: 186, above: false, maxHeight: 582 })
@@ -145,6 +167,17 @@ describe('useProjectPeek', () => {
     answer(peekOf('acme/a'))
     await wait(0)
     expect(list.peek.content.value).toEqual({ status: 'ready', peek: peekOf('acme/a') })
+  })
+
+  it('does not prefetch rows the pointer merely sweeps across', async () => {
+    const list = await mountPeek()
+    hover(list.row('a'), 40, 20)
+    await wait(PEEK_PREFETCH_DELAY - 1)
+    hover(list.row('b'), 40, 120)
+    await wait(PEEK_PREFETCH_DELAY - 1)
+    pointer('pointerleave', list.rowsEl(), 400, 120)
+    await wait(PEEK_OPEN_DELAY)
+    expect(list.load).not.toHaveBeenCalled()
   })
 
   it('rises over a row near the bottom of the view, as tall as the room above it', async () => {
@@ -367,6 +400,43 @@ describe('useProjectPeekData', () => {
     return { data, load, loadTrends }
   }
   const unreadable = (repoId: string): GitHubProjectPeek => ({ ...peekOf(repoId), status: 'unavailable', has_readme: false, readme: [] })
+
+  it('can retry a stalled prefetch without letting its late response overwrite newer content', async () => {
+    const { data, load } = setup()
+    let finish!: (peek: GitHubProjectPeek) => void
+    load.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const stalled = data.fetchPeek('acme/a')
+    await wait(30_000)
+    await data.fetchPeek('acme/a')
+    expect(load).toHaveBeenCalledTimes(2)
+    finish({ ...peekOf('acme/a'), readme: ['Obsolete intro'] })
+    await stalled
+    expect(data.contentOf('acme/a')).toEqual({ status: 'ready', peek: peekOf('acme/a') })
+  })
+
+  it('keeps cached content visible through an expired refresh and retries failed refreshes without blanking it', async () => {
+    const { data, load } = setup()
+    await data.fetchPeek('acme/a')
+    await wait(10 * 60_000)
+    let finish!: (peek: GitHubProjectPeek) => void
+    load.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const refreshing = data.fetchPeek('acme/a')
+    expect(data.fetchPeek('acme/a')).toBe(refreshing)
+    expect(data.contentOf('acme/a')).toEqual({ status: 'ready', peek: peekOf('acme/a') })
+    finish(unreadable('acme/a'))
+    await refreshing
+    expect(data.contentOf('acme/a')).toEqual({ status: 'ready', peek: peekOf('acme/a') })
+    data.fetchPeek('acme/a')
+    expect(load).toHaveBeenCalledTimes(2)
+    await wait(30_000)
+    load.mockRejectedValueOnce(new Error('offline'))
+    await data.fetchPeek('acme/a')
+    expect(data.contentOf('acme/a')).toEqual({ status: 'ready', peek: peekOf('acme/a') })
+    await wait(30_000)
+    load.mockResolvedValueOnce({ ...peekOf('acme/a'), readme: ['Updated intro'] })
+    await data.fetchPeek('acme/a')
+    expect(data.contentOf('acme/a')).toMatchObject({ status: 'ready', peek: { readme: ['Updated intro'] } })
+  })
 
   it('reads a repository GitHub could not be reached for again after thirty seconds, not ten minutes', async () => {
     const { data, load } = setup(vi.fn(async (repoId: string) => unreadable(repoId)))

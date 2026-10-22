@@ -2,8 +2,8 @@
 
 库里存的 README 是给检索清洗过的（链接文字已去、空白已并），读不成段，所以速览现读 GitHub：一次 GraphQL
 （owner、name 走变量），拿默认分支最近一次提交和 GitHub 仓库首页展示的那份 README。读到的结果在 Redis 里
-新鲜 FRESH_SECONDS，过了再有人看才重读；读不到（GitHub 出错、限流、额度见底）时退回上一份，上一份最多留
-STALE_SECONDS。
+新鲜 FRESH_SECONDS，过了先返回上一份、后台重读；读不到（GitHub 出错、限流、额度见底）时继续保留上一份，
+上一份最多留 STALE_SECONDS。
 
 GraphQL 额度与采集共用一个令牌，现读有几道闸：只读公开项目库里的仓库；单 IP 与全站的现读次数封顶；令牌剩余
 额度低于 RESERVE_POINTS 或被 GitHub 限流时全站停读到额度重置；读失败的仓库 RETRY_SECONDS 内、GitHub 上已经
@@ -244,7 +244,7 @@ class ProjectPeekService:
         self._fetch = fetch
         self._clock = clock
         # 同一个仓库同时有几个人在看：进程里只读一次
-        self._inflight: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._inflight: dict[str, asyncio.Future[dict[str, Any] | None]] = {}
 
     async def peek(self, repo_id: str, *, redis: Any, client_ip: str) -> dict[str, Any] | None:
         """仓库不在公开项目库里返回 None；否则返回速览，读不到又没有上一份时 status=unavailable。"""
@@ -252,6 +252,8 @@ class ProjectPeekService:
         if source is None:
             return None
         cached = await self._read_cache(redis, repo_id)
+        if cached is not None and self._clock() - cached[0] >= STALE_SECONDS:
+            cached = None
         if cached is not None and self._clock() - cached[0] < FRESH_SECONDS:
             return cached[1]
         stale = cached[1] if cached is not None else None
@@ -263,13 +265,32 @@ class ProjectPeekService:
             task = asyncio.ensure_future(self._refresh(repo_id, full_name, redis=redis, client_ip=client_ip))
             self._inflight[repo_id] = task
             task.add_done_callback(lambda done: self._forget(repo_id, done))
+        # 已有正文立即可用；刷新沿用相同的去重、限流和失败退避，不让看的人等 GitHub。
+        if stale is not None:
+            return stale
         # 看的人走了（请求取消）也读完、写进缓存，下一个人直接用
         fresh = await asyncio.shield(task)
         return fresh or stale or _unavailable(repo_id)
 
-    def _forget(self, repo_id: str, task: asyncio.Future[dict[str, Any]]) -> None:
+    def _forget(self, repo_id: str, task: asyncio.Future[dict[str, Any] | None]) -> None:
         if self._inflight.get(repo_id) is task:
             del self._inflight[repo_id]
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("[ProjectPeek] 刷新 %s 失败：%s", repo_id, type(error).__name__)
+
+    async def warm(self, repo_id: str, *, redis: Any) -> None:
+        """预热与访问共用缓存和额度；等待刷新结束，让调用方的并发上限覆盖真实 GitHub 请求。"""
+        await self.peek(repo_id, redis=redis, client_ip="project-peek-warmup")
+        task = self._inflight.get(repo_id)
+        if task is not None:
+            await asyncio.shield(task)
+
+    async def aclose(self) -> None:
+        """关闭 Redis 前停止尚未结束的后台刷新。"""
+        tasks = list(self._inflight.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _refresh(self, repo_id: str, full_name: str, *, redis: Any, client_ip: str) -> dict[str, Any] | None:
         if not await self._may_fetch(redis, repo_id, client_ip):

@@ -44,6 +44,7 @@ from backend.app.api import (
     routes_x_media,
 )
 from backend.app.api.dashboard_cache_warmup import maintain_dashboard_cache
+from backend.app.api.dependencies import get_project_peek_service
 from backend.app.api.exception_handlers import register_exception_handlers
 from backend.app.api.routes_dashboard import (
     build_dashboard_live_stats_compute,
@@ -99,6 +100,7 @@ from backend.app.services.email.smtp_config_provider import (
 )
 from backend.app.services.payments.plan_overrides import configure_plan_overrides_reader
 from backend.app.services.payments.runtime_config import configure_payment_settings_reader
+from backend.app.services.project_catalog.peek_warmup import maintain_project_peek_cache
 from backend.app.services.project_search_runtime import ApplicationProjectSearchRuntime
 from backend.app.services.push.telegram_config_provider import (
     configure_telegram_settings_reader,
@@ -162,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_provider: RagChatServiceProvider | None = None
     semantic_warmup_task: asyncio.Task[object] | None = None
     dashboard_warmup_task: asyncio.Task[None] | None = None
+    project_peek_warmup_task: asyncio.Task[None] | None = None
     live_stats_task: asyncio.Task[None] | None = None
     live_stats_broadcaster: LiveStatsBroadcaster | None = None
     mcp_metrics_checkpoint_runtime: McpMetricsCheckpointRuntime | None = None
@@ -178,6 +181,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.application_database_backend = "postgres"
     app.state.redis = None
     app.state.dashboard_warmup_task = None
+    app.state.project_peek_warmup_task = None
     app.state.mcp_tool_call_metrics = None
     app.state.project_search_runtime = None
     app.state.monitoring_runtime = None
@@ -397,6 +401,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 maintain_dashboard_cache(app.state.application_repositories)
             )
             app.state.dashboard_warmup_task = dashboard_warmup_task
+            project_peek_warmup_task = asyncio.create_task(
+                maintain_project_peek_cache(app.state.redis, get_project_peek_service())
+            )
+            app.state.project_peek_warmup_task = project_peek_warmup_task
 
         scheduler_enabled = bool(getattr(settings, "scheduler_enabled", True))
         job_configs = {}
@@ -470,6 +478,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             name="Dashboard cache warmup",
         )
         app.state.dashboard_warmup_task = None
+        await _cancel_background_task(
+            project_peek_warmup_task,
+            name="Project peek cache warmup",
+        )
+        app.state.project_peek_warmup_task = None
+        await get_project_peek_service().aclose()
         if live_stats_broadcaster is not None:
             try:
                 await live_stats_broadcaster.aclose()

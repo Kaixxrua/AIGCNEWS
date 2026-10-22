@@ -234,14 +234,85 @@ class ProjectPeekServiceTests(unittest.IsolatedAsyncioTestCase):
         self.fetch.assert_not_awaited()
         self.assertNotIn("ratelimit:projects.peek.github:all", self.redis.values)
 
+    async def test_first_visitor_uses_the_warmed_cache_without_spending_their_fetch_budget(self) -> None:
+        await self.service.warm("acme/alpha", redis=self.redis)
+        self.assertEqual((await self._peek())["status"], "ok")
+        self.fetch.assert_awaited_once()
+        self.assertNotIn("ratelimit:projects.peek.github:ip:203.0.113.7", self.redis.values)
+        self.assertEqual(self.redis.values["ratelimit:projects.peek.github:all"], 1)
+
+    async def test_warmup_obeys_the_existing_site_wide_budget(self) -> None:
+        self.redis.values["ratelimit:projects.peek.github:all"] = GLOBAL_FETCHES_PER_HOUR
+        await self.service.warm("acme/alpha", redis=self.redis)
+        self.fetch.assert_not_awaited()
+
     async def test_an_old_copy_is_refreshed_and_kept_while_github_fails(self) -> None:
         self._cache("acme/alpha", OK_PEEK, age=FRESH_SECONDS + 1)
         self.fetch.return_value = GitHubPeekFetch("failed")
 
         self.assertEqual(await self._peek(), OK_PEEK)
+        await asyncio.gather(*self.service._inflight.values())
         self.assertEqual(self.redis.expirations["projects:peek:v1:retry:acme/alpha"], RETRY_SECONDS)
         # 重读间隔内不再去读，照样给上一份
         self.assertEqual(await self._peek(), OK_PEEK)
+        self.fetch.assert_awaited_once()
+
+    async def test_stale_content_returns_before_one_shared_background_refresh_finishes(self) -> None:
+        self._cache("acme/alpha", OK_PEEK, age=FRESH_SECONDS + 1)
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def delayed(full_name: str) -> GitHubPeekFetch:
+            started.set()
+            await release.wait()
+            return GitHubPeekFetch("ok", readme=README, commit=None)
+
+        self.fetch.side_effect = delayed
+        try:
+            self.assertEqual(await asyncio.wait_for(self._peek(), timeout=1), OK_PEEK)
+            await asyncio.wait_for(started.wait(), timeout=1)
+            self.assertEqual(await asyncio.wait_for(self._peek(ip="203.0.113.8"), timeout=1), OK_PEEK)
+            self.fetch.assert_awaited_once()
+        finally:
+            release.set()
+            await asyncio.gather(*self.service._inflight.values())
+
+        refreshed = await self._peek()
+        self.assertIsNone(refreshed["commit"])
+        self.assertNotEqual(refreshed["readme"], OK_PEEK["readme"])
+        self.fetch.assert_awaited_once()
+
+    async def test_a_background_exception_preserves_content_and_is_observed(self) -> None:
+        self._cache("acme/alpha", OK_PEEK, age=FRESH_SECONDS + 1)
+        self.fetch.side_effect = RuntimeError("unexpected failure")
+        with self.assertLogs(peek_service.logger, level="WARNING") as logs:
+            self.assertEqual(await self._peek(), OK_PEEK)
+            await asyncio.gather(*self.service._inflight.values(), return_exceptions=True)
+        self.assertIn("RuntimeError", logs.output[0])
+        self.assertFalse(self.service._inflight)
+
+    async def test_a_copy_past_the_stale_limit_is_not_served(self) -> None:
+        self._cache("acme/alpha", OK_PEEK, age=STALE_SECONDS)
+        self.fetch.return_value = GitHubPeekFetch("failed")
+        self.assertEqual(await self._peek(), UNAVAILABLE)
+        self.fetch.assert_awaited_once()
+
+    async def test_warmup_waits_for_real_refresh_and_shutdown_cancels_it(self) -> None:
+        self._cache("acme/alpha", OK_PEEK, age=FRESH_SECONDS + 1)
+        started = asyncio.Event()
+
+        async def delayed(full_name: str) -> GitHubPeekFetch:
+            started.set()
+            await asyncio.Future()
+
+        self.fetch.side_effect = delayed
+        warming = asyncio.create_task(self.service.warm("acme/alpha", redis=self.redis))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        self.assertFalse(warming.done())
+        self.assertEqual(await self._peek(), OK_PEEK)
+        await self.service.aclose()
+        with self.assertRaises(asyncio.CancelledError):
+            await warming
+        self.assertFalse(self.service._inflight)
         self.fetch.assert_awaited_once()
 
     async def test_repos_gone_from_github_back_off_longer(self) -> None:

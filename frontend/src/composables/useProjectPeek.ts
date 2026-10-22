@@ -1,6 +1,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, ref, shallowReactive, watch, type Ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { viewOf } from '@/composables/useListKeys'
+import { useProjectPeekWarmup } from '@/composables/useProjectPeekWarmup'
 import { PEEK_CURVE_DAYS, peekPlacement, type PeekPlacement } from '@/features/projects/projectPeek'
 import {
   fetchProjectPeek,
@@ -26,6 +27,8 @@ export const PEEK_CLOSE_GRACE = 160
 export const PEEK_WARM_MS = 800
 /** 停稳：离开始计时的地方不超过这么远（px） */
 export const PEEK_STILL_RADIUS = 8
+/** 悬停意图先取数，卡片仍等停稳半秒再出现。 */
+export const PEEK_PREFETCH_DELAY = 100
 const CACHE_MS = 10 * 60_000
 /** 没取到的（连读不到 GitHub 的）过一会儿再取；一直没回来的请求过这么久也不再等 */
 const RETRY_MS = 30_000
@@ -66,6 +69,7 @@ export interface ProjectPeekDataOptions {
 interface Cached<T> {
   state: T
   at: number
+  retryAt?: number
 }
 
 const peekKept = (state: PeekContent) => state.status === 'ready' && state.peek.status === 'ok'
@@ -85,6 +89,7 @@ export function useProjectPeekData({
 }: ProjectPeekDataOptions) {
   const peeks = shallowReactive(new Map<string, Cached<PeekContent>>())
   const curves = shallowReactive(new Map<string, Cached<PeekCurveState>>())
+  const pendingPeeks = new Map<string, { request: Promise<void>; at: number }>()
 
   const remember = <T>(cache: Map<string, Cached<T>>, key: string, state: T) => {
     cache.delete(key)
@@ -94,17 +99,32 @@ export function useProjectPeekData({
   /** 正在取、取到了还新鲜、没取到但刚试过的，这次都不取 */
   const settled = <T>(entry: Cached<T> | undefined, at: number, kept: (state: T) => boolean) => {
     if (!entry) return false
-    return at - entry.at < (kept(entry.state) ? CACHE_MS : RETRY_MS)
+    return at < (entry.retryAt ?? 0) || at - entry.at < (kept(entry.state) ? CACHE_MS : RETRY_MS)
   }
 
   /** 只取 README 和提交（详情栏顺手预取前后两行用） */
   const fetchPeek = (repoId: string) => {
+    const pending = pendingPeeks.get(repoId)
+    if (pending && now() - pending.at < RETRY_MS) return pending.request
     if (!repoId || settled(peeks.get(repoId), now(), peekKept)) return
-    remember(peeks, repoId, { status: 'loading' })
-    load(repoId).then(
-      (peek) => remember(peeks, repoId, { status: 'ready', peek }),
-      () => remember(peeks, repoId, { status: 'error' }),
-    )
+    const previous = peeks.get(repoId)
+    const stale = previous && peekKept(previous.state) ? previous : undefined
+    if (stale) peeks.set(repoId, { ...stale, retryAt: now() + RETRY_MS })
+    else remember(peeks, repoId, { status: 'loading' })
+    const request = load(repoId).then(
+      (peek) => {
+        if (pendingPeeks.get(repoId)?.request !== request) return
+        if (peek.status === 'ok' || !stale) remember(peeks, repoId, { status: 'ready', peek })
+      },
+      () => {
+        if (pendingPeeks.get(repoId)?.request !== request) return
+        if (!stale) remember(peeks, repoId, { status: 'error' })
+      },
+    ).finally(() => {
+      if (pendingPeeks.get(repoId)?.request === request) pendingPeeks.delete(repoId)
+    })
+    pendingPeeks.set(repoId, { request, at: now() })
+    return request
   }
 
   /** 曲线一次取这一页还没取过的全部仓库，看着的这个排第一。 */
@@ -137,8 +157,9 @@ export function useProjectPeekData({
 
   /** 这个仓库的速览和曲线，没取过（或该再取了）的去取 */
   const fetch = (repoId: string) => {
-    fetchPeek(repoId)
+    const request = fetchPeek(repoId)
     fetchCurves(repoId)
+    return request
   }
 
   /** 没取到的（取失败、读不到 GitHub、曲线没取到）马上再取，不等半分钟 */
@@ -187,11 +208,13 @@ export function useProjectPeek({
   now = () => Date.now(),
 }: ProjectPeekOptions) {
   const data = shared ?? useProjectPeekData({ keys, repoOf, load, loadTrends, now })
+  useProjectPeekWarmup({ enabled, rows, keys, repoOf, load: data.fetch })
   const target = ref<PeekTarget | null>(null)
   const placement = ref<PeekPlacement | null>(null)
 
   // 计时停稳的那一行和起点；卡片的稍后收起；刚收起的余温
   let timer: ReturnType<typeof setTimeout> | undefined
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined
   let pending: string | null = null
   let anchor: { x: number; y: number } | null = null
   let closer: ReturnType<typeof setTimeout> | undefined
@@ -206,6 +229,7 @@ export function useProjectPeek({
 
   const stopTimer = () => {
     clearTimeout(timer)
+    clearTimeout(prefetchTimer)
     timer = undefined
     pending = null
     anchor = null
@@ -280,9 +304,12 @@ export function useProjectPeek({
     }
     if (key === pending && anchor && Math.hypot(x - anchor.x, y - anchor.y) <= PEEK_STILL_RADIUS) return
     // 进了新的一行，或者挪远了：从这里重新计时
-    clearTimeout(timer)
+    stopTimer()
     pending = key
     anchor = { x, y }
+    prefetchTimer = setTimeout(() => {
+      if (usable()) data.fetch(repoOf(key))
+    }, PEEK_PREFETCH_DELAY)
     timer = setTimeout(() => show(key), target.value !== null || now() < warmUntil ? PEEK_SWITCH_DELAY : PEEK_OPEN_DELAY)
   }
 

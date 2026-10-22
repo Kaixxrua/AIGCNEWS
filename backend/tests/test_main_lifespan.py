@@ -56,10 +56,18 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
         metrics = MagicMock()
         metrics.seed_from_json = AsyncMock()
         warmup_started = asyncio.Event()
+        peek_warmup_started = asyncio.Event()
+        peeks = SimpleNamespace(aclose=AsyncMock())
 
         async def warm_dashboard(repositories_arg):
             self.assertIs(repositories_arg, repositories)
             warmup_started.set()
+            await asyncio.Future()
+
+        async def warm_peeks(redis_arg, service):
+            self.assertIs(redis_arg, redis_client)
+            self.assertIs(service, peeks)
+            peek_warmup_started.set()
             await asyncio.Future()
 
         with (
@@ -99,6 +107,8 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "create_redis_client", return_value=redis_client),
             patch.object(main, "create_redis_mcp_tool_call_metrics", return_value=metrics),
             patch.object(main, "maintain_dashboard_cache", side_effect=warm_dashboard),
+            patch.object(main, "get_project_peek_service", return_value=peeks),
+            patch.object(main, "maintain_project_peek_cache", side_effect=warm_peeks),
             patch.object(main.FastAPICache, "init"),
         ):
             async with main.lifespan(app):
@@ -113,6 +123,9 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(warmup_started.wait(), timeout=1)
                 dashboard_warmup_task = app.state.dashboard_warmup_task
                 self.assertFalse(dashboard_warmup_task.done())
+                await asyncio.wait_for(peek_warmup_started.wait(), timeout=1)
+                peek_warmup_task = app.state.project_peek_warmup_task
+                self.assertFalse(peek_warmup_task.done())
                 scheduler_runtime.start.assert_not_called()
                 scheduler_runtime.stop.assert_not_called()
                 database.close.assert_not_called()
@@ -140,6 +153,9 @@ class MainLifespanTests(unittest.IsolatedAsyncioTestCase):
             database.close.assert_called_once_with()
             self.assertTrue(dashboard_warmup_task.cancelled())
             self.assertIsNone(app.state.dashboard_warmup_task)
+            self.assertTrue(peek_warmup_task.cancelled())
+            self.assertIsNone(app.state.project_peek_warmup_task)
+            peeks.aclose.assert_awaited_once()
             self.assertEqual(
                 shutdown_events,
                 ["scheduler", "operations", "models", "postgres"],
