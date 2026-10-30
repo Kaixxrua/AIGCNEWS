@@ -235,3 +235,22 @@ reads the template and clone's expanded device configuration and rejects a
 mismatch before startup; it never changes the endpoint. This verifies
 configuration inheritance, not network availability. Runtime proxy ownership
 and switching remain with the coordinator.
+
+### Dependency routes on the coordinator egress (2026-10-30)
+
+After 2026-10-21 the `CLAUDE-US` upstream of the `127.0.0.1:17897` Mihomo
+(`~/.config/mihomo-codex/config.yaml`, user unit `codex-mihomo.service`) timed
+out for every destination, so the "Verify dependency lock consistency" step
+failed with TLS handshake EOF against `pypi.org`. The endpoint, the template
+`egress-proxy` device and the trusted configuration were not changed. Only
+five rules were added before `MATCH`, sending dependency sources through the
+existing `CODEX-SSH-EGRESS` group: `DOMAIN-SUFFIX` `pypi.org`,
+`pythonhosted.org`, `npmjs.org`, `golang.org` and `goproxy.cn`. OpenAI rules
+and the default route are unchanged. Validation used `mihomo -t` on a
+candidate file, then a unit restart with no established connections; a
+backend-tests preflight then passed all three steps.
+
+Rollback: restore `config.yaml.before-ci-deps-20261030T064125Z` in the same
+directory and run `systemctl --user restart codex-mihomo.service`. If the
+`CLAUDE-US` upstream recovers, the five rules can stay or be removed; they do
+not affect other destinations.
