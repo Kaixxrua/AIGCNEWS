@@ -11,8 +11,18 @@ proxies:
     type: direct
     interface-name: enp3s0
     ip-version: ipv4
+  # Alpine CDN only answers through the host SSH SOCKS tunnel (same route as the CI egress).
+  - name: DEP-SSH
+    type: socks5
+    server: 127.0.0.1
+    port: 11081
 rules:
   - DOMAIN,mirrors.ustc.edu.cn,USTC-DIRECT
   # USTC redirects cache misses to this upstream; keep its downloads direct too.
   - DOMAIN,mirrors.tuna.tsinghua.edu.cn,USTC-DIRECT
+  # Release image builds (mcp-go go mod download, frontend npm ci, alpine apk).
+  # proxy.golang.org is rejected so GOPROXY falls through to goproxy.cn quickly.
+  - DOMAIN,goproxy.cn,USTC-DIRECT
+  - DOMAIN,registry.npmjs.org,USTC-DIRECT
+  - DOMAIN,dl-cdn.alpinelinux.org,DEP-SSH
   - MATCH,REJECT

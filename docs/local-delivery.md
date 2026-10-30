@@ -73,6 +73,8 @@ operation、实例、日志归属或退出码缺失时拒绝通过，并按原 r
 
 控制器只向后端镜像传入这些构建参数，代理不进入镜像环境。默认单并发避免镜像 429；保留 uv、pip 和 wheel 缓存。新控制器按不可变 bundle 流程安装，等当前发布排空后切换发布服务。验收须从 Docker bridge 经该端口完整下载固定 wheel 并核对 SHA-256，再完成带哈希校验的后端镜像构建；同时验证其他目的地被拒绝、镜像不包含代理环境。回退时恢复备份的发布配置和服务 bundle，再停用专用代理，不能修改活动 bundle 或绕过发布门禁。
 
+2026-10-30 起 Docker bridge 转发流量访问外网 TLS 全部超时，而 BuildKit 缓存清理后 mcp-go 的 `go mod download`、前端 `npm ci` 与 Alpine `apk add` 层需要重新下载。专用实例因此追加：`goproxy.cn`、`registry.npmjs.org` 走同一 enp3s0 直连节点；`dl-cdn.alpinelinux.org` 走宿主 SSH SOCKS（`127.0.0.1:11081`，与 CI 协调出口同一上游）；`proxy.golang.org` 仍被拒绝，使 `GOPROXY` 立即回落到 goproxy.cn。控制器仍只向后端镜像传入代理参数；mcp/前端镜像的依赖层由运维经该端口预热 BuildKit 缓存（代理构建参数不进入缓存键），正式发布命中缓存。回退：恢复 `~/.config/aigcnews-dependency-egress/config.yaml.before-release-deps-20261030` 并重启 `aigcnews-dependency-egress.service`。
+
 ### 提交前快速验证
 
 暂存本次工作后运行安装后的 `local_preflight.py --repository "$PWD" --jobs frontend-build`（也支持 `backend-tests`、`mcp-go`）。入口对暂存 tree 创建不移动分支的验证对象，随后调用可信隔离执行器。前端单测/lint/typecheck、后端 lint、Go vet/test 可按步骤复用；准备依赖、生成测试夹具及生产构建仍执行。代码、测试、依赖或控制配置变化全部失效，partial preflight 永远不能作为完整 CI 回执。零散 pytest 文件子集尚不覆盖完整后端套件，不能据此跳过该套件。
