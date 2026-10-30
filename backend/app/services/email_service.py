@@ -198,6 +198,20 @@ class EmailService:
     ) -> None:
         await self._otp_store.consume(email, purpose=purpose)
 
+    @property
+    def delivery_configured(self) -> bool:
+        return bool(self._transport.configured)
+
+    async def send_plain_message(self, to_email: str, subject: str, body: str) -> None:
+        """事务性纯文本邮件（如闪光工坊激活码）；SMTP 未配置或发送失败抛 EmailServiceError。"""
+        if not self._transport.configured:
+            raise EmailServiceError("SMTP 未配置，无法发送真实邮件")
+        try:
+            await self._transport.send_plain(to_email, subject, body)
+        except SmtpDeliveryError as exc:
+            logger.error("[EMAIL] ❌ 事务邮件发送失败 to=%s error_type=%s", to_email, exc.error_type)
+            raise EmailServiceError(f"邮件发送失败（{exc.error_type}）") from exc
+
     async def send_briefing(
         self,
         to_email: str,

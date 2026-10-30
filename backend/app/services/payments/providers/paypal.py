@@ -27,6 +27,15 @@
 - query_order：GET /v2/checkout/orders/{channel_order_no}，返回 status
   原串；未绑定渠道单号抛 ProviderNotConfiguredError（骨架期不进路由，
   见 base.py 契约）。
+
+闪光工坊（ShinyDesk）激活码订单复用本渠道（services/shinydesk）：
+- 订单映射可带 item_name / brand_name / return_order_only / digital_goods
+  覆盖商品名、品牌、回跳参数与运送偏好；会员订单不带这些键，报文不变；
+- verify_webhook_event 只验签并返回事件原文，parse_verified_event 是
+  verify_and_parse_callback 的后半段（两者组合与原方法等价），供回调入口
+  先按单号前缀分流；
+- capture_order_details / get_order_details 返回 PayPal 订单原文（含 payer
+  与 captures），供回跳页即时确认与 webhook 落账时取付款邮箱。
 """
 
 from __future__ import annotations
@@ -53,6 +62,15 @@ from backend.app.services.payments.providers.overseas_redirect import (
 )
 
 
+class PayPalOrderNotCapturable(ChannelUpstreamError):
+    """capture 被 PayPal 以 422 业务错误拒绝（如买家未批准 ORDER_NOT_APPROVED）；
+    issue 为 PayPal details[0].issue 原串。"""
+
+    def __init__(self, issue: str) -> None:
+        super().__init__(f"paypal order not capturable: {issue}")
+        self.issue = issue
+
+
 class PayPalProviderConfig(Protocol):
     overseas_provider: str
     overseas_sandbox: bool
@@ -66,10 +84,14 @@ _LIVE_API_BASE = "https://api-m.paypal.com"
 _HTTP_TIMEOUT_SECONDS = 10.0
 _EVENT_ORDER_APPROVED = "CHECKOUT.ORDER.APPROVED"
 _EVENT_CAPTURE_COMPLETED = "PAYMENT.CAPTURE.COMPLETED"
+_ISSUE_ALREADY_CAPTURED = "ORDER_ALREADY_CAPTURED"
 _VERIFICATION_SUCCESS = "SUCCESS"
 
 
 def _product_name(order: Mapping[str, Any]) -> str:
+    item_name = order.get("item_name")
+    if isinstance(item_name, str) and item_name:
+        return item_name
     plan_code = str(order.get("plan_code", ""))
     if plan_code.endswith("yearly"):
         return "AIGC Radar Membership (Yearly)"
@@ -81,6 +103,10 @@ def _return_urls(order: Mapping[str, Any], return_url: str | None) -> tuple[str 
     if not return_url:
         return None, None
     order_no = str(order["order_no"])
+    if order.get("return_order_only"):
+        separator = "&" if "?" in return_url else "?"
+        url = f"{return_url}{separator}{urlencode({'order': order_no})}"
+        return url, url
     plan = "yearly" if str(order.get("plan_code", "")).endswith("yearly") else "monthly"
     separator = "&" if "?" in return_url else "?"
     url = f"{return_url}{separator}{urlencode({'order_no': order_no, 'plan': plan})}"
@@ -122,6 +148,25 @@ def _parse_paypal_time(value: object) -> datetime:
     if parsed.tzinfo is None:
         raise CallbackVerificationError("paypal create_time must carry a timezone")
     return parsed.astimezone(timezone.utc)
+
+
+def _first_issue(response: httpx.Response) -> str:
+    try:
+        details = response.json().get("details")
+        issue = details[0].get("issue") if isinstance(details, list) and details else ""
+    except (ValueError, AttributeError, TypeError):
+        return ""
+    return issue if isinstance(issue, str) else ""
+
+
+def _json_object(response: httpx.Response, error: str) -> dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ChannelUpstreamError(error) from exc
+    if not isinstance(payload, dict):
+        raise ChannelUpstreamError(error)
+    return payload
 
 
 class PayPalProvider:
@@ -196,9 +241,11 @@ class PayPalProvider:
             "description": _product_name(order),
         }
         application_context: dict[str, Any] = {
-            "brand_name": "AIGC Radar",
+            "brand_name": str(order.get("brand_name") or "AIGC Radar"),
             "user_action": "PAY_NOW",
         }
+        if order.get("digital_goods"):
+            application_context["shipping_preference"] = "NO_SHIPPING"
         if success_url is not None:
             application_context["return_url"] = success_url
         if cancel_url is not None:
@@ -252,6 +299,16 @@ class PayPalProvider:
         raw_body: bytes,
         headers: Mapping[str, str],
     ) -> VerifiedCallback | None:
+        event = self.verify_webhook_event(raw_body=raw_body, headers=headers)
+        return self.parse_verified_event(event)
+
+    def verify_webhook_event(
+        self,
+        *,
+        raw_body: bytes,
+        headers: Mapping[str, str],
+    ) -> dict[str, Any]:
+        """验签并返回事件原文；验签失败/报文非法抛 CallbackVerificationError。"""
         if not self.is_configured():
             raise ProviderNotConfiguredError("overseas_redirect(paypal) channel not configured")
         header_map = {key.lower(): value for key, value in headers.items()}
@@ -276,7 +333,10 @@ class PayPalProvider:
             cert_url=cert_url,
             auth_algo=auth_algo,
         )
+        return event
 
+    def parse_verified_event(self, event: Mapping[str, Any]) -> VerifiedCallback | None:
+        """已验签事件 → 会员订单落账语义（verify_and_parse_callback 的后半段）。"""
         event_type = event.get("event_type")
         resource = event.get("resource")
         if not isinstance(resource, dict):
@@ -396,6 +456,53 @@ class PayPalProvider:
             raise ChannelUpstreamError(
                 f"paypal capture rejected: HTTP {response.status_code}"
             )
+
+    def capture_order_details(self, *, paypal_order_id: str, request_id: str) -> dict[str, Any]:
+        """capture 并返回 PayPal 订单原文；已 capture（422 ORDER_ALREADY_CAPTURED）
+        改为查单返回，其余 422 业务错误抛 PayPalOrderNotCapturable。"""
+        if not self.is_configured():
+            raise ProviderNotConfiguredError("overseas_redirect(paypal) channel not configured")
+        try:
+            with self._client() as client:
+                token = self._oauth_token(client)
+                response = client.post(
+                    f"{self._api_base()}/v2/checkout/orders/{paypal_order_id}/capture",
+                    content=b"{}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Prefer": "return=representation",
+                        "PayPal-Request-Id": f"{request_id}-capture",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise ChannelUpstreamError(f"paypal capture request failed: {exc}") from exc
+        if response.status_code == 422:
+            issue = _first_issue(response)
+            if issue == _ISSUE_ALREADY_CAPTURED:
+                return self.get_order_details(paypal_order_id=paypal_order_id)
+            raise PayPalOrderNotCapturable(issue or "UNPROCESSABLE_ENTITY")
+        if response.status_code not in (200, 201):
+            raise ChannelUpstreamError(f"paypal capture rejected: HTTP {response.status_code}")
+        return _json_object(response, "paypal capture returned invalid payload")
+
+    def get_order_details(self, *, paypal_order_id: str) -> dict[str, Any]:
+        """GET /v2/checkout/orders/{id} 原文（含 payer、purchase_units[].payments）。"""
+        if not self.is_configured():
+            raise ProviderNotConfiguredError("overseas_redirect(paypal) channel not configured")
+        try:
+            with self._client() as client:
+                token = self._oauth_token(client)
+                response = client.get(
+                    f"{self._api_base()}/v2/checkout/orders/{paypal_order_id}",
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                )
+        except httpx.HTTPError as exc:
+            raise ChannelUpstreamError(f"paypal order query request failed: {exc}") from exc
+        if response.status_code != 200:
+            raise ChannelUpstreamError(f"paypal order query rejected: HTTP {response.status_code}")
+        return _json_object(response, "paypal order query returned invalid payload")
 
     def build_ack_response(self, *, ok: bool) -> Response:
         # PayPal 应答契约：2xx 即成功；非 2xx 会按渠道策略重发通知。

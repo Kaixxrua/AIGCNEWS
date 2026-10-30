@@ -62,6 +62,7 @@ from backend.app.services.payments.providers.base import (
     PaymentProvider,
     ProviderNotConfiguredError,
 )
+from backend.app.services.payments.providers.paypal import PayPalProvider
 from backend.app.services.payments.runtime_config import EffectivePaymentConfig, resolve_payment_config
 
 logger = logging.getLogger(__name__)
@@ -380,11 +381,26 @@ async def payment_callback(
 
     raw_body = await request.body()
     try:
-        verified = await asyncio.to_thread(
-            provider.verify_and_parse_callback,
-            raw_body=raw_body,
-            headers=dict(request.headers),
-        )
+        if isinstance(provider, PayPalProvider):
+            # 闪光工坊激活码订单共用 PayPal webhook：验签后先按 SD 单号/capture id
+            # 分流（routes_shinydesk），未认领的事件按原会员语义解析，行为不变。
+            from backend.app.api.routes_shinydesk import dispatch_paypal_event
+
+            event = await asyncio.to_thread(
+                provider.verify_webhook_event,
+                raw_body=raw_body,
+                headers=dict(request.headers),
+            )
+            shinydesk_ack = await dispatch_paypal_event(request, provider, event, error_events)
+            if shinydesk_ack is not None:
+                return shinydesk_ack
+            verified = await asyncio.to_thread(provider.parse_verified_event, event)
+        else:
+            verified = await asyncio.to_thread(
+                provider.verify_and_parse_callback,
+                raw_body=raw_body,
+                headers=dict(request.headers),
+            )
     except CallbackVerificationError:
         logger.warning("[Payments] callback verification failed: channel=%s", channel)
         return provider.build_ack_response(ok=False)
