@@ -13,6 +13,7 @@ import httpx
 from jose import JWTError, jwt
 
 from backend.app.services.auth.oauth.contracts import OAuthProviderConfig
+from backend.app.services.auth.oauth.providers._http import request_with_retry
 
 DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 EXPECTED_ISSUER = "https://accounts.google.com"
@@ -117,8 +118,8 @@ class GoogleOIDCProvider:
             token_endpoint = _https_endpoint(discovery.get("token_endpoint"))
             jwks_uri = _https_endpoint(discovery.get("jwks_uri"))
             try:
-                response = await client.post(
-                    token_endpoint,
+                response = await request_with_retry(
+                    client, "POST", token_endpoint,
                     data={
                         "code": code,
                         "client_id": self.config.client_id,
@@ -129,10 +130,12 @@ class GoogleOIDCProvider:
                     },
                 )
             except (httpx.HTTPError, TimeoutError) as exc:
-                raise GoogleOAuthError("Google token exchange failed") from exc
+                raise GoogleOAuthError(
+                    f"Google token exchange failed: stage=token error={type(exc).__name__}"
+                ) from exc
             payload = _response_json(response)
             if response.status_code >= 400 or not isinstance(payload, dict):
-                raise GoogleOAuthError("Google token exchange failed")
+                raise GoogleOAuthError(f"Google token exchange failed: stage=token status={response.status_code}")
             id_token = payload.get("id_token")
             if not isinstance(id_token, str) or not id_token:
                 raise GoogleOAuthError("Google response did not contain an identity token")
@@ -148,7 +151,7 @@ class GoogleOIDCProvider:
                     "Google token response lacked access_token; keys=%s",
                     sorted(payload.keys()),
                 )
-            jwks = await _get_json(client, jwks_uri)
+            jwks = await _get_json(client, jwks_uri, stage="jwks")
             # discovery 的 issuer 已在上方严格校验；id_token 的 iss 按 Google
             # 官方双形态白名单校验，不再依赖 discovery 单值透传。
             return _validate_id_token(
@@ -175,14 +178,16 @@ class _OwnedClient:
             await self.client.aclose()
 
 
-async def _get_json(client: httpx.AsyncClient, url: str) -> dict[str, Any]:
+async def _get_json(client: httpx.AsyncClient, url: str, *, stage: str = "discovery") -> dict[str, Any]:
     try:
-        response = await client.get(url)
+        response = await request_with_retry(client, "GET", url)
     except (httpx.HTTPError, TimeoutError) as exc:
-        raise GoogleOAuthError("Google OIDC discovery failed") from exc
+        raise GoogleOAuthError(
+            f"Google OIDC {stage} failed: stage={stage} error={type(exc).__name__}"
+        ) from exc
     payload = _response_json(response)
     if response.status_code >= 400 or not isinstance(payload, dict):
-        raise GoogleOAuthError("Google OIDC discovery failed")
+        raise GoogleOAuthError(f"Google OIDC {stage} failed: stage={stage} status={response.status_code}")
     return payload
 
 

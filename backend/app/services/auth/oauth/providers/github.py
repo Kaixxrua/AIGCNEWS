@@ -16,6 +16,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from backend.app.services.auth.oauth.providers._http import request_with_retry
+
 
 class GitHubOAuthError(RuntimeError):
     """Base error raised for an unusable GitHub OAuth exchange."""
@@ -122,6 +124,7 @@ class GitHubOAuthProvider:
         token = await self._request_json(
             "POST",
             self.config.token_endpoint,
+            stage="token",
             data={
                 "client_id": self.config.client_id,
                 "client_secret": self.config.client_secret,
@@ -136,25 +139,30 @@ class GitHubOAuthProvider:
             raise GitHubOAuthResponseError("GitHub token response was invalid")
 
         headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {access_token}"}
-        user = await self._request_json("GET", f"{self.config.api_base_url}/user", headers=headers)
+        user = await self._request_json("GET", f"{self.config.api_base_url}/user", stage="profile", headers=headers)
         emails = await self._request_json(
-            "GET", f"{self.config.api_base_url}/user/emails", headers=headers
+            "GET", f"{self.config.api_base_url}/user/emails", stage="emails", headers=headers
         )
         return self._profile(user, emails)
 
-    async def _request_json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
+    async def _request_json(self, method: str, url: str, *, stage: str, **kwargs: Any) -> dict[str, Any] | list[Any]:
         try:
             async with self._client_factory(timeout=self._TIMEOUT, follow_redirects=False) as client:
-                response = await client.request(method, url, **kwargs)
+                response = await request_with_retry(client, method, url, **kwargs)
         except (httpx.HTTPError, TimeoutError) as exc:
-            raise GitHubOAuthTransportError("GitHub OAuth request failed") from exc
+            # Exception text/URLs may contain credentials; include only its type.
+            raise GitHubOAuthTransportError(
+                f"GitHub OAuth request failed: stage={stage} error={type(exc).__name__}"
+            ) from exc
         content_length = response.headers.get("content-length")
         if content_length and (not content_length.isdigit() or int(content_length) > self._MAX_RESPONSE_BYTES):
             raise GitHubOAuthResponseError("GitHub OAuth response was too large")
         if len(response.content) > self._MAX_RESPONSE_BYTES:
             raise GitHubOAuthResponseError("GitHub OAuth response was too large")
         if response.status_code < 200 or response.status_code >= 300:
-            raise GitHubOAuthResponseError("GitHub OAuth upstream rejected the request")
+            raise GitHubOAuthResponseError(
+                f"GitHub OAuth upstream rejected the request: stage={stage} status={response.status_code}"
+            )
         try:
             payload = response.json()
         except (ValueError, UnicodeDecodeError) as exc:

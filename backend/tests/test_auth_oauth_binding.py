@@ -6,6 +6,7 @@ import asyncio
 import json
 from typing import Any
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -27,6 +28,8 @@ from backend.app.services.auth.oauth.handoff import (
     OAUTH_BIND_HANDOFF_PREFIX,
     OAuthHandoffStore,
 )
+from backend.app.services.auth.oauth.providers.github import GitHubOAuthTransportError
+from backend.app.services.auth.oauth.providers.google import GoogleOAuthError
 from backend.app.services.auth.oauth.runtime_config import EffectiveOAuthConfig
 from backend.app.services.auth.oauth.state import (
     OAUTH_BIND_STATE_PREFIX,
@@ -381,6 +384,38 @@ def test_callback_login_branch_unaffected(rig) -> None:
     assert "aigc_oauth_bind_handoff=" not in response.headers["set-cookie"]
     assert len(identities.resolve_calls) == 1
     assert identities.bind_calls == []
+
+
+@pytest.mark.parametrize("bind", [False, True])
+@pytest.mark.parametrize("provider,error,reason", [
+    ("github", GitHubOAuthTransportError, "GitHub OAuth request failed: stage=token error=ConnectError"),
+    ("google", GoogleOAuthError, "Google OIDC discovery failed: stage=discovery error=ConnectError"),
+])
+def test_callback_transport_failure_remains_private_and_consumes_state_once(
+    rig, monkeypatch, caplog, bind, provider, error, reason,
+):
+    client, redis, _, identities, adapter = rig
+    state = _seed_state(redis, bind=bind, provider=provider)
+    _browser_cookies(client)
+
+    async def fail(**kwargs):
+        adapter.exchange_calls.append(kwargs)
+        raise error(reason) from httpx.ConnectError("secret-code secret-token proxy-password")
+
+    monkeypatch.setattr(adapter, "exchange_code", fail)
+    monkeypatch.setattr(routes_oauth, "_adapter", lambda *args: adapter)
+    url = f"/api/auth/oauth/{provider}/callback?state={state}&code=secret-code"
+    response = client.get(url, follow_redirects=False)
+    assert response.status_code == 502
+    assert response.json() == {"detail": "oauth_callback_failed"}
+    assert "set-cookie" not in response.headers
+    assert redis.values == {}
+    assert identities.resolve_calls == identities.bind_calls == []
+    assert f"provider={provider} reason={reason}" in caplog.text
+    for secret in (state, "secret-code", "secret-token", "proxy-password"):
+        assert secret not in caplog.text
+    assert client.get(url, follow_redirects=False).status_code == 400
+    assert len(adapter.exchange_calls) == 1
 
 
 def test_callback_bind_owned_by_other_is_conflict_without_handoff(rig) -> None:

@@ -172,3 +172,59 @@ async def test_exchange_rejects_unknown_token_issuer() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(_exchange_handler(key, token))) as client:
         with pytest.raises(GoogleTokenValidationError, match="Invalid issuer"):
             await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_path,error", [
+    ("/.well-known/openid-configuration", httpx.ReadTimeout),
+    ("/token", httpx.ConnectError),
+    ("/token", httpx.ProxyError),
+    ("/keys", httpx.RemoteProtocolError),
+])
+async def test_exchange_recovers_without_replaying_completed_token_exchange(failure_path, error):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = jwt.encode(_google_claims(), key, algorithm="RS256", headers={"kid": "k"})
+    successful = _exchange_handler(key, token)
+    calls = {}
+
+    def handler(request):
+        path = request.url.path
+        calls[path] = calls.get(path, 0) + 1
+        if path == failure_path and calls[path] == 1:
+            raise error("private-upstream-detail", request=request)
+        return successful(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        identity = await _provider(client).exchange_code(code="c", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+    assert identity.subject == "s"
+    assert calls == {path: 2 if path == failure_path else 1 for path in ("/.well-known/openid-configuration", "/token", "/keys")}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_path,stage,error,attempts", [
+    ("/.well-known/openid-configuration", "discovery", httpx.ConnectError, 2),
+    ("/token", "token", httpx.ConnectTimeout, 2),
+    ("/token", "token", httpx.ProxyError, 2),
+    ("/token", "token", httpx.ReadTimeout, 1),
+    ("/token", "token", httpx.WriteTimeout, 1),
+    ("/token", "token", httpx.RemoteProtocolError, 1),
+    ("/keys", "jwks", httpx.ReadError, 2),
+])
+async def test_transport_failure_reports_safe_stage_and_error(failure_path, stage, error, attempts):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = jwt.encode(_google_claims(), key, algorithm="RS256", headers={"kid": "k"})
+    successful = _exchange_handler(key, token)
+    calls = []
+
+    def handler(request):
+        if request.url.path == failure_path:
+            calls.append(request)
+            raise error("secret-code secret-token proxy-password", request=request)
+        return successful(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(GoogleOAuthError) as caught:
+            await _provider(client).exchange_code(code="secret-code", redirect_uri="https://app.example/cb", code_verifier="v", nonce="n")
+    assert len(calls) == attempts
+    prefix = "Google token exchange failed" if stage == "token" else f"Google OIDC {stage} failed"
+    assert str(caught.value) == f"{prefix}: stage={stage} error={error.__name__}"

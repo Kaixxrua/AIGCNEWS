@@ -1,10 +1,11 @@
-"""Bounded JSON transport for the QQ and Linux DO OAuth adapters."""
+"""HTTP helpers for OAuth provider adapters."""
 from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
 from typing import Any
 
+import anyio
 import httpx
 
 _MAX_RESPONSE_BYTES = 1_048_576
@@ -13,6 +14,28 @@ _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 class OAuthUpstreamError(RuntimeError):
     """Only fixed, non-sensitive messages may cross the callback boundary."""
+
+
+async def request_with_retry(
+    client: httpx.AsyncClient, method: str, url: str, **kwargs: Any,
+) -> httpx.Response:
+    """Retry once without replaying a possibly consumed authorization code.
+
+    Connect/proxy setup failures occur before the request is sent. Read failures may be
+    retried only for GETs; a token POST may already have consumed its code.
+    Keep the supplied client's proxy, TLS, timeout and redirect policy.
+    """
+    try:
+        return await client.request(method, url, **kwargs)
+    except httpx.TransportError as exc:
+        before_send = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ProxyError))
+        safe_read = method == "GET" and isinstance(
+            exc, (httpx.ReadError, httpx.ReadTimeout, httpx.RemoteProtocolError),
+        )
+        if not (before_send or safe_read):
+            raise
+    await anyio.sleep(0.25)
+    return await client.request(method, url, **kwargs)
 
 
 @asynccontextmanager
