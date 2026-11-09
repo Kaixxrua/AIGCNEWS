@@ -103,9 +103,16 @@ def step_cache(path, identity):
 
 
 def verification_key(repository, sha, config, state, key):
-    # Full tree is conservative: even an unrelated source edit invalidates reuse.
-    # Commit messages/parents may change without invalidating identical content.
-    payload = [git(repository, 'rev-parse', sha + '^{tree}').decode().strip(),
+    # Only the three non-Python jobs can reuse checks across backend edits.
+    # Keep shared parity/fixtures, dependencies, configuration and every other
+    # path. Python/PG suites inspect cross-component contracts and keep the full
+    # tree. A changed workflow, runner or environment always invalidates reuse.
+    inputs = git(repository, 'rev-parse', sha + '^{tree}').decode().strip()
+    if key in {'mcp-go', 'compose-smoke', 'frontend-build'}:
+        inputs = {path: entry for path, entry in tree(repository, sha).items()
+                  if not (path.startswith('backend/app/') or
+                          re.fullmatch(r'backend/tests/test_[^/]+\.py', path))}
+    payload = [inputs,
                config, state['workflow_sha256'], state['controls'], key,
                hashlib.sha256(Path(__file__).read_bytes()).hexdigest()]
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()

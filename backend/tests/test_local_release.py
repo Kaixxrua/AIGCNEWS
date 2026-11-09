@@ -87,6 +87,69 @@ def test_build_checkpoint_rejects_unverified_image_reference(tmp_path):
     assert release.verified_images(path, 'exact') is None
 
 
+def test_backend_release_reuses_frontend_and_go_without_running_npm(tmp_path, monkeypatch):
+    import json
+    import shutil
+
+    import local_delivery as delivery
+    import local_release
+    import release_image_cache as cache
+
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[2] / 'scripts/release'))
+    import deploy_production
+    import publish_frontend_edges
+    sha = 'a' * 40
+    production = tmp_path / 'production'
+    control = production / '.aigcnews-deploy'
+    control.mkdir(parents=True)
+    (control / 'state.json').write_text(json.dumps({'active_release': 'b' * 40}))
+    for path in ('mcp-go/internal/uicatalog/data', 'frontend/.ui-previews/previews'):
+        (production / path).mkdir(parents=True)
+    (production / 'mcp-go/internal/uicatalog/data/catalog.json').write_text('{}')
+    config = {'state': str(tmp_path/'state'), 'production': str(production), 'bare': 'unused',
+              'runtime': str(Path(__file__).parents[2]/'scripts'), 'private_root': 'unused',
+              'private_release_id': 'test', 'private_descriptor_sha256': 'c' * 64}
+    db = delivery.database(config)
+    delivery.meta(db, 'release', {'sha': sha, 'status': 'deploying'})
+    db.close()
+    monkeypatch.setattr(local_release, 'deployment_environment', lambda config: None)
+    monkeypatch.setattr(delivery, 'git', lambda *args: sha)
+    monkeypatch.setattr(delivery, 'ancestor', lambda *args: True)
+    monkeypatch.setattr(cache, 'toolchain_identity', lambda: ['fixed'])
+    monkeypatch.setattr(cache, 'image_key', lambda checkout, service, config, toolchain: service)
+    images = {service: 'ghcr.io/kaixxrua/aigcnews/' + service + '@sha256:' + 'd' * 64
+              for service in local_release.IMAGE_SERVICES}
+    monkeypatch.setattr(cache, 'cached_image', lambda path, key, service:
+                        None if service == 'backend' else {'image': images[service], 'source_sha': 'b' * 40})
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append([str(arg) for arg in args])
+        if args[:2] == ['git', 'clone']:
+            shutil.copytree(production, args[-1])
+        if args[:3] == ['docker', 'buildx', 'build']:
+            Path(args[args.index('--metadata-file') + 1]).write_text(
+                json.dumps({'containerimage.digest': 'sha256:' + 'd' * 64}))
+
+    def deploy(root, release, **kwargs):
+        assert release.source_sha == sha
+        assert release.backend_image == images['backend']
+        assert release.mcp_image == images['mcp']
+        assert release.frontend_image == images['frontend']
+        return 'deployed'
+
+    monkeypatch.setattr(local_release, 'run', run)
+    monkeypatch.setattr(deploy_production, 'deploy', deploy)
+    monkeypatch.setattr(publish_frontend_edges, 'publish', lambda *args: 'published')
+    local_release.release(config, sha)
+    assert not any(args[0] == 'npm' for args in calls)
+    builds = [args for args in calls if args[:3] == ['docker', 'buildx', 'build']]
+    assert len(builds) == 1 and builds[0][-1] == 'backend'
+    assert len([args for args in calls if args[:2] == ['docker', 'tag']]) == 2
+    checkpoint = json.loads((Path(config['state'])/'releases'/sha/'verified-images.json').read_text())
+    assert checkpoint['reused_from'] == {'mcp': 'b' * 40, 'frontend': 'b' * 40}
+
+
 def test_release_rejects_unselected_sha_before_build(tmp_path, monkeypatch):
     import local_delivery as delivery
     import local_release

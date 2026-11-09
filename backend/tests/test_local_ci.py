@@ -743,6 +743,36 @@ def test_changed_source_invalidates_preflight(tmp_path, repository, monkeypatch)
     assert calls.count('launch') == 5
 
 
+@pytest.mark.parametrize('path,reused', [
+    ('backend/app/api/routes_example.py', 3),
+    ('backend/tests/test_example.py', 3),
+    ('backend/tests/parity/corpus/tools.jsonl', 0),
+    ('backend/tests/fixtures/document_search_intent_vectors.json', 0),
+    ('backend/requirements.lock', 0),
+    ('frontend/src/example.ts', 0),
+    ('mcp-go/internal/example.go', 0),
+    ('scripts/manage_main_stack.sh', 0),
+])
+def test_backend_edit_reuses_only_independent_jobs(tmp_path, repository, monkeypatch, path, reused):
+    cfg, calls, output = mocked_execution(tmp_path, repository, monkeypatch)
+    cfg['verification_environment_digest'] = 'a' * 64
+    first = cfg['baseline_sha']
+    assert ci.execute(repository, first, output, cfg) == 0
+    target = repository / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('changed\n')
+    second = commit(repository)
+    calls.clear()
+    assert ci.execute(repository, second, output, cfg) == 0
+    assert calls.count('launch') == 5 - reused
+    receipt = json.loads(output.read_text())
+    assert receipt['sha'] == second
+    inherited = [row for row in receipt['checks'] if row.get('reused_from')]
+    assert len(inherited) == reused
+    assert all(row['reused_from']['sha'] == first for row in inherited)
+    assert not any(row['id'] in {'backend-tests', 'postgres-integration'} for row in inherited)
+
+
 def test_expired_failed_or_public_cache_never_reused(tmp_path):
     p = tmp_path / 'receipt.json'
     value = {'key': 'key', 'at': ci.time.time(), 'check': {
@@ -769,7 +799,8 @@ def test_hook_clears_git_selectors_before_tests(tmp_path):
     env = dict(clean, GIT_DIR=str(repo / '.git'), GIT_WORK_TREE=str(repo),
                GIT_INDEX_FILE=str(repo / '.git/index'))
     script = block + '\npython3 -c "import os; assert not any(k in os.environ for k in (\'GIT_DIR\', \'GIT_WORK_TREE\', \'GIT_INDEX_FILE\'))"'
-    subprocess.run(['bash', '-euc', script], cwd=repo, env=env, check=True)
+    # Exercise the hook snippet independently of host shell startup files.
+    subprocess.run(['bash', '--noprofile', '--norc', '-euc', script], cwd=repo, env=env, check=True)
 
 
 def test_staged_preflight_does_not_move_branch_or_include_unstaged_changes(repository):
