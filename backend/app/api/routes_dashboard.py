@@ -25,6 +25,7 @@ from backend.app.api.dependencies import (
     get_rank_snapshot_repository,
     get_user_account_repository,
 )
+from backend.app.core.client_ip import client_ip_from_request
 from backend.app.core.postgres_database import postgres_database
 from backend.app.monitoring import live_stats_broadcaster
 from backend.app.repositories.document_repository import (
@@ -889,7 +890,8 @@ async def record_site_visit(
 
     浏览器首次日期及每日记录持久化，用于跨日回访。Redis set 仍负责原有计数的
     日内去重；只有首次出现的 ID 才累加站点总数，
-    并按 User-Agent 归类平台桶。爬虫、无头浏览器等自动化访问只记平台维度的
+    并按 User-Agent 与可信客户端 IP 归类平台桶。爬虫、无头浏览器、已核实的
+    云网段浏览器脚本等自动化访问只记平台维度的
     bot 桶，不计入访问量，也不触发实时统计推送。Redis 不可用时 fail closed，
     避免故障期间把重复请求膨胀成访客数。
 
@@ -898,7 +900,9 @@ async def record_site_visit(
     自动化访问不记；落地记录失败只写日志，不影响访问计数与响应。
     """
     day = cst_today()
-    platform = classify_platform(request.headers.get("user-agent"))
+    platform = classify_platform(
+        request.headers.get("user-agent"), client_ip=client_ip_from_request(request)
+    )
     # Record even a Redis duplicate: this allows retries and an existing
     # browser's first report after rollout to establish durable history.
     if platform != AUTOMATED_PLATFORM:
