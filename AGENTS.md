@@ -11,6 +11,7 @@
 - 提交前运行 `scripts/dev_session.py check`；工具拒绝 `main`、detached HEAD、ghost parent、复用的分支/worktree，以及 dirty/staged/untracked 状态；工具不会执行 reset、stash、rebase 或清理。
 - 成功提交后，由 tracked `.githooks/post-commit` 自动 push 当前会话分支。不得使用 `--force`、`--force-with-lease` 或任何等效强制推送。
 - 启用本地交付模式时，`origin` 为本机权威，GitHub 只作异步镜像；本地提交入队、精确 SHA CI、串行落地和生产部署按 `docs/local-delivery.md` 自动完成，不等待 GitHub PR 或 API。未启用时，自动推送后的建 PR、精确 SHA 自动合并和生产部署遵循 `docs/automatic-delivery.md` 的既定流水线，无需逐次授权；流水线外手工创建/合并 PR、直接 landing 或部署仍需独立授权。
+- 小改动采用自动化的简化流程：按可信输入指纹复用未变化的检查、镜像与静态站点，具体边界见 `docs/local-delivery.md`；不得把缺少成功证据的步骤标记为通过。权限、迁移、健康检查和回滚继续保留。
 - 不要为 Codex 新生成的提交添加 Claude 专属的 `Co-Authored-By` trailer，也不要删除历史提交中真实存在的 attribution。
 
 ## 重构执行

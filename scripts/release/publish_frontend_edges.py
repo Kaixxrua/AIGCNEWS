@@ -108,12 +108,15 @@ def publish(root: Path, source_sha: str, *, dry_run: bool = False) -> str:
             state_path = control / "edge-state.json"
             previous = json.loads(state_path.read_text()) if state_path.exists() else {}
             state = {"source_sha": source_sha, "frontend_image": image, "sites": {}, "site_releases": {}}
-            if previous.get("source_sha") == source_sha and previous.get("frontend_image") == image:
+            # A backend-only release can carry the very same frontend artifact.
+            # Each site still needs its remote identity, manifest and smoke check.
+            if previous.get("frontend_image") == image:
                 state["sites"] = previous.get("sites", {})
                 state["site_releases"] = previous.get("site_releases", {})
             for site in config["sites"]:
                 if not dry_run and state['sites'].get(site) == 'published' and confirmed_site(
                         controller, inventory, site, artifact, state['site_releases'].get(site)):
+                    write_state(state_path, state)
                     continue
                 args = [sys.executable, str(controller), "--inventory", str(inventory_path),
                         "plan" if dry_run else "publish", site, "--skip-build"]

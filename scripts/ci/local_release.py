@@ -245,16 +245,30 @@ def release(config,sha):
                             '--expected-release-id',config['private_release_id'],
                             '--expected-descriptor-sha256',config['private_descriptor_sha256']])
                 normalize_build_permissions(checkout)
+                from release_image_cache import cached_image, image_key, record_image, toolchain_identity
+                toolchain = toolchain_identity()
+                keys = {service: image_key(checkout, service, config, toolchain) for service in IMAGE_SERVICES}
+                cache = Path(config['state']) / 'verified-component-images'
+                prior = {service: cached_image(cache / (key + '.json'), key, service) if key else None
+                         for service, key in keys.items()}
                 env=dict(os.environ,UI_LIBRARY_DATA_ROOT=str(checkout/'frontend/.ui-library-data'),
                          npm_config_cache=str(Path(config['state'])/'dependency-cache/npm'),
                          npm_config_prefer_offline='true', npm_config_audit='false', npm_config_fetch_timeout='30000')
-                run(['npm','ci'],cwd=checkout/'frontend',env=env)
-                run(['npm','run','typecheck'],cwd=checkout/'frontend',env=env)
-                run(['npm','run','test:unit','--','src/components/contact/GodotContactScene.test.ts',
-                     'src/views/ContactPageView.test.ts'],cwd=checkout/'frontend',env=env)
+                if not prior['frontend']:
+                    run(['npm','ci'],cwd=checkout/'frontend',env=env)
+                    run(['npm','run','typecheck'],cwd=checkout/'frontend',env=env)
+                    run(['npm','run','test:unit','--','src/components/contact/GodotContactScene.test.ts',
+                         'src/views/ContactPageView.test.ts'],cwd=checkout/'frontend',env=env)
                 images={}
                 for service,context,dockerfile in [('backend','backend','backend/Dockerfile'),('mcp','.','mcp-go/Dockerfile'),('frontend','frontend','frontend/Dockerfile')]:
                     repository='ghcr.io/kaixxrua/aigcnews/'+service
+                    if prior[service]:
+                        images[service] = prior[service]['image']
+                        # Keep a tag for this release so ordinary retention also
+                        # protects images inherited from an older source SHA.
+                        run(['docker', 'tag', images[service], repository + ':' + sha])
+                        print(f"Reused {service} image from {prior[service]['source_sha']}", flush=True)
+                        continue
                     metadata=Path(name)/(service+'.json')
                     args=['docker','buildx','build','--builder','default','--load','--provenance=false',
                           '--metadata-file',metadata,'--tag',repository+':'+sha,'--file',dockerfile]
@@ -265,8 +279,11 @@ def release(config,sha):
                     ref=repository+'@'+digest
                     run(['docker','image','inspect',ref])
                     images[service]=ref
+                    if keys[service]:
+                        record_image(cache / (keys[service] + '.json'), keys[service], ref, sha)
                 from local_delivery import atomic
-                atomic(checkpoint, {'identity': identity, 'images': images})
+                atomic(checkpoint, {'identity': identity, 'images': images,
+                                    'reused_from': {service: proof['source_sha'] for service, proof in prior.items() if proof}})
         with stage(config, sha, 'deploy'):
             result=deploy(production,Release(sha,images['backend'],images['mcp'],images['frontend'],ui_catalog), pinned=True)
             if result not in ('deployed','already-active'):raise RuntimeError('candidate superseded at deploy lock')

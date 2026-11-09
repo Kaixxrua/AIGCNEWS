@@ -99,10 +99,11 @@ def test_dry_run_never_publishes_or_updates_edge_state(tmp_path):
     assert not any("publish" in args for args in calls)
 
 
-def test_retry_skips_only_reconfirmed_published_site(tmp_path, monkeypatch):
+@pytest.mark.parametrize('previous_sha', [SHA, 'd' * 40])
+def test_retry_skips_only_reconfirmed_published_site(tmp_path, monkeypatch, previous_sha):
     control, _ = configure(tmp_path)
     (control/'edge-state.json').write_text(json.dumps({
-        'source_sha': SHA, 'frontend_image': IMAGE, 'sites': {'app': 'published'},
+        'source_sha': previous_sha, 'frontend_image': IMAGE, 'sites': {'app': 'published'},
         'site_releases': {'app': '20260919T081804368945Z-c072f8734541'},
     }))
     calls = []
@@ -116,6 +117,7 @@ def test_retry_skips_only_reconfirmed_published_site(tmp_path, monkeypatch):
     monkeypatch.setattr(edge, 'confirmed_site', lambda *args: True)
     assert edge.publish(tmp_path, SHA) == 'published'
     assert not any('publish' in args for args in calls)
+    assert json.loads((control / 'edge-state.json').read_text())['source_sha'] == SHA
     monkeypatch.setattr(edge, 'confirmed_site', lambda *args: False)
     with pytest.raises(edge.DeployError, match='confirmed exact artifact'):
         edge.publish(tmp_path, SHA)
