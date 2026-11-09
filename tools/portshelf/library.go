@@ -36,8 +36,9 @@ type Snapshot struct {
 }
 
 type diskState struct {
-	Games     []Game              `json:"games"`
-	Snapshots map[string]Snapshot `json:"snapshots"`
+	Games        []Game                 `json:"games"`
+	Snapshots    map[string]Snapshot    `json:"snapshots"`
+	Descriptions map[string]Description `json:"descriptions,omitempty"`
 }
 
 type Library struct {
@@ -72,10 +73,11 @@ func newLibrary(root string) (*Library, error) {
 			return nil, readErr
 		}
 		var saved diskState
-		if len(b) > maxLibraryBytes || json.Unmarshal(b, &saved) != nil || len(saved.Games) > 500 {
+		if len(b) > maxLibraryBytes || json.Unmarshal(b, &saved) != nil {
 			return nil, errors.New("游戏库记录损坏，请先备份 library.json 后再恢复")
 		}
 		l.state.Games = saved.Games
+		l.state.Descriptions = saved.Descriptions
 		if l.state.Snapshots == nil {
 			l.state.Snapshots = map[string]Snapshot{}
 		}
@@ -112,6 +114,15 @@ func newLibrary(root string) (*Library, error) {
 		clean[strings.ToLower(valid)] = snapshot
 	}
 	l.state.Snapshots = clean
+	descriptions := map[string]Description{}
+	for key, item := range l.state.Descriptions {
+		repo, err := parseRepo(item.Repo)
+		if err == nil && strings.EqualFold(key, repo) && readyDescription(item) {
+			item.Error, item.RetryAfter = "", 0
+			descriptions[strings.ToLower(repo)] = item
+		}
+	}
+	l.state.Descriptions = descriptions
 	return l, nil
 }
 
@@ -187,9 +198,12 @@ func cloneGame(game Game) Game {
 }
 
 func cloneState(state diskState) diskState {
-	next := diskState{Games: make([]Game, len(state.Games)), Snapshots: make(map[string]Snapshot, len(state.Snapshots))}
+	next := diskState{Games: make([]Game, len(state.Games)), Snapshots: make(map[string]Snapshot, len(state.Snapshots)), Descriptions: make(map[string]Description, len(state.Descriptions))}
 	for i, game := range state.Games {
 		next.Games[i] = cloneGame(game)
+	}
+	for repo, description := range state.Descriptions {
+		next.Descriptions[repo] = description
 	}
 	for repo, snapshot := range state.Snapshots {
 		next.Snapshots[repo] = cloneSnapshot(snapshot)
@@ -203,24 +217,51 @@ func (l *Library) snapshot() diskState {
 	return cloneState(l.state)
 }
 
+type libraryEntry struct {
+	Game     Game
+	Snapshot Snapshot
+}
+
 func (l *Library) add(game Game, snapshot Snapshot) error {
-	if err := validateGame(&game); err != nil {
-		return err
+	_, _, err := l.addBatch([]libraryEntry{{Game: game, Snapshot: snapshot}})
+	return err
+}
+
+// All additions are persisted in one replacement. A failed save publishes none.
+func (l *Library) addBatch(entries []libraryEntry) (added, skipped []string, err error) {
+	prepared := make([]libraryEntry, len(entries))
+	for i, entry := range entries {
+		if err := validateGame(&entry.Game); err != nil {
+			return nil, nil, err
+		}
+		prepared[i] = libraryEntry{Game: cloneGame(entry.Game), Snapshot: cloneSnapshot(entry.Snapshot)}
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, existing := range l.state.Games {
-		if strings.EqualFold(existing.Repo, game.Repo) {
-			return nil
-		}
-	}
-	if len(l.state.Games) >= 500 {
-		return errors.New("游戏库最多添加 500 个自定义项目")
-	}
+	added, skipped = []string{}, []string{}
 	next := cloneState(l.state)
-	next.Games = append(next.Games, cloneGame(game))
-	next.Snapshots[strings.ToLower(game.Repo)] = cloneSnapshot(snapshot)
-	return l.save(next)
+	known := map[string]string{}
+	for _, game := range next.Games {
+		known[strings.ToLower(game.Repo)] = game.Repo
+	}
+	for _, entry := range prepared {
+		key := strings.ToLower(entry.Game.Repo)
+		if existing, ok := known[key]; ok {
+			skipped = append(skipped, existing)
+			continue
+		}
+		known[key] = entry.Game.Repo
+		next.Games = append(next.Games, entry.Game)
+		next.Snapshots[key] = entry.Snapshot
+		added = append(added, entry.Game.Repo)
+	}
+	if len(added) == 0 {
+		return added, skipped, nil
+	}
+	if err := l.save(next); err != nil {
+		return []string{}, skipped, err
+	}
+	return added, skipped, nil
 }
 
 func (l *Library) updateSnapshot(repo string, snapshot Snapshot) error {
@@ -228,5 +269,26 @@ func (l *Library) updateSnapshot(repo string, snapshot Snapshot) error {
 	defer l.mu.Unlock()
 	next := cloneState(l.state)
 	next.Snapshots[strings.ToLower(repo)] = cloneSnapshot(snapshot)
+	return l.save(next)
+}
+
+// Cache only verified ready text; pending/failed results never erase a good copy.
+func (l *Library) saveDescriptions(items []Description) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	next := cloneState(l.state)
+	changed := false
+	for _, item := range items {
+		repo, err := parseRepo(item.Repo)
+		if err != nil || !readyDescription(item) {
+			continue
+		}
+		item.Repo, item.Error, item.RetryAfter = repo, "", 0
+		next.Descriptions[strings.ToLower(repo)] = item
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
 	return l.save(next)
 }

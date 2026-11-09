@@ -4,8 +4,11 @@
   const $ = (id) => document.getElementById(id);
   const state = {
     games: [], snapshots: {}, category: "all", query: "", sort: "stars", view: "grid", minStars: null, maxStars: null,
-    page: "library", hasToken: false, refreshing: false, polling: null, pollBusy: false,
+    page: "library", hasToken: false, hasAigcToken: false, descriptions: {}, refreshing: false, polling: null, pollBusy: false,
     selected: null, allAssets: false, searchResults: [], searchBusy: false, stopped: false,
+    discovery: { range: null, nextPage: 1, page: 0, hasMore: false, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 },
+    batch: null, singleAdds: new Set(), manualAddBusy: false, confirmedGames: new Map(),
+    descriptionRequests: new Set(), descriptionReadQueue: new Set(), descriptionReadBusy: false, descriptionPollTargets: new Map(), descriptionPollTimer: null, descriptionPollAfter: 3, descriptionBatch: null,
     loaded: false, toastTimer: null, activeRefresh: null,
   };
   const numberFormat = new Intl.NumberFormat("zh-CN");
@@ -29,6 +32,300 @@
     if (className) node.className = className;
     if (content !== undefined && content !== null) node.textContent = String(content);
     return node;
+  }
+
+  function descriptionOf(game) {
+    const record = state.descriptions[repositoryKey(game.repo)];
+    const enriched = record?.status === "ready" && record.descriptionZh ? { ...game, descriptionZh: record.descriptionZh, descriptionSource: "aigcnews" } : game;
+    try {
+      const description = globalThis.PortShelfDescriptions?.describe(enriched);
+      if (description && typeof description.text === "string" && description.text.trim()) {
+        return { text: description.text, source: description.source, original: typeof description.original === "string" ? description.original : "" };
+      }
+    } catch (_) { /* The directory remains usable if description enrichment is unavailable. */ }
+    if (enriched.descriptionZh) return { text: enriched.descriptionZh, source: "aigcnews", original: typeof game.description === "string" ? game.description : "" };
+    const original = typeof game.description === "string" ? game.description : "";
+    if (/[\u3400-\u9fff]/.test(original)) return { text: original, source: "upstream", original: "" };
+    return { text: "中文简介待补充，可查看上游项目了解游戏内容。", source: "unknown", original };
+  }
+
+  function descriptionSource(description) {
+    if (description.source === "aigcnews") return "AIGCNEWS 中文简介";
+    if (description.source === "summary") return "按上游信息整理";
+    if (description.source === "unknown") return "信息待补充";
+    return "";
+  }
+
+  function descriptionNodes(game, className, showOriginal = false) {
+    const description = descriptionOf(game);
+    const nodes = [element("p", className, description.text)];
+    const source = descriptionSource(description);
+    if (source) nodes.push(element("span", "description-source", source));
+    const record = state.descriptions[repositoryKey(game.repo)];
+    if (record?.status === "ready" && record.error) nodes.push(element("span", "description-error", "暂用已缓存的中文简介：" + record.error));
+    if (showOriginal && description.original.trim() && description.original.trim() !== description.text.trim()) {
+      const original = element("details", "original-description");
+      original.append(element("summary", "", "查看上游原文"), element("p", "", description.original));
+      nodes.push(original);
+    }
+    const control = descriptionControl(game);
+    if (control) nodes.push(control);
+    return nodes;
+  }
+
+  function repositoryKey(repo) { return String(repo || "").toLowerCase(); }
+  function isInLibrary(repo) { return state.games.some((game) => repositoryKey(game.repo) === repositoryKey(repo)); }
+
+  function rememberGames(repos) {
+    const candidates = new Map(state.searchResults.map((game) => [repositoryKey(game.repo), game]));
+    const known = new Set(state.games.map((game) => repositoryKey(game.repo)));
+    for (const repo of repos) {
+      const key = repositoryKey(repo);
+      const game = candidates.get(key);
+      if (!game) continue;
+      state.confirmedGames.set(key, game);
+      if (!known.has(key)) { state.games.push(game); known.add(key); }
+    }
+  }
+
+  function needsDescription(game) {
+    const record = state.descriptions[repositoryKey(game.repo)];
+    if (record?.status === "ready" && record.descriptionZh) return false;
+    return descriptionOf(game).source === "unknown";
+  }
+
+  function descriptionControl(game, compact = false) {
+    if (!needsDescription(game)) return null;
+    const key = repositoryKey(game.repo);
+    const record = state.descriptions[key];
+    const pending = record?.status === "pending";
+    const requesting = state.descriptionRequests.has(key);
+    const wrapper = element("span", "description-control" + (compact ? " compact" : ""));
+    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : record?.status === "failed" ? "重试中文简介" : "生成中文简介");
+    button.type = "button";
+    button.dataset.descriptionRepo = key;
+    button.disabled = requesting || Boolean(state.descriptionBatch?.running);
+    if (pending) wrapper.append(element("span", "description-pending", "中文简介生成中"));
+    button.addEventListener("click", () => {
+      if (state.descriptionRequests.has(key) || state.descriptionBatch?.running) return;
+      if (pending) { queueDescriptionRead([game.repo], true); return; }
+      if (!state.hasAigcToken) { openAigcSettings(); return; }
+      generateDescription(game);
+    });
+    wrapper.append(button);
+    if (!compact && record?.error) wrapper.append(element("span", "description-error", record.error));
+    return wrapper;
+  }
+
+  function descriptionNotice(message) {
+    if (state.stopped) return;
+    $("description-notice").textContent = message;
+    $("description-notice").hidden = !message;
+  }
+
+  function descriptionError(error) {
+    const explanations = { 401: "请设置或更新 AIGCNEWS MCP Token。", 403: "此 AIGCNEWS Token 暂无中文简介生成权限。", 429: "AIGCNEWS 额度或请求频率已达限制，已停止后续提交。", 404: "AIGCNEWS 中文简介服务暂未开放，请稍后重试。", 503: "AIGCNEWS 中文简介服务暂不可用，请稍后重试。" };
+    return (explanations[error.status] || "") + (error.message || "中文简介请求未完成，请稍后重试。");
+  }
+
+  function openAigcSettings() {
+    showError("aigc-token-error", "请先设置独立的 AIGCNEWS MCP Token，再生成中文简介。");
+    $("aigc-token-input").value = "";
+    renderStats();
+    if (!$("settings-dialog").open) $("settings-dialog").showModal();
+    $("aigc-token-input").focus();
+  }
+
+  function mergeDescriptions(items) {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item || !repoURL(item.repo) || !["ready", "pending", "missing", "failed"].includes(item.status)) continue;
+      const key = repositoryKey(item.repo);
+      const previous = state.descriptions[key];
+      if (previous?.status === "ready" && previous.descriptionZh && item.status !== "ready") {
+        if (item.error) state.descriptions[key] = { ...previous, error: String(item.error) };
+        continue;
+      }
+      if (previous?.status === "pending" && item.status === "missing") continue;
+      state.descriptions[key] = { ...item, descriptionZh: typeof item.descriptionZh === "string" ? item.descriptionZh : "", error: typeof item.error === "string" ? item.error : "" };
+      if (item.status === "pending") {
+        if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
+      } else state.descriptionPollTargets.delete(key);
+    }
+  }
+
+  function updateDescriptionViews() {
+    if (state.stopped) return;
+    if (state.loaded) renderGames();
+    if (state.selected) renderDetails();
+    if (state.discovery.range) renderSearchResults();
+    syncDiscoveryControls();
+  }
+
+  function queueDescriptionRead(repos, resetPoll = false) {
+    if (state.stopped) return;
+    for (const repo of repos) {
+      if (!repoURL(repo)) continue;
+      const key = repositoryKey(repo);
+      if (resetPoll && state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
+      state.descriptionReadQueue.add(key);
+    }
+    if (!state.descriptionReadBusy) drainDescriptionReads();
+  }
+
+  async function drainDescriptionReads() {
+    if (state.descriptionReadBusy || state.stopped) return;
+    state.descriptionReadBusy = true;
+    try {
+      while (state.descriptionReadQueue.size && !state.stopped) {
+        const repos = Array.from(state.descriptionReadQueue).slice(0, 50);
+        repos.forEach((repo) => state.descriptionReadQueue.delete(repo));
+        const result = await api("/api/descriptions?repos=" + encodeURIComponent(repos.join(",")), undefined, 30000);
+        if (state.stopped) return;
+        mergeDescriptions(result.items);
+        state.descriptionPollAfter = Math.min(15, Math.max(3, Number(result.pollAfter) || 3));
+        updateDescriptionViews();
+      }
+    } catch (error) {
+      state.descriptionReadQueue.clear();
+      descriptionNotice("已有中文简介读取未完成，不影响游戏浏览。" + descriptionError(error));
+    } finally {
+      state.descriptionReadBusy = false;
+      scheduleDescriptionPoll();
+    }
+  }
+
+  function scheduleDescriptionPoll() {
+    if (state.stopped || state.descriptionPollTimer || state.descriptionReadBusy) return;
+    const pending = Array.from(state.descriptionPollTargets).filter(([repo, attempts]) => attempts < 20 && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting);
+    if (!pending.length) {
+      if (Array.from(state.descriptionPollTargets.values()).some((attempts) => attempts >= 20)) descriptionNotice("部分中文简介仍在生成，自动核对已暂歇。可点击游戏旁的“核对生成进度”继续查看。");
+      return;
+    }
+    state.descriptionPollTimer = setTimeout(() => {
+      state.descriptionPollTimer = null;
+      const repos = [];
+      for (const [repo, attempts] of state.descriptionPollTargets) {
+        if (attempts < 20 && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting) { state.descriptionPollTargets.set(repo, attempts + 1); repos.push(repo); }
+      }
+      queueDescriptionRead(repos);
+    }, state.descriptionPollAfter * 1000);
+  }
+
+  async function requestDescription(game) {
+    const key = repositoryKey(game.repo);
+    state.descriptionRequests.add(key);
+    updateDescriptionViews();
+    try {
+      const result = await api("/api/descriptions", { repo: game.repo });
+      if (state.stopped) return;
+      mergeDescriptions(result.items);
+      state.descriptionPollAfter = Math.min(15, Math.max(3, Number(result.pollAfter) || 3));
+      const record = state.descriptions[key];
+      if (!record || record.status === "missing") throw new Error("服务未确认中文简介任务，请稍后重试。");
+      return record;
+    } catch (error) {
+      if (!state.stopped && state.descriptions[key]?.status !== "ready") state.descriptions[key] = { repo: game.repo, status: "failed", error: descriptionError(error) };
+      throw error;
+    } finally {
+      state.descriptionRequests.delete(key);
+      updateDescriptionViews();
+      scheduleDescriptionPoll();
+    }
+  }
+
+  async function generateDescription(game) {
+    if (state.stopped || state.descriptionRequests.has(repositoryKey(game.repo)) || state.descriptionBatch?.running) return;
+    if (!needsDescription(game)) return;
+    if (state.descriptions[repositoryKey(game.repo)]?.status === "pending") { queueDescriptionRead([game.repo], true); return; }
+    if (!state.hasAigcToken) { openAigcSettings(); return; }
+    try {
+      const record = await requestDescription(game);
+      if (state.stopped) return;
+      if (record.status === "failed") { descriptionNotice(record.error || "中文简介生成未完成，可稍后重试。"); notify(record.error || "中文简介生成未完成，可稍后重试。", true); }
+      else { descriptionNotice(""); notify(record.status === "ready" ? "AIGCNEWS 中文简介已更新。" : "已提交中文简介生成，完成后会自动显示。"); }
+    } catch (error) { descriptionNotice(descriptionError(error)); notify(descriptionError(error), true); }
+  }
+
+  function renderDescriptionProgress() {
+    const batch = state.descriptionBatch;
+    $("description-progress-panel").hidden = !batch;
+    if (!batch) return;
+    $("description-progress-label").textContent = (batch.running ? batch.stopRequested ? "等待当前提交结束" : "正在补全中文简介" : batch.stopRequested ? "已停止提交" : batch.interrupted ? "中文简介提交已中断" : "中文简介提交完成") + " · 已处理 " + batch.done + " / " + batch.total + " · 已接受 " + batch.accepted + " · 失败 " + batch.failed;
+    $("description-progress-note").textContent = batch.note || "已有中文或正在生成的项目自动跳过。生成由 AIGCNEWS 完成，列表会自动核对进度。";
+    $("descriptions-stop").hidden = !batch.running;
+    $("descriptions-stop").disabled = batch.stopRequested;
+  }
+
+  async function waitForQueuedDescription(game, batch) {
+    const key = repositoryKey(game.repo);
+    batch.waiting = key;
+    try {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        if (batch.stopRequested || state.stopped) return state.descriptions[key];
+        await new Promise((resolve) => setTimeout(resolve, state.descriptionPollAfter * 1000));
+        if (batch.stopRequested || state.stopped) return state.descriptions[key];
+        const result = await api("/api/descriptions?repos=" + encodeURIComponent(game.repo), undefined, 30000);
+        if (state.stopped) return state.descriptions[key];
+        mergeDescriptions(result.items);
+        const record = state.descriptions[key];
+        state.descriptionPollTargets.set(key, attempt + 1);
+        if (record?.status !== "pending") state.descriptionPollTargets.delete(key);
+        updateDescriptionViews();
+        if (record?.status !== "pending") return record;
+      }
+      return state.descriptions[key];
+    } finally {
+      batch.waiting = null;
+      scheduleDescriptionPoll();
+    }
+  }
+
+  async function fillDescriptions() {
+    if (state.descriptionBatch?.running || state.batch?.running || state.searchBusy || state.descriptionRequests.size || !state.searchResults.length || state.stopped) return;
+    if (!state.hasAigcToken) { openAigcSettings(); return; }
+    const pending = state.searchResults.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending");
+    const batch = { running: true, stopRequested: false, interrupted: false, waiting: null, total: pending.length, done: 0, accepted: 0, failed: 0, note: "" };
+    state.descriptionBatch = batch;
+    descriptionNotice("");
+    syncDiscoveryControls();
+    try {
+      for (const game of pending) {
+        if (batch.stopRequested || state.stopped) break;
+        if (!needsDescription(game) || state.descriptions[repositoryKey(game.repo)]?.status === "pending") { batch.done++; continue; }
+        let submitted = false;
+        try {
+          let record = await requestDescription(game);
+          if (state.stopped) return;
+          batch.done++;
+          submitted = true;
+          if (record.status === "ready" || record.status === "pending") batch.accepted++;
+          if (record.status === "pending") {
+            batch.note = "正在等待 " + game.repo + " 的中文简介完成，再提交下一个项目。";
+            renderDescriptionProgress();
+            record = await waitForQueuedDescription(game, batch);
+            if (state.stopped) return;
+          }
+          if (record?.status === "failed") batch.failed++;
+          if (record?.status === "pending" && !batch.stopRequested) {
+            batch.interrupted = true;
+            batch.note = game.repo + " 仍在生成，已暂停后续提交。可稍后核对进度，再补全剩余简介。";
+            break;
+          }
+          batch.note = "";
+        } catch (error) {
+          if (!submitted) { batch.done++; batch.failed++; }
+          batch.interrupted = true;
+          batch.note = descriptionError(error) + " 已接受的生成任务仍会继续，后续项目尚未提交。";
+          descriptionNotice(batch.note);
+          break;
+        }
+        renderDescriptionProgress();
+      }
+    } finally {
+      batch.running = false;
+      if (!state.stopped) updateDescriptionViews();
+    }
   }
 
   function githubURL(value) {
@@ -68,7 +365,7 @@
       });
       let data;
       try { data = await response.json(); } catch (_) { throw new Error("工具返回了无效资料，请重新打开 PortShelf。"); }
-      if (!response.ok) throw new Error(data.error || "请求失败，请稍后重试。");
+      if (!response.ok) { const error = new Error(data.error || "请求失败，请稍后重试。"); error.status = response.status; throw error; }
       return data;
     } catch (error) {
       if (error.name === "AbortError") throw new Error("GitHub 响应超时，请稍后重试。已缓存的资料仍可浏览。");
@@ -132,7 +429,8 @@
 
   function updateDiscoverRange() {
     const range = readStarsRange("discover");
-    $("discover-range-summary").textContent = range ? "当前范围：" + rangeLabel(range) : "请修正 Stars 范围后再查找。";
+    const changed = range && state.discovery.range && (range.min !== state.discovery.range.min || range.max !== state.discovery.range.max);
+    $("discover-range-summary").textContent = range ? (changed ? "待查找范围：" : "当前范围：") + rangeLabel(range) + (changed ? " · 点击查找后生效" : "") : "请修正 Stars 范围后再查找。";
     document.querySelectorAll("[data-min-stars]").forEach((button) => {
       const value = button.dataset.minStars === "" ? null : Number(button.dataset.minStars);
       const selected = Boolean(range && range.min === value && (value !== null || range.max === null));
@@ -221,6 +519,7 @@
     $("checked-label").textContent = checked.length ? "最近核对于 " + date(checked[0]) : "尚未核对 · 点击刷新资料";
     $("connection-label").textContent = state.hasToken ? "GitHub Token 已设置" : "GitHub 公开访问";
     $("token-state").textContent = state.hasToken ? "当前已使用 Token，仅保留在本次进程内存中。" : "当前使用 GitHub 公开访问，未设置 Token。";
+    $("aigc-token-state").textContent = state.hasAigcToken ? "已设置 AIGCNEWS MCP Token，仅在本次运行中保存。" : "尚未设置 AIGCNEWS MCP Token；仍可读取已有中文简介。";
   }
 
   function availability(game) {
@@ -241,6 +540,10 @@
     title.id = id;
     const tags = element("div", "card-tags");
     tags.append(tag(game.category || "其他项目"), availability(game));
+    const description = descriptionOf(game);
+    if (descriptionSource(description)) tags.append(tag(descriptionSource(description)));
+    const descriptionAction = descriptionControl(game, true);
+    if (descriptionAction) tags.append(descriptionAction);
     const bottom = element("div", "card-bottom");
     const download = element("button", "button button-subtle button-small", "查看下载 ↗");
     download.setAttribute("aria-label", "查看 " + (game.name || game.repo) + " 的下载");
@@ -249,7 +552,7 @@
     const record = snapshot(game);
     let checked = record?.starsCheckedAt ? "Stars 核对于 " + date(record.starsCheckedAt) : "Stars 尚未核对";
     if (record?.error && record?.starsCheckedAt) checked += " · 暂用缓存";
-    card.append(top, title, element("p", "card-subtitle", game.subtitle || game.repo), element("p", "card-description", game.description || "上游尚未填写简介，查看 GitHub 项目了解详情。"), tags, bottom, element("div", "card-checked", checked));
+    card.append(top, title, element("p", "card-subtitle", game.subtitle || game.repo), element("p", "card-description", description.text), tags, bottom, element("div", "card-checked", checked));
     return card;
   }
 
@@ -262,7 +565,7 @@
         const value = starValue(game);
         if (value === null || (state.minStars !== null && value < state.minStars) || (state.maxStars !== null && value > state.maxStars)) return false;
       }
-      return !query || [game.name, game.subtitle, game.description, game.repo, game.category].some((value) => String(value || "").toLocaleLowerCase().includes(query));
+      return !query || [game.name, game.subtitle, descriptionOf(game).text, game.description, game.repo, game.category].some((value) => String(value || "").toLocaleLowerCase().includes(query));
     });
     games.sort((a, b) => {
       if (state.sort === "stars") return (starValue(b) ?? -1) - (starValue(a) ?? -1) || String(a.name).localeCompare(String(b.name));
@@ -281,13 +584,22 @@
     const data = await api("/api/library");
     if (state.stopped) return;
     state.games = Array.isArray(data.games) ? data.games : [];
+    const known = new Set(state.games.map((game) => repositoryKey(game.repo)));
+    for (const [key, game] of state.confirmedGames) {
+      if (!known.has(key)) { state.games.push(game); known.add(key); }
+    }
     state.snapshots = data.snapshots && typeof data.snapshots === "object" ? data.snapshots : {};
     state.hasToken = Boolean(data.hasToken);
+    state.hasAigcToken = Boolean(data.hasAigcToken);
+    if (data.descriptions && typeof data.descriptions === "object") {
+      mergeDescriptions(Object.entries(data.descriptions).map(([repo, item]) => ({ ...item, repo, status: item.status || "ready" })));
+    }
     state.loaded = true;
     $("version-label").textContent = "PortShelf " + (data.version ? "v" + data.version : "");
     renderCategories(); renderStats(); renderGames();
     if (state.selected) renderDetails();
-    if (state.searchResults.length) renderSearchResults();
+    if (state.discovery.range) renderSearchResults();
+    syncDiscoveryControls();
   }
 
   function changePage(page) {
@@ -416,6 +728,7 @@
     const game = state.games.find((item) => item.repo.toLowerCase() === state.selected?.toLowerCase());
     if (!game) return;
     const container = $("detail-content");
+    const originalOpen = Boolean(container.querySelector(".original-description[open]"));
     const previousFocus = document.activeElement;
     const previousID = container.contains(previousFocus) ? previousFocus.id : "";
     container.replaceChildren();
@@ -428,7 +741,8 @@
     header.append(mark(game), heading);
     const meta = element("div", "detail-meta");
     meta.append(stars(game), element("span", "", game.category || "其他项目"), element("span", "", "项目更新 " + date(record?.pushedAt)));
-    container.append(header, element("p", "detail-description", game.description || "上游尚未填写简介，可在 GitHub 查看项目说明。"), meta);
+    container.append(header, ...descriptionNodes(game, "detail-description", true), meta);
+    if (originalOpen && container.querySelector(".original-description")) container.querySelector(".original-description").open = true;
     if (game.dataNote) {
       const note = element("div", "data-note");
       note.append(element("strong", "", "开始之前"), document.createTextNode(game.dataNote));
@@ -501,74 +815,258 @@
     $("detail-dialog").showModal();
     $("detail-dialog").scrollTop = 0;
     const record = snapshot(game);
+    queueDescriptionRead([game.repo]);
     if (!record?.releaseCheckedAt && !record?.error && !state.refreshing) refresh(game.repo);
   }
 
   function renderSearchResults() {
     if (state.stopped) return;
+    const expanded = new Set(Array.from($("discover-results").querySelectorAll(".original-description[open]")).map((node) => node.closest("[data-repository]")?.dataset.repository));
     $("discover-results").replaceChildren();
     if (!state.searchResults.length) {
-      const empty = element("div", "empty-state");
-      empty.append(element("h3", "", "这个 Stars 范围内没有找到项目"), element("p", "", "试试降低最低 Stars、提高最高 Stars，或选择“全部”后重新查找。"));
-      $("discover-results").append(empty);
+      if (!state.searchBusy && state.discovery.page > 0) {
+        const empty = element("div", "empty-state");
+        empty.append(element("h3", "", state.discovery.hasMore ? "已读取的候选页尚未筛选出游戏" : "当前查询未发现匹配的游戏项目"), element("p", "", state.discovery.hasMore ? "后面还有候选页，可以点击“加载更多”继续查找。" : "可调整 Stars 范围重新查找；上游候选数量不等于游戏数量。"));
+        $("discover-results").append(empty);
+      }
+      syncDiscoveryControls();
       return;
     }
     state.searchResults.forEach((game) => {
       const row = element("article", "search-result");
+      row.dataset.repository = repositoryKey(game.repo);
       const info = element("div", "search-result-info");
       const heading = element("h3");
       heading.append(externalLink(game.name || game.repo, repoURL(game.repo)));
-      info.append(heading, element("div", "repo-path", game.repo), element("p", "", game.description || "上游尚未填写简介，可前往 GitHub 查看项目详情。"));
+      info.append(heading, element("div", "repo-path", game.repo), ...descriptionNodes(game, "search-description", true));
+      if (expanded.has(repositoryKey(game.repo)) && info.querySelector("details")) info.querySelector("details").open = true;
       const actions = element("div", "search-result-actions");
       actions.append(stars(game, false));
-      const added = state.games.some((item) => item.repo.toLowerCase() === String(game.repo).toLowerCase());
+      const added = isInLibrary(game.repo);
       const button = element("button", "button " + (added ? "button-secondary" : "button-subtle") + " button-small", added ? "已加入 · 查看下载" : "＋ 加入目录");
+      button.dataset.resultRepo = repositoryKey(game.repo);
       button.addEventListener("click", async () => {
-        if (state.games.some((item) => item.repo.toLowerCase() === String(game.repo).toLowerCase())) {
-          openDetails(state.games.find((item) => item.repo.toLowerCase() === String(game.repo).toLowerCase()));
+        if (isInLibrary(game.repo)) {
+          openDetails(state.games.find((item) => repositoryKey(item.repo) === repositoryKey(game.repo)));
           return;
         }
-        busy(button, true, "正在添加…", "＋ 加入目录");
-        try { await api("/api/games", { repo: game.repo }); await loadLibrary(); notify("已将 " + (game.name || game.repo) + " 加入目录。"); }
-        catch (error) { notify(error.message, true); busy(button, false, "", "＋ 加入目录"); }
+        const key = repositoryKey(game.repo);
+        if (state.batch?.running || state.singleAdds.has(key)) return;
+        state.singleAdds.add(key);
+        syncDiscoveryControls();
+        try {
+          const addedGame = await api("/api/games", { repo: game.repo });
+          state.confirmedGames.set(repositoryKey(addedGame.repo), addedGame);
+          rememberGames([game.repo]);
+          await loadLibrary();
+          notify("已将 " + (game.name || game.repo) + " 加入目录。");
+        } catch (error) { notify(error.message, true); }
+        finally { state.singleAdds.delete(key); syncDiscoveryControls(); }
       });
       actions.append(button);
       row.append(mark(game), info, actions);
       $("discover-results").append(row);
     });
+    syncDiscoveryControls();
+  }
+
+  function syncDiscoveryControls() {
+    if (state.stopped) return;
+    const discovery = state.discovery;
+    const batchRunning = Boolean(state.batch?.running);
+    const descriptionRunning = Boolean(state.descriptionBatch?.running);
+    const discoveryLocked = batchRunning || descriptionRunning;
+    const known = new Set(state.games.map((game) => repositoryKey(game.repo)));
+    const pending = state.searchResults.filter((game) => !known.has(repositoryKey(game.repo))).length;
+    $("discover-submit").disabled = state.searchBusy || discoveryLocked;
+    $("discover-submit").textContent = state.searchBusy ? "正在查找…" : "按 Stars 查找";
+    $("discover-min-stars").disabled = discoveryLocked;
+    $("discover-max-stars").disabled = discoveryLocked;
+    document.querySelectorAll("[data-min-stars]").forEach((button) => { button.disabled = discoveryLocked; });
+    $("add-open").disabled = batchRunning;
+    $("add-submit").disabled = batchRunning || state.manualAddBusy;
+    $("discover-results").setAttribute("aria-busy", String(state.searchBusy));
+    $("batch-toolbar").hidden = state.searchResults.length === 0;
+    $("batch-selection-label").textContent = "当前已加载 " + state.searchResults.length + " 个游戏项目 · 待添加 " + pending + " 个";
+    $("batch-add").disabled = state.searchBusy || discoveryLocked || state.singleAdds.size > 0 || state.manualAddBusy || pending === 0;
+    $("batch-add").textContent = batchRunning ? "正在批量添加…" : pending === 0 ? "当前结果已全部加入" : "一键添加当前结果";
+    const missingDescriptions = state.searchResults.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending").length;
+    const pendingDescriptions = state.searchResults.some((game) => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
+    $("descriptions-fill").disabled = state.searchBusy || discoveryLocked || state.descriptionRequests.size > 0 || missingDescriptions === 0;
+    $("descriptions-fill").textContent = descriptionRunning ? "正在补全中文简介…" : missingDescriptions === 0 ? pendingDescriptions ? "中文简介生成中" : "当前中文简介已齐全" : "补全当前中文简介";
+    $("discover-results").querySelectorAll("[data-result-repo]").forEach((button) => {
+      const added = known.has(button.dataset.resultRepo);
+      const adding = state.singleAdds.has(button.dataset.resultRepo);
+      button.disabled = !added && (batchRunning || adding);
+      button.textContent = added ? "已加入 · 查看下载" : adding ? "正在添加…" : "＋ 加入目录";
+      button.classList.toggle("button-secondary", added);
+      button.classList.toggle("button-subtle", !added);
+    });
+    if (discovery.range) {
+      $("discover-count").textContent = "结果范围：" + rangeLabel(discovery.range) + " · 已发现 " + state.searchResults.length + " 个游戏项目";
+      const details = [];
+      if (discovery.page) details.push("已读取第 " + discovery.page + " 页候选");
+      if (discovery.page) details.push("上游候选 " + numberFormat.format(discovery.totalCandidates) + " 项，需进一步筛选");
+      if (state.searchBusy) details.push("正在加载第 " + discovery.nextPage + " 页…");
+      else if (discovery.error) details.push("第 " + discovery.nextPage + " 页未完成，可重试");
+      else if (discovery.page && discovery.lastAdded === 0 && discovery.hasMore) details.push("本页没有新增游戏，可继续加载");
+      else if (discovery.page && !discovery.hasMore) details.push("本次查询已无可读取的后续页");
+      $("discovery-page-summary").textContent = details.join(" · ");
+    }
+    $("discovery-pagination").hidden = !discovery.range;
+    $("discover-more").hidden = !discovery.hasMore && !discovery.error;
+    $("discover-more").disabled = state.searchBusy || discoveryLocked;
+    $("discover-more").textContent = state.searchBusy ? "正在加载…" : discovery.error ? "重试第 " + discovery.nextPage + " 页" : "加载更多";
+    showError("discover-error", discovery.error ? discovery.error + " 已加载的结果仍保留，点击下方按钮重试当前页。" : "");
+    const warnings = [];
+    if (discovery.incomplete) warnings.push("GitHub 本次返回的候选结果不完整，当前列表不能视为全部结果。");
+    if (discovery.limitReached) warnings.push("已达到 GitHub 对此查询开放的前 1,000 个候选限制。");
+    if (warnings.length) warnings.push("请收窄 Stars 范围继续查找。");
+    $("discover-limit-notice").textContent = warnings.join(" ");
+    $("discover-limit-notice").hidden = warnings.length === 0;
+    renderBatchProgress();
+    renderDescriptionProgress();
+  }
+
+  async function loadDiscoveryPage() {
+    if (state.searchBusy || state.batch?.running || state.descriptionBatch?.running || !state.discovery.range || state.stopped) return;
+    const discovery = state.discovery;
+    const page = discovery.nextPage;
+    if (!Number.isInteger(page) || page < 1) return;
+    const params = new URLSearchParams({ page: String(page) });
+    if (discovery.range.min !== null) params.set("minStars", String(discovery.range.min));
+    if (discovery.range.max !== null) params.set("maxStars", String(discovery.range.max));
+    state.searchBusy = true;
+    discovery.error = "";
+    let pageRepos = [];
+    syncDiscoveryControls();
+    try {
+      const result = await api("/api/discover?" + params.toString());
+      if (state.stopped) return;
+      if (!result || !Array.isArray(result.items) || result.page !== page || !Number.isInteger(result.nextPage) || result.nextPage < 0 || (result.hasMore && result.nextPage <= page)) {
+        throw new Error("分页结果无效，请重试当前页。");
+      }
+      const merged = new Map(state.searchResults.map((game) => [repositoryKey(game.repo), game]));
+      const before = merged.size;
+      for (const game of result.items) {
+        if (game && repoURL(game.repo)) merged.set(repositoryKey(game.repo), game);
+      }
+      state.searchResults = Array.from(merged.values()).sort((a, b) => (starValue(b, false) ?? -1) - (starValue(a, false) ?? -1) || repositoryKey(a.repo).localeCompare(repositoryKey(b.repo)));
+      discovery.lastAdded = merged.size - before;
+      discovery.page = page;
+      discovery.nextPage = result.hasMore ? result.nextPage : 0;
+      discovery.hasMore = Boolean(result.hasMore && result.nextPage > 0);
+      discovery.totalCandidates = Number.isFinite(result.totalCandidates) && result.totalCandidates >= 0 ? result.totalCandidates : 0;
+      discovery.incomplete = discovery.incomplete || Boolean(result.incomplete);
+      discovery.limitReached = discovery.limitReached || Boolean(result.limitReached);
+      pageRepos = result.items.filter((game) => game && repoURL(game.repo)).map((game) => game.repo);
+    } catch (error) {
+      if (!state.stopped) discovery.error = error.message;
+    } finally {
+      state.searchBusy = false;
+      if (!state.stopped) { renderSearchResults(); queueDescriptionRead(pageRepos); }
+    }
   }
 
   async function searchGitHub(event) {
     event.preventDefault();
-    if (state.searchBusy) return;
+    if (state.searchBusy || state.batch?.running || state.descriptionBatch?.running) return;
     const range = updateDiscoverRange();
     if (!range) {
       $("discover-form").querySelector('[aria-invalid="true"]')?.focus();
       return;
     }
-    const params = new URLSearchParams();
-    if (range.min !== null) params.set("minStars", String(range.min));
-    if (range.max !== null) params.set("maxStars", String(range.max));
-    state.searchBusy = true;
     state.searchResults = [];
-    busy($("discover-submit"), true, "正在查找…", "按 Stars 查找");
-    $("discover-count").textContent = rangeLabel(range) + " · 正在查找…";
+    state.discovery = { range: { ...range }, nextPage: 1, page: 0, hasMore: true, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 };
+    state.batch = null;
+    state.descriptionBatch = null;
+    updateDiscoverRange();
     $("discover-results").replaceChildren();
-    $("discover-results").setAttribute("aria-busy", "true");
+    await loadDiscoveryPage();
+  }
+
+  function renderBatchProgress() {
+    const batch = state.batch;
+    $("batch-progress-panel").hidden = !batch;
+    if (!batch) return;
+    let label = batch.running ? (batch.checking ? "正在核对已加入的项目" : batch.stopRequested ? "等待当前批次结束后停止" : "正在批量添加") : batch.stopRequested ? "已停止批量添加" : batch.interrupted ? "批量添加已中断" : "本次批量处理完成";
+    label += " · 已处理 " + batch.completed + " / " + batch.total + " · 新增 " + batch.added + " · 已存在 " + batch.skipped + " · 失败 " + batch.failed.length;
+    $("batch-progress-label").textContent = label;
+    $("batch-progress-meter").max = Math.max(1, batch.total);
+    $("batch-progress-meter").value = batch.completed;
+    $("batch-stop").hidden = !batch.running;
+    $("batch-stop").disabled = batch.stopRequested;
+    $("batch-stop").textContent = batch.stopRequested ? "等待本批结束…" : "停止添加";
+    $("batch-note").textContent = batch.note || "只添加当前已加载的结果，已有项目自动跳过；下载资料在打开游戏详情时核对。";
+    $("batch-failures").hidden = batch.failed.length === 0;
+    $("batch-failures-summary").textContent = "未能添加的 " + batch.failed.length + " 个项目（可再次添加重试）";
+    $("batch-failure-list").replaceChildren(...batch.failed.map((failure) => {
+      const item = element("li");
+      item.append(element("strong", "", failure.repo), element("span", "", failure.error));
+      return item;
+    }));
+  }
+
+  async function addCurrentResults() {
+    if (state.batch?.running || state.descriptionBatch?.running || state.searchBusy || state.singleAdds.size || state.manualAddBusy || !state.searchResults.length || state.stopped) return;
+    const batch = { running: true, checking: true, stopRequested: false, interrupted: false, total: 0, completed: 0, added: 0, skipped: 0, failed: [], note: "" };
+    state.batch = batch;
+    syncDiscoveryControls();
     try {
-      const results = await api("/api/search" + (params.size ? "?" + params.toString() : ""));
+      // A retry first reads persisted state, including successes from a lost response.
+      await loadLibrary();
       if (state.stopped) return;
-      state.searchResults = Array.isArray(results) ? results.slice().sort((a, b) => (starValue(b, false) ?? -1) - (starValue(a, false) ?? -1)).slice(0, 24) : [];
-      renderSearchResults();
-      $("discover-count").textContent = rangeLabel(range) + " · 找到 " + state.searchResults.length + " 个项目";
+      const pending = state.searchResults.filter((game) => !isInLibrary(game.repo)).map((game) => game.repo);
+      batch.total = pending.length;
+      batch.checking = false;
+      syncDiscoveryControls();
+      for (let index = 0; index < pending.length && !batch.stopRequested; index += 50) {
+        const repos = pending.slice(index, index + 50);
+        try {
+          const result = await api("/api/games/batch", { repos });
+          if (state.stopped) return;
+          if (!Array.isArray(result.added) || !Array.isArray(result.skipped) || !Array.isArray(result.failed)) throw new Error("批量返回结果无效，请重新核对目录后重试。");
+          const added = new Set(result.added.map(repositoryKey));
+          const skipped = new Set(result.skipped.map(repositoryKey));
+          const failed = new Map(result.failed.map((entry) => [repositoryKey(entry.repo), String(entry.error || "添加未完成，请重试。") ]));
+          const confirmed = [];
+          for (const repo of repos) {
+            const key = repositoryKey(repo);
+            if (added.has(key)) { batch.added++; confirmed.push(repo); }
+            else if (skipped.has(key)) { batch.skipped++; confirmed.push(repo); }
+            else batch.failed.push({ repo, error: failed.get(key) || "本次请求未确认添加结果，可重试。" });
+          }
+          rememberGames(confirmed);
+          batch.completed += repos.length;
+          renderCategories(); renderStats(); renderGames(); renderSearchResults();
+        } catch (error) {
+          if (state.stopped) return;
+          batch.failed.push(...repos.map((repo) => ({ repo, error: error.message })));
+          batch.completed += repos.length;
+          batch.interrupted = true;
+          batch.note = "本批请求未完成，已停止后续批次。已成功保存的项目会保留；再次添加前会先核对目录。";
+          break;
+        }
+      }
+      try {
+        await loadLibrary();
+        const recovered = batch.failed.filter((failure) => isInLibrary(failure.repo)).length;
+        batch.failed = batch.failed.filter((failure) => !isInLibrary(failure.repo));
+        batch.skipped += recovered;
+      } catch (error) {
+        batch.note = "已确认添加的项目已保留，但目录同步未完成：" + error.message;
+      }
+      if (!batch.note) {
+        const remaining = Math.max(0, batch.total - batch.completed);
+        batch.note = "已完成的添加已保存。" + (remaining ? "还有 " + remaining + " 个未处理项目，" : "") + (remaining || batch.failed.length ? "再次点击会只补充尚未加入的项目。" : "打开游戏详情时再核对 Windows 下载附件。");
+      }
     } catch (error) {
-      if (state.stopped) return;
-      $("discover-count").textContent = rangeLabel(range) + " · 查找未完成";
-      $("discover-results").replaceChildren(element("div", "notice error", error.message));
+      batch.interrupted = true;
+      batch.note = "无法核对当前目录，本次未发起批量添加：" + error.message;
     } finally {
-      state.searchBusy = false;
-      busy($("discover-submit"), false, "", "按 Stars 查找");
-      if ($("discover-results")) $("discover-results").setAttribute("aria-busy", "false");
+      batch.running = false;
+      batch.checking = false;
+      if (!state.stopped) { renderSearchResults(); syncDiscoveryControls(); }
     }
   }
 
@@ -603,20 +1101,36 @@
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
     }));
     $("add-open").addEventListener("click", () => { showError("add-error", ""); $("add-dialog").showModal(); $("repo-input").focus(); });
-    $("settings-open").addEventListener("click", () => { showError("token-error", ""); $("token-input").value = ""; renderStats(); $("settings-dialog").showModal(); });
-    $("settings-dialog").addEventListener("close", () => { $("token-input").value = ""; });
+    $("settings-open").addEventListener("click", () => { showError("token-error", ""); showError("aigc-token-error", ""); $("token-input").value = ""; $("aigc-token-input").value = ""; renderStats(); $("settings-dialog").showModal(); });
+    $("settings-dialog").addEventListener("close", () => { $("token-input").value = ""; $("aigc-token-input").value = ""; });
     $("quit-open").addEventListener("click", () => { showError("quit-error", ""); $("quit-dialog").showModal(); });
     $("discover-form").addEventListener("submit", searchGitHub);
+    $("discover-more").addEventListener("click", loadDiscoveryPage);
+    $("batch-add").addEventListener("click", addCurrentResults);
+    $("descriptions-fill").addEventListener("click", fillDescriptions);
+    $("descriptions-stop").addEventListener("click", () => {
+      if (!state.descriptionBatch?.running) return;
+      state.descriptionBatch.stopRequested = true;
+      renderDescriptionProgress();
+    });
+    $("batch-stop").addEventListener("click", () => {
+      if (!state.batch?.running) return;
+      state.batch.stopRequested = true;
+      renderBatchProgress();
+    });
     $("add-form").addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = $("add-submit");
-      if (button.disabled) return;
+      if (button.disabled || state.batch?.running) return;
       const repo = $("repo-input").value.trim();
       if (!repo) return;
       showError("add-error", "");
+      state.manualAddBusy = true;
       busy(button, true, "正在添加与核对…", "添加并核对资料");
+      syncDiscoveryControls();
       try {
         const game = await api("/api/games", { repo });
+        state.confirmedGames.set(repositoryKey(game.repo), game);
         await loadLibrary();
         if (state.stopped) return;
         $("add-dialog").close();
@@ -624,7 +1138,7 @@
         clearLibraryFilters();
         notify("已将 " + (game.name || game.repo || "项目") + " 加入目录。");
       } catch (error) { showError("add-error", error.message); }
-      finally { busy(button, false, "", "添加并核对资料"); }
+      finally { state.manualAddBusy = false; busy(button, false, "", "添加并核对资料"); syncDiscoveryControls(); }
     });
     $("token-form").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -642,12 +1156,30 @@
       } catch (error) { showError("token-error", error.message); }
       finally { busy(button, false, "", "保存设置"); }
     });
+    $("aigc-token-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = $("aigc-token-submit");
+      if (button.disabled) return;
+      showError("aigc-token-error", "");
+      busy(button, true, "保存中…", "保存 AIGCNEWS Token");
+      try {
+        const data = await api("/api/aigc-token", { token: $("aigc-token-input").value.trim() });
+        state.hasAigcToken = Boolean(data.hasAigcToken ?? data.hasToken);
+        $("aigc-token-input").value = "";
+        renderStats();
+        $("settings-dialog").close();
+        notify(state.hasAigcToken ? "AIGCNEWS MCP Token 已仅保存在本次运行内存中。" : "AIGCNEWS MCP Token 已清除。");
+        syncDiscoveryControls();
+      } catch (error) { showError("aigc-token-error", descriptionError(error)); }
+      finally { busy(button, false, "", "保存 AIGCNEWS Token"); }
+    });
     $("quit-confirm").addEventListener("click", async () => {
       busy($("quit-confirm"), true, "正在退出…", "退出工具");
       try {
         await api("/api/quit", {});
         state.stopped = true;
-        clearTimeout(state.polling); clearTimeout(state.toastTimer);
+        clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer);
+        state.descriptionReadQueue.clear(); state.descriptionPollTargets.clear();
         sessionToken = "";
         try { sessionStorage.removeItem("portshelf-session"); } catch (_) { /* Storage may be disabled. */ }
         $("quit-dialog").close();
@@ -677,6 +1209,7 @@
     }
     try {
       await loadLibrary();
+      queueDescriptionRead(state.games.filter(needsDescription).map((game) => game.repo));
       const status = await api("/api/status", undefined, 15000);
       if (status.running) { setRefreshState(true, status); schedulePoll(); }
     } catch (error) {

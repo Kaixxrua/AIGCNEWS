@@ -43,8 +43,9 @@ def main() -> None:
                 for path in root.glob(pattern):
                     if path.is_file():
                         shutil.copy2(path, source / path.name)
-            for directory in ("web", "third_party"):
-                shutil.copytree(root / directory, source / directory)
+            for directory in ("web", "third_party", "tests"):
+                if (root / directory).is_dir():
+                    shutil.copytree(root / directory, source / directory)
             target = output / f"{name}.zip"
             pending = output / f".{name}.zip.tmp"
             with zipfile.ZipFile(pending, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:

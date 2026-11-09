@@ -267,17 +267,35 @@ func isGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
 	return false
 }
 
-func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([]Game, error) {
-	query = strings.TrimSpace(query)
-	if len(query) > 180 {
-		return nil, errors.New("搜索关键词太长")
+type DiscoveryPage struct {
+	Items           []Game `json:"items"`
+	Page            int    `json:"page"`
+	NextPage        int    `json:"nextPage"`
+	HasMore         bool   `json:"hasMore"`
+	TotalCandidates int    `json:"totalCandidates"`
+	Incomplete      bool   `json:"incomplete"`
+	LimitReached    bool   `json:"limitReached"`
+}
+
+type githubSearchPage struct {
+	Items      []searchRepository `json:"items"`
+	Total      int                `json:"total_count"`
+	Incomplete bool               `json:"incomplete_results"`
+}
+
+func (g *GitHub) searchPage(ctx context.Context, query string, bounds starBounds, perPage, page int) (githubSearchPage, error) {
+	var result githubSearchPage
+	path := "/search/repositories?q=" + url.QueryEscape(query+" archived:false"+bounds.qualifier()) + "&sort=stars&order=desc&per_page=" + strconv.Itoa(perPage)
+	if page > 0 {
+		path += "&page=" + strconv.Itoa(page)
 	}
-	automatic := query == ""
-	perPage := 24
+	err := g.get(ctx, path, &result)
+	return result, err
+}
+
+func filterSearchGames(repositories []searchRepository, bounds starBounds, automatic bool) ([]Game, error) {
 	knownGames := map[string]bool{}
 	if automatic {
-		query = automaticGameQuery
-		perPage = 100
 		catalog, err := readCatalog()
 		if err != nil {
 			return nil, err
@@ -286,15 +304,9 @@ func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([
 			knownGames[strings.ToLower(game.Repo)] = true
 		}
 	}
-	var d struct {
-		Items []searchRepository `json:"items"`
-	}
-	if err := g.get(ctx, "/search/repositories?q="+url.QueryEscape(query+" archived:false"+bounds.qualifier())+"&sort=stars&order=desc&per_page="+strconv.Itoa(perPage), &d); err != nil {
-		return nil, err
-	}
 	games := []Game{}
 	seen := map[string]int{}
-	for _, repo := range d.Items {
+	for _, repo := range repositories {
 		canonical, err := parseRepo(repo.FullName)
 		if err != nil || repo.Private || !bounds.includes(repo.Stars) {
 			continue
@@ -315,9 +327,6 @@ func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([
 			seen[key] = len(games)
 		}
 		games = append(games, game)
-		if !automatic && len(games) == 24 {
-			break
-		}
 	}
 	if automatic {
 		sort.Slice(games, func(i, j int) bool {
@@ -326,11 +335,51 @@ func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([
 			}
 			return *games[i].Stars > *games[j].Stars
 		})
-		if len(games) > 24 {
-			games = games[:24]
-		}
 	}
 	return games, nil
+}
+
+// Legacy array response remains capped for existing keyword-search clients.
+func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([]Game, error) {
+	query = strings.TrimSpace(query)
+	if len(query) > 180 {
+		return nil, errors.New("搜索关键词太长")
+	}
+	automatic := query == ""
+	perPage := 24
+	if automatic {
+		query, perPage = automaticGameQuery, 100
+	}
+	result, err := g.searchPage(ctx, query, bounds, perPage, 0)
+	if err != nil {
+		return nil, err
+	}
+	games, err := filterSearchGames(result.Items, bounds, automatic)
+	if len(games) > 24 {
+		games = games[:24]
+	}
+	return games, err
+}
+
+func (g *GitHub) discover(ctx context.Context, bounds starBounds, page int) (DiscoveryPage, error) {
+	if page < 1 || page > 10 {
+		return DiscoveryPage{}, errors.New("页码必须是 1 到 10 之间的整数，请收窄 Stars 范围查看更多项目")
+	}
+	result, err := g.searchPage(ctx, automaticGameQuery, bounds, 100, page)
+	if err != nil {
+		return DiscoveryPage{}, err
+	}
+	games, err := filterSearchGames(result.Items, bounds, true)
+	if err != nil {
+		return DiscoveryPage{}, err
+	}
+	response := DiscoveryPage{Items: games, Page: page, TotalCandidates: result.Total, Incomplete: result.Incomplete}
+	response.HasMore = page < 10 && page*100 < result.Total
+	response.LimitReached = page == 10 && result.Total > 1000
+	if response.HasMore {
+		response.NextPage = page + 1
+	}
+	return response, nil
 }
 
 func (g *GitHub) latest(ctx context.Context, repo, arch string) (Release, error) {

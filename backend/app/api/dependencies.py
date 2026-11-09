@@ -592,6 +592,22 @@ def get_github_project_enrichment_repository(
     return repositories.github_enrichment
 
 
+def get_project_descriptions_service(
+    enrichment: GitHubProjectEnrichmentRepository = Depends(get_github_project_enrichment_repository),
+):
+    from backend.app.services.project_catalog.descriptions_service import ProjectDescriptionsService
+
+    async def describe(metadata: dict[str, Any]) -> str:
+        import asyncio
+
+        from backend.app.services.ingestion.github_project_enricher import GitHubProjectEnricher
+
+        enricher = await asyncio.to_thread(GitHubProjectEnricher, enrichment)
+        return await enricher.describe_repository(metadata)
+
+    return ProjectDescriptionsService(describe)
+
+
 def get_tool_website_enrichment_repository(
     repositories: ApplicationRepositories = Depends(get_application_repositories),
 ) -> ToolWebsiteEnrichmentRepository:

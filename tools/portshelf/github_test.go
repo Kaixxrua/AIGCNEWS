@@ -344,3 +344,74 @@ func TestLegacyKeywordSearchRetainsUnclassifiedCandidates(t *testing.T) {
 		t.Fatalf("explicit keyword results were automatically filtered: %v, %+v", err, games)
 	}
 }
+
+func discoveryCandidates(start, count int) []searchRepository {
+	items := make([]searchRepository, 0, count)
+	for i := start; i < start+count; i++ {
+		items = append(items, searchRepository{FullName: fmt.Sprintf("ports/game%d", i), Name: fmt.Sprintf("Game %d", i), Description: "A source port of a classic game", Stars: 1000 - i})
+	}
+	return items
+}
+
+func TestDiscoverLoadsTwoFullPagesWithoutTwentyFourLimit(t *testing.T) {
+	g := newGitHub("")
+	calls := 0
+	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		params := r.URL.Query()
+		if r.URL.Path != "/search/repositories" || params.Get("per_page") != "100" || params.Get("sort") != "stars" || params.Get("order") != "desc" || params.Get("q") != automaticGameQuery+" archived:false stars:0..1000" {
+			t.Errorf("invalid paginated GitHub query: %s", r.URL)
+		}
+		items := discoveryCandidates(0, 100)
+		if params.Get("page") == "2" {
+			items = discoveryCandidates(100, 50)
+		} else if params.Get("page") != "1" {
+			t.Errorf("invalid page: %s", params.Get("page"))
+		}
+		return apiResponse(200, jsonString(map[string]any{"items": items, "total_count": 150, "incomplete_results": false})), nil
+	})
+	bounds, _ := parseStarBounds("0", "1000")
+	first, err := g.discover(context.Background(), bounds, 1)
+	if err != nil || len(first.Items) != 100 || first.Page != 1 || first.NextPage != 2 || !first.HasMore || first.TotalCandidates != 150 || first.Incomplete || first.LimitReached {
+		t.Fatalf("first page was truncated or malformed: %+v, %v", first, err)
+	}
+	second, err := g.discover(context.Background(), bounds, first.NextPage)
+	if err != nil || len(second.Items) != 50 || second.Page != 2 || second.NextPage != 0 || second.HasMore || second.LimitReached || calls != 2 {
+		t.Fatalf("second page incorrect: %+v, %v, calls=%d", second, err, calls)
+	}
+}
+
+func TestDiscoverPaginationUsesCandidatesIncludingEmptyFilteredPages(t *testing.T) {
+	cases := []struct {
+		name                      string
+		page, total               int
+		incomplete, emptyFiltered bool
+		wantMore, wantLimit       bool
+	}{
+		{"filtered empty can continue", 1, 200, false, true, true, false},
+		{"no candidates", 1, 0, false, true, false, false},
+		{"incomplete upstream", 1, 250, true, false, true, false},
+		{"before thousand", 9, 1500, false, false, true, false},
+		{"thousand upstream cap", 10, 1500, false, false, false, true},
+		{"exact thousand exhausted", 10, 1000, false, false, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newGitHub("")
+			g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+				items := discoveryCandidates(0, 100)
+				if tc.emptyFiltered {
+					items = []searchRepository{{FullName: "example/awesome-games", Name: "awesome-games", Description: "A source port list", Stars: 999}}
+				}
+				return apiResponse(200, jsonString(map[string]any{"items": items, "total_count": tc.total, "incomplete_results": tc.incomplete})), nil
+			})
+			result, err := g.discover(context.Background(), starBounds{}, tc.page)
+			if err != nil || result.HasMore != tc.wantMore || result.LimitReached != tc.wantLimit || result.Incomplete != tc.incomplete || result.TotalCandidates != tc.total {
+				t.Fatalf("pagination metadata: %+v, %v", result, err)
+			}
+			if result.Items == nil || tc.emptyFiltered && len(result.Items) != 0 || tc.wantMore && result.NextPage != tc.page+1 || !tc.wantMore && result.NextPage != 0 {
+				t.Fatalf("empty page or nextPage contract incorrect: %+v", result)
+			}
+		})
+	}
+}

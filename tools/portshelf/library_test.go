@@ -174,3 +174,40 @@ func TestSingleInstanceLockAndSessionURL(t *testing.T) {
 		}
 	}
 }
+
+func TestLibraryLoadsMoreThanFiveHundredOldGamesAndAddsAtomically(t *testing.T) {
+	root := t.TempDir()
+	old := diskState{Games: []Game{}}
+	for i := 0; i < 501; i++ {
+		old.Games = append(old.Games, Game{Repo: fmt.Sprintf("old/game%d", i), Name: "Old game"})
+	}
+	if err := os.WriteFile(filepath.Join(root, "library.json"), []byte(jsonString(old)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	library, err := newLibrary(root)
+	if err != nil {
+		t.Fatalf("old library rejected by obsolete count limit: %v", err)
+	}
+	added, skipped, err := library.addBatch([]libraryEntry{{Game: Game{Repo: "new/game1"}}, {Game: Game{Repo: "new/game2"}}, {Game: Game{Repo: "NEW/GAME1"}}, {Game: Game{Repo: "OLD/GAME0"}}})
+	if err != nil || len(added) != 2 || len(skipped) != 2 || len(library.snapshot().Games) != 503 {
+		t.Fatalf("batch additions incorrect: %v %v %v", added, skipped, err)
+	}
+	reloaded, err := newLibrary(root)
+	if err != nil || len(reloaded.snapshot().Games) != 503 {
+		t.Fatalf("batch did not survive reload: %v", err)
+	}
+}
+
+func TestLibraryBatchSizeFailurePublishesNoPartialState(t *testing.T) {
+	library := testLibrary(t)
+	added, _, err := library.addBatch([]libraryEntry{
+		{Game: Game{Repo: "owner/small", Description: "Small game"}},
+		{Game: Game{Repo: "owner/large", Description: strings.Repeat("x", maxLibraryBytes)}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "过大") || len(added) != 0 || len(library.snapshot().Games) != 0 {
+		t.Fatalf("size limit did not atomically reject batch: %v, %v", added, err)
+	}
+	if _, err := os.Stat(filepath.Join(library.root, "library.json")); !os.IsNotExist(err) {
+		t.Fatalf("failed batch wrote partial disk state: %v", err)
+	}
+}

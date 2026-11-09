@@ -424,3 +424,147 @@ func TestSearchRejectsInvalidStarFiltersBeforeGitHub(t *testing.T) {
 		t.Fatalf("invalid filters made %d GitHub requests", calls)
 	}
 }
+
+func TestDiscoverHTTPValidatesPageAndBoundsBeforeNetwork(t *testing.T) {
+	app := testApp(t)
+	calls := 0
+	app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return apiResponse(200, `{"items":[],"total_count":0,"incomplete_results":false}`), nil
+	})
+	for _, params := range []string{"page=0", "page=11", "page=-1", "page=1.5", "page=", "page=abc", "page=%2B1", "page=%20", "page=%ZZ", "page=9999999999999999999999", "page=1&page=2", "minStars=-1", "maxStars=1.2", "minStars=1000000001", "minStars=2&maxStars=1", "minStars=0&minStars=1", "maxStars=0&maxStars=1"} {
+		w := call(app, "GET", "/api/discover?"+params, "")
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("invalid discover parameters reached HTTP %d: %s", w.Code, params)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("invalid discover inputs sent %d network requests", calls)
+	}
+	w := call(app, "GET", "/api/discover?minStars=&maxStars=", "")
+	var page DiscoveryPage
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != 200 || page.Items == nil || page.Page != 1 || page.NextPage != 0 || calls != 1 {
+		t.Fatalf("default discover contract: %d %s %v", w.Code, w.Body.String(), err)
+	}
+}
+
+func TestBatchAddsOnlyCachedPublicDiscoveryWithoutExtraRequests(t *testing.T) {
+	app := testApp(t)
+	calls := 0
+	app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Path != "/search/repositories" {
+			t.Errorf("batch fetched additional metadata: %s", r.URL)
+		}
+		items := []searchRepository{
+			{FullName: "owner/NewPort", Name: "Verified name", Description: "A source port", Stars: 0},
+			{FullName: "owner/later", Name: "Later", Description: "A source port", Stars: 10},
+			{FullName: "owner/private", Name: "Private", Description: "A source port", Stars: 20, Private: true},
+			{FullName: "owner/awesome-games", Name: "awesome-games", Description: "A source port list", Stars: 100},
+		}
+		return apiResponse(200, jsonString(map[string]any{"items": items, "total_count": 4})), nil
+	})
+	if w := call(app, "GET", "/api/discover", ""); w.Code != 200 {
+		t.Fatalf("discovery failed: %s", w.Body.String())
+	}
+	w := call(app, "POST", "/api/games/batch", `{"repos":["OWNER/NEWPORT","owner/newport","OpenRCT2/OpenRCT2","owner/unknown","owner/private","owner/awesome-games","../invalid"]}`)
+	var result BatchResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || len(result.Added) != 1 || result.Added[0] != "owner/NewPort" || len(result.Skipped) != 2 || len(result.Failed) != 4 || calls != 1 {
+		t.Fatalf("incorrect partial batch: %d %s %v calls=%d", w.Code, w.Body.String(), err, calls)
+	}
+	state := app.lib.snapshot()
+	snapshot := state.Snapshots["owner/newport"]
+	if len(state.Games) != 1 || state.Games[0].Name != "Verified name" || state.Games[0].Stars == nil || *state.Games[0].Stars != 0 || snapshot.Stars != 0 || snapshot.StarsCheckedAt == "" || snapshot.Release != nil || snapshot.ReleaseCheckedAt != "" || snapshot.Error != "" {
+		t.Fatalf("batch trusted incorrect metadata or fabricated release: %+v, %+v", state.Games, snapshot)
+	}
+	if _, err := time.Parse(time.RFC3339, snapshot.StarsCheckedAt); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := newLibrary(app.lib.root)
+	if err != nil || len(reloaded.snapshot().Games) != 1 {
+		t.Fatalf("batch did not persist: %v", err)
+	}
+	newSession, err := newApp(reloaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer newSession.cancel()
+	if next := newSession.addDiscovered([]string{"owner/later"}); len(next.Failed) != 1 || len(next.Added) != 0 {
+		t.Fatalf("discovery trust survived beyond its session: %+v", next)
+	}
+}
+
+func TestBatchRequestValidationAndAtomicDiskFailure(t *testing.T) {
+	app := testApp(t)
+	app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		t.Errorf("batch performed an unexpected outbound request: %s", r.URL)
+		return apiResponse(500, `{}`), nil
+	})
+	tooMany := make([]string, 101)
+	for i := range tooMany {
+		tooMany[i] = "owner/repo"
+	}
+	for _, body := range []string{`{}`, `{"repos":null}`, `{"repos":["owner/repo"],"name":"forged"}`, `{"repos":"owner/repo"}`, jsonString(map[string]any{"repos": tooMany})} {
+		if w := call(app, "POST", "/api/games/batch", body); w.Code != 400 {
+			t.Errorf("invalid batch accepted: %d %s", w.Code, body)
+		}
+	}
+	if w := call(app, "POST", "/api/games/batch", `{"repos":[]}`); w.Code != 200 || strings.Contains(w.Body.String(), "null") {
+		t.Fatalf("empty batch should be a no-op with arrays: %d %s", w.Code, w.Body.String())
+	}
+	stars := 10
+	app.cacheDiscovery([]Game{{Repo: "owner/one", Name: "One", Stars: &stars}, {Repo: "owner/two", Name: "Two", Stars: &stars}}, "2026-11-09T01:00:00Z")
+	if err := os.Mkdir(filepath.Join(app.lib.root, "library.json"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	w := call(app, "POST", "/api/games/batch", `{"repos":["owner/one","owner/two"]}`)
+	var result BatchResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || w.Code != 200 || len(result.Added) != 0 || len(result.Failed) != 2 || len(app.lib.snapshot().Games) != 0 {
+		t.Fatalf("disk failure published partial batch: %d %s %v", w.Code, w.Body.String(), err)
+	}
+	if leftovers, _ := filepath.Glob(filepath.Join(app.lib.root, ".library-*")); len(leftovers) != 0 {
+		t.Fatalf("failed atomic batch left temporary files: %v", leftovers)
+	}
+}
+
+func TestDiscoveryCacheIsBoundedAndConcurrentBatchesDoNotDuplicate(t *testing.T) {
+	app := testApp(t)
+	games := []Game{}
+	for _, repo := range discoveryCandidates(0, maxDiscoveredCandidates+1) {
+		stars := repo.Stars
+		games = append(games, Game{Repo: repo.FullName, Name: repo.Name, Stars: &stars})
+	}
+	app.cacheDiscovery(games, "2026-11-09T01:00:00Z")
+	if len(app.candidates) != maxDiscoveredCandidates || len(app.candidateOrder) != maxDiscoveredCandidates {
+		t.Fatalf("candidate cache exceeded bound: %d", len(app.candidates))
+	}
+	if _, ok := app.discoveredCandidate("ports/game0"); ok {
+		t.Fatal("oldest candidate was not evicted")
+	}
+	*games[1].Stars = 999999
+	entry, ok := app.discoveredCandidate("ports/game1")
+	if !ok || *entry.Game.Stars != 999 {
+		t.Fatal("candidate cache shares caller-owned pointer")
+	}
+	*entry.Game.Stars = 123456
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 4; j++ {
+				app.cacheDiscovery([]Game{games[2]}, "2026-11-09T02:00:00Z")
+				result := app.addDiscovered([]string{"ports/game1", "PORTS/GAME2"})
+				if len(result.Failed) != 0 {
+					t.Errorf("concurrent batch failed: %+v", result)
+				}
+				_ = app.lib.snapshot()
+			}
+		}()
+	}
+	wg.Wait()
+	state := app.lib.snapshot()
+	if len(state.Games) != 2 || *state.Games[0].Stars != 999 {
+		t.Fatalf("concurrent batch duplicated or mutated entries: %+v", state.Games)
+	}
+}

@@ -32,6 +32,7 @@ from backend.app.api import (
     routes_ops,
     routes_papers,
     routes_payments,
+    routes_project_descriptions,
     routes_projects_api,
     routes_push,
     routes_report,
@@ -636,6 +637,7 @@ app.include_router(routes_site.router, prefix="/api", tags=["Site"])
 app.include_router(routes_ui_library.router, prefix="/api")
 app.include_router(routes_github_projects.router, prefix="/api", tags=["GitHub Projects"])
 app.include_router(routes_projects_api.router, prefix="/api", tags=["Projects API"])
+app.include_router(routes_project_descriptions.router, prefix="/api", tags=["Projects API"])
 # /api/mcp 不再由本进程服务：生产流量经 frontend 精确路由到 Go 网关
 # （aigc-mcp-go，见 docs/mcp-go-w5-blue-green-cutover.md）；Python 入站
 # 工具栈（routes_mcp.py 等）已随 W6-U4 删除。

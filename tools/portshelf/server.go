@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,17 +26,21 @@ type RefreshStatus struct {
 }
 
 type App struct {
-	lib       *Library
-	github    *GitHub
-	catalog   []Game
-	token     string
-	host      string
-	quit      chan struct{}
-	quitOnce  sync.Once
-	ctx       context.Context
-	cancel    context.CancelFunc
-	refreshMu sync.Mutex
-	status    RefreshStatus
+	lib            *Library
+	github         *GitHub
+	aigc           *AIGC
+	catalog        []Game
+	token          string
+	host           string
+	quit           chan struct{}
+	quitOnce       sync.Once
+	ctx            context.Context
+	cancel         context.CancelFunc
+	refreshMu      sync.Mutex
+	status         RefreshStatus
+	candidateMu    sync.Mutex
+	candidates     map[string]libraryEntry
+	candidateOrder []string
 }
 
 func newApp(lib *Library) (*App, error) {
@@ -44,7 +49,117 @@ func newApp(lib *Library) (*App, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &App{lib: lib, github: newGitHub(""), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}}, nil
+	return &App{lib: lib, github: newGitHub(""), aigc: newAIGC(), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}, candidates: map[string]libraryEntry{}}, nil
+}
+
+const maxDiscoveredCandidates = 2000
+const maxBatchGames = 100
+
+type BatchFailure struct {
+	Repo  string `json:"repo"`
+	Error string `json:"error"`
+}
+
+type BatchResult struct {
+	Added   []string       `json:"added"`
+	Skipped []string       `json:"skipped"`
+	Failed  []BatchFailure `json:"failed"`
+}
+
+func parseDiscoveryParameters(raw string) (starBounds, int, error) {
+	params, err := url.ParseQuery(raw)
+	if err != nil || len(params["minStars"]) > 1 || len(params["maxStars"]) > 1 || len(params["page"]) > 1 {
+		return starBounds{}, 0, errors.New("发现参数格式无效，页码和 Stars 上下限各只能指定一次")
+	}
+	bounds, err := parseStarBounds(params.Get("minStars"), params.Get("maxStars"))
+	if err != nil {
+		return starBounds{}, 0, err
+	}
+	page := 1
+	if values, provided := params["page"]; provided {
+		raw := values[0]
+		for _, char := range raw {
+			if char < '0' || char > '9' {
+				return starBounds{}, 0, errors.New("页码必须是 1 到 10 之间的整数")
+			}
+		}
+		page, err = strconv.Atoi(raw)
+		if err != nil || page < 1 || page > 10 {
+			return starBounds{}, 0, errors.New("页码必须是 1 到 10 之间的整数，请收窄 Stars 范围查看更多项目")
+		}
+	}
+	return bounds, page, nil
+}
+
+func (a *App) cacheDiscovery(games []Game, checkedAt string) {
+	a.candidateMu.Lock()
+	defer a.candidateMu.Unlock()
+	for _, game := range games {
+		if game.Stars == nil {
+			continue
+		}
+		key := strings.ToLower(game.Repo)
+		if _, exists := a.candidates[key]; !exists {
+			if len(a.candidateOrder) >= maxDiscoveredCandidates {
+				delete(a.candidates, a.candidateOrder[0])
+				a.candidateOrder[0] = ""
+				a.candidateOrder = a.candidateOrder[1:]
+			}
+			a.candidateOrder = append(a.candidateOrder, key)
+		}
+		a.candidates[key] = libraryEntry{Game: cloneGame(game), Snapshot: Snapshot{Stars: *game.Stars, StarsCheckedAt: checkedAt}}
+	}
+}
+
+func (a *App) discoveredCandidate(repo string) (libraryEntry, bool) {
+	a.candidateMu.Lock()
+	defer a.candidateMu.Unlock()
+	entry, ok := a.candidates[strings.ToLower(repo)]
+	return libraryEntry{Game: cloneGame(entry.Game), Snapshot: cloneSnapshot(entry.Snapshot)}, ok
+}
+
+func (a *App) addDiscovered(repos []string) BatchResult {
+	result := BatchResult{Added: []string{}, Skipped: []string{}, Failed: []BatchFailure{}}
+	known := map[string]string{}
+	for _, game := range a.allGames() {
+		known[strings.ToLower(game.Repo)] = game.Repo
+	}
+	entries := []libraryEntry{}
+	for _, raw := range repos {
+		repo, err := parseRepo(raw)
+		if err != nil {
+			result.Failed = append(result.Failed, BatchFailure{Repo: raw, Error: err.Error()})
+			continue
+		}
+		key := strings.ToLower(repo)
+		if existing, ok := known[key]; ok {
+			result.Skipped = append(result.Skipped, existing)
+			continue
+		}
+		entry, ok := a.discoveredCandidate(repo)
+		if !ok {
+			result.Failed = append(result.Failed, BatchFailure{Repo: repo, Error: "项目未在本次会话的发现结果中，请重新加载后再添加"})
+			continue
+		}
+		known[key] = entry.Game.Repo
+		entries = append(entries, entry)
+	}
+	added, skipped, err := a.lib.addBatch(entries)
+	result.Skipped = append(result.Skipped, skipped...)
+	if err == nil {
+		result.Added = added
+		return result
+	}
+	skippedKeys := map[string]bool{}
+	for _, repo := range skipped {
+		skippedKeys[strings.ToLower(repo)] = true
+	}
+	for _, entry := range entries {
+		if !skippedKeys[strings.ToLower(entry.Game.Repo)] {
+			result.Failed = append(result.Failed, BatchFailure{Repo: entry.Game.Repo, Error: "保存项目失败：" + err.Error()})
+		}
+	}
+	return result
 }
 
 func reply(w http.ResponseWriter, status int, value any) {
@@ -189,10 +304,11 @@ func validToken(token string) bool {
 
 func (a *App) handler() http.Handler {
 	mux := http.NewServeMux()
+	a.registerDescriptionRoutes(mux)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, map[string]any{"games": a.allGames(), "snapshots": a.lib.snapshot().Snapshots, "root": a.lib.root, "version": version, "arch": runtime.GOARCH, "hasToken": a.github.hasToken()})
+		reply(w, http.StatusOK, map[string]any{"games": a.allGames(), "snapshots": a.lib.snapshot().Snapshots, "root": a.lib.root, "version": version, "arch": runtime.GOARCH, "hasToken": a.github.hasToken(), "hasAigcToken": a.aigc.hasToken(), "descriptions": a.lib.snapshot().Descriptions})
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, a.refreshStatus())
@@ -242,6 +358,34 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		reply(w, http.StatusOK, games)
+	})
+	mux.HandleFunc("GET /api/discover", func(w http.ResponseWriter, r *http.Request) {
+		bounds, page, err := parseDiscoveryParameters(r.URL.RawQuery)
+		if err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		result, err := a.github.discover(r.Context(), bounds, page)
+		if err != nil {
+			fail(w, http.StatusBadGateway, err)
+			return
+		}
+		a.cacheDiscovery(result.Items, time.Now().UTC().Format(time.RFC3339))
+		reply(w, http.StatusOK, result)
+	})
+	mux.HandleFunc("POST /api/games/batch", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Repos []string `json:"repos"`
+		}
+		if err := decode(w, r, &body); err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		if body.Repos == nil || len(body.Repos) > maxBatchGames {
+			fail(w, http.StatusBadRequest, errors.New("请提供项目列表，每批最多添加 100 个项目"))
+			return
+		}
+		reply(w, http.StatusOK, a.addDiscovered(body.Repos))
 	})
 	mux.HandleFunc("POST /api/games", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
