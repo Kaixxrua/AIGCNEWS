@@ -1,0 +1,101 @@
+[
+  {
+    "repo": "HarbourMasters/Shipwright",
+    "name": "Ship of Harkinian",
+    "subtitle": "塞尔达传说：时之笛",
+    "category": "动作冒险",
+    "description": "在现代电脑上重返海拉鲁，体验社区维护的原生 PC 移植。",
+    "dataNote": "需要自备项目支持版本的《时之笛》ROM。首次运行按上游向导导入；下载包不包含 ROM。",
+    "guide": "https://github.com/HarbourMasters/Shipwright#readme",
+    "mark": "SoH",
+    "color": "forest"
+  },
+  {
+    "repo": "Zelda64Recomp/Zelda64Recomp",
+    "name": "Zelda64 Recompiled",
+    "subtitle": "塞尔达传说：梅祖拉的假面",
+    "category": "动作冒险",
+    "description": "以静态重编译方式，让经典冒险在现代 Windows 上运行。",
+    "dataNote": "需要自备项目支持的《梅祖拉的假面》ROM，首次启动时选择原版数据。",
+    "guide": "https://github.com/Zelda64Recomp/Zelda64Recomp#readme",
+    "mark": "Z64",
+    "color": "violet"
+  },
+  {
+    "repo": "OpenRCT2/OpenRCT2",
+    "name": "OpenRCT2",
+    "subtitle": "过山车大亨 2",
+    "category": "模拟经营",
+    "description": "重新经营你的游乐园，体验现代系统支持与社区扩展。",
+    "dataNote": "需要《过山车大亨 2》原版数据。启动 OpenRCT2 后选择原版游戏安装目录。",
+    "guide": "https://github.com/OpenRCT2/OpenRCT2#readme",
+    "mark": "RCT²",
+    "color": "coral"
+  },
+  {
+    "repo": "OpenRA/OpenRA",
+    "name": "OpenRA",
+    "subtitle": "红色警戒 · 泰伯利亚黎明 · 沙丘 2000",
+    "category": "即时战略",
+    "description": "为经典 Westwood 即时战略游戏打造的开源引擎。",
+    "dataNote": "首次启动时按游戏向导配置对应模组的数据文件；各模组的数据来源与要求不同。",
+    "guide": "https://github.com/OpenRA/OpenRA#readme",
+    "mark": "RA",
+    "color": "red"
+  },
+  {
+    "repo": "diasurgical/DevilutionX",
+    "name": "DevilutionX",
+    "subtitle": "暗黑破坏神 · 地狱火",
+    "category": "角色扮演",
+    "description": "让初代暗黑破坏神在现代系统上继续运行的社区移植。",
+    "dataNote": "完整游戏需要自备 DIABDAT.MPQ；地狱火扩展另需对应数据。按项目文档放置游戏文件。",
+    "guide": "https://github.com/diasurgical/DevilutionX#readme",
+    "mark": "DX",
+    "color": "ember"
+  },
+  {
+    "repo": "CorsixTH/CorsixTH",
+    "name": "CorsixTH",
+    "subtitle": "主题医院",
+    "category": "模拟经营",
+    "description": "开源重现主题医院，让经典医院经营玩法继续生长。",
+    "dataNote": "需要《主题医院》原版或项目支持的演示版数据。首次启动时指定数据目录。",
+    "guide": "https://github.com/CorsixTH/CorsixTH#readme",
+    "mark": "TH",
+    "color": "teal"
+  },
+  {
+    "repo": "UZDoom/UZDoom",
+    "name": "UZDoom",
+    "subtitle": "Doom 引擎游戏",
+    "category": "第一人称射击",
+    "description": "基于 GZDoom 的现代 Doom 引擎移植，支持丰富的社区模组。",
+    "dataNote": "需要项目支持的 IWAD 文件，可使用自备原版数据或兼容的自由游戏数据。",
+    "guide": "https://github.com/UZDoom/UZDoom#readme",
+    "mark": "UZ",
+    "color": "slate"
+  },
+  {
+    "repo": "dhewm/dhewm3",
+    "name": "dhewm3",
+    "subtitle": "毁灭战士 3",
+    "category": "第一人称射击",
+    "description": "面向现代操作系统维护的 Doom 3 源码移植。",
+    "dataNote": "需要 Doom 3 原版数据；BFG 版数据不适用。下载完成后按上游文档配置 base 目录。",
+    "guide": "https://github.com/dhewm/dhewm3#readme",
+    "mark": "D3",
+    "color": "sand"
+  },
+  {
+    "repo": "OpenMW/openmw",
+    "name": "OpenMW",
+    "subtitle": "上古卷轴 III：晨风",
+    "category": "角色扮演",
+    "description": "可运行晨风的开源引擎，提供现代平台兼容与扩展。",
+    "dataNote": "需要《晨风》原版游戏数据。当前上游提供 Windows 安装器，安装后使用设置向导选择数据目录。",
+    "guide": "https://github.com/OpenMW/openmw#readme",
+    "mark": "MW",
+    "color": "ochre"
+  }
+]

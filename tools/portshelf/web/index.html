@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="PortShelf：查看开源移植游戏、GitHub Stars 与 Windows 下载地址。">
+    <title>PortShelf · 移植游戏目录</title>
+    <link rel="icon" type="image/svg+xml" href="/gamepad.svg">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳到游戏目录</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="目录导航">
+        <a class="brand" href="/" aria-label="PortShelf 首页">
+          <span class="brand-mark"><img src="/gamepad.svg" width="27" height="27" alt=""></span>
+          <span><strong>PortShelf<span class="brand-dot">.</span></strong><small>经典游戏 · 开源新生</small></span>
+        </a>
+        <p class="nav-label">你的游戏发现站</p>
+        <nav class="main-nav" aria-label="主导航">
+          <button class="nav-item active" id="library-nav" aria-current="page"><span>我的目录</span><span class="nav-count" id="nav-count">—</span></button>
+          <button class="nav-item" id="discover-nav"><span>发现更多</span><span aria-hidden="true">↗</span></button>
+        </nav>
+        <div class="category-section" id="category-section">
+          <p class="nav-label">按游戏类型</p>
+          <nav class="category-nav" id="categories" aria-label="游戏类型"></nav>
+        </div>
+        <div class="sidebar-note">
+          <span class="small-label">OLD GAMES. NEW LIFE.</span>
+          <p>熟悉的世界，<br>再次出发。</p>
+          <span>由开源社区延续的经典。</span>
+        </div>
+        <div class="sidebar-footer">
+          <button class="connection-button" id="settings-open"><span class="connection-dot" aria-hidden="true"></span><span id="connection-label">GitHub 公开访问</span><span aria-hidden="true">›</span></button>
+          <div class="footer-actions"><span id="version-label">PortShelf</span><button class="text-button" id="quit-open">退出工具</button></div>
+        </div>
+      </aside>
+
+      <main class="main-content" id="main" tabindex="-1">
+        <div class="topline"><span>GITHUB OPEN SOURCE GAMES</span><span class="local-badge"><span aria-hidden="true">●</span> 本地运行 · Windows 目录</span></div>
+        <header class="page-header">
+          <div><div class="eyebrow" id="page-eyebrow">给经典一个新入口</div><h1 id="page-title">移植游戏目录<span class="heading-dot">.</span></h1><p id="page-description">找到熟悉的游戏，看看社区的更新，获取 Windows 下载地址。</p></div>
+          <div class="header-actions"><button class="button button-secondary" id="refresh-button">刷新资料</button><button class="button button-primary" id="add-open"><span aria-hidden="true">＋</span> 添加项目</button></div>
+        </header>
+        <div id="notice" class="notice" role="status" hidden></div>
+        <div class="refresh-progress" id="refresh-progress" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="refresh-label">正在连接 GitHub…</span><progress id="refresh-meter" max="1" value="0" aria-label="资料刷新进度"></progress></div>
+
+        <section id="library-view" aria-label="我的游戏目录">
+          <div class="stats-grid" id="stats">
+            <div class="stat"><div><span class="stat-value" id="game-count">—</span><span class="stat-unit">款</span></div><span class="stat-label">收录的开源游戏</span></div>
+            <div class="stat"><div><span class="stat-value" id="windows-count">—</span><span class="stat-unit">款</span></div><span class="stat-label">有 Windows 下载附件</span></div>
+            <div class="stat stat-note"><span class="stat-label">资料来自 GitHub</span><strong id="checked-label">正在读取本地目录</strong><span>Stars 与下载地址按核对时间显示</span></div>
+          </div>
+          <div class="toolbar">
+            <div class="search-wrap"><label class="sr-only" for="library-search">搜索目录</label><input id="library-search" type="search" placeholder="搜索游戏、原作名称或简介…" autocomplete="off"><kbd aria-hidden="true">/</kbd></div>
+            <div class="mobile-category"><label class="sr-only" for="category-select">游戏类型</label><select id="category-select"><option value="all">全部类型</option></select></div>
+            <label class="sort-wrap"><span>排序</span><select id="sort-select"><option value="stars">Stars 从高到低</option><option value="updated">最近更新</option><option value="name">名称 A–Z</option></select></label>
+            <div class="view-switch" role="group" aria-label="目录显示方式"><button id="grid-view" aria-pressed="true" title="卡片视图">卡片</button><button id="list-view" aria-pressed="false" title="列表视图">列表</button></div>
+          </div>
+          <div class="section-heading"><h2 id="results-title">全部游戏</h2><span id="result-count" aria-live="polite">读取中…</span></div>
+          <div class="game-grid" id="game-grid" aria-busy="true"></div>
+          <div class="empty-state" id="library-empty" hidden><span class="empty-mark" aria-hidden="true">⌕</span><h3>没有找到匹配的游戏</h3><p>试试原作名称，或换一个游戏类型。</p><button class="button button-secondary" id="clear-filters">清除筛选</button></div>
+        </section>
+
+        <section id="discover-view" aria-label="在 GitHub 发现游戏" hidden>
+          <div class="discover-intro"><span class="small-label">DISCOVER ON GITHUB</span><h2>下一款想重玩的游戏。</h2><p>搜索 GitHub 上的公开项目，加入目录后即可核对 Stars 和下载附件。</p><form class="discover-form" id="discover-form"><label class="sr-only" for="discover-search">GitHub 项目关键词</label><input id="discover-search" type="search" value="topic:source-port" placeholder="游戏名称、关键词或 topic:source-port" maxlength="200" required><button class="button button-primary" id="discover-submit" type="submit">搜索 GitHub</button></form><p class="field-help">支持 GitHub 搜索语法，例如 <code>topic:source-port</code>、<code>openrct2</code>。搜索结果不一定提供 Windows 版本。</p></div>
+          <div class="section-heading"><h2>搜索结果</h2><span id="discover-count" aria-live="polite">输入关键词开始搜索</span></div>
+          <div class="discover-results" id="discover-results"></div>
+        </section>
+
+        <footer class="main-footer"><span>一份持续更新的经典游戏书架。</span><span>项目资料与下载文件由 GitHub 上游提供 <span aria-hidden="true">↗</span></span></footer>
+      </main>
+    </div>
+
+    <dialog class="detail-dialog" id="detail-dialog" aria-labelledby="detail-title">
+      <div class="drawer-top"><span class="small-label">游戏与下载</span><button class="close-button" id="detail-close" aria-label="关闭下载详情" autofocus>×</button></div>
+      <div id="detail-content"></div>
+    </dialog>
+
+    <dialog class="form-dialog" id="add-dialog" aria-labelledby="add-title">
+      <div class="dialog-heading"><div><span class="small-label">YOUR NEXT FAVORITE</span><h2 id="add-title">添加一个开源游戏</h2></div><button class="close-button" data-close="add-dialog" aria-label="关闭添加项目">×</button></div>
+      <p class="dialog-description">粘贴 GitHub 项目地址，把它放进你的目录。</p>
+      <form id="add-form"><label class="field-label" for="repo-input">GitHub 项目</label><input id="repo-input" type="text" placeholder="owner/repo 或 https://github.com/owner/repo" maxlength="300" autocomplete="off" required><p class="field-help">例如 <code>OpenRCT2/OpenRCT2</code>。只需公开项目，无需登录。</p><p class="form-error" id="add-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="add-dialog">取消</button><button class="button button-primary" id="add-submit" type="submit">添加并核对资料</button></div></form>
+    </dialog>
+
+    <dialog class="form-dialog" id="settings-dialog" aria-labelledby="settings-title">
+      <div class="dialog-heading"><div><span class="small-label">GITHUB CONNECTION</span><h2 id="settings-title">GitHub 连接</h2></div><button class="close-button" data-close="settings-dialog" aria-label="关闭连接设置">×</button></div>
+      <p class="dialog-description">公开访问即可使用。遇到 GitHub 请求额度限制时，可设置你自己的 Token。</p>
+      <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help">只读取公开项目信息，无需仓库写入权限。Token 仅在工具进程内存中保留，退出后清除。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
+    </dialog>
+
+    <dialog class="form-dialog compact-dialog" id="quit-dialog" aria-labelledby="quit-title">
+      <div class="dialog-heading"><h2 id="quit-title">退出 PortShelf？</h2><button class="close-button" data-close="quit-dialog" aria-label="取消退出">×</button></div>
+      <p class="dialog-description">目录和已核对的资料会保留。下次双击 PortShelf 即可继续浏览。</p><p class="form-error" id="quit-error" role="alert" hidden></p><div class="dialog-actions"><button class="button button-secondary" data-close="quit-dialog">继续浏览</button><button class="button button-primary" id="quit-confirm">退出工具</button></div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>

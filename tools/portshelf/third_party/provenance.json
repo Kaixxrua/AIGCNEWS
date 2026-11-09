@@ -1,0 +1,15 @@
+{
+  "layout": {
+    "id": "sailboatui-layout-sidebar",
+    "source": "https://github.com/sailboatui/sailboatui/blob/8d0970f39193d8e852bf338298665556aa3163c8/content/docs/components/layout.html",
+    "revision": "8d0970f39193d8e852bf338298665556aa3163c8",
+    "license": "MIT"
+  },
+  "icon": {
+    "id": "lucide:gamepad-2",
+    "source": "https://github.com/lucide-icons/lucide/tree/076b52527f0c5fe4cc1cd2472ef716fc332ccf0e",
+    "revision": "076b52527f0c5fe4cc1cd2472ef716fc332ccf0e",
+    "license": "ISC",
+    "sha256": "b0671de7afbebdafc4d655d867d9851947170b906fb187e749410039df867509"
+  }
+}

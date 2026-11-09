@@ -1,0 +1,1074 @@
+{
+  "harbourmasters/shipwright": {
+    "stars": 5930,
+    "pushedAt": "2026-11-05T10:51:52Z",
+    "starsCheckedAt": "2026-11-09T02:49:02Z",
+    "releaseCheckedAt": "2026-11-09T02:49:02Z",
+    "release": {
+      "tag_name": "9.3.1",
+      "name": "Dewey Bravo 9.3.1",
+      "html_url": "https://github.com/HarbourMasters/Shipwright/releases/tag/9.3.1",
+      "published_at": "2026-10-18T21:06:27Z",
+      "assets": [
+        {
+          "id": 656566128,
+          "name": "SoH-Dewey-Bravo-Win64.zip",
+          "size": 72980600,
+          "browser_download_url": "https://github.com/HarbourMasters/Shipwright/releases/download/9.3.1/SoH-Dewey-Bravo-Win64.zip",
+          "digest": "sha256:429292a0bfbdfcda283b33c1538ecdc49163b9ed53e8702cac80b2489d9fe26c",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 656566565,
+          "name": "SoH-Dewey-Bravo-Mac.zip",
+          "size": 49516403,
+          "browser_download_url": "https://github.com/HarbourMasters/Shipwright/releases/download/9.3.1/SoH-Dewey-Bravo-Mac.zip",
+          "digest": "sha256:6d9b69b7037d3af863c1767829af42666732c9f4651468a7e086c3e11268bd4b",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 656565940,
+          "name": "SoH-Dewey-Bravo.appimage",
+          "size": 32113856,
+          "browser_download_url": "https://github.com/HarbourMasters/Shipwright/releases/download/9.3.1/SoH-Dewey-Bravo.appimage",
+          "digest": "sha256:e4bb775c9a0c3629ebac57e4b6ccba6d0b621d71ab201e9105aceef9141ad1f4",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "zelda64recomp/zelda64recomp": {
+    "stars": 7621,
+    "pushedAt": "2026-09-25T18:57:57Z",
+    "starsCheckedAt": "2026-11-09T02:49:01Z",
+    "releaseCheckedAt": "2026-11-09T02:49:01Z",
+    "release": {
+      "tag_name": "v1.2.2",
+      "name": "v1.2.2",
+      "html_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/tag/v1.2.2",
+      "published_at": "2025-08-27T00:58:35Z",
+      "assets": [
+        {
+          "id": 286581714,
+          "name": "Zelda64Recompiled-v1.2.2-Windows.zip",
+          "size": 28940501,
+          "browser_download_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-Windows.zip",
+          "digest": "sha256:d02b95f1cf5e4d44d6587fa6136c6db521f61aa41ba8700c05f91bea8b0a26d0",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 286581814,
+          "name": "Zelda64Recompiled-v1.2.2-Linux-ARM64.zip",
+          "size": 19228944,
+          "browser_download_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-Linux-ARM64.zip",
+          "digest": "sha256:2e49b96aced578363065e1764ca96eaa5590cb6f7e80efd10e8ce1a08462b933",
+          "arch": "arm64",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 286581858,
+          "name": "Zelda64Recompiled-v1.2.2-Linux-Flatpak-X64.zip",
+          "size": 13024507,
+          "browser_download_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-Linux-Flatpak-X64.zip",
+          "digest": "sha256:79efc38a5469d524b09c024f97509a3ff0c61466db4a74630c112f4901804e10",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 286581896,
+          "name": "Zelda64Recompiled-v1.2.2-Linux-X64.zip",
+          "size": 18638525,
+          "browser_download_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-Linux-X64.zip",
+          "digest": "sha256:de8b19cdb4e3ad0c10fd6d8127f7a6cc2a9eba106d89c753439178b718887c42",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 286581571,
+          "name": "Zelda64Recompiled-v1.2.2-macOS.zip",
+          "size": 32315959,
+          "browser_download_url": "https://github.com/Zelda64Recomp/Zelda64Recomp/releases/download/v1.2.2/Zelda64Recompiled-v1.2.2-macOS.zip",
+          "digest": "sha256:f369815d7ba2a1139a6fab8a0aa51c52e5f064dcfcce649eb888fdef9f648689",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "openrct2/openrct2": {
+    "stars": 16551,
+    "pushedAt": "2026-11-07T22:53:59Z",
+    "starsCheckedAt": "2026-11-09T02:49:02Z",
+    "releaseCheckedAt": "2026-11-09T02:49:02Z",
+    "release": {
+      "tag_name": "v0.5.7",
+      "name": "v0.5.7 - “Get on with it!”",
+      "html_url": "https://github.com/OpenRCT2/OpenRCT2/releases/tag/v0.5.7",
+      "published_at": "2026-11-01T10:57:49Z",
+      "assets": [
+        {
+          "id": 698061163,
+          "name": "OpenRCT2-v0.5.7-windows-portable-x64.zip",
+          "size": 82158608,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-portable-x64.zip",
+          "digest": "sha256:c8759848d0035a5de41985c5c6b8adb69aa197731f28a6f7e7441830912b0300",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 698061162,
+          "name": "OpenRCT2-v0.5.7-windows-installer-x64.exe",
+          "size": 77665184,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-installer-x64.exe",
+          "digest": "sha256:41cb48837e7f3ce93e299d0c9937b0be61762ab36d752a8e6a5db88e8f08387d",
+          "arch": "amd64",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 698061160,
+          "name": "OpenRCT2-v0.5.7-windows-portable-win32.zip",
+          "size": 80548295,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-portable-win32.zip",
+          "digest": "sha256:42c89776d6ba58b6accd2fcbc5dbac43d23191f458d3d0e1dd2c2adfc1ac9fd6",
+          "arch": "386",
+          "kind": "zip",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 698061169,
+          "name": "OpenRCT2-v0.5.7-windows-installer-win32.exe",
+          "size": 76526456,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-installer-win32.exe",
+          "digest": "sha256:d8ef9705622427252a496e83a6b421403fcc84e5bd5ff89cac6560ecfee29893",
+          "arch": "386",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 698061170,
+          "name": "OpenRCT2-v0.5.7-android.apk",
+          "size": 217172013,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-android.apk",
+          "digest": "sha256:3cc3b3078a120ae5a65b259c21bc989765a7008883f3298604976c607032cb0d",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061165,
+          "name": "OpenRCT2-v0.5.7-Linux-bookworm-x86_64.tar.gz",
+          "size": 87427232,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-Linux-bookworm-x86_64.tar.gz",
+          "digest": "sha256:fa48a0ca43ce3b0e22894324d47ce9f119f3e4a88421cbd6ad22bf37920177e8",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061171,
+          "name": "OpenRCT2-v0.5.7-Linux-noble-x86_64.tar.gz",
+          "size": 87524211,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-Linux-noble-x86_64.tar.gz",
+          "digest": "sha256:7f94ff9857e9a45b61f518405e3ed7299f84385d123468464d71cb94c6b6cd86",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061172,
+          "name": "OpenRCT2-v0.5.7-Linux-resolute-x86_64.tar.gz",
+          "size": 87956072,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-Linux-resolute-x86_64.tar.gz",
+          "digest": "sha256:c069be59226765280488219fcb285eae75d56d74f80140d3c6f120899081249e",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061168,
+          "name": "OpenRCT2-v0.5.7-Linux-trixie-x86_64.tar.gz",
+          "size": 87202584,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-Linux-trixie-x86_64.tar.gz",
+          "digest": "sha256:cbdebfd3a024cd5d2d1b8991461246788ca2fceb26740cf83c5d40e575e18848",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061167,
+          "name": "OpenRCT2-v0.5.7-linux-x86_64.AppImage",
+          "size": 103332344,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-linux-x86_64.AppImage",
+          "digest": "sha256:d02ecb52d946d1e5f00db53a164fadbd41bbb8636f6f5cdddb44d954a3bcdb64",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061173,
+          "name": "OpenRCT2-v0.5.7-macos-universal.zip",
+          "size": 115868444,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-macos-universal.zip",
+          "digest": "sha256:fd71e17c8ee5e8bd5887e2b1e269d7bdd0c7cee056997cdc6b55813ed395fed3",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061156,
+          "name": "OpenRCT2-v0.5.7-sha256sums.txt",
+          "size": 1845,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-sha256sums.txt",
+          "digest": "sha256:381d489f396f71718697da9cb757aa0f68b0e1786f8259994c27aa8247c1165e",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061164,
+          "name": "OpenRCT2-v0.5.7-windows-installer-arm64.exe",
+          "size": 76562864,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-installer-arm64.exe",
+          "digest": "sha256:c3a8f0ab39c6d6c110bec2732a5ffb5a418967f4a1f040ecf04c014eda442cb4",
+          "arch": "arm64",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 698061174,
+          "name": "OpenRCT2-v0.5.7-windows-portable-arm64.zip",
+          "size": 81719489,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-portable-arm64.zip",
+          "digest": "sha256:422f8ae07b16bf5f2ea2cc0ecf4de345cf271177ca3877b09c68ef13c0bbaa9a",
+          "arch": "arm64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 698061158,
+          "name": "OpenRCT2-v0.5.7-windows-symbols-arm64.zip",
+          "size": 36167222,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-symbols-arm64.zip",
+          "digest": "sha256:51cfc5ed0d41a49ad4eebda4ec01d59a7dcda511be638f10d9fe0822e5c908aa",
+          "arch": "arm64",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061159,
+          "name": "OpenRCT2-v0.5.7-windows-symbols-win32.zip",
+          "size": 35216901,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-symbols-win32.zip",
+          "digest": "sha256:c217926d42644c89c71a1494061bc49fa8b00021d41b1af939e54196b19b78a7",
+          "arch": "386",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 698061161,
+          "name": "OpenRCT2-v0.5.7-windows-symbols-x64.zip",
+          "size": 37973853,
+          "browser_download_url": "https://github.com/OpenRCT2/OpenRCT2/releases/download/v0.5.7/OpenRCT2-v0.5.7-windows-symbols-x64.zip",
+          "digest": "sha256:6cbb4c92af9d522eb80c6c2ff67dd2d962d8e9cdfbbfb5dec3b0520fb230fda3",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "openra/openra": {
+    "stars": 17753,
+    "pushedAt": "2026-11-08T19:04:38Z",
+    "starsCheckedAt": "2026-11-09T02:49:03Z",
+    "releaseCheckedAt": "2026-11-09T02:49:03Z",
+    "release": {
+      "tag_name": "release-20250330",
+      "name": "",
+      "html_url": "https://github.com/OpenRA/OpenRA/releases/tag/release-20250330",
+      "published_at": "2025-03-30T17:36:43Z",
+      "assets": [
+        {
+          "id": 242076046,
+          "name": "OpenRA-release-20250330-x64-winportable.zip",
+          "size": 73079233,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330-x64-winportable.zip",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 242076049,
+          "name": "OpenRA-release-20250330-x64.exe",
+          "size": 61266292,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330-x64.exe",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 242076047,
+          "name": "OpenRA-release-20250330-x86-winportable.zip",
+          "size": 69848515,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330-x86-winportable.zip",
+          "digest": null,
+          "arch": "386",
+          "kind": "zip",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 242076045,
+          "name": "OpenRA-release-20250330-x86.exe",
+          "size": 58528821,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330-x86.exe",
+          "digest": null,
+          "arch": "386",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 242075335,
+          "name": "OpenRA-Dune-2000-x86_64.AppImage",
+          "size": 47892984,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Dune-2000-x86_64.AppImage",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075336,
+          "name": "OpenRA-Dune-2000-x86_64.AppImage.zsync",
+          "size": 164005,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Dune-2000-x86_64.AppImage.zsync",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075337,
+          "name": "OpenRA-Red-Alert-x86_64.AppImage",
+          "size": 44026360,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Red-Alert-x86_64.AppImage",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075333,
+          "name": "OpenRA-Red-Alert-x86_64.AppImage.zsync",
+          "size": 150789,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Red-Alert-x86_64.AppImage.zsync",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075234,
+          "name": "OpenRA-release-20250330-source.tar.bz2",
+          "size": 32489806,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330-source.tar.bz2",
+          "digest": null,
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242080423,
+          "name": "OpenRA-release-20250330.dmg",
+          "size": 159559841,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-release-20250330.dmg",
+          "digest": null,
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075334,
+          "name": "OpenRA-Tiberian-Dawn-x86_64.AppImage",
+          "size": 55323128,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Tiberian-Dawn-x86_64.AppImage",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 242075338,
+          "name": "OpenRA-Tiberian-Dawn-x86_64.AppImage.zsync",
+          "size": 189409,
+          "browser_download_url": "https://github.com/OpenRA/OpenRA/releases/download/release-20250330/OpenRA-Tiberian-Dawn-x86_64.AppImage.zsync",
+          "digest": null,
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "diasurgical/devilutionx": {
+    "stars": 9995,
+    "pushedAt": "2026-11-07T18:41:05Z",
+    "starsCheckedAt": "2026-11-09T02:49:03Z",
+    "releaseCheckedAt": "2026-11-09T02:49:03Z",
+    "release": {
+      "tag_name": "1.5.5",
+      "name": "1.5.5",
+      "html_url": "https://github.com/diasurgical/DevilutionX/releases/tag/1.5.5",
+      "published_at": "2025-10-30T17:00:17Z",
+      "assets": [
+        {
+          "id": 310816827,
+          "name": "devilutionx-windows-x86_64.zip",
+          "size": 10482049,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-windows-x86_64.zip",
+          "digest": "sha256:a20cfb62cd611f76aac78f9bf09a28f57794fbfe63ae6da9245deca446680b2b",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 310821742,
+          "name": "devilutionx-windows-i386.zip",
+          "size": 10442606,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-windows-i386.zip",
+          "digest": "sha256:aa2c7051495cb53a8aaf7ac1f65d3537e6f52538f96797be38aa06a4aaa90d15",
+          "arch": "386",
+          "kind": "zip",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 310600208,
+          "name": "devilutionx-windows-xp-32bit.zip",
+          "size": 8523155,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-windows-xp-32bit.zip",
+          "digest": "sha256:fce6b3fd2fb381e101b5d8b72e08a47ef9dcfb372c7543ea6bd49318cec80e88",
+          "arch": "386",
+          "kind": "zip",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 310600140,
+          "name": "devilutionx-3ds.3dsx",
+          "size": 13942660,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-3ds.3dsx",
+          "digest": "sha256:13550e71c8c3d0cc11d37bfcaead96b9b5477f3455d3b16f3cd2a761da49055c",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600144,
+          "name": "devilutionx-3ds.cia",
+          "size": 13210560,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-3ds.cia",
+          "digest": "sha256:884dfcc81e7119ea879492136a7fbb9e38aa71da954ca8a7fac866dccb4d62b2",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600010,
+          "name": "devilutionx-amiga-m68k",
+          "size": 3183704,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-amiga-m68k",
+          "digest": "sha256:04fc0621054015fd34c9aa22c26e5b29a6be5dc5c78dcc38d695cc72d58600d9",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310804777,
+          "name": "devilutionx-android.apk",
+          "size": 18840504,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-android.apk",
+          "digest": "sha256:c5a53ff35223e367eba75ef8ed2caa31ea8e78792d8aff00f2cee51a0566b28f",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310601867,
+          "name": "devilutionx-iOS.ipa",
+          "size": 8603944,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-iOS.ipa",
+          "digest": "sha256:161a37578efeab924775a32e143c3e554e74f85d05024eaf308262d8e75c6d70",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600313,
+          "name": "devilutionx-lepus.opk",
+          "size": 6844416,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-lepus.opk",
+          "digest": "sha256:bf8a9f8ed11b9674d64455550dbc7c7ecb8aefb3dadb96692e02b796e77a222b",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 316238322,
+          "name": "devilutionx-linux-aarch64.tar.xz",
+          "size": 21826732,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-linux-aarch64.tar.xz",
+          "digest": "sha256:71f34342cd750dc6dec1effefa250e90a5fe0f127e79d4c9c66f4d07706c3442",
+          "arch": "arm64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600343,
+          "name": "devilutionx-linux-i386.tar.xz",
+          "size": 22506424,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-linux-i386.tar.xz",
+          "digest": "sha256:a6a8aec11d09b85bbb6a98f59941da663e97da8065b55a82da9402e9d9cc9cea",
+          "arch": "386",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600314,
+          "name": "devilutionx-linux-x86_64.appimage",
+          "size": 14158328,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-linux-x86_64.appimage",
+          "digest": "sha256:38a88b3e1f127ec8436949a1766937838ba6596a15686773c69c7e0482816c61",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600306,
+          "name": "devilutionx-linux-x86_64.tar.xz",
+          "size": 28549676,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-linux-x86_64.tar.xz",
+          "digest": "sha256:3c0a79afad682054c4d11a91728887617b9f5dfbd8b6810dbb9226c380474432",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 314864962,
+          "name": "devilutionx-macOS-10.4-tiger-ppc.dmg",
+          "size": 6745467,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-macOS-10.4-tiger-ppc.dmg",
+          "digest": "sha256:a047a5f78b21bb5716f958cdf97376faea26079d0dde6c1d4218a46ef0d3a722",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 316595839,
+          "name": "devilutionx-macOS-intel-x86.dmg",
+          "size": 6682539,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-macOS-intel-x86.dmg",
+          "digest": "sha256:6a84fb71e5216d74f6d31bac536c63934580bd24f1010405f56d11a602fbd301",
+          "arch": "386",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 311100910,
+          "name": "devilutionx-macOS-universal.dmg",
+          "size": 26642310,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-macOS-universal.dmg",
+          "digest": "sha256:10ecd55caf4239d087bc91bce7538943705399b0b2abcff71c347ddbf01d30c6",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600066,
+          "name": "devilutionx-miyoo-mini-miniui.zip",
+          "size": 5980172,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-miyoo-mini-miniui.zip",
+          "digest": "sha256:a278fa67892e1d1835236ae4f4375800786bb876f483634ea946701e8694de2d",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600064,
+          "name": "devilutionx-miyoo-mini-onion-os.zip",
+          "size": 6587896,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-miyoo-mini-onion-os.zip",
+          "digest": "sha256:ba701cf1142c80b3f39db97da35de4b698d8f3f5b064c780d97e132a6ec7d375",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600895,
+          "name": "devilutionx-ps4.pkg",
+          "size": 14614528,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-ps4.pkg",
+          "digest": "sha256:33e5d47f45c594ff071a52987d6be937d0123509a4d67022e20b3d5cb75713be",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600099,
+          "name": "devilutionx-retrofw.opk",
+          "size": 6086656,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-retrofw.opk",
+          "digest": "sha256:6fd7df995d133646333a899cdc43850d4b6e266b38b61a9bf46393680f7f9ada",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600252,
+          "name": "devilutionx-rg350.opk",
+          "size": 6897664,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-rg350.opk",
+          "digest": "sha256:8186df4f6d29a0437b41b7a381f82be70db2ccbbed8920324f307c4357fa20bd",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310600145,
+          "name": "devilutionx-src-fully-vendored.tar.xz",
+          "size": 34660480,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-src-fully-vendored.tar.xz",
+          "digest": "sha256:f42379cdf098a351a2020d9e6de1840c76e09113c792f73c6df34dec26818b04",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310599677,
+          "name": "devilutionx-src.tar.xz",
+          "size": 22561696,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-src.tar.xz",
+          "digest": "sha256:dfe7894dd4dfa5fd2375d708aaa6837eef3986ccac248345a7988059a507de6a",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 516201576,
+          "name": "devilutionx-switch.nro",
+          "size": 20887823,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-switch.nro",
+          "digest": "sha256:4f9f06540f43f83d01d5b7b82e8848c6591681907f423990604b42731097c504",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310601451,
+          "name": "devilutionx-vita.vpk",
+          "size": 7599439,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-vita.vpk",
+          "digest": "sha256:1378fd61bffde123c8afe660d0e551b10267506d9a51871a4febe9fa06109175",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310602996,
+          "name": "devilutionx-xbox-one-series.zip",
+          "size": 8430484,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-xbox-one-series.zip",
+          "digest": "sha256:84adcc90a3f01064bddd85e7794244cee132321550fc54b67f4fc20d72a6a4e5",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 310599924,
+          "name": "devilutionx-xbox.zip",
+          "size": 6635056,
+          "browser_download_url": "https://github.com/diasurgical/DevilutionX/releases/download/1.5.5/devilutionx-xbox.zip",
+          "digest": "sha256:8d65637de7afe2be3543f9daa4b1d3b7d2d0b400e110a1c7cb448e47613c9ab3",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "corsixth/corsixth": {
+    "stars": 4658,
+    "pushedAt": "2026-11-08T15:45:15Z",
+    "starsCheckedAt": "2026-11-09T02:49:03Z",
+    "releaseCheckedAt": "2026-11-09T02:49:03Z",
+    "release": {
+      "tag_name": "v0.70.2",
+      "name": "CorsixTH 0.70.2",
+      "html_url": "https://github.com/CorsixTH/CorsixTH/releases/tag/v0.70.2",
+      "published_at": "2026-11-08T13:00:17Z",
+      "assets": [
+        {
+          "id": 709021605,
+          "name": "CorsixTH-v0.70.2-Windows-x64.zip",
+          "size": 32838541,
+          "browser_download_url": "https://github.com/CorsixTH/CorsixTH/releases/download/v0.70.2/CorsixTH-v0.70.2-Windows-x64.zip",
+          "digest": "sha256:751f837e79ada345f60fba9c97b4d0b2ad7cedcc157b5dd3c257ab7047d24ea2",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 709728621,
+          "name": "CorsixTHInstaller.exe",
+          "size": 35836841,
+          "browser_download_url": "https://github.com/CorsixTH/CorsixTH/releases/download/v0.70.2/CorsixTHInstaller.exe",
+          "digest": "sha256:9dfd9df7c9a6d6b767fd24bf1f9e5a8d3f812b22d097e0eb46747b79aa367a36",
+          "arch": "unknown",
+          "kind": "installer",
+          "windows": true,
+          "recommended": false
+        },
+        {
+          "id": 712319184,
+          "name": "CorsixTH-0.70.2.dmg",
+          "size": 99645786,
+          "browser_download_url": "https://github.com/CorsixTH/CorsixTH/releases/download/v0.70.2/CorsixTH-0.70.2.dmg",
+          "digest": "sha256:9da01dfc58dad3197748e3a0be99722f6b8dfabee887319a78fa6ad099f93106",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 709004077,
+          "name": "CorsixTH-v0.70.2-x86_64.AppImage",
+          "size": 82872824,
+          "browser_download_url": "https://github.com/CorsixTH/CorsixTH/releases/download/v0.70.2/CorsixTH-v0.70.2-x86_64.AppImage",
+          "digest": "sha256:106aa756cfbd59be153067f63fa8ac8b2090996752853cd4f03d03425011237e",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "uzdoom/uzdoom": {
+    "stars": 2332,
+    "pushedAt": "2026-11-08T19:45:10Z",
+    "starsCheckedAt": "2026-11-09T02:49:04Z",
+    "releaseCheckedAt": "2026-11-09T02:49:04Z",
+    "release": {
+      "tag_name": "5.0.3",
+      "name": "UZDoom 5.0.3",
+      "html_url": "https://github.com/UZDoom/UZDoom/releases/tag/5.0.3",
+      "published_at": "2026-09-23T22:16:48Z",
+      "assets": [
+        {
+          "id": 584674267,
+          "name": "Windows-UZDoom-Release-x86_64.zip",
+          "size": 29337585,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/Windows-UZDoom-Release-x86_64.zip",
+          "digest": "sha256:3a41131845415bc4bb5474f8de301a77736bd858e2ab489926325a2675e8263f",
+          "arch": "amd64",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 584674268,
+          "name": "Linux-UZDoom-Release-x86_64.AppImage",
+          "size": 34560504,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/Linux-UZDoom-Release-x86_64.AppImage",
+          "digest": "sha256:9c5166febc09cbf80c24612a78829037c953f38c4d986e36f8475ddd507e0228",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 584674270,
+          "name": "Linux-UZDoom-Release-x86_64.AppImage.zsync",
+          "size": 118347,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/Linux-UZDoom-Release-x86_64.AppImage.zsync",
+          "digest": "sha256:b6902ef31642aed3ca1f490682ff8f306219f7ed8fe9f5ef7048e815a4ad53aa",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 584674271,
+          "name": "MacOS-UZDoom-Release-ARM64.dmg",
+          "size": 32247467,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/MacOS-UZDoom-Release-ARM64.dmg",
+          "digest": "sha256:789465d31dd970c3bff7b929c7f74d090f730d8934a3a0f7aef92befd5582666",
+          "arch": "arm64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 584674266,
+          "name": "_release.json",
+          "size": 1160,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/_release.json",
+          "digest": "sha256:6bdd076643f04607cf68e2a10781b7d2abd67de5458851467f733d92ac3451a9",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 584674269,
+          "name": "_release.json.asc",
+          "size": 228,
+          "browser_download_url": "https://github.com/UZDoom/UZDoom/releases/download/5.0.3/_release.json.asc",
+          "digest": "sha256:cbfdee3c58cd00ee5dae81c51488aade99504ffaa49bb7e0806950647dc987ea",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "dhewm/dhewm3": {
+    "stars": 2196,
+    "pushedAt": "2026-06-08T13:46:34Z",
+    "starsCheckedAt": "2026-11-09T02:49:04Z",
+    "releaseCheckedAt": "2026-11-09T02:49:04Z",
+    "release": {
+      "tag_name": "1.5.5",
+      "name": "dhewm3 1.5.5",
+      "html_url": "https://github.com/dhewm/dhewm3/releases/tag/1.5.5",
+      "published_at": "2026-06-08T13:46:34Z",
+      "assets": [
+        {
+          "id": 441742605,
+          "name": "dhewm3-1.5.5_win32.zip",
+          "size": 11382039,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-1.5.5_win32.zip",
+          "digest": "sha256:7fb23ced41b902c2ca14fa0da37f30f7656a7087310bc70b367f3257ddb0a7f7",
+          "arch": "386",
+          "kind": "zip",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 441716838,
+          "name": "dhewm3-1.5.5_Linux_amd64.tar.gz",
+          "size": 7534656,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-1.5.5_Linux_amd64.tar.gz",
+          "digest": "sha256:793f8dbfb523f8e065b99357f438d0f23f8524c85382098264c3278ac8219290",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 443191405,
+          "name": "dhewm3-1.5.5_Linux_arm64.tar.gz",
+          "size": 7603628,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-1.5.5_Linux_arm64.tar.gz",
+          "digest": "sha256:bf1f62af3c18907a33b77fc261bbed99cc72f684665aab84051c5c5159a86b36",
+          "arch": "arm64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 441718209,
+          "name": "dhewm3-mods-1.5.5_Linux_amd64.tar.gz",
+          "size": 31430497,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-mods-1.5.5_Linux_amd64.tar.gz",
+          "digest": "sha256:c477a59899afb29288042a1dedb92de990054872a5be94b518d9e53049267019",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 443191427,
+          "name": "dhewm3-mods-1.5.5_Linux_arm64.tar.gz",
+          "size": 30075210,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-mods-1.5.5_Linux_arm64.tar.gz",
+          "digest": "sha256:f50ab2d232123c340d9b4e0291dce2f691de6b84b76cd11bd64eece2a6b1c4f1",
+          "arch": "arm64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 441718346,
+          "name": "dhewm3-mods-1.5.5_win32.zip",
+          "size": 26349455,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-mods-1.5.5_win32.zip",
+          "digest": "sha256:06b31ad92be6b32810005c96e38665c625d4d726cbfb58a29b6f54381c86a6c8",
+          "arch": "386",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 441743548,
+          "name": "dhewm3-wide-guis-v0.2.zip",
+          "size": 389619,
+          "browser_download_url": "https://github.com/dhewm/dhewm3/releases/download/1.5.5/dhewm3-wide-guis-v0.2.zip",
+          "digest": "sha256:e01a5834b0f2d4fb7fb1bcfbceea099db0871469d41faaba57fe19d395045322",
+          "arch": "unknown",
+          "kind": "zip",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  },
+  "openmw/openmw": {
+    "stars": 6735,
+    "pushedAt": "2026-11-09T01:22:35Z",
+    "starsCheckedAt": "2026-11-09T02:49:04Z",
+    "releaseCheckedAt": "2026-11-09T02:49:04Z",
+    "release": {
+      "tag_name": "openmw-0.51.0",
+      "name": "OpenMW 0.51.0 Released!",
+      "html_url": "https://github.com/OpenMW/openmw/releases/tag/openmw-0.51.0",
+      "published_at": "2026-06-19T19:58:46Z",
+      "assets": [
+        {
+          "id": 438833986,
+          "name": "OpenMW-0.51.0-Windows-x64.exe",
+          "size": 73331347,
+          "browser_download_url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/OpenMW-0.51.0-Windows-x64.exe",
+          "digest": "sha256:56f6ccda630860a3197fb10c802e047740ea92230474dc442a39674e227f9ce7",
+          "arch": "amd64",
+          "kind": "installer",
+          "windows": true,
+          "recommended": true
+        },
+        {
+          "id": 451600199,
+          "name": "openmw-0.51.0-Linux-64Bit-debug.tar.gz",
+          "size": 629363279,
+          "browser_download_url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/openmw-0.51.0-Linux-64Bit-debug.tar.gz",
+          "digest": "sha256:7acc875d8af4f2509a64a6a6ad50ab6996849f52417f0c54518a77ec58d65ea8",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 451589526,
+          "name": "openmw-0.51.0-Linux-64Bit.tar.gz",
+          "size": 94444356,
+          "browser_download_url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/openmw-0.51.0-Linux-64Bit.tar.gz",
+          "digest": "sha256:a39459e6adad06163eb0ffd4d80229e13aec8748211c3dfd5bf95c204ae68f0b",
+          "arch": "unknown",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 438829353,
+          "name": "OpenMW-0.51.0-macOS-arm64.dmg",
+          "size": 137461865,
+          "browser_download_url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/OpenMW-0.51.0-macOS-arm64.dmg",
+          "digest": "sha256:76bc0436413ed500dcd846a2cc3889711af948645bdd4eafd36ad16bc0c5615c",
+          "arch": "arm64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        },
+        {
+          "id": 438835004,
+          "name": "OpenMW-0.51.0-macOS-x86_64.dmg",
+          "size": 145801559,
+          "browser_download_url": "https://github.com/OpenMW/openmw/releases/download/openmw-0.51.0/OpenMW-0.51.0-macOS-x86_64.dmg",
+          "digest": "sha256:cce014e1827cf2b1a23017894015648298c90e3324097fac157dd9e40b341602",
+          "arch": "amd64",
+          "kind": "file",
+          "windows": false,
+          "recommended": false
+        }
+      ]
+    }
+  }
+}
