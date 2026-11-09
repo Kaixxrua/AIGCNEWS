@@ -5,6 +5,7 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import psycopg
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi_cache import FastAPICache
@@ -12,7 +13,60 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 
 from backend.app.api import routes_dashboard
 from backend.app.api.dependencies import get_user_account_repository
+from backend.app.core import client_ip as client_ip_module
 from backend.app.repositories.site_visit_repository import SiteVisitStats
+
+
+@pytest.mark.parametrize("peer,forwarded,automated", [
+    ("127.0.0.1", "119.28.68.186", True),
+    ("119.28.68.186", "203.0.113.9", True),
+    ("203.0.113.9", "119.28.68.186", False),
+    ("127.0.0.1", "203.0.113.9", False),
+])
+def test_browser_script_filter_respects_proxy_trust_and_all_counting_paths(peer, forwarded, automated):
+    app = FastAPI()
+    app.include_router(routes_dashboard.router, prefix="/api")
+    visits = MagicMock()
+    visits.get_visit_stats.return_value = SiteVisitStats(today_visits=8, total_visits=701)
+    visits.record_visit.return_value = SiteVisitStats(today_visits=8, total_visits=701)
+    app.dependency_overrides[routes_dashboard.get_site_visit_repository] = lambda: visits
+    redis = MagicMock()
+    # First request and landing, then a repeated beacon; automated clients never mark a landing.
+    redis.sadd = AsyncMock(side_effect=[1, 0] if automated else [1, 1, 0, 0])
+    redis.ttl = AsyncMock(return_value=60)
+    app.state.redis = redis
+    browser_ua = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+    )
+    try:
+        with patch.object(client_ip_module.settings, "trusted_proxy_ips", "127.0.0.1,::1"), patch.object(
+            routes_dashboard.live_stats_broadcaster, "notify_live_stats_changed"
+        ) as notify:
+            client_ip_module._reset_trusted_proxy_cache()
+            with TestClient(app, client=(peer, 5000)) as client:
+                for _ in range(2):
+                    response = client.post(
+                        "/api/dashboard/visit",
+                        headers={"User-Agent": browser_ua, "X-Forwarded-For": forwarded},
+                        json={"visitor_id": "visitor-1234567890", "landing_ref": "mcp-429-anon", "landing_path": "/mcp"},
+                    )
+                    assert response.status_code == 200
+                    assert response.json() == {"today_visits": 8, "total_visits": 701}
+            if automated:
+                visits.record_automated_visit.assert_called_once()
+                visits.record_visit.assert_not_called()
+                visits.record_browser_visit.assert_not_called()
+                visits.record_landing.assert_not_called()
+                notify.assert_not_called()
+            else:
+                visits.record_automated_visit.assert_not_called()
+                visits.record_visit.assert_called_once()
+                assert visits.record_browser_visit.call_count == 2
+                visits.record_landing.assert_called_once()
+                notify.assert_called_once_with("site-visit")
+    finally:
+        client_ip_module._reset_trusted_proxy_cache()
 
 
 class SiteVisitBeaconRouteTests(unittest.TestCase):

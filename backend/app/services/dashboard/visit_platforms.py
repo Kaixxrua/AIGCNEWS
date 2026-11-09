@@ -27,6 +27,7 @@ from backend.app.repositories.site_visit_repository import (
     PLATFORM_BUCKETS,
     PlatformVisits,
 )
+from backend.app.services.dashboard.automated_visit_sources import is_known_automated_browser
 
 #: 读端点合法窗口枚举（Query pattern 与之保持一致）：today/7d/30d 为含今天的自然日数。
 VISIT_STATS_WINDOWS: tuple[str, ...] = ("today", "7d", "30d", "all")
@@ -92,11 +93,11 @@ def is_automated_user_agent(user_agent: str | None) -> bool:
     return _CRAWLER_TOKEN.search(ua) is not None
 
 
-def classify_platform(user_agent: str | None) -> str:
+def classify_platform(user_agent: str | None, *, client_ip: str | None = None) -> str:
     """把 User-Agent 归入平台桶；自动化访问归 bot，空/无法识别一律 other。"""
     if not user_agent:
         return DEFAULT_PLATFORM
-    if is_automated_user_agent(user_agent):
+    if is_automated_user_agent(user_agent) or is_known_automated_browser(user_agent, client_ip):
         return AUTOMATED_PLATFORM
     ua = user_agent.casefold()
     if "iphone" in ua or "ipad" in ua or "ipod" in ua:
