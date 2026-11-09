@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"sync"
@@ -225,7 +226,17 @@ func (a *App) handler() http.Handler {
 		reply(w, http.StatusAccepted, a.refreshStatus())
 	})
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
-		games, err := a.github.search(r.Context(), r.URL.Query().Get("q"))
+		params, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(params["minStars"]) > 1 || len(params["maxStars"]) > 1 {
+			fail(w, http.StatusBadRequest, errors.New("搜索参数格式无效，Stars 上下限各只能指定一次"))
+			return
+		}
+		bounds, err := parseStarBounds(params.Get("minStars"), params.Get("maxStars"))
+		if err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		games, err := a.github.search(r.Context(), params.Get("q"), bounds)
 		if err != nil {
 			fail(w, http.StatusBadGateway, err)
 			return

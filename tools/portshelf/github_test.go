@@ -184,20 +184,20 @@ func TestSearchKeepsNewPublicProjectsAndCapsResults(t *testing.T) {
 	g := newGitHub("")
 	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 		query := r.URL.Query()
-		if query.Get("q") != "topic:source-port archived:false" || query.Get("per_page") != "24" || query.Get("sort") != "stars" {
+		if query.Get("q") != `sourceport OR "source port" OR recompilation OR remake archived:false` || query.Get("per_page") != "100" || query.Get("sort") != "stars" {
 			t.Errorf("unexpected default query: %s", r.URL.RawQuery)
 		}
 		items := []map[string]any{{"full_name": "private/repo", "private": true}, {"full_name": "owner/../../evil"}}
 		for i := 0; i < 30; i++ {
-			items = append(items, map[string]any{"full_name": fmt.Sprintf("owner/game%d", i), "name": fmt.Sprintf("game%d", i), "description": "A port", "stargazers_count": 10 + i})
+			items = append(items, map[string]any{"full_name": fmt.Sprintf("owner/game%d", i), "name": fmt.Sprintf("game%d", i), "description": "A source port of a classic game", "stargazers_count": 10 + i})
 		}
 		return apiResponse(200, jsonString(map[string]any{"items": items})), nil
 	})
-	games, err := g.search(context.Background(), "")
-	if err != nil || len(games) != 24 || games[0].Stars == nil || *games[0].Stars != 10 {
+	games, err := g.search(context.Background(), "", starBounds{})
+	if err != nil || len(games) != 24 || games[0].Stars == nil || *games[0].Stars != 39 {
 		t.Fatalf("new project search = %v, %v", games, err)
 	}
-	if _, err := g.search(context.Background(), strings.Repeat("x", 181)); err == nil {
+	if _, err := g.search(context.Background(), strings.Repeat("x", 181), starBounds{}); err == nil {
 		t.Fatal("oversized search accepted")
 	}
 }
@@ -209,5 +209,138 @@ func TestRepositoryRejectsPrivateOrRelocatedProject(t *testing.T) {
 		if _, err := g.repository(context.Background(), "owner/repo"); err == nil {
 			t.Fatalf("unsafe repository accepted: %s", body)
 		}
+	}
+}
+
+func TestSearchStarBoundsIncludeEdgesAndExcludePrivateProjects(t *testing.T) {
+	cases := []struct {
+		name, minimum, maximum string
+		want                   []int
+	}{
+		{"unbounded", "", "", []int{501, 500, 499, 100, 99, 1, 0}},
+		{"minimum included", "100", "", []int{501, 500, 499, 100}},
+		{"maximum included", "", "100", []int{100, 99, 1, 0}},
+		{"both edges included", "100", "500", []int{500, 499, 100}},
+		{"one value", "100", "100", []int{100}},
+		{"exact zero", "0", "0", []int{0}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bounds, err := parseStarBounds(tc.minimum, tc.maximum)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := newGitHub("")
+			g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+				items := []map[string]any{{"full_name": "private/repo", "private": true, "stargazers_count": 100}, {"full_name": "owner/../../evil", "stargazers_count": 100}}
+				for _, stars := range []int{501, 500, 499, 100, 99, 1, 0} {
+					items = append(items, map[string]any{"full_name": fmt.Sprintf("owner/game%d", stars), "name": "A game", "description": "A source port of a classic game", "stargazers_count": stars, "private": false})
+				}
+				return apiResponse(http.StatusOK, jsonString(map[string]any{"items": items})), nil
+			})
+			games, err := g.search(context.Background(), "", bounds)
+			if err != nil || len(games) != len(tc.want) {
+				t.Fatalf("unexpected search results: got %d, want %d, error=%v", len(games), len(tc.want), err)
+			}
+			for i, game := range games {
+				if game.Stars == nil || *game.Stars != tc.want[i] {
+					t.Errorf("game %d has stars %v, want %d", i, game.Stars, tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestAutomaticSearchKeepsGamesAndRejectsCollectionsAndTools(t *testing.T) {
+	candidates := []searchRepository{
+		{FullName: "CorsixTH/CorsixTH", Name: "CorsixTH", Description: "Open source clone of Theme Hospital", Stars: 4658},
+		{FullName: "dhewm/dhewm3", Name: "dhewm3", Description: "A Doom 3 source port", Stars: 2196},
+		{FullName: "chocolate-doom/chocolate-doom", Name: "chocolate-doom", Description: "Conservative sourceport of Doom", Stars: 3000},
+		{FullName: "NagyD/SDLPoP", Name: "SDLPoP", Description: "An open-source port of Prince of Persia", Stars: 1500},
+		{FullName: "Zelda64Recomp/Zelda64Recomp", Name: "Zelda64Recomp", Description: "Static recompilation of Majora's Mask", Stars: 7621},
+		{FullName: "example/topic-remake", Name: "topic-remake", Description: "A classic arcade remake", Topics: []string{"game-engine"}, Stars: 15},
+		{FullName: "example/description-remake", Name: "description-remake", Description: "A remake of the original game", Stars: 10},
+		{FullName: "example/adventure-remake", Name: "adventure-remake", Description: "A modern remake", Topics: []string{"adventure-game"}, Stars: 5},
+		{FullName: "example/new-port", Name: "new-port", Description: "A new source port", Stars: 0},
+		{FullName: "DHEWM/DHEWM3", Name: "dhewm3", Description: "A Doom 3 source port", Stars: 2196},
+		{FullName: "SubmitGame/awesome-decomp-games", Name: "awesome-decomp-games", Description: "Game source ports and recompilation projects", Stars: 100000},
+		{FullName: "example/games", Name: "games", Description: "Game source ports", Topics: []string{"awesome-list"}, Stars: 100001},
+		{FullName: "example/ports-list", Name: "ports-list", Description: "Game source ports", Stars: 100002},
+		{FullName: "example/catalog", Name: "catalog", Description: "A curated collection of game source ports", Stars: 100003},
+		{FullName: "example/ports", Name: "ports", Description: "A list of source ports and game remakes", Stars: 100004},
+		{FullName: "example/game-sdk", Name: "game-sdk", Description: "SDK for game recompilation", Stars: 100005},
+		{FullName: "example/game-toolkit", Name: "game-toolkit", Description: "A toolkit for source ports", Stars: 100006},
+		{FullName: "example/n64-emulator", Name: "n64-emulator", Description: "An emulator with recompilation", Stars: 100007},
+		{FullName: "example/video-remake", Name: "video-remake", Description: "Remake videos using AI", Topics: []string{"video", "ai"}, Stars: 100008},
+		{FullName: "example/network-remake", Name: "network-remake", Description: "A remake of a network client in Rust", Stars: 100009},
+		{FullName: "example/luajit-remake", Name: "luajit-remake", Description: "A remake of LuaJIT", Topics: []string{"jit", "compiler"}, Stars: 100010},
+		{FullName: "example/private-game", Name: "private-game", Description: "Game source port", Private: true, Stars: 100011},
+		{FullName: "owner/../../invalid", Name: "invalid", Description: "Game source port", Stars: 100012},
+	}
+	g := newGitHub("")
+	calls := 0
+	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Query().Get("per_page") != "100" {
+			t.Error("automatic discovery did not request 100 candidates")
+		}
+		return apiResponse(http.StatusOK, jsonString(map[string]any{"items": candidates})), nil
+	})
+	games, err := g.search(context.Background(), "", starBounds{})
+	want := []string{"zelda64recomp/zelda64recomp", "corsixth/corsixth", "chocolate-doom/chocolate-doom", "dhewm/dhewm3", "nagyd/sdlpop", "example/topic-remake", "example/description-remake", "example/adventure-remake", "example/new-port"}
+	if err != nil || calls != 1 || len(games) != len(want) {
+		t.Fatalf("automatic discovery: error=%v calls=%d games=%+v", err, calls, games)
+	}
+	for i, game := range games {
+		if strings.ToLower(game.Repo) != want[i] {
+			t.Errorf("result %d = %s, want %s", i, game.Repo, want[i])
+		}
+		if game.Stars == nil || i > 0 && *games[i-1].Stars < *game.Stars {
+			t.Errorf("results not sorted by real GitHub stars: %+v", game)
+		}
+	}
+	if *games[len(games)-1].Stars != 0 || !strings.Contains(jsonString(games[len(games)-1]), `"stars":0`) {
+		t.Fatal("zero-star game lost its known star count")
+	}
+}
+
+func TestAutomaticSearchFiltersBeforeLimitAndUsesRealStarsForDuplicates(t *testing.T) {
+	candidates := []searchRepository{}
+	for i := 0; i < 30; i++ {
+		candidates = append(candidates, searchRepository{FullName: fmt.Sprintf("example/awesome%d", i), Name: "awesome-games", Description: "A game source port list", Stars: 100000 + i})
+	}
+	for i := 0; i < 30; i++ {
+		candidates = append(candidates, searchRepository{FullName: fmt.Sprintf("example/game%d", i), Name: fmt.Sprintf("game%d", i), Description: "A game source port", Stars: i})
+	}
+	candidates = append(candidates, searchRepository{FullName: "EXAMPLE/GAME0", Name: "Game zero", Description: "A game source port", Stars: 100})
+	g := newGitHub("")
+	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		return apiResponse(http.StatusOK, jsonString(map[string]any{"items": candidates})), nil
+	})
+	games, err := g.search(context.Background(), "", starBounds{})
+	if err != nil || len(games) != 24 || strings.ToLower(games[0].Repo) != "example/game0" || *games[0].Stars != 100 || *games[1].Stars != 29 || *games[23].Stars != 7 {
+		t.Fatalf("filter/sort/deduplicate/limit failed: error=%v games=%+v", err, games)
+	}
+	seen := map[string]bool{}
+	for _, game := range games {
+		key := strings.ToLower(game.Repo)
+		if seen[key] {
+			t.Errorf("duplicate repository: %s", key)
+		}
+		seen[key] = true
+	}
+}
+
+func TestLegacyKeywordSearchRetainsUnclassifiedCandidates(t *testing.T) {
+	g := newGitHub("")
+	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Query().Get("q") != "remake archived:false" || r.URL.Query().Get("per_page") != "24" {
+			t.Errorf("legacy keyword query changed: %s", r.URL)
+		}
+		return apiResponse(http.StatusOK, `{"items":[{"full_name":"example/network-remake","name":"network-remake","description":"A network client remake","stargazers_count":10}]}`), nil
+	})
+	games, err := g.search(context.Background(), "remake", starBounds{})
+	if err != nil || len(games) != 1 || games[0].Repo != "example/network-remake" {
+		t.Fatalf("explicit keyword results were automatically filtered: %v, %+v", err, games)
 	}
 }

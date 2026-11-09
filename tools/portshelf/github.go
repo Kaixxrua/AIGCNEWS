@@ -171,35 +171,163 @@ func (g *GitHub) repository(ctx context.Context, repo string) (repositoryDetails
 	return repositoryDetails{Game: Game{Repo: canonical, Name: d.Name, Subtitle: canonical, Category: "自定义", Description: d.Description, DataNote: "运行要求以项目文档为准。部分移植需要自备原版游戏数据。", Guide: "https://github.com/" + canonical + "#readme", Mark: "GH", Color: "slate", Stars: &d.Stars}, PushedAt: d.PushedAt}, nil
 }
 
-func (g *GitHub) search(ctx context.Context, query string) ([]Game, error) {
+type starBounds struct {
+	min *int
+	max *int
+}
+
+func parseStarBounds(minimum, maximum string) (starBounds, error) {
+	parse := func(raw string) (*int, error) {
+		if raw == "" {
+			return nil, nil
+		}
+		for _, char := range raw {
+			if char < '0' || char > '9' {
+				return nil, errors.New("Stars 必须是 0 到 1000000000 之间的整数")
+			}
+		}
+		value, err := strconv.ParseUint(raw, 10, 32)
+		if err != nil || value > 1_000_000_000 {
+			return nil, errors.New("Stars 必须是 0 到 1000000000 之间的整数")
+		}
+		stars := int(value)
+		return &stars, nil
+	}
+	min, err := parse(minimum)
+	if err != nil {
+		return starBounds{}, err
+	}
+	max, err := parse(maximum)
+	if err != nil {
+		return starBounds{}, err
+	}
+	if min != nil && max != nil && *min > *max {
+		return starBounds{}, errors.New("最低 Stars 不能超过最高 Stars")
+	}
+	return starBounds{min: min, max: max}, nil
+}
+
+func (bounds starBounds) qualifier() string {
+	switch {
+	case bounds.min != nil && bounds.max != nil:
+		return fmt.Sprintf(" stars:%d..%d", *bounds.min, *bounds.max)
+	case bounds.min != nil:
+		return fmt.Sprintf(" stars:>=%d", *bounds.min)
+	case bounds.max != nil:
+		return fmt.Sprintf(" stars:<=%d", *bounds.max)
+	default:
+		return ""
+	}
+}
+
+func (bounds starBounds) includes(stars int) bool {
+	return (bounds.min == nil || stars >= *bounds.min) && (bounds.max == nil || stars <= *bounds.max)
+}
+
+const automaticGameQuery = `sourceport OR "source port" OR recompilation OR remake`
+
+type searchRepository struct {
+	FullName    string   `json:"full_name"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Topics      []string `json:"topics"`
+	Stars       int      `json:"stargazers_count"`
+	Private     bool     `json:"private"`
+}
+
+var collectionNameMarker = regexp.MustCompile(`(?i)(^|[-_ ])(list|lists|collection|collections)([-_ ]|$)`)
+var collectionDescriptionMarker = regexp.MustCompile(`(?i)(\bcurated\s+(list|collection)\b|^\s*(a\s+|an\s+)?(list|collection)\s+of\b)`)
+var developmentToolMarker = regexp.MustCompile(`(?i)\b(sdk|toolkit|emulator|emulators|development[ -]kit)\b`)
+var portMarker = regexp.MustCompile(`(?i)\b(source[ -]?ports?|recompilation)\b`)
+var remakeMarker = regexp.MustCompile(`(?i)\bremakes?\b`)
+var gameDescriptionMarker = regexp.MustCompile(`(?i)\b(games?|gameplay)\b`)
+
+func isGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
+	name := strings.ToLower(repo.Name + " " + strings.Split(repo.FullName, "/")[1])
+	topics := strings.ToLower(strings.Join(repo.Topics, " "))
+	text := name + " " + repo.Description + " " + topics
+	if strings.Contains(name, "awesome") || strings.Contains(topics, "awesome") || collectionNameMarker.MatchString(name+" "+topics) || collectionDescriptionMarker.MatchString(repo.Description) || developmentToolMarker.MatchString(text) {
+		return false
+	}
+	if knownGames[strings.ToLower(repo.FullName)] || portMarker.MatchString(text) {
+		return true
+	}
+	if !remakeMarker.MatchString(text) {
+		return false
+	}
+	if gameDescriptionMarker.MatchString(repo.Description) {
+		return true
+	}
+	for _, topic := range repo.Topics {
+		topic = strings.ToLower(topic)
+		if topic == "game" || topic == "gaming" || topic == "game-engine" || strings.HasSuffix(topic, "-game") {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([]Game, error) {
 	query = strings.TrimSpace(query)
 	if len(query) > 180 {
 		return nil, errors.New("搜索关键词太长")
 	}
-	if query == "" {
-		query = "topic:source-port"
+	automatic := query == ""
+	perPage := 24
+	knownGames := map[string]bool{}
+	if automatic {
+		query = automaticGameQuery
+		perPage = 100
+		catalog, err := readCatalog()
+		if err != nil {
+			return nil, err
+		}
+		for _, game := range catalog {
+			knownGames[strings.ToLower(game.Repo)] = true
+		}
 	}
 	var d struct {
-		Items []struct {
-			FullName    string `json:"full_name"`
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Stars       int    `json:"stargazers_count"`
-			Private     bool   `json:"private"`
-		} `json:"items"`
+		Items []searchRepository `json:"items"`
 	}
-	if err := g.get(ctx, "/search/repositories?q="+url.QueryEscape(query+" archived:false")+"&sort=stars&order=desc&per_page=24", &d); err != nil {
+	if err := g.get(ctx, "/search/repositories?q="+url.QueryEscape(query+" archived:false"+bounds.qualifier())+"&sort=stars&order=desc&per_page="+strconv.Itoa(perPage), &d); err != nil {
 		return nil, err
 	}
 	games := []Game{}
+	seen := map[string]int{}
 	for _, repo := range d.Items {
 		canonical, err := parseRepo(repo.FullName)
-		if err != nil || repo.Private {
+		if err != nil || repo.Private || !bounds.includes(repo.Stars) {
 			continue
 		}
-		games = append(games, Game{Repo: canonical, Name: repo.Name, Description: repo.Description, Guide: "https://github.com/" + canonical + "#readme", Subtitle: canonical, Category: "GitHub", Mark: "GH", Color: "slate", Stars: &repo.Stars})
-		if len(games) == 24 {
+		repo.FullName = canonical
+		game := Game{Repo: canonical, Name: repo.Name, Description: repo.Description, Guide: "https://github.com/" + canonical + "#readme", Subtitle: canonical, Category: "GitHub", Mark: "GH", Color: "slate", Stars: &repo.Stars}
+		if automatic {
+			if !isGameCandidate(repo, knownGames) {
+				continue
+			}
+			key := strings.ToLower(canonical)
+			if index, exists := seen[key]; exists {
+				if repo.Stars > *games[index].Stars {
+					games[index] = game
+				}
+				continue
+			}
+			seen[key] = len(games)
+		}
+		games = append(games, game)
+		if !automatic && len(games) == 24 {
 			break
+		}
+	}
+	if automatic {
+		sort.Slice(games, func(i, j int) bool {
+			if *games[i].Stars == *games[j].Stars {
+				return strings.ToLower(games[i].Repo) < strings.ToLower(games[j].Repo)
+			}
+			return *games[i].Stars > *games[j].Stars
+		})
+		if len(games) > 24 {
+			games = games[:24]
 		}
 	}
 	return games, nil

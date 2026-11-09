@@ -54,19 +54,44 @@
             <div class="stat stat-note"><span class="stat-label">资料来自 GitHub</span><strong id="checked-label">正在读取本地目录</strong><span>Stars 与下载地址按核对时间显示</span></div>
           </div>
           <div class="toolbar">
-            <div class="search-wrap"><label class="sr-only" for="library-search">搜索目录</label><input id="library-search" type="search" placeholder="搜索游戏、原作名称或简介…" autocomplete="off"><kbd aria-hidden="true">/</kbd></div>
+            <div class="search-wrap"><label class="sr-only" for="library-search">名称筛选（可选）</label><input id="library-search" type="search" placeholder="名称筛选（可选）…" autocomplete="off"><kbd aria-hidden="true">/</kbd></div>
             <div class="mobile-category"><label class="sr-only" for="category-select">游戏类型</label><select id="category-select"><option value="all">全部类型</option></select></div>
             <label class="sort-wrap"><span>排序</span><select id="sort-select"><option value="stars">Stars 从高到低</option><option value="updated">最近更新</option><option value="name">名称 A–Z</option></select></label>
             <div class="view-switch" role="group" aria-label="目录显示方式"><button id="grid-view" aria-pressed="true" title="卡片视图">卡片</button><button id="list-view" aria-pressed="false" title="列表视图">列表</button></div>
           </div>
+          <div class="library-stars-filter">
+            <span class="range-label">Stars 范围</span>
+            <div class="stars-range-fields">
+              <label><span>最低 Stars</span><input id="library-min-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" placeholder="不限" aria-describedby="library-range-summary library-range-error"></label>
+              <span class="range-separator" aria-hidden="true">—</span>
+              <label><span>最高 Stars</span><input id="library-max-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" placeholder="不限" aria-describedby="library-range-summary library-range-error"></label>
+            </div>
+            <span class="range-summary" id="library-range-summary" aria-live="polite">Stars 不限 · 留空表示不限</span>
+            <button class="text-button clear-range-button" id="clear-filters-top">清除筛选</button>
+          </div>
+          <p class="form-error range-error" id="library-range-error" role="alert" hidden></p>
           <div class="section-heading"><h2 id="results-title">全部游戏</h2><span id="result-count" aria-live="polite">读取中…</span></div>
           <div class="game-grid" id="game-grid" aria-busy="true"></div>
-          <div class="empty-state" id="library-empty" hidden><span class="empty-mark" aria-hidden="true">⌕</span><h3>没有找到匹配的游戏</h3><p>试试原作名称，或换一个游戏类型。</p><button class="button button-secondary" id="clear-filters">清除筛选</button></div>
+          <div class="empty-state" id="library-empty" hidden><span class="empty-mark" aria-hidden="true">⌕</span><h3>没有找到匹配的游戏</h3><p>试试放宽 Stars 范围，或清除名称和类型筛选。</p><button class="button button-secondary" id="clear-filters">清除筛选</button></div>
         </section>
 
         <section id="discover-view" aria-label="在 GitHub 发现游戏" hidden>
-          <div class="discover-intro"><span class="small-label">DISCOVER ON GITHUB</span><h2>下一款想重玩的游戏。</h2><p>搜索 GitHub 上的公开项目，加入目录后即可核对 Stars 和下载附件。</p><form class="discover-form" id="discover-form"><label class="sr-only" for="discover-search">GitHub 项目关键词</label><input id="discover-search" type="search" value="topic:source-port" placeholder="游戏名称、关键词或 topic:source-port" maxlength="200" required><button class="button button-primary" id="discover-submit" type="submit">搜索 GitHub</button></form><p class="field-help">支持 GitHub 搜索语法，例如 <code>topic:source-port</code>、<code>openrct2</code>。搜索结果不一定提供 Windows 版本。</p></div>
-          <div class="section-heading"><h2>搜索结果</h2><span id="discover-count" aria-live="polite">输入关键词开始搜索</span></div>
+          <div class="discover-intro">
+            <span class="small-label">DISCOVER ON GITHUB</span><h2>按热度，发现下一款经典。</h2><p>选择 Stars 范围，自动查找 GitHub 上的开源移植游戏。</p>
+            <form class="discover-form stars-search-form" id="discover-form" novalidate>
+              <div class="stars-range-fields">
+                <label><span>最低 Stars</span><input id="discover-min-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" value="1000" placeholder="不限" aria-describedby="discover-range-help discover-range-error"></label>
+                <span class="range-separator" aria-hidden="true">—</span>
+                <label><span>最高 Stars</span><input id="discover-max-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" placeholder="不限" aria-describedby="discover-range-help discover-range-error"></label>
+              </div>
+              <button class="button button-primary" id="discover-submit" type="submit">按 Stars 查找</button>
+            </form>
+            <div class="star-presets" role="group" aria-label="快速设置最低 Stars"><span>快捷下限</span><button type="button" data-min-stars="" aria-pressed="false">全部</button><button type="button" data-min-stars="100" aria-pressed="false">100+</button><button type="button" data-min-stars="500" aria-pressed="false">500+</button><button type="button" data-min-stars="1000" aria-pressed="true">1000+</button><button type="button" data-min-stars="5000" aria-pressed="false">5000+</button><button type="button" data-min-stars="10000" aria-pressed="false">10000+</button></div>
+            <p class="form-error range-error" id="discover-range-error" role="alert" hidden></p>
+            <p class="range-summary" id="discover-range-summary" aria-live="polite">当前范围：Stars ≥ 1,000</p>
+            <p class="field-help" id="discover-range-help">上下限均包含边界，留空表示不限。按 Stars 从高到低，最多显示 24 个项目；加入目录后可查看 Windows 下载附件。</p>
+          </div>
+          <div class="section-heading discover-heading"><h2>查找结果</h2><span id="discover-count" aria-live="polite">选择范围后点击“按 Stars 查找”</span></div>
           <div class="discover-results" id="discover-results"></div>
         </section>
 

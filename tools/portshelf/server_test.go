@@ -358,3 +358,69 @@ func TestSearchSerializesKnownZeroStars(t *testing.T) {
 		t.Fatal("unqueried game should not claim a known star count")
 	}
 }
+
+func TestSearchStarFilterQueriesWithoutKeywords(t *testing.T) {
+	cases := []struct {
+		name, parameters, query string
+	}{
+		{"no filters", "", `sourceport OR "source port" OR recompilation OR remake archived:false`},
+		{"empty filters", "?minStars=&maxStars=", `sourceport OR "source port" OR recompilation OR remake archived:false`},
+		{"minimum", "?minStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=500`},
+		{"maximum", "?maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:<=500`},
+		{"range", "?minStars=100&maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:100..500`},
+		{"zero minimum", "?minStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=0`},
+		{"zero maximum", "?maxStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:<=0`},
+		{"exact zero", "?minStars=0&maxStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:0..0`},
+		{"equal bounds", "?minStars=500&maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:500..500`},
+		{"maximum allowed", "?minStars=1000000000&maxStars=1000000000", `sourceport OR "source port" OR recompilation OR remake archived:false stars:1000000000..1000000000`},
+		{"legacy keyword", "?q=doom&minStars=50", "doom archived:false stars:>=50"},
+		{"legacy keyword only", "?q=doom", "doom archived:false"},
+		{"blank keyword", "?q=%20%20&minStars=50", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=50`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := testApp(t)
+			calls := 0
+			app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				params := r.URL.Query()
+				expectedPageSize := "100"
+				if strings.HasPrefix(tc.name, "legacy") {
+					expectedPageSize = "24"
+				}
+				if r.URL.Path != "/search/repositories" || params.Get("q") != tc.query || params.Get("sort") != "stars" || params.Get("order") != "desc" || params.Get("per_page") != expectedPageSize {
+					t.Errorf("incorrect GitHub search request: %s", r.URL)
+				}
+				return apiResponse(http.StatusOK, `{"items":[]}`), nil
+			})
+			w := call(app, "GET", "/api/search"+tc.parameters, "")
+			if w.Code != http.StatusOK || calls != 1 || strings.TrimSpace(w.Body.String()) != "[]" {
+				t.Fatalf("unexpected search response: HTTP %d, calls=%d, body=%s", w.Code, calls, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestSearchRejectsInvalidStarFiltersBeforeGitHub(t *testing.T) {
+	cases := []string{
+		"minStars=-1", "maxStars=-1", "minStars=1.5", "maxStars=0.0", "minStars=abc", "maxStars=NaN", "minStars=1e3", "minStars=%2B1", "maxStars=%20", "minStars=1000000001", "maxStars=1000000001", "minStars=999999999999999999999999999999999", "minStars=501&maxStars=500", "minStars=1&maxStars=0", "minStars=%EF%BC%91", "minStars=%ZZ", "minStars=0&minStars=-1", "maxStars=1&maxStars=2",
+	}
+	app := testApp(t)
+	calls := 0
+	app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return apiResponse(http.StatusOK, `{"items":[]}`), nil
+	})
+	for _, params := range cases {
+		t.Run(params, func(t *testing.T) {
+			w := call(app, "GET", "/api/search?"+params, "")
+			var failure map[string]string
+			if err := json.Unmarshal(w.Body.Bytes(), &failure); w.Code != http.StatusBadRequest || err != nil || failure["error"] == "" {
+				t.Fatalf("invalid filter not rejected with JSON 400: HTTP %d, %v, %s", w.Code, err, w.Body.String())
+			}
+		})
+	}
+	if calls != 0 {
+		t.Fatalf("invalid filters made %d GitHub requests", calls)
+	}
+}

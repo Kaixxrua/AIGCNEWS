@@ -3,7 +3,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const state = {
-    games: [], snapshots: {}, category: "all", query: "", sort: "stars", view: "grid",
+    games: [], snapshots: {}, category: "all", query: "", sort: "stars", view: "grid", minStars: null, maxStars: null,
     page: "library", hasToken: false, refreshing: false, polling: null, pollBusy: false,
     selected: null, allAssets: false, searchResults: [], searchBusy: false, stopped: false,
     loaded: false, toastTimer: null, activeRefresh: null,
@@ -78,13 +78,13 @@
   }
 
   function snapshot(game) { return state.snapshots[String(game.repo).toLowerCase()] || null; }
-  function starValue(game) {
-    const record = snapshot(game);
+  function starValue(game, useSnapshot = true) {
+    const record = useSnapshot ? snapshot(game) : null;
     const value = record?.starsCheckedAt ? record.stars : game.stars;
     return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
   }
-  function stars(game) {
-    const value = starValue(game);
+  function stars(game, useSnapshot = true) {
+    const value = starValue(game, useSnapshot);
     const node = element("span", "star-count" + (value === null ? " unknown" : ""));
     const symbol = element("span", "star-symbol", "☆");
     symbol.setAttribute("aria-hidden", "true");
@@ -92,6 +92,64 @@
     node.setAttribute("aria-label", value === null ? "GitHub Stars 待核对" : numberFormat.format(value) + " GitHub Stars");
     return node;
   }
+
+  function rangeLabel(range) {
+    if (range.min === null && range.max === null) return "Stars 不限";
+    if (range.min === null) return "Stars ≤ " + numberFormat.format(range.max);
+    if (range.max === null) return "Stars ≥ " + numberFormat.format(range.min);
+    return "Stars " + numberFormat.format(range.min) + "–" + numberFormat.format(range.max);
+  }
+
+  function readStarsRange(prefix) {
+    const range = { min: null, max: null };
+    let error = "";
+    for (const [bound, label] of [["min", "最低"], ["max", "最高"]]) {
+      const input = $(prefix + "-" + bound + "-stars");
+      const raw = input.value.trim();
+      const value = raw === "" ? null : Number(raw);
+      const invalid = input.validity.badInput || (raw !== "" && (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 0 || value > 1000000000));
+      input.setAttribute("aria-invalid", String(invalid));
+      if (invalid && !error) error = label + " Stars 必须是 0–1,000,000,000 之间的整数，或留空表示不限。";
+      range[bound] = value;
+    }
+    if (!error && range.min !== null && range.max !== null && range.min > range.max) {
+      error = "最低 Stars 不能大于最高 Stars。";
+      $(prefix + "-min-stars").setAttribute("aria-invalid", "true");
+      $(prefix + "-max-stars").setAttribute("aria-invalid", "true");
+    }
+    showError(prefix + "-range-error", error ? (prefix === "library" ? "筛选未更新：" : "") + error : "");
+    return error ? null : range;
+  }
+
+  function updateLibraryRange() {
+    const range = readStarsRange("library");
+    if (!range) return;
+    state.minStars = range.min;
+    state.maxStars = range.max;
+    $("library-range-summary").textContent = rangeLabel(range) + (range.min !== null || range.max !== null ? " · 未核对 Stars 已隐藏" : " · 留空表示不限");
+    renderGames();
+  }
+
+  function updateDiscoverRange() {
+    const range = readStarsRange("discover");
+    $("discover-range-summary").textContent = range ? "当前范围：" + rangeLabel(range) : "请修正 Stars 范围后再查找。";
+    document.querySelectorAll("[data-min-stars]").forEach((button) => {
+      const value = button.dataset.minStars === "" ? null : Number(button.dataset.minStars);
+      const selected = Boolean(range && range.min === value && (value !== null || range.max === null));
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    return range;
+  }
+
+  function clearLibraryFilters() {
+    state.query = "";
+    $("library-search").value = "";
+    $("library-min-stars").value = "";
+    $("library-max-stars").value = "";
+    updateLibraryRange();
+    chooseCategory("all");
+  }
+
   function timestamp(value) { const result = Date.parse(value); return Number.isFinite(result) ? result : 0; }
   function date(value, withTime = false) {
     if (!timestamp(value)) return "待核对";
@@ -197,8 +255,13 @@
 
   function renderGames() {
     const query = state.query.trim().toLocaleLowerCase();
+    const hasStarRange = state.minStars !== null || state.maxStars !== null;
     const games = state.games.filter((game) => {
       if (state.category !== "all" && (game.category || "其他项目") !== state.category) return false;
+      if (hasStarRange) {
+        const value = starValue(game);
+        if (value === null || (state.minStars !== null && value < state.minStars) || (state.maxStars !== null && value > state.maxStars)) return false;
+      }
       return !query || [game.name, game.subtitle, game.description, game.repo, game.category].some((value) => String(value || "").toLocaleLowerCase().includes(query));
     });
     games.sort((a, b) => {
@@ -211,7 +274,7 @@
     $("game-grid").replaceChildren(...games.map(gameCard));
     $("library-empty").hidden = games.length > 0 || !state.loaded;
     $("results-title").textContent = state.category === "all" ? "全部游戏" : state.category;
-    $("result-count").textContent = query || state.category !== "all" ? "找到 " + games.length + " 款 / 共 " + state.games.length + " 款" : "共 " + games.length + " 款游戏";
+    $("result-count").textContent = query || state.category !== "all" || hasStarRange ? "找到 " + games.length + " 款 / 共 " + state.games.length + " 款" : "共 " + games.length + " 款游戏";
   }
 
   async function loadLibrary() {
@@ -446,7 +509,7 @@
     $("discover-results").replaceChildren();
     if (!state.searchResults.length) {
       const empty = element("div", "empty-state");
-      empty.append(element("h3", "", "没有找到匹配的项目"), element("p", "", "试试英文游戏名称，或使用 topic:source-port。"));
+      empty.append(element("h3", "", "这个 Stars 范围内没有找到项目"), element("p", "", "试试降低最低 Stars、提高最高 Stars，或选择“全部”后重新查找。"));
       $("discover-results").append(empty);
       return;
     }
@@ -457,7 +520,7 @@
       heading.append(externalLink(game.name || game.repo, repoURL(game.repo)));
       info.append(heading, element("div", "repo-path", game.repo), element("p", "", game.description || "上游尚未填写简介，可前往 GitHub 查看项目详情。"));
       const actions = element("div", "search-result-actions");
-      actions.append(stars(game));
+      actions.append(stars(game, false));
       const added = state.games.some((item) => item.repo.toLowerCase() === String(game.repo).toLowerCase());
       const button = element("button", "button " + (added ? "button-secondary" : "button-subtle") + " button-small", added ? "已加入 · 查看下载" : "＋ 加入目录");
       button.addEventListener("click", async () => {
@@ -478,37 +541,52 @@
   async function searchGitHub(event) {
     event.preventDefault();
     if (state.searchBusy) return;
-    const query = $("discover-search").value.trim();
-    if (!query) return;
+    const range = updateDiscoverRange();
+    if (!range) {
+      $("discover-form").querySelector('[aria-invalid="true"]')?.focus();
+      return;
+    }
+    const params = new URLSearchParams();
+    if (range.min !== null) params.set("minStars", String(range.min));
+    if (range.max !== null) params.set("maxStars", String(range.max));
     state.searchBusy = true;
-    busy($("discover-submit"), true, "搜索中…", "搜索 GitHub");
-    $("discover-count").textContent = "正在搜索 GitHub…";
+    state.searchResults = [];
+    busy($("discover-submit"), true, "正在查找…", "按 Stars 查找");
+    $("discover-count").textContent = rangeLabel(range) + " · 正在查找…";
+    $("discover-results").replaceChildren();
     $("discover-results").setAttribute("aria-busy", "true");
     try {
-      const results = await api("/api/search?q=" + encodeURIComponent(query));
+      const results = await api("/api/search" + (params.size ? "?" + params.toString() : ""));
       if (state.stopped) return;
-      state.searchResults = Array.isArray(results) ? results : [];
+      state.searchResults = Array.isArray(results) ? results.slice().sort((a, b) => (starValue(b, false) ?? -1) - (starValue(a, false) ?? -1)).slice(0, 24) : [];
       renderSearchResults();
-      $("discover-count").textContent = "找到 " + state.searchResults.length + " 个项目";
+      $("discover-count").textContent = rangeLabel(range) + " · 找到 " + state.searchResults.length + " 个项目";
     } catch (error) {
       if (state.stopped) return;
-      $("discover-count").textContent = "搜索未完成";
+      $("discover-count").textContent = rangeLabel(range) + " · 查找未完成";
       $("discover-results").replaceChildren(element("div", "notice error", error.message));
     } finally {
       state.searchBusy = false;
-      busy($("discover-submit"), false, "", "搜索 GitHub");
+      busy($("discover-submit"), false, "", "按 Stars 查找");
       if ($("discover-results")) $("discover-results").setAttribute("aria-busy", "false");
     }
   }
 
   function setupEvents() {
     $("library-nav").addEventListener("click", () => changePage("library"));
-    $("discover-nav").addEventListener("click", () => { changePage("discover"); $("discover-search").focus(); });
+    $("discover-nav").addEventListener("click", () => { changePage("discover"); $("discover-min-stars").focus(); });
     document.querySelector(".brand").addEventListener("click", (event) => { event.preventDefault(); changePage("library"); });
     $("library-search").addEventListener("input", (event) => { state.query = event.target.value; renderGames(); });
     $("sort-select").addEventListener("change", (event) => { state.sort = event.target.value; renderGames(); });
     $("category-select").addEventListener("change", (event) => chooseCategory(event.target.value));
-    $("clear-filters").addEventListener("click", () => { state.query = ""; $("library-search").value = ""; chooseCategory("all"); $("library-search").focus(); });
+    ["library-min-stars", "library-max-stars"].forEach((id) => $(id).addEventListener("input", updateLibraryRange));
+    ["discover-min-stars", "discover-max-stars"].forEach((id) => $(id).addEventListener("input", updateDiscoverRange));
+    ["clear-filters", "clear-filters-top"].forEach((id) => $(id).addEventListener("click", () => { clearLibraryFilters(); $("library-search").focus(); }));
+    document.querySelectorAll("[data-min-stars]").forEach((button) => button.addEventListener("click", () => {
+      $("discover-min-stars").value = button.dataset.minStars;
+      if (button.dataset.minStars === "") $("discover-max-stars").value = "";
+      updateDiscoverRange();
+    }));
     [["grid-view", "grid"], ["list-view", "list"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
       state.view = view;
       $("grid-view").setAttribute("aria-pressed", String(view === "grid"));
@@ -543,7 +621,7 @@
         if (state.stopped) return;
         $("add-dialog").close();
         $("repo-input").value = "";
-        state.query = ""; $("library-search").value = ""; chooseCategory("all");
+        clearLibraryFilters();
         notify("已将 " + (game.name || game.repo || "项目") + " 加入目录。");
       } catch (error) { showError("add-error", error.message); }
       finally { busy(button, false, "", "添加并核对资料"); }
@@ -583,7 +661,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) || state.stopped) return;
       event.preventDefault();
-      $(state.page === "library" ? "library-search" : "discover-search").focus();
+      $(state.page === "library" ? "library-search" : "discover-min-stars").focus();
     });
   }
 
