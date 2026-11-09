@@ -97,8 +97,9 @@ async def request_project_description(
     authorization = McpAuthorizationContext(user)
     if not authorization.is_authenticated or authorization.user_id <= 0:
         raise HTTPException(401, "生成中文简介需要 AIGCNEWS MCP Token。", headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"})
-    if not authorization.has_scope("read"):
-        raise HTTPException(403, "MCP Token 缺少 read 权限。", headers={"Cache-Control": "no-store"})
+    # Public repository generation uses the authenticated account's API quota,
+    # just like public project search. Issued scopes govern personal favorites
+    # and tracking only; the token issuer does not grant a generic "read" scope.
     response.headers["Cache-Control"] = "no-store"
     try:
         item = await service.request(payload.repo, redis=getattr(request.app.state, "redis", None), authorization=authorization, operations=operations)

@@ -12,8 +12,12 @@ import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.api import routes_project_descriptions as routes
-from backend.app.api.dependencies import get_operations_runtime, get_project_descriptions_service
+from backend.app.api import routes_auth, routes_project_descriptions as routes
+from backend.app.api.dependencies import (
+    get_mcp_access_token_repository,
+    get_operations_runtime,
+    get_project_descriptions_service,
+)
 from backend.app.core.auth import OptionalMcpUser, get_mcp_access_token_authenticator
 from backend.app.models.schema_project_descriptions import normalize_description_repo
 from backend.app.services.api_access import quota
@@ -30,7 +34,7 @@ from backend.app.services.project_catalog.descriptions_service import (
 )
 
 ZH = "Doom 3 的源码移植，让经典第一人称射击游戏在现代系统上继续运行。"
-USER = {"user_id": 921734, "role": "user", "scopes": frozenset({"read"})}
+USER = {"user_id": 921734, "role": "user", "scopes": frozenset(routes_auth.DEFAULT_MCP_TOKEN_SCOPES)}
 
 
 class QueuedOperations:
@@ -76,11 +80,58 @@ class DescriptionRouteTests(unittest.TestCase):
         for names in ["a/b," * 50 + "c/d", "../secret", "a/..", "https://github.com/a/b", "a/b?x=1", "a/%2e%2e", "a/b/c", "a/b,,c/d"]:
             self.assertEqual(browser.get("/api/v1/projects/descriptions", params={"repos": names}).status_code, 422, names)
 
-    def test_post_auth_and_scope_are_required_even_for_cached_repositories(self):
-        for user, status in [(None, 401), ({**USER, "scopes": []}, 403)]:
+    def test_post_requires_authenticated_user_even_for_cached_repositories(self):
+        for user in [None, {}, {**USER, "user_id": 0}, {**USER, "user_id": -1}]:
             browser, service = client(user=user)
-            self.assertEqual(browser.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}).status_code, status)
+            service.request.return_value = {"repo": "acme/game", "status": "ready", "descriptionZh": ZH}
+            self.assertEqual(browser.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}).status_code, 401)
             service.request.assert_not_awaited()
+
+    def test_tokens_from_actual_issuance_route_can_generate_and_read_cached_descriptions(self):
+        # Exercise the real issuer defaults and Bearer authentication together;
+        # a synthetic generic "read" scope previously hid this compatibility bug.
+        for scopes in [None, ["projects:favorites:read"], ["tracking:read"]]:
+            with self.subTest(scopes=scopes):
+                browser, service = client(real_auth=True)
+                browser.app.include_router(routes_auth.router, prefix="/api")
+                browser.app.dependency_overrides[routes_auth.RequireUser] = lambda: dict(USER)
+                tokens = {}
+
+                def issue(**values):
+                    tokens[values["token_hash"]] = {**USER, "scopes": values["scopes"]}
+                    return {"token_metadata": {"id": 1, "scopes": values["scopes"]}, "replaced_count": 0}
+
+                repository = SimpleNamespace(
+                    create_user_mcp_token=MagicMock(side_effect=issue),
+                    get_user_by_mcp_token_hash=MagicMock(side_effect=lambda token_hash: dict(tokens[token_hash]) if token_hash in tokens else None),
+                )
+                browser.app.dependency_overrides[get_mcp_access_token_repository] = lambda: repository
+                browser.app.dependency_overrides[get_mcp_access_token_authenticator] = lambda: repository
+                payload = {"client_type": "other", "client_label": "PortShelf test"}
+                if scopes is not None:
+                    payload["scopes"] = scopes
+                issued = browser.post("/api/auth/me/mcp-tokens", json=payload)
+                self.assertEqual(issued.status_code, 200)
+                granted = issued.json()["token_metadata"]["scopes"]
+                self.assertNotIn("read", granted)
+                headers = {"Authorization": "Bearer " + issued.json()["token"]}
+                response = browser.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}, headers=headers)
+                self.assertEqual(response.status_code, 202, response.text)
+                authorization = service.request.await_args.kwargs["authorization"]
+                self.assertEqual(authorization.user_id, USER["user_id"])
+                self.assertEqual(authorization.user["scopes"], frozenset(granted))
+                service.request.return_value = {"repo": "acme/game", "status": "ready", "descriptionZh": ZH}
+                self.assertEqual(browser.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}, headers=headers).status_code, 200)
+
+    def test_malformed_token_scope_metadata_is_still_rejected_by_authenticator(self):
+        for scopes in [None, "read", [1], {"read": True}]:
+            with self.subTest(scopes=scopes):
+                browser, service = client(real_auth=True)
+                repository = SimpleNamespace(get_user_by_mcp_token_hash=MagicMock(return_value={**USER, "scopes": scopes}))
+                browser.app.dependency_overrides[get_mcp_access_token_authenticator] = lambda: repository
+                response = browser.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}, headers={"Authorization": "Bearer test-malformed-token"})
+                self.assertEqual(response.status_code, 401)
+                service.request.assert_not_awaited()
 
     def test_invalid_real_mcp_token_is_rejected(self):
         browser, service = client(real_auth=True)
@@ -225,6 +276,33 @@ class RealRedisDescriptionTests(unittest.IsolatedAsyncioTestCase):
 
     def daily_key(self):
         return f"ratelimit:{quota.API_QUOTA_DAILY_BUCKET}:user:{self.user_id}"
+
+    async def test_default_token_through_http_preserves_shared_quota_and_cache(self):
+        browser, _ = client(service=self.service, real_auth=True)
+        browser.app.state.redis = self.redis
+        browser.app.dependency_overrides[get_operations_runtime] = lambda: self.operations
+        token_repository = SimpleNamespace(get_user_by_mcp_token_hash=lambda _: {
+            **USER, "user_id": self.user_id, "scopes": list(routes_auth.DEFAULT_MCP_TOKEN_SCOPES),
+        })
+        browser.app.dependency_overrides[get_mcp_access_token_authenticator] = lambda: token_repository
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=browser.app), base_url="http://test") as http:
+            headers = {"Authorization": "Bearer test-default-scopes"}
+            for _ in range(2):
+                response = await http.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}, headers=headers)
+                self.assertEqual(response.status_code, 202, response.text)
+            self.assertEqual(await self.redis.get(self.daily_key()), "1")
+            await self.operations.run()
+            cached = await http.post("/api/v1/projects/descriptions", json={"repo": "acme/game"}, headers=headers)
+            self.assertEqual(cached.status_code, 200)
+            self.assertEqual(cached.json()["items"][0]["descriptionZh"], ZH)
+            self.assertEqual(await self.redis.get(self.daily_key()), "1")
+            # Current API policy gives all authenticated accounts this quota.
+            await self.redis.set(self.daily_key(), quota.API_MEMBER_DAILY_SEARCH_QUOTA, ex=60)
+            denied = await http.post("/api/v1/projects/descriptions", json={"repo": "acme/other"}, headers=headers)
+            self.assertEqual(denied.status_code, 429)
+            self.assertEqual(denied.json()["error"], "quota_exceeded")
+            self.assertEqual(self.operations.jobs, [])
+            self.describe.assert_awaited_once()
 
     async def test_cache_miss_duplicate_requests_and_ready_cache_only_charge_once(self):
         initial = await self.read()
