@@ -336,6 +336,8 @@ func (a *App) registerDescriptionRoutes(mux *http.ServeMux) {
 			return
 		}
 		a.aigc.setToken(token)
+		a.credentialsChanged()
+		a.transfers.credentialsAvailable("aigc")
 		reply(w, 200, map[string]bool{"hasAigcToken": token != ""})
 	})
 }

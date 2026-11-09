@@ -184,6 +184,7 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 	if snapshot.Release != nil {
 		release := *snapshot.Release
 		release.Assets = append([]Asset{}, release.Assets...)
+		release.SupportedSystems = append([]string{}, release.SupportedSystems...)
 		snapshot.Release = &release
 	}
 	return snapshot

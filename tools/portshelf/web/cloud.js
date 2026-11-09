@@ -58,10 +58,16 @@
     return { completed, total, percent: total > 0 ? Math.min(100, Math.floor(completed / total * 100)) : null };
   }
 
+  function systemsLabel(value) {
+    const systems = Array.isArray(value) ? [...new Set(value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))] : [];
+    return systems.length ? "支持系统：" + systems.join("、") : "支持系统待核实";
+  }
+
   function materialFor(job) {
     const lines = [String(job.name || job.repo || "开源游戏"), "项目：" + String(job.repo || "")];
     if (job.version) lines.push("版本：" + job.version);
     if (job.arch) lines.push("Windows 架构：" + (job.arch === "arm64" ? "ARM64" : job.arch === "amd64" ? "x64" : job.arch));
+    lines.push(systemsLabel(job.supportedSystems));
     if (job.description) lines.push("", String(job.description), "");
     if (job.dataNote) lines.push("游戏素材：" + job.dataNote);
     if (job.guide) lines.push("使用说明：" + job.guide);
@@ -200,6 +206,14 @@
       const heading = node("div", "transfer-job-heading");
       const title = node("div"); title.append(node("h3", "", job.name || job.repo), node("p", "transfer-job-meta", [job.repo, job.version, job.arch === "amd64" ? "Windows x64" : job.arch === "arm64" ? "Windows ARM64" : job.arch].filter(Boolean).join(" · ")));
       const status = node("span", "transfer-status", statusLabels[job.status] || "未知状态"); status.dataset.status = job.status; heading.append(title, status); card.append(heading);
+      card.append(node("p", "transfer-systems", systemsLabel(job.supportedSystems)));
+      const automatic = globalThis.PortShelfAutomation?.taskNotice(job);
+      if (automatic) {
+        const automation = node("div", "transfer-automation"); automation.dataset.kind = automatic.kind;
+        automation.append(node("span", "tag", "自动任务"), node("span", "", automatic.attempts));
+        if (automatic.text) automation.append(node("p", "", automatic.text));
+        card.append(automation);
+      }
       const currentStage = job.status === "waiting_auth" ? "等待连接网盘" : stageLabels[job.stage] || "等待处理";
       const stage = node("p", "transfer-stage", currentStage + (providers[job.provider] ? " · " + providers[job.provider] : "")); card.append(stage);
       if (["download", "upload"].includes(job.stage) && job.status === "running") {
@@ -258,7 +272,7 @@
 
     function schedulePoll() {
       clearTimeout(state.pollTimer); state.pollTimer = null;
-      if (isStopped() || !state.visible || document.hidden || state.pollBusy || state.pollFailures >= 3 || !state.jobs.some((job) => activeStatuses.has(job.status))) return;
+      if (isStopped() || !state.visible || document.hidden || state.pollBusy || state.pollFailures >= 3 || !state.jobs.some((job) => activeStatuses.has(job.status) || globalThis.PortShelfAutomation?.taskNotice(job)?.pendingRetry)) return;
       state.pollTimer = setTimeout(loadJobs, 2000);
     }
 
@@ -368,7 +382,7 @@
         state.providers[id] = result.provider || result; state.authLoaded = true;
         input.value = "";
         if (id === "quark") $("cloud-quark-authorization").replaceChildren();
-        context.notify(clear ? providers[id] + "凭据已清除。" : providers[id] + "连接已验证，仅在本次运行中保存。");
+        context.notify(clear ? providers[id] + "凭据已清除。" : providers[id] + "连接已验证，凭据按无人值守设置保管。");
         await loadJobs();
       } catch (error) { message("cloud-" + id + "-error", error.message); }
       finally {
@@ -410,7 +424,7 @@
         const error = node("p", "form-error"); error.id = "cloud-" + id + "-error"; error.setAttribute("role", "alert"); error.hidden = true;
         const actions = node("div", "dialog-actions"); const clear = button("清除连接", () => saveProvider(id, true)); clear.id = "cloud-" + id + "-clear";
         const submit = node("button", "button button-primary", "验证并连接"); submit.type = "submit"; submit.id = "cloud-" + id + "-submit"; actions.append(clear, submit);
-        form.append(label, input, node("p", "field-help", "仅保留在工具进程内存中，保存后清空输入，退出后需重新连接。"), error, actions);
+        form.append(label, input, node("p", "field-help", "保存后清空输入，不存浏览器。默认仅在进程内存保留；Windows 可在无人值守设置中启用 DPAPI 本机加密保存。"), error, actions);
         form.addEventListener("submit", (event) => { event.preventDefault(); saveProvider(id); });
         return form;
       });
@@ -434,6 +448,7 @@
       setVisible(visible) { state.visible = visible; clearTimeout(state.pollTimer); state.pollTimer = null; if (visible && !isStopped()) { renderSelection(); state.pollFailures = 0; loadJobs(); loadProviders(); } },
       updateLibrary() { if (!state.archSet && context.getArch()) { $("transfer-arch").value = context.getArch() === "arm64" ? "arm64" : "amd64"; state.archSet = true; } if (state.visible) renderSelection(); },
       settingsOpened() { if (!isStopped()) loadProviders(); },
+      refresh() { if (state.visible && !isStopped()) loadJobs(); },
       clearCredentials,
       stop() { state.stopped = true; clearTimeout(state.pollTimer); state.pollTimer = null; clearCredentials(); },
     };
@@ -451,5 +466,5 @@
     } catch (_) { return null; }
   }
 
-  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, materialFor, create };
+  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, systemsLabel, materialFor, create };
 });

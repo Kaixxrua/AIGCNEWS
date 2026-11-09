@@ -48,11 +48,12 @@ type Asset struct {
 }
 
 type Release struct {
-	Tag       string  `json:"tag_name"`
-	Name      string  `json:"name"`
-	URL       string  `json:"html_url"`
-	Published string  `json:"published_at"`
-	Assets    []Asset `json:"assets"`
+	SupportedSystems []string `json:"supportedSystems,omitempty"`
+	Tag              string   `json:"tag_name"`
+	Name             string   `json:"name"`
+	URL              string   `json:"html_url"`
+	Published        string   `json:"published_at"`
+	Assets           []Asset  `json:"assets"`
 }
 
 type repositoryDetails struct {
@@ -435,6 +436,7 @@ func prepareRelease(repo string, release Release, arch string) (Release, error) 
 	if len(release.Assets) > 0 && assetScore(release.Assets[0], arch) > 0 {
 		release.Assets[0].Recommended = true
 	}
+	release.SupportedSystems = supportedSystems(release.Assets)
 	return release, nil
 }
 

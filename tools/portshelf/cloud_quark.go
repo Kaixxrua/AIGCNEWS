@@ -56,23 +56,26 @@ var quarkDeviceIdentity = sync.OnceValues(func() (string, error) {
 })
 
 type quarkDrive struct {
-	client   *http.Client
-	authGate chan struct{}
-	mu       sync.Mutex
-	token    string
-	authCode string
-	refresh  string
-	deviceID string
-	expires  time.Time
-	userID   string
-	name     string
-	badAuth  bool
+	client            *http.Client
+	authGate          chan struct{}
+	mu                sync.Mutex
+	token             string
+	authCode          string
+	refresh           string
+	deviceID          string
+	expires           time.Time
+	userID            string
+	name              string
+	badAuth           bool
+	credentialChanged func()
 }
 
 func newQuarkDrive(credentials CloudCredentials) CloudDrive {
 	return &quarkDrive{
 		client: newQuarkHTTPClient(), authGate: make(chan struct{}, 1),
 		token: strings.TrimSpace(credentials.AccessToken), authCode: strings.TrimSpace(credentials.AuthCode),
+		refresh: credentials.RefreshToken, deviceID: credentials.DeviceID, userID: credentials.UserID,
+		expires: quarkExpiry(json.RawMessage(strconv.Quote(credentials.ExpiresAt))),
 		badAuth: credentials.Cookie != "" || !quarkCredential(credentials.AccessToken, true) || !quarkCredential(credentials.AuthCode, true),
 	}
 }
@@ -255,6 +258,7 @@ func (d *quarkDrive) api(ctx context.Context, method, path string, query url.Val
 			d.token = next
 		}
 		d.mu.Unlock()
+		d.credentialsChanged()
 	}
 	return nil
 }
@@ -325,7 +329,7 @@ func (d *quarkDrive) ensureToken(ctx context.Context) error {
 			return err
 		}
 		if response.Status == "second_confirmed" {
-			return errors.New("此授权码对应已有授权；本工具只在内存保留登录，请在夸克取消该设备原有授权后重新授权并复制新授权码")
+			return errors.New("此授权码对应已有授权，请在夸克取消该设备原有授权后重新授权并复制新授权码")
 		}
 		if response.Status == "expired" || !quarkCredential(response.Token, false) || !quarkIdentifier(response.User) || !quarkCredential(response.Refresh, true) || !quarkCredential(response.Device, true) {
 			return errors.New("夸克授权码已过期、尚未确认或未返回有效登录信息，请重新授权")
@@ -334,6 +338,7 @@ func (d *quarkDrive) ensureToken(ctx context.Context) error {
 		d.token, d.authCode, d.refresh, d.deviceID = response.Token, "", response.Refresh, response.Device
 		d.expires = quarkExpiry(response.TokenExpires)
 		d.mu.Unlock()
+		d.credentialsChanged()
 		return nil
 	}
 	if expires.IsZero() || time.Until(expires) > time.Minute {
@@ -356,6 +361,7 @@ func (d *quarkDrive) ensureToken(ctx context.Context) error {
 	d.mu.Lock()
 	d.token, d.refresh, d.expires = response.Token, response.Refresh, time.Now().Add(time.Duration(response.Expires)*time.Second)
 	d.mu.Unlock()
+	d.credentialsChanged()
 	return nil
 }
 
@@ -387,6 +393,10 @@ func (d *quarkDrive) Check(ctx context.Context) (string, error) {
 		name = "夸克账号已授权"
 	}
 	d.mu.Lock()
+	if d.userID != "" && d.userID != response.User {
+		d.mu.Unlock()
+		return "", errors.New("夸克登录账号与保存的授权不一致，请重新连接")
+	}
 	d.userID, d.name = response.User, name
 	d.mu.Unlock()
 	return name, nil

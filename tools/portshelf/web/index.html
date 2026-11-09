@@ -9,6 +9,7 @@
     <link rel="icon" type="image/svg+xml" href="/gamepad.svg">
     <link rel="stylesheet" href="/app.css">
     <script src="/zh.js" defer></script>
+    <script src="/automation.js" defer></script>
     <script src="/cloud.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
@@ -83,15 +84,15 @@
             <span class="small-label">DISCOVER ON GITHUB</span><h2>按热度，发现下一款经典。</h2><p>选择 Stars 范围，自动查找 GitHub 上的开源移植游戏。</p>
             <form class="discover-form stars-search-form" id="discover-form" novalidate>
               <div class="stars-range-fields">
-                <label><span>最低 Stars</span><input id="discover-min-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" value="1000" placeholder="不限" aria-describedby="discover-range-help discover-range-error"></label>
+                <label><span>最低 Stars</span><input id="discover-min-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" value="10" placeholder="不限" aria-describedby="discover-range-help discover-range-error"></label>
                 <span class="range-separator" aria-hidden="true">—</span>
                 <label><span>最高 Stars</span><input id="discover-max-stars" type="number" inputmode="numeric" min="0" max="1000000000" step="1" placeholder="不限" aria-describedby="discover-range-help discover-range-error"></label>
               </div>
               <button class="button button-primary" id="discover-submit" type="submit">按 Stars 查找</button>
             </form>
-            <div class="star-presets" role="group" aria-label="快速设置最低 Stars"><span>快捷下限</span><button type="button" data-min-stars="" aria-pressed="false">全部</button><button type="button" data-min-stars="100" aria-pressed="false">100+</button><button type="button" data-min-stars="500" aria-pressed="false">500+</button><button type="button" data-min-stars="1000" aria-pressed="true">1000+</button><button type="button" data-min-stars="5000" aria-pressed="false">5000+</button><button type="button" data-min-stars="10000" aria-pressed="false">10000+</button></div>
+            <div class="star-presets" role="group" aria-label="快速设置最低 Stars"><span>快捷下限</span><button type="button" data-min-stars="" aria-pressed="false">全部</button><button type="button" data-min-stars="10" aria-pressed="true">10+</button><button type="button" data-min-stars="100" aria-pressed="false">100+</button><button type="button" data-min-stars="500" aria-pressed="false">500+</button><button type="button" data-min-stars="1000" aria-pressed="false">1000+</button><button type="button" data-min-stars="5000" aria-pressed="false">5000+</button><button type="button" data-min-stars="10000" aria-pressed="false">10000+</button></div>
             <p class="form-error range-error" id="discover-range-error" role="alert" hidden></p>
-            <p class="range-summary" id="discover-range-summary" aria-live="polite">当前范围：Stars ≥ 1,000</p>
+            <p class="range-summary" id="discover-range-summary" aria-live="polite">当前范围：Stars ≥ 10</p>
             <p class="field-help" id="discover-range-help">上下限均包含边界，留空表示不限。按 Stars 从高到低浏览，可继续加载更多；修改范围后点击查找才会更新结果。</p>
           </div>
           <div class="section-heading discover-heading"><h2>查找结果</h2><span id="discover-count" aria-live="polite">选择范围后点击“按 Stars 查找”</span></div>
@@ -111,6 +112,32 @@
         </section>
 
         <section id="cloud-view" aria-label="下载与分享" hidden>
+          <section class="automation-panel" aria-labelledby="automation-title">
+            <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 加入目录 → 下载 → 中文简介 → 网盘上传与分享。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
+            <p class="automation-intro">自动重试可恢复的失败，重启后接续任务，并把成果持续写入 JSON、CSV 和 Markdown 资料。</p>
+            <div class="automation-metrics"><div><span>下次扫描</span><strong id="automation-next-run">—</strong></div><div><span>上次扫描</span><strong id="automation-last-run">—</strong></div><div><span>发现 / 入队 / 暂不支持</span><strong id="automation-counts">—</strong></div></div>
+            <div id="automation-load-error" class="notice error" role="status" hidden></div><div id="automation-last-error" class="notice error" role="status" hidden></div><div id="automation-credential-error" class="notice error" role="status" hidden></div>
+            <form id="automation-form" novalidate>
+              <div class="automation-fields">
+                <label><span class="field-label">最低 Stars</span><input id="automation-min-stars" type="number" min="0" max="1000000000" step="1" inputmode="numeric" value="10" placeholder="0"></label>
+                <label><span class="field-label">最高 Stars <span>可选</span></span><input id="automation-max-stars" type="number" min="0" max="1000000000" step="1" inputmode="numeric" placeholder="不限"></label>
+                <label><span class="field-label">扫描周期（小时）</span><input id="automation-interval" type="number" min="1" max="168" step="1" inputmode="numeric" value="6"></label>
+                <label><span class="field-label">每天最多游戏数</span><input id="automation-daily-limit" type="number" min="1" max="100" step="1" inputmode="numeric" value="10"></label>
+              </div>
+              <div class="automation-targets"><fieldset class="cloud-fieldset"><legend>自动上传到</legend><label class="check-label"><input id="automation-baidu" type="checkbox" checked><span>百度网盘</span></label><label class="check-label"><input id="automation-quark" type="checkbox" checked><span>夸克网盘</span></label><p class="field-help">自动模式至少选择一个网盘；仅下载可使用下方手动队列。</p></fieldset><label><span class="field-label">Windows 架构</span><select id="automation-arch" class="cloud-select"><option value="amd64">x64 · Intel / AMD</option><option value="arm64">ARM64 · Windows on Arm</option></select></label></div>
+              <details class="automation-advanced"><summary>高级设置 · 分享、凭据与登录启动</summary><div class="automation-advanced-content">
+                <div class="share-options"><label><span class="field-label">分享有效期</span><select id="automation-share-days" class="cloud-select"><option value="0">永久</option><option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option></select></label><label><span class="field-label">百度提取码 <span>可选</span></span><input id="automation-share-code" type="text" maxlength="4" placeholder="留空自动生成" autocomplete="off" spellcheck="false"></label></div>
+                <label class="check-label"><input id="automation-private-share" type="checkbox" checked><span id="automation-private-label">百度使用提取码分享</span></label><p class="field-help">百度使用私密分享，提取码可指定 4 位字母或数字；夸克提取码由服务生成，仅选夸克时也可选择公开分享。</p>
+                <label class="check-label"><input id="automation-enrich" type="checkbox" checked><span>自动补全中文简介</span></label><p class="field-help">优先使用已有中文；缺少时使用 AIGCNEWS 生成，可能消耗已配置账号的额度。</p>
+                <label class="check-label"><input id="automation-remember" type="checkbox" disabled><span>在此电脑记住凭据</span></label><p id="automation-storage-help" class="field-help">正在核对本机凭据保存能力。</p>
+                <label class="check-label"><input id="automation-start-on-login" type="checkbox" disabled><span>登录 Windows 时后台启动</span></label><p id="automation-startup-help" class="field-help">正在核对登录启动支持情况。</p>
+              </div></details>
+              <p id="automation-form-error" class="form-error" role="alert" hidden></p><p id="automation-save-note" class="field-help" role="status" hidden></p>
+              <div class="automation-form-actions"><span id="automation-dirty-note" class="field-help">设置会保存到本机。</span><button id="automation-reset" type="button" class="text-button" disabled>恢复已保存设置</button><button id="automation-save" type="submit" class="button button-secondary" disabled>保存设置</button></div>
+            </form>
+            <div class="automation-operation"><div><button id="automation-run" type="button" class="button button-secondary button-small" disabled>立即扫描</button><button id="automation-open" type="button" class="button button-secondary button-small" disabled>打开自动资料目录</button><button id="automation-connections" type="button" class="text-button">配置网盘与中文服务</button><button id="automation-refresh" type="button" class="text-button">刷新状态</button></div><p id="automation-export" class="field-help">自动生成的资料目录待确认。</p></div>
+            <p class="automation-footnote">首次仍需本人授权网盘；授权失效或出现验证码时，需要回来处理。电脑须开机联网，工具须保持运行。暂停会暂停当前自动任务，继续后恢复；已经开始的手动任务继续执行。</p>
+          </section>
           <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>获取 GitHub 的 Windows 发布附件，保存到本机，再上传到所选网盘并生成分享资料。</p></div>
           <form id="transfer-form" class="transfer-compose" novalidate>
             <section class="transfer-picker" aria-labelledby="transfer-picker-title">
@@ -155,15 +182,15 @@
 
     <dialog class="form-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-heading"><div><span class="small-label">CONNECTION SETTINGS</span><h2 id="settings-title">连接设置</h2></div><button class="close-button" data-close="settings-dialog" aria-label="关闭连接设置">×</button></div>
-      <p class="dialog-description">游戏查询可公开访问。各服务独立设置，凭据仅在本次工具进程内存中保存，退出后清除。</p>
-      <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help">只读取公开项目信息，无需仓库写入权限。Token 仅在工具进程内存中保留，退出后清除。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
+      <p class="dialog-description">各服务独立设置，凭据不保存在浏览器中。默认仅在本次进程内存中保留；Windows 可在无人值守设置中开启本机加密保存。</p>
+      <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help">只读取公开项目信息，无需仓库写入权限。开启“记住凭据”后使用 Windows DPAPI 加密保存，仅当前 Windows 用户可解密。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
       <form class="aigc-token-form" id="aigc-token-form"><h3>AIGCNEWS 中文简介</h3><div class="token-state" id="aigc-token-state"></div><label class="field-label" for="aigc-token-input">AIGCNEWS MCP Token <span>独立设置</span></label><input id="aigc-token-input" type="password" placeholder="粘贴 AIGCNEWS Token，留空则清除" maxlength="4096" autocomplete="off" spellcheck="false"><p class="field-help">用于你主动请求的中文简介生成，可能消耗 AIGCNEWS 生成额度。读取已有简介不消耗生成额度；此 Token 不会用于 GitHub。<a href="https://aigcnews.cn/mcp" target="_blank" rel="noopener noreferrer">获取 AIGCNEWS MCP Token ↗</a></p><p class="form-error" id="aigc-token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="aigc-token-submit" type="submit">保存 AIGCNEWS Token</button></div></form>
       <section class="cloud-settings" id="cloud-settings" aria-labelledby="cloud-settings-title"><h3 id="cloud-settings-title">网盘连接</h3><p class="field-help">连接后可上传和分享下载的发布附件。凭据不写入目录文件，也不保存在浏览器中。</p><div id="cloud-provider-settings"></div><p id="cloud-settings-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">完成设置</button></div></section>
     </dialog>
 
     <dialog class="form-dialog compact-dialog" id="quit-dialog" aria-labelledby="quit-title">
       <div class="dialog-heading"><h2 id="quit-title">退出 PortShelf？</h2><button class="close-button" data-close="quit-dialog" aria-label="取消退出">×</button></div>
-      <p class="dialog-description">目录和已核对的资料会保留。下次双击 PortShelf 即可继续浏览。</p><p class="form-error" id="quit-error" role="alert" hidden></p><div class="dialog-actions"><button class="button button-secondary" data-close="quit-dialog">继续浏览</button><button class="button button-primary" id="quit-confirm">退出工具</button></div>
+      <p class="dialog-description">目录、配置和任务记录会保留；退出后本次后台处理停止。下次打开工具后接续，已设置的 Windows 登录启动仍会保留。</p><p class="form-error" id="quit-error" role="alert" hidden></p><div class="dialog-actions"><button class="button button-secondary" data-close="quit-dialog">继续浏览</button><button class="button button-primary" id="quit-confirm">退出工具</button></div>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   </body>

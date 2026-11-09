@@ -11,9 +11,13 @@ import (
 
 // Credentials never enter task records, exports or browser storage.
 type CloudCredentials struct {
-	Cookie      string `json:"cookie"`
-	AccessToken string `json:"accessToken"`
-	AuthCode    string `json:"authCode"`
+	Cookie       string `json:"cookie"`
+	AccessToken  string `json:"accessToken"`
+	AuthCode     string `json:"authCode"`
+	RefreshToken string `json:"refreshToken,omitempty"`
+	DeviceID     string `json:"deviceId,omitempty"`
+	ExpiresAt    string `json:"expiresAt,omitempty"`
+	UserID       string `json:"userId,omitempty"`
 }
 
 type CloudFile struct {
@@ -51,10 +55,12 @@ type cloudStatus struct {
 }
 
 type cloudAccount struct {
-	drive   CloudDrive
-	account string
+	drive       CloudDrive
+	account     string
+	credentials CloudCredentials
 	// A random session identity prevents retrying an old file ID with a
-	// different account. Re-authorizing after restart intentionally reuploads.
+	// different account. A fresh login rotates it; verified vault restoration
+	// preserves it so completed uploads can be reused across restarts.
 	session string
 }
 
@@ -96,7 +102,7 @@ func (c *cloudRegistry) statuses() []cloudStatus {
 }
 
 func validCloudCredentials(c CloudCredentials) bool {
-	for _, value := range []string{c.Cookie, c.AccessToken, c.AuthCode} {
+	for _, value := range []string{c.Cookie, c.AccessToken, c.AuthCode, c.RefreshToken, c.DeviceID, c.ExpiresAt, c.UserID} {
 		if len(value) > 12000 {
 			return false
 		}
@@ -146,16 +152,21 @@ func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 			fail(w, http.StatusBadRequest, errors.New("登录信息格式无效或过长，请只粘贴凭据值"))
 			return
 		}
+		if credentials.RefreshToken != "" || credentials.DeviceID != "" || credentials.ExpiresAt != "" || credentials.UserID != "" {
+			fail(w, http.StatusBadRequest, errors.New("请使用授权页面登录，续期信息由工具自动管理"))
+			return
+		}
 		if a.transfers.providerBusy(id) {
 			fail(w, http.StatusConflict, errors.New("网盘正在处理任务，请先停止任务再更换或清除登录"))
 			return
 		}
 		if credentials == (CloudCredentials{}) {
-			if !a.transfers.setCloudAccount(id, nil) {
+			if !a.setCloudAccount(id, nil) {
 				fail(w, http.StatusConflict, errors.New("网盘正在处理任务，请先停止任务再更换或清除登录"))
 				return
 			}
 			reply(w, http.StatusOK, map[string]any{"id": id, "configured": false, "account": ""})
+			a.credentialsChanged()
 			return
 		}
 		if id == "baidu" && (credentials.Cookie == "" || credentials.AccessToken != "" || credentials.AuthCode != "") ||
@@ -166,15 +177,18 @@ func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 		defer cancel()
 		drive := a.cloud.factory(id, credentials)
+		a.watchCloudCredentials(drive)
 		account, err := drive.Check(ctx)
 		if err != nil {
 			fail(w, http.StatusBadGateway, err)
 			return
 		}
-		if !a.transfers.setCloudAccount(id, &cloudAccount{drive: drive, account: account, session: randomID()}) {
+		if !a.setCloudAccount(id, &cloudAccount{drive: drive, account: account, credentials: credentials, session: randomID()}) {
 			fail(w, http.StatusConflict, errors.New("验证期间网盘任务已开始，请先停止任务再更换登录"))
 			return
 		}
+		a.credentialsChanged()
+		a.transfers.credentialsAvailable(id)
 		reply(w, http.StatusOK, map[string]any{"id": id, "configured": true, "account": account})
 	})
 }

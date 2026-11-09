@@ -26,23 +26,26 @@ type RefreshStatus struct {
 }
 
 type App struct {
-	lib            *Library
-	github         *GitHub
-	aigc           *AIGC
-	cloud          *cloudRegistry
-	transfers      *transferManager
-	catalog        []Game
-	token          string
-	host           string
-	quit           chan struct{}
-	quitOnce       sync.Once
-	ctx            context.Context
-	cancel         context.CancelFunc
-	refreshMu      sync.Mutex
-	status         RefreshStatus
-	candidateMu    sync.Mutex
-	candidates     map[string]libraryEntry
-	candidateOrder []string
+	lib              *Library
+	github           *GitHub
+	aigc             *AIGC
+	cloud            *cloudRegistry
+	transfers        *transferManager
+	automation       *automationManager
+	credentials      *credentialManager
+	credentialsReady <-chan struct{}
+	catalog          []Game
+	token            string
+	host             string
+	quit             chan struct{}
+	quitOnce         sync.Once
+	ctx              context.Context
+	cancel           context.CancelFunc
+	refreshMu        sync.Mutex
+	status           RefreshStatus
+	candidateMu      sync.Mutex
+	candidates       map[string]libraryEntry
+	candidateOrder   []string
 }
 
 func newApp(lib *Library) (*App, error) {
@@ -57,12 +60,30 @@ func newApp(lib *Library) (*App, error) {
 		cancel()
 		return nil, err
 	}
+	app.automation, err = newAutomation(app)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	app.credentials = newCredentials(app, app.automation.configSnapshot())
+	// Restore local secrets before accepting API edits; network reconnection
+	// stays asynchronous and the scheduler waits on credentialsReady.
+	app.credentials.load()
+	app.credentialsReady = app.credentials.ready
+	go app.credentials.loop()
+	go app.automation.loop()
 	go app.transfers.loop()
 	app.cancel = func() {
 		cancel()
 		select {
 		case <-app.transfers.done:
 		case <-time.After(3 * time.Second):
+		}
+		for _, done := range []<-chan struct{}{app.automation.done, app.credentials.done} {
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+			}
 		}
 	}
 	return app, nil
@@ -323,6 +344,7 @@ func (a *App) handler() http.Handler {
 	a.registerDescriptionRoutes(mux)
 	a.registerCloudRoutes(mux)
 	a.registerTransferRoutes(mux)
+	a.registerAutomationRoutes(mux)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
@@ -458,6 +480,8 @@ func (a *App) handler() http.Handler {
 			return
 		}
 		a.github.setToken(token)
+		a.credentialsChanged()
+		a.transfers.credentialsAvailable("github")
 		reply(w, http.StatusOK, map[string]bool{"hasToken": token != ""})
 	})
 	mux.HandleFunc("POST /api/quit", func(w http.ResponseWriter, r *http.Request) {

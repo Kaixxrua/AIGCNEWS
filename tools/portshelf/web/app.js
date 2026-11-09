@@ -15,6 +15,10 @@
   const colors = new Set(["forest", "violet", "coral", "red", "ember", "teal", "slate", "sand", "ochre"]);
   let sessionToken = "";
   let transferUI = null;
+  let automationUI = null;
+  let automationFingerprint = "";
+  let automationQueued = null;
+  let automaticLibraryLoading = false;
 
   function readSession() {
     const hash = location.hash.slice(1);
@@ -537,8 +541,8 @@
     const checked = state.games.map((game) => snapshot(game)?.starsCheckedAt).filter(timestamp).sort((a, b) => timestamp(b) - timestamp(a));
     $("checked-label").textContent = checked.length ? "最近核对于 " + date(checked[0]) : "尚未核对 · 点击刷新资料";
     $("connection-label").textContent = state.hasToken ? "GitHub Token 已设置" : "GitHub 公开访问";
-    $("token-state").textContent = state.hasToken ? "当前已使用 Token，仅保留在本次进程内存中。" : "当前使用 GitHub 公开访问，未设置 Token。";
-    $("aigc-token-state").textContent = state.hasAigcToken ? "已设置 AIGCNEWS MCP Token，仅在本次运行中保存。" : "尚未设置 AIGCNEWS MCP Token；仍可读取已有中文简介。";
+    $("token-state").textContent = state.hasToken ? "当前已使用 GitHub Token，存储方式由无人值守设置决定。" : "当前使用 GitHub 公开访问，未设置 Token。";
+    $("aigc-token-state").textContent = state.hasAigcToken ? "已设置 AIGCNEWS MCP Token，存储方式由无人值守设置决定。" : "尚未设置 AIGCNEWS MCP Token；仍可读取已有中文简介。";
   }
 
   function availability(game) {
@@ -559,6 +563,7 @@
     title.id = id;
     const tags = element("div", "card-tags");
     tags.append(tag(game.category || "其他项目"), availability(game));
+    tags.append(element("span", "card-systems", globalThis.PortShelfTransfers.systemsLabel(snapshot(game)?.release?.supportedSystems)));
     const description = descriptionOf(game);
     if (descriptionSource(description)) tags.append(tag(descriptionSource(description)));
     const descriptionAction = descriptionControl(game, true);
@@ -646,6 +651,7 @@
     $("page-description").textContent = headings[page][2];
     $("category-section").hidden = page === "cloud";
     transferUI?.setVisible(page === "cloud");
+    automationUI?.setVisible(page === "cloud");
   }
 
   function openConnectionSettings() {
@@ -654,6 +660,19 @@
     transferUI?.clearCredentials(); renderStats();
     if (!$("settings-dialog").open) $("settings-dialog").showModal();
     transferUI?.settingsOpened();
+    automationUI?.refresh();
+  }
+
+  function automationStatusChanged(status) {
+    if (state.stopped) return;
+    const fingerprint = JSON.stringify([status.config?.enabled, status.running, status.queued, status.lastRun, status.exportedAt]);
+    if (fingerprint !== automationFingerprint) { automationFingerprint = fingerprint; transferUI?.refresh(); }
+    const changed = automationQueued !== null && automationQueued !== status.queued;
+    automationQueued = status.queued;
+    if (changed && state.loaded && !automaticLibraryLoading) {
+      automaticLibraryLoading = true;
+      loadLibrary().catch((error) => notice("自动新增的目录暂未刷新：" + error.message, true)).finally(() => { automaticLibraryLoading = false; });
+    }
   }
 
   function setRefreshState(running, status) {
@@ -781,6 +800,7 @@
     const meta = element("div", "detail-meta");
     meta.append(stars(game), element("span", "", game.category || "其他项目"), element("span", "", "项目更新 " + date(record?.pushedAt)));
     container.append(header, ...descriptionNodes(game, "detail-description", true), meta);
+    container.append(element("p", "systems-info", globalThis.PortShelfTransfers.systemsLabel(record?.release?.supportedSystems)));
     if (originalOpen && container.querySelector(".original-description")) container.querySelector(".original-description").open = true;
     if (game.dataNote) {
       const note = element("div", "data-note");
@@ -878,6 +898,7 @@
       const heading = element("h3");
       heading.append(externalLink(game.name || game.repo, repoURL(game.repo)));
       info.append(heading, element("div", "repo-path", game.repo), ...descriptionNodes(game, "search-description", true));
+      info.append(element("p", "systems-info", "支持系统待核实"));
       if (expanded.has(repositoryKey(game.repo)) && info.querySelector("details")) info.querySelector("details").open = true;
       const actions = element("div", "search-result-actions");
       actions.append(stars(game, false));
@@ -1192,7 +1213,7 @@
         $("token-input").value = "";
         renderStats();
         $("settings-dialog").close();
-        notify(state.hasToken ? "Token 已保留在本次进程内存中，可重新刷新资料。" : "Token 已清除，恢复 GitHub 公开访问。");
+        notify(state.hasToken ? "GitHub Token 已设置，按无人值守的凭据选项保管。" : "Token 已清除，恢复 GitHub 公开访问。");
       } catch (error) { showError("token-error", error.message); }
       finally { busy(button, false, "", "保存设置"); }
     });
@@ -1208,7 +1229,7 @@
         $("aigc-token-input").value = "";
         renderStats();
         $("settings-dialog").close();
-        notify(state.hasAigcToken ? "AIGCNEWS MCP Token 已仅保存在本次运行内存中。" : "AIGCNEWS MCP Token 已清除。");
+        notify(state.hasAigcToken ? "AIGCNEWS MCP Token 已设置，按无人值守的凭据选项保管。" : "AIGCNEWS MCP Token 已清除。");
         syncDiscoveryControls();
       } catch (error) { showError("aigc-token-error", descriptionError(error)); }
       finally { busy(button, false, "", "保存 AIGCNEWS Token"); }
@@ -1219,6 +1240,7 @@
         await api("/api/quit", {});
         state.stopped = true;
         transferUI?.stop();
+        automationUI?.stop();
         clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer);
         state.descriptionReadQueue.clear(); state.descriptionPollTargets.clear();
         sessionToken = "";
@@ -1241,6 +1263,7 @@
   async function start() {
     readSession(); setupEvents();
     transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, notify });
+    automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {
       $("game-grid").replaceChildren();

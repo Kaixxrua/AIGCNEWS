@@ -5,6 +5,7 @@ const path = require('node:path');
 const http = require('node:http');
 const os = require('node:os');
 const { chromium } = require(process.env.PORTSHELF_PLAYWRIGHT_MODULE || path.resolve(__dirname, '../../../frontend/node_modules/playwright'));
+const { defaultConfig } = require('../web/automation.js');
 const root = path.resolve(__dirname, '../web');
 const token = 'c'.repeat(48);
 const games = Array.from({ length: 205 }, (_, index) => ({ repo: `demo/game-${index}`, name: `Game${String(index).padStart(3, '0')}`, description: '由社区延续的经典游戏。', stars: 1000 + index, category: '动作游戏' }));
@@ -29,6 +30,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/library') return json({ games, snapshots: {}, descriptions: {}, arch: 'arm64', version: 'test', hasToken: false, hasAigcToken: false });
     if (url.pathname === '/api/status') return json({ running: false });
     if (url.pathname === '/api/descriptions') return json({ items: [] });
+    if (url.pathname === '/api/automation' && req.method === 'GET') return json({ config: defaultConfig('arm64'), running: false, nextRun: '', lastRun: '', lastError: '', exportDir: 'C:\\PortShelf\\exports', exportedAt: '', discovered: 0, queued: 0, unsupported: 0, credentialStorageSupported: false, startOnLoginSupported: false, credentialError: '' });
     if (url.pathname === '/api/cloud') return json({ providers: Object.values(accounts), downloadDir: 'C:\\PortShelf\\downloads' });
     if (url.pathname === '/api/cloud/quark/authorize') return json({ url: authorizationURL });
     if (/^\/api\/cloud\/(baidu|quark)$/.test(url.pathname)) {
@@ -57,7 +59,7 @@ const server = http.createServer(async (req, res) => {
     return json({ error: 'unmocked ' + url.pathname }, 404);
   }
   const name = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-  if (!['index.html', 'app.js', 'app.css', 'zh.js', 'cloud.js', 'gamepad.svg'].includes(name)) { res.statusCode = 404; return res.end(); }
+  if (!['index.html', 'app.js', 'app.css', 'zh.js', 'cloud.js', 'automation.js', 'gamepad.svg'].includes(name)) { res.statusCode = 404; return res.end(); }
   res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.svg') ? 'image/svg+xml' : 'text/html');
   res.end(fs.readFileSync(path.join(root, name)));
 });

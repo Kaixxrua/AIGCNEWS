@@ -29,39 +29,46 @@ type TransferRequest struct {
 }
 
 type TransferOutput struct {
-	Status  string     `json:"status"`
-	File    CloudFile  `json:"file"`
-	Share   CloudShare `json:"share"`
-	Error   string     `json:"error,omitempty"`
-	Session string     `json:"session,omitempty"`
+	Status         string     `json:"status"`
+	NeedsAttention bool       `json:"needsAttention,omitempty"`
+	File           CloudFile  `json:"file"`
+	Share          CloudShare `json:"share"`
+	Error          string     `json:"error,omitempty"`
+	Session        string     `json:"session,omitempty"`
 }
 
 type TransferJob struct {
-	ID             string                    `json:"id"`
-	Repo           string                    `json:"repo"`
-	Name           string                    `json:"name"`
-	Version        string                    `json:"version"`
-	Arch           string                    `json:"arch"`
-	Providers      []string                  `json:"providers"`
-	ShareOptions   ShareOptions              `json:"shareOptions"`
-	Enrich         bool                      `json:"enrich"`
-	Status         string                    `json:"status"`
-	Stage          string                    `json:"stage"`
-	Provider       string                    `json:"provider"`
-	CompletedBytes int64                     `json:"completedBytes"`
-	TotalBytes     int64                     `json:"totalBytes"`
-	DownloadPath   string                    `json:"downloadPath"`
-	SHA256         string                    `json:"sha256"`
-	Description    string                    `json:"description"`
-	DataNote       string                    `json:"dataNote"`
-	Guide          string                    `json:"guide"`
-	Stars          *int                      `json:"stars,omitempty"`
-	Error          string                    `json:"error,omitempty"`
-	Warnings       []string                  `json:"warnings"`
-	Outputs        map[string]TransferOutput `json:"outputs"`
-	CreatedAt      string                    `json:"createdAt"`
-	UpdatedAt      string                    `json:"updatedAt"`
-	Asset          *Asset                    `json:"asset,omitempty"`
+	Automatic        bool                      `json:"automatic,omitempty"`
+	Attempts         int                       `json:"attempts,omitempty"`
+	NextRetryAt      string                    `json:"nextRetryAt,omitempty"`
+	NeedsAttention   bool                      `json:"needsAttention,omitempty"`
+	ResolvedAt       string                    `json:"resolvedAt,omitempty"`
+	SupportedSystems []string                  `json:"supportedSystems,omitempty"`
+	ID               string                    `json:"id"`
+	Repo             string                    `json:"repo"`
+	Name             string                    `json:"name"`
+	Version          string                    `json:"version"`
+	Arch             string                    `json:"arch"`
+	Providers        []string                  `json:"providers"`
+	ShareOptions     ShareOptions              `json:"shareOptions"`
+	Enrich           bool                      `json:"enrich"`
+	Status           string                    `json:"status"`
+	Stage            string                    `json:"stage"`
+	Provider         string                    `json:"provider"`
+	CompletedBytes   int64                     `json:"completedBytes"`
+	TotalBytes       int64                     `json:"totalBytes"`
+	DownloadPath     string                    `json:"downloadPath"`
+	SHA256           string                    `json:"sha256"`
+	Description      string                    `json:"description"`
+	DataNote         string                    `json:"dataNote"`
+	Guide            string                    `json:"guide"`
+	Stars            *int                      `json:"stars,omitempty"`
+	Error            string                    `json:"error,omitempty"`
+	Warnings         []string                  `json:"warnings"`
+	Outputs          map[string]TransferOutput `json:"outputs"`
+	CreatedAt        string                    `json:"createdAt"`
+	UpdatedAt        string                    `json:"updatedAt"`
+	Asset            *Asset                    `json:"asset,omitempty"`
 }
 
 type transferManager struct {
@@ -108,6 +115,9 @@ func newTransferManager(a *App) (*transferManager, error) {
 			}
 			if job.Asset != nil && (!officialReleaseURL(job.Asset.URL, job.Repo, true) || !validDownloadName(job.Asset.Name)) {
 				return nil, errors.New("下载任务中的附件地址无效")
+			}
+			if len(job.SupportedSystems) == 0 && job.Asset != nil {
+				job.SupportedSystems = supportedSystems([]Asset{*job.Asset})
 			}
 			if job.DownloadPath != "" && !m.ownedDownloadPath(job.DownloadPath) {
 				return nil, errors.New("下载任务中的文件路径不属于下载目录")
@@ -263,6 +273,9 @@ func sameTransfer(a, b TransferJob) bool {
 }
 
 func (m *transferManager) enqueue(request TransferRequest) ([]string, []string, error) {
+	return m.enqueueRelease(request, nil, false)
+}
+func (m *transferManager) enqueueRelease(request TransferRequest, pinned *Release, automatic bool) ([]string, []string, error) {
 	if len(request.Repos) == 0 || len(request.Repos) > 100 || (request.Arch != "amd64" && request.Arch != "arm64") ||
 		(request.ShareDays != 0 && request.ShareDays != 1 && request.ShareDays != 7 && request.ShareDays != 30) {
 		return nil, nil, errors.New("每批请选择 1–100 个游戏、Windows x64/ARM64 和有效分享期限")
@@ -309,10 +322,23 @@ func (m *transferManager) enqueue(request TransferRequest) ([]string, []string, 
 			description = game.Description
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		candidates = append(candidates, TransferJob{ID: randomID(), Repo: game.Repo, Name: game.Name, Arch: request.Arch,
+		candidate := TransferJob{Automatic: automatic, ID: randomID(), Repo: game.Repo, Name: game.Name, Arch: request.Arch,
 			Providers: providers, ShareOptions: ShareOptions{Days: request.ShareDays, Code: request.ShareCode, Private: private},
 			Enrich: request.Enrich, Status: "queued", Stage: "release", Description: description, DataNote: game.DataNote, Guide: game.Guide,
-			Stars: stars, Warnings: []string{}, Outputs: map[string]TransferOutput{}, CreatedAt: now, UpdatedAt: now})
+			Stars: stars, Warnings: []string{}, Outputs: map[string]TransferOutput{}, CreatedAt: now, UpdatedAt: now}
+		if pinned != nil {
+			release, err := prepareRelease(game.Repo, *pinned, request.Arch)
+			if err != nil {
+				return nil, nil, err
+			}
+			selected, err := selectTransferAsset(release, request.Arch)
+			if err != nil {
+				return nil, nil, err
+			}
+			candidate.Asset, candidate.Version, candidate.ResolvedAt = selected, release.Tag, now
+			candidate.SupportedSystems = append([]string{}, release.SupportedSystems...)
+		}
+		candidates = append(candidates, candidate)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -324,7 +350,11 @@ func (m *transferManager) enqueue(request TransferRequest) ([]string, []string, 
 	for _, candidate := range candidates {
 		duplicate := false
 		for _, previous := range next {
-			if sameTransfer(candidate, previous) && previous.Status != "done" && previous.Status != "cancelled" {
+			blocks := previous.Status != "done" && previous.Status != "cancelled"
+			if automatic && pinned != nil {
+				blocks = sameReleaseAsset(candidate, previous) && blocksAutomaticTransfer(previous)
+			}
+			if sameTransfer(candidate, previous) && blocks {
 				duplicate = true
 				break
 			}
@@ -347,6 +377,7 @@ func (m *transferManager) enqueue(request TransferRequest) ([]string, []string, 
 }
 
 func (m *transferManager) action(id, action string) error {
+	automaticEnabled := m.app.automation != nil && m.app.automation.configSnapshot().Enabled
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	next := append([]TransferJob{}, m.jobs...)
@@ -355,14 +386,23 @@ func (m *transferManager) action(id, action string) error {
 			continue
 		}
 		if action == "retry" {
+			if job.Automatic && !automaticEnabled {
+				return errors.New("请先开启自动运行，再继续自动任务")
+			}
 			if job.Status == "running" || job.Status == "queued" || m.activeID == id {
 				return errors.New("任务正在运行，请稍候")
 			}
 			next[i] = cloneTransfer(job)
 			next[i].Status, next[i].Error = "queued", ""
+			next[i].Attempts, next[i].NextRetryAt, next[i].NeedsAttention = 0, "", false
+			for provider, output := range next[i].Outputs {
+				output.NeedsAttention = false
+				next[i].Outputs[provider] = output
+			}
 		} else {
 			next[i] = cloneTransfer(job)
 			next[i].Status, next[i].Error = "cancelled", "任务已停止，已完成的下载和网盘文件会保留"
+			next[i].NextRetryAt, next[i].NeedsAttention = "", false
 		}
 		next[i].UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := m.saveLocked(next); err != nil {
@@ -387,11 +427,12 @@ func (m *transferManager) loop() {
 		case <-m.wake:
 		}
 		for {
+			enabled := m.app.automation != nil && m.app.automation.configSnapshot().Enabled
 			m.mu.Lock()
 			id := ""
 			if m.storeError == "" && m.app.ctx.Err() == nil {
 				for _, job := range m.jobs {
-					if job.Status == "queued" {
+					if job.Status == "queued" && (!job.Automatic || enabled) {
 						id = job.ID
 						break
 					}
@@ -404,11 +445,14 @@ func (m *transferManager) loop() {
 			ctx, cancel := context.WithTimeout(m.app.ctx, 8*time.Hour)
 			m.activeID, m.activeStop = id, cancel
 			m.mu.Unlock()
-			err := m.run(ctx, id)
+			err := m.beginAutomaticAttempt(id)
+			if err == nil {
+				err = m.run(ctx, id)
+			}
 			cancel()
 			if err != nil {
 				_ = m.modify(id, func(job *TransferJob) {
-					if job.Status != "cancelled" {
+					if job.Status != "cancelled" && job.Status != "paused" {
 						job.Status, job.Error = "failed", err.Error()
 						if ctx.Err() != nil && m.app.ctx.Err() != nil {
 							job.Status, job.Error = "paused", "工具已退出，点击继续可恢复任务"
@@ -416,16 +460,20 @@ func (m *transferManager) loop() {
 					}
 				}, true)
 			}
+			m.planAutomaticRetry(id)
 			m.mu.Lock()
 			m.activeID, m.activeStop = "", nil
 			m.mu.Unlock()
+			if m.app.automation != nil {
+				m.app.automation.notify()
+			}
 		}
 	}
 }
 
 func (m *transferManager) stage(id, stage, provider string) error {
 	return m.modify(id, func(job *TransferJob) {
-		if job.Status != "cancelled" {
+		if job.Status != "cancelled" && job.Status != "paused" {
 			job.Status, job.Stage, job.Provider, job.Error = "running", stage, provider, ""
 			job.CompletedBytes, job.TotalBytes = 0, 0
 		}
@@ -449,6 +497,9 @@ func (m *transferManager) progress(id string) UploadProgress {
 }
 
 func (m *transferManager) run(ctx context.Context, id string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err := m.stage(id, "release", ""); err != nil {
 		return err
 	}
@@ -458,24 +509,20 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		if err != nil {
 			return err
 		}
-		var selected *Asset
-		for _, asset := range release.Assets {
-			if assetScore(asset, job.Arch) > 0 && asset.Size > 0 && validDownloadName(asset.Name) {
-				copy := asset
-				selected = &copy
-				break
-			}
+		selected, err := selectTransferAsset(release, job.Arch)
+		if err != nil {
+			return err
 		}
-		if selected == nil {
-			return errors.New("上游没有适用于所选 Windows 架构的发布附件，请打开项目发布页确认")
-		}
-		if selected.Size > maxTransferBytes {
-			return errors.New("附件超过本工具单文件 8 GiB 上限")
-		}
-		if err := m.modify(id, func(j *TransferJob) { j.Asset, j.Version = selected, release.Tag }, true); err != nil {
+		if err := m.modify(id, func(j *TransferJob) {
+			j.Asset, j.Version = selected, release.Tag
+			j.ResolvedAt = time.Now().UTC().Format(time.RFC3339)
+			j.SupportedSystems = append([]string{}, release.SupportedSystems...)
+		}, true); err != nil {
 			return err
 		}
 		job, _ = m.job(id)
+	}
+	if job.DownloadPath == "" {
 		if err := m.reuseCompleted(&job); err != nil {
 			return err
 		}
@@ -512,6 +559,10 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		job, _ = m.job(id)
 		output := job.Outputs[provider]
 		account, configured := m.app.cloud.get(provider)
+		if job.Automatic && output.NeedsAttention && (!configured || output.Session == account.session) {
+			failed = true
+			continue
+		}
 		if configured && output.Session == account.session && output.Status == "done" && usableCloudShare(provider, output.Share) {
 			continue
 		}
@@ -522,16 +573,18 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		}
 		if !configured {
 			waiting = true
-			output.Status, output.Error = "waiting_auth", "请在连接设置中登录此网盘，再点击继续"
+			output.Status, output.Error, output.NeedsAttention = "waiting_auth", "请在连接设置中登录此网盘，再点击继续", true
 		} else {
 			if err := m.stage(id, "upload", provider); err != nil {
 				return err
 			}
 			if output.File.ID == "" || output.Session != account.session {
+				output.Session = account.session
+				output.NeedsAttention = false
 				remoteName := transferRemoteName(job)
 				file, uploadErr := account.drive.Upload(ctx, path, remoteName, m.progress(id))
 				if uploadErr != nil {
-					output.Status, output.Error = "failed", uploadErr.Error()
+					output.Status, output.Error, output.NeedsAttention = "failed", uploadErr.Error(), manualActionRequired(uploadErr.Error())
 				} else {
 					output.File, output.Session, output.Status, output.Error = file, account.session, "uploaded", ""
 					if err := m.modify(id, func(j *TransferJob) { j.Outputs[provider] = output }, true); err != nil {
@@ -549,11 +602,11 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 				}
 				share, shareErr := account.drive.Share(ctx, output.File, options)
 				if shareErr != nil {
-					output.Status, output.Error = "share_failed", shareErr.Error()
+					output.Status, output.Error, output.NeedsAttention = "share_failed", shareErr.Error(), manualActionRequired(shareErr.Error())
 				} else if !validCloudShare(provider, share.URL) {
 					output.Status, output.Error = "share_failed", "网盘返回的分享地址无效"
 				} else {
-					output.Status, output.Share, output.Error = "done", share, ""
+					output.Status, output.Share, output.Error, output.NeedsAttention = "done", share, "", false
 				}
 			}
 			failed = failed || output.Status != "done"
@@ -566,7 +619,7 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		return errors.New("任务已停止")
 	}
 	return m.modify(id, func(j *TransferJob) {
-		if j.Status == "cancelled" {
+		if j.Status == "cancelled" || j.Status == "paused" {
 			return
 		}
 		j.Status, j.Stage, j.Provider, j.Error = "done", "done", "", ""
@@ -634,7 +687,7 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	if err == nil && len(result.Items) > 0 && readyDescription(result.Items[0]) {
 		item := result.Items[0]
 		_ = m.app.lib.saveDescriptions([]Description{item})
-		return m.modify(job.ID, func(j *TransferJob) { j.Description = item.DescriptionZh }, true)
+		return m.modify(job.ID, func(j *TransferJob) { j.Description = item.DescriptionZh; j.Warnings = []string{} }, true)
 	}
 	message := "中文简介待补充，请设置 AIGCNEWS Token 后重试；文件传输会继续"
 	if err != nil {

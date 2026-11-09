@@ -13,22 +13,23 @@ import (
 )
 
 type transferMaterial struct {
-	Name         string     `json:"name"`
-	Title        string     `json:"title"`
-	Repo         string     `json:"repo"`
-	Version      string     `json:"version"`
-	Arch         string     `json:"arch"`
-	Stars        *int       `json:"stars,omitempty"`
-	Description  string     `json:"descriptionZh"`
-	DataNote     string     `json:"requirements"`
-	Upstream     string     `json:"upstream"`
-	Guide        string     `json:"guide"`
-	Filename     string     `json:"filename"`
-	SHA256       string     `json:"sha256"`
-	DownloadPath string     `json:"downloadPath"`
-	Status       string     `json:"status"`
-	Baidu        CloudShare `json:"baidu"`
-	Quark        CloudShare `json:"quark"`
+	SupportedSystems []string   `json:"supportedSystems"`
+	Name             string     `json:"name"`
+	Title            string     `json:"title"`
+	Repo             string     `json:"repo"`
+	Version          string     `json:"version"`
+	Arch             string     `json:"arch"`
+	Stars            *int       `json:"stars,omitempty"`
+	Description      string     `json:"descriptionZh"`
+	DataNote         string     `json:"requirements"`
+	Upstream         string     `json:"upstream"`
+	Guide            string     `json:"guide"`
+	Filename         string     `json:"filename"`
+	SHA256           string     `json:"sha256"`
+	DownloadPath     string     `json:"downloadPath"`
+	Status           string     `json:"status"`
+	Baidu            CloudShare `json:"baidu"`
+	Quark            CloudShare `json:"quark"`
 }
 
 func materials(jobs []TransferJob) []transferMaterial {
@@ -38,7 +39,7 @@ func materials(jobs []TransferJob) []transferMaterial {
 			continue
 		}
 		title := fmt.Sprintf("%s · Windows %s · %s", job.Name, job.Arch, job.Version)
-		result = append(result, transferMaterial{Name: job.Name, Title: title, Repo: job.Repo, Version: job.Version, Arch: job.Arch,
+		result = append(result, transferMaterial{SupportedSystems: append([]string{}, job.SupportedSystems...), Name: job.Name, Title: title, Repo: job.Repo, Version: job.Version, Arch: job.Arch,
 			Stars: job.Stars, Description: job.Description, DataNote: job.DataNote, Upstream: "https://github.com/" + job.Repo,
 			Guide: job.Guide, Filename: job.Asset.Name, SHA256: job.SHA256, DownloadPath: job.DownloadPath, Status: job.Status,
 			Baidu: job.Outputs["baidu"].Share, Quark: job.Outputs["quark"].Share})
@@ -78,14 +79,14 @@ func exportTransfers(w http.ResponseWriter, format string, jobs []TransferJob) e
 		_, _ = w.Write([]byte{0xef, 0xbb, 0xbf})
 		writer := csv.NewWriter(w)
 		writer.UseCRLF = true
-		_ = writer.Write([]string{"游戏名称", "标题", "GitHub仓库", "版本", "Windows架构", "Stars", "中文简介", "运行要求",
+		_ = writer.Write([]string{"游戏名称", "标题", "GitHub仓库", "版本", "Windows架构", "支持系统（据发布附件）", "Stars", "中文简介", "运行要求",
 			"上游项目", "运行指南", "附件", "SHA256", "本地文件", "任务状态", "百度链接", "百度提取码", "百度有效期", "夸克链接", "夸克提取码", "夸克有效期"})
 		for _, row := range rows {
 			stars := ""
 			if row.Stars != nil {
 				stars = fmt.Sprint(*row.Stars)
 			}
-			cells := []string{row.Name, row.Title, row.Repo, row.Version, row.Arch, stars, row.Description, row.DataNote, row.Upstream, row.Guide,
+			cells := []string{row.Name, row.Title, row.Repo, row.Version, row.Arch, systemDescription(row.SupportedSystems), stars, row.Description, row.DataNote, row.Upstream, row.Guide,
 				row.Filename, row.SHA256, row.DownloadPath, row.Status, row.Baidu.URL, row.Baidu.Code, row.Baidu.ExpiresAt, row.Quark.URL, row.Quark.Code, row.Quark.ExpiresAt}
 			for i := range cells {
 				cells[i] = csvCell(cells[i])
@@ -107,6 +108,7 @@ func exportTransfers(w http.ResponseWriter, format string, jobs []TransferJob) e
 		_, _ = fmt.Fprintf(w, "\n## %s\n\n%s\n\n- 仓库：%s\n- 版本：%s / Windows %s\n- 上游：%s\n- 运行要求：%s\n- SHA-256：%s\n",
 			escape.Replace(row.Name), escape.Replace(description), escape.Replace(row.Repo), escape.Replace(row.Version), escape.Replace(row.Arch),
 			row.Upstream, escape.Replace(row.DataNote), row.SHA256)
+		_, _ = fmt.Fprintf(w, "- 支持系统（据发布附件）：%s\n", escape.Replace(systemDescription(row.SupportedSystems)))
 		for _, item := range []struct {
 			name  string
 			share CloudShare
