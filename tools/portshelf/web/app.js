@@ -9,11 +9,12 @@
     discovery: { range: null, nextPage: 1, page: 0, hasMore: false, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 },
     batch: null, singleAdds: new Set(), manualAddBusy: false, confirmedGames: new Map(),
     descriptionRequests: new Set(), descriptionReadQueue: new Set(), descriptionReadBusy: false, descriptionPollTargets: new Map(), descriptionPollTimer: null, descriptionPollAfter: 3, descriptionBatch: null,
-    loaded: false, toastTimer: null, activeRefresh: null,
+    loaded: false, toastTimer: null, activeRefresh: null, arch: "",
   };
   const numberFormat = new Intl.NumberFormat("zh-CN");
   const colors = new Set(["forest", "violet", "coral", "red", "ember", "teal", "slate", "sand", "ochre"]);
   let sessionToken = "";
+  let transferUI = null;
 
   function readSession() {
     const hash = location.hash.slice(1);
@@ -368,10 +369,28 @@
       if (!response.ok) { const error = new Error(data.error || "请求失败，请稍后重试。"); error.status = response.status; throw error; }
       return data;
     } catch (error) {
-      if (error.name === "AbortError") throw new Error("GitHub 响应超时，请稍后重试。已缓存的资料仍可浏览。");
+      if (error.name === "AbortError") throw new Error("请求响应超时，请稍后重试。已缓存的资料仍可浏览。");
       if (error instanceof TypeError) throw new Error("无法连接本地工具。请确认 PortShelf 正在运行，或重新双击打开。");
       throw error;
     } finally { clearTimeout(timer); }
+  }
+
+  async function exportTransferFile(format) {
+    const extension = { json: "json", csv: "csv", markdown: "md" }[format];
+    if (!extension || state.stopped) throw new Error("导出格式无效，或工具已退出。");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch("/api/transfers/export?format=" + format, { headers: { Authorization: "Bearer " + sessionToken }, signal: controller.signal, credentials: "omit", cache: "no-store", redirect: "error" });
+      if (!response.ok) { let reason = "请求未完成，请稍后重试。"; try { reason = (await response.json()).error || reason; } catch (_) { /* Use the fixed error. */ } throw new Error(reason); }
+      const blob = await response.blob();
+      if (state.stopped) return;
+      const url = URL.createObjectURL(blob);
+      const link = element("a"); link.href = url; link.download = "PortShelf-分享资料-" + new Date().toISOString().slice(0, 10) + "." + extension;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { if (error.name === "AbortError") throw new Error("导出超时，请稍后重试。"); throw error; }
+    finally { clearTimeout(timer); }
   }
 
   function snapshot(game) { return state.snapshots[String(game.repo).toLowerCase()] || null; }
@@ -556,7 +575,7 @@
     return card;
   }
 
-  function renderGames() {
+  function filteredGames() {
     const query = state.query.trim().toLocaleLowerCase();
     const hasStarRange = state.minStars !== null || state.maxStars !== null;
     const games = state.games.filter((game) => {
@@ -572,12 +591,20 @@
       if (state.sort === "updated") return timestamp(snapshot(b)?.pushedAt) - timestamp(snapshot(a)?.pushedAt) || String(a.name).localeCompare(String(b.name));
       return String(a.name || a.repo).localeCompare(String(b.name || b.repo));
     });
+    return games;
+  }
+
+  function renderGames() {
+    const games = filteredGames();
+    const query = state.query.trim();
+    const hasStarRange = state.minStars !== null || state.maxStars !== null;
     $("game-grid").classList.toggle("list-mode", state.view === "list");
     $("game-grid").setAttribute("aria-busy", "false");
     $("game-grid").replaceChildren(...games.map(gameCard));
     $("library-empty").hidden = games.length > 0 || !state.loaded;
     $("results-title").textContent = state.category === "all" ? "全部游戏" : state.category;
     $("result-count").textContent = query || state.category !== "all" || hasStarRange ? "找到 " + games.length + " 款 / 共 " + state.games.length + " 款" : "共 " + games.length + " 款游戏";
+    transferUI?.updateLibrary();
   }
 
   async function loadLibrary() {
@@ -591,6 +618,7 @@
     state.snapshots = data.snapshots && typeof data.snapshots === "object" ? data.snapshots : {};
     state.hasToken = Boolean(data.hasToken);
     state.hasAigcToken = Boolean(data.hasAigcToken);
+    state.arch = data.arch || state.arch;
     if (data.descriptions && typeof data.descriptions === "object") {
       mergeDescriptions(Object.entries(data.descriptions).map(([repo, item]) => ({ ...item, repo, status: item.status || "ready" })));
     }
@@ -604,17 +632,28 @@
 
   function changePage(page) {
     if (state.stopped) return;
+    if (!["library", "discover", "cloud"].includes(page)) return;
     state.page = page;
-    $("library-view").hidden = page !== "library";
-    $("discover-view").hidden = page !== "discover";
-    $("library-nav").classList.toggle("active", page === "library");
-    $("discover-nav").classList.toggle("active", page === "discover");
-    $("library-nav").removeAttribute("aria-current");
-    $("discover-nav").removeAttribute("aria-current");
-    $(page === "library" ? "library-nav" : "discover-nav").setAttribute("aria-current", "page");
-    $("page-title").replaceChildren(document.createTextNode(page === "library" ? "移植游戏目录" : "发现更多游戏"), element("span", "heading-dot", "."));
-    $("page-eyebrow").textContent = page === "library" ? "给经典一个新入口" : "开源世界，继续探索";
-    $("page-description").textContent = page === "library" ? "找到熟悉的游戏，看看社区的更新，获取 Windows 下载地址。" : "从 GitHub 的社区项目里，发现你的下一款收藏。";
+    for (const name of ["library", "discover", "cloud"]) {
+      $(name + "-view").hidden = page !== name;
+      $(name + "-nav").classList.toggle("active", page === name);
+      $(name + "-nav").removeAttribute("aria-current");
+    }
+    $(page + "-nav").setAttribute("aria-current", "page");
+    const headings = { library: ["移植游戏目录", "给经典一个新入口", "找到熟悉的游戏，看看社区的更新，获取 Windows 下载地址。"], discover: ["发现更多游戏", "开源世界，继续探索", "从 GitHub 的社区项目里，发现你的下一款收藏。"], cloud: ["下载与分享", "从开源附件，到分享资料", "选择游戏，自动下载、上传网盘，并整理中文简介与分享链接。"] };
+    $("page-title").replaceChildren(document.createTextNode(headings[page][0]), element("span", "heading-dot", "."));
+    $("page-eyebrow").textContent = headings[page][1];
+    $("page-description").textContent = headings[page][2];
+    $("category-section").hidden = page === "cloud";
+    transferUI?.setVisible(page === "cloud");
+  }
+
+  function openConnectionSettings() {
+    showError("token-error", ""); showError("aigc-token-error", "");
+    $("token-input").value = ""; $("aigc-token-input").value = "";
+    transferUI?.clearCredentials(); renderStats();
+    if (!$("settings-dialog").open) $("settings-dialog").showModal();
+    transferUI?.settingsOpened();
   }
 
   function setRefreshState(running, status) {
@@ -1073,6 +1112,7 @@
   function setupEvents() {
     $("library-nav").addEventListener("click", () => changePage("library"));
     $("discover-nav").addEventListener("click", () => { changePage("discover"); $("discover-min-stars").focus(); });
+    $("cloud-nav").addEventListener("click", () => changePage("cloud"));
     document.querySelector(".brand").addEventListener("click", (event) => { event.preventDefault(); changePage("library"); });
     $("library-search").addEventListener("input", (event) => { state.query = event.target.value; renderGames(); });
     $("sort-select").addEventListener("change", (event) => { state.sort = event.target.value; renderGames(); });
@@ -1101,8 +1141,8 @@
       if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
     }));
     $("add-open").addEventListener("click", () => { showError("add-error", ""); $("add-dialog").showModal(); $("repo-input").focus(); });
-    $("settings-open").addEventListener("click", () => { showError("token-error", ""); showError("aigc-token-error", ""); $("token-input").value = ""; $("aigc-token-input").value = ""; renderStats(); $("settings-dialog").showModal(); });
-    $("settings-dialog").addEventListener("close", () => { $("token-input").value = ""; $("aigc-token-input").value = ""; });
+    $("settings-open").addEventListener("click", openConnectionSettings);
+    $("settings-dialog").addEventListener("close", () => { $("token-input").value = ""; $("aigc-token-input").value = ""; transferUI?.clearCredentials(); });
     $("quit-open").addEventListener("click", () => { showError("quit-error", ""); $("quit-dialog").showModal(); });
     $("discover-form").addEventListener("submit", searchGitHub);
     $("discover-more").addEventListener("click", loadDiscoveryPage);
@@ -1178,6 +1218,7 @@
       try {
         await api("/api/quit", {});
         state.stopped = true;
+        transferUI?.stop();
         clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer);
         state.descriptionReadQueue.clear(); state.descriptionPollTargets.clear();
         sessionToken = "";
@@ -1193,12 +1234,13 @@
     document.addEventListener("keydown", (event) => {
       if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || document.querySelector("dialog[open]") || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) || state.stopped) return;
       event.preventDefault();
-      $(state.page === "library" ? "library-search" : "discover-min-stars").focus();
+      $({ library: "library-search", discover: "discover-min-stars", cloud: "transfer-search" }[state.page]).focus();
     });
   }
 
   async function start() {
     readSession(); setupEvents();
+    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, notify });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {
       $("game-grid").replaceChildren();

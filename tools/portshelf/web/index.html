@@ -9,6 +9,7 @@
     <link rel="icon" type="image/svg+xml" href="/gamepad.svg">
     <link rel="stylesheet" href="/app.css">
     <script src="/zh.js" defer></script>
+    <script src="/cloud.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -23,6 +24,7 @@
         <nav class="main-nav" aria-label="主导航">
           <button class="nav-item active" id="library-nav" aria-current="page"><span>我的目录</span><span class="nav-count" id="nav-count">—</span></button>
           <button class="nav-item" id="discover-nav"><span>发现更多</span><span aria-hidden="true">↗</span></button>
+          <button class="nav-item" id="cloud-nav"><span>下载与分享</span><span class="nav-count" id="cloud-nav-count">0</span></button>
         </nav>
         <div class="category-section" id="category-section">
           <p class="nav-label">按游戏类型</p>
@@ -108,6 +110,34 @@
           <div class="discovery-pagination" id="discovery-pagination" hidden><p id="discovery-page-summary" aria-live="polite"></p><button class="button button-secondary" id="discover-more">加载更多</button></div>
         </section>
 
+        <section id="cloud-view" aria-label="下载与分享" hidden>
+          <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>获取 GitHub 的 Windows 发布附件，保存到本机，再上传到所选网盘并生成分享资料。</p></div>
+          <form id="transfer-form" class="transfer-compose" novalidate>
+            <section class="transfer-picker" aria-labelledby="transfer-picker-title">
+              <div class="section-heading"><h3 id="transfer-picker-title">1. 选择目录中的游戏</h3><span id="transfer-selection-count" aria-live="polite">已选 0 款</span></div>
+              <label class="sr-only" for="transfer-search">筛选待下载游戏</label><input id="transfer-search" type="search" placeholder="名称筛选（可选）…" autocomplete="off">
+              <div class="transfer-selection-tools"><label class="check-label"><input id="transfer-use-filters" type="checkbox" checked><span>沿用“我的目录”筛选</span></label><div><button id="transfer-select-visible" type="button" class="text-button">全选当前结果</button><button id="transfer-clear-selection" type="button" class="text-button">清空选择</button></div></div>
+              <p class="field-help" id="transfer-filter-summary"></p>
+              <div id="transfer-game-list" class="transfer-game-list" aria-label="可选游戏"></div>
+            </section>
+            <section class="transfer-options" aria-labelledby="transfer-options-title">
+              <h3 id="transfer-options-title">2. 设置下载与分享</h3>
+              <label class="field-label" for="transfer-arch">Windows 架构</label><select id="transfer-arch" class="cloud-select"><option value="amd64">x64 · 常见 Intel / AMD 电脑</option><option value="arm64">ARM64 · Windows on Arm</option></select>
+              <fieldset class="cloud-fieldset"><legend>上传到网盘 <span>可多选</span></legend><div class="provider-choices"><label class="provider-choice"><input id="transfer-baidu" type="checkbox" value="baidu"><span><strong>百度网盘</strong><small id="transfer-baidu-state">尚未读取连接状态</small></span></label><label class="provider-choice"><input id="transfer-quark" type="checkbox" value="quark"><span><strong>夸克网盘</strong><small id="transfer-quark-state">尚未读取连接状态</small></span></label></div><p class="field-help">不选网盘时，仅下载到本机。<button type="button" id="transfer-auth-open" class="inline-button">配置网盘连接</button></p></fieldset>
+              <div class="share-options"><label><span class="field-label">分享有效期</span><select id="transfer-share-days" class="cloud-select"><option value="0">永久</option><option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option></select></label><label><span class="field-label">百度提取码 <span>可选</span></span><input id="transfer-share-code" type="text" maxlength="4" placeholder="留空自动生成" autocomplete="off" spellcheck="false"></label></div>
+              <label class="check-label transfer-private"><input id="transfer-private-share" type="checkbox" checked><span id="transfer-private-label">分享链接需要提取码</span></label><p class="field-help">百度可指定 4 位字母或数字；夸克提取码由服务自动生成，以任务结果为准。</p>
+              <label class="check-label transfer-enrich"><input id="transfer-enrich" type="checkbox" checked><span>补全中文简介</span></label><p class="field-help">优先使用已有中文简介；缺少时通过 AIGCNEWS 生成，可能消耗已配置账号的额度。</p>
+              <p id="transfer-enqueue-error" class="form-error" role="alert" hidden></p><p id="transfer-enqueue-note" class="field-help" role="status" hidden></p>
+              <button id="transfer-submit" class="button button-primary" type="submit" disabled>加入下载队列</button>
+            </section>
+          </form>
+          <div class="section-heading transfer-queue-heading"><div><h2>任务队列</h2><p id="transfer-queue-summary" class="field-help" aria-live="polite">尚未读取任务</p></div><div class="queue-tools"><button id="transfer-refresh" type="button" class="button button-secondary button-small">刷新任务</button><button id="transfer-open-folder" type="button" class="button button-secondary button-small">打开下载目录</button></div></div>
+          <div id="transfer-poll-error" class="notice error" role="status" hidden></div><div id="transfer-store-error" class="notice error" role="status" hidden></div>
+          <div class="transfer-export-bar"><p id="transfer-download-dir"></p><div><label for="transfer-export-format" class="sr-only">导出格式</label><select id="transfer-export-format" class="cloud-select"><option value="markdown">Markdown 分享资料</option><option value="csv">CSV 表格</option><option value="json">JSON 数据</option></select><button type="button" id="transfer-export" class="button button-secondary button-small">导出成果</button></div></div>
+          <div class="transfer-history-bar"><span>清理只移除已完成、已取消的任务记录，保留本地与网盘文件。</span><button type="button" id="transfer-clear-history" class="text-button" disabled>清理完成历史</button></div>
+          <div id="transfer-jobs" class="transfer-jobs"></div><div id="transfer-empty" class="empty-state" hidden><h3>队列还是空的</h3><p>选择游戏并加入队列，下载、上传和分享进度会显示在这里。</p></div>
+        </section>
+
         <footer class="main-footer"><span>一份持续更新的经典游戏书架。</span><span>项目资料与下载文件由 GitHub 上游提供 <span aria-hidden="true">↗</span></span></footer>
       </main>
     </div>
@@ -125,9 +155,10 @@
 
     <dialog class="form-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-heading"><div><span class="small-label">CONNECTION SETTINGS</span><h2 id="settings-title">连接设置</h2></div><button class="close-button" data-close="settings-dialog" aria-label="关闭连接设置">×</button></div>
-      <p class="dialog-description">游戏查询可公开访问。两个服务的 Token 分别设置，仅在本次工具进程内存中保存。</p>
+      <p class="dialog-description">游戏查询可公开访问。各服务独立设置，凭据仅在本次工具进程内存中保存，退出后清除。</p>
       <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help">只读取公开项目信息，无需仓库写入权限。Token 仅在工具进程内存中保留，退出后清除。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
       <form class="aigc-token-form" id="aigc-token-form"><h3>AIGCNEWS 中文简介</h3><div class="token-state" id="aigc-token-state"></div><label class="field-label" for="aigc-token-input">AIGCNEWS MCP Token <span>独立设置</span></label><input id="aigc-token-input" type="password" placeholder="粘贴 AIGCNEWS Token，留空则清除" maxlength="4096" autocomplete="off" spellcheck="false"><p class="field-help">用于你主动请求的中文简介生成，可能消耗 AIGCNEWS 生成额度。读取已有简介不消耗生成额度；此 Token 不会用于 GitHub。<a href="https://aigcnews.cn/mcp" target="_blank" rel="noopener noreferrer">获取 AIGCNEWS MCP Token ↗</a></p><p class="form-error" id="aigc-token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="aigc-token-submit" type="submit">保存 AIGCNEWS Token</button></div></form>
+      <section class="cloud-settings" id="cloud-settings" aria-labelledby="cloud-settings-title"><h3 id="cloud-settings-title">网盘连接</h3><p class="field-help">连接后可上传和分享下载的发布附件。凭据不写入目录文件，也不保存在浏览器中。</p><div id="cloud-provider-settings"></div><p id="cloud-settings-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">完成设置</button></div></section>
     </dialog>
 
     <dialog class="form-dialog compact-dialog" id="quit-dialog" aria-labelledby="quit-title">

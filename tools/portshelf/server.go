@@ -29,6 +29,8 @@ type App struct {
 	lib            *Library
 	github         *GitHub
 	aigc           *AIGC
+	cloud          *cloudRegistry
+	transfers      *transferManager
 	catalog        []Game
 	token          string
 	host           string
@@ -49,7 +51,21 @@ func newApp(lib *Library) (*App, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &App{lib: lib, github: newGitHub(""), aigc: newAIGC(), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}, candidates: map[string]libraryEntry{}}, nil
+	app := &App{lib: lib, github: newGitHub(""), aigc: newAIGC(), cloud: newCloudRegistry(), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}, candidates: map[string]libraryEntry{}}
+	app.transfers, err = newTransferManager(app)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	go app.transfers.loop()
+	app.cancel = func() {
+		cancel()
+		select {
+		case <-app.transfers.done:
+		case <-time.After(3 * time.Second):
+		}
+	}
+	return app, nil
 }
 
 const maxDiscoveredCandidates = 2000
@@ -305,6 +321,8 @@ func validToken(token string) bool {
 func (a *App) handler() http.Handler {
 	mux := http.NewServeMux()
 	a.registerDescriptionRoutes(mux)
+	a.registerCloudRoutes(mux)
+	a.registerTransferRoutes(mux)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
