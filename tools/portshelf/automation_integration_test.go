@@ -86,7 +86,7 @@ func (s *automationIntegrationSources) install(t *testing.T, a *App) {
 		switch r.URL.Path {
 		case "/search/repositories":
 			s.searches.Add(1)
-			if !strings.Contains(r.URL.Query().Get("q"), "stars:>=10") || r.URL.Query().Get("per_page") != "100" {
+			if !strings.Contains(r.URL.Query().Get("q"), "stars:10..1000000000") || r.URL.Query().Get("per_page") != "100" {
 				t.Error("scheduler did not use Stars discovery")
 			}
 			return apiResponse(200, `{"total_count":1,"incomplete_results":false,"items":[{"full_name":"integration/port-game","name":"Port Game","description":"A source port of a classic game","topics":["game","source-port"],"stargazers_count":11,"private":false}]}`), nil

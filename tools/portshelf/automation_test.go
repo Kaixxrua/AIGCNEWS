@@ -33,7 +33,7 @@ func automationTestManager(t *testing.T) *automationManager {
 	a.automation = m
 	m.apply = func(AutomationConfig, AutomationConfig) error { return nil }
 	m.maintain = func(AutomationConfig) {}
-	m.discover = func(context.Context, starBounds, int) (DiscoveryPage, error) {
+	m.discover = func(context.Context, starBounds, int, string) (DiscoveryPage, error) {
 		t.Error("unexpected discovery")
 		return DiscoveryPage{}, errors.New("unexpected discovery")
 	}
@@ -90,7 +90,7 @@ func TestAutomationDailyQuotaAndCandidateCursorSurviveRestart(t *testing.T) {
 	m.now = func() time.Time { return now }
 	automationTestEnable(t, m, 2)
 	var discoverCalls, releaseCalls int
-	m.discover = func(_ context.Context, bounds starBounds, page int) (DiscoveryPage, error) {
+	m.discover = func(_ context.Context, bounds starBounds, page int, cursor string) (DiscoveryPage, error) {
 		discoverCalls++
 		if page != 1 || bounds.min == nil || *bounds.min != 10 {
 			t.Fatalf("wrong Stars/page: %+v %d", bounds, page)
@@ -123,7 +123,7 @@ func TestAutomationDailyQuotaAndCandidateCursorSurviveRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	restored.now, restored.latest, restored.enqueue = m.now, m.latest, enqueue
-	restored.discover = func(context.Context, starBounds, int) (DiscoveryPage, error) {
+	restored.discover = func(context.Context, starBounds, int, string) (DiscoveryPage, error) {
 		t.Fatal("unprocessed page was lost")
 		return DiscoveryPage{}, nil
 	}
@@ -141,7 +141,7 @@ func TestAutomationDailyQuotaAndCandidateCursorSurviveRestart(t *testing.T) {
 func TestAutomationBoundsReleaseRequestsAndSkipsUnsupported(t *testing.T) {
 	m := automationTestManager(t)
 	automationTestEnable(t, m, 100)
-	m.discover = func(context.Context, starBounds, int) (DiscoveryPage, error) {
+	m.discover = func(context.Context, starBounds, int, string) (DiscoveryPage, error) {
 		return DiscoveryPage{Items: automationTestGames(100)}, nil
 	}
 	requests := 0
@@ -169,7 +169,7 @@ func TestAutomationTransientFailureAndEnqueueRefund(t *testing.T) {
 	m := automationTestManager(t)
 	config := automationTestEnable(t, m, 1)
 	discoveryCalls, releaseCalls := 0, 0
-	m.discover = func(context.Context, starBounds, int) (DiscoveryPage, error) {
+	m.discover = func(context.Context, starBounds, int, string) (DiscoveryPage, error) {
 		discoveryCalls++
 		return DiscoveryPage{Items: automationTestGames(1)}, nil
 	}
@@ -317,7 +317,7 @@ func TestAutomationWaitsForCredentialsAndDisabledCannotRun(t *testing.T) {
 	m.app.credentialsReady = ready
 	var scans atomic.Int32
 	started := make(chan struct{}, 1)
-	m.discover = func(context.Context, starBounds, int) (DiscoveryPage, error) {
+	m.discover = func(context.Context, starBounds, int, string) (DiscoveryPage, error) {
 		scans.Add(1)
 		started <- struct{}{}
 		return DiscoveryPage{}, nil

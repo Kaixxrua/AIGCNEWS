@@ -37,23 +37,26 @@ type AutomationConfig struct {
 }
 
 type automationState struct {
-	Version      int              `json:"version"`
-	Config       AutomationConfig `json:"config"`
-	NextRun      string           `json:"nextRun"`
-	LastRun      string           `json:"lastRun"`
-	LastError    string           `json:"lastError"`
-	ExportError  string           `json:"exportError"`
-	ExportedAt   string           `json:"exportedAt"`
-	ExportDigest string           `json:"exportDigest"`
-	Discovered   int              `json:"discovered"`
-	Queued       int              `json:"queued"`
-	Unsupported  int              `json:"unsupported"`
-	Day          string           `json:"day"`
-	DayCount     int              `json:"dayCount"`
-	Page         int              `json:"page"`
-	Following    int              `json:"following"`
-	Candidates   []Game           `json:"candidates"`
-	Cursor       int              `json:"cursor"`
+	DiscoveryWarning string           `json:"discoveryWarning,omitempty"`
+	DiscoveryCursor  string           `json:"discoveryCursor,omitempty"`
+	FollowingCursor  string           `json:"followingCursor,omitempty"`
+	Version          int              `json:"version"`
+	Config           AutomationConfig `json:"config"`
+	NextRun          string           `json:"nextRun"`
+	LastRun          string           `json:"lastRun"`
+	LastError        string           `json:"lastError"`
+	ExportError      string           `json:"exportError"`
+	ExportedAt       string           `json:"exportedAt"`
+	ExportDigest     string           `json:"exportDigest"`
+	Discovered       int              `json:"discovered"`
+	Queued           int              `json:"queued"`
+	Unsupported      int              `json:"unsupported"`
+	Day              string           `json:"day"`
+	DayCount         int              `json:"dayCount"`
+	Page             int              `json:"page"`
+	Following        int              `json:"following"`
+	Candidates       []Game           `json:"candidates"`
+	Cursor           int              `json:"cursor"`
 }
 
 type automationStatus struct {
@@ -85,7 +88,7 @@ type automationManager struct {
 	wake       chan struct{}
 	done       chan struct{}
 	now        func() time.Time
-	discover   func(context.Context, starBounds, int) (DiscoveryPage, error)
+	discover   func(context.Context, starBounds, int, string) (DiscoveryPage, error)
 	latest     func(context.Context, string, string) (Release, error)
 	enqueue    func(string, AutomationConfig, Release) ([]string, []string, error)
 	maintain   func(AutomationConfig)
@@ -153,7 +156,7 @@ func validateAutomationConfig(config AutomationConfig) (AutomationConfig, error)
 func newAutomation(a *App) (*automationManager, error) {
 	m := &automationManager{app: a, state: automationState{Version: 1, Config: defaultAutomationConfig(), Page: 1, Following: 1, Candidates: []Game{}},
 		wake: make(chan struct{}, 1), done: make(chan struct{}), now: time.Now,
-		discover: a.github.discover, latest: a.github.latest, enqueue: a.transfers.enqueueAutomatic, maintain: a.transfers.maintainAutomatic, applyTransaction: a.applyAutomationSettingsTransaction}
+		discover: a.github.discoverAutomatic, latest: a.github.latest, enqueue: a.transfers.enqueueAutomatic, maintain: a.transfers.maintainAutomatic, applyTransaction: a.applyAutomationSettingsTransaction}
 	file, err := os.Open(filepath.Join(a.lib.root, "automation.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return m, nil
@@ -173,8 +176,23 @@ func newAutomation(a *App) (*automationManager, error) {
 		return nil, fmt.Errorf("自动运行配置无效：%w", err)
 	}
 	m.state.Config = config
-	if m.state.Page < 1 || m.state.Page > 10 || m.state.Following < 1 || m.state.Following > 10 || len(m.state.Candidates) > 100 || m.state.Cursor < 0 || m.state.Cursor > len(m.state.Candidates) || m.state.DayCount < 0 || m.state.DayCount > 100 {
+	if m.state.Page < 1 || m.state.Page > maxDiscoveryPage || m.state.Following < 1 || m.state.Following > maxDiscoveryPage || len(m.state.Candidates) > 100 || m.state.Cursor < 0 || m.state.Cursor > len(m.state.Candidates) || m.state.DayCount < 0 || m.state.DayCount > 100 {
 		return nil, errors.New("自动运行的分页或每日配额记录无效")
+	}
+	// Older clients could persist a second query as pages 11–20, without a
+	// cursor. Restart discovery safely while retaining queued candidates,
+	// transfer history and the daily quota, so an upgrade does not redownload.
+	if m.state.DiscoveryCursor == "" && m.state.FollowingCursor == "" && (m.state.Page > 10 || m.state.Following > 10) && m.state.Page <= 20 && m.state.Following <= 20 {
+		m.state.Page, m.state.Following = 1, 1
+		m.state.DiscoveryWarning = "发现策略已更新；保留现有候选和每日配额，完成后从首个分段重新扫描。"
+	}
+	for _, progress := range []struct {
+		page   int
+		cursor string
+	}{{m.state.Page, m.state.DiscoveryCursor}, {m.state.Following, m.state.FollowingCursor}} {
+		if _, err := parseDiscoveryCursor(progress.cursor, starBounds{min: &config.MinStars, max: config.MaxStars}, progress.page); err != nil {
+			return nil, errors.New("自动运行的发现进度无效")
+		}
 	}
 	for _, value := range []string{m.state.LastRun, m.state.NextRun, m.state.ExportedAt} {
 		if value != "" {
@@ -242,7 +260,7 @@ func (m *automationManager) status() automationStatus {
 		ExportDir: filepath.Join(m.app.lib.root, "exports"), ExportedAt: s.ExportedAt, Discovered: s.Discovered, Queued: s.Queued, Unsupported: s.Unsupported,
 		CredentialStorageSupported: credentialProtectionAvailable(), StartOnLoginSupported: autoStartSupported()}
 	var messages []string
-	for _, message := range []string{s.LastError, s.ExportError, m.storeError} {
+	for _, message := range []string{s.LastError, s.DiscoveryWarning, s.ExportError, m.storeError} {
 		if message != "" {
 			messages = append(messages, message)
 		}
@@ -278,6 +296,7 @@ func (m *automationManager) configure(config AutomationConfig) error {
 		reset := !automationSameSelection(previous, validated)
 		if reset {
 			next.Page, next.Following, next.Cursor, next.Candidates = 1, 1, 0, []Game{}
+			next.DiscoveryCursor, next.FollowingCursor, next.DiscoveryWarning = "", "", ""
 		}
 		if !validated.Enabled {
 			next.NextRun = ""
@@ -439,7 +458,7 @@ func (m *automationManager) scan(ctx context.Context, revision uint64, config Au
 		return nil
 	}
 	if state.Cursor >= len(state.Candidates) {
-		page, err := m.discover(ctx, starBounds{min: &config.MinStars, max: config.MaxStars}, state.Page)
+		page, err := m.discover(ctx, starBounds{min: &config.MinStars, max: config.MaxStars}, state.Page, state.DiscoveryCursor)
 		if err != nil {
 			return err
 		}
@@ -468,13 +487,17 @@ func (m *automationManager) scan(ctx context.Context, revision uint64, config Au
 			return errors.New("自动发现项目无法保存到目录，请检查本地磁盘空间和权限")
 		}
 		following := 1
-		if page.HasMore && state.Page < 10 {
-			following = state.Page + 1
+		if page.HasMore {
+			if page.NextPage < state.Page || page.NextPage == state.Page && !page.EvidencePending || page.NextPage > maxDiscoveryPage {
+				return errors.New("自动发现返回了无效的后续页")
+			}
+			following = page.NextPage
 		}
 		if err := m.checkpoint(revision, func(next *automationState) {
 			next.Candidates, next.Cursor, next.Following, next.Discovered = games, 0, following, len(games)
+			next.FollowingCursor, next.DiscoveryWarning = page.NextCursor, page.Warning
 			if len(games) == 0 {
-				next.Page = following
+				next.Page, next.DiscoveryCursor = following, page.NextCursor
 			}
 		}); err != nil {
 			return err
@@ -555,6 +578,7 @@ func (m *automationManager) advance(revision uint64, unsupported bool, queued in
 		}
 		if state.Cursor >= len(state.Candidates) {
 			state.Page, state.Cursor, state.Candidates = state.Following, 0, []Game{}
+			state.DiscoveryCursor = state.FollowingCursor
 		}
 	})
 }

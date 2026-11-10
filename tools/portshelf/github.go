@@ -62,9 +62,10 @@ type repositoryDetails struct {
 }
 
 type GitHub struct {
-	client *http.Client
-	mu     sync.RWMutex
-	token  string
+	client           *http.Client
+	mu               sync.RWMutex
+	token            string
+	discoveryReadmes map[string]discoveryReadme
 }
 
 func newGitHub(token string) *GitHub {
@@ -225,9 +226,10 @@ func (bounds starBounds) includes(stars int) bool {
 	return (bounds.min == nil || stars >= *bounds.min) && (bounds.max == nil || stars <= *bounds.max)
 }
 
-const automaticGameQuery = `sourceport OR "source port" OR recompilation OR remake`
+const automaticGameQuery = `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation`
 
 type searchRepository struct {
+	Readme      string   `json:"-"`
 	FullName    string   `json:"full_name"`
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
@@ -238,38 +240,15 @@ type searchRepository struct {
 
 var collectionNameMarker = regexp.MustCompile(`(?i)(^|[-_ ])(list|lists|collection|collections)([-_ ]|$)`)
 var collectionDescriptionMarker = regexp.MustCompile(`(?i)(\bcurated\s+(list|collection)\b|^\s*(a\s+|an\s+)?(list|collection)\s+of\b)`)
-var developmentToolMarker = regexp.MustCompile(`(?i)\b(sdk|toolkit|emulator|emulators|development[ -]kit)\b`)
-var portMarker = regexp.MustCompile(`(?i)\b(source[ -]?ports?|recompilation)\b`)
-var remakeMarker = regexp.MustCompile(`(?i)\bremakes?\b`)
-var gameDescriptionMarker = regexp.MustCompile(`(?i)\b(games?|gameplay)\b`)
-
-func isGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
-	name := strings.ToLower(repo.Name + " " + strings.Split(repo.FullName, "/")[1])
-	topics := strings.ToLower(strings.Join(repo.Topics, " "))
-	text := name + " " + repo.Description + " " + topics
-	if strings.Contains(name, "awesome") || strings.Contains(topics, "awesome") || collectionNameMarker.MatchString(name+" "+topics) || collectionDescriptionMarker.MatchString(repo.Description) || developmentToolMarker.MatchString(text) {
-		return false
-	}
-	if knownGames[strings.ToLower(repo.FullName)] || portMarker.MatchString(text) {
-		return true
-	}
-	if !remakeMarker.MatchString(text) {
-		return false
-	}
-	if gameDescriptionMarker.MatchString(repo.Description) {
-		return true
-	}
-	for _, topic := range repo.Topics {
-		topic = strings.ToLower(topic)
-		if topic == "game" || topic == "gaming" || topic == "game-engine" || strings.HasSuffix(topic, "-game") {
-			return true
-		}
-	}
-	return false
-}
+var portMarker = regexp.MustCompile(`(?i)\bsource[ -]?ports?\b`)
+var nativePortMarker = regexp.MustCompile(`(?i)\b(?:native|pc)(?:[ /-](?:pc|handheld))*[ -]ports?\b`)
+var gameDescriptionMarker = regexp.MustCompile(`(?i)\b(games?|gameplay|playable)\b`)
 
 type DiscoveryPage struct {
 	Items           []Game `json:"items"`
+	NextCursor      string `json:"nextCursor,omitempty"`
+	EvidencePending bool   `json:"evidencePending,omitempty"`
+	Warning         string `json:"warning,omitempty"`
 	Page            int    `json:"page"`
 	NextPage        int    `json:"nextPage"`
 	HasMore         bool   `json:"hasMore"`
@@ -360,27 +339,6 @@ func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([
 		games = games[:24]
 	}
 	return games, err
-}
-
-func (g *GitHub) discover(ctx context.Context, bounds starBounds, page int) (DiscoveryPage, error) {
-	if page < 1 || page > 10 {
-		return DiscoveryPage{}, errors.New("页码必须是 1 到 10 之间的整数，请收窄 Stars 范围查看更多项目")
-	}
-	result, err := g.searchPage(ctx, automaticGameQuery, bounds, 100, page)
-	if err != nil {
-		return DiscoveryPage{}, err
-	}
-	games, err := filterSearchGames(result.Items, bounds, true)
-	if err != nil {
-		return DiscoveryPage{}, err
-	}
-	response := DiscoveryPage{Items: games, Page: page, TotalCandidates: result.Total, Incomplete: result.Incomplete}
-	response.HasMore = page < 10 && page*100 < result.Total
-	response.LimitReached = page == 10 && result.Total > 1000
-	if response.HasMore {
-		response.NextPage = page + 1
-	}
-	return response, nil
 }
 
 func (g *GitHub) latest(ctx context.Context, repo, arch string) (Release, error) {

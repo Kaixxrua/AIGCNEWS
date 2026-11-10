@@ -9,7 +9,7 @@
     games: [], snapshots: {}, category: "all", query: "", sort: "stars", view: "grid", minStars: null, maxStars: null,
     page: "library", hasToken: false, hasAigcToken: false, descriptions: {}, refreshing: false, polling: null, pollBusy: false,
     selected: null, allAssets: false, searchResults: [], searchBusy: false, stopped: false,
-    discovery: { range: null, nextPage: 1, page: 0, hasMore: false, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 },
+    discovery: { range: null, cursor: "", nextPage: 1, page: 0, hasMore: false, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 },
     batch: null, singleAdds: new Set(), manualAddBusy: false, confirmedGames: new Map(),
     descriptionRequests: new Set(), descriptionReadQueue: new Set(), descriptionReadBusy: false, descriptionPollTargets: new Map(), descriptionPollTimer: null, descriptionPollAfter: 3, descriptionBatch: null,
     loaded: false, toastTimer: null, activeRefresh: null, arch: "",
@@ -1105,7 +1105,7 @@
       $("discover-count").textContent = "结果范围：" + rangeLabel(discovery.range) + " · 已发现 " + state.searchResults.length + " 个游戏项目";
       const details = [];
       if (discovery.page) details.push("已读取第 " + discovery.page + " 页候选");
-      if (discovery.page) details.push("上游候选 " + numberFormat.format(discovery.totalCandidates) + " 项，需进一步筛选");
+      if (discovery.page) details.push("本分段上游候选 " + numberFormat.format(discovery.totalCandidates) + " 项，需进一步筛选");
       if (state.searchBusy) details.push("正在加载第 " + discovery.nextPage + " 页…");
       else if (discovery.error) details.push("第 " + discovery.nextPage + " 页未完成，可重试");
       else if (discovery.page && discovery.lastAdded === 0 && discovery.hasMore) details.push("本页没有新增游戏，可继续加载");
@@ -1119,8 +1119,8 @@
     showError("discover-error", discovery.error ? discovery.error + " 已加载的结果仍保留，点击下方按钮重试当前页。" : "");
     const warnings = [];
     if (discovery.incomplete) warnings.push("GitHub 本次返回的候选结果不完整，当前列表不能视为全部结果。");
-    if (discovery.limitReached) warnings.push("已达到 GitHub 对此查询开放的前 1,000 个候选限制。");
-    if (warnings.length) warnings.push("请收窄 Stars 范围继续查找。");
+    if (discovery.limitReached) warnings.push("部分同 Stars 分段仍超过 GitHub 的 1,000 条上限，未能全部读取；其余分段继续查找。");
+    if (warnings.length) warnings.push("当前列表不能视为 GitHub 上的全部游戏。");
     $("discover-limit-notice").textContent = warnings.join(" ");
     $("discover-limit-notice").hidden = warnings.length === 0;
     renderBatchProgress();
@@ -1144,6 +1144,7 @@
     const page = discovery.nextPage;
     if (!Number.isInteger(page) || page < 1) return;
     const params = new URLSearchParams({ page: String(page) });
+    if (discovery.cursor) params.set("cursor", discovery.cursor);
     if (discovery.range.min !== null) params.set("minStars", String(discovery.range.min));
     if (discovery.range.max !== null) params.set("maxStars", String(discovery.range.max));
     state.searchBusy = true;
@@ -1153,7 +1154,7 @@
     try {
       const result = await api("/api/discover?" + params.toString());
       if (state.stopped) return;
-      if (!result || !Array.isArray(result.items) || result.page !== page || !Number.isInteger(result.nextPage) || result.nextPage < 0 || (result.hasMore && result.nextPage <= page)) {
+      if (!result || !Array.isArray(result.items) || result.page !== page || !Number.isInteger(result.nextPage) || result.nextPage < 0 || (result.hasMore && (result.nextPage < page || result.nextPage === page && !result.evidencePending))) {
         throw new Error("分页结果无效，请重试当前页。");
       }
       const merged = new Map(state.searchResults.map((game) => [repositoryKey(game.repo), game]));
@@ -1165,7 +1166,9 @@
       discovery.lastAdded = merged.size - before;
       discovery.page = page;
       discovery.nextPage = result.hasMore ? result.nextPage : 0;
+      discovery.cursor = result.hasMore && typeof result.nextCursor === "string" ? result.nextCursor : "";
       discovery.hasMore = Boolean(result.hasMore && result.nextPage > 0);
+      if (result.evidencePending) discovery.error = typeof result.warning === "string" ? result.warning : "部分游戏资料尚未核实，请重试本页。";
       discovery.totalCandidates = Number.isFinite(result.totalCandidates) && result.totalCandidates >= 0 ? result.totalCandidates : 0;
       discovery.incomplete = discovery.incomplete || Boolean(result.incomplete);
       discovery.limitReached = discovery.limitReached || Boolean(result.limitReached);
@@ -1187,7 +1190,7 @@
       return;
     }
     state.searchResults = [];
-    state.discovery = { range: { ...range }, nextPage: 1, page: 0, hasMore: true, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 };
+    state.discovery = { range: { ...range }, cursor: "", nextPage: 1, page: 0, hasMore: true, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 };
     state.batch = null;
     state.descriptionBatch = null;
     updateDiscoverRange();
