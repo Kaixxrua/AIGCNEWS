@@ -56,7 +56,7 @@ def has_project_identity(text: str, name: str) -> bool:
 def project_artwork_links(
     soup: BeautifulSoup, page_url: str, project_repo: str, project_name: str,
 ) -> list[dict[str, str]]:
-    """Return up to three explicit project wiki or itch.io game links.
+    """Return up to three evidenced project home, repo, wiki or itch.io links.
 
     The caller must already have verified this page's project identity and
     remains responsible for the one-hop budget. No URLs are invented and no
@@ -87,13 +87,21 @@ def project_artwork_links(
         same_wiki = parts.hostname == "github.com" and (
             path.lower().rstrip("/") == wiki_path or path.lower().startswith(wiki_path + "/")
         )
+        same_repo = parts.hostname == "github.com" and path.lower().rstrip("/") == "/" + repo and not parts.query
+        # A named root page in the actual DOM can lead from a news article to
+        # the game's own site. This is a candidate, not proof of ownership:
+        # the destination still passes URL, DNS and project identity checks.
+        project_home = bool(
+            path in {"", "/"} and not parts.query
+            and any(has_project_identity(value, project_name) for value in (parts.hostname or "", label, title))
+        )
         same_itch_game = bool(
             _ITCH_AUTHOR.fullmatch(parts.hostname or "")
             and parts.hostname not in {"www.itch.io", "api.itch.io", "static.itch.io", "img.itch.io"}
             and _ITCH_GAME.fullmatch(path)
             and any(has_project_identity(value, project_name) for value in (path.strip("/"), label, title))
         )
-        if not (same_wiki or same_itch_game):
+        if not (same_wiki or same_itch_game or same_repo or project_home):
             continue
         seen.add(address)
         links.append({"url": address, "title": label or title or "项目资料页面"})
