@@ -8,7 +8,7 @@ import re
 import unicodedata
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -58,6 +58,37 @@ _BARE_PLATFORM = re.compile(
     r"^(.{3,}?)\s+(Nintendo (?:DS|3DS|64|Switch(?: 2)?)|PlayStation(?: [1-5])?|Xbox 360|Wii U|Game Boy(?: Color| Advance)?|N64|DS|3DS|GBA)$",
     re.I,
 )
+_REGIONS = frozenset({"us", "usa", "united states", "north america", "na", "jp", "japan", "eu", "europe",
+                      "uk", "united kingdom", "au", "australia", "kr", "korea", "cn", "china", "tw", "taiwan"})
+
+
+def _non_artwork_address(address: str) -> bool:
+    """Apply the same decoration checks before both DOM and index quotas.
+
+    GitHub's Camo hides the source of README badges in a hex path. Decode it
+    only for classification: the original URL is retained for safe fetching.
+    An undecodable proxy URL is unknown, never an identity approval.
+    """
+    parts = urlsplit(address)
+    if parts.hostname == "camo.githubusercontent.com":
+        encoded = parts.path.rsplit("/", 1)[-1]
+        if len(encoded) <= 8192 and len(encoded) % 2 == 0 and re.fullmatch(r"[0-9a-fA-F]+", encoded):
+            try:
+                target = urlsplit(bytes.fromhex(encoded).decode("utf-8"))
+                if target.scheme in {"https", "http"} and target.hostname:
+                    parts = target
+            except (ValueError, UnicodeError):
+                pass
+    host = (parts.hostname or "").lower()
+    badge = any(host == domain or host.endswith("." + domain)
+                for domain in ("shields.io", "badgen.net", "badge.fury.io"))
+    github_file_page = (host == "github.com" and re.match(r"^/[^/]+/[^/]+/blob/", parts.path)
+                        and not any(value.lower() in {"true", "1"} for value in parse_qs(parts.query).get("raw", [])))
+    return bool(badge or github_file_page or host == "opengraph.githubassets.com"
+                or re.fullmatch(r"avatars\d*\.githubusercontent\.com", host)
+                or _DECORATION.search(unquote(parts.path))
+                or _PLACEHOLDER.search(unquote(parts.path))
+                or _FILE_PAGE.search(unquote(parts.path)))
 
 
 def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
@@ -131,6 +162,16 @@ def _platform_suffix_parts(original: str) -> tuple[str, str, str] | None:
     return None
 
 
+def _region_suffix_parts(original: str) -> tuple[str, str] | None:
+    """Separate a known distribution region, never a version or sequel name."""
+    match = _PLATFORM_SUFFIX.fullmatch(original)
+    if match and len(match[1].strip()) >= 3:
+        region = (match[2] or match[3]).strip()
+        if normalized_game_title(region) in _REGIONS:
+            return match[1].strip(), region
+    return None
+
+
 def _platform_search_alias(original: str) -> tuple[str, str] | None:
     """Separate only a known platform; keep any release year in the query."""
     parts = _platform_suffix_parts(original)
@@ -170,19 +211,25 @@ def _has_platform(text: str, platform: str) -> bool:
 
 def _page_matches_identity(title: str, text: str, original: str, chinese: str) -> bool:
     evidence = title + " " + text
-    edition = _edition_identity(original)
+    # Galleries often put regions beside individual covers, not in the title.
+    # Admit the correct game's page, then verify the requested regional cover
+    # with its unchanged full title and local source context.
+    region = _region_suffix_parts(original)
+    title_identity = region[0] if region else original
+    edition = _edition_identity(title_identity)
     if edition:
         base, platform, year = edition
         return (_matches_identity(evidence, (base, chinese)) and _has_year(evidence, year)
                 and (not platform or _has_platform(evidence, platform)))
-    if bare := _BARE_PLATFORM.fullmatch(original):
+    if bare := _BARE_PLATFORM.fullmatch(title_identity):
         return _matches_identity(evidence, (bare[1].strip(), chinese)) and _has_platform(evidence, bare[2])
     return _matches_identity(evidence, _identity_names(original, chinese))
 
 
 def _identity_names(original: str, chinese: str = "") -> tuple[str, ...]:
-    alias = _platform_search_alias(original)
-    return (original, chinese, alias[0]) if alias else (original, chinese)
+    region = _region_suffix_parts(original)
+    alias = _platform_search_alias(region[0] if region else original)
+    return (original, chinese, *((region[0],) if region else ()), *((alias[0],) if alias else ()))
 
 
 def _error_frames(exc: Exception) -> list[dict[str, Any]]:
@@ -366,12 +413,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             continue
         # Decoration checks use purpose-marked path segments, never the page
         # title: Pixel Dungeon, Counter-Strike and Iconoclasts are valid games.
-        parts = urlsplit(address)
-        if (parts.hostname == "opengraph.githubassets.com"
-                or re.fullmatch(r"avatars\d*\.githubusercontent\.com", parts.hostname or "")
-                or _DECORATION.search(unquote(parts.path))
-                or _PLACEHOLDER.search(unquote(parts.path))
-                or _FILE_PAGE.search(unquote(parts.path))):
+        if _non_artwork_address(address):
             continue
         if address in images:
             # Open Graph/JSON-LD commonly repeats a real DOM image. Retain
@@ -398,6 +440,7 @@ class GamePosterAgent:
         self.page_resources: dict[str, Any] = {}
         self.failed_hosts: set[str] = set()
         self.candidates: dict[str, dict] = {}
+        self.attempted_images: set[str] = set()
         self.verified: dict[str, dict] = {}
         self.trace: list[dict] = []
         self.counts = {"search_web": 0, "read_page": 0, "verify_image": 0}
@@ -414,6 +457,10 @@ class GamePosterAgent:
 
     def _prepare(self, name: str, args: dict, original: str, record: dict, chinese: str) -> dict:
         """Reserve budgets and accept only IDs known before this model turn."""
+        candidate = self.candidates.get(args.get("candidateId")) if isinstance(args.get("candidateId"), str) else None
+        if name == "verify_image" and candidate and self._image_evidence(candidate) in self.attempted_images:
+            record.update(candidateId=args["candidateId"], sourceUrl=candidate["sourceUrl"], imageUrl=candidate["url"])
+            raise PosterResourceError("image_already_tried")
         cached_page = name == "read_page" and isinstance(args.get("resultId"), str) and args["resultId"] in self.page_resources
         recovery_search = (name == "search_web" and (self.project_recovery or self.source_recovery)
                            and not self.project_recovery_used
@@ -476,7 +523,17 @@ class GamePosterAgent:
             raise PosterResourceError("unknown_candidate_id")
         record.update(candidateId=identifier, sourceUrl=self.candidates[identifier]["sourceUrl"],
                       imageUrl=self.candidates[identifier]["url"])
+        self.attempted_images.add(self._image_evidence(self.candidates[identifier]))
         return {"candidateId": identifier, "kind": kind, "candidate": self.candidates[identifier]}
+
+    @staticmethod
+    def _image_evidence(candidate: dict) -> str:
+        # Reserve before concurrent work: changing the ID or proposed kind
+        # cannot buy another verdict for identical pixels and source evidence.
+        # New source text or an original/project identity switch can matter.
+        evidence = {key: candidate.get(key) for key in ("url", "sourceUrl", "pageTitle", "label", "context",
+                    "nearbyText", "sourceExcerpt", "identityKind", "inSourcePage")}
+        return hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
     def _register_result(self, result: dict) -> dict:
         """Register one evidenced URL, retaining identity, depth and old traces."""
@@ -602,7 +659,7 @@ class GamePosterAgent:
             images = page.pop("images")
             if page["matchesGame"] and evidence.get("searchImages"):
                 indexed = {image["url"]: image for image in evidence["searchImages"][:6]
-                           if not _FILE_PAGE.search(unquote(urlsplit(image["url"]).path))}
+                           if not _non_artwork_address(image["url"])}
                 # Current DOM references precede potentially stale image-index
                 # URLs. The search-only candidates remain available as fallback.
                 merged = {}
@@ -664,6 +721,8 @@ class GamePosterAgent:
                     self.project_recovery = True
         if value["error"] == "invalid_image":
             value["nextStep"] = "此候选不是合格大图，可能是缩略图；读取来源页已返回的图库/封面详情 links，不能猜测大图地址。"
+        if value["error"] == "image_already_tried":
+            value["nextStep"] = "此图和来源证据已经核验过；请换其它候选或读取新的来源，重复选择不会获得新证据。"
         if alternatives := self._unused_pages():
             value["unreadSources"] = alternatives
             value.setdefault("nextStep", "仍有真实搜索结果可读；先尝试尚未失败的其它网站，不要把本次故障当作没有图片。")
@@ -706,10 +765,9 @@ class GamePosterAgent:
         failed_image = any(row.get("tool") == "verify_image" and row.get("imageUrl") and row.get("error") for row in self.trace)
         if not failed_image or self.counts["verify_image"] >= self.limits["verify_image"]:
             return []
-        attempted = {row.get("candidateId") for row in self.trace if row.get("tool") == "verify_image"}
         return [{"candidateId": key, "sourceUrl": row["sourceUrl"], "imageUrl": row["url"],
                  "label": row.get("label", ""), "inSourcePage": row.get("inSourcePage", True)}
-                for key, row in self.candidates.items() if key not in attempted][:6]
+                for key, row in self.candidates.items() if self._image_evidence(row) not in self.attempted_images][:6]
 
     def _verified_result(self, reason: str) -> dict | None:
         if not self.searched or not self.verified:
@@ -742,9 +800,11 @@ class GamePosterAgent:
                 chinese = ""
             except ValueError:
                 return {"posterStatus": "missing", "posterSearchVersion": SEARCH_VERSION, "posterTrace": []}
-        alias = None if project_repo else _platform_search_alias(original)
-        identity = {"identityKind": "project" if project_repo else "game", "searchIdentity": alias[0] if alias else original,
+        region = None if project_repo else _region_suffix_parts(original)
+        alias = None if project_repo else _platform_search_alias(region[0] if region else original)
+        identity = {"identityKind": "project" if project_repo else "game", "searchIdentity": alias[0] if alias else region[0] if region else original,
                     "platformEvidence": alias[1] if alias else "",
+                    "regionEvidence": region[1] if region else "",
                     "projectSearchIdentity": self.project_repo.split("/", 1)[-1] if self.project_repo else ""}
         messages = [SystemMessage(content=(
             "为指定的真实游戏主动联网寻找海报。必须先 search_web，再 read_page 核实来源页，"
@@ -753,9 +813,13 @@ class GamePosterAgent:
             "原作模式须核实同一游戏及版本，拒绝续作、合集、同名电影/小说、logo、徽章、广告、社区无关图；"
             "searchIdentity有时仅移除了原名末尾已知平台括号，完整gameNameOriginal仍是原始证据，不得改写。"
             "platformEvidence保留该平台证据，找图仍须辨别原版、重制版和平台版本；不能移除续作序号、年份或版本名称来扩大匹配。"
+            "regionEvidence表示原名末尾的发行地区，只为寻找按游戏主标题组织的资料页分离；查询仍带该地区消歧，核验时保留完整原名，不能拿不同地区或版本封面顶替。"
             "identityKind=project 表示没有唯一原作，searchIdentity只是已核实仓库的项目名，绝不能当作或补写为gameNameOriginal。"
             "项目模式只找该项目自己的官方封面、整体宣传图或实际运行画面；不能擅选它支持的某一商业原作封面。"
             "项目页面须明确介绍此项目，结合repo和简介核实；仅在其它游戏介绍中偶然提到项目不算证据。"
+            "已有明确单一原作名、简介说明兼容引擎/移植/反编译/重编译时，先按game模式找对应原作封面。"
+            "不含游戏素材、需自备副本或尚未提供成品，不是改用project模式的理由；这些项目仍有对应原作。"
+            "简介明确的原作平台、年份和版本也应加入查询用于消歧，不要改写原作名或换成续作。"
             "即使已有原作名，若简介说明这是独立游戏/自由素材替代，或原版盒封与重制版不符，也可以搜索 projectSearchIdentity。"
             "先根据简介判断项目关系：独立游戏、续作、多游戏引擎直接优先项目名截图；不要先把两次查询都用于关联的商业原作。"
             "此时使用项目名加screenshots，必须找项目自己的画面，不得把商业原作当独立项目；无需改写原作名。"
