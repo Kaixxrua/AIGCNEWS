@@ -23,6 +23,7 @@ from backend.app.services.project_catalog.game_poster_resources import (
     fetch_poster_resource,
     safe_web_url,
     search_public_artwork,
+    search_public_web,
 )
 from backend.app.services.project_catalog.game_posters import normalized_game_title
 
@@ -74,6 +75,10 @@ TOOLS = [
 TOOLS[0]["function"]["parameters"]["properties"]["identityKind"] = {
     "type": "string", "enum": ["game", "project"],
     "description": "查原作图片选game；查已核实项目自己的截图选project，可附原作背景和作者消歧。",
+}
+TOOLS[0]["function"]["parameters"]["properties"]["searchType"] = {
+    "type": "string", "enum": ["pages", "images"],
+    "description": "pages 用普通网页找官网/游戏资料页；images 优先图片来源，保留游戏资料库网页回退。省略时沿用原检索方式；共用搜索次数。",
 }
 
 
@@ -374,10 +379,12 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
 
 
 class GamePosterAgent:
-    def __init__(self, model: Any, *, search=search_public_artwork, fetch=fetch_poster_resource, cache=cache_poster,
+    def __init__(self, model: Any, *, search=search_public_artwork, search_pages=search_public_web,
+                 fetch=fetch_poster_resource, cache=cache_poster,
                  review=None, deadline_seconds: float = 180, model_seconds: float = 40):
         self.model = model
         self.search, self.fetch, self.cache = search, fetch, cache
+        self.search_pages = search_pages
         self.review = review
         self.item: dict[str, Any] = {}
         self.project_repo = ""
@@ -417,8 +424,9 @@ class GamePosterAgent:
         if name == "search_web":
             query = args.get("query")
             mode = args.get("identityKind")
-            if (not isinstance(query, str) or len(query) > 300 or not set(args) <= {"query", "identityKind"}
-                    or (mode is not None and mode not in {"game", "project"})):
+            search_type = args.get("searchType", "images")
+            if (not isinstance(query, str) or len(query) > 300 or not set(args) <= {"query", "identityKind", "searchType"}
+                    or (mode is not None and mode not in ("game", "project")) or search_type not in ("pages", "images")):
                 raise PosterResourceError("query_must_include_game")
             project_name = self.project_repo.split("/", 1)[-1] if self.project_repo else ""
             project_query = bool(project_name and has_project_identity(query, project_name)
@@ -449,8 +457,8 @@ class GamePosterAgent:
             identity = {"identityKind": "project" if project_query else "game",
                         "identityName": project_name if project_query else original,
                         "identityRepo": self.project_repo if project_query else ""}
-            record.update(query=query, **identity)
-            return {"query": query, **identity}
+            record.update(query=query, searchType=search_type, **identity)
+            return {"query": query, "searchType": search_type, **identity}
         if name == "read_page":
             identifier = args.get("resultId")
             if not isinstance(identifier, str) or identifier not in self.results or set(args) != {"resultId"}:
@@ -514,7 +522,8 @@ class GamePosterAgent:
         try:
             async with asyncio.timeout(self._seconds_left(limit)):
                 if name == "search_web":
-                    return await self.search(prepared["query"])
+                    search = self.search_pages if prepared["searchType"] == "pages" else self.search
+                    return await search(prepared["query"])
                 if name == "read_page":
                     if prepared.get("cachedResource") is not None:
                         record["reusedPage"] = True
@@ -573,7 +582,7 @@ class GamePosterAgent:
                 record["attempts"] = response["attempts"]
             if response.get("workerTransport") in {"child_watcher", "direct_child"}:
                 record["workerTransport"] = response["workerTransport"]
-            return {"query": prepared["query"], "results": rows}
+            return {"query": prepared["query"], "searchType": prepared["searchType"], "results": rows}
         if name == "read_page":
             identifier = prepared["resultId"]
             resource = value
@@ -664,6 +673,7 @@ class GamePosterAgent:
                       "projectRepo": self.project_repo,
                       "instruction": ("错误游戏或版本已被内容核验拒绝；只查此项目自己的截图，用identityKind=project并附作者或已知游戏背景消歧。"
                                       if self.project_recovery else "来源失效；可用原作或项目身份换一个来源查询。")
+                      + "若图片检索反复返回重名或失效来源，改用searchType=pages找真实官网或游戏资料页，再读页核验。"
                       + "常规查询、读页或核图额度耗尽时，只补一次查询机会、两页和一张图；仍受总时限约束。"}}
 
     def _unused_images(self) -> list[dict]:
@@ -727,6 +737,9 @@ class GamePosterAgent:
             "project模式可同时包含原作名称用于消歧，归属仍是该开源项目；仅标题拼写类似不能替代来源核对。"
             "identityHint仅是搜索标题/摘要中的名称提示，不是批准；false结果尤其要防止拼写纠正成别的游戏，优先读true来源，仍须核对实际页面和图片。"
             "search_web会执行真实网页或图片搜索；图片检索结果也必须先读其来源页，身份核实后才会生成可验证的候选ID。"
+            "searchType=pages使用普通网页检索找官网和游戏资料页；省略或images沿用图片优先检索及游戏资料库回退。"
+            "图片检索若重复出现同名道具、软件、聚合转载，或来源读不到，下一次改用pages并加项目作者/完整repo与官网等词消歧，不要只在图片索引里重复同一查询。"
+            "普通网页结果也必须read_page核对身份并verify_image核验；切换检索方式共用现有搜索次数、补救机会和总时限，不增加额度。"
             "优先游戏官网、游戏商店和专门游戏资料/封面站，例如 Steam、GOG、MobyGames、IGDB、TheCoverProject、"
             "Nintendo、LaunchBox Games Database、itch.io；无合适结果再扩大到百科等其它公开来源。"
             "英文原作模式首次优先查询 searchIdentity + platformEvidence（若有）+ cover + site:gamesdb.launchbox-app.com，从游戏封面库读取可用大图；"
@@ -742,7 +755,7 @@ class GamePosterAgent:
             "图片须通过实际内容核验，纯站点占位图或要求贡献截图的提示不能当作游戏画面。image_content_mismatch后换候选。"
             "read_page/verify_image只能用工具已经返回的ID；搜索结果页只有简介时，可以读取返回的同站图库links。"
             "inSourcePage=true代表刚读取的页面仍引用此图，优先于仅在图片搜索索引中存在的旧URL；旧图404后应尝试当前页面的其它图片。File:开头的百科地址是图片详情页，应读links取真实原图。"
-            "项目页只有logo或下载按钮时，优先读取工具返回的项目Wiki/游戏商店links，不要把按钮当作截图。"
+            "项目页只有logo或下载按钮，或媒体图片无法核验时，优先读取工具返回的项目官网/仓库/Wiki/游戏商店links，不要把按钮当作截图。"
             "thumb/thumbnail路径和小尺寸图片优先跟进已返回的详情页links，不应同时验证多张缩略图。invalid_image意味着需换大图，不是模型服务故障。"
             "通常最多2次搜索、6页、3图、8轮模型调用；工具明确返回projectRecovery时另有一次项目查询、两页、一张图和最多三轮，仍受总时限约束。"
             "sourceRecovery表示来源故障，可在相同额度内换原作或项目来源；所有补救总共只可增加一次，不能累加。"
