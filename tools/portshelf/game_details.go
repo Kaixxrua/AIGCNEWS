@@ -16,7 +16,8 @@ func readyGameDetails(item Description) bool {
 }
 
 func needsPosterGeneration(item Description) bool {
-	return readyGameDetails(item) && item.GameNameOriginal != "" && item.PosterURL == "" &&
+	_, repoError := parseRepo(item.Repo)
+	return repoError == nil && readyGameDetails(item) && item.PosterURL == "" &&
 		(item.PosterSearchVersion == 0 || item.PosterRetryAfter <= 0)
 }
 

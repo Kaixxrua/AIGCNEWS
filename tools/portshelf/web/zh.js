@@ -122,7 +122,8 @@
   }
 
   function canSearchPoster(game, record = {}) {
-    return (record.detailsVersion === 1 || game?.detailsVersion === 1) && describe({ ...game, descriptionZh: record.descriptionZh || game?.descriptionZh }).source !== 'unknown' && Boolean(identity(game, record).original);
+    const repo = string(record.repo) || string(game?.repo);
+    return (record.detailsVersion === 1 || game?.detailsVersion === 1) && describe({ ...game, descriptionZh: record.descriptionZh || game?.descriptionZh }).source !== 'unknown' && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(repo) && !/\/\.{1,2}$/.test(repo);
   }
 
   function needsPoster(game, record = {}) {

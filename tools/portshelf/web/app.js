@@ -70,7 +70,8 @@
     const { url, source } = evidence;
     const figure = element("figure", "game-poster " + variant + "-poster");
     const fallback = element("div", "poster-placeholder", evidence.status === "missing" ? "暂未找到匹配海报" : evidence.status === "unavailable" ? "海报暂未取得，可重试" : "海报待补充");
-    const kind = evidence.kind === "screenshot" ? "游戏画面" : "游戏海报";
+    const projectArtwork = !identityOf(game).original;
+    const kind = evidence.kind === "screenshot" ? projectArtwork ? "项目画面" : "游戏画面" : projectArtwork ? "项目海报" : "游戏海报";
     const caption = element("figcaption", "poster-caption");
     caption.append(element("span", "", kind));
     if (source) {
@@ -216,7 +217,10 @@
       else if (record?.posterSearchVersion === 1 && record?.posterStatus === "missing") wrapper.append(element("span", "description-pending", "本次联网搜索未找到匹配海报，已有资料已保留。"));
     }
     if (cooldown && !pending) wrapper.append(element("span", "description-pending", "约 " + (cooldown > 3600 ? Math.ceil(cooldown / 3600) + " 小时" : cooldown > 60 ? Math.ceil(cooldown / 60) + " 分钟" : cooldown + " 秒") + "后可重试"));
-    if (posterOnly && !pending) wrapper.append(element("span", "description-pending", compact ? "使用现有富化额度" : "保留中文名和简介；联网查图使用现有富化额度。"));
+    if (posterOnly && !pending) {
+      const projectArtwork = !identityOf(game).original;
+      wrapper.append(element("span", "description-pending", projectArtwork ? compact ? "按项目查图 · 使用现有富化额度" : "按项目官方资料查找海报或画面，保留现有名称和简介；使用现有富化额度。" : compact ? "使用现有富化额度" : "保留中文名和简介；联网查图使用现有富化额度。"));
+    }
     if (!compact && record?.error) wrapper.append(element("span", "description-error", record.error));
     return wrapper;
   }

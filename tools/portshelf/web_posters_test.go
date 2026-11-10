@@ -55,7 +55,9 @@ func TestTransferPosterSearchHonorsCooldownAndKeepsDownloadsIndependent(t *testi
 		{"web_missing", 1, 0, false, true, true},
 		{"web_cooling", 1, 300, false, true, false},
 		{"healthy", 1, 0, true, true, false},
-		{"unresolved_identity", 1, 0, false, false, false},
+		{"project_without_original", 1, 0, false, false, true},
+		{"project_cooling", 1, 300, false, false, false},
+		{"project_healthy", 1, 0, true, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a, _, _ := prepareTransferApp(t)
@@ -66,7 +68,7 @@ func TestTransferPosterSearchHonorsCooldownAndKeepsDownloadsIndependent(t *testi
 				item.PosterURL, item.PosterSourceURL, item.PosterKind, item.PosterStatus = "", "", "", "missing"
 			}
 			if !tc.identity {
-				item.GameNameOriginal = ""
+				item.GameNameZh, item.GameNameOriginal = "", ""
 			}
 			job := TransferJob{ID: randomID(), Repo: item.Repo, Status: "running", Warnings: []string{}, Outputs: map[string]TransferOutput{}}
 			a.transfers.mu.Lock()
@@ -89,7 +91,7 @@ func TestTransferPosterSearchHonorsCooldownAndKeepsDownloadsIndependent(t *testi
 			if (posts == 1) != tc.wantPost || posts > 1 || after.Description != item.DescriptionZh || !readyTransferDetails(after) {
 				t.Fatal("poster cooldown or a failed lookup blocked existing Chinese details")
 			}
-			if !tc.image && tc.identity && len(after.Warnings) == 0 {
+			if !tc.image && len(after.Warnings) == 0 {
 				t.Fatal("missing poster was silently reported as complete")
 			}
 		})

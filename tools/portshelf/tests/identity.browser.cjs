@@ -27,6 +27,8 @@ const records = {
   'demo/unsafe': { repo: 'demo/unsafe', status: 'ready', descriptionZh: '游戏简介 <img src=x onerror="window.injected=2">', gameNameZh: '<img src=x onerror="window.injected=3">中文', posterUrl: 'javascript:window.injected=4', posterSourceUrl: 'https://github.com.evil.test/poster', detailsVersion: 1 },
   'demo/discovered': { repo: discovered.repo, status: 'ready', descriptionZh: '这是发现列表中的旧版游戏简介。' },
 };
+// These fixtures exercise error rendering while a recent explicit poster search is cooling down.
+for (const repo of ['demo/broken', 'demo/unknown', 'demo/unsafe']) Object.assign(records[repo], { posterSearchVersion: 1, posterRetryAfter: 3600, checkedAt: new Date().toISOString() });
 const completed = repo => ({ repo, status: 'ready', descriptionZh: repo.toLowerCase() === 'peilika/lasrecomp' ? oldDescription : '这是一款适合现代电脑的经典开源游戏。', gameNameZh: repo.toLowerCase() === 'peilika/lasrecomp' ? '塞尔达传说：织梦岛' : repo === 'demo/old' ? '旧作历险记' : '新发现的冒险', gameNameOriginal: 'The Original Adventure', posterUrl: cover, posterSourceUrl: 'https://github.com/demo/art/blob/main/README.md#screenshots', posterKind: 'screenshot', detailsVersion: 1 });
 const posts = [], reads = [], imageRequests = [];
 let finishPending = false, failOld = true;
@@ -87,7 +89,7 @@ const server = http.createServer(async (req, res) => {
     assert.match(await las.locator('.card-subtitle').innerText(), /中文名待确认/);
     assert.equal(await las.locator('.card-description').innerText(), oldDescription);
     assert.equal(await las.getByRole('button', { name: '补全中文名与海报', exact: true }).count(), 1);
-    assert.equal(await card('demo/unknown').locator('.description-button').count(), 0);
+    assert.equal(await card('demo/unknown').getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.equal(await card('demo/unsafe').locator('img').count(), 0);
     assert.equal(await card('demo/unsafe').locator('.poster-caption a').count(), 0);
     assert.equal(posts.length, 0, 'reading old caches must not silently spend generation credits');

@@ -19,7 +19,7 @@ const records = {
   [totk.repo]: recordFor(totk, { gameNameZh: '塞尔达传说：王国之泪', gameNameOriginal: 'The Legend of Zelda: Tears of the Kingdom', descriptionZh: description, posterUrl: '', posterSourceUrl: '', posterKind: '' }),
   'demo/no-cover': recordFor(games[1], { gameNameZh: '未找到封面的游戏', posterStatus: 'missing', posterRetryAfter: 3600, posterSearchVersion: 1 }),
   'demo/network': recordFor(games[2], { gameNameZh: '网络失败的游戏', posterStatus: 'unavailable', posterRetryAfter: 300, posterSearchVersion: 1 }),
-  'demo/unknown': recordFor(games[3], { gameNameZh: '', gameNameOriginal: '', posterStatus: 'missing', posterRetryAfter: 0 }),
+  'demo/unknown': recordFor(games[3], { gameNameZh: '', gameNameOriginal: '', posterStatus: 'missing', posterRetryAfter: 3600, posterSearchVersion: 1 }),
   [batchGame.repo]: recordFor(batchGame, { gameNameZh: '批量补图游戏' }),
 };
 const posts = [], reads = [], imageRequests = [];
@@ -80,7 +80,7 @@ const server = http.createServer(async (req, res) => {
     assert.equal(await missing.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.match(await network.locator('.poster-placeholder').innerText(), /海报暂未取得，可重试/);
     assert.equal(await network.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
-    assert.equal(await card('demo/unknown').locator('.description-button').count(), 0);
+    assert.equal(await card('demo/unknown').getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
 
     await target.getByRole('button', { name: '联网重找海报', exact: true }).click();
     await target.getByRole('button', { name: '核对生成进度', exact: true }).waitFor();

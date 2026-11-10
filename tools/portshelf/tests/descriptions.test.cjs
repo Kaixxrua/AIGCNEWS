@@ -61,10 +61,10 @@ test('old Chinese descriptions are upgraded on request while pending and failed 
   assert.equal(failed.descriptionZh, old.descriptionZh);
   assert.equal(failed.error, 'temporary failure');
   const ready = mergeRecord(failed, { ...old, detailsVersion: 1, gameNameZh: '经典游戏' });
-  assert.equal(needsDetails(game, ready), false);
+  assert.equal(needsDetails(game, ready), true, 'verified text without artwork remains eligible for explicit project poster lookup');
   assert.equal(mergeRecord(ready, old).gameNameZh, '经典游戏');
   assert.equal(mergeRecord(ready, old).detailsVersion, 1);
-  assert.equal(needsDetails(game, { ...ready, gameNameZh: '', posterUrl: '' }), false, 'verified unknown artwork must not cause automatic generation loops');
+  assert.equal(needsDetails(game, { ...ready, gameNameZh: '', posterUrl: '' }), true, 'a project can find artwork without inventing its Chinese game name');
   assert.equal(needsDetails(game, { ...ready, detailsVersion: 2 }), true, 'unknown protocol versions must be checked again');
 });
 
@@ -102,7 +102,7 @@ test('version-one records with a known game but no image can be retried without 
   const game = { repo: 'valentderah/totk-pc-recomp', name: 'totk-pc-recomp' };
   const cached = { repo: game.repo, status: 'ready', descriptionZh: '这是《塞尔达传说：王国之泪》的电脑移植项目。', gameNameZh: '塞尔达传说：王国之泪', gameNameOriginal: 'The Legend of Zelda: Tears of the Kingdom', detailsVersion: 1, posterUrl: '' };
   assert.equal(needsDetails(game, cached), true); assert.equal(needsPoster(game, cached), true);
-  assert.equal(needsPoster(game, { ...cached, gameNameOriginal: '' }), false);
+  assert.equal(needsPoster(game, { ...cached, gameNameOriginal: '' }), true);
   assert.equal(needsPoster(game, { ...cached, descriptionZh: '' }), false, 'missing text must not be labelled as a poster-only operation');
   const pending = mergeRecord(cached, { repo: game.repo, status: 'pending', detailsVersion: 1 });
   assert.equal(pending.gameNameZh, cached.gameNameZh); assert.equal(pending.descriptionZh, cached.descriptionZh);
@@ -144,7 +144,8 @@ test('known version-one game text can explicitly re-search existing artwork with
   assert.equal(needsPoster(game, record), false);
   assert.equal(needsDetails(game, record), false);
   assert.equal(canSearchPoster(game, { ...record, posterUrl: '' }), true);
-  for (const patch of [{ gameNameOriginal: '' }, { descriptionZh: '' }, { detailsVersion: 0 }, { detailsVersion: 2 }]) assert.equal(canSearchPoster(game, { ...record, ...patch }), false);
+  assert.equal(canSearchPoster(game, { ...record, gameNameOriginal: '' }), true);
+  for (const patch of [{ descriptionZh: '' }, { detailsVersion: 0 }, { detailsVersion: 2 }]) assert.equal(canSearchPoster(game, { ...record, ...patch }), false);
 });
 
 test('poster search progress and negative results retain names, text, old artwork and fixed cooldown metadata', () => {

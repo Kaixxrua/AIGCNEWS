@@ -123,12 +123,24 @@ def _game_fields(cached: dict[str, Any], now: float) -> dict[str, Any]:
     result["posterStatus"] = status if status in {"ready", "missing", "unavailable"} else "missing"
     retry_at = cached.get("posterRetryAt", 0)
     result["posterRetryAfter"] = max(0, math.ceil(retry_at - now)) if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) else 0
+    # Earlier web-poster releases marked multi-game projects as "searched"
+    # without executing a single tool. Let those records enter the project
+    # artwork lookup once, instead of preserving a misleading one-hour wait.
+    if result["posterStatus"] == "missing" and not result["gameNameOriginal"] and not cached.get("posterTrace"):
+        result.update(posterSearchVersion=0, posterRetryAfter=0)
     return result
 
 
 def _needs_poster(item: dict[str, Any], refresh: bool = False, web: bool = True) -> bool:
-    if item.get("status") != "ready" or item.get("detailsVersion") != 1 or not item.get("gameNameOriginal"):
+    if item.get("status") != "ready" or item.get("detailsVersion") != 1:
         return False
+    if not item.get("gameNameOriginal"):
+        if not web or not _chinese(item.get("descriptionZh")):
+            return False
+        try:
+            normalize_description_repo(item.get("repo"))
+        except ValueError:
+            return False
     if item.get("posterSearchVersion", 0) == 0 and (refresh or (web and not item.get("posterUrl"))):
         return True
     return bool(item.get("posterRetryAfter", 0) <= 0 and (refresh or not item.get("posterUrl")))

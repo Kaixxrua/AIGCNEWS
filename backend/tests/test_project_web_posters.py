@@ -418,6 +418,38 @@ class WebPosterRedisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.redis.get(self.daily_key()), "2")
         self.describe_game.assert_not_awaited()
 
+    async def test_project_without_unique_original_repairs_previously_skipped_search_once(self):
+        await self.seed(gameNameOriginal="", gameNameZh="", posterStatus="missing",
+                        posterSearchVersion=1, posterRetryAt=self.now + 3600, posterTrace=[])
+        before = await self.read()
+        self.assertEqual((before["posterSearchVersion"], before["posterRetryAfter"]), (0, 0))
+        self.research.assert_not_awaited()
+        first, second = await asyncio.gather(self.request(), self.request(refresh=True))
+        self.assertEqual((first["status"], second["status"]), ("pending", "pending"))
+        self.assertEqual(len(self.operations.jobs), 1)
+        await self.operations.run()
+        result = await self.read()
+        self.assertEqual((result["gameNameOriginal"], result["gameNameZh"]), ("", ""))
+        self.assertEqual(result["descriptionZh"], fixtures.ZH)
+        self.assertEqual(result["posterStatus"], "ready")
+        self.assertEqual(result["posterRetryAfter"], 60)
+        self.assertEqual(await self.redis.get(self.daily_key()), "1")
+        self.research.assert_awaited_once()
+        self.fetch.assert_not_awaited()
+        self.describe_game.assert_not_awaited()
+        await self.request(refresh=True)
+        self.assertEqual(self.operations.jobs, [])
+
+    async def test_completed_project_search_keeps_its_cooldown_without_a_unique_original(self):
+        await self.seed(gameNameOriginal="", gameNameZh="", posterStatus="missing",
+                        posterSearchVersion=1, posterRetryAt=self.now + 3600,
+                        posterTrace=[{"tool": "search_web", "status": "succeeded", "results": []}])
+        result = await self.read()
+        self.assertEqual((result["posterSearchVersion"], result["posterRetryAfter"]), (1, 3600))
+        self.assertEqual((await self.request(refresh=True))["status"], "ready")
+        self.assertEqual(self.operations.jobs, [])
+        self.assertIsNone(await self.redis.get(self.daily_key()))
+
     async def test_new_generation_searches_even_with_readme_image_and_missing_is_one_hour(self):
         from backend.tests.test_project_game_details import GAME_RESULT, metadata
 

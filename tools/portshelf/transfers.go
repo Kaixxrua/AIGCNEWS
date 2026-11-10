@@ -600,7 +600,7 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		}
 	}
 	job, _ = m.job(id)
-	if job.Enrich && (!readyTransferDetails(job) || (job.GameNameOriginal != "" && job.PosterURL == "")) {
+	if job.Enrich && (!readyTransferDetails(job) || job.PosterURL == "") {
 		if err := m.enrich(ctx, job); err != nil {
 			return err
 		}
@@ -790,7 +790,7 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 			j.Warnings = []string{}
 			if !readyTransferDetails(*j) {
 				j.Warnings = []string{"中文简介已保留，中文游戏名与海报资料待补充"}
-			} else if posterUnavailable || (j.GameNameOriginal != "" && j.PosterURL == "") {
+			} else if posterUnavailable || j.PosterURL == "" {
 				j.Warnings = []string{"中文游戏资料已保留，海报联网查找尚未完成"}
 			}
 		}, true)
