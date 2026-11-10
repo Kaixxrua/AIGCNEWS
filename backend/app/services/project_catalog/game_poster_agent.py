@@ -40,6 +40,8 @@ SEARCH_VERSION = 1
 SEARCH_MISSING_SECONDS = 3600
 SEARCH_UNAVAILABLE_SECONDS = 300
 SEARCH_READY_SECONDS = 60
+FINAL_VERIFY_MODEL_SECONDS = 10.0
+FINAL_VERIFY_MIN_SECONDS = 20.0
 _DECORATION = re.compile(r"(?:^|[/._-])(?:logo|badge|icon|favicon|avatar|sponsor|tracking|tracker|spacer|beacon|shields)(?:[._/-]|$)|\.svg(?:[.?/]|$)", re.I)
 _GAME_SITES = ("steampowered.com", "gog.com", "mobygames.com", "igdb.com", "thecoverproject.net",
                "nintendo.com", "gamesdb.launchbox-app.com", "itch.io", "playstation.com", "xbox.com")
@@ -657,6 +659,63 @@ class GamePosterAgent:
             seconds = self._seconds_left(self.model_seconds)
             return await asyncio.wait_for(model.ainvoke(messages), timeout=seconds)
 
+    async def _final_verification(self, identifiers: list[str], messages: list, original: str, chinese: str) -> dict | None:
+        """One selection and one existing verification, without model retry."""
+        started = asyncio.get_running_loop().time()
+        selection = {"stage": "final_verification", "status": "failed", "candidateIds": identifiers,
+                     "remainingMs": max(0, round((self.deadline - started) * 1000)), "at": datetime.now(UTC).isoformat()}
+        self.trace.append(selection)
+        record = selection
+        try:
+            model = self.model.bind_tools([tool for tool in TOOLS if tool["function"]["name"] == "verify_image"]).bind(max_tokens=1200)
+            instruction = HumanMessage(content=json.dumps({
+                "allowedCandidateIds": identifiers,
+                "instruction": "常规循环已结束，只可从最后读页新增的这些候选中选择一张最可靠的完整海报或游戏画面，调用一次 verify_image。"
+                               "不得搜索、读页、使用其它ID或发起多个调用；所有游戏身份、版本和画面规则不变。没有可靠候选就返回空串ID。",
+            }, ensure_ascii=False))
+            # Intentionally bypass _call_model: the tail has no retry allowance.
+            response = await asyncio.wait_for(model.ainvoke([*messages, instruction]),
+                                              timeout=self._seconds_left(min(self.model_seconds, FINAL_VERIFY_MODEL_SECONDS)))
+            selection["elapsedMs"] = round((asyncio.get_running_loop().time() - started) * 1000)
+            calls = getattr(response, "tool_calls", []) or []
+            if getattr(response, "invalid_tool_calls", None):
+                raise PosterResourceError("invalid_final_verification")
+            if not calls:
+                selection.update(status="skipped", reason="no_selection")
+                return None
+            if (not isinstance(calls, list) or len(calls) != 1 or not isinstance(calls[0], dict)
+                    or calls[0].get("name") != "verify_image"):
+                raise PosterResourceError("invalid_final_verification")
+            args = calls[0].get("args")
+            if (isinstance(args, dict) and set(args) == {"candidateId", "kind"}
+                    and args["candidateId"] == "" and isinstance(args["kind"], str)
+                    and args["kind"] in {"cover", "screenshot"}):
+                selection.update(status="skipped", reason="no_selection")
+                return None
+            if (not isinstance(args, dict) or not isinstance(args.get("candidateId"), str)
+                    or args["candidateId"] not in identifiers or not isinstance(args.get("kind"), str)
+                    or args["kind"] not in {"cover", "screenshot"}
+                    or set(args) != {"candidateId", "kind"}):
+                raise PosterResourceError("invalid_final_verification")
+            selection["status"] = "succeeded"
+            record = {"tool": "verify_image", "finalVerification": True, "status": "failed", "at": datetime.now(UTC).isoformat()}
+            self.trace.append(record)
+            prepared = self._prepare("verify_image", args, original, record, chinese)
+            outcome = await self._perform("verify_image", prepared, record)
+            self._accept("verify_image", prepared, outcome, original, record, chinese, self.project_repo)
+            record["status"] = "succeeded"
+            return self._verified_result("final_verification")
+        except asyncio.CancelledError:
+            record["status"] = "cancelled"
+            raise
+        except Exception as exc:
+            if isinstance(exc, TimeoutError):
+                exc = PosterResourceError("agent_deadline" if asyncio.get_running_loop().time() >= self.deadline else "model_timeout")
+            self._tool_failure(exc, record)
+            return None
+        finally:
+            selection.setdefault("elapsedMs", round((asyncio.get_running_loop().time() - started) * 1000))
+
     async def _perform(self, name: str, prepared: dict, record: dict) -> Any:
         """Network work overlaps; state and evidence registration remain ordered."""
         started = asyncio.get_running_loop().time()
@@ -958,6 +1017,8 @@ class GamePosterAgent:
             "第二次搜索可直接指定已知游戏资料站；不要把所有读页次数都耗在同一站点。"
             "网页中提到原名不代表每张图都属于该游戏，必须结合图片说明、所在标题、图片路径核对；排除续作、其它推荐游戏及站点通用图。"
             "同时检查nearbyText和sourceExcerpt中的版本、VR/移动改版及后续澄清；别的引擎里的纹理测试、素材样张和对比图不能当作当前项目运行画面。"
+            "先按来源上下文把核图额度留给完整游戏场景、实际棋盘/文字对局或完整官方宣传画；纯代码、编辑器/数据查看器、局部设置控件和诊断裁条不是主候选。"
+            "不要仅凭文件名或站点排除；完整画面里的正常HUD、低分辨率像素和终端文字玩法仍可用，官方演示局面也不因成绩是设置的就被否定。"
             "图片须通过实际内容核验，纯站点占位图或要求贡献截图的提示不能当作游戏画面。image_content_mismatch后换候选。"
             "read_page/verify_image只能用工具已经返回的ID；搜索结果页只有简介时，可以读取返回的同站图库links。"
             "inSourcePage=true代表刚读取的页面仍引用此图，优先于仅在图片搜索索引中存在的旧URL；旧图404后应尝试当前页面的其它图片。File:开头的百科地址是图片详情页，应读links取真实原图。"
@@ -978,6 +1039,8 @@ class GamePosterAgent:
             model = self.model.bind_tools(TOOLS).bind(max_tokens=1800)
             while turns < 8 + (3 if self.project_recovery or self.source_recovery else 0):
                 turns += 1
+                known_candidates = set(self.candidates)
+                last_read_candidates = []
                 phase = "model_call"
                 response = await self._call_model(model, messages)
                 phase = "model_response"
@@ -1033,6 +1096,8 @@ class GamePosterAgent:
                                 raise outcome
                             value = self._accept(name, prepared, outcome, original, record, chinese, project_repo)
                             record["status"] = "succeeded"
+                            if name == "read_page":
+                                last_read_candidates.extend(key for key in record["candidateIds"] if key not in known_candidates)
                         except asyncio.CancelledError:
                             raise
                         except Exception as exc:
@@ -1044,9 +1109,19 @@ class GamePosterAgent:
                 # real page, image and cache evidence. Do not require another
                 # paid call solely to repeat its ID. An explicit final empty ID
                 # breaks above and is still respected as rejection.
-                self._terminal("model_turn_limit", turns)
                 if result := self._verified_result("model_turn_limit"):
+                    self._terminal("model_turn_limit", turns)
                     return result
+                identifiers = list(dict.fromkeys(key for key in last_read_candidates
+                                                if self._image_evidence(self.candidates[key]) not in self.attempted_images))
+                if (identifiers and self.counts["verify_image"] < self.limits["verify_image"]
+                        and self.deadline - asyncio.get_running_loop().time() >= FINAL_VERIFY_MIN_SECONDS):
+                    turns += 1
+                    phase = terminal_reason = "final_verification"
+                    result = await self._final_verification(identifiers, messages, original, chinese)
+                    self._terminal(terminal_reason, turns)
+                    if result:
+                        return result
         except asyncio.CancelledError:
             self._terminal("cancelled", turns)
             raise
