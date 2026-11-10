@@ -184,7 +184,7 @@ func TestSearchKeepsNewPublicProjectsAndCapsResults(t *testing.T) {
 	g := newGitHub("")
 	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 		query := r.URL.Query()
-		if query.Get("q") != `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false` || query.Get("per_page") != "100" || query.Get("sort") != "stars" {
+		if query.Get("q") != `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true` || query.Get("per_page") != "100" || query.Get("sort") != "stars" {
 			t.Errorf("unexpected default query: %s", r.URL.RawQuery)
 		}
 		items := []map[string]any{{"full_name": "private/repo", "private": true}, {"full_name": "owner/../../evil"}}
@@ -359,7 +359,7 @@ func TestDiscoverLoadsTwoFullPagesWithoutTwentyFourLimit(t *testing.T) {
 	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
 		params := r.URL.Query()
-		if r.URL.Path != "/search/repositories" || params.Get("per_page") != "100" || params.Get("sort") != "stars" || params.Get("order") != "desc" || params.Get("q") != automaticGameQuery+" archived:false stars:0..1000" {
+		if r.URL.Path != "/search/repositories" || params.Get("per_page") != "100" || params.Get("sort") != "stars" || params.Get("order") != "desc" || params.Get("q") != automaticGameQuery+" fork:true stars:0..1000" {
 			t.Errorf("invalid paginated GitHub query: %s", r.URL)
 		}
 		items := discoveryCandidates(0, 100)

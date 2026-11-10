@@ -265,7 +265,7 @@ type githubSearchPage struct {
 
 func (g *GitHub) searchPage(ctx context.Context, query string, bounds starBounds, perPage, page int) (githubSearchPage, error) {
 	var result githubSearchPage
-	path := "/search/repositories?q=" + url.QueryEscape(query+" archived:false"+bounds.qualifier()) + "&sort=stars&order=desc&per_page=" + strconv.Itoa(perPage)
+	path := "/search/repositories?q=" + url.QueryEscape(query+bounds.qualifier()) + "&sort=stars&order=desc&per_page=" + strconv.Itoa(perPage)
 	if page > 0 {
 		path += "&page=" + strconv.Itoa(page)
 	}
@@ -319,6 +319,21 @@ func filterSearchGames(repositories []searchRepository, bounds starBounds, autom
 	return games, nil
 }
 
+// Only the advanced keyword mode retains its old archive default. Explicit
+// qualifiers are passed through; words inside quoted phrases are not filters.
+func hasSearchQualifier(query, qualifier string) bool {
+	quoted := false
+	for _, token := range strings.Fields(query) {
+		if !quoted && strings.HasPrefix(strings.ToLower(token), qualifier+":") {
+			return true
+		}
+		if strings.Count(token, `"`)%2 != 0 {
+			quoted = !quoted
+		}
+	}
+	return false
+}
+
 // Legacy array response remains capped for existing keyword-search clients.
 func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([]Game, error) {
 	query = strings.TrimSpace(query)
@@ -328,7 +343,9 @@ func (g *GitHub) search(ctx context.Context, query string, bounds starBounds) ([
 	automatic := query == ""
 	perPage := 24
 	if automatic {
-		query, perPage = automaticGameQuery, 100
+		query, perPage = automaticGameQuery+" fork:true", 100
+	} else if !hasSearchQualifier(query, "archived") {
+		query += " archived:false"
 	}
 	result, err := g.searchPage(ctx, query, bounds, perPage, 0)
 	if err != nil {

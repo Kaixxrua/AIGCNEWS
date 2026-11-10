@@ -99,7 +99,7 @@ func (g *GitHub) discoverPage(ctx context.Context, bounds starBounds, page int, 
 	}
 	part := c.Ranges[0]
 	queryBounds := starBounds{min: &part.Min, max: &part.Max}
-	result, err := g.searchPage(ctx, discoveryQueries[c.Query], queryBounds, 100, c.Page)
+	result, err := g.searchPage(ctx, discoveryQueries[c.Query]+" fork:true", queryBounds, 100, c.Page)
 	if err != nil {
 		return DiscoveryPage{}, err
 	}
@@ -160,14 +160,14 @@ var acronymWordBoundary = regexp.MustCompile(`([A-Z])([A-Z][a-z])`)
 var toolIdentityMarker = regexp.MustCompile(`(?i)(^|[-_ ])(sdk|toolkit|emulator|emulators|framework|tutorials?|examples?|course|cheats?|trainer)([-_ ]|$)`)
 var toolRoleMarker = regexp.MustCompile(`(?i)\b(sdk|toolkit|emulators?|development[ -]kit|runtime librar(?:y|ies)|static recompiler|game (?:server management|hosting|development (?:framework|library)|editor|speed modifier|launcher|backend)|network client|tracing|diagnostics|reporting services|reportviewer|image editor|datepicker)\b`)
 var launcherRoleMarker = regexp.MustCompile(`(?i)^\s*(?:(?:[a-z0-9_-]+\s+)?launchers?\b|(?:an?|the)\s+(?:[a-z-]+\s+){0,4}launcher\b)`)
-var mentionedToolClause = regexp.MustCompile(`(?i)\b(?:uses?|using|built with|requires?|based on)\s+[^.!;\n]*\b(?:sdk|toolkit|framework|emulator|engine|library)\b[^.!;\n]*`)
+var mentionedToolClause = regexp.MustCompile(`(?i)\b(?:uses|using|utili[sz]es|built with|requires?|based on)\s+[^.!;\n]*\b(?:sdk|toolkit|framework|emulator|engine|library)\b[^.!;\n]*`)
 var negatedToolClause = regexp.MustCompile(`(?i)\b(?:no|without|not an?|is not an?|isn't an?|does not include|doesn't include)\b[^.!;\n]*\b(?:sdk|emulator|recompilation|toolkit)\b[^.!;\n]*`)
 var componentRoleMarker = regexp.MustCompile(`(?i)\b(?:benchmark|asset pipeline|behaviou?r tree (?:solution|framework|library|editor)|action planner|(?:first[ -]person|third[ -]person|character) controller for|(?:kcp|tcp|icmp|network) tunnel|tunnel for games|quickstart|standard (?:c\+\+ )?library|c\+\+ interface|game coding agent|game development.*book)\b`)
 var utilityRoleMarker = regexp.MustCompile(`(?i)\b(?:game (?:creator|creation tool|performance optimi[sz]ation service)|search(?:es|ing)? [^.\n]{0,80}game install paths|minimal example)\b|(?:脚本|编译器)[^。\n]{0,30}(?:语法|引擎)内核`)
-var readmeProjectRoleMarker = regexp.MustCompile(`(?im)(?:^|\n)\s*(?:(?:[a-z0-9_.*-]+\s+){1,5}(?:is|provides)\s+)?(?:(?:an?|the)\s+)?(?:[a-z0-9_.*-]+\s+){0,7}(?:sdk|toolkit|toolset|emulator|framework|library|extension|plugin|component|behaviou?r tree solution)(?:\s+(?:for|to|that|with|in)\b|\s*[.:!\r]?(?:\n|$))|(?:^|\n)\s*[a-z0-9_.*-]*(?:游戏|客户端)开发(?:使用)?(?:框架|工具库|脚手架)`)
+var readmeProjectRoleMarker = regexp.MustCompile(`(?im)(?:^|\n)\s*(?:(?:[a-z0-9_.*-]+[ \t]+){1,5}(?:is|provides)[ \t]+(?:(?:an?|the)[ \t]+)?|(?:an?|the)[ \t]+)(?:[a-z0-9_.*-]+\s+){0,7}(?:sdk|toolkit|toolset|emulator|framework|library|extension|plugin|component|behaviou?r tree solution)(?:\s+(?:for|to|that|with|in)\b|\s*[.:!\r]?(?:\n|$))|(?:^|\n)\s*[a-z0-9_.*-]*(?:游戏|客户端)开发(?:使用)?(?:框架|工具库|脚手架)`)
 var componentTopicMarker = regexp.MustCompile(`(?i)(^|[-_ ])(library|libraries|template|templates|benchmark|benchmarks)([-_ ]|$)`)
 var gamePortToolkitMarker = regexp.MustCompile(`(?i)\bporting toolkit for\b`)
-var genericEngineMarker = regexp.MustCompile(`(?i)\b(?:game[ -](?:client[ -])?engine|game development framework|game framework)\b`)
+var genericEngineMarker = regexp.MustCompile(`(?i)\b(?:(?:game|visual[ -]novel)[ -](?:client[ -])?engine|game development framework|game framework)\b`)
 var generalConsoleMarker = regexp.MustCompile(`(?i)^(?:playstation ?[1-5]|ps[1-5]|xbox(?: 360)?|n64|nintendo 64) (?:games|titles)\b`)
 var reimplementationMarker = regexp.MustCompile(`(?i)\b(?:re-?implement(?:ation|ed)?|remakes?|demakes?|recreations?|clones?|decompilations?|recompilations?|recompiled)\b`)
 var specificRecompilationMarker = regexp.MustCompile(`(?i)\b(?:static )?(?:recompilation|decompilation)\s+(?:(?:project|runtime)\s+)?(?:of|for)\s+\S`)
@@ -181,7 +181,7 @@ var describedGameMarker = regexp.MustCompile(`(?i)\bgames?[ \t]*(?:[—:–-]|wi
 var declaredToolRoleMarker = regexp.MustCompile(`(?i)\b(?:framework|librar(?:y|ies)|toolset|extensions?|plugins?|bindings?|scaffold|mod[ -]manager|game[ -](?:updater|patcher)|(?:custom|heart[ -]rate)[ -]counter)\b|(?:开发|自动化)(?:使用)?(?:框架|脚手架|工具库)|网络库`)
 var genericDevelopmentMarker = regexp.MustCompile(`(?i)\b(?:general[ -]purpose|(?:make|making|create|creating|develop|developing|build|building) [^.!;\n]{0,50}\bgames|game development framework|game development library)\b`)
 var readmeCode = regexp.MustCompile("(?s)```.*?```|~~~.*?~~~|<!--.*?-->")
-var readmeMarkup = regexp.MustCompile(`(?s)<[^>]*>|https?://[^\s<>\)]+`)
+var readmeMarkup = regexp.MustCompile(`(?s)</?[A-Za-z][A-Za-z0-9]*(?:\s[^<>]*|/?)>|https?://[^\s<>\)]+`)
 var localizedReadmeLink = regexp.MustCompile(`(?i)\]\((?:\./)?(README[-_.](?:zh|cn)[A-Za-z0-9_.-]*\.(?:md|markdown|rst|txt))\)`)
 
 // A declared component role wins over later examples or installation steps.
@@ -206,8 +206,8 @@ func excludedGameCandidate(repo searchRepository) bool {
 	name := acronymWordBoundary.ReplaceAllString(repo.Name+" "+path.Base(repo.FullName), "$1 $2")
 	name = strings.ToLower(camelWordBoundary.ReplaceAllString(name, "$1 $2"))
 	topics := strings.ToLower(strings.Join(repo.Topics, " "))
-	description := mentionedToolClause.ReplaceAllString(negatedToolClause.ReplaceAllString(repo.Description, ""), "")
-	return strings.Contains(name, "awesome") || strings.Contains(topics, "awesome") || collectionNameMarker.MatchString(name+" "+topics) || collectionDescriptionMarker.MatchString(repo.Description) || toolIdentityMarker.MatchString(name+" "+topics) || (toolRoleMarker.MatchString(description) && !gamePortToolkitMarker.MatchString(description)) || componentRoleMarker.MatchString(description) || declaredToolProject(description) || utilityRoleMarker.MatchString(description) || componentTopicMarker.MatchString(name+" "+topics) || genericDevelopmentMarker.MatchString(description) || launcherRoleMarker.MatchString(description) || generalConsoleMarker.MatchString(description)
+	description := normalizedPurpose(repo.Description)
+	return strings.Contains(name, "awesome") || strings.Contains(topics, "awesome") || collectionNameMarker.MatchString(name+" "+topics) || toolIdentityMarker.MatchString(name) || (toolRoleMarker.MatchString(description) && !gamePortToolkitMarker.MatchString(description)) || componentRoleMarker.MatchString(description) || declaredToolProject(description) && !originalExtension.MatchString(description) || utilityRoleMarker.MatchString(description) || componentTopicMarker.MatchString(name) || genericDevelopmentMarker.MatchString(description) || launcherRoleMarker.MatchString(description) || generalConsoleMarker.MatchString(description) || collectionReadmePurpose.MatchString(description) || unrelatedPurpose.MatchString(description) || toolPurpose(description)
 }
 
 func metadataGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
@@ -217,12 +217,15 @@ func metadataGameCandidate(repo searchRepository, knownGames map[string]bool) bo
 	if knownGames[strings.ToLower(repo.FullName)] {
 		return true
 	}
-	description := mentionedToolClause.ReplaceAllString(negatedToolClause.ReplaceAllString(repo.Description, ""), "")
+	description := normalizedPurpose(repo.Description)
 	text := description + " " + strings.Join(repo.Topics, " ")
+	if pluralImplementations.MatchString(description) || strings.Contains(strings.ToLower(description), "collection of games") || collectionDescriptionMarker.MatchString(description) || originalExtension.MatchString(description) {
+		return false
+	}
 	if portMarker.MatchString(text) || specificRecompilationMarker.MatchString(description) || nativePortMarker.MatchString(description) && reimplementationMarker.MatchString(repo.Description) {
 		return true
 	}
-	if genericEngineMarker.MatchString(description) && !reimplementationMarker.MatchString(description) && !gameDescriptionMarker.MatchString(genericEngineMarker.ReplaceAllString(description, "")) {
+	if genericEngineMarker.MatchString(description) {
 		return false
 	}
 	if reimplementationMarker.MatchString(description) && (gameDescriptionMarker.MatchString(description) || gameGenreMarker.MatchString(text)) {
@@ -233,7 +236,7 @@ func metadataGameCandidate(repo searchRepository, knownGames map[string]bool) bo
 			return true
 		}
 	}
-	return playableGameMarker.MatchString(description) || describedGameMarker.MatchString(description)
+	return namedGameVersion.MatchString(description) || primaryGameType(description) || primaryGameNoun.MatchString(description) || selfGameClaim.MatchString(description) || playableGameMarker.MatchString(description) || describedGameMarker.MatchString(description)
 }
 
 func isGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
@@ -246,20 +249,24 @@ func isGameCandidate(repo searchRepository, knownGames map[string]bool) bool {
 	if metadataGameCandidate(repo, knownGames) {
 		return true
 	}
-	text := readmeCode.ReplaceAllString(repo.Readme, " ")
-	text = readmeMarkup.ReplaceAllString(text, " ")
-	if len(text) > 12000 {
-		text = text[:12000]
+	text := discoveryReadmeText(repo.Readme)
+	intro := discoveryReadmeIntro(text)
+	identity := normalizedPurpose(intro)
+	// A single-game native port may include its translator and tooling. Its
+	// explicit runtime and original-copy requirements establish the purpose.
+	if gamePortToolkitMarker.MatchString(repo.Description) && nativeRuntimeEvidence.MatchString(identity) && playableGameMarker.MatchString(identity) {
+		return true
 	}
-	intro := text
-	if len(intro) > 2600 {
-		intro = intro[:2600]
-	}
-	identity := mentionedToolClause.ReplaceAllString(negatedToolClause.ReplaceAllString(intro, ""), "")
-	if genericDevelopmentMarker.MatchString(identity) || declaredToolProject(identity) || readmeProjectRoleMarker.MatchString(identity) {
+	if collectionReadmePurpose.MatchString(identity) || readmeProjectRoleMarker.MatchString(identity) || toolPurpose(identity) {
 		return false
 	}
-	return playableGameMarker.MatchString(genericEngineMarker.ReplaceAllString(text, "")) || describedGameMarker.MatchString(genericEngineMarker.ReplaceAllString(intro, "")) || (gameDescriptionMarker.MatchString(intro) || gameGenreMarker.MatchString(intro)) && reimplementationMarker.MatchString(intro)
+	if !genericEngineMarker.MatchString(identity) && (primaryGameType(identity) || selfGameClaim.MatchString(identity) || describedGameMarker.MatchString(identity)) {
+		return true
+	}
+	if genericEngineMarker.MatchString(normalizedPurpose(repo.Description)) || genericEngineMarker.MatchString(identity) {
+		return dedicatedEnginePurpose(repo, identity, text)
+	}
+	return directRecompiledRuntime.MatchString(identity) || gamePlayControls.MatchString(identity) || playOwnProject(repo, identity) || engineWord.MatchString(repo.Description) && supportedGameReleases.MatchString(identity) || playableEngine.MatchString(identity) || targetClientPurpose(repo, identity, text) || reconstructsGameEngine(repo) || likeTheGame.MatchString(identity) || namedGameVersion.MatchString(identity) || reversedGame.MatchString(identity) || explicitGameRuntime.MatchString(identity) && gameDomain(repo) || primaryGameType(identity) || primaryGameNoun.MatchString(identity) || selfGameClaim.MatchString(identity) || playableGameMarker.MatchString(identity) || describedGameMarker.MatchString(identity) || gameDomain(repo) && (gameSubjectPort.MatchString(identity) || namedGamePorting(repo, identity)) || purposeRecreation.MatchString(identity) && gameDescriptionMarker.MatchString(text)
 }
 
 type discoveryReadme struct {

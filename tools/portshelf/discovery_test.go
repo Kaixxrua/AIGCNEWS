@@ -361,8 +361,13 @@ func TestDiscoveryActualReadPathRejectsDevelopmentRolesButKeepsPlayableProjects(
 	if err != nil || result.EvidencePending || len(result.Items) != 2 || result.Items[0].Repo != "demo/native" || result.Items[1].Repo != "demo/actual" {
 		t.Fatalf("README role/positive evidence lost in the actual API path: %+v %v", result, err)
 	}
-	if len(readCalls) != len(readmes) {
-		t.Fatalf("topics bypassed actual README evidence: %v", readCalls)
+	for _, repo := range []string{"yicaoyimuys/EgretGameEngine", "demo/unknown", "demo/actual", "demo/native"} {
+		if readCalls[repo] != 1 {
+			t.Fatalf("uncertain topic candidate bypassed README: %s %v", repo, readCalls)
+		}
+	}
+	if readCalls["luis-l/BonsaiBehaviourTree"] != 0 {
+		t.Fatalf("explicit component identity should avoid an unnecessary README request: %v", readCalls)
 	}
 }
 

@@ -363,19 +363,19 @@ func TestSearchStarFilterQueriesWithoutKeywords(t *testing.T) {
 	cases := []struct {
 		name, parameters, query string
 	}{
-		{"no filters", "", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false`},
-		{"empty filters", "?minStars=&maxStars=", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false`},
-		{"minimum", "?minStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=500`},
-		{"maximum", "?maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:<=500`},
-		{"range", "?minStars=100&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:100..500`},
-		{"zero minimum", "?minStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=0`},
-		{"zero maximum", "?maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:<=0`},
-		{"exact zero", "?minStars=0&maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:0..0`},
-		{"equal bounds", "?minStars=500&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:500..500`},
-		{"maximum allowed", "?minStars=1000000000&maxStars=1000000000", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:1000000000..1000000000`},
+		{"no filters", "", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true`},
+		{"empty filters", "?minStars=&maxStars=", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true`},
+		{"minimum", "?minStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:>=500`},
+		{"maximum", "?maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:<=500`},
+		{"range", "?minStars=100&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:100..500`},
+		{"zero minimum", "?minStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:>=0`},
+		{"zero maximum", "?maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:<=0`},
+		{"exact zero", "?minStars=0&maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:0..0`},
+		{"equal bounds", "?minStars=500&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:500..500`},
+		{"maximum allowed", "?minStars=1000000000&maxStars=1000000000", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:1000000000..1000000000`},
 		{"legacy keyword", "?q=doom&minStars=50", "doom archived:false stars:>=50"},
 		{"legacy keyword only", "?q=doom", "doom archived:false"},
-		{"blank keyword", "?q=%20%20&minStars=50", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=50`},
+		{"blank keyword", "?q=%20%20&minStars=50", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation fork:true stars:>=50`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
