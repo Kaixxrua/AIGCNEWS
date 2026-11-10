@@ -18,6 +18,7 @@ import (
 
 const aigcDescriptionsURL = "https://aigcnews.cn/api/v1/projects/descriptions"
 const descriptionTTL = 7 * 24 * time.Hour
+const incompletePosterTTL = time.Minute
 
 type Description struct {
 	Repo                string `json:"repo"`
@@ -95,7 +96,13 @@ func readyDescription(item Description) bool {
 }
 func freshDescription(item Description, now time.Time) bool {
 	checked, err := time.Parse(time.RFC3339, item.CheckedAt)
-	return readyGameDetails(item) && err == nil && !checked.After(now.Add(5*time.Minute)) && now.Sub(checked) < descriptionTTL
+	ttl := descriptionTTL
+	if item.PosterURL == "" || (item.PosterStatus != "" && item.PosterStatus != "ready") {
+		// A successful brief does not mean its artwork is complete. Recheck the
+		// public cache on the next read without launching another paid search.
+		ttl = incompletePosterTTL
+	}
+	return readyGameDetails(item) && err == nil && !checked.After(now.Add(5*time.Minute)) && now.Sub(checked) < ttl
 }
 func (a *AIGC) get(ctx context.Context, repos []string) (DescriptionsResponse, error) {
 	v, _, err := a.request(ctx, http.MethodGet, repos, false)

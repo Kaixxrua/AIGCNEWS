@@ -31,6 +31,9 @@ SEARCH_READY_SECONDS = 60
 _DECORATION = re.compile(r"(?:^|[/._-])(?:logo|badge|icon|favicon|avatar|sponsor|tracking|tracker|spacer|beacon|shields)(?:[._/-]|$)|\.svg(?:[.?/]|$)", re.I)
 _GAME_SITES = ("steampowered.com", "gog.com", "mobygames.com", "igdb.com", "thecoverproject.net",
                "nintendo.com", "gamesdb.launchbox-app.com", "itch.io", "playstation.com", "xbox.com")
+_GALLERY = re.compile(r"(?:^|[/_\s-])(?:covers?|images?|pictures?|posters?|screenshots?|galler(?:y|ies)|artwork|boxart|boxshots?)(?:$|[/_\s-])", re.I)
+_IMAGE_FILE = re.compile(r"\.(?:jpe?g|png|webp)$", re.I)
+_NUMBERED_SEQUEL = re.compile(r"^\s+(?:[2-9]|[1-9]\d|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)(?![\w])", re.I)
 
 
 def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
@@ -40,7 +43,7 @@ def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, 
 
 TOOLS = [
     _tool("search_web", "真实联网搜索当前游戏或项目的官网、商店或资料站；无匹配再扩大。查询必须含 searchIdentity，不能擅自换成其它游戏；最多两次。", {"query": {"type": "string"}}),
-    _tool("read_page", "读取 search_web 真实返回的 resultId，核实游戏和提取图片候选；最多四页。", {"resultId": {"type": "string"}}),
+    _tool("read_page", "读取 search_web 或已核实页面返回的 resultId，核实游戏和提取图片候选；同站图库链接最多跟进一层，总共最多四页。", {"resultId": {"type": "string"}}),
     _tool("verify_image", "选择同一款游戏的海报或游戏画面，真实下载解码并缓存；只接受 read_page 的 candidateId，最多三图。",
           {"candidateId": {"type": "string"}, "kind": {"type": "string", "enum": ["cover", "screenshot"]}}),
 ]
@@ -63,6 +66,57 @@ def _game_site(url: str) -> bool:
     return any(host == domain or host.endswith("." + domain) for domain in _GAME_SITES)
 
 
+def _page_url(page_url: str, reference: str) -> str:
+    try:
+        return safe_web_url(urljoin(page_url, reference))
+    except (ValueError, UnicodeError) as exc:
+        raise PosterResourceError("unsafe_url") from exc
+
+
+def _wrong_sequel_title(title: str, names: tuple[str, ...]) -> bool:
+    """An incidental base-name mention cannot approve an obvious numbered sequel."""
+    value = normalized_game_title(title)
+    for name in names:
+        name = normalized_game_title(name)
+        if not name:
+            continue
+        matches = re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", value)
+        if any(_NUMBERED_SEQUEL.match(value[match.end():]) for match in matches):
+            return True
+    return False
+
+
+def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str) -> list[dict[str, str]]:
+    """Expose only evidenced, same-site artwork subpages of this game, one hop."""
+    source = urlsplit(url)
+    source_path = unquote(source.path).rstrip("/")
+    source_ids = set(re.findall(r"(?<!\d)\d{3,}(?!\d)", source_path))
+    links, seen = [], {url}
+    for tag in soup.find_all("a", href=True)[:500]:
+        try:
+            address = _page_url(url, str(tag["href"]))
+        except PosterResourceError:
+            continue
+        parts = urlsplit(address)
+        if address in seen or parts.hostname != source.hostname or _IMAGE_FILE.search(parts.path):
+            continue
+        path = unquote(parts.path)
+        label = tag.get_text(" ", strip=True)[:200] or str(tag.get("title") or "")[:200]
+        if not _GALLERY.search(path + " " + label):
+            continue
+        path_title = re.sub(r"[/_-]+", " ", path)
+        same_game = bool(source_path and path.startswith(source_path + "/"))
+        same_game |= bool(source_ids & set(re.findall(r"(?<!\d)\d{3,}(?!\d)", path)))
+        same_game |= _matches_identity(path_title + " " + label, (original, chinese))
+        if not same_game or _wrong_sequel_title(path_title + " " + label, (original, chinese)):
+            continue
+        seen.add(address)
+        links.append({"url": address, "title": label or "游戏图片页面"})
+        if len(links) == 4:
+            break
+    return links
+
+
 def page_images(url: str, body: bytes, original: str, chinese: str = "", *, project_repo: str = "") -> dict[str, Any]:
     soup = BeautifulSoup(body, "html.parser")
     title_node = soup.find("meta", property="og:title")
@@ -75,17 +129,17 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
     if project_repo:
         for tag in soup.find_all("a", href=True)[:500]:
             try:
-                link = urlsplit(safe_web_url(urljoin(url, str(tag["href"]))))
+                link = urlsplit(_page_url(url, str(tag["href"])))
             except PosterResourceError:
                 continue
             path = link.path.lower().rstrip("/")
             if link.hostname == "github.com" and (path == "/" + project_repo or path.startswith("/" + project_repo + "/")):
                 project_linked = True
                 break
-    found: list[tuple[str, str]] = []
+    found: list[dict[str, Any]] = []
     for tag in soup.find_all("meta"):
         if str(tag.get("property") or tag.get("name") or "").lower() in {"og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"}:
-            found.append((str(tag.get("content") or ""), "页面主图：" + title[:200]))
+            found.append({"url": str(tag.get("content") or ""), "label": "页面主图：" + title[:200]})
 
     def structured(node: Any, depth: int = 0) -> None:
         if depth > 3:
@@ -102,7 +156,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
                 if isinstance(value, dict):
                     value = value.get("contentUrl") or value.get("url")
                 if isinstance(value, str):
-                    found.append((value, "游戏资料图片：" + str(node.get("name") or title)[:200]))
+                    found.append({"url": value, "label": "游戏资料图片：" + str(node.get("name") or title)[:200]})
         structured(node.get("@graph"), depth + 1)
 
     for script in soup.find_all("script", type="application/ld+json")[:6]:
@@ -111,13 +165,29 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
         except (ValueError, TypeError, RecursionError):
             pass
     for tag in soup.find_all("img")[:150]:
-        if any(str(tag.get(key) or "").isdigit() and int(tag[key]) < 160 for key in ("width", "height")):
-            continue
         label = str(tag.get("alt") or tag.get("title") or "")[:250]
+        dimensions = {key: int(tag[key]) for key in ("width", "height")
+                      if str(tag.get(key) or "").isdigit() and 0 < int(tag[key]) <= 100000}
+        figure = tag.find_parent("figure")
+        caption = figure.find("figcaption") if figure else None
+        if caption:
+            label = (label + " " + caption.get_text(" ", strip=True))[:250].strip()
+        context = tag.find_previous(["h1", "h2", "h3", "h4"])
+        context = context.get_text(" ", strip=True)[:200] if context else ""
+        anchor = tag.find_parent("a", href=True)
+        if anchor:
+            try:
+                address = _page_url(url, str(anchor["href"]))
+            except PosterResourceError:
+                address = ""
+            if address and _IMAGE_FILE.search(urlsplit(address).path):
+                found.append({"url": address, "label": label, "context": context, "linkedOriginal": True})
+        if any(value < 160 for value in dimensions.values()):
+            continue
         # A data: placeholder must not hide the real lazy-loaded image. Keep
         # candidates bounded and validate each URL independently below.
         for attribute in ("src", "data-src"):
-            found.append((str(tag.get(attribute) or ""), label))
+            found.append({"url": str(tag.get(attribute) or ""), "label": label, "context": context, **dimensions})
         for attribute in ("srcset", "data-srcset"):
             value = str(tag.get(attribute) or "")[:8192]
             if value.lstrip().lower().startswith("data:"):
@@ -125,18 +195,22 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             for entry in value.split(",")[:6]:
                 parts = entry.strip().split()
                 if parts and (len(parts) == 1 or re.fullmatch(r"\d+(?:\.\d+)?[wx]", parts[1])):
-                    found.append((parts[0], label))
+                    found.append({"url": parts[0], "label": label, "context": context, **dimensions})
+    links = _gallery_links(soup, url, original, chinese)
     for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "form", "iframe"]):
         tag.decompose()
     text = " ".join(soup.get_text(" ", strip=True).split())[:16000]
-    if not _matches_identity(title + " " + text, (original, chinese)) or (project_repo and not (project_named or project_linked)):
-        return {"title": title[:300], "text": text[:5000], "matchesGame": False, "images": []}
+    if (_wrong_sequel_title(title, (original, chinese))
+            or not _matches_identity(title + " " + text, (original, chinese))
+            or (project_repo and not (project_named or project_linked))):
+        return {"title": title[:300], "text": text[:5000], "matchesGame": False, "images": [], "links": []}
     images, seen = [], set()
-    for address, label in found:
+    for candidate in found:
+        address = candidate["url"]
         if not address:
             continue
         try:
-            address = safe_web_url(urljoin(url, address))
+            address = _page_url(url, address)
         except PosterResourceError:
             continue
         # Decoration checks use purpose-marked path segments, never the page
@@ -148,14 +222,15 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             continue
         if address not in seen:
             seen.add(address)
-            images.append({"url": address, "label": label[:250]})
+            images.append({**candidate, "url": address})
         if len(images) == 12:
             break
-    return {"title": title[:300], "text": text[:5000], "matchesGame": True, "images": images}
+    return {"title": title[:300], "text": text[:5000], "matchesGame": True, "images": images, "links": links}
 
 
 class GamePosterAgent:
-    def __init__(self, model: Any, *, search=search_public_web, fetch=fetch_poster_resource, cache=cache_poster):
+    def __init__(self, model: Any, *, search=search_public_web, fetch=fetch_poster_resource, cache=cache_poster,
+                 deadline_seconds: float = 85, model_seconds: float = 20):
         self.model = model
         self.search, self.fetch, self.cache = search, fetch, cache
         self.results: dict[str, dict] = {}
@@ -167,8 +242,12 @@ class GamePosterAgent:
         self.searched = False
         self.read = False
         self.had_error = False
+        self.deadline_seconds = min(85.0, max(0.001, float(deadline_seconds)))
+        self.model_seconds = min(20.0, max(0.001, float(model_seconds)))
+        self.deadline = 0.0
 
-    async def _execute(self, name: str, args: dict, original: str, record: dict, chinese: str = "", project_repo: str = "") -> dict:
+    def _prepare(self, name: str, args: dict, original: str, record: dict, chinese: str) -> dict:
+        """Reserve budgets and accept only IDs known before this model turn."""
         if name not in self.limits or self.counts[name] >= self.limits[name]:
             raise PosterResourceError("tool_budget_exceeded")
         self.counts[name] += 1
@@ -184,7 +263,44 @@ class GamePosterAgent:
                 query = original + " cover" + (" site:" + site[1] if site else "")
                 record["queryAdjusted"] = True
             record["query"] = query
-            response = await self.search(query)
+            return {"query": query}
+        if name == "read_page":
+            identifier = args.get("resultId")
+            if not isinstance(identifier, str) or identifier not in self.results or set(args) != {"resultId"}:
+                raise PosterResourceError("unknown_result_id")
+            return {"resultId": identifier, "result": self.results[identifier]}
+        identifier, kind = args.get("candidateId"), args.get("kind")
+        if not isinstance(identifier, str) or identifier not in self.candidates or kind not in {"cover", "screenshot"} or set(args) != {"candidateId", "kind"}:
+            raise PosterResourceError("unknown_candidate_id")
+        return {"candidateId": identifier, "kind": kind, "candidate": self.candidates[identifier]}
+
+    def _seconds_left(self, limit: float) -> float:
+        remaining = self.deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise PosterResourceError("agent_deadline")
+        return min(limit, remaining)
+
+    async def _perform(self, name: str, prepared: dict, record: dict) -> Any:
+        """Network work overlaps; state and evidence registration remain ordered."""
+        started = asyncio.get_running_loop().time()
+        limit = {"search_web": 23, "read_page": 16, "verify_image": 22}[name]
+        try:
+            async with asyncio.timeout(self._seconds_left(limit)):
+                if name == "search_web":
+                    return await self.search(prepared["query"])
+                if name == "read_page":
+                    return await self.fetch(prepared["result"]["url"])
+                resource = await self.fetch(prepared["candidate"]["url"], image=True)
+                return resource, await self.cache(resource.body)
+        except TimeoutError as exc:
+            code = "agent_deadline" if asyncio.get_running_loop().time() >= self.deadline else "tool_timeout"
+            raise PosterResourceError(code) from exc
+        finally:
+            record["elapsedMs"] = round((asyncio.get_running_loop().time() - started) * 1000)
+
+    def _accept(self, name: str, prepared: dict, value: Any, original: str, record: dict, chinese: str, project_repo: str) -> dict:
+        if name == "search_web":
+            response = value
             self.searched = True
             rows = []
             for row in response.get("results", [])[:6]:
@@ -201,12 +317,12 @@ class GamePosterAgent:
                 result["resultId"] = identifier
                 self.results[identifier] = result
             record.update(engine=str(response.get("engine") or "public_web")[:30], results=rows)
-            return {"query": query, "results": rows}
+            if response.get("workerTransport") in {"child_watcher", "direct_child"}:
+                record["workerTransport"] = response["workerTransport"]
+            return {"query": prepared["query"], "results": rows}
         if name == "read_page":
-            identifier = args.get("resultId")
-            if not isinstance(identifier, str) or identifier not in self.results or set(args) != {"resultId"}:
-                raise PosterResourceError("unknown_result_id")
-            resource = await self.fetch(self.results[identifier]["url"])
+            identifier = prepared["resultId"]
+            resource = value
             source = safe_web_url(resource.url)
             page = page_images(source, resource.body, original, chinese, project_repo=project_repo)
             self.read = True
@@ -214,22 +330,49 @@ class GamePosterAgent:
             for image in page.pop("images"):
                 candidate_id = f"image-{len(self.candidates) + 1}"
                 self.candidates[candidate_id] = {**image, "sourceUrl": source, "pageTitle": page["title"]}
-                candidates.append({"candidateId": candidate_id, "label": image["label"]})
+                candidates.append({"candidateId": candidate_id, "imageUrl": image["url"], "sourceUrl": source,
+                                   "pageTitle": page["title"], **{key: image[key] for key in ("label", "context", "width", "height", "linkedOriginal") if key in image}})
+            links = []
+            page_links = page.pop("links")
+            if not prepared["result"].get("parentResultId"):
+                for link in page_links:
+                    if any(row["url"] == link["url"] for row in self.results.values()):
+                        continue
+                    linked_id = f"page-{len(self.results) + 1}"
+                    result = {**link, "resultId": linked_id, "parentResultId": identifier, "gameSite": _game_site(link["url"])}
+                    self.results[linked_id] = result
+                    links.append(result)
             record.update(resultId=identifier, sourceUrl=source, pageSha256=hashlib.sha256(resource.body).hexdigest(),
-                          candidateIds=[row["candidateId"] for row in candidates])
-            return {**page, "sourceUrl": source, "candidates": candidates}
-        identifier, kind = args.get("candidateId"), args.get("kind")
-        if not isinstance(identifier, str) or identifier not in self.candidates or kind not in {"cover", "screenshot"} or set(args) != {"candidateId", "kind"}:
-            raise PosterResourceError("unknown_candidate_id")
-        candidate = self.candidates[identifier]
-        resource = await self.fetch(candidate["url"], image=True)
-        cached = await self.cache(resource.body)
+                          candidateIds=[row["candidateId"] for row in candidates], linkedResults=links)
+            if prepared["result"].get("parentResultId"):
+                record["parentResultId"] = prepared["result"]["parentResultId"]
+            return {**page, "sourceUrl": source, "candidates": candidates, "links": links}
+        identifier, kind, candidate = prepared["candidateId"], prepared["kind"], prepared["candidate"]
+        resource, cached = value
         self.verified[identifier] = {"posterUrl": cached["url"], "posterSourceUrl": candidate["sourceUrl"], "posterKind": kind}
         record.update(candidateId=identifier, sourceUrl=candidate["sourceUrl"], imageUrl=resource.url,
                       imageSha256=cached["sha256"], width=cached["width"], height=cached["height"])
         return {"candidateId": identifier, "verified": True, "width": cached["width"], "height": cached["height"]}
 
+    def _tool_failure(self, exc: Exception, record: dict) -> dict:
+        self.had_error = True
+        value = {"error": str(exc) if isinstance(exc, PosterResourceError) else "tool_unavailable"}
+        record.update(error=value["error"], errorType=type(exc).__name__)
+        return value
+
+    def _verified_result(self, reason: str) -> dict | None:
+        if not self.searched or not self.verified:
+            return None
+        choices = list(reversed(self.verified))
+        identifier = next((key for key in choices if self.verified[key]["posterKind"] == "cover"), choices[0])
+        for record in reversed(self.trace):
+            if record.get("tool") == "verify_image" and record.get("candidateId") == identifier and record.get("status") == "succeeded":
+                record["selectionReason"] = reason
+                break
+        return {**self.verified[identifier], "posterStatus": "ready", "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}
+
     async def run(self, item: dict[str, Any]) -> dict[str, Any]:
+        self.deadline = asyncio.get_running_loop().time() + self.deadline_seconds
         original = str(item.get("gameNameOriginal") or "").strip()[:160]
         chinese = str(item.get("gameNameZh") or "")[:160]
         project_repo = ""
@@ -257,8 +400,10 @@ class GamePosterAgent:
             "403/404或读页失败时换搜索结果中的站点，不重复访问同一坏链接。"
             "第二次查询保持简短，可用原名+cover+site:gamesdb.launchbox-app.com 或其它游戏资料站域名，"
             "所有实际查询必须包含searchIdentity；原作模式不能只搜中文译名，中文名只能附加。项目模式不能换成所支持的某一款游戏。"
-            "网页中提到原名不代表每张图都属于该游戏，必须核对图片说明。read_page/verify_image只能用工具返回的ID。"
-            "最多2次搜索、4页、3图，总共6轮模型调用；可在一轮调用多个有依据的工具。"
+            "网页中提到原名不代表每张图都属于该游戏，必须结合图片说明、所在标题、图片路径核对；排除续作、其它推荐游戏及站点通用图。"
+            "read_page/verify_image只能用工具已经返回的ID；搜索结果页只有简介时，可以读取返回的同站图库links。"
+            "最多2次搜索、4页、3图，总共6轮模型调用；同一轮应并行读取两个最有希望的独立页面，必要时并行验证已有候选。"
+            "不能在同轮猜测新生成的page/image ID；已有可靠封面就立即结束，不再做额外搜索。"
             "找到可用海报后只返回JSON {\"candidateId\":\"已verify_image成功的ID\"}；没有可靠图返回空串ID。"
         )), HumanMessage(content=json.dumps({**{key: item.get(key, "") for key in ("repo", "gameNameOriginal", "gameNameZh", "descriptionZh")}, **identity}, ensure_ascii=False))]
         phase = "model_bind"
@@ -266,7 +411,8 @@ class GamePosterAgent:
             model = self.model.bind_tools(TOOLS).bind(max_tokens=1800)
             for _ in range(6):
                 phase = "model_call"
-                response = await model.ainvoke(messages)
+                seconds = self._seconds_left(self.model_seconds)
+                response = await asyncio.wait_for(model.ainvoke(messages), timeout=seconds)
                 phase = "model_response"
                 messages.append(response)
                 calls = getattr(response, "tool_calls", []) or []
@@ -278,9 +424,13 @@ class GamePosterAgent:
                         identifier = None
                     if self.searched and isinstance(identifier, str) and identifier in self.verified:
                         return {**self.verified[identifier], "posterStatus": "ready", "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}
+                    if identifier is None:
+                        raise PosterResourceError("invalid_model_response")
                     break
                 if len(calls) > 6:
                     raise PosterResourceError("tool_budget_exceeded")
+                phase = "tool_calls"
+                prepared_calls, work = [], []
                 for call in calls:
                     name, arguments = call.get("name"), call.get("args")
                     call_id = str(call.get("id") or "")[:120]
@@ -289,35 +439,43 @@ class GamePosterAgent:
                     try:
                         if not isinstance(arguments, dict):
                             raise PosterResourceError("invalid_arguments")
-                        value = await self._execute(name, arguments, original, record, chinese, project_repo)
-                        record["status"] = "succeeded"
-                    except asyncio.CancelledError:
-                        raise
+                        prepared = self._prepare(name, arguments, original, record, chinese)
+                        prepared_calls.append((name, prepared, record, len(work)))
+                        work.append(self._perform(name, prepared, record))
                     except Exception as exc:
-                        self.had_error = True
-                        value = {"error": str(exc) if isinstance(exc, PosterResourceError) else "tool_unavailable"}
-                        record["error"] = value["error"]
-                        record["errorType"] = type(exc).__name__
-                    messages.append(ToolMessage(content=json.dumps(value, ensure_ascii=False), tool_call_id=call_id))
+                        prepared_calls.append((name, None, record, self._tool_failure(exc, record)))
+                outcomes = await asyncio.gather(*work, return_exceptions=True)
+                for name, prepared, record, index in prepared_calls:
+                    if prepared is None:
+                        value = index
+                    else:
+                        try:
+                            outcome = outcomes[index]
+                            if isinstance(outcome, BaseException):
+                                raise outcome
+                            value = self._accept(name, prepared, outcome, original, record, chinese, project_repo)
+                            record["status"] = "succeeded"
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            value = self._tool_failure(exc, record)
+                    messages.append(ToolMessage(content=json.dumps(value, ensure_ascii=False), tool_call_id=record["callId"]))
             else:
                 # A successful verify_image in turn six has already supplied
                 # real page, image and cache evidence. Do not require a seventh
                 # paid call solely to repeat its ID. An explicit final empty ID
                 # breaks above and is still respected as rejection.
-                if self.searched and self.verified:
-                    choices = list(reversed(self.verified))
-                    identifier = next((key for key in choices if self.verified[key]["posterKind"] == "cover"), choices[0])
-                    for record in reversed(self.trace):
-                        if record.get("tool") == "verify_image" and record.get("candidateId") == identifier and record.get("status") == "succeeded":
-                            record["selectionReason"] = "model_turn_limit"
-                            break
-                    return {**self.verified[identifier], "posterStatus": "ready", "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}
+                if result := self._verified_result("model_turn_limit"):
+                    return result
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self.had_error = True
-            self.trace.append({"stage": phase, "status": "failed", "error": "agent_unavailable",
+            code = "agent_deadline" if asyncio.get_running_loop().time() >= self.deadline else "model_timeout" if isinstance(exc, TimeoutError) else "agent_unavailable"
+            self.trace.append({"stage": phase, "status": "failed", "error": code,
                                "errorType": type(exc).__name__, "at": datetime.now(UTC).isoformat()})
+            if result := self._verified_result(code):
+                return result
         completed = self.searched and (self.read or not self.results)
         status = "missing" if completed and not self.had_error else "unavailable"
         return {"posterStatus": status, "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}

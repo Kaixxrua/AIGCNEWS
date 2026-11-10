@@ -359,12 +359,16 @@ func TestPosterRetryStateSurvivesOfflineCacheWithoutExtendingCooldown(t *testing
 		t.Fatal(err)
 	}
 	defer restarted.cancel()
+	reads := 0
 	restarted.aigc.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
-		t.Error("fresh cached text should not repeatedly query poster status")
+		reads++
+		if r.Method != http.MethodGet || r.Header.Get("Authorization") != "" {
+			t.Error("stale missing artwork must only recheck the public cache")
+		}
 		return apiResponse(503, ""), nil
 	})
 	result, err := restarted.readDescriptions(context.Background(), []string{item.Repo})
-	if err != nil || len(result.Items) != 1 {
+	if err != nil || len(result.Items) != 1 || reads != 1 {
 		t.Fatal("read cached poster retry state")
 	}
 	got := result.Items[0]

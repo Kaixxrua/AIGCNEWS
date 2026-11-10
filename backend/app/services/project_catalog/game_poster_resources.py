@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import stat
+import subprocess
 import sys
 import time
 import warnings
@@ -29,6 +30,7 @@ from backend.app.services.project_catalog.game_poster_search import bounded_engi
 PAGE_BYTES = 1024 * 1024
 IMAGE_BYTES = 4 * 1024 * 1024
 IMAGE_PIXELS = 16_000_000
+SEARCH_WORKER_SECONDS = 22
 ASSET_BASE = "https://aigcnews.cn/api/media/site/game-posters/"
 _UNSAFE = re.compile(r"[\x00-\x20\x7f-\x9f\\]")
 _UNSAFE_DECODED_PATH = re.compile(r"[\x00-\x1f\x7f-\x9f\\]")
@@ -70,6 +72,42 @@ class PosterResource:
     content_type: str
 
 
+async def _search_without_child_watcher(payload: bytes, environment: dict[str, str]) -> bytes:
+    """Keep search killable when the server loop cannot spawn a child process.
+
+    uvloop can reject subprocess creation while another loop is forking. This
+    fallback owns the child directly; cancellation kills it and joins the pipe
+    reader before returning, so retries never leave DDGS workers running.
+    """
+    process = subprocess.Popen(
+        [sys.executable, str(Path(__file__).with_name("game_poster_search.py"))],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        env=environment,
+    )
+    reader = asyncio.create_task(asyncio.to_thread(process.communicate, payload, timeout=SEARCH_WORKER_SECONDS))
+    try:
+        output, _ = await asyncio.shield(reader)
+        if process.returncode != 0:
+            raise PosterResourceError("search_unavailable")
+        return output
+    except subprocess.TimeoutExpired as exc:
+        raise PosterResourceError("search_unavailable") from exc
+    finally:
+        if process.poll() is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        try:
+            await asyncio.shield(reader)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        await asyncio.to_thread(process.wait, timeout=5)
+        for stream in (process.stdin, process.stdout):
+            if stream is not None:
+                stream.close()
+
+
 async def search_public_web(query: str, *, engines: tuple[str, ...] = ("yahoo", "duckduckgo")) -> dict:
     """A subprocess can be killed; cancelling a to_thread(DDGS) cannot stop I/O."""
     if not isinstance(query, str) or not 3 <= len(query) <= 300 or re.search(r"[\x00-\x1f\x7f]", query):
@@ -79,24 +117,30 @@ async def search_public_web(query: str, *, engines: tuple[str, ...] = ("yahoo", 
     except ValueError as exc:
         raise PosterResourceError("invalid_search_engines") from exc
     environment = {key: os.environ[key] for key in ("PATH", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR") if key in os.environ}
-    process = await asyncio.create_subprocess_exec(
-        sys.executable, str(Path(__file__).with_name("game_poster_search.py")),
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, env=environment,
-    )
+    process = None
     try:
         payload = json.dumps({"query": query, "proxy": settings.outbound_proxy or None, "engines": engines}).encode()
-        output, _ = await asyncio.wait_for(process.communicate(payload), timeout=22)
-        if process.returncode != 0 or len(output) > 32768:
+        try:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, str(Path(__file__).with_name("game_poster_search.py")),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, env=environment,
+            )
+        except RuntimeError:
+            output = await _search_without_child_watcher(payload, environment)
+        else:
+            output, _ = await asyncio.wait_for(process.communicate(payload), timeout=SEARCH_WORKER_SECONDS)
+        if (process is not None and process.returncode != 0) or len(output) > 32768:
             raise PosterResourceError("search_unavailable")
         data = json.loads(output)
         if not isinstance(data, dict) or data.get("unavailable") or not isinstance(data.get("results"), list):
             raise PosterResourceError("search_unavailable")
-        return {"engine": str(data.get("engine") or "ddgs")[:30], "results": data["results"][:6]}
-    except (ValueError, TimeoutError) as exc:
+        return {"engine": str(data.get("engine") or "ddgs")[:30], "results": data["results"][:6],
+                "workerTransport": "child_watcher" if process is not None else "direct_child"}
+    except (OSError, ValueError, TimeoutError) as exc:
         raise PosterResourceError("search_unavailable") from exc
     finally:
-        if process.returncode is None:
+        if process is not None and process.returncode is None:
             try:
                 process.kill()
             except ProcessLookupError:

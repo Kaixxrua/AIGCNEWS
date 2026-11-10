@@ -44,8 +44,11 @@ from backend.app.services.project_catalog.game_posters import (
 
 READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
-JOB_SECONDS = 90
-LEASE_SECONDS = 120
+# Identity enrichment and web research share the job, but not a ninety-second
+# budget that can expire after the poster has already been downloaded. The
+# agent has its own 85-second deadline and returns its trace before this fence.
+JOB_SECONDS = 150
+LEASE_SECONDS = 180
 READS_PER_MINUTE = 60
 POSTS_PER_MINUTE = 30
 MAX_CONCURRENT_GENERATIONS = 4
