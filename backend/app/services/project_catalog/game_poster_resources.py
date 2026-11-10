@@ -72,44 +72,67 @@ class PosterResource:
     content_type: str
 
 
-async def _search_without_child_watcher(payload: bytes, environment: dict[str, str]) -> bytes:
-    """Keep search killable when the server loop cannot spawn a child process.
+async def _search_worker(payload: bytes, environment: dict[str, str]) -> bytes:
+    """Own a bounded worker without server-loop child watchers or reader threads.
 
-    uvloop can reject subprocess creation while another loop is forking. This
-    fallback owns the child directly; cancellation kills it and joins the pipe
-    reader before returning, so retries never leave DDGS workers running.
+    Search subprocess operations failed after repeated requests in the running
+    server. Nonblocking pipes keep I/O cancellable and bounded while Popen owns
+    waitpid independently of the event loop and its default thread pool.
     """
+    if len(payload) > 8192:
+        raise PosterResourceError("search_input_too_large")
     process = subprocess.Popen(
         [sys.executable, str(Path(__file__).with_name("game_poster_search.py"))],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         env=environment,
     )
-    reader = asyncio.create_task(asyncio.to_thread(process.communicate, payload, timeout=SEARCH_WORKER_SECONDS))
     try:
-        output, _ = await asyncio.shield(reader)
-        if process.returncode != 0:
-            raise PosterResourceError("search_unavailable")
-        return output
-    except subprocess.TimeoutExpired as exc:
-        raise PosterResourceError("search_unavailable") from exc
+        os.set_blocking(process.stdin.fileno(), False)
+        os.set_blocking(process.stdout.fileno(), False)
+        output = bytearray()
+        sent, eof = 0, False
+        deadline = asyncio.get_running_loop().time() + SEARCH_WORKER_SECONDS
+        while True:
+            if not process.stdin.closed:
+                try:
+                    sent += os.write(process.stdin.fileno(), payload[sent:])
+                except BlockingIOError:
+                    pass
+                if sent == len(payload):
+                    process.stdin.close()
+            try:
+                chunk = os.read(process.stdout.fileno(), 8192)
+            except BlockingIOError:
+                chunk = None
+            if chunk:
+                output.extend(chunk)
+                if len(output) > 32768:
+                    raise PosterResourceError("search_output_too_large")
+            elif chunk == b"":
+                eof = True
+            if process.poll() is not None and eof:
+                if process.returncode != 0:
+                    raise PosterResourceError("search_unavailable")
+                return bytes(output)
+            if asyncio.get_running_loop().time() >= deadline:
+                raise PosterResourceError("search_timeout")
+            await asyncio.sleep(0.025)
     finally:
         if process.poll() is None:
             try:
                 process.kill()
             except ProcessLookupError:
                 pass
-        try:
-            await asyncio.shield(reader)
-        except (subprocess.TimeoutExpired, OSError):
-            pass
-        await asyncio.to_thread(process.wait, timeout=5)
+        # Reap even during cancellation; this waits only for a killed child,
+        # never its network work. Avoid the loop's failed process watcher.
+        process.wait(timeout=2)
         for stream in (process.stdin, process.stdout):
             if stream is not None:
                 stream.close()
 
 
-async def search_public_web(query: str, *, engines: tuple[str, ...] = ("yahoo", "duckduckgo")) -> dict:
-    """A subprocess can be killed; cancelling a to_thread(DDGS) cannot stop I/O."""
+async def search_public_web(query: str, *, engines: tuple[str, ...] = ("google", "yahoo")) -> dict:
+    """Run real public search in an isolated, killable, minimal-env process."""
     if not isinstance(query, str) or not 3 <= len(query) <= 300 or re.search(r"[\x00-\x1f\x7f]", query):
         raise PosterResourceError("invalid_query")
     try:
@@ -117,35 +140,16 @@ async def search_public_web(query: str, *, engines: tuple[str, ...] = ("yahoo", 
     except ValueError as exc:
         raise PosterResourceError("invalid_search_engines") from exc
     environment = {key: os.environ[key] for key in ("PATH", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR") if key in os.environ}
-    process = None
     try:
         payload = json.dumps({"query": query, "proxy": settings.outbound_proxy or None, "engines": engines}).encode()
-        try:
-            process = await asyncio.create_subprocess_exec(
-                sys.executable, str(Path(__file__).with_name("game_poster_search.py")),
-                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, env=environment,
-            )
-        except RuntimeError:
-            output = await _search_without_child_watcher(payload, environment)
-        else:
-            output, _ = await asyncio.wait_for(process.communicate(payload), timeout=SEARCH_WORKER_SECONDS)
-        if (process is not None and process.returncode != 0) or len(output) > 32768:
-            raise PosterResourceError("search_unavailable")
+        output = await _search_worker(payload, environment)
         data = json.loads(output)
         if not isinstance(data, dict) or data.get("unavailable") or not isinstance(data.get("results"), list):
             raise PosterResourceError("search_unavailable")
         return {"engine": str(data.get("engine") or "ddgs")[:30], "results": data["results"][:6],
-                "workerTransport": "child_watcher" if process is not None else "direct_child"}
-    except (OSError, ValueError, TimeoutError) as exc:
+                "workerTransport": "direct_child"}
+    except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired) as exc:
         raise PosterResourceError("search_unavailable") from exc
-    finally:
-        if process is not None and process.returncode is None:
-            try:
-                process.kill()
-            except ProcessLookupError:
-                pass
-            await process.wait()
 
 
 async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResource:

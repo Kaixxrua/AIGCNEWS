@@ -27,7 +27,7 @@ def main() -> None:
         raise ValueError("invalid query")
     failed = False
     with DDGS(proxy=data.get("proxy") or None, timeout=8) as search:
-        for engine in bounded_engines(data.get("engines", ["yahoo", "duckduckgo"])):
+        for engine in bounded_engines(data.get("engines", ["google", "yahoo"])):
             try:
                 rows = search.text(query, backend=engine, region="us-en", max_results=6)
             except DDGSException:

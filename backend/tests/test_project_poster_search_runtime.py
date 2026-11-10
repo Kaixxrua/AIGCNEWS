@@ -18,7 +18,7 @@ class SearchWorkerRuntimeTests(unittest.IsolatedAsyncioTestCase):
         (root / "game_poster_search.py").write_text(code)
         return patch.object(resources, "__file__", str(root / "game_poster_resources.py"))
 
-    async def test_child_watcher_failure_still_searches_without_leaking_environment(self):
+    async def test_search_does_not_use_child_watchers_or_leak_environment(self):
         code = '''import json, os, sys
 data = json.load(sys.stdin)
 assert len(sys.argv) == 1
@@ -31,6 +31,7 @@ print(json.dumps({'engine': 'test', 'results': [{'title': data['query']}]}))
                 patch.object(resources.asyncio, "create_subprocess_exec", AsyncMock(side_effect=RuntimeError("child watcher failed"))):
             result = await resources.search_public_web("Diablo cover")
         self.assertEqual(result["results"], [{"title": "Diablo cover"}])
+        self.assertEqual(result["workerTransport"], "direct_child")
 
     async def blocked_worker(self, timeout: bool):
         with tempfile.TemporaryDirectory() as directory:
@@ -51,15 +52,30 @@ print(json.dumps({'engine': 'test', 'results': [{'title': data['query']}]}))
                 with self.assertRaises(ProcessLookupError):
                     os.kill(pid, 0)
 
-    async def test_fallback_cancellation_kills_and_reaps_real_child(self):
+    async def test_worker_cancellation_kills_and_reaps_real_child(self):
         await self.blocked_worker(False)
 
-    async def test_fallback_timeout_kills_and_reaps_real_child(self):
+    async def test_worker_timeout_kills_and_reaps_real_child(self):
         await self.blocked_worker(True)
 
-    async def test_fallback_bad_output_is_a_stable_nonsecret_failure(self):
+    async def test_worker_bad_output_is_a_stable_nonsecret_failure(self):
         for output in ["not-json", json.dumps({"unavailable": True, "results": []})]:
             with tempfile.TemporaryDirectory() as directory, self.worker(directory, "print(" + repr(output) + ")"), \
                     patch.object(resources.asyncio, "create_subprocess_exec", AsyncMock(side_effect=RuntimeError("child watcher failed"))):
                 with self.assertRaisesRegex(resources.PosterResourceError, "^search_unavailable$"):
                     await resources.search_public_web("Diablo cover")
+
+    async def test_repeated_parallel_searches_survive_a_failed_loop_process_watcher(self):
+        code = "import json, sys\ndata=json.load(sys.stdin)\nprint(json.dumps({'results':[{'title':data['query']}]}))\n"
+        with tempfile.TemporaryDirectory() as directory, self.worker(directory, code), \
+                patch.object(resources.asyncio, "create_subprocess_exec", AsyncMock(side_effect=RuntimeError("unusable loop watcher"))), \
+                patch.object(resources.asyncio, "to_thread", AsyncMock(side_effect=RuntimeError("unusable default executor"))):
+            for batch in range(4):
+                results = await asyncio.gather(*(resources.search_public_web(f"game {batch}-{i} cover") for i in range(4)))
+                self.assertEqual([r["results"][0]["title"] for r in results], [f"game {batch}-{i} cover" for i in range(4)])
+
+    async def test_worker_output_limit_kills_instead_of_reading_unbounded_data(self):
+        code = "import sys, time\nsys.stdout.write('x'*100000);sys.stdout.flush();time.sleep(60)\n"
+        with tempfile.TemporaryDirectory() as directory, self.worker(directory, code):
+            with self.assertRaisesRegex(resources.PosterResourceError, "search_output_too_large"):
+                await asyncio.wait_for(resources.search_public_web("game cover"), 3)

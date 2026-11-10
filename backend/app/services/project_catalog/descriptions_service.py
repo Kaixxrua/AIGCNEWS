@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import json
 import math
+import posixpath
 import re
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -182,6 +185,102 @@ async def _bounded_response(client: httpx.AsyncClient, path: str, *, raw: bool =
         return bytes(body)
 
 
+def _readme_document(raw: bytes) -> tuple[str, str]:
+    try:
+        document = json.loads(raw)
+        if not isinstance(document, dict) or document.get("encoding") != "base64" or not isinstance(document.get("content"), str):
+            raise ValueError("invalid README encoding")
+        path = safe_repository_path(document.get("path"))
+        if not path or document.get("type", "file") != "file":
+            raise ValueError("invalid README path")
+        content = base64.b64decode("".join(document["content"].split()), validate=True)
+        if len(content) > 65536:
+            raise ValueError("oversized README")
+    except (ValueError, UnicodeError) as exc:
+        raise DescriptionInputUnavailable("GitHub 返回的 README 资料无效或过大。") from exc
+    return path, content.decode("utf-8", errors="replace")[:12000]
+
+
+class _ReadmeLinks(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "a":
+            self.links.extend(value for name, value in attrs if name.lower() == "href" and value)
+
+
+def _localized_readme_link(repo: str, branch: str, readme_path: str, text: str) -> str:
+    # Follow an evidenced translation only when the default document lacks
+    # enough prose to establish the game. Never enumerate repository contents.
+    if len(text.strip()) >= 1500 or not branch:
+        return ""
+    visible = re.sub(r"<!--[\s\S]*?-->|```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`", "", text)
+    prose = re.sub(r"\]\([^\n)]*\)|<[^>]*>|https?://\S+", " ", visible)
+    if re.search(r"\b(?:games?|gameplay)\b|游戏", prose, re.I):
+        return ""
+    links = [match[1].strip("<>") for match in re.finditer(r"(?<!!)\[[^\]\n]*\]\(\s*(<[^>\n]+>|[^\s)]+)(?:\s+[\"'][^\n]*?[\"'])?\s*\)", visible)]
+    parser = _ReadmeLinks()
+    parser.feed(visible)
+    links.extend(parser.links)
+    paths = []
+    for value in links:
+        value = html.unescape(value)
+        if re.search(r"[\x00-\x20\x7f\\%]", value):
+            continue
+        try:
+            parts = urlsplit(value)
+        except ValueError:
+            continue
+        if parts.query or parts.fragment:
+            continue
+        if parts.scheme or parts.netloc:
+            prefix = f"/{repo}/blob/"
+            if parts.scheme != "https" or parts.netloc != "github.com" or not parts.path.casefold().startswith(prefix.casefold()):
+                continue
+            remainder = parts.path[len(prefix):]
+            if not remainder.startswith(branch + "/"):
+                continue
+            path = remainder[len(branch) + 1:]
+        else:
+            if parts.path.startswith("/"):
+                continue
+            path = posixpath.normpath(posixpath.join(posixpath.dirname(readme_path), parts.path))
+        if not safe_repository_path(path) or path.casefold() == readme_path.casefold():
+            continue
+        name = posixpath.basename(path)
+        if not re.fullmatch(r"readme[._-][a-z]{2,3}(?:[._-][a-z]{2,4})?\.(?:md|markdown|rst|txt)", name, re.I):
+            # Some repositories put translations in docs/zh/README.md.
+            if not re.fullmatch(r"readme\.(?:md|markdown|rst|txt)", name, re.I) or not any(
+                re.fullmatch(r"[a-z]{2}(?:[-_][a-z]{2,4})?", part, re.I) for part in path.split("/")[:-1]
+            ):
+                continue
+        paths.append(path)
+    # Prefer Chinese evidence for Chinese identity enrichment, retaining the
+    # document's order within each language group. At most one path is fetched.
+    return next(iter(sorted(paths, key=lambda path: not re.search(r"(?:^|[./_-])(?:zh|cn)(?:[./_-]|$)", path, re.I))), "")
+
+
+async def _supplement_localized_readme(client: httpx.AsyncClient, metadata: dict[str, Any]) -> None:
+    repo, branch = metadata["full_name"], metadata["default_branch"]
+    path = _localized_readme_link(repo, branch, metadata["readme_path"], metadata["readme_text"])
+    if not path:
+        return
+    try:
+        raw = await _bounded_response(client, f"/repos/{repo}/contents/{quote(path, safe='/')}?ref={quote(branch, safe='')}")
+        if raw is None:
+            return
+        actual_path, text = _readme_document(raw)
+        if actual_path != path:
+            return
+    except (DescriptionInputUnavailable, httpx.HTTPError):
+        # An optional translation must not erase a useful primary README.
+        return
+    metadata["readme_localized_path"] = path
+    metadata["readme_text"] = (metadata["readme_text"] + f"\n\nLinked README: {path}\n\n" + text)[:12000]
+
+
 async def fetch_public_repository(repo: str, *, game_details: bool = False, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
     repo = normalize_description_repo(repo)
     async with httpx.AsyncClient(
@@ -212,21 +311,10 @@ async def fetch_public_repository(repo: str, *, game_details: bool = False, tran
                 path += "?ref=" + quote(branch, safe="")
             raw_readme = await _bounded_response(client, path)
             if raw_readme:
-                try:
-                    document = json.loads(raw_readme)
-                    if not isinstance(document, dict) or document.get("encoding") != "base64" or not isinstance(document.get("content"), str):
-                        raise ValueError("invalid README encoding")
-                    readme_path = safe_repository_path(document.get("path"))
-                    if not readme_path or document.get("type", "file") != "file":
-                        raise ValueError("invalid README path")
-                    content = base64.b64decode("".join(document["content"].split()), validate=True)
-                    if len(content) > 65536:
-                        raise ValueError("oversized README")
-                except (ValueError, UnicodeError) as exc:
-                    raise DescriptionInputUnavailable("GitHub 返回的 README 资料无效或过大。") from exc
-                text = content.decode("utf-8", errors="replace")[:12000]
+                readme_path, text = _readme_document(raw_readme)
                 metadata.update(readme_status="succeeded", readme_text=text, readme_path=readme_path)
                 metadata["image_candidates"] = image_candidates(repo, branch, readme_path, text)
+                await _supplement_localized_readme(client, metadata)
         elif not description.strip():
             readme = await _bounded_response(client, "/repos/" + repo + "/readme", raw=True)
             if readme:

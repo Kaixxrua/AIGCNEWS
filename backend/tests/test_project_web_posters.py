@@ -170,38 +170,17 @@ class WebPosterAgentTests(unittest.IsolatedAsyncioTestCase):
         search.assert_awaited_once()
         fetch.assert_not_awaited()
 
-    async def test_search_process_is_killed_and_reaped_on_cancel(self):
-        entered = asyncio.Event()
-        process = MagicMock(returncode=None)
-
-        async def communicate(data):
-            self.assertNotIn(b"api_key", data)
-            entered.set()
-            await asyncio.Event().wait()
-
-        process.communicate = AsyncMock(side_effect=communicate)
-        process.wait = AsyncMock(return_value=-9)
-        with patch.object(resources.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)) as spawn:
-            task = asyncio.create_task(search_public_web(ORIGINAL + " cover"))
-            await asyncio.wait_for(entered.wait(), 1)
-            task.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await task
-        process.kill.assert_called_once()
-        process.wait.assert_awaited_once()
-        self.assertNotIn(ORIGINAL, " ".join(spawn.call_args.args))
-        self.assertNotIn("OPENAI_API_KEY", spawn.call_args.kwargs["env"])
-
-    async def test_search_engine_override_is_bounded_and_does_not_add_model_tools(self):
-        process = MagicMock(returncode=0)
-        process.communicate = AsyncMock(return_value=(b'{"engine":"yahoo","results":[]}', b""))
-        with patch.object(resources.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)) as spawn:
+    async def test_search_engine_override_is_bounded_and_uses_minimal_environment(self):
+        worker = AsyncMock(return_value=b'{"engine":"yahoo","results":[]}')
+        with patch.object(resources, "_search_worker", worker):
             await search_public_web(ORIGINAL + " cover", engines=("yahoo",))
-            self.assertEqual(json.loads(process.communicate.await_args.args[0])["engines"], ["yahoo"])
+            payload, environment = worker.await_args.args
+            self.assertEqual(json.loads(payload)["engines"], ["yahoo"])
+            self.assertNotIn("OPENAI_API_KEY", environment)
             for engines in [("untrusted",), ("yahoo", "google", "brave"), ()]:
                 with self.assertRaises(PosterResourceError):
                     await search_public_web(ORIGINAL, engines=engines)
-            spawn.assert_awaited_once()
+            worker.assert_awaited_once()
 
 
 class PosterPageAndCacheTests(unittest.IsolatedAsyncioTestCase):
