@@ -1,8 +1,26 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, materialFor, hasSourceBundle } = require('../web/cloud.js');
+const { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, materialFor, hasSourceBundle, credentialStorageState } = require('../web/cloud.js');
 
 const options = { providers: [], arch: 'amd64', shareDays: 0, shareCode: '', privateShare: true, enrich: true };
+
+test('credential status distinguishes encrypted receipts, memory-only, first save and pending restore without treating a failed write as saved', () => {
+  const baseline = { supported: true, remember: true, saved: false, pending: [] };
+  assert.equal(credentialStorageState(undefined).kind, 'unknown');
+  assert.equal(credentialStorageState({ supported: 'true', remember: true, saved: true }).kind, 'unknown');
+  assert.equal(credentialStorageState(baseline).kind, 'waiting');
+  assert.match(credentialStorageState(baseline).text, /等待首次保存.*无需开启无人值守/);
+  assert.equal(credentialStorageState({ ...baseline, saved: true }).kind, 'saved');
+  assert.match(credentialStorageState({ ...baseline, saved: true }).text, /加密保存.*暂停也不清除/);
+  assert.match(credentialStorageState({ ...baseline, saved: true, remember: false }).text, /已关闭.*仅在本次运行/);
+  assert.match(credentialStorageState({ ...baseline, supported: false }).text, /当前平台不支持.*本次运行/);
+  const restoring = credentialStorageState({ ...baseline, saved: true, pending: ['quark', 'quark', 'untrusted'] });
+  assert.deepEqual(restoring.pending, ['quark']); assert.equal(restoring.kind, 'restoring');
+  assert.match(restoring.text, /已保存授权正在恢复.*无需重复/);
+  const failed = credentialStorageState({ ...baseline, saved: true, pending: ['baidu'], error: 'write or restore failed <img src=x>' });
+  assert.equal(failed.kind, 'error'); assert.deepEqual(failed.pending, ['baidu']);
+  assert.match(failed.text, /保存或恢复出错/); assert.doesNotMatch(failed.text, /已在本机加密保存/);
+});
 
 test('selection deduplicates repositories and batches at the server limit without dropping games', () => {
   const repos = Array.from({ length: 205 }, (_, index) => `games/game-${index}`);

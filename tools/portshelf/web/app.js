@@ -20,6 +20,8 @@
   let automationQueued = null;
   let automaticLibraryLoading = false;
   const failedPosters = new Set();
+  const posterRetries = new Set();
+  let posterCooldownTimer = null;
 
   function readSession() {
     const hash = location.hash.slice(1);
@@ -64,34 +66,54 @@
 
   function posterFor(game, variant = "card") {
     const record = state.descriptions[repositoryKey(game.repo)] || game;
-    const url = globalThis.PortShelfDescriptions.imageURL(record.posterUrl);
-    const source = globalThis.PortShelfDescriptions.imageURL(record.posterSourceUrl, true);
+    const evidence = globalThis.PortShelfDescriptions.posterEvidence(game, record);
+    const { url, source } = evidence;
     const figure = element("figure", "game-poster " + variant + "-poster");
-    const fallback = element("div", "poster-placeholder", url && failedPosters.has(url) ? "图片暂不可用" : "海报待补充");
-    const kind = record.posterKind === "screenshot" ? "游戏画面" : "游戏海报";
+    const fallback = element("div", "poster-placeholder", evidence.status === "missing" ? "暂未找到匹配海报" : evidence.status === "unavailable" ? "海报暂未取得，可重试" : "海报待补充");
+    const kind = evidence.kind === "screenshot" ? "游戏画面" : "游戏海报";
     const caption = element("figcaption", "poster-caption");
     caption.append(element("span", "", kind));
     if (source) {
       const link = element("a", "", "图片来源 ↗"); link.href = source; link.target = "_blank"; link.rel = "noopener noreferrer";
       caption.append(link);
     }
-    if (url && !failedPosters.has(url)) {
+    function syncRetryButtons() {
+      document.querySelectorAll("[data-poster-retry]").forEach(button => {
+        if (button.dataset.posterRetry !== url) return;
+        button.disabled = posterRetries.has(url); button.textContent = button.disabled ? "正在重试图片…" : "重试图片";
+      });
+    }
+    function showImageFailure() {
+      fallback.replaceChildren(element("span", "", "海报暂未取得，可重试"));
+      const retry = element("button", "description-button", posterRetries.has(url) ? "正在重试图片…" : "重试图片");
+      retry.type = "button"; retry.dataset.posterRetry = url; retry.disabled = posterRetries.has(url);
+      retry.addEventListener("click", () => {
+        if (posterRetries.has(url) || state.stopped) return;
+        posterRetries.add(url); syncRetryButtons(); loadImage(true);
+      });
+      fallback.append(retry); figure.replaceChildren(fallback, caption); figure.dataset.state = "failed";
+    }
+    function loadImage(retry = false) {
       const image = element("img");
       image.alt = identityOf(game).title + " · " + kind;
       image.loading = "lazy"; image.decoding = "async"; image.referrerPolicy = "no-referrer";
       image.addEventListener("error", () => {
+        if (retry) posterRetries.delete(url);
         failedPosters.add(url);
-        fallback.textContent = "图片暂不可用";
-        image.replaceWith(fallback);
-        figure.dataset.state = "failed";
+        showImageFailure(); syncRetryButtons();
+      }, { once: true });
+      image.addEventListener("load", () => {
+        if (retry) { posterRetries.delete(url); failedPosters.delete(url); syncRetryButtons(); }
       }, { once: true });
       image.src = url;
-      figure.append(image, caption);
+      figure.replaceChildren(image, caption);
       figure.dataset.state = "available";
-    } else {
+    }
+    if (url && !failedPosters.has(url)) loadImage();
+    else if (url) showImageFailure();
+    else {
       figure.append(fallback);
-      if (url && source) figure.append(caption);
-      figure.dataset.state = url ? "failed" : "missing";
+      figure.dataset.state = evidence.status || "missing";
     }
     return figure;
   }
@@ -140,18 +162,31 @@
     return globalThis.PortShelfDescriptions.needsDetails(game, record);
   }
 
+  function needsPoster(game) { return globalThis.PortShelfDescriptions.needsPoster(game, state.descriptions[repositoryKey(game.repo)]); }
+  function posterRetrySeconds(game) { return needsPoster(game) ? globalThis.PortShelfDescriptions.posterRetrySeconds(state.descriptions[repositoryKey(game.repo)] || game) : 0; }
+  function canSubmitDescription(game) { return needsDescription(game) && !posterRetrySeconds(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending"; }
+
+  function schedulePosterCooldown() {
+    clearTimeout(posterCooldownTimer); posterCooldownTimer = null;
+    if (state.stopped) return;
+    const waits = Object.values(state.descriptions).filter(record => globalThis.PortShelfDescriptions.needsPoster({}, record)).map(record => globalThis.PortShelfDescriptions.posterRetrySeconds(record)).filter(seconds => seconds > 0);
+    if (waits.length) posterCooldownTimer = setTimeout(() => { posterCooldownTimer = null; updateDescriptionViews(); }, Math.min(2147483647, waits.reduce((minimum, seconds) => Math.min(minimum, seconds), Infinity) * 1000));
+  }
+
   function descriptionControl(game, compact = false) {
     if (!needsDescription(game)) return null;
     const key = repositoryKey(game.repo);
     const record = state.descriptions[key];
     const pending = record?.status === "pending";
     const requesting = state.descriptionRequests.has(key);
+    const posterOnly = needsPoster(game);
+    const cooldown = posterRetrySeconds(game);
     const wrapper = element("span", "description-control" + (compact ? " compact" : ""));
-    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : record?.status === "failed" ? "重试游戏资料" : descriptionOf(game).source !== "unknown" ? "补全中文名与海报" : "生成中文游戏资料");
+    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : posterOnly ? cooldown ? "海报稍后重试" : ["missing", "unavailable"].includes(record?.posterStatus) || record?.status === "failed" ? "重试海报" : "补全海报" : record?.status === "failed" ? "重试游戏资料" : descriptionOf(game).source !== "unknown" ? "补全中文名与海报" : "生成中文游戏资料");
     button.type = "button";
     button.dataset.descriptionRepo = key;
-    button.disabled = requesting || Boolean(state.descriptionBatch?.running);
-    if (pending) wrapper.append(element("span", "description-pending", "游戏资料生成中"));
+    button.disabled = requesting || Boolean(state.descriptionBatch?.running) || Boolean(cooldown && !pending);
+    if (pending) wrapper.append(element("span", "description-pending", posterOnly ? "正在查找海报" : "游戏资料生成中"));
     button.addEventListener("click", () => {
       if (state.descriptionRequests.has(key) || state.descriptionBatch?.running) return;
       if (pending) { queueDescriptionRead([game.repo], true); return; }
@@ -159,6 +194,8 @@
       generateDescription(game);
     });
     wrapper.append(button);
+    if (cooldown && !pending) wrapper.append(element("span", "description-pending", "约 " + (cooldown > 60 ? Math.ceil(cooldown / 60) + " 分钟" : cooldown + " 秒") + "后可重试"));
+    else if (!compact && posterOnly && !pending) wrapper.append(element("span", "description-pending", "只补图片，保留中文名和简介。"));
     if (!compact && record?.error) wrapper.append(element("span", "description-error", record.error));
     return wrapper;
   }
@@ -193,6 +230,7 @@
         if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
       } else state.descriptionPollTargets.delete(key);
     }
+    schedulePosterCooldown();
   }
 
   function updateDescriptionViews() {
@@ -201,6 +239,7 @@
     if (state.selected) renderDetails();
     if (state.discovery.range) renderSearchResults();
     syncDiscoveryControls();
+    schedulePosterCooldown();
   }
 
   function queueDescriptionRead(repos, resetPoll = false) {
@@ -255,6 +294,7 @@
 
   async function requestDescription(game) {
     const key = repositoryKey(game.repo);
+    const posterOnly = needsPoster(game);
     state.descriptionRequests.add(key);
     updateDescriptionViews();
     try {
@@ -266,7 +306,7 @@
       if (!record || record.status === "missing") throw new Error("服务未确认中文简介任务，请稍后重试。");
       return record;
     } catch (error) {
-      if (!state.stopped) state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(state.descriptions[key], { repo: game.repo, status: "failed", error: descriptionError(error) });
+      if (!state.stopped) state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(state.descriptions[key], { repo: game.repo, status: "failed", error: descriptionError(error), ...(posterOnly ? { posterStatus: "unavailable" } : {}) });
       throw error;
     } finally {
       state.descriptionRequests.delete(key);
@@ -279,12 +319,18 @@
     if (state.stopped || state.descriptionRequests.has(repositoryKey(game.repo)) || state.descriptionBatch?.running) return;
     if (!needsDescription(game)) return;
     if (state.descriptions[repositoryKey(game.repo)]?.status === "pending") { queueDescriptionRead([game.repo], true); return; }
+    if (posterRetrySeconds(game)) return;
     if (!state.hasAigcToken) { openAigcSettings(); return; }
+    const posterOnly = needsPoster(game);
     try {
       const record = await requestDescription(game);
       if (state.stopped) return;
       if (record.status === "failed") { descriptionNotice(record.error || "中文简介生成未完成，可稍后重试。"); notify(record.error || "中文简介生成未完成，可稍后重试。", true); }
-      else { descriptionNotice(""); notify(record.status === "ready" ? "中文名、海报与简介已核对更新。" : "已提交游戏资料生成，完成后会自动显示。"); }
+      else {
+        const poster = globalThis.PortShelfDescriptions.posterEvidence(game, record);
+        const message = posterOnly ? record.status === "pending" ? "正在查找海报，中文名和简介已保留。" : poster.url ? "游戏海报已更新，中文名和简介已保留。" : poster.status === "unavailable" ? "海报暂未取得，可稍后重试；中文名和简介已保留。" : "暂未找到匹配海报，可稍后重试。" : record.status === "ready" ? "中文名、海报与简介已核对更新。" : "已提交游戏资料生成，完成后会自动显示。";
+        descriptionNotice(""); notify(message);
+      }
     } catch (error) { descriptionNotice(descriptionError(error)); notify(descriptionError(error), true); }
   }
 
@@ -293,7 +339,7 @@
     $("description-progress-panel").hidden = !batch;
     if (!batch) return;
     $("description-progress-label").textContent = (batch.running ? batch.stopRequested ? "等待当前提交结束" : "正在补全游戏资料" : batch.stopRequested ? "已停止提交" : batch.interrupted ? "游戏资料提交已中断" : "游戏资料提交完成") + " · 已处理 " + batch.done + " / " + batch.total + " · 已接受 " + batch.accepted + " · 失败 " + batch.failed;
-    $("description-progress-note").textContent = batch.note || "已核对新版资料或正在生成的项目自动跳过；旧简介会保留，同时补全中文名与海报。";
+    $("description-progress-note").textContent = batch.note || "资料已齐全、正在生成或海报冷却中的项目自动跳过；已有中文名和简介的项目只补图片。";
     $("descriptions-stop").hidden = !batch.running;
     $("descriptions-stop").disabled = batch.stopRequested;
   }
@@ -326,7 +372,7 @@
     const games = scope === "library" ? filteredGames() : state.searchResults;
     if (state.descriptionBatch?.running || state.batch?.running || state.searchBusy || state.descriptionRequests.size || !games.length || state.stopped) return;
     if (!state.hasAigcToken) { openAigcSettings(); return; }
-    const pending = games.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending");
+    const pending = games.filter(canSubmitDescription);
     const batch = { running: true, stopRequested: false, interrupted: false, waiting: null, total: pending.length, done: 0, accepted: 0, failed: 0, note: "" };
     state.descriptionBatch = batch;
     descriptionNotice("");
@@ -335,7 +381,7 @@
     try {
       for (const game of pending) {
         if (batch.stopRequested || state.stopped) break;
-        if (!needsDescription(game) || state.descriptions[repositoryKey(game.repo)]?.status === "pending") { batch.done++; continue; }
+        if (!canSubmitDescription(game)) { batch.done++; continue; }
         let submitted = false;
         try {
           let record = await requestDescription(game);
@@ -344,7 +390,7 @@
           submitted = true;
           if (record.status === "ready" || record.status === "pending") batch.accepted++;
           if (record.status === "pending") {
-            batch.note = "正在等待 " + game.repo + " 的中文简介完成，再提交下一个项目。";
+            batch.note = "正在等待 " + game.repo + " 的游戏资料完成，再提交下一个项目。";
             renderDescriptionProgress();
             record = await waitForQueuedDescription(game, batch);
             if (state.stopped) return;
@@ -579,8 +625,8 @@
     const checked = state.games.map((game) => snapshot(game)?.starsCheckedAt).filter(timestamp).sort((a, b) => timestamp(b) - timestamp(a));
     $("checked-label").textContent = checked.length ? "最近核对于 " + date(checked[0]) : "尚未核对 · 点击刷新资料";
     $("connection-label").textContent = state.hasToken ? "GitHub Token 已设置" : "GitHub 公开访问";
-    $("token-state").textContent = state.hasToken ? "当前已使用 GitHub Token，存储方式由无人值守设置决定。" : "当前使用 GitHub 公开访问，未设置 Token。";
-    $("aigc-token-state").textContent = state.hasAigcToken ? "已设置 AIGCNEWS MCP Token，存储方式由无人值守设置决定。" : "尚未设置 AIGCNEWS MCP Token；仍可读取已有中文简介。";
+    $("token-state").textContent = state.hasToken ? "当前已使用 GitHub Token，存储方式由“记住凭据”设置决定。" : "当前使用 GitHub 公开访问，未设置 Token。";
+    $("aigc-token-state").textContent = state.hasAigcToken ? "已设置 AIGCNEWS MCP Token，存储方式由“记住凭据”设置决定。" : "尚未设置 AIGCNEWS MCP Token；仍可读取已有中文简介。";
   }
 
   function availability(game) {
@@ -700,6 +746,14 @@
     if (!$("settings-dialog").open) $("settings-dialog").showModal();
     transferUI?.settingsOpened();
     automationUI?.refresh();
+  }
+
+  function openCredentialSettings() {
+    $("settings-dialog").close();
+    changePage("cloud");
+    document.querySelector(".automation-advanced").open = true;
+    $("automation-remember").scrollIntoView({ block: "center" });
+    $("automation-remember").focus({ preventScroll: true });
   }
 
   function automationStatusChanged(status) {
@@ -989,10 +1043,11 @@
     $("batch-selection-label").textContent = "当前已加载 " + state.searchResults.length + " 个游戏项目 · 待添加 " + pending + " 个";
     $("batch-add").disabled = state.searchBusy || discoveryLocked || state.singleAdds.size > 0 || state.manualAddBusy || pending === 0;
     $("batch-add").textContent = batchRunning ? "正在批量添加…" : pending === 0 ? "当前结果已全部加入" : "一键添加当前结果";
-    const missingDescriptions = state.searchResults.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending").length;
+    const missingDescriptions = state.searchResults.filter(canSubmitDescription).length;
     const pendingDescriptions = state.searchResults.some((game) => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
+    const coolingPosters = state.searchResults.some(game => posterRetrySeconds(game) > 0);
     $("descriptions-fill").disabled = state.searchBusy || discoveryLocked || state.descriptionRequests.size > 0 || missingDescriptions === 0;
-    $("descriptions-fill").textContent = descriptionRunning ? "正在补全游戏资料…" : missingDescriptions === 0 ? pendingDescriptions ? "游戏资料生成中" : "当前游戏资料已核对" : "补全中文名、海报与简介";
+    $("descriptions-fill").textContent = descriptionRunning ? "正在补全游戏资料…" : missingDescriptions === 0 ? pendingDescriptions ? "游戏资料生成中" : coolingPosters ? "海报稍后可重试" : "当前游戏资料已核对" : "补全中文名、海报与简介";
     syncLibraryDescriptions();
     $("discover-results").querySelectorAll("[data-result-repo]").forEach((button) => {
       const added = known.has(button.dataset.resultRepo);
@@ -1030,11 +1085,12 @@
 
   function syncLibraryDescriptions() {
     const games = filteredGames();
-    const missing = games.filter(game => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending").length;
+    const missing = games.filter(canSubmitDescription).length;
     const pending = games.some(game => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
+    const cooling = games.some(game => posterRetrySeconds(game) > 0);
     const running = Boolean(state.descriptionBatch?.running);
     $("library-descriptions-fill").disabled = running || Boolean(state.batch?.running) || state.descriptionRequests.size > 0 || missing === 0;
-    $("library-descriptions-fill").textContent = running ? "正在补全游戏资料…" : missing ? "补全当前中文名与海报（" + missing + "）" : pending ? "游戏资料生成中" : "当前游戏资料已核对";
+    $("library-descriptions-fill").textContent = running ? "正在补全游戏资料…" : missing ? "补全当前中文名与海报（" + missing + "）" : pending ? "游戏资料生成中" : cooling ? "海报稍后可重试" : "当前游戏资料已核对";
   }
 
   async function loadDiscoveryPage() {
@@ -1263,7 +1319,7 @@
         $("token-input").value = "";
         renderStats();
         $("settings-dialog").close();
-        notify(state.hasToken ? "GitHub Token 已设置，按无人值守的凭据选项保管。" : "Token 已清除，恢复 GitHub 公开访问。");
+        notify(state.hasToken ? "GitHub Token 已设置，按“记住凭据”选项保管。" : "Token 已清除，恢复 GitHub 公开访问。");
       } catch (error) { showError("token-error", error.message); }
       finally { busy(button, false, "", "保存设置"); }
     });
@@ -1279,7 +1335,7 @@
         $("aigc-token-input").value = "";
         renderStats();
         $("settings-dialog").close();
-        notify(state.hasAigcToken ? "AIGCNEWS MCP Token 已设置，按无人值守的凭据选项保管。" : "AIGCNEWS MCP Token 已清除。");
+        notify(state.hasAigcToken ? "AIGCNEWS MCP Token 已设置，按“记住凭据”选项保管。" : "AIGCNEWS MCP Token 已清除。");
         syncDiscoveryControls();
       } catch (error) { showError("aigc-token-error", descriptionError(error)); }
       finally { busy(button, false, "", "保存 AIGCNEWS Token"); }
@@ -1291,7 +1347,7 @@
         state.stopped = true;
         transferUI?.stop();
         automationUI?.stop();
-        clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer);
+        clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer); clearTimeout(posterCooldownTimer); posterCooldownTimer = null;
         state.descriptionReadQueue.clear(); state.descriptionPollTargets.clear();
         sessionToken = "";
         try { sessionStorage.removeItem("portshelf-session"); } catch (_) { /* Storage may be disabled. */ }
@@ -1312,7 +1368,7 @@
 
   async function start() {
     readSession(); setupEvents();
-    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, notify });
+    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, openCredentialSettings, notify });
     automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {

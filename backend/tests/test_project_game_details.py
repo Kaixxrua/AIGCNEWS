@@ -263,8 +263,9 @@ class GameDetailsRedisTests(unittest.IsolatedAsyncioTestCase):
         self.fetch = AsyncMock(return_value=metadata())
         self.describe = AsyncMock(return_value=ZH)
         self.describe_game = AsyncMock(return_value=dict(GAME_RESULT))
+        self.fetch_poster = AsyncMock(return_value=None)
         self.now = 1794000000.0
-        self.service = ProjectDescriptionsService(self.describe, describe_game=self.describe_game, repository=self.repo, fetch=self.fetch, clock=lambda: self.now)
+        self.service = ProjectDescriptionsService(self.describe, describe_game=self.describe_game, repository=self.repo, fetch=self.fetch, fetch_poster=self.fetch_poster, clock=lambda: self.now)
         self.operations = QueuedOperations()
 
     async def asyncTearDown(self):

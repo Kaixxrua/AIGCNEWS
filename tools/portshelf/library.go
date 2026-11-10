@@ -282,7 +282,22 @@ func (l *Library) saveDescriptions(items []Description) error {
 	changed := false
 	for _, item := range items {
 		repo, err := parseRepo(item.Repo)
-		if err != nil || !readyDescription(item) {
+		if err != nil {
+			continue
+		}
+		if item.Status == "pending" && item.Source == "aigcnews" {
+			key := strings.ToLower(repo)
+			previous := next.Descriptions[key]
+			if readyDescription(previous) && previous.CheckedAt != "" {
+				// Keep the offline text, but poll the service for an explicit
+				// poster-only upgrade even when its v1 text cache is still fresh.
+				previous.CheckedAt = ""
+				next.Descriptions[key] = previous
+				changed = true
+			}
+			continue
+		}
+		if !readyDescription(item) {
 			continue
 		}
 		item.Repo, item.Error, item.RetryAfter = repo, "", 0

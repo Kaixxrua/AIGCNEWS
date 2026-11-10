@@ -21,6 +21,7 @@ Object.assign(jobs.find(job => job.id === 'done'), { gameNameZh: '完成的中�
 for (const output of Object.values(jobs.find(job => job.id === 'done').outputs)) output.payloadSha256 = 'c'.repeat(64);
 const requests = [], enqueues = [], credentials = [], exportedFormats = [];
 const accounts = { baidu: { id: 'baidu', name: '百度网盘', configured: false, authMode: 'cookie' }, quark: { id: 'quark', name: '夸克网盘', configured: false, authMode: 'authCode' } };
+let credentialStorage = { supported: true, remember: true, saved: false, pending: [] }, failCredentialSave = false;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://local');
@@ -33,12 +34,13 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/status') return json({ running: false });
     if (url.pathname === '/api/descriptions') return json({ items: [] });
     if (url.pathname === '/api/automation' && req.method === 'GET') return json({ config: defaultConfig('arm64'), running: false, nextRun: '', lastRun: '', lastError: '', exportDir: 'C:\\PortShelf\\exports', exportedAt: '', discovered: 0, queued: 0, unsupported: 0, credentialStorageSupported: false, startOnLoginSupported: false, credentialError: '' });
-    if (url.pathname === '/api/cloud') return json({ providers: Object.values(accounts), downloadDir: 'C:\\PortShelf\\downloads' });
+    if (url.pathname === '/api/cloud') return json({ providers: Object.values(accounts), downloadDir: 'C:\\PortShelf\\downloads', credentialStorage });
     if (url.pathname === '/api/cloud/quark/authorize') return json({ url: authorizationURL });
     if (/^\/api\/cloud\/(baidu|quark)$/.test(url.pathname)) {
       const id = url.pathname.split('/').pop(); credentials.push({ id, body }); await sleep(70);
       const configured = Boolean(body.cookie || body.authCode || body.accessToken); accounts[id] = { ...accounts[id], configured, account: configured ? '测试账号 <img onerror=alert(1)>' : '' };
-      return json(accounts[id]);
+      credentialStorage = { ...credentialStorage, saved: !failCredentialSave, error: failCredentialSave ? 'mock encrypted save failure' : '' };
+      return json({ ...accounts[id], credentialStorage });
     }
     if (url.pathname === '/api/transfers' && req.method === 'GET') {
       pollCount++; if (failNextRead) { failNextRead = false; return json({ error: 'temporary read failure' }, 503); }
@@ -145,17 +147,60 @@ const server = http.createServer(async (req, res) => {
     await page.locator('#cloud-nav').click(); await page.waitForFunction(() => document.getElementById('transfer-poll-error').hidden);
     assert.ok(await page.evaluate(() => window.transferDelays.includes(2000)));
 
-    await page.locator('#transfer-auth-open').click(); await page.locator('#cloud-baidu-credential').fill('BDUSS=local-cookie-secret; STOKEN=local-only');
+    await page.locator('#transfer-auth-open').click();
+    await page.waitForFunction(() => document.getElementById('credential-storage-state').dataset.state === 'waiting');
+    assert.match(await page.locator('#credential-storage-state').innerText(), /等待首次保存/);
+    await page.locator('#cloud-baidu-credential').fill('BDUSS=local-cookie-secret; STOKEN=local-only');
     await page.evaluate(() => { const button = document.getElementById('cloud-baidu-submit'); button.click(); button.click(); });
     await page.waitForFunction(() => !document.getElementById('cloud-baidu-submit').disabled);
     assert.equal(credentials.length, 1); assert.ok(credentials[0].body.cookie); assert.equal(credentials[0].body.accessToken, undefined); assert.equal(await page.locator('#cloud-baidu-credential').inputValue(), '');
+    assert.equal(await page.locator('#credential-storage-state').getAttribute('data-state'), 'saved');
+    assert.match(await page.locator('#credential-storage-state').innerText(), /已在本机加密保存.*无需开启无人值守/);
     await page.locator('#cloud-quark-authorize').click(); await page.locator('#cloud-quark-authorization a').waitFor(); assert.equal(await page.locator('#cloud-quark-authorization a').getAttribute('href'), authorizationURL);
+    failCredentialSave = true;
     await page.locator('#cloud-quark-credential').fill('auth-code-local-only'); await page.locator('#cloud-quark-submit').click(); await page.waitForFunction(() => !document.getElementById('cloud-quark-submit').disabled);
     assert.deepEqual(credentials[1], { id: 'quark', body: { authCode: 'auth-code-local-only' } }); assert.equal(await page.locator('#cloud-quark-credential').inputValue(), '');
+    assert.equal(await page.locator('#credential-storage-state').getAttribute('data-state'), 'error');
+    assert.match(await page.locator('#credential-storage-state').innerText(), /本次已连接的账号仍可使用.*本机保存状态需处理.*mock encrypted save failure/);
+    assert.match(await page.locator('#cloud-quark-state').innerText(), /已连接/);
+    failCredentialSave = false;
+    credentialStorage = { supported: true, remember: true, saved: true, pending: ['quark'] };
+    accounts.quark.configured = false;
+    await page.locator('#cloud-baidu-credential').fill('unsubmitted-local-draft');
+    await page.evaluate(() => { window.credentialInputBeforeRefresh = document.getElementById('cloud-baidu-credential'); });
+    await page.locator('#cloud-settings-refresh').click();
+    await page.waitForFunction(() => document.getElementById('cloud-quark-state').textContent.includes('已保存授权正在恢复'));
+    assert.doesNotMatch(await page.locator('#cloud-quark-state').innerText(), /未连接/);
+    assert.equal(await page.locator('#cloud-baidu-credential').inputValue(), 'unsubmitted-local-draft');
+    const restoreReadCount = requests.filter(item => item.path === '/api/cloud').length;
+    await page.waitForTimeout(240);
+    assert.ok(requests.filter(item => item.path === '/api/cloud').length > restoreReadCount, 'pending saved authorization should refresh without another login');
+    assert.equal(credentials.length, 2);
+    credentialStorage = { ...credentialStorage, saved: false, error: 'temporary restore failure <img src=x onerror="window.injected=5">' };
+    await page.locator('#cloud-settings-refresh').click();
+    await page.waitForFunction(() => document.getElementById('cloud-quark-state').textContent.includes('恢复待重试'));
+    assert.equal(await page.locator('#credential-storage-state img').count(), 0);
+    assert.equal(await page.locator('#cloud-baidu-credential').inputValue(), 'unsubmitted-local-draft');
+    credentialStorage = { supported: true, remember: true, saved: true, pending: [] }; accounts.quark.configured = true;
+    await page.waitForFunction(() => document.getElementById('cloud-quark-state').textContent.includes('已连接') && document.getElementById('credential-storage-state').dataset.state === 'saved');
+    assert.equal(await page.evaluate(() => window.credentialInputBeforeRefresh === document.getElementById('cloud-baidu-credential')), true);
+    assert.equal(await page.locator('#cloud-baidu-credential').inputValue(), 'unsubmitted-local-draft');
+    assert.equal(credentials.length, 2);
+    credentialStorage = { ...credentialStorage, remember: false };
+    await page.locator('#cloud-settings-refresh').click(); await page.waitForFunction(() => document.getElementById('credential-storage-state').textContent.includes('已关闭'));
+    assert.match(await page.locator('#credential-storage-state').innerText(), /仅在本次运行/);
+    credentialStorage = { ...credentialStorage, supported: false };
+    await page.locator('#cloud-settings-refresh').click(); await page.waitForFunction(() => document.getElementById('credential-storage-state').textContent.includes('当前平台不支持'));
+    credentialStorage = { supported: true, remember: true, saved: true, pending: [] };
+    await page.locator('#cloud-settings-refresh').click(); await page.waitForFunction(() => document.getElementById('credential-storage-state').dataset.state === 'saved');
     assert.equal(await page.evaluate(() => /local-cookie-secret|auth-code-local-only/.test(JSON.stringify(localStorage) + JSON.stringify(sessionStorage))), false);
     authorizationURL = 'https://evil.test/open/v1/oauth/agent'; await page.locator('#cloud-quark-authorize').click(); await page.waitForFunction(() => document.getElementById('cloud-quark-error').textContent.includes('受信任'));
     await page.locator('#cloud-baidu-clear').click(); await page.waitForFunction(() => !document.getElementById('cloud-baidu-submit').disabled); assert.deepEqual(credentials[2].body, { cookie: '', accessToken: '', authCode: '' });
     await page.locator('#cloud-baidu-credential').fill('unsubmitted-secret'); await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('settings-dialog').open && !document.getElementById('cloud-baidu-credential').value);
+    await page.locator('#transfer-auth-open').click(); await page.locator('#credential-storage-options').click();
+    assert.equal(await page.locator('#settings-dialog').evaluate(dialog => dialog.open), false);
+    assert.equal(await page.locator('.automation-advanced').evaluate(details => details.open), true);
+    assert.equal(requests.filter(item => item.path === '/api/automation' && item.method === 'POST').length, 0, 'storage settings navigation must not enable automation');
 
     const downloadEvent = page.waitForEvent('download'); await page.locator('#transfer-export').click(); const download = await downloadEvent;
     assert.match(download.suggestedFilename(), /^PortShelf-.*\.md$/); assert.match(fs.readFileSync(await download.path(), 'utf8'), /中文分享资料/); assert.deepEqual(exportedFormats, ['markdown']);
@@ -169,7 +214,7 @@ const server = http.createServer(async (req, res) => {
     await page.locator('#transfer-auth-open').click(); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false); await page.screenshot({ path: path.join(outputDir, 'settings-mobile.png') }); await page.keyboard.press('Escape');
     await page.locator('#quit-open').click(); await page.locator('#quit-confirm').click(); await page.locator('.stopped-message').waitFor(); await page.waitForTimeout(120); const quitCount = pollCount; await page.waitForTimeout(220); assert.equal(pollCount, quitCount);
     assert.equal(await page.evaluate(() => window.injected), undefined); assert.deepEqual(errors, []);
-    console.log('PASS transfer selection/filtering, batches <=100, private/public options, progress/partial results, duplicate-action guards, retry/cancel/clear, authenticated Blob export, folder IDs, independent credentials/no storage/clear, official URL allowlist, polling visibility/quit, XSS and mobile layout.');
+    console.log('PASS transfer selection/filtering/batches, source-share metadata, retry/cancel/clear/export, real encrypted-save receipts and errors, pending authorization restore polling without re-login or clearing typed input, explicit memory-only/unsupported state, independent storage settings navigation, official URL allowlist, visibility/quit polling, XSS and mobile layout.');
     console.log('Screenshots: ' + outputDir);
   } finally { await browser.close(); server.close(); }
 })().catch(error => { console.error(error); server.close(); process.exitCode = 1; });

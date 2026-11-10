@@ -117,7 +117,7 @@ func validCloudCredentials(c CloudCredentials) bool {
 
 func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cloud", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, map[string]any{"providers": a.cloud.statuses(), "downloadDir": a.transfers.downloadDir})
+		reply(w, http.StatusOK, map[string]any{"providers": a.cloud.statuses(), "downloadDir": a.transfers.downloadDir, "credentialStorage": a.credentialStorageStatus()})
 	})
 	mux.HandleFunc("POST /api/cloud/quark/authorize", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}
@@ -165,8 +165,11 @@ func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 				fail(w, http.StatusConflict, errors.New("网盘正在处理任务，请先停止任务再更换或清除登录"))
 				return
 			}
-			reply(w, http.StatusOK, map[string]any{"id": id, "configured": false, "account": ""})
+			if a.credentials != nil {
+				a.credentials.persist()
+			}
 			a.credentialsChanged()
+			reply(w, http.StatusOK, map[string]any{"id": id, "configured": false, "account": "", "credentialStorage": a.credentialStorageStatus()})
 			return
 		}
 		if id == "baidu" && (credentials.Cookie == "" || credentials.AccessToken != "" || credentials.AuthCode != "") ||
@@ -187,8 +190,13 @@ func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 			fail(w, http.StatusConflict, errors.New("验证期间网盘任务已开始，请先停止任务再更换登录"))
 			return
 		}
+		// Finish the local encrypted write before acknowledging the connection.
+		// A storage error keeps this session usable and is surfaced separately.
+		if a.credentials != nil {
+			a.credentials.persist()
+		}
 		a.credentialsChanged()
 		a.transfers.credentialsAvailable(id)
-		reply(w, http.StatusOK, map[string]any{"id": id, "configured": true, "account": account})
+		reply(w, http.StatusOK, map[string]any{"id": id, "configured": true, "account": account, "credentialStorage": a.credentialStorageStatus()})
 	})
 }

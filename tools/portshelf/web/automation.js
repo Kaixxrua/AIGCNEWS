@@ -124,7 +124,7 @@
       $("automation-counts").textContent = [status.discovered, status.queued, status.unsupported].map((value) => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0).join(" / ");
       show("automation-last-error", status.lastError ? "最近自动处理提示：" + status.lastError : "");
       show("automation-credential-error", status.credentialError ? "凭据需要处理：" + status.credentialError : "");
-      $("automation-storage-help").textContent = status.credentialStorageSupported ? "开启后使用 Windows DPAPI 在本机加密保存凭据，仅当前 Windows 用户可解密。凭据不会写入浏览器存储。" : "当前平台不支持 Windows DPAPI，凭据仅保留在当前工具进程中；退出后需重新连接。";
+      $("automation-storage-help").textContent = status.credentialStorageSupported ? "勾选后使用 Windows DPAPI 在本机加密保存，仅当前 Windows 用户可解密。无需开启无人值守；暂停不会清除授权。取消勾选并保存后，仅在本次运行中保留凭据。" : "当前平台不支持 Windows DPAPI，凭据仅保留在当前工具进程中；退出后需重新连接。";
       $("automation-startup-help").textContent = status.startOnLoginSupported ? "登录 Windows 时在后台启动，不弹出浏览器。电脑须开机联网；勾选“记住凭据”可恢复网盘连接。" : "当前平台不支持 Windows 登录启动，只在本次工具进程运行期间自动处理。";
       $("automation-export").textContent = status.exportDir ? "自动资料目录：" + status.exportDir + " · JSON / CSV / Markdown" + (date(status.exportedAt) ? " · 最近写入 " + date(status.exportedAt) : " · 首个成果完成后写入") : "自动生成的资料目录待确认。";
       syncControls();
@@ -176,7 +176,7 @@
         const result = await context.api("/api/automation", config);
         if (stopped()) return;
         acceptStatus(result?.config ? result : { config }, !keepDraft);
-        show("automation-save-note", mode === "pause" ? "无人值守已暂停，当前自动任务暂停，手动任务继续。" + (keepDraft ? " 未保存的编辑仍已保留。" : "") : mode === "enable" ? "无人值守已开启。首次请完成网盘授权，之后可关闭浏览器，保持工具运行。" : "配置已保存，后续自动处理使用此设置。");
+        show("automation-save-note", mode === "pause" ? "无人值守已暂停，当前自动任务暂停，手动任务继续；已记住的授权继续保留。" + (keepDraft ? " 未保存的编辑仍已保留。" : "") : mode === "enable" ? "无人值守已开启。首次请完成网盘授权，之后可关闭浏览器，保持工具运行。" : "配置已保存；凭据保存设置独立生效，无需开启无人值守。");
         state.failures = 0;
         await loadStatus();
       } catch (error) { show("automation-form-error", "设置未能保存：" + error.message); }

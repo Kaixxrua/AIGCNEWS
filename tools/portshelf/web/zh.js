@@ -44,21 +44,30 @@
   }
 
   function imageURL(value, source = false) {
-    if (typeof value !== 'string' || /[\s\\\u0000-\u001f\u007f]/u.test(value) || !/^https:\/\/(?:raw\.githubusercontent\.com|user-images\.githubusercontent\.com|github\.com)\//i.test(value)) return null;
+    if (typeof value !== 'string' || /[\s\\\u0000-\u001f\u007f]/u.test(value) || !/^https:\/\/(?:raw\.githubusercontent\.com|user-images\.githubusercontent\.com|github\.com|upload\.wikimedia\.org|en\.wikipedia\.org)\//i.test(value)) return null;
     try {
       const url = new URL(value);
-      if (url.username || url.password || url.port || url.search || (!source && url.hash) || /(?:^|\/)\.{1,2}(?:\/|$)|%(?:2f|5c|0[0-9a-f]|7f)/i.test(value.slice(value.indexOf('/', 8)))) return null;
+      if (url.username || url.password || url.port || value.includes('?') || (!source && url.hash) || /(?:^|\/)\.{1,2}(?:\/|$)|%(?:2f|5c|0[0-9a-f]|7f)/i.test(value.slice(value.indexOf('/', 8)))) return null;
       if (url.hostname === 'github.com' && !source && !/^\/user-attachments\/assets\/[a-zA-Z0-9-]+$/.test(url.pathname)) return null;
+      if (url.hostname === 'upload.wikimedia.org') {
+        const pathname = decodeURIComponent(url.pathname);
+        if (source || value.includes('#') || /[<>"\u0000-\u001f\u007f]|\.svg(?:\.|\/|$)/i.test(pathname) || !/^\/wikipedia\/(?:en|commons)\/(?:thumb\/)?[a-f0-9]\/[a-f0-9]{2}\/[^/]+\.(?:jpe?g|png|webp)(?:\/[0-9]+px-[^/]+\.(?:jpe?g|png|webp))?$/i.test(pathname)) return null;
+      }
+      if (url.hostname === 'en.wikipedia.org') {
+        const pathname = decodeURIComponent(url.pathname);
+        if (!source || value.includes('#') || !/^\/wiki\/[^/]+$/.test(pathname) || /[<>"\u0000-\u001f\u007f]/.test(pathname) || /^\/wiki\/(?:File|Category|Special|Wikipedia|Talk|Template|Help|Portal|User|Media|Draft):/i.test(pathname)) return null;
+      }
       if (url.pathname === '/') return null;
       return url.href;
     } catch (_) { return null; }
   }
 
   function mergeRecord(previous, item) {
-    const fields = ['descriptionZh', 'gameNameZh', 'gameNameOriginal', 'posterUrl', 'posterSourceUrl', 'posterKind'];
+    const fields = ['descriptionZh', 'gameNameZh', 'gameNameOriginal', 'posterUrl', 'posterSourceUrl', 'posterKind', 'posterStatus'];
     if (previous?.status === 'pending' && item.status === 'missing') return previous;
     const record = { ...item, error: string(item.error), detailsVersion: item.detailsVersion === 1 ? 1 : 0 };
     for (const field of fields) record[field] = string(item[field]);
+    record.posterRetryAfter = Number.isFinite(item.posterRetryAfter) && item.posterRetryAfter > 0 ? item.posterRetryAfter : 0;
     if (previous && item.status !== 'ready') {
       for (const field of fields) if (!record[field]) record[field] = string(previous[field]);
       record.detailsVersion = record.detailsVersion === 1 || previous.detailsVersion === 1 ? 1 : 0;
@@ -70,8 +79,33 @@
   }
 
   function needsDetails(game, record = {}) {
-    return !(record.detailsVersion === 1 || game?.detailsVersion === 1) || describe({ ...game, descriptionZh: record.descriptionZh || game?.descriptionZh }).source === 'unknown';
+    return !(record.detailsVersion === 1 || game?.detailsVersion === 1) || describe({ ...game, descriptionZh: record.descriptionZh || game?.descriptionZh }).source === 'unknown' || needsPoster(game, record);
   }
 
-  globalThis.PortShelfDescriptions = Object.freeze({ describe, identity, imageURL, mergeRecord, needsDetails });
+  function posterEvidence(game, record = {}) {
+    const value = { ...game, ...record };
+    let url = imageURL(value.posterUrl);
+    let source = imageURL(value.posterSourceUrl, true);
+    if (url && new URL(url).hostname === 'upload.wikimedia.org') {
+      const normalize = text => text.normalize('NFKC').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLocaleLowerCase('en');
+      const original = normalize(string(value.gameNameOriginal));
+      const article = source && new URL(source).hostname === 'en.wikipedia.org' ? normalize(decodeURIComponent(new URL(source).pathname.slice('/wiki/'.length))) : '';
+      if (!original || !article || ![original, original + ' (video game)'].includes(article)) { url = null; source = null; }
+    } else if (source && new URL(source).hostname === 'en.wikipedia.org') source = null;
+    return { url, source, kind: value.posterKind === 'screenshot' ? 'screenshot' : 'cover', status: ['ready', 'missing', 'unavailable'].includes(value.posterStatus) ? value.posterStatus : '' };
+  }
+
+  function needsPoster(game, record = {}) {
+    return (record.detailsVersion === 1 || game?.detailsVersion === 1) && describe({ ...game, descriptionZh: record.descriptionZh || game?.descriptionZh }).source !== 'unknown' && Boolean(identity(game, record).original) && !posterEvidence(game, record).url;
+  }
+
+  function posterRetrySeconds(record, now = Date.now()) {
+    const checked = Date.parse(record?.checkedAt || '');
+    const seconds = record?.posterRetryAfter;
+    if (!Number.isFinite(checked) || !Number.isFinite(seconds) || seconds <= 0) return 0;
+    const remaining = Math.ceil((checked + seconds * 1000 - now) / 1000);
+    return Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
+  }
+
+  globalThis.PortShelfDescriptions = Object.freeze({ describe, identity, imageURL, mergeRecord, needsDetails, posterEvidence, needsPoster, posterRetrySeconds });
 })();

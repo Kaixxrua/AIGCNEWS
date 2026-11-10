@@ -73,8 +73,62 @@ func validGamePoster(repo, raw string) bool {
 			}
 		}
 		return true
+	case "upload.wikimedia.org":
+		return validWikimediaPosterPath(u.Path)
 	}
 	return false
+}
+
+func validWikimediaPosterPath(value string) bool {
+	parts := strings.Split(strings.TrimPrefix(value, "/"), "/")
+	if len(parts) < 5 || parts[0] != "wikipedia" || (parts[1] != "en" && parts[1] != "commons") {
+		return false
+	}
+	start, count := 2, 5
+	if parts[2] == "thumb" {
+		start, count = 3, 7
+	}
+	if len(parts) != count || len(parts[start]) != 1 || len(parts[start+1]) != 2 {
+		return false
+	}
+	for _, char := range parts[start] + parts[start+1] {
+		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+			return false
+		}
+	}
+	for _, name := range parts[start+2:] {
+		extension := strings.ToLower(path.Ext(name))
+		if strings.Contains(strings.ToLower(name), ".svg") || (extension != ".jpg" && extension != ".jpeg" && extension != ".png" && extension != ".webp") {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizedGameTitle(value string) string {
+	value = strings.NewReplacer("_", " ", "’", "'", "‘", "'", "“", "\"", "”", "\"").Replace(value)
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+}
+
+func validWikipediaPosterSource(original, raw string) bool {
+	u := gameImageURL(raw)
+	if u == nil || u.Host != "en.wikipedia.org" || !strings.HasPrefix(u.Path, "/wiki/") {
+		return false
+	}
+	title := normalizedGameTitle(strings.TrimPrefix(u.Path, "/wiki/"))
+	original = normalizedGameTitle(original)
+	return len(original) >= 3 && (title == original || title == original+" (video game)")
+}
+
+func validGamePosterSource(item Description) bool {
+	u := gameImageURL(item.PosterURL)
+	if u == nil {
+		return false
+	}
+	if u.Host == "upload.wikimedia.org" {
+		return validWikipediaPosterSource(item.GameNameOriginal, item.PosterSourceURL)
+	}
+	return validPosterSource(item.Repo, item.PosterSourceURL)
 }
 
 func validPosterSource(repo, raw string) bool {
@@ -93,12 +147,24 @@ func sanitizeGameDetails(item *Description) {
 		item.DetailsVersion = 0
 		item.GameNameZh, item.GameNameOriginal = "", ""
 		item.PosterURL, item.PosterSourceURL, item.PosterKind = "", "", ""
+		item.PosterStatus, item.PosterRetryAfter = "", 0
 		return
 	}
 	item.GameNameZh = cleanGameName(item.GameNameZh, true)
 	item.GameNameOriginal = cleanGameName(item.GameNameOriginal, false)
+	if item.PosterStatus != "ready" && item.PosterStatus != "missing" && item.PosterStatus != "unavailable" {
+		item.PosterStatus = ""
+	}
+	if item.PosterRetryAfter < 0 || item.PosterRetryAfter > 86400 {
+		item.PosterRetryAfter = 0
+	}
 	if item.Status != "ready" || (item.PosterKind != "cover" && item.PosterKind != "screenshot") ||
-		!validGamePoster(item.Repo, item.PosterURL) || !validPosterSource(item.Repo, item.PosterSourceURL) {
+		!validGamePoster(item.Repo, item.PosterURL) || !validGamePosterSource(*item) {
 		item.PosterURL, item.PosterSourceURL, item.PosterKind = "", "", ""
+		if item.PosterStatus == "ready" {
+			item.PosterStatus, item.PosterRetryAfter = "", 0
+		}
+	} else {
+		item.PosterStatus, item.PosterRetryAfter = "ready", 0
 	}
 }

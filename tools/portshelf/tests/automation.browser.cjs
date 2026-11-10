@@ -73,6 +73,7 @@ const server = http.createServer(async (req, res) => {
     await page.locator('#cloud-nav').click(); await page.waitForFunction(() => document.getElementById('automation-status').textContent === '已暂停');
     assert.equal(await page.locator('#automation-min-stars').inputValue(), '10'); assert.equal(await page.locator('#automation-interval').inputValue(), '6'); assert.equal(await page.locator('#automation-daily-limit').inputValue(), '10'); assert.equal(await page.locator('#automation-arch').inputValue(), 'arm64');
     assert.equal(await page.locator('#automation-remember').isChecked(), true); assert.equal(await page.locator('#automation-start-on-login').isChecked(), true); assert.equal(await page.locator('#automation-remember').isDisabled(), false);
+    assert.match(await page.locator('#automation-storage-help').textContent(), /无需开启无人值守.*暂停不会清除授权/);
     await page.evaluate(() => { const button = document.getElementById('automation-toggle'); button.click(); button.click(); }); await page.waitForFunction(() => document.getElementById('automation-status').textContent === '已开启');
     assert.equal(saves.length, 1); assert.equal(saves[0].enabled, true); assert.equal(saves[0].minStars, 10); assert.equal(saves[0].rememberCredentials, true); assert.equal(saves[0].startOnLogin, true);
 
@@ -82,6 +83,7 @@ const server = http.createServer(async (req, res) => {
     assert.equal(await page.locator('#automation-min-stars').inputValue(), '20'); assert.equal(await page.locator('#automation-interval').inputValue(), '8'); assert.equal(config.minStars, 10); assert.equal(await page.locator('#automation-run').isDisabled(), true); assert.equal(await page.locator('.automation-panel img,.automation-panel script').count(), 0);
     await page.locator('#automation-toggle').click(); await page.waitForFunction(() => document.getElementById('automation-status').textContent === '已暂停');
     assert.equal(saves[1].enabled, false); assert.equal(saves[1].minStars, 10); assert.equal(await page.locator('#automation-min-stars').inputValue(), '20'); assert.match(await page.locator('#automation-dirty-note').innerText(), /未保存/);
+    assert.equal(saves[1].rememberCredentials, true); assert.match(await page.locator('#automation-save-note').innerText(), /已记住的授权继续保留/);
     failSave = true; await page.locator('#automation-toggle').click(); await page.waitForFunction(() => document.getElementById('automation-form-error').textContent.includes('mock configuration error')); assert.equal(await page.locator('#automation-status').innerText(), '已暂停'); assert.equal(await page.locator('#automation-min-stars').inputValue(), '20');
     failSave = false; lastError = ''; credentialError = ''; await page.locator('#automation-toggle').click(); await page.waitForFunction(() => document.getElementById('automation-status').textContent === '已开启' && !document.getElementById('automation-toggle').disabled);
     assert.equal(config.minStars, 20); assert.equal(config.maxStars, 1000); assert.equal(config.intervalHours, 8); assert.equal(config.dailyLimit, 15);

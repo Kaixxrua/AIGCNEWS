@@ -31,6 +31,11 @@ from backend.app.services.project_catalog.game_details import (
     normalize_game_details,
     safe_repository_path,
 )
+from backend.app.services.project_catalog.game_posters import (
+    POSTER_MISSING_SECONDS,
+    POSTER_UNAVAILABLE_SECONDS,
+    fetch_wikipedia_poster,
+)
 
 READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
@@ -103,6 +108,24 @@ def _cached(value: Any, repo: str) -> dict[str, Any]:
     except (ValueError, TypeError):
         return {}
     return result if isinstance(result, dict) and result.get("repo") == repo else {}
+
+
+def _game_fields(cached: dict[str, Any], now: float) -> dict[str, Any]:
+    result = {key: cached.get(key, "") for key in ("gameNameZh", "gameNameOriginal", "posterUrl", "posterSourceUrl", "posterKind")}
+    result["detailsVersion"] = 1
+    status = "ready" if result["posterUrl"] else cached.get("posterStatus", "missing")
+    result["posterStatus"] = status if status in {"ready", "missing", "unavailable"} else "missing"
+    retry_at = cached.get("posterRetryAt", 0)
+    result["posterRetryAfter"] = max(0, math.ceil(retry_at - now)) if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) and status != "ready" else 0
+    return result
+
+
+def _needs_poster(item: dict[str, Any]) -> bool:
+    return bool(item.get("status") == "ready" and item.get("detailsVersion") == 1 and not item.get("posterUrl") and item.get("gameNameOriginal") and item.get("posterRetryAfter", 0) <= 0)
+
+
+def _cached_request(item: dict[str, Any], game_details: bool) -> bool:
+    return bool((item["status"] in {"ready", "pending"} or item.get("retryAfter", 0) > 0) and not (game_details and _needs_poster(item)))
 
 
 def _chinese(text: Any) -> str:
@@ -222,6 +245,7 @@ class ProjectDescriptionsService:
         describe_game: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
         repository: Any = None,
         fetch: Callable[..., Awaitable[dict[str, Any]]] = fetch_public_repository,
+        fetch_poster: Callable[[str], Awaitable[dict[str, str] | None]] = fetch_wikipedia_poster,
         clock: Callable[[], float] = time.time,
         job_seconds: float = JOB_SECONDS,
     ) -> None:
@@ -229,6 +253,7 @@ class ProjectDescriptionsService:
         self.describe = describe
         self.describe_game = describe_game
         self.fetch = fetch
+        self.fetch_poster = fetch_poster
         self.clock = clock
         self.job_seconds = min(float(job_seconds), JOB_SECONDS)
 
@@ -256,10 +281,20 @@ class ProjectDescriptionsService:
                     description = _chinese(previous.get("descriptionZh"))
             status = cached.get("status")
             if status == "ready" and _chinese(cached.get("descriptionZh")) and (not game_details or cached.get("detailsVersion") == 1):
-                details = {key: cached.get(key, "") for key in ("gameNameZh", "gameNameOriginal", "posterUrl", "posterSourceUrl", "posterKind")} if game_details else {}
-                if game_details:
-                    details["detailsVersion"] = 1
+                details = _game_fields(cached, self.clock()) if game_details else {}
                 items.append(_item(repo, "ready", descriptionZh=cached["descriptionZh"], **details))
+            elif game_details and status == "pending" and cached.get("posterOnly") is True and cached.get("detailsVersion") == 1 and _chinese(cached.get("descriptionZh")):
+                deadline = cached.get("deadline", 0)
+                deadline = deadline if isinstance(deadline, (int, float)) and math.isfinite(deadline) else 0
+                if deadline > self.clock():
+                    details = {**_game_fields(cached, self.clock()), "posterStatus": "unavailable", "posterRetryAfter": 3}
+                    items.append(_item(repo, "pending", descriptionZh=cached["descriptionZh"], retryAfter=3, **details))
+                else:
+                    # A process can die without finalizing its lease. Preserve
+                    # verified text and allow a later poster-only retry after
+                    # a bounded cooldown, never a fresh model generation.
+                    details = _game_fields({**cached, "posterStatus": "unavailable", "posterRetryAt": deadline + POSTER_UNAVAILABLE_SECONDS}, self.clock())
+                    items.append(_item(repo, "ready", descriptionZh=cached["descriptionZh"], **details))
             elif status == "pending":
                 deadline = cached.get("deadline", 0)
                 if isinstance(deadline, (int, float)) and deadline > self.clock():
@@ -295,13 +330,13 @@ class ProjectDescriptionsService:
         if blocked:
             raise DescriptionNotPublic("无法读取此公开仓库。")
         item = existing[0]
-        if item["status"] in {"ready", "pending"} or item.get("retryAfter", 0) > 0:
+        if _cached_request(item, game_details):
             return item
         token = secrets.token_hex(16)
         profile = _profile(repo, game_details)
         lock_key = PREFIX + "lock:" + profile
         if not await redis.set(lock_key, token, nx=True, ex=LEASE_SECONDS):
-            return _item(repo, "pending", retryAfter=3)
+            return {**item, "status": "pending", "retryAfter": 3} if game_details and _needs_poster(item) else _item(repo, "pending", retryAfter=3)
         slot, submitted = "", False
         try:
             # Another worker may have finished between the first lookup and NX.
@@ -309,7 +344,7 @@ class ProjectDescriptionsService:
             if second_blocked:
                 raise DescriptionNotPublic("无法读取此公开仓库。")
             second = second_items[0]
-            if second["status"] in {"ready", "pending"} or second.get("retryAfter", 0) > 0:
+            if _cached_request(second, game_details):
                 return second
             for index in range(MAX_CONCURRENT_GENERATIONS):
                 candidate = PREFIX + f"slot:{index}"
@@ -318,15 +353,24 @@ class ProjectDescriptionsService:
                     break
             if not slot:
                 raise DescriptionBusy()
-            await charge_generation(redis, authorization)
-            pending = {**_item(repo, "pending"), "token": token, "deadline": self.clock() + self.job_seconds + 5}
+            poster_only = game_details and _needs_poster(second)
+            if not poster_only:
+                await charge_generation(redis, authorization)
+            pending_item = {**second, "status": "pending", "posterStatus": "unavailable", "posterRetryAfter": 3} if poster_only else _item(repo, "pending")
+            pending = {**pending_item, "token": token, "deadline": self.clock() + self.job_seconds + 5}
+            if poster_only:
+                pending["posterOnly"] = True
             if not await redis.set(PREFIX + "cache:" + profile, json.dumps(pending), ex=READY_TTL):
                 raise DescriptionsUnavailable("无法保存生成任务，请稍后重试。")
-            submitted = bool(operations.submit(self._generate, repo, token, slot, redis, game_details, second.get("descriptionZh", "")))
+            if poster_only:
+                submitted = bool(operations.submit(self._generate_poster, repo, token, slot, redis, second))
+            else:
+                submitted = bool(operations.submit(self._generate, repo, token, slot, redis, game_details, second.get("descriptionZh", "")))
             if not submitted:
-                await self._finish(redis, repo, token, _item(repo, "failed", error="后台正在停止，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS), game_details)
+                failed = self._poster_failure(second) if poster_only else _item(repo, "failed", error="后台正在停止，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS)
+                await self._finish(redis, repo, token, failed, game_details)
                 raise DescriptionsUnavailable("后台正在停止，请稍后重试。")
-            return _item(repo, "pending", retryAfter=3)
+            return {**pending_item, "retryAfter": 3}
         finally:
             if not submitted:
                 await self._release(redis, lock_key, token)
@@ -337,8 +381,42 @@ class ProjectDescriptionsService:
         profile = _profile(repo, game_details)
         await redis.eval(_FINISH, 2, PREFIX + "lock:" + profile, PREFIX + "cache:" + profile, token, json.dumps(item, ensure_ascii=False), READY_TTL)
 
+    def _poster_failure(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {**item, "status": "ready", "posterStatus": "unavailable", "posterRetryAt": self.clock() + POSTER_UNAVAILABLE_SECONDS}
+
+    async def _fill_poster(self, item: dict[str, Any]) -> dict[str, Any]:
+        if item.get("posterUrl"):
+            return {**item, "posterStatus": "ready", "posterRetryAt": 0}
+        try:
+            poster = await self.fetch_poster(item["gameNameOriginal"]) if item.get("gameNameOriginal") else None
+            if poster:
+                return {**item, **{key: poster[key] for key in ("posterUrl", "posterSourceUrl", "posterKind")}, "posterStatus": "ready", "posterRetryAt": 0}
+        except Exception:
+            # External service failures must never erase verified names/text or
+            # expose its response, query URL or transport credentials.
+            return self._poster_failure(item)
+        return {**item, "posterStatus": "missing", "posterRetryAt": self.clock() + POSTER_MISSING_SECONDS}
+
+    async def _generate_poster(self, repo: str, token: str, slot: str, redis: Any, existing: dict[str, Any]) -> None:
+        item = self._poster_failure(existing)
+        try:
+            item = await asyncio.wait_for(self._fill_poster(existing), timeout=self.job_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        finally:
+            try:
+                await self._finish(redis, repo, token, item, True)
+            except Exception:
+                pass
+            await self._release(redis, slot, token)
+
     async def _generate(self, repo: str, token: str, slot: str, redis: Any, game_details: bool = False, previous_description: str = "") -> None:
+        generated_item: dict[str, Any] | None = None
+
         async def generate() -> dict[str, Any]:
+            nonlocal generated_item
             if game_details:
                 metadata = await self.fetch(repo, game_details=True)
                 if self.describe_game is None:
@@ -354,17 +432,18 @@ class ProjectDescriptionsService:
                 details = {}
             if not description:
                 raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
-            return _item(repo, "ready", descriptionZh=description, **details)
+            generated_item = _item(repo, "ready", descriptionZh=description, **details)
+            return await self._fill_poster(generated_item) if game_details else generated_item
 
         try:
             item = await asyncio.wait_for(generate(), timeout=self.job_seconds)
         except asyncio.CancelledError:
-            item = _item(repo, "failed", error="生成已中断，请重试。", retryAt=self.clock() + RETRY_SECONDS)
+            item = self._poster_failure(generated_item) if game_details and generated_item else _item(repo, "failed", error="生成已中断，请重试。", retryAt=self.clock() + RETRY_SECONDS)
             raise
         except (DescriptionInputUnavailable, DescriptionNotPublic) as exc:
             item = _item(repo, "failed", error=str(exc), retryAt=self.clock() + RETRY_SECONDS)
         except TimeoutError:
-            item = _item(repo, "failed", error="生成超时，请重试。", retryAt=self.clock() + RETRY_SECONDS)
+            item = self._poster_failure(generated_item) if game_details and generated_item else _item(repo, "failed", error="生成超时，请重试。", retryAt=self.clock() + RETRY_SECONDS)
         except Exception:
             # Provider failures can include credentials/URLs; never return them.
             item = _item(repo, "failed", error="中文简介生成暂时失败，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS)

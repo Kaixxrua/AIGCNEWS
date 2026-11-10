@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 require('../web/zh.js');
 const { describe } = globalThis.PortShelfDescriptions;
-const { identity, imageURL, mergeRecord, needsDetails } = globalThis.PortShelfDescriptions;
+const { identity, imageURL, mergeRecord, needsDetails, posterEvidence, needsPoster, posterRetrySeconds } = globalThis.PortShelfDescriptions;
 
 test('AIGCNEWS Chinese takes precedence and keeps the exact upstream original', () => {
   const original = 'A Doom 3 source port.';
@@ -66,4 +66,58 @@ test('old Chinese descriptions are upgraded on request while pending and failed 
   assert.equal(mergeRecord(ready, old).detailsVersion, 1);
   assert.equal(needsDetails(game, { ...ready, gameNameZh: '', posterUrl: '' }), false, 'verified unknown artwork must not cause automatic generation loops');
   assert.equal(needsDetails(game, { ...ready, detailsVersion: 2 }), true, 'unknown protocol versions must be checked again');
+});
+
+test('Wikimedia posters are raster images tied to the exact original game article, not arbitrary Wikipedia images', () => {
+  const game = { detailsVersion: 1, gameNameOriginal: 'The Legend of Zelda: Tears of the Kingdom' };
+  const url = 'https://upload.wikimedia.org/wikipedia/en/f/fb/The_Legend_of_Zelda_Tears_of_the_Kingdom_cover.jpg';
+  const source = 'https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom';
+  assert.equal(imageURL(url), url); assert.equal(imageURL(source, true), source);
+  assert.equal(posterEvidence(game, { posterUrl: url, posterSourceUrl: source }).url, url);
+  assert.equal(posterEvidence(game, { posterUrl: url, posterSourceUrl: 'https://en.wikipedia.org/wiki/Another_game' }).url, null);
+  assert.equal(posterEvidence(game, { posterUrl: url, posterSourceUrl: 'https://github.com/valentderah/totk-pc-recomp' }).url, null);
+  assert.equal(posterEvidence(game, { posterUrl: url }).url, null);
+  for (const format of ['jpg', 'jpeg', 'png', 'webp']) {
+    const thumb = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Game_cover.' + format + '/320px-Game_cover.' + format;
+    assert.equal(imageURL(thumb), thumb);
+  }
+  assert.ok(posterEvidence({ gameNameOriginal: 'Example' }, { posterUrl: url, posterSourceUrl: 'https://en.wikipedia.org/wiki/Example_(video_game)' }).url);
+  for (const bad of [url + '?width=100', url + '?', url + '#x', url + '#', url.replace('wikimedia.org/', 'wikimedia.org:443/'), url.replace('en/', 'evil/'), url.replace('.jpg', '.svg'), url.replace('.jpg', '.svg.png'), url.replace('.jpg', '.SVG.jpg'), url.replace('.jpg', '.gif'), url.replace('/f/fb/', '/../../'), url.replace('upload.wikimedia.org', 'evil.test'), url.replace('https:', 'http:')]) assert.equal(imageURL(bad), null, bad);
+  for (const bad of [source + '?redirect=no', source + '?', source + '#section', source + '#', source.replace('en.wikipedia.org/', 'en.wikipedia.org:443/'), source.replace('en.wikipedia.org', 'en.wikipedia.org.evil.test'), 'https://en.wikipedia.org/wiki/File:Game_cover.jpg', 'https://en.wikipedia.org/wiki/%3Cscript%3E', 'https://en.wikipedia.org/wiki/Game%2Fcover', 'https://en.wikipedia.org/w/index.php']) assert.equal(imageURL(bad, true), null, bad);
+  assert.equal(imageURL(source), null); assert.equal(imageURL(url, true), null);
+});
+
+test('verified Wikipedia game titles match equivalent curly quotes without losing meaningful punctuation', () => {
+  const url = 'https://upload.wikimedia.org/wikipedia/en/a/ab/Links_Awakening_cover.jpg';
+  const source = "https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Link's_Awakening";
+  for (const quote of ['‘', '’']) {
+    const game = { gameNameOriginal: `The Legend of Zelda: Link${quote}s Awakening` };
+    assert.equal(posterEvidence(game, { posterUrl: url, posterSourceUrl: source }).url, url);
+  }
+  assert.equal(posterEvidence({ gameNameOriginal: '"Example"' }, { posterUrl: url, posterSourceUrl: 'https://en.wikipedia.org/wiki/%E2%80%9CExample%E2%80%9D' }).url, url);
+  assert.equal(posterEvidence({ gameNameOriginal: 'The Legend of Zelda: Links Awakening' }, { posterUrl: url, posterSourceUrl: source }).url, null);
+});
+
+test('version-one records with a known game but no image can be retried without regenerating their Chinese text', () => {
+  const game = { repo: 'valentderah/totk-pc-recomp', name: 'totk-pc-recomp' };
+  const cached = { repo: game.repo, status: 'ready', descriptionZh: '这是《塞尔达传说：王国之泪》的电脑移植项目。', gameNameZh: '塞尔达传说：王国之泪', gameNameOriginal: 'The Legend of Zelda: Tears of the Kingdom', detailsVersion: 1, posterUrl: '' };
+  assert.equal(needsDetails(game, cached), true); assert.equal(needsPoster(game, cached), true);
+  assert.equal(needsPoster(game, { ...cached, gameNameOriginal: '' }), false);
+  assert.equal(needsPoster(game, { ...cached, descriptionZh: '' }), false, 'missing text must not be labelled as a poster-only operation');
+  const pending = mergeRecord(cached, { repo: game.repo, status: 'pending', detailsVersion: 1 });
+  assert.equal(pending.gameNameZh, cached.gameNameZh); assert.equal(pending.descriptionZh, cached.descriptionZh);
+  const failed = mergeRecord(pending, { repo: game.repo, status: 'failed', posterStatus: 'unavailable' });
+  assert.equal(failed.gameNameOriginal, cached.gameNameOriginal); assert.equal(failed.descriptionZh, cached.descriptionZh);
+  assert.equal(failed.posterStatus, 'unavailable');
+});
+
+test('poster retry cooldown uses the original checkedAt, so repeated local cache reads and reloads cannot extend it', () => {
+  const checkedAt = '2026-11-10T03:00:00Z';
+  const record = { status: 'ready', posterStatus: 'unavailable', posterRetryAfter: 300, checkedAt };
+  const now = Date.parse(checkedAt) + 120000;
+  assert.equal(posterRetrySeconds(record, now), 180);
+  assert.equal(posterRetrySeconds(mergeRecord(record, record), now), 180);
+  assert.equal(posterRetrySeconds(record, now + 180001), 0);
+  assert.equal(posterRetrySeconds({ ...record, posterRetryAfter: 86400 }, now), 86280);
+  for (const patch of [{ checkedAt: '' }, { posterRetryAfter: 0 }, { posterRetryAfter: Infinity }, { posterRetryAfter: -1 }]) assert.equal(posterRetrySeconds({ ...record, ...patch }, now), 0);
 });

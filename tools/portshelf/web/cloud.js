@@ -117,9 +117,21 @@
     try { const url = new URL(value); return !url.port && !url.username && !url.password && !url.search && !url.hash ? url.href : null; } catch (_) { return null; }
   }
 
+  function credentialStorageState(value) {
+    const unknown = { kind: "unknown", text: "正在核对本机凭据保存状态。", pending: [] };
+    if (!value || typeof value.supported !== "boolean" || typeof value.remember !== "boolean" || typeof value.saved !== "boolean") return unknown;
+    const pending = value.supported && value.remember && Array.isArray(value.pending) ? [...new Set(value.pending.filter(id => Object.hasOwn(providers, id)))] : [];
+    if (typeof value.error === "string" && value.error.trim()) return { kind: "error", text: "凭据保存或恢复出错：" + value.error, pending };
+    if (!value.supported) return { kind: "memory", text: "当前平台不支持本机加密保存，授权仅在本次运行中保留；退出后需重新连接。", pending };
+    if (!value.remember) return { kind: "memory", text: "已关闭“记住凭据”，授权仅在本次运行中保留；退出后需重新连接。", pending };
+    if (pending.length) return { kind: "restoring", text: "已保存授权正在恢复，可刷新连接状态；无需重复填写 Cookie 或授权码。", pending };
+    if (value.saved) return { kind: "saved", text: "授权已在本机加密保存，重新打开工具会恢复连接；无需开启无人值守，暂停也不清除授权。", pending };
+    return { kind: "waiting", text: "已启用本机加密保存，等待首次保存授权；无需开启无人值守。", pending };
+  }
+
   function create(context) {
     const $ = (id) => document.getElementById(id);
-    const state = { selected: new Set(), jobs: [], jobCards: new Map(), providers: {}, visible: false, loaded: false, stopped: false, pollTimer: null, pollBusy: false, pollAgain: false, pollFailures: 0, cloudBusy: false, enqueueBusy: false, actions: new Set(), authBusy: new Set(), authLoaded: false, authRevision: 0, exportBusy: false, clearBusy: false, folderBusy: false, archSet: false, downloadDir: "" };
+    const state = { selected: new Set(), jobs: [], jobCards: new Map(), providers: {}, visible: false, loaded: false, stopped: false, pollTimer: null, pollBusy: false, pollAgain: false, pollFailures: 0, cloudBusy: false, enqueueBusy: false, actions: new Set(), authBusy: new Set(), authLoaded: false, authRevision: 0, authPollTimer: null, authFailures: 0, credentialStorage: null, exportBusy: false, clearBusy: false, folderBusy: false, archSet: false, downloadDir: "" };
     function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined && text !== null) el.textContent = String(text); return el; }
     function button(text, action, className = "button button-secondary button-small") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
     function message(id, text) { if (state.stopped) return; $(id).textContent = text || ""; $(id).hidden = !text; }
@@ -174,32 +186,47 @@
     }
 
     function syncProviderState() {
+      const storage = credentialStorageState(state.credentialStorage);
+      const storageLabel = $("credential-storage-state");
+      storageLabel.textContent = (storage.kind === "error" && Object.values(state.providers).some(provider => provider?.configured) ? "本次已连接的账号仍可使用；本机保存状态需处理。" : "") + storage.text; storageLabel.dataset.state = storage.kind;
+      storageLabel.className = storage.kind === "error" ? "notice error" : "token-state";
+      $("cloud-settings-refresh").disabled = state.cloudBusy;
       for (const [id, name] of Object.entries(providers)) {
         const provider = state.providers[id];
-        const status = provider?.configured ? "已连接" + (provider.account ? " · " + provider.account : "") : state.authLoaded ? "未连接 · 可在设置中配置" : "尚未读取连接状态";
+        const pending = storage.pending.includes(id);
+        const status = provider?.configured ? "已连接" + (provider.account ? " · " + provider.account : "") : pending ? storage.kind === "error" ? "已保存授权恢复待重试 · 可刷新连接状态" : "已保存授权正在恢复 · 无需重新授权" : state.authLoaded ? "未连接 · 可在设置中配置" : "尚未读取连接状态";
         $("transfer-" + id + "-state").textContent = status;
         const label = $("cloud-" + id + "-state");
         if (label) label.textContent = name + "：" + status;
         const clear = $("cloud-" + id + "-clear");
-        if (clear) clear.disabled = state.authBusy.has(id) || !provider?.configured;
+        if (clear) clear.disabled = state.authBusy.has(id) || (!provider?.configured && !pending);
       }
+    }
+
+    function scheduleAuthPoll() {
+      clearTimeout(state.authPollTimer); state.authPollTimer = null;
+      if (isStopped() || document.hidden || (!state.visible && !$("settings-dialog").open) || state.cloudBusy || state.authBusy.size || state.authFailures >= 3 || !credentialStorageState(state.credentialStorage).pending.length) return;
+      state.authPollTimer = setTimeout(loadProviders, 2000);
     }
 
     async function loadProviders() {
       if (state.cloudBusy || isStopped()) return;
-      state.cloudBusy = true;
+      clearTimeout(state.authPollTimer); state.authPollTimer = null;
+      state.cloudBusy = true; syncProviderState();
       const revision = state.authRevision;
       try {
         const result = await context.api("/api/cloud", undefined, 20000);
         if (isStopped()) return;
         if (revision === state.authRevision) {
           for (const provider of result.providers || []) if (Object.hasOwn(providers, provider.id)) state.providers[provider.id] = provider;
+          if (result.credentialStorage) state.credentialStorage = result.credentialStorage;
           state.authLoaded = true;
+          state.authFailures = 0;
         }
         if (result.downloadDir) state.downloadDir = String(result.downloadDir);
         syncProviderState(); renderDirectory(); message("cloud-settings-error", "");
-      } catch (error) { message("cloud-settings-error", "网盘连接状态读取失败：" + error.message); }
-      finally { state.cloudBusy = false; }
+      } catch (error) { if (revision === state.authRevision) { state.authFailures++; message("cloud-settings-error", "网盘连接状态读取失败：" + error.message + (state.authFailures >= 3 ? " 可点击“刷新连接状态”重试。" : "")); } }
+      finally { state.cloudBusy = false; if (!isStopped()) { syncProviderState(); scheduleAuthPoll(); } }
     }
 
     function renderDirectory() { if (!isStopped()) $("transfer-download-dir").textContent = state.downloadDir ? "本地下载目录：" + state.downloadDir : "本地下载目录待确认"; }
@@ -410,7 +437,7 @@
     function openSettings() {
       context.openSettings();
       $("cloud-settings").scrollIntoView({ block: "start" });
-      $("cloud-baidu-credential")?.focus({ preventScroll: true });
+      $("cloud-settings-refresh").focus({ preventScroll: true });
     }
 
     async function saveProvider(id, clear = false) {
@@ -426,14 +453,17 @@
         const result = await context.api("/api/cloud/" + id, clear ? { cookie: "", accessToken: "", authCode: "" } : id === "baidu" ? { cookie: value } : { authCode: value });
         if (isStopped()) return;
         state.providers[id] = result.provider || result; state.authLoaded = true;
+        if (result.credentialStorage) state.credentialStorage = result.credentialStorage;
+        state.authFailures = 0; syncProviderState();
         input.value = "";
         if (id === "quark") $("cloud-quark-authorization").replaceChildren();
-        context.notify(clear ? providers[id] + "凭据已清除。" : providers[id] + "连接已验证，凭据按无人值守设置保管。");
+        const storage = credentialStorageState(state.credentialStorage);
+        context.notify(clear ? providers[id] + "凭据已清除。" : providers[id] + (storage.kind === "error" ? "本次连接可用，但本机保存需处理。" : "连接已验证。") + storage.text, storage.kind === "error");
         await loadJobs();
       } catch (error) { message("cloud-" + id + "-error", error.message); }
       finally {
         input.value = ""; state.authBusy.delete(id);
-        form.querySelectorAll("button,input").forEach((item) => { item.disabled = false; }); $("cloud-" + id + "-submit").textContent = "验证并连接"; syncProviderState();
+        form.querySelectorAll("button,input").forEach((item) => { item.disabled = false; }); $("cloud-" + id + "-submit").textContent = "验证并连接"; syncProviderState(); scheduleAuthPoll();
       }
     }
 
@@ -470,7 +500,7 @@
         const error = node("p", "form-error"); error.id = "cloud-" + id + "-error"; error.setAttribute("role", "alert"); error.hidden = true;
         const actions = node("div", "dialog-actions"); const clear = button("清除连接", () => saveProvider(id, true)); clear.id = "cloud-" + id + "-clear";
         const submit = node("button", "button button-primary", "验证并连接"); submit.type = "submit"; submit.id = "cloud-" + id + "-submit"; actions.append(clear, submit);
-        form.append(label, input, node("p", "field-help", "保存后清空输入，不存浏览器。默认仅在进程内存保留；Windows 可在无人值守设置中启用 DPAPI 本机加密保存。"), error, actions);
+        form.append(label, input, node("p", "field-help", "连接后清空输入，不存浏览器。Windows 勾选“记住凭据”时会在本机加密保存；无需开启无人值守，暂停不清除授权。"), error, actions);
         form.addEventListener("submit", (event) => { event.preventDefault(); saveProvider(id); });
         return form;
       });
@@ -484,19 +514,22 @@
     ["transfer-baidu", "transfer-quark", "transfer-private-share"].forEach((id) => $(id).addEventListener("change", syncSelection));
     $("transfer-form").addEventListener("submit", enqueue);
     $("transfer-auth-open").addEventListener("click", openSettings);
-    $("transfer-refresh").addEventListener("click", () => { state.pollFailures = 0; loadJobs(); loadProviders(); });
+    $("transfer-refresh").addEventListener("click", () => { state.pollFailures = 0; state.authFailures = 0; loadJobs(); loadProviders(); });
+    $("cloud-settings-refresh").addEventListener("click", () => { state.authFailures = 0; loadProviders(); });
+    $("credential-storage-options").addEventListener("click", () => context.openCredentialSettings());
     $("transfer-open-folder").addEventListener("click", () => openFolder());
     $("transfer-export").addEventListener("click", exportArtifacts);
     $("transfer-clear-history").addEventListener("click", clearHistory);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && state.visible) loadJobs(); else { clearTimeout(state.pollTimer); state.pollTimer = null; } });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && state.visible) loadJobs(); else { clearTimeout(state.pollTimer); state.pollTimer = null; } scheduleAuthPoll(); });
+    $("settings-dialog").addEventListener("close", scheduleAuthPoll);
     renderAuthForms();
     return {
-      setVisible(visible) { state.visible = visible; clearTimeout(state.pollTimer); state.pollTimer = null; if (visible && !isStopped()) { renderSelection(); state.pollFailures = 0; loadJobs(); loadProviders(); } },
+      setVisible(visible) { state.visible = visible; clearTimeout(state.pollTimer); state.pollTimer = null; if (visible && !isStopped()) { renderSelection(); state.pollFailures = 0; state.authFailures = 0; loadJobs(); loadProviders(); } scheduleAuthPoll(); },
       updateLibrary() { if (!state.archSet && context.getArch()) { $("transfer-arch").value = context.getArch() === "arm64" ? "arm64" : "amd64"; state.archSet = true; } if (state.visible) { renderSelection(); renderJobs(); } },
-      settingsOpened() { if (!isStopped()) loadProviders(); },
+      settingsOpened() { if (!isStopped()) { state.authFailures = 0; loadProviders(); } },
       refresh() { if (state.visible && !isStopped()) loadJobs(); },
       clearCredentials,
-      stop() { state.stopped = true; clearTimeout(state.pollTimer); state.pollTimer = null; clearCredentials(); },
+      stop() { state.stopped = true; clearTimeout(state.pollTimer); state.pollTimer = null; clearTimeout(state.authPollTimer); state.authPollTimer = null; clearCredentials(); },
     };
   }
 
@@ -512,5 +545,5 @@
     } catch (_) { return null; }
   }
 
-  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, systemsLabel, materialFor, hasSourceBundle, create };
+  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, systemsLabel, materialFor, hasSourceBundle, credentialStorageState, create };
 });

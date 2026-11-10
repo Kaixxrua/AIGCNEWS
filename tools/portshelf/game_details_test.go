@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -193,7 +194,7 @@ func TestGamePosterCSPDoesNotOpenScriptsOrConnectionsToOtherHosts(t *testing.T) 
 	app := descriptionApp(t)
 	w := call(app, "GET", "/", "")
 	csp := w.Header().Get("Content-Security-Policy")
-	for _, host := range []string{"https://raw.githubusercontent.com", "https://user-images.githubusercontent.com", "https://github.com"} {
+	for _, host := range []string{"https://raw.githubusercontent.com", "https://user-images.githubusercontent.com", "https://github.com", "https://upload.wikimedia.org"} {
 		if !strings.Contains(csp, host) {
 			t.Fatalf("poster origin missing from CSP: %s", host)
 		}
@@ -201,6 +202,181 @@ func TestGamePosterCSPDoesNotOpenScriptsOrConnectionsToOtherHosts(t *testing.T) 
 	for _, directive := range []string{"script-src 'self';", "connect-src 'self';", "frame-ancestors 'none';", "base-uri 'none';"} {
 		if !strings.Contains(csp, directive) {
 			t.Fatalf("poster change weakened %s", directive)
+		}
+	}
+}
+
+func wikipediaPosterFixture() Description {
+	item := readyFixture("owner/game")
+	item.GameNameZh = "塞尔达传说 王国之泪"
+	item.GameNameOriginal = "The Legend of Zelda: Tears of the Kingdom"
+	item.PosterURL = "https://upload.wikimedia.org/wikipedia/en/f/fb/The_Legend_of_Zelda_Tears_of_the_Kingdom_cover.jpg"
+	item.PosterSourceURL = "https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom"
+	item.PosterKind, item.PosterStatus = "cover", "ready"
+	return item
+}
+
+func TestPosterOnlyUpgradePollsThroughFreshV1CacheAndSurvivesRestart(t *testing.T) {
+	app := descriptionApp(t)
+	completed := wikipediaPosterFixture()
+	old := completed
+	old.PosterURL, old.PosterSourceURL, old.PosterKind, old.PosterStatus = "", "", "", ""
+	if err := app.lib.saveDescriptions([]Description{old}); err != nil {
+		t.Fatal(err)
+	}
+	app.aigc.setToken("mock-poster-token")
+	gets, posts := 0, 0
+	app.aigc.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost {
+			posts++
+			pending := old
+			pending.Status = "pending"
+			return apiResponse(202, jsonString(DescriptionsResponse{Items: []Description{pending}, PollAfter: 1})), nil
+		}
+		gets++
+		return apiResponse(200, jsonString(DescriptionsResponse{Items: []Description{completed}})), nil
+	})
+	first := call(app, "POST", "/api/descriptions", `{"repo":"owner/game"}`)
+	var response DescriptionsResponse
+	if first.Code != 202 || json.Unmarshal(first.Body.Bytes(), &response) != nil || len(response.Items) != 1 {
+		t.Fatalf("poster-only request failed: %s", first.Body.String())
+	}
+	if got := response.Items[0]; got.Status != "pending" || got.DescriptionZh != old.DescriptionZh || got.GameNameZh != old.GameNameZh {
+		t.Fatal("poster-only pending response erased the existing title or brief")
+	}
+	// A restart during the poster lookup must still poll the service, while
+	// retaining the existing text for offline use.
+	app.cancel()
+	reloaded, err := newLibrary(app.lib.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached := reloaded.snapshot().Descriptions[old.Repo]
+	if cached.DescriptionZh != old.DescriptionZh || cached.GameNameZh != old.GameNameZh || freshDescription(cached, time.Now()) {
+		t.Fatal("poster-only lookup left a fresh cache that would hide completion")
+	}
+	restarted, err := newApp(reloaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.cancel()
+	restarted.host = app.host
+	stars := 10
+	restarted.cacheDiscovery([]Game{{Repo: old.Repo, Name: "Game", Stars: &stars}}, old.CheckedAt)
+	restarted.aigc.client.Transport = app.aigc.client.Transport
+	second := call(restarted, "GET", "/api/descriptions?repos=owner/game", "")
+	if second.Code != 200 || json.Unmarshal(second.Body.Bytes(), &response) != nil || len(response.Items) != 1 {
+		t.Fatalf("poster completion poll failed: %s", second.Body.String())
+	}
+	got := response.Items[0]
+	if gets != 1 || posts != 1 || got.PosterURL != completed.PosterURL || got.PosterStatus != "ready" || got.GameNameOriginal != old.GameNameOriginal || got.DescriptionZh != old.DescriptionZh {
+		t.Fatal("poster completion was suppressed by the old v1 text cache")
+	}
+	reloaded, err = newLibrary(app.lib.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cached = reloaded.snapshot().Descriptions[old.Repo]
+	if cached.PosterURL != completed.PosterURL || cached.PosterSourceURL != completed.PosterSourceURL || cached.PosterStatus != "ready" || !freshDescription(cached, time.Now()) {
+		t.Fatal("completed poster was not durably cached")
+	}
+}
+
+func TestWikipediaPosterRequiresExactGameProvenanceAndRasterImage(t *testing.T) {
+	for _, path := range []string{
+		"/wikipedia/en/f/fb/The_Legend_of_Zelda_Tears_of_the_Kingdom_cover.jpg",
+		"/wikipedia/en/thumb/f/fb/Cover.jpg/300px-Cover.jpg",
+		"/wikipedia/commons/thumb/a/ab/Cover.png/600px-Cover.png",
+		"/wikipedia/commons/a/ab/Cover.webp",
+	} {
+		item := wikipediaPosterFixture()
+		item.PosterURL = "https://upload.wikimedia.org" + path
+		sanitizeGameDetails(&item)
+		if item.PosterURL == "" || item.PosterStatus != "ready" {
+			t.Errorf("verified raster cover rejected: %s", path)
+		}
+	}
+	for _, raw := range []string{
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover.svg",
+		"https://upload.wikimedia.org/wikipedia/en/thumb/f/fb/Cover.svg/600px-Cover.svg.png",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover.gif",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover.jpg?tracking=1",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover.jpg#fragment",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/%2e%2e/Cover.jpg",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover%2fextra.jpg",
+		"https://upload.wikimedia.org/wikipedia/en/f/fb/Cover%5cextra.jpg",
+		"https://upload.wikimedia.org/wikipedia/en/x/xx/Cover.jpg",
+		"https://upload.wikimedia.org/wikipedia/fr/f/fb/Cover.jpg",
+		"https://upload.wikimedia.org.evil.test/wikipedia/en/f/fb/Cover.jpg",
+		"https://upload.wikimedia.org:443/wikipedia/en/f/fb/Cover.jpg",
+		"https://secret@upload.wikimedia.org/wikipedia/en/f/fb/Cover.jpg",
+	} {
+		item := wikipediaPosterFixture()
+		item.PosterURL = raw
+		sanitizeGameDetails(&item)
+		if item.PosterURL != "" || item.PosterStatus == "ready" {
+			t.Errorf("unsafe cover accepted: %s", raw)
+		}
+	}
+	for _, source := range []string{
+		"https://en.wikipedia.org/wiki/The_Legend_of_Zelda",
+		"https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Breath_of_the_Wild",
+		"https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom_(2023)",
+		"https://en.wikipedia.org/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom?source=1",
+		"https://en.wikipedia.org/w/index.php?title=The_Legend_of_Zelda:_Tears_of_the_Kingdom",
+		"https://en.wikipedia.org:443/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom",
+		"https://commons.wikimedia.org/wiki/The_Legend_of_Zelda:_Tears_of_the_Kingdom",
+		"https://github.com/owner/game#readme",
+	} {
+		item := wikipediaPosterFixture()
+		item.PosterSourceURL = source
+		sanitizeGameDetails(&item)
+		if item.PosterURL != "" || item.PosterSourceURL != "" {
+			t.Errorf("mismatched article accepted: %s", source)
+		}
+	}
+	if !validWikipediaPosterSource("Link’s Awakening", "https://en.wikipedia.org/wiki/Link%27s_Awakening_(video_game)") {
+		t.Fatal("equivalent apostrophe and video game suffix should match")
+	}
+}
+
+func TestPosterRetryStateSurvivesOfflineCacheWithoutExtendingCooldown(t *testing.T) {
+	app := descriptionApp(t)
+	item := wikipediaPosterFixture()
+	item.PosterURL, item.PosterSourceURL, item.PosterKind = "", "", ""
+	item.PosterStatus, item.PosterRetryAfter = "unavailable", 300
+	item.CheckedAt = time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339)
+	if err := app.lib.saveDescriptions([]Description{item}); err != nil {
+		t.Fatal(err)
+	}
+	app.cancel()
+	reloaded, err := newLibrary(app.lib.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := newApp(reloaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.cancel()
+	restarted.aigc.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		t.Error("fresh cached text should not repeatedly query poster status")
+		return apiResponse(503, ""), nil
+	})
+	result, err := restarted.readDescriptions(context.Background(), []string{item.Repo})
+	if err != nil || len(result.Items) != 1 {
+		t.Fatal("read cached poster retry state")
+	}
+	got := result.Items[0]
+	if got.PosterStatus != "unavailable" || got.PosterRetryAfter != 300 || got.CheckedAt != item.CheckedAt || got.GameNameZh != item.GameNameZh {
+		t.Fatal("cached read erased failure state or restarted the retry timer")
+	}
+	for _, seconds := range []int{-1, 86401} {
+		invalid := item
+		invalid.PosterRetryAfter = seconds
+		sanitizeGameDetails(&invalid)
+		if invalid.PosterRetryAfter != 0 {
+			t.Fatal("unbounded poster cooldown accepted")
 		}
 	}
 }

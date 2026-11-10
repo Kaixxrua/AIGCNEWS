@@ -31,6 +31,36 @@ type credentialManager struct {
 	wake, ready, done           chan struct{}
 }
 
+// Public storage state contains no credential values or account/session IDs.
+type credentialStorageStatus struct {
+	Supported bool     `json:"supported"`
+	Remember  bool     `json:"remember"`
+	Saved     bool     `json:"saved"`
+	Pending   []string `json:"pending"`
+	Error     string   `json:"error,omitempty"`
+}
+
+func (a *App) credentialStorageStatus() credentialStorageStatus {
+	result := credentialStorageStatus{Pending: []string{}}
+	if a.credentials == nil {
+		return result
+	}
+	m := a.credentials
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result.Supported, result.Remember = m.vault.available, m.remember
+	result.Saved = m.remember && m.hasVault && !m.loadFailed && m.lastError == ""
+	result.Error = m.lastError
+	if m.remember {
+		for _, provider := range []string{"baidu", "quark"} {
+			if _, pending := m.pending[provider]; pending {
+				result.Pending = append(result.Pending, provider)
+			}
+		}
+	}
+	return result
+}
+
 func newCredentials(a *App, config AutomationConfig) *credentialManager {
 	_, err := os.Lstat(filepath.Join(a.lib.root, credentialVaultFile))
 	return &credentialManager{app: a, vault: newCredentialVault(a.lib.root), enabled: config.Enabled, remember: config.RememberCredentials,
@@ -144,7 +174,9 @@ func (m *credentialManager) persist() {
 }
 
 func (m *credentialManager) persistLocked() {
-	if m.loadFailed || !m.vault.available || !m.remember || (!m.enabled && !m.hasVault) {
+	// Remembering accounts is independent from scheduled discovery. A manual
+	// user must keep their first login even if automation has never run.
+	if m.loadFailed || !m.vault.available || !m.remember {
 		return
 	}
 	if err := m.vault.save(m.snapshotLocked()); err != nil {
@@ -231,7 +263,7 @@ func (m *credentialManager) restorePending() {
 	defer m.restoreMu.Unlock()
 	m.mu.Lock()
 	accounts := map[string]savedCloud{}
-	if m.enabled && m.remember {
+	if m.remember {
 		for id, account := range m.pending {
 			accounts[id] = account
 		}
@@ -255,7 +287,7 @@ func (m *credentialManager) restorePending() {
 		cancel()
 		m.mu.Lock()
 		pending, stillPending := m.pending[id]
-		if !stillPending || pending.Session != saved.Session || !m.enabled || !m.remember {
+		if !stillPending || pending.Session != saved.Session || !m.remember {
 			m.mu.Unlock()
 			continue
 		}
@@ -339,10 +371,10 @@ func (a *App) applyAutomationSettingsTransaction(previous, next AutomationConfig
 	if next.StartOnLogin && (!m.startSupported || m.setStart == nil) {
 		return errors.New("当前系统不支持 Windows 登录启动")
 	}
-	if next.RememberCredentials && next.Enabled && m.loadFailed {
+	if next.RememberCredentials && m.loadFailed {
 		return errors.New("已保存的登录授权无法读取，未覆盖原文件；请先关闭记住凭据以清除，再重新连接")
 	}
-	changeVault := m.vault.available && (!next.RememberCredentials || next.Enabled)
+	changeVault := m.vault.available
 	var before credentialVaultCheckpoint
 	var err error
 	if changeVault {

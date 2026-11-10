@@ -41,6 +41,8 @@ class ProjectDescriptionItem(BaseModel):
     posterSourceUrl: str | None = None
     posterKind: Literal["", "cover", "screenshot"] | None = None
     detailsVersion: Literal[1] | None = None
+    posterStatus: Literal["ready", "missing", "unavailable"] | None = None
+    posterRetryAfter: int | None = Field(default=None, ge=0)
 
 
 class ProjectDescriptionsResponse(BaseModel):

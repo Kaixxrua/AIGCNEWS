@@ -28,6 +28,8 @@ type Description struct {
 	PosterURL        string `json:"posterUrl,omitempty"`
 	PosterSourceURL  string `json:"posterSourceUrl,omitempty"`
 	PosterKind       string `json:"posterKind,omitempty"`
+	PosterStatus     string `json:"posterStatus,omitempty"`
+	PosterRetryAfter int    `json:"posterRetryAfter,omitempty"`
 	DetailsVersion   int    `json:"detailsVersion,omitempty"`
 	Source           string `json:"source"`
 	CheckedAt        string `json:"checkedAt"`

@@ -79,7 +79,7 @@ const server = http.createServer(async (req, res) => {
     });
     await page.goto(`http://127.0.0.1:${server.address().port}/#${token}`);
     await page.waitForFunction(() => document.getElementById('game-count').textContent === '5');
-    await page.waitForFunction(() => document.querySelector('#game-demo-broken')?.closest('article').querySelector('.poster-placeholder')?.textContent === '图片暂不可用');
+    await page.waitForFunction(() => document.querySelector('#game-demo-broken')?.closest('article').querySelector('.poster-placeholder')?.textContent.includes('海报暂未取得，可重试'));
     const failedImageRequests = imageRequests.filter(url => url === broken).length;
     const card = repo => page.locator('#game-' + repo.replace(/[^a-zA-Z0-9_-]/g, '-')).locator('..');
     const las = card(games[0].repo), old = card('demo/old');
