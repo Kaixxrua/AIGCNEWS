@@ -8,6 +8,7 @@ leases so an expired worker cannot overwrite a newer result.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import math
 import re
@@ -15,6 +16,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -24,6 +26,11 @@ from backend.app.services.api_access import quota
 from backend.app.services.auth.rate_limit import RATE_LIMIT_PREFIX, hit_rate_limit
 from backend.app.services.ingestion.source_github import _build_headers
 from backend.app.services.mcp.inbound.context import McpAuthorizationContext
+from backend.app.services.project_catalog.game_details import (
+    image_candidates,
+    normalize_game_details,
+    safe_repository_path,
+)
 
 READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
@@ -86,6 +93,18 @@ def _item(repo: str, status: str, **extra: Any) -> dict[str, Any]:
     return {"repo": repo, "status": status, "descriptionZh": "", "source": "aigcnews", **extra}
 
 
+def _profile(repo: str, game_details: bool) -> str:
+    return "game-v1:" + repo if game_details else repo
+
+
+def _cached(value: Any, repo: str) -> dict[str, Any]:
+    try:
+        result = json.loads(value) if value else {}
+    except (ValueError, TypeError):
+        return {}
+    return result if isinstance(result, dict) and result.get("repo") == repo else {}
+
+
 def _chinese(text: Any) -> str:
     if not isinstance(text, str):
         return ""
@@ -115,7 +134,7 @@ async def _bounded_response(client: httpx.AsyncClient, path: str, *, raw: bool =
         return bytes(body)
 
 
-async def fetch_public_repository(repo: str, *, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
+async def fetch_public_repository(repo: str, *, game_details: bool = False, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
     repo = normalize_description_repo(repo)
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(8.0, connect=4.0), follow_redirects=False,
@@ -137,7 +156,30 @@ async def fetch_public_repository(repo: str, *, transport: httpx.AsyncBaseTransp
         topics = data.get("topics")
         topics = [topic[:80] for topic in topics[:30] if isinstance(topic, str)] if isinstance(topics, list) else []
         metadata = {"full_name": repo, "description": description, "topics": topics}
-        if not description.strip():
+        if game_details:
+            branch = safe_repository_path(data.get("default_branch"))
+            metadata.update(default_branch=branch, image_candidates=[])
+            path = "/repos/" + repo + "/readme"
+            if branch:
+                path += "?ref=" + quote(branch, safe="")
+            raw_readme = await _bounded_response(client, path)
+            if raw_readme:
+                try:
+                    document = json.loads(raw_readme)
+                    if not isinstance(document, dict) or document.get("encoding") != "base64" or not isinstance(document.get("content"), str):
+                        raise ValueError("invalid README encoding")
+                    readme_path = safe_repository_path(document.get("path"))
+                    if not readme_path or document.get("type", "file") != "file":
+                        raise ValueError("invalid README path")
+                    content = base64.b64decode("".join(document["content"].split()), validate=True)
+                    if len(content) > 65536:
+                        raise ValueError("oversized README")
+                except (ValueError, UnicodeError) as exc:
+                    raise DescriptionInputUnavailable("GitHub 返回的 README 资料无效或过大。") from exc
+                text = content.decode("utf-8", errors="replace")[:12000]
+                metadata.update(readme_status="succeeded", readme_text=text, readme_path=readme_path)
+                metadata["image_candidates"] = image_candidates(repo, branch, readme_path, text)
+        elif not description.strip():
             readme = await _bounded_response(client, "/repos/" + repo + "/readme", raw=True)
             if readme:
                 metadata.update(readme_status="succeeded", readme_text=readme.decode("utf-8", errors="replace")[:12000])
@@ -177,61 +219,66 @@ async def charge_generation(redis: Any, authorization: McpAuthorizationContext) 
 class ProjectDescriptionsService:
     def __init__(
         self, describe: Callable[[dict[str, Any]], Awaitable[str]], *,
+        describe_game: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
         repository: Any = None,
-        fetch: Callable[[str], Awaitable[dict[str, Any]]] = fetch_public_repository,
+        fetch: Callable[..., Awaitable[dict[str, Any]]] = fetch_public_repository,
         clock: Callable[[], float] = time.time,
         job_seconds: float = JOB_SECONDS,
     ) -> None:
         self.repository = repository or PostgresProjectDescriptionRepository()
         self.describe = describe
+        self.describe_game = describe_game
         self.fetch = fetch
         self.clock = clock
         self.job_seconds = min(float(job_seconds), JOB_SECONDS)
 
-    async def _lookup(self, repos: list[str], redis: Any) -> tuple[list[dict[str, Any]], set[str]]:
+    async def _lookup(self, repos: list[str], redis: Any, game_details: bool = False) -> tuple[list[dict[str, Any]], set[str]]:
         if redis is None:
             raise DescriptionsUnavailable("中文简介服务暂时不可用。")
         catalog = await asyncio.wait_for(asyncio.to_thread(self.repository.lookup, repos), timeout=4)
-        values = await redis.mget([PREFIX + "cache:" + repo for repo in repos])
+        values = await redis.mget([PREFIX + "cache:" + _profile(repo, game_details) for repo in repos])
+        legacy = await redis.mget([PREFIX + "cache:" + repo for repo in repos]) if game_details else [None] * len(repos)
         items, blocked = [], set()
-        for repo, value in zip(repos, values, strict=True):
+        for repo, value, old in zip(repos, values, legacy, strict=True):
             known = catalog.get(repo, {})
             if known.get("blocked"):
                 blocked.add(repo)
                 items.append(_item(repo, "missing"))
                 continue
             description = _chinese(known.get("descriptionZh"))
-            if description:
+            if description and not game_details:
                 items.append(_item(repo, "ready", descriptionZh=description))
                 continue
-            try:
-                cached = json.loads(value) if value else {}
-            except (ValueError, TypeError):
-                cached = {}
-            if not isinstance(cached, dict) or cached.get("repo") != repo:
-                cached = {}
+            cached = _cached(value, repo)
+            if game_details and not description:
+                previous = _cached(old, repo)
+                if previous.get("status") == "ready":
+                    description = _chinese(previous.get("descriptionZh"))
             status = cached.get("status")
-            if status == "ready" and _chinese(cached.get("descriptionZh")):
-                items.append(_item(repo, "ready", descriptionZh=cached["descriptionZh"]))
+            if status == "ready" and _chinese(cached.get("descriptionZh")) and (not game_details or cached.get("detailsVersion") == 1):
+                details = {key: cached.get(key, "") for key in ("gameNameZh", "gameNameOriginal", "posterUrl", "posterSourceUrl", "posterKind")} if game_details else {}
+                if game_details:
+                    details["detailsVersion"] = 1
+                items.append(_item(repo, "ready", descriptionZh=cached["descriptionZh"], **details))
             elif status == "pending":
                 deadline = cached.get("deadline", 0)
                 if isinstance(deadline, (int, float)) and deadline > self.clock():
-                    items.append(_item(repo, "pending", retryAfter=3))
+                    items.append(_item(repo, "pending", descriptionZh=description, retryAfter=3))
                 else:
-                    items.append(_item(repo, "failed", error="生成超时，请重试。", retryAfter=0))
+                    items.append(_item(repo, "failed", descriptionZh=description, error="生成超时，请重试。", retryAfter=0))
             elif status == "failed":
                 retry_at = cached.get("retryAt", 0)
                 retry = max(0, math.ceil(retry_at - self.clock())) if isinstance(retry_at, (int, float)) else 0
-                items.append(_item(repo, "failed", error=str(cached.get("error") or "生成失败，请重试。")[:200], retryAfter=retry))
+                items.append(_item(repo, "failed", descriptionZh=description, error=str(cached.get("error") or "生成失败，请重试。")[:200], retryAfter=retry))
             else:
-                items.append(_item(repo, "missing"))
+                items.append(_item(repo, "missing", descriptionZh=description))
         return items, blocked
 
-    async def read(self, repos: list[str], *, redis: Any, client_ip: str) -> list[dict[str, Any]]:
+    async def read(self, repos: list[str], *, redis: Any, client_ip: str, game_details: bool = False) -> list[dict[str, Any]]:
         if redis is None:
             raise DescriptionsUnavailable("中文简介服务暂时不可用。")
         await hit_rate_limit(redis, action="projects.descriptions.read", identity=f"ip:{client_ip}", limit=READS_PER_MINUTE, window_seconds=60)
-        return (await self._lookup(repos, redis))[0]
+        return (await self._lookup(repos, redis, game_details))[0]
 
     async def _release(self, redis: Any, key: str, token: str) -> None:
         try:
@@ -240,24 +287,25 @@ class ProjectDescriptionsService:
             # Bounded leases expire even if Redis disappears during cleanup.
             pass
 
-    async def request(self, repo: str, *, redis: Any, authorization: McpAuthorizationContext, operations: Any) -> dict[str, Any]:
+    async def request(self, repo: str, *, redis: Any, authorization: McpAuthorizationContext, operations: Any, game_details: bool = False) -> dict[str, Any]:
         if redis is None:
             raise DescriptionsUnavailable("中文简介服务暂时不可用。")
         await hit_rate_limit(redis, action="projects.descriptions.request", identity=f"user:{authorization.user_id}", limit=POSTS_PER_MINUTE, window_seconds=60)
-        existing, blocked = await self._lookup([repo], redis)
+        existing, blocked = await self._lookup([repo], redis, game_details)
         if blocked:
             raise DescriptionNotPublic("无法读取此公开仓库。")
         item = existing[0]
         if item["status"] in {"ready", "pending"} or item.get("retryAfter", 0) > 0:
             return item
         token = secrets.token_hex(16)
-        lock_key = PREFIX + "lock:" + repo
+        profile = _profile(repo, game_details)
+        lock_key = PREFIX + "lock:" + profile
         if not await redis.set(lock_key, token, nx=True, ex=LEASE_SECONDS):
             return _item(repo, "pending", retryAfter=3)
         slot, submitted = "", False
         try:
             # Another worker may have finished between the first lookup and NX.
-            second_items, second_blocked = await self._lookup([repo], redis)
+            second_items, second_blocked = await self._lookup([repo], redis, game_details)
             if second_blocked:
                 raise DescriptionNotPublic("无法读取此公开仓库。")
             second = second_items[0]
@@ -272,11 +320,11 @@ class ProjectDescriptionsService:
                 raise DescriptionBusy()
             await charge_generation(redis, authorization)
             pending = {**_item(repo, "pending"), "token": token, "deadline": self.clock() + self.job_seconds + 5}
-            if not await redis.set(PREFIX + "cache:" + repo, json.dumps(pending), ex=READY_TTL):
+            if not await redis.set(PREFIX + "cache:" + profile, json.dumps(pending), ex=READY_TTL):
                 raise DescriptionsUnavailable("无法保存生成任务，请稍后重试。")
-            submitted = bool(operations.submit(self._generate, repo, token, slot, redis))
+            submitted = bool(operations.submit(self._generate, repo, token, slot, redis, game_details, second.get("descriptionZh", "")))
             if not submitted:
-                await self._finish(redis, repo, token, _item(repo, "failed", error="后台正在停止，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS))
+                await self._finish(redis, repo, token, _item(repo, "failed", error="后台正在停止，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS), game_details)
                 raise DescriptionsUnavailable("后台正在停止，请稍后重试。")
             return _item(repo, "pending", retryAfter=3)
         finally:
@@ -285,20 +333,31 @@ class ProjectDescriptionsService:
                 if slot:
                     await self._release(redis, slot, token)
 
-    async def _finish(self, redis: Any, repo: str, token: str, item: dict[str, Any]) -> None:
-        await redis.eval(_FINISH, 2, PREFIX + "lock:" + repo, PREFIX + "cache:" + repo, token, json.dumps(item, ensure_ascii=False), READY_TTL)
+    async def _finish(self, redis: Any, repo: str, token: str, item: dict[str, Any], game_details: bool = False) -> None:
+        profile = _profile(repo, game_details)
+        await redis.eval(_FINISH, 2, PREFIX + "lock:" + profile, PREFIX + "cache:" + profile, token, json.dumps(item, ensure_ascii=False), READY_TTL)
 
-    async def _generate(self, repo: str, token: str, slot: str, redis: Any) -> None:
-        async def generate() -> str:
-            metadata = await self.fetch(repo)
-            description = _chinese(await self.describe(metadata))
+    async def _generate(self, repo: str, token: str, slot: str, redis: Any, game_details: bool = False, previous_description: str = "") -> None:
+        async def generate() -> dict[str, Any]:
+            if game_details:
+                metadata = await self.fetch(repo, game_details=True)
+                if self.describe_game is None:
+                    raise DescriptionsUnavailable("游戏资料富化暂时不可用。")
+                data = await self.describe_game(metadata)
+                if not isinstance(data, dict) or not isinstance(data.get("description_zh"), str):
+                    raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。")
+                description = _chinese(data["description_zh"]) or _chinese(previous_description)
+                details = normalize_game_details(data, metadata)
+            else:
+                metadata = await self.fetch(repo)
+                description = _chinese(await self.describe(metadata))
+                details = {}
             if not description:
                 raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
-            return description
+            return _item(repo, "ready", descriptionZh=description, **details)
 
         try:
-            description = await asyncio.wait_for(generate(), timeout=self.job_seconds)
-            item = _item(repo, "ready", descriptionZh=description)
+            item = await asyncio.wait_for(generate(), timeout=self.job_seconds)
         except asyncio.CancelledError:
             item = _item(repo, "failed", error="生成已中断，请重试。", retryAt=self.clock() + RETRY_SECONDS)
             raise
@@ -311,7 +370,7 @@ class ProjectDescriptionsService:
             item = _item(repo, "failed", error="中文简介生成暂时失败，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS)
         finally:
             try:
-                await self._finish(redis, repo, token, item)
+                await self._finish(redis, repo, token, item, game_details)
             except Exception:
                 pass
             await self._release(redis, slot, token)

@@ -19,6 +19,7 @@ def normalize_description_repo(value: str) -> str:
 class ProjectDescriptionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     repo: str = Field(min_length=3, max_length=140, strict=True)
+    gameDetails: bool = Field(default=False, strict=True)
 
     @field_validator("repo")
     @classmethod
@@ -33,6 +34,13 @@ class ProjectDescriptionItem(BaseModel):
     source: Literal["aigcnews"] = "aigcnews"
     error: str | None = None
     retryAfter: int | None = None
+    # Opt-in fields are absent from legacy responses, including cache misses.
+    gameNameZh: str | None = None
+    gameNameOriginal: str | None = None
+    posterUrl: str | None = None
+    posterSourceUrl: str | None = None
+    posterKind: Literal["", "cover", "screenshot"] | None = None
+    detailsVersion: Literal[1] | None = None
 
 
 class ProjectDescriptionsResponse(BaseModel):

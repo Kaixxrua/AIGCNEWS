@@ -349,7 +349,7 @@ func TestCleanedDownloadSupportsDescriptionAndShareRetriesWithoutRedownloading(t
 		t.Fatalf("removed local file still offered as available: %d", w.Code)
 	}
 	a.aigc.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
-		return apiResponse(200, `{"items":[{"repo":"OpenRCT2/OpenRCT2","status":"ready","descriptionZh":"重现经典游乐园经营玩法的开源游戏。","source":"aigcnews"}]}`), nil
+		return apiResponse(200, `{"items":[{"repo":"OpenRCT2/OpenRCT2","status":"ready","descriptionZh":"重现经典游乐园经营玩法的开源游戏。","source":"aigcnews","detailsVersion":1,"gameNameZh":"过山车大亨2"}]}`), nil
 	})
 	if err := a.transfers.modify(id, func(j *TransferJob) {
 		j.Enrich, j.Description = true, ""

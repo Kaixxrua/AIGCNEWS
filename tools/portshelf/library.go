@@ -118,6 +118,7 @@ func newLibrary(root string) (*Library, error) {
 	for key, item := range l.state.Descriptions {
 		repo, err := parseRepo(item.Repo)
 		if err == nil && strings.EqualFold(key, repo) && readyDescription(item) {
+			sanitizeGameDetails(&item)
 			item.Error, item.RetryAfter = "", 0
 			descriptions[strings.ToLower(repo)] = item
 		}
@@ -285,6 +286,8 @@ func (l *Library) saveDescriptions(items []Description) error {
 			continue
 		}
 		item.Repo, item.Error, item.RetryAfter = repo, "", 0
+		sanitizeGameDetails(&item)
+		item = descriptionWithFallback(item, next.Descriptions[strings.ToLower(repo)])
 		next.Descriptions[strings.ToLower(repo)] = item
 		changed = true
 	}

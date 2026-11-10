@@ -19,6 +19,7 @@
   let automationFingerprint = "";
   let automationQueued = null;
   let automaticLibraryLoading = false;
+  const failedPosters = new Set();
 
   function readSession() {
     const hash = location.hash.slice(1);
@@ -41,7 +42,7 @@
 
   function descriptionOf(game) {
     const record = state.descriptions[repositoryKey(game.repo)];
-    const enriched = record?.status === "ready" && record.descriptionZh ? { ...game, descriptionZh: record.descriptionZh, descriptionSource: "aigcnews" } : game;
+    const enriched = record?.descriptionZh ? { ...game, descriptionZh: record.descriptionZh, descriptionSource: "aigcnews" } : game;
     try {
       const description = globalThis.PortShelfDescriptions?.describe(enriched);
       if (description && typeof description.text === "string" && description.text.trim()) {
@@ -52,6 +53,47 @@
     const original = typeof game.description === "string" ? game.description : "";
     if (/[\u3400-\u9fff]/.test(original)) return { text: original, source: "upstream", original: "" };
     return { text: "中文简介待补充，可查看上游项目了解游戏内容。", source: "unknown", original };
+  }
+
+  function identityOf(game) { return globalThis.PortShelfDescriptions.identity(game, state.descriptions[repositoryKey(game.repo)]); }
+
+  function identitySubtitle(game) {
+    const identity = identityOf(game);
+    return (identity.pending ? "中文名待确认 · " : "") + identity.secondary;
+  }
+
+  function posterFor(game, variant = "card") {
+    const record = state.descriptions[repositoryKey(game.repo)] || game;
+    const url = globalThis.PortShelfDescriptions.imageURL(record.posterUrl);
+    const source = globalThis.PortShelfDescriptions.imageURL(record.posterSourceUrl, true);
+    const figure = element("figure", "game-poster " + variant + "-poster");
+    const fallback = element("div", "poster-placeholder", url && failedPosters.has(url) ? "图片暂不可用" : "海报待补充");
+    const kind = record.posterKind === "screenshot" ? "游戏画面" : "游戏海报";
+    const caption = element("figcaption", "poster-caption");
+    caption.append(element("span", "", kind));
+    if (source) {
+      const link = element("a", "", "图片来源 ↗"); link.href = source; link.target = "_blank"; link.rel = "noopener noreferrer";
+      caption.append(link);
+    }
+    if (url && !failedPosters.has(url)) {
+      const image = element("img");
+      image.alt = identityOf(game).title + " · " + kind;
+      image.loading = "lazy"; image.decoding = "async"; image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => {
+        failedPosters.add(url);
+        fallback.textContent = "图片暂不可用";
+        image.replaceWith(fallback);
+        figure.dataset.state = "failed";
+      }, { once: true });
+      image.src = url;
+      figure.append(image, caption);
+      figure.dataset.state = "available";
+    } else {
+      figure.append(fallback);
+      if (url && source) figure.append(caption);
+      figure.dataset.state = url ? "failed" : "missing";
+    }
+    return figure;
   }
 
   function descriptionSource(description) {
@@ -95,8 +137,7 @@
 
   function needsDescription(game) {
     const record = state.descriptions[repositoryKey(game.repo)];
-    if (record?.status === "ready" && record.descriptionZh) return false;
-    return descriptionOf(game).source === "unknown";
+    return globalThis.PortShelfDescriptions.needsDetails(game, record);
   }
 
   function descriptionControl(game, compact = false) {
@@ -106,11 +147,11 @@
     const pending = record?.status === "pending";
     const requesting = state.descriptionRequests.has(key);
     const wrapper = element("span", "description-control" + (compact ? " compact" : ""));
-    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : record?.status === "failed" ? "重试中文简介" : "生成中文简介");
+    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : record?.status === "failed" ? "重试游戏资料" : descriptionOf(game).source !== "unknown" ? "补全中文名与海报" : "生成中文游戏资料");
     button.type = "button";
     button.dataset.descriptionRepo = key;
     button.disabled = requesting || Boolean(state.descriptionBatch?.running);
-    if (pending) wrapper.append(element("span", "description-pending", "中文简介生成中"));
+    if (pending) wrapper.append(element("span", "description-pending", "游戏资料生成中"));
     button.addEventListener("click", () => {
       if (state.descriptionRequests.has(key) || state.descriptionBatch?.running) return;
       if (pending) { queueDescriptionRead([game.repo], true); return; }
@@ -147,13 +188,8 @@
       if (!item || !repoURL(item.repo) || !["ready", "pending", "missing", "failed"].includes(item.status)) continue;
       const key = repositoryKey(item.repo);
       const previous = state.descriptions[key];
-      if (previous?.status === "ready" && previous.descriptionZh && item.status !== "ready") {
-        if (item.error) state.descriptions[key] = { ...previous, error: String(item.error) };
-        continue;
-      }
-      if (previous?.status === "pending" && item.status === "missing") continue;
-      state.descriptions[key] = { ...item, descriptionZh: typeof item.descriptionZh === "string" ? item.descriptionZh : "", error: typeof item.error === "string" ? item.error : "" };
-      if (item.status === "pending") {
+      state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(previous, item);
+      if (state.descriptions[key].status === "pending") {
         if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
       } else state.descriptionPollTargets.delete(key);
     }
@@ -230,7 +266,7 @@
       if (!record || record.status === "missing") throw new Error("服务未确认中文简介任务，请稍后重试。");
       return record;
     } catch (error) {
-      if (!state.stopped && state.descriptions[key]?.status !== "ready") state.descriptions[key] = { repo: game.repo, status: "failed", error: descriptionError(error) };
+      if (!state.stopped) state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(state.descriptions[key], { repo: game.repo, status: "failed", error: descriptionError(error) });
       throw error;
     } finally {
       state.descriptionRequests.delete(key);
@@ -248,7 +284,7 @@
       const record = await requestDescription(game);
       if (state.stopped) return;
       if (record.status === "failed") { descriptionNotice(record.error || "中文简介生成未完成，可稍后重试。"); notify(record.error || "中文简介生成未完成，可稍后重试。", true); }
-      else { descriptionNotice(""); notify(record.status === "ready" ? "AIGCNEWS 中文简介已更新。" : "已提交中文简介生成，完成后会自动显示。"); }
+      else { descriptionNotice(""); notify(record.status === "ready" ? "中文名、海报与简介已核对更新。" : "已提交游戏资料生成，完成后会自动显示。"); }
     } catch (error) { descriptionNotice(descriptionError(error)); notify(descriptionError(error), true); }
   }
 
@@ -256,8 +292,8 @@
     const batch = state.descriptionBatch;
     $("description-progress-panel").hidden = !batch;
     if (!batch) return;
-    $("description-progress-label").textContent = (batch.running ? batch.stopRequested ? "等待当前提交结束" : "正在补全中文简介" : batch.stopRequested ? "已停止提交" : batch.interrupted ? "中文简介提交已中断" : "中文简介提交完成") + " · 已处理 " + batch.done + " / " + batch.total + " · 已接受 " + batch.accepted + " · 失败 " + batch.failed;
-    $("description-progress-note").textContent = batch.note || "已有中文或正在生成的项目自动跳过。生成由 AIGCNEWS 完成，列表会自动核对进度。";
+    $("description-progress-label").textContent = (batch.running ? batch.stopRequested ? "等待当前提交结束" : "正在补全游戏资料" : batch.stopRequested ? "已停止提交" : batch.interrupted ? "游戏资料提交已中断" : "游戏资料提交完成") + " · 已处理 " + batch.done + " / " + batch.total + " · 已接受 " + batch.accepted + " · 失败 " + batch.failed;
+    $("description-progress-note").textContent = batch.note || "已核对新版资料或正在生成的项目自动跳过；旧简介会保留，同时补全中文名与海报。";
     $("descriptions-stop").hidden = !batch.running;
     $("descriptions-stop").disabled = batch.stopRequested;
   }
@@ -286,14 +322,16 @@
     }
   }
 
-  async function fillDescriptions() {
-    if (state.descriptionBatch?.running || state.batch?.running || state.searchBusy || state.descriptionRequests.size || !state.searchResults.length || state.stopped) return;
+  async function fillDescriptions(scope = "discover") {
+    const games = scope === "library" ? filteredGames() : state.searchResults;
+    if (state.descriptionBatch?.running || state.batch?.running || state.searchBusy || state.descriptionRequests.size || !games.length || state.stopped) return;
     if (!state.hasAigcToken) { openAigcSettings(); return; }
-    const pending = state.searchResults.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending");
+    const pending = games.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending");
     const batch = { running: true, stopRequested: false, interrupted: false, waiting: null, total: pending.length, done: 0, accepted: 0, failed: 0, note: "" };
     state.descriptionBatch = batch;
     descriptionNotice("");
     syncDiscoveryControls();
+    $("description-progress-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
     try {
       for (const game of pending) {
         if (batch.stopRequested || state.stopped) break;
@@ -559,7 +597,7 @@
     card.setAttribute("aria-labelledby", id);
     const top = element("div", "card-top");
     top.append(mark(game), stars(game));
-    const title = element("h3", "card-title", game.name || game.repo);
+    const title = element("h3", "card-title", identityOf(game).title);
     title.id = id;
     const tags = element("div", "card-tags");
     tags.append(tag(game.category || "其他项目"), availability(game));
@@ -570,13 +608,13 @@
     if (descriptionAction) tags.append(descriptionAction);
     const bottom = element("div", "card-bottom");
     const download = element("button", "button button-subtle button-small", "查看下载 ↗");
-    download.setAttribute("aria-label", "查看 " + (game.name || game.repo) + " 的下载");
+    download.setAttribute("aria-label", "查看 " + identityOf(game).title + " 的下载");
     download.addEventListener("click", () => openDetails(game));
     bottom.append(externalLink("GitHub ↗", repoURL(game.repo), "repository-link"), download);
     const record = snapshot(game);
     let checked = record?.starsCheckedAt ? "Stars 核对于 " + date(record.starsCheckedAt) : "Stars 尚未核对";
     if (record?.error && record?.starsCheckedAt) checked += " · 暂用缓存";
-    card.append(top, title, element("p", "card-subtitle", game.subtitle || game.repo), element("p", "card-description", description.text), tags, bottom, element("div", "card-checked", checked));
+    card.append(top, posterFor(game), title, element("p", "card-subtitle", identitySubtitle(game)), element("p", "card-description", description.text), tags, bottom, element("div", "card-checked", checked));
     return card;
   }
 
@@ -589,12 +627,12 @@
         const value = starValue(game);
         if (value === null || (state.minStars !== null && value < state.minStars) || (state.maxStars !== null && value > state.maxStars)) return false;
       }
-      return !query || [game.name, game.subtitle, descriptionOf(game).text, game.description, game.repo, game.category].some((value) => String(value || "").toLocaleLowerCase().includes(query));
+      return !query || [identityOf(game).title, identityOf(game).secondary, game.name, game.subtitle, descriptionOf(game).text, game.description, game.repo, game.category].some((value) => String(value || "").toLocaleLowerCase().includes(query));
     });
     games.sort((a, b) => {
       if (state.sort === "stars") return (starValue(b) ?? -1) - (starValue(a) ?? -1) || String(a.name).localeCompare(String(b.name));
       if (state.sort === "updated") return timestamp(snapshot(b)?.pushedAt) - timestamp(snapshot(a)?.pushedAt) || String(a.name).localeCompare(String(b.name));
-      return String(a.name || a.repo).localeCompare(String(b.name || b.repo));
+      return identityOf(a).title.localeCompare(identityOf(b).title, "zh-CN");
     });
     return games;
   }
@@ -610,6 +648,7 @@
     $("results-title").textContent = state.category === "all" ? "全部游戏" : state.category;
     $("result-count").textContent = query || state.category !== "all" || hasStarRange ? "找到 " + games.length + " 款 / 共 " + state.games.length + " 款" : "共 " + games.length + " 款游戏";
     transferUI?.updateLibrary();
+    syncLibraryDescriptions();
   }
 
   async function loadLibrary() {
@@ -793,13 +832,13 @@
     const record = snapshot(game);
     const header = element("div", "detail-header");
     const heading = element("div");
-    const title = element("h2", "", game.name || game.repo);
+    const title = element("h2", "", identityOf(game).title);
     title.id = "detail-title";
-    heading.append(title, element("p", "detail-subtitle", game.subtitle || game.category || "开源项目"), externalLink(game.repo + " ↗", repoURL(game.repo), "detail-repo"));
+    heading.append(title, element("p", "detail-subtitle", identitySubtitle(game)), externalLink(game.repo + " ↗", repoURL(game.repo), "detail-repo"));
     header.append(mark(game), heading);
     const meta = element("div", "detail-meta");
     meta.append(stars(game), element("span", "", game.category || "其他项目"), element("span", "", "项目更新 " + date(record?.pushedAt)));
-    container.append(header, ...descriptionNodes(game, "detail-description", true), meta);
+    container.append(header, posterFor(game, "detail"), ...descriptionNodes(game, "detail-description", true), meta);
     container.append(element("p", "systems-info", globalThis.PortShelfTransfers.systemsLabel(record?.release?.supportedSystems)));
     if (originalOpen && container.querySelector(".original-description")) container.querySelector(".original-description").open = true;
     if (game.dataNote) {
@@ -896,8 +935,8 @@
       row.dataset.repository = repositoryKey(game.repo);
       const info = element("div", "search-result-info");
       const heading = element("h3");
-      heading.append(externalLink(game.name || game.repo, repoURL(game.repo)));
-      info.append(heading, element("div", "repo-path", game.repo), ...descriptionNodes(game, "search-description", true));
+      heading.append(externalLink(identityOf(game).title, repoURL(game.repo)));
+      info.append(heading, element("div", "repo-path", identitySubtitle(game)), ...descriptionNodes(game, "search-description", true));
       info.append(element("p", "systems-info", "支持系统待核实"));
       if (expanded.has(repositoryKey(game.repo)) && info.querySelector("details")) info.querySelector("details").open = true;
       const actions = element("div", "search-result-actions");
@@ -924,7 +963,7 @@
         finally { state.singleAdds.delete(key); syncDiscoveryControls(); }
       });
       actions.append(button);
-      row.append(mark(game), info, actions);
+      row.append(posterFor(game, "search"), info, actions);
       $("discover-results").append(row);
     });
     syncDiscoveryControls();
@@ -953,7 +992,8 @@
     const missingDescriptions = state.searchResults.filter((game) => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending").length;
     const pendingDescriptions = state.searchResults.some((game) => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
     $("descriptions-fill").disabled = state.searchBusy || discoveryLocked || state.descriptionRequests.size > 0 || missingDescriptions === 0;
-    $("descriptions-fill").textContent = descriptionRunning ? "正在补全中文简介…" : missingDescriptions === 0 ? pendingDescriptions ? "中文简介生成中" : "当前中文简介已齐全" : "补全当前中文简介";
+    $("descriptions-fill").textContent = descriptionRunning ? "正在补全游戏资料…" : missingDescriptions === 0 ? pendingDescriptions ? "游戏资料生成中" : "当前游戏资料已核对" : "补全中文名、海报与简介";
+    syncLibraryDescriptions();
     $("discover-results").querySelectorAll("[data-result-repo]").forEach((button) => {
       const added = known.has(button.dataset.resultRepo);
       const adding = state.singleAdds.has(button.dataset.resultRepo);
@@ -986,6 +1026,15 @@
     $("discover-limit-notice").hidden = warnings.length === 0;
     renderBatchProgress();
     renderDescriptionProgress();
+  }
+
+  function syncLibraryDescriptions() {
+    const games = filteredGames();
+    const missing = games.filter(game => needsDescription(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending").length;
+    const pending = games.some(game => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
+    const running = Boolean(state.descriptionBatch?.running);
+    $("library-descriptions-fill").disabled = running || Boolean(state.batch?.running) || state.descriptionRequests.size > 0 || missing === 0;
+    $("library-descriptions-fill").textContent = running ? "正在补全游戏资料…" : missing ? "补全当前中文名与海报（" + missing + "）" : pending ? "游戏资料生成中" : "当前游戏资料已核对";
   }
 
   async function loadDiscoveryPage() {
@@ -1168,7 +1217,8 @@
     $("discover-form").addEventListener("submit", searchGitHub);
     $("discover-more").addEventListener("click", loadDiscoveryPage);
     $("batch-add").addEventListener("click", addCurrentResults);
-    $("descriptions-fill").addEventListener("click", fillDescriptions);
+    $("descriptions-fill").addEventListener("click", () => fillDescriptions("discover"));
+    $("library-descriptions-fill").addEventListener("click", () => fillDescriptions("library"));
     $("descriptions-stop").addEventListener("click", () => {
       if (!state.descriptionBatch?.running) return;
       state.descriptionBatch.stopRequested = true;
@@ -1262,7 +1312,7 @@
 
   async function start() {
     readSession(); setupEvents();
-    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, notify });
+    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, notify });
     automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {

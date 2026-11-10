@@ -90,6 +90,8 @@ func (s *automationIntegrationSources) install(t *testing.T, a *App) {
 				t.Error("scheduler did not use Stars discovery")
 			}
 			return apiResponse(200, `{"total_count":1,"incomplete_results":false,"items":[{"full_name":"integration/port-game","name":"Port Game","description":"A source port of a classic game","topics":["game","source-port"],"stargazers_count":11,"private":false}]}`), nil
+		case "/repos/" + repo + "/git/ref/tags/v1":
+			return apiResponse(200, testTagResponse("v1")), nil
 		case "/repos/" + repo + "/releases/latest":
 			s.releases.Add(1)
 			return apiResponse(200, string(encodedRelease)), nil
@@ -99,6 +101,12 @@ func (s *automationIntegrationSources) install(t *testing.T, a *App) {
 		}
 	})
 	a.transfers.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "codeload.github.com" {
+			archive := testSourceZIP(t, repo)
+			response := apiResponse(200, string(archive))
+			response.ContentLength = int64(len(archive))
+			return response, nil
+		}
 		s.downloads.Add(1)
 		if r.URL.String() != release.Assets[0].URL || r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 			t.Error("download was not the pinned official asset or leaked credentials")
@@ -125,7 +133,7 @@ func (s *automationIntegrationSources) install(t *testing.T, a *App) {
 		if r.Method != http.MethodGet || r.URL.Query().Get("repos") != repo {
 			t.Error("unexpected Chinese description request")
 		}
-		return apiResponse(200, `{"items":[{"repo":"integration/port-game","status":"ready","descriptionZh":"经典平台动作游戏的开源移植，保留原作关卡与玩法。","source":"aigcnews"}]}`), nil
+		return apiResponse(200, `{"items":[{"repo":"integration/port-game","status":"ready","descriptionZh":"经典平台动作游戏的开源移植，保留原作关卡与玩法。","source":"aigcnews","detailsVersion":1,"gameNameZh":"测试平台游戏"}]}`), nil
 	})
 }
 

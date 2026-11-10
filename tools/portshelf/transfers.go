@@ -30,6 +30,7 @@ type TransferRequest struct {
 
 type TransferOutput struct {
 	Status         string     `json:"status"`
+	PayloadSHA256  string     `json:"payloadSha256,omitempty"`
 	NeedsAttention bool       `json:"needsAttention,omitempty"`
 	File           CloudFile  `json:"file"`
 	Share          CloudShare `json:"share"`
@@ -47,6 +48,12 @@ type TransferJob struct {
 	ID                  string                    `json:"id"`
 	Repo                string                    `json:"repo"`
 	Name                string                    `json:"name"`
+	GameNameZh          string                    `json:"gameNameZh,omitempty"`
+	GameNameOriginal    string                    `json:"gameNameOriginal,omitempty"`
+	PosterURL           string                    `json:"posterUrl,omitempty"`
+	PosterSourceURL     string                    `json:"posterSourceUrl,omitempty"`
+	PosterKind          string                    `json:"posterKind,omitempty"`
+	DetailsVersion      int                       `json:"detailsVersion,omitempty"`
 	Version             string                    `json:"version"`
 	Arch                string                    `json:"arch"`
 	Providers           []string                  `json:"providers"`
@@ -62,6 +69,18 @@ type TransferJob struct {
 	LocalCleanupPending bool                      `json:"localCleanupPending,omitempty"`
 	LocalCleanupError   string                    `json:"localCleanupError,omitempty"`
 	SHA256              string                    `json:"sha256"`
+	SourceCommit        string                    `json:"sourceCommit,omitempty"`
+	SourceURL           string                    `json:"sourceUrl,omitempty"`
+	SourcePath          string                    `json:"sourcePath,omitempty"`
+	SourceSHA256        string                    `json:"sourceSha256,omitempty"`
+	SourceSize          int64                     `json:"sourceSize,omitempty"`
+	BundleVersion       int                       `json:"bundleVersion,omitempty"`
+	BundlePath          string                    `json:"bundlePath,omitempty"`
+	BundleSHA256        string                    `json:"bundleSha256,omitempty"`
+	BundleSize          int64                     `json:"bundleSize,omitempty"`
+	LocalCleanupIntents map[string]string         `json:"localCleanupIntents,omitempty"`
+	LocalRemovedFiles   map[string]string         `json:"localRemovedFiles,omitempty"`
+	LegacyOutputs       map[string]TransferOutput `json:"legacyOutputs,omitempty"`
 	Description         string                    `json:"description"`
 	DataNote            string                    `json:"dataNote"`
 	Guide               string                    `json:"guide"`
@@ -125,9 +144,25 @@ func newTransferManager(a *App) (*transferManager, error) {
 			if job.DownloadPath != "" && !m.ownedDownloadPath(job.DownloadPath) {
 				return nil, errors.New("下载任务中的文件路径不属于下载目录")
 			}
-			for id, output := range job.Outputs {
-				if !validDrive(id) || (output.Share.URL != "" && !validCloudShare(id, output.Share.URL)) {
-					return nil, errors.New("下载任务中的网盘分享地址无效")
+			for _, localPath := range []string{job.SourcePath, job.BundlePath} {
+				if localPath != "" && !m.ownedDownloadPath(localPath) {
+					return nil, errors.New("源码或分享包路径不属于下载目录")
+				}
+			}
+			if job.SourceCommit != "" && !commitPattern.MatchString(job.SourceCommit) {
+				return nil, errors.New("下载任务中的源码提交无效")
+			}
+			if job.SourceURL != "" && job.SourceURL != sourceArchiveURL(job.Repo, job.SourceCommit) {
+				return nil, errors.New("下载任务中的源码来源无效")
+			}
+			if job.BundleVersion < 0 || job.BundleVersion > sourceBundleVersion {
+				return nil, errors.New("此分享包版本暂不支持，请升级工具")
+			}
+			for _, outputs := range []map[string]TransferOutput{job.Outputs, job.LegacyOutputs} {
+				for id, output := range outputs {
+					if !validDrive(id) || (output.Share.URL != "" && !validCloudShare(id, output.Share.URL)) {
+						return nil, errors.New("下载任务中的网盘分享地址无效")
+					}
 				}
 			}
 			if job.Outputs == nil {
@@ -329,6 +364,9 @@ func (m *transferManager) enqueueRelease(request TransferRequest, pinned *Releas
 			Providers: providers, ShareOptions: ShareOptions{Days: request.ShareDays, Code: request.ShareCode, Private: private},
 			Enrich: request.Enrich, Status: "queued", Stage: "release", Description: description, DataNote: game.DataNote, Guide: game.Guide,
 			Stars: stars, Warnings: []string{}, Outputs: map[string]TransferOutput{}, CreatedAt: now, UpdatedAt: now}
+		if item, ok := state.Descriptions[strings.ToLower(repo)]; ok && readyDescription(item) {
+			applyTransferDetails(&candidate, item)
+		}
 		if pinned != nil {
 			release, err := prepareRelease(game.Repo, *pinned, request.Arch)
 			if err != nil {
@@ -556,16 +594,22 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 			}
 			j.DownloadPath, j.SHA256 = path, digest
 			j.LocalDeletedAt, j.LocalCleanupError, j.LocalCleanupPending = "", "", false
+			j.LocalCleanupIntents, j.LocalRemovedFiles = nil, nil
 		}, true); err != nil {
 			return err
 		}
 	}
 	job, _ = m.job(id)
-	if job.Enrich && job.Description == "" {
+	if job.Enrich && !readyTransferDetails(job) {
 		if err := m.enrich(ctx, job); err != nil {
 			return err
 		}
 	}
+	if err := m.prepareSourceBundle(ctx, id); err != nil {
+		return err
+	}
+	job, _ = m.job(id)
+	path, payloadDigest := transferPayload(job)
 	waiting, failed := false, false
 	for _, provider := range job.Providers {
 		if ctx.Err() != nil {
@@ -573,12 +617,15 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		}
 		job, _ = m.job(id)
 		output := job.Outputs[provider]
+		if output.PayloadSHA256 != payloadDigest {
+			output = TransferOutput{}
+		}
 		account, configured := m.app.cloud.get(provider)
 		if job.Automatic && output.NeedsAttention && (!configured || output.Session == account.session) {
 			failed = true
 			continue
 		}
-		if (configured && output.Session == account.session || !configured && job.LocalDeletedAt != "") && output.Status == "done" && usableCloudShare(provider, output.Share) {
+		if (configured && output.Session == account.session || !configured && localFilesWereCleaned(job)) && output.Status == "done" && usableCloudShare(provider, output.Share) {
 			continue
 		}
 		if configured && output.Session != account.session {
@@ -594,10 +641,13 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 				return err
 			}
 			if output.File.ID == "" || output.Session != account.session {
-				output.Session = account.session
+				output.Session, output.PayloadSHA256 = account.session, payloadDigest
 				output.NeedsAttention = false
 				remoteName := transferRemoteName(job)
 				file, uploadErr := account.drive.Upload(ctx, path, remoteName, m.progress(id))
+				if uploadErr == nil && !m.verifyManaged(ctx, path, payloadDigest, job.BundleSize) {
+					uploadErr = errors.New("上传期间分享包发生变化，请重新核对；本地文件会保留")
+				}
 				if uploadErr != nil {
 					output.Status, output.Error, output.NeedsAttention = "failed", uploadErr.Error(), manualActionRequired(uploadErr.Error())
 				} else {
@@ -662,10 +712,15 @@ func (m *transferManager) reuseCompleted(job *TransferJob) error {
 		}
 		job.DownloadPath, job.SHA256 = previous.DownloadPath, previous.SHA256
 		job.LocalDeletedAt = previous.LocalDeletedAt
+		if len(job.Providers) > 0 && hasSourceBundle(previous) {
+			job.SourceCommit, job.SourceURL, job.SourcePath, job.SourceSHA256, job.SourceSize = previous.SourceCommit, sourceArchiveURL(job.Repo, previous.SourceCommit), previous.SourcePath, previous.SourceSHA256, previous.SourceSize
+			job.LocalRemovedFiles = previous.LocalRemovedFiles
+			job.BundleVersion, job.BundlePath, job.BundleSHA256, job.BundleSize = previous.BundleVersion, previous.BundlePath, previous.BundleSHA256, previous.BundleSize
+		}
 		for _, provider := range job.Providers {
 			output := previous.Outputs[provider]
 			account, configured := m.app.cloud.get(provider)
-			if !configured || output.Session != account.session {
+			if !hasSourceBundle(previous) || output.PayloadSHA256 != previous.BundleSHA256 || !configured || output.Session != account.session {
 				continue
 			}
 			if previous.ShareOptions == job.ShareOptions && output.Status == "done" && usableCloudShare(provider, output.Share) {
@@ -681,6 +736,9 @@ func (m *transferManager) reuseCompleted(job *TransferJob) error {
 		return m.modify(job.ID, func(j *TransferJob) {
 			j.DownloadPath, j.SHA256, j.Outputs = job.DownloadPath, job.SHA256, job.Outputs
 			j.LocalDeletedAt = job.LocalDeletedAt
+			j.LocalRemovedFiles = job.LocalRemovedFiles
+			j.SourceCommit, j.SourceURL, j.SourcePath, j.SourceSHA256, j.SourceSize = job.SourceCommit, job.SourceURL, job.SourcePath, job.SourceSHA256, job.SourceSize
+			j.BundleVersion, j.BundlePath, j.BundleSHA256, j.BundleSize = job.BundleVersion, job.BundlePath, job.BundleSHA256, job.BundleSize
 		}, true)
 	}
 	return nil
@@ -693,7 +751,7 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	descriptionCtx, cancel := context.WithTimeout(ctx, 100*time.Second)
 	defer cancel()
 	result, err := m.app.aigc.get(descriptionCtx, []string{job.Repo})
-	if err == nil && (len(result.Items) == 0 || !readyDescription(result.Items[0])) && m.app.aigc.hasToken() {
+	if err == nil && (len(result.Items) == 0 || !readyGameDetails(result.Items[0])) && m.app.aigc.hasToken() {
 		result, _, err = m.app.aigc.generate(descriptionCtx, job.Repo)
 	}
 	for err == nil && len(result.Items) > 0 && result.Items[0].Status == "pending" {
@@ -714,7 +772,16 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	if err == nil && len(result.Items) > 0 && readyDescription(result.Items[0]) {
 		item := result.Items[0]
 		_ = m.app.lib.saveDescriptions([]Description{item})
-		return m.modify(job.ID, func(j *TransferJob) { j.Description = item.DescriptionZh; j.Warnings = []string{} }, true)
+		if cached, ok := m.app.lib.snapshot().Descriptions[strings.ToLower(job.Repo)]; ok && readyGameDetails(cached) {
+			item = cached
+		}
+		return m.modify(job.ID, func(j *TransferJob) {
+			applyTransferDetails(j, item)
+			j.Warnings = []string{}
+			if !readyTransferDetails(*j) {
+				j.Warnings = []string{"中文简介已保留，中文游戏名与海报资料待补充"}
+			}
+		}, true)
 	}
 	message := "中文简介待补充，请设置 AIGCNEWS Token 后重试；文件传输会继续"
 	if err != nil {
@@ -723,4 +790,19 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	return m.modify(job.ID, func(j *TransferJob) {
 		j.Warnings = append([]string{}, message)
 	}, true)
+}
+
+func applyTransferDetails(job *TransferJob, item Description) {
+	sanitizeGameDetails(&item)
+	job.Description = item.DescriptionZh
+	if item.DetailsVersion != gameDetailsVersion && job.DetailsVersion == gameDetailsVersion {
+		return
+	}
+	job.GameNameZh, job.GameNameOriginal = item.GameNameZh, item.GameNameOriginal
+	job.PosterURL, job.PosterSourceURL, job.PosterKind = item.PosterURL, item.PosterSourceURL, item.PosterKind
+	job.DetailsVersion = item.DetailsVersion
+}
+
+func readyTransferDetails(job TransferJob) bool {
+	return job.Description != "" && job.DetailsVersion == gameDetailsVersion
 }

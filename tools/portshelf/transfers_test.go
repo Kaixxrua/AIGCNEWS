@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,6 +27,8 @@ type fakeCloudDrive struct {
 	shareFails int
 	checkError error
 	content    string
+	uploaded   []byte
+	remoteName string
 }
 
 func (d *fakeCloudDrive) Check(context.Context) (string, error) {
@@ -40,9 +44,10 @@ func (d *fakeCloudDrive) Upload(ctx context.Context, path, remote string, progre
 	if err != nil {
 		return CloudFile{}, err
 	}
-	if string(data) != d.content || !validDownloadName(remote) {
+	if !validDownloadName(remote) || validateTestBundle(data, d.content) != nil {
 		return CloudFile{}, errors.New("wrong uploaded bytes/name")
 	}
+	d.uploaded, d.remoteName = append([]byte{}, data...), remote
 	d.uploads++
 	progress(int64(len(data)), int64(len(data)))
 	return CloudFile{ID: d.id + "-file", Name: remote, Path: "/PortShelf/" + remote}, nil
@@ -78,6 +83,9 @@ func prepareTransferApp(t *testing.T) (*App, *atomic.Int64, string) {
 			URL: "https://github.com/OpenRCT2/OpenRCT2/releases/download/v1.0/game-windows-x64.zip", Digest: "sha256:" + digest}}}
 	body, _ := json.Marshal(release)
 	a.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.Contains(r.URL.Path, "/git/ref/tags/") {
+			return apiResponse(200, testTagResponse("v1.0")), nil
+		}
 		if !strings.HasSuffix(r.URL.Path, "/releases/latest") {
 			t.Errorf("unexpected API request: %s", r.URL.Path)
 		}
@@ -85,6 +93,15 @@ func prepareTransferApp(t *testing.T) (*App, *atomic.Int64, string) {
 	})
 	calls := &atomic.Int64{}
 	a.transfers.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host == "codeload.github.com" {
+			if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
+				t.Error("credential attached to source archive")
+			}
+			archive := testSourceZIP(t, "OpenRCT2/OpenRCT2")
+			response := apiResponse(200, string(archive))
+			response.ContentLength = int64(len(archive))
+			return response, nil
+		}
 		calls.Add(1)
 		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 			t.Error("credential attached to public download")
@@ -537,4 +554,68 @@ func TestTransferFailedPinnedTaskCanBeReplaced(t *testing.T) {
 	if replacement.DownloadPath == first.DownloadPath {
 		t.Fatal("replacement overwrote existing file")
 	}
+}
+
+const testSourceCommit = "0123456789abcdef0123456789abcdef01234567"
+
+func testTagResponse(tag string) string {
+	encoded, _ := json.Marshal(map[string]any{"ref": "refs/tags/" + tag, "object": map[string]string{"type": "commit", "sha": testSourceCommit}})
+	return string(encoded)
+}
+
+func testSourceZIP(t *testing.T, repo string) []byte {
+	t.Helper()
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	root := strings.Split(repo, "/")[1] + "-" + testSourceCommit + "/"
+	for _, item := range []struct{ name, value string }{{"LICENSE", "Original upstream license. Preserve exactly.\n"}, {"README.md", "Build this source using the upstream instructions.\n"}, {"src/game.c", "int main() { return 0; }\n"}} {
+		file, err := writer.Create(root + item.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write([]byte(item.value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func validateTestBundle(data []byte, binary string) error {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	foundBinary, foundSource, foundManifest, foundReadme := false, false, false, false
+	for _, file := range reader.File {
+		f, err := file.Open()
+		if err != nil {
+			return err
+		}
+		content, err := io.ReadAll(f)
+		f.Close()
+		if err != nil {
+			return err
+		}
+		switch {
+		case strings.HasPrefix(file.Name, "game/"):
+			foundBinary = string(content) == binary
+		case strings.HasPrefix(file.Name, "source/"):
+			source, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+			if err != nil {
+				return err
+			}
+			foundSource = len(source.File) >= 3
+		case file.Name == "manifest.json":
+			foundManifest = strings.Contains(string(content), testSourceCommit)
+		case file.Name == "使用说明.txt":
+			foundReadme = strings.Contains(string(content), "源码")
+		}
+	}
+	if !foundBinary || !foundSource || !foundManifest || !foundReadme {
+		return errors.New("source bundle incomplete or altered original asset")
+	}
+	return nil
 }

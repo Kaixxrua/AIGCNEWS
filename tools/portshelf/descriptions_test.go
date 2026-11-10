@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -16,7 +17,7 @@ import (
 )
 
 func readyFixture(repo string) Description {
-	return Description{Repo: repo, Status: "ready", DescriptionZh: "这是一款经典游戏的开源移植，支持现代电脑。", Source: "aigcnews", CheckedAt: time.Now().UTC().Format(time.RFC3339)}
+	return Description{Repo: repo, Status: "ready", DescriptionZh: "这是一款经典游戏的开源移植，支持现代电脑。", DetailsVersion: gameDetailsVersion, Source: "aigcnews", CheckedAt: time.Now().UTC().Format(time.RFC3339)}
 }
 func descriptionApp(t *testing.T) *App {
 	t.Helper()
@@ -69,14 +70,15 @@ func TestAIGCTokenIsolationAndAnonymousReads(t *testing.T) {
 		}
 		if r.Method == "GET" {
 			gets++
-			if r.Header.Get("Authorization") != "" || r.URL.Query().Get("repos") != "owner/game" {
+			if r.Header.Get("Authorization") != "" || r.URL.Query().Get("repos") != "owner/game" || r.URL.Query().Get("gameDetails") != "true" {
 				t.Error("readonly request leaked token or altered repo")
 			}
 		}
 		if r.Method == "POST" {
 			posts++
 			body, _ := io.ReadAll(r.Body)
-			if r.Header.Get("Authorization") != "Bearer "+aigcSecret || string(body) != `{"repo":"owner/game"}` {
+			var payload map[string]any
+			if json.Unmarshal(body, &payload) != nil || r.Header.Get("Authorization") != "Bearer "+aigcSecret || payload["repo"] != "owner/game" || payload["gameDetails"] != true || len(payload) != 2 {
 				t.Errorf("generation used incorrect credentials or input: %s", body)
 			}
 		}

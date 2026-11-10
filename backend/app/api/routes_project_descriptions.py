@@ -42,7 +42,7 @@ async def _description_request(request: Request) -> ProjectDescriptionRequest:
     try:
         return ProjectDescriptionRequest.model_validate(json.loads(body))
     except (ValueError, ValidationError, UnicodeError) as exc:
-        raise HTTPException(422, "请求须为仅包含有效 repo 字段的 JSON 对象。") from exc
+        raise HTTPException(422, "请求须包含有效 repo，可选 gameDetails 布尔字段。") from exc
 
 
 def _error_response(exc: Exception) -> JSONResponse:
@@ -69,6 +69,7 @@ def _error_response(exc: Exception) -> JSONResponse:
 async def read_project_descriptions(
     request: Request, response: Response,
     repos: str = Query(..., min_length=3, max_length=7100),
+    gameDetails: bool = Query(False),
     service: ProjectDescriptionsService = Depends(get_project_descriptions_service),
 ) -> Any:
     parts = repos.split(",")
@@ -80,7 +81,7 @@ async def read_project_descriptions(
         raise HTTPException(422, str(exc)) from exc
     response.headers["Cache-Control"] = "no-store"
     try:
-        items = await service.read(names, redis=getattr(request.app.state, "redis", None), client_ip=client_ip_from_request(request))
+        items = await service.read(names, redis=getattr(request.app.state, "redis", None), client_ip=client_ip_from_request(request), game_details=gameDetails)
         return {"items": items, "pollAfter": 3}
     except Exception as exc:
         return _error_response(exc)
@@ -102,7 +103,7 @@ async def request_project_description(
     # and tracking only; the token issuer does not grant a generic "read" scope.
     response.headers["Cache-Control"] = "no-store"
     try:
-        item = await service.request(payload.repo, redis=getattr(request.app.state, "redis", None), authorization=authorization, operations=operations)
+        item = await service.request(payload.repo, redis=getattr(request.app.state, "redis", None), authorization=authorization, operations=operations, game_details=payload.gameDetails)
         response.status_code = 202 if item["status"] == "pending" else 200
         return {"items": [item], "pollAfter": 3}
     except Exception as exc:

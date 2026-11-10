@@ -50,6 +50,8 @@
         </header>
         <div id="notice" class="notice" role="status" hidden></div>
         <div class="refresh-progress" id="refresh-progress" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="refresh-label">正在连接 GitHub…</span><progress id="refresh-meter" max="1" value="0" aria-label="资料刷新进度"></progress></div>
+        <div class="notice" id="description-notice" role="status" hidden></div>
+        <section class="batch-progress-panel description-progress-panel" id="description-progress-panel" aria-label="游戏资料提交进度" hidden><div class="batch-progress-heading"><p id="description-progress-label" role="status" aria-live="polite"></p><button class="button button-secondary button-small" id="descriptions-stop">停止提交</button></div><p class="batch-note" id="description-progress-note"></p></section>
 
         <section id="library-view" aria-label="我的游戏目录">
           <div class="stats-grid" id="stats">
@@ -74,6 +76,7 @@
             <button class="text-button clear-range-button" id="clear-filters-top">清除筛选</button>
           </div>
           <p class="form-error range-error" id="library-range-error" role="alert" hidden></p>
+          <div class="library-enrichment"><p>中文游戏名优先显示；原项目名和仓库保留，方便核对。</p><button class="button button-secondary button-small" id="library-descriptions-fill">补全当前中文名与海报</button></div>
           <div class="section-heading"><h2 id="results-title">全部游戏</h2><span id="result-count" aria-live="polite">读取中…</span></div>
           <div class="game-grid" id="game-grid" aria-busy="true"></div>
           <div class="empty-state" id="library-empty" hidden><span class="empty-mark" aria-hidden="true">⌕</span><h3>没有找到匹配的游戏</h3><p>试试放宽 Stars 范围，或清除名称和类型筛选。</p><button class="button button-secondary" id="clear-filters">清除筛选</button></div>
@@ -98,9 +101,7 @@
           <div class="section-heading discover-heading"><h2>查找结果</h2><span id="discover-count" aria-live="polite">选择范围后点击“按 Stars 查找”</span></div>
           <div class="notice" id="discover-limit-notice" role="status" hidden></div>
           <div class="notice error" id="discover-error" role="alert" hidden></div>
-          <div class="batch-toolbar" id="batch-toolbar" hidden><span id="batch-selection-label"></span><div class="batch-toolbar-actions"><button class="button button-secondary" id="descriptions-fill">补全当前中文简介</button><button class="button button-primary" id="batch-add">一键添加当前结果</button></div></div>
-          <div class="notice" id="description-notice" role="status" hidden></div>
-          <section class="batch-progress-panel description-progress-panel" id="description-progress-panel" aria-label="中文简介提交进度" hidden><div class="batch-progress-heading"><p id="description-progress-label" role="status" aria-live="polite"></p><button class="button button-secondary button-small" id="descriptions-stop">停止提交</button></div><p class="batch-note" id="description-progress-note"></p></section>
+          <div class="batch-toolbar" id="batch-toolbar" hidden><span id="batch-selection-label"></span><div class="batch-toolbar-actions"><button class="button button-secondary" id="descriptions-fill">补全中文名、海报与简介</button><button class="button button-primary" id="batch-add">一键添加当前结果</button></div></div>
           <section class="batch-progress-panel" id="batch-progress-panel" aria-label="批量添加进度" hidden>
             <div class="batch-progress-heading"><p id="batch-progress-label" role="status" aria-live="polite"></p><button class="button button-secondary button-small" id="batch-stop">停止添加</button></div>
             <progress id="batch-progress-meter" max="1" value="0" aria-label="批量添加进度"></progress>
@@ -113,7 +114,7 @@
 
         <section id="cloud-view" aria-label="下载与分享" hidden>
           <section class="automation-panel" aria-labelledby="automation-title">
-            <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 加入目录 → 下载 → 中文简介 → 网盘上传与分享 → 双盘完成后清理本地文件。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
+            <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 补全中文名、海报与简介 → 下载游戏与对应版本源码 → 打包上传分享 → 双盘完成后清理本地文件。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
             <p class="automation-intro">自动重试可恢复的失败，重启后接续任务，并把成果持续写入 JSON、CSV 和 Markdown 资料。</p>
             <div class="automation-metrics"><div><span>下次扫描</span><strong id="automation-next-run">—</strong></div><div><span>上次扫描</span><strong id="automation-last-run">—</strong></div><div><span>发现 / 入队 / 暂不支持</span><strong id="automation-counts">—</strong></div></div>
             <div id="automation-load-error" class="notice error" role="status" hidden></div><div id="automation-last-error" class="notice error" role="status" hidden></div><div id="automation-credential-error" class="notice error" role="status" hidden></div>
@@ -128,7 +129,7 @@
               <details class="automation-advanced"><summary>高级设置 · 分享、凭据与登录启动</summary><div class="automation-advanced-content">
                 <div class="share-options"><label><span class="field-label">分享有效期</span><select id="automation-share-days" class="cloud-select"><option value="0">永久</option><option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option></select></label><label><span class="field-label">百度提取码 <span>可选</span></span><input id="automation-share-code" type="text" maxlength="4" placeholder="留空自动生成" autocomplete="off" spellcheck="false"></label></div>
                 <label class="check-label"><input id="automation-private-share" type="checkbox" checked><span id="automation-private-label">百度使用提取码分享</span></label><p class="field-help">百度使用私密分享，提取码可指定 4 位字母或数字；夸克提取码由服务生成，仅选夸克时也可选择公开分享。</p>
-                <label class="check-label"><input id="automation-enrich" type="checkbox" checked><span>自动补全中文简介</span></label><p class="field-help">优先使用已有中文；缺少时使用 AIGCNEWS 生成，可能消耗已配置账号的额度。</p>
+                <label class="check-label"><input id="automation-enrich" type="checkbox" checked><span>自动补全中文名、海报与简介</span></label><p class="field-help">优先使用已有资料；旧简介可补充中文名和海报，可能消耗 AIGCNEWS 账号额度。找不到可靠图片时明确留空。</p>
                 <label class="check-label"><input id="automation-remember" type="checkbox" disabled><span>在此电脑记住凭据</span></label><p id="automation-storage-help" class="field-help">正在核对本机凭据保存能力。</p>
                 <label class="check-label"><input id="automation-start-on-login" type="checkbox" disabled><span>登录 Windows 时后台启动</span></label><p id="automation-startup-help" class="field-help">正在核对登录启动支持情况。</p>
               </div></details>
@@ -138,7 +139,7 @@
             <div class="automation-operation"><div><button id="automation-run" type="button" class="button button-secondary button-small" disabled>立即扫描</button><button id="automation-open" type="button" class="button button-secondary button-small" disabled>打开自动资料目录</button><button id="automation-connections" type="button" class="text-button">配置网盘与中文服务</button><button id="automation-refresh" type="button" class="text-button">刷新状态</button></div><p id="automation-export" class="field-help">自动生成的资料目录待确认。</p></div>
             <p class="automation-footnote">首次仍需本人授权网盘；授权失效或出现验证码时，需要回来处理。电脑须开机联网，工具须保持运行。暂停会暂停当前自动任务，继续后恢复；已经开始的手动任务继续执行。</p>
           </section>
-          <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>下载 GitHub 的 Windows 发布附件并上传到所选网盘；百度与夸克均上传、分享成功后，自动删除本地安装包，保留中文资料与分享链接。</p></div>
+          <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>将 Windows 发布附件、对应版本源码 ZIP 和说明打成分享包，上传到所选网盘。百度与夸克均上传、分享成功后，自动清理本地安装包、源码和分享包，保留中文资料与链接。</p></div>
           <form id="transfer-form" class="transfer-compose" novalidate>
             <section class="transfer-picker" aria-labelledby="transfer-picker-title">
               <div class="section-heading"><h3 id="transfer-picker-title">1. 选择目录中的游戏</h3><span id="transfer-selection-count" aria-live="polite">已选 0 款</span></div>
@@ -153,7 +154,7 @@
               <fieldset class="cloud-fieldset"><legend>上传到网盘 <span>可多选</span></legend><div class="provider-choices"><label class="provider-choice"><input id="transfer-baidu" type="checkbox" value="baidu"><span><strong>百度网盘</strong><small id="transfer-baidu-state">尚未读取连接状态</small></span></label><label class="provider-choice"><input id="transfer-quark" type="checkbox" value="quark"><span><strong>夸克网盘</strong><small id="transfer-quark-state">尚未读取连接状态</small></span></label></div><p class="field-help">不选网盘时，仅下载到本机。<button type="button" id="transfer-auth-open" class="inline-button">配置网盘连接</button></p></fieldset>
               <div class="share-options"><label><span class="field-label">分享有效期</span><select id="transfer-share-days" class="cloud-select"><option value="0">永久</option><option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option></select></label><label><span class="field-label">百度提取码 <span>可选</span></span><input id="transfer-share-code" type="text" maxlength="4" placeholder="留空自动生成" autocomplete="off" spellcheck="false"></label></div>
               <label class="check-label transfer-private"><input id="transfer-private-share" type="checkbox" checked><span id="transfer-private-label">分享链接需要提取码</span></label><p class="field-help">百度可指定 4 位字母或数字；夸克提取码由服务自动生成，以任务结果为准。</p>
-              <label class="check-label transfer-enrich"><input id="transfer-enrich" type="checkbox" checked><span>补全中文简介</span></label><p class="field-help">优先使用已有中文简介；缺少时通过 AIGCNEWS 生成，可能消耗已配置账号的额度。</p>
+              <label class="check-label transfer-enrich"><input id="transfer-enrich" type="checkbox" checked><span>补全中文名、海报与简介</span></label><p class="field-help">优先使用已有资料；缺少时通过 AIGCNEWS 补全，可能消耗已配置账号的额度。</p>
               <p id="transfer-enqueue-error" class="form-error" role="alert" hidden></p><p id="transfer-enqueue-note" class="field-help" role="status" hidden></p>
               <button id="transfer-submit" class="button button-primary" type="submit" disabled>加入下载队列</button>
             </section>

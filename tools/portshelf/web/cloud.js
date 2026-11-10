@@ -7,7 +7,7 @@
 })(globalThis, function () {
   const providers = { baidu: "百度网盘", quark: "夸克网盘" };
   const statusLabels = { queued: "排队中", running: "进行中", waiting_auth: "等待连接网盘", failed: "未完成", partial: "部分完成", done: "已完成", cancelled: "已取消", paused: "已暂停" };
-  const stageLabels = { release: "核对 Windows 附件", download: "下载到本机", description: "准备中文简介", upload: "上传网盘", share: "创建分享", done: "处理完成" };
+  const stageLabels = { release: "核对 Windows 附件", download: "下载到本机", description: "准备中文名、海报与简介", source: "获取对应版本源码", bundle: "打包游戏与源码", upload: "上传网盘", share: "创建分享", done: "处理完成" };
   const activeStatuses = new Set(["queued", "running"]);
   const retryStatuses = new Set(["waiting_auth", "failed", "partial", "cancelled", "paused"]);
   const cancelStatuses = new Set(["queued", "running", "waiting_auth", "paused", "failed", "partial"]);
@@ -64,7 +64,11 @@
   }
 
   function materialFor(job) {
-    const lines = [String(job.name || job.repo || "开源游戏"), "项目：" + String(job.repo || "")];
+    const identity = gameIdentity(job);
+    const lines = [identity.title, "项目：" + String(job.repo || "")];
+    if (identity.nameZh && job.name && job.name !== identity.nameZh) lines.push("项目名称：" + job.name);
+    if (!identity.nameZh) lines.push("中文名待确认");
+    if (identity.original) lines.push("游戏原名：" + identity.original);
     if (job.version) lines.push("版本：" + job.version);
     if (job.arch) lines.push("Windows 架构：" + (job.arch === "arm64" ? "ARM64" : job.arch === "amd64" ? "x64" : job.arch));
     lines.push(systemsLabel(job.supportedSystems));
@@ -75,14 +79,42 @@
       const output = job.outputs?.[id];
       const url = shareURL(output?.share?.url, id);
       if (!url) continue;
-      lines.push(name + "：" + url);
+      lines.push(name + (hasSourceBundle(job) ? output.payloadSha256 === job.bundleSha256 ? "（含对应版本源码）" : "（未核实为源码分享包）" : "") + "：" + url);
+      if (output.share.code) lines.push("提取码：" + output.share.code);
+      if (output.share.expiresAt) lines.push("有效期至：" + output.share.expiresAt);
+    }
+    for (const [id, name] of Object.entries(providers)) {
+      const output = job.legacyOutputs?.[id];
+      const url = shareURL(output?.share?.url, id);
+      if (!url) continue;
+      lines.push("历史单文件分享 · " + name + "（不含源码）：" + url);
       if (output.share.code) lines.push("提取码：" + output.share.code);
       if (output.share.expiresAt) lines.push("有效期至：" + output.share.expiresAt);
     }
     if (uniqueRepos([job.repo]).length) lines.push("上游项目：https://github.com/" + job.repo);
-    if (job.sha256) lines.push("SHA-256：" + job.sha256);
+    if (job.sha256) lines.push("原发布附件 SHA-256：" + job.sha256);
+    if (hasSourceBundle(job)) {
+      lines.push("分享内容：原发布附件 + 对应版本源码 ZIP + 说明", "源码 Commit：" + job.sourceCommit, "源码 SHA-256：" + job.sourceSha256, "分享包：" + String(job.bundlePath || "分享 ZIP").split(/[\\/]/).pop(), "分享包 SHA-256：" + job.bundleSha256);
+      const source = sourceURL(job.sourceUrl);
+      if (source) lines.push("对应源码：" + source);
+    }
+    const posterSource = globalThis.PortShelfDescriptions?.imageURL(job.posterSourceUrl, true);
+    if (posterSource) lines.push("图片来源：" + posterSource);
     if (job.localDeletedAt) lines.push("本地文件：双盘完成后已清理，网盘分享资料保留。");
     return lines.join("\n");
+  }
+
+  function gameIdentity(job) {
+    if (globalThis.PortShelfDescriptions?.identity) return globalThis.PortShelfDescriptions.identity(job);
+    const nameZh = typeof job.gameNameZh === "string" ? job.gameNameZh.trim() : "";
+    return { title: nameZh || job.name || job.repo || "开源游戏", nameZh, original: typeof job.gameNameOriginal === "string" ? job.gameNameOriginal : "", secondary: job.repo || "" };
+  }
+
+  function hasSourceBundle(job) { return job.bundleVersion === 1 && /^[a-f0-9]{64}$/i.test(job.bundleSha256 || "") && /^[a-f0-9]{64}$/i.test(job.sourceSha256 || "") && /^[a-f0-9]{40}$/i.test(job.sourceCommit || ""); }
+
+  function sourceURL(value) {
+    if (typeof value !== "string" || !/^https:\/\/(?:github\.com|codeload\.github\.com)\//.test(value) || /[\s\\]/.test(value)) return null;
+    try { const url = new URL(value); return !url.port && !url.username && !url.password && !url.search && !url.hash ? url.href : null; } catch (_) { return null; }
   }
 
   function create(context) {
@@ -92,6 +124,8 @@
     function button(text, action, className = "button button-secondary button-small") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
     function message(id, text) { if (state.stopped) return; $(id).textContent = text || ""; $(id).hidden = !text; }
     function isStopped() { return state.stopped || context.isStopped(); }
+    function identityFor(game) { return context.getIdentity?.(game) || gameIdentity(game); }
+    function sharingMaterial(job) { const identity = identityFor(job); return materialFor({ ...job, gameNameZh: identity.nameZh, gameNameOriginal: identity.original }); }
     function selectedProviders() { return Object.keys(providers).filter((id) => $("transfer-" + id).checked); }
     function size(value) { if (value < 1024) return value + " B"; if (value < 1024 ** 2) return (value / 1024).toFixed(1) + " KB"; if (value < 1024 ** 3) return (value / 1024 ** 2).toFixed(1) + " MB"; return (value / 1024 ** 3).toFixed(2) + " GB"; }
     function date(value) { const d = new Date(value); return Number.isFinite(d.getTime()) && d.getFullYear() > 1970 ? d.toLocaleString("zh-CN") : ""; }
@@ -100,7 +134,7 @@
     function visibleGames() {
       const games = $("transfer-use-filters").checked ? context.getFilteredGames() : context.getGames();
       const query = $("transfer-search").value.trim().toLocaleLowerCase();
-      return games.filter((game) => !query || [game.repo, game.name, game.subtitle].some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+      return games.filter((game) => !query || [identityFor(game).title, identityFor(game).secondary, game.repo, game.name, game.subtitle].some((value) => String(value || "").toLocaleLowerCase().includes(query)));
     }
 
     function syncSelection() {
@@ -130,7 +164,8 @@
         const label = node("label", "transfer-game");
         const input = node("input"); input.type = "checkbox"; input.value = game.repo; input.checked = state.selected.has(game.repo.toLowerCase()); input.disabled = state.enqueueBusy;
         input.addEventListener("change", () => { if (input.checked) state.selected.add(game.repo.toLowerCase()); else state.selected.delete(game.repo.toLowerCase()); syncSelection(); });
-        const info = node("span", "transfer-game-info"); info.append(node("strong", "", game.name || game.repo), node("small", "", game.subtitle || game.repo));
+        const identity = identityFor(game);
+        const info = node("span", "transfer-game-info"); info.append(node("strong", "", identity.title), node("small", "", (identity.nameZh ? "" : "中文名待确认 · ") + identity.secondary));
         label.append(input, info); return label;
       });
       if (!entries.length) entries.push(node("p", "transfer-selection-empty", context.getGames().length ? "当前筛选没有游戏，试试取消沿用目录筛选。" : "目录暂无游戏，请先到“发现更多”添加项目。"));
@@ -184,11 +219,12 @@
       finally { trigger.disabled = false; }
     }
 
-    function outputView(provider, output) {
+    function outputView(provider, output, includesSource = false) {
       const row = node("div", "transfer-output");
       const head = node("div", "transfer-output-heading");
       const states = { uploaded: "已上传", share_failed: "分享未完成", shared: "已分享", done: "已完成", waiting_auth: "等待连接", failed: "未完成", skipped: "已跳过", running: "处理中", uploading: "上传中", pending: "等待处理", queued: "排队中" };
       head.append(node("strong", "", providers[provider]), node("span", "", states[output.status] || output.status || "等待处理")); row.append(head);
+      if (includesSource) row.append(node("p", "transfer-bundle-note", "含对应版本源码"));
       const url = shareURL(output.share?.url, provider);
       if (url) {
         const share = node("div", "transfer-share"); share.append(safeLink("打开分享链接 ↗", url));
@@ -205,9 +241,11 @@
     function jobCard(job, openDetails) {
       const card = node("article", "transfer-job"); card.dataset.jobId = job.id;
       const heading = node("div", "transfer-job-heading");
-      const title = node("div"); title.append(node("h3", "", job.name || job.repo), node("p", "transfer-job-meta", [job.repo, job.version, job.arch === "amd64" ? "Windows x64" : job.arch === "arm64" ? "Windows ARM64" : job.arch].filter(Boolean).join(" · ")));
+      const identity = identityFor(job);
+      const title = node("div"); title.append(node("h3", "", identity.title), node("p", "transfer-job-meta", [identity.nameZh ? identity.secondary : "中文名待确认 · " + identity.secondary, job.version, job.arch === "amd64" ? "Windows x64" : job.arch === "arm64" ? "Windows ARM64" : job.arch].filter(Boolean).join(" · ")));
       const status = node("span", "transfer-status", statusLabels[job.status] || "未知状态"); status.dataset.status = job.status; heading.append(title, status); card.append(heading);
       card.append(node("p", "transfer-systems", systemsLabel(job.supportedSystems)));
+      if (hasSourceBundle(job)) card.append(node("p", "transfer-bundle-note", "分享包已准备：原发布附件 + 对应版本源码 ZIP + 说明"));
       const automatic = globalThis.PortShelfAutomation?.taskNotice(job);
       if (automatic) {
         const automation = node("div", "transfer-automation"); automation.dataset.kind = automatic.kind;
@@ -217,7 +255,7 @@
       }
       const currentStage = job.status === "waiting_auth" ? "等待连接网盘" : stageLabels[job.stage] || "等待处理";
       const stage = node("p", "transfer-stage", currentStage + (providers[job.provider] ? " · " + providers[job.provider] : "")); card.append(stage);
-      if (["download", "upload"].includes(job.stage) && job.status === "running") {
+      if (["download", "source", "upload"].includes(job.stage) && job.status === "running") {
         const data = progressOf(job); const meter = node("progress", "transfer-progress"); meter.max = data.total || 1; if (data.total) meter.value = Math.min(data.completed, data.total);
         meter.setAttribute("aria-label", currentStage + "进度");
         card.append(meter, node("p", "transfer-progress-text", data.total ? data.percent + "% · " + size(data.completed) + " / " + size(data.total) : size(data.completed) + " · 总大小待确认"));
@@ -225,16 +263,20 @@
       if (job.error) card.append(node("p", "transfer-error", job.error));
       if (Array.isArray(job.warnings) && job.warnings.length) { const warnings = node("ul", "transfer-warnings"); job.warnings.forEach((warning) => warnings.append(node("li", "", warning))); card.append(warnings); }
       if (job.localDeletedAt) card.append(node("p", "transfer-local-path", "本地文件已自动清理 · 百度与夸克分享资料保留"));
+      else if (job.bundlePath) card.append(node("p", "transfer-local-path", "分享包：" + job.bundlePath));
       else if (job.downloadPath) card.append(node("p", "transfer-local-path", "已下载：" + job.downloadPath));
       if (!job.localDeletedAt && job.localCleanupError) card.append(node("p", "transfer-error", "本地清理：" + job.localCleanupError));
       else if (!job.localDeletedAt && job.localCleanupPending && ["done", "partial"].includes(job.status)) card.append(node("p", "transfer-local-path", "两盘已完成，正在核对并清理本地文件…"));
       const outputs = node("div", "transfer-outputs");
-      for (const provider of Object.keys(providers)) if (job.outputs?.[provider]) outputs.append(outputView(provider, job.outputs[provider]));
+      for (const provider of Object.keys(providers)) if (job.outputs?.[provider]) outputs.append(outputView(provider, job.outputs[provider], hasSourceBundle(job) && job.outputs[provider].payloadSha256 === job.bundleSha256));
       if (outputs.childElementCount) card.append(outputs);
+      const oldOutputs = node("div", "transfer-outputs");
+      for (const provider of Object.keys(providers)) if (job.legacyOutputs?.[provider]) oldOutputs.append(outputView(provider, job.legacyOutputs[provider]));
+      if (oldOutputs.childElementCount) { const history = node("details", "transfer-legacy"); history.append(node("summary", "", "历史单文件分享 · 不含源码"), oldOutputs); card.append(history); }
       const details = node("details", "transfer-material"); details.open = openDetails;
-      details.append(node("summary", "", "查看中文资料与校验信息"), node("pre", "", materialFor(job))); card.append(details);
+      details.append(node("summary", "", "查看中文资料与校验信息"), node("pre", "", sharingMaterial(job))); card.append(details);
       const actions = node("div", "transfer-job-actions");
-      const copying = button("复制分享资料", () => copyText(materialFor(job), copying)); actions.append(copying);
+      const copying = button("复制分享资料", () => copyText(sharingMaterial(job), copying)); actions.append(copying);
       if (job.downloadPath && !job.localDeletedAt) { const folder = button("打开所在目录", () => openFolder(job.id)); folder.disabled = state.folderBusy; actions.append(folder); }
       if (job.status === "waiting_auth") actions.append(button("配置网盘连接", openSettings));
       if (retryStatuses.has(job.status)) { const retry = button(state.actions.has(job.id) ? "处理中…" : ["paused", "waiting_auth"].includes(job.status) ? "继续任务" : "重试任务", () => jobAction(job.id, "retry")); retry.disabled = state.actions.has(job.id); actions.append(retry); }
@@ -256,7 +298,7 @@
       for (const [id, cached] of state.jobCards) if (!keep.has(id)) { cached.card.remove(); state.jobCards.delete(id); }
       state.jobs.forEach((job, index) => {
         const previous = state.jobCards.get(job.id);
-        const signature = JSON.stringify([job, state.actions.has(job.id), state.folderBusy]);
+        const signature = JSON.stringify([job, identityFor(job), state.actions.has(job.id), state.folderBusy]);
         let card = previous?.card;
         if (!previous || previous.signature !== signature) {
           const focusIndex = card?.contains(document.activeElement) ? [...card.querySelectorAll("button,a,summary")].indexOf(document.activeElement) : -1;
@@ -450,7 +492,7 @@
     renderAuthForms();
     return {
       setVisible(visible) { state.visible = visible; clearTimeout(state.pollTimer); state.pollTimer = null; if (visible && !isStopped()) { renderSelection(); state.pollFailures = 0; loadJobs(); loadProviders(); } },
-      updateLibrary() { if (!state.archSet && context.getArch()) { $("transfer-arch").value = context.getArch() === "arm64" ? "arm64" : "amd64"; state.archSet = true; } if (state.visible) renderSelection(); },
+      updateLibrary() { if (!state.archSet && context.getArch()) { $("transfer-arch").value = context.getArch() === "arm64" ? "arm64" : "amd64"; state.archSet = true; } if (state.visible) { renderSelection(); renderJobs(); } },
       settingsOpened() { if (!isStopped()) loadProviders(); },
       refresh() { if (state.visible && !isStopped()) loadJobs(); },
       clearCredentials,
@@ -470,5 +512,5 @@
     } catch (_) { return null; }
   }
 
-  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, systemsLabel, materialFor, create };
+  return { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, systemsLabel, materialFor, hasSourceBundle, create };
 });

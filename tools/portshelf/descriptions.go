@@ -20,13 +20,19 @@ const aigcDescriptionsURL = "https://aigcnews.cn/api/v1/projects/descriptions"
 const descriptionTTL = 7 * 24 * time.Hour
 
 type Description struct {
-	Repo          string `json:"repo"`
-	Status        string `json:"status"`
-	DescriptionZh string `json:"descriptionZh"`
-	Source        string `json:"source"`
-	CheckedAt     string `json:"checkedAt"`
-	Error         string `json:"error,omitempty"`
-	RetryAfter    int    `json:"retryAfter,omitempty"`
+	Repo             string `json:"repo"`
+	Status           string `json:"status"`
+	DescriptionZh    string `json:"descriptionZh"`
+	GameNameZh       string `json:"gameNameZh,omitempty"`
+	GameNameOriginal string `json:"gameNameOriginal,omitempty"`
+	PosterURL        string `json:"posterUrl,omitempty"`
+	PosterSourceURL  string `json:"posterSourceUrl,omitempty"`
+	PosterKind       string `json:"posterKind,omitempty"`
+	DetailsVersion   int    `json:"detailsVersion,omitempty"`
+	Source           string `json:"source"`
+	CheckedAt        string `json:"checkedAt"`
+	Error            string `json:"error,omitempty"`
+	RetryAfter       int    `json:"retryAfter,omitempty"`
 }
 type DescriptionsResponse struct {
 	Items     []Description `json:"items"`
@@ -86,7 +92,7 @@ func readyDescription(item Description) bool {
 }
 func freshDescription(item Description, now time.Time) bool {
 	checked, err := time.Parse(time.RFC3339, item.CheckedAt)
-	return readyDescription(item) && err == nil && !checked.After(now.Add(5*time.Minute)) && now.Sub(checked) < descriptionTTL
+	return readyGameDetails(item) && err == nil && !checked.After(now.Add(5*time.Minute)) && now.Sub(checked) < descriptionTTL
 }
 func (a *AIGC) get(ctx context.Context, repos []string) (DescriptionsResponse, error) {
 	v, _, err := a.request(ctx, http.MethodGet, repos)
@@ -99,9 +105,9 @@ func (a *AIGC) request(ctx context.Context, method string, repos []string) (Desc
 	endpoint := aigcDescriptionsURL
 	var body io.Reader
 	if method == http.MethodGet {
-		endpoint += "?repos=" + url.QueryEscape(strings.Join(repos, ","))
+		endpoint += "?gameDetails=true&repos=" + url.QueryEscape(strings.Join(repos, ","))
 	} else {
-		encoded, _ := json.Marshal(map[string]string{"repo": repos[0]})
+		encoded, _ := json.Marshal(map[string]any{"repo": repos[0], "gameDetails": true})
 		body = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
@@ -131,9 +137,11 @@ func (a *AIGC) request(ctx context.Context, method string, repos []string) (Desc
 		case 401:
 			message = "AIGCNEWS 登录凭证无效或已过期，请重新填写"
 		case 403:
-			message = "AIGCNEWS 登录凭证缺少 read 权限"
+			message = "此 AIGCNEWS 登录凭证暂无游戏资料生成权限，请检查账号权限或更新凭证"
 		case 429:
 			message = "AIGCNEWS 请求频率或生成额度已达上限，请稍后重试"
+		case 422:
+			message = "AIGCNEWS 暂未支持新版游戏资料富化，请在云端更新后重试"
 		case 503:
 			message = "AIGCNEWS 中文简介服务暂时不可用，请稍后重试"
 		case 404:
@@ -167,6 +175,7 @@ func (a *AIGC) request(ctx context.Context, method string, repos []string) (Desc
 		}
 		seen[key] = true
 		item.Repo = canonical
+		sanitizeGameDetails(item)
 		item.CheckedAt = time.Now().UTC().Format(time.RFC3339)
 		if len(item.Error) > 2000 {
 			item.Error = "AIGCNEWS 未能完成中文简介，请稍后重试"
@@ -179,7 +188,12 @@ func (a *AIGC) request(ctx context.Context, method string, repos []string) (Desc
 				item.Error, item.RetryAfter = "", 0
 			}
 		case "pending", "missing", "failed":
-			item.DescriptionZh = ""
+			// The richer profile can already have a verified legacy brief while
+			// identity/artwork is still missing. Keep useful text without marking
+			// the game details ready or suppressing the upgrade action.
+			if !validChineseDescription(item.DescriptionZh) {
+				item.DescriptionZh = ""
+			}
 		default:
 			return DescriptionsResponse{}, 0, errors.New("AIGCNEWS 中文简介状态无效")
 		}
@@ -253,6 +267,11 @@ func (a *App) readDescriptions(ctx context.Context, repos []string) (Description
 	return response, nil
 }
 func descriptionWithFallback(current, previous Description) Description {
+	if readyDescription(current) && !readyGameDetails(current) && readyGameDetails(previous) {
+		previous.DescriptionZh = current.DescriptionZh
+		previous.Error = "远端未返回中文名与图片，暂用上次保存的游戏资料"
+		return previous
+	}
 	if readyDescription(current) || current.Status == "pending" || !readyDescription(previous) {
 		return current
 	}

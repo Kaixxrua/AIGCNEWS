@@ -22,7 +22,7 @@ func newDownloadClient() *http.Client {
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 			ForceAttemptHTTP2: true, MaxIdleConns: 4, IdleConnTimeout: 30 * time.Second, TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second},
 		CheckRedirect: func(request *http.Request, via []*http.Request) error {
-			if len(via) >= 5 || !validDownloadTarget(request.URL) {
+			if len(via) >= 5 || !(validDownloadTarget(request.URL) || validSourceTarget(request.URL)) {
 				return errors.New("GitHub 下载重定向地址不受支持")
 			}
 			request.Header.Del("Authorization")
@@ -63,6 +63,9 @@ func validDownloadName(name string) bool {
 }
 
 func transferRemoteName(job TransferJob) string {
+	if hasSourceBundle(job) {
+		return bundleName(job)
+	}
 	prefix := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
 			return r

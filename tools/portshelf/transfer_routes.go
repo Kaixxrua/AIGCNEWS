@@ -13,24 +13,38 @@ import (
 )
 
 type transferMaterial struct {
-	SupportedSystems []string   `json:"supportedSystems"`
-	Name             string     `json:"name"`
-	Title            string     `json:"title"`
-	Repo             string     `json:"repo"`
-	Version          string     `json:"version"`
-	Arch             string     `json:"arch"`
-	Stars            *int       `json:"stars,omitempty"`
-	Description      string     `json:"descriptionZh"`
-	DataNote         string     `json:"requirements"`
-	Upstream         string     `json:"upstream"`
-	Guide            string     `json:"guide"`
-	Filename         string     `json:"filename"`
-	SHA256           string     `json:"sha256"`
-	DownloadPath     string     `json:"downloadPath"`
-	LocalDeletedAt   string     `json:"localDeletedAt,omitempty"`
-	Status           string     `json:"status"`
-	Baidu            CloudShare `json:"baidu"`
-	Quark            CloudShare `json:"quark"`
+	SupportedSystems []string                  `json:"supportedSystems"`
+	Name             string                    `json:"name"`
+	GameNameZh       string                    `json:"gameNameZh,omitempty"`
+	GameNameOriginal string                    `json:"gameNameOriginal,omitempty"`
+	PosterURL        string                    `json:"posterUrl,omitempty"`
+	PosterSourceURL  string                    `json:"posterSourceUrl,omitempty"`
+	PosterKind       string                    `json:"posterKind,omitempty"`
+	DetailsVersion   int                       `json:"detailsVersion,omitempty"`
+	Title            string                    `json:"title"`
+	Repo             string                    `json:"repo"`
+	Version          string                    `json:"version"`
+	Arch             string                    `json:"arch"`
+	Stars            *int                      `json:"stars,omitempty"`
+	Description      string                    `json:"descriptionZh"`
+	DataNote         string                    `json:"requirements"`
+	Upstream         string                    `json:"upstream"`
+	Guide            string                    `json:"guide"`
+	Filename         string                    `json:"filename"`
+	SHA256           string                    `json:"sha256"`
+	SourceCommit     string                    `json:"sourceCommit,omitempty"`
+	SourceURL        string                    `json:"sourceUrl,omitempty"`
+	SourceSHA256     string                    `json:"sourceSha256,omitempty"`
+	BundleVersion    int                       `json:"bundleVersion,omitempty"`
+	BundleFilename   string                    `json:"bundleFilename,omitempty"`
+	BundleSHA256     string                    `json:"bundleSha256,omitempty"`
+	BundleSize       int64                     `json:"bundleSize,omitempty"`
+	LegacyOutputs    map[string]TransferOutput `json:"legacyOutputs,omitempty"`
+	DownloadPath     string                    `json:"downloadPath"`
+	LocalDeletedAt   string                    `json:"localDeletedAt,omitempty"`
+	Status           string                    `json:"status"`
+	Baidu            CloudShare                `json:"baidu"`
+	Quark            CloudShare                `json:"quark"`
 }
 
 func materials(jobs []TransferJob) []transferMaterial {
@@ -39,14 +53,22 @@ func materials(jobs []TransferJob) []transferMaterial {
 		if job.DownloadPath == "" || job.SHA256 == "" || job.Asset == nil {
 			continue
 		}
-		title := fmt.Sprintf("%s · Windows %s · %s", job.Name, job.Arch, job.Version)
-		localPath := job.DownloadPath
+		displayName := job.GameNameZh
+		if displayName == "" {
+			displayName = job.Name
+		}
+		title := fmt.Sprintf("%s · Windows %s · %s", displayName, job.Arch, job.Version)
+		localPath, _ := transferPayload(job)
+		bundleFilename := ""
+		if hasSourceBundle(job) {
+			bundleFilename = bundleName(job)
+		}
 		if job.LocalDeletedAt != "" {
 			localPath = ""
 		}
-		result = append(result, transferMaterial{SupportedSystems: append([]string{}, job.SupportedSystems...), Name: job.Name, Title: title, Repo: job.Repo, Version: job.Version, Arch: job.Arch,
+		result = append(result, transferMaterial{SupportedSystems: append([]string{}, job.SupportedSystems...), Name: job.Name, GameNameZh: job.GameNameZh, GameNameOriginal: job.GameNameOriginal, PosterURL: job.PosterURL, PosterSourceURL: job.PosterSourceURL, PosterKind: job.PosterKind, DetailsVersion: job.DetailsVersion, Title: title, Repo: job.Repo, Version: job.Version, Arch: job.Arch,
 			Stars: job.Stars, Description: job.Description, DataNote: job.DataNote, Upstream: "https://github.com/" + job.Repo,
-			Guide: job.Guide, Filename: job.Asset.Name, SHA256: job.SHA256, DownloadPath: localPath, LocalDeletedAt: job.LocalDeletedAt, Status: job.Status,
+			Guide: job.Guide, Filename: job.Asset.Name, SHA256: job.SHA256, SourceCommit: job.SourceCommit, SourceURL: job.SourceURL, SourceSHA256: job.SourceSHA256, BundleVersion: job.BundleVersion, BundleFilename: bundleFilename, BundleSHA256: job.BundleSHA256, BundleSize: job.BundleSize, LegacyOutputs: job.LegacyOutputs, DownloadPath: localPath, LocalDeletedAt: job.LocalDeletedAt, Status: job.Status,
 			Baidu: job.Outputs["baidu"].Share, Quark: job.Outputs["quark"].Share})
 	}
 	return result
@@ -85,14 +107,14 @@ func exportTransfers(w http.ResponseWriter, format string, jobs []TransferJob) e
 		writer := csv.NewWriter(w)
 		writer.UseCRLF = true
 		_ = writer.Write([]string{"游戏名称", "标题", "GitHub仓库", "版本", "Windows架构", "支持系统（据发布附件）", "Stars", "中文简介", "运行要求",
-			"上游项目", "运行指南", "附件", "SHA256", "本地文件", "本地文件清理时间", "任务状态", "百度链接", "百度提取码", "百度有效期", "夸克链接", "夸克提取码", "夸克有效期"})
+			"上游项目", "运行指南", "附件", "SHA256", "本地文件", "本地文件清理时间", "任务状态", "百度链接", "百度提取码", "百度有效期", "夸克链接", "夸克提取码", "夸克有效期", "中文游戏名称", "游戏原名", "海报图片", "图片来源", "源码提交", "源码来源", "源码SHA256", "含源码分享包", "分享包SHA256"})
 		for _, row := range rows {
 			stars := ""
 			if row.Stars != nil {
 				stars = fmt.Sprint(*row.Stars)
 			}
 			cells := []string{row.Name, row.Title, row.Repo, row.Version, row.Arch, systemDescription(row.SupportedSystems), stars, row.Description, row.DataNote, row.Upstream, row.Guide,
-				row.Filename, row.SHA256, row.DownloadPath, row.LocalDeletedAt, row.Status, row.Baidu.URL, row.Baidu.Code, row.Baidu.ExpiresAt, row.Quark.URL, row.Quark.Code, row.Quark.ExpiresAt}
+				row.Filename, row.SHA256, row.DownloadPath, row.LocalDeletedAt, row.Status, row.Baidu.URL, row.Baidu.Code, row.Baidu.ExpiresAt, row.Quark.URL, row.Quark.Code, row.Quark.ExpiresAt, row.GameNameZh, row.GameNameOriginal, row.PosterURL, row.PosterSourceURL, row.SourceCommit, row.SourceURL, row.SourceSHA256, row.BundleFilename, row.BundleSHA256}
 			for i := range cells {
 				cells[i] = csvCell(cells[i])
 			}
@@ -113,6 +135,15 @@ func exportTransfers(w http.ResponseWriter, format string, jobs []TransferJob) e
 		_, _ = fmt.Fprintf(w, "\n## %s\n\n%s\n\n- 仓库：%s\n- 版本：%s / Windows %s\n- 上游：%s\n- 运行要求：%s\n- SHA-256：%s\n",
 			escape.Replace(row.Name), escape.Replace(description), escape.Replace(row.Repo), escape.Replace(row.Version), escape.Replace(row.Arch),
 			row.Upstream, escape.Replace(row.DataNote), row.SHA256)
+		if row.GameNameZh != "" {
+			_, _ = fmt.Fprintf(w, "- 中文游戏名：%s\n- 游戏原名：%s\n", escape.Replace(row.GameNameZh), escape.Replace(row.GameNameOriginal))
+		}
+		if row.PosterURL != "" {
+			_, _ = fmt.Fprintf(w, "- 游戏图片：%s\n- 图片来源：%s\n", escape.Replace(row.PosterURL), escape.Replace(row.PosterSourceURL))
+		}
+		if row.BundleVersion == sourceBundleVersion {
+			_, _ = fmt.Fprintf(w, "- 分享包（含对应版本源码）：%s\n- 分享包 SHA-256：%s\n- 源码提交：%s\n- 源码来源：%s\n- 源码 SHA-256：%s\n", escape.Replace(row.BundleFilename), row.BundleSHA256, row.SourceCommit, row.SourceURL, row.SourceSHA256)
+		}
 		_, _ = fmt.Fprintf(w, "- 支持系统（据发布附件）：%s\n", escape.Replace(systemDescription(row.SupportedSystems)))
 		if row.LocalDeletedAt != "" {
 			_, _ = fmt.Fprintf(w, "- 本地文件：双盘完成后已清理（%s）\n", escape.Replace(row.LocalDeletedAt))

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, materialFor } = require('../web/cloud.js');
+const { uniqueRepos, transferBatches, shareURL, authorizationURL, progressOf, materialFor, hasSourceBundle } = require('../web/cloud.js');
 
 const options = { providers: [], arch: 'amd64', shareDays: 0, shareCode: '', privateShare: true, enrich: true };
 
@@ -75,4 +75,27 @@ test('cleaned downloads retain share materials without advertising a missing loc
   assert.match(materials, /https:\/\/pan.baidu.com\/s\/kept/);
   assert.match(materials, /https:\/\/pan.quark.cn\/s\/kept/);
   assert.doesNotMatch(materials, /removed.zip/);
+});
+
+test('source bundles identify the real Chinese game, source commit and separate digests without relabelling old shares', () => {
+  const job = { repo: 'demo/game', name: 'CommunityPort', gameNameZh: '经典冒险', gameNameOriginal: 'Classic Adventure', bundleVersion: 1, bundlePath: 'C:\\private\\game-with-source.zip', bundleSha256: 'b'.repeat(64), sourceSha256: 'c'.repeat(64), sourceCommit: 'd'.repeat(40), sourceUrl: 'https://github.com/demo/game/archive/' + 'd'.repeat(40) + '.zip', sha256: 'a'.repeat(64), outputs: { baidu: { payloadSha256: 'b'.repeat(64), share: { url: 'https://pan.baidu.com/s/source', code: '1234' } }, quark: { payloadSha256: 'a'.repeat(64), share: { url: 'https://pan.quark.cn/s/old' } } }, legacyOutputs: { baidu: { share: { url: 'https://pan.baidu.com/s/legacy', code: '5678' } } } };
+  assert.equal(hasSourceBundle(job), true);
+  const text = materialFor(job);
+  assert.match(text, /^经典冒险\n/);
+  assert.match(text, /项目名称：CommunityPort/);
+  assert.match(text, /游戏原名：Classic Adventure/);
+  assert.match(text, /百度网盘（含对应版本源码）：https:\/\/pan.baidu.com\/s\/source/);
+  assert.match(text, /夸克网盘（未核实为源码分享包）/);
+  assert.match(text, /历史单文件分享.*不含源码.*legacy/);
+  assert.match(text, /原发布附件 SHA-256：a{64}/);
+  assert.match(text, /源码 Commit：d{40}/);
+  assert.match(text, /源码 SHA-256：c{64}/);
+  assert.match(text, /分享包 SHA-256：b{64}/);
+  assert.match(text, /分享包：game-with-source.zip/);
+  assert.doesNotMatch(text, /C:|private/);
+  assert.equal(hasSourceBundle({ ...job, bundleVersion: 0 }), false);
+  assert.equal(hasSourceBundle({ ...job, bundleVersion: 2 }), false);
+  assert.equal(hasSourceBundle({ ...job, sourceCommit: 'd'.repeat(41) }), false);
+  assert.doesNotMatch(materialFor({ ...job, bundleVersion: undefined }), /含对应版本源码|源码 Commit/);
+  assert.doesNotMatch(materialFor({ ...job, sourceUrl: 'javascript:alert(1)' }), /javascript/);
 });

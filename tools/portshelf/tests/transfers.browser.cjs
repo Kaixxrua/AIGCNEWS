@@ -17,6 +17,8 @@ const initialJobs = [
   { id: 'running', repo: 'demo/game-3', name: '正在下载的游戏', arch: 'amd64', status: 'running', stage: 'download', completedBytes: 512, totalBytes: 1024, outputs: {} },
 ];
 let jobs = structuredClone(initialJobs), pollCount = 0, failNextRead = false, failEnqueueAt = 0, authorizationURL = 'https://pan.quark.cn/open/v1/oauth/agent?device_id=test&device_name=PortShelf&agent_id=test&page_code=code#/agent-oauth';
+Object.assign(jobs.find(job => job.id === 'done'), { gameNameZh: '完成的中文经典', gameNameOriginal: 'The Classic Game', bundleVersion: 1, bundlePath: 'C:\\PortShelf\\downloads\\complete-with-source.zip', sourceCommit: 'a'.repeat(40), sourceSha256: 'b'.repeat(64), bundleSha256: 'c'.repeat(64), sourceUrl: 'https://github.com/demo/game-0/archive/' + 'a'.repeat(40) + '.zip', legacyOutputs: { baidu: { share: { url: 'https://pan.baidu.com/s/legacy', code: '6789' } } } });
+for (const output of Object.values(jobs.find(job => job.id === 'done').outputs)) output.payloadSha256 = 'c'.repeat(64);
 const requests = [], enqueues = [], credentials = [], exportedFormats = [];
 const accounts = { baidu: { id: 'baidu', name: '百度网盘', configured: false, authMode: 'cookie' }, quark: { id: 'quark', name: '夸克网盘', configured: false, authMode: 'authCode' } };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -110,13 +112,21 @@ const server = http.createServer(async (req, res) => {
     assert.deepEqual(enqueues.slice(retryOffset).map(body => body.repos.length), [100, 5]);
 
     const cleaned = page.locator('[data-job-id="done"]');
+    assert.equal(await cleaned.locator('h3').innerText(), '完成的中文经典');
+    assert.match(await cleaned.innerText(), /分享包已准备.*对应版本源码/);
+    assert.equal(await cleaned.locator('.transfer-outputs').first().getByText('含对应版本源码', { exact: true }).count(), 2);
+    assert.match(await cleaned.locator('.transfer-legacy summary').innerText(), /历史单文件分享.*不含源码/);
     assert.match(await cleaned.innerText(), /本地文件已自动清理/);
     assert.equal(await cleaned.getByRole('button', { name: '打开所在目录' }).count(), 0);
     await cleaned.getByRole('button', { name: '复制分享资料', exact: true }).click();
     assert.match(await page.evaluate(() => window.copiedMaterial), /双盘完成后已清理/);
     assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.baidu.com\/s\/demo/);
     assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.quark.cn\/s\/demo/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /源码 Commit：a{40}/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /分享包 SHA-256：c{64}/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /历史单文件分享.*不含源码/);
     const partial = page.locator('[data-job-id="partial"]');
+    assert.doesNotMatch(await partial.innerText(), /含对应版本源码|分享包已准备/);
     assert.equal(await partial.getByRole('button', { name: '取消任务', exact: true }).count(), 1);
     await page.locator('[data-job-id="failed"]').getByRole('button', { name: '取消任务', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-job-id="failed"] .transfer-status').textContent === '已取消');

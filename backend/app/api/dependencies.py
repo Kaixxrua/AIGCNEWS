@@ -605,7 +605,15 @@ def get_project_descriptions_service(
         enricher = await asyncio.to_thread(GitHubProjectEnricher, enrichment)
         return await enricher.describe_repository(metadata)
 
-    return ProjectDescriptionsService(describe)
+    async def describe_game(metadata: dict[str, Any]) -> dict[str, Any]:
+        import asyncio
+
+        from backend.app.services.ingestion.github_project_enricher import GitHubProjectEnricher
+
+        enricher = await asyncio.to_thread(GitHubProjectEnricher, enrichment)
+        return await enricher.describe_game_repository(metadata)
+
+    return ProjectDescriptionsService(describe, describe_game=describe_game)
 
 
 def get_tool_website_enrichment_repository(

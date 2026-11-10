@@ -89,7 +89,7 @@ func (m *transferManager) planAutomaticRetry(id string) {
 	if !ok || !job.Automatic || job.Status == "cancelled" || job.Status == "paused" {
 		return
 	}
-	needsDescription := job.Enrich && job.Description == ""
+	needsDescription := job.Enrich && !readyTransferDetails(job)
 	if job.Status == "done" && !needsDescription {
 		_ = m.modify(id, func(j *TransferJob) { j.NextRetryAt = ""; j.NeedsAttention = false }, true)
 		return
@@ -192,7 +192,7 @@ func (m *transferManager) credentialsAvailable(provider string) {
 		if !job.Automatic || job.Status == "cancelled" || job.Status == "done" || job.Status == "running" || job.Status == "queued" {
 			continue
 		}
-		relevant := provider == "github" && (job.Stage == "release" || job.Stage == "download") || provider == "aigc" && job.Description == "" && job.Enrich
+		relevant := provider == "github" && (job.Stage == "release" || job.Stage == "download" || job.Stage == "source") || provider == "aigc" && !readyTransferDetails(job) && job.Enrich
 		if output, exists := job.Outputs[provider]; exists && output.Status != "done" {
 			relevant = true
 		}
