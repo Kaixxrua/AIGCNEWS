@@ -26,6 +26,7 @@ from backend.app.services.project_catalog.game_poster_resources import (
     search_public_artwork,
     search_public_web,
 )
+from backend.app.services.project_catalog.game_poster_retry import transient_model_failure, without_openai_sdk_retries
 from backend.app.services.project_catalog.game_posters import normalized_game_title
 
 SEARCH_VERSION = 1
@@ -451,6 +452,7 @@ class GamePosterAgent:
         self.project_recovery = False
         self.source_recovery = False
         self.project_recovery_used = False
+        self.model_retry_used = False
         self.deadline_seconds = min(180.0, max(0.001, float(deadline_seconds)))
         self.model_seconds = min(40.0, max(0.001, float(model_seconds)))
         self.deadline = 0.0
@@ -577,6 +579,31 @@ class GamePosterAgent:
             raise PosterResourceError("agent_deadline")
         return min(limit, remaining)
 
+    async def _call_model(self, model: Any, messages: list) -> Any:
+        """At most one extra model attempt per job, inside its existing clock.
+
+        A failed response has not dispatched any tools, so retrying the same
+        evidence cannot repeat a download, cache write or search. An already
+        verified image can be returned directly instead of waiting again.
+        """
+        try:
+            seconds = self._seconds_left(self.model_seconds)
+            return await asyncio.wait_for(model.ainvoke(messages), timeout=seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            reason = transient_model_failure(exc)
+            delay = min(1.0, max(0.01, self.model_seconds / 4))
+            remaining = self.deadline - asyncio.get_running_loop().time()
+            if not reason or self.model_retry_used or self.verified or remaining <= delay + min(5.0, self.model_seconds):
+                raise
+            self.model_retry_used = True
+            self.trace.append({"stage": "model_retry", "status": "retrying", "error": reason,
+                               "attempt": 1, "at": datetime.now(UTC).isoformat()})
+            await asyncio.sleep(delay)
+            seconds = self._seconds_left(self.model_seconds)
+            return await asyncio.wait_for(model.ainvoke(messages), timeout=seconds)
+
     async def _perform(self, name: str, prepared: dict, record: dict) -> Any:
         """Network work overlaps; state and evidence registration remain ordered."""
         started = asyncio.get_running_loop().time()
@@ -592,6 +619,20 @@ class GamePosterAgent:
                         return prepared["cachedResource"]
                     return await self.fetch(prepared["result"]["url"])
                 resource = await self.fetch(prepared["candidate"]["url"], image=True)
+                preview = getattr(resource, "preview", None)
+                if isinstance(preview, dict) and preview.get("type") == "gif_frame":
+                    # Keep reproduction evidence even if vision rejects this
+                    # frame; never copy arbitrary metadata or remote text.
+                    evidence = {key: preview[key] for key in (
+                        "frameIndex", "frameEnd", "framesValidated", "validatedBytes", "decodedPixels",
+                        "canvasWidth", "canvasHeight", "downloadedBytes", "transferBytes", "sourceBytes", "width", "height",
+                    ) if type(preview.get(key)) is int and 0 <= preview[key] < 2**64}
+                    evidence["type"] = "gif_frame"
+                    if type(preview.get("partial")) is bool:
+                        evidence["partial"] = preview["partial"]
+                    if isinstance(preview.get("sourcePrefixSha256"), str) and re.fullmatch(r"[0-9a-f]{64}", preview["sourcePrefixSha256"]):
+                        evidence["sourcePrefixSha256"] = preview["sourcePrefixSha256"]
+                    record["imagePreview"] = evidence
                 if self.review is not None:
                     review = await self.review(resource.body, item=self.item, candidate=prepared["candidate"], kind=prepared["kind"])
                     record["imageReview"] = review
@@ -865,8 +906,7 @@ class GamePosterAgent:
             while turns < 8 + (3 if self.project_recovery or self.source_recovery else 0):
                 turns += 1
                 phase = "model_call"
-                seconds = self._seconds_left(self.model_seconds)
-                response = await asyncio.wait_for(model.ainvoke(messages), timeout=seconds)
+                response = await self._call_model(model, messages)
                 phase = "model_response"
                 messages.append(response)
                 calls = getattr(response, "tool_calls", []) or []
@@ -963,6 +1003,7 @@ async def research_game_poster(item: dict[str, Any], *, model: Any = None, **too
             return get_chat_model(temperature=0, reasoning_effort=effort if effort in {"none", "minimal", "low"} else "low")
 
         model = await asyncio.to_thread(bounded_model)
+    model = without_openai_sdk_retries(model)
     if "review" not in tools:
         from functools import partial
 
