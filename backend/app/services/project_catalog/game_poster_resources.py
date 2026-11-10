@@ -26,6 +26,7 @@ from PIL import Image, ImageOps
 
 from backend.app.core.config import settings
 from backend.app.services.outbound_target_policy import pin_http_target
+from backend.app.services.project_catalog.game_poster_gif import GifPreviewError, preview_gif, preview_gif_sync
 from backend.app.services.project_catalog.game_poster_search import SEARCH_ENGINES, bounded_engines
 
 PAGE_BYTES = 1024 * 1024
@@ -105,6 +106,7 @@ class PosterResource:
     url: str
     body: bytes
     content_type: str
+    preview: dict | None = None
 
 
 async def _search_worker(payload: bytes, environment: dict[str, str]) -> bytes:
@@ -217,10 +219,16 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
     deadline = asyncio.get_running_loop().time() + (IMAGE_RESOURCE_SECONDS if image else 15)
     redirects = 0
     retried = False
+    downloaded = 0
+    gif_candidate = False
     try:
         async with asyncio.timeout_at(deadline):
             while redirects < 4:
                 url = safe_web_url(url)
+                gif_candidate = gif_candidate or image and unquote(urlsplit(url).path).lower().endswith(".gif")
+                remaining_bytes = limit - downloaded
+                if remaining_bytes <= 0:
+                    raise PosterResourceError("image_too_large" if image else "page_too_large")
                 target = await asyncio.to_thread(pin_http_target, url, allowed_ports={443}, reject_mixed=True)
                 # The await above is also a cancellation boundary before any I/O.
                 parts = urlsplit(target.logical_url)
@@ -232,10 +240,11 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                 oversized = False
 
                 def receive(chunk: bytes) -> int:
-                    nonlocal oversized
-                    if len(body) + len(chunk) > limit:
+                    nonlocal oversized, downloaded
+                    if downloaded + len(chunk) > limit:
                         oversized = True
                         return CURL_WRITEFUNC_ERROR
+                    downloaded += len(chunk)
                     body.extend(chunk)
                     return len(chunk)
 
@@ -243,9 +252,10 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                     async with AsyncSession(
                         proxy=settings.outbound_proxy or None, verify=True, trust_env=True,
                         headers={"User-Agent": "Mozilla/5.0 AIGCNEWS-PortShelf/1.0",
-                                 "Accept": "image/jpeg,image/png,image/webp,image/gif" if image else "text/html,application/xhtml+xml"},
+                                 "Accept": "image/jpeg,image/png,image/webp,image/gif" if image else "text/html,application/xhtml+xml",
+                                 **({"Range": f"bytes=0-{remaining_bytes - 1}", "Accept-Encoding": "identity"} if gif_candidate else {})},
                         curl_options={CurlOpt.CONNECT_TO: connections, CurlOpt.HTTPPROXYTUNNEL: 1,
-                                      CurlOpt.MAXFILESIZE_LARGE: limit},
+                                      CurlOpt.MAXFILESIZE_LARGE: remaining_bytes},
                     ) as client:
                         remaining = deadline - asyncio.get_running_loop().time()
                         if remaining <= 0:
@@ -260,7 +270,7 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                         raise PosterResourceError("image_too_large" if image else "page_too_large") from None
                     status = getattr(getattr(exc, "response", None), "status_code", 0)
                     if (image and not retried and isinstance(exc, CurlError) and exc.code in _TRANSIENT_IMAGE_ERRORS
-                            and status in {0, 200}):
+                            and status in {0, 200, 206}):
                         # A fresh connection and DNS pin are required, even for
                         # the same URL. One shared retry never resets redirects
                         # or the resource deadline, and never repeats vision.
@@ -280,8 +290,36 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                     continue
                 content_type = response.headers.get("content-type", "").lower().split(";", 1)[0].strip()
                 permitted = {"image/jpeg", "image/png", "image/webp", "image/gif"} if image else {"text/html", "application/xhtml+xml"}
-                if response.status_code != 200 or content_type not in permitted:
+                partial, total = False, None
+                if gif_candidate:
+                    if response.headers.get("content-encoding", "identity").lower() != "identity":
+                        raise PosterResourceError("invalid_image")
+                    if response.status_code == 206:
+                        match = re.fullmatch(r"bytes 0-([0-9]{1,20})/([0-9]{1,20})", response.headers.get("content-range", ""))
+                        if (not match or int(match[1]) + 1 != len(body) or len(body) > remaining_bytes
+                                or int(match[2]) < len(body)):
+                            raise PosterResourceError("invalid_image")
+                        total = int(match[2])
+                        partial = total > len(body)
+                    if response.headers.get("content-length") is not None:
+                        length = response.headers["content-length"]
+                        if not re.fullmatch(r"[0-9]{1,20}", length) or int(length) != len(body):
+                            raise PosterResourceError("invalid_image")
+                gif_body = image and bytes(body[:6]) in (b"GIF87a", b"GIF89a")
+                binary_gif = gif_candidate and gif_body and content_type == "application/octet-stream"
+                if (response.status_code not in ({200, 206} if gif_candidate else {200})
+                        or content_type not in permitted and not binary_gif
+                        or response.status_code == 206 and not gif_body):
                     raise PosterResourceError("invalid_image" if image else "page_unavailable")
+                if image and (gif_body or content_type == "image/gif"):
+                    try:
+                        jpeg, evidence = await preview_gif(bytes(body), partial=partial)
+                    except GifPreviewError as exc:
+                        raise PosterResourceError(str(exc)) from exc
+                    evidence["transferBytes"] = downloaded
+                    if total is not None:
+                        evidence["sourceBytes"] = total
+                    return PosterResource(target.logical_url, jpeg, "image/jpeg", evidence)
                 return PosterResource(target.logical_url, bytes(body), content_type)
     except asyncio.CancelledError:
         raise
@@ -297,17 +335,18 @@ def clean_poster_jpeg(payload: bytes) -> tuple[bytes, int, int]:
         raise PosterResourceError("image_too_large")
     if not payload:
         raise PosterResourceError("invalid_image")
+    if payload[:6] in (b"GIF87a", b"GIF89a"):
+        try:
+            jpeg, evidence = preview_gif_sync(payload)
+            return jpeg, evidence["width"], evidence["height"]
+        except GifPreviewError as exc:
+            raise PosterResourceError(str(exc)) from exc
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(BytesIO(payload)) as source:
-                if source.format not in {"JPEG", "PNG", "WEBP", "GIF"} or min(source.size) < 160 or source.width * source.height > IMAGE_PIXELS:
+                if source.format not in {"JPEG", "PNG", "WEBP"} or min(source.size) < 160 or source.width * source.height > IMAGE_PIXELS:
                     raise PosterResourceError("invalid_image")
-                if source.format == "GIF":
-                    # A poster needs one bounded raster, not animation. Never
-                    # inspect n_frames or seek later frames, which can trigger
-                    # unbounded animation work despite a small file size.
-                    source.seek(0)
                 source.load()
                 oriented = ImageOps.exif_transpose(source).convert("RGB")
                 oriented.thumbnail((1200, 1200), Image.Resampling.LANCZOS)

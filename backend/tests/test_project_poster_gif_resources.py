@@ -6,7 +6,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from PIL import GifImagePlugin, Image
+from PIL import GifImagePlugin, Image, ImageDraw
 
 from backend.app.services.outbound_target_policy import pin_http_target
 from backend.app.services.project_catalog import game_poster_resources as resources
@@ -14,6 +14,7 @@ from backend.app.services.project_catalog import game_poster_resources as resour
 
 def gif_bytes(*, size=(256, 256), animated=True):
     first = Image.new("RGB", size, "red")
+    ImageDraw.Draw(first).rectangle((0, 0, size[0] // 4, size[1] // 2), fill="yellow")
     output = BytesIO()
     first.save(output, format="GIF", save_all=animated,
                append_images=[Image.new("RGB", size, "blue")] if animated else [],
@@ -22,21 +23,9 @@ def gif_bytes(*, size=(256, 256), animated=True):
 
 
 class GifPosterDecodeTests(unittest.TestCase):
-    def test_only_first_frame_is_decoded_and_animation_metadata_is_removed(self):
-        original_seek = GifImagePlugin.GifImageFile.seek
-        visited = []
-
-        def first_frame_only(source, frame):
-            visited.append(frame)
-            if frame != 0:
-                raise AssertionError("later_animation_frame_was_requested")
-            return original_seek(source, frame)
-
-        with patch.object(GifImagePlugin.GifImageFile, "seek", first_frame_only):
-            jpeg, width, height = resources.clean_poster_jpeg(gif_bytes())
+    def test_preview_is_static_and_animation_metadata_is_removed(self):
+        jpeg, width, height = resources.clean_poster_jpeg(gif_bytes())
         self.assertEqual((width, height), (256, 256))
-        self.assertTrue(visited)
-        self.assertEqual(set(visited), {0})
         with Image.open(BytesIO(jpeg)) as image:
             self.assertEqual(image.format, "JPEG")
             self.assertFalse(getattr(image, "is_animated", False))
@@ -117,8 +106,9 @@ class GifPosterTransportTests(unittest.IsolatedAsyncioTestCase):
                     patch.object(resources, "AsyncSession", self.session(response, seen=seen)):
                 if allowed:
                     result = await resources.fetch_poster_resource("https://games.example/animation.gif", image=True)
-                    self.assertEqual(result.content_type, "image/gif")
-                    self.assertEqual(result.body, body)
+                    self.assertEqual(result.content_type, "image/jpeg")
+                    self.assertTrue(result.body.startswith(b"\xff\xd8\xff"))
+                    self.assertEqual(result.preview["type"], "gif_frame")
                 else:
                     with self.assertRaisesRegex(resources.PosterResourceError, "^invalid_image$"):
                         await resources.fetch_poster_resource("https://games.example/animation.gif", image=True)
