@@ -105,8 +105,8 @@ type BatchResult struct {
 
 func parseDiscoveryParameters(raw string) (starBounds, int, error) {
 	params, err := url.ParseQuery(raw)
-	if err != nil || len(params["minStars"]) > 1 || len(params["maxStars"]) > 1 || len(params["page"]) > 1 {
-		return starBounds{}, 0, errors.New("发现参数格式无效，页码和 Stars 上下限各只能指定一次")
+	if err != nil || len(params["minStars"]) > 1 || len(params["maxStars"]) > 1 || len(params["page"]) > 1 || len(params["cursor"]) > 1 {
+		return starBounds{}, 0, errors.New("发现参数格式无效，页码、进度和 Stars 上下限各只能指定一次")
 	}
 	bounds, err := parseStarBounds(params.Get("minStars"), params.Get("maxStars"))
 	if err != nil {
@@ -121,9 +121,12 @@ func parseDiscoveryParameters(raw string) (starBounds, int, error) {
 			}
 		}
 		page, err = strconv.Atoi(raw)
-		if err != nil || page < 1 || page > 10 {
-			return starBounds{}, 0, errors.New("页码必须是 1 到 10 之间的整数，请收窄 Stars 范围查看更多项目")
+		if err != nil || page < 1 || page > maxDiscoveryPage || page > 10 && params.Get("cursor") == "" {
+			return starBounds{}, 0, errors.New("发现页码或进度无效，请重新按 Stars 查找")
 		}
+	}
+	if _, err := parseDiscoveryCursor(params.Get("cursor"), bounds, page); err != nil {
+		return starBounds{}, 0, err
 	}
 	return bounds, page, nil
 }
@@ -405,7 +408,7 @@ func (a *App) handler() http.Handler {
 			fail(w, http.StatusBadRequest, err)
 			return
 		}
-		result, err := a.github.discover(r.Context(), bounds, page)
+		result, err := a.github.discoverNext(r.Context(), bounds, page, r.URL.Query().Get("cursor"))
 		if err != nil {
 			fail(w, http.StatusBadGateway, err)
 			return

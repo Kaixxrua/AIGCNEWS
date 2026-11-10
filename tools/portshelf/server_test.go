@@ -363,19 +363,19 @@ func TestSearchStarFilterQueriesWithoutKeywords(t *testing.T) {
 	cases := []struct {
 		name, parameters, query string
 	}{
-		{"no filters", "", `sourceport OR "source port" OR recompilation OR remake archived:false`},
-		{"empty filters", "?minStars=&maxStars=", `sourceport OR "source port" OR recompilation OR remake archived:false`},
-		{"minimum", "?minStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=500`},
-		{"maximum", "?maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:<=500`},
-		{"range", "?minStars=100&maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:100..500`},
-		{"zero minimum", "?minStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=0`},
-		{"zero maximum", "?maxStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:<=0`},
-		{"exact zero", "?minStars=0&maxStars=0", `sourceport OR "source port" OR recompilation OR remake archived:false stars:0..0`},
-		{"equal bounds", "?minStars=500&maxStars=500", `sourceport OR "source port" OR recompilation OR remake archived:false stars:500..500`},
-		{"maximum allowed", "?minStars=1000000000&maxStars=1000000000", `sourceport OR "source port" OR recompilation OR remake archived:false stars:1000000000..1000000000`},
+		{"no filters", "", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false`},
+		{"empty filters", "?minStars=&maxStars=", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false`},
+		{"minimum", "?minStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=500`},
+		{"maximum", "?maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:<=500`},
+		{"range", "?minStars=100&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:100..500`},
+		{"zero minimum", "?minStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=0`},
+		{"zero maximum", "?maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:<=0`},
+		{"exact zero", "?minStars=0&maxStars=0", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:0..0`},
+		{"equal bounds", "?minStars=500&maxStars=500", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:500..500`},
+		{"maximum allowed", "?minStars=1000000000&maxStars=1000000000", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:1000000000..1000000000`},
 		{"legacy keyword", "?q=doom&minStars=50", "doom archived:false stars:>=50"},
 		{"legacy keyword only", "?q=doom", "doom archived:false"},
-		{"blank keyword", "?q=%20%20&minStars=50", `sourceport OR "source port" OR recompilation OR remake archived:false stars:>=50`},
+		{"blank keyword", "?q=%20%20&minStars=50", `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false stars:>=50`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -432,7 +432,7 @@ func TestDiscoverHTTPValidatesPageAndBoundsBeforeNetwork(t *testing.T) {
 		calls++
 		return apiResponse(200, `{"items":[],"total_count":0,"incomplete_results":false}`), nil
 	})
-	for _, params := range []string{"page=0", "page=11", "page=-1", "page=1.5", "page=", "page=abc", "page=%2B1", "page=%20", "page=%ZZ", "page=9999999999999999999999", "page=1&page=2", "minStars=-1", "maxStars=1.2", "minStars=1000000001", "minStars=2&maxStars=1", "minStars=0&minStars=1", "maxStars=0&maxStars=1"} {
+	for _, params := range []string{"page=0", "page=11", "page=-1", "page=1.5", "page=", "page=abc", "page=%2B1", "page=%20", "page=%ZZ", "page=9999999999999999999999", "page=1&page=2", "cursor=a&cursor=b", "cursor=bad", "minStars=-1", "maxStars=1.2", "minStars=1000000001", "minStars=2&maxStars=1", "minStars=0&minStars=1", "maxStars=0&maxStars=1"} {
 		w := call(app, "GET", "/api/discover?"+params, "")
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("invalid discover parameters reached HTTP %d: %s", w.Code, params)
@@ -443,7 +443,7 @@ func TestDiscoverHTTPValidatesPageAndBoundsBeforeNetwork(t *testing.T) {
 	}
 	w := call(app, "GET", "/api/discover?minStars=&maxStars=", "")
 	var page DiscoveryPage
-	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != 200 || page.Items == nil || page.Page != 1 || page.NextPage != 0 || calls != 1 {
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != 200 || page.Items == nil || page.Page != 1 || page.NextPage != 2 || page.NextCursor == "" || !page.HasMore || calls != 1 {
 		t.Fatalf("default discover contract: %d %s %v", w.Code, w.Body.String(), err)
 	}
 }
@@ -566,5 +566,28 @@ func TestDiscoveryCacheIsBoundedAndConcurrentBatchesDoNotDuplicate(t *testing.T)
 	state := app.lib.snapshot()
 	if len(state.Games) != 2 || *state.Games[0].Stars != 999 {
 		t.Fatalf("concurrent batch duplicated or mutated entries: %+v", state.Games)
+	}
+}
+
+func TestDiscoverHTTPContinuesPastTenPagesOnlyWithBoundedCursor(t *testing.T) {
+	app := testApp(t)
+	calls := 0
+	app.github.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Query().Get("page") != "1" || !strings.HasSuffix(r.URL.Query().Get("q"), "stars:10..99") {
+			t.Errorf("invalid upstream discovery page/bounds: %s", r.URL)
+		}
+		return apiResponse(200, `{"items":[],"total_count":0}`), nil
+	})
+	bounds, _ := parseStarBounds("10", "")
+	cursor := encodeDiscoveryCursor(discoveryCursor{Version: 1, Query: 1, Page: 1, Next: 11, Bounds: discoveryBounds(bounds), Ranges: []discoveryRange{{Min: 10, Max: 99}}})
+	w := call(app, "GET", "/api/discover?minStars=10&page=11&cursor="+cursor, "")
+	var page DiscoveryPage
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != 200 || page.Page != 11 || page.NextPage != 12 || !page.HasMore || calls != 1 {
+		t.Fatalf("valid later cursor rejected: %d %s %v", w.Code, w.Body.String(), err)
+	}
+	w = call(app, "GET", "/api/discover?minStars=20&page=11&cursor="+cursor, "")
+	if w.Code != 400 || calls != 1 {
+		t.Fatalf("cursor escaped requested bounds: %d calls=%d", w.Code, calls)
 	}
 }

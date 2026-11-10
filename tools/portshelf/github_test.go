@@ -184,7 +184,7 @@ func TestSearchKeepsNewPublicProjectsAndCapsResults(t *testing.T) {
 	g := newGitHub("")
 	g.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
 		query := r.URL.Query()
-		if query.Get("q") != `sourceport OR "source port" OR recompilation OR remake archived:false` || query.Get("per_page") != "100" || query.Get("sort") != "stars" {
+		if query.Get("q") != `sourceport OR "source port" OR recompilation OR remake OR reimplementation OR decompilation archived:false` || query.Get("per_page") != "100" || query.Get("sort") != "stars" {
 			t.Errorf("unexpected default query: %s", r.URL.RawQuery)
 		}
 		items := []map[string]any{{"full_name": "private/repo", "private": true}, {"full_name": "owner/../../evil"}}
@@ -371,12 +371,12 @@ func TestDiscoverLoadsTwoFullPagesWithoutTwentyFourLimit(t *testing.T) {
 		return apiResponse(200, jsonString(map[string]any{"items": items, "total_count": 150, "incomplete_results": false})), nil
 	})
 	bounds, _ := parseStarBounds("0", "1000")
-	first, err := g.discover(context.Background(), bounds, 1)
+	first, err := g.discoverNext(context.Background(), bounds, 1, "")
 	if err != nil || len(first.Items) != 100 || first.Page != 1 || first.NextPage != 2 || !first.HasMore || first.TotalCandidates != 150 || first.Incomplete || first.LimitReached {
 		t.Fatalf("first page was truncated or malformed: %+v, %v", first, err)
 	}
-	second, err := g.discover(context.Background(), bounds, first.NextPage)
-	if err != nil || len(second.Items) != 50 || second.Page != 2 || second.NextPage != 0 || second.HasMore || second.LimitReached || calls != 2 {
+	second, err := g.discoverNext(context.Background(), bounds, first.NextPage, first.NextCursor)
+	if err != nil || len(second.Items) != 50 || second.Page != 2 || second.NextPage != 3 || !second.HasMore || second.NextCursor == "" || second.LimitReached || calls != 2 {
 		t.Fatalf("second page incorrect: %+v, %v, calls=%d", second, err, calls)
 	}
 }
@@ -389,11 +389,11 @@ func TestDiscoverPaginationUsesCandidatesIncludingEmptyFilteredPages(t *testing.
 		wantMore, wantLimit       bool
 	}{
 		{"filtered empty can continue", 1, 200, false, true, true, false},
-		{"no candidates", 1, 0, false, true, false, false},
+		{"no candidates continues other query", 1, 0, false, true, true, false},
 		{"incomplete upstream", 1, 250, true, false, true, false},
 		{"before thousand", 9, 1500, false, false, true, false},
-		{"thousand upstream cap", 10, 1500, false, false, false, true},
-		{"exact thousand exhausted", 10, 1000, false, false, false, false},
+		{"same-star thousand cap continues other query", 10, 1500, false, false, true, true},
+		{"exact thousand advances query", 10, 1000, false, false, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -405,7 +405,8 @@ func TestDiscoverPaginationUsesCandidatesIncludingEmptyFilteredPages(t *testing.
 				}
 				return apiResponse(200, jsonString(map[string]any{"items": items, "total_count": tc.total, "incomplete_results": tc.incomplete})), nil
 			})
-			result, err := g.discover(context.Background(), starBounds{}, tc.page)
+			bounds, _ := parseStarBounds("10", "10")
+			result, err := g.discoverNext(context.Background(), bounds, tc.page, "")
 			if err != nil || result.HasMore != tc.wantMore || result.LimitReached != tc.wantLimit || result.Incomplete != tc.incomplete || result.TotalCandidates != tc.total {
 				t.Fatalf("pagination metadata: %+v, %v", result, err)
 			}
