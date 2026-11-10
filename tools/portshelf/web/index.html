@@ -113,7 +113,7 @@
 
         <section id="cloud-view" aria-label="下载与分享" hidden>
           <section class="automation-panel" aria-labelledby="automation-title">
-            <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 加入目录 → 下载 → 中文简介 → 网盘上传与分享。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
+            <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 加入目录 → 下载 → 中文简介 → 网盘上传与分享 → 双盘完成后清理本地文件。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
             <p class="automation-intro">自动重试可恢复的失败，重启后接续任务，并把成果持续写入 JSON、CSV 和 Markdown 资料。</p>
             <div class="automation-metrics"><div><span>下次扫描</span><strong id="automation-next-run">—</strong></div><div><span>上次扫描</span><strong id="automation-last-run">—</strong></div><div><span>发现 / 入队 / 暂不支持</span><strong id="automation-counts">—</strong></div></div>
             <div id="automation-load-error" class="notice error" role="status" hidden></div><div id="automation-last-error" class="notice error" role="status" hidden></div><div id="automation-credential-error" class="notice error" role="status" hidden></div>
@@ -138,7 +138,7 @@
             <div class="automation-operation"><div><button id="automation-run" type="button" class="button button-secondary button-small" disabled>立即扫描</button><button id="automation-open" type="button" class="button button-secondary button-small" disabled>打开自动资料目录</button><button id="automation-connections" type="button" class="text-button">配置网盘与中文服务</button><button id="automation-refresh" type="button" class="text-button">刷新状态</button></div><p id="automation-export" class="field-help">自动生成的资料目录待确认。</p></div>
             <p class="automation-footnote">首次仍需本人授权网盘；授权失效或出现验证码时，需要回来处理。电脑须开机联网，工具须保持运行。暂停会暂停当前自动任务，继续后恢复；已经开始的手动任务继续执行。</p>
           </section>
-          <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>获取 GitHub 的 Windows 发布附件，保存到本机，再上传到所选网盘并生成分享资料。</p></div>
+          <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>下载 GitHub 的 Windows 发布附件并上传到所选网盘；百度与夸克均上传、分享成功后，自动删除本地安装包，保留中文资料与分享链接。</p></div>
           <form id="transfer-form" class="transfer-compose" novalidate>
             <section class="transfer-picker" aria-labelledby="transfer-picker-title">
               <div class="section-heading"><h3 id="transfer-picker-title">1. 选择目录中的游戏</h3><span id="transfer-selection-count" aria-live="polite">已选 0 款</span></div>
@@ -161,7 +161,7 @@
           <div class="section-heading transfer-queue-heading"><div><h2>任务队列</h2><p id="transfer-queue-summary" class="field-help" aria-live="polite">尚未读取任务</p></div><div class="queue-tools"><button id="transfer-refresh" type="button" class="button button-secondary button-small">刷新任务</button><button id="transfer-open-folder" type="button" class="button button-secondary button-small">打开下载目录</button></div></div>
           <div id="transfer-poll-error" class="notice error" role="status" hidden></div><div id="transfer-store-error" class="notice error" role="status" hidden></div>
           <div class="transfer-export-bar"><p id="transfer-download-dir"></p><div><label for="transfer-export-format" class="sr-only">导出格式</label><select id="transfer-export-format" class="cloud-select"><option value="markdown">Markdown 分享资料</option><option value="csv">CSV 表格</option><option value="json">JSON 数据</option></select><button type="button" id="transfer-export" class="button button-secondary button-small">导出成果</button></div></div>
-          <div class="transfer-history-bar"><span>清理只移除已完成、已取消的任务记录，保留本地与网盘文件。</span><button type="button" id="transfer-clear-history" class="text-button" disabled>清理完成历史</button></div>
+          <div class="transfer-history-bar"><span>此操作只移除已完成、已取消的任务记录，不删除网盘文件。</span><button type="button" id="transfer-clear-history" class="text-button" disabled>清理完成历史</button></div>
           <div id="transfer-jobs" class="transfer-jobs"></div><div id="transfer-empty" class="empty-state" hidden><h3>队列还是空的</h3><p>选择游戏并加入队列，下载、上传和分享进度会显示在这里。</p></div>
         </section>
 

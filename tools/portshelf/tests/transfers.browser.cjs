@@ -11,7 +11,7 @@ const token = 'c'.repeat(48);
 const games = Array.from({ length: 205 }, (_, index) => ({ repo: `demo/game-${index}`, name: `Game${String(index).padStart(3, '0')}`, description: '由社区延续的经典游戏。', stars: 1000 + index, category: '动作游戏' }));
 const initialJobs = [
   { id: 'failed', repo: 'demo/game-4', name: '下载失败的游戏', arch: 'amd64', status: 'failed', stage: 'download', error: '文件有变动，请先取消此任务再新建任务，原文件会保留', outputs: {} },
-  { id: 'done', repo: 'demo/game-0', name: '完成的经典游戏', arch: 'amd64', version: 'v1.0', status: 'done', stage: 'done', downloadPath: 'C:\\PortShelf\\downloads\\game.zip', sha256: 'abc123', description: '一款经典动作游戏。', outputs: { baidu: { status: 'done', file: { id: 'b1', path: '/PortShelf/game.zip' }, share: { url: 'https://pan.baidu.com/s/demo', code: 'ab12' } }, quark: { status: 'done', share: { url: 'https://pan.quark.cn/s/demo', code: 'q123' } } } },
+  { id: 'done', repo: 'demo/game-0', name: '完成的经典游戏', arch: 'amd64', version: 'v1.0', status: 'done', stage: 'done', localDeletedAt: '2026-11-10T00:00:00Z', downloadPath: 'C:\\PortShelf\\downloads\\game.zip', sha256: 'abc123', description: '一款经典动作游戏。', outputs: { baidu: { status: 'done', file: { id: 'b1', path: '/PortShelf/game.zip' }, share: { url: 'https://pan.baidu.com/s/demo', code: 'ab12' } }, quark: { status: 'done', share: { url: 'https://pan.quark.cn/s/demo', code: 'q123' } } } },
   { id: 'partial', repo: 'demo/game-1', name: '部分完成的游戏', arch: 'arm64', version: 'v2', status: 'partial', stage: 'share', downloadPath: 'C:\\downloads\\partial.zip', description: '中文简介 <img src=x onerror="window.injected=1">', dataNote: '需要原作素材', guide: '复制原作资源后运行。', error: '部分分享失败 <script>window.injected=2</script>', warnings: ['上游使用说明 <img src=x onerror="window.injected=3">'], outputs: { baidu: { status: 'done', file: { id: 'b2' }, share: { url: 'https://pan.baidu.com/s/partial', code: 'cd34' } }, quark: { status: 'failed', share: { url: 'javascript:alert(1)' }, error: '夸克服务暂不可用' } } },
   { id: 'waiting', repo: 'demo/game-2', name: '等待网盘连接', arch: 'amd64', status: 'waiting_auth', stage: 'upload', downloadPath: 'C:\\downloads\\waiting.zip', outputs: { quark: { status: 'waiting_auth', error: '请先连接网盘' } } },
   { id: 'running', repo: 'demo/game-3', name: '正在下载的游戏', arch: 'amd64', status: 'running', stage: 'download', completedBytes: 512, totalBytes: 1024, outputs: {} },
@@ -109,6 +109,13 @@ const server = http.createServer(async (req, res) => {
     const retryOffset = enqueues.length; failEnqueueAt = 0; await page.locator('#transfer-submit').click(); await page.waitForFunction(() => !document.getElementById('transfer-submit').textContent.includes('正在'));
     assert.deepEqual(enqueues.slice(retryOffset).map(body => body.repos.length), [100, 5]);
 
+    const cleaned = page.locator('[data-job-id="done"]');
+    assert.match(await cleaned.innerText(), /本地文件已自动清理/);
+    assert.equal(await cleaned.getByRole('button', { name: '打开所在目录' }).count(), 0);
+    await cleaned.getByRole('button', { name: '复制分享资料', exact: true }).click();
+    assert.match(await page.evaluate(() => window.copiedMaterial), /双盘完成后已清理/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.baidu.com\/s\/demo/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.quark.cn\/s\/demo/);
     const partial = page.locator('[data-job-id="partial"]');
     assert.equal(await partial.getByRole('button', { name: '取消任务', exact: true }).count(), 1);
     await page.locator('[data-job-id="failed"]').getByRole('button', { name: '取消任务', exact: true }).click();

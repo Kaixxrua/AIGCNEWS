@@ -159,7 +159,7 @@ func waitAutomationMaterial(t *testing.T, a *App) transferMaterial {
 	for time.Now().Before(deadline) {
 		data, err := os.ReadFile(filepath.Join(a.lib.root, "exports", "最新游戏清单.json"))
 		var rows []transferMaterial
-		if err == nil && json.Unmarshal(data, &rows) == nil && len(rows) == 1 && rows[0].Status == "done" && rows[0].Baidu.URL != "" && rows[0].Quark.URL != "" {
+		if err == nil && json.Unmarshal(data, &rows) == nil && len(rows) == 1 && rows[0].Status == "done" && rows[0].Baidu.URL != "" && rows[0].Quark.URL != "" && rows[0].LocalDeletedAt != "" {
 			return rows[0]
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -187,7 +187,7 @@ func TestAutomationIntegrationDiscoveryToBothDrivesExportAndRestartQuota(t *test
 	if !job.Automatic || job.Version != "v1" || job.Asset == nil || job.Asset.ID != 11 || job.ResolvedAt == "" || job.Description == "" || job.Attempts != 1 || len(job.SupportedSystems) != 3 {
 		t.Fatalf("pinned/enriched metadata was lost: %+v", job)
 	}
-	if row.Description != job.Description || len(row.SupportedSystems) != 3 || row.SHA256 != job.SHA256 || row.DownloadPath != job.DownloadPath {
+	if row.Description != job.Description || len(row.SupportedSystems) != 3 || row.SHA256 != job.SHA256 || row.DownloadPath != "" {
 		t.Fatal("export did not preserve final game materials")
 	}
 	for provider, drive := range drives {
@@ -198,9 +198,8 @@ func TestAutomationIntegrationDiscoveryToBothDrivesExportAndRestartQuota(t *test
 	if sources.searches.Load() != 1 || sources.releases.Load() != 1 || sources.downloads.Load() != 1 || sources.descriptions.Load() != 1 {
 		t.Fatalf("unexpected source request counts: search=%d release=%d download=%d descriptions=%d", sources.searches.Load(), sources.releases.Load(), sources.downloads.Load(), sources.descriptions.Load())
 	}
-	data, err := os.ReadFile(job.DownloadPath)
-	if err != nil || string(data) != sources.content {
-		t.Fatal("downloaded bytes not preserved")
+	if _, err := os.Stat(job.DownloadPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("successful two-drive download was not cleaned")
 	}
 	stop()
 	// Recreate real library/queue/scheduler from disk. Today's slot remains used;
@@ -232,7 +231,7 @@ func TestAutomationIntegrationDiscoveryToBothDrivesExportAndRestartQuota(t *test
 	}
 	stopRestarted()
 	jobs, _ := restarted.transfers.snapshot()
-	if len(jobs) != 1 || jobs[0].ID != job.ID || sources.searches.Load() != 1 || sources.releases.Load() != 1 || sources.downloads.Load() != 1 {
+	if len(jobs) != 1 || jobs[0].ID != job.ID || jobs[0].LocalDeletedAt != row.LocalDeletedAt || sources.searches.Load() != 1 || sources.releases.Load() != 1 || sources.downloads.Load() != 1 {
 		t.Fatal("restart duplicated an already handled release or bypassed quota")
 	}
 }

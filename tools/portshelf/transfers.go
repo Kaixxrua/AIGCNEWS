@@ -38,37 +38,40 @@ type TransferOutput struct {
 }
 
 type TransferJob struct {
-	Automatic        bool                      `json:"automatic,omitempty"`
-	Attempts         int                       `json:"attempts,omitempty"`
-	NextRetryAt      string                    `json:"nextRetryAt,omitempty"`
-	NeedsAttention   bool                      `json:"needsAttention,omitempty"`
-	ResolvedAt       string                    `json:"resolvedAt,omitempty"`
-	SupportedSystems []string                  `json:"supportedSystems,omitempty"`
-	ID               string                    `json:"id"`
-	Repo             string                    `json:"repo"`
-	Name             string                    `json:"name"`
-	Version          string                    `json:"version"`
-	Arch             string                    `json:"arch"`
-	Providers        []string                  `json:"providers"`
-	ShareOptions     ShareOptions              `json:"shareOptions"`
-	Enrich           bool                      `json:"enrich"`
-	Status           string                    `json:"status"`
-	Stage            string                    `json:"stage"`
-	Provider         string                    `json:"provider"`
-	CompletedBytes   int64                     `json:"completedBytes"`
-	TotalBytes       int64                     `json:"totalBytes"`
-	DownloadPath     string                    `json:"downloadPath"`
-	SHA256           string                    `json:"sha256"`
-	Description      string                    `json:"description"`
-	DataNote         string                    `json:"dataNote"`
-	Guide            string                    `json:"guide"`
-	Stars            *int                      `json:"stars,omitempty"`
-	Error            string                    `json:"error,omitempty"`
-	Warnings         []string                  `json:"warnings"`
-	Outputs          map[string]TransferOutput `json:"outputs"`
-	CreatedAt        string                    `json:"createdAt"`
-	UpdatedAt        string                    `json:"updatedAt"`
-	Asset            *Asset                    `json:"asset,omitempty"`
+	Automatic           bool                      `json:"automatic,omitempty"`
+	Attempts            int                       `json:"attempts,omitempty"`
+	NextRetryAt         string                    `json:"nextRetryAt,omitempty"`
+	NeedsAttention      bool                      `json:"needsAttention,omitempty"`
+	ResolvedAt          string                    `json:"resolvedAt,omitempty"`
+	SupportedSystems    []string                  `json:"supportedSystems,omitempty"`
+	ID                  string                    `json:"id"`
+	Repo                string                    `json:"repo"`
+	Name                string                    `json:"name"`
+	Version             string                    `json:"version"`
+	Arch                string                    `json:"arch"`
+	Providers           []string                  `json:"providers"`
+	ShareOptions        ShareOptions              `json:"shareOptions"`
+	Enrich              bool                      `json:"enrich"`
+	Status              string                    `json:"status"`
+	Stage               string                    `json:"stage"`
+	Provider            string                    `json:"provider"`
+	CompletedBytes      int64                     `json:"completedBytes"`
+	TotalBytes          int64                     `json:"totalBytes"`
+	DownloadPath        string                    `json:"downloadPath"`
+	LocalDeletedAt      string                    `json:"localDeletedAt,omitempty"`
+	LocalCleanupPending bool                      `json:"localCleanupPending,omitempty"`
+	LocalCleanupError   string                    `json:"localCleanupError,omitempty"`
+	SHA256              string                    `json:"sha256"`
+	Description         string                    `json:"description"`
+	DataNote            string                    `json:"dataNote"`
+	Guide               string                    `json:"guide"`
+	Stars               *int                      `json:"stars,omitempty"`
+	Error               string                    `json:"error,omitempty"`
+	Warnings            []string                  `json:"warnings"`
+	Outputs             map[string]TransferOutput `json:"outputs"`
+	CreatedAt           string                    `json:"createdAt"`
+	UpdatedAt           string                    `json:"updatedAt"`
+	Asset               *Asset                    `json:"asset,omitempty"`
 }
 
 type transferManager struct {
@@ -420,12 +423,17 @@ func (m *transferManager) action(id, action string) error {
 
 func (m *transferManager) loop() {
 	defer close(m.done)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	m.notify()
 	for {
 		select {
 		case <-m.app.ctx.Done():
 			return
 		case <-m.wake:
+		case <-ticker.C:
 		}
+		m.cleanupLocalFiles()
 		for {
 			enabled := m.app.automation != nil && m.app.automation.configSnapshot().Enabled
 			m.mu.Lock()
@@ -464,6 +472,7 @@ func (m *transferManager) loop() {
 			m.mu.Lock()
 			m.activeID, m.activeStop = "", nil
 			m.mu.Unlock()
+			m.cleanupLocalFiles()
 			if m.app.automation != nil {
 				m.app.automation.notify()
 			}
@@ -530,20 +539,26 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return errors.New("任务已停止")
 	}
-	if err := m.stage(id, "download", ""); err != nil {
-		return err
-	}
-	path, digest, err := m.download(ctx, job, m.progress(id))
-	if err != nil {
-		return err
-	}
-	if err := m.modify(id, func(j *TransferJob) {
-		if job.SHA256 != "" && job.SHA256 != digest {
-			j.Outputs = map[string]TransferOutput{}
+	path := job.DownloadPath
+	if m.needsLocalDownload(job) {
+		if err := m.stage(id, "download", ""); err != nil {
+			return err
 		}
-		j.DownloadPath, j.SHA256 = path, digest
-	}, true); err != nil {
-		return err
+		var digest string
+		var err error
+		path, digest, err = m.download(ctx, job, m.progress(id))
+		if err != nil {
+			return err
+		}
+		if err := m.modify(id, func(j *TransferJob) {
+			if job.SHA256 != "" && job.SHA256 != digest {
+				j.Outputs = map[string]TransferOutput{}
+			}
+			j.DownloadPath, j.SHA256 = path, digest
+			j.LocalDeletedAt, j.LocalCleanupError, j.LocalCleanupPending = "", "", false
+		}, true); err != nil {
+			return err
+		}
 	}
 	job, _ = m.job(id)
 	if job.Enrich && job.Description == "" {
@@ -563,7 +578,7 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 			failed = true
 			continue
 		}
-		if configured && output.Session == account.session && output.Status == "done" && usableCloudShare(provider, output.Share) {
+		if (configured && output.Session == account.session || !configured && job.LocalDeletedAt != "") && output.Status == "done" && usableCloudShare(provider, output.Share) {
 			continue
 		}
 		if configured && output.Session != account.session {
@@ -628,6 +643,9 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		} else if failed {
 			j.Status, j.Error = "partial", "下载已完成，部分网盘步骤失败，可单独重试"
 		}
+		if cleanupEligible(*j) {
+			j.LocalCleanupPending = true
+		}
 	}, true)
 }
 
@@ -643,17 +661,26 @@ func (m *transferManager) reuseCompleted(job *TransferJob) error {
 			continue
 		}
 		job.DownloadPath, job.SHA256 = previous.DownloadPath, previous.SHA256
-		if previous.ShareOptions == job.ShareOptions {
-			for _, provider := range job.Providers {
-				output := previous.Outputs[provider]
-				account, configured := m.app.cloud.get(provider)
-				if configured && output.Session == account.session && output.Status == "done" && usableCloudShare(provider, output.Share) {
-					job.Outputs[provider] = output
-				}
+		job.LocalDeletedAt = previous.LocalDeletedAt
+		for _, provider := range job.Providers {
+			output := previous.Outputs[provider]
+			account, configured := m.app.cloud.get(provider)
+			if !configured || output.Session != account.session {
+				continue
+			}
+			if previous.ShareOptions == job.ShareOptions && output.Status == "done" && usableCloudShare(provider, output.Share) {
+				job.Outputs[provider] = output
+			} else if previous.LocalDeletedAt != "" && output.File.ID != "" && !output.NeedsAttention &&
+				(output.Status == "done" || output.Status == "uploaded" || output.Status == "share_failed") {
+				// An expired link or changed share options need a new share, not
+				// another download/upload of an intentionally cleaned release.
+				output.Status, output.Share, output.Error = "uploaded", CloudShare{}, ""
+				job.Outputs[provider] = output
 			}
 		}
 		return m.modify(job.ID, func(j *TransferJob) {
 			j.DownloadPath, j.SHA256, j.Outputs = job.DownloadPath, job.SHA256, job.Outputs
+			j.LocalDeletedAt = job.LocalDeletedAt
 		}, true)
 	}
 	return nil

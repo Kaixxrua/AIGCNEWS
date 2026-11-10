@@ -188,10 +188,13 @@ func TestTransferShareRetrySkipsSuccessfulUploadAndOtherDrive(t *testing.T) {
 	if partial.Outputs["baidu"].File.ID == "" || partial.Outputs["quark"].Status != "done" {
 		t.Fatalf("partial work lost: %+v", partial.Outputs)
 	}
+	if data, err := os.ReadFile(partial.DownloadPath); err != nil || string(data) != content || partial.LocalDeletedAt != "" {
+		t.Fatal("one failed share must keep the local file")
+	}
 	if err := a.transfers.action(id, "retry"); err != nil {
 		t.Fatal(err)
 	}
-	waitTransfer(t, a, id, "done")
+	waitLocalCleanup(t, a, id)
 	bUploads, bShares := baidu.counts()
 	qUploads, qShares := quark.counts()
 	if bUploads != 1 || bShares != 2 || qUploads != 1 || qShares != 1 || calls.Load() != 1 {

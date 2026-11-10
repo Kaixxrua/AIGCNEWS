@@ -68,3 +68,11 @@ test('share materials retain Chinese instructions and successful partial results
   assert.match(materials, /SHA-256：abc123/);
   assert.doesNotMatch(materials, /javascript|secret|private/);
 });
+
+test('cleaned downloads retain share materials without advertising a missing local file', () => {
+  const materials = materialFor({ name: '游戏', repo: 'demo/game', localDeletedAt: '2026-11-10T00:00:00Z', downloadPath: 'removed.zip', outputs: { baidu: { share: { url: 'https://pan.baidu.com/s/kept', code: '1234' } }, quark: { share: { url: 'https://pan.quark.cn/s/kept', code: '5678' } } } });
+  assert.match(materials, /双盘完成后已清理/);
+  assert.match(materials, /https:\/\/pan.baidu.com\/s\/kept/);
+  assert.match(materials, /https:\/\/pan.quark.cn\/s\/kept/);
+  assert.doesNotMatch(materials, /removed.zip/);
+});

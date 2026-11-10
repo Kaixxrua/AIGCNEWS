@@ -81,6 +81,7 @@
     }
     if (uniqueRepos([job.repo]).length) lines.push("上游项目：https://github.com/" + job.repo);
     if (job.sha256) lines.push("SHA-256：" + job.sha256);
+    if (job.localDeletedAt) lines.push("本地文件：双盘完成后已清理，网盘分享资料保留。");
     return lines.join("\n");
   }
 
@@ -223,7 +224,10 @@
       }
       if (job.error) card.append(node("p", "transfer-error", job.error));
       if (Array.isArray(job.warnings) && job.warnings.length) { const warnings = node("ul", "transfer-warnings"); job.warnings.forEach((warning) => warnings.append(node("li", "", warning))); card.append(warnings); }
-      if (job.downloadPath) card.append(node("p", "transfer-local-path", "已下载：" + job.downloadPath));
+      if (job.localDeletedAt) card.append(node("p", "transfer-local-path", "本地文件已自动清理 · 百度与夸克分享资料保留"));
+      else if (job.downloadPath) card.append(node("p", "transfer-local-path", "已下载：" + job.downloadPath));
+      if (!job.localDeletedAt && job.localCleanupError) card.append(node("p", "transfer-error", "本地清理：" + job.localCleanupError));
+      else if (!job.localDeletedAt && job.localCleanupPending && ["done", "partial"].includes(job.status)) card.append(node("p", "transfer-local-path", "两盘已完成，正在核对并清理本地文件…"));
       const outputs = node("div", "transfer-outputs");
       for (const provider of Object.keys(providers)) if (job.outputs?.[provider]) outputs.append(outputView(provider, job.outputs[provider]));
       if (outputs.childElementCount) card.append(outputs);
@@ -231,7 +235,7 @@
       details.append(node("summary", "", "查看中文资料与校验信息"), node("pre", "", materialFor(job))); card.append(details);
       const actions = node("div", "transfer-job-actions");
       const copying = button("复制分享资料", () => copyText(materialFor(job), copying)); actions.append(copying);
-      if (job.downloadPath) { const folder = button("打开所在目录", () => openFolder(job.id)); folder.disabled = state.folderBusy; actions.append(folder); }
+      if (job.downloadPath && !job.localDeletedAt) { const folder = button("打开所在目录", () => openFolder(job.id)); folder.disabled = state.folderBusy; actions.append(folder); }
       if (job.status === "waiting_auth") actions.append(button("配置网盘连接", openSettings));
       if (retryStatuses.has(job.status)) { const retry = button(state.actions.has(job.id) ? "处理中…" : ["paused", "waiting_auth"].includes(job.status) ? "继续任务" : "重试任务", () => jobAction(job.id, "retry")); retry.disabled = state.actions.has(job.id); actions.append(retry); }
       if (cancelStatuses.has(job.status)) { const cancel = button(state.actions.has(job.id) ? "处理中…" : "取消任务", () => jobAction(job.id, "cancel"), "text-button"); cancel.disabled = state.actions.has(job.id); actions.append(cancel); }
@@ -272,7 +276,7 @@
 
     function schedulePoll() {
       clearTimeout(state.pollTimer); state.pollTimer = null;
-      if (isStopped() || !state.visible || document.hidden || state.pollBusy || state.pollFailures >= 3 || !state.jobs.some((job) => activeStatuses.has(job.status) || globalThis.PortShelfAutomation?.taskNotice(job)?.pendingRetry)) return;
+      if (isStopped() || !state.visible || document.hidden || state.pollBusy || state.pollFailures >= 3 || !state.jobs.some((job) => activeStatuses.has(job.status) || globalThis.PortShelfAutomation?.taskNotice(job)?.pendingRetry || job.localCleanupPending && !job.localDeletedAt && !job.localCleanupError && ["done", "partial"].includes(job.status))) return;
       state.pollTimer = setTimeout(loadJobs, 2000);
     }
 
