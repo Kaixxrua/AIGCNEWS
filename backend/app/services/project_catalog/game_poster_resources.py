@@ -16,6 +16,7 @@ import warnings
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from curl_cffi import CurlOpt, ffi, lib
@@ -25,7 +26,7 @@ from PIL import Image, ImageOps
 
 from backend.app.core.config import settings
 from backend.app.services.outbound_target_policy import pin_http_target
-from backend.app.services.project_catalog.game_poster_search import bounded_engines
+from backend.app.services.project_catalog.game_poster_search import SEARCH_ENGINES, bounded_engines
 
 PAGE_BYTES = 1024 * 1024
 IMAGE_BYTES = 4 * 1024 * 1024
@@ -39,6 +40,34 @@ _CACHED_POSTER = re.compile(re.escape(ASSET_BASE) + r"([0-9a-f]{64}\.jpg)\Z")
 
 class PosterResourceError(RuntimeError):
     """Only a stable non-secret code may be shown in a tool transcript."""
+
+    def __init__(self, code: str, *, attempts: list[dict] | None = None):
+        super().__init__(code)
+        self.attempts = attempts or []
+
+
+def _search_attempts(value: Any) -> list[dict]:
+    """Keep diagnostic codes, never provider messages, response HTML or URLs."""
+    if not isinstance(value, list):
+        return []
+    output = []
+    for row in value[:2]:
+        if (not isinstance(row, dict) or not isinstance(row.get("engine"), str) or row["engine"] not in SEARCH_ENGINES
+                or not isinstance(row.get("status"), str) or row["status"] not in {"succeeded", "empty", "unavailable"}):
+            continue
+        public = {"engine": row["engine"], "status": row["status"]}
+        for key, low, high in (("elapsedMs", 0, 22000), ("resultCount", 0, 6), ("httpStatus", 100, 599)):
+            number = row.get(key)
+            if type(number) is int and low <= number <= high:
+                public[key] = number
+        if row.get("parser") == "yahoo_headings":
+            public["parser"] = "yahoo_headings"
+        if isinstance(row.get("reason"), str) and row["reason"] in {"provider_http", "provider_response_oversize", "worker_deadline"}:
+            public["reason"] = row["reason"]
+        if isinstance(row.get("errorType"), str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", row["errorType"]):
+            public["errorType"] = row["errorType"]
+        output.append(public)
+    return output
 
 
 def safe_web_url(value: str) -> str:
@@ -144,10 +173,11 @@ async def search_public_web(query: str, *, engines: tuple[str, ...] = ("google",
         payload = json.dumps({"query": query, "proxy": settings.outbound_proxy or None, "engines": engines}).encode()
         output = await _search_worker(payload, environment)
         data = json.loads(output)
+        attempts = _search_attempts(data.get("attempts")) if isinstance(data, dict) else []
         if not isinstance(data, dict) or data.get("unavailable") or not isinstance(data.get("results"), list):
-            raise PosterResourceError("search_unavailable")
+            raise PosterResourceError("search_unavailable", attempts=attempts)
         return {"engine": str(data.get("engine") or "ddgs")[:30], "results": data["results"][:6],
-                "workerTransport": "direct_child"}
+                "workerTransport": "direct_child", "attempts": attempts}
     except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired) as exc:
         raise PosterResourceError("search_unavailable") from exc
 

@@ -49,9 +49,10 @@ READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
 # Identity enrichment and web research share the job, but not a ninety-second
 # budget that can expire after the poster has already been downloaded. The
-# agent has its own 85-second deadline and returns its trace before this fence.
-JOB_SECONDS = 150
-LEASE_SECONDS = 180
+# agent has its own 120-second deadline, including visual image review, and
+# returns its trace before this fence. The lease also covers job finalization.
+JOB_SECONDS = 180
+LEASE_SECONDS = 210
 READS_PER_MINUTE = 60
 POSTS_PER_MINUTE = 30
 MAX_CONCURRENT_GENERATIONS = 4
@@ -124,6 +125,8 @@ def _cached(value: Any, repo: str) -> dict[str, Any]:
 def _game_fields(cached: dict[str, Any], now: float) -> dict[str, Any]:
     result = {key: cached.get(key, "") for key in ("gameNameZh", "gameNameOriginal", "posterUrl", "posterSourceUrl", "posterKind")}
     result["detailsVersion"] = 1
+    # Internal cache revision; response models intentionally omit this field.
+    result["identityEvidenceVersion"] = 2 if cached.get("identityEvidenceVersion") == 2 else 0
     result["posterSearchVersion"] = 1 if cached.get("posterSearchVersion") == 1 else 0
     status = cached.get("posterStatus", "ready" if result["posterUrl"] else "missing")
     result["posterStatus"] = status if status in {"ready", "missing", "unavailable"} else "missing"
@@ -493,7 +496,9 @@ class ProjectDescriptionsService:
             if not await redis.set(PREFIX + "cache:" + profile, json.dumps(pending), ex=READY_TTL):
                 raise DescriptionsUnavailable("无法保存生成任务，请稍后重试。")
             if poster_only:
-                submitted = bool(operations.submit(self._generate_poster, repo, token, slot, redis, second))
+                repair_identity = bool(refresh_poster and self.research_poster is not None and not second.get("gameNameOriginal")
+                                       and second.get("identityEvidenceVersion", 0) < 2)
+                submitted = bool(operations.submit(self._generate_poster, repo, token, slot, redis, second, repair_identity))
             else:
                 submitted = bool(operations.submit(self._generate, repo, token, slot, redis, game_details, second.get("descriptionZh", "")))
             if not submitted:
@@ -546,10 +551,36 @@ class ProjectDescriptionsService:
             return self._poster_failure(item)
         return {**item, "posterStatus": "missing", "posterRetryAt": self.clock() + POSTER_MISSING_SECONDS}
 
-    async def _generate_poster(self, repo: str, token: str, slot: str, redis: Any, existing: dict[str, Any]) -> None:
-        item = self._poster_failure(existing)
+    async def _refresh_missing_identity(self, existing: dict[str, Any]) -> dict[str, Any]:
+        """One user-requested repair for names rejected by old evidence checks."""
+        if self.describe_game is None:
+            return existing
         try:
-            item = await asyncio.wait_for(self._fill_poster(existing), timeout=self.job_seconds)
+            async with asyncio.timeout(40):
+                metadata = await self.fetch(existing["repo"], game_details=True)
+                data = await self.describe_game(metadata)
+                if not isinstance(data, dict):
+                    return existing
+                details = normalize_game_details(data, metadata)
+                # Retain the verified description and image even when identity
+                # remains a multi-game project. Do not restore README hotlinks.
+                return {**existing, **{key: details[key] for key in ("gameNameOriginal", "gameNameZh", "identityEvidenceVersion")}}
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return existing
+
+    async def _generate_poster(self, repo: str, token: str, slot: str, redis: Any, existing: dict[str, Any], repair_identity: bool = False) -> None:
+        item = self._poster_failure(existing)
+
+        async def generate() -> dict[str, Any]:
+            nonlocal item
+            current = await self._refresh_missing_identity(existing) if repair_identity else existing
+            item = self._poster_failure(current)
+            return await self._fill_poster(current)
+
+        try:
+            item = await asyncio.wait_for(generate(), timeout=self.job_seconds)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -98,8 +98,8 @@ class PosterTurnLimitTests(unittest.IsolatedAsyncioTestCase):
             tool("read_page", {"resultId": "page-2"}),
             AIMessage(content='{"candidateId":""}'),
         )
-        search = AsyncMock(return_value={"results": [{"url": SOURCE}]})
-        fetch = AsyncMock(side_effect=[PosterResource(SOURCE, HTML, "text/html"), PosterResource(IMAGE, image_bytes(), "image/png"), PosterResource(SOURCE, HTML, "text/html")])
+        search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}]}, {"results": [{"url": SOURCE + "/screenshots"}]}])
+        fetch = AsyncMock(side_effect=[PosterResource(SOURCE, HTML, "text/html"), PosterResource(IMAGE, image_bytes(), "image/png"), PosterResource(SOURCE + "/screenshots", HTML, "text/html")])
         with tempfile.TemporaryDirectory() as directory, patch.object(resources.settings, "site_assets_storage_dir", directory):
             result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
         self.assertEqual(result["posterStatus"], "missing")
@@ -116,7 +116,7 @@ class PosterTurnLimitTests(unittest.IsolatedAsyncioTestCase):
                 tool("read_page", {"resultId": "page-1"}),
                 tool("verify_image", {"candidateId": "image-3", "kind": "cover"}),
             )
-            search = AsyncMock(return_value={"results": [{"url": SOURCE}]})
+            search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}]}, {"results": [{"url": SOURCE + "/screenshots"}]}])
             fetch = AsyncMock(side_effect=[PosterResource(SOURCE, HTML, "text/html")] * 3 + [PosterResource(IMAGE, payload, "image/png")])
             result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
             self.assertEqual(result["posterStatus"], "unavailable")

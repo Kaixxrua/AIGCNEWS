@@ -73,7 +73,9 @@ class WebPosterAgentTests(unittest.IsolatedAsyncioTestCase):
         search = AsyncMock(return_value={"engine": "yahoo", "results": [{"url": SOURCE, "title": ORIGINAL}]})
         fetch = AsyncMock(side_effect=[PosterResource(SOURCE, HTML, "text/html"), PosterResource(IMAGE, image_bytes(), "image/png")])
         with tempfile.TemporaryDirectory() as directory, patch.object(resources.settings, "site_assets_storage_dir", directory):
-            result = await research_game_poster(ITEM, model=happy_model(), search=search, fetch=fetch)
+            review = AsyncMock(return_value={"matches": True, "kind": "cover", "reason": "matched"})
+            result = await research_game_poster(ITEM, model=happy_model(), search=search, fetch=fetch, review=review)
+            review.assert_awaited_once()
             self.assertEqual(result["posterStatus"], "ready")
             self.assertEqual(result["posterSearchVersion"], 1)
             self.assertEqual(result["posterSourceUrl"], SOURCE)
@@ -108,7 +110,8 @@ class WebPosterAgentTests(unittest.IsolatedAsyncioTestCase):
                 )
                 search = AsyncMock(return_value={"results": [{"url": "https://general.example.com/article", "title": original}, {"url": source, "title": chinese}]})
                 fetch = AsyncMock(side_effect=[PosterResource(source, body, "text/html"), PosterResource(image, image_bytes(), "image/jpeg")])
-                result = await research_game_poster({**ITEM, "gameNameOriginal": original, "gameNameZh": chinese}, model=model, search=search, fetch=fetch)
+                result = await research_game_poster({**ITEM, "gameNameOriginal": original, "gameNameZh": chinese}, model=model, search=search, fetch=fetch,
+                                                   review=AsyncMock(return_value={"matches": True, "kind": "cover", "reason": "matched"}))
                 self.assertEqual(result["posterStatus"], "ready")
                 self.assertEqual(result["posterSourceUrl"], source)
                 fetch.assert_any_await(source)

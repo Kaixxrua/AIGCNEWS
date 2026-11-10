@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import posixpath
 import re
+import string
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
@@ -22,6 +23,17 @@ _DECORATION = re.compile(
 )
 _UNSAFE = re.compile(r"[\x00-\x20\x7f\\]")
 _ATTACHMENT = re.compile(r"/user-attachments/assets/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
+_IDENTITY_PUNCTUATION = str.maketrans({
+    **{chr(ord(char) + 0xFEE0): char for char in string.punctuation},
+    "‘": "'", "’": "'", "“": '"', "”": '"',
+})
+_IDENTITY_EMPHASIS = tuple(
+    re.compile(
+        rf"(?<![\w\\{marker[0]}]){re.escape(marker)}(?!\s)"
+        rf"([^{marker[0]}\n]+?)(?<!\s){re.escape(marker)}(?![\w{marker[0]}])"
+    )
+    for marker in ("***", "___", "**", "__", "*", "_")
+)
 
 
 def safe_repository_path(value: Any) -> str:
@@ -146,22 +158,48 @@ def _name(value: Any, limit: int = 160) -> str:
     return value
 
 
+def _identity_evidence(value: str) -> str:
+    # Compare displayed words without changing the returned name. Only paired
+    # inline emphasis and equivalent punctuation are folded; titles, numbers,
+    # editions, platform qualifiers and literal in-word underscores stay intact.
+    for pattern in _IDENTITY_EMPHASIS:
+        value = pattern.sub(r"\1", value)
+    value = html.unescape(value).translate(_IDENTITY_PUNCTUATION)
+    return " ".join(value.split()).casefold()
+
+
+def _identity_in_facts(name: str, facts: str) -> bool:
+    if not name:
+        return False
+    # A short numeric title/version must not match the prefix of another one
+    # (Game 2 vs Game 20, or Game 1.4 vs Game 1.4.3). Chinese prose need not have
+    # whitespace around a title, so these guards apply only to ASCII tokens.
+    start = r"(?<![a-z0-9_])" if name[0] in string.ascii_lowercase + string.digits else ""
+    end = ""
+    if name[-1] in string.digits:
+        end = r"(?![a-z0-9_]|\.\d)"
+    elif name[-1] in string.ascii_lowercase:
+        end = r"(?![a-z0-9_])"
+    return re.search(start + re.escape(name) + end, facts) is not None
+
+
 def normalize_game_details(data: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     """Refuse invented identities/URLs while caching a completed empty attempt."""
     result: dict[str, Any] = {
         "gameNameZh": "", "gameNameOriginal": "", "posterUrl": "",
         "posterSourceUrl": "", "posterKind": "", "detailsVersion": 1,
+        "identityEvidenceVersion": 2,
     }
     original = _name(data.get("game_name_original"))
     chinese = _name(data.get("game_name_zh"), 100)
     facts = " ".join(str(metadata.get(key) or "") for key in ("description", "readme_text"))
-    normalized_facts = " ".join(facts.split()).casefold()
-    normalized_name = " ".join(original.split()).casefold()
+    normalized_facts = _identity_evidence(facts)
+    normalized_name = _identity_evidence(original)
     repo = str(metadata.get("full_name") or "")
     if (
         data.get("game_identity") != "single_game" or len(original) < 3
-        or normalized_name not in normalized_facts
-        or normalized_name in {repo.casefold(), repo.rsplit("/", 1)[-1].casefold()}
+        or not _identity_in_facts(normalized_name, normalized_facts)
+        or normalized_name in {_identity_evidence(repo), _identity_evidence(repo.rsplit("/", 1)[-1])}
     ):
         return result
     result["gameNameOriginal"] = original
