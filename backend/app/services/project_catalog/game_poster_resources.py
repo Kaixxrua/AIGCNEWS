@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
-from curl_cffi import CurlOpt, ffi, lib
+from curl_cffi import CurlECode, CurlOpt, ffi, lib
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import AsyncSession
 from PIL import Image, ImageOps
@@ -29,7 +29,7 @@ from backend.app.services.outbound_target_policy import pin_http_target
 from backend.app.services.project_catalog.game_poster_search import SEARCH_ENGINES, bounded_engines
 
 PAGE_BYTES = 1024 * 1024
-IMAGE_BYTES = 4 * 1024 * 1024
+IMAGE_BYTES = 8 * 1024 * 1024
 IMAGE_PIXELS = 16_000_000
 SEARCH_WORKER_SECONDS = 22
 ASSET_BASE = "https://aigcnews.cn/api/media/site/game-posters/"
@@ -178,10 +178,33 @@ async def search_public_web(query: str, *, engines: tuple[str, ...] = ("google",
         attempts = _search_attempts(data.get("attempts")) if isinstance(data, dict) else []
         if not isinstance(data, dict) or data.get("unavailable") or not isinstance(data.get("results"), list):
             raise PosterResourceError("search_unavailable", attempts=attempts)
-        return {"engine": str(data.get("engine") or "ddgs")[:30], "results": data["results"][:6],
+        rows = []
+        for row in data["results"][:6]:
+            if not isinstance(row, dict):
+                continue
+            if "imageUrl" in row:
+                try:
+                    source, image_url = safe_web_url(row.get("url")), safe_web_url(row["imageUrl"])
+                except PosterResourceError:
+                    continue
+                # The subprocess cannot turn an arbitrary URL or extra field
+                # into trusted evidence. Network fetches still pin both hosts.
+                row = {"url": source, "imageUrl": image_url,
+                       "title": row["title"][:300] if isinstance(row.get("title"), str) else "",
+                       "snippet": row["snippet"][:600] if isinstance(row.get("snippet"), str) else ""}
+            rows.append(row)
+        return {"engine": str(data.get("engine") or "ddgs")[:30], "results": rows,
                 "workerTransport": "direct_child", "attempts": attempts}
     except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired) as exc:
         raise PosterResourceError("search_unavailable") from exc
+
+
+async def search_public_artwork(query: str) -> dict:
+    """Keep precise game-database queries, otherwise discover images and sources."""
+    # Preserve the existing query validator, including its non-string cases.
+    game_database = isinstance(query, str) and re.search(r"(?<!\S)site:gamesdb\.launchbox-app\.com(?=\s|$)", query, re.I)
+    engines = ("google", "yahoo") if game_database else ("bing_images", "yahoo")
+    return await search_public_web(query, engines=engines)
 
 
 async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResource:
@@ -199,9 +222,12 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                 if connections == ffi.NULL:
                     raise PosterResourceError("network_unavailable")
                 body = bytearray()
+                oversized = False
 
                 def receive(chunk: bytes) -> int:
+                    nonlocal oversized
                     if len(body) + len(chunk) > limit:
+                        oversized = True
                         return CURL_WRITEFUNC_ERROR
                     body.extend(chunk)
                     return len(chunk)
@@ -215,8 +241,17 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                                       CurlOpt.MAXFILESIZE_LARGE: limit},
                     ) as client:
                         response = await client.get(target.logical_url, allow_redirects=False, timeout=12, content_callback=receive)
+                except Exception as exc:
+                    # libcurl can reject Content-Length before streaming, or
+                    # the callback can stop an unknown/chunked response. Both
+                    # are size failures, without exposing transport messages.
+                    if oversized or getattr(exc, "code", None) == CurlECode.FILESIZE_EXCEEDED:
+                        raise PosterResourceError("image_too_large" if image else "page_too_large") from None
+                    raise
                 finally:
                     lib.curl_slist_free_all(connections)
+                if oversized:
+                    raise PosterResourceError("image_too_large" if image else "page_too_large")
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = response.headers.get("location")
                     if not location:
@@ -238,7 +273,9 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
 
 
 def clean_poster_jpeg(payload: bytes) -> tuple[bytes, int, int]:
-    if not payload or len(payload) > IMAGE_BYTES:
+    if len(payload) > IMAGE_BYTES:
+        raise PosterResourceError("image_too_large")
+    if not payload:
         raise PosterResourceError("invalid_image")
     try:
         with warnings.catch_warnings():

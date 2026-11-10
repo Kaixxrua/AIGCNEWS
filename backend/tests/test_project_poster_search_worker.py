@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, call, patch
+from unittest.mock import MagicMock, Mock, call, patch
 from urllib.parse import quote
 
 from backend.app.services.project_catalog import game_poster_search as worker
@@ -76,6 +76,64 @@ class PosterSearchWorkerTests(unittest.TestCase):
         self.assertEqual(result["attempts"][0]["parser"], "yahoo_headings")
         self.assertEqual(result["attempts"][0]["status"], "succeeded")
         self.assertNotIn("private-proxy-value", json.dumps(result))
+
+    def test_image_search_keeps_actual_image_with_its_referring_page_and_never_thumbnail(self):
+        search = MagicMock()
+        search.__enter__.return_value = search
+        search.images.return_value = [
+            {"url": "https://games.example/project/screenshots", "image": "https://images.example/original.png",
+             "thumbnail": "https://thumb.example/small.jpg", "title": "Game screenshot", "source": "Games site"},
+            {"url": "https://games.example/project/screenshots", "image": "https://images.example/other.png",
+             "title": "Another view", "body": "Gameplay", "source": "Games site"},
+            {"url": "https://games.example/missing", "thumbnail": "https://thumb.example/not-original.jpg"},
+            {"image": "https://images.example/no-source.png"},
+            {"url": "https://games.example/long", "image": "https://images.example/" + "x" * 2048},
+            None,
+        ]
+        constructor = Mock(return_value=search)
+        with patch.dict("sys.modules", {"ddgs": SimpleNamespace(DDGS=constructor)}):
+            result = worker.search_results("A Game screenshots", "private-proxy-value", ("bing_images", "yahoo"))
+        constructor.assert_called_once_with(proxy="private-proxy-value", timeout=8)
+        search.images.assert_called_once_with("A Game screenshots", backend="bing", region="us-en", safesearch="moderate", max_results=6)
+        search.text.assert_not_called()
+        self.assertEqual(result["engine"], "bing_images")
+        self.assertEqual(result["results"], [
+            {"url": "https://games.example/project/screenshots", "imageUrl": "https://images.example/original.png",
+             "title": "Game screenshot", "snippet": "Games site"},
+            {"url": "https://games.example/project/screenshots", "imageUrl": "https://images.example/other.png",
+             "title": "Another view", "snippet": "Gameplay"},
+        ])
+        self.assertEqual(result["attempts"][0]["resultCount"], 2)
+        self.assertNotIn("thumb.example", json.dumps(result))
+        self.assertNotIn("private-proxy-value", json.dumps(result))
+
+    def test_empty_or_failed_bing_images_uses_only_the_existing_fallback_budget(self):
+        for failure in (False, True):
+            with self.subTest(failure=failure):
+                search = MagicMock()
+                search.__enter__.return_value = search
+                if failure:
+                    search.images.side_effect = RuntimeError("private-403-captcha-response-with-proxy-credentials")
+                else:
+                    search.images.return_value = []
+                module, _, engine = self.yahoo_module()
+                with patch.dict("sys.modules", {"ddgs": SimpleNamespace(DDGS=Mock(return_value=search)), "ddgs.engines.yahoo": module}):
+                    result = worker.search_results("A Game screenshots", None, ("bing_images", "yahoo"))
+                self.assertEqual(result["engine"], "yahoo")
+                self.assertEqual([row["engine"] for row in result["attempts"]], ["bing_images", "yahoo"])
+                self.assertEqual(result["attempts"][0]["status"], "unavailable" if failure else "empty")
+                search.images.assert_called_once()
+                engine.http_client.request.assert_called_once()
+                self.assertNotIn("private-403", json.dumps(result))
+
+    def test_image_search_fallback_cannot_start_after_the_worker_deadline(self):
+        with patch.object(worker.time, "monotonic", side_effect=[0, 0, 20, 20]), \
+                patch.object(worker, "_search_ddgs", return_value=[]) as first, \
+                patch.object(worker, "_search_yahoo") as second:
+            result = worker.search_results("A Game screenshots", None, ("bing_images", "yahoo"))
+        first.assert_called_once_with("A Game screenshots", None, 8, "bing_images")
+        second.assert_not_called()
+        self.assertEqual(result["attempts"][-1]["reason"], "worker_deadline")
 
     def test_rate_limit_and_oversized_html_are_safe_unavailable_diagnostics(self):
         for status, body, reason in [(429, "secret-response", "provider_http"),

@@ -23,6 +23,8 @@ class PosterSearchAliasTests(unittest.TestCase):
             ("A Game II (Nintendo Switch, 2019)", "A Game II (2019)", "Nintendo Switch"),
             ("A Game II (2019, Nintendo Switch)", "A Game II (2019)", "Nintendo Switch"),
             ("冒险游戏 II（Nintendo Switch，2019）", "冒险游戏 II (2019)", "Nintendo Switch"),
+            ("Adventure II DS", "Adventure II", "DS"),
+            ("Adventure II Nintendo 3DS", "Adventure II", "Nintendo 3DS"),
         ]:
             with self.subTest(original=original):
                 self.assertEqual(_platform_search_alias(original), (alias, platform))
@@ -77,6 +79,13 @@ class PosterSearchAliasTests(unittest.TestCase):
         self.assertTrue(page_images(SOURCE, body, "Adventure 2 (2019) (Nintendo Switch)")["matchesGame"])
         self.assertFalse(page_images(SOURCE, body, "Adventure 2 (2018) (Nintendo Switch)")["matchesGame"])
         self.assertFalse(page_images(SOURCE, body, "Adventure 2 (2019) (PlayStation 2)")["matchesGame"])
+
+    def test_bare_console_suffix_needs_matching_page_platform(self):
+        body = f'<h1>Adventure II.</h1><p>Platform: Nintendo DS.</p><img src="{IMAGE}">'.encode()
+        self.assertTrue(page_images(SOURCE, body, "Adventure II DS")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, body, "Adventure II Nintendo 3DS")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, body.replace(b'Nintendo DS', b'Nintendo 3DS'), "Adventure II DS")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, body.replace(b'Platform: Nintendo DS.', b''), "Adventure II DS")["matchesGame"])
 
 
 class PosterSearchAliasAgentTests(unittest.IsolatedAsyncioTestCase):

@@ -11,7 +11,7 @@ import sys
 import time
 from urllib.parse import unquote, urlsplit
 
-SEARCH_ENGINES = frozenset({"yahoo", "duckduckgo", "google", "brave", "startpage", "mojeek", "wikipedia"})
+SEARCH_ENGINES = frozenset({"yahoo", "duckduckgo", "google", "brave", "startpage", "mojeek", "wikipedia", "bing_images"})
 SEARCH_PAGE_BYTES = 1024 * 1024
 SEARCH_OUTPUT_BYTES = 32000
 
@@ -124,6 +124,15 @@ def _search_ddgs(query: str, proxy: str | None, timeout: int, engine: str) -> li
     from ddgs import DDGS
 
     with DDGS(proxy=proxy, timeout=timeout) as search:
+        if engine == "bing_images":
+            rows = search.images(query, backend="bing", region="us-en", safesearch="moderate", max_results=6)
+            # The provider's original image and referring page are one piece
+            # of evidence. Never substitute its thumbnail or synthesize URLs.
+            return [{"url": row["url"], "imageUrl": row["image"],
+                     "title": str(row.get("title") or "")[:300],
+                     "snippet": str(row.get("body") or row.get("source") or "")[:600]}
+                    for row in rows[:6] if isinstance(row, dict)
+                    and all(isinstance(row.get(key), str) and 0 < len(row[key]) <= 2048 for key in ("url", "image"))]
         rows = search.text(query, backend=engine, region="us-en", max_results=6)
     return [{"url": str(row.get("href") or "")[:2048],
              "title": str(row.get("title") or "")[:300],

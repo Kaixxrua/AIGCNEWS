@@ -160,7 +160,8 @@ class PosterImageReviewTests(unittest.IsolatedAsyncioTestCase):
         for payload in payloads:
             with self.subTest(bytes=len(payload)):
                 model = mock_model()
-                with self.assertRaisesRegex(PosterResourceError, "^invalid_image$"):
+                error = "image_too_large" if len(payload) > resources.IMAGE_BYTES else "invalid_image"
+                with self.assertRaisesRegex(PosterResourceError, "^" + error + "$"):
                     await review_poster_image(model, payload, item=ITEM, candidate=CANDIDATE, kind="cover")
                 model.bind.assert_not_called()
                 model.ainvoke.assert_not_awaited()
