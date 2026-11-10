@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"net/url"
 	"path"
 	"strings"
@@ -12,6 +13,11 @@ const gameDetailsVersion = 1
 
 func readyGameDetails(item Description) bool {
 	return readyDescription(item) && item.DetailsVersion == gameDetailsVersion
+}
+
+func needsPosterGeneration(item Description) bool {
+	return readyGameDetails(item) && item.GameNameOriginal != "" && item.PosterURL == "" &&
+		(item.PosterSearchVersion == 0 || item.PosterRetryAfter <= 0)
 }
 
 func cleanGameName(value string, chinese bool) string {
@@ -75,6 +81,18 @@ func validGamePoster(repo, raw string) bool {
 		return true
 	case "upload.wikimedia.org":
 		return validWikimediaPosterPath(u.Path)
+	case "aigcnews.cn":
+		const prefix = "/api/media/site/game-posters/"
+		id := strings.TrimSuffix(strings.TrimPrefix(u.Path, prefix), ".jpg")
+		if !strings.HasPrefix(u.Path, prefix) || !strings.HasSuffix(u.Path, ".jpg") || len(id) != 64 || u.RawPath != "" {
+			return false
+		}
+		for _, char := range id {
+			if !(char >= 'a' && char <= 'f' || char >= '0' && char <= '9') {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -128,7 +146,52 @@ func validGamePosterSource(item Description) bool {
 	if u.Host == "upload.wikimedia.org" {
 		return validWikipediaPosterSource(item.GameNameOriginal, item.PosterSourceURL)
 	}
+	if u.Host == "aigcnews.cn" {
+		return validPublicPosterSource(item.PosterSourceURL)
+	}
 	return validPosterSource(item.Repo, item.PosterSourceURL)
+}
+
+// This is an attribution link, never a URL fetched by the local application.
+// Only the backend may fetch search results after its DNS/redirect checks.
+func validPublicPosterSource(raw string) bool {
+	if len(raw) > 2048 || strings.TrimSpace(raw) != raw {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Opaque != "" || u.Fragment != "" ||
+		strings.Contains(u.Host, ":") || u.ForceQuery {
+		return false
+	}
+	cleanPath := strings.TrimSuffix(u.Path, "/")
+	if cleanPath == "" {
+		cleanPath = "/"
+	}
+	if path.Clean(u.Path) != cleanPath || strings.Contains(u.Path, "//") {
+		return false
+	}
+	for _, char := range raw {
+		if unicode.IsControl(char) || unicode.IsSpace(char) || char == '\\' {
+			return false
+		}
+	}
+	for _, char := range u.Path {
+		if unicode.IsControl(char) || char == '\\' {
+			return false
+		}
+	}
+	host := strings.ToLower(u.Host)
+	if !strings.Contains(host, ".") || net.ParseIP(host) != nil || strings.Trim(host, "0123456789.") == "" ||
+		host == "metadata.google.internal" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") ||
+		strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".lan") || strings.HasSuffix(host, ".") {
+		return false
+	}
+	for _, char := range host {
+		if !(char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '.' || char == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 func validPosterSource(repo, raw string) bool {
@@ -148,23 +211,27 @@ func sanitizeGameDetails(item *Description) {
 		item.GameNameZh, item.GameNameOriginal = "", ""
 		item.PosterURL, item.PosterSourceURL, item.PosterKind = "", "", ""
 		item.PosterStatus, item.PosterRetryAfter = "", 0
+		item.PosterSearchVersion = 0
 		return
 	}
 	item.GameNameZh = cleanGameName(item.GameNameZh, true)
 	item.GameNameOriginal = cleanGameName(item.GameNameOriginal, false)
+	if item.PosterSearchVersion != 1 {
+		item.PosterSearchVersion = 0
+	}
 	if item.PosterStatus != "ready" && item.PosterStatus != "missing" && item.PosterStatus != "unavailable" {
 		item.PosterStatus = ""
 	}
 	if item.PosterRetryAfter < 0 || item.PosterRetryAfter > 86400 {
 		item.PosterRetryAfter = 0
 	}
-	if item.Status != "ready" || (item.PosterKind != "cover" && item.PosterKind != "screenshot") ||
+	if (item.Status != "ready" && item.Status != "pending" && item.Status != "failed") || (item.PosterKind != "cover" && item.PosterKind != "screenshot") ||
 		!validGamePoster(item.Repo, item.PosterURL) || !validGamePosterSource(*item) {
 		item.PosterURL, item.PosterSourceURL, item.PosterKind = "", "", ""
 		if item.PosterStatus == "ready" {
 			item.PosterStatus, item.PosterRetryAfter = "", 0
 		}
-	} else {
-		item.PosterStatus, item.PosterRetryAfter = "ready", 0
+	} else if item.PosterStatus == "" {
+		item.PosterStatus = "ready"
 	}
 }

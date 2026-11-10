@@ -42,7 +42,7 @@ async def _description_request(request: Request) -> ProjectDescriptionRequest:
     try:
         return ProjectDescriptionRequest.model_validate(json.loads(body))
     except (ValueError, ValidationError, UnicodeError) as exc:
-        raise HTTPException(422, "请求须包含有效 repo，可选 gameDetails 布尔字段。") from exc
+        raise HTTPException(422, "请求须包含有效 repo；gameDetails、refreshPoster 必须为布尔值，重新找海报需要 gameDetails=true。") from exc
 
 
 def _error_response(exc: Exception) -> JSONResponse:
@@ -103,7 +103,7 @@ async def request_project_description(
     # and tracking only; the token issuer does not grant a generic "read" scope.
     response.headers["Cache-Control"] = "no-store"
     try:
-        item = await service.request(payload.repo, redis=getattr(request.app.state, "redis", None), authorization=authorization, operations=operations, game_details=payload.gameDetails)
+        item = await service.request(payload.repo, redis=getattr(request.app.state, "redis", None), authorization=authorization, operations=operations, game_details=payload.gameDetails, refresh_poster=payload.refreshPoster)
         response.status_code = 202 if item["status"] == "pending" else 200
         return {"items": [item], "pollAfter": 3}
     except Exception as exc:

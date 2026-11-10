@@ -101,9 +101,13 @@
         if (retry) posterRetries.delete(url);
         failedPosters.add(url);
         showImageFailure(); syncRetryButtons();
+        if (!state.stopped) { syncLibraryDescriptions(); syncDiscoveryControls(); }
       }, { once: true });
       image.addEventListener("load", () => {
-        if (retry) { posterRetries.delete(url); failedPosters.delete(url); syncRetryButtons(); }
+        if (retry) {
+          posterRetries.delete(url); failedPosters.delete(url); syncRetryButtons();
+          if (!state.stopped) { syncLibraryDescriptions(); syncDiscoveryControls(); }
+        }
       }, { once: true });
       image.src = url;
       figure.replaceChildren(image, caption);
@@ -131,7 +135,7 @@
     const source = descriptionSource(description);
     if (source) nodes.push(element("span", "description-source", source));
     const record = state.descriptions[repositoryKey(game.repo)];
-    if (record?.status === "ready" && record.error) nodes.push(element("span", "description-error", "暂用已缓存的中文简介：" + record.error));
+    if (record?.status === "ready" && record.error) nodes.push(element("span", "description-error", "暂用已缓存的游戏资料：" + record.error));
     if (showOriginal && description.original.trim() && description.original.trim() !== description.text.trim()) {
       const original = element("details", "original-description");
       original.append(element("summary", "", "查看上游原文"), element("p", "", description.original));
@@ -159,43 +163,60 @@
 
   function needsDescription(game) {
     const record = state.descriptions[repositoryKey(game.repo)];
-    return globalThis.PortShelfDescriptions.needsDetails(game, record);
+    return globalThis.PortShelfDescriptions.needsDetails(game, record) || (canSearchPoster(game) && hasFailedPoster(game));
   }
 
-  function needsPoster(game) { return globalThis.PortShelfDescriptions.needsPoster(game, state.descriptions[repositoryKey(game.repo)]); }
-  function posterRetrySeconds(game) { return needsPoster(game) ? globalThis.PortShelfDescriptions.posterRetrySeconds(state.descriptions[repositoryKey(game.repo)] || game) : 0; }
+  function hasFailedPoster(game) {
+    const { url } = globalThis.PortShelfDescriptions.posterEvidence(game, state.descriptions[repositoryKey(game.repo)]);
+    return Boolean(url && failedPosters.has(url));
+  }
+  function needsPoster(game) { return globalThis.PortShelfDescriptions.needsPoster(game, state.descriptions[repositoryKey(game.repo)]) || (canSearchPoster(game) && hasFailedPoster(game)); }
+  function canSearchPoster(game) { return globalThis.PortShelfDescriptions.canSearchPoster(game, state.descriptions[repositoryKey(game.repo)]); }
+  function posterSearchNeedsRetry(game) {
+    const record = state.descriptions[repositoryKey(game.repo)] || game;
+    return canSearchPoster(game) && (record.status === "failed" || (record.posterSearchVersion === 1 && ["missing", "unavailable"].includes(record.posterStatus)));
+  }
+  function posterRetrySeconds(game) {
+    const record = state.descriptions[repositoryKey(game.repo)] || game;
+    return canSearchPoster(game) && record.posterSearchVersion === 1 ? globalThis.PortShelfDescriptions.posterRetrySeconds(record) : 0;
+  }
   function canSubmitDescription(game) { return needsDescription(game) && !posterRetrySeconds(game) && state.descriptions[repositoryKey(game.repo)]?.status !== "pending"; }
 
   function schedulePosterCooldown() {
     clearTimeout(posterCooldownTimer); posterCooldownTimer = null;
     if (state.stopped) return;
-    const waits = Object.values(state.descriptions).filter(record => globalThis.PortShelfDescriptions.needsPoster({}, record)).map(record => globalThis.PortShelfDescriptions.posterRetrySeconds(record)).filter(seconds => seconds > 0);
+    const waits = Object.values(state.descriptions).filter(record => record.posterSearchVersion === 1 && globalThis.PortShelfDescriptions.canSearchPoster({}, record)).map(record => globalThis.PortShelfDescriptions.posterRetrySeconds(record)).filter(seconds => seconds > 0);
     if (waits.length) posterCooldownTimer = setTimeout(() => { posterCooldownTimer = null; updateDescriptionViews(); }, Math.min(2147483647, waits.reduce((minimum, seconds) => Math.min(minimum, seconds), Infinity) * 1000));
   }
 
   function descriptionControl(game, compact = false) {
-    if (!needsDescription(game)) return null;
+    const posterOnly = canSearchPoster(game);
+    if (!needsDescription(game) && !posterOnly) return null;
     const key = repositoryKey(game.repo);
     const record = state.descriptions[key];
     const pending = record?.status === "pending";
     const requesting = state.descriptionRequests.has(key);
-    const posterOnly = needsPoster(game);
     const cooldown = posterRetrySeconds(game);
     const wrapper = element("span", "description-control" + (compact ? " compact" : ""));
-    const button = element("button", "description-button", requesting ? "正在提交…" : pending ? "核对生成进度" : posterOnly ? cooldown ? "海报稍后重试" : ["missing", "unavailable"].includes(record?.posterStatus) || record?.status === "failed" ? "重试海报" : "补全海报" : record?.status === "failed" ? "重试游戏资料" : descriptionOf(game).source !== "unknown" ? "补全中文名与海报" : "生成中文游戏资料");
+    const button = element("button", "description-button", requesting ? posterOnly ? "正在联网查图…" : "正在提交…" : pending ? "核对生成进度" : posterOnly ? cooldown ? "稍后联网重找" : "联网重找海报" : record?.status === "failed" ? "重试游戏资料" : descriptionOf(game).source !== "unknown" ? "补全中文名与海报" : "生成中文游戏资料");
     button.type = "button";
     button.dataset.descriptionRepo = key;
+    if (posterOnly) button.dataset.posterSearchRepo = key;
     button.disabled = requesting || Boolean(state.descriptionBatch?.running) || Boolean(cooldown && !pending);
-    if (pending) wrapper.append(element("span", "description-pending", posterOnly ? "正在查找海报" : "游戏资料生成中"));
+    if (pending) wrapper.append(element("span", "description-pending", posterOnly ? "正在联网查找海报" : "游戏资料生成中"));
     button.addEventListener("click", () => {
       if (state.descriptionRequests.has(key) || state.descriptionBatch?.running) return;
       if (pending) { queueDescriptionRead([game.repo], true); return; }
       if (!state.hasAigcToken) { openAigcSettings(); return; }
-      generateDescription(game);
+      generateDescription(game, posterOnly);
     });
     wrapper.append(button);
-    if (cooldown && !pending) wrapper.append(element("span", "description-pending", "约 " + (cooldown > 60 ? Math.ceil(cooldown / 60) + " 分钟" : cooldown + " 秒") + "后可重试"));
-    else if (!compact && posterOnly && !pending) wrapper.append(element("span", "description-pending", "只补图片，保留中文名和简介。"));
+    if (posterOnly && !pending && !requesting) {
+      if (record?.status === "failed" || record?.posterStatus === "unavailable") wrapper.append(element("span", "description-error", "联网查图暂未完成，已有资料已保留。"));
+      else if (record?.posterSearchVersion === 1 && record?.posterStatus === "missing") wrapper.append(element("span", "description-pending", "本次联网搜索未找到匹配海报，已有资料已保留。"));
+    }
+    if (cooldown && !pending) wrapper.append(element("span", "description-pending", "约 " + (cooldown > 3600 ? Math.ceil(cooldown / 3600) + " 小时" : cooldown > 60 ? Math.ceil(cooldown / 60) + " 分钟" : cooldown + " 秒") + "后可重试"));
+    if (posterOnly && !pending) wrapper.append(element("span", "description-pending", compact ? "使用现有富化额度" : "保留中文名和简介；联网查图使用现有富化额度。"));
     if (!compact && record?.error) wrapper.append(element("span", "description-error", record.error));
     return wrapper;
   }
@@ -207,12 +228,12 @@
   }
 
   function descriptionError(error) {
-    const explanations = { 401: "请设置或更新 AIGCNEWS MCP Token。", 403: "此 AIGCNEWS Token 暂无中文简介生成权限。", 429: "AIGCNEWS 额度或请求频率已达限制，已停止后续提交。", 404: "AIGCNEWS 中文简介服务暂未开放，请稍后重试。", 503: "AIGCNEWS 中文简介服务暂不可用，请稍后重试。" };
-    return (explanations[error.status] || "") + (error.message || "中文简介请求未完成，请稍后重试。");
+    const explanations = { 401: "请设置或更新 AIGCNEWS MCP Token。", 403: "此 AIGCNEWS Token 暂无游戏资料富化权限。", 429: "AIGCNEWS 额度或请求频率已达限制，已停止后续提交。", 404: "AIGCNEWS 游戏资料服务暂未开放，请稍后重试。", 503: "AIGCNEWS 游戏资料服务暂不可用，请稍后重试。" };
+    return (explanations[error.status] || "") + (error.message || "游戏资料请求未完成，请稍后重试。");
   }
 
   function openAigcSettings() {
-    showError("aigc-token-error", "请先设置独立的 AIGCNEWS MCP Token，再生成中文简介。");
+    showError("aigc-token-error", "请先设置独立的 AIGCNEWS MCP Token，再生成游戏资料或联网查找海报。");
     $("aigc-token-input").value = "";
     renderStats();
     if (!$("settings-dialog").open) $("settings-dialog").showModal();
@@ -226,6 +247,10 @@
       const key = repositoryKey(item.repo);
       const previous = state.descriptions[key];
       state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(previous, item);
+      if (previous?.status === "pending" && item.status === "ready" && item.posterSearchVersion === 1 && item.posterStatus === "ready") {
+        const poster = globalThis.PortShelfDescriptions.posterEvidence({}, state.descriptions[key]);
+        if (poster.url) failedPosters.delete(poster.url);
+      }
       if (state.descriptions[key].status === "pending") {
         if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
       } else state.descriptionPollTargets.delete(key);
@@ -279,7 +304,7 @@
     if (state.stopped || state.descriptionPollTimer || state.descriptionReadBusy) return;
     const pending = Array.from(state.descriptionPollTargets).filter(([repo, attempts]) => attempts < 20 && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting);
     if (!pending.length) {
-      if (Array.from(state.descriptionPollTargets.values()).some((attempts) => attempts >= 20)) descriptionNotice("部分中文简介仍在生成，自动核对已暂歇。可点击游戏旁的“核对生成进度”继续查看。");
+      if (Array.from(state.descriptionPollTargets.values()).some((attempts) => attempts >= 20)) descriptionNotice("部分游戏资料仍在生成或查图，自动核对已暂歇。可点击游戏旁的“核对生成进度”继续查看。");
       return;
     }
     state.descriptionPollTimer = setTimeout(() => {
@@ -292,18 +317,22 @@
     }, state.descriptionPollAfter * 1000);
   }
 
-  async function requestDescription(game) {
+  async function requestDescription(game, refreshPoster = false) {
     const key = repositoryKey(game.repo);
-    const posterOnly = needsPoster(game);
+    const posterOnly = refreshPoster || needsPoster(game);
     state.descriptionRequests.add(key);
     updateDescriptionViews();
     try {
-      const result = await api("/api/descriptions", { repo: game.repo });
+      const result = await api("/api/descriptions", { repo: game.repo, ...(refreshPoster ? { refreshPoster: true } : {}) });
       if (state.stopped) return;
       mergeDescriptions(result.items);
       state.descriptionPollAfter = Math.min(15, Math.max(3, Number(result.pollAfter) || 3));
       const record = state.descriptions[key];
-      if (!record || record.status === "missing") throw new Error("服务未确认中文简介任务，请稍后重试。");
+      if (!record || record.status === "missing") throw new Error("服务未确认游戏资料任务，请稍后重试。");
+      if (refreshPoster && record.status === "ready" && record.posterSearchVersion === 1 && record.posterStatus === "ready") {
+        const poster = globalThis.PortShelfDescriptions.posterEvidence(game, record);
+        if (poster.url) failedPosters.delete(poster.url);
+      }
       return record;
     } catch (error) {
       if (!state.stopped) state.descriptions[key] = globalThis.PortShelfDescriptions.mergeRecord(state.descriptions[key], { repo: game.repo, status: "failed", error: descriptionError(error), ...(posterOnly ? { posterStatus: "unavailable" } : {}) });
@@ -315,20 +344,20 @@
     }
   }
 
-  async function generateDescription(game) {
+  async function generateDescription(game, refreshPoster = false) {
     if (state.stopped || state.descriptionRequests.has(repositoryKey(game.repo)) || state.descriptionBatch?.running) return;
-    if (!needsDescription(game)) return;
+    if (refreshPoster ? !canSearchPoster(game) : !needsDescription(game)) return;
     if (state.descriptions[repositoryKey(game.repo)]?.status === "pending") { queueDescriptionRead([game.repo], true); return; }
     if (posterRetrySeconds(game)) return;
     if (!state.hasAigcToken) { openAigcSettings(); return; }
-    const posterOnly = needsPoster(game);
+    const posterOnly = refreshPoster || needsPoster(game);
     try {
-      const record = await requestDescription(game);
+      const record = await requestDescription(game, refreshPoster);
       if (state.stopped) return;
-      if (record.status === "failed") { descriptionNotice(record.error || "中文简介生成未完成，可稍后重试。"); notify(record.error || "中文简介生成未完成，可稍后重试。", true); }
+      if (record.status === "failed") { descriptionNotice(record.error || "游戏资料更新未完成，可稍后重试。"); notify(record.error || "游戏资料更新未完成，可稍后重试。", true); }
       else {
         const poster = globalThis.PortShelfDescriptions.posterEvidence(game, record);
-        const message = posterOnly ? record.status === "pending" ? "正在查找海报，中文名和简介已保留。" : poster.url ? "游戏海报已更新，中文名和简介已保留。" : poster.status === "unavailable" ? "海报暂未取得，可稍后重试；中文名和简介已保留。" : "暂未找到匹配海报，可稍后重试。" : record.status === "ready" ? "中文名、海报与简介已核对更新。" : "已提交游戏资料生成，完成后会自动显示。";
+        const message = posterOnly ? record.status === "pending" ? "正在联网查找海报，中文名和简介已保留。" : poster.status === "unavailable" ? "联网查图暂未完成，可稍后重试；已有资料已保留。" : poster.status === "missing" ? "本次联网搜索未找到匹配海报；已有资料已保留。" : record.posterSearchVersion === 1 && poster.status === "ready" && poster.url ? "联网海报已核对更新，中文名和简介已保留。" : "联网查图结果尚未确认，可稍后核对。" : record.status === "ready" ? "中文名、海报与简介已核对更新。" : "已提交游戏资料生成，完成后会自动显示。";
         descriptionNotice(""); notify(message);
       }
     } catch (error) { descriptionNotice(descriptionError(error)); notify(descriptionError(error), true); }
@@ -339,7 +368,7 @@
     $("description-progress-panel").hidden = !batch;
     if (!batch) return;
     $("description-progress-label").textContent = (batch.running ? batch.stopRequested ? "等待当前提交结束" : "正在补全游戏资料" : batch.stopRequested ? "已停止提交" : batch.interrupted ? "游戏资料提交已中断" : "游戏资料提交完成") + " · 已处理 " + batch.done + " / " + batch.total + " · 已接受 " + batch.accepted + " · 失败 " + batch.failed;
-    $("description-progress-note").textContent = batch.note || "资料已齐全、正在生成或海报冷却中的项目自动跳过；已有中文名和简介的项目只补图片。";
+    $("description-progress-note").textContent = batch.note || "资料已齐全、正在生成或海报冷却中的项目自动跳过；已有中文名和简介的项目联网补图，使用现有富化额度。";
     $("descriptions-stop").hidden = !batch.running;
     $("descriptions-stop").disabled = batch.stopRequested;
   }
@@ -384,7 +413,7 @@
         if (!canSubmitDescription(game)) { batch.done++; continue; }
         let submitted = false;
         try {
-          let record = await requestDescription(game);
+          let record = await requestDescription(game, canSearchPoster(game) && hasFailedPoster(game));
           if (state.stopped) return;
           batch.done++;
           submitted = true;
@@ -1045,9 +1074,10 @@
     $("batch-add").textContent = batchRunning ? "正在批量添加…" : pending === 0 ? "当前结果已全部加入" : "一键添加当前结果";
     const missingDescriptions = state.searchResults.filter(canSubmitDescription).length;
     const pendingDescriptions = state.searchResults.some((game) => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
-    const coolingPosters = state.searchResults.some(game => posterRetrySeconds(game) > 0);
+    const coolingPosters = state.searchResults.some(game => (needsPoster(game) || posterSearchNeedsRetry(game)) && posterRetrySeconds(game) > 0);
+    const retryPosters = state.searchResults.some(posterSearchNeedsRetry);
     $("descriptions-fill").disabled = state.searchBusy || discoveryLocked || state.descriptionRequests.size > 0 || missingDescriptions === 0;
-    $("descriptions-fill").textContent = descriptionRunning ? "正在补全游戏资料…" : missingDescriptions === 0 ? pendingDescriptions ? "游戏资料生成中" : coolingPosters ? "海报稍后可重试" : "当前游戏资料已核对" : "补全中文名、海报与简介";
+    $("descriptions-fill").textContent = descriptionRunning ? "正在补全游戏资料…" : missingDescriptions === 0 ? pendingDescriptions ? "游戏资料生成中" : coolingPosters ? "海报稍后可重试" : retryPosters ? "部分海报需联网重找" : "当前游戏资料已核对" : "补全中文名、海报与简介";
     syncLibraryDescriptions();
     $("discover-results").querySelectorAll("[data-result-repo]").forEach((button) => {
       const added = known.has(button.dataset.resultRepo);
@@ -1087,10 +1117,11 @@
     const games = filteredGames();
     const missing = games.filter(canSubmitDescription).length;
     const pending = games.some(game => state.descriptions[repositoryKey(game.repo)]?.status === "pending");
-    const cooling = games.some(game => posterRetrySeconds(game) > 0);
+    const cooling = games.some(game => (needsPoster(game) || posterSearchNeedsRetry(game)) && posterRetrySeconds(game) > 0);
+    const retryPosters = games.some(posterSearchNeedsRetry);
     const running = Boolean(state.descriptionBatch?.running);
     $("library-descriptions-fill").disabled = running || Boolean(state.batch?.running) || state.descriptionRequests.size > 0 || missing === 0;
-    $("library-descriptions-fill").textContent = running ? "正在补全游戏资料…" : missing ? "补全当前中文名与海报（" + missing + "）" : pending ? "游戏资料生成中" : cooling ? "海报稍后可重试" : "当前游戏资料已核对";
+    $("library-descriptions-fill").textContent = running ? "正在补全游戏资料…" : missing ? "补全当前中文名与海报（" + missing + "）" : pending ? "游戏资料生成中" : cooling ? "海报稍后可重试" : retryPosters ? "部分海报需联网重找" : "当前游戏资料已核对";
   }
 
   async function loadDiscoveryPage() {

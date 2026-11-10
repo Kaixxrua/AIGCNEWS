@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_DESCRIPTION_REPOS = 50
 # GitHub owner and repository path segments, excluding dot traversal and URLs.
@@ -20,6 +20,13 @@ class ProjectDescriptionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     repo: str = Field(min_length=3, max_length=140, strict=True)
     gameDetails: bool = Field(default=False, strict=True)
+    refreshPoster: bool = Field(default=False, strict=True)
+
+    @model_validator(mode="after")
+    def poster_requires_game_details(self):
+        if self.refreshPoster and not self.gameDetails:
+            raise ValueError("refreshPoster 需要 gameDetails=true")
+        return self
 
     @field_validator("repo")
     @classmethod
@@ -43,6 +50,7 @@ class ProjectDescriptionItem(BaseModel):
     detailsVersion: Literal[1] | None = None
     posterStatus: Literal["ready", "missing", "unavailable"] | None = None
     posterRetryAfter: int | None = Field(default=None, ge=0)
+    posterSearchVersion: Literal[0, 1] | None = None
 
 
 class ProjectDescriptionsResponse(BaseModel):

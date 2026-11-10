@@ -194,7 +194,7 @@ func TestGamePosterCSPDoesNotOpenScriptsOrConnectionsToOtherHosts(t *testing.T) 
 	app := descriptionApp(t)
 	w := call(app, "GET", "/", "")
 	csp := w.Header().Get("Content-Security-Policy")
-	for _, host := range []string{"https://raw.githubusercontent.com", "https://user-images.githubusercontent.com", "https://github.com", "https://upload.wikimedia.org"} {
+	for _, host := range []string{"https://raw.githubusercontent.com", "https://user-images.githubusercontent.com", "https://github.com", "https://upload.wikimedia.org", "https://aigcnews.cn"} {
 		if !strings.Contains(csp, host) {
 			t.Fatalf("poster origin missing from CSP: %s", host)
 		}

@@ -600,7 +600,7 @@ func (m *transferManager) run(ctx context.Context, id string) error {
 		}
 	}
 	job, _ = m.job(id)
-	if job.Enrich && !readyTransferDetails(job) {
+	if job.Enrich && (!readyTransferDetails(job) || (job.GameNameOriginal != "" && job.PosterURL == "")) {
 		if err := m.enrich(ctx, job); err != nil {
 			return err
 		}
@@ -751,7 +751,11 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	descriptionCtx, cancel := context.WithTimeout(ctx, 100*time.Second)
 	defer cancel()
 	result, err := m.app.aigc.get(descriptionCtx, []string{job.Repo})
-	if err == nil && (len(result.Items) == 0 || !readyGameDetails(result.Items[0])) && m.app.aigc.hasToken() {
+	var previous Description
+	if err == nil && len(result.Items) > 0 && readyGameDetails(result.Items[0]) {
+		previous = result.Items[0]
+	}
+	if err == nil && (len(result.Items) == 0 || !readyGameDetails(result.Items[0]) || needsPosterGeneration(result.Items[0])) && m.app.aigc.hasToken() {
 		result, _, err = m.app.aigc.generate(descriptionCtx, job.Repo)
 	}
 	for err == nil && len(result.Items) > 0 && result.Items[0].Status == "pending" {
@@ -769,6 +773,12 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 			result, err = m.app.aigc.get(descriptionCtx, []string{job.Repo})
 		}
 	}
+	posterUnavailable := readyGameDetails(previous) && (err != nil || len(result.Items) == 0 || !readyGameDetails(result.Items[0]))
+	if posterUnavailable {
+		// A poster-only request cannot discard text already verified by GET or
+		// turn a completed download into endless Chinese-description retries.
+		result, err = DescriptionsResponse{Items: []Description{previous}}, nil
+	}
 	if err == nil && len(result.Items) > 0 && readyDescription(result.Items[0]) {
 		item := result.Items[0]
 		_ = m.app.lib.saveDescriptions([]Description{item})
@@ -780,11 +790,15 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 			j.Warnings = []string{}
 			if !readyTransferDetails(*j) {
 				j.Warnings = []string{"中文简介已保留，中文游戏名与海报资料待补充"}
+			} else if posterUnavailable || (j.GameNameOriginal != "" && j.PosterURL == "") {
+				j.Warnings = []string{"中文游戏资料已保留，海报联网查找尚未完成"}
 			}
 		}, true)
 	}
 	message := "中文简介待补充，请设置 AIGCNEWS Token 后重试；文件传输会继续"
-	if err != nil {
+	if readyTransferDetails(job) {
+		message = "中文游戏资料已保留，海报联网查找尚未完成"
+	} else if err != nil {
 		message = "中文简介未完成：" + err.Error()
 	}
 	return m.modify(job.ID, func(j *TransferJob) {

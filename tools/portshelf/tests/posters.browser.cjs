@@ -17,8 +17,8 @@ const description = '这是《塞尔达传说：王国之泪》的电脑移植�
 const recordFor = (game, patch = {}) => ({ repo: game.repo, status: 'ready', descriptionZh: '这是一个经典游戏的开源移植。', gameNameZh: '测试游戏', gameNameOriginal: game.name, detailsVersion: 1, checkedAt, ...patch });
 const records = {
   [totk.repo]: recordFor(totk, { gameNameZh: '塞尔达传说：王国之泪', gameNameOriginal: 'The Legend of Zelda: Tears of the Kingdom', descriptionZh: description, posterUrl: '', posterSourceUrl: '', posterKind: '' }),
-  'demo/no-cover': recordFor(games[1], { gameNameZh: '未找到封面的游戏', posterStatus: 'missing', posterRetryAfter: 86400 }),
-  'demo/network': recordFor(games[2], { gameNameZh: '网络失败的游戏', posterStatus: 'unavailable', posterRetryAfter: 300 }),
+  'demo/no-cover': recordFor(games[1], { gameNameZh: '未找到封面的游戏', posterStatus: 'missing', posterRetryAfter: 3600, posterSearchVersion: 1 }),
+  'demo/network': recordFor(games[2], { gameNameZh: '网络失败的游戏', posterStatus: 'unavailable', posterRetryAfter: 300, posterSearchVersion: 1 }),
   'demo/unknown': recordFor(games[3], { gameNameZh: '', gameNameOriginal: '', posterStatus: 'missing', posterRetryAfter: 0 }),
   [batchGame.repo]: recordFor(batchGame, { gameNameZh: '批量补图游戏' }),
 };
@@ -34,17 +34,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/status') return json({ running: false });
     if (url.pathname === '/api/descriptions') {
       if (req.method === 'POST') {
-        assert.deepEqual(Object.keys(body), ['repo']); posts.push(body.repo);
+        assert.deepEqual(body, { repo: body.repo, ...(body.repo === batchGame.repo ? {} : { refreshPoster: true }) }); posts.push(body.repo);
         assert.equal(records[body.repo].detailsVersion, 1, 'fixture requests only supplement posters for existing detailed text');
         if (body.repo === totk.repo) {
           records[totk.repo] = { ...records[totk.repo], status: 'pending' };
           return json({ items: [{ repo: totk.repo, status: 'pending', detailsVersion: 1 }], pollAfter: 3 });
         }
-        records[body.repo] = { ...records[body.repo], posterStatus: 'missing', posterRetryAfter: 86400, checkedAt: new Date().toISOString() };
+        records[body.repo] = { ...records[body.repo], posterStatus: 'missing', posterRetryAfter: 3600, posterSearchVersion: 1, checkedAt: new Date().toISOString() };
         return json({ items: [records[body.repo]] });
       }
       const repos = (url.searchParams.get('repos') || '').split(','); reads.push(repos);
-      if (finishPoster && records[totk.repo].status === 'pending') records[totk.repo] = { ...records[totk.repo], status: 'ready', posterUrl: imageURL, posterSourceUrl: sourceURL, posterKind: 'cover', posterStatus: 'ready', posterRetryAfter: 0, checkedAt: new Date().toISOString() };
+      if (finishPoster && records[totk.repo].status === 'pending') records[totk.repo] = { ...records[totk.repo], status: 'ready', posterUrl: imageURL, posterSourceUrl: sourceURL, posterKind: 'cover', posterStatus: 'ready', posterRetryAfter: 60, posterSearchVersion: 1, checkedAt: new Date().toISOString() };
       return json({ items: repos.map(repo => records[repo] || { repo, status: 'missing' }), pollAfter: 3 });
     }
     if (url.pathname === '/api/discover') return json({ items: [totk, batchGame], page: 1, nextPage: 0, hasMore: false, totalCandidates: 2 });
@@ -74,15 +74,15 @@ const server = http.createServer(async (req, res) => {
     const card = repo => page.locator('#game-' + repo.replace(/[^a-zA-Z0-9_-]/g, '-')).locator('..');
     const target = card(totk.repo), network = card('demo/network'), missing = card('demo/no-cover');
     assert.equal(await target.locator('.card-title').innerText(), '塞尔达传说：王国之泪');
-    assert.equal(await target.getByRole('button', { name: '补全海报', exact: true }).isEnabled(), true);
+    assert.equal(await target.getByRole('button', { name: '联网重找海报', exact: true }).isEnabled(), true);
     assert.equal(posts.length, 0, 'old v1 cache reads must not automatically submit enrichment');
     assert.match(await missing.locator('.poster-placeholder').innerText(), /暂未找到匹配海报/);
-    assert.equal(await missing.getByRole('button', { name: '海报稍后重试', exact: true }).isDisabled(), true);
+    assert.equal(await missing.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.match(await network.locator('.poster-placeholder').innerText(), /海报暂未取得，可重试/);
-    assert.equal(await network.getByRole('button', { name: '海报稍后重试', exact: true }).isDisabled(), true);
+    assert.equal(await network.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.equal(await card('demo/unknown').locator('.description-button').count(), 0);
 
-    await target.getByRole('button', { name: '补全海报', exact: true }).click();
+    await target.getByRole('button', { name: '联网重找海报', exact: true }).click();
     await target.getByRole('button', { name: '核对生成进度', exact: true }).waitFor();
     assert.equal(await target.locator('.card-description').innerText(), description);
     assert.equal(await target.locator('.card-title').innerText(), '塞尔达传说：王国之泪');
@@ -108,10 +108,10 @@ const server = http.createServer(async (req, res) => {
     await page.locator('#detail-close').click();
     assert.equal(posts.length, 1, 'checking cached cooldown does not submit a retry');
     await page.evaluate(() => { window.posterClockOffset = 301000; document.getElementById('library-search').dispatchEvent(new Event('input')); });
-    await network.getByRole('button', { name: '重试海报', exact: true }).click();
+    await network.getByRole('button', { name: '联网重找海报', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('#game-demo-network').closest('article').querySelector('.poster-placeholder')?.textContent === '暂未找到匹配海报');
     assert.equal(await network.locator('.card-description').innerText(), records['demo/network'].descriptionZh);
-    assert.equal(await network.getByRole('button', { name: '海报稍后重试', exact: true }).isDisabled(), true);
+    assert.equal(await network.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.equal(await page.locator('#library-descriptions-fill').isDisabled(), true);
     assert.match(await page.locator('#library-descriptions-fill').innerText(), /海报稍后可重试/);
 
@@ -129,7 +129,7 @@ const server = http.createServer(async (req, res) => {
     await page.screenshot({ path: path.join(outputDir, 'mobile-fixture.png'), fullPage: true });
     await page.reload(); await page.waitForFunction(() => document.getElementById('game-count').textContent === '4');
     assert.deepEqual(posts, [totk.repo, 'demo/network', 'demo/batch']);
-    assert.equal(await target.getByRole('button', { name: '补全海报', exact: true }).count(), 0);
+    assert.equal(await target.getByRole('button', { name: '稍后联网重找', exact: true }).isDisabled(), true);
     assert.equal(await target.locator('img').getAttribute('src'), imageURL);
     assert.deepEqual(errors, []);
     console.log('PASS fixture: actual TOTK v1 field shape, poster-only explicit POST, pending text/name preservation, Wikipedia/raster source pairing, missing/unavailable/cooldown states, cached checkedAt countdown, current-result batch, no implicit repeat POST, one deliberate image retry, 390px layout.');

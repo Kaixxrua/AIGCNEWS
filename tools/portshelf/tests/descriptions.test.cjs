@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 require('../web/zh.js');
 const { describe } = globalThis.PortShelfDescriptions;
-const { identity, imageURL, mergeRecord, needsDetails, posterEvidence, needsPoster, posterRetrySeconds } = globalThis.PortShelfDescriptions;
+const { identity, imageURL, mergeRecord, needsDetails, posterEvidence, needsPoster, canSearchPoster, posterRetrySeconds } = globalThis.PortShelfDescriptions;
 
 test('AIGCNEWS Chinese takes precedence and keeps the exact upstream original', () => {
   const original = 'A Doom 3 source port.';
@@ -120,4 +120,64 @@ test('poster retry cooldown uses the original checkedAt, so repeated local cache
   assert.equal(posterRetrySeconds(record, now + 180001), 0);
   assert.equal(posterRetrySeconds({ ...record, posterRetryAfter: 86400 }, now), 86280);
   for (const patch of [{ checkedAt: '' }, { posterRetryAfter: 0 }, { posterRetryAfter: Infinity }, { posterRetryAfter: -1 }]) assert.equal(posterRetrySeconds({ ...record, ...patch }, now), 0);
+});
+
+test('cached web posters use the exact AIGCNEWS content address and a safe public HTTPS source, never arbitrary image hosts', () => {
+  const url = 'https://aigcnews.cn/api/media/site/game-posters/' + 'a'.repeat(64) + '.jpg';
+  const source = 'https://openrct2.org/screenshots?view=all#classic';
+  assert.equal(imageURL(url), url);
+  assert.equal(posterEvidence({}, { posterUrl: url, posterSourceUrl: source }).url, url);
+  assert.equal(posterEvidence({}, { posterUrl: url, posterSourceUrl: source }).source, source);
+  assert.equal(posterEvidence({}, { posterUrl: url }).url, null, 'cached artwork requires the verified source page');
+  assert.equal(imageURL(source), null, 'permitting source pages must not permit their images to load directly');
+  for (const bad of [url + '?x=1', url + '?', url + '#source', url + '#', url + '\n', url.replace('aigcnews.cn/', 'aigcnews.cn:443/'), url.replace('aigcnews.cn/', 'user@aigcnews.cn/'), url.replace('aigcnews.cn', 'aigcnews.cn.evil.com'), url.replace('https:', 'http:'), url.replace('a'.repeat(64), 'A'.repeat(64)), url.replace('a'.repeat(64), 'a'.repeat(63)), url.replace('a'.repeat(64), '%61' + 'a'.repeat(63)), url.replace('/game-posters/', '/other/../game-posters/'), url.replace('.jpg', '.png'), url.replace('.jpg', '.svg'), url + '/extra']) assert.equal(imageURL(bad), null, bad);
+  for (const bad of ['javascript:alert(1)', 'data:text/html,test', 'http://openrct2.org/screenshots', 'https://user:secret@openrct2.org/screenshots', 'https://openrct2.org:443/screenshots', 'https://openrct2.org:8443/screenshots', 'https://localhost/poster', 'https://localhost./poster', 'https://x.localhost/poster', 'https://server.local/poster', 'https://server.internal/poster', 'https://router.home.arpa/poster', 'https://127.0.0.1/poster', 'https://127.1/poster', 'https://2130706433/poster', 'https://10.0.0.1/poster', 'https://172.16.0.1/poster', 'https://192.168.0.1/poster', 'https://169.254.169.254/poster', 'https://[::1]/poster', 'https://%6cocalhost/poster', 'https://openrct2.org/%3Cscript%3E', 'https://openrct2.org/%0d%0a', 'https://openrct2.org/%5cattack', 'https://en.wikipedia.org/wiki/File:Other.jpg', 'https://github.com/demo/game?private=1']) {
+    const evidence = posterEvidence({}, { posterUrl: url, posterSourceUrl: bad });
+    assert.equal(evidence.url, null, bad); assert.equal(evidence.source, null, bad);
+  }
+});
+
+test('known version-one game text can explicitly re-search existing artwork without adding complete records to ordinary bulk enrichment', () => {
+  const game = { repo: 'OpenRCT2/OpenRCT2', name: 'OpenRCT2' };
+  const record = { detailsVersion: 1, descriptionZh: '这是《过山车大亨 2》的开源重现。', gameNameOriginal: 'RollerCoaster Tycoon 2', posterUrl: 'https://raw.githubusercontent.com/OpenRCT2/OpenRCT2/develop/screenshot.png', posterSourceUrl: 'https://github.com/OpenRCT2/OpenRCT2', posterKind: 'screenshot' };
+  assert.equal(canSearchPoster(game, record), true);
+  assert.equal(needsPoster(game, record), false);
+  assert.equal(needsDetails(game, record), false);
+  assert.equal(canSearchPoster(game, { ...record, posterUrl: '' }), true);
+  for (const patch of [{ gameNameOriginal: '' }, { descriptionZh: '' }, { detailsVersion: 0 }, { detailsVersion: 2 }]) assert.equal(canSearchPoster(game, { ...record, ...patch }), false);
+});
+
+test('poster search progress and negative results retain names, text, old artwork and fixed cooldown metadata', () => {
+  const previous = { repo: 'OpenRCT2/OpenRCT2', status: 'ready', detailsVersion: 1, gameNameZh: '过山车大亨 2', gameNameOriginal: 'RollerCoaster Tycoon 2', descriptionZh: '这是经典游戏的开源重现。', posterUrl: 'https://raw.githubusercontent.com/demo/art/main/old.png', posterSourceUrl: 'https://github.com/demo/art', posterKind: 'screenshot', posterStatus: 'ready', posterSearchVersion: 1, checkedAt: '2026-11-10T06:00:00Z', posterRetryAfter: 60 };
+  const pending = mergeRecord(previous, { repo: previous.repo, status: 'pending' });
+  assert.equal(pending.posterSearchVersion, 1); assert.equal(pending.checkedAt, previous.checkedAt); assert.equal(pending.posterRetryAfter, 60);
+  for (const result of [{ status: 'failed', posterStatus: 'unavailable' }, { status: 'ready', detailsVersion: 1, posterSearchVersion: 1, posterStatus: 'missing', posterUrl: previous.posterUrl, posterSourceUrl: previous.posterSourceUrl, posterKind: previous.posterKind, checkedAt: '2026-11-10T06:01:00Z', posterRetryAfter: 3600 }]) {
+    const updated = mergeRecord(pending, { repo: previous.repo, ...result });
+    for (const field of ['gameNameZh', 'gameNameOriginal', 'descriptionZh', 'posterUrl', 'posterSourceUrl', 'posterKind']) assert.equal(updated[field], previous[field], field);
+    assert.equal(updated.posterStatus, result.posterStatus);
+    assert.equal(updated.posterSearchVersion, 1);
+  }
+  const missing = mergeRecord(previous, { ...previous, posterStatus: 'missing', posterRetryAfter: 3600 });
+  assert.equal(posterRetrySeconds(missing, Date.parse(previous.checkedAt) + 120000), 3480, 'an old image does not eliminate the latest search cooldown');
+  assert.equal(posterRetrySeconds(mergeRecord(missing, missing), Date.parse(previous.checkedAt) + 120000), 3480);
+  assert.equal(mergeRecord(null, { status: 'ready' }).posterSearchVersion, 0);
+  assert.equal(mergeRecord(previous, { ...previous, posterSearchVersion: 2 }).posterSearchVersion, 0);
+});
+
+test('authoritative missing-cache records clear stale artwork while sparse pending or failed responses retain it', () => {
+  const previous = { repo: 'demo/expired', status: 'ready', detailsVersion: 1, posterSearchVersion: 1, descriptionZh: '这是经典游戏的开源重现。', gameNameZh: '测试游戏', gameNameOriginal: 'Test Game', posterUrl: 'https://aigcnews.cn/api/media/site/game-posters/' + 'e'.repeat(64) + '.jpg', posterSourceUrl: 'https://example.com/game', posterKind: 'cover', posterStatus: 'ready' };
+  const missing = { repo: previous.repo, status: 'ready', detailsVersion: 1, posterSearchVersion: 1, descriptionZh: previous.descriptionZh, gameNameZh: previous.gameNameZh, gameNameOriginal: previous.gameNameOriginal, posterStatus: 'missing', posterRetryAfter: 0 };
+  for (const patch of [{}, { posterUrl: '', posterSourceUrl: '', posterKind: '' }]) {
+    const record = mergeRecord(previous, { ...missing, ...patch });
+    for (const field of ['posterUrl', 'posterSourceUrl', 'posterKind']) assert.equal(record[field], '', field);
+    for (const field of ['descriptionZh', 'gameNameZh', 'gameNameOriginal']) assert.equal(record[field], previous[field], field);
+    assert.equal(posterEvidence({}, record).url, null);
+    assert.equal(needsPoster({}, record), true);
+  }
+  for (const status of ['pending', 'failed']) {
+    const sparse = mergeRecord(previous, { repo: previous.repo, status });
+    assert.equal(sparse.posterUrl, previous.posterUrl);
+    const explicitlyCleared = mergeRecord(previous, { repo: previous.repo, status, posterUrl: '', posterSourceUrl: '', posterKind: '' });
+    for (const field of ['posterUrl', 'posterSourceUrl', 'posterKind']) assert.equal(explicitlyCleared[field], '', field);
+  }
 });

@@ -20,21 +20,22 @@ const aigcDescriptionsURL = "https://aigcnews.cn/api/v1/projects/descriptions"
 const descriptionTTL = 7 * 24 * time.Hour
 
 type Description struct {
-	Repo             string `json:"repo"`
-	Status           string `json:"status"`
-	DescriptionZh    string `json:"descriptionZh"`
-	GameNameZh       string `json:"gameNameZh,omitempty"`
-	GameNameOriginal string `json:"gameNameOriginal,omitempty"`
-	PosterURL        string `json:"posterUrl,omitempty"`
-	PosterSourceURL  string `json:"posterSourceUrl,omitempty"`
-	PosterKind       string `json:"posterKind,omitempty"`
-	PosterStatus     string `json:"posterStatus,omitempty"`
-	PosterRetryAfter int    `json:"posterRetryAfter,omitempty"`
-	DetailsVersion   int    `json:"detailsVersion,omitempty"`
-	Source           string `json:"source"`
-	CheckedAt        string `json:"checkedAt"`
-	Error            string `json:"error,omitempty"`
-	RetryAfter       int    `json:"retryAfter,omitempty"`
+	Repo                string `json:"repo"`
+	Status              string `json:"status"`
+	DescriptionZh       string `json:"descriptionZh"`
+	GameNameZh          string `json:"gameNameZh,omitempty"`
+	GameNameOriginal    string `json:"gameNameOriginal,omitempty"`
+	PosterURL           string `json:"posterUrl,omitempty"`
+	PosterSourceURL     string `json:"posterSourceUrl,omitempty"`
+	PosterKind          string `json:"posterKind,omitempty"`
+	PosterStatus        string `json:"posterStatus,omitempty"`
+	PosterRetryAfter    int    `json:"posterRetryAfter,omitempty"`
+	PosterSearchVersion int    `json:"posterSearchVersion,omitempty"`
+	DetailsVersion      int    `json:"detailsVersion,omitempty"`
+	Source              string `json:"source"`
+	CheckedAt           string `json:"checkedAt"`
+	Error               string `json:"error,omitempty"`
+	RetryAfter          int    `json:"retryAfter,omitempty"`
 }
 type DescriptionsResponse struct {
 	Items     []Description `json:"items"`
@@ -97,19 +98,23 @@ func freshDescription(item Description, now time.Time) bool {
 	return readyGameDetails(item) && err == nil && !checked.After(now.Add(5*time.Minute)) && now.Sub(checked) < descriptionTTL
 }
 func (a *AIGC) get(ctx context.Context, repos []string) (DescriptionsResponse, error) {
-	v, _, err := a.request(ctx, http.MethodGet, repos)
+	v, _, err := a.request(ctx, http.MethodGet, repos, false)
 	return v, err
 }
 func (a *AIGC) generate(ctx context.Context, repo string) (DescriptionsResponse, int, error) {
-	return a.request(ctx, http.MethodPost, []string{repo})
+	return a.request(ctx, http.MethodPost, []string{repo}, false)
 }
-func (a *AIGC) request(ctx context.Context, method string, repos []string) (DescriptionsResponse, int, error) {
+func (a *AIGC) request(ctx context.Context, method string, repos []string, refreshPoster bool) (DescriptionsResponse, int, error) {
 	endpoint := aigcDescriptionsURL
 	var body io.Reader
 	if method == http.MethodGet {
 		endpoint += "?gameDetails=true&repos=" + url.QueryEscape(strings.Join(repos, ","))
 	} else {
-		encoded, _ := json.Marshal(map[string]any{"repo": repos[0], "gameDetails": true})
+		payload := map[string]any{"repo": repos[0], "gameDetails": true}
+		if refreshPoster {
+			payload["refreshPoster"] = true
+		}
+		encoded, _ := json.Marshal(payload)
 		body = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint, body)
@@ -312,7 +317,8 @@ func (a *App) registerDescriptionRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /api/descriptions", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Repo string `json:"repo"`
+			Repo          string `json:"repo"`
+			RefreshPoster bool   `json:"refreshPoster"`
 		}
 		if err := decode(w, r, &body); err != nil {
 			fail(w, 400, err)
@@ -323,7 +329,7 @@ func (a *App) registerDescriptionRoutes(mux *http.ServeMux) {
 			fail(w, 400, err)
 			return
 		}
-		response, status, err := a.aigc.generate(r.Context(), repos[0])
+		response, status, err := a.aigc.request(r.Context(), http.MethodPost, repos, body.RefreshPoster)
 		if err != nil {
 			code := 502
 			var upstream *descriptionError
