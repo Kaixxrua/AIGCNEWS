@@ -34,7 +34,8 @@ _DECORATION = re.compile(r"(?:^|[/._-])(?:logo|badge|icon|favicon|avatar|sponsor
 _GAME_SITES = ("steampowered.com", "gog.com", "mobygames.com", "igdb.com", "thecoverproject.net",
                "nintendo.com", "gamesdb.launchbox-app.com", "itch.io", "playstation.com", "xbox.com")
 _GALLERY = re.compile(r"(?:^|[/_\s-])(?:covers?|images?|pictures?|posters?|screenshots?|galler(?:y|ies)|artwork|boxart|boxshots?)(?:$|[/_\s-])", re.I)
-_IMAGE_FILE = re.compile(r"\.(?:jpe?g|png|webp)$", re.I)
+_IMAGE_FILE = re.compile(r"\.(?:jpe?g|png|webp|gif)$", re.I)
+_FILE_PAGE = re.compile(r"/(?:File|Image):[^/]+$", re.I)
 _PLACEHOLDER = re.compile(r"(?:^|[/_. -])(?:placeholder|no[ _-]?(?:image|screenshot|cover)|missing[ _-]?(?:image|screenshot|cover)|contribute[ _-]?(?:ss|screenshot))(?:[_. /-]|$)", re.I)
 _NUMBERED_SEQUEL = re.compile(r"^\s+(?:[2-9]|[1-9]\d|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii)(?![\w])", re.I)
 _PLATFORM_SUFFIX = re.compile(r"^(.+?)\s*(?:\(([^()]+)\)|（([^（）]+)）)\s*$")
@@ -68,6 +69,12 @@ TOOLS = [
     _tool("verify_image", "选择同一款游戏的海报或游戏画面，真实下载解码并缓存；只接受 read_page 的 candidateId，最多三图。",
           {"candidateId": {"type": "string"}, "kind": {"type": "string", "enum": ["cover", "screenshot"]}}),
 ]
+# Keep existing query-only clients compatible while allowing a project query
+# to include its original game's name as disambiguating evidence.
+TOOLS[0]["function"]["parameters"]["properties"]["identityKind"] = {
+    "type": "string", "enum": ["game", "project"],
+    "description": "查原作图片选game；查已核实项目自己的截图选project，可附原作背景和作者消歧。",
+}
 
 
 def _canonical_identity(value: str) -> str:
@@ -230,11 +237,12 @@ def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str) -
         except PosterResourceError:
             continue
         parts = urlsplit(address)
-        if address in seen or parts.hostname != source.hostname or _IMAGE_FILE.search(parts.path):
+        file_page = bool(_FILE_PAGE.search(unquote(parts.path)))
+        if address in seen or parts.hostname != source.hostname or (_IMAGE_FILE.search(parts.path) and not file_page):
             continue
         path = unquote(parts.path)
         label = tag.get_text(" ", strip=True)[:200] or str(tag.get("title") or "")[:200]
-        if not _GALLERY.search(path + " " + label):
+        if not file_page and not _GALLERY.search(path + " " + label):
             continue
         path_title = re.sub(r"[/_-]+", " ", path)
         same_game = bool(source_path and path.startswith(source_path + "/"))
@@ -312,7 +320,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
                 address = _page_url(url, str(anchor["href"]))
             except PosterResourceError:
                 address = ""
-            if address and _IMAGE_FILE.search(urlsplit(address).path):
+            if address and _IMAGE_FILE.search(urlsplit(address).path) and not _FILE_PAGE.search(unquote(urlsplit(address).path)):
                 found.append({"url": address, "label": label, "context": context, "linkedOriginal": True})
         if any(value < 160 for value in dimensions.values()):
             continue
@@ -354,7 +362,8 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
         if (parts.hostname == "opengraph.githubassets.com"
                 or re.fullmatch(r"avatars\d*\.githubusercontent\.com", parts.hostname or "")
                 or _DECORATION.search(unquote(parts.path))
-                or _PLACEHOLDER.search(unquote(parts.path))):
+                or _PLACEHOLDER.search(unquote(parts.path))
+                or _FILE_PAGE.search(unquote(parts.path))):
             continue
         if address not in seen:
             seen.add(address)
@@ -385,6 +394,7 @@ class GamePosterAgent:
         self.read = False
         self.had_error = False
         self.project_recovery = False
+        self.source_recovery = False
         self.project_recovery_used = False
         self.deadline_seconds = min(180.0, max(0.001, float(deadline_seconds)))
         self.model_seconds = min(40.0, max(0.001, float(model_seconds)))
@@ -393,8 +403,9 @@ class GamePosterAgent:
     def _prepare(self, name: str, args: dict, original: str, record: dict, chinese: str) -> dict:
         """Reserve budgets and accept only IDs known before this model turn."""
         cached_page = name == "read_page" and isinstance(args.get("resultId"), str) and args["resultId"] in self.page_resources
-        recovery_search = (name == "search_web" and self.project_recovery and not self.project_recovery_used
-                           and self.counts[name] >= self.limits[name])
+        recovery_search = (name == "search_web" and (self.project_recovery or self.source_recovery)
+                           and not self.project_recovery_used
+                           and any(self.counts[key] >= self.limits[key] for key in self.limits))
         if name not in self.limits or (self.counts[name] >= self.limits[name] and not cached_page and not recovery_search):
             raise PosterResourceError("tool_budget_exceeded")
         # Re-reading a completed URL cannot supply new evidence. Reject before
@@ -405,22 +416,28 @@ class GamePosterAgent:
             self.counts[name] += 1
         if name == "search_web":
             query = args.get("query")
-            if not isinstance(query, str) or len(query) > 300 or set(args) != {"query"}:
+            mode = args.get("identityKind")
+            if (not isinstance(query, str) or len(query) > 300 or not set(args) <= {"query", "identityKind"}
+                    or (mode is not None and mode not in {"game", "project"})):
                 raise PosterResourceError("query_must_include_game")
             project_name = self.project_repo.split("/", 1)[-1] if self.project_repo else ""
             project_query = bool(project_name and has_project_identity(query, project_name)
-                                 and (not self.item.get("gameNameOriginal") or not _matches_identity(query, _identity_names(original, chinese))))
+                                 and mode != "game" and (mode == "project" or not self.item.get("gameNameOriginal")
+                                                        or not _matches_identity(query, _identity_names(original, chinese))))
+            if mode == "project" and not project_query:
+                raise PosterResourceError("query_must_include_game")
             if not project_query and not _matches_identity(query, _identity_names(original, chinese)):
                 raise PosterResourceError("query_must_include_game")
             if recovery_search:
-                if not project_query:
+                if self.project_recovery and not project_query:
                     raise PosterResourceError("recovery_requires_project_query")
                 self.project_recovery_used = True
-                self.limits["search_web"] += 1
+                if self.counts[name] >= self.limits[name]:
+                    self.limits["search_web"] += 1
                 self.limits["read_page"] += 2
                 self.limits["verify_image"] += 1
                 self.counts[name] += 1
-                record["projectRecovery"] = True
+                record["projectRecovery" if self.project_recovery else "sourceRecovery"] = True
             if not project_query and not _matches_identity(query, _identity_names(original)):
                 # An English game database cannot reliably find a translated
                 # title. Repair a known translated title, never invent a new
@@ -544,8 +561,12 @@ class GamePosterAgent:
                              "gameSite": _game_site(url), **{key: prepared[key] for key in ("identityKind", "identityName", "identityRepo")}})
                 if image:
                     rows[-1]["searchImages"] = [image]
+                evidence = rows[-1]["title"] + " " + rows[-1]["snippet"] + " " + unquote(urlsplit(url).path)
+                rows[-1]["identityHint"] = (has_project_identity(evidence, prepared["identityName"])
+                                            if prepared["identityKind"] == "project"
+                                            else _matches_identity(evidence, _identity_names(original, chinese)))
                 seen[url] = rows[-1]
-            rows.sort(key=lambda row: not row["gameSite"])
+            rows.sort(key=lambda row: (not row["identityHint"], not row["gameSite"]))
             rows = [self._register_result(result) for result in rows]
             record.update(engine=str(response.get("engine") or "public_web")[:30], results=rows)
             if response.get("attempts"):
@@ -566,19 +587,26 @@ class GamePosterAgent:
             candidates = []
             images = page.pop("images")
             if page["matchesGame"] and evidence.get("searchImages"):
-                merged = {image["url"]: image for image in evidence["searchImages"][:6]}
+                indexed = {image["url"]: image for image in evidence["searchImages"][:6]
+                           if not _FILE_PAGE.search(unquote(urlsplit(image["url"]).path))}
+                # Current DOM references precede potentially stale image-index
+                # URLs. The search-only candidates remain available as fallback.
+                merged = {}
                 for image in images:
-                    previous = merged.get(image["url"], {})
-                    merged[image["url"]] = {**previous, **image,
+                    previous = indexed.get(image["url"], {})
+                    merged[image["url"]] = {**previous, **image, "inSourcePage": True,
                                              "label": image.get("label") or previous.get("label", ""),
                                              "context": image.get("context") or previous.get("context", "")}
+                for image in indexed.values():
+                    merged.setdefault(image["url"], {**image, "inSourcePage": False})
                 images = list(merged.values())[:12]
             for image in images:
                 candidate_id = f"image-{len(self.candidates) + 1}"
                 self.candidates[candidate_id] = {**image, "sourceUrl": source, "pageTitle": page["title"],
+                                                 "sourceExcerpt": page["text"][:1200],
                                                  "identityKind": evidence.get("identityKind", "game")}
                 candidates.append({"candidateId": candidate_id, "imageUrl": image["url"], "sourceUrl": source,
-                                   "pageTitle": page["title"], **{key: image[key] for key in ("label", "context", "width", "height", "linkedOriginal") if key in image}})
+                                   "pageTitle": page["title"], **{key: image[key] for key in ("label", "context", "width", "height", "linkedOriginal", "inSourcePage") if key in image}})
             links = []
             page_links = page.pop("links")
             if not prepared["result"].get("parentResultId"):
@@ -606,6 +634,9 @@ class GamePosterAgent:
             record["attempts"] = exc.attempts
         if record.get("tool") == "read_page" and record.get("sourceUrl"):
             self.failed_hosts.add(urlsplit(record["sourceUrl"]).hostname)
+        if (self.project_repo and value["error"] in {"network_unavailable", "page_unavailable", "invalid_image", "image_too_large", "page_too_large"}
+                and (record.get("tool") == "verify_image" or self.counts["read_page"] >= 2)):
+            self.source_recovery = True
         if value["error"] == "image_content_mismatch" and isinstance(record.get("imageReview"), dict):
             review = record["imageReview"]
             if (review.get("matches") is False and review.get("kind") in {"cover", "screenshot"}
@@ -615,18 +646,34 @@ class GamePosterAgent:
                     value["nextStep"] = "图片不是该项目的游戏。核对原作与独立项目关系；可用已提供的 projectSearchIdentity 查找项目自己的截图，不要继续换同一商业原作的盒封。"
                 elif review["reason"] == "wrong_version":
                     value["nextStep"] = "图片版本不匹配。保留完整原作版本证据重新查找，或使用已提供的项目名称查找项目本身画面。"
-                if (review["reason"] in {"wrong_game", "wrong_version"} and self.project_repo
-                        and self.candidates.get(record.get("candidateId"), {}).get("identityKind") != "project"):
+                if review["reason"] in {"wrong_game", "wrong_version"} and self.project_repo:
                     self.project_recovery = True
-                    if not self.project_recovery_used and self.counts["search_web"] >= self.limits["search_web"]:
-                        value["projectRecovery"] = {"queryIdentity": self.project_repo.split("/", 1)[1],
-                                                    "instruction": "原作图已被内容核验拒绝；额外允许一次项目名截图查询、两页和一张图。只查该项目，不可继续搜索商业原作。"}
         if value["error"] == "invalid_image":
             value["nextStep"] = "此候选不是合格大图，可能是缩略图；读取来源页已返回的图库/封面详情 links，不能猜测大图地址。"
         if alternatives := self._unused_pages():
             value["unreadSources"] = alternatives
             value.setdefault("nextStep", "仍有真实搜索结果可读；先尝试尚未失败的其它网站，不要把本次故障当作没有图片。")
+        value.update(self._recovery_hint())
         return value
+
+    def _recovery_hint(self) -> dict:
+        if self.project_recovery_used or not (self.project_recovery or self.source_recovery):
+            return {}
+        key = "projectRecovery" if self.project_recovery else "sourceRecovery"
+        return {key: {"queryIdentity": self.project_repo.split("/", 1)[-1],
+                      "projectRepo": self.project_repo,
+                      "instruction": ("错误游戏或版本已被内容核验拒绝；只查此项目自己的截图，用identityKind=project并附作者或已知游戏背景消歧。"
+                                      if self.project_recovery else "来源失效；可用原作或项目身份换一个来源查询。")
+                      + "常规查询、读页或核图额度耗尽时，只补一次查询机会、两页和一张图；仍受总时限约束。"}}
+
+    def _unused_images(self) -> list[dict]:
+        failed_image = any(row.get("tool") == "verify_image" and row.get("imageUrl") and row.get("error") for row in self.trace)
+        if not failed_image or self.counts["verify_image"] >= self.limits["verify_image"]:
+            return []
+        attempted = {row.get("candidateId") for row in self.trace if row.get("tool") == "verify_image"}
+        return [{"candidateId": key, "sourceUrl": row["sourceUrl"], "imageUrl": row["url"],
+                 "label": row.get("label", ""), "inSourcePage": row.get("inSourcePage", True)}
+                for key, row in self.candidates.items() if key not in attempted][:6]
 
     def _verified_result(self, reason: str) -> dict | None:
         if not self.searched or not self.verified:
@@ -676,6 +723,9 @@ class GamePosterAgent:
             "即使已有原作名，若简介说明这是独立游戏/自由素材替代，或原版盒封与重制版不符，也可以搜索 projectSearchIdentity。"
             "先根据简介判断项目关系：独立游戏、续作、多游戏引擎直接优先项目名截图；不要先把两次查询都用于关联的商业原作。"
             "此时使用项目名加screenshots，必须找项目自己的画面，不得把商业原作当独立项目；无需改写原作名。"
+            "项目检索显式传identityKind=project；短名、普通词或与原作同名的项目，应附repo作者和已核实游戏背景消歧。名称用引号保留拼写，不要接受搜索引擎把项目名自动纠正为拼写相近的另一游戏。"
+            "project模式可同时包含原作名称用于消歧，归属仍是该开源项目；仅标题拼写类似不能替代来源核对。"
+            "identityHint仅是搜索标题/摘要中的名称提示，不是批准；false结果尤其要防止拼写纠正成别的游戏，优先读true来源，仍须核对实际页面和图片。"
             "search_web会执行真实网页或图片搜索；图片检索结果也必须先读其来源页，身份核实后才会生成可验证的候选ID。"
             "优先游戏官网、游戏商店和专门游戏资料/封面站，例如 Steam、GOG、MobyGames、IGDB、TheCoverProject、"
             "Nintendo、LaunchBox Games Database、itch.io；无合适结果再扩大到百科等其它公开来源。"
@@ -691,9 +741,11 @@ class GamePosterAgent:
             "网页中提到原名不代表每张图都属于该游戏，必须结合图片说明、所在标题、图片路径核对；排除续作、其它推荐游戏及站点通用图。"
             "图片须通过实际内容核验，纯站点占位图或要求贡献截图的提示不能当作游戏画面。image_content_mismatch后换候选。"
             "read_page/verify_image只能用工具已经返回的ID；搜索结果页只有简介时，可以读取返回的同站图库links。"
+            "inSourcePage=true代表刚读取的页面仍引用此图，优先于仅在图片搜索索引中存在的旧URL；旧图404后应尝试当前页面的其它图片。File:开头的百科地址是图片详情页，应读links取真实原图。"
             "项目页只有logo或下载按钮时，优先读取工具返回的项目Wiki/游戏商店links，不要把按钮当作截图。"
             "thumb/thumbnail路径和小尺寸图片优先跟进已返回的详情页links，不应同时验证多张缩略图。invalid_image意味着需换大图，不是模型服务故障。"
             "通常最多2次搜索、6页、3图、8轮模型调用；工具明确返回projectRecovery时另有一次项目查询、两页、一张图和最多三轮，仍受总时限约束。"
+            "sourceRecovery表示来源故障，可在相同额度内换原作或项目来源；所有补救总共只可增加一次，不能累加。"
             "同一轮应并行读取两个最有希望的独立页面。图片被判wrong_game后立刻换项目来源，不要继续核验同一原作的多个盒封。"
             "不能在同轮猜测新生成的page/image ID；已有可靠封面就立即结束，不再做额外搜索。"
             "找到可用海报后只返回JSON {\"candidateId\":\"已verify_image成功的ID\"}；没有可靠图返回空串ID。"
@@ -703,7 +755,7 @@ class GamePosterAgent:
         try:
             model = self.model.bind_tools(TOOLS).bind(max_tokens=1800)
             turns = 0
-            while turns < 8 + (3 if self.project_recovery else 0):
+            while turns < 8 + (3 if self.project_recovery or self.source_recovery else 0):
                 turns += 1
                 phase = "model_call"
                 seconds = self._seconds_left(self.model_seconds)
@@ -721,11 +773,12 @@ class GamePosterAgent:
                         return {**self.verified[identifier], "posterStatus": "ready", "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}
                     if identifier is None:
                         raise PosterResourceError("invalid_model_response")
-                    if not identifier and self.had_error and not recovery_requested and (alternatives := self._unused_pages()):
+                    continuation = {"remainingSources": self._unused_pages(), "remainingImages": self._unused_images(), **self._recovery_hint()}
+                    if not identifier and self.had_error and not recovery_requested and any(continuation.values()):
                         recovery_requested = True
                         messages.append(HumanMessage(content=json.dumps({
-                            "remainingSources": alternatives,
-                            "instruction": "先前发生了网络或图片失败，但还有真实搜索返回的未读来源。请继续尝试其它网站；仍须核对同一游戏，不能猜URL或换成其它游戏。",
+                            **continuation,
+                            "instruction": "先前发生了网络或图片失败，但仍有未试来源、当前页面图片或有界补救机会。优先核验当前页面仍存在的候选；失败再换源。仍须核对同一游戏，不能猜URL或换成其它游戏。",
                         }, ensure_ascii=False)))
                         continue
                     break

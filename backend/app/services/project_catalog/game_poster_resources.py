@@ -236,7 +236,7 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                     async with AsyncSession(
                         proxy=settings.outbound_proxy or None, verify=True, trust_env=True,
                         headers={"User-Agent": "Mozilla/5.0 AIGCNEWS-PortShelf/1.0",
-                                 "Accept": "image/jpeg,image/png,image/webp" if image else "text/html,application/xhtml+xml"},
+                                 "Accept": "image/jpeg,image/png,image/webp,image/gif" if image else "text/html,application/xhtml+xml"},
                         curl_options={CurlOpt.CONNECT_TO: connections, CurlOpt.HTTPPROXYTUNNEL: 1,
                                       CurlOpt.MAXFILESIZE_LARGE: limit},
                     ) as client:
@@ -259,7 +259,7 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                     url = urljoin(target.logical_url, location)
                     continue
                 content_type = response.headers.get("content-type", "").lower().split(";", 1)[0].strip()
-                permitted = {"image/jpeg", "image/png", "image/webp"} if image else {"text/html", "application/xhtml+xml"}
+                permitted = {"image/jpeg", "image/png", "image/webp", "image/gif"} if image else {"text/html", "application/xhtml+xml"}
                 if response.status_code != 200 or content_type not in permitted:
                     raise PosterResourceError("invalid_image" if image else "page_unavailable")
                 return PosterResource(target.logical_url, bytes(body), content_type)
@@ -281,8 +281,13 @@ def clean_poster_jpeg(payload: bytes) -> tuple[bytes, int, int]:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(BytesIO(payload)) as source:
-                if source.format not in {"JPEG", "PNG", "WEBP"} or min(source.size) < 160 or source.width * source.height > IMAGE_PIXELS:
+                if source.format not in {"JPEG", "PNG", "WEBP", "GIF"} or min(source.size) < 160 or source.width * source.height > IMAGE_PIXELS:
                     raise PosterResourceError("invalid_image")
+                if source.format == "GIF":
+                    # A poster needs one bounded raster, not animation. Never
+                    # inspect n_frames or seek later frames, which can trigger
+                    # unbounded animation work despite a small file size.
+                    source.seek(0)
                 source.load()
                 oriented = ImageOps.exif_transpose(source).convert("RGB")
                 oriented.thumbnail((1200, 1200), Image.Resampling.LANCZOS)

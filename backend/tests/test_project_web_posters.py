@@ -222,7 +222,7 @@ class PosterPageAndCacheTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(safe_web_url("https://example.com/Game%20Cover.jpg"), "https://example.com/Game%20Cover.jpg")
 
     def test_format_size_pixels_and_metadata_are_validated(self):
-        for payload in [b"<svg></svg>", b"<html>not an image</html>", image_bytes(size=(20, 20)), image_bytes(fmt="GIF"), b"x" * (resources.IMAGE_BYTES + 1)]:
+        for payload in [b"<svg></svg>", b"<html>not an image</html>", image_bytes(size=(20, 20)), b"x" * (resources.IMAGE_BYTES + 1)]:
             with self.assertRaises(PosterResourceError):
                 clean_poster_jpeg(payload)
         with patch.object(resources, "IMAGE_PIXELS", 1000):

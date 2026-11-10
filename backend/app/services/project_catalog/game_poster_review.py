@@ -64,8 +64,10 @@ def _candidate_context(candidate: dict) -> dict[str, str]:
         "pageTitle": _text(candidate.get("pageTitle"), 300),
         "label": _text(candidate.get("label"), 300),
         "context": _text(candidate.get("context"), 300),
+        "sourceExcerpt": _text(candidate.get("sourceExcerpt"), 1200),
         "imageFile": _text(unquote(image_path.rsplit("/", 1)[-1]), 160),
         "sourceHost": _text(source_host, 253),
+        "sourcePath": _text(unquote(urlsplit(_text(candidate.get("sourceUrl"), 2048)).path), 300),
     }
 
 
