@@ -78,6 +78,8 @@ class PosterRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failure["imageReview"]["reason"], "placeholder")
         self.assertNotIn("imageSha256", failure)
         self.assertEqual(review.call_args.kwargs["item"], ITEM)
+        responses = [json.loads(message.content) for message in model.ainvoke.call_args.args[0] if isinstance(message, ToolMessage)]
+        self.assertEqual(responses[2]["imageReview"], {"matches": False, "kind": "cover", "reason": "placeholder"})
 
     async def test_unavailable_visual_review_cannot_turn_a_download_into_a_success(self):
         model = model_with(tool("search_web", {"query": ORIGINAL + " cover"}),
@@ -227,3 +229,24 @@ class BoundedRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["posterTrace"][1]["linkedResults"][0]["identityKind"], "game")
         self.assertEqual(result["posterTrace"][4]["linkedResults"][0]["identityKind"], "project")
         self.assertTrue(result["posterTrace"][5]["reusedPage"])
+
+    async def test_wrong_original_cover_feedback_directs_recovery_to_project_identity(self):
+        item = {**ITEM, "repo": "example/free-world", "gameNameOriginal": "Commercial Classic", "detailsVersion": 1}
+        project_page = f'<h1>Free World</h1><a href="https://github.com/example/free-world">Source</a><img src="{IMAGE}">'.encode()
+        original_page = f'<h1>Commercial Classic</h1><img src="{IMAGE}">'.encode()
+        responses = [tool("search_web", {"query": "Commercial Classic cover"}), tool("read_page", {"resultId": "page-1"}),
+                     tool("verify_image", {"candidateId": "image-1", "kind": "cover"}),
+                     tool("search_web", {"query": "free-world screenshots"}), tool("read_page", {"resultId": "page-2"}),
+                     tool("verify_image", {"candidateId": "image-2", "kind": "screenshot"}), AIMessage(content='{"candidateId":"image-2"}')]
+        model = model_with(*responses)
+        fetch = AsyncMock(side_effect=[PosterResource(SOURCE, original_page, "text/html"), PosterResource(IMAGE, b"wrong", "image/png"),
+                                      PosterResource(SOURCE + "project", project_page, "text/html"), PosterResource(IMAGE, b"own game", "image/png")])
+        review = AsyncMock(side_effect=[{"matches": False, "kind": "cover", "reason": "wrong_game"},
+                                       {"matches": True, "kind": "screenshot", "reason": "matched"}])
+        search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}]}, {"results": [{"url": SOURCE + "project"}]}])
+        result = await GamePosterAgent(model, search=search, fetch=fetch, review=review, cache=AsyncMock(return_value=cached_image())).run(item)
+        self.assertEqual(result["posterStatus"], "ready")
+        messages = [json.loads(message.content) for message in model.ainvoke.call_args.args[0] if isinstance(message, ToolMessage)]
+        self.assertEqual(messages[2]["imageReview"]["reason"], "wrong_game")
+        self.assertIn("projectSearchIdentity", messages[2]["nextStep"])
+        self.assertEqual(messages[2]["remainingBudget"]["verify_image"], 2)

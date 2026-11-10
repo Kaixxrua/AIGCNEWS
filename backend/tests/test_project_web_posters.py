@@ -424,13 +424,61 @@ class WebPosterRedisTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_project_search_keeps_its_cooldown_without_a_unique_original(self):
         await self.seed(gameNameOriginal="", gameNameZh="", posterStatus="missing",
-                        posterSearchVersion=1, posterRetryAt=self.now + 3600,
+                        posterSearchVersion=1, posterRetryAt=self.now + 3600, posterResearchRevision=2,
                         posterTrace=[{"tool": "search_web", "status": "succeeded", "results": []}])
         result = await self.read()
         self.assertEqual((result["posterSearchVersion"], result["posterRetryAfter"]), (1, 3600))
         self.assertEqual((await self.request(refresh=True))["status"], "ready")
         self.assertEqual(self.operations.jobs, [])
         self.assertIsNone(await self.redis.get(self.daily_key()))
+
+    async def test_old_algorithm_failure_can_retry_once_without_free_work_or_erasing_old_image(self):
+        await self.seed(**fixtures.POSTER, posterStatus="missing", posterSearchVersion=1,
+                        posterRetryAt=self.now + 3600, posterTrace=[{"tool": "search_web", "status": "succeeded"}])
+        before = await self.read()
+        self.assertEqual((before["posterSearchVersion"], before["posterRetryAfter"]), (0, 0))
+        self.assertEqual(before["posterUrl"], fixtures.IMAGE)
+        self.research.assert_not_awaited()
+        self.assertIsNone(await self.redis.get(self.daily_key()))
+        self.research.return_value = {"posterStatus": "unavailable", "posterTrace": []}
+        first, second = await asyncio.gather(self.request(refresh=True), self.request(refresh=True))
+        self.assertEqual((first["status"], second["status"]), ("pending", "pending"))
+        self.assertEqual(len(self.operations.jobs), 1)
+        await self.operations.run()
+        result = await self.read()
+        self.assertEqual((result["posterSearchVersion"], result["posterRetryAfter"]), (1, 300))
+        self.assertEqual(result["posterUrl"], fixtures.IMAGE)
+        self.assertNotIn("posterResearchRevision", result)
+        self.assertEqual(json.loads(await self.redis.get(self.cache_key))["posterResearchRevision"], 2)
+        await self.request(refresh=True)
+        self.assertEqual(self.operations.jobs, [])
+        self.assertEqual(await self.redis.get(self.daily_key()), "1")
+
+    async def test_algorithm_upgrade_does_not_expire_successful_posters(self):
+        await self.seed(**fixtures.POSTER, posterStatus="ready", posterSearchVersion=1, posterRetryAt=self.now + 60)
+        result = await self.read()
+        self.assertEqual((result["posterSearchVersion"], result["posterRetryAfter"]), (1, 60))
+        self.assertEqual((await self.request(refresh=True))["status"], "ready")
+        self.assertEqual(self.operations.jobs, [])
+
+    async def test_current_algorithm_crashed_worker_keeps_recovery_cooldown(self):
+        await self.seed(posterStatus="missing", posterSearchVersion=1)
+        await self.request(refresh=True)
+        pending = json.loads(await self.redis.get(self.cache_key))
+        self.assertEqual(pending["posterResearchRevision"], 2)
+        # Simulate a worker that died and whose lease has expired. No task
+        # finalizer ran to stamp a revision or establish a new cooldown.
+        self.operations.jobs.clear()
+        await self.redis.delete(self.lock_key)
+        self.now = pending["deadline"] + 30
+        before = await self.redis.get(self.cache_key)
+        result = await self.read()
+        self.assertEqual((result["posterSearchVersion"], result["posterRetryAfter"]), (1, 270))
+        self.assertEqual(await self.redis.get(self.cache_key), before)
+        self.assertEqual((await self.request(refresh=True))["status"], "ready")
+        self.assertEqual(self.operations.jobs, [])
+        self.research.assert_not_awaited()
+        self.assertEqual(await self.redis.get(self.daily_key()), "1")
 
     async def test_new_generation_searches_even_with_readme_image_and_missing_is_one_hour(self):
         from backend.tests.test_project_game_details import GAME_RESULT, metadata

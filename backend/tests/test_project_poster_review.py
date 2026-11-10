@@ -254,3 +254,19 @@ class PosterImageReviewTests(unittest.IsolatedAsyncioTestCase):
             reviewer.assert_awaited_once_with(base_model, b"already downloaded pixels", item=ITEM, candidate=CANDIDATE, kind="cover")
             base_model.bind_tools.assert_not_called()
             instance.run.assert_awaited_once_with(ITEM)
+
+
+class PosterReasoningBudgetTests(unittest.IsolatedAsyncioTestCase):
+    async def test_poster_calls_bound_global_reasoning_without_changing_the_provider(self):
+        for configured, expected in [("max", "low"), ("high", "low"), ("medium", "low"),
+                                     ("low", "low"), ("minimal", "minimal"), ("none", "none")]:
+            with self.subTest(configured=configured):
+                model = MagicMock()
+                instance = MagicMock()
+                instance.run = AsyncMock(return_value={"posterStatus": "missing"})
+                with patch.object(agent, "get_enrichment_reasoning_effort", return_value=configured), \
+                        patch.object(agent, "get_chat_model", return_value=model) as factory, \
+                        patch.object(agent, "GamePosterAgent", return_value=instance) as constructor:
+                    await agent.research_game_poster(ITEM)
+                    factory.assert_called_once_with(temperature=0, reasoning_effort=expected)
+                    self.assertIs(constructor.call_args.args[0], model)

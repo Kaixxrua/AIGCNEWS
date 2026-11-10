@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit
@@ -44,6 +45,11 @@ _PLATFORMS = frozenset({
     "ps1", "ps2", "ps3", "ps4", "ps5", "psp", "ps vita", "xbox", "xbox 360", "xbox one", "xbox series x", "xbox series s",
     "amiga", "atari st", "sega saturn", "sega genesis", "sega mega drive", "dreamcast", "sega dreamcast",
 })
+_ROMAN_NUMBERS = {value: str(index) for index, value in enumerate((
+    "i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii", "xiii", "xiv", "xv",
+    "xvi", "xvii", "xviii", "xix", "xx",
+), start=1)}
+_EDITION_YEAR = re.compile(r"(?:19|20)\d{2}")
 
 
 def _tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
@@ -59,28 +65,97 @@ TOOLS = [
 ]
 
 
+def _canonical_identity(value: str) -> str:
+    """Normalize notation, never remove a sequel number or edition name."""
+    value = unicodedata.normalize("NFKC", value.replace("™", "").replace("®", ""))
+    value = normalized_game_title(value)
+    return re.sub(r"(?<!\w)[ivx]+(?!\w)", lambda match: _ROMAN_NUMBERS.get(match[0], match[0]), value)
+
+
 def _has_identity(text: str, original: str) -> bool:
-    value = normalized_game_title(text).replace("™", "").replace("®", "")
-    name = normalized_game_title(original).replace("™", "").replace("®", "")
+    value = _canonical_identity(text)
+    name = _canonical_identity(original)
     # CJK words do not use whitespace boundaries (e.g. 游戏名+封面).
     boundary = r"A-Za-z0-9" if re.search(r"[\u3400-\u9fff]", name) else r"\w"
     return bool(name and re.search(r"(?<![" + boundary + r"])" + re.escape(name) + r"(?![" + boundary + r"])", value))
 
 
 def _matches_identity(text: str, names: tuple[str, ...]) -> bool:
-    return any(_has_identity(text, name) for name in names if name)
+    for name in names:
+        if not name:
+            continue
+        edition = _edition_identity(name)
+        if edition:
+            # Search providers can place "cover" between title and year. The
+            # year remains mandatory; punctuation and word order are not.
+            if _has_identity(text, edition[0]) and _has_year(text, edition[2]):
+                return True
+        elif _has_identity(text, name):
+            return True
+    return False
+
+
+def _platform_suffix_parts(original: str) -> tuple[str, str, str] | None:
+    """Recognize a platform, optionally paired with one explicit release year."""
+    match = _PLATFORM_SUFFIX.fullmatch(original)
+    if not match or len(match[1].strip()) < 3:
+        return None
+    base, suffix = match[1].strip(), (match[2] or match[3]).strip()
+    if normalized_game_title(suffix) in _PLATFORMS:
+        return base, suffix, ""
+    parts = [part.strip() for part in re.split(r"[,，]", suffix)]
+    if len(parts) == 2:
+        for platform, year in (parts, parts[::-1]):
+            if normalized_game_title(platform) in _PLATFORMS and _EDITION_YEAR.fullmatch(year):
+                return base, platform, year
+    return None
 
 
 def _platform_search_alias(original: str) -> tuple[str, str] | None:
-    """Remove only one recognized platform suffix, retaining edition/year names."""
-    match = _PLATFORM_SUFFIX.fullmatch(original)
-    if not match:
+    """Separate only a known platform; keep any release year in the query."""
+    parts = _platform_suffix_parts(original)
+    if not parts:
         return None
-    platform = (match[2] or match[3]).strip()
-    base = match[1].strip()
-    if normalized_game_title(platform) not in _PLATFORMS or len(base) < 3:
-        return None
-    return base, platform
+    base, platform, year = parts
+    return (f"{base} ({year})" if year else base), platform
+
+
+def _edition_identity(original: str) -> tuple[str, str, str] | None:
+    """Extract explicit version evidence without changing the supplied title."""
+    parts = _platform_suffix_parts(original)
+    base, platform, year = parts if parts else (original, "", "")
+    if year:
+        return base, platform, year
+    match = _PLATFORM_SUFFIX.fullmatch(base)
+    if match:
+        suffix = (match[2] or match[3]).strip()
+        if re.fullmatch(r"(?:19|20)\d{2}(?: video game)?", suffix, re.I) and len(match[1].strip()) >= 3:
+            return match[1].strip(), platform, suffix[:4]
+    return None
+
+
+def _has_year(text: str, year: str) -> bool:
+    return bool(re.search(r"(?<![A-Za-z0-9])" + re.escape(year) + r"(?![A-Za-z0-9])", text))
+
+
+def _has_platform(text: str, platform: str) -> bool:
+    value, name = _canonical_identity(text), _canonical_identity(platform)
+    numbered_family = any(re.fullmatch(re.escape(name) + r" \d+", known) for known in _PLATFORMS)
+    for match in re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", value):
+        # A newer numbered console is not evidence for the earlier platform.
+        if not numbered_family or not re.match(r"\s+\d{1,3}(?!\d)", value[match.end():]):
+            return True
+    return False
+
+
+def _page_matches_identity(title: str, text: str, original: str, chinese: str) -> bool:
+    evidence = title + " " + text
+    edition = _edition_identity(original)
+    if edition:
+        base, platform, year = edition
+        return (_matches_identity(evidence, (base, chinese)) and _has_year(evidence, year)
+                and (not platform or _has_platform(evidence, platform)))
+    return _matches_identity(evidence, _identity_names(original, chinese))
 
 
 def _identity_names(original: str, chinese: str = "") -> tuple[str, ...]:
@@ -117,14 +192,20 @@ def _page_url(page_url: str, reference: str) -> str:
 
 def _wrong_sequel_title(title: str, names: tuple[str, ...]) -> bool:
     """An incidental base-name mention cannot approve an obvious numbered sequel."""
-    value = normalized_game_title(title)
-    for name in names:
-        name = normalized_game_title(name)
+    value = _canonical_identity(title)
+    expanded = (*names, *(edition[0] for name in names if (edition := _edition_identity(name))))
+    for name in expanded:
+        name = _canonical_identity(name)
         if not name:
             continue
         matches = re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", value)
         if any(_NUMBERED_SEQUEL.match(value[match.end():]) for match in matches):
             return True
+        number = re.search(r"(?<!\w)([1-9]\d?)(?!\w)", name)
+        if number and (prefix := name[:number.start()].rstrip()):
+            numbered_title = re.finditer(r"(?<!\w)" + re.escape(prefix) + r"\s+([1-9]\d?)(?!\w)", value)
+            if any(match[1] != number[1] for match in numbered_title):
+                return True
     return False
 
 
@@ -242,7 +323,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
     for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "form", "iframe"]):
         tag.decompose()
     text = " ".join(soup.get_text(" ", strip=True).split())[:16000]
-    matches = (project_named or project_linked) if project_repo else _matches_identity(title + " " + text, _identity_names(original, chinese))
+    matches = (project_named or project_linked) if project_repo else _page_matches_identity(title, text, original, chinese)
     if not matches or (not project_repo and _wrong_sequel_title(title, _identity_names(original, chinese))):
         return {"title": title[:300], "text": text[:5000], "matchesGame": False, "images": [], "links": []}
     images, seen = [], set()
@@ -470,6 +551,15 @@ class GamePosterAgent:
             record["attempts"] = exc.attempts
         if record.get("tool") == "read_page" and record.get("sourceUrl"):
             self.failed_hosts.add(urlsplit(record["sourceUrl"]).hostname)
+        if value["error"] == "image_content_mismatch" and isinstance(record.get("imageReview"), dict):
+            review = record["imageReview"]
+            if (review.get("matches") is False and review.get("kind") in {"cover", "screenshot"}
+                    and review.get("reason") in {"placeholder", "decoration", "wrong_game", "wrong_version", "uncertain"}):
+                value["imageReview"] = {key: review[key] for key in ("matches", "kind", "reason")}
+                if review["reason"] == "wrong_game":
+                    value["nextStep"] = "图片不是该项目的游戏。核对原作与独立项目关系；可用已提供的 projectSearchIdentity 查找项目自己的截图，不要继续换同一商业原作的盒封。"
+                elif review["reason"] == "wrong_version":
+                    value["nextStep"] = "图片版本不匹配。保留完整原作版本证据重新查找，或使用已提供的项目名称查找项目本身画面。"
         if value["error"] == "invalid_image":
             value["nextStep"] = "此候选不是合格大图，可能是缩略图；读取来源页已返回的图库/封面详情 links，不能猜测大图地址。"
         if alternatives := self._unused_pages():
@@ -526,10 +616,10 @@ class GamePosterAgent:
             "此时使用项目名加screenshots，必须找项目自己的画面，不得把商业原作当独立项目；无需改写原作名。"
             "优先游戏官网、游戏商店和专门游戏资料/封面站，例如 Steam、GOG、MobyGames、IGDB、TheCoverProject、"
             "Nintendo、LaunchBox Games Database、itch.io；无合适结果再扩大到百科等其它公开来源。"
-            "英文原作模式首次优先查询 searchIdentity + cover + site:gamesdb.launchbox-app.com，从游戏封面库读取可用大图；"
+            "英文原作模式首次优先查询 searchIdentity + platformEvidence（若有）+ cover + site:gamesdb.launchbox-app.com，从游戏封面库读取可用大图；"
             "若无结果再扩大到其它官网、商店或百科。中文原名不限定该英文库。项目模式用项目名加screenshots；避免无关堆词。"
             "403/404或读页失败时换搜索结果中的站点，不重复访问同一坏链接。优先并行读取两个不同域名，避免两个请求都被同一站点阻挡。"
-            "第二次查询保持简短，去掉已失败的限站条件扩大来源，或改找已提供的项目名截图，"
+            "第二次查询保持简短，去掉已失败的限站条件扩大来源，但保留年份、平台和重制版本证据，或改找已提供的项目名截图，"
             "实际查询必须包含searchIdentity，或使用已提供的projectSearchIdentity寻找项目自身图片；原作模式不能只搜中文译名，中文名只能附加。项目模式不能换成所支持的某一款游戏。"
             "原名本来就是中文时用该原名和截图、封面搜索中文游戏官网或游戏媒体，不必限定英文游戏库。"
             "搜索失败不会撤销此前已返回的页面。工具给出unreadSources时继续读取其中其它网站；还有未读来源时不能直接宣告无图。"
@@ -630,9 +720,14 @@ class GamePosterAgent:
 async def research_game_poster(item: dict[str, Any], *, model: Any = None, **tools) -> dict[str, Any]:
     """Production entry point; inject model/search/fetch/cache for isolated tests."""
     if model is None:
-        model = await asyncio.to_thread(lambda: get_chat_model(
-            temperature=0, reasoning_effort=get_enrichment_reasoning_effort(fallback="medium"),
-        ))
+        def bounded_model():
+            # These are short tool-selection and visual classification calls.
+            # Inheriting a global max effort can exhaust the whole job before
+            # the first tool, even when providers and game sites are healthy.
+            effort = get_enrichment_reasoning_effort(fallback="low")
+            return get_chat_model(temperature=0, reasoning_effort=effort if effort in {"none", "minimal", "low"} else "low")
+
+        model = await asyncio.to_thread(bounded_model)
     if "review" not in tools:
         from functools import partial
 

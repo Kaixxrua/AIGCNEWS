@@ -20,11 +20,15 @@ class PosterSearchAliasTests(unittest.TestCase):
             ("A Game (1998 video game) (PlayStation 2)", "A Game (1998 video game)", "PlayStation 2"),
             ("A Game: Remastered (Linux)", "A Game: Remastered", "Linux"),
             ("冒险游戏（Nintendo Switch）", "冒险游戏", "Nintendo Switch"),
+            ("A Game II (Nintendo Switch, 2019)", "A Game II (2019)", "Nintendo Switch"),
+            ("A Game II (2019, Nintendo Switch)", "A Game II (2019)", "Nintendo Switch"),
+            ("冒险游戏 II（Nintendo Switch，2019）", "冒险游戏 II (2019)", "Nintendo Switch"),
         ]:
             with self.subTest(original=original):
                 self.assertEqual(_platform_search_alias(original), (alias, platform))
         for original in ["Doom (1993)", "Doom (2016 video game)", "Game (HD Edition)", "Game (Remastered)",
-                         "Game (Nintendo Switch 2 remake)", "Game (Windows/Linux)", "PC", "Game (Unknown console)"]:
+                         "Game (Nintendo Switch 2 remake)", "Game (Windows/Linux)", "PC", "Game (Unknown console)",
+                         "Game (Nintendo Switch, 2019 remake)", "Game (Nintendo Switch, 2019, Remastered)"]:
             with self.subTest(original=original):
                 self.assertIsNone(_platform_search_alias(original))
 
@@ -35,9 +39,44 @@ class PosterSearchAliasTests(unittest.TestCase):
         self.assertTrue(page("DOOM II (Windows)", "DOOM II - Game Database")["matchesGame"])
         self.assertFalse(page("DOOM II (Windows)", "DOOM - Game Database")["matchesGame"])
         self.assertFalse(page("DOOM II (1994) (Windows)", "DOOM II")["matchesGame"])
-        self.assertTrue(page("DOOM II (1994) (Windows)", "DOOM II (1994)")["matchesGame"])
+        self.assertTrue(page("DOOM II (1994) (Windows)", "DOOM II (1994) for Windows")["matchesGame"])
         self.assertFalse(page("A Game (HD Edition)", "A Game")["matchesGame"])
         self.assertFalse(page("Diablo (Windows)", "Diablo II")["matchesGame"])
+
+    def test_roman_and_arabic_sequels_match_only_the_same_number(self):
+        for original, title in [("Adventure 2: New Lands", "Adventure II: New Lands"),
+                                ("Adventure XIV", "Adventure 14"),
+                                ("Adventure II", "Adventure Ⅱ™"),
+                                ("Adventure I", "Adventure 1")]:
+            with self.subTest(original=original, title=title):
+                page = page_images(SOURCE, f'<h1>{title}</h1><img src="{IMAGE}">'.encode(), original)
+                self.assertTrue(page["matchesGame"])
+                self.assertTrue(page["images"])
+        for title in ["Adventure I", "Adventure III", "Adventure 1", "Adventure 3", "Adventure 20"]:
+            with self.subTest(title=title):
+                body = f'<h1>{title}</h1><p>The sequel to Adventure II.</p><img src="{IMAGE}">'.encode()
+                self.assertFalse(page_images(SOURCE, body, "Adventure II")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, f'<h1>Adventure 1009</h1><img src="{IMAGE}">'.encode(), "Adventure MIX")["matchesGame"])
+
+    def test_platform_and_year_are_separate_but_required_page_evidence(self):
+        original = "Adventure II (Nintendo Switch, 2019)"
+        def page(platform="Nintendo Switch", year="2019", title="Adventure 2", extra=""):
+            body = f'<h1>{title}</h1><p>Platform: {platform}</p><p>Released September {year}.</p>{extra}<img src="{IMAGE}">'.encode()
+            return page_images(SOURCE, body, original)
+
+        self.assertTrue(page()["matchesGame"])
+        self.assertTrue(page(year="2019年")["matchesGame"])
+        for changes in [{"year": ""}, {"platform": ""}, {"year": "2018"}, {"platform": "Nintendo Switch 2"},
+                        {"title": "Adventure III", "extra": "<p>Inspired by Adventure II.</p>"},
+                        {"year": "2018", "extra": "<footer>Copyright 2019</footer>"}]:
+            with self.subTest(changes=changes):
+                self.assertFalse(page(**changes)["matchesGame"])
+
+    def test_separate_year_parentheses_require_the_same_version_evidence(self):
+        body = f'<h1>Adventure II</h1><p>Release: 2019. Platform: Nintendo Switch.</p><img src="{IMAGE}">'.encode()
+        self.assertTrue(page_images(SOURCE, body, "Adventure 2 (2019) (Nintendo Switch)")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, body, "Adventure 2 (2018) (Nintendo Switch)")["matchesGame"])
+        self.assertFalse(page_images(SOURCE, body, "Adventure 2 (2019) (PlayStation 2)")["matchesGame"])
 
 
 class PosterSearchAliasAgentTests(unittest.IsolatedAsyncioTestCase):
@@ -73,13 +112,52 @@ class PosterSearchAliasAgentTests(unittest.IsolatedAsyncioTestCase):
     async def test_alias_guard_does_not_authorize_dropping_sequel_edition_or_year(self):
         for original, query in [("DOOM II (Windows)", "DOOM cover"),
                                 ("DOOM II (1994) (Windows)", "DOOM II cover"),
-                                ("Game Remastered (Windows)", "Game cover")]:
+                                ("Game Remastered (Windows)", "Game cover"),
+                                ("Adventure II (Nintendo Switch, 2019)", "Adventure 2 cover"),
+                                ("Adventure II (Nintendo Switch, 2019)", "Adventure 3 cover 2019"),
+                                ("Adventure II (Nintendo Switch, 2019)", "Adventure 1 cover 2019"),
+                                ("Adventure II (Nintendo Switch, 2019)", "Adventure 2 cover 2018")]:
             with self.subTest(original=original):
                 model = model_with(tool("search_web", {"query": query}), AIMessage(content='{"candidateId":""}'))
                 search = AsyncMock()
                 result = await GamePosterAgent(model, search=search).run({"gameNameOriginal": original})
                 search.assert_not_awaited()
                 self.assertEqual(result["posterTrace"][0]["error"], "query_must_include_game")
+
+    async def test_version_search_accepts_word_order_without_dropping_the_year(self):
+        for query in ["Adventure 2 cover 2019", "Adventure II 2019 cover", "Adventure II (2019) cover"]:
+            with self.subTest(query=query):
+                model = model_with(tool("search_web", {"query": query}), AIMessage(content='{"candidateId":""}'))
+                search = AsyncMock(return_value={"results": []})
+                await GamePosterAgent(model, search=search).run({"gameNameOriginal": "Adventure II (Nintendo Switch, 2019)"})
+                search.assert_awaited_once_with(query)
+
+    async def test_version_alias_keeps_full_original_identity_for_visual_review(self):
+        original = "Adventure II (Nintendo Switch, 2019)"
+        item = {"repo": "owner/project", "gameNameOriginal": original, "descriptionZh": "原作游戏移植项目。"}
+        model = model_with(tool("search_web", {"query": "Adventure 2 cover 2019"}),
+                           tool("read_page", {"resultId": "page-1"}),
+                           tool("verify_image", {"candidateId": "image-1", "kind": "cover"}),
+                           AIMessage(content='{"candidateId":"image-1"}'))
+        body = f'<h1>Adventure II</h1><p>Nintendo Switch. Released in 2019.</p><img src="{IMAGE}">'.encode()
+        review = AsyncMock(return_value={"matches": True, "kind": "cover", "reason": "matched"})
+        result = await GamePosterAgent(model, search=AsyncMock(return_value={"results": [{"url": SOURCE}]}),
+                                      fetch=AsyncMock(side_effect=[PosterResource(SOURCE, body, "text/html"), PosterResource(IMAGE, b"image", "image/png")]),
+                                      review=review, cache=AsyncMock(return_value=cached_image())).run(item)
+        self.assertEqual(result["posterStatus"], "ready")
+        payload = json.loads(model.ainvoke.await_args_list[0].args[0][1].content)
+        self.assertEqual(payload["gameNameOriginal"], original)
+        self.assertEqual(payload["searchIdentity"], "Adventure II (2019)")
+        self.assertEqual(payload["platformEvidence"], "Nintendo Switch")
+        self.assertEqual(review.await_args.kwargs["item"]["gameNameOriginal"], original)
+        self.assertEqual(item["gameNameOriginal"], original)
+
+    async def test_verified_project_fallback_does_not_require_the_original_release_year(self):
+        model = model_with(tool("search_web", {"query": "free-adventure screenshots"}), AIMessage(content='{"candidateId":""}'))
+        search = AsyncMock(return_value={"results": []})
+        await GamePosterAgent(model, search=search).run({"repo": "example/free-adventure", "detailsVersion": 1,
+                                                       "gameNameOriginal": "Adventure II (Nintendo Switch, 2019)"})
+        search.assert_awaited_once_with("free-adventure screenshots")
 
 
 class PosterErrorFrameTests(unittest.IsolatedAsyncioTestCase):

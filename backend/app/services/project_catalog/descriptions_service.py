@@ -53,6 +53,7 @@ RETRY_SECONDS = 60
 # returns its trace before this fence. The lease also covers job finalization.
 JOB_SECONDS = 240
 LEASE_SECONDS = 270
+POSTER_RESEARCH_REVISION = 2
 READS_PER_MINUTE = 60
 POSTS_PER_MINUTE = 30
 MAX_CONCURRENT_GENERATIONS = 4
@@ -132,6 +133,12 @@ def _game_fields(cached: dict[str, Any], now: float) -> dict[str, Any]:
     result["posterStatus"] = status if status in {"ready", "missing", "unavailable"} else "missing"
     retry_at = cached.get("posterRetryAt", 0)
     result["posterRetryAfter"] = max(0, math.ceil(retry_at - now)) if isinstance(retry_at, (int, float)) and math.isfinite(retry_at) else 0
+    # Failed results from an older algorithm may be retried by an explicit
+    # request after upgrade. Reading remains free and never launches work;
+    # every completed attempt records this revision and keeps its cooldown.
+    if (result["posterSearchVersion"] == 1 and result["posterStatus"] in {"missing", "unavailable"}
+            and cached.get("posterResearchRevision") != POSTER_RESEARCH_REVISION):
+        result.update(posterSearchVersion=0, posterRetryAfter=0)
     # Earlier web-poster releases marked multi-game projects as "searched"
     # without executing a single tool. Let those records enter the project
     # artwork lookup once, instead of preserving a misleading one-hour wait.
@@ -497,6 +504,7 @@ class ProjectDescriptionsService:
                 pending["posterOnly"] = True
                 if self.research_poster is not None:
                     pending["posterSearchVersion"] = 1
+                    pending["posterResearchRevision"] = POSTER_RESEARCH_REVISION
             if not await redis.set(PREFIX + "cache:" + profile, json.dumps(pending), ex=READY_TTL):
                 raise DescriptionsUnavailable("无法保存生成任务，请稍后重试。")
             if poster_only:
@@ -522,7 +530,7 @@ class ProjectDescriptionsService:
 
     def _poster_failure(self, item: dict[str, Any]) -> dict[str, Any]:
         return {**item, "status": "ready", "posterStatus": "unavailable", "posterRetryAt": self.clock() + POSTER_UNAVAILABLE_SECONDS,
-                **({"posterSearchVersion": 1} if self.research_poster is not None else {})}
+                **({"posterSearchVersion": 1, "posterResearchRevision": POSTER_RESEARCH_REVISION} if self.research_poster is not None else {})}
 
     async def _fill_poster(self, item: dict[str, Any]) -> dict[str, Any]:
         if self.research_poster is not None:
@@ -538,7 +546,7 @@ class ProjectDescriptionsService:
                     fields = {key: result[key] for key in ("posterUrl", "posterSourceUrl", "posterKind")}
                 delay = {"ready": SEARCH_READY_SECONDS, "missing": SEARCH_MISSING_SECONDS, "unavailable": POSTER_UNAVAILABLE_SECONDS}[status]
                 return {**item, **fields, "posterStatus": status, "posterSearchVersion": 1,
-                        "posterRetryAt": self.clock() + delay, "posterTrace": result.get("posterTrace", [])}
+                        "posterResearchRevision": POSTER_RESEARCH_REVISION, "posterRetryAt": self.clock() + delay, "posterTrace": result.get("posterTrace", [])}
             except asyncio.CancelledError:
                 raise
             except Exception:
