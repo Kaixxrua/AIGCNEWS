@@ -34,6 +34,13 @@ from backend.app.services.project_catalog.game_details import (
     normalize_game_details,
     safe_repository_path,
 )
+from backend.app.services.project_catalog.game_identity_context import (
+    binary_qualified_title,
+    cached_identity_evidence,
+    contradicted_runtime_identity,
+    identity_evidence,
+    repository_title_is_game,
+)
 from backend.app.services.project_catalog.game_poster_agent import (
     SEARCH_MISSING_SECONDS,
     SEARCH_READY_SECONDS,
@@ -129,6 +136,8 @@ def _game_fields(cached: dict[str, Any], now: float) -> dict[str, Any]:
     result["detailsVersion"] = 1
     # Internal cache revision; response models intentionally omit this field.
     result["identityEvidenceVersion"] = 2 if cached.get("identityEvidenceVersion") == 2 else 0
+    if evidence := cached_identity_evidence(cached):
+        result["gameIdentityEvidence"] = evidence
     result["posterSearchVersion"] = 1 if cached.get("posterSearchVersion") == 1 else 0
     status = cached.get("posterStatus", "ready" if result["posterUrl"] else "missing")
     result["posterStatus"] = status if status in {"ready", "missing", "unavailable"} else "missing"
@@ -511,7 +520,7 @@ class ProjectDescriptionsService:
             if poster_only:
                 repair_identity = bool(refresh_poster and self.research_poster is not None and not second.get("gameNameOriginal")
                                        and second.get("identityEvidenceVersion", 0) < 2)
-                submitted = bool(operations.submit(self._generate_poster, repo, token, slot, redis, second, repair_identity))
+                submitted = bool(operations.submit(self._generate_poster, repo, token, slot, redis, second, repair_identity, refresh_poster))
             else:
                 submitted = bool(operations.submit(self._generate, repo, token, slot, redis, game_details, second.get("descriptionZh", "")))
             if not submitted:
@@ -533,10 +542,14 @@ class ProjectDescriptionsService:
         return {**item, "status": "ready", "posterStatus": "unavailable", "posterRetryAt": self.clock() + POSTER_UNAVAILABLE_SECONDS,
                 **({"posterSearchVersion": 1, "posterResearchRevision": POSTER_RESEARCH_REVISION} if self.research_poster is not None else {})}
 
-    async def _fill_poster(self, item: dict[str, Any]) -> dict[str, Any]:
+    async def _fill_poster(self, item: dict[str, Any], *, project_only: bool = False) -> dict[str, Any]:
         if self.research_poster is not None:
             try:
-                result = await self.research_poster(item)
+                # Failed relationship lookup does not authorize the ancestor's
+                # artwork, but the same job may still find the project's own.
+                # This temporary identity must never replace cached user text.
+                research_item = {**item, "gameNameOriginal": "", "gameNameZh": ""} if project_only else item
+                result = await self.research_poster(research_item)
                 status = result.get("posterStatus")
                 if status not in {"ready", "missing", "unavailable"}:
                     return self._poster_failure(item)
@@ -564,33 +577,60 @@ class ProjectDescriptionsService:
             return self._poster_failure(item)
         return {**item, "posterStatus": "missing", "posterRetryAt": self.clock() + POSTER_MISSING_SECONDS}
 
-    async def _refresh_missing_identity(self, existing: dict[str, Any]) -> dict[str, Any]:
-        """One user-requested repair for names rejected by old evidence checks."""
-        if self.describe_game is None:
-            return existing
+    async def _refresh_identity_evidence(self, existing: dict[str, Any], repair_identity: bool = False) -> tuple[dict[str, Any], bool]:
+        """One explicit, fenced refresh adds evidence; most need no text model.
+
+        Only a missing, positively evidenced same-name game, the previous
+        identity-repair contract, or an evidenced executable identity can
+        re-run text enrichment. Completed evidence prevents repeated work.
+        The returned flag restricts only this attempt to project artwork.
+        """
+        conflict = False
         try:
             async with asyncio.timeout(40):
                 metadata = await self.fetch(existing["repo"], game_details=True)
-                data = await self.describe_game(metadata)
-                if not isinstance(data, dict):
-                    return existing
-                details = normalize_game_details(data, metadata)
-                # Retain the verified description and image even when identity
-                # remains a multi-game project. Do not restore README hotlinks.
-                return {**existing, **{key: details[key] for key in ("gameNameOriginal", "gameNameZh", "identityEvidenceVersion")}}
+                evidence = identity_evidence(metadata)
+                name = str(existing.get("gameNameOriginal") or "")
+                conflict = contradicted_runtime_identity(name, evidence) or binary_qualified_title(name, evidence)
+                named_game = not existing.get("gameNameOriginal") and repository_title_is_game(existing["repo"].split("/")[-1], metadata)
+                current = {**existing, "gameIdentityEvidence": evidence}
+                if (repair_identity or conflict or named_game) and self.describe_game is not None:
+                    data = await self.describe_game(metadata)
+                    if not isinstance(data, dict):
+                        raise DescriptionInputUnavailable("未核实游戏身份。")
+                    details = normalize_game_details(data, metadata)
+                    if conflict and (not details["gameNameOriginal"] or not _chinese(data.get("description_zh"))):
+                        raise DescriptionInputUnavailable("未核实游戏身份。")
+                    # Existing artwork is never replaced with an unreviewed
+                    # README hotlink. Correct text only for a proven conflict.
+                    current.update({key: details[key] for key in ("gameNameOriginal", "gameNameZh", "identityEvidenceVersion")})
+                    if conflict:
+                        current["descriptionZh"] = _chinese(data["description_zh"])
+                elif conflict:
+                    raise DescriptionInputUnavailable("未核实游戏身份。")
+                return current, False
         except asyncio.CancelledError:
             raise
         except Exception:
-            return existing
+            if conflict:
+                # A proven runtime conflict still needs a verified correction.
+                raise DescriptionInputUnavailable("游戏身份资料暂未核实，请稍后重试。") from None
+            # An unavailable README alone must not stop project artwork search.
+            # No success marker is stored; a later explicit retry may add the
+            # missing relationship evidence without silently repeating work.
+            return existing, True
 
-    async def _generate_poster(self, repo: str, token: str, slot: str, redis: Any, existing: dict[str, Any], repair_identity: bool = False) -> None:
+    async def _generate_poster(self, repo: str, token: str, slot: str, redis: Any, existing: dict[str, Any], repair_identity: bool = False, refresh_evidence: bool = False) -> None:
         item = self._poster_failure(existing)
 
         async def generate() -> dict[str, Any]:
             nonlocal item
-            current = await self._refresh_missing_identity(existing) if repair_identity else existing
+            current = existing
+            project_only = False
+            if self.research_poster is not None and (repair_identity or (refresh_evidence and not cached_identity_evidence(existing))):
+                current, project_only = await self._refresh_identity_evidence(existing, repair_identity)
             item = self._poster_failure(current)
-            return await self._fill_poster(current)
+            return await self._fill_poster(current, project_only=project_only)
 
         try:
             item = await asyncio.wait_for(generate(), timeout=self.job_seconds)
@@ -621,8 +661,13 @@ class ProjectDescriptionsService:
                 async with generation_stage(trace, "normalize"):
                     if not isinstance(data, dict) or not isinstance(data.get("description_zh"), str):
                         raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。")
+                    name = str(data.get("game_name_original") or "")
+                    evidence = identity_evidence(metadata)
+                    if contradicted_runtime_identity(name, evidence) or binary_qualified_title(name, evidence):
+                        raise DescriptionInputUnavailable("尚未区分游戏名称与原仓库运行要求，请稍后重试。")
                     description = _chinese(data["description_zh"]) or _chinese(previous_description)
                     details = normalize_game_details(data, metadata)
+                    details["gameIdentityEvidence"] = evidence
                     if not description:
                         raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
             else:

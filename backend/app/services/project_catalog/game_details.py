@@ -15,6 +15,14 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
+from backend.app.services.project_catalog.game_identity_context import (
+    binary_qualified_title,
+    contradicted_runtime_identity,
+    identity_evidence,
+    repository_title_is_game,
+    title_separators,
+)
+
 MAX_CANDIDATES = 12
 _RASTER = re.compile(r"\.(?:png|jpe?g|webp)$", re.I)
 _DECORATION = re.compile(
@@ -165,7 +173,7 @@ def _identity_evidence(value: str) -> str:
     for pattern in _IDENTITY_EMPHASIS:
         value = pattern.sub(r"\1", value)
     value = html.unescape(value).translate(_IDENTITY_PUNCTUATION)
-    return " ".join(value.split()).casefold()
+    return title_separators(value).casefold()
 
 
 def _identity_in_facts(name: str, facts: str) -> bool:
@@ -199,7 +207,10 @@ def normalize_game_details(data: dict[str, Any], metadata: dict[str, Any]) -> di
     if (
         data.get("game_identity") != "single_game" or len(original) < 3
         or not _identity_in_facts(normalized_name, normalized_facts)
-        or normalized_name in {_identity_evidence(repo), _identity_evidence(repo.rsplit("/", 1)[-1])}
+        or normalized_name == _identity_evidence(repo)
+        or (normalized_name == _identity_evidence(repo.rsplit("/", 1)[-1]) and not repository_title_is_game(original, metadata))
+        or contradicted_runtime_identity(original, identity_evidence(metadata))
+        or binary_qualified_title(original, identity_evidence(metadata))
     ):
         return result
     result["gameNameOriginal"] = original

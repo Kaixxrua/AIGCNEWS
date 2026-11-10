@@ -15,6 +15,42 @@ _SEPARATOR = r"[\W_]*"
 _FOLLOWING_NUMBER = re.compile(_SEPARATOR + r"(?:[0-9]+|[ivx]+)(?!" + _WORD + r")")
 _ITCH_AUTHOR = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.itch\.io")
 _ITCH_GAME = re.compile(r"/[a-z0-9][a-z0-9_.-]*/?", re.I)
+_MEDIA_DIRECTORY = re.compile(r"screenshots?|images?|galler(?:y|ies)|media|artwork|pictures?|posters?", re.I)
+
+
+def _project_media_path(url: str, project_repo: str) -> tuple[str, str, tuple[str, ...]] | None:
+    try:
+        parts = urlsplit(safe_web_url(url))
+        repo = normalize_description_repo(project_repo)
+    except (PosterResourceError, ValueError):
+        return None
+    # A slash-encoded ref/path is ambiguous in GitHub's tree route. Never
+    # turn it into a different repository/ref or an invented raw URL.
+    if parts.hostname != "github.com" or parts.query or re.search(r"%2f", parts.path, re.I):
+        return None
+    path = unquote(parts.path).strip("/").split("/")
+    if (len(path) < 5 or "/".join(path[:2]).lower() != repo or path[2] not in {"tree", "blob"}
+            or not any(_MEDIA_DIRECTORY.fullmatch(part) for part in path[4:])):
+        return None
+    return path[2], path[3], tuple(path[4:])
+
+
+def project_media_directory(url: str, project_repo: str) -> bool:
+    path = _project_media_path(url, project_repo)
+    return bool(path and path[0] == "tree")
+
+
+def project_media_descendant(source: str, target: str, project_repo: str) -> bool:
+    """Classify an actual DOM link down a single repository/ref's media tree.
+
+    Only tree pages may lead to another directory or a supported image's HTML
+    blob detail. The caller enforces the two-hop and overall read budgets.
+    """
+    parent = _project_media_path(source, project_repo)
+    child = _project_media_path(target, project_repo)
+    return bool(parent and child and parent[0] == "tree" and parent[1] == child[1]
+                and len(child[2]) > len(parent[2]) and child[2][:len(parent[2])] == parent[2]
+                and (child[0] == "tree" or project_image_detail(target, project_repo)))
 
 
 def project_image_detail(url: str, project_repo: str) -> bool:

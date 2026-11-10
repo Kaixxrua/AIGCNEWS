@@ -29,7 +29,7 @@ from backend.app.services.outbound_target_policy import pin_http_target
 from backend.app.services.project_catalog.game_poster_gif import GifPreviewError, preview_gif, preview_gif_sync
 from backend.app.services.project_catalog.game_poster_search import SEARCH_ENGINES, bounded_engines
 
-PAGE_BYTES = 1024 * 1024
+PAGE_BYTES = 4 * 1024 * 1024
 IMAGE_BYTES = 8 * 1024 * 1024
 IMAGE_PIXELS = 16_000_000
 IMAGE_RESOURCE_SECONDS = 30
