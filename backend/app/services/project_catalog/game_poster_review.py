@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from PIL import Image
 
 from backend.app.domain.project_taxonomy import extract_message_text
+from backend.app.services.project_catalog.game_poster_context import IMAGE_CONTEXT_CHARS, SOURCE_EXCERPT_CHARS
 from backend.app.services.project_catalog.game_poster_resources import PosterResourceError, clean_poster_jpeg
 
 REVIEW_SECONDS = 35.0
@@ -27,6 +28,9 @@ _SYSTEM = """你是游戏图片内容核验器，结合用户消息中已嵌入�
 核对图片是否明确属于 expected 中的同一游戏或项目及版本，不能仅凭网页标题或 alt 声称匹配就批准。
 截图通常不含游戏标题。来源页身份已经过核对；对真实游戏运行画面，可结合来源主标题、图片说明、项目关系和画面内容共同判断，
 不必要求仅凭像素认出冷门游戏的名字。来源吻合、玩法画面一致且没有相反证据时可判 matched；若画面与来源矛盾仍须拒绝。
+来源页可能混有改版、模组、对比或读者投稿；页面标题相同不是每张截图都匹配的证据。
+nearbyText 是图片附近的前后说明，sourceExcerpt 可能包含文章或讨论的后续澄清；先核对这些文字是否确切指向当前图片。
+明确说明图片在另一游戏、另一版本或另一引擎中测试时，不能因为讨论页属于当前仓库就判为当前项目画面。
 拒绝“暂无图片”“请贡献图片”“contribute/upload/no image/coming soon”等占位图，包括带网站风格的占位海报；
 拒绝徽章、通用站点logo、广告、加载错误页、纯文字说明、与游戏无关的装饰图；游戏本身的完整盒封可带发行商logo。
 文字游戏的实际运行界面（属性、操作选项、事件记录等）属于 screenshot；仅游戏名字或静态介绍文案不算运行界面。
@@ -37,6 +41,9 @@ free-content/free assets 项目或基于旧引擎制作的新游戏，必须使�
 关联的商业原作盒封属于 wrong_game，不能因它也使用该引擎或原作名就通过。
 identityKind=game 仅表示存在原作名字段，不保证该项目就是原作；关系冲突或无法确认时应拒绝而非猜测。
 拒绝其它游戏、续作、电影、小说，以及与指定原版不同的重制版、合集或版本；不能忽略名称中的续作序号、年份和版本名。
+同一名称和玩法也可能是独立 VR、移动改版或第三方衍生客户端。画面中的 VR 手柄、头显空间视角、
+重做的三维场景或不同客户端界面都是版本证据；若 expected 描述的是普通桌面原版，不得把这些差异当作同版主题或皮肤直接批准。
+跨设备的真实同一发行版仍可接受，但须有对应版本的来源证据；无法确认改版关系时返回 wrong_version 或 uncertain。
 同一原作在其它平台发行的真实盒封可以匹配，按图上的名称和版本辨认并保留平台标识，不能把移植支持系统当盒封的平台证据。
 但 gameNameOriginal 中明确限定了原作的平台或年份时，那是输入游戏版本的身份限制，不是本项目支持系统；
 若封面标识另一平台而无法证明该输入版本就是同一发行版，应返回 wrong_version 或 uncertain，不能默认是跨平台同版。
@@ -44,6 +51,8 @@ identityKind=game 仅表示存在原作名字段，不保证该项目就是原�
 identityKind=project 表示正在寻找项目自己的图片，artworkIdentity为该项目；原作名称字段只作背景，不是本次要匹配的商业原作。
 只允许该项目自身的官方封面、整体宣传图或实际运行画面；
 不能把它支持的某款商业原作的盒封当作项目海报，也不能替项目发明原作名。
+纹理样张、素材替换/对比测试、设计稿，以及在别的商业游戏里试验待移植素材的截图，不是该项目的实际运行画面。
+这类图片即使出现在本项目的 issue/discussion 或显示相似场景，也应拒绝；有明确其它游戏/版本证据用 wrong_game/wrong_version，否则 uncertain。
 kind 按像素纠正：完整盒封、封面或宣传海报为 cover；实际游戏运行画面为 screenshot。
 看不清或证据不足时 matches=false，reason=uncertain；不得猜测或按候选提出的 kind 强行通过。
 只输出一个JSON对象，不能有Markdown、解释或额外字段：
@@ -64,7 +73,10 @@ def _candidate_context(candidate: dict) -> dict[str, str]:
         "pageTitle": _text(candidate.get("pageTitle"), 300),
         "label": _text(candidate.get("label"), 300),
         "context": _text(candidate.get("context"), 300),
-        "sourceExcerpt": _text(candidate.get("sourceExcerpt"), 1200),
+        "nearbyText": _text(candidate.get("nearbyText"), IMAGE_CONTEXT_CHARS),
+        "sourceExcerpt": _text(candidate.get("sourceExcerpt"), SOURCE_EXCERPT_CHARS),
+        "sourceReference": ("image_in_page" if candidate.get("inSourcePage") is True else
+                            "image_index_only" if candidate.get("inSourcePage") is False else "page_candidate"),
         "imageFile": _text(unquote(image_path.rsplit("/", 1)[-1]), 160),
         "sourceHost": _text(source_host, 253),
         "sourcePath": _text(unquote(urlsplit(_text(candidate.get("sourceUrl"), 2048)).path), 300),

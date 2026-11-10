@@ -44,6 +44,7 @@ from backend.app.services.project_catalog.game_posters import (
     POSTER_MISSING_SECONDS,
     POSTER_UNAVAILABLE_SECONDS,
 )
+from backend.app.services.project_catalog.generation_diagnostics import generation_stage
 
 READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
@@ -606,26 +607,37 @@ class ProjectDescriptionsService:
 
     async def _generate(self, repo: str, token: str, slot: str, redis: Any, game_details: bool = False, previous_description: str = "") -> None:
         generated_item: dict[str, Any] | None = None
+        trace: list[dict] = []
 
         async def generate() -> dict[str, Any]:
             nonlocal generated_item
+            async with generation_stage(trace, "fetch"):
+                metadata = await self.fetch(repo, game_details=True) if game_details else await self.fetch(repo)
             if game_details:
-                metadata = await self.fetch(repo, game_details=True)
-                if self.describe_game is None:
-                    raise DescriptionsUnavailable("游戏资料富化暂时不可用。")
-                data = await self.describe_game(metadata)
-                if not isinstance(data, dict) or not isinstance(data.get("description_zh"), str):
-                    raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。")
-                description = _chinese(data["description_zh"]) or _chinese(previous_description)
-                details = normalize_game_details(data, metadata)
+                async with generation_stage(trace, "describe"):
+                    if self.describe_game is None:
+                        raise DescriptionsUnavailable("游戏资料富化暂时不可用。")
+                    data = await self.describe_game(metadata)
+                async with generation_stage(trace, "normalize"):
+                    if not isinstance(data, dict) or not isinstance(data.get("description_zh"), str):
+                        raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。")
+                    description = _chinese(data["description_zh"]) or _chinese(previous_description)
+                    details = normalize_game_details(data, metadata)
+                    if not description:
+                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
             else:
-                metadata = await self.fetch(repo)
-                description = _chinese(await self.describe(metadata))
+                async with generation_stage(trace, "describe"):
+                    data = await self.describe(metadata)
+                async with generation_stage(trace, "normalize"):
+                    description = _chinese(data)
+                    if not description:
+                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
                 details = {}
-            if not description:
-                raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
             generated_item = _item(repo, "ready", descriptionZh=description, **details)
-            return await self._fill_poster(generated_item) if game_details else generated_item
+            if game_details:
+                async with generation_stage(trace, "poster"):
+                    return await self._fill_poster(generated_item)
+            return generated_item
 
         try:
             item = await asyncio.wait_for(generate(), timeout=self.job_seconds)
@@ -641,7 +653,9 @@ class ProjectDescriptionsService:
             item = _item(repo, "failed", error="中文简介生成暂时失败，请稍后重试。", retryAt=self.clock() + RETRY_SECONDS)
         finally:
             try:
-                await self._finish(redis, repo, token, item, game_details)
+                # Internal cache diagnostics are omitted by public read models.
+                # Never attach provider messages, response bodies or requests.
+                await self._finish(redis, repo, token, {**item, "generationTrace": trace}, game_details)
             except Exception:
                 pass
             await self._release(redis, slot, token)

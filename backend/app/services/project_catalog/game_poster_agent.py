@@ -16,6 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from backend.app.core.model_factory import get_chat_model, get_enrichment_reasoning_effort
 from backend.app.domain.project_taxonomy import extract_message_text, parse_json_object
 from backend.app.models.schema_project_descriptions import normalize_description_repo
+from backend.app.services.project_catalog.game_poster_context import image_context, page_source_excerpt
 from backend.app.services.project_catalog.game_poster_page_identity import has_project_identity, project_artwork_links
 from backend.app.services.project_catalog.game_poster_resources import (
     PosterResourceError,
@@ -319,6 +320,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             label = (label + " " + caption.get_text(" ", strip=True))[:250].strip()
         context = tag.find_previous(["h1", "h2", "h3", "h4"])
         context = context.get_text(" ", strip=True)[:200] if context else ""
+        nearby = image_context(tag)
         anchor = tag.find_parent("a", href=True)
         if anchor:
             try:
@@ -326,13 +328,13 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             except PosterResourceError:
                 address = ""
             if address and _IMAGE_FILE.search(urlsplit(address).path) and not _FILE_PAGE.search(unquote(urlsplit(address).path)):
-                found.append({"url": address, "label": label, "context": context, "linkedOriginal": True})
+                found.append({"url": address, "label": label, "context": context, "nearbyText": nearby, "linkedOriginal": True})
         if any(value < 160 for value in dimensions.values()):
             continue
         # A data: placeholder must not hide the real lazy-loaded image. Keep
         # candidates bounded and validate each URL independently below.
         for attribute in ("src", "data-src"):
-            found.append({"url": str(tag.get(attribute) or ""), "label": label, "context": context, **dimensions})
+            found.append({"url": str(tag.get(attribute) or ""), "label": label, "context": context, "nearbyText": nearby, **dimensions})
         for attribute in ("srcset", "data-srcset"):
             value = str(tag.get(attribute) or "")[:8192]
             if value.lstrip().lower().startswith("data:"):
@@ -340,7 +342,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
             for entry in value.split(",")[:6]:
                 parts = entry.strip().split()
                 if parts and (len(parts) == 1 or re.fullmatch(r"\d+(?:\.\d+)?[wx]", parts[1])):
-                    found.append({"url": parts[0], "label": label, "context": context, **dimensions})
+                    found.append({"url": parts[0], "label": label, "context": context, "nearbyText": nearby, **dimensions})
     links = _gallery_links(soup, url, original, chinese)
     if project_repo:
         existing = {link["url"] for link in links}
@@ -349,10 +351,11 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
     for tag in soup(["script", "style", "noscript", "nav", "footer", "header", "form", "iframe"]):
         tag.decompose()
     text = " ".join(soup.get_text(" ", strip=True).split())[:16000]
+    excerpt = page_source_excerpt(soup)
     matches = (project_named or project_linked) if project_repo else _page_matches_identity(title, text, original, chinese)
     if not matches or (not project_repo and _wrong_sequel_title(title, _identity_names(original, chinese))):
         return {"title": title[:300], "text": text[:5000], "matchesGame": False, "images": [], "links": []}
-    images, seen = [], set()
+    images: dict[str, dict] = {}
     for candidate in found:
         address = candidate["url"]
         if not address:
@@ -370,12 +373,14 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
                 or _PLACEHOLDER.search(unquote(parts.path))
                 or _FILE_PAGE.search(unquote(parts.path))):
             continue
-        if address not in seen:
-            seen.add(address)
-            images.append({**candidate, "url": address})
-        if len(images) == 12:
-            break
-    return {"title": title[:300], "text": text[:5000], "matchesGame": True, "images": images, "links": links}
+        if address in images:
+            # Open Graph/JSON-LD commonly repeats a real DOM image. Retain
+            # nearby qualifications instead of letting the first URL erase it.
+            images[address].update({key: value for key, value in candidate.items() if key != "url" and value})
+        elif len(images) < 12:
+            images[address] = {**candidate, "url": address}
+    return {"title": title[:300], "text": text[:5000], "sourceExcerpt": excerpt,
+            "matchesGame": True, "images": list(images.values()), "links": links}
 
 
 class GamePosterAgent:
@@ -612,10 +617,10 @@ class GamePosterAgent:
             for image in images:
                 candidate_id = f"image-{len(self.candidates) + 1}"
                 self.candidates[candidate_id] = {**image, "sourceUrl": source, "pageTitle": page["title"],
-                                                 "sourceExcerpt": page["text"][:1200],
+                                                 "sourceExcerpt": page.get("sourceExcerpt", page["text"][:1200]),
                                                  "identityKind": evidence.get("identityKind", "game")}
                 candidates.append({"candidateId": candidate_id, "imageUrl": image["url"], "sourceUrl": source,
-                                   "pageTitle": page["title"], **{key: image[key] for key in ("label", "context", "width", "height", "linkedOriginal", "inSourcePage") if key in image}})
+                                   "pageTitle": page["title"], **{key: image[key] for key in ("label", "context", "nearbyText", "width", "height", "linkedOriginal", "inSourcePage") if key in image}})
             links = []
             page_links = page.pop("links")
             if not prepared["result"].get("parentResultId"):
@@ -775,6 +780,7 @@ class GamePosterAgent:
             "remainingBudget不含recoveryBudget.additional；eligible=true时，即使常规search_web为0，additional.search_web=1仍允许一次补救查询，并在该查询解锁额外页与图。补救共用一次，不会重置。"
             "第二次搜索可直接指定已知游戏资料站；不要把所有读页次数都耗在同一站点。"
             "网页中提到原名不代表每张图都属于该游戏，必须结合图片说明、所在标题、图片路径核对；排除续作、其它推荐游戏及站点通用图。"
+            "同时检查nearbyText和sourceExcerpt中的版本、VR/移动改版及后续澄清；别的引擎里的纹理测试、素材样张和对比图不能当作当前项目运行画面。"
             "图片须通过实际内容核验，纯站点占位图或要求贡献截图的提示不能当作游戏画面。image_content_mismatch后换候选。"
             "read_page/verify_image只能用工具已经返回的ID；搜索结果页只有简介时，可以读取返回的同站图库links。"
             "inSourcePage=true代表刚读取的页面仍引用此图，优先于仅在图片搜索索引中存在的旧URL；旧图404后应尝试当前页面的其它图片。File:开头的百科地址是图片详情页，应读links取真实原图。"
