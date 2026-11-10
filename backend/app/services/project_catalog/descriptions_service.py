@@ -29,6 +29,10 @@ from backend.app.services.api_access import quota
 from backend.app.services.auth.rate_limit import RATE_LIMIT_PREFIX, hit_rate_limit
 from backend.app.services.ingestion.source_github import _build_headers
 from backend.app.services.mcp.inbound.context import McpAuthorizationContext
+from backend.app.services.project_catalog.description_language import (
+    chinese_description as _chinese,
+    description_validation_reason,
+)
 from backend.app.services.project_catalog.game_details import (
     image_candidates,
     normalize_game_details,
@@ -112,7 +116,9 @@ class DescriptionNotPublic(RuntimeError):
 
 
 class DescriptionInputUnavailable(RuntimeError):
-    pass
+    def __init__(self, message: str, *, validation_reason: str = "") -> None:
+        super().__init__(message)
+        self.validation_reason = validation_reason
 
 
 def _item(repo: str, status: str, **extra: Any) -> dict[str, Any]:
@@ -161,7 +167,7 @@ def _needs_poster(item: dict[str, Any], refresh: bool = False, web: bool = True)
     if item.get("status") != "ready" or item.get("detailsVersion") != 1:
         return False
     if not item.get("gameNameOriginal"):
-        if not web or not _chinese(item.get("descriptionZh")):
+        if not web or not _chinese(item.get("descriptionZh"), game=item):
             return False
         try:
             normalize_description_repo(item.get("repo"))
@@ -174,15 +180,6 @@ def _needs_poster(item: dict[str, Any], refresh: bool = False, web: bool = True)
 
 def _cached_request(item: dict[str, Any], game_details: bool, refresh: bool = False, web: bool = True) -> bool:
     return bool((item["status"] in {"ready", "pending"} or item.get("retryAfter", 0) > 0) and not (game_details and _needs_poster(item, refresh, web)))
-
-
-def _chinese(text: Any) -> str:
-    if not isinstance(text, str):
-        return ""
-    text = text.strip()
-    if len(text) > 512 or not re.search(r"[\u3400-\u9fff]", text) or re.search(r"[\u3040-\u30ff]", text):
-        return ""
-    return text
 
 
 async def _bounded_response(client: httpx.AsyncClient, path: str, *, raw: bool = False) -> bytes | None:
@@ -429,10 +426,11 @@ class ProjectDescriptionsService:
                 if previous.get("status") == "ready":
                     description = _chinese(previous.get("descriptionZh"))
             status = cached.get("status")
-            if status == "ready" and _chinese(cached.get("descriptionZh")) and (not game_details or cached.get("detailsVersion") == 1):
+            cached_description = _chinese(cached.get("descriptionZh"), game=cached if game_details else None)
+            if status == "ready" and cached_description and (not game_details or cached.get("detailsVersion") == 1):
                 details = _game_fields(cached, self.clock()) if game_details else {}
                 items.append(_item(repo, "ready", descriptionZh=cached["descriptionZh"], **details))
-            elif game_details and status == "pending" and cached.get("posterOnly") is True and cached.get("detailsVersion") == 1 and _chinese(cached.get("descriptionZh")):
+            elif game_details and status == "pending" and cached.get("posterOnly") is True and cached.get("detailsVersion") == 1 and cached_description:
                 deadline = cached.get("deadline", 0)
                 deadline = deadline if isinstance(deadline, (int, float)) and math.isfinite(deadline) else 0
                 if deadline > self.clock():
@@ -599,15 +597,21 @@ class ProjectDescriptionsService:
                     if not isinstance(data, dict):
                         raise DescriptionInputUnavailable("未核实游戏身份。")
                     details = normalize_game_details(data, metadata)
-                    if conflict and (not details["gameNameOriginal"] or not _chinese(data.get("description_zh"))):
+                    updated = {**current, **{key: details[key] for key in ("gameNameOriginal", "gameNameZh", "identityEvidenceVersion")}}
+                    description = _chinese(data.get("description_zh"), game=updated)
+                    if conflict and (not details["gameNameOriginal"] or not description):
                         raise DescriptionInputUnavailable("未核实游戏身份。")
                     # Existing artwork is never replaced with an unreviewed
                     # README hotlink. Correct text only for a proven conflict.
-                    current.update({key: details[key] for key in ("gameNameOriginal", "gameNameZh", "identityEvidenceVersion")})
-                    if conflict:
-                        current["descriptionZh"] = _chinese(data["description_zh"])
+                    current = updated
+                    if conflict or not _chinese(current.get("descriptionZh"), game=current):
+                        current["descriptionZh"] = description
                 elif conflict:
                     raise DescriptionInputUnavailable("未核实游戏身份。")
+                if not _chinese(current.get("descriptionZh"), game=current):
+                    # A changed/shorter source or identity must not invalidate
+                    # the existing description on the next cache-only GET.
+                    raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
                 return current, False
         except asyncio.CancelledError:
             raise
@@ -660,23 +664,24 @@ class ProjectDescriptionsService:
                     data = await self.describe_game(metadata)
                 async with generation_stage(trace, "normalize"):
                     if not isinstance(data, dict) or not isinstance(data.get("description_zh"), str):
-                        raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。")
+                        raise DescriptionInputUnavailable("未生成可靠的游戏资料，请稍后重试。", validation_reason="invalid_type")
                     name = str(data.get("game_name_original") or "")
                     evidence = identity_evidence(metadata)
                     if contradicted_runtime_identity(name, evidence) or binary_qualified_title(name, evidence):
-                        raise DescriptionInputUnavailable("尚未区分游戏名称与原仓库运行要求，请稍后重试。")
-                    description = _chinese(data["description_zh"]) or _chinese(previous_description)
+                        raise DescriptionInputUnavailable("尚未区分游戏名称与原仓库运行要求，请稍后重试。", validation_reason="identity_conflict")
                     details = normalize_game_details(data, metadata)
                     details["gameIdentityEvidence"] = evidence
+                    context = {"repo": repo, **details}
+                    description = _chinese(data["description_zh"], game=context) or _chinese(previous_description, game=context)
                     if not description:
-                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
+                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。", validation_reason=description_validation_reason(data["description_zh"], game=context))
             else:
                 async with generation_stage(trace, "describe"):
                     data = await self.describe(metadata)
                 async with generation_stage(trace, "normalize"):
                     description = _chinese(data)
                     if not description:
-                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。")
+                        raise DescriptionInputUnavailable("未生成可靠的中文简介，请稍后重试。", validation_reason=description_validation_reason(data))
                 details = {}
             generated_item = _item(repo, "ready", descriptionZh=description, **details)
             if game_details:

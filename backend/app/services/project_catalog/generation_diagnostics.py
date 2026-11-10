@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import PurePath
 
+_VALIDATION_REASONS = frozenset({"invalid_type", "empty", "too_long", "no_han", "kana_present", "identity_conflict"})
+
 
 def _identifier(value: str, fallback: str) -> str:
     return value if re.fullmatch(r"[A-Za-z0-9_.<>-]{1,100}", value) else fallback
@@ -36,6 +38,9 @@ async def generation_stage(trace: list[dict], stage: str):
             status = getattr(getattr(exc, "response", None), "status_code", None)
         if type(status) is int and 100 <= status <= 599:
             record["httpStatus"] = status
+        reason = getattr(exc, "validation_reason", None)
+        if isinstance(reason, str) and reason in _VALIDATION_REASONS:
+            record["validationReason"] = reason
         raise
     else:
         record["status"] = "succeeded"

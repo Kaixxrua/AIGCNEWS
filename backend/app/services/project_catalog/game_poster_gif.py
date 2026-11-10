@@ -68,7 +68,14 @@ def _lzw(data: bytes, minimum: int, expected: int, colors: int, transparent: int
             size, available, previous = minimum + 1, end + 1, None
             continue
         if code == end:
-            if pixels != expected or len(data) * 8 - bit >= 8:
+            remaining = len(data) * 8 - bit
+            # Narrow encoder compatibility, not an assertion that GIF89a
+            # permits arbitrary bytes after EOI: observed encoders flush one
+            # zero byte even when EOI already ended on a byte boundary. It
+            # contributes no decoded pixels. All other whole-byte tails,
+            # including two zeros or an unaligned extra byte, remain invalid.
+            zero_flush = remaining == 8 and bit % 8 == 0 and data[-1] == 0
+            if pixels != expected or remaining >= 8 and not zero_flush:
                 _invalid()
             return
         if previous is None:
