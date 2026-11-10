@@ -748,14 +748,16 @@ func (m *transferManager) enrich(ctx context.Context, job TransferJob) error {
 	if err := m.stage(job.ID, "description", ""); err != nil {
 		return err
 	}
-	descriptionCtx, cancel := context.WithTimeout(ctx, 100*time.Second)
+	// Background metadata work can take four minutes; allow time to read its result.
+	descriptionCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	result, err := m.app.aigc.get(descriptionCtx, []string{job.Repo})
 	var previous Description
 	if err == nil && len(result.Items) > 0 && readyGameDetails(result.Items[0]) {
 		previous = result.Items[0]
 	}
-	if err == nil && (len(result.Items) == 0 || !readyGameDetails(result.Items[0]) || needsPosterGeneration(result.Items[0])) && m.app.aigc.hasToken() {
+	// Resume a queued job by reading its status instead of submitting it again.
+	if err == nil && (len(result.Items) == 0 || result.Items[0].Status != "pending" && (!readyGameDetails(result.Items[0]) || needsPosterGeneration(result.Items[0]))) && m.app.aigc.hasToken() {
 		result, _, err = m.app.aigc.generate(descriptionCtx, job.Repo)
 	}
 	for err == nil && len(result.Items) > 0 && result.Items[0].Status == "pending" {

@@ -196,7 +196,7 @@ class PublicGameRepositoryTests(unittest.IsolatedAsyncioTestCase):
             httpx.Response(302, headers={"location": "https://evil.test/readme"}),
             httpx.Response(200, json={"path": "../README.md", "encoding": "base64", "content": "YWJj"}),
             httpx.Response(200, json={"path": "README.md", "encoding": "base64", "content": "invalid!!!"}),
-            httpx.Response(200, json={"path": "README.md", "encoding": "base64", "content": base64.b64encode(b"a" * 65537).decode()}),
+            httpx.Response(200, json={"path": "README.md", "encoding": "base64", "content": base64.b64encode(b"a" * 262145).decode()}),
             httpx.Response(200, json={"path": "README.md", "encoding": "none", "download_url": "http://127.0.0.1/"}),
         ]:
             seen = []

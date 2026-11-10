@@ -71,22 +71,24 @@ class ProjectPosterIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PosterTurnLimitTests(unittest.IsolatedAsyncioTestCase):
-    async def test_sixth_turn_verified_image_does_not_require_seventh_model_call(self):
+    async def test_final_turn_verified_image_does_not_require_an_extra_model_call(self):
         model = model_with(
             tool("search_web", {"query": ORIGINAL + " cover"}),
             tool("read_page", {"resultId": "page-1"}),
             tool("search_web", {"query": ORIGINAL + " cover site:example.com"}),
             tool("read_page", {"resultId": "page-2"}),
             tool("read_page", {"resultId": "page-3"}),
-            tool("verify_image", {"candidateId": "image-3", "kind": "cover"}),
+            tool("read_page", {"resultId": "page-4"}),
+            tool("read_page", {"resultId": "page-5"}),
+            tool("verify_image", {"candidateId": "image-5", "kind": "cover"}),
         )
-        search = AsyncMock(return_value={"results": [{"url": SOURCE + str(index)} for index in range(3)]})
-        fetch = AsyncMock(side_effect=[*[PosterResource(SOURCE + str(index), HTML, "text/html") for index in range(3)], PosterResource(IMAGE, image_bytes(), "image/png")])
+        search = AsyncMock(return_value={"results": [{"url": SOURCE + str(index)} for index in range(5)]})
+        fetch = AsyncMock(side_effect=[*[PosterResource(SOURCE + str(index), HTML, "text/html") for index in range(5)], PosterResource(IMAGE, image_bytes(), "image/png")])
         with tempfile.TemporaryDirectory() as directory, patch.object(resources.settings, "site_assets_storage_dir", directory):
             result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
         self.assertEqual(result["posterStatus"], "ready")
-        self.assertEqual(result["posterSourceUrl"], SOURCE + "2")
-        self.assertEqual(model.ainvoke.await_count, 6)
+        self.assertEqual(result["posterSourceUrl"], SOURCE + "4")
+        self.assertEqual(model.ainvoke.await_count, 8)
         self.assertEqual(result["posterTrace"][-1]["selectionReason"], "model_turn_limit")
 
     async def test_explicit_empty_final_candidate_does_not_get_replaced_with_verified_image(self):
@@ -113,10 +115,10 @@ class PosterTurnLimitTests(unittest.IsolatedAsyncioTestCase):
                 tool("read_page", {"resultId": "page-1"}),
                 tool("search_web", {"query": ORIGINAL + " screenshots"}),
                 tool("read_page", {"resultId": "page-2"}),
-                tool("read_page", {"resultId": "page-1"}),
+                tool("read_page", {"resultId": "page-3"}),
                 tool("verify_image", {"candidateId": "image-3", "kind": "cover"}),
             )
-            search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}]}, {"results": [{"url": SOURCE + "/screenshots"}]}])
+            search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}]}, {"results": [{"url": SOURCE + "/screenshots"}, {"url": SOURCE + "/covers"}]}])
             fetch = AsyncMock(side_effect=[PosterResource(SOURCE, HTML, "text/html")] * 3 + [PosterResource(IMAGE, payload, "image/png")])
             result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
             self.assertEqual(result["posterStatus"], "unavailable")

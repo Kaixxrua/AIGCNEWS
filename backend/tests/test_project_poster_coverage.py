@@ -134,12 +134,16 @@ class PosterCoverageAgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_parallel_calls_still_enforce_the_shared_page_budget(self):
         calls = AIMessage(content="", tool_calls=[
-            {"name": "read_page", "args": {"resultId": "page-1"}, "id": str(index), "type": "tool_call"} for index in range(5)
+            {"name": "read_page", "args": {"resultId": f"page-{index + 1}"}, "id": str(index), "type": "tool_call"} for index in range(6)
         ])
-        model = model_with(tool("search_web", {"query": ORIGINAL + " cover"}), calls, AIMessage(content='{"candidateId":""}'))
+        model = model_with(tool("search_web", {"query": ORIGINAL + " cover"}),
+                           tool("search_web", {"query": ORIGINAL + " screenshots"}), calls,
+                           tool("read_page", {"resultId": "page-7"}), AIMessage(content='{"candidateId":""}'))
+        search = AsyncMock(side_effect=[{"results": [{"url": SOURCE + str(index)} for index in range(6)]},
+                                       {"results": [{"url": SOURCE + "6"}]}])
         fetch = AsyncMock(return_value=PosterResource(SOURCE, HTML, "text/html"))
-        result = await GamePosterAgent(model, search=AsyncMock(return_value={"results": [{"url": SOURCE}]}), fetch=fetch).run(ITEM)
-        self.assertEqual(fetch.await_count, 4)
+        result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
+        self.assertEqual(fetch.await_count, 6)
         self.assertEqual(result["posterTrace"][-1]["error"], "tool_budget_exceeded")
 
     async def test_model_failure_after_verified_image_keeps_real_evidence(self):

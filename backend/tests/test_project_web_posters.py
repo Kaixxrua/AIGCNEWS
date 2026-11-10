@@ -149,10 +149,10 @@ class WebPosterAgentTests(unittest.IsolatedAsyncioTestCase):
             result = await GamePosterAgent(model, search=search).run(ITEM)
             self.assertEqual(result["posterStatus"], status)
         search = AsyncMock(return_value={"results": []})
-        model = model_with(*[tool("search_web", {"query": ORIGINAL + " cover"}, f"call-{i}") for i in range(7)])
+        model = model_with(*[tool("search_web", {"query": ORIGINAL + " cover"}, f"call-{i}") for i in range(9)])
         result = await GamePosterAgent(model, search=search).run(ITEM)
         self.assertEqual(search.await_count, 2)
-        self.assertEqual(model.ainvoke.await_count, 6)
+        self.assertEqual(model.ainvoke.await_count, 8)
         self.assertEqual(result["posterStatus"], "unavailable")
 
     async def test_cancel_stops_tool_loop_before_any_further_network_call(self):

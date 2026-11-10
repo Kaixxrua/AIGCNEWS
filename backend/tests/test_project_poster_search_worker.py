@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 from urllib.parse import quote
 
 from backend.app.services.project_catalog import game_poster_search as worker
@@ -79,6 +79,7 @@ class PosterSearchWorkerTests(unittest.TestCase):
 
     def test_rate_limit_and_oversized_html_are_safe_unavailable_diagnostics(self):
         for status, body, reason in [(429, "secret-response", "provider_http"),
+                                     (403, "secret-response", "provider_http"),
                                      (200, "x" * (worker.SEARCH_PAGE_BYTES + 1), "provider_response_oversize")]:
             with self.subTest(reason=reason):
                 module, _, engine = self.yahoo_module(status=status, body=body)
@@ -104,12 +105,94 @@ class PosterSearchWorkerTests(unittest.TestCase):
         self.assertNotIn("password", json.dumps(result))
 
     def test_genuine_empty_search_is_distinct_from_provider_failure(self):
-        module, _, _ = self.yahoo_module(body="<html><title>No results</title></html>")
+        module, _, engine = self.yahoo_module(body="<html><title>No results</title></html>")
         with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}):
             result = worker.search_results("A Game II cover", None, ("yahoo",))
         self.assertFalse(result["unavailable"])
         self.assertEqual(result["attempts"][0]["status"], "empty")
         self.assertEqual(result["attempts"][0]["resultCount"], 0)
+        self.assertEqual(result["attempts"][0]["retryCount"], 1)
+        self.assertEqual(engine.http_client.request.call_count, 2)
+
+    def test_normal_empty_response_gets_one_same_query_retry_without_another_engine_attempt(self):
+        module, _, engine = self.yahoo_module()
+        engine.http_client.request.side_effect = [SimpleNamespace(status_code=200, text="<html><title>No results</title></html>"),
+                                                  SimpleNamespace(status_code=200, text=result_html("https://games.example/game/cover"))]
+        with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}), \
+                patch.object(worker, "_search_ddgs", side_effect=RuntimeError("private-provider-message")):
+            result = worker.search_results("A Game II cover", None, ("google", "yahoo"))
+        self.assertEqual(result["engine"], "yahoo")
+        self.assertEqual(len(result["attempts"]), 2)
+        self.assertEqual(result["attempts"][-1]["retryCount"], 1)
+        self.assertEqual(result["attempts"][-1]["status"], "succeeded")
+        engine.build_payload.assert_has_calls([call("A Game II cover", region="us-en", safesearch="moderate", timelimit=None)] * 2)
+        engine.http_client.request.assert_has_calls([call("GET", "https://search.yahoo.com/search", params={"p": "A Game II cover"})] * 2)
+        self.assertNotIn("private-provider-message", json.dumps(result))
+
+    def test_challenge_or_consent_response_is_not_retried(self):
+        for body in ('<h1>Verify you are human</h1>', '<form action="/captcha/verify"></form>',
+                     '<div class="g-recaptcha"></div>', '<form action="https://consent.yahoo.com/v2/collectConsent"></form>',
+                     '<p>Our systems have detected unusual traffic</p>'):
+            with self.subTest(body=body):
+                module, _, engine = self.yahoo_module(body=body)
+                with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}):
+                    result = worker.search_results("A Game II cover", None, ("yahoo",))
+                self.assertTrue(result["unavailable"])
+                self.assertEqual(result["attempts"][0]["reason"], "provider_challenge")
+                self.assertEqual(result["attempts"][0]["retryCount"], 0)
+                engine.http_client.request.assert_called_once()
+
+    def test_valid_search_snippet_mentioning_a_challenge_does_not_hide_organic_results(self):
+        module, _, engine = self.yahoo_module(body=result_html("https://games.example/game/cover", snippet="A game's unusual traffic puzzle"))
+        with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}):
+            result = worker.search_results("A Game II cover", None, ("yahoo",))
+        self.assertEqual(result["attempts"][0]["status"], "succeeded")
+        self.assertEqual(result["attempts"][0]["retryCount"], 0)
+        engine.http_client.request.assert_called_once()
+
+    def test_yahoo_transport_exception_is_not_retried_or_printed(self):
+        module, _, engine = self.yahoo_module()
+        engine.http_client.request.side_effect = RuntimeError("secret-proxy-credentials")
+        with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}):
+            result = worker.search_results("A Game II cover", None, ("yahoo",))
+        self.assertTrue(result["unavailable"])
+        self.assertEqual(result["attempts"][0]["errorType"], "RuntimeError")
+        self.assertEqual(result["attempts"][0]["retryCount"], 0)
+        engine.http_client.request.assert_called_once()
+        self.assertNotIn("secret-proxy", json.dumps(result))
+
+    def test_empty_response_retry_respects_the_original_worker_deadline(self):
+        clock = [0.0]
+        module, _, engine = self.yahoo_module()
+
+        def empty_after_budget(*args, **kwargs):
+            clock[0] = 19.7
+            return SimpleNamespace(status_code=200, text="<html>No results</html>")
+
+        engine.http_client.request.side_effect = empty_after_budget
+        with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}), patch.object(worker.time, "monotonic", side_effect=lambda: clock[0]):
+            result = worker.search_results("A Game II cover", None, ("yahoo",))
+        self.assertTrue(result["unavailable"])
+        self.assertEqual(result["attempts"][0]["reason"], "worker_deadline")
+        self.assertEqual(result["attempts"][0]["retryCount"], 0)
+        engine.http_client.request.assert_called_once()
+
+    def test_retry_http_timeout_is_shortened_to_remaining_worker_time(self):
+        clock = [0.0]
+        module, constructor, engine = self.yahoo_module()
+
+        def respond(*args, **kwargs):
+            if engine.http_client.request.call_count == 1:
+                clock[0] = 16.2
+                return SimpleNamespace(status_code=200, text="<html>No results</html>")
+            return SimpleNamespace(status_code=200, text=result_html("https://games.example/game/cover"))
+
+        engine.http_client.request.side_effect = respond
+        with patch.dict("sys.modules", {"ddgs.engines.yahoo": module}), patch.object(worker.time, "monotonic", side_effect=lambda: clock[0]):
+            result = worker.search_results("A Game II cover", None, ("yahoo",))
+        self.assertEqual(result["engine"], "yahoo")
+        self.assertEqual(constructor.call_args_list, [call(proxy=None, timeout=8), call(proxy=None, timeout=3)])
+        self.assertEqual(result["attempts"][0]["retryCount"], 1)
 
     def test_whole_worker_budget_prevents_starting_another_request(self):
         with patch.object(worker.time, "monotonic", side_effect=[0, 0, 20, 20]), \

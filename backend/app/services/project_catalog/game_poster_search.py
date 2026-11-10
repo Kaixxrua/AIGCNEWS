@@ -69,23 +69,55 @@ def parse_yahoo_results(body: str) -> list[dict[str, str]]:
     return results
 
 
-def _search_yahoo(query: str, proxy: str | None, timeout: int, attempt: dict) -> list[dict[str, str]]:
+def _yahoo_challenge(body: str) -> bool:
+    """Do not retry a provider challenge or consent page as an empty search."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(body, "html.parser")
+    if soup.select_one(".g-recaptcha, .h-captcha, #captcha, #recaptcha, #challenge-form, input[name='captcha']"):
+        return True
+    for tag in soup.find_all(["form", "iframe"])[:50]:
+        address = str(tag.get("action") or tag.get("src") or "").lower()
+        if any(marker in address for marker in ("captcha", "/challenge", "consent.yahoo.com")):
+            return True
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    visible = " ".join(soup.get_text(" ", strip=True).lower().split())
+    return any(phrase in visible for phrase in (
+        "verify you are human", "verify that you are human", "verify you're human", "complete the captcha",
+        "prove you're not a robot", "unusual traffic", "automated requests", "verify your identity to continue",
+    ))
+
+
+def _search_yahoo(query: str, proxy: str | None, timeout: int, attempt: dict, *, deadline: float) -> list[dict[str, str]]:
     # DDGS 9.16 only recognizes relsrch. Reuse its same endpoint and transport,
-    # but parse its alternate algo layout too, without making another request.
+    # but parse its alternate algo layout too. Only a normal 200 empty response
+    # receives one retry, within the original worker deadline, not a new budget.
     from ddgs.engines.yahoo import Yahoo
 
-    engine = Yahoo(proxy=proxy, timeout=timeout)
-    payload = engine.build_payload(query, region="us-en", safesearch="moderate", timelimit=None)
-    response = engine.http_client.request("GET", engine.search_url, params=payload)
-    attempt.update(httpStatus=response.status_code, parser="yahoo_headings")
-    if response.status_code != 200:
-        attempt.update(status="unavailable", reason="provider_http")
-        return []
-    body = response.text
-    if len(body.encode("utf-8")) > SEARCH_PAGE_BYTES:
-        attempt.update(status="unavailable", reason="provider_response_oversize")
-        return []
-    return parse_yahoo_results(body)
+    for retry in range(2):
+        remaining = deadline - time.monotonic()
+        if remaining < 1:
+            attempt.update(status="unavailable", reason="worker_deadline")
+            return []
+        engine = Yahoo(proxy=proxy, timeout=min(timeout, int(remaining)))
+        payload = engine.build_payload(query, region="us-en", safesearch="moderate", timelimit=None)
+        attempt["retryCount"] = retry
+        response = engine.http_client.request("GET", engine.search_url, params=payload)
+        attempt.update(httpStatus=response.status_code, parser="yahoo_headings")
+        if response.status_code != 200:
+            attempt.update(status="unavailable", reason="provider_http")
+            return []
+        body = response.text
+        if len(body.encode("utf-8")) > SEARCH_PAGE_BYTES:
+            attempt.update(status="unavailable", reason="provider_response_oversize")
+            return []
+        if rows := parse_yahoo_results(body):
+            return rows
+        if _yahoo_challenge(body):
+            attempt.update(status="unavailable", reason="provider_challenge")
+            return []
+    return []
 
 
 def _search_ddgs(query: str, proxy: str | None, timeout: int, engine: str) -> list[dict[str, str]]:
@@ -111,7 +143,7 @@ def search_results(query: str, proxy: str | None, engines: tuple[str, ...]) -> d
         attempts.append(attempt)
         try:
             timeout = min(8, max(1, int(remaining)))
-            rows = _search_yahoo(query, proxy, timeout, attempt) if engine == "yahoo" else _search_ddgs(query, proxy, timeout, engine)
+            rows = _search_yahoo(query, proxy, timeout, attempt, deadline=deadline) if engine == "yahoo" else _search_ddgs(query, proxy, timeout, engine)
             attempt["resultCount"] = len(rows)
             if rows:
                 attempt["status"] = "succeeded"

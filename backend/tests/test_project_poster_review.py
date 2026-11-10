@@ -111,6 +111,17 @@ class PosterImageReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("商业原作盒封属于 wrong_game", system.content)
         self.assertNotIn("librequake", system.content.lower(), 'identity rules must remain general rather than hard-coded project mappings')
 
+    async def test_project_art_candidate_keeps_original_metadata_but_reviews_the_project(self):
+        item = {**ITEM, "repo": "example/free-world", "descriptionZh": "基于原作引擎、使用自由素材的独立游戏。"}
+        model = mock_model('{"matches":true,"kind":"screenshot","reason":"matched"}')
+        await review_poster_image(model, fixture_image(), item=item,
+                                  candidate={**CANDIDATE, "identityKind": "project"}, kind="screenshot")
+        expected = json.loads(model.ainvoke.await_args.args[0][1].content[0]["text"])["expected"]
+        self.assertEqual(expected["identityKind"], "project")
+        self.assertEqual(expected["gameNameOriginal"], ITEM["gameNameOriginal"])
+        self.assertEqual(expected["repo"], item["repo"])
+        self.assertIn("输入游戏版本的身份限制", model.ainvoke.await_args.args[0][0].content)
+
     async def test_matching_project_name_banner_still_requires_a_visual_content_decision(self):
         item = {"repo": "example/ultratears", "gameNameOriginal": "", "descriptionZh": "这是一个游戏的开源重编译项目。"}
         candidate = {**CANDIDATE, "pageTitle": "UltraTears", "label": "UltraTears official image"}
@@ -149,12 +160,12 @@ class PosterImageReviewTests(unittest.IsolatedAsyncioTestCase):
         for payload in payloads:
             with self.subTest(bytes=len(payload)):
                 model = mock_model()
-                with self.assertRaisesRegex(PosterResourceError, "^image_review_unavailable$"):
+                with self.assertRaisesRegex(PosterResourceError, "^invalid_image$"):
                     await review_poster_image(model, payload, item=ITEM, candidate=CANDIDATE, kind="cover")
                 model.bind.assert_not_called()
                 model.ainvoke.assert_not_awaited()
         model = mock_model()
-        with patch.object(resources, "IMAGE_PIXELS", 100000), self.assertRaisesRegex(PosterResourceError, "^image_review_unavailable$"):
+        with patch.object(resources, "IMAGE_PIXELS", 100000), self.assertRaisesRegex(PosterResourceError, "^invalid_image$"):
             await review_poster_image(model, fixture_image(), item=ITEM, candidate=CANDIDATE, kind="cover")
         model.ainvoke.assert_not_awaited()
 

@@ -143,6 +143,17 @@ class LocalizedReadmeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["readme_text"], primary)
                 self.assertNotIn("readme_localized_path", result)
 
+    async def test_valid_large_primary_readme_supplies_bounded_identity_excerpt(self):
+        primary = "# Star Miner\nAn open source game.\n" + "Game details. " * 6000
+        result, seen = await self.fetch(primary)
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(result["readme_status"], "succeeded")
+        self.assertEqual(result["readme_text"], primary[:12000])
+        # The public response body limit is not raised for arbitrarily large
+        # README JSON, nor is the optional translation limit relaxed.
+        with self.assertRaises(service.DescriptionInputUnavailable):
+            await self.fetch("x" * 300000)
+
     async def test_combined_input_remains_bounded_and_image_sources_are_not_rebound(self):
         primary = "# Project\n[中文](README.zh.md)\n![Cover](docs/cover.jpg)"
         translated = "![Cover](translated/cover.jpg)\n" + "中" * 15000

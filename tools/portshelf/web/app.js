@@ -2,6 +2,9 @@
 
 (() => {
   const $ = (id) => document.getElementById(id);
+  // Background enrichment jobs may run for four minutes. Poll by elapsed time,
+  // not a fixed request count, and leave time for the completed result to arrive.
+  const DESCRIPTION_WAIT_MS = 5 * 60 * 1000;
   const state = {
     games: [], snapshots: {}, category: "all", query: "", sort: "stars", view: "grid", minStars: null, maxStars: null,
     page: "library", hasToken: false, hasAigcToken: false, descriptions: {}, refreshing: false, polling: null, pollBusy: false,
@@ -256,7 +259,7 @@
         if (poster.url) failedPosters.delete(poster.url);
       }
       if (state.descriptions[key].status === "pending") {
-        if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
+        if (!state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, Date.now() + DESCRIPTION_WAIT_MS);
       } else state.descriptionPollTargets.delete(key);
     }
     schedulePosterCooldown();
@@ -276,7 +279,7 @@
     for (const repo of repos) {
       if (!repoURL(repo)) continue;
       const key = repositoryKey(repo);
-      if (resetPoll && state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, 0);
+      if (resetPoll && state.descriptionPollTargets.has(key)) state.descriptionPollTargets.set(key, Date.now() + DESCRIPTION_WAIT_MS);
       state.descriptionReadQueue.add(key);
     }
     if (!state.descriptionReadBusy) drainDescriptionReads();
@@ -306,19 +309,20 @@
 
   function scheduleDescriptionPoll() {
     if (state.stopped || state.descriptionPollTimer || state.descriptionReadBusy) return;
-    const pending = Array.from(state.descriptionPollTargets).filter(([repo, attempts]) => attempts < 20 && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting);
+    const pending = Array.from(state.descriptionPollTargets).filter(([repo, deadline]) => Date.now() < deadline && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting);
     if (!pending.length) {
-      if (Array.from(state.descriptionPollTargets.values()).some((attempts) => attempts >= 20)) descriptionNotice("部分游戏资料仍在生成或查图，自动核对已暂歇。可点击游戏旁的“核对生成进度”继续查看。");
+      if (Array.from(state.descriptionPollTargets.values()).some((deadline) => Date.now() >= deadline)) descriptionNotice("部分游戏资料仍在生成或查图，自动核对已暂歇。可点击游戏旁的“核对生成进度”继续查看。");
       return;
     }
+    const deadline = pending.reduce((earliest, [, value]) => Math.min(earliest, value), Infinity);
     state.descriptionPollTimer = setTimeout(() => {
       state.descriptionPollTimer = null;
       const repos = [];
-      for (const [repo, attempts] of state.descriptionPollTargets) {
-        if (attempts < 20 && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting) { state.descriptionPollTargets.set(repo, attempts + 1); repos.push(repo); }
+      for (const [repo, deadline] of state.descriptionPollTargets) {
+        if (Date.now() < deadline && state.descriptions[repo]?.status === "pending" && repo !== state.descriptionBatch?.waiting) repos.push(repo);
       }
       queueDescriptionRead(repos);
-    }, state.descriptionPollAfter * 1000);
+    }, Math.min(state.descriptionPollAfter * 1000, Math.max(0, deadline - Date.now())));
   }
 
   async function requestDescription(game, refreshPoster = false) {
@@ -379,17 +383,20 @@
 
   async function waitForQueuedDescription(game, batch) {
     const key = repositoryKey(game.repo);
+    const deadline = state.descriptionPollTargets.get(key) || Date.now() + DESCRIPTION_WAIT_MS;
     batch.waiting = key;
     try {
-      for (let attempt = 0; attempt < 20; attempt++) {
+      while (Date.now() < deadline) {
         if (batch.stopRequested || state.stopped) return state.descriptions[key];
-        await new Promise((resolve) => setTimeout(resolve, state.descriptionPollAfter * 1000));
+        const delay = Math.min(state.descriptionPollAfter * 1000, Math.max(0, deadline - Date.now()));
+        await new Promise((resolve) => setTimeout(resolve, delay));
         if (batch.stopRequested || state.stopped) return state.descriptions[key];
+        if (Date.now() >= deadline) break;
         const result = await api("/api/descriptions?repos=" + encodeURIComponent(game.repo), undefined, 30000);
         if (state.stopped) return state.descriptions[key];
         mergeDescriptions(result.items);
         const record = state.descriptions[key];
-        state.descriptionPollTargets.set(key, attempt + 1);
+        state.descriptionPollTargets.set(key, deadline);
         if (record?.status !== "pending") state.descriptionPollTargets.delete(key);
         updateDescriptionViews();
         if (record?.status !== "pending") return record;
@@ -751,6 +758,9 @@
     if (state.selected) renderDetails();
     if (state.discovery.range) renderSearchResults();
     syncDiscoveryControls();
+    // A pending poster search keeps its old artwork on disk with checkedAt
+    // cleared. Reading that marker after reload resumes GET polling, not billing.
+    queueDescriptionRead(state.games.filter(game => needsDescription(game) || posterSearchNeedsRetry(game) || !state.descriptions[repositoryKey(game.repo)]?.checkedAt).map(game => game.repo));
   }
 
   function changePage(page) {
@@ -1415,7 +1425,6 @@
     }
     try {
       await loadLibrary();
-      queueDescriptionRead(state.games.filter(needsDescription).map((game) => game.repo));
       const status = await api("/api/status", undefined, 15000);
       if (status.running) { setRefreshState(true, status); schedulePoll(); }
     } catch (error) {

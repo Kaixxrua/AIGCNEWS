@@ -49,10 +49,10 @@ READY_TTL = 7 * 86400
 RETRY_SECONDS = 60
 # Identity enrichment and web research share the job, but not a ninety-second
 # budget that can expire after the poster has already been downloaded. The
-# agent has its own 120-second deadline, including visual image review, and
+# agent has its own 180-second deadline, including visual image review, and
 # returns its trace before this fence. The lease also covers job finalization.
-JOB_SECONDS = 180
-LEASE_SECONDS = 210
+JOB_SECONDS = 240
+LEASE_SECONDS = 270
 READS_PER_MINUTE = 60
 POSTS_PER_MINUTE = 30
 MAX_CONCURRENT_GENERATIONS = 4
@@ -188,7 +188,7 @@ async def _bounded_response(client: httpx.AsyncClient, path: str, *, raw: bool =
         return bytes(body)
 
 
-def _readme_document(raw: bytes) -> tuple[str, str]:
+def _readme_document(raw: bytes, *, allow_excerpt: bool = False) -> tuple[str, str]:
     try:
         document = json.loads(raw)
         if not isinstance(document, dict) or document.get("encoding") != "base64" or not isinstance(document.get("content"), str):
@@ -198,7 +198,11 @@ def _readme_document(raw: bytes) -> tuple[str, str]:
             raise ValueError("invalid README path")
         content = base64.b64decode("".join(document["content"].split()), validate=True)
         if len(content) > 65536:
-            raise ValueError("oversized README")
+            if not allow_excerpt:
+                raise ValueError("oversized README")
+            # The JSON response is already capped at 256 KiB. Keep a bounded
+            # primary excerpt rather than rejecting an otherwise valid game.
+            content = content[:65536]
     except (ValueError, UnicodeError) as exc:
         raise DescriptionInputUnavailable("GitHub 返回的 README 资料无效或过大。") from exc
     return path, content.decode("utf-8", errors="replace")[:12000]
@@ -314,7 +318,7 @@ async def fetch_public_repository(repo: str, *, game_details: bool = False, tran
                 path += "?ref=" + quote(branch, safe="")
             raw_readme = await _bounded_response(client, path)
             if raw_readme:
-                readme_path, text = _readme_document(raw_readme)
+                readme_path, text = _readme_document(raw_readme, allow_excerpt=True)
                 metadata.update(readme_status="succeeded", readme_text=text, readme_path=readme_path)
                 metadata["image_candidates"] = image_candidates(repo, branch, readme_path, text)
                 await _supplement_localized_readme(client, metadata)

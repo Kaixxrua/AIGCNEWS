@@ -60,9 +60,11 @@ def _search_attempts(value: Any) -> list[dict]:
             number = row.get(key)
             if type(number) is int and low <= number <= high:
                 public[key] = number
+        if type(row.get("retryCount")) is int and row["retryCount"] in (0, 1):
+            public["retryCount"] = row["retryCount"]
         if row.get("parser") == "yahoo_headings":
             public["parser"] = "yahoo_headings"
-        if isinstance(row.get("reason"), str) and row["reason"] in {"provider_http", "provider_response_oversize", "worker_deadline"}:
+        if isinstance(row.get("reason"), str) and row["reason"] in {"provider_http", "provider_response_oversize", "worker_deadline", "provider_challenge"}:
             public["reason"] = row["reason"]
         if isinstance(row.get("errorType"), str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", row["errorType"]):
             public["errorType"] = row["errorType"]

@@ -14,7 +14,7 @@ from PIL import Image
 from backend.app.domain.project_taxonomy import extract_message_text
 from backend.app.services.project_catalog.game_poster_resources import PosterResourceError, clean_poster_jpeg
 
-REVIEW_SECONDS = 25.0
+REVIEW_SECONDS = 35.0
 REVIEW_MAX_TOKENS = 1200
 REVIEW_IMAGE_EDGE = 512
 REVIEW_IMAGE_BYTES = 256 * 1024
@@ -35,6 +35,9 @@ free-content/free assets 项目或基于旧引擎制作的新游戏，必须使�
 identityKind=game 仅表示存在原作名字段，不保证该项目就是原作；关系冲突或无法确认时应拒绝而非猜测。
 拒绝其它游戏、续作、电影、小说，以及与指定原版不同的重制版、合集或版本；不能忽略名称中的续作序号、年份和版本名。
 同一原作在其它平台发行的真实盒封可以匹配，按图上的名称和版本辨认并保留平台标识，不能把移植支持系统当盒封的平台证据。
+但 gameNameOriginal 中明确限定了原作的平台或年份时，那是输入游戏版本的身份限制，不是本项目支持系统；
+若封面标识另一平台而无法证明该输入版本就是同一发行版，应返回 wrong_version 或 uncertain，不能默认是跨平台同版。
+例如原名明确为某新主机版或某年重制版时，早期主机原版盒封不能仅凭主标题相同就通过。
 identityKind=project 表示没有唯一原作，只允许该项目自身的官方封面、整体宣传图或实际运行画面；
 不能把它支持的某款商业原作的盒封当作项目海报，也不能替项目发明原作名。
 kind 按像素纠正：完整盒封、封面或宣传海报为 cover；实际游戏运行画面为 screenshot。
@@ -122,7 +125,7 @@ async def review_poster_image(model: Any, body: bytes, *, item: dict, candidate:
             expected = {key: _text(item.get(key), limit) for key, limit in (
                 ("repo", 160), ("gameNameOriginal", 160), ("gameNameZh", 160), ("descriptionZh", 2000),
             )}
-            expected["identityKind"] = "game" if expected["gameNameOriginal"].strip() else "project"
+            expected["identityKind"] = "project" if candidate.get("identityKind") == "project" or not expected["gameNameOriginal"].strip() else "game"
             messages = [SystemMessage(content=_SYSTEM), HumanMessage(content=[
                 {"type": "text", "text": json.dumps({"expected": expected, "untrustedCandidate": _candidate_context(candidate),
                                                     "proposedKind": kind}, ensure_ascii=False)},
@@ -133,6 +136,11 @@ async def review_poster_image(model: Any, body: bytes, *, item: dict, candidate:
             return _review_result(response)
     except asyncio.CancelledError:
         raise
+    except PosterResourceError as exc:
+        # Only the decoder's known code may leave this tool. A provider could
+        # otherwise supply an arbitrary exception message of the same type.
+        code = "invalid_image" if str(exc) == "invalid_image" else "image_review_unavailable"
+        raise PosterResourceError(code) from None
     except Exception:
         # Chaining provider exceptions could expose credentials or prompt text.
         raise PosterResourceError("image_review_unavailable") from None
