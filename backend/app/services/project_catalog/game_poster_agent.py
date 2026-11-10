@@ -17,7 +17,11 @@ from backend.app.core.model_factory import get_chat_model, get_enrichment_reason
 from backend.app.domain.project_taxonomy import extract_message_text, parse_json_object
 from backend.app.models.schema_project_descriptions import normalize_description_repo
 from backend.app.services.project_catalog.game_poster_context import image_context, page_source_excerpt
-from backend.app.services.project_catalog.game_poster_page_identity import has_project_identity, project_artwork_links
+from backend.app.services.project_catalog.game_poster_page_identity import (
+    has_project_identity,
+    project_artwork_links,
+    project_image_detail,
+)
 from backend.app.services.project_catalog.game_poster_resources import (
     PosterResourceError,
     cache_poster,
@@ -279,7 +283,7 @@ def _wrong_sequel_title(title: str, names: tuple[str, ...]) -> bool:
     return False
 
 
-def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str) -> list[dict[str, str]]:
+def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str, project_repo: str = "") -> list[dict[str, str]]:
     """Expose only evidenced, same-site artwork subpages of this game, one hop."""
     source = urlsplit(url)
     source_path = unquote(source.path).rstrip("/")
@@ -291,7 +295,8 @@ def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str) -
         except PosterResourceError:
             continue
         parts = urlsplit(address)
-        file_page = bool(_FILE_PAGE.search(unquote(parts.path)))
+        project_detail = bool(project_repo and project_image_detail(address, project_repo))
+        file_page = bool(_FILE_PAGE.search(unquote(parts.path))) or project_detail
         if address in seen or parts.hostname != source.hostname or (_IMAGE_FILE.search(parts.path) and not file_page):
             continue
         path = unquote(parts.path)
@@ -300,6 +305,7 @@ def _gallery_links(soup: BeautifulSoup, url: str, original: str, chinese: str) -
             continue
         path_title = re.sub(r"[/_-]+", " ", path)
         same_game = bool(source_path and path.startswith(source_path + "/"))
+        same_game |= project_detail
         same_game |= bool(source_ids & set(re.findall(r"(?<!\d)\d{3,}(?!\d)", path)))
         same_game |= _matches_identity(path_title + " " + label, _identity_names(original, chinese))
         if not same_game or _wrong_sequel_title(path_title + " " + label, _identity_names(original, chinese)):
@@ -391,7 +397,7 @@ def page_images(url: str, body: bytes, original: str, chinese: str = "", *, proj
                 parts = entry.strip().split()
                 if parts and (len(parts) == 1 or re.fullmatch(r"\d+(?:\.\d+)?[wx]", parts[1])):
                     found.append({"url": parts[0], "label": label, "context": context, "nearbyText": nearby, **dimensions})
-    links = _gallery_links(soup, url, original, chinese)
+    links = _gallery_links(soup, url, original, chinese, project_repo)
     if project_repo:
         existing = {link["url"] for link in links}
         links.extend(link for link in project_artwork_links(soup, url, project_repo, original) if link["url"] not in existing)
@@ -440,6 +446,8 @@ class GamePosterAgent:
         self.attempted_pages: set[str] = set()
         self.page_resources: dict[str, Any] = {}
         self.failed_hosts: set[str] = set()
+        self.page_host_failures: dict[str, int] = {}
+        self.pending_page_hosts: dict[int, str] = {}
         self.candidates: dict[str, dict] = {}
         self.attempted_images: set[str] = set()
         self.verified: dict[str, dict] = {}
@@ -464,6 +472,18 @@ class GamePosterAgent:
             record.update(candidateId=args["candidateId"], sourceUrl=candidate["sourceUrl"], imageUrl=candidate["url"])
             raise PosterResourceError("image_already_tried")
         cached_page = name == "read_page" and isinstance(args.get("resultId"), str) and args["resultId"] in self.page_resources
+        if name == "read_page" and not cached_page and isinstance(args.get("resultId"), str):
+            page = self.results.get(args["resultId"])
+            if page:
+                record.update(resultId=args["resultId"], sourceUrl=page["url"])
+                host = urlsplit(page["url"]).hostname
+                failures = self.page_host_failures.get(host, 0)
+                if failures >= 2:
+                    raise PosterResourceError("page_source_unavailable")
+                # Do not spend all six pages before the first same-host
+                # failures return. One failed page still permits a probe.
+                if failures + sum(value == host for value in self.pending_page_hosts.values()) >= 2:
+                    raise PosterResourceError("page_source_in_flight")
         recovery_search = (name == "search_web" and (self.project_recovery or self.source_recovery)
                            and not self.project_recovery_used
                            and any(self.counts[key] >= self.limits[key] for key in self.limits))
@@ -519,6 +539,8 @@ class GamePosterAgent:
                 raise PosterResourceError("unknown_result_id")
             self.attempted_pages.add(identifier)
             record.update(resultId=identifier, sourceUrl=self.results[identifier]["url"])
+            if not cached_page:
+                self.pending_page_hosts[id(record)] = urlsplit(self.results[identifier]["url"]).hostname
             return {"resultId": identifier, "result": dict(self.results[identifier]), "cachedResource": self.page_resources.get(identifier)}
         identifier, kind = args.get("candidateId"), args.get("kind")
         if not isinstance(identifier, str) or identifier not in self.candidates or kind not in {"cover", "screenshot"} or set(args) != {"candidateId", "kind"}:
@@ -569,9 +591,25 @@ class GamePosterAgent:
 
     def _unused_pages(self) -> list[dict]:
         rows = [row for key, row in self.results.items() if key not in self.attempted_pages
-                and (self.counts["read_page"] < self.limits["read_page"] or key in self.page_resources)]
+                and (self.counts["read_page"] < self.limits["read_page"] or key in self.page_resources)
+                and (key in self.page_resources or self.page_host_failures.get(urlsplit(row["url"]).hostname, 0) < 2)]
         rows.sort(key=lambda row: (urlsplit(row["url"]).hostname in self.failed_hosts, not row.get("gameSite")))
         return [{key: row[key] for key in ("resultId", "url", "title") if key in row} for row in rows[:6]]
+
+    def _page_read_outcome(self, record: dict, *, succeeded: bool = False) -> None:
+        # A rejected duplicate resultId must not release the original call's
+        # reservation. This ownership token remains internal to this run.
+        host = self.pending_page_hosts.pop(id(record), None)
+        if host is None:
+            return
+        status = record.get("httpStatus")
+        host_failure = (record.get("error") in {"network_unavailable", "tool_timeout"}
+                        or type(status) is int and (status in {403, 429} or 500 <= status <= 599))
+        # A missing path (404/410), a successful fetch, or an unclassified
+        # injected error is not evidence that every page on the host is down.
+        self.page_host_failures[host] = self.page_host_failures.get(host, 0) + 1 if not succeeded and host_failure else 0
+        if succeeded:
+            self.failed_hosts.discard(host)
 
     def _seconds_left(self, limit: float) -> float:
         remaining = self.deadline - asyncio.get_running_loop().time()
@@ -687,6 +725,7 @@ class GamePosterAgent:
                 record["workerTransport"] = response["workerTransport"]
             return {"query": prepared["query"], "searchType": prepared["searchType"], "results": rows}
         if name == "read_page":
+            self._page_read_outcome(record, succeeded=True)
             identifier = prepared["resultId"]
             resource = value
             source = safe_web_url(resource.url)
@@ -744,8 +783,19 @@ class GamePosterAgent:
         record.update(error=value["error"], errorType=type(exc).__name__, errorFrames=_error_frames(exc))
         if isinstance(exc, PosterResourceError) and exc.attempts:
             record["attempts"] = exc.attempts
+        if isinstance(exc, PosterResourceError) and exc.http_status is not None:
+            record["httpStatus"] = value["httpStatus"] = exc.http_status
         if record.get("tool") == "read_page" and record.get("sourceUrl"):
+            self._page_read_outcome(record)
             self.failed_hosts.add(urlsplit(record["sourceUrl"]).hostname)
+        source_blocked = (record.get("tool") == "read_page" and record.get("sourceUrl")
+                          and self.page_host_failures.get(urlsplit(record["sourceUrl"]).hostname, 0) >= 2)
+        if value["error"] == "page_source_unavailable" or source_blocked:
+            value["nextStep"] = "此网站已连续两次拒绝访问或连接失败；本任务请读取其它真实来源，或在剩余搜索额度内换网站查找。"
+            if value["error"] == "page_source_unavailable":
+                value["nextStep"] += "本次拦截未消耗读页额度。"
+        elif value["error"] == "page_source_in_flight":
+            value["nextStep"] = "同一网站的两个探测额度已占用；先使用这些读页结果，或读取其它网站。此拒绝未消耗读页额度。"
         if (self.project_repo and value["error"] in {"network_unavailable", "page_unavailable", "invalid_image", "image_too_large", "page_too_large"}
                 and (record.get("tool") == "verify_image" or self.counts["read_page"] >= 2)):
             self.source_recovery = True

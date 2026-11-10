@@ -46,9 +46,10 @@ _CACHED_POSTER = re.compile(re.escape(ASSET_BASE) + r"([0-9a-f]{64}\.jpg)\Z")
 class PosterResourceError(RuntimeError):
     """Only a stable non-secret code may be shown in a tool transcript."""
 
-    def __init__(self, code: str, *, attempts: list[dict] | None = None):
+    def __init__(self, code: str, *, attempts: list[dict] | None = None, http_status: int | None = None):
         super().__init__(code)
         self.attempts = attempts or []
+        self.http_status = http_status if type(http_status) is int and 100 <= http_status <= 599 else None
 
 
 def _search_attempts(value: Any) -> list[dict]:
@@ -310,7 +311,7 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                 if (response.status_code not in ({200, 206} if gif_candidate else {200})
                         or content_type not in permitted and not binary_gif
                         or response.status_code == 206 and not gif_body):
-                    raise PosterResourceError("invalid_image" if image else "page_unavailable")
+                    raise PosterResourceError("invalid_image" if image else "page_unavailable", http_status=response.status_code)
                 if image and (gif_body or content_type == "image/gif"):
                     try:
                         jpeg, evidence = await preview_gif(bytes(body), partial=partial)

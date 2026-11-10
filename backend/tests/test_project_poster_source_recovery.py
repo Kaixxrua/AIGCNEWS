@@ -72,10 +72,11 @@ class PosterSourceRecoveryTests(unittest.IsolatedAsyncioTestCase):
             tool("verify_image", {"candidateId": "image-1", "kind": "screenshot"}),
             AIMessage(content='{"candidateId":"image-1"}'),
         )
+        recovered = "https://recovered.example/game"
         search = AsyncMock(side_effect=[{"results": [{"url": SOURCE}, {"url": SOURCE + "/b"}]},
-                                       {"results": [{"url": SOURCE + "/c"}]}, {"results": [{"url": SOURCE + "/d"}]}])
+                                       {"results": [{"url": "https://another.example/game"}]}, {"results": [{"url": recovered}]}])
         fetch = AsyncMock(side_effect=[PosterResourceError("network_unavailable")] * 3
-                         + [PosterResource(SOURCE + "/d", html, "text/html"), PosterResource(IMAGE, b"pixels", "image/png")])
+                         + [PosterResource(recovered, html, "text/html"), PosterResource(IMAGE, b"pixels", "image/png")])
         agent = GamePosterAgent(model, search=search, fetch=fetch, cache=AsyncMock(return_value=cached_image()))
         result = await agent.run(ITEM)
         self.assertEqual(result["posterStatus"], "ready")

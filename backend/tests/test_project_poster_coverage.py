@@ -139,8 +139,10 @@ class PosterCoverageAgentTests(unittest.IsolatedAsyncioTestCase):
         model = model_with(tool("search_web", {"query": ORIGINAL + " cover"}),
                            tool("search_web", {"query": ORIGINAL + " screenshots"}), calls,
                            tool("read_page", {"resultId": "page-7"}), AIMessage(content='{"candidateId":""}'))
-        search = AsyncMock(side_effect=[{"results": [{"url": SOURCE + str(index)} for index in range(6)]},
-                                       {"results": [{"url": SOURCE + "6"}]}])
+        # Different hosts exercise the global six-page budget independently
+        # of the per-host limit on probes still waiting for a response.
+        search = AsyncMock(side_effect=[{"results": [{"url": f"https://source{index}.example/game"} for index in range(6)]},
+                                       {"results": [{"url": "https://source6.example/game"}]}])
         fetch = AsyncMock(return_value=PosterResource(SOURCE, HTML, "text/html"))
         result = await GamePosterAgent(model, search=search, fetch=fetch).run(ITEM)
         self.assertEqual(fetch.await_count, 6)

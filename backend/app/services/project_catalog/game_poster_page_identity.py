@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -15,6 +15,22 @@ _SEPARATOR = r"[\W_]*"
 _FOLLOWING_NUMBER = re.compile(_SEPARATOR + r"(?:[0-9]+|[ivx]+)(?!" + _WORD + r")")
 _ITCH_AUTHOR = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.itch\.io")
 _ITCH_GAME = re.compile(r"/[a-z0-9][a-z0-9_.-]*/?", re.I)
+
+
+def project_image_detail(url: str, project_repo: str) -> bool:
+    """A same-repository GitHub blob is an HTML detail page, not its image.
+
+    This only classifies a URL already present in the source DOM. The caller
+    still fetches that exact page and extracts its actual image references.
+    """
+    try:
+        parts = urlsplit(safe_web_url(url))
+        repo = normalize_description_repo(project_repo)
+    except (PosterResourceError, ValueError):
+        return False
+    return bool(parts.hostname == "github.com"
+                and re.fullmatch("/" + re.escape(repo) + r"/blob/[^/]+/.+\.(?:png|jpe?g|webp|gif)", unquote(parts.path), re.I)
+                and not any(value.lower() in {"true", "1"} for value in parse_qs(parts.query).get("raw", [])))
 
 
 def has_project_identity(text: str, name: str) -> bool:
