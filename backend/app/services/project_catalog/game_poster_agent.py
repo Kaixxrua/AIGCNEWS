@@ -518,7 +518,7 @@ class GamePosterAgent:
     async def _perform(self, name: str, prepared: dict, record: dict) -> Any:
         """Network work overlaps; state and evidence registration remain ordered."""
         started = asyncio.get_running_loop().time()
-        limit = {"search_web": 23, "read_page": 16, "verify_image": 55}[name]
+        limit = {"search_web": 23, "read_page": 16, "verify_image": 70}[name]
         try:
             async with asyncio.timeout(self._seconds_left(limit)):
                 if name == "search_web":
@@ -671,10 +671,31 @@ class GamePosterAgent:
         key = "projectRecovery" if self.project_recovery else "sourceRecovery"
         return {key: {"queryIdentity": self.project_repo.split("/", 1)[-1],
                       "projectRepo": self.project_repo,
+                      **self._recovery_budget(),
                       "instruction": ("错误游戏或版本已被内容核验拒绝；只查此项目自己的截图，用identityKind=project并附作者或已知游戏背景消歧。"
                                       if self.project_recovery else "来源失效；可用原作或项目身份换一个来源查询。")
                       + "若图片检索反复返回重名或失效来源，改用searchType=pages找真实官网或游戏资料页，再读页核验。"
+                      + "普通网页查询失败或空结果时，缩短项目查询，只保留项目名加作者，或完整repo；不要原样重复冗长查询。"
                       + "常规查询、读页或核图额度耗尽时，只补一次查询机会、两页和一张图；仍受总时限约束。"}}
+
+    def _recovery_budget(self) -> dict:
+        pending = bool((self.project_recovery or self.source_recovery) and not self.project_recovery_used)
+        eligible = pending and any(self.counts[key] >= self.limits[key] for key in self.limits)
+        return {"eligible": eligible, "used": self.project_recovery_used, "requiresSearch": True,
+                "additional": {"search_web": int(eligible and self.counts["search_web"] >= self.limits["search_web"]),
+                               "read_page": 2 if eligible else 0, "verify_image": 1 if eligible else 0}}
+
+    def _budget_view(self) -> dict:
+        return {"remainingBudget": {key: max(0, self.limits[key] - self.counts[key]) for key in self.limits},
+                "recoveryBudget": self._recovery_budget()}
+
+    def _terminal(self, reason: str, turns: int) -> None:
+        # Keep existing event ordering and error fields compatible. No raw
+        # model output or unverified candidate text enters this summary.
+        if not self.trace:
+            self.trace.append({"stage": "agent", "at": datetime.now(UTC).isoformat()})
+        self.trace[-1]["terminal"] = {"reason": reason, "modelTurns": turns,
+                                      "counts": dict(self.counts), "limits": dict(self.limits), **self._budget_view()}
 
     def _unused_images(self) -> list[dict]:
         failed_image = any(row.get("tool") == "verify_image" and row.get("imageUrl") and row.get("error") for row in self.trace)
@@ -740,6 +761,7 @@ class GamePosterAgent:
             "searchType=pages使用普通网页检索找官网和游戏资料页；省略或images沿用图片优先检索及游戏资料库回退。"
             "图片检索若重复出现同名道具、软件、聚合转载，或来源读不到，下一次改用pages并加项目作者/完整repo与官网等词消歧，不要只在图片索引里重复同一查询。"
             "普通网页结果也必须read_page核对身份并verify_image核验；切换检索方式共用现有搜索次数、补救机会和总时限，不增加额度。"
+            "普通网页查询失败或无结果时缩短项目查询，只保留已核实项目名+作者，或完整repo；项目模式不必附原作长标题，原作模式仍保留版本要求。"
             "优先游戏官网、游戏商店和专门游戏资料/封面站，例如 Steam、GOG、MobyGames、IGDB、TheCoverProject、"
             "Nintendo、LaunchBox Games Database、itch.io；无合适结果再扩大到百科等其它公开来源。"
             "英文原作模式首次优先查询 searchIdentity + platformEvidence（若有）+ cover + site:gamesdb.launchbox-app.com，从游戏封面库读取可用大图；"
@@ -750,6 +772,7 @@ class GamePosterAgent:
             "原名本来就是中文时用该原名和截图、封面搜索中文游戏官网或游戏媒体，不必限定英文游戏库。"
             "搜索失败不会撤销此前已返回的页面。工具给出unreadSources时继续读取其中其它网站；还有未读来源时不能直接宣告无图。"
             "remainingBudget 是当前剩余次数；首次两个页面均失败时及时使用第二次搜索换源，至少留两页给新来源和图库详情。"
+            "remainingBudget不含recoveryBudget.additional；eligible=true时，即使常规search_web为0，additional.search_web=1仍允许一次补救查询，并在该查询解锁额外页与图。补救共用一次，不会重置。"
             "第二次搜索可直接指定已知游戏资料站；不要把所有读页次数都耗在同一站点。"
             "网页中提到原名不代表每张图都属于该游戏，必须结合图片说明、所在标题、图片路径核对；排除续作、其它推荐游戏及站点通用图。"
             "图片须通过实际内容核验，纯站点占位图或要求贡献截图的提示不能当作游戏画面。image_content_mismatch后换候选。"
@@ -765,9 +788,10 @@ class GamePosterAgent:
         )), HumanMessage(content=json.dumps({**{key: item.get(key, "") for key in ("repo", "gameNameOriginal", "gameNameZh", "descriptionZh")}, **identity}, ensure_ascii=False))]
         phase = "model_bind"
         recovery_requested = False
+        turns = 0
+        terminal_reason = "model_turn_limit"
         try:
             model = self.model.bind_tools(TOOLS).bind(max_tokens=1800)
-            turns = 0
             while turns < 8 + (3 if self.project_recovery or self.source_recovery else 0):
                 turns += 1
                 phase = "model_call"
@@ -783,6 +807,7 @@ class GamePosterAgent:
                     except ValueError:
                         identifier = None
                     if self.searched and isinstance(identifier, str) and identifier in self.verified:
+                        self._terminal("verified", turns)
                         return {**self.verified[identifier], "posterStatus": "ready", "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}
                     if identifier is None:
                         raise PosterResourceError("invalid_model_response")
@@ -791,9 +816,11 @@ class GamePosterAgent:
                         recovery_requested = True
                         messages.append(HumanMessage(content=json.dumps({
                             **continuation,
+                            **self._budget_view(),
                             "instruction": "先前发生了网络或图片失败，但仍有未试来源、当前页面图片或有界补救机会。优先核验当前页面仍存在的候选；失败再换源。仍须核对同一游戏，不能猜URL或换成其它游戏。",
                         }, ensure_ascii=False)))
                         continue
+                    terminal_reason = "model_empty_result" if not identifier else "unverified_candidate"
                     break
                 if len(calls) > 6:
                     raise PosterResourceError("tool_budget_exceeded")
@@ -827,24 +854,29 @@ class GamePosterAgent:
                             raise
                         except Exception as exc:
                             value = self._tool_failure(exc, record)
-                    value["remainingBudget"] = {key: max(0, self.limits[key] - self.counts[key]) for key in self.limits}
+                    value.update(self._budget_view())
                     messages.append(ToolMessage(content=json.dumps(value, ensure_ascii=False), tool_call_id=record["callId"]))
             else:
                 # A successful verify_image in the final turn has already supplied
                 # real page, image and cache evidence. Do not require another
                 # paid call solely to repeat its ID. An explicit final empty ID
                 # breaks above and is still respected as rejection.
+                self._terminal("model_turn_limit", turns)
                 if result := self._verified_result("model_turn_limit"):
                     return result
         except asyncio.CancelledError:
+            self._terminal("cancelled", turns)
             raise
         except Exception as exc:
             self.had_error = True
             code = "agent_deadline" if asyncio.get_running_loop().time() >= self.deadline else "model_timeout" if isinstance(exc, TimeoutError) else "agent_unavailable"
             self.trace.append({"stage": phase, "status": "failed", "error": code,
                                "errorType": type(exc).__name__, "errorFrames": _error_frames(exc), "at": datetime.now(UTC).isoformat()})
+            terminal_reason = code
+            self._terminal(code, turns)
             if result := self._verified_result(code):
                 return result
+        self._terminal(terminal_reason, turns)
         completed = self.searched and (self.read or not self.results)
         status = "missing" if completed and not self.had_error else "unavailable"
         return {"posterStatus": status, "posterSearchVersion": SEARCH_VERSION, "posterTrace": self.trace}

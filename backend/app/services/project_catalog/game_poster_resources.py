@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from curl_cffi import CurlECode, CurlOpt, ffi, lib
-from curl_cffi.curl import CURL_WRITEFUNC_ERROR
+from curl_cffi.curl import CURL_WRITEFUNC_ERROR, CurlError
 from curl_cffi.requests import AsyncSession
 from PIL import Image, ImageOps
 
@@ -31,6 +31,10 @@ from backend.app.services.project_catalog.game_poster_search import SEARCH_ENGIN
 PAGE_BYTES = 1024 * 1024
 IMAGE_BYTES = 8 * 1024 * 1024
 IMAGE_PIXELS = 16_000_000
+IMAGE_RESOURCE_SECONDS = 30
+IMAGE_REQUEST_SECONDS = 18
+_TRANSIENT_IMAGE_ERRORS = frozenset({CurlECode.COULDNT_CONNECT, CurlECode.OPERATION_TIMEDOUT,
+                                    CurlECode.GOT_NOTHING, CurlECode.SEND_ERROR, CurlECode.RECV_ERROR})
 SEARCH_WORKER_SECONDS = 22
 ASSET_BASE = "https://aigcnews.cn/api/media/site/game-posters/"
 _UNSAFE = re.compile(r"[\x00-\x20\x7f-\x9f\\]")
@@ -210,9 +214,12 @@ async def search_public_artwork(query: str) -> dict:
 async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResource:
     """Same proxy-safe CONNECT_TO pin as hotword_web; revalidate every hop."""
     limit = IMAGE_BYTES if image else PAGE_BYTES
+    deadline = asyncio.get_running_loop().time() + (IMAGE_RESOURCE_SECONDS if image else 15)
+    redirects = 0
+    retried = False
     try:
-        async with asyncio.timeout(15):
-            for _ in range(4):
+        async with asyncio.timeout_at(deadline):
+            while redirects < 4:
                 url = safe_web_url(url)
                 target = await asyncio.to_thread(pin_http_target, url, allowed_ports={443}, reject_mixed=True)
                 # The await above is also a cancellation boundary before any I/O.
@@ -240,13 +247,25 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                         curl_options={CurlOpt.CONNECT_TO: connections, CurlOpt.HTTPPROXYTUNNEL: 1,
                                       CurlOpt.MAXFILESIZE_LARGE: limit},
                     ) as client:
-                        response = await client.get(target.logical_url, allow_redirects=False, timeout=12, content_callback=receive)
+                        remaining = deadline - asyncio.get_running_loop().time()
+                        if remaining <= 0:
+                            raise TimeoutError
+                        response = await client.get(target.logical_url, allow_redirects=False,
+                                                    timeout=min(IMAGE_REQUEST_SECONDS if image else 12, remaining), content_callback=receive)
                 except Exception as exc:
                     # libcurl can reject Content-Length before streaming, or
                     # the callback can stop an unknown/chunked response. Both
                     # are size failures, without exposing transport messages.
                     if oversized or getattr(exc, "code", None) == CurlECode.FILESIZE_EXCEEDED:
                         raise PosterResourceError("image_too_large" if image else "page_too_large") from None
+                    status = getattr(getattr(exc, "response", None), "status_code", 0)
+                    if (image and not retried and isinstance(exc, CurlError) and exc.code in _TRANSIENT_IMAGE_ERRORS
+                            and status in {0, 200}):
+                        # A fresh connection and DNS pin are required, even for
+                        # the same URL. One shared retry never resets redirects
+                        # or the resource deadline, and never repeats vision.
+                        retried = True
+                        continue
                     raise
                 finally:
                     lib.curl_slist_free_all(connections)
@@ -257,6 +276,7 @@ async def fetch_poster_resource(url: str, *, image: bool = False) -> PosterResou
                     if not location:
                         raise PosterResourceError("invalid_redirect")
                     url = urljoin(target.logical_url, location)
+                    redirects += 1
                     continue
                 content_type = response.headers.get("content-type", "").lower().split(";", 1)[0].strip()
                 permitted = {"image/jpeg", "image/png", "image/webp", "image/gif"} if image else {"text/html", "application/xhtml+xml"}
