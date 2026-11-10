@@ -132,3 +132,41 @@ class ProjectArtworkLinksTests(unittest.TestCase):
         self.assertEqual(self.links(html, source="http://example.com"), [])
         self.assertEqual(self.links(html, repo="https://github.com/bradharding/doomretro"), [])
         self.assertEqual(self.links("<p>There should be screenshots on the project wiki.</p>"), [])
+
+    def test_news_article_can_expose_real_named_project_home_and_exact_repo(self):
+        html = """
+          <a href="https://openciv3.org/">https://openciv3.org/</a>
+          <a href="https://github.com/C7-Game/OpenCiv3">GitHub</a>
+          <a href="https://openciv3.org/#downloads">Duplicate home</a>
+        """
+        self.assertEqual(self.links(html, "https://news.example/article", "c7-game/openciv3", "OpenCiv3"), [
+            {"url": "https://openciv3.org/", "title": "https://openciv3.org/"},
+            {"url": "https://github.com/C7-Game/OpenCiv3", "title": "GitHub"},
+        ])
+        generic = '<a href="https://independent.example/">Example Project official website</a>'
+        self.assertEqual(len(self.links(generic, "https://news.example/article", "team/exampleproject", "ExampleProject")), 1)
+
+    def test_homepage_links_do_not_guess_deep_paths_other_projects_or_private_targets(self):
+        addresses = [
+            "https://othergame.example/", "https://doomretro-fork.example/", "https://doomretro2.example/",
+            "https://doomretro.example/article", "https://doomretro.example/?redirect=elsewhere",
+            "https://github.com/someone/doomretro", "https://github.com/bradharding/doomretro-fork",
+            "https://github.com/bradharding/doomretro/issues", "https://doomretro.local/",
+            "https://127.0.0.1/", "https://192.168.1.1/", "https://user:secret@doomretro.example/",
+            "http://doomretro.example/", "https://doomretro.example:443/",
+        ]
+        for address in addresses:
+            with self.subTest(address=address):
+                self.assertEqual(self.links(f'<a href="{address}">Open</a>', source="https://news.example/article"), [])
+        self.assertEqual(self.links('<p>Official site: https://doomretro.example/</p>'), [])
+
+    def test_new_home_and_repo_links_share_the_existing_three_link_limit(self):
+        html = """
+          <a href="https://doomretro.example/">Home</a>
+          <a href="https://github.com/bradharding/doomretro">Repo</a>
+          <a href="https://github.com/bradharding/doomretro/wiki">Wiki</a>
+          <a href="https://author.itch.io/doomretro">Play</a>
+        """
+        links = self.links(html, source="https://news.example/article")
+        self.assertEqual(len(links), 3)
+        self.assertEqual(links[-1]["title"], "Wiki")

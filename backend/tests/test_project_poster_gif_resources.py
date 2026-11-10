@@ -89,7 +89,7 @@ class GifPosterTransportTests(unittest.IsolatedAsyncioTestCase):
                 seen.append("closed")
 
             async def get(self, url, *, allow_redirects, timeout, content_callback):
-                assert not allow_redirects and timeout <= 12
+                assert not allow_redirects and 0 < timeout <= resources.IMAGE_REQUEST_SECONDS
                 assert self.options["verify"] is True
                 assert "image/gif" in self.options["headers"]["Accept"]
                 assert self.options["curl_options"][resources.CurlOpt.MAXFILESIZE_LARGE] == resources.IMAGE_BYTES
