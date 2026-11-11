@@ -514,6 +514,9 @@ func (m *transferManager) loop() {
 			if m.app.automation != nil {
 				m.app.automation.notify()
 			}
+			if m.app.marketplace != nil {
+				m.app.marketplace.notify()
+			}
 		}
 	}
 }

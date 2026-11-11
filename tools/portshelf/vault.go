@@ -25,6 +25,9 @@ type savedCredentials struct {
 	GitHubToken string                `json:"githubToken"`
 	AIGCToken   string                `json:"aigcToken"`
 	Clouds      map[string]savedCloud `json:"clouds"`
+	// Omit the new field when disconnected so older v1 vaults re-encode to
+	// exactly the canonical bytes covered by their existing checksum.
+	Xianguanjia *XGJCredentials `json:"xianguanjia,omitempty"`
 }
 
 const credentialVaultFile = "credentials.dpapi"
@@ -74,6 +77,9 @@ func emptySavedCredentials() savedCredentials {
 
 func validateSavedCredentials(saved savedCredentials) bool {
 	if !validToken(saved.GitHubToken) || !validAIGCToken(saved.AIGCToken) || len(saved.Clouds) > 2 {
+		return false
+	}
+	if c := saved.Xianguanjia; c != nil && (c.AppKey == "" || c.AppSecret == "" || !validXGJCredentials(*c)) {
 		return false
 	}
 	for provider, cloud := range saved.Clouds {

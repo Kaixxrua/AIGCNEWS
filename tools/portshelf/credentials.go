@@ -135,6 +135,14 @@ func (m *credentialManager) snapshotLocked() savedCredentials {
 	m.app.aigc.mu.RLock()
 	result.AIGCToken = m.app.aigc.token
 	m.app.aigc.mu.RUnlock()
+	// Keep credentials.mu -> marketplace.mu ordering. Marketplace setters
+	// must release their lock before requesting a credential persist.
+	if m.app.marketplace != nil {
+		credentials := m.app.marketplace.credentialsSnapshot()
+		if credentials != (XGJCredentials{}) {
+			result.Xianguanjia = &credentials
+		}
+	}
 	for provider, account := range m.pending {
 		result.Clouds[provider] = account
 	}
@@ -202,7 +210,7 @@ func (m *credentialManager) load() {
 		m.lastError = "读取保存的登录授权失败：" + err.Error()
 		return
 	}
-	if !validToken(secrets.GitHubToken) || !validAIGCToken(secrets.AIGCToken) {
+	if !validateSavedCredentials(secrets) {
 		m.loadFailed = true
 		m.lastError = "保存的登录信息无效，请重新连接"
 		return
@@ -227,6 +235,9 @@ func (m *credentialManager) load() {
 		m.app.aigc.token = secrets.AIGCToken
 	}
 	m.app.aigc.mu.Unlock()
+	if m.app.marketplace != nil && secrets.Xianguanjia != nil && m.app.marketplace.credentialsSnapshot() == (XGJCredentials{}) {
+		m.app.marketplace.restoreCredentials(*secrets.Xianguanjia)
+	}
 	for provider, account := range secrets.Clouds {
 		if _, exists := m.app.cloud.get(provider); exists {
 			continue

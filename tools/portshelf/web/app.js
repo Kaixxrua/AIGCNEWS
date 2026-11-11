@@ -19,6 +19,7 @@
   let sessionToken = "";
   let transferUI = null;
   let automationUI = null;
+  let marketplaceUI = null;
   let automationFingerprint = "";
   let automationQueued = null;
   let automaticLibraryLoading = false;
@@ -780,6 +781,7 @@
     $("category-section").hidden = page === "cloud";
     transferUI?.setVisible(page === "cloud");
     automationUI?.setVisible(page === "cloud");
+    marketplaceUI?.setVisible(page === "cloud");
   }
 
   function openConnectionSettings() {
@@ -1395,6 +1397,7 @@
         state.stopped = true;
         transferUI?.stop();
         automationUI?.stop();
+        marketplaceUI?.stop();
         clearTimeout(state.polling); clearTimeout(state.toastTimer); clearTimeout(state.descriptionPollTimer); clearTimeout(posterCooldownTimer); posterCooldownTimer = null;
         state.descriptionReadQueue.clear(); state.descriptionPollTargets.clear();
         sessionToken = "";
@@ -1418,6 +1421,7 @@
     readSession(); setupEvents();
     transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, openCredentialSettings, notify });
     automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
+    marketplaceUI = globalThis.PortShelfMarketplace?.create({ api, isStopped: () => state.stopped });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {
       $("game-grid").replaceChildren();

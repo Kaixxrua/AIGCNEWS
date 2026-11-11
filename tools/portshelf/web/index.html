@@ -11,6 +11,7 @@
     <script src="/zh.js" defer></script>
     <script src="/automation.js" defer></script>
     <script src="/cloud.js" defer></script>
+    <script src="/marketplace.js" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -138,6 +139,40 @@
             </form>
             <div class="automation-operation"><div><button id="automation-run" type="button" class="button button-secondary button-small" disabled>立即扫描</button><button id="automation-open" type="button" class="button button-secondary button-small" disabled>打开自动资料目录</button><button id="automation-connections" type="button" class="text-button">配置网盘与中文服务</button><button id="automation-refresh" type="button" class="text-button">刷新状态</button></div><p id="automation-export" class="field-help">自动生成的资料目录待确认。</p></div>
             <p class="automation-footnote">首次仍需本人授权网盘；授权失效或出现验证码时，需要回来处理。电脑须开机联网，工具须保持运行。暂停会暂停当前自动任务，继续后恢复；已经开始的手动任务继续执行。</p>
+          </section>
+          <section class="marketplace-panel" aria-labelledby="marketplace-title">
+            <div class="marketplace-heading"><div><span class="small-label">FROM DISCOVERY TO LISTING</span><h2 id="marketplace-title">闲管家自动铺货 <span id="marketplace-status" class="automation-status" role="status">尚未读取</span></h2><p>双盘分享成功后，按你设置的店铺、类目和售价创建商品，再核对上架结果。</p></div><button type="button" id="marketplace-toggle" class="button button-primary" disabled>开启自动铺货</button></div>
+            <ol class="marketplace-flow" aria-label="自动铺货流程"><li>自动发现游戏</li><li>下载游戏与源码</li><li>百度 + 夸克分享</li><li>闲管家铺货</li></ol>
+            <p class="field-help">配合上方“无人值守”使用：先完成网盘授权和本页设置，再开启两个自动开关。网盘分享链接与提取码保留在本地分享资料中。</p>
+            <div id="marketplace-load-error" class="notice error" role="status" hidden></div><div id="marketplace-service-error" class="notice error" role="status" hidden></div>
+            <details id="marketplace-setup" class="marketplace-setup" open><summary>连接闲管家与设置商品</summary>
+              <details class="marketplace-guide" id="marketplace-guide" open><summary>还没开通应用？先完成这三步</summary><ol><li>在闲管家开通支持开放平台的 ERP 专业版或铂金版。</li><li>创建“自研系统／进销存”应用，完成审核上线，获得 AppKey 和 AppSecret。</li><li>在下方连接应用、检测店铺，并按已准入的类目设置商品。</li></ol><a href="https://s.apifox.cn/3ac13d69-5a38-4536-ae9b-a54001854ef8/doc-8472075" target="_blank" rel="noopener noreferrer">查看闲管家官方接入说明 ↗</a></details>
+              <form id="marketplace-connect-form" class="marketplace-connect" novalidate>
+                <div class="marketplace-fields marketplace-credentials"><label><span class="field-label">AppKey</span><input id="marketplace-app-key" type="password" autocomplete="off" spellcheck="false" placeholder="填入应用 AppKey" maxlength="512"></label><label><span class="field-label">AppSecret</span><input id="marketplace-app-secret" type="password" autocomplete="new-password" spellcheck="false" placeholder="填入应用 AppSecret" maxlength="512"></label></div>
+                <p id="marketplace-connection-state" class="field-help" role="status">还未连接闲管家应用。</p><p id="marketplace-credential-help" class="field-help">凭据仅发送给本机工具，由工具连接闲管家；不会存入浏览器。</p><p id="marketplace-connect-error" class="form-error" role="alert" hidden></p>
+                <div class="marketplace-actions"><button type="submit" id="marketplace-connect" class="button button-secondary" disabled>保存应用凭据</button><button type="button" id="marketplace-check" class="button button-secondary" disabled>检测连接并获取店铺</button><button type="button" id="marketplace-disconnect" class="text-button" disabled>断开并清除凭据</button></div>
+              </form>
+              <form id="marketplace-form" novalidate>
+                <div class="marketplace-fields">
+                  <label><span class="field-label">发布店铺</span><select id="marketplace-shop" class="cloud-select"><option value="">连接后检测店铺</option></select></label>
+                  <label><span class="field-label">商品行业</span><select id="marketplace-biz" class="cloud-select"><option value="">请选择已准入行业</option><option value="20">游戏电玩</option><option value="22">虚拟游戏</option><option value="99">其他</option></select></label>
+                </div>
+                <div class="marketplace-field-heading"><h3>发布类目与属性</h3><button type="button" id="marketplace-categories-load" class="text-button" disabled>获取可用类目</button></div>
+                <div class="marketplace-fields"><label><span class="field-label">选择发布类目</span><select id="marketplace-category-select" class="cloud-select"><option value="">先选择行业并获取类目</option></select></label><label><span class="field-label">类目编码 <span>也可手动填写</span></span><input id="marketplace-category" type="text" inputmode="numeric" maxlength="64" placeholder="从可用类目选择后自动填写" autocomplete="off"></label></div>
+                <div class="marketplace-property-heading"><p class="field-help" id="marketplace-properties-help">选择类目后读取该类目要求的商品属性。</p><div><button type="button" id="marketplace-properties-load" class="text-button" disabled>读取类目属性</button><button type="button" id="marketplace-property-add" class="text-button" disabled>手动添加属性</button></div></div><div id="marketplace-properties" class="marketplace-fields"></div>
+                <div class="marketplace-field-heading"><h3>发布地区</h3><button type="button" id="marketplace-addresses-load" class="text-button" disabled>获取已保存地址</button></div>
+                <label><span class="sr-only">选择已保存地址</span><select id="marketplace-address-select" class="cloud-select"><option value="">选择地址后自动填入省、市、区，也可在下方填写</option></select></label>
+                <div class="marketplace-fields marketplace-region"><label><span class="field-label">省份编码</span><input id="marketplace-province" type="text" inputmode="numeric" maxlength="10" placeholder="选择地址后自动填入" autocomplete="off"></label><label><span class="field-label">城市编码</span><input id="marketplace-city" type="text" inputmode="numeric" maxlength="10" placeholder="行政区编码" autocomplete="off"></label><label><span class="field-label">区县编码</span><input id="marketplace-district" type="text" inputmode="numeric" maxlength="10" placeholder="行政区编码" autocomplete="off"></label></div>
+                <div class="marketplace-field-heading"><h3>默认商品设置</h3></div>
+                <div class="marketplace-fields marketplace-pricing"><label><span class="field-label">售价（元）</span><input id="marketplace-price" type="text" inputmode="decimal" maxlength="14" placeholder="请自行确定售价" autocomplete="off"></label><label><span class="field-label">每款商品库存</span><input id="marketplace-stock" type="text" inputmode="numeric" maxlength="9" placeholder="请自行确定库存" autocomplete="off"></label><label><span class="field-label">标题前缀 <span>可选</span></span><input id="marketplace-title-prefix" type="text" maxlength="40" placeholder="标题前自动添加的文字" autocomplete="off"></label></div>
+                <p class="field-help">可以先保存未完成的配置；售价、库存及必填资料齐全后才能开启。修改售价、店铺等设置只影响新入队的任务，已有任务保留入队时的设置。</p>
+                <p id="marketplace-form-error" class="form-error" role="alert" hidden></p><p id="marketplace-save-note" class="field-help" role="status" hidden></p>
+                <div class="marketplace-form-actions"><span id="marketplace-dirty-note" class="field-help">正在读取本机配置。</span><button type="button" id="marketplace-reset" class="text-button" disabled>恢复已保存设置</button><button type="submit" id="marketplace-save" class="button button-secondary" disabled>保存铺货设置</button></div>
+              </form>
+            </details>
+            <div class="marketplace-queue-heading"><div><h3>铺货队列</h3><p id="marketplace-queue-summary" class="field-help" aria-live="polite">尚未读取任务</p></div><div class="marketplace-actions"><button type="button" id="marketplace-enqueue" class="button button-secondary button-small" disabled>一键加入已完成分享</button><button type="button" id="marketplace-run" class="button button-secondary button-small" disabled>立即处理</button><button type="button" id="marketplace-refresh" class="text-button">刷新状态</button></div></div>
+            <p id="marketplace-action-note" class="field-help" role="status" hidden></p><p id="marketplace-action-error" class="form-error" role="alert" hidden></p><div id="marketplace-jobs" class="marketplace-jobs"></div><p id="marketplace-empty" class="marketplace-empty" hidden>开启后，新的双盘分享任务会自动加入。已有成果可通过“一键加入已完成分享”接续铺货。</p>
+            <p class="marketplace-footnote">自动铺货使用已保存的配置，需电脑开机联网并保持工具运行。授权失效或平台要求验证时，任务会保留并提示处理。</p>
           </section>
           <div class="cloud-intro"><span class="small-label">FROM RELEASE TO SHARE</span><h2>选好游戏，其余交给队列。</h2><p>将 Windows 发布附件、对应版本源码 ZIP 和说明打成分享包，上传到所选网盘。百度与夸克均上传、分享成功后，自动清理本地安装包、源码和分享包，保留中文资料与链接。</p></div>
           <form id="transfer-form" class="transfer-compose" novalidate>

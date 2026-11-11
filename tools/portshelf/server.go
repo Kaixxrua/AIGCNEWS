@@ -32,6 +32,7 @@ type App struct {
 	cloud            *cloudRegistry
 	transfers        *transferManager
 	automation       *automationManager
+	marketplace      *marketplaceManager
 	credentials      *credentialManager
 	credentialsReady <-chan struct{}
 	catalog          []Game
@@ -66,6 +67,11 @@ func newApp(lib *Library) (*App, error) {
 		return nil, err
 	}
 	app.credentials = newCredentials(app, app.automation.configSnapshot())
+	app.marketplace, err = newMarketplace(app)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	// Restore local secrets before accepting API edits; network reconnection
 	// stays asynchronous and the scheduler waits on credentialsReady.
 	app.credentials.load()
@@ -73,13 +79,14 @@ func newApp(lib *Library) (*App, error) {
 	go app.credentials.loop()
 	go app.automation.loop()
 	go app.transfers.loop()
+	go app.marketplace.loop()
 	app.cancel = func() {
 		cancel()
 		select {
 		case <-app.transfers.done:
 		case <-time.After(3 * time.Second):
 		}
-		for _, done := range []<-chan struct{}{app.automation.done, app.credentials.done} {
+		for _, done := range []<-chan struct{}{app.automation.done, app.credentials.done, app.marketplace.done} {
 			select {
 			case <-done:
 			case <-time.After(3 * time.Second):
@@ -348,6 +355,7 @@ func (a *App) handler() http.Handler {
 	a.registerCloudRoutes(mux)
 	a.registerTransferRoutes(mux)
 	a.registerAutomationRoutes(mux)
+	a.registerMarketplaceRoutes(mux)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
