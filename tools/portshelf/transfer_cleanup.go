@@ -135,12 +135,13 @@ func (m *transferManager) cleanupArtifact(job TransferJob, artifact localArtifac
 		m.cleanupError(job, "下载路径无法核实，已保留本地文件")
 		return
 	}
-	rootInfo, err := os.Lstat(m.downloadDir)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+	base := m.downloadRoot(artifact.path)
+	rootInfo, err := regularDownloadRoot(base)
+	if err != nil {
 		m.cleanupError(job, "下载目录无法安全访问，已保留本地文件")
 		return
 	}
-	root, err := os.OpenRoot(m.downloadDir)
+	root, err := os.OpenRoot(base)
 	if err != nil {
 		m.cleanupError(job, "下载目录无法安全访问，已保留本地文件")
 		return
@@ -151,7 +152,7 @@ func (m *transferManager) cleanupArtifact(job TransferJob, artifact localArtifac
 		m.cleanupError(job, "下载目录已变化，已保留本地文件")
 		return
 	}
-	relative, _ := filepath.Rel(m.downloadDir, artifact.path)
+	relative, _ := filepath.Rel(base, artifact.path)
 	parent, name := filepath.Dir(relative), filepath.Base(relative)
 	parentInfo, err := root.Lstat(parent)
 	if errors.Is(err, os.ErrNotExist) && artifactRemovalIntent(job, artifact) {
@@ -220,7 +221,7 @@ func (m *transferManager) cleanupArtifact(job TransferJob, artifact localArtifac
 	}
 	current, err := directory.Lstat(name)
 	currentParent, parentErr := root.Lstat(parent)
-	currentRoot, rootErr := os.Lstat(m.downloadDir)
+	currentRoot, rootErr := regularDownloadRoot(base)
 	if err != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) ||
 		parentErr != nil || currentParent.Mode()&os.ModeSymlink != 0 || !os.SameFile(parentInfo, currentParent) ||
 		rootErr != nil || currentRoot.Mode()&os.ModeSymlink != 0 || !os.SameFile(rootInfo, currentRoot) {

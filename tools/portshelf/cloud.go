@@ -117,7 +117,7 @@ func validCloudCredentials(c CloudCredentials) bool {
 
 func (a *App) registerCloudRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/cloud", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, map[string]any{"providers": a.cloud.statuses(), "downloadDir": a.transfers.downloadDir, "credentialStorage": a.credentialStorageStatus()})
+		reply(w, http.StatusOK, map[string]any{"providers": a.cloud.statuses(), "downloadDir": a.transfers.downloadDirectory(), "credentialStorage": a.credentialStorageStatus()})
 	})
 	mux.HandleFunc("POST /api/cloud/quark/authorize", func(w http.ResponseWriter, r *http.Request) {
 		var body struct{}

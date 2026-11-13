@@ -114,6 +114,17 @@
         </section>
 
         <section id="cloud-view" aria-label="下载与分享" hidden>
+          <section class="automation-panel" aria-labelledby="download-directory-title">
+            <h2 id="download-directory-title">下载与临时文件目录</h2>
+            <form id="download-directory-form" novalidate>
+              <label class="field-label" for="download-directory-input">保存文件夹</label>
+              <input id="download-directory-input" type="text" placeholder="例如 D:\PortShelfDownloads" maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="download-directory-help">
+              <p id="download-directory-help" class="field-help">填入完整文件夹路径后保存。后续下载的安装包、源码和打包文件使用新目录；正在写入的文件先完成本次写入。已下载文件保留在原位置，仍可续用并在双盘分享成功后自动清理。账号授权与任务记录不变。</p>
+              <p id="download-directory-current" class="field-help search-description" role="status">当前目录待确认</p>
+              <p id="download-directory-error" class="form-error" role="alert" hidden></p>
+              <div class="automation-form-actions"><button id="download-directory-save" type="submit" class="button button-secondary" disabled>保存下载目录</button></div>
+            </form>
+          </section>
           <section class="automation-panel" aria-labelledby="automation-title">
             <div class="automation-heading"><div><span class="small-label">SET ONCE. KEEP DISCOVERING.</span><h2 id="automation-title">无人值守<span id="automation-status" class="automation-status" role="status">读取中</span></h2><p>按 Stars 自动发现 → 补全中文名、海报与简介 → 下载游戏与对应版本源码 → 打包上传分享 → 双盘完成后清理本地文件。</p></div><button type="button" id="automation-toggle" class="button button-primary" disabled>开启无人值守</button></div>
             <p class="automation-intro">自动重试可恢复的失败，重启后接续任务，并把成果持续写入 JSON、CSV 和 Markdown 资料。</p>

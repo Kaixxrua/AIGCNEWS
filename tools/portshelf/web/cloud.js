@@ -131,7 +131,7 @@
 
   function create(context) {
     const $ = (id) => document.getElementById(id);
-    const state = { selected: new Set(), jobs: [], jobCards: new Map(), providers: {}, visible: false, loaded: false, stopped: false, pollTimer: null, pollBusy: false, pollAgain: false, pollFailures: 0, cloudBusy: false, enqueueBusy: false, actions: new Set(), authBusy: new Set(), authLoaded: false, authRevision: 0, authPollTimer: null, authFailures: 0, credentialStorage: null, exportBusy: false, clearBusy: false, folderBusy: false, archSet: false, downloadDir: "" };
+    const state = { selected: new Set(), jobs: [], jobCards: new Map(), providers: {}, visible: false, loaded: false, stopped: false, pollTimer: null, pollBusy: false, pollAgain: false, pollFailures: 0, cloudBusy: false, enqueueBusy: false, actions: new Set(), authBusy: new Set(), authLoaded: false, authRevision: 0, authPollTimer: null, authFailures: 0, credentialStorage: null, exportBusy: false, clearBusy: false, folderBusy: false, archSet: false, downloadDir: "", directoryDirty: false, directoryBusy: false, directoryRevision: 0 };
     function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined && text !== null) el.textContent = String(text); return el; }
     function button(text, action, className = "button button-secondary button-small") { const el = node("button", className, text); el.type = "button"; el.addEventListener("click", action); return el; }
     function message(id, text) { if (state.stopped) return; $(id).textContent = text || ""; $(id).hidden = !text; }
@@ -214,6 +214,7 @@
       clearTimeout(state.authPollTimer); state.authPollTimer = null;
       state.cloudBusy = true; syncProviderState();
       const revision = state.authRevision;
+      const directoryRevision = state.directoryRevision;
       try {
         const result = await context.api("/api/cloud", undefined, 20000);
         if (isStopped()) return;
@@ -223,13 +224,38 @@
           state.authLoaded = true;
           state.authFailures = 0;
         }
-        if (result.downloadDir) state.downloadDir = String(result.downloadDir);
+        if (result.downloadDir && directoryRevision === state.directoryRevision && !state.directoryBusy) state.downloadDir = String(result.downloadDir);
         syncProviderState(); renderDirectory(); message("cloud-settings-error", "");
       } catch (error) { if (revision === state.authRevision) { state.authFailures++; message("cloud-settings-error", "网盘连接状态读取失败：" + error.message + (state.authFailures >= 3 ? " 可点击“刷新连接状态”重试。" : "")); } }
       finally { state.cloudBusy = false; if (!isStopped()) { syncProviderState(); scheduleAuthPoll(); } }
     }
 
-    function renderDirectory() { if (!isStopped()) $("transfer-download-dir").textContent = state.downloadDir ? "本地下载目录：" + state.downloadDir : "本地下载目录待确认"; }
+    function renderDirectory() {
+      if (isStopped()) return;
+      const current = state.downloadDir ? "当前下载目录：" + state.downloadDir : "当前下载目录待确认";
+      $("transfer-download-dir").textContent = current;
+      $("download-directory-current").textContent = current;
+      const input = $("download-directory-input");
+      if (!state.directoryDirty && !state.directoryBusy) input.value = state.downloadDir;
+      input.disabled = state.directoryBusy;
+      $("download-directory-save").disabled = state.directoryBusy || !input.value.trim() || !state.directoryDirty;
+      $("download-directory-save").textContent = state.directoryBusy ? "正在保存…" : "保存下载目录";
+    }
+
+    async function saveDirectory(event) {
+      event.preventDefault();
+      if (state.directoryBusy || isStopped()) return;
+      const directory = $("download-directory-input").value.trim();
+      if (!directory) { message("download-directory-error", "请填写完整的文件夹路径，例如 D:\\PortShelfDownloads"); return; }
+      state.directoryBusy = true; state.directoryRevision++; renderDirectory(); message("download-directory-error", "");
+      try {
+        const result = await context.api("/api/transfers/directory", { directory }, 20000);
+        if (isStopped()) return;
+        state.downloadDir = result.downloadDir; state.directoryDirty = false;
+        context.notify("下载目录已保存，后续文件将使用新目录；已下载文件继续保留并按原规则清理。");
+      } catch (error) { message("download-directory-error", error.message); }
+      finally { state.directoryBusy = false; state.directoryRevision++; renderDirectory(); }
+    }
 
     async function copyText(value, trigger) {
       if (trigger.disabled) return;
@@ -354,11 +380,12 @@
       if (isStopped()) return;
       if (state.pollBusy) { state.pollAgain = true; return; }
       state.pollBusy = true; $("transfer-refresh").disabled = true;
+      const directoryRevision = state.directoryRevision;
       try {
         const result = await context.api("/api/transfers", undefined, 20000);
         if (isStopped()) return;
         state.jobs = Array.isArray(result.jobs) ? result.jobs.filter((job) => job && typeof job.id === "string") : [];
-        state.downloadDir = String(result.downloadDir || state.downloadDir);
+        if (directoryRevision === state.directoryRevision && !state.directoryBusy) state.downloadDir = String(result.downloadDir || state.downloadDir);
         state.loaded = true; state.pollFailures = 0;
         message("transfer-poll-error", ""); message("transfer-store-error", result.storeError ? "任务记录保存异常：" + result.storeError + "。已完成结果仍会显示，请及时导出。" : ""); renderJobs();
       } catch (error) { state.pollFailures++; message("transfer-poll-error", "任务状态读取失败，已保留上次结果。" + error.message + (state.pollFailures >= 3 ? " 请点击“刷新任务”重试。" : "")); }
@@ -513,6 +540,8 @@
     $("transfer-clear-selection").addEventListener("click", () => { state.selected.clear(); renderSelection(); });
     ["transfer-baidu", "transfer-quark", "transfer-private-share"].forEach((id) => $(id).addEventListener("change", syncSelection));
     $("transfer-form").addEventListener("submit", enqueue);
+    $("download-directory-form").addEventListener("submit", saveDirectory);
+    $("download-directory-input").addEventListener("input", () => { state.directoryDirty = true; message("download-directory-error", ""); renderDirectory(); });
     $("transfer-auth-open").addEventListener("click", openSettings);
     $("transfer-refresh").addEventListener("click", () => { state.pollFailures = 0; state.authFailures = 0; loadJobs(); loadProviders(); });
     $("cloud-settings-refresh").addEventListener("click", () => { state.authFailures = 0; loadProviders(); });

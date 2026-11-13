@@ -120,14 +120,15 @@ func hasSourceBundle(job TransferJob) bool {
 // Open a managed file without following symlinks at any path component. The
 // Root handles keep the file inside the downloaded task directory throughout.
 func (m *transferManager) openManagedFile(target string) (*os.File, error) {
-	if !m.ownedDownloadPath(target) {
+	base := m.downloadRoot(target)
+	if base == "" {
 		return nil, errors.New("文件不属于下载目录")
 	}
-	rootInfo, err := os.Lstat(m.downloadDir)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("下载目录不安全")
+	rootInfo, err := regularDownloadRoot(base)
+	if err != nil {
+		return nil, err
 	}
-	root, err := os.OpenRoot(m.downloadDir)
+	root, err := os.OpenRoot(base)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func (m *transferManager) openManagedFile(target string) (*os.File, error) {
 	if err != nil || !os.SameFile(rootInfo, opened) {
 		return nil, errors.New("下载目录已变化")
 	}
-	relative, _ := filepath.Rel(m.downloadDir, target)
+	relative, _ := filepath.Rel(base, target)
 	parent, name := filepath.Dir(relative), filepath.Base(relative)
 	info, err := root.Lstat(parent)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
@@ -200,12 +201,15 @@ func (m *transferManager) verifyManaged(ctx context.Context, target, digest stri
 	return err == nil && n == size && actual == digest
 }
 
-func (m *transferManager) sourceDirectory(job TransferJob) (*os.Root, error) {
-	rootInfo, err := os.Lstat(m.downloadDir)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("下载目录不安全")
+func (m *transferManager) sourceDirectory(job TransferJob, base string) (*os.Root, error) {
+	if !sessionTokenPattern.MatchString(job.ID) {
+		return nil, errors.New("下载任务编号无效")
 	}
-	root, err := os.OpenRoot(m.downloadDir)
+	rootInfo, err := regularDownloadRoot(base)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(base)
 	if err != nil {
 		return nil, err
 	}
@@ -296,13 +300,14 @@ func (m *transferManager) downloadSource(ctx context.Context, job TransferJob) (
 	if m.verifyManaged(ctx, job.SourcePath, job.SourceSHA256, job.SourceSize) {
 		return job.SourcePath, job.SourceSHA256, job.SourceSize, nil
 	}
-	directory, err := m.sourceDirectory(job)
+	base := m.downloadDirectory()
+	directory, err := m.sourceDirectory(job, base)
 	if err != nil {
 		return "", "", 0, err
 	}
 	defer directory.Close()
 	name := sourceArchiveName(job)
-	target := filepath.Join(m.downloadDir, job.ID, name)
+	target := filepath.Join(base, job.ID, name)
 	// A previous process may have renamed a complete archive before saving its
 	// receipt. Re-fetch and compare before adopting any existing final file.
 	existing := false
@@ -403,13 +408,14 @@ func (m *transferManager) createSourceBundle(ctx context.Context, job TransferJo
 	if err != nil {
 		return "", "", 0, err
 	}
-	directory, err := m.sourceDirectory(job)
+	base := m.downloadDirectory()
+	directory, err := m.sourceDirectory(job, base)
 	if err != nil {
 		return "", "", 0, err
 	}
 	defer directory.Close()
 	name := bundleName(job)
-	target := filepath.Join(m.downloadDir, job.ID, name)
+	target := filepath.Join(base, job.ID, name)
 	existing := false
 	if info, err := directory.Lstat(name); err == nil {
 		if !info.Mode().IsRegular() {

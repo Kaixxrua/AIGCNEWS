@@ -20,6 +20,7 @@ let jobs = structuredClone(initialJobs), pollCount = 0, failNextRead = false, fa
 Object.assign(jobs.find(job => job.id === 'done'), { gameNameZh: '完成的中文经典', gameNameOriginal: 'The Classic Game', bundleVersion: 1, bundlePath: 'C:\\PortShelf\\downloads\\complete-with-source.zip', sourceCommit: 'a'.repeat(40), sourceSha256: 'b'.repeat(64), bundleSha256: 'c'.repeat(64), sourceUrl: 'https://github.com/demo/game-0/archive/' + 'a'.repeat(40) + '.zip', legacyOutputs: { baidu: { share: { url: 'https://pan.baidu.com/s/legacy', code: '6789' } } } });
 for (const output of Object.values(jobs.find(job => job.id === 'done').outputs)) output.payloadSha256 = 'c'.repeat(64);
 const requests = [], enqueues = [], credentials = [], exportedFormats = [];
+let downloadDir = 'C:\\PortShelf\\downloads', directoryError = false, delayedDirectoryRead = false;
 const accounts = { baidu: { id: 'baidu', name: '百度网盘', configured: false, authMode: 'cookie' }, quark: { id: 'quark', name: '夸克网盘', configured: false, authMode: 'authCode' } };
 let credentialStorage = { supported: true, remember: true, saved: false, pending: [] }, failCredentialSave = false;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -34,7 +35,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/status') return json({ running: false });
     if (url.pathname === '/api/descriptions') return json({ items: [] });
     if (url.pathname === '/api/automation' && req.method === 'GET') return json({ config: defaultConfig('arm64'), running: false, nextRun: '', lastRun: '', lastError: '', exportDir: 'C:\\PortShelf\\exports', exportedAt: '', discovered: 0, queued: 0, unsupported: 0, credentialStorageSupported: false, startOnLoginSupported: false, credentialError: '' });
-    if (url.pathname === '/api/cloud') return json({ providers: Object.values(accounts), downloadDir: 'C:\\PortShelf\\downloads', credentialStorage });
+    if (url.pathname === '/api/cloud') return json({ providers: Object.values(accounts), downloadDir, credentialStorage });
     if (url.pathname === '/api/cloud/quark/authorize') return json({ url: authorizationURL });
     if (/^\/api\/cloud\/(baidu|quark)$/.test(url.pathname)) {
       const id = url.pathname.split('/').pop(); credentials.push({ id, body }); await sleep(70);
@@ -44,7 +45,15 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/transfers' && req.method === 'GET') {
       pollCount++; if (failNextRead) { failNextRead = false; return json({ error: 'temporary read failure' }, 503); }
-      return json({ jobs, downloadDir: 'C:\\PortShelf\\downloads', storeError: 'mock record warning' });
+      const readDirectory = downloadDir;
+      if (delayedDirectoryRead) { delayedDirectoryRead = false; await sleep(200); }
+      return json({ jobs, downloadDir: readDirectory, storeError: 'mock record warning' });
+    }
+    if (url.pathname === '/api/transfers/directory') {
+      await sleep(60);
+      if (directoryError) return json({ error: '下载目录不可写，仍使用原目录' }, 400);
+      downloadDir = body.directory;
+      return json({ downloadDir });
     }
     if (url.pathname === '/api/transfers' && req.method === 'POST') {
       enqueues.push(body); await sleep(60);
@@ -82,6 +91,29 @@ const server = http.createServer(async (req, res) => {
     assert.equal(pollCount, 0);
     await page.locator('#library-search').fill('Game000'); await page.locator('#cloud-nav').click();
     await page.locator('[data-job-id="partial"]').waitFor();
+    assert.equal(await page.locator('#download-directory-input').inputValue(), downloadDir);
+    const chosenDirectory = 'D:\\游戏资料\\' + 'long'.repeat(30) + '\\PortShelf Downloads';
+    await page.locator('#download-directory-input').fill(chosenDirectory);
+    await page.locator('#transfer-refresh').click();
+    await page.waitForTimeout(250);
+    assert.equal(await page.locator('#download-directory-input').inputValue(), chosenDirectory, 'polls must preserve unsaved folder input');
+    directoryError = true;
+    await page.locator('#download-directory-save').click();
+    await page.locator('#download-directory-error').waitFor();
+    assert.equal(downloadDir, 'C:\\PortShelf\\downloads');
+    assert.equal(await page.locator('#download-directory-input').inputValue(), chosenDirectory);
+    directoryError = false; delayedDirectoryRead = true;
+    await page.locator('#transfer-refresh').click();
+    await page.evaluate(() => { const save = document.getElementById('download-directory-save'); save.click(); save.click(); });
+    await page.waitForFunction(() => document.getElementById('download-directory-current').textContent.includes('D:'));
+    await page.waitForTimeout(300);
+    assert.equal(requests.filter(item => item.path === '/api/transfers/directory').length, 2, 'duplicate clicks must not save twice');
+    assert.equal(await page.locator('#download-directory-input').inputValue(), chosenDirectory, 'an older status response must not replace the saved folder');
+    assert.match(await page.locator('#transfer-download-dir').innerText(), /D:/);
+    await page.locator('[aria-labelledby="download-directory-title"]').screenshot({ path: path.join(outputDir, 'download-directory.png') });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'folder field must fit a narrow window');
+    await page.setViewportSize({ width: 1440, height: 1100 });
     assert.equal(await page.locator('#transfer-arch').inputValue(), 'arm64');
     assert.equal(await page.locator('.transfer-game').count(), 1);
     await page.locator('#transfer-select-visible').click();

@@ -132,28 +132,7 @@ func (w *countingDownload) Write(data []byte) (int, error) {
 }
 
 func (m *transferManager) verifyLocal(ctx context.Context, job TransferJob) bool {
-	if job.Asset == nil || job.SHA256 == "" || !m.ownedDownloadPath(job.DownloadPath) {
-		return false
-	}
-	root, err := os.OpenRoot(m.downloadDir)
-	if err != nil {
-		return false
-	}
-	defer root.Close()
-	relative, _ := filepath.Rel(m.downloadDir, job.DownloadPath)
-	info, err := root.Lstat(relative)
-	if err != nil || !info.Mode().IsRegular() || info.Size() != job.Asset.Size {
-		return false
-	}
-	file, err := root.Open(relative)
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	hash := sha256.New()
-	writer := &countingDownload{writer: hash, ctx: ctx, progress: func(int64, int64) {}}
-	_, err = io.Copy(writer, io.LimitReader(file, job.Asset.Size+1))
-	return err == nil && hex.EncodeToString(hash.Sum(nil)) == job.SHA256
+	return job.Asset != nil && m.verifyManaged(ctx, job.DownloadPath, job.SHA256, job.Asset.Size)
 }
 
 func (m *transferManager) download(ctx context.Context, job TransferJob, progress UploadProgress) (string, string, error) {
@@ -168,27 +147,16 @@ func (m *transferManager) download(ctx context.Context, job TransferJob, progres
 	if ctx.Err() != nil {
 		return "", "", errors.New("下载已停止")
 	}
-	root, err := os.OpenRoot(m.downloadDir)
+	base := m.downloadDirectory()
+	directory, err := m.sourceDirectory(job, base)
 	if err != nil {
-		return "", "", errors.New("无法访问下载目录")
-	}
-	defer root.Close()
-	if err := root.Mkdir(job.ID, 0700); err != nil && !errors.Is(err, os.ErrExist) {
-		return "", "", errors.New("无法创建游戏下载目录")
-	}
-	info, err := root.Lstat(job.ID)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", "", errors.New("游戏下载目录不安全")
-	}
-	directory, err := root.OpenRoot(job.ID)
-	if err != nil {
-		return "", "", errors.New("无法打开游戏下载目录")
+		return "", "", err
 	}
 	defer directory.Close()
 	// Recover a crash between the final rename and the task checkpoint. An
 	// upstream digest verifies an orphaned final file; without one, compare it
 	// with a fresh download before accepting it. Never replace an existing file.
-	targetPath := filepath.Join(m.downloadDir, job.ID, asset.Name)
+	targetPath := filepath.Join(base, job.ID, asset.Name)
 	existingComplete := false
 	if info, err := directory.Lstat(asset.Name); err == nil {
 		if !info.Mode().IsRegular() || info.Size() != asset.Size {

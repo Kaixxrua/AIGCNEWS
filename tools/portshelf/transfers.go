@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,6 +99,7 @@ type transferManager struct {
 	app         *App
 	jobs        []TransferJob
 	downloadDir string
+	storage     atomic.Pointer[downloadStorage]
 	storeError  string
 	wake        chan struct{}
 	done        chan struct{}
@@ -117,6 +119,9 @@ func newTransferManager(a *App) (*transferManager, error) {
 	m := &transferManager{app: a, jobs: []TransferJob{}, downloadDir: filepath.Join(a.lib.root, "downloads"), wake: make(chan struct{}, 1), done: make(chan struct{}), client: newDownloadClient()}
 	if err := os.MkdirAll(m.downloadDir, 0700); err != nil {
 		return nil, fmt.Errorf("无法创建下载目录：%w", err)
+	}
+	if err := m.loadDownloadStorage(); err != nil {
+		return nil, err
 	}
 	f, err := os.Open(filepath.Join(a.lib.root, "transfers.json"))
 	if err == nil {
@@ -179,12 +184,7 @@ func newTransferManager(a *App) (*transferManager, error) {
 }
 
 func (m *transferManager) ownedDownloadPath(target string) bool {
-	relative, err := filepath.Rel(m.downloadDir, target)
-	if err != nil || filepath.IsAbs(relative) {
-		return false
-	}
-	parts := strings.Split(filepath.ToSlash(relative), "/")
-	return len(parts) == 2 && sessionTokenPattern.MatchString(parts[0]) && validDownloadName(parts[1])
+	return m.downloadRoot(target) != ""
 }
 
 func (m *transferManager) saveLocked(next []TransferJob) error {

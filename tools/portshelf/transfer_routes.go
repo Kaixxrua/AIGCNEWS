@@ -164,7 +164,21 @@ func exportTransfers(w http.ResponseWriter, format string, jobs []TransferJob) e
 func (a *App) registerTransferRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/transfers", func(w http.ResponseWriter, r *http.Request) {
 		jobs, storeError := a.transfers.snapshot()
-		reply(w, http.StatusOK, map[string]any{"jobs": jobs, "downloadDir": a.transfers.downloadDir, "storeError": storeError})
+		reply(w, http.StatusOK, map[string]any{"jobs": jobs, "downloadDir": a.transfers.downloadDirectory(), "storeError": storeError})
+	})
+	mux.HandleFunc("POST /api/transfers/directory", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Directory string `json:"directory"`
+		}
+		if err := decode(w, r, &body); err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := a.transfers.setDownloadDirectory(body.Directory); err != nil {
+			fail(w, http.StatusBadRequest, err)
+			return
+		}
+		reply(w, http.StatusOK, map[string]string{"downloadDir": a.transfers.downloadDirectory()})
 	})
 	mux.HandleFunc("POST /api/transfers", func(w http.ResponseWriter, r *http.Request) {
 		var body TransferRequest
@@ -230,7 +244,7 @@ func (a *App) registerTransferRoutes(mux *http.ServeMux) {
 			fail(w, http.StatusBadRequest, err)
 			return
 		}
-		target := a.transfers.downloadDir
+		target := a.transfers.downloadDirectory()
 		if body.ID != "" {
 			job, found := a.transfers.job(body.ID)
 			if found && job.LocalDeletedAt != "" {
