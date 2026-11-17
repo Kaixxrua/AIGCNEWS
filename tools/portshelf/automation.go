@@ -72,6 +72,7 @@ type automationStatus struct {
 	Unsupported                int              `json:"unsupported"`
 	CredentialStorageSupported bool             `json:"credentialStorageSupported"`
 	StartOnLoginSupported      bool             `json:"startOnLoginSupported"`
+	ServerMode                 bool             `json:"serverMode"`
 	CredentialError            string           `json:"credentialError"`
 }
 
@@ -117,6 +118,14 @@ func cloneAutomationConfig(config AutomationConfig) AutomationConfig {
 }
 
 func validateAutomationConfig(config AutomationConfig) (AutomationConfig, error) {
+	return validateAutomationCapabilities(config, credentialProtectionAvailable(), autoStartSupported())
+}
+
+func (a *App) validateAutomationConfig(config AutomationConfig) (AutomationConfig, error) {
+	return validateAutomationCapabilities(config, a.serverMode || credentialProtectionAvailable(), !a.serverMode && autoStartSupported())
+}
+
+func validateAutomationCapabilities(config AutomationConfig, storage, startup bool) (AutomationConfig, error) {
 	config = cloneAutomationConfig(config)
 	if config.IntervalHours < 1 || config.IntervalHours > 168 || config.DailyLimit < 1 || config.DailyLimit > 100 {
 		return config, errors.New("自动检查间隔须为 1–168 小时，每日新增任务上限须为 1–100")
@@ -147,7 +156,7 @@ func validateAutomationConfig(config AutomationConfig) (AutomationConfig, error)
 			return config, errors.New("百度提取码须为 4 位英文字母或数字")
 		}
 	}
-	if config.RememberCredentials && !credentialProtectionAvailable() || config.StartOnLogin && !autoStartSupported() {
+	if config.RememberCredentials && !storage || config.StartOnLogin && !startup {
 		return config, errors.New("当前平台不支持所选的安全记住登录或开机启动设置")
 	}
 	return config, nil
@@ -157,6 +166,9 @@ func newAutomation(a *App) (*automationManager, error) {
 	m := &automationManager{app: a, state: automationState{Version: 1, Config: defaultAutomationConfig(), Page: 1, Following: 1, Candidates: []Game{}},
 		wake: make(chan struct{}, 1), done: make(chan struct{}), now: time.Now,
 		discover: a.github.discoverAutomatic, latest: a.github.latest, enqueue: a.transfers.enqueueAutomatic, maintain: a.transfers.maintainAutomatic, applyTransaction: a.applyAutomationSettingsTransaction}
+	if a.serverMode {
+		m.state.Config.RememberCredentials, m.state.Config.StartOnLogin = true, false
+	}
 	file, err := os.Open(filepath.Join(a.lib.root, "automation.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return m, nil
@@ -171,7 +183,7 @@ func newAutomation(a *App) (*automationManager, error) {
 		return nil, errors.New("自动运行记录损坏，请先备份 automation.json 再恢复")
 	}
 	m.state = restored
-	config, err := validateAutomationConfig(m.state.Config)
+	config, err := a.validateAutomationConfig(m.state.Config)
 	if err != nil {
 		return nil, fmt.Errorf("自动运行配置无效：%w", err)
 	}
@@ -258,7 +270,7 @@ func (m *automationManager) status() automationStatus {
 	s := m.state
 	result := automationStatus{Config: cloneAutomationConfig(s.Config), Running: m.running, NextRun: s.NextRun, LastRun: s.LastRun,
 		ExportDir: filepath.Join(m.app.lib.root, "exports"), ExportedAt: s.ExportedAt, Discovered: s.Discovered, Queued: s.Queued, Unsupported: s.Unsupported,
-		CredentialStorageSupported: credentialProtectionAvailable(), StartOnLoginSupported: autoStartSupported()}
+		ServerMode: m.app.serverMode, CredentialStorageSupported: m.app.serverMode || credentialProtectionAvailable(), StartOnLoginSupported: !m.app.serverMode && autoStartSupported()}
 	var messages []string
 	for _, message := range []string{s.LastError, s.DiscoveryWarning, s.ExportError, m.storeError} {
 		if message != "" {
@@ -281,7 +293,7 @@ func automationSameSelection(a, b AutomationConfig) bool {
 }
 
 func (m *automationManager) configure(config AutomationConfig) error {
-	validated, err := validateAutomationConfig(config)
+	validated, err := m.app.validateAutomationConfig(config)
 	if err != nil {
 		return err
 	}

@@ -12,7 +12,7 @@
     discovery: { range: null, cursor: "", nextPage: 1, page: 0, hasMore: false, totalCandidates: 0, incomplete: false, limitReached: false, error: "", lastAdded: 0 },
     batch: null, singleAdds: new Set(), manualAddBusy: false, confirmedGames: new Map(),
     descriptionRequests: new Set(), descriptionReadQueue: new Set(), descriptionReadBusy: false, descriptionPollTargets: new Map(), descriptionPollTimer: null, descriptionPollAfter: 3, descriptionBatch: null,
-    loaded: false, toastTimer: null, activeRefresh: null, arch: "",
+    serverMode: false, loaded: false, toastTimer: null, activeRefresh: null, arch: "",
   };
   const numberFormat = new Intl.NumberFormat("zh-CN");
   const colors = new Set(["forest", "violet", "coral", "red", "ember", "teal", "slate", "sand", "ochre"]);
@@ -29,13 +29,16 @@
 
   function readSession() {
     const hash = location.hash.slice(1);
-    try { sessionToken = sessionStorage.getItem("portshelf-session") || ""; } catch (_) { /* Memory remains available. */ }
+    try { sessionToken = sessionStorage.getItem("portshelf-session") || (state.serverMode ? localStorage.getItem("portshelf-lan-access") : "") || ""; } catch (_) { /* Memory remains available. */ }
     if (!/^[a-f0-9]{48}$/.test(sessionToken)) sessionToken = "";
     const candidate = hash.startsWith("token=") ? new URLSearchParams(hash).get("token") || "" : hash;
     if (/^[a-f0-9]{48}$/.test(candidate)) {
       sessionToken = candidate;
       try { sessionStorage.setItem("portshelf-session", sessionToken); } catch (_) { /* Opening the executable supplies a fresh session. */ }
       history.replaceState(null, "", location.pathname + location.search);
+    }
+    if (state.serverMode && sessionToken) {
+      try { localStorage.setItem("portshelf-lan-access", sessionToken); } catch (_) { /* Session-only access remains available. */ }
     }
   }
 
@@ -499,7 +502,7 @@
       return data;
     } catch (error) {
       if (error.name === "AbortError") throw new Error("请求响应超时，请稍后重试。已缓存的资料仍可浏览。");
-      if (error instanceof TypeError) throw new Error("无法连接本地工具。请确认 PortShelf 正在运行，或重新双击打开。");
+      if (error instanceof TypeError) throw new Error(state.serverMode ? "暂时无法连接内网服务，请检查服务器及网络后刷新页面。" : "无法连接本地工具。请确认 PortShelf 正在运行，或重新双击打开。");
       throw error;
     } finally { clearTimeout(timer); }
   }
@@ -750,11 +753,13 @@
     state.hasToken = Boolean(data.hasToken);
     state.hasAigcToken = Boolean(data.hasAigcToken);
     state.arch = data.arch || state.arch;
+    state.serverMode = Boolean(data.serverMode);
+    applyServerUI();
     if (data.descriptions && typeof data.descriptions === "object") {
       mergeDescriptions(Object.entries(data.descriptions).map(([repo, item]) => ({ ...item, repo, status: item.status || "ready" })));
     }
     state.loaded = true;
-    $("version-label").textContent = "PortShelf " + (data.version ? "v" + data.version : "");
+    $("version-label").textContent = "PortShelf " + (data.version ? "v" + data.version : "") + (state.serverMode ? " · 内网版" : "");
     renderCategories(); renderStats(); renderGames();
     if (state.selected) renderDetails();
     if (state.discovery.range) renderSearchResults();
@@ -1393,7 +1398,7 @@
     $("quit-confirm").addEventListener("click", async () => {
       busy($("quit-confirm"), true, "正在退出…", "退出工具");
       try {
-        await api("/api/quit", {});
+        if (!state.serverMode) await api("/api/quit", {});
         state.stopped = true;
         transferUI?.stop();
         automationUI?.stop();
@@ -1403,6 +1408,11 @@
         sessionToken = "";
         try { sessionStorage.removeItem("portshelf-session"); } catch (_) { /* Storage may be disabled. */ }
         $("quit-dialog").close();
+        if (state.serverMode) {
+          try { localStorage.removeItem("portshelf-lan-access"); } catch (_) { /* Optional browser storage. */ }
+          location.reload();
+          return;
+        }
         const message = element("div", "stopped-message");
         message.append(element("h1", "", "下次，再来重温经典。"), element("p", "", "PortShelf 已退出，目录资料已保留。你可以关闭这个标签页，或双击 PortShelf 再次打开。"));
         $("main").replaceChildren(message);
@@ -1417,17 +1427,54 @@
     });
   }
 
+  function applyServerUI() {
+    if (!state.serverMode) return;
+    $("runtime-badge").textContent = "● 内网服务 · 后台持续运行";
+    $("quit-open").textContent = "退出访问";
+    $("quit-title").textContent = "退出此浏览器访问？";
+    $("quit-confirm").textContent = "退出访问";
+    $("quit-dialog").querySelector(".dialog-description").textContent = "清除当前浏览器的访问码；服务器上的下载、上传和自动任务继续运行。";
+    $("connection-storage-help").textContent = "各服务独立连接。勾选“记住凭据”后在服务器加密保存，更新或重启后继续恢复；Windows 旧版授权需在此重新连接一次。";
+    $("github-storage-help").textContent = "只读取公开项目信息，无需仓库写入权限。开启“记住凭据”后在服务器加密保存。";
+    $("credential-remember-label").textContent = "在服务器记住凭据";
+    $("download-directory-title").textContent = "服务器下载与临时文件目录";
+    $("download-directory-input").placeholder = "例如 /home/portshelf/downloads";
+    $("download-directory-help").textContent = "文件下载到内网服务器，不占用当前电脑的 C 盘或 E 盘。填写服务器上的绝对路径；双盘上传并分享成功后自动清理对应文件。Windows 旧任务和文件不会自动迁入。";
+    $("transfer-open-folder").hidden = true;
+    $("automation-open").hidden = true;
+    document.querySelector(".marketplace-footnote").textContent = "铺货由内网服务器持续处理，无需保持当前电脑或浏览器开启。授权失效或平台要求验证时，任务保留并提示处理。";
+  }
+
+  function askForAccess(message = "") {
+    showError("access-error", message);
+    if (!$("access-dialog").open) $("access-dialog").showModal();
+    $("access-code").focus();
+  }
+
   async function start() {
-    readSession(); setupEvents();
-    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, openCredentialSettings, notify });
-    automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
-    marketplaceUI = globalThis.PortShelfMarketplace?.create({ api, isStopped: () => state.stopped });
+    try {
+      const response = await fetch("/runtime.json", { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(10000) });
+      if (response.ok) state.serverMode = (await response.json()).serverMode === true;
+    } catch (_) { /* The API below reports connection errors. */ }
+    readSession(); setupEvents(); applyServerUI();
+    $("access-dialog").addEventListener("cancel", (event) => event.preventDefault());
+    $("access-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const token = $("access-code").value.trim();
+      if (!/^[a-f0-9]{48}$/.test(token)) { showError("access-error", "请粘贴完整的 48 位内网访问码。"); return; }
+      location.hash = token;
+      location.reload();
+    });
+    transferUI = globalThis.PortShelfTransfers.create({ api, exportFile: exportTransferFile, getGames: () => state.games, getFilteredGames: filteredGames, getIdentity: identityOf, getArch: () => state.arch, isServerMode: () => state.serverMode, isStopped: () => state.stopped, openSettings: openConnectionSettings, openCredentialSettings, notify });
+    automationUI = globalThis.PortShelfAutomation.create({ api, getArch: () => state.arch, isServerMode: () => state.serverMode, isStopped: () => state.stopped, openSettings: openConnectionSettings, onStatus: automationStatusChanged });
+    marketplaceUI = globalThis.PortShelfMarketplace?.create({ api, isServerMode: () => state.serverMode, isStopped: () => state.stopped });
     for (let i = 0; i < 6; i++) $("game-grid").append(element("div", "skeleton"));
     if (!sessionToken) {
       $("game-grid").replaceChildren();
       $("game-grid").setAttribute("aria-busy", "false");
       $("result-count").textContent = "尚未连接";
-      notice("这个页面缺少本地访问凭据，请双击 PortShelf.exe 重新打开目录。", true);
+      if (state.serverMode) askForAccess();
+      else notice("这个页面缺少本地访问凭据，请双击 PortShelf.exe 重新打开目录。", true);
       return;
     }
     try {
@@ -1437,6 +1484,7 @@
     } catch (error) {
       if (!state.loaded) { $("game-grid").replaceChildren(); $("result-count").textContent = "暂时无法读取目录"; $("game-grid").setAttribute("aria-busy", "false"); }
       notice(error.message, true);
+      if (state.serverMode && error.status === 401) askForAccess("访问码无效，请重新输入。");
     }
   }
   start();

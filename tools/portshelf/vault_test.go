@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-// Only tests inject AES-GCM. Production has no non-DPAPI persistence path.
+// Desktop-vault tests inject AES-GCM without depending on Windows DPAPI.
 func newTestCredentialVault(t *testing.T) *credentialVault {
 	t.Helper()
 	key := make([]byte, 32)

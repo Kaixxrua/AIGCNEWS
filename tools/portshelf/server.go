@@ -38,6 +38,7 @@ type App struct {
 	catalog          []Game
 	token            string
 	host             string
+	serverMode       bool
 	quit             chan struct{}
 	quitOnce         sync.Once
 	ctx              context.Context
@@ -50,12 +51,27 @@ type App struct {
 }
 
 func newApp(lib *Library) (*App, error) {
+	return newAppWithMode(lib, false)
+}
+
+func newAppWithMode(lib *Library, serverMode bool) (*App, error) {
 	games, err := readCatalog()
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	app := &App{lib: lib, github: newGitHub(""), aigc: newAIGC(), cloud: newCloudRegistry(), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}, candidates: map[string]libraryEntry{}}
+	app := &App{lib: lib, serverMode: serverMode, github: newGitHub(""), aigc: newAIGC(), cloud: newCloudRegistry(), catalog: games, token: randomID(), quit: make(chan struct{}), ctx: ctx, cancel: cancel, status: RefreshStatus{Errors: []string{}}, candidates: map[string]libraryEntry{}}
+	vault := newCredentialVault(lib.root)
+	if serverMode {
+		app.token, err = loadLANAccessToken(lib.root)
+		if err == nil {
+			vault, err = newServerCredentialVault(lib.root)
+		}
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+	}
 	app.transfers, err = newTransferManager(app)
 	if err != nil {
 		cancel()
@@ -66,7 +82,7 @@ func newApp(lib *Library) (*App, error) {
 		cancel()
 		return nil, err
 	}
-	app.credentials = newCredentials(app, app.automation.configSnapshot())
+	app.credentials = newCredentialsWithVault(app, app.automation.configSnapshot(), vault)
 	app.marketplace, err = newMarketplace(app)
 	if err != nil {
 		cancel()
@@ -358,8 +374,11 @@ func (a *App) handler() http.Handler {
 	a.registerMarketplaceRoutes(mux)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
+	mux.HandleFunc("GET /runtime.json", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, http.StatusOK, map[string]bool{"serverMode": a.serverMode})
+	})
 	mux.HandleFunc("GET /api/library", func(w http.ResponseWriter, r *http.Request) {
-		reply(w, http.StatusOK, map[string]any{"games": a.allGames(), "snapshots": a.lib.snapshot().Snapshots, "root": a.lib.root, "version": version, "arch": runtime.GOARCH, "hasToken": a.github.hasToken(), "hasAigcToken": a.aigc.hasToken(), "descriptions": a.lib.snapshot().Descriptions})
+		reply(w, http.StatusOK, map[string]any{"games": a.allGames(), "snapshots": a.lib.snapshot().Snapshots, "root": a.lib.root, "version": version, "serverMode": a.serverMode, "arch": runtime.GOARCH, "hasToken": a.github.hasToken(), "hasAigcToken": a.aigc.hasToken(), "descriptions": a.lib.snapshot().Descriptions})
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, a.refreshStatus())
@@ -496,6 +515,10 @@ func (a *App) handler() http.Handler {
 		reply(w, http.StatusOK, map[string]bool{"hasToken": token != ""})
 	})
 	mux.HandleFunc("POST /api/quit", func(w http.ResponseWriter, r *http.Request) {
+		if a.serverMode {
+			fail(w, http.StatusConflict, errors.New("内网服务持续运行；退出网页访问不会停止后台任务"))
+			return
+		}
 		if r.Body != nil && r.ContentLength != 0 {
 			var body struct{}
 			if err := decode(w, r, &body); err != nil {
@@ -527,7 +550,7 @@ func (a *App) handler() http.Handler {
 		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Header.Get("Sec-Fetch-Site") == "cross-site" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) != 1 {
-				fail(w, http.StatusUnauthorized, errors.New("请通过 PortShelf.exe 重新打开本地界面"))
+				fail(w, http.StatusUnauthorized, errors.New("访问凭据无效，请重新输入内网访问码，或通过 PortShelf 重新打开本地界面"))
 				return
 			}
 			if r.ContentLength > maxRequestBytes {

@@ -44,7 +44,7 @@
       </aside>
 
       <main class="main-content" id="main" tabindex="-1">
-        <div class="topline"><span>GITHUB OPEN SOURCE GAMES</span><span class="local-badge"><span aria-hidden="true">●</span> 本地运行 · Windows 目录</span></div>
+        <div class="topline"><span>GITHUB OPEN SOURCE GAMES</span><span class="local-badge" id="runtime-badge"><span aria-hidden="true">●</span> 本地运行 · Windows 目录</span></div>
         <header class="page-header">
           <div><div class="eyebrow" id="page-eyebrow">给经典一个新入口</div><h1 id="page-title">移植游戏目录<span class="heading-dot">.</span></h1><p id="page-description">找到熟悉的游戏，看看社区的更新，获取 Windows 下载地址。</p></div>
           <div class="header-actions"><button class="button button-secondary" id="refresh-button">刷新资料</button><button class="button button-primary" id="add-open"><span aria-hidden="true">＋</span> 添加项目</button></div>
@@ -142,7 +142,7 @@
                 <div class="share-options"><label><span class="field-label">分享有效期</span><select id="automation-share-days" class="cloud-select"><option value="0">永久</option><option value="1">1 天</option><option value="7">7 天</option><option value="30">30 天</option></select></label><label><span class="field-label">百度提取码 <span>可选</span></span><input id="automation-share-code" type="text" maxlength="4" placeholder="留空自动生成" autocomplete="off" spellcheck="false"></label></div>
                 <label class="check-label"><input id="automation-private-share" type="checkbox" checked><span id="automation-private-label">百度使用提取码分享</span></label><p class="field-help">百度使用私密分享，提取码可指定 4 位字母或数字；夸克提取码由服务生成，仅选夸克时也可选择公开分享。</p>
                 <label class="check-label"><input id="automation-enrich" type="checkbox" checked><span>自动补全中文名、海报与简介</span></label><p class="field-help">优先使用已有资料；旧简介可补充中文名和海报，可能消耗 AIGCNEWS 账号额度。找不到可靠图片时明确留空。</p>
-                <label class="check-label"><input id="automation-remember" type="checkbox" disabled><span>在此电脑记住凭据</span></label><p id="automation-storage-help" class="field-help">正在核对本机凭据保存能力。</p>
+                <label class="check-label"><input id="automation-remember" type="checkbox" disabled><span id="credential-remember-label">在此电脑记住凭据</span></label><p id="automation-storage-help" class="field-help">正在核对本机凭据保存能力。</p>
                 <label class="check-label"><input id="automation-start-on-login" type="checkbox" disabled><span>登录 Windows 时后台启动</span></label><p id="automation-startup-help" class="field-help">正在核对登录启动支持情况。</p>
               </div></details>
               <p id="automation-form-error" class="form-error" role="alert" hidden></p><p id="automation-save-note" class="field-help" role="status" hidden></p>
@@ -229,8 +229,8 @@
 
     <dialog class="form-dialog" id="settings-dialog" aria-labelledby="settings-title">
       <div class="dialog-heading"><div><span class="small-label">CONNECTION SETTINGS</span><h2 id="settings-title">连接设置</h2></div><button class="close-button" data-close="settings-dialog" aria-label="关闭连接设置">×</button></div>
-      <p class="dialog-description">各服务独立设置，凭据不保存在浏览器中。Windows 的“记住凭据”独立生效，无需开启无人值守；暂停不清除已保存的授权。</p>
-      <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help">只读取公开项目信息，无需仓库写入权限。开启“记住凭据”后使用 Windows DPAPI 加密保存，仅当前 Windows 用户可解密。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
+      <p class="dialog-description" id="connection-storage-help">各服务独立设置，凭据不保存在浏览器中。Windows 的“记住凭据”独立生效，无需开启无人值守；暂停不清除已保存的授权。</p>
+      <form id="token-form"><div class="token-state" id="token-state"></div><label class="field-label" for="token-input">GitHub Token <span>可选</span></label><input id="token-input" type="password" placeholder="粘贴 Token，留空则清除" maxlength="256" autocomplete="off" spellcheck="false"><p class="field-help" id="github-storage-help">只读取公开项目信息，无需仓库写入权限。开启“记住凭据”后使用 Windows DPAPI 加密保存，仅当前 Windows 用户可解密。</p><p class="form-error" id="token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="token-submit" type="submit">保存设置</button></div></form>
       <form class="aigc-token-form" id="aigc-token-form"><h3>AIGCNEWS 游戏资料</h3><div class="token-state" id="aigc-token-state"></div><label class="field-label" for="aigc-token-input">AIGCNEWS MCP Token <span>独立设置</span></label><input id="aigc-token-input" type="password" placeholder="粘贴 AIGCNEWS Token，留空则清除" maxlength="4096" autocomplete="off" spellcheck="false"><p class="field-help">用于游戏资料富化和联网查找海报，使用现有富化额度。读取已有资料不消耗生成额度；此 Token 不会用于 GitHub。<a href="https://aigcnews.cn/mcp" target="_blank" rel="noopener noreferrer">获取 AIGCNEWS MCP Token ↗</a></p><p class="form-error" id="aigc-token-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">取消</button><button class="button button-primary" id="aigc-token-submit" type="submit">保存 AIGCNEWS Token</button></div></form>
       <section class="cloud-settings" id="cloud-settings" aria-labelledby="cloud-settings-title"><h3 id="cloud-settings-title">网盘连接</h3><p class="field-help">连接后可上传和分享下载的发布附件。凭据不写入目录文件，也不保存在浏览器中。</p>
         <div id="credential-storage-state" class="token-state" role="status">正在核对本机凭据保存状态。</div>
@@ -238,6 +238,11 @@
         <div id="cloud-provider-settings"></div><p id="cloud-settings-error" class="form-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="button button-secondary" data-close="settings-dialog">完成设置</button></div></section>
     </dialog>
 
+    <dialog class="form-dialog compact-dialog" id="access-dialog" aria-labelledby="access-title">
+      <h2 id="access-title">连接内网 PortShelf</h2>
+      <p class="dialog-description">输入此服务的访问码。访问码会保存在当前浏览器，退出访问时清除；网盘和其他服务的授权保存在服务器。</p>
+      <form id="access-form"><label class="field-label" for="access-code">内网访问码</label><input id="access-code" name="access-code" type="password" maxlength="48" autocomplete="current-password" required><p class="form-error" id="access-error" role="alert" hidden></p><div class="dialog-actions"><button class="button button-primary" type="submit">连接</button></div></form>
+    </dialog>
     <dialog class="form-dialog compact-dialog" id="quit-dialog" aria-labelledby="quit-title">
       <div class="dialog-heading"><h2 id="quit-title">退出 PortShelf？</h2><button class="close-button" data-close="quit-dialog" aria-label="取消退出">×</button></div>
       <p class="dialog-description">目录、配置和任务记录会保留；退出后本次后台处理停止。下次打开工具后接续，已设置的 Windows 登录启动仍会保留。</p><p class="form-error" id="quit-error" role="alert" hidden></p><div class="dialog-actions"><button class="button button-secondary" data-close="quit-dialog">继续浏览</button><button class="button button-primary" id="quit-confirm">退出工具</button></div>

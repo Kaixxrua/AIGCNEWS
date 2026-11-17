@@ -100,7 +100,7 @@
       $("automation-run").title = state.dirty ? "请先保存设置，再立即扫描。" : !enabled() ? "先开启无人值守，再立即扫描。" : "使用已保存的配置立即扫描。";
       $("automation-open").disabled = busy || !state.status?.exportDir;
       $("automation-refresh").disabled = busy || state.loading;
-      $("automation-dirty-note").textContent = state.dirty ? "有未保存的修改；当前任务继续使用已保存配置。" : ready ? "设置已保存到本机。" : "正在读取本机设置。";
+      $("automation-dirty-note").textContent = state.dirty ? "有未保存的修改；当前任务继续使用已保存配置。" : ready ? state.status?.serverMode ? "设置已保存到服务器。" : "设置已保存到本机。" : "正在读取本机设置。";
       const baidu = $("automation-baidu").checked;
       const anyProvider = baidu || $("automation-quark").checked;
       if (baidu) $("automation-private-share").checked = true;
@@ -124,8 +124,8 @@
       $("automation-counts").textContent = [status.discovered, status.queued, status.unsupported].map((value) => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0).join(" / ");
       show("automation-last-error", status.lastError ? "最近自动处理提示：" + status.lastError : "");
       show("automation-credential-error", status.credentialError ? "凭据需要处理：" + status.credentialError : "");
-      $("automation-storage-help").textContent = status.credentialStorageSupported ? "勾选后使用 Windows DPAPI 在本机加密保存，仅当前 Windows 用户可解密。无需开启无人值守；暂停不会清除授权。取消勾选并保存后，仅在本次运行中保留凭据。" : "当前平台不支持 Windows DPAPI，凭据仅保留在当前工具进程中；退出后需重新连接。";
-      $("automation-startup-help").textContent = status.startOnLoginSupported ? "登录 Windows 时在后台启动，不弹出浏览器。电脑须开机联网；勾选“记住凭据”可恢复网盘连接。" : "当前平台不支持 Windows 登录启动，只在本次工具进程运行期间自动处理。";
+      $("automation-storage-help").textContent = status.serverMode ? "凭据在服务器上加密保存，服务更新或重启后自动恢复。暂停无人值守不会清除授权；取消勾选并保存后仅在当前服务进程内保留。" : status.credentialStorageSupported ? "勾选后使用 Windows DPAPI 在本机加密保存，仅当前 Windows 用户可解密。无需开启无人值守；暂停不会清除授权。取消勾选并保存后，仅在本次运行中保留凭据。" : "当前平台不支持 Windows DPAPI，凭据仅保留在当前工具进程中；退出后需重新连接。";
+      $("automation-startup-help").textContent = status.serverMode ? "内网服务由服务器托管，关闭浏览器后任务仍会继续，无需设置 Windows 登录启动。" : status.startOnLoginSupported ? "登录 Windows 时在后台启动，不弹出浏览器。电脑须开机联网；勾选“记住凭据”可恢复网盘连接。" : "当前平台不支持 Windows 登录启动，只在本次工具进程运行期间自动处理。";
       $("automation-export").textContent = status.exportDir ? "自动资料目录：" + status.exportDir + " · JSON / CSV / Markdown" + (date(status.exportedAt) ? " · 最近写入 " + date(status.exportedAt) : " · 首个成果完成后写入") : "自动生成的资料目录待确认。";
       syncControls();
     }

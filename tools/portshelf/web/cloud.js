@@ -117,7 +117,7 @@
     try { const url = new URL(value); return !url.port && !url.username && !url.password && !url.search && !url.hash ? url.href : null; } catch (_) { return null; }
   }
 
-  function credentialStorageState(value) {
+  function credentialStorageState(value, serverMode = false) {
     const unknown = { kind: "unknown", text: "正在核对本机凭据保存状态。", pending: [] };
     if (!value || typeof value.supported !== "boolean" || typeof value.remember !== "boolean" || typeof value.saved !== "boolean") return unknown;
     const pending = value.supported && value.remember && Array.isArray(value.pending) ? [...new Set(value.pending.filter(id => Object.hasOwn(providers, id)))] : [];
@@ -125,8 +125,8 @@
     if (!value.supported) return { kind: "memory", text: "当前平台不支持本机加密保存，授权仅在本次运行中保留；退出后需重新连接。", pending };
     if (!value.remember) return { kind: "memory", text: "已关闭“记住凭据”，授权仅在本次运行中保留；退出后需重新连接。", pending };
     if (pending.length) return { kind: "restoring", text: "已保存授权正在恢复，可刷新连接状态；无需重复填写 Cookie 或授权码。", pending };
-    if (value.saved) return { kind: "saved", text: "授权已在本机加密保存，重新打开工具会恢复连接；无需开启无人值守，暂停也不清除授权。", pending };
-    return { kind: "waiting", text: "已启用本机加密保存，等待首次保存授权；无需开启无人值守。", pending };
+    if (value.saved) return { kind: "saved", text: serverMode ? "授权已在服务器加密保存，服务重启后恢复连接；关闭网页不影响后台任务。" : "授权已在本机加密保存，重新打开工具会恢复连接；无需开启无人值守，暂停也不清除授权。", pending };
+    return { kind: "waiting", text: serverMode ? "已启用服务器加密保存，等待首次连接账号。" : "已启用本机加密保存，等待首次保存授权；无需开启无人值守。", pending };
   }
 
   function create(context) {
@@ -186,7 +186,7 @@
     }
 
     function syncProviderState() {
-      const storage = credentialStorageState(state.credentialStorage);
+      const storage = credentialStorageState(state.credentialStorage, context.isServerMode?.());
       const storageLabel = $("credential-storage-state");
       storageLabel.textContent = (storage.kind === "error" && Object.values(state.providers).some(provider => provider?.configured) ? "本次已连接的账号仍可使用；本机保存状态需处理。" : "") + storage.text; storageLabel.dataset.state = storage.kind;
       storageLabel.className = storage.kind === "error" ? "notice error" : "token-state";
@@ -205,7 +205,7 @@
 
     function scheduleAuthPoll() {
       clearTimeout(state.authPollTimer); state.authPollTimer = null;
-      if (isStopped() || document.hidden || (!state.visible && !$("settings-dialog").open) || state.cloudBusy || state.authBusy.size || state.authFailures >= 3 || !credentialStorageState(state.credentialStorage).pending.length) return;
+      if (isStopped() || document.hidden || (!state.visible && !$("settings-dialog").open) || state.cloudBusy || state.authBusy.size || state.authFailures >= 3 || !credentialStorageState(state.credentialStorage, context.isServerMode?.()).pending.length) return;
       state.authPollTimer = setTimeout(loadProviders, 2000);
     }
 
@@ -246,7 +246,7 @@
       event.preventDefault();
       if (state.directoryBusy || isStopped()) return;
       const directory = $("download-directory-input").value.trim();
-      if (!directory) { message("download-directory-error", "请填写完整的文件夹路径，例如 D:\\PortShelfDownloads"); return; }
+      if (!directory) { message("download-directory-error", context.isServerMode?.() ? "请填写服务器上的绝对文件夹路径。" : "请填写完整的文件夹路径，例如 D:\\PortShelfDownloads"); return; }
       state.directoryBusy = true; state.directoryRevision++; renderDirectory(); message("download-directory-error", "");
       try {
         const result = await context.api("/api/transfers/directory", { directory }, 20000);
@@ -306,7 +306,7 @@
         if (automatic.text) automation.append(node("p", "", automatic.text));
         card.append(automation);
       }
-      const currentStage = job.status === "partial" ? "网盘步骤尚未全部完成" : job.status === "waiting_auth" ? "等待连接网盘" : stageLabels[job.stage] || "等待处理";
+      const currentStage = job.status === "partial" ? "网盘步骤尚未全部完成" : job.status === "waiting_auth" ? "等待连接网盘" : (context.isServerMode?.() && job.stage === "download" ? "下载到服务器" : stageLabels[job.stage]) || "等待处理";
       const stage = node("p", "transfer-stage", currentStage + (providers[job.provider] ? " · " + providers[job.provider] : "")); card.append(stage);
       if (["download", "source", "upload"].includes(job.stage) && job.status === "running") {
         const data = progressOf(job); const meter = node("progress", "transfer-progress"); meter.max = data.total || 1; if (data.total) meter.value = Math.min(data.completed, data.total);
@@ -330,7 +330,7 @@
       details.append(node("summary", "", "查看中文资料与校验信息"), node("pre", "", sharingMaterial(job))); card.append(details);
       const actions = node("div", "transfer-job-actions");
       const copying = button("复制分享资料", () => copyText(sharingMaterial(job), copying)); actions.append(copying);
-      if (job.downloadPath && !job.localDeletedAt) { const folder = button("打开所在目录", () => openFolder(job.id)); folder.disabled = state.folderBusy; actions.append(folder); }
+      if (job.downloadPath && !job.localDeletedAt && !context.isServerMode?.()) { const folder = button("打开所在目录", () => openFolder(job.id)); folder.disabled = state.folderBusy; actions.append(folder); }
       if (job.status === "waiting_auth") actions.append(button("配置网盘连接", openSettings));
       if (retryStatuses.has(job.status)) { const retry = button(state.actions.has(job.id) ? "处理中…" : ["paused", "waiting_auth"].includes(job.status) ? "继续任务" : "重试任务", () => jobAction(job.id, "retry")); retry.disabled = state.actions.has(job.id); actions.append(retry); }
       if (cancelStatuses.has(job.status)) { const cancel = button(state.actions.has(job.id) ? "处理中…" : "取消任务", () => jobAction(job.id, "cancel"), "text-button"); cancel.disabled = state.actions.has(job.id); actions.append(cancel); }
@@ -484,7 +484,7 @@
         state.authFailures = 0; syncProviderState();
         input.value = "";
         if (id === "quark") $("cloud-quark-authorization").replaceChildren();
-        const storage = credentialStorageState(state.credentialStorage);
+        const storage = credentialStorageState(state.credentialStorage, context.isServerMode?.());
         context.notify(clear ? providers[id] + "凭据已清除。" : providers[id] + (storage.kind === "error" ? "本次连接可用，但本机保存需处理。" : "连接已验证。") + storage.text, storage.kind === "error");
         await loadJobs();
       } catch (error) { message("cloud-" + id + "-error", error.message); }
@@ -523,11 +523,11 @@
           const target = node("div", "cloud-authorization"); target.id = "cloud-quark-authorization"; form.append(auth, target);
         }
         const label = node("label", "field-label", id === "baidu" ? "百度网盘 Cookie" : "夸克官方授权码 AuthCode"); label.htmlFor = "cloud-" + id + "-credential";
-        const input = node("input"); input.id = label.htmlFor; input.type = "password"; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 12000; input.placeholder = id === "baidu" ? "仅在本机粘贴 Cookie" : "粘贴授权页提供的 AuthCode";
+        const input = node("input"); input.id = label.htmlFor; input.type = "password"; input.autocomplete = "off"; input.spellcheck = false; input.maxLength = 12000; input.placeholder = id === "baidu" ? "粘贴自己的百度 Cookie" : "粘贴授权页提供的 AuthCode";
         const error = node("p", "form-error"); error.id = "cloud-" + id + "-error"; error.setAttribute("role", "alert"); error.hidden = true;
         const actions = node("div", "dialog-actions"); const clear = button("清除连接", () => saveProvider(id, true)); clear.id = "cloud-" + id + "-clear";
         const submit = node("button", "button button-primary", "验证并连接"); submit.type = "submit"; submit.id = "cloud-" + id + "-submit"; actions.append(clear, submit);
-        form.append(label, input, node("p", "field-help", "连接后清空输入，不存浏览器。Windows 勾选“记住凭据”时会在本机加密保存；无需开启无人值守，暂停不清除授权。"), error, actions);
+        form.append(label, input, node("p", "field-help", context.isServerMode?.() ? "连接后清空输入，网盘授权不存浏览器。勾选“记住凭据”后在服务器加密保存，更新或重启后继续恢复。" : "连接后清空输入，不存浏览器。Windows 勾选“记住凭据”时会在本机加密保存；无需开启无人值守，暂停不清除授权。"), error, actions);
         form.addEventListener("submit", (event) => { event.preventDefault(); saveProvider(id); });
         return form;
       });

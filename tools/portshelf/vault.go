@@ -46,12 +46,15 @@ type credentialEnvelope struct {
 type credentialVault struct {
 	mu        sync.Mutex
 	root      string
+	fileName  string
+	magic     string
 	rootError error
 	available bool
 	protect   func([]byte) ([]byte, error)
 	unprotect func([]byte) ([]byte, error)
 	// Tests inject an authenticated cipher and commit failures per instance.
-	// Production always uses DPAPI; no plaintext fallback is supported.
+	// Desktop uses DPAPI; LAN mode supplies a server-key authenticated cipher.
+	// Neither mode supports a plaintext fallback.
 	replace func(*os.Root, string, string) error
 }
 
@@ -65,7 +68,7 @@ func newCredentialVault(root string) *credentialVault {
 		rootError = errors.New("凭据目录无效")
 	}
 	return &credentialVault{
-		root: absolute, rootError: rootError, available: credentialProtectionAvailable(),
+		root: absolute, fileName: credentialVaultFile, magic: credentialVaultMagic, rootError: rootError, available: credentialProtectionAvailable(),
 		protect: protectCredentialBytes, unprotect: unprotectCredentialBytes,
 		replace: func(root *os.Root, source, target string) error { return root.Rename(source, target) },
 	}
@@ -114,14 +117,14 @@ func (v *credentialVault) load() (savedCredentials, error) {
 		return empty, err
 	}
 	defer root.Close()
-	info, err := root.Lstat(credentialVaultFile)
+	info, err := root.Lstat(v.fileName)
 	if errors.Is(err, os.ErrNotExist) {
 		return empty, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Size() <= int64(len(credentialVaultMagic)) || info.Size() > maxCredentialCiphertext {
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= int64(len(v.magic)) || info.Size() > maxCredentialCiphertext {
 		return empty, errors.New("加密凭据文件无效，请清除已保存凭据后重新连接")
 	}
-	file, err := root.Open(credentialVaultFile)
+	file, err := root.Open(v.fileName)
 	if err != nil {
 		return empty, errors.New("无法读取加密凭据文件")
 	}
@@ -131,13 +134,13 @@ func (v *credentialVault) load() (savedCredentials, error) {
 		return empty, errors.New("加密凭据文件在读取期间发生变化")
 	}
 	encoded, err := io.ReadAll(io.LimitReader(file, maxCredentialCiphertext+1))
-	if err != nil || len(encoded) > maxCredentialCiphertext || !bytes.HasPrefix(encoded, []byte(credentialVaultMagic)) {
+	if err != nil || len(encoded) > maxCredentialCiphertext || !bytes.HasPrefix(encoded, []byte(v.magic)) {
 		return empty, errors.New("加密凭据文件格式无效，不会尝试读取明文凭据")
 	}
-	plain, err := v.unprotect(encoded[len(credentialVaultMagic):])
+	plain, err := v.unprotect(encoded[len(v.magic):])
 	defer clear(plain)
 	if err != nil {
-		return empty, errors.New("无法解密已保存凭据，请使用原 Windows 用户，或清除后重新连接")
+		return empty, errors.New("无法解密已保存凭据，请使用原用户及原加密密钥，或清除后重新连接")
 	}
 	if len(plain) == 0 || len(plain) > maxCredentialPlaintext {
 		return empty, errors.New("加密凭据内容无效")
@@ -174,7 +177,7 @@ func (v *credentialVault) save(saved savedCredentials) error {
 	if !validateSavedCredentials(saved) {
 		return errors.New("待保存的凭据或账号信息无效")
 	}
-	if info, err := root.Lstat(credentialVaultFile); err == nil {
+	if info, err := root.Lstat(v.fileName); err == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("凭据文件位置已被目录或链接占用")
 		}
@@ -193,8 +196,8 @@ func (v *credentialVault) save(saved savedCredentials) error {
 		return errors.New("凭据内容过大或无法编码")
 	}
 	protected, err := v.protect(plain)
-	if err != nil || len(protected) == 0 || len(protected)+len(credentialVaultMagic) > maxCredentialCiphertext || bytes.Equal(protected, plain) {
-		return errors.New("Windows 凭据加密失败，未保存任何明文登录信息")
+	if err != nil || len(protected) == 0 || len(protected)+len(v.magic) > maxCredentialCiphertext || bytes.Equal(protected, plain) {
+		return errors.New("凭据加密失败，未保存任何明文登录信息")
 	}
 	// No file is written before protection succeeds. Temporary files contain
 	// only ciphertext and are created exclusively inside the data root.
@@ -208,7 +211,7 @@ func (v *credentialVault) save(saved savedCredentials) error {
 		return errors.New("无法保存加密凭据，请检查磁盘空间和权限")
 	}
 	defer root.Remove(name)
-	_, err = file.Write([]byte(credentialVaultMagic))
+	_, err = file.Write([]byte(v.magic))
 	if err == nil {
 		_, err = file.Write(protected)
 	}
@@ -219,7 +222,7 @@ func (v *credentialVault) save(saved savedCredentials) error {
 		err = closeErr
 	}
 	if err == nil {
-		err = v.replace(root, name, credentialVaultFile)
+		err = v.replace(root, name, v.fileName)
 	}
 	if err != nil {
 		return errors.New("保存加密凭据失败，原有凭据未被替换；请检查磁盘空间和权限")
@@ -235,14 +238,14 @@ func (v *credentialVault) clear() error {
 		return err
 	}
 	defer root.Close()
-	info, err := root.Lstat(credentialVaultFile)
+	info, err := root.Lstat(v.fileName)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil || !info.Mode().IsRegular() {
 		return errors.New("加密凭据文件位置无效，未删除其它文件")
 	}
-	if err := root.Remove(credentialVaultFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := root.Remove(v.fileName); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.New("无法清除已保存的加密凭据，请检查文件权限")
 	}
 	return nil

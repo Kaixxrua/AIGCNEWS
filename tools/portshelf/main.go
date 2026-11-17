@@ -17,13 +17,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 //go:embed web/* catalog.json snapshot.json
 var assets embed.FS
 
-var version = "1.7.2"
+var version = "1.8.0"
 var errRunning = errors.New("PortShelf 已在运行")
 
 func main() {
@@ -36,8 +37,15 @@ func main() {
 func run() error {
 	noBrowser := flag.Bool("no-browser", false, "不自动打开浏览器")
 	dataDir := flag.String("data-dir", "", "游戏列表与缓存保存目录")
-	listen := flag.String("listen", "127.0.0.1:0", "仅支持 127.0.0.1，默认自动分配端口")
+	listen := flag.String("listen", "127.0.0.1:0", "监听地址；内网服务需同时启用 -lan 并指定私有 IP 和固定端口")
+	lan := flag.Bool("lan", false, "启用持久内网访问及服务器加密凭据")
 	flag.Parse()
+	if err := validateListenAddress(*listen, *lan); err != nil {
+		return err
+	}
+	if *lan {
+		*noBrowser = true
+	}
 	if *dataDir == "" {
 		base, err := os.UserConfigDir()
 		if err != nil {
@@ -54,6 +62,9 @@ func run() error {
 	}
 	unlock, err := lockLibrary(lib.root)
 	if errors.Is(err, errRunning) {
+		if *lan {
+			return errRunning
+		}
 		if b, readErr := os.ReadFile(filepath.Join(lib.root, "session.url")); readErr == nil && !*noBrowser {
 			sessionURL := strings.TrimSpace(string(b))
 			if validSessionURL(sessionURL) {
@@ -69,16 +80,12 @@ func run() error {
 		return err
 	}
 	defer unlock()
-	host, _, err := net.SplitHostPort(*listen)
-	if err != nil || host != "127.0.0.1" {
-		return errors.New("仅允许监听 127.0.0.1")
-	}
 	ln, err := net.Listen("tcp", *listen)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
-	app, err := newApp(lib)
+	app, err := newAppWithMode(lib, *lan)
 	if err != nil {
 		return err
 	}
@@ -90,9 +97,13 @@ func run() error {
 		return err
 	}
 	defer os.Remove(filepath.Join(lib.root, "session.url"))
-	fmt.Printf("PortShelf %s\n缓存目录：%s\n游戏列表：%s\n关闭工具可点击界面中的“退出工具”。\n", version, lib.root, sessionURL)
+	if *lan {
+		fmt.Printf("PortShelf %s 内网服务\n游戏列表：http://%s/\n访问入口保存在数据目录的 session.url；更新时请保留数据目录。\n", version, app.host)
+	} else {
+		fmt.Printf("PortShelf %s\n缓存目录：%s\n游戏列表：%s\n关闭工具可点击界面中的“退出工具”。\n", version, lib.root, sessionURL)
+	}
 	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(interrupt)
 	shutdownDone := make(chan struct{})
 	go func() {

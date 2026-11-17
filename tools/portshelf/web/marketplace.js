@@ -231,7 +231,7 @@
       $("marketplace-properties-load").disabled = busy || !connected || !$("marketplace-biz").value || !$("marketplace-category").value.trim();
       $("marketplace-property-add").disabled = busy || !ready;
       $("marketplace-addresses-load").disabled = busy || !connected;
-      $("marketplace-dirty-note").textContent = state.dirty ? "有未保存的修改；自动铺货仍使用已保存设置。" : ready ? "配置已保存到本机；不会默认设置售价或开启铺货。" : "正在读取本机配置。";
+      $("marketplace-dirty-note").textContent = state.dirty ? "有未保存的修改；自动铺货仍使用已保存设置。" : ready ? context.isServerMode?.() ? "配置已保存到服务器；按你设置的售价和库存铺货。" : "配置已保存到本机；不会默认设置售价或开启铺货。" : "正在读取本机配置。";
       $("marketplace-jobs").querySelectorAll("button").forEach(button => { button.disabled = busy || !enabled() || state.dirty; });
     }
 
@@ -241,7 +241,7 @@
       $("marketplace-status").textContent = status.running ? "正在处理" : enabled() ? "已开启" : "已暂停";
       $("marketplace-status").dataset.state = enabled() ? "enabled" : "paused";
       $("marketplace-connection-state").textContent = status.connected ? "应用凭据已连接。" + ((status.shops || []).length ? " 已取得 " + status.shops.length + " 个店铺，请选择发布店铺。" : " 请检测连接并获取店铺。") : "还未连接闲管家应用。";
-      $("marketplace-credential-help").textContent = status.credentialSaved ? "应用凭据已加密保存在当前 Windows 用户的本机配置中，升级无需重填；不会存入浏览器。" : status.credentialStorageSupported ? "应用凭据尚未保存到本机。如需重启后保留授权，请在上方“无人值守”的高级设置中勾选“在此电脑记住凭据”；不会存入浏览器。" : "当前平台无法持久保存应用凭据，连接仅在本次工具运行期间有效；不会存入浏览器。";
+      $("marketplace-credential-help").textContent = context.isServerMode?.() ? status.credentialSaved ? "应用凭据已在服务器加密保存，更新或重启后继续恢复。" : "在此连接闲管家，并开启“在服务器记住凭据”可跨重启保留授权。" : status.credentialSaved ? "应用凭据已加密保存在当前 Windows 用户的本机配置中，升级无需重填；不会存入浏览器。" : status.credentialStorageSupported ? "应用凭据尚未保存到本机。如需重启后保留授权，请在上方“无人值守”的高级设置中勾选“在此电脑记住凭据”；不会存入浏览器。" : "当前平台无法持久保存应用凭据，连接仅在本次工具运行期间有效；不会存入浏览器。";
       show("marketplace-service-error", status.error || ""); syncControls();
     }
 

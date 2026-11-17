@@ -17,7 +17,7 @@ func (a *App) registerAutomationRoutes(mux *http.ServeMux) {
 			fail(w, http.StatusBadRequest, err)
 			return
 		}
-		if _, err := validateAutomationConfig(config); err != nil {
+		if _, err := a.validateAutomationConfig(config); err != nil {
 			fail(w, http.StatusBadRequest, err)
 			return
 		}
@@ -40,6 +40,10 @@ func (a *App) registerAutomationRoutes(mux *http.ServeMux) {
 		reply(w, http.StatusAccepted, a.automation.status())
 	})
 	mux.HandleFunc("POST /api/automation/open", func(w http.ResponseWriter, r *http.Request) {
+		if a.serverMode {
+			fail(w, http.StatusConflict, errors.New("资料保存在服务器，请使用导出资料下载到当前电脑"))
+			return
+		}
 		var body struct{}
 		if err := decode(w, r, &body); err != nil {
 			fail(w, http.StatusBadRequest, err)

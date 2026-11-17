@@ -237,6 +237,10 @@ func (a *App) registerTransferRoutes(mux *http.ServeMux) {
 		}
 	})
 	mux.HandleFunc("POST /api/transfers/open", func(w http.ResponseWriter, r *http.Request) {
+		if a.serverMode {
+			fail(w, http.StatusConflict, errors.New("下载文件保存在内网服务器，可通过网盘分享链接获取"))
+			return
+		}
 		var body struct {
 			ID string `json:"id"`
 		}

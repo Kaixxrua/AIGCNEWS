@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Tokens are restored only from the current Windows user's encrypted vault.
+// Tokens are restored only from the selected encrypted credential vault.
 // Pending accounts remain in the vault if the network is temporarily offline.
 type credentialManager struct {
 	mu                          sync.Mutex
@@ -62,9 +62,13 @@ func (a *App) credentialStorageStatus() credentialStorageStatus {
 }
 
 func newCredentials(a *App, config AutomationConfig) *credentialManager {
-	_, err := os.Lstat(filepath.Join(a.lib.root, credentialVaultFile))
-	return &credentialManager{app: a, vault: newCredentialVault(a.lib.root), enabled: config.Enabled, remember: config.RememberCredentials,
-		hasVault: !errors.Is(err, os.ErrNotExist), startOnLogin: config.StartOnLogin, startSupported: autoStartSupported(), setStart: setAutoStart,
+	return newCredentialsWithVault(a, config, newCredentialVault(a.lib.root))
+}
+
+func newCredentialsWithVault(a *App, config AutomationConfig, vault *credentialVault) *credentialManager {
+	_, err := os.Lstat(filepath.Join(a.lib.root, vault.fileName))
+	return &credentialManager{app: a, vault: vault, enabled: config.Enabled, remember: config.RememberCredentials,
+		hasVault: !errors.Is(err, os.ErrNotExist), startOnLogin: config.StartOnLogin, startSupported: !a.serverMode && autoStartSupported(), setStart: setAutoStart,
 		pending: map[string]savedCloud{}, wake: make(chan struct{}, 1), ready: make(chan struct{}), done: make(chan struct{})}
 }
 
@@ -466,14 +470,14 @@ func (v *credentialVault) checkpoint() (credentialVaultCheckpoint, error) {
 		return result, err
 	}
 	defer root.Close()
-	info, err := root.Lstat(credentialVaultFile)
+	info, err := root.Lstat(v.fileName)
 	if errors.Is(err, os.ErrNotExist) {
 		return result, nil
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Size() > maxCredentialCiphertext {
 		return result, errors.New("无法安全备份原有凭据文件，未修改登录设置")
 	}
-	file, err := root.Open(credentialVaultFile)
+	file, err := root.Open(v.fileName)
 	if err != nil {
 		return result, errors.New("无法读取原有凭据文件，未修改登录设置")
 	}
@@ -500,7 +504,7 @@ func (v *credentialVault) restoreCheckpoint(checkpoint credentialVaultCheckpoint
 		return err
 	}
 	defer root.Close()
-	if info, statErr := root.Lstat(credentialVaultFile); statErr == nil {
+	if info, statErr := root.Lstat(v.fileName); statErr == nil {
 		if !info.Mode().IsRegular() {
 			return errors.New("凭据文件位置已改变，无法恢复")
 		}
@@ -525,7 +529,7 @@ func (v *credentialVault) restoreCheckpoint(checkpoint credentialVaultCheckpoint
 		err = closeErr
 	}
 	if err == nil {
-		err = v.replace(root, name, credentialVaultFile)
+		err = v.replace(root, name, v.fileName)
 	}
 	if err != nil {
 		return errors.New("无法恢复原有凭据文件")
