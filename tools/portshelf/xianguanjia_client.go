@@ -31,6 +31,7 @@ const (
 	xgjProductPath     = "/api/open/product/detail"
 	xgjCreatePath      = "/api/open/product/create"
 	xgjPublishPath     = "/api/open/product/publish"
+	xgjEditPath        = "/api/open/product/edit"
 )
 
 type XGJCredentials struct {
@@ -145,7 +146,7 @@ func newXGJClient(credentials XGJCredentials) *xgjClient {
 func xgjKnownPath(path string) bool {
 	switch path {
 	case xgjShopsPath, xgjAddressesPath, xgjCategoriesPath, xgjPropertiesPath,
-		xgjProductsPath, xgjProductPath, xgjCreatePath, xgjPublishPath:
+		xgjProductsPath, xgjProductPath, xgjCreatePath, xgjPublishPath, xgjEditPath:
 		return true
 	}
 	return false

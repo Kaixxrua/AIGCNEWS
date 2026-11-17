@@ -270,6 +270,8 @@ type marketplaceProduct struct {
 		UserName string `json:"user_name"`
 		Status   *int   `json:"status"`
 		ItemID   int64  `json:"item_id"`
+		Title    string `json:"title"`
+		Content  string `json:"content"`
 	} `json:"publish_shop"`
 }
 

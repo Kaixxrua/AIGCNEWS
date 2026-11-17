@@ -67,6 +67,8 @@ type MarketplaceJob struct {
 	CreateIssuedAt     string            `json:"createIssuedAt,omitempty"`
 	MetadataAttempts   int               `json:"metadataAttempts,omitempty"`
 	Attempts           int               `json:"attempts,omitempty"`
+	CopyUpdate         *marketplaceCopy  `json:"copyUpdate,omitempty"`
+	CopyUpdatedAt      string            `json:"copyUpdatedAt,omitempty"`
 }
 
 type marketplaceState struct {
@@ -187,12 +189,15 @@ func newMarketplace(a *App) (*marketplaceManager, error) {
 		if _, err := parseRepo(j.Repo); err != nil {
 			return nil, errors.New("闲管家任务仓库无效")
 		}
-		for _, value := range []string{j.CreatedAt, j.UpdatedAt, j.NextRunAt, j.PublishIssuedAt, j.CreateIssuedAt} {
+		for _, value := range []string{j.CreatedAt, j.UpdatedAt, j.NextRunAt, j.PublishIssuedAt, j.CreateIssuedAt, j.CopyUpdatedAt} {
 			if value != "" {
 				if _, err := time.Parse(time.RFC3339, value); err != nil {
 					return nil, errors.New("闲管家任务时间无效")
 				}
 			}
+		}
+		if copy := j.CopyUpdate; copy != nil && (copy.Title == "" || copy.Content == "" || !marketplaceText(copy.Title, 60, false) || marketplaceWidth(copy.Title) > 60 || !marketplaceText(copy.Content, 5000, true) || marketplaceWidth(copy.Content) > 5000) {
+			return nil, errors.New("待核对的商品文案无效")
 		}
 		ids[j.ID], outer[j.OuterID] = true, true
 		// A process may have died after the remote side effect but before its
@@ -353,20 +358,43 @@ func marketplacePayload(t TransferJob, c MarketplaceConfig, outer string) (json.
 	if !marketplaceMaterialsReady(t) {
 		return nil, "", "", errors.New("等待中文简介和可公开访问的已核验游戏图片")
 	}
-	name := t.GameNameZh
-	if name == "" {
-		name = t.Name
-	}
-	if name == "" {
-		name = t.Repo
-	}
-	title := marketplaceTrim(strings.TrimSpace(c.TitlePrefix+" "+name+" · 开源项目文件与源码"), 60)
-	content := strings.Join([]string{t.Description, "", "项目：" + t.Repo, "发布版本：" + t.Version, "安装包平台：Windows " + t.Arch, "项目支持系统：" + systemDescription(t.SupportedSystems), "内容：上游公开发布安装包、对应版本源码及来源说明。通过百度网盘和夸克网盘交付。", "运行要求：" + t.DataNote, "使用说明：" + t.Guide, "项目来源：https://github.com/" + t.Repo, "源码版本：" + t.SourceCommit, "请按上游许可使用；若项目需要原版游戏数据，须自行准备。"}, "\n")
-	if marketplaceWidth(content) > 5000 || !marketplaceText(content, 5000, true) {
-		return nil, "", "", errors.New("商品资料超过平台长度限制，请整理简介或运行说明后重试")
+	title, content, err := marketplaceBuyerCopy(t, c)
+	if err != nil {
+		return nil, "", "", err
 	}
 	properties := append([]MarketplaceProperty{}, c.Properties...)
 	payload := map[string]any{"item_biz_type": c.ItemBizType, "sp_biz_type": c.SpBizType, "channel_cat_id": c.CategoryID, "channel_pv": properties, "price": c.PriceFen, "express_fee": 0, "stock": c.Stock, "outer_id": outer, "stuff_status": 0, "publish_shop": []map[string]any{{"user_name": c.ShopUserName, "province": c.Province, "city": c.City, "district": c.District, "title": title, "content": content, "images": []string{t.PosterURL}, "express_way": 5}}}
 	b, err := xgjJSON(payload)
 	return b, title, content, err
+}
+
+// Buyer copy describes the delivered game and platform. Provenance, hashes and
+// upstream instructions remain in the source bundle and operator exports.
+func marketplaceBuyerCopy(t TransferJob, c MarketplaceConfig) (string, string, error) {
+	name := strings.TrimSpace(t.Name)
+	if name == "" {
+		name = strings.TrimSpace(t.GameNameZh)
+	} else if chinese := strings.TrimSpace(t.GameNameZh); chinese != "" && !strings.EqualFold(name, chinese) {
+		name += " · " + chinese
+	}
+	if name == "" {
+		return "", "", errors.New("请先补全游戏名称")
+	}
+	platform := "Windows x64"
+	if t.Arch == "arm64" {
+		platform = "Windows ARM64"
+	} else if t.Arch != "amd64" {
+		return "", "", errors.New("请先核实安装包的适用系统")
+	}
+	title := marketplaceTrim(strings.TrimSpace(c.TitlePrefix+" "+name+" · Windows版"), 60)
+	lines := []string{name, "", strings.TrimSpace(t.Description), ""}
+	if t.Version != "" {
+		lines = append(lines, "版本："+t.Version)
+	}
+	lines = append(lines, "适用系统："+platform, "包含内容：游戏文件、配套源码及说明", "交付方式：百度网盘 / 夸克网盘")
+	content := strings.Join(lines, "\n")
+	if !validChineseDescription(t.Description) || !marketplaceText(title, 60, false) || marketplaceWidth(content) > 5000 || !marketplaceText(content, 5000, true) {
+		return "", "", errors.New("游戏名称或简介无效、或超过平台长度限制，请整理后重试")
+	}
+	return title, content, nil
 }

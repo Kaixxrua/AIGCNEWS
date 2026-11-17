@@ -155,11 +155,11 @@ const server = http.createServer(async (req, res) => {
     assert.match(await cleaned.innerText(), /本地文件已自动清理/);
     assert.equal(await cleaned.getByRole('button', { name: '打开所在目录' }).count(), 0);
     await cleaned.getByRole('button', { name: '复制分享资料', exact: true }).click();
-    assert.match(await page.evaluate(() => window.copiedMaterial), /双盘完成后已清理/);
+    assert.doesNotMatch(await page.evaluate(() => window.copiedMaterial), /双盘完成后已清理|本地文件/);
     assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.baidu.com\/s\/demo/);
     assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.quark.cn\/s\/demo/);
-    assert.match(await page.evaluate(() => window.copiedMaterial), /源码 Commit：a{40}/);
-    assert.match(await page.evaluate(() => window.copiedMaterial), /分享包 SHA-256：c{64}/);
+    assert.match(await page.evaluate(() => window.copiedMaterial), /本包适用系统：Windows x64/);
+    assert.doesNotMatch(await page.evaluate(() => window.copiedMaterial), /项目：|使用说明：|github.com|SHA-256|Commit/);
     assert.match(await page.evaluate(() => window.copiedMaterial), /历史单文件分享.*不含源码/);
     const partial = page.locator('[data-job-id="partial"]');
     assert.doesNotMatch(await partial.innerText(), /含对应版本源码|分享包已准备/);
@@ -167,7 +167,8 @@ const server = http.createServer(async (req, res) => {
     await page.locator('[data-job-id="failed"]').getByRole('button', { name: '取消任务', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('[data-job-id="failed"] .transfer-status').textContent === '已取消');
     assert.equal(await partial.locator('a[href^="javascript"]').count(), 0); assert.equal(await partial.locator('img,script').count(), 0);
-    await partial.locator('summary').click(); assert.match(await partial.locator('pre').innerText(), /需要原作素材/);
+    await partial.locator('summary').click(); assert.match(await partial.locator('pre').innerText(), /中文简介/);
+    assert.doesNotMatch(await partial.locator('pre').innerText(), /游戏素材：|使用说明：/);
     await partial.locator('summary').focus(); await page.waitForTimeout(250); assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-job-id]')?.dataset.jobId), 'partial'); assert.equal(await partial.locator('details').evaluate(item => item.open), true);
     await partial.getByRole('button', { name: '复制分享资料', exact: true }).click();
     assert.match(await page.evaluate(() => window.copiedMaterial), /https:\/\/pan.baidu.com\/s\/partial/); assert.doesNotMatch(await page.evaluate(() => window.copiedMaterial), /javascript/);

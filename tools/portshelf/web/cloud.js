@@ -65,16 +65,15 @@
 
   function materialFor(job) {
     const identity = gameIdentity(job);
-    const lines = [identity.title, "项目：" + String(job.repo || "")];
-    if (identity.nameZh && job.name && job.name !== identity.nameZh) lines.push("项目名称：" + job.name);
-    if (!identity.nameZh) lines.push("中文名待确认");
+    const lines = [identity.title];
+    if (identity.nameZh && job.name && job.name !== identity.nameZh) lines.push("游戏名称：" + job.name);
     if (identity.original) lines.push("游戏原名：" + identity.original);
     if (job.version) lines.push("版本：" + job.version);
-    if (job.arch) lines.push("Windows 架构：" + (job.arch === "arm64" ? "ARM64" : job.arch === "amd64" ? "x64" : job.arch));
-    lines.push(systemsLabel(job.supportedSystems));
+    if (["amd64", "arm64"].includes(job.arch) && (hasSourceBundle(job) || job.asset && /^[a-f0-9]{64}$/i.test(job.sha256 || ""))) {
+      lines.push("本包适用系统：Windows " + (job.arch === "arm64" ? "ARM64" : "x64"));
+    } else lines.push("项目" + systemsLabel(job.supportedSystems));
     if (job.description) lines.push("", String(job.description), "");
-    if (job.dataNote) lines.push("游戏素材：" + job.dataNote);
-    if (job.guide) lines.push("使用说明：" + job.guide);
+    if (hasSourceBundle(job)) lines.push("包含内容：游戏文件、配套源码及说明");
     for (const [id, name] of Object.entries(providers)) {
       const output = job.outputs?.[id];
       const url = shareURL(output?.share?.url, id);
@@ -91,16 +90,6 @@
       if (output.share.code) lines.push("提取码：" + output.share.code);
       if (output.share.expiresAt) lines.push("有效期至：" + output.share.expiresAt);
     }
-    if (uniqueRepos([job.repo]).length) lines.push("上游项目：https://github.com/" + job.repo);
-    if (job.sha256) lines.push("原发布附件 SHA-256：" + job.sha256);
-    if (hasSourceBundle(job)) {
-      lines.push("分享内容：原发布附件 + 对应版本源码 ZIP + 说明", "源码 Commit：" + job.sourceCommit, "源码 SHA-256：" + job.sourceSha256, "分享包：" + String(job.bundlePath || "分享 ZIP").split(/[\\/]/).pop(), "分享包 SHA-256：" + job.bundleSha256);
-      const source = sourceURL(job.sourceUrl);
-      if (source) lines.push("对应源码：" + source);
-    }
-    const posterSource = globalThis.PortShelfDescriptions?.imageURL(job.posterSourceUrl, true);
-    if (posterSource) lines.push("图片来源：" + posterSource);
-    if (job.localDeletedAt) lines.push("本地文件：双盘完成后已清理，网盘分享资料保留。");
     return lines.join("\n");
   }
 
@@ -111,11 +100,6 @@
   }
 
   function hasSourceBundle(job) { return job.bundleVersion === 1 && /^[a-f0-9]{64}$/i.test(job.bundleSha256 || "") && /^[a-f0-9]{64}$/i.test(job.sourceSha256 || "") && /^[a-f0-9]{40}$/i.test(job.sourceCommit || ""); }
-
-  function sourceURL(value) {
-    if (typeof value !== "string" || !/^https:\/\/(?:github\.com|codeload\.github\.com)\//.test(value) || /[\s\\]/.test(value)) return null;
-    try { const url = new URL(value); return !url.port && !url.username && !url.password && !url.search && !url.hash ? url.href : null; } catch (_) { return null; }
-  }
 
   function credentialStorageState(value, serverMode = false) {
     const unknown = { kind: "unknown", text: "正在核对本机凭据保存状态。", pending: [] };

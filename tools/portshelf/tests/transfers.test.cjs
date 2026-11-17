@@ -76,40 +76,36 @@ test('progress stays bounded and unknown totals stay indeterminate', () => {
   assert.equal(progressOf({ completedBytes: 1, totalBytes: 0 }).percent, null);
 });
 
-test('share materials retain Chinese instructions and successful partial results without unsafe links or local secrets', () => {
+test('buyer materials keep the game and successful shares without technical notes or unsafe links', () => {
   const materials = materialFor({ name: '经典游戏', repo: 'owner/game', description: '中文游戏简介', guide: '启动前配置游戏数据。', dataNote: '需自备原作素材。', downloadPath: 'C:\\private\\game.zip', sha256: 'abc123', outputs: { baidu: { share: { url: 'https://pan.baidu.com/s/result', code: 'a1B2' } }, quark: { error: 'retry later', share: { url: 'javascript:alert(1)', code: 'secret' } } } });
   assert.match(materials, /中文游戏简介/);
-  assert.match(materials, /需自备原作素材/);
-  assert.match(materials, /配置游戏数据/);
+  assert.doesNotMatch(materials, /游戏素材：|使用说明：|项目：|github|运行要求：/);
   assert.match(materials, /https:\/\/pan.baidu.com\/s\/result/);
   assert.match(materials, /提取码：a1B2/);
-  assert.match(materials, /SHA-256：abc123/);
+  assert.doesNotMatch(materials, /SHA-256|abc123/);
   assert.doesNotMatch(materials, /javascript|secret|private/);
 });
 
 test('cleaned downloads retain share materials without advertising a missing local file', () => {
   const materials = materialFor({ name: '游戏', repo: 'demo/game', localDeletedAt: '2026-11-10T00:00:00Z', downloadPath: 'removed.zip', outputs: { baidu: { share: { url: 'https://pan.baidu.com/s/kept', code: '1234' } }, quark: { share: { url: 'https://pan.quark.cn/s/kept', code: '5678' } } } });
-  assert.match(materials, /双盘完成后已清理/);
+  assert.doesNotMatch(materials, /已清理|本地文件/);
   assert.match(materials, /https:\/\/pan.baidu.com\/s\/kept/);
   assert.match(materials, /https:\/\/pan.quark.cn\/s\/kept/);
   assert.doesNotMatch(materials, /removed.zip/);
 });
 
-test('source bundles identify the real Chinese game, source commit and separate digests without relabelling old shares', () => {
+test('buyer materials name the game and distinguish verified bundles without exposing provenance', () => {
   const job = { repo: 'demo/game', name: 'CommunityPort', gameNameZh: '经典冒险', gameNameOriginal: 'Classic Adventure', bundleVersion: 1, bundlePath: 'C:\\private\\game-with-source.zip', bundleSha256: 'b'.repeat(64), sourceSha256: 'c'.repeat(64), sourceCommit: 'd'.repeat(40), sourceUrl: 'https://github.com/demo/game/archive/' + 'd'.repeat(40) + '.zip', sha256: 'a'.repeat(64), outputs: { baidu: { payloadSha256: 'b'.repeat(64), share: { url: 'https://pan.baidu.com/s/source', code: '1234' } }, quark: { payloadSha256: 'a'.repeat(64), share: { url: 'https://pan.quark.cn/s/old' } } }, legacyOutputs: { baidu: { share: { url: 'https://pan.baidu.com/s/legacy', code: '5678' } } } };
   assert.equal(hasSourceBundle(job), true);
   const text = materialFor(job);
   assert.match(text, /^经典冒险\n/);
-  assert.match(text, /项目名称：CommunityPort/);
+  assert.match(text, /游戏名称：CommunityPort/);
   assert.match(text, /游戏原名：Classic Adventure/);
   assert.match(text, /百度网盘（含对应版本源码）：https:\/\/pan.baidu.com\/s\/source/);
   assert.match(text, /夸克网盘（未核实为源码分享包）/);
   assert.match(text, /历史单文件分享.*不含源码.*legacy/);
-  assert.match(text, /原发布附件 SHA-256：a{64}/);
-  assert.match(text, /源码 Commit：d{40}/);
-  assert.match(text, /源码 SHA-256：c{64}/);
-  assert.match(text, /分享包 SHA-256：b{64}/);
-  assert.match(text, /分享包：game-with-source.zip/);
+  assert.match(text, /包含内容：游戏文件、配套源码及说明/);
+  assert.doesNotMatch(text, /SHA-256|Commit|github|demo\/game|game-with-source.zip|a{64}|b{64}|c{64}|d{40}/);
   assert.doesNotMatch(text, /C:|private/);
   assert.equal(hasSourceBundle({ ...job, bundleVersion: 0 }), false);
   assert.equal(hasSourceBundle({ ...job, bundleVersion: 2 }), false);

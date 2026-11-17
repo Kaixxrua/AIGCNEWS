@@ -24,7 +24,7 @@ import (
 //go:embed web/* catalog.json snapshot.json
 var assets embed.FS
 
-var version = "1.8.1"
+var version = "1.8.2"
 var errRunning = errors.New("PortShelf 已在运行")
 
 func main() {

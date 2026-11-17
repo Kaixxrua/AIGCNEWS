@@ -310,6 +310,14 @@ func (a *App) registerMarketplaceRoutes(mux *http.ServeMux) {
 		a.marketplace.mu.Unlock()
 		reply(w, 200, map[string]any{"jobs": jobs, "error": problem})
 	})
+	mux.HandleFunc("GET /api/marketplace/jobs/{id}/delivery-preview", func(w http.ResponseWriter, r *http.Request) {
+		content, err := a.marketplace.deliveryPreview(strings.TrimSpace(r.PathValue("id")))
+		if err != nil {
+			fail(w, 409, err)
+			return
+		}
+		reply(w, 200, map[string]string{"content": content, "remoteStatus": "unverified"})
+	})
 	for _, path := range []string{"/api/marketplace/run", "/api/marketplace/enqueue"} {
 		mux.HandleFunc("POST "+path, func(w http.ResponseWriter, r *http.Request) {
 			var body struct{}
@@ -341,5 +349,17 @@ func (a *App) registerMarketplaceRoutes(mux *http.ServeMux) {
 		}
 		a.marketplace.notify()
 		reply(w, 202, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("POST /api/marketplace/jobs/{id}/refresh-copy", func(w http.ResponseWriter, r *http.Request) {
+		var body struct{}
+		if err := decode(w, r, &body); err != nil {
+			fail(w, 400, err)
+			return
+		}
+		if err := a.marketplace.refreshCopy(r.Context(), strings.TrimSpace(r.PathValue("id"))); err != nil {
+			fail(w, 409, err)
+			return
+		}
+		reply(w, 200, map[string]bool{"ok": true})
 	})
 }

@@ -232,7 +232,7 @@
       $("marketplace-property-add").disabled = busy || !ready;
       $("marketplace-addresses-load").disabled = busy || !connected;
       $("marketplace-dirty-note").textContent = state.dirty ? "有未保存的修改；自动铺货仍使用已保存设置。" : ready ? context.isServerMode?.() ? "配置已保存到服务器；按你设置的售价和库存铺货。" : "配置已保存到本机；不会默认设置售价或开启铺货。" : "正在读取本机配置。";
-      $("marketplace-jobs").querySelectorAll("button").forEach(button => { button.disabled = busy || !enabled() || state.dirty; });
+      $("marketplace-jobs").querySelectorAll("button").forEach(button => { button.disabled = busy || (button.dataset.delivery === "true" ? false : state.dirty || (button.dataset.copy === "true" ? !connected : !enabled())); });
     }
 
     function renderStatus() {
@@ -269,6 +269,8 @@
         if (info.reconcile) card.append(node("p", "field-help", "创建请求的结果尚未确认，将先查询远端商品，避免重复创建。"));
         else if (job.status === "confirming") card.append(node("p", "field-help", "已提交上架，正在核对远端状态；确认前不会标为成功。"));
         if (job.error) card.append(node("p", "form-error", job.error));
+        if (job.copyUpdate) card.append(node("p", "field-help", "文案更新结果待核对；原商品和网盘分享保留。"));
+        else if (job.copyUpdatedAt) card.append(node("p", "field-help", "闲管家文案已核对更新；在售商品的闲鱼页面由平台同步。"));
         const retryAt = date(job.nextRunAt); if (retryAt && !info.published) card.append(node("p", "field-help", "下次处理：" + retryAt));
         if (job.content || job.posterUrl) {
           const preview = node("details", "marketplace-preview"); preview.open = openPreviews.has(String(job.id || "")); preview.append(node("summary", "", "查看商品文案与海报"));
@@ -278,9 +280,36 @@
           }
           card.append(preview);
         }
+        if (job.id) {
+          const delivery = node("div", "marketplace-delivery");
+          const view = node("button", "button button-secondary button-small", "查看发货内容"); view.type = "button"; view.dataset.delivery = "true";
+          const output = node("div");
+          view.addEventListener("click", () => perform("delivery-preview", async () => {
+            output.replaceChildren();
+            const result = await context.api("/api/marketplace/jobs/" + encodeURIComponent(job.id) + "/delivery-preview", undefined, 20000);
+            if (stopped() || !card.isConnected) return;
+            if (!result?.content || result.remoteStatus !== "unverified") throw new Error("发货内容返回异常，请刷新后重试。");
+            output.append(node("p", "field-help", "这是待配置的发货内容。闲管家自动发货是否启用、实际绑定内容尚未核对。可将以下内容填入该商品“无卡模式”的发货附言。"));
+            const message = node("textarea"); message.readOnly = true; message.rows = 12; message.value = result.content; message.setAttribute("aria-label", "待配置的发货内容");
+            const copy = node("button", "button button-secondary button-small", "复制发货内容"); copy.type = "button"; copy.dataset.delivery = "true";
+            copy.addEventListener("click", async () => {
+              try {
+                if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(message.value);
+                else { message.focus(); message.select(); if (!document.execCommand("copy")) throw new Error("copy unavailable"); }
+                copy.textContent = "已复制";
+              } catch (_) { message.focus(); message.select(); copy.textContent = "已选中，请按 Ctrl+C 复制"; }
+            });
+            output.append(message, copy); view.textContent = "刷新发货内容";
+          }));
+          delivery.append(view, output); card.append(delivery);
+        }
         const actions = node("div", "marketplace-job-actions"); const href = safeItemURL(job.itemUrl);
         if (href) { const link = node("a", "button button-secondary button-small", info.published ? "查看已上架商品 ↗" : "查看远端商品 ↗"); link.href = href; link.target = "_blank"; link.rel = "noopener noreferrer"; actions.append(link); }
         if (info.retry && job.id) { const retry = node("button", "button button-secondary button-small", info.reconcile ? "核对结果" : "重试此任务"); retry.type = "button"; retry.addEventListener("click", () => action("retry", String(job.id))); actions.append(retry); }
+        if (job.productId && ["published", "attention"].includes(job.status)) {
+          const refresh = node("button", "button button-secondary button-small", job.copyUpdate ? "核对文案" : "更新商品文案");
+          refresh.type = "button"; refresh.dataset.copy = "true"; refresh.addEventListener("click", () => action("refresh-copy", String(job.id))); actions.append(refresh);
+        }
         if (actions.childNodes.length) card.append(actions);
         const updated = date(job.updatedAt); if (updated) card.append(node("p", "marketplace-job-time", "最近更新 " + updated));
         container.append(card);
@@ -413,11 +442,11 @@
     async function action(name, id) {
       if ((name === "run" || name === "retry") && (!enabled() || state.dirty) || name === "enqueue" && state.dirty) return;
       await perform(name, async () => {
-        const path = name === "retry" ? "/api/marketplace/jobs/" + encodeURIComponent(id) + "/retry" : "/api/marketplace/" + name;
-        const result = await context.api(path, {}, 30000);
+        const path = ["retry", "refresh-copy"].includes(name) ? "/api/marketplace/jobs/" + encodeURIComponent(id) + "/" + name : "/api/marketplace/" + name;
+        const result = await context.api(path, {}, name === "refresh-copy" ? 120000 : 30000);
         if (stopped()) return;
         if (result?.config) acceptStatus(result);
-        show("marketplace-action-note", name === "enqueue" ? "已请求加入完成双盘分享的任务；已有任务会保留，结果以队列为准。" + (!enabled() ? " 自动铺货仍保持暂停。" : "") : name === "retry" ? "已请求继续处理，请以队列中的核对结果为准。" : "已请求处理铺货队列，商品确认上架后才显示成功。");
+        show("marketplace-action-note", name === "refresh-copy" ? "已核对闲管家原商品的新文案，售价、库存与分享链接保持原样；在售商品的闲鱼页面由平台同步。" : name === "enqueue" ? "已请求加入完成双盘分享的任务；已有任务会保留，结果以队列为准。" + (!enabled() ? " 自动铺货仍保持暂停。" : "") : name === "retry" ? "已请求继续处理，请以队列中的核对结果为准。" : "已请求处理铺货队列，商品确认上架后才显示成功。");
       });
     }
 

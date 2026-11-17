@@ -49,6 +49,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/marketplace/enqueue') return json({ added: 0 });
     if (url.pathname === '/api/marketplace/run') { running = true; return json({ added: 0 }, 202); }
     if (url.pathname === '/api/marketplace/jobs/unknown/retry') { jobs[1].status = 'confirming'; jobs[1].error = ''; return json({ ok: true }); }
+    if (url.pathname === '/api/marketplace/jobs/confirmed/delivery-preview') return json({ content: '测试游戏 · Windows x64\n百度网盘：https://pan.baidu.com/s/test\n提取码：1234\n夸克网盘：https://pan.quark.cn/s/test\n<img src=x onerror="window.injected=5">', remoteStatus: 'unverified' });
+    if (url.pathname === '/api/marketplace/jobs/confirmed/refresh-copy') {
+      await wait(70);
+      if (!jobs[2].copyUpdate) { jobs[2].copyUpdate = { title: '新商品文案', content: '游戏玩法与适用系统。' }; return json({ error: '文案请求已提交，等待闲管家同步' }, 409); }
+      Object.assign(jobs[2], jobs[2].copyUpdate); delete jobs[2].copyUpdate; jobs[2].copyUpdatedAt = new Date().toISOString(); return json({ ok: true });
+    }
     if (url.pathname === '/api/quit') return json({ ok: true });
     return json({ error: 'unmocked ' + url.pathname }, 404);
   }
@@ -136,6 +142,22 @@ const server = http.createServer(async (req, res) => {
     failSave = true; await page.locator('#marketplace-save').click(); await page.waitForFunction(() => document.getElementById('marketplace-form-error').textContent.includes('mock save')); await ready();
     assert.equal(await page.locator('#marketplace-price').inputValue(), '12.30'); assert.equal(config.priceFen, 29);
     failSave = false; serviceError = ''; await page.locator('#marketplace-save').click(); await saved(); assert.equal(config.enabled, false); assert.equal(config.priceFen, 1230);
+    const confirmed = page.locator('[data-marketplace-job="confirmed"]');
+    await confirmed.getByRole('button', { name: '更新商品文案' }).click(); await ready();
+    await confirmed.getByRole('button', { name: '核对文案' }).waitFor();
+    assert.match(await page.locator('#marketplace-action-error').textContent(), /等待闲管家同步/);
+    await confirmed.getByRole('button', { name: '核对文案' }).click(); await ready();
+    await page.waitForFunction(() => document.querySelector('[data-marketplace-job="confirmed"]').textContent.includes('闲管家文案已核对更新'));
+    assert.equal(config.enabled, false); assert.equal(jobs[2].productId, '9001'); assert.equal(jobs[2].priceFen, 1230);
+    assert.equal(requests.filter(item => item.path.endsWith('/confirmed/refresh-copy')).length, 2);
+    await confirmed.getByRole('button', { name: '查看发货内容' }).click(); await ready();
+    const delivery = confirmed.getByRole('textbox', { name: '待配置的发货内容' });
+    assert.match(await delivery.inputValue(), /百度网盘：https:\/\/pan.baidu.com\/s\/test/);
+    assert.match(await delivery.inputValue(), /提取码：1234/);
+    assert.match(await delivery.inputValue(), /<img src=x/);
+    assert.match(await confirmed.textContent(), /实际绑定内容尚未核对/);
+    assert.equal(await confirmed.getByRole('button', { name: '复制发货内容' }).isDisabled(), false);
+    assert.equal(await page.evaluate(() => window.injected), undefined);
     await page.locator('#marketplace-enqueue').click(); await page.waitForFunction(() => document.getElementById('marketplace-action-note').textContent.includes('仍保持暂停')); await ready();
     assert.equal(config.enabled, false); assert.equal(requests.filter(item => item.path.endsWith('/enqueue')).length, 1);
     await page.locator('#marketplace-toggle').click(); await page.waitForFunction(() => document.getElementById('marketplace-status').textContent === '已开启'); await ready();

@@ -63,7 +63,7 @@ async function stopService() {
     await page.locator('#access-code').fill(token);
     await page.locator('#access-form button').click();
     await page.waitForFunction(() => document.getElementById('version-label').textContent.includes('内网版'));
-    assert.match(await page.locator('#version-label').textContent(), /v1\.8\.1/);
+    assert.match(await page.locator('#version-label').textContent(), /v1\.8\.2/);
     assert.equal(new URL(page.url()).hash, '');
     await page.locator('#cloud-nav').click();
     await page.waitForFunction(() => !document.getElementById('automation-remember').disabled);
