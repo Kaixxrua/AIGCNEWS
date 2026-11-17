@@ -306,7 +306,7 @@
         if (automatic.text) automation.append(node("p", "", automatic.text));
         card.append(automation);
       }
-      const currentStage = job.status === "waiting_auth" ? "等待连接网盘" : stageLabels[job.stage] || "等待处理";
+      const currentStage = job.status === "partial" ? "网盘步骤尚未全部完成" : job.status === "waiting_auth" ? "等待连接网盘" : stageLabels[job.stage] || "等待处理";
       const stage = node("p", "transfer-stage", currentStage + (providers[job.provider] ? " · " + providers[job.provider] : "")); card.append(stage);
       if (["download", "source", "upload"].includes(job.stage) && job.status === "running") {
         const data = progressOf(job); const meter = node("progress", "transfer-progress"); meter.max = data.total || 1; if (data.total) meter.value = Math.min(data.completed, data.total);

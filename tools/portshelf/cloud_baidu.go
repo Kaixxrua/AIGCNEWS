@@ -91,7 +91,13 @@ type baiduAPIError struct {
 }
 
 func (e *baiduAPIError) Error() string {
+	return fmt.Sprintf("%s（错误码 %d）", e.message(), e.Code)
+}
+
+func (e *baiduAPIError) message() string {
 	switch e.Code {
+	case 2:
+		return "百度网盘拒绝了请求参数"
 	case -4, -6, -11, 3, 112, 20016, 20017, 31045:
 		return "百度网盘登录已失效，请更新 Cookie"
 	case -8, -30, 31061:
@@ -110,9 +116,9 @@ func (e *baiduAPIError) Error() string {
 	case -19, -62, 132:
 		return "百度网盘要求安全验证，请先在网盘网页完成验证"
 	case -1, -16, -17, 110, 115:
-		return fmt.Sprintf("百度网盘拒绝本次操作，请在网页检查账号或分享限制（错误码 %d）", e.Code)
+		return "百度网盘拒绝本次操作，请在网页检查账号或分享限制"
 	default:
-		return fmt.Sprintf("百度网盘操作失败（错误码 %d），请在网页检查账号状态后重试", e.Code)
+		return "百度网盘操作失败，请在网页检查账号状态后重试"
 	}
 }
 
@@ -133,7 +139,7 @@ func baiduEndpointAllowed(host, endpoint string) bool {
 	return false
 }
 
-func (b *baiduDrive) request(ctx context.Context, method, host, endpoint string, query url.Values, body io.Reader, contentType string, contentLength int64, timeout time.Duration, output any) error {
+func (b *baiduDrive) request(ctx context.Context, method, host, endpoint string, query url.Values, body io.Reader, contentType string, contentLength int64, timeout time.Duration, output any) (err error) {
 	if b.credentialErr != nil {
 		return b.credentialErr
 	}
@@ -143,6 +149,11 @@ func (b *baiduDrive) request(ctx context.Context, method, host, endpoint string,
 	if !baiduEndpointAllowed(host, endpoint) {
 		return errors.New("百度网盘请求地址无效")
 	}
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%s：%w", baiduRequestStage(endpoint), err)
+		}
+	}()
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	u := url.URL{Scheme: "https", Host: host, Path: endpoint, RawQuery: query.Encode()}
@@ -172,43 +183,7 @@ func (b *baiduDrive) request(ctx context.Context, method, host, endpoint string,
 		return errors.New("无法连接百度网盘，请检查网络或代理配置")
 	}
 	defer response.Body.Close()
-	switch {
-	case response.StatusCode >= 300 && response.StatusCode < 400:
-		return errors.New("百度网盘要求跳转，请更新 Cookie 后重试")
-	case response.StatusCode == 401 || response.StatusCode == 403:
-		return errors.New("百度网盘拒绝访问，请更新 Cookie 或在网页检查账号状态")
-	case response.StatusCode == 429:
-		return errors.New("百度网盘请求过于频繁，请稍后重试")
-	case response.StatusCode < 200 || response.StatusCode >= 300:
-		return fmt.Errorf("百度网盘服务暂不可用（HTTP %d）", response.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, baiduResponseLimit+1))
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return errors.New("读取百度网盘响应失败")
-	}
-	if len(data) > baiduResponseLimit {
-		return errors.New("百度网盘响应过大")
-	}
-	var status struct {
-		Errno     int `json:"errno"`
-		ErrorCode int `json:"error_code"`
-	}
-	if json.Unmarshal(data, &status) != nil {
-		return errors.New("百度网盘响应格式无效，请检查 Cookie 是否有效")
-	}
-	if status.Errno != 0 {
-		return &baiduAPIError{Code: status.Errno, Sharing: endpoint == "/share/pset"}
-	}
-	if status.ErrorCode != 0 {
-		return &baiduAPIError{Code: status.ErrorCode, Sharing: endpoint == "/share/pset"}
-	}
-	if json.Unmarshal(data, output) != nil {
-		return errors.New("百度网盘响应格式无效")
-	}
-	return nil
+	return baiduResponse(ctx, response, endpoint == "/share/pset", output)
 }
 
 func baiduQuery(token string) url.Values {
