@@ -174,22 +174,11 @@ func TestBaiduExistingRootMustBeDirectory(t *testing.T) {
 				if request.URL.Path == "/api/create" {
 					return apiResponse(200, `{"errno":-8}`), nil
 				}
-				if request.URL.Host != "pcs.baidu.com" || request.URL.Path != "/rest/2.0/pcs/file" || request.URL.Query().Get("method") != "meta" {
-					t.Fatal("expected metadata verification")
+				q := request.URL.Query()
+				if request.Method != http.MethodGet || request.URL.Host != "pan.baidu.com" || request.URL.Path != "/api/filemetas" || q.Get("target") != `["/PortShelf"]` || q.Get("dlink") != "0" || q.Get("bdstoken") != "csrf" || q.Get("web") != "1" || q.Get("clienttype") != "0" || request.Header.Get("Cookie") != testBaiduCookie {
+					t.Fatal("metadata must verify the fixed root using the same web session")
 				}
-				reader, err := request.MultipartReader()
-				if err != nil {
-					t.Fatal(err)
-				}
-				part, err := reader.NextPart()
-				if err != nil || part.FormName() != "param" {
-					t.Fatal("missing metadata param")
-				}
-				param, _ := io.ReadAll(part)
-				if string(param) != `{"list":[{"path":"/PortShelf"}]}` {
-					t.Fatal("metadata escaped the fixed root")
-				}
-				return apiResponse(200, fmt.Sprintf(`{"list":[{"path":"/PortShelf","fs_id":101,"isdir":%d}]}`, isDir)), nil
+				return apiResponse(200, fmt.Sprintf(`{"errno":0,"info":[{"path":"/PortShelf","fs_id":101,"isdir":%d}]}`, isDir)), nil
 			})
 			err := drive.ensureDirectory(context.Background(), "csrf")
 			if (err == nil) != (isDir == 1) || calls != 2 {
@@ -351,6 +340,9 @@ func TestBaiduInvalidCredentialsAndTargetsMakeNoRequests(t *testing.T) {
 	}
 	if err := drive.request(context.Background(), http.MethodGet, "pan.baidu.com", "/redirect", nil, nil, "", 0, time.Second, &response); err == nil {
 		t.Fatal("accepted arbitrary provider path")
+	}
+	if err := drive.request(context.Background(), http.MethodPost, "pcs.baidu.com", "/rest/2.0/pcs/file", nil, nil, "", 0, time.Second, &response); err == nil {
+		t.Fatal("accepted retired PCS metadata endpoint")
 	}
 }
 

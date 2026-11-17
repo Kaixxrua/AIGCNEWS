@@ -128,11 +128,9 @@ func baiduEndpointAllowed(host, endpoint string) bool {
 	switch host {
 	case "pan.baidu.com":
 		switch endpoint {
-		case "/api/gettemplatevariable", "/api/precreate", "/api/create", "/share/pset":
+		case "/api/gettemplatevariable", "/api/filemetas", "/api/precreate", "/api/create", "/share/pset":
 			return true
 		}
-	case "pcs.baidu.com":
-		return endpoint == "/rest/2.0/pcs/file"
 	case "d.pcs.baidu.com":
 		return endpoint == "/rest/2.0/pcs/superfile2"
 	}
@@ -260,21 +258,22 @@ func (b *baiduDrive) ensureDirectory(ctx context.Context, token string) error {
 	var remote *baiduAPIError
 	if errors.As(err, &remote) && (remote.Code == -8 || remote.Code == -30 || remote.Code == 31061) {
 		// A same-named file must not be treated as our upload directory.
-		var body bytes.Buffer
-		writer := multipart.NewWriter(&body)
-		_ = writer.WriteField("param", `{"list":[{"path":"/PortShelf"}]}`)
-		_ = writer.Close()
+		// Keep metadata on the same web session as create/precreate. The legacy
+		// PCS meta endpoint can reject a valid web Cookie with 31030.
 		var response struct {
-			List []baiduFileInfo `json:"list"`
+			Info []baiduFileInfo `json:"info"`
 		}
-		q := url.Values{"app_id": {"250528"}, "method": {"meta"}}
-		if err = b.request(ctx, http.MethodPost, "pcs.baidu.com", "/rest/2.0/pcs/file", q, &body, writer.FormDataContentType(), int64(body.Len()), 30*time.Second, &response); err != nil {
+		q := baiduQuery(token)
+		target, _ := json.Marshal([]string{baiduDirectory})
+		q.Set("target", string(target))
+		q.Set("dlink", "0")
+		if err = b.request(ctx, http.MethodGet, "pan.baidu.com", "/api/filemetas", q, nil, "", 0, 30*time.Second, &response); err != nil {
 			return err
 		}
-		if len(response.List) != 1 {
+		if len(response.Info) != 1 {
 			return errors.New("无法核实百度网盘 PortShelf 目录")
 		}
-		info = response.List[0]
+		info = response.Info[0]
 	} else if err != nil {
 		return err
 	}

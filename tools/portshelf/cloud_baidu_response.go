@@ -15,7 +15,7 @@ func baiduRequestStage(endpoint string) string {
 		return "验证百度登录"
 	case "/api/create":
 		return "创建百度文件或目录"
-	case "/rest/2.0/pcs/file":
+	case "/api/filemetas":
 		return "核对百度上传目录"
 	case "/api/precreate":
 		return "准备百度上传"

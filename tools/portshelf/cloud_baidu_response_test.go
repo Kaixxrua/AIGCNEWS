@@ -39,8 +39,14 @@ func TestBaiduHTTP400ExistingDirectoryContinuesUpload(t *testing.T) {
 				return
 			}
 			fmt.Fprintf(w, `{"errno":0,"fs_id":42,"path":"/PortShelf/game.zip","size":%d,"isdir":0}`, len(data))
+		case "/api/filemetas":
+			if r.Method != http.MethodGet || r.URL.Query().Get("target") != `["/PortShelf"]` || r.URL.Query().Get("bdstoken") != "testCSRF" {
+				t.Error("metadata must use the authenticated web API")
+			}
+			fmt.Fprint(w, `{"errno":0,"info":[{"path":"/PortShelf","fs_id":1,"isdir":1}]}`)
 		case "/rest/2.0/pcs/file":
-			fmt.Fprint(w, `{"list":[{"path":"/PortShelf","fs_id":1,"isdir":1}]}`)
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error_code":31030,"error_msg":"pcs token not exist"}`)
 		case "/api/precreate":
 			fmt.Fprint(w, `{"errno":0,"return_type":1,"uploadid":"test-upload","block_list":[0]}`)
 		case "/rest/2.0/pcs/superfile2":
@@ -90,7 +96,7 @@ func TestBaiduHTTPErrorCodesAndStepsAreSafeAndActionable(t *testing.T) {
 		{"space", "/api/precreate", `{"error_code":"31190"}`, "准备百度上传", "空间不足", 400, 31190, true},
 		{"params", "/rest/2.0/pcs/superfile2", `{"error_code":2}`, "上传百度文件分片", "请求参数", 400, 2, false},
 		{"unknown", "/rest/2.0/pcs/superfile2", `{"error_code":31299}`, "上传百度文件分片", "操作失败", 400, 31299, true},
-		{"rate", "/rest/2.0/pcs/file", `{"errno":31034}`, "核对百度上传目录", "请求过于频繁", 429, 31034, false},
+		{"rate", "/api/filemetas", `{"errno":31034}`, "核对百度上传目录", "请求过于频繁", 429, 31034, false},
 		{"share limit", "/share/pset", `{"errno":-10}`, "创建百度分享链接", "分享数量", 400, -10, true},
 		{"same directory", "/api/create", `{"errno":-8}`, "创建百度文件或目录", "同名", 400, -8, true},
 		{"http ok api failed", "/api/precreate", `{"errno":2}`, "准备百度上传", "请求参数", 200, 2, false},
@@ -99,9 +105,7 @@ func TestBaiduHTTPErrorCodesAndStepsAreSafeAndActionable(t *testing.T) {
 			body := strings.TrimSuffix(tc.body, "}") + `,"error_msg":"private-bduss private-stoken privateCSRF123 Cookie=secret","request_id":"secret-id"}`
 			drive := baiduTestDrive(func(*http.Request) (*http.Response, error) { return apiResponse(tc.status, body), nil })
 			host := "pan.baidu.com"
-			if tc.endpoint == "/rest/2.0/pcs/file" {
-				host = "pcs.baidu.com"
-			} else if tc.endpoint == "/rest/2.0/pcs/superfile2" {
+			if tc.endpoint == "/rest/2.0/pcs/superfile2" {
 				host = "d.pcs.baidu.com"
 			}
 			var output any
